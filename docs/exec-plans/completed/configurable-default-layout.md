@@ -105,7 +105,7 @@ The position types map directly to Dockview's layout primitives:
 | `'tab'` | `{ referencePanel: ref }` (no direction) | Tab: new panel in same group as ref |
 | _(none)_ | _(no position arg)_ | Root: first panel, fills entire viewport |
 
-**`referencePanel` vs `referenceGroup` decision:** Horizontal splits (`left`/`right`) use `referencePanel` — this splits correctly regardless of group structure. Vertical splits (`above`/`below`) use `referenceGroup` (resolved from `api.getPanel(ref).group`) — this matches the existing `ensureCorePanels()` behavior where the shell is created with `referenceGroup: emptyPanel.group` (line 1159). Using `referencePanel` for vertical splits can produce wrong results when the reference panel shares a group with tabs. The config stays simple (string IDs only) — the builder resolves the group internally.
+**`referencePanel` vs `referenceGroup` decision:** Horizontal splits (`left`/`right`) use `referencePanel`. Vertical splits (`above`/`below`) use `referenceGroup` (resolved from `api.getPanel(ref).group`) to match the existing `ensureCorePanels()` behavior where shell is created with `referenceGroup: emptyPanel.group` (line 1159). In bd-28ui.2.2 DockView probes, `referenceGroup` and `referencePanel` produced the same center-column split in the tested tabbed-center scenario; we still standardize on `referenceGroup` for vertical splits for consistency with runtime code.
 
 This is a thin wrapper over Dockview — no new abstractions, just a declarative config for what `ensureCorePanels()` does imperatively today.
 
@@ -377,8 +377,8 @@ export default {
   defaultLayout: {
     panels: [
       { id: 'data-catalog' },
-      { id: 'filetree', position: 'below', ref: 'data-catalog' },
       { id: 'chart-canvas', position: 'right', ref: 'data-catalog' },
+      { id: 'filetree', position: 'below', ref: 'data-catalog' },
       { id: 'companion', position: 'right', ref: 'chart-canvas' },
       { id: 'shell', position: 'below', ref: 'chart-canvas' },
     ],
@@ -492,7 +492,7 @@ npm run test:run
 10. localStorage saved layout takes priority over `defaultLayout` on second load.
 11. `centerGroupRef` is set correctly for custom layouts — editors opened later land in the center group.
 12. `empty-center` is recreated correctly when all editors are closed in a custom layout.
-13. DockView creation order: verify that `{ position: 'right', ref: 'data-catalog' }` after `data-catalog` has been vsplit (by filetree below) splits the **entire left column** to the right, not just the data-catalog cell. If DockView splits only the cell, the config order must be adjusted (create chart-canvas before filetree). Document the verified behavior.
+13. DockView creation order (verified in bd-28ui.2.2): after `data-catalog` is vsplit (`filetree` below), `{ position: 'right', ref: 'data-catalog' }` splits only the `data-catalog` cell, not the full left column. Authoring rule: create horizontal sibling columns before vertical splits within those columns when you need a full-height center column.
 
 **Files**:
 - `src/front/App.jsx` — layout builder + integration
@@ -540,9 +540,9 @@ bun run build
 
 ## Risk register
 
-- **Risk:** DockView panel creation order affects layout tree structure. After `filetree` splits below `data-catalog` (vsplit), a subsequent `{ position: 'right', ref: 'data-catalog' }` might split only the data-catalog cell instead of the entire left column.
+- **Risk (confirmed in bd-28ui.2.2):** DockView panel creation order affects layout tree structure. After `filetree` splits below `data-catalog` (vsplit), `{ position: 'right', ref: 'data-catalog' }` splits only the data-catalog cell (not the entire left column).
   - **Impact:** Center column appears between data-catalog and filetree instead of to the right of the full left column.
-  - **Mitigation:** Test this specific scenario in Phase 1 (test case 13). If DockView splits the cell, swap creation order in the example config: create `chart-canvas` right of `data-catalog` first, then `filetree` below `data-catalog`. Document the verified behavior as a config authoring guideline.
+  - **Mitigation:** Keep config guidance aligned with verified behavior: create `chart-canvas` right of `data-catalog` first, then `filetree` below `data-catalog` when a full-height center column is required.
 
 - **Risk:** `applyPanelConstraints()` refactor introduces regressions in stock layout.
   - **Impact:** Panels lose locking, headers become visible, sizing constraints break.
