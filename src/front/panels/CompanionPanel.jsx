@@ -38,8 +38,14 @@ export default function CompanionPanel({ params }) {
       return true
     }
 
+    // No explicit URL — use same-origin mode (companion proxied through backend)
+    if (companionAvailable) {
+      setCompanionConfig('', '')
+      return true
+    }
+
     return false
-  }, [activeProvider, companionUrl])
+  }, [activeProvider, companionUrl, companionAvailable])
 
   if (collapsed) {
     return (

@@ -120,6 +120,10 @@ export default function App() {
 
   // Fetch backend capabilities for feature gating
   const { capabilities, loading: capabilitiesLoading, refetch: refetchCapabilities } = useCapabilities()
+  const capabilitiesRef = useRef(capabilities)
+  const capabilitiesLoadingRef = useRef(capabilitiesLoading)
+  capabilitiesRef.current = capabilities
+  capabilitiesLoadingRef.current = capabilitiesLoading
 
   // Workspace plugin components loaded dynamically
   const [workspaceComponents, setWorkspaceComponents] = useState({})
@@ -1293,7 +1297,13 @@ export default function App() {
       )
     }
 
-    const buildLayoutFromConfig = (api, config, registry, capabilities) => {
+    const buildLayoutFromConfig = (
+      api,
+      config,
+      registry,
+      capabilitiesSnapshot,
+      capabilitiesLoadingSnapshot,
+    ) => {
       const layoutPanels = config?.defaultLayout?.panels
       if (!Array.isArray(layoutPanels)) {
         console.error('[Layout] defaultLayout.panels must be an array, falling back to stock layout')
@@ -1324,8 +1334,14 @@ export default function App() {
           return
         }
 
-        const requirementsMet = typeof registry?.checkRequirements === 'function'
-          ? registry.checkRequirements(id, capabilities)
+        // During initial boot, capabilities may not be loaded yet.
+        // Don't skip panel creation in that window or the layout can be
+        // persisted without core panes (e.g. filetree).
+        const canEnforceRequirements = !capabilitiesLoadingSnapshot
+          && !!capabilitiesSnapshot
+          && typeof registry?.checkRequirements === 'function'
+        const requirementsMet = canEnforceRequirements
+          ? registry.checkRequirements(id, capabilitiesSnapshot)
           : true
         if (!requirementsMet) {
           console.warn(`[Layout] Panel "${id}" skipped - required capabilities not available`)
@@ -1470,7 +1486,13 @@ export default function App() {
       ? config.defaultLayout.panels.length > 0
       : config?.defaultLayout && Object.prototype.hasOwnProperty.call(config.defaultLayout, 'panels')
     const panelBuilder = shouldUseConfigLayout
-      ? () => buildLayoutFromConfig(api, config, paneRegistry, capabilities)
+      ? () => buildLayoutFromConfig(
+          api,
+          config,
+          paneRegistry,
+          capabilitiesRef.current,
+          capabilitiesLoadingRef.current,
+        )
       : ensureCorePanels
     if (!hasSavedLayout || invalidLayoutFound) {
       panelBuilder()
@@ -2185,6 +2207,16 @@ export default function App() {
     onPluginChanged: refetchCapabilities,
     enabled: workspacePluginsEnabled,
   })
+
+  // Re-run core panel/layout builder once capabilities are resolved.
+  // This repairs first-load races where onReady executed before
+  // capabilities arrived and persisted an incomplete layout.
+  useEffect(() => {
+    if (!dockApi || capabilitiesLoading) return
+    if (ensureCorePanelsRef.current) {
+      ensureCorePanelsRef.current()
+    }
+  }, [dockApi, capabilitiesLoading, capabilities, nativeAgentEnabled, companionAgentEnabled])
 
   // Add or remove the right-rail agent panel based on provider feature availability.
   // Waits for capabilities to finish loading before making decisions to avoid
