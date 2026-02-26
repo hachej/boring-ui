@@ -32,7 +32,9 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
   const [dragOver, setDragOver] = useState(null)
   const [newFileInput, setNewFileInput] = useState(null) // { parentDir: string, name: string }
   const [kurtConfig, setKurtConfig] = useState(null)
-  const [collapsedSections, setCollapsedSections] = useState({ other: true }) // "Other" collapsed by default
+  // Keep "Other" expanded by default so repos without configured sections
+  // still show files immediately instead of appearing empty.
+  const [collapsedSections, setCollapsedSections] = useState({ other: false })
   const renameInputRef = useRef(null)
   const newFileInputRef = useRef(null)
 

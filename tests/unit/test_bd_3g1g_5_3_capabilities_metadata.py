@@ -33,6 +33,7 @@ def test_capabilities_router_descriptions_encode_owner_and_canonical_contract(mo
     # Ownership markers (machine-checkable) embedded in existing description field.
     assert by_name["files"]["description"].startswith("[owner=workspace-core] [canonical=/api/v1/files/*] ")
     assert by_name["git"]["description"].startswith("[owner=workspace-core] [canonical=/api/v1/git/*] ")
+    assert by_name["ui_state"]["description"].startswith("[owner=workspace-core] [canonical=/api/v1/ui/*] ")
     assert by_name["pty"]["description"].startswith("[owner=pty-service] [canonical=/ws/pty,/api/v1/pty/*] ")
     assert by_name["chat_claude_code"]["description"].startswith(
         "[owner=agent-normal] [canonical=/ws/agent/normal/*,/api/v1/agent/normal/*] "
@@ -80,6 +81,8 @@ def test_capabilities_contract_metadata_is_gated_and_schema_stable(monkeypatch) 
     assert by_name2["files"]["contract_metadata"]["canonical_families"] == ["/api/v1/files/*"]
     assert by_name2["git"]["contract_metadata"]["owner_service"] == "workspace-core"
     assert by_name2["git"]["contract_metadata"]["canonical_families"] == ["/api/v1/git/*"]
+    assert by_name2["ui_state"]["contract_metadata"]["owner_service"] == "workspace-core"
+    assert by_name2["ui_state"]["contract_metadata"]["canonical_families"] == ["/api/v1/ui/*"]
     assert by_name2["pty"]["contract_metadata"]["owner_service"] == "pty-service"
     assert "/ws/pty" in by_name2["pty"]["contract_metadata"]["canonical_families"]
     assert "/api/v1/pty/*" in by_name2["pty"]["contract_metadata"]["canonical_families"]

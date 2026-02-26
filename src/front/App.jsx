@@ -77,6 +77,135 @@ const debounce = (fn, wait) => {
   return debounced
 }
 
+const panelIdToConfigKey = (panelId) =>
+  String(panelId || '').replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase())
+
+const getPanelSizeConfigValue = (sizeConfig, panelId, fallbackKey) => {
+  if (!sizeConfig || !panelId) return undefined
+  const direct = sizeConfig[panelId]
+  if (Number.isFinite(direct)) return direct
+  const camelKey = panelIdToConfigKey(panelId)
+  const camel = sizeConfig[camelKey]
+  if (Number.isFinite(camel)) return camel
+  const fallback = sizeConfig[fallbackKey]
+  return Number.isFinite(fallback) ? fallback : undefined
+}
+
+const createFrontendStateClientId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+const getFrontendStateClientId = (storagePrefix) => {
+  const key = `${storagePrefix}-frontend-state-client-id`
+  try {
+    const existing = window.sessionStorage?.getItem(key)
+    if (existing) return existing
+    const created = createFrontendStateClientId()
+    window.sessionStorage?.setItem(key, created)
+    return created
+  } catch {
+    return createFrontendStateClientId()
+  }
+}
+
+const MAX_SNAPSHOT_DEPTH = 4
+const MAX_SNAPSHOT_ARRAY_ITEMS = 32
+const MAX_SNAPSHOT_OBJECT_KEYS = 64
+const MAX_SNAPSHOT_STRING_LENGTH = 2048
+
+const sanitizeSnapshotValue = (value, depth = 0, seen = new WeakSet()) => {
+  if (value == null) return value
+  const kind = typeof value
+  if (kind === 'string') {
+    if (value.length <= MAX_SNAPSHOT_STRING_LENGTH) {
+      return value
+    }
+    return `${value.slice(0, MAX_SNAPSHOT_STRING_LENGTH)}...`
+  }
+  if (kind === 'number' || kind === 'boolean') {
+    return value
+  }
+  if (kind === 'bigint') {
+    return value.toString()
+  }
+  if (kind === 'function' || kind === 'symbol' || kind === 'undefined') {
+    return undefined
+  }
+  if (depth >= MAX_SNAPSHOT_DEPTH) return undefined
+
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, MAX_SNAPSHOT_ARRAY_ITEMS)
+      .map((item) => sanitizeSnapshotValue(item, depth + 1, seen))
+      .filter((item) => item !== undefined)
+  }
+
+  if (kind === 'object') {
+    if (seen.has(value)) return undefined
+    seen.add(value)
+    const out = {}
+    Object.entries(value)
+      .slice(0, MAX_SNAPSHOT_OBJECT_KEYS)
+      .forEach(([key, entry]) => {
+        const sanitized = sanitizeSnapshotValue(entry, depth + 1, seen)
+        if (sanitized !== undefined) out[key] = sanitized
+      })
+    return out
+  }
+
+  return undefined
+}
+
+const collectFrontendStateSnapshot = (api, clientId, projectRoot) => {
+  const activePanelId = api?.activePanel?.id ?? null
+  const panels = Array.isArray(api?.panels)
+    ? api.panels
+    : typeof api?.getPanels === 'function'
+      ? api.getPanels()
+      : []
+
+  const openPanels = panels
+    .filter((panel) => typeof panel?.id === 'string' && panel.id.length > 0)
+    .map((panel) => {
+      const params = sanitizeSnapshotValue(
+        panel?.params ?? panel?.api?.params ?? panel?.api?.parameters ?? {},
+      ) || {}
+      const entry = {
+        id: panel.id,
+        component: panel?.api?.component ?? panel?.component ?? null,
+        title: panel?.api?.title ?? panel?.title ?? null,
+        active: panel.id === activePanelId,
+        params,
+      }
+      if (panel?.group?.id) entry.group_id = panel.group.id
+      return entry
+    })
+
+  return {
+    client_id: clientId,
+    project_root: projectRoot || null,
+    active_panel_id: activePanelId,
+    open_panels: openPanels,
+    captured_at_ms: Date.now(),
+    meta: {
+      pane_count: openPanels.length,
+    },
+  }
+}
+
+const isCenterContentPanel = (panel, registry) => {
+  if (!panel?.id || panel.id === 'empty-center') return false
+  if (panel.id.startsWith('editor-') || panel.id.startsWith('review-')) return true
+
+  const componentId = panel?.api?.component ?? panel?.component
+  if (typeof componentId !== 'string' || componentId.length === 0) return false
+  const paneConfig = registry?.get?.(componentId)
+  return paneConfig?.placement === 'center'
+}
+
 // Get capability-gated components from pane registry
 // Components with requiresFeatures/requiresRouters will show error states when unavailable
 const KNOWN_COMPONENTS = getKnownComponents()
@@ -117,6 +246,32 @@ export default function App() {
     companionCollapsed:
       Number.isFinite(panelCollapsed.companion) ? panelCollapsed.companion : panelCollapsed.terminal,
   }
+  const leftSidebarPanelIds = useMemo(() => {
+    const configured = config.panels?.leftSidebarPanels
+    if (!Array.isArray(configured) || configured.length === 0) {
+      return ['filetree']
+    }
+    const unique = []
+    configured.forEach((id) => {
+      if (typeof id !== 'string' || id.length === 0 || unique.includes(id)) return
+      unique.push(id)
+    })
+    return unique.length > 0 ? unique : ['filetree']
+  }, [config.panels?.leftSidebarPanels])
+  const leftSidebarCollapsedWidth = useMemo(() => {
+    const widths = leftSidebarPanelIds
+      .map((panelId) => getPanelSizeConfigValue(panelCollapsed, panelId, 'filetree'))
+      .filter((value) => Number.isFinite(value))
+    if (widths.length === 0) return panelCollapsed.filetree ?? 48
+    return Math.max(...widths)
+  }, [leftSidebarPanelIds, panelCollapsed])
+  const leftSidebarMinWidth = useMemo(() => {
+    const widths = leftSidebarPanelIds
+      .map((panelId) => getPanelSizeConfigValue(panelMin, panelId, 'filetree'))
+      .filter((value) => Number.isFinite(value))
+    if (widths.length === 0) return panelMin.filetree ?? 180
+    return Math.max(...widths)
+  }, [leftSidebarPanelIds, panelMin])
 
   // Fetch backend capabilities for feature gating
   const { capabilities, loading: capabilitiesLoading, refetch: refetchCapabilities } = useCapabilities()
@@ -175,10 +330,85 @@ export default function App() {
   const ensureCorePanelsRef = useRef(null)
   const [projectRoot, setProjectRoot] = useState(null) // null = not loaded yet, '' = loaded but empty
   const projectRootRef = useRef(null) // Stable ref for callbacks
+  const frontendStateClientIdRef = useRef('')
+  const frontendStateUnavailableRef = useRef(false)
+  const frontendCommandUnavailableRef = useRef(false)
   const storagePrefixRef = useRef(storagePrefix) // Stable ref for callbacks
   storagePrefixRef.current = storagePrefix
   const layoutVersionRef = useRef(layoutVersion) // Stable ref for callbacks
   layoutVersionRef.current = layoutVersion
+  projectRootRef.current = projectRoot
+
+  if (!frontendStateClientIdRef.current) {
+    frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefix)
+  }
+
+  useEffect(() => {
+    frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefix)
+    frontendStateUnavailableRef.current = false
+    frontendCommandUnavailableRef.current = false
+  }, [storagePrefix])
+
+  const publishFrontendState = useCallback(async (api, options = {}) => {
+    const targetApi = api || dockApi
+    if (!targetApi) return false
+
+    const force = options.force === true
+    const transport = options.transport === 'beacon' ? 'beacon' : 'fetch'
+
+    if (frontendStateUnavailableRef.current && !force) {
+      return false
+    }
+
+    if (!frontendStateClientIdRef.current) {
+      frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefixRef.current)
+    }
+
+    const route = routes.uiState.upsert()
+    const snapshot = collectFrontendStateSnapshot(
+      targetApi,
+      frontendStateClientIdRef.current,
+      projectRootRef.current,
+    )
+
+    if (
+      transport === 'beacon'
+      && typeof navigator !== 'undefined'
+      && typeof navigator.sendBeacon === 'function'
+    ) {
+      try {
+        const body = new Blob([JSON.stringify(snapshot)], { type: 'application/json' })
+        return navigator.sendBeacon(buildApiUrl(route.path, route.query), body)
+      } catch {
+        return false
+      }
+    }
+
+    try {
+      const response = await apiFetch(route.path, {
+        query: route.query,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot),
+        keepalive: true,
+      })
+      if (response.ok) {
+        frontendStateUnavailableRef.current = false
+        return true
+      }
+      if (response.status === 404 || response.status === 405) {
+        frontendStateUnavailableRef.current = true
+      }
+    } catch {
+      // Ignore transient publish failures (network/server startup races).
+    }
+    return false
+  }, [dockApi])
+
+  useEffect(() => {
+    if (!dockApi || projectRoot === null) return
+    void publishFrontendState(dockApi, { force: true })
+  }, [dockApi, projectRoot, publishFrontendState])
 
   // Refs for panel config (used in callbacks)
   const panelCollapsedRef = useRef({ ...panelCollapsed, companion: rightRailDefaults.companionCollapsed })
@@ -284,14 +514,14 @@ export default function App() {
     if (!api) return []
     const groups = []
     const seen = new Set()
-    ;['data-catalog', 'filetree'].forEach((panelId) => {
+    leftSidebarPanelIds.forEach((panelId) => {
       const group = api.getPanel(panelId)?.group
       if (!group || seen.has(group.id)) return
       seen.add(group.id)
       groups.push(group)
     })
     return groups
-  }, [])
+  }, [leftSidebarPanelIds])
 
   // Toggle sidebar collapse - capture size before collapsing
   const toggleFiletree = useCallback(() => {
@@ -299,10 +529,7 @@ export default function App() {
       // Capture current left-column size before collapsing.
       const leftGroups = getLeftSidebarGroups(dockApi)
       const currentWidth = leftGroups[0]?.api?.width
-      const collapsedWidth = Math.max(
-        panelCollapsedRef.current.filetree ?? 48,
-        panelCollapsedRef.current.dataCatalog ?? panelCollapsedRef.current.filetree ?? 48,
-      )
+      const collapsedWidth = leftSidebarCollapsedWidth
       if (Number.isFinite(currentWidth) && currentWidth > collapsedWidth) {
           panelSizesRef.current = { ...panelSizesRef.current, filetree: currentWidth }
           savePanelSizes(panelSizesRef.current, storagePrefixRef.current)
@@ -313,7 +540,7 @@ export default function App() {
       saveCollapsedState(next, storagePrefixRef.current)
       return next
     })
-  }, [collapsed.filetree, dockApi, getLeftSidebarGroups])
+  }, [collapsed.filetree, dockApi, getLeftSidebarGroups, leftSidebarCollapsedWidth])
 
   const toggleTerminal = useCallback(() => {
     if (!nativeAgentEnabled) return
@@ -631,14 +858,8 @@ export default function App() {
     const companionPanel = dockApi.getPanel('companion')
 
     if (leftGroups.length > 0) {
-      const collapsedWidth = Math.max(
-        panelCollapsedRef.current.filetree ?? 48,
-        panelCollapsedRef.current.dataCatalog ?? panelCollapsedRef.current.filetree ?? 48,
-      )
-      const minWidth = Math.max(
-        panelMinRef.current.filetree ?? 180,
-        panelMinRef.current.dataCatalog ?? panelMinRef.current.filetree ?? 180,
-      )
+      const collapsedWidth = leftSidebarCollapsedWidth
+      const minWidth = leftSidebarMinWidth
       if (collapsed.filetree) {
         leftGroups.forEach((group) => {
           group.api.setConstraints({
@@ -730,7 +951,7 @@ export default function App() {
         }
       }
     }
-  }, [dockApi, collapsed, getLeftSidebarGroups])
+  }, [dockApi, collapsed, getLeftSidebarGroups, leftSidebarCollapsedWidth, leftSidebarMinWidth])
 
   // Git status polling removed - not currently used in UI
 
@@ -822,6 +1043,26 @@ export default function App() {
     [normalizeApprovalPath],
   )
 
+  const getLiveCenterGroup = useCallback((api) => {
+    if (!api) return null
+    const candidate = centerGroupRef.current
+    if (!candidate) return null
+
+    const groups = Array.isArray(api.groups) ? api.groups : []
+    if (groups.includes(candidate)) {
+      return candidate
+    }
+    if (candidate.id) {
+      const matchingGroup = groups.find((group) => group?.id === candidate.id)
+      if (matchingGroup) {
+        centerGroupRef.current = matchingGroup
+        return matchingGroup
+      }
+    }
+    centerGroupRef.current = null
+    return null
+  }, [])
+
   // Open file in a specific position (used for drag-drop)
   const openFileAtPosition = useCallback(
     (path, position, extraParams = {}) => {
@@ -840,7 +1081,7 @@ export default function App() {
       }
 
       const emptyPanel = dockApi.getPanel('empty-center')
-      const centerGroup = centerGroupRef.current
+      const centerGroup = getLiveCenterGroup(dockApi)
       if (centerGroup) {
         centerGroup.header.hidden = false
       }
@@ -903,7 +1144,7 @@ export default function App() {
           addEditorPanel('')
         })
     },
-    [dockApi]
+    [dockApi, getLiveCenterGroup]
   )
 
   const openFile = useCallback(
@@ -921,7 +1162,7 @@ export default function App() {
       // Priority: existing editor group > centerGroupRef > empty panel > shell > fallback
       const emptyPanel = dockApi.getPanel('empty-center')
       const shellPanel = dockApi.getPanel('shell')
-      const centerGroup = centerGroupRef.current
+      const centerGroup = getLiveCenterGroup(dockApi)
 
       // Find existing editor panels to add as sibling tab
       const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
@@ -945,7 +1186,7 @@ export default function App() {
       openFileAtPosition(path, position)
       return true
     },
-    [dockApi, openFileAtPosition]
+    [dockApi, getLiveCenterGroup, openFileAtPosition]
   )
 
   const openFileToSide = useCallback(
@@ -962,14 +1203,15 @@ export default function App() {
 
       // Find the active editor panel to split from (not terminal/filetree)
       const activePanel = dockApi.activePanel
+      const centerGroup = getLiveCenterGroup(dockApi)
       let position
 
       if (activePanel && activePanel.id.startsWith('editor-')) {
         // Split to the right of the current editor
         position = { direction: 'right', referencePanel: activePanel.id }
-      } else if (centerGroupRef.current) {
+      } else if (centerGroup) {
         // Use center group if no editor is active
-        position = { direction: 'right', referenceGroup: centerGroupRef.current }
+        position = { direction: 'right', referenceGroup: centerGroup }
       } else {
         // Fallback: to the right of filetree (but will be left of terminal)
         position = { direction: 'right', referencePanel: 'filetree' }
@@ -977,7 +1219,7 @@ export default function App() {
 
       openFileAtPosition(path, position)
     },
-    [dockApi, openFileAtPosition]
+    [dockApi, getLiveCenterGroup, openFileAtPosition]
   )
 
   const openDiff = useCallback(
@@ -998,7 +1240,7 @@ export default function App() {
       // Use empty panel's group first to maintain layout hierarchy
       const emptyPanel = dockApi.getPanel('empty-center')
       const shellPanel = dockApi.getPanel('shell')
-      const centerGroup = centerGroupRef.current
+      const centerGroup = getLiveCenterGroup(dockApi)
 
       let position
       if (emptyPanel?.group) {
@@ -1015,55 +1257,72 @@ export default function App() {
       openFileAtPosition(path, position, { initialMode: 'git-diff' })
       setActiveDiffFile(path)
     },
-    [dockApi, openFileAtPosition]
+    [dockApi, getLiveCenterGroup, openFileAtPosition]
   )
 
-  const openSeries = useCallback(
-    (seriesId) => {
-      if (!dockApi || !seriesId) return false
+  const getCommandPanelPosition = useCallback((api) => {
+    const emptyPanel = api.getPanel('empty-center')
+    if (emptyPanel?.group) {
+      return { referenceGroup: emptyPanel.group }
+    }
 
-      const panelId = `chart-${seriesId}`
-      const existingPanel = dockApi.getPanel(panelId)
+    const centerGroup = getLiveCenterGroup(api)
+    if (centerGroup) {
+      return { referenceGroup: centerGroup }
+    }
+
+    const shellPanel = api.getPanel('shell')
+    if (shellPanel?.group) {
+      return { direction: 'above', referenceGroup: shellPanel.group }
+    }
+
+    const filetreePanel = api.getPanel('filetree')
+    if (filetreePanel) {
+      return { direction: 'right', referencePanel: 'filetree' }
+    }
+
+    return undefined
+  }, [getLiveCenterGroup])
+
+  const openGenericPanelFromCommand = useCallback(
+    (api, command) => {
+      const component = typeof command?.component === 'string' ? command.component.trim() : ''
+      if (!component) return false
+
+      const requestedId = typeof command?.panel_id === 'string' ? command.panel_id.trim() : ''
+      const requestedTitle = typeof command?.title === 'string' ? command.title.trim() : ''
+      const panelTitle = requestedTitle || component
+      const params = command?.params && typeof command.params === 'object' && !Array.isArray(command.params)
+        ? command.params
+        : {}
+      const preferExisting = command?.prefer_existing !== false
+
+      const baseId = requestedId || `cmd-${component}-${Date.now().toString(36)}`
+      const existingPanel = preferExisting ? api.getPanel(baseId) : null
       if (existingPanel) {
+        if (Object.keys(params).length > 0) {
+          existingPanel.api.updateParameters(params)
+        }
         existingPanel.api.setActive()
         return true
       }
 
-      const emptyPanel = dockApi.getPanel('empty-center')
-      const shellPanel = dockApi.getPanel('shell')
-      const centerGroup = centerGroupRef.current
-      const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
-      const existingContentPanel = allPanels.find(
-        (panel) =>
-          panel.id.startsWith('editor-')
-          || panel.id.startsWith('review-')
-          || panel.id.startsWith('chart-'),
-      )
-
-      let position
-      if (existingContentPanel?.group) {
-        position = { referenceGroup: existingContentPanel.group }
-      } else if (centerGroup) {
-        position = { referenceGroup: centerGroup }
-      } else if (emptyPanel?.group) {
-        position = { referenceGroup: emptyPanel.group }
-      } else if (shellPanel?.group) {
-        position = { direction: 'above', referenceGroup: shellPanel.group }
-      } else {
-        position = { direction: 'right', referencePanel: 'filetree' }
-      }
-
-      const panel = dockApi.addPanel({
+      const panelId = api.getPanel(baseId) ? `${baseId}-${Date.now().toString(36)}` : baseId
+      const position = getCommandPanelPosition(api)
+      const panel = api.addPanel({
         id: panelId,
-        component: 'chart-canvas',
-        title: seriesId,
+        component,
+        title: panelTitle,
         position,
-        params: { seriesId, mode: 'chart' },
+        params,
       })
+      if (!panel) return false
 
-      if (emptyPanel) {
+      const emptyPanel = api.getPanel('empty-center')
+      if (emptyPanel && emptyPanel.id !== panelId) {
         emptyPanel.api.close()
       }
+
       if (panel?.group) {
         panel.group.header.hidden = false
         centerGroupRef.current = panel.group
@@ -1072,13 +1331,98 @@ export default function App() {
           maximumHeight: Number.MAX_SAFE_INTEGER,
         })
       }
-      if (panel?.api) {
-        panel.api.setActive()
-      }
+      panel.api.setActive()
       return true
     },
-    [dockApi],
+    [getCommandPanelPosition],
   )
+
+  const executeFrontendCommand = useCallback(
+    async (api, commandEnvelope) => {
+      if (!api || !commandEnvelope || typeof commandEnvelope !== 'object') return false
+      const command = commandEnvelope.command && typeof commandEnvelope.command === 'object'
+        ? commandEnvelope.command
+        : commandEnvelope
+      const kind = typeof command?.kind === 'string' ? command.kind.trim() : ''
+      if (!kind) return false
+
+      if (kind === 'focus_panel') {
+        const panelId = typeof command?.panel_id === 'string' ? command.panel_id.trim() : ''
+        if (!panelId) return false
+        const panel = api.getPanel(panelId)
+        if (!panel) return false
+        panel.api.setActive()
+        await publishFrontendState(api)
+        return true
+      }
+
+      if (kind === 'open_panel') {
+        const opened = openGenericPanelFromCommand(api, command)
+        if (opened) {
+          await publishFrontendState(api)
+        }
+        return opened
+      }
+
+      return false
+    },
+    [openGenericPanelFromCommand, publishFrontendState],
+  )
+
+  const consumeNextFrontendCommand = useCallback(
+    async (api) => {
+      const targetApi = api || dockApi
+      if (!targetApi) return false
+      if (frontendStateUnavailableRef.current || frontendCommandUnavailableRef.current) {
+        return false
+      }
+      if (!frontendStateClientIdRef.current) {
+        frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefixRef.current)
+      }
+
+      const route = routes.uiState.commands.next(frontendStateClientIdRef.current)
+      try {
+        const { response, data } = await apiFetchJson(route.path, { query: route.query })
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 405) {
+            frontendCommandUnavailableRef.current = true
+          }
+          return false
+        }
+        if (!data?.command) return false
+        return executeFrontendCommand(targetApi, data.command)
+      } catch {
+        return false
+      }
+    },
+    [dockApi, executeFrontendCommand],
+  )
+
+  useEffect(() => {
+    if (!dockApi) return
+
+    let isDisposed = false
+    let timeoutId = null
+    const pollLoop = async () => {
+      while (!isDisposed) {
+        await consumeNextFrontendCommand(dockApi)
+        if (isDisposed) break
+        await new Promise((resolve) => {
+          timeoutId = window.setTimeout(resolve, 750)
+        })
+        timeoutId = null
+      }
+    }
+
+    void pollLoop()
+
+    return () => {
+      isDisposed = true
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [dockApi, consumeNextFrontendCommand])
 
   useEffect(() => {
     if (!dockApi || !approvalsLoaded) return
@@ -1123,12 +1467,13 @@ export default function App() {
       const existingEditorPanel = allPanels.find(p => p.id.startsWith('editor-') || p.id.startsWith('review-'))
 
       // Priority: existing editor group > centerGroupRef > empty panel > shell > fallback
+      const centerGroup = getLiveCenterGroup(dockApi)
       let position
       if (existingEditorPanel?.group) {
         // Add as tab next to existing editors/reviews
         position = { referenceGroup: existingEditorPanel.group }
-      } else if (centerGroupRef.current) {
-        position = { referenceGroup: centerGroupRef.current }
+      } else if (centerGroup) {
+        position = { referenceGroup: centerGroup }
       } else if (emptyPanel?.group) {
         position = { referenceGroup: emptyPanel.group }
       } else if (shellPanel?.group) {
@@ -1166,6 +1511,7 @@ export default function App() {
     approvalsLoaded,
     dockApi,
     getReviewTitle,
+    getLiveCenterGroup,
     handleDecision,
     normalizeApprovalPath,
     openFile,
@@ -1231,12 +1577,6 @@ export default function App() {
 
     const getDefaultParams = (panelId) => {
       switch (panelId) {
-        case 'data-catalog':
-          return {
-            collapsed: collapsed.filetree,
-            onToggleCollapse: toggleFiletree,
-            onOpenSeries: openSeries,
-          }
         case 'filetree':
           return {
             onOpenFile: openFile,
@@ -1272,6 +1612,12 @@ export default function App() {
             lockProvider: true,
           }
         default:
+          if (leftSidebarPanelIds.includes(panelId)) {
+            return {
+              collapsed: collapsed.filetree,
+              onToggleCollapse: toggleFiletree,
+            }
+          }
           return {}
       }
     }
@@ -1624,19 +1970,15 @@ export default function App() {
 
       // Check if there are any center-content panels left anywhere
       const allPanels = Array.isArray(api.panels) ? api.panels : []
-      const hasCenterPanels = allPanels.some(p =>
-        p.id.startsWith('editor-')
-        || p.id.startsWith('review-')
-        || p.id.startsWith('chart-')
-      )
+      const hasCenterPanels = allPanels.some((panel) => isCenterContentPanel(panel, paneRegistry))
 
       // If there are still center panels open, don't add empty panel
       if (hasCenterPanels) return
 
       // Need to add empty panel - find the right position
       // Try to use centerGroupRef if it still exists and has panels
-      let centerGroup = centerGroupRef.current
-      const groupStillExists = centerGroup && api.groups?.includes(centerGroup)
+      const centerGroup = getLiveCenterGroup(api)
+      const groupStillExists = !!centerGroup
 
       // Get shell panel to position relative to it
       const shellPanel = api.getPanel('shell')
@@ -1722,10 +2064,7 @@ export default function App() {
       let changed = false
 
       // Only save if not collapsed (width/height > collapsed size)
-      const leftCollapsedWidth = Math.max(
-        panelCollapsedRef.current.filetree ?? 48,
-        panelCollapsedRef.current.dataCatalog ?? panelCollapsedRef.current.filetree ?? 48,
-      )
+      const leftCollapsedWidth = leftSidebarCollapsedWidth
       const leftWidth = leftGroups[0]?.api?.width ?? filetreeGroup?.api?.width
       if (Number.isFinite(leftWidth) && leftWidth > leftCollapsedWidth) {
         if (newSizes.filetree !== leftWidth) {
@@ -1763,6 +2102,9 @@ export default function App() {
     // Debounce layout saves to avoid excessive writes during drag operations
     const debouncedSaveLayout = debounce(saveLayoutNow, 300)
     const debouncedSavePanelSizes = debounce(savePanelSizesNow, 300)
+    const debouncedPublishFrontendState = debounce(() => {
+      void publishFrontendState(api)
+    }, 250)
 
     if (typeof api.onDidLayoutChange === 'function') {
       api.onDidLayoutChange(() => {
@@ -1770,13 +2112,27 @@ export default function App() {
         enforceMinimumConstraints()
         debouncedSaveLayout()
         debouncedSavePanelSizes()
+        debouncedPublishFrontendState()
       })
     }
+    if (typeof api.onDidAddPanel === 'function') {
+      api.onDidAddPanel(() => {
+        debouncedPublishFrontendState()
+      })
+    }
+    api.onDidRemovePanel(() => {
+      debouncedPublishFrontendState()
+    })
+    requestAnimationFrame(() => {
+      void publishFrontendState(api, { force: true })
+    })
 
     // Flush pending saves before page unload to avoid data loss
     window.addEventListener('beforeunload', () => {
       debouncedSaveLayout.flush()
       debouncedSavePanelSizes.flush()
+      debouncedPublishFrontendState.flush()
+      void publishFrontendState(api, { force: true, transport: 'beacon' })
     })
 
     // Mark as initialized immediately - tabs will be restored via useEffect
@@ -1888,7 +2244,10 @@ export default function App() {
 
         // After restoring, apply locked panels and cleanup
         const filetreePanel = dockApi.getPanel('filetree')
-        const dataCatalogPanel = dockApi.getPanel('data-catalog')
+        const linkedSidebarPanels = leftSidebarPanelIds
+          .filter((panelId) => panelId !== 'filetree')
+          .map((panelId) => dockApi.getPanel(panelId))
+          .filter(Boolean)
         const terminalPanel = dockApi.getPanel('terminal')
         const shellPanel = dockApi.getPanel('shell')
 
@@ -1896,12 +2255,6 @@ export default function App() {
         if (filetreeGroup) {
           filetreeGroup.locked = true
           filetreeGroup.header.hidden = true
-        }
-
-        const dataCatalogGroup = dataCatalogPanel?.group
-        if (dataCatalogGroup) {
-          dataCatalogGroup.locked = true
-          dataCatalogGroup.header.hidden = true
         }
 
         // Update filetree params with callbacks (callbacks can't be serialized in layout JSON)
@@ -1929,13 +2282,17 @@ export default function App() {
           })
         }
 
-        if (dataCatalogPanel) {
-          dataCatalogPanel.api.updateParameters({
+        linkedSidebarPanels.forEach((panel) => {
+          if (panel?.group) {
+            panel.group.locked = true
+            panel.group.header.hidden = true
+          }
+          panel?.api?.updateParameters({
+            ...(panel?.params || {}),
             collapsed: collapsed.filetree,
             onToggleCollapse: toggleFiletree,
-            onOpenSeries: openSeries,
           })
-        }
+        })
 
         const terminalGroup = terminalPanel?.group
         if (terminalGroup) {
@@ -2084,14 +2441,8 @@ export default function App() {
 
           // For collapsed panels, set collapsed size; for expanded, use saved size
           if (leftGroups.length > 0) {
-            const collapsedWidth = Math.max(
-              panelCollapsedRef.current.filetree ?? 48,
-              panelCollapsedRef.current.dataCatalog ?? panelCollapsedRef.current.filetree ?? 48,
-            )
-            const minWidth = Math.max(
-              panelMinRef.current.filetree ?? 180,
-              panelMinRef.current.dataCatalog ?? panelMinRef.current.filetree ?? 180,
-            )
+            const collapsedWidth = leftSidebarCollapsedWidth
+            const minWidth = leftSidebarMinWidth
             const expandedWidth = Math.max(panelSizesRef.current.filetree ?? minWidth, minWidth)
 
             leftGroups.forEach((group) => {
@@ -2166,7 +2517,6 @@ export default function App() {
     openFile,
     openFileToSide,
     openDiff,
-    openSeries,
     activeFile,
     activeDiffFile,
     toggleFiletree,
@@ -2185,6 +2535,7 @@ export default function App() {
     nativeAgentEnabled,
     piAgentEnabled,
     getLeftSidebarGroups,
+    leftSidebarPanelIds,
   ])
 
   // Track active panel to highlight in file tree and sync URL
@@ -2208,15 +2559,19 @@ export default function App() {
         url.searchParams.delete('doc')
         window.history.replaceState({}, '', url)
       }
+      void publishFrontendState(dockApi)
     })
     return () => disposable.dispose()
-  }, [dockApi])
+  }, [dockApi, publishFrontendState])
 
   // Update filetree panel params when openFile changes
   useEffect(() => {
     if (!dockApi) return
     const filetreePanel = dockApi.getPanel('filetree')
-    const dataCatalogPanel = dockApi.getPanel('data-catalog')
+    const linkedSidebarPanels = leftSidebarPanelIds
+      .filter((panelId) => panelId !== 'filetree')
+      .map((panelId) => dockApi.getPanel(panelId))
+      .filter(Boolean)
     if (filetreePanel) {
       filetreePanel.api.updateParameters({
         onOpenFile: openFile,
@@ -2240,13 +2595,13 @@ export default function App() {
         onLogout: handleLogout,
       })
     }
-    if (dataCatalogPanel) {
-      dataCatalogPanel.api.updateParameters({
+    linkedSidebarPanels.forEach((panel) => {
+      panel.api.updateParameters({
+        ...(panel?.params || {}),
         collapsed: collapsed.filetree,
         onToggleCollapse: toggleFiletree,
-        onOpenSeries: openSeries,
       })
-    }
+    })
   }, [
     dockApi,
     openFile,
@@ -2268,7 +2623,7 @@ export default function App() {
     handleCreateWorkspace,
     handleOpenUserSettings,
     handleLogout,
-    openSeries,
+    leftSidebarPanelIds,
   ])
 
   // Helper to focus a review panel
@@ -2596,7 +2951,7 @@ export default function App() {
         dropPosition = position
       } else {
         // Fallback to center group
-        const centerGroup = centerGroupRef.current
+        const centerGroup = getLiveCenterGroup(dockApi)
         dropPosition = centerGroup
           ? { referenceGroup: centerGroup }
           : { direction: 'right', referencePanel: 'filetree' }

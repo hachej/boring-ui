@@ -81,6 +81,26 @@ export const routes = {
     diff: (targetPath) => ({ path: '/api/v1/git/diff', query: { path: targetPath } }),
     show: (targetPath) => ({ path: '/api/v1/git/show', query: { path: targetPath } }),
   },
+  uiState: {
+    upsert: () => ({ path: '/api/v1/ui/state', query: undefined }),
+    list: () => ({ path: '/api/v1/ui/state', query: undefined }),
+    latest: () => ({ path: '/api/v1/ui/state/latest', query: undefined }),
+    get: (clientId) => ({ path: `/api/v1/ui/state/${encodeSegment(clientId)}`, query: undefined }),
+    delete: (clientId) => ({ path: `/api/v1/ui/state/${encodeSegment(clientId)}`, query: undefined }),
+    clear: () => ({ path: '/api/v1/ui/state', query: undefined }),
+    panes: {
+      latest: () => ({ path: '/api/v1/ui/panes', query: undefined }),
+      get: (clientId) => ({ path: `/api/v1/ui/panes/${encodeSegment(clientId)}`, query: undefined }),
+    },
+    focus: () => ({ path: '/api/v1/ui/focus', query: undefined }),
+    commands: {
+      enqueue: () => ({ path: '/api/v1/ui/commands', query: undefined }),
+      next: (clientId) => ({
+        path: '/api/v1/ui/commands/next',
+        query: clientId ? { client_id: clientId } : undefined,
+      }),
+    },
+  },
   sessions: {
     list: () => ({ path: '/api/v1/agent/normal/sessions', query: undefined }),
     create: () => ({ path: '/api/v1/agent/normal/sessions', query: undefined }),

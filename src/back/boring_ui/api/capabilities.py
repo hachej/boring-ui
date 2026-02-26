@@ -105,6 +105,7 @@ def create_default_registry() -> RouterRegistry:
     """
     from .modules.files import create_file_router
     from .modules.git import create_git_router
+    from .modules.ui_state import create_ui_state_router
     from .modules.pty import create_pty_router
     from .modules.stream import create_stream_router
     from .approval import create_approval_router
@@ -125,6 +126,13 @@ def create_default_registry() -> RouterRegistry:
         create_git_router,
         description='Git operations (status, diff, show)',
         tags=['git'],
+    )
+    registry.register(
+        'ui_state',
+        '/api/v1/ui',
+        create_ui_state_router,
+        description='Workspace UI state snapshots (open panes, active pane)',
+        tags=['ui'],
     )
 
     # Optional routers
@@ -205,6 +213,7 @@ def create_capabilities_router(
             contract_by_router: dict[str, dict[str, Any]] = {
                 "files": {"owner_service": "workspace-core", "canonical_families": ["/api/v1/files/*"]},
                 "git": {"owner_service": "workspace-core", "canonical_families": ["/api/v1/git/*"]},
+                "ui_state": {"owner_service": "workspace-core", "canonical_families": ["/api/v1/ui/*"]},
                 "pty": {"owner_service": "pty-service", "canonical_families": ["/ws/pty", "/api/v1/pty/*"]},
                 "chat_claude_code": {
                     "owner_service": "agent-normal",

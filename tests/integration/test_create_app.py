@@ -9,6 +9,7 @@ from httpx import AsyncClient, ASGITransport
 
 from boring_ui.api.app import create_app
 from boring_ui.api.config import APIConfig
+from boring_ui.api.modules.ui_state import get_ui_state_service
 
 
 @pytest.fixture
@@ -19,6 +20,15 @@ def workspace(tmp_path):
     (tmp_path / 'src').mkdir()
     (tmp_path / 'src' / 'main.py').write_text('print("hello")')
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def clear_ui_state_service():
+    """Reset module-level UI state store between integration tests."""
+    service = get_ui_state_service()
+    service.clear()
+    yield
+    service.clear()
 
 
 @pytest.fixture
@@ -58,6 +68,18 @@ class TestAppFactory:
         """Test that project endpoint is available."""
         paths = [r.path for r in app.routes if hasattr(r, 'path')]
         assert '/api/project' in paths
+
+    def test_app_has_workspace_core_ui_state_endpoints(self, app):
+        """Test that canonical workspace-core UI-state endpoints are available."""
+        paths = [r.path for r in app.routes if hasattr(r, 'path')]
+        assert '/api/v1/ui/state' in paths
+        assert '/api/v1/ui/state/latest' in paths
+        assert '/api/v1/ui/state/{client_id}' in paths
+        assert '/api/v1/ui/panes' in paths
+        assert '/api/v1/ui/panes/{client_id}' in paths
+        assert '/api/v1/ui/commands' in paths
+        assert '/api/v1/ui/commands/next' in paths
+        assert '/api/v1/ui/focus' in paths
 
     def test_app_has_api_sessions_endpoints(self, app):
         """Test that session list/create endpoints are available."""
@@ -99,6 +121,7 @@ class TestHealthEndpoint:
             features = data['features']
             assert features['files'] is True
             assert features['git'] is True
+            assert features['ui_state'] is True
             assert features['pty'] is True
             assert features['chat_claude_code'] is True
             assert features['stream'] is True  # Backward compat alias
@@ -114,6 +137,7 @@ class TestHealthEndpoint:
             features = data['features']
             assert features['files'] is True
             assert features['git'] is True
+            assert features['ui_state'] is True
             assert features['pty'] is False
             assert features['chat_claude_code'] is False
             assert features['stream'] is False
@@ -164,6 +188,7 @@ class TestCapabilitiesEndpoint:
             router_names = [r['name'] for r in data['routers']]
             assert 'files' in router_names
             assert 'git' in router_names
+            assert 'ui_state' in router_names
 
 
 class TestFileRoutes:
@@ -268,6 +293,84 @@ class TestAgentNormalAttachmentRoutes:
             saved_path = workspace / data['relative_path']
             assert saved_path.exists()
             assert saved_path.read_bytes() == b'hello attachment'
+
+
+class TestUiStateRoutes:
+    """Integration tests for canonical workspace-core UI-state endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_ui_state_roundtrip(self, app):
+        """PUT /state then GET /state/latest should return the published payload."""
+        transport = ASGITransport(app=app)
+        payload = {
+            'client_id': 'web-client-1',
+            'project_root': '/tmp/demo',
+            'active_panel_id': 'pane-1',
+            'open_panels': [
+                {'id': 'pane-1', 'component': 'list', 'params': {'q': 'abc'}},
+                {'id': 'pane-2', 'component': 'chart', 'params': {'symbol': 'AAPL'}},
+            ],
+            'meta': {'pane_count': 2},
+        }
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            put_response = await client.put('/api/v1/ui/state', json=payload)
+            assert put_response.status_code == 200
+            put_state = put_response.json()['state']
+            assert put_state['client_id'] == 'web-client-1'
+            assert put_state['meta']['pane_count'] == 2
+
+            latest_response = await client.get('/api/v1/ui/state/latest')
+            assert latest_response.status_code == 200
+            latest_state = latest_response.json()['state']
+            assert latest_state['client_id'] == 'web-client-1'
+            assert latest_state['active_panel_id'] == 'pane-1'
+            assert len(latest_state['open_panels']) == 2
+
+    @pytest.mark.asyncio
+    async def test_ui_state_latest_is_404_without_publication(self, app):
+        """GET /state/latest should return 404 when no frontend state exists."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.get('/api/v1/ui/state/latest')
+            assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_ui_state_panes_and_command_queue(self, app):
+        """Panes view and generic command queue should operate for a published client."""
+        transport = ASGITransport(app=app)
+        payload = {
+            'client_id': 'web-client-2',
+            'active_panel_id': 'pane-2',
+            'open_panels': [
+                {'id': 'pane-1', 'component': 'table'},
+                {'id': 'pane-2', 'component': 'chart-canvas'},
+            ],
+        }
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            assert (await client.put('/api/v1/ui/state', json=payload)).status_code == 200
+
+            panes = await client.get('/api/v1/ui/panes')
+            assert panes.status_code == 200
+            panes_payload = panes.json()
+            assert panes_payload['client_id'] == 'web-client-2'
+            assert panes_payload['count'] == 2
+            assert panes_payload['active_panel_id'] == 'pane-2'
+
+            focus_command = await client.post(
+                '/api/v1/ui/commands',
+                json={
+                    'client_id': 'web-client-2',
+                    'command': {'kind': 'focus_panel', 'panel_id': 'pane-1'},
+                },
+            )
+            assert focus_command.status_code == 200
+
+            next_command = await client.get('/api/v1/ui/commands/next?client_id=web-client-2')
+            assert next_command.status_code == 200
+            command = next_command.json()['command']
+            assert command['client_id'] == 'web-client-2'
+            assert command['command']['kind'] == 'focus_panel'
+            assert command['command']['panel_id'] == 'pane-1'
 
 
 class TestConfigEndpoint:

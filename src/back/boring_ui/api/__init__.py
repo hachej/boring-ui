@@ -40,6 +40,7 @@ from .storage import Storage, LocalStorage, S3Storage
 # Router factories
 from .modules.files import create_file_router
 from .modules.git import create_git_router
+from .modules.ui_state import create_ui_state_router
 from .modules.pty import create_pty_router
 from .modules.stream import create_stream_router
 from .approval import (
@@ -69,6 +70,7 @@ __all__ = [
     # Router factories
     'create_file_router',
     'create_git_router',
+    'create_ui_state_router',
     'create_pty_router',
     'create_stream_router',
     'create_approval_router',

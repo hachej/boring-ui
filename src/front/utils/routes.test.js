@@ -40,6 +40,53 @@ describe('routes helper', () => {
     })
   })
 
+  it('builds canonical workspace UI-state route descriptors', () => {
+    expect(routes.uiState.upsert()).toEqual({
+      path: '/api/v1/ui/state',
+      query: undefined,
+    })
+    expect(routes.uiState.list()).toEqual({
+      path: '/api/v1/ui/state',
+      query: undefined,
+    })
+    expect(routes.uiState.latest()).toEqual({
+      path: '/api/v1/ui/state/latest',
+      query: undefined,
+    })
+    expect(routes.uiState.get('client-abc')).toEqual({
+      path: '/api/v1/ui/state/client-abc',
+      query: undefined,
+    })
+    expect(routes.uiState.delete('client-abc')).toEqual({
+      path: '/api/v1/ui/state/client-abc',
+      query: undefined,
+    })
+    expect(routes.uiState.clear()).toEqual({
+      path: '/api/v1/ui/state',
+      query: undefined,
+    })
+    expect(routes.uiState.panes.latest()).toEqual({
+      path: '/api/v1/ui/panes',
+      query: undefined,
+    })
+    expect(routes.uiState.panes.get('client-abc')).toEqual({
+      path: '/api/v1/ui/panes/client-abc',
+      query: undefined,
+    })
+    expect(routes.uiState.focus()).toEqual({
+      path: '/api/v1/ui/focus',
+      query: undefined,
+    })
+    expect(routes.uiState.commands.enqueue()).toEqual({
+      path: '/api/v1/ui/commands',
+      query: undefined,
+    })
+    expect(routes.uiState.commands.next('client-abc')).toEqual({
+      path: '/api/v1/ui/commands/next',
+      query: { client_id: 'client-abc' },
+    })
+  })
+
   it('builds canonical control-plane route descriptors', () => {
     expect(routes.controlPlane.me.get()).toEqual({
       path: '/api/v1/me',
