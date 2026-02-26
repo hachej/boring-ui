@@ -585,15 +585,19 @@ export default function App() {
 
   const SECTION_HEADER_HEIGHT = 28
   const LEFT_PANE_HEADER_HEIGHT = 24
+  const PANEL_FOOTER_HEIGHT = 56
   const sectionSizesRef = useRef({})
 
   const toggleSectionCollapse = useCallback((panelId) => {
     if (!dockApi) return
     const panel = dockApi.getPanel(panelId)
     const group = panel?.group
-    // First sidebar panel renders LeftPaneHeader, so its collapsed height is taller
+    // First sidebar panel renders LeftPaneHeader; filetree has always-visible footer
     const isFirstPanel = leftSidebarPanelIds[0] === panelId
-    const collapsedHeight = SECTION_HEADER_HEIGHT + (isFirstPanel ? LEFT_PANE_HEADER_HEIGHT : 0)
+    const hasFooter = panelId === 'filetree'
+    const collapsedHeight = SECTION_HEADER_HEIGHT
+      + (isFirstPanel ? LEFT_PANE_HEADER_HEIGHT : 0)
+      + (hasFooter ? PANEL_FOOTER_HEIGHT : 0)
     if (group && !sectionCollapsed[panelId]) {
       // Capture current height before collapsing
       const currentHeight = group.api.height
