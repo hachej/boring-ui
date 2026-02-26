@@ -605,16 +605,20 @@ export default function App() {
         sectionSizesRef.current = { ...sectionSizesRef.current, [panelId]: currentHeight }
       }
     }
+    const isLastPanel = leftSidebarPanelIds[leftSidebarPanelIds.length - 1] === panelId
     setSectionCollapsed((prev) => {
       const next = { ...prev, [panelId]: !prev[panelId] }
       // Apply constraints immediately
       if (group) {
         if (next[panelId]) {
+          // Last panel keeps flexible max so its footer sticks to bottom
           group.api.setConstraints({
             minimumHeight: collapsedHeight,
-            maximumHeight: collapsedHeight,
+            maximumHeight: isLastPanel ? Number.MAX_SAFE_INTEGER : collapsedHeight,
           })
-          group.api.setSize({ height: collapsedHeight })
+          if (!isLastPanel) {
+            group.api.setSize({ height: collapsedHeight })
+          }
         } else {
           group.api.setConstraints({
             minimumHeight: 60,
