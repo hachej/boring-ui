@@ -12,7 +12,7 @@ const defaultState = {
   sessions: [],
 }
 
-export default function PiSessionToolbar() {
+export default function PiSessionToolbar({ panelId, onSplitPanel }) {
   const [state, setState] = useState(defaultState)
 
   useEffect(() => {
@@ -41,9 +41,15 @@ export default function PiSessionToolbar() {
       <button
         type="button"
         className="terminal-new-icon"
-        onClick={() => requestPiNewSession()}
-        title="New PI session"
-        aria-label="New PI session"
+        onClick={() => {
+          if (typeof onSplitPanel === 'function') {
+            onSplitPanel(panelId)
+            return
+          }
+          requestPiNewSession()
+        }}
+        title={typeof onSplitPanel === 'function' ? 'Split chat panel' : 'New PI session'}
+        aria-label={typeof onSplitPanel === 'function' ? 'Split chat panel' : 'New PI session'}
         data-testid="pi-session-new"
       >
         <Plus size={16} />

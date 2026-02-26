@@ -15,6 +15,7 @@ export default function FileTreePanel({ params }) {
     activeDiffFile,
     collapsed,
     onToggleCollapse,
+    onOpenChatTab,
     showSidebarToggle,
     sectionCollapsed,
     onToggleSection,
@@ -51,6 +52,17 @@ export default function FileTreePanel({ params }) {
   if (collapsed) {
     return (
       <div className="panel-content filetree-panel filetree-collapsed">
+        {showSidebarToggle && typeof onToggleCollapse === 'function' && (
+          <button
+            type="button"
+            className="sidebar-toggle-btn"
+            onClick={onToggleCollapse}
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
+          >
+            <ChevronRight size={12} />
+          </button>
+        )}
         <div className="filetree-collapsed-footer">
           <UserMenu
             email={userEmail}
@@ -73,7 +85,12 @@ export default function FileTreePanel({ params }) {
 
   return (
     <div className="panel-content filetree-panel">
-      {showSidebarToggle && <LeftPaneHeader onToggleSidebar={onToggleCollapse} />}
+      {showSidebarToggle && (
+        <LeftPaneHeader
+          onToggleSidebar={onToggleCollapse}
+          onOpenChatTab={onOpenChatTab}
+        />
+      )}
       <SidebarSectionHeader
         title="Files"
         sectionCollapsed={sectionCollapsed}

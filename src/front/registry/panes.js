@@ -288,7 +288,7 @@ class PaneRegistry {
  * |-----------|-----------|-----------|------------------------|
  * | filetree  | yes       | left      | files feature          |
  * | editor    | no        | center    | files feature          |
- * | terminal  | yes       | right     | chat_claude_code router|
+ * | terminal  | no        | right     | chat_claude_code router|
  * | shell     | yes       | bottom    | pty router             |
  * | empty     | no        | center    | none                   |
  * | review    | no        | center    | approval router        |
@@ -331,9 +331,9 @@ const createDefaultRegistry = () => {
     component: TerminalPanel,
     title: 'Code Sessions',
     placement: 'right',
-    essential: true,
-    locked: true,
-    hideHeader: true,
+    essential: false,
+    locked: false,
+    hideHeader: false,
     constraints: {
       minWidth: 250,
       collapsedWidth: 48,
@@ -385,7 +385,7 @@ const createDefaultRegistry = () => {
     placement: 'right',
     essential: false,
     locked: false,
-    hideHeader: true,
+    hideHeader: false,
     constraints: {
       minWidth: 250,
     },

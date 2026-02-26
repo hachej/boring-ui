@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useCapabilitiesContext } from '../components/CapabilityGate'
 import { setCompanionConfig } from '../providers/companion/config'
 import CompanionAdapter from '../providers/companion/adapter'
@@ -12,7 +11,7 @@ import '../providers/companion/upstream.css'
 import '../providers/companion/theme-bridge.css'
 
 export default function CompanionPanel({ params }) {
-  const { collapsed, onToggleCollapse, provider, lockProvider = false } = params || {}
+  const { panelId, onSplitPanel, provider, lockProvider = false } = params || {}
   const capabilities = useCapabilitiesContext()
   const initialProvider = provider === 'pi' ? 'pi' : 'companion'
   const companionAvailable = capabilities?.features?.companion === true
@@ -47,38 +46,9 @@ export default function CompanionPanel({ params }) {
     return false
   }, [activeProvider, companionUrl, companionAvailable])
 
-  if (collapsed) {
-    return (
-      <div
-        className="panel-content terminal-panel-content right-rail-panel companion-panel-content terminal-collapsed"
-        data-testid="companion-panel-collapsed"
-      >
-        <button
-          type="button"
-          className="sidebar-toggle-btn"
-          onClick={onToggleCollapse}
-          title="Expand agent panel"
-          aria-label="Expand agent panel"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <div className="sidebar-collapsed-label">{activeProvider === 'pi' ? 'PI Agent' : 'Companion'}</div>
-      </div>
-    )
-  }
-
   return (
-    <div className="panel-content terminal-panel-content right-rail-panel companion-panel-content" data-testid="companion-panel">
+    <div className="panel-content terminal-panel-content companion-panel-content" data-testid="companion-panel">
       <div className="terminal-header">
-        <button
-          type="button"
-          className="sidebar-toggle-btn"
-          onClick={onToggleCollapse}
-          title="Collapse agent panel"
-          aria-label="Collapse agent panel"
-        >
-          <ChevronRight size={16} />
-        </button>
         <span className="terminal-title-text">{activeProvider === 'pi' ? 'PI Agent' : 'Companion'}</span>
         {canSwitchProviders && (
           <div className="flex items-center gap-1 ml-2">
@@ -109,7 +79,9 @@ export default function CompanionPanel({ params }) {
           </div>
         )}
         <div className="terminal-header-spacer" />
-        {activeProvider === 'pi' ? <PiSessionToolbar /> : <EmbeddedSessionToolbar />}
+        {activeProvider === 'pi'
+          ? <PiSessionToolbar panelId={panelId} onSplitPanel={onSplitPanel} />
+          : <EmbeddedSessionToolbar panelId={panelId} onSplitPanel={onSplitPanel} />}
       </div>
       <div className="terminal-body companion-body">
         <div className="companion-instance active">

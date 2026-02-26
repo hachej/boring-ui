@@ -15,7 +15,7 @@ const getSessionLabel = (session, sessionNames) => {
   return session.sessionId.slice(0, 8)
 }
 
-export default function EmbeddedSessionToolbar() {
+export default function EmbeddedSessionToolbar({ panelId, onSplitPanel }) {
   const [isCreating, setIsCreating] = useState(false)
   const currentSessionId = useStore((s) => s.currentSessionId)
   const sdkSessions = useStore((s) => s.sdkSessions)
@@ -89,9 +89,15 @@ export default function EmbeddedSessionToolbar() {
       <button
         type="button"
         className="terminal-new-icon"
-        onClick={handleCreateSession}
-        title="New Companion session"
-        aria-label="New Companion session"
+        onClick={() => {
+          if (typeof onSplitPanel === 'function') {
+            onSplitPanel(panelId)
+            return
+          }
+          void handleCreateSession()
+        }}
+        title={typeof onSplitPanel === 'function' ? 'Split chat panel' : 'New Companion session'}
+        aria-label={typeof onSplitPanel === 'function' ? 'Split chat panel' : 'New Companion session'}
         data-testid="companion-session-new"
         disabled={isCreating}
       >

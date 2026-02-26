@@ -1,5 +1,6 @@
 export default {
   features: {
-  codeSessions: false
-}
+    codeSessions: false,
+    showHeader: false,
+  },
 }

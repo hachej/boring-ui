@@ -1,14 +1,25 @@
-import { ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 
 /**
  * LeftPaneHeader - Thin header bar for the left sidebar pane with collapse toggle.
  * Rendered only by the first panel in the sidebar.
  */
-export function LeftPaneHeader({ onToggleSidebar }) {
+export function LeftPaneHeader({ onToggleSidebar, onOpenChatTab }) {
   if (typeof onToggleSidebar !== 'function') return null
   return (
     <div className="left-pane-header">
       <div className="left-pane-header-spacer" />
+      {typeof onOpenChatTab === 'function' && (
+        <button
+          type="button"
+          className="sidebar-action-btn"
+          onClick={onOpenChatTab}
+          title="Open new chat pane"
+          aria-label="Open new chat pane"
+        >
+          <Bot size={12} />
+        </button>
+      )}
       <button
         type="button"
         className="sidebar-toggle-btn"

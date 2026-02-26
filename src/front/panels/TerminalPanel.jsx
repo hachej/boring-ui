@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Copy, Plus, X } from 'lucide-react'
+import { Copy, Plus, X } from 'lucide-react'
 import Terminal from '../components/Terminal'
 import ClaudeStreamChat from '../components/chat/ClaudeStreamChat'
 
@@ -72,7 +72,14 @@ const getFileName = (path) => {
 }
 
 export default function TerminalPanel({ params }) {
-  const { collapsed, onToggleCollapse, approvals, onFocusReview, onDecision, normalizeApprovalPath } = params || {}
+  const {
+    panelId,
+    onSplitPanel,
+    approvals,
+    onFocusReview,
+    onDecision,
+    normalizeApprovalPath,
+  } = params || {}
   const terminalCounter = useRef(1)
   const [chatInterface, setChatInterface] = useState(() => {
     try {
@@ -215,38 +222,9 @@ export default function TerminalPanel({ params }) {
     }
   }, [chatInterface])
 
-  if (collapsed) {
-    return (
-      <div
-        className="panel-content terminal-panel-content right-rail-panel terminal-collapsed"
-        data-testid="terminal-panel-collapsed"
-      >
-        <button
-          type="button"
-          className="sidebar-toggle-btn"
-          onClick={onToggleCollapse}
-          title="Expand agent panel"
-          aria-label="Expand agent panel"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <div className="sidebar-collapsed-label">Agent</div>
-      </div>
-    )
-  }
-
   return (
-    <div className="panel-content terminal-panel-content right-rail-panel" data-testid="terminal-panel">
+    <div className="panel-content terminal-panel-content" data-testid="terminal-panel">
       <div className="terminal-header">
-        <button
-          type="button"
-          className="sidebar-toggle-btn"
-          onClick={onToggleCollapse}
-          title="Collapse agent panel"
-          aria-label="Collapse agent panel"
-        >
-          <ChevronRight size={16} />
-        </button>
         {sessions.length === 0 ? (
           <>
             <span className="terminal-title-text">Agent</span>
@@ -254,9 +232,15 @@ export default function TerminalPanel({ params }) {
             <button
               type="button"
               className="terminal-icon-btn"
-              onClick={addSession}
-              aria-label="New session"
-              title="New session"
+              onClick={() => {
+                if (typeof onSplitPanel === 'function') {
+                  onSplitPanel(panelId)
+                  return
+                }
+                addSession()
+              }}
+              aria-label="Split chat panel"
+              title="Split chat panel"
             >
               <Plus size={16} />
             </button>
@@ -310,9 +294,15 @@ export default function TerminalPanel({ params }) {
             <button
               type="button"
               className="terminal-icon-btn"
-              onClick={addSession}
-              aria-label="New session"
-              title="New session"
+              onClick={() => {
+                if (typeof onSplitPanel === 'function') {
+                  onSplitPanel(panelId)
+                  return
+                }
+                addSession()
+              }}
+              aria-label="Split chat panel"
+              title="Split chat panel"
             >
               <Plus size={16} />
             </button>
