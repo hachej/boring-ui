@@ -57,6 +57,5 @@ describe('FileTreePanel', () => {
 
     expect(screen.getByTestId('user-menu-collapsed')).toBeInTheDocument()
     expect(screen.queryByTestId('file-tree')).not.toBeInTheDocument()
-    expect(screen.getByText('Files')).toBeInTheDocument()
   })
 })

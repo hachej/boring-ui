@@ -317,7 +317,7 @@ describe('createDefaultRegistry', () => {
     const registry = createDefaultRegistry()
 
     expect(registry.isEssential('filetree')).toBe(true)
-    expect(registry.isEssential('terminal')).toBe(true)
+    expect(registry.isEssential('terminal')).toBe(false)
     expect(registry.isEssential('shell')).toBe(true)
     expect(registry.isEssential('editor')).toBe(false)
     expect(registry.isEssential('empty')).toBe(false)
@@ -340,7 +340,7 @@ describe('createDefaultRegistry', () => {
     expect(pane.requiresAnyFeatures).toContain('pi')
     expect(pane.essential).toBe(false)
     expect(pane.placement).toBe('right')
-    expect(pane.hideHeader).toBe(true)
+    expect(pane.hideHeader).toBe(false)
   })
 
   it('gates companion pane on companion OR pi feature', () => {

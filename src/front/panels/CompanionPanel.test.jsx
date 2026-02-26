@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 
 // Mock the adapter component
 vi.mock('../providers/companion/adapter', () => ({
@@ -114,24 +114,20 @@ describe('CompanionPanel', () => {
     expect(mockSetCompanionConfig).not.toHaveBeenCalled()
   })
 
-  it('renders collapsed state with correct test id', () => {
+  it('renders panel content even when legacy collapsed params are provided', () => {
     render(<CompanionPanel params={{ collapsed: true, onToggleCollapse: vi.fn() }} />)
 
-    expect(screen.getByTestId('companion-panel-collapsed')).toBeTruthy()
-    expect(screen.queryByTestId('companion-app')).toBeNull()
-    expect(screen.queryByTestId('companion-connecting')).toBeNull()
+    expect(screen.getByTestId('companion-panel')).toBeTruthy()
+    expect(screen.getByTestId('companion-connecting')).toBeTruthy()
   })
 
-  it('calls toggle callback in collapsed and expanded states', () => {
+  it('does not render legacy collapse/expand controls', () => {
     const onToggleCollapse = vi.fn()
-    const { rerender } = render(<CompanionPanel params={{ collapsed: true, onToggleCollapse }} />)
+    render(<CompanionPanel params={{ collapsed: true, onToggleCollapse }} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand agent panel' }))
-    expect(onToggleCollapse).toHaveBeenCalledTimes(1)
-
-    rerender(<CompanionPanel params={{ collapsed: false, onToggleCollapse }} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse agent panel' }))
-    expect(onToggleCollapse).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: 'Expand agent panel' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Collapse agent panel' })).toBeNull()
+    expect(onToggleCollapse).not.toHaveBeenCalled()
   })
 
   it('calls setCompanionConfig before rendering CompanionApp', () => {
