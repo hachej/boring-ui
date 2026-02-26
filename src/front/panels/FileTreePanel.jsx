@@ -88,56 +88,60 @@ export default function FileTreePanel({ params }) {
         title="Files"
         sectionCollapsed={sectionCollapsed}
         onToggleSection={onToggleSection}
-      >
-        <div className="sidebar-view-toggle">
-          <button
-            type="button"
-            className={`view-toggle-btn ${viewMode === 'files' ? 'active' : ''}`}
-            onClick={() => setViewMode('files')}
-            title="File tree"
-          >
-            <FolderOpen size={14} />
-          </button>
-          <button
-            type="button"
-            className={`view-toggle-btn ${viewMode === 'changes' ? 'active' : ''}`}
-            onClick={() => setViewMode('changes')}
-            title="Git changes"
-          >
-            <GitBranch size={14} />
-          </button>
-        </div>
-        {viewMode === 'files' && (
-          <button
-            type="button"
-            className="sidebar-action-btn"
-            onClick={handleNewFile}
-            title="New File"
-            aria-label="New File"
-          >
-            <Plus size={14} />
-          </button>
-        )}
-      </SidebarSectionHeader>
+      />
       {!sectionCollapsed && (
-        <div className="filetree-body">
-          {viewMode === 'files' ? (
-            <FileTree
-              onOpen={onOpenFile}
-              onOpenToSide={onOpenFileToSide}
-              projectRoot={projectRoot}
-              activeFile={activeFile}
-              creatingFile={creatingFile}
-              onFileCreated={handleFileCreated}
-              onCancelCreate={handleCancelCreate}
-            />
-          ) : (
-            <GitChangesView
-              onOpenDiff={onOpenDiff}
-              activeDiffFile={activeDiffFile}
-            />
-          )}
-        </div>
+        <>
+          <div className="filetree-toolbar">
+            <div className="sidebar-view-toggle">
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'files' ? 'active' : ''}`}
+                onClick={() => setViewMode('files')}
+                title="File tree"
+              >
+                <FolderOpen size={14} />
+              </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'changes' ? 'active' : ''}`}
+                onClick={() => setViewMode('changes')}
+                title="Git changes"
+              >
+                <GitBranch size={14} />
+              </button>
+            </div>
+            <div className="filetree-toolbar-spacer" />
+            {viewMode === 'files' && (
+              <button
+                type="button"
+                className="sidebar-action-btn"
+                onClick={handleNewFile}
+                title="New File"
+                aria-label="New File"
+              >
+                <Plus size={14} />
+              </button>
+            )}
+          </div>
+          <div className="filetree-body">
+            {viewMode === 'files' ? (
+              <FileTree
+                onOpen={onOpenFile}
+                onOpenToSide={onOpenFileToSide}
+                projectRoot={projectRoot}
+                activeFile={activeFile}
+                creatingFile={creatingFile}
+                onFileCreated={handleFileCreated}
+                onCancelCreate={handleCancelCreate}
+              />
+            ) : (
+              <GitChangesView
+                onOpenDiff={onOpenDiff}
+                activeDiffFile={activeDiffFile}
+              />
+            )}
+          </div>
+        </>
       )}
       <div className="filetree-footer">
         <UserMenu
