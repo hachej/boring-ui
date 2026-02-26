@@ -3,7 +3,7 @@ import { ChevronRight, FolderOpen, GitBranch, Plus } from 'lucide-react'
 import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
 import UserMenu from '../components/UserMenu'
-import SidebarSectionHeader from '../components/SidebarSectionHeader'
+import SidebarSectionHeader, { LeftPaneHeader } from '../components/SidebarSectionHeader'
 
 export default function FileTreePanel({ params }) {
   const {
@@ -15,6 +15,7 @@ export default function FileTreePanel({ params }) {
     activeDiffFile,
     collapsed,
     onToggleCollapse,
+    showSidebarToggle,
     sectionCollapsed,
     onToggleSection,
     userEmail,
@@ -82,11 +83,11 @@ export default function FileTreePanel({ params }) {
 
   return (
     <div className="panel-content filetree-panel">
+      {showSidebarToggle && <LeftPaneHeader onToggleSidebar={onToggleCollapse} />}
       <SidebarSectionHeader
         title="Files"
         sectionCollapsed={sectionCollapsed}
         onToggleSection={onToggleSection}
-        onToggleSidebar={onToggleCollapse}
       >
         <div className="sidebar-view-toggle">
           <button

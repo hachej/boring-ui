@@ -1627,6 +1627,7 @@ export default function App() {
             activeDiffFile,
             collapsed: collapsed.filetree,
             onToggleCollapse: toggleFiletree,
+            showSidebarToggle: leftSidebarPanelIds[0] === 'filetree',
             sectionCollapsed: sectionCollapsed.filetree,
             onToggleSection: () => toggleSectionCollapse('filetree'),
             userEmail: menuUserEmail,
@@ -1658,6 +1659,7 @@ export default function App() {
             return {
               collapsed: collapsed.filetree,
               onToggleCollapse: toggleFiletree,
+              showSidebarToggle: leftSidebarPanelIds[0] === panelId,
               sectionCollapsed: sectionCollapsed[panelId],
               onToggleSection: () => toggleSectionCollapse(panelId),
             }
@@ -2312,6 +2314,7 @@ export default function App() {
             activeDiffFile,
             collapsed: collapsed.filetree,
             onToggleCollapse: toggleFiletree,
+            showSidebarToggle: leftSidebarPanelIds[0] === 'filetree',
             sectionCollapsed: sectionCollapsed.filetree,
             onToggleSection: () => toggleSectionCollapse('filetree'),
             userEmail: menuUserEmail,
@@ -2338,6 +2341,7 @@ export default function App() {
             ...(panel?.params || {}),
             collapsed: collapsed.filetree,
             onToggleCollapse: toggleFiletree,
+            showSidebarToggle: leftSidebarPanelIds[0] === panelId,
             sectionCollapsed: panelId ? sectionCollapsed[panelId] : false,
             onToggleSection: panelId ? () => toggleSectionCollapse(panelId) : undefined,
           })
@@ -2631,6 +2635,7 @@ export default function App() {
         activeDiffFile,
         collapsed: collapsed.filetree,
         onToggleCollapse: toggleFiletree,
+        showSidebarToggle: leftSidebarPanelIds[0] === 'filetree',
         sectionCollapsed: sectionCollapsed.filetree,
         onToggleSection: () => toggleSectionCollapse('filetree'),
         userEmail: menuUserEmail,
@@ -2652,6 +2657,7 @@ export default function App() {
         ...(panel?.params || {}),
         collapsed: collapsed.filetree,
         onToggleCollapse: toggleFiletree,
+        showSidebarToggle: leftSidebarPanelIds[0] === panelId,
         sectionCollapsed: panelId ? sectionCollapsed[panelId] : false,
         onToggleSection: panelId ? () => toggleSectionCollapse(panelId) : undefined,
       })

@@ -650,6 +650,19 @@ html {
   box-shadow: var(--shadow-focus);
 }
 
+/* Left pane header - thin bar at top of left sidebar with collapse toggle */
+.left-pane-header {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.left-pane-header-spacer {
+  flex: 1;
+}
+
 /* Sidebar section header (shared across left sidebar panels) */
 .sidebar-section-header {
   display: flex;
