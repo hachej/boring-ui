@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { ChevronRight, ChevronLeft, FolderOpen, GitBranch, Plus } from 'lucide-react'
+import { ChevronRight, FolderOpen, GitBranch, Plus } from 'lucide-react'
 import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
 import UserMenu from '../components/UserMenu'
+import SidebarSectionHeader from '../components/SidebarSectionHeader'
 
 export default function FileTreePanel({ params }) {
   const {
@@ -14,6 +15,8 @@ export default function FileTreePanel({ params }) {
     activeDiffFile,
     collapsed,
     onToggleCollapse,
+    sectionCollapsed,
+    onToggleSection,
     userEmail,
     workspaceName,
     workspaceId,
@@ -51,8 +54,8 @@ export default function FileTreePanel({ params }) {
           type="button"
           className="sidebar-toggle-btn"
           onClick={onToggleCollapse}
-          title="Expand file tree"
-          aria-label="Expand file tree"
+          title="Expand sidebar"
+          aria-label="Expand sidebar"
         >
           <ChevronRight size={12} />
         </button>
@@ -79,7 +82,12 @@ export default function FileTreePanel({ params }) {
 
   return (
     <div className="panel-content filetree-panel">
-      <div className="sidebar-header">
+      <SidebarSectionHeader
+        title="Files"
+        sectionCollapsed={sectionCollapsed}
+        onToggleSection={onToggleSection}
+        onToggleSidebar={onToggleCollapse}
+      >
         <div className="sidebar-view-toggle">
           <button
             type="button"
@@ -98,62 +106,55 @@ export default function FileTreePanel({ params }) {
             <GitBranch size={14} />
           </button>
         </div>
-        <div className="sidebar-header-actions">
-          {viewMode === 'files' && (
-            <button
-              type="button"
-              className="sidebar-action-btn"
-              onClick={handleNewFile}
-              title="New File"
-              aria-label="New File"
-            >
-              <Plus size={14} />
-            </button>
-          )}
+        {viewMode === 'files' && (
           <button
             type="button"
-            className="sidebar-toggle-btn"
-            onClick={onToggleCollapse}
-            title="Collapse file tree"
-            aria-label="Collapse file tree"
+            className="sidebar-action-btn"
+            onClick={handleNewFile}
+            title="New File"
+            aria-label="New File"
           >
-            <ChevronLeft size={12} />
+            <Plus size={14} />
           </button>
-        </div>
-      </div>
-      <div className="filetree-body">
-        {viewMode === 'files' ? (
-          <FileTree
-            onOpen={onOpenFile}
-            onOpenToSide={onOpenFileToSide}
-            projectRoot={projectRoot}
-            activeFile={activeFile}
-            creatingFile={creatingFile}
-            onFileCreated={handleFileCreated}
-            onCancelCreate={handleCancelCreate}
-          />
-        ) : (
-          <GitChangesView
-            onOpenDiff={onOpenDiff}
-            activeDiffFile={activeDiffFile}
-          />
         )}
-      </div>
-      <div className="filetree-footer">
-        <UserMenu
-          email={userEmail}
-          workspaceName={workspaceName}
-          workspaceId={workspaceId}
-          statusMessage={userMenuStatusMessage}
-          statusTone={userMenuStatusTone}
-          onRetry={onUserMenuRetry}
-          disabledActions={userMenuDisabledActions}
-          onSwitchWorkspace={onSwitchWorkspace}
-          onCreateWorkspace={onCreateWorkspace}
-          onOpenUserSettings={onOpenUserSettings}
-          onLogout={onLogout}
-        />
-      </div>
+      </SidebarSectionHeader>
+      {!sectionCollapsed && (
+        <>
+          <div className="filetree-body">
+            {viewMode === 'files' ? (
+              <FileTree
+                onOpen={onOpenFile}
+                onOpenToSide={onOpenFileToSide}
+                projectRoot={projectRoot}
+                activeFile={activeFile}
+                creatingFile={creatingFile}
+                onFileCreated={handleFileCreated}
+                onCancelCreate={handleCancelCreate}
+              />
+            ) : (
+              <GitChangesView
+                onOpenDiff={onOpenDiff}
+                activeDiffFile={activeDiffFile}
+              />
+            )}
+          </div>
+          <div className="filetree-footer">
+            <UserMenu
+              email={userEmail}
+              workspaceName={workspaceName}
+              workspaceId={workspaceId}
+              statusMessage={userMenuStatusMessage}
+              statusTone={userMenuStatusTone}
+              onRetry={onUserMenuRetry}
+              disabledActions={userMenuDisabledActions}
+              onSwitchWorkspace={onSwitchWorkspace}
+              onCreateWorkspace={onCreateWorkspace}
+              onOpenUserSettings={onOpenUserSettings}
+              onLogout={onLogout}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

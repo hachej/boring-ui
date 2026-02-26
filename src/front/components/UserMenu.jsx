@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
+import { Sun, Moon } from 'lucide-react'
+import { useTheme } from '../hooks/useTheme'
 
 /**
  * UserMenu - Avatar with dropdown menu for user and workspace actions
@@ -32,6 +34,8 @@ export default function UserMenu({
   const menuRef = useRef(null)
   const dropdownRef = useRef(null)
   const [collapsedMenuStyle, setCollapsedMenuStyle] = useState(null)
+  const { theme, toggleTheme } = useTheme()
+  const isDark = theme === 'dark'
 
   // Get first letter of email (uppercase) for avatar
   const avatarLetter = email ? email.charAt(0).toUpperCase() : '?'
@@ -177,6 +181,15 @@ export default function UserMenu({
           ) : null}
         </div>
       ) : null}
+      <div className="user-menu-divider" />
+      <button
+        className="user-menu-item user-menu-item-appearance"
+        onClick={toggleTheme}
+        role="menuitem"
+      >
+        {isDark ? <Sun size={14} /> : <Moon size={14} />}
+        <span>Appearance: {isDark ? 'Dark' : 'Light'}</span>
+      </button>
       <div className="user-menu-divider" />
       {actionItems.map((item) => {
         const disabled = typeof item.onClick !== 'function' || disabledActions.includes(item.key)

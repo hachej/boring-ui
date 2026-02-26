@@ -650,6 +650,58 @@ html {
   box-shadow: var(--shadow-focus);
 }
 
+/* Sidebar section header (shared across left sidebar panels) */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 4px 2px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.sidebar-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.sidebar-section-toggle:hover {
+  background: var(--color-bg-active);
+  color: var(--color-text-primary);
+}
+
+.sidebar-section-title {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
 /* Collapsed sidebar styles */
 .filetree-collapsed,
 .terminal-collapsed {
@@ -3810,6 +3862,12 @@ html {
 .user-menu-item:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.user-menu-item-appearance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .user-menu-dropdown-portal {

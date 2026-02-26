@@ -317,6 +317,7 @@ export default function App() {
     const saved = loadCollapsedState(storagePrefix)
     return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
   })
+  const [sectionCollapsed, setSectionCollapsed] = useState({})
   const panelSizesRef = useRef({
     ...panelDefaults,
     companion: rightRailDefaults.companion,
@@ -581,6 +582,45 @@ export default function App() {
       return next
     })
   }, [collapsed.companion, dockApi])
+
+  const SECTION_HEADER_HEIGHT = 28
+  const sectionSizesRef = useRef({})
+
+  const toggleSectionCollapse = useCallback((panelId) => {
+    if (!dockApi) return
+    const panel = dockApi.getPanel(panelId)
+    const group = panel?.group
+    if (group && !sectionCollapsed[panelId]) {
+      // Capture current height before collapsing
+      const currentHeight = group.api.height
+      if (currentHeight > SECTION_HEADER_HEIGHT) {
+        sectionSizesRef.current = { ...sectionSizesRef.current, [panelId]: currentHeight }
+      }
+    }
+    setSectionCollapsed((prev) => {
+      const next = { ...prev, [panelId]: !prev[panelId] }
+      // Apply constraints immediately
+      if (group) {
+        if (next[panelId]) {
+          group.api.setConstraints({
+            minimumHeight: SECTION_HEADER_HEIGHT,
+            maximumHeight: SECTION_HEADER_HEIGHT,
+          })
+          group.api.setSize({ height: SECTION_HEADER_HEIGHT })
+        } else {
+          group.api.setConstraints({
+            minimumHeight: 60,
+            maximumHeight: Number.MAX_SAFE_INTEGER,
+          })
+          const savedHeight = sectionSizesRef.current[panelId]
+          if (Number.isFinite(savedHeight) && savedHeight > 60) {
+            group.api.setSize({ height: savedHeight })
+          }
+        }
+      }
+      return next
+    })
+  }, [dockApi, sectionCollapsed])
 
   const toggleShell = useCallback(() => {
     if (!collapsed.shell && dockApi) {
@@ -1587,6 +1627,8 @@ export default function App() {
             activeDiffFile,
             collapsed: collapsed.filetree,
             onToggleCollapse: toggleFiletree,
+            sectionCollapsed: sectionCollapsed.filetree,
+            onToggleSection: () => toggleSectionCollapse('filetree'),
             userEmail: menuUserEmail,
             userMenuStatusMessage,
             userMenuStatusTone,
@@ -1616,6 +1658,8 @@ export default function App() {
             return {
               collapsed: collapsed.filetree,
               onToggleCollapse: toggleFiletree,
+              sectionCollapsed: sectionCollapsed[panelId],
+              onToggleSection: () => toggleSectionCollapse(panelId),
             }
           }
           return {}
@@ -2268,6 +2312,8 @@ export default function App() {
             activeDiffFile,
             collapsed: collapsed.filetree,
             onToggleCollapse: toggleFiletree,
+            sectionCollapsed: sectionCollapsed.filetree,
+            onToggleSection: () => toggleSectionCollapse('filetree'),
             userEmail: menuUserEmail,
             userMenuStatusMessage,
             userMenuStatusTone,
@@ -2287,10 +2333,13 @@ export default function App() {
             panel.group.locked = true
             panel.group.header.hidden = true
           }
+          const panelId = panel?.id
           panel?.api?.updateParameters({
             ...(panel?.params || {}),
             collapsed: collapsed.filetree,
             onToggleCollapse: toggleFiletree,
+            sectionCollapsed: panelId ? sectionCollapsed[panelId] : false,
+            onToggleSection: panelId ? () => toggleSectionCollapse(panelId) : undefined,
           })
         })
 
@@ -2582,6 +2631,8 @@ export default function App() {
         activeDiffFile,
         collapsed: collapsed.filetree,
         onToggleCollapse: toggleFiletree,
+        sectionCollapsed: sectionCollapsed.filetree,
+        onToggleSection: () => toggleSectionCollapse('filetree'),
         userEmail: menuUserEmail,
         userMenuStatusMessage,
         userMenuStatusTone,
@@ -2596,10 +2647,13 @@ export default function App() {
       })
     }
     linkedSidebarPanels.forEach((panel) => {
+      const panelId = panel?.id
       panel.api.updateParameters({
         ...(panel?.params || {}),
         collapsed: collapsed.filetree,
         onToggleCollapse: toggleFiletree,
+        sectionCollapsed: panelId ? sectionCollapsed[panelId] : false,
+        onToggleSection: panelId ? () => toggleSectionCollapse(panelId) : undefined,
       })
     })
   }, [
@@ -2612,6 +2666,8 @@ export default function App() {
     activeDiffFile,
     collapsed.filetree,
     toggleFiletree,
+    sectionCollapsed,
+    toggleSectionCollapse,
     menuUserEmail,
     userMenuStatusMessage,
     userMenuStatusTone,
@@ -2983,19 +3039,21 @@ export default function App() {
   return (
     <ThemeProvider>
       <div className="app-container">
-        <header className="app-header">
-          <div className="app-header-brand">
-            <div className="app-header-logo" aria-hidden="true">
-              {config.branding?.logo || 'B'}
+        {config.features?.showHeader !== false && (
+          <header className="app-header">
+            <div className="app-header-brand">
+              <div className="app-header-logo" aria-hidden="true">
+                {config.branding?.logo || 'B'}
+              </div>
+              <div className="app-header-title">
+                {projectRoot?.split('/').pop() || config.branding?.name || 'Workspace'}
+              </div>
             </div>
-            <div className="app-header-title">
-              {projectRoot?.split('/').pop() || config.branding?.name || 'Workspace'}
+            <div className="app-header-controls">
+              <ThemeToggle />
             </div>
-          </div>
-          <div className="app-header-controls">
-            <ThemeToggle />
-          </div>
-        </header>
+          </header>
+        )}
         {unavailableEssentials.length > 0 && (
           <div className="capability-warning">
             <strong>Warning:</strong> Some features are unavailable.
