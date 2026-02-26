@@ -83,7 +83,24 @@ export default function FileTreePanel({ params }) {
 
   return (
     <div className="panel-content filetree-panel">
-      {showSidebarToggle && <LeftPaneHeader onToggleSidebar={onToggleCollapse} />}
+      {showSidebarToggle && (
+        <LeftPaneHeader onToggleSidebar={onToggleCollapse}>
+          <UserMenu
+            email={userEmail}
+            workspaceName={workspaceName}
+            workspaceId={workspaceId}
+            statusMessage={userMenuStatusMessage}
+            statusTone={userMenuStatusTone}
+            onRetry={onUserMenuRetry}
+            disabledActions={userMenuDisabledActions}
+            onSwitchWorkspace={onSwitchWorkspace}
+            onCreateWorkspace={onCreateWorkspace}
+            onOpenUserSettings={onOpenUserSettings}
+            onLogout={onLogout}
+            collapsed
+          />
+        </LeftPaneHeader>
+      )}
       <SidebarSectionHeader
         title="Files"
         sectionCollapsed={sectionCollapsed}
@@ -120,41 +137,41 @@ export default function FileTreePanel({ params }) {
         )}
       </SidebarSectionHeader>
       {!sectionCollapsed && (
-        <>
-          <div className="filetree-body">
-            {viewMode === 'files' ? (
-              <FileTree
-                onOpen={onOpenFile}
-                onOpenToSide={onOpenFileToSide}
-                projectRoot={projectRoot}
-                activeFile={activeFile}
-                creatingFile={creatingFile}
-                onFileCreated={handleFileCreated}
-                onCancelCreate={handleCancelCreate}
-              />
-            ) : (
-              <GitChangesView
-                onOpenDiff={onOpenDiff}
-                activeDiffFile={activeDiffFile}
-              />
-            )}
-          </div>
-          <div className="filetree-footer">
-            <UserMenu
-              email={userEmail}
-              workspaceName={workspaceName}
-              workspaceId={workspaceId}
-              statusMessage={userMenuStatusMessage}
-              statusTone={userMenuStatusTone}
-              onRetry={onUserMenuRetry}
-              disabledActions={userMenuDisabledActions}
-              onSwitchWorkspace={onSwitchWorkspace}
-              onCreateWorkspace={onCreateWorkspace}
-              onOpenUserSettings={onOpenUserSettings}
-              onLogout={onLogout}
+        <div className="filetree-body">
+          {viewMode === 'files' ? (
+            <FileTree
+              onOpen={onOpenFile}
+              onOpenToSide={onOpenFileToSide}
+              projectRoot={projectRoot}
+              activeFile={activeFile}
+              creatingFile={creatingFile}
+              onFileCreated={handleFileCreated}
+              onCancelCreate={handleCancelCreate}
             />
-          </div>
-        </>
+          ) : (
+            <GitChangesView
+              onOpenDiff={onOpenDiff}
+              activeDiffFile={activeDiffFile}
+            />
+          )}
+        </div>
+      )}
+      {!showSidebarToggle && (
+        <div className="filetree-footer">
+          <UserMenu
+            email={userEmail}
+            workspaceName={workspaceName}
+            workspaceId={workspaceId}
+            statusMessage={userMenuStatusMessage}
+            statusTone={userMenuStatusTone}
+            onRetry={onUserMenuRetry}
+            disabledActions={userMenuDisabledActions}
+            onSwitchWorkspace={onSwitchWorkspace}
+            onCreateWorkspace={onCreateWorkspace}
+            onOpenUserSettings={onOpenUserSettings}
+            onLogout={onLogout}
+          />
+        </div>
       )}
     </div>
   )

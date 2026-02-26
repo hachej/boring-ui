@@ -3,11 +3,13 @@ import { ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
 /**
  * LeftPaneHeader - Thin header bar for the left sidebar pane with collapse toggle.
  * Rendered only by the first panel in the sidebar.
+ * Accepts children (e.g. UserMenu) rendered on the left side before the spacer.
  */
-export function LeftPaneHeader({ onToggleSidebar }) {
+export function LeftPaneHeader({ onToggleSidebar, children }) {
   if (typeof onToggleSidebar !== 'function') return null
   return (
     <div className="left-pane-header">
+      {children}
       <div className="left-pane-header-spacer" />
       <button
         type="button"
