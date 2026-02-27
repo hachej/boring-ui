@@ -7,38 +7,21 @@ Operational runbooks for common tasks.
 ### Start Local Dev Environment
 
 ```bash
-# Terminal 1: Frontend dev server
+# Terminal 1: Frontend dev server (HMR)
 npm install
 npm run dev
 # -> http://localhost:5173
 
-# Terminal 2: Backend
-cd src/back
-pip install -e .
-export ANTHROPIC_API_KEY=$(vault kv get -field=api_key secret/agent/anthropic)
-python -c "
-from boring_ui.api.app import create_app
-import uvicorn
-app = create_app()
-uvicorn.run(app, host='0.0.0.0', port=8000)
-"
+# Terminal 2: Backend API
+uv sync
+uv run python -m uvicorn boring_ui.runtime:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Start with All Services
+### Start Optional Companion / PI Services
 
 ```bash
-# Backend with sandbox and companion support
-python -c "
-from boring_ui.api.app import create_app
-import uvicorn
-app = create_app(include_sandbox=True, include_companion=True)
-uvicorn.run(app, host='0.0.0.0', port=8000)
-"
-
-# Companion service (separate terminal)
+# Separate terminal(s)
 npm run companion:service
-
-# PI service (separate terminal)
 npm run pi:service
 ```
 
@@ -55,7 +38,7 @@ npm test
 npm run test:e2e
 
 # Backend tests
-python3 -m pytest tests/unit/ -v
+python3 -m pytest tests/ -v
 
 # Lint
 npm run lint
@@ -75,6 +58,18 @@ npm run build:lib
 
 # Preview production build
 npm run preview
+```
+
+## Downstream Packaging Helper
+
+For apps embedding boring-ui (for example `boring-macro`), use:
+
+```bash
+python3 scripts/package_app_assets.py \
+  --frontend-dir /path/to/app/frontend \
+  --static-dir /path/to/app/runtime_static \
+  --companion-source /path/to/boring-ui/src/companion_service/launch.sh \
+  --companion-target /path/to/app/runtime_companion/launch.sh
 ```
 
 ## Configuration
@@ -123,6 +118,6 @@ curl http://localhost:8000/api/capabilities | python3 -m json.tool
 3. Ensure the provider name in the WS query matches a configured provider
 
 ### Chat Sessions Not Working
-1. Verify `ANTHROPIC_API_KEY` is set
-2. Check `chat_claude_code` appears in capabilities
-3. Monitor WebSocket connection at `/ws/agent/normal/stream`
+1. Check capabilities: `curl http://localhost:8000/api/capabilities`
+2. If using companion, verify `COMPANION_URL` (or companion service availability)
+3. If using Claude stream, verify `ANTHROPIC_API_KEY` and `chat_claude_code` capability

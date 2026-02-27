@@ -345,7 +345,7 @@ export default {
 npm run dev
 
 # Terminal 2: backend API server
-uv run python -m boring_ui.api
+uv run python -m uvicorn boring_ui.runtime:app --host 0.0.0.0 --port 8000 --reload
 
 # Optional production build + preview
 npm run build
