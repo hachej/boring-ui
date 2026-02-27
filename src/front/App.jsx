@@ -905,7 +905,9 @@ export default function App() {
       // ignore storage errors for local-only settings intent
     }
     window.dispatchEvent(new CustomEvent('boring-ui:user-settings-open', { detail }))
-    const route = routes.controlPlane.auth.settings()
+    const route = currentWorkspaceId
+      ? routes.controlPlane.workspaces.scope(currentWorkspaceId, 'settings')
+      : routes.controlPlane.auth.settings()
     window.location.assign(buildApiUrl(route.path, route.query))
   }, [storagePrefix, projectRoot, currentWorkspaceId])
 
