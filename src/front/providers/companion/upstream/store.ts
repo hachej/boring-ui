@@ -26,6 +26,7 @@ interface AppState {
 
   // Session status
   sessionStatus: Map<string, "idle" | "running" | "compacting" | null>;
+  authRequired: Map<string, string>;
 
   // Plan mode: stores previous permission mode per session so we can restore it
   previousPermissionMode: Map<string, string>;
@@ -82,6 +83,7 @@ interface AppState {
   setConnectionStatus: (sessionId: string, status: "connecting" | "connected" | "disconnected") => void;
   setCliConnected: (sessionId: string, connected: boolean) => void;
   setSessionStatus: (sessionId: string, status: "idle" | "running" | "compacting" | null) => void;
+  setAuthRequired: (sessionId: string, error: string | null) => void;
 
   reset: () => void;
 }
@@ -119,6 +121,7 @@ export const useStore = create<AppState>((set) => ({
   connectionStatus: new Map(),
   cliConnected: new Map(),
   sessionStatus: new Map(),
+  authRequired: new Map(),
   previousPermissionMode: new Map(),
   sessionTasks: new Map(),
   sessionNames: getInitialSessionNames(),
@@ -188,6 +191,8 @@ export const useStore = create<AppState>((set) => ({
       cliConnected.delete(sessionId);
       const sessionStatus = new Map(s.sessionStatus);
       sessionStatus.delete(sessionId);
+      const authRequired = new Map(s.authRequired);
+      authRequired.delete(sessionId);
       const previousPermissionMode = new Map(s.previousPermissionMode);
       previousPermissionMode.delete(sessionId);
       const pendingPermissions = new Map(s.pendingPermissions);
@@ -209,6 +214,7 @@ export const useStore = create<AppState>((set) => ({
         connectionStatus,
         cliConnected,
         sessionStatus,
+        authRequired,
         previousPermissionMode,
         pendingPermissions,
         sessionTasks,
@@ -359,6 +365,17 @@ export const useStore = create<AppState>((set) => ({
       return { sessionStatus };
     }),
 
+  setAuthRequired: (sessionId, error) =>
+    set((s) => {
+      const authRequired = new Map(s.authRequired);
+      if (error) {
+        authRequired.set(sessionId, error);
+      } else {
+        authRequired.delete(sessionId);
+      }
+      return { authRequired };
+    }),
+
   reset: () =>
     set({
       sessions: new Map(),
@@ -372,6 +389,7 @@ export const useStore = create<AppState>((set) => ({
       connectionStatus: new Map(),
       cliConnected: new Map(),
       sessionStatus: new Map(),
+      authRequired: new Map(),
       previousPermissionMode: new Map(),
       sessionTasks: new Map(),
       sessionNames: new Map(),

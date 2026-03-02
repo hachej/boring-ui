@@ -29,6 +29,17 @@ interface CommandItem {
   type: "command" | "skill";
 }
 
+function getWorkspaceBasePath(pathname: string = ""): string {
+  const match = String(pathname || "").match(/^\/w\/[^/]+/);
+  return match ? match[0] : "";
+}
+
+function getManagedAuthBase(): string {
+  if (typeof window === "undefined") return "/api/v1/chat/auth";
+  const workspaceBase = getWorkspaceBasePath(window.location?.pathname || "");
+  return `${workspaceBase}/api/v1/chat/auth`;
+}
+
 export function Composer({ sessionId }: { sessionId: string }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<ImageAttachment[]>([]);
@@ -106,9 +117,94 @@ export function Composer({ sessionId }: { sessionId: string }) {
     textareaRef.current?.focus();
   }, []);
 
-  function handleSend() {
+  function resetComposerState() {
+    setText("");
+    setImages([]);
+    setSlashMenuOpen(false);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+    textareaRef.current?.focus();
+  }
+
+  async function handleLoginShortcut() {
+    const store = useStore.getState();
+    store.setAuthRequired(sessionId, "Authentication required");
+
+    try {
+      const resp = await fetch(`${getManagedAuthBase()}/login-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        store.appendMessage(sessionId, {
+          id: `sys-login-${Date.now()}-${++idCounter}`,
+          role: "system",
+          content: String(data?.message || "Unable to start login flow."),
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      if (data?.already_logged_in || data?.logged_in) {
+        store.setAuthRequired(sessionId, null);
+        store.appendMessage(sessionId, {
+          id: `sys-login-${Date.now()}-${++idCounter}`,
+          role: "system",
+          content: "Claude Code is already authenticated for this workspace session.",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      const loginUrl = String(data?.url || "").trim();
+      const loginCode = String(data?.code || "").trim();
+      if (loginUrl) {
+        const opened = window.open(loginUrl, "_blank", "noopener,noreferrer");
+        const baseMessage = opened
+          ? "Opened Claude login in a new tab. Complete sign-in, paste code if prompted, then click Finish Login in the auth panel."
+          : `Open this login URL to authenticate: ${loginUrl}`;
+        const message = loginCode
+          ? `${baseMessage}\nAuth code: ${loginCode}`
+          : baseMessage;
+        store.appendMessage(sessionId, {
+          id: `sys-login-${Date.now()}-${++idCounter}`,
+          role: "system",
+          content: message,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      store.appendMessage(sessionId, {
+        id: `sys-login-${Date.now()}-${++idCounter}`,
+        role: "system",
+        content: "Login started, but no browser URL was returned. Use the auth panel fallback.",
+        timestamp: Date.now(),
+      });
+    } catch {
+      store.appendMessage(sessionId, {
+        id: `sys-login-${Date.now()}-${++idCounter}`,
+        role: "system",
+        content: "Unable to start login flow. Use the auth panel fallback.",
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  async function handleSend() {
     const msg = text.trim();
-    if (!msg || !isConnected) return;
+    if (!msg) return;
+
+    if (/^\/login(?:\s+.*)?$/i.test(msg)) {
+      resetComposerState();
+      await handleLoginShortcut();
+      return;
+    }
+
+    if (!isConnected) return;
 
     sendToSession(sessionId, {
       type: "user_message",
@@ -125,17 +221,17 @@ export function Composer({ sessionId }: { sessionId: string }) {
       timestamp: Date.now(),
     });
 
-    setText("");
-    setImages([]);
-    setSlashMenuOpen(false);
-
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
-    textareaRef.current?.focus();
+    resetComposerState();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    // Always treat /login as a send action (do not let slash-menu consume Enter).
+    if (e.key === "Enter" && !e.shiftKey && /^\/login(?:\s+.*)?$/i.test(text.trim())) {
+      e.preventDefault();
+      handleSend();
+      return;
+    }
+
     // Slash menu navigation
     if (slashMenuOpen && filteredCommands.length > 0) {
       if (e.key === "ArrowDown") {
