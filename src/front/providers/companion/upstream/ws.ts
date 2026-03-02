@@ -3,6 +3,18 @@ import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, Chat
 import { generateUniqueSessionName } from "./utils/names.js";
 import { getCompanionBaseUrl, getCompanionAuthToken } from "../config.js";
 
+const CANONICAL_API_PREFIX = "/api/v1/agent/companion";
+
+function getWorkspaceBasePath(pathname: string = ""): string {
+  const match = String(pathname || "").match(/^\/w\/[^/]+/);
+  return match ? match[0] : "";
+}
+
+function getWorkspaceWsPath(sessionId: string): string {
+  const workspaceBase = getWorkspaceBasePath(location.pathname);
+  return `${workspaceBase}/ws/agent/companion/browser/${sessionId}`;
+}
+
 const sockets = new Map<string, WebSocket>();
 const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const taskCounters = new Map<string, number>();
@@ -89,21 +101,34 @@ function nextId(): string {
 
 function getWsUrl(sessionId: string): string {
   const base = (getCompanionBaseUrl() || "").trim();
+  const token = getCompanionAuthToken();
+  const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+
   if (base) {
-    // Direct Connect: derive WS URL from configured HTTP base URL
-    const url = new URL(base);
+    // Direct connect: derive WS URL from configured HTTP base URL and support
+    // same-origin workspace-scoped routing.
+    const url = new URL(base, location.origin);
     const proto = url.protocol === "https:" ? "wss:" : "ws:";
-    const token = getCompanionAuthToken();
-    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
-    const basePath = url.pathname.replace(/\/+$/, "");
+    let basePath = url.pathname.replace(/\/+$/, "");
+
+    if (basePath.endsWith(CANONICAL_API_PREFIX)) {
+      basePath = basePath.slice(0, -CANONICAL_API_PREFIX.length);
+    } else if (!basePath || basePath === "/") {
+      basePath = getWorkspaceBasePath(location.pathname);
+    }
+
     return `${proto}//${url.host}${basePath}/ws/agent/companion/browser/${sessionId}${qs}`;
   }
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws/agent/companion/browser/${sessionId}`;
+  return `${proto}//${location.host}${getWorkspaceWsPath(sessionId)}${qs}`;
 }
 
 export const __companionWsTestUtils = {
   getWsUrl,
+  isAuthFailureText,
+  dispatchMessage(sessionId: string, payload: BrowserIncomingMessage) {
+    handleMessage(sessionId, { data: JSON.stringify(payload) } as MessageEvent);
+  },
 };
 
 function extractTextFromBlocks(blocks: ContentBlock[]): string {
@@ -115,6 +140,21 @@ function extractTextFromBlocks(blocks: ContentBlock[]): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function isAuthFailureText(text: string): boolean {
+  const value = String(text || "").toLowerCase();
+  if (!value) return false;
+  return (
+    value.includes("invalid bearer token")
+    || value.includes("failed to authenticate")
+    || value.includes("authentication_error")
+    || value.includes("not authenticated")
+    || value.includes("not logged in")
+    || value.includes("please run /login")
+    || value.includes("run /login")
+    || value.includes("login required")
+  );
 }
 
 function handleMessage(sessionId: string, event: MessageEvent) {
@@ -158,6 +198,9 @@ function handleMessage(sessionId: string, event: MessageEvent) {
         stopReason: msg.stop_reason,
       };
       store.appendMessage(sessionId, chatMsg);
+      if (isAuthFailureText(textContent)) {
+        store.setAuthRequired(sessionId, textContent);
+      }
       store.setStreaming(sessionId, null);
       store.setSessionStatus(sessionId, "running");
 
@@ -232,6 +275,17 @@ function handleMessage(sessionId: string, event: MessageEvent) {
       store.setStreaming(sessionId, null);
       store.setStreamingStats(sessionId, null);
       store.setSessionStatus(sessionId, "idle");
+      if (r.is_error) {
+        const combinedErrorText = [
+          ...(Array.isArray(r.errors) ? r.errors : []),
+          typeof r.result === "string" ? r.result : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        if (isAuthFailureText(combinedErrorText)) {
+          store.setAuthRequired(sessionId, combinedErrorText);
+        }
+      }
       if (r.is_error && r.errors?.length) {
         store.appendMessage(sessionId, {
           id: nextId(),
@@ -283,11 +337,13 @@ function handleMessage(sessionId: string, event: MessageEvent) {
     }
 
     case "auth_status": {
-      if (data.error) {
+      const outputText = Array.isArray(data.output) ? data.output.join(" ") : "";
+      if (data.error || isAuthFailureText(outputText)) {
+        store.setAuthRequired(sessionId, data.error || outputText || "Authentication required");
         store.appendMessage(sessionId, {
           id: nextId(),
           role: "system",
-          content: `Auth error: ${data.error}`,
+          content: `Auth error: ${data.error || outputText}`,
           timestamp: Date.now(),
         });
       }
@@ -295,6 +351,9 @@ function handleMessage(sessionId: string, event: MessageEvent) {
     }
 
     case "error": {
+      if (isAuthFailureText(data.message)) {
+        store.setAuthRequired(sessionId, data.message);
+      }
       store.appendMessage(sessionId, {
         id: nextId(),
         role: "system",
@@ -328,6 +387,9 @@ function handleMessage(sessionId: string, event: MessageEvent) {
         } else if (histMsg.type === "assistant") {
           const msg = histMsg.message;
           const textContent = extractTextFromBlocks(msg.content);
+          if (isAuthFailureText(textContent)) {
+            store.setAuthRequired(sessionId, textContent);
+          }
           chatMessages.push({
             id: msg.id,
             role: "assistant",
@@ -344,6 +406,15 @@ function handleMessage(sessionId: string, event: MessageEvent) {
           }
         } else if (histMsg.type === "result") {
           const r = histMsg.data;
+          const combinedErrorText = [
+            ...(Array.isArray(r.errors) ? r.errors : []),
+            typeof r.result === "string" ? r.result : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          if (isAuthFailureText(combinedErrorText)) {
+            store.setAuthRequired(sessionId, combinedErrorText);
+          }
           if (r.is_error && r.errors?.length) {
             chatMessages.push({
               id: nextId(),

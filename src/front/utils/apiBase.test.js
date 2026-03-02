@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { __apiBaseTestUtils, buildWsUrl } from './apiBase'
+import { __apiBaseTestUtils, buildApiUrl, buildWsUrl } from './apiBase'
 
 describe('apiBase loopback rewrite', () => {
   it('rewrites loopback VITE_API_URL to current host for remote browser clients', () => {
@@ -61,5 +61,50 @@ describe('apiBase loopback rewrite', () => {
     expect(wsUrl).toContain('session_id=abc123')
     expect(wsUrl).toContain('file=one.txt')
     expect(wsUrl).toContain('file=two.txt')
+  })
+
+  it('extracts workspace base from pathname', () => {
+    expect(__apiBaseTestUtils.getWorkspaceBasePath('/w/ws-123/app/editor')).toBe('/w/ws-123')
+    expect(__apiBaseTestUtils.getWorkspaceBasePath('/api/capabilities')).toBe('')
+  })
+
+  it('builds workspace-scoped api url when running under /w/{id}', () => {
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        protocol: 'https:',
+        hostname: 'example.com',
+        port: '',
+        origin: 'https://example.com',
+        pathname: '/w/ws-123/',
+      },
+    })
+    try {
+      expect(buildApiUrl('/api/capabilities')).toBe('https://example.com/w/ws-123/api/capabilities')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+  })
+
+  it('builds workspace-scoped websocket url when running under /w/{id}', () => {
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        protocol: 'https:',
+        hostname: 'example.com',
+        port: '',
+        origin: 'https://example.com',
+        pathname: '/w/ws-123/',
+      },
+    })
+    try {
+      expect(
+        buildWsUrl('/ws/pty', { session_id: 'abc123', resume: 1 }),
+      ).toBe('wss://example.com/w/ws-123/ws/pty?session_id=abc123&resume=1')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
   })
 })

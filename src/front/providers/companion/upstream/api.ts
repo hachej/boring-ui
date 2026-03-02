@@ -1,14 +1,46 @@
 import type { SdkSessionInfo } from "./types.js";
 import { getCompanionBaseUrl, getAuthHeaders } from "../config.js";
 
+const CANONICAL_PREFIX = "/api/v1/agent/companion";
+
+function getWorkspaceBasePath(pathname: string = ""): string {
+  const match = String(pathname || "").match(/^\/w\/[^/]+/);
+  return match ? match[0] : "";
+}
+
+function getWorkspaceCanonicalPrefix(): string {
+  if (typeof window === "undefined") return CANONICAL_PREFIX;
+  const workspaceBase = getWorkspaceBasePath(window.location?.pathname || "");
+  return workspaceBase ? `${workspaceBase}${CANONICAL_PREFIX}` : CANONICAL_PREFIX;
+}
+
 function getBase(): string {
   const base = (getCompanionBaseUrl() || "").trim();
   // Canonical agent-companion service boundary (Phase-1 contract freeze).
-  // This is not frontend-callable directly in hosted mode, but is the correct
-  // direct-connect surface when talking to an agent-companion service.
-  if (!base) return "/api/v1/agent/companion";
+  // Keep same-origin requests workspace-aware when browsing /w/{workspace_id}/.
+  if (!base) return getWorkspaceCanonicalPrefix();
+
   const normalized = base.replace(/\/+$/, "");
-  return `${normalized}/api/v1/agent/companion`;
+  if (typeof window === "undefined") return `${normalized}${CANONICAL_PREFIX}`;
+
+  try {
+    const parsed = new URL(normalized, window.location.origin);
+    const sameOrigin = parsed.origin === window.location.origin;
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+
+    if (pathname.endsWith(CANONICAL_PREFIX)) {
+      return parsed.toString().replace(/\/+$/, "");
+    }
+
+    // For same-origin roots or workspace bases, prefer the current workspace path.
+    if (sameOrigin && (pathname === "" || pathname === "/" || /^\/w\/[^/]+$/.test(pathname))) {
+      return getWorkspaceCanonicalPrefix();
+    }
+  } catch {
+    // Fall through and append canonical prefix.
+  }
+
+  return `${normalized}${CANONICAL_PREFIX}`;
 }
 
 async function post<T = unknown>(path: string, body?: object): Promise<T> {
