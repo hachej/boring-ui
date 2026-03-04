@@ -132,6 +132,14 @@ describe('routes helper', () => {
       path: '/auth/logout',
       query: undefined,
     })
+    expect(routes.controlPlane.auth.login()).toEqual({
+      path: '/auth/login',
+      query: undefined,
+    })
+    expect(routes.controlPlane.auth.login('/w/ws-123/')).toEqual({
+      path: '/auth/login',
+      query: { redirect_uri: '/w/ws-123/' },
+    })
     expect(routes.controlPlane.auth.settings()).toEqual({
       path: '/auth/settings',
       query: undefined,

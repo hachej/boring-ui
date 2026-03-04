@@ -102,6 +102,20 @@ describe('workspaceNavigation transport regressions', () => {
     })
   })
 
+  it('bypasses setup routing when onboarding is disabled', () => {
+    expect(
+      resolveWorkspaceNavigationRoute({
+        workspaceId: 'ws-no-onboarding',
+        runtimePayload: { runtime: { status: 'failed' } },
+        currentWorkspacePathSuffix: 'app/editor',
+        onboardingEnabled: false,
+      }),
+    ).toEqual({
+      path: '/w/ws-no-onboarding/app/editor',
+      query: undefined,
+    })
+  })
+
   it('derives path suffix from pathname to avoid boot-race regressions', () => {
     expect(
       resolveWorkspaceNavigationRouteFromPathname({
@@ -133,6 +147,20 @@ describe('workspaceNavigation transport regressions', () => {
       }),
     ).toEqual({
       path: '/w/ws-live/setup',
+      query: undefined,
+    })
+  })
+
+  it('derives direct workspace scope route from pathname when onboarding is disabled', () => {
+    expect(
+      resolveWorkspaceNavigationRouteFromPathname({
+        workspaceId: 'ws-live',
+        runtimePayload: { runtime: { status: 'failed' } },
+        pathname: '/w/ws-current/app/editor',
+        onboardingEnabled: false,
+      }),
+    ).toEqual({
+      path: '/w/ws-live/app/editor',
       query: undefined,
     })
   })

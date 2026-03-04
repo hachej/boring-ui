@@ -49,7 +49,11 @@ export const resolveWorkspaceNavigationRoute = ({
   workspaceId,
   runtimePayload,
   currentWorkspacePathSuffix = '',
+  onboardingEnabled = true,
 }) => {
+  if (!onboardingEnabled) {
+    return routes.controlPlane.workspaces.scope(workspaceId, currentWorkspacePathSuffix)
+  }
   if (isRuntimeReady(runtimePayload)) {
     return routes.controlPlane.workspaces.scope(workspaceId, currentWorkspacePathSuffix)
   }
@@ -62,10 +66,12 @@ export const resolveWorkspaceNavigationRouteFromPathname = ({
   workspaceId,
   runtimePayload,
   pathname = '',
+  onboardingEnabled = true,
 }) => {
   return resolveWorkspaceNavigationRoute({
     workspaceId,
     runtimePayload,
     currentWorkspacePathSuffix: getWorkspacePathSuffix(pathname),
+    onboardingEnabled,
   })
 }

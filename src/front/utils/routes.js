@@ -12,6 +12,10 @@ export const routes = {
   },
   controlPlane: {
     auth: {
+      login: (redirectUri) => ({
+        path: '/auth/login',
+        query: redirectUri ? { redirect_uri: redirectUri } : undefined,
+      }),
       logout: () => ({ path: '/auth/logout', query: undefined }),
       settings: () => ({ path: '/auth/settings', query: undefined }),
     },

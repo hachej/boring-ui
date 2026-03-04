@@ -14,6 +14,7 @@ import {
   extractUserEmail,
   extractWorkspaceId,
   getWorkspaceIdFromPathname,
+  getWorkspacePathSuffix,
   normalizeWorkspaceList,
   runWithPreflightFallback,
 } from './utils/controlPlane'
@@ -293,6 +294,7 @@ export default function App() {
   const nativeAgentEnabled = codeSessionsEnabled && (agentRailMode === 'all' || agentRailMode === 'native')
   const companionAgentEnabled = agentRailMode === 'all' || agentRailMode === 'companion'
   const piAgentEnabled = agentRailMode === 'all' || agentRailMode === 'pi'
+  const controlPlaneOnboardingEnabled = config.features?.controlPlaneOnboarding === true
   const storagePrefix = config.storage?.prefix || 'kurt-web'
   const layoutVersion = config.storage?.layoutVersion || 1
 
@@ -593,7 +595,7 @@ export default function App() {
   }, [workspaceOptions, currentWorkspaceId])
   const userMenuDisabledActions = useMemo(() => {
     if (userMenuAuthStatus === 'unauthenticated') {
-      return ['switch', 'create', 'settings', 'logout']
+      return ['switch', 'create', 'logout']
     }
     if (userMenuWorkspaceError) {
       return ['switch']
@@ -949,6 +951,15 @@ export default function App() {
     if (!selectedWorkspace?.id) return
     const targetWorkspaceId = selectedWorkspace.id
 
+    if (!controlPlaneOnboardingEnabled) {
+      const route = routes.controlPlane.workspaces.scope(
+        targetWorkspaceId,
+        getWorkspacePathSuffix(window.location.pathname),
+      )
+      window.location.assign(buildApiUrl(route.path, route.query))
+      return
+    }
+
     const route = await runWithPreflightFallback({
       run: async () => {
         const { runtimePayload } = await syncWorkspaceRuntimeAndSettings({
@@ -968,7 +979,7 @@ export default function App() {
       warningMessage: '[UserMenu] Switch workspace preflight failed:',
     })
     window.location.assign(buildApiUrl(route.path, route.query))
-  }, [currentWorkspaceId, fetchWorkspaceList])
+  }, [controlPlaneOnboardingEnabled, currentWorkspaceId, fetchWorkspaceList])
 
   const handleCreateWorkspace = useCallback(async () => {
     const createRoute = routes.controlPlane.workspaces.create()
@@ -982,6 +993,16 @@ export default function App() {
     if (!createdWorkspaceId) return
 
     await fetchWorkspaceList()
+
+    if (!controlPlaneOnboardingEnabled) {
+      const route = routes.controlPlane.workspaces.scope(
+        createdWorkspaceId,
+        getWorkspacePathSuffix(window.location.pathname),
+      )
+      window.location.assign(buildApiUrl(route.path, route.query))
+      return
+    }
+
     const route = await runWithPreflightFallback({
       run: async () => {
         const { runtimePayload } = await syncWorkspaceRuntimeAndSettings({
@@ -1000,9 +1021,17 @@ export default function App() {
       warningMessage: '[UserMenu] Create workspace preflight failed:',
     })
     window.location.assign(buildApiUrl(route.path, route.query))
-  }, [fetchWorkspaceList])
+  }, [controlPlaneOnboardingEnabled, fetchWorkspaceList])
 
   const handleOpenUserSettings = useCallback(() => {
+    if (userMenuAuthStatus === 'unauthenticated') {
+      const route = routes.controlPlane.auth.login(
+        `${window.location.pathname}${window.location.search || ''}`,
+      )
+      window.location.assign(buildApiUrl(route.path, route.query))
+      return
+    }
+
     const key = getStorageKey(storagePrefix, projectRoot, 'user-settings-intent')
     const detail = {
       source: 'sidebar-user-menu',
@@ -1019,7 +1048,7 @@ export default function App() {
       ? routes.controlPlane.workspaces.scope(currentWorkspaceId, 'settings')
       : routes.controlPlane.auth.settings()
     window.location.assign(buildApiUrl(route.path, route.query))
-  }, [storagePrefix, projectRoot, currentWorkspaceId])
+  }, [userMenuAuthStatus, storagePrefix, projectRoot, currentWorkspaceId])
 
   const handleLogout = useCallback(() => {
     const route = routes.controlPlane.auth.logout()

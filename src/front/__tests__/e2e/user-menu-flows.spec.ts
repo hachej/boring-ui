@@ -260,7 +260,7 @@ test.describe('User Menu Control-Plane Flows', () => {
     await expect(userMenu.getByRole('alert')).toHaveText(/Not signed in/i)
     await expect(userMenu.getByRole('menuitem', { name: 'Switch workspace' })).toHaveCount(0)
     await expect(userMenu.getByRole('menuitem', { name: 'Create workspace' })).toBeDisabled()
-    await expect(userMenu.getByRole('menuitem', { name: 'User settings' })).toBeDisabled()
+    await expect(userMenu.getByRole('menuitem', { name: 'User settings' })).toBeEnabled()
     await expect(userMenu.getByRole('menuitem', { name: 'Logout' })).toBeDisabled()
 
     await userMenu.getByRole('button', { name: 'Retry' }).click()
