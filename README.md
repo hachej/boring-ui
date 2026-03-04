@@ -84,6 +84,40 @@ For quick standalone backend testing without editing config:
 - `?data_backend=lightningfs`
 - `?data_backend=lightningfs&data_fs=myide-fs-alt`
 
+### PI Tool Extensions (Vertical Apps)
+
+Vertical apps (for example `boring-macro`) can register PI tools at startup:
+
+```javascript
+import { addPiAgentTools } from 'boring-ui'
+
+addPiAgentTools([
+  {
+    name: 'macro_run',
+    label: 'Run Macro',
+    description: 'Execute a boring-macro pipeline by id.',
+    parameters: Type.Object({
+      macro_id: Type.String(),
+    }),
+    execute: async (_callId, params) => {
+      const result = await fetch('/api/v1/macro/run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ macro_id: params.macro_id }),
+      }).then((r) => r.json())
+      return {
+        content: [{ type: 'text', text: `Triggered macro ${params.macro_id}` }],
+        details: result,
+      }
+    },
+  },
+])
+```
+
+Notes:
+- Tool names are merged by `name` (later registrations override earlier ones).
+- Built-in PI filesystem/git/UI tools remain available unless overridden by name.
+
 ## Project Structure
 
 ```
