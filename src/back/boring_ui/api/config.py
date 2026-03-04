@@ -1,5 +1,6 @@
 """Configuration for boring-ui API."""
 import os
+import secrets
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +37,16 @@ def _workspace_plugin_allowlist() -> list[str]:
     raw = os.environ.get('WORKSPACE_PLUGIN_ALLOWLIST', '')
     return [item.strip() for item in raw.split(',') if item.strip()]
 
+
+def _env_str(name: str, default: str) -> str:
+    """Read an environment variable as a stripped string."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    return stripped if stripped else default
+
+
 def _env_cmd(name: str) -> list[str] | None:
     """Parse a command list from a string env var (shell-like splitting)."""
     raw = os.environ.get(name)
@@ -45,6 +56,18 @@ def _env_cmd(name: str) -> list[str] | None:
     if not raw:
         return None
     return shlex.split(raw)
+
+
+def _env_int(name: str, default: int) -> int:
+    """Parse an integer environment variable with fallback."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 @dataclass
@@ -82,6 +105,27 @@ class APIConfig:
     workspace_plugin_allowlist: list[str] = field(
         default_factory=_workspace_plugin_allowlist
     )
+    control_plane_enabled: bool = field(
+        default_factory=lambda: _env_bool('CONTROL_PLANE_ENABLED', True)
+    )
+    control_plane_state_relpath: str = field(
+        default_factory=lambda: _env_str('CONTROL_PLANE_STATE_RELPATH', '.boring/control-plane/state.json')
+    )
+    auth_session_cookie_name: str = field(
+        default_factory=lambda: _env_str('AUTH_SESSION_COOKIE_NAME', 'boring_session')
+    )
+    auth_session_ttl_seconds: int = field(
+        default_factory=lambda: _env_int('AUTH_SESSION_TTL_SECONDS', 86400)
+    )
+    auth_session_secure_cookie: bool = field(
+        default_factory=lambda: _env_bool('AUTH_SESSION_SECURE_COOKIE', False)
+    )
+    auth_dev_login_enabled: bool = field(
+        default_factory=lambda: _env_bool('AUTH_DEV_LOGIN_ENABLED', False)
+    )
+    auth_session_secret: str = field(
+        default_factory=lambda: _env_str('BORING_UI_SESSION_SECRET', '')
+    )
 
     def __post_init__(self) -> None:
         # Test harness hook: allow overriding the PTY provider commands without
@@ -90,6 +134,9 @@ class APIConfig:
         claude_override = _env_cmd("BORING_UI_PTY_CLAUDE_COMMAND")
         if claude_override and "claude" in self.pty_providers:
             self.pty_providers["claude"] = claude_override
+        if not self.auth_session_secret:
+            # Generate an ephemeral secret when one is not configured explicitly.
+            self.auth_session_secret = secrets.token_urlsafe(48)
 
     def validate_path(self, path: Path | str) -> Path:
         """Validate that a path is within workspace_root.

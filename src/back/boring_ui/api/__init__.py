@@ -41,6 +41,12 @@ from .storage import Storage, LocalStorage, S3Storage
 from .modules.files import create_file_router
 from .modules.git import create_git_router
 from .modules.ui_state import create_ui_state_router
+from .modules.control_plane import create_control_plane_router
+from .modules.control_plane import create_auth_session_router
+from .modules.control_plane import create_me_router
+from .modules.control_plane import create_workspace_router
+from .modules.control_plane import create_collaboration_router
+from .modules.control_plane import create_workspace_boundary_router
 from .modules.pty import create_pty_router
 from .modules.stream import create_stream_router
 from .approval import (
@@ -71,6 +77,12 @@ __all__ = [
     'create_file_router',
     'create_git_router',
     'create_ui_state_router',
+    'create_control_plane_router',
+    'create_auth_session_router',
+    'create_me_router',
+    'create_workspace_router',
+    'create_collaboration_router',
+    'create_workspace_boundary_router',
     'create_pty_router',
     'create_stream_router',
     'create_approval_router',

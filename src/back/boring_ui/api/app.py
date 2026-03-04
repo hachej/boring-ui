@@ -12,6 +12,11 @@ from .capabilities import (
     create_capabilities_router,
 )
 from .modules.agent_normal import create_agent_normal_router
+from .modules.control_plane import create_auth_session_router
+from .modules.control_plane import create_me_router
+from .modules.control_plane import create_workspace_router
+from .modules.control_plane import create_collaboration_router
+from .modules.control_plane import create_workspace_boundary_router
 from .modules.pty.lifecycle import create_pty_lifecycle_router
 from .workspace_plugins import WorkspacePluginManager
 
@@ -39,7 +44,7 @@ def create_app(
         include_stream: Include Claude stream WebSocket router (default: True)
         include_approval: Include approval workflow router (default: True)
         routers: List of router names to include. If None, uses include_* flags.
-            Valid names: 'files', 'git', 'ui_state', 'pty', 'stream', 'approval'
+            Valid names: 'files', 'git', 'ui_state', 'control_plane', 'pty', 'stream', 'approval'
         registry: Custom router registry. Defaults to create_default_registry().
 
     Returns:
@@ -78,6 +83,8 @@ def create_app(
         enabled_routers = set(routers)
     else:
         enabled_routers = {'files', 'git', 'ui_state'}  # Core routers always included
+        if config.control_plane_enabled:
+            enabled_routers.add('control_plane')
         if include_pty:
             enabled_routers.add('pty')
         if include_stream:
@@ -100,6 +107,7 @@ def create_app(
         'files': 'files' in enabled_routers,
         'git': 'git' in enabled_routers,
         'ui_state': 'ui_state' in enabled_routers,
+        'control_plane': 'control_plane' in enabled_routers,
         'pty': 'pty' in enabled_routers,
         'chat_claude_code': chat_enabled,
         'stream': chat_enabled,  # Backward compatibility alias
@@ -116,6 +124,7 @@ def create_app(
         description='A composition-based web IDE backend',
         version='0.1.0',
     )
+    app.state.app_config = config
 
     # CORS middleware
     app.add_middleware(
@@ -131,6 +140,7 @@ def create_app(
         'files': (config, storage),
         'git': (config,),
         'ui_state': (),
+        'control_plane': (config,),
         'pty': (config,),
         'chat_claude_code': (config,),
         'stream': (config,),  # Alias
@@ -163,6 +173,14 @@ def create_app(
         create_agent_normal_router(config, pty_enabled=('pty' in enabled_routers)),
         prefix='/api/v1/agent/normal',
     )
+
+    # Auth/session is a control-plane-owned surface under /auth/*.
+    if 'control_plane' in enabled_routers:
+        app.include_router(create_auth_session_router(config))
+        app.include_router(create_me_router(config), prefix='/api/v1')
+        app.include_router(create_workspace_router(config), prefix='/api/v1')
+        app.include_router(create_collaboration_router(config), prefix='/api/v1')
+        app.include_router(create_workspace_boundary_router(config))
 
     # Workspace plugins are optional and disabled by default since they execute
     # workspace-local Python modules in-process.

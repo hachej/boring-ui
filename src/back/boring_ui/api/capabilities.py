@@ -106,6 +106,7 @@ def create_default_registry() -> RouterRegistry:
     from .modules.files import create_file_router
     from .modules.git import create_git_router
     from .modules.ui_state import create_ui_state_router
+    from .modules.control_plane import create_control_plane_router
     from .modules.pty import create_pty_router
     from .modules.stream import create_stream_router
     from .approval import create_approval_router
@@ -133,6 +134,13 @@ def create_default_registry() -> RouterRegistry:
         create_ui_state_router,
         description='Workspace UI state snapshots (open panes, active pane)',
         tags=['ui'],
+    )
+    registry.register(
+        'control_plane',
+        '/api/v1/control-plane',
+        create_control_plane_router,
+        description='Workspace/user/membership/invite/settings metadata foundation',
+        tags=['control-plane'],
     )
 
     # Optional routers
@@ -214,6 +222,10 @@ def create_capabilities_router(
                 "files": {"owner_service": "workspace-core", "canonical_families": ["/api/v1/files/*"]},
                 "git": {"owner_service": "workspace-core", "canonical_families": ["/api/v1/git/*"]},
                 "ui_state": {"owner_service": "workspace-core", "canonical_families": ["/api/v1/ui/*"]},
+                "control_plane": {
+                    "owner_service": "boring-ui",
+                    "canonical_families": ["/api/v1/control-plane/*"],
+                },
                 "pty": {"owner_service": "pty-service", "canonical_families": ["/ws/pty", "/api/v1/pty/*"]},
                 "chat_claude_code": {
                     "owner_service": "agent-normal",
