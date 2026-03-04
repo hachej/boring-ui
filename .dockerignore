@@ -1,0 +1,16 @@
+.git
+.beads
+.agent-evidence
+.verify
+.pytest_cache
+node_modules
+dist
+playwright-report
+test-results
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+.env.*

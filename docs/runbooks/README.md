@@ -80,6 +80,28 @@ python3 scripts/run_full_app.py \
 bash scripts/run_full_app.sh app.full.toml --deploy-mode core
 ```
 
+### Docker Compose Ownership (boring-ui)
+
+`boring-ui` now owns a local Docker Compose harness for deployment-mode testing:
+
+```bash
+# Core mode (frontend -> boring-ui backend directly)
+docker compose -f deploy/docker/docker-compose.yml up --build backend frontend-core
+
+# Sandbox-proxy mode (frontend -> edge proxy -> boring-ui backend)
+docker compose -f deploy/docker/docker-compose.yml --profile sandbox-proxy \
+  up --build backend edge-proxy frontend-sandbox-proxy
+```
+
+Endpoints:
+- Core frontend: `http://localhost:5173`
+- Sandbox-proxy frontend: `http://localhost:5174`
+- Backend API: `http://localhost:8000`
+- Edge proxy: `http://localhost:8080`
+
+The `edge-proxy` service is a pass-through compatibility harness for proxy mode.
+If you need the full `boring-sandbox` control plane (auth/workspace/provisioning stack), run that repo separately and point proxy-mode frontend env to that gateway URL.
+
 Smoke-check canonical control-plane ownership after boot:
 
 ```bash
