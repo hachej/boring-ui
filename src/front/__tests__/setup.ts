@@ -135,5 +135,105 @@ vi.stubGlobal('fetch', vi.fn())
 // Mock import.meta.env
 vi.stubEnv('VITE_API_URL', '')
 
+// Minimal indexedDB + IDBKeyRange stubs for modules that bootstrap lightning-fs
+// during import/collection.
+const createIndexedDbRequest = (result: unknown) => {
+  const request: {
+    result: unknown
+    error: unknown
+    onsuccess: ((event: { target: unknown }) => void) | null
+    onerror: ((event: { target: unknown }) => void) | null
+    onupgradeneeded: ((event: { target: unknown }) => void) | null
+  } = {
+    result,
+    error: null,
+    onsuccess: null,
+    onerror: null,
+    onupgradeneeded: null,
+  }
+  queueMicrotask(() => {
+    request.onupgradeneeded?.({ target: request })
+    request.onsuccess?.({ target: request })
+  })
+  return request
+}
+
+const indexedDbObjectStore = () => ({
+  put: () => createIndexedDbRequest(undefined),
+  get: () => createIndexedDbRequest(undefined),
+  delete: () => createIndexedDbRequest(undefined),
+  clear: () => createIndexedDbRequest(undefined),
+  getAllKeys: () => createIndexedDbRequest([]),
+  openCursor: () => createIndexedDbRequest(null),
+  createIndex: () => ({}),
+  index: () => ({}),
+})
+
+const indexedDbDatabase = () => ({
+  createObjectStore: () => indexedDbObjectStore(),
+  transaction: () => ({
+    objectStore: () => indexedDbObjectStore(),
+    oncomplete: null,
+    onerror: null,
+    onabort: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }),
+  close: vi.fn(),
+})
+
+if (typeof globalThis.indexedDB === 'undefined') {
+  vi.stubGlobal('indexedDB', {
+    open: vi.fn(() => createIndexedDbRequest(indexedDbDatabase())),
+    deleteDatabase: vi.fn(() => createIndexedDbRequest(undefined)),
+  })
+}
+
+if (typeof globalThis.IDBKeyRange === 'undefined') {
+  vi.stubGlobal('IDBKeyRange', {
+    only: (value: unknown) => value,
+    lowerBound: (value: unknown) => value,
+    upperBound: (value: unknown) => value,
+    bound: (left: unknown, right: unknown) => [left, right],
+  })
+}
+
+// JSDOM defines getContext but throws "Not implemented". Replace with a harmless stub.
+if (typeof HTMLCanvasElement !== 'undefined') {
+  HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+    canvas: { width: 300, height: 150 },
+    fillRect: vi.fn(),
+    clearRect: vi.fn(),
+    getImageData: vi.fn(() => ({ data: [] })),
+    putImageData: vi.fn(),
+    createImageData: vi.fn(() => []),
+    createLinearGradient: vi.fn(() => ({
+      addColorStop: vi.fn(),
+    })),
+    createRadialGradient: vi.fn(() => ({
+      addColorStop: vi.fn(),
+    })),
+    createPattern: vi.fn(() => null),
+    setTransform: vi.fn(),
+    drawImage: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    closePath: vi.fn(),
+    stroke: vi.fn(),
+    translate: vi.fn(),
+    scale: vi.fn(),
+    rotate: vi.fn(),
+    arc: vi.fn(),
+    fill: vi.fn(),
+    measureText: vi.fn(() => ({ width: 0 })),
+    transform: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+  }))
+}
+
 // Suppress console errors during tests (optional - comment out for debugging)
 // vi.spyOn(console, 'error').mockImplementation(() => {})

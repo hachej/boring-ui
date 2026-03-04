@@ -58,7 +58,7 @@ test.describe('Companion Integration', () => {
       await page.waitForSelector('[data-testid="dockview"]', { timeout: 15000 })
 
       // Dockview should be present
-      await expect(page.locator('.dv-dockview')).toBeVisible()
+      await expect(page.locator('[data-testid="dockview"]')).toBeVisible()
     })
   })
 
@@ -103,7 +103,7 @@ test.describe('Companion Integration', () => {
       await page.waitForSelector('[data-testid="dockview"]', { timeout: 15000 })
 
       // Both panels should be present in the DOM
-      const dockview = page.locator('.dv-dockview')
+      const dockview = page.locator('[data-testid="dockview"]')
       await expect(dockview).toBeVisible()
 
       // The existing terminal panel (Claude sessions) should still work

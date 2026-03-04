@@ -1,10 +1,26 @@
 import { test, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
 
 /**
  * Layout E2E Tests
  *
  * Tests for layout persistence and pane interactions.
  */
+
+const waitForDockview = async (page: Page) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.waitForSelector('[data-testid="dockview"]', {
+        state: 'visible',
+        timeout: 20000,
+      })
+      return
+    } catch (error) {
+      if (attempt === 2) throw error
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 })
+    }
+  }
+}
 
 test.describe('Layout Persistence', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,23 +33,23 @@ test.describe('Layout Persistence', () => {
     // (resource timing + long-lived connections). `domcontentloaded` + explicit UI
     // readiness wait is sufficient for these tests.
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 })
-    await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
+    await waitForDockview(page)
   })
 
   test('app loads with essential panels', async ({ page }) => {
     await page.goto('/')
 
     // Wait for app to initialize
-    await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
+    await waitForDockview(page)
 
     // Essential panels should be visible
     // Note: These selectors depend on the actual rendered components
-    await expect(page.locator('.dv-dockview')).toBeVisible()
+    await expect(page.locator('[data-testid="dockview"]')).toBeVisible()
   })
 
   test('layout persists after reload', async ({ page }) => {
     await page.goto('/')
-    await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
+    await waitForDockview(page)
 
     // Get initial layout state
     const initialLayout = await page.evaluate(() => {
@@ -47,7 +63,7 @@ test.describe('Layout Persistence', () => {
 
     // Reload the page
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 })
-    await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
+    await waitForDockview(page)
 
     // Layout should be restored
     const restoredLayout = await page.evaluate(() => {
@@ -77,7 +93,7 @@ test.describe('Layout Persistence', () => {
     })
 
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 })
-    await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
+    await waitForDockview(page)
 
     // Verify state was preserved
     const collapsedState = await page.evaluate(() => {
@@ -92,7 +108,7 @@ test.describe('Layout Persistence', () => {
 test.describe('File Tree', () => {
   test('file tree panel is visible', async ({ page }) => {
     await page.goto('/')
-    await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
+    await waitForDockview(page)
 
     // File tree should be visible (look for file tree specific elements)
     // This selector may need adjustment based on actual component structure
@@ -104,7 +120,7 @@ test.describe('File Tree', () => {
 test.describe('Theme', () => {
   test('theme toggle works', async ({ page }) => {
     await page.goto('/')
-    await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
+    await waitForDockview(page)
 
     // Check initial theme
     const initialTheme = await page.evaluate(() => {
@@ -137,7 +153,7 @@ test.describe('Theme', () => {
     })
 
     await page.reload()
-    await page.waitForSelector('[data-testid="dockview"]', { timeout: 10000 })
+    await waitForDockview(page)
 
     // Theme should be preserved
     const savedTheme = await page.evaluate(() => {

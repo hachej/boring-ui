@@ -37,7 +37,7 @@ const createProviderMocks = () => ({
 const createWrapper = (provider) => {
   const queryClient = new QueryClient({
     defaultOptions: {
-      queries: { retry: false, gcTime: 0 },
+      queries: { retry: false, gcTime: 60_000 },
       mutations: { retry: false },
     },
   })
@@ -329,16 +329,16 @@ describe('mutation hooks', () => {
       const readKey = queryKeys.files.read('src/a.txt')
       queryClient.setQueryData(readKey, 'old')
 
-      const pending = result.current.mutateAsync({ path: 'src/a.txt', content: 'next' })
+      act(() => {
+        result.current.mutate({ path: 'src/a.txt', content: 'next' })
+      })
 
       await waitFor(() => {
         expect(queryClient.getQueryData(readKey)).toBe('next')
       })
 
       deferred.resolve(undefined)
-      await act(async () => {
-        await pending
-      })
+      await waitFor(() => expect(result.current.isSuccess).toBe(true))
     })
 
     it('rollback: restores previous read cache on write failure', async () => {
