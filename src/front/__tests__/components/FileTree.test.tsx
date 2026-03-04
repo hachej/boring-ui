@@ -11,10 +11,30 @@
  * - File creation/rename/delete
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
 import FileTree from '../../components/FileTree'
 import { fileTree, gitStatus, searchResults } from '../fixtures'
 import { setupApiMocks, flushPromises, simulateContextMenu, simulateDragDrop } from '../utils'
+import DataContext from '../../providers/data/DataContext'
+import { createHttpProvider } from '../../providers/data'
+
+const render = (ui: ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  })
+  return rtlRender(
+    <QueryClientProvider client={queryClient}>
+      <DataContext.Provider value={createHttpProvider()}>
+        {ui}
+      </DataContext.Provider>
+    </QueryClientProvider>
+  )
+}
 
 describe('FileTree', () => {
   const defaultProps = {
@@ -741,8 +761,9 @@ describe('FileTree', () => {
           const path = match ? decodeURIComponent(match[1]) : '.'
           if (path === 'src') {
             srcCallCount++
-            // Return updated content on subsequent calls (simulating file creation)
-            return { entries: srcCallCount > 1 ? updatedSrcDir : initialSrcDir }
+            // Query-driven refresh can issue multiple initial reads; switch only
+            // after several calls so the test can assert the pre-refresh state.
+            return { entries: srcCallCount > 2 ? updatedSrcDir : initialSrcDir }
           }
           if (path === '.') return { entries: fileTree.root }
           return { entries: [] }

@@ -1,9 +1,21 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, X, Folder, FolderOpen, FolderInput, ChevronRight, ChevronDown, MoreHorizontal, Settings } from 'lucide-react'
-import { apiFetchJson, getHttpErrorDetail } from '../utils/transport'
+import { useQueryClient, useQueries } from '@tanstack/react-query'
+import { apiFetchJson } from '../utils/transport'
 import { routes } from '../utils/routes'
 import { getFileIcon } from '../utils/fileIcons'
+import {
+  useDataProvider,
+  useFileList,
+  useFileSearch,
+  useFileWrite,
+  useFileDelete,
+  useFileRename,
+  useFileMove,
+  useGitStatus,
+  queryKeys,
+} from '../providers/data'
 
 const configPath = import.meta.env.VITE_CONFIG_PATH || ''
 
@@ -21,12 +33,11 @@ const formatSectionLabel = (path) => {
 }
 
 export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRenamed, onFileMoved, projectRoot, activeFile, creatingFile, onFileCreated, onCancelCreate }) {
-  const [entries, setEntries] = useState([])
+  const provider = useDataProvider()
+  const queryClient = useQueryClient()
   const [expandedDirs, setExpandedDirs] = useState({})
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [gitStatus, setGitStatus] = useState({})
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [contextMenu, setContextMenu] = useState(null)
   const [renaming, setRenaming] = useState(null)
   const [dragOver, setDragOver] = useState(null)
@@ -44,29 +55,102 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     expandedDirsRef.current = expandedDirs
   }, [expandedDirs])
 
-  const fetchDir = (dirPath) => {
-    const route = routes.files.list(dirPath)
-    return apiFetchJson(route.path, { query: route.query })
-      .then(({ data }) => data.entries || [])
-      .catch(() => [])
-  }
+  const expandedPaths = useMemo(() => Object.keys(expandedDirs), [expandedDirs])
 
-  const fetchGitStatus = () => {
-    const route = routes.git.status()
-    apiFetchJson(route.path, { query: route.query })
-      .then(({ data }) => {
-        if (data.available && data.files) {
-          setGitStatus(data.files)
+  const {
+    data: entries = [],
+  } = useFileList('.', {
+    // Preserve the old startup behavior where empty trees retry aggressively.
+    refetchInterval: (query) => (
+      Array.isArray(query.state.data) && query.state.data.length === 0 ? 300 : 3000
+    ),
+  })
+
+  const { data: rawGitStatus } = useGitStatus({ refetchInterval: 5000 })
+
+  const gitStatus = useMemo(() => {
+    const files = rawGitStatus?.files
+    if (Array.isArray(files)) {
+      return files.reduce((acc, entry) => {
+        if (entry?.path && entry?.status) acc[entry.path] = entry.status
+        return acc
+      }, {})
+    }
+    if (files && typeof files === 'object') {
+      return files
+    }
+    return {}
+  }, [rawGitStatus])
+
+  const {
+    data: rawSearchResults = [],
+    isFetching: isSearchFetching,
+  } = useFileSearch(debouncedQuery, {
+    enabled: debouncedQuery.length > 0,
+  })
+
+  const searchResults = useMemo(() => {
+    const results = Array.isArray(rawSearchResults)
+      ? rawSearchResults
+      : (Array.isArray(rawSearchResults?.results) ? rawSearchResults.results : [])
+    return results
+      .map((result) => {
+        const path = result?.path || ''
+        const name = result?.name || (path ? path.split('/').pop() : '')
+        return {
+          ...result,
+          path,
+          name,
+          dir: result?.dir || (path.includes('/') ? path.split('/').slice(0, -1).join('/') : ''),
         }
       })
-      .catch(() => {})
-  }
+      .filter((result) => result.path)
+  }, [rawSearchResults])
+
+  const isSearching = Boolean(searchQuery.trim()) && (debouncedQuery !== searchQuery.trim() || isSearchFetching)
+
+  const fileWriteMutation = useFileWrite()
+  const fileDeleteMutation = useFileDelete()
+  const fileRenameMutation = useFileRename()
+  const fileMoveMutation = useFileMove()
+
+  const fetchDir = useCallback(async (dirPath) => {
+    const data = await queryClient.fetchQuery({
+      queryKey: queryKeys.files.list(dirPath),
+      queryFn: ({ signal }) => provider.files.list(dirPath, { signal }),
+    })
+    return Array.isArray(data) ? data : []
+  }, [provider, queryClient])
+
+  const expandedDirQueries = useQueries({
+    queries: expandedPaths.map((path) => ({
+      queryKey: queryKeys.files.list(path),
+      queryFn: ({ signal }) => provider.files.list(path, { signal }),
+      refetchInterval: 3000,
+    })),
+  })
+
+  useEffect(() => {
+    if (expandedPaths.length === 0) return
+    setExpandedDirs((prev) => {
+      let changed = false
+      const next = { ...prev }
+      expandedPaths.forEach((path, idx) => {
+        const data = expandedDirQueries[idx]?.data
+        if (Array.isArray(data) && next[path] !== data) {
+          next[path] = data
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+  }, [expandedDirQueries, expandedPaths])
 
   const refreshTree = useCallback(async () => {
-    const root = await fetchDir('.')
-    setEntries(root)
-    // Refresh expanded dirs in parallel, updating in-place
-    // Use ref to get current expanded dirs (avoids stale closure in setInterval)
+    await queryClient.invalidateQueries({ queryKey: queryKeys.files.all })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.git.all })
+    // Refresh expanded dirs in parallel, updating in-place.
+    // Use ref to read the latest expanded set inside this callback.
     const paths = Object.keys(expandedDirsRef.current)
     if (paths.length > 0) {
       const results = await Promise.all(paths.map(fetchDir))
@@ -78,11 +162,10 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
         return updated
       })
     }
-    fetchGitStatus()
-  }, [])
+  }, [fetchDir, queryClient])
 
   // Fetch config for section organization
-  const fetchConfig = () => {
+  const fetchConfig = useCallback(() => {
     const route = routes.config.get(configPath)
     apiFetchJson(route.path, { query: route.query })
       .then(async ({ data }) => {
@@ -113,67 +196,23 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
         }
       })
       .catch(() => {})
-  }
+  }, [fetchDir])
 
   useEffect(() => {
-    let retryCount = 0
-    const maxRetries = 10
-
-    const initialFetch = () => {
-      fetchDir('.').then((result) => {
-        if (result.length > 0 || retryCount >= maxRetries) {
-          setEntries(result)
-        } else {
-          // Retry if empty (server might not be ready)
-          retryCount++
-          setTimeout(initialFetch, 300)
-        }
-      })
-    }
-
-    initialFetch()
-    fetchGitStatus()
     fetchConfig()
+  }, [fetchConfig])
 
-    // Poll for git status changes
-    const gitInterval = setInterval(fetchGitStatus, 5000)
-    // Poll for file tree changes (new/deleted files)
-    const treeInterval = setInterval(refreshTree, 3000)
-
-    return () => {
-      clearInterval(gitInterval)
-      clearInterval(treeInterval)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Clear search results immediately when query is cleared (before any async operation)
-  // This ensures the tree renders correctly without any stale search results
+  // Debounce file search calls to avoid query churn on every key stroke.
   const trimmedQuery = searchQuery.trim()
 
   useEffect(() => {
-    // Immediately clear results if query is empty
     if (!trimmedQuery) {
-      setSearchResults([])
-      setIsSearching(false)
+      setDebouncedQuery('')
       return
     }
-
-    setIsSearching(true)
     const timeoutId = setTimeout(() => {
-      const route = routes.files.search(trimmedQuery)
-      apiFetchJson(route.path, { query: route.query })
-        .then(({ data }) => {
-          // Only update if query hasn't changed (prevent stale results)
-          setSearchResults(data.results || [])
-          setIsSearching(false)
-        })
-        .catch(() => {
-          setSearchResults([])
-          setIsSearching(false)
-        })
+      setDebouncedQuery(trimmedQuery)
     }, 200)
-
     return () => clearTimeout(timeoutId)
   }, [trimmedQuery])
 
@@ -275,14 +314,9 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     if (!window.confirm(confirmMsg)) return
 
     try {
-      const route = routes.files.delete(entry.path)
-      const { response, data } = await apiFetchJson(route.path, { query: route.query, method: 'DELETE' })
-      if (response.ok) {
-        await refreshTree()
-        onFileDeleted?.(entry.path)
-      } else {
-        alert(`Failed to delete: ${getHttpErrorDetail(response, data, 'Delete failed')}`)
-      }
+      await fileDeleteMutation.mutateAsync({ path: entry.path })
+      await refreshTree()
+      onFileDeleted?.(entry.path)
     } catch (err) {
       alert(`Failed to delete: ${err.message}`)
     }
@@ -304,20 +338,10 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     }
 
     try {
-      const route = routes.files.rename()
-      const { response, data } = await apiFetchJson(route.path, {
-        query: route.query,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ old_path: oldPath, new_path: newPath }),
-      })
-      if (response.ok) {
-        setRenaming(null)
-        await refreshTree()
-        onFileRenamed?.(oldPath, newPath)
-      } else {
-        alert(`Failed to rename: ${getHttpErrorDetail(response, data, 'Rename failed')}`)
-      }
+      await fileRenameMutation.mutateAsync({ oldPath, newName: renaming.newName.trim() })
+      setRenaming(null)
+      await refreshTree()
+      onFileRenamed?.(oldPath, newPath)
     } catch (err) {
       alert(`Failed to rename: ${err.message}`)
     }
@@ -359,20 +383,10 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
       : fileName
 
     try {
-      const route = routes.files.write(filePath)
-      const { response, data } = await apiFetchJson(route.path, {
-        query: route.query,
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: '' }),
-      })
-      if (response.ok) {
-        setNewFileInput(null)
-        await refreshTree()
-        onFileCreated?.(filePath)
-      } else {
-        alert(`Failed to create file: ${getHttpErrorDetail(response, data, 'Create file failed')}`)
-      }
+      await fileWriteMutation.mutateAsync({ path: filePath, content: '' })
+      setNewFileInput(null)
+      await refreshTree()
+      onFileCreated?.(filePath)
     } catch (err) {
       alert(`Failed to create file: ${err.message}`)
     }
@@ -451,6 +465,12 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     setDragOver(null)
   }
 
+  const buildMovedPath = (srcPath, destDir) => {
+    const name = srcPath.includes('/') ? srcPath.split('/').pop() : srcPath
+    if (!name) return srcPath
+    return destDir === '.' ? name : `${destDir}/${name}`
+  }
+
   const handleDrop = async (event, destEntry) => {
     event.preventDefault()
     setDragOver(null)
@@ -466,19 +486,9 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     if (destEntry.path.startsWith(srcFile.path + '/')) return
 
     try {
-      const route = routes.files.move()
-      const { response, data } = await apiFetchJson(route.path, {
-        query: route.query,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ src_path: srcFile.path, dest_dir: destEntry.path }),
-      })
-      if (response.ok) {
-        await refreshTree()
-        onFileMoved?.(srcFile.path, data.dest_path)
-      } else {
-        alert(`Failed to move: ${getHttpErrorDetail(response, data, 'Move failed')}`)
-      }
+      await fileMoveMutation.mutateAsync({ srcPath: srcFile.path, destPath: destEntry.path })
+      await refreshTree()
+      onFileMoved?.(srcFile.path, buildMovedPath(srcFile.path, destEntry.path))
     } catch (err) {
       alert(`Failed to move: ${err.message}`)
     }
@@ -496,19 +506,9 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
     if (!srcFile.path.includes('/')) return
 
     try {
-      const route = routes.files.move()
-      const { response, data } = await apiFetchJson(route.path, {
-        query: route.query,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ src_path: srcFile.path, dest_dir: '.' }),
-      })
-      if (response.ok) {
-        await refreshTree()
-        onFileMoved?.(srcFile.path, data.dest_path)
-      } else {
-        alert(`Failed to move: ${getHttpErrorDetail(response, data, 'Move failed')}`)
-      }
+      await fileMoveMutation.mutateAsync({ srcPath: srcFile.path, destPath: '.' })
+      await refreshTree()
+      onFileMoved?.(srcFile.path, buildMovedPath(srcFile.path, '.'))
     } catch (err) {
       alert(`Failed to move: ${err.message}`)
     }
