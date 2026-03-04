@@ -51,6 +51,8 @@ export default function EditorPanel({ params: initialParams, api }) {
 
   // Refs let query-driven polling compare against latest editor state.
   const contentRef = useRef(content)
+  const pendingDiskSyncContentRef = useRef(null)
+  const pendingDiskSyncDeadlineRef = useRef(0)
 
   // Keep refs in sync with state
   useEffect(() => { contentRef.current = content }, [content])
@@ -120,6 +122,21 @@ export default function EditorPanel({ params: initialParams, api }) {
   useEffect(() => {
     if (!path || !hasDiskContent || isDirty || isSaving) return
     const nextContent = typeof diskContent === 'string' ? diskContent : ''
+    const pendingSavedContent = pendingDiskSyncContentRef.current
+    if (pendingSavedContent !== null) {
+      if (nextContent === pendingSavedContent) {
+        pendingDiskSyncContentRef.current = null
+        pendingDiskSyncDeadlineRef.current = 0
+        setExternalChange(false)
+        return
+      }
+      if (Date.now() < pendingDiskSyncDeadlineRef.current) {
+        // Briefly suppress stale post-save reads until disk query catches up.
+        return
+      }
+      pendingDiskSyncContentRef.current = null
+      pendingDiskSyncDeadlineRef.current = 0
+    }
     if (nextContent === contentRef.current) {
       setExternalChange(false)
       return
@@ -139,6 +156,8 @@ export default function EditorPanel({ params: initialParams, api }) {
     // Keep local editor state in sync while write mutation runs.
     // useFileWrite.onMutate cancels in-flight file read queries to prevent
     // stale poll responses from setting false external-change notifications.
+    pendingDiskSyncContentRef.current = newContent
+    pendingDiskSyncDeadlineRef.current = Date.now() + 3000
     setContent(newContent)
     setIsSaving(true)
     try {
@@ -155,6 +174,10 @@ export default function EditorPanel({ params: initialParams, api }) {
       } else if (editorMode === 'diff') {
         await refetchGitShow()
       }
+    } catch (error) {
+      pendingDiskSyncContentRef.current = null
+      pendingDiskSyncDeadlineRef.current = 0
+      throw error
     } finally {
       setIsSaving(false)
     }

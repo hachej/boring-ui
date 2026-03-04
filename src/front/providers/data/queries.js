@@ -88,10 +88,28 @@ export const useFileWrite = () => {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ path, content }) => provider.files.write(path, content),
-    onMutate: async ({ path }) => {
+    onMutate: async ({ path, content }) => {
+      const readKey = queryKeys.files.read(path)
       // Cancel any in-flight read queries for this file so stale data
       // doesn't overwrite the about-to-be-saved version.
-      await qc.cancelQueries({ queryKey: queryKeys.files.read(path) })
+      await qc.cancelQueries({ queryKey: readKey })
+
+      const previousContent = qc.getQueryData(readKey)
+      const hadPreviousContent = qc.getQueryState(readKey)?.data !== undefined
+
+      // Optimistically reflect saved content to prevent transient stale reads
+      // (for example, editor "changed on disk" flashes right after autosave).
+      qc.setQueryData(readKey, content)
+
+      return { readKey, previousContent, hadPreviousContent }
+    },
+    onError: (_error, _variables, context) => {
+      if (!context?.readKey) return
+      if (context.hadPreviousContent) {
+        qc.setQueryData(context.readKey, context.previousContent)
+        return
+      }
+      qc.removeQueries({ queryKey: context.readKey, exact: true })
     },
     onSuccess: (_data, { path }) => {
       // Invalidate the file content cache and parent directory listing.

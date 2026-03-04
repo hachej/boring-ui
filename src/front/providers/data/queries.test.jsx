@@ -319,6 +319,44 @@ describe('mutation hooks', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.files.lists() })
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.git.all })
     })
+
+    it('optimistic update: sets read cache to new content before write resolves', async () => {
+      const provider = createProviderMocks()
+      const deferred = createDeferred()
+      provider.files.write.mockReturnValue(deferred.promise)
+      const { wrapper, queryClient } = createWrapper(provider)
+      const { result } = renderHook(() => useFileWrite(), { wrapper })
+      const readKey = queryKeys.files.read('src/a.txt')
+      queryClient.setQueryData(readKey, 'old')
+
+      const pending = result.current.mutateAsync({ path: 'src/a.txt', content: 'next' })
+
+      await waitFor(() => {
+        expect(queryClient.getQueryData(readKey)).toBe('next')
+      })
+
+      deferred.resolve(undefined)
+      await act(async () => {
+        await pending
+      })
+    })
+
+    it('rollback: restores previous read cache on write failure', async () => {
+      const provider = createProviderMocks()
+      provider.files.write.mockRejectedValue(new Error('write failed'))
+      const { wrapper, queryClient } = createWrapper(provider)
+      const { result } = renderHook(() => useFileWrite(), { wrapper })
+      const readKey = queryKeys.files.read('src/a.txt')
+      queryClient.setQueryData(readKey, 'old')
+
+      await act(async () => {
+        await expect(
+          result.current.mutateAsync({ path: 'src/a.txt', content: 'next' })
+        ).rejects.toThrow('write failed')
+      })
+
+      expect(queryClient.getQueryData(readKey)).toBe('old')
+    })
   })
 
   describe('useFileDelete', () => {

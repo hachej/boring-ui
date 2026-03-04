@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import DataContext from '../../providers/data/DataContext'
 import EditorPanel from '../../panels/EditorPanel'
@@ -87,6 +87,40 @@ const createProviderWithDeferredRead = () => {
   return { provider, readSignals }
 }
 
+const createProviderWithStaleReadDuringSave = () => {
+  const secondRead = {
+    resolve: null,
+    promise: null,
+  }
+  secondRead.promise = new Promise((resolve) => {
+    secondRead.resolve = resolve
+  })
+
+  let readCount = 0
+  const provider = {
+    files: {
+      list: vi.fn(),
+      read: vi.fn(() => {
+        readCount += 1
+        if (readCount === 1) return Promise.resolve('old content')
+        if (readCount === 2) return secondRead.promise
+        return Promise.resolve('next content')
+      }),
+      write: vi.fn(async () => undefined),
+      delete: vi.fn(),
+      rename: vi.fn(),
+      move: vi.fn(),
+      search: vi.fn(),
+    },
+    git: {
+      status: vi.fn(async () => ({ available: true, files: [] })),
+      diff: vi.fn(async () => ''),
+      show: vi.fn(async () => ''),
+    },
+  }
+  return { provider, secondRead }
+}
+
 describe('EditorPanel integration + cancellation', () => {
   it('save cancels in-flight read poll before write completes', async () => {
     const { provider, readSignals } = createProviderWithDeferredRead()
@@ -159,6 +193,33 @@ describe('EditorPanel integration + cancellation', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('editor-content')).toHaveTextContent('next content')
+    })
+  })
+
+  it('does not flash external-change notice during stale post-save read', async () => {
+    const { provider, secondRead } = createProviderWithStaleReadDuringSave()
+    renderWithProvider(provider, { initialContent: 'old content' })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('editor-content')).toHaveTextContent('old content')
+    })
+
+    fireEvent.click(screen.getByTestId('editor-change'))
+    fireEvent.click(screen.getByTestId('editor-autosave'))
+
+    await waitFor(() => {
+      expect(provider.files.write).toHaveBeenCalledWith('README.md', 'next content')
+    })
+
+    expect(screen.queryByText('File changed on disk.')).not.toBeInTheDocument()
+
+    await act(async () => {
+      secondRead.resolve('next content')
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('File changed on disk.')).not.toBeInTheDocument()
     })
   })
 })
