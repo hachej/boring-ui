@@ -62,6 +62,13 @@ const DEFAULT_CONFIG = {
     baseUrl: '',
   },
 
+  // Data backend selection.
+  // - 'http' uses the built-in HTTP provider.
+  // - Any other value resolves through a host-registered provider factory.
+  data: {
+    backend: 'http',
+  },
+
   // Feature flags
   features: {
     gitStatus: true,

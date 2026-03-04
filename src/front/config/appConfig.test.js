@@ -35,6 +35,7 @@ describe('appConfig', () => {
       expect(config.storage).toBeDefined()
       expect(config.panels).toBeDefined()
       expect(config.api).toBeDefined()
+      expect(config.data).toBeDefined()
       expect(config.features).toBeDefined()
       expect(config.styles).toBeDefined()
     })
@@ -52,6 +53,11 @@ describe('appConfig', () => {
       expect(config.features.gitStatus).toBe(true)
       expect(config.features.search).toBe(true)
       expect(config.features.cloudMode).toBe(false)
+    })
+
+    it('has correct data backend defaults', () => {
+      const config = getDefaultConfig()
+      expect(config.data.backend).toBe('http')
     })
 
     it('has correct panel constraints', () => {
@@ -96,6 +102,15 @@ describe('appConfig', () => {
       expect(config.features.cloudMode).toBe(true)
       expect(config.features.gitStatus).toBe(true) // Default preserved
       expect(config.features.search).toBe(true) // Default preserved
+    })
+
+    it('allows overriding configured data backend', () => {
+      const config = setConfig({
+        data: {
+          backend: 'lightningfs',
+        },
+      })
+      expect(config.data.backend).toBe('lightningfs')
     })
 
     it('replaces arrays instead of merging', () => {
