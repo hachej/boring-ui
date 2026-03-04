@@ -2,8 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Editor from '../components/Editor'
 import CodeEditor from '../components/CodeEditor'
 import GitDiff from '../components/GitDiff'
-import { apiFetchJson, getHttpErrorDetail } from '../utils/transport'
-import { routes } from '../utils/routes'
+import {
+  useFileContent,
+  useFileWrite,
+  useGitDiff,
+  useGitShow,
+  useGitStatus,
+} from '../providers/data'
 
 // Check if file is markdown
 const isMarkdownFile = (filepath) => {
@@ -41,65 +46,62 @@ export default function EditorPanel({ params: initialParams, api }) {
   const [isSaving, setIsSaving] = useState(false)
   const [externalChange, setExternalChange] = useState(false)
   const [editorMode, setEditorMode] = useState(initialMode || 'rendered') // 'rendered' | 'diff' | 'git-diff'
-  const [diffText, setDiffText] = useState('')
-  const [diffError, setDiffError] = useState('')
-  const [originalContent, setOriginalContent] = useState(null)
   const [initialModeApplied, setInitialModeApplied] = useState(false)
 
-  // Refs for polling to read current values without recreating interval
+  // Refs let query-driven polling compare against latest editor state.
   const contentRef = useRef(content)
-  const isDirtyRef = useRef(isDirty)
-  const isSavingRef = useRef(isSaving)
-  const pollAbortRef = useRef(null) // AbortController for in-flight poll requests
 
   // Keep refs in sync with state
   useEffect(() => { contentRef.current = content }, [content])
-  useEffect(() => { isDirtyRef.current = isDirty }, [isDirty])
-  useEffect(() => { isSavingRef.current = isSaving }, [isSaving])
+  const fileWriteMutation = useFileWrite()
 
-  const loadDiff = useCallback(async () => {
-    if (!path) return
-    setDiffError('')
-    try {
-      const route = routes.git.diff(path)
-      const { response, data } = await apiFetchJson(route.path, { query: route.query })
-      if (!response.ok) {
-        throw new Error(getHttpErrorDetail(response, data, 'Failed to load git diff'))
-      }
-      setDiffText(data.diff || '')
-    } catch (err) {
-      setDiffError(err?.message || 'Failed to load git diff')
-      setDiffText('')
-    }
-  }, [path])
+  const { data: gitStatus } = useGitStatus()
+  const gitAvailable = gitStatus?.available !== false
 
-  const loadOriginalContent = useCallback(async () => {
-    if (!path) return
-    try {
-      const route = routes.git.show(path)
-      const { response, data } = await apiFetchJson(route.path, { query: route.query })
-      if (!response.ok) {
-        throw new Error(getHttpErrorDetail(response, data, 'Failed to load original content'))
-      }
-      setOriginalContent(data.is_new ? '' : (data.content || ''))
-    } catch (err) {
-      setOriginalContent(null)
-      setDiffError(err?.message || 'Failed to load original content')
-    }
-  }, [path])
+  const {
+    data: diskContent,
+    isSuccess: hasDiskContent,
+    refetch: refetchDiskContent,
+  } = useFileContent(path, {
+    enabled: Boolean(path) && !isDirty && !isSaving,
+    refetchInterval: path ? 2000 : false,
+  })
+
+  const {
+    data: gitDiffText = '',
+    error: gitDiffError,
+    refetch: refetchGitDiff,
+  } = useGitDiff(path, {
+    enabled: Boolean(path) && gitAvailable && editorMode === 'git-diff',
+  })
+
+  const {
+    data: gitShowContent,
+    error: gitShowError,
+    refetch: refetchGitShow,
+  } = useGitShow(path, {
+    enabled: Boolean(path) && gitAvailable && editorMode === 'diff',
+  })
+
+  const diffText = typeof gitDiffText === 'string' ? gitDiffText : ''
+  const originalContent = typeof gitShowContent === 'string' ? gitShowContent : null
+  const diffError = useMemo(() => {
+    if (editorMode === 'git-diff') return gitDiffError?.message || ''
+    if (editorMode === 'diff') return gitShowError?.message || ''
+    return ''
+  }, [editorMode, gitDiffError?.message, gitShowError?.message])
 
   // Apply initial mode when params change (e.g., opening from git changes)
   useEffect(() => {
     if (initialMode && !initialModeApplied) {
-      setEditorMode(initialMode)
-      setInitialModeApplied(true)
-      if (initialMode === 'git-diff') {
-        loadDiff()
-      } else if (initialMode === 'diff') {
-        loadOriginalContent()
+      if (initialMode === 'git-diff' && !gitAvailable) {
+        setEditorMode('rendered')
+      } else {
+        setEditorMode(initialMode)
       }
+      setInitialModeApplied(true)
     }
-  }, [initialMode, initialModeApplied, loadDiff, loadOriginalContent])
+  }, [gitAvailable, initialMode, initialModeApplied])
 
   // Sync content from parent when it changes
   useEffect(() => {
@@ -109,87 +111,42 @@ export default function EditorPanel({ params: initialParams, api }) {
     }
   }, [initialContent, content, isDirty])
 
-  // Poll for external changes
-  // Uses refs so interval isn't recreated on every keystroke (which would cancel in-flight fetches)
   useEffect(() => {
-    if (!path) return
-    let isActive = true
-
-    const interval = setInterval(() => {
-      // Don't poll while saving or if dirty - prevents race conditions
-      if (!isActive || isSavingRef.current || isDirtyRef.current) return
-
-      // Create abort controller for this poll request (can be aborted by save())
-      const abortController = new AbortController()
-      pollAbortRef.current = abortController
-
-      const route = routes.files.read(path)
-      apiFetchJson(route.path, {
-        query: route.query,
-        signal: abortController.signal,
-      })
-        .then(({ data }) => {
-          if (!isActive || isSavingRef.current || isDirtyRef.current) return
-          const nextContent = data.content || ''
-          if (nextContent === contentRef.current) {
-            // Content matches - clear any stale external change notification
-            setExternalChange(false)
-            return
-          }
-
-          // Don't auto-update content - show notification instead
-          // User can click "Reload" to accept the external changes
-          setExternalChange(true)
-        })
-        .catch((err) => {
-          // Ignore abort errors (expected when save cancels in-flight poll)
-          if (err?.name !== 'AbortError') {
-            // Silently ignore other fetch errors
-          }
-        })
-    }, 2000)
-
-    return () => {
-      isActive = false
-      clearInterval(interval)
-      // Abort any in-flight poll when effect cleans up
-      pollAbortRef.current?.abort()
+    if (!path || !hasDiskContent || isDirty || isSaving) return
+    const nextContent = typeof diskContent === 'string' ? diskContent : ''
+    if (nextContent === contentRef.current) {
+      setExternalChange(false)
+      return
     }
-  }, [path])
+    setExternalChange(true)
+  }, [diskContent, hasDiskContent, isDirty, isSaving, path])
+
+  useEffect(() => {
+    if (!gitAvailable && editorMode === 'git-diff') {
+      setEditorMode('rendered')
+    }
+  }, [editorMode, gitAvailable])
 
   const save = async (newContent) => {
     if (!path) return
 
-    // Abort any in-flight poll request to prevent stale responses from triggering
-    // false "file changed on disk" notifications after save completes
-    pollAbortRef.current?.abort()
-
-    // Update content state BEFORE the API call to prevent race condition with polling
-    // This ensures the poll comparison uses the new content
+    // Keep local editor state in sync while write mutation runs.
+    // useFileWrite.onMutate cancels in-flight file read queries to prevent
+    // stale poll responses from setting false external-change notifications.
     setContent(newContent)
     setIsSaving(true)
     try {
-      const route = routes.files.write(path)
-      const { response, data } = await apiFetchJson(route.path, {
-        query: route.query,
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newContent }),
-      })
-      if (!response.ok) {
-        throw new Error(getHttpErrorDetail(response, data, 'Failed to save file'))
-      }
+      await fileWriteMutation.mutateAsync({ path, content: newContent })
 
       setIsDirty(false)
       setExternalChange(false) // Clear notification since we just wrote to disk
       onContentChange?.(path, newContent)
       onDirtyChange?.(path, false)
 
-      // Reload diff data if in diff mode
       if (editorMode === 'git-diff') {
-        loadDiff()
+        await refetchGitDiff()
       } else if (editorMode === 'diff') {
-        loadOriginalContent()
+        await refetchGitShow()
       }
     } finally {
       setIsSaving(false)
@@ -208,35 +165,32 @@ export default function EditorPanel({ params: initialParams, api }) {
   }
 
   const handleModeChange = (newMode) => {
-    setEditorMode(newMode)
-    setDiffError('')
-    if (newMode === 'git-diff') {
-      loadDiff()
-    } else if (newMode === 'diff') {
-      loadOriginalContent()
+    if (newMode === 'git-diff' && !gitAvailable) {
+      return
     }
+    setEditorMode(newMode)
   }
 
-  const reloadFromDisk = () => {
+  const reloadFromDisk = useCallback(async () => {
     if (!path) return
-    const route = routes.files.read(path)
-    apiFetchJson(route.path, { query: route.query })
-      .then(({ data }) => {
-        setContent(data.content || '')
-        setIsDirty(false)
-        onDirtyChange?.(path, false)
-        setExternalChange(false)
-        setContentVersion((v) => v + 1)
+    try {
+      const result = await refetchDiskContent()
+      const nextContent = typeof result?.data === 'string' ? result.data : ''
+      setContent(nextContent)
+      setIsDirty(false)
+      onDirtyChange?.(path, false)
+      setExternalChange(false)
+      setContentVersion((v) => v + 1)
 
-        // Reload diff data if in diff mode (same as save())
-        if (editorMode === 'git-diff') {
-          loadDiff()
-        } else if (editorMode === 'diff') {
-          loadOriginalContent()
-        }
-      })
-      .catch(() => {})
-  }
+      if (editorMode === 'git-diff') {
+        await refetchGitDiff()
+      } else if (editorMode === 'diff') {
+        await refetchGitShow()
+      }
+    } catch {
+      // Keep current editor contents when reload fails.
+    }
+  }, [editorMode, onDirtyChange, path, refetchDiskContent, refetchGitDiff, refetchGitShow])
 
   // Only show folder path in breadcrumbs (filename is already in tab)
   const pathParts = path ? path.split('/').filter(Boolean) : []
@@ -279,7 +233,7 @@ export default function EditorPanel({ params: initialParams, api }) {
           isSaving={isSaving}
           onChange={handleChange}
           onAutoSave={handleAutoSave}
-          showDiffToggle={Boolean(path)}
+          showDiffToggle={Boolean(path) && gitAvailable}
           editorMode={editorMode}
           diffText={diffText}
           diffError={diffError}
@@ -298,13 +252,15 @@ export default function EditorPanel({ params: initialParams, api }) {
               >
                 Code
               </button>
-              <button
-                type="button"
-                className={`mode-btn ${editorMode === 'git-diff' ? 'active' : ''}`}
-                onClick={() => handleModeChange('git-diff')}
-              >
-                Diff
-              </button>
+              {gitAvailable && (
+                <button
+                  type="button"
+                  className={`mode-btn ${editorMode === 'git-diff' ? 'active' : ''}`}
+                  onClick={() => handleModeChange('git-diff')}
+                >
+                  Diff
+                </button>
+              )}
             </div>
           </div>
           {editorMode === 'git-diff' ? (
