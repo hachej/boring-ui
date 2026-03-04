@@ -20,7 +20,6 @@ def _default_cors_origins() -> list[str]:
         'http://127.0.0.1:5173',
         'http://127.0.0.1:5174',
         'http://127.0.0.1:5175',
-        '*',  # Allow all origins in dev - restrict in production
     ]
 
 
@@ -68,6 +67,15 @@ def _env_int(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def _normalize_control_plane_provider(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"", "local"}:
+        return "local"
+    if value in {"supabase", "postgres"}:
+        return "supabase"
+    return "local"
 
 
 @dataclass
@@ -126,6 +134,32 @@ class APIConfig:
     auth_session_secret: str = field(
         default_factory=lambda: _env_str('BORING_UI_SESSION_SECRET', '')
     )
+    control_plane_provider: str = field(
+        default_factory=lambda: _normalize_control_plane_provider(
+            os.environ.get('CONTROL_PLANE_PROVIDER')
+        )
+    )
+    control_plane_app_id: str = field(
+        default_factory=lambda: _env_str('CONTROL_PLANE_APP_ID', 'boring-ui')
+    )
+    supabase_url: str | None = field(
+        default_factory=lambda: os.environ.get('SUPABASE_URL')
+    )
+    supabase_anon_key: str | None = field(
+        default_factory=lambda: os.environ.get('SUPABASE_ANON_KEY')
+    )
+    supabase_service_role_key: str | None = field(
+        default_factory=lambda: os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+    )
+    supabase_jwt_secret: str | None = field(
+        default_factory=lambda: os.environ.get('SUPABASE_JWT_SECRET')
+    )
+    supabase_db_url: str | None = field(
+        default_factory=lambda: os.environ.get('SUPABASE_DB_URL')
+    )
+    settings_encryption_key: str | None = field(
+        default_factory=lambda: os.environ.get('BORING_SETTINGS_KEY')
+    )
 
     def __post_init__(self) -> None:
         # Test harness hook: allow overriding the PTY provider commands without
@@ -135,8 +169,21 @@ class APIConfig:
         if claude_override and "claude" in self.pty_providers:
             self.pty_providers["claude"] = claude_override
         if not self.auth_session_secret:
+            # Backward compatibility with sandbox naming.
+            self.auth_session_secret = _env_str('BORING_SESSION_SECRET', '')
+        if not self.auth_session_secret:
             # Generate an ephemeral secret when one is not configured explicitly.
             self.auth_session_secret = secrets.token_urlsafe(48)
+
+        # Auto-enable supabase provider when explicit envs are present.
+        if self.control_plane_provider == "local" and (
+            (self.supabase_url and self.supabase_anon_key) or self.supabase_db_url
+        ):
+            self.control_plane_provider = "supabase"
+
+    @property
+    def use_supabase_control_plane(self) -> bool:
+        return self.control_plane_provider == "supabase"
 
     def validate_path(self, path: Path | str) -> Path:
         """Validate that a path is within workspace_root.

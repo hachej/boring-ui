@@ -1,7 +1,8 @@
 """Application factory for boring-ui API."""
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .config import APIConfig
 from .storage import Storage, LocalStorage
@@ -17,6 +18,12 @@ from .modules.control_plane import create_me_router
 from .modules.control_plane import create_workspace_router
 from .modules.control_plane import create_collaboration_router
 from .modules.control_plane import create_workspace_boundary_router
+from .modules.control_plane.auth_session import (
+    SessionExpired,
+    SessionInvalid,
+    parse_session_cookie,
+)
+from .modules.control_plane.supabase import db_client as supabase_db_client
 from .modules.pty.lifecycle import create_pty_lifecycle_router
 from .workspace_plugins import WorkspacePluginManager
 
@@ -176,11 +183,28 @@ def create_app(
 
     # Auth/session is a control-plane-owned surface under /auth/*.
     if 'control_plane' in enabled_routers:
-        app.include_router(create_auth_session_router(config))
-        app.include_router(create_me_router(config), prefix='/api/v1')
-        app.include_router(create_workspace_router(config), prefix='/api/v1')
-        app.include_router(create_collaboration_router(config), prefix='/api/v1')
-        app.include_router(create_workspace_boundary_router(config))
+        if config.use_supabase_control_plane:
+            from .modules.control_plane.auth_router_supabase import create_auth_session_router_supabase
+            from .modules.control_plane.me_router_supabase import create_me_router_supabase
+            from .modules.control_plane.workspace_router_supabase import create_workspace_router_supabase
+            from .modules.control_plane.collaboration_router_supabase import (
+                create_collaboration_router_supabase,
+            )
+            from .modules.control_plane.workspace_boundary_router_supabase import (
+                create_workspace_boundary_router_supabase,
+            )
+
+            app.include_router(create_auth_session_router_supabase(config))
+            app.include_router(create_me_router_supabase(config), prefix='/api/v1')
+            app.include_router(create_workspace_router_supabase(config), prefix='/api/v1')
+            app.include_router(create_collaboration_router_supabase(config), prefix='/api/v1')
+            app.include_router(create_workspace_boundary_router_supabase(config))
+        else:
+            app.include_router(create_auth_session_router(config))
+            app.include_router(create_me_router(config), prefix='/api/v1')
+            app.include_router(create_workspace_router(config), prefix='/api/v1')
+            app.include_router(create_collaboration_router(config), prefix='/api/v1')
+            app.include_router(create_workspace_boundary_router(config))
 
     # Workspace plugins are optional and disabled by default since they execute
     # workspace-local Python modules in-process.
@@ -220,12 +244,30 @@ def create_app(
         }
 
     @app.get('/api/v1/config/provider-keys')
-    async def config_provider_keys():
-        """Return AI provider API keys from environment for browser-side PI agent.
+    async def config_provider_keys(request: Request):
+        """Return configured browser-side PI provider keys for authenticated users."""
+        token = request.cookies.get(config.auth_session_cookie_name, '')
+        if not token:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    'error': 'unauthorized',
+                    'code': 'SESSION_REQUIRED',
+                    'message': 'No active session',
+                },
+            )
+        try:
+            parse_session_cookie(token, secret=config.auth_session_secret)
+        except (SessionExpired, SessionInvalid):
+            return JSONResponse(
+                status_code=401,
+                content={
+                    'error': 'unauthorized',
+                    'code': 'SESSION_INVALID',
+                    'message': 'Session invalid',
+                },
+            )
 
-        Keys are read from standard environment variables so the host app
-        can populate them via .env, Vault, or any secret management system.
-        """
         import os as _os
         keys = {}
         for env_key, provider in [
@@ -250,5 +292,14 @@ def create_app(
         @app.on_event('startup')
         async def _start_plugin_watcher() -> None:
             plugin_manager.start_watcher()
+
+    if config.control_plane_enabled and config.use_supabase_control_plane and config.supabase_db_url:
+        @app.on_event('startup')
+        async def _startup_supabase_pool() -> None:
+            await supabase_db_client.create_pool(config.supabase_db_url)
+
+        @app.on_event('shutdown')
+        async def _shutdown_supabase_pool() -> None:
+            await supabase_db_client.close_pool()
 
     return app
