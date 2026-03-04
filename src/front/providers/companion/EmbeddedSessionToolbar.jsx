@@ -96,8 +96,8 @@ export default function EmbeddedSessionToolbar({ panelId, onSplitPanel }) {
           }
           void handleCreateSession()
         }}
-        title={typeof onSplitPanel === 'function' ? 'Split chat panel' : 'New Companion session'}
-        aria-label={typeof onSplitPanel === 'function' ? 'Split chat panel' : 'New Companion session'}
+        title={typeof onSplitPanel === 'function' ? 'Split chat panel' : 'New agent session'}
+        aria-label={typeof onSplitPanel === 'function' ? 'Split chat panel' : 'New agent session'}
         data-testid="companion-session-new"
         disabled={isCreating}
       >

@@ -56,7 +56,7 @@ export default function CompanionPanel({ params }) {
   return (
     <div className="panel-content terminal-panel-content companion-panel-content" data-testid="companion-panel">
       <div className="terminal-header">
-        <span className="terminal-title-text">{activeProvider === 'pi' ? 'PI Agent' : 'Companion'}</span>
+        <span className="terminal-title-text">{activeProvider === 'pi' ? 'PI Agent' : 'Agent'}</span>
         {canSwitchProviders && (
           <div className="flex items-center gap-1 ml-2">
             <button
@@ -67,9 +67,9 @@ export default function CompanionPanel({ params }) {
                   : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
               }`}
               onClick={() => setSelectedProvider('companion')}
-              aria-label="Use Companion provider"
+              aria-label="Use Agent provider"
             >
-              Companion
+              Agent
             </button>
             <button
               type="button"
@@ -123,7 +123,7 @@ export default function CompanionPanel({ params }) {
               data-testid="companion-connecting"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)' }}
             >
-              Connecting to Companion server...
+              Connecting to agent...
             </div>
           )}
         </div>
