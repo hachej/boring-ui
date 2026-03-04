@@ -43,6 +43,20 @@ Browser                            Backend (FastAPI)                   External
 
 7. **Providers** (`providers/companion/`, `providers/pi/`): Chat provider implementations for Companion and PI agents. Follow a registry pattern for pluggable AI backends.
 
+### PI Native Tool Dimensions
+
+PI native tooling is explicitly split along two dimensions:
+
+1. **Chat/runtime surface** (PI native adapter): model/provider transport and session lifecycle.
+2. **Filesystem backend** (active DataProvider): file/git/python execution primitives.
+
+For PI native only:
+- UI primitives (`open_file`, `list_tabs`) are frontend bridge tools and do not depend on DataProvider.
+- Backend primitives (`read_file`, `write_file`, `rename_file`, `move_file`, `search_files`, `git_*`, optional `python_exec`) are DataProvider-bound.
+- Tool composition happens in `providers/pi/defaultTools.js` and is injected by `providers/pi/nativeAdapter.jsx`.
+
+Backend agent surfaces exposed through API endpoints (`agent-companion`, `agent-pi`, `agent-normal`) should use the frontend command API contract, not browser `window` bridge tools.
+
 ### Frontend Networking
 
 - `utils/apiBase.js`: Base URL resolution
