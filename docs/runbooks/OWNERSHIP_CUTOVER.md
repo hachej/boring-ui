@@ -15,6 +15,17 @@ This runbook defines production rollout and rollback for the ownership split:
 
 `boring-sandbox` remains optional. If not needed, remove it from request path entirely.
 
+For local containerized mode checks owned by this repo:
+
+```bash
+# Core mode
+docker compose -f deploy/docker/docker-compose.yml up --build backend frontend-core
+
+# Proxy mode
+docker compose -f deploy/docker/docker-compose.yml --profile sandbox-proxy \
+  up --build backend edge-proxy frontend-sandbox-proxy
+```
+
 ## Pre-Cutover Checklist
 
 1. Deploy `boring-ui` with canonical control-plane routes enabled.
