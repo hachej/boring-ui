@@ -91,6 +91,12 @@ docker compose -f deploy/docker/docker-compose.yml up --build backend frontend-c
 # Sandbox-proxy mode (frontend -> edge proxy -> boring-ui backend)
 docker compose -f deploy/docker/docker-compose.yml --profile sandbox-proxy \
   up --build backend edge-proxy frontend-sandbox-proxy
+
+# Sandbox-proxy mode against external boring-sandbox gateway (optional)
+SANDBOX_VITE_API_URL=http://host.docker.internal:8081 \
+SANDBOX_VITE_GATEWAY_URL=http://host.docker.internal:8081 \
+docker compose -f deploy/docker/docker-compose.yml --profile sandbox-proxy \
+  up --build backend frontend-sandbox-proxy
 ```
 
 Endpoints:
