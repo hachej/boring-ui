@@ -64,9 +64,16 @@ const DEFAULT_CONFIG = {
 
   // Data backend selection.
   // - 'http' uses the built-in HTTP provider.
+  // - 'lightningfs' uses in-browser LightningFS + isomorphic-git.
   // - Any other value resolves through a host-registered provider factory.
   data: {
     backend: 'http',
+    // When true, unknown backends throw instead of silently falling back to HTTP.
+    strictBackend: false,
+    // LightningFS storage namespace (IndexedDB database name).
+    lightningfs: {
+      name: 'boring-fs',
+    },
   },
 
   // Feature flags

@@ -58,6 +58,8 @@ describe('appConfig', () => {
     it('has correct data backend defaults', () => {
       const config = getDefaultConfig()
       expect(config.data.backend).toBe('http')
+      expect(config.data.strictBackend).toBe(false)
+      expect(config.data.lightningfs.name).toBe('boring-fs')
     })
 
     it('has correct panel constraints', () => {
@@ -108,9 +110,13 @@ describe('appConfig', () => {
       const config = setConfig({
         data: {
           backend: 'lightningfs',
+          strictBackend: true,
+          lightningfs: { name: 'boring-fs-test' },
         },
       })
       expect(config.data.backend).toBe('lightningfs')
+      expect(config.data.strictBackend).toBe(true)
+      expect(config.data.lightningfs.name).toBe('boring-fs-test')
     })
 
     it('replaces arrays instead of merging', () => {
