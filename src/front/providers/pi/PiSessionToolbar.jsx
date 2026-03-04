@@ -12,17 +12,17 @@ const defaultState = {
   sessions: [],
 }
 
-export default function PiSessionToolbar() {
+export default function PiSessionToolbar({ panelId, onSplitPanel }) {
   const [state, setState] = useState(defaultState)
 
   useEffect(() => {
-    const unsubscribe = subscribePiSessionState((next) => {
+    const unsubscribe = subscribePiSessionState(panelId, (next) => {
       setState(next || defaultState)
     })
 
-    requestPiSessionState()
+    requestPiSessionState(panelId)
     return unsubscribe
-  }, [])
+  }, [panelId])
 
   const sessions = Array.isArray(state.sessions) ? state.sessions : []
 
@@ -31,7 +31,7 @@ export default function PiSessionToolbar() {
       <select
         className="terminal-select companion-session-select"
         value={state.currentSessionId || ''}
-        onChange={(e) => requestPiSwitchSession(e.target.value)}
+        onChange={(e) => requestPiSwitchSession(panelId, e.target.value)}
         data-testid="pi-session-select"
       >
         {sessions.length === 0
@@ -42,10 +42,14 @@ export default function PiSessionToolbar() {
         type="button"
         className="terminal-new-icon"
         onClick={() => {
-          requestPiNewSession()
+          if (typeof onSplitPanel === 'function') {
+            onSplitPanel(panelId, { piSessionBootstrap: 'new' })
+            return
+          }
+          requestPiNewSession(panelId)
         }}
-        title="New PI session"
-        aria-label="New PI session"
+        title={typeof onSplitPanel === 'function' ? 'Split PI panel' : 'New PI session'}
+        aria-label={typeof onSplitPanel === 'function' ? 'Split PI panel' : 'New PI session'}
         data-testid="pi-session-new"
       >
         <Plus size={16} />

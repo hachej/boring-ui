@@ -8,10 +8,10 @@ const requestPiSwitchSession = vi.fn()
 let stateListener = null
 
 vi.mock('./sessionBus', () => ({
-  requestPiNewSession: () => requestPiNewSession(),
-  requestPiSessionState: () => requestPiSessionState(),
+  requestPiNewSession: (...args) => requestPiNewSession(...args),
+  requestPiSessionState: (...args) => requestPiSessionState(...args),
   requestPiSwitchSession: (...args) => requestPiSwitchSession(...args),
-  subscribePiSessionState: (listener) => {
+  subscribePiSessionState: (_panelId, listener) => {
     stateListener = listener
     return () => {
       stateListener = null
@@ -26,20 +26,31 @@ describe('PiSessionToolbar', () => {
   })
 
   it('requests state on mount', () => {
-    render(<PiSessionToolbar />)
+    render(<PiSessionToolbar panelId="pi-agent" />)
     expect(requestPiSessionState).toHaveBeenCalledTimes(1)
+    expect(requestPiSessionState).toHaveBeenCalledWith('pi-agent')
   })
 
-  it('creates a new PI session on + click', () => {
-    render(<PiSessionToolbar panelId="pi-agent" onSplitPanel={vi.fn()} />)
+  it('splits panel on + click when split handler is provided', () => {
+    const onSplitPanel = vi.fn()
+    render(<PiSessionToolbar panelId="pi-agent" onSplitPanel={onSplitPanel} />)
 
     fireEvent.click(screen.getByTestId('pi-session-new'))
 
-    expect(requestPiNewSession).toHaveBeenCalledTimes(1)
+    expect(onSplitPanel).toHaveBeenCalledWith('pi-agent', { piSessionBootstrap: 'new' })
+    expect(requestPiNewSession).not.toHaveBeenCalled()
+  })
+
+  it('creates a new PI session on + click when split handler is unavailable', () => {
+    render(<PiSessionToolbar panelId="pi-agent" />)
+
+    fireEvent.click(screen.getByTestId('pi-session-new'))
+
+    expect(requestPiNewSession).toHaveBeenCalledWith('pi-agent')
   })
 
   it('renders sessions and switches by id', () => {
-    render(<PiSessionToolbar />)
+    render(<PiSessionToolbar panelId="pi-agent" />)
     act(() => {
       stateListener?.({
         currentSessionId: 's-1',
@@ -51,6 +62,6 @@ describe('PiSessionToolbar', () => {
     })
 
     fireEvent.change(screen.getByTestId('pi-session-select'), { target: { value: 's-2' } })
-    expect(requestPiSwitchSession).toHaveBeenCalledWith('s-2')
+    expect(requestPiSwitchSession).toHaveBeenCalledWith('pi-agent', 's-2')
   })
 })
