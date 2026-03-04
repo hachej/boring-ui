@@ -1,3 +1,4 @@
+import './litClassFieldFix.js' // Must precede pi-web-ui to fix Lit class field shadowing
 import { useEffect, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Agent } from '@mariozechner/pi-agent-core'
@@ -20,7 +21,7 @@ const PI_SYSTEM_PROMPT = [
   'Be concise, accurate, and action-oriented.',
 ].join(' ')
 
-let _agentConfig = { tools: [], systemPrompt: null, disableArtifactsTool: false }
+let _agentConfig = { tools: [], systemPrompt: null, disableArtifactsTool: true }
 
 export const setPiAgentConfig = (config = {}) => {
   if (Array.isArray(config.tools)) _agentConfig.tools = config.tools
@@ -61,12 +62,6 @@ const titleFromMessages = (messages) => {
   if (!text) return 'New session'
   if (text.length <= 48) return text
   return `${text.slice(0, 45)}...`
-}
-
-const hasConversation = (messages) => {
-  const hasUser = messages.some((m) => m.role === 'user' || m.role === 'user-with-attachments')
-  const hasAssistant = messages.some((m) => m.role === 'assistant')
-  return hasUser && hasAssistant
 }
 
 const usageTotals = (messages) => {
@@ -200,6 +195,8 @@ const logPiError = (context, error) => {
   console.error(`[PiNativeAdapter] ${context}`, error)
 }
 
+const modelKey = (model) => `${String(model?.api || '')}:${String(model?.id || '')}`
+
 const createSessionId = () => {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
     return globalThis.crypto.randomUUID()
@@ -237,7 +234,7 @@ const promptForApiKey = async (provider, runtime) => {
   return true
 }
 
-export default function PiNativeAdapter() {
+export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', initialSessionId = '' }) {
   const dataProvider = useDataProvider()
   const queryClient = useQueryClient()
   const defaultTools = useMemo(
@@ -315,7 +312,7 @@ export default function PiNativeAdapter() {
         })
       }
 
-      publishPiSessionState({
+      publishPiSessionState(panelId, {
         currentSessionId: currentId,
         sessions: persisted,
       })
@@ -327,18 +324,26 @@ export default function PiNativeAdapter() {
       if (!agent || !currentSessionId || !active) return
 
       const messages = agent.state.messages || []
-      if (!hasConversation(messages)) {
+      const previous = await runtime.sessions.get(currentSessionId)
+      const hasMessages = messages.length > 0
+      const previousModel = previous?.model || null
+      const nextModel = agent.state.model || null
+      const modelChanged = modelKey(previousModel) !== modelKey(nextModel)
+      const thinkingChanged = String(previous?.thinkingLevel || 'off') !== String(agent.state.thinkingLevel || 'off')
+
+      if (!hasMessages && previous && !modelChanged && !thinkingChanged) {
         await refreshSessionState()
         return
       }
 
-      const title = titleFromMessages(messages)
+      const title = hasMessages
+        ? titleFromMessages(messages)
+        : (previous?.title || sessionTitleRef.current || 'New session')
       sessionTitleRef.current = title
 
       const now = new Date().toISOString()
       const usage = usageTotals(messages)
 
-      const previous = await runtime.sessions.getMetadata(currentSessionId)
       const createdAt = previous?.createdAt || now
 
       await runtime.sessions.save(
@@ -424,6 +429,11 @@ export default function PiNativeAdapter() {
       }
 
       await refreshSessionState()
+
+      const metadata = await runtime.sessions.getMetadata(nextSessionId)
+      if (!metadata) {
+        await persistCurrentSession()
+      }
     }
 
     const switchSession = async (sessionId) => {
@@ -440,7 +450,7 @@ export default function PiNativeAdapter() {
       await mountAgent(null)
     }
 
-    const unsubscribeActions = subscribePiSessionActions({
+    const unsubscribeActions = subscribePiSessionActions(panelId, {
       onSwitch: (sessionId) => {
         switchSession(sessionId).catch((error) => logPiError('Failed to switch session', error))
       },
@@ -453,9 +463,37 @@ export default function PiNativeAdapter() {
     })
 
     void (async () => {
+      // Seed provider API keys from backend (best-effort, non-blocking).
+      try {
+        const base = typeof window !== 'undefined'
+          ? (window.location.pathname.match(/^\/w\/[^/]+/) || [''])[0]
+          : ''
+        const res = await fetch(`${base}/api/v1/config/provider-keys`)
+        if (res.ok) {
+          const keys = await res.json()
+          if (keys && typeof keys === 'object') {
+            for (const [provider, key] of Object.entries(keys)) {
+              if (typeof key === 'string' && key) {
+                await runtime.providerKeys.set(provider, key)
+              }
+            }
+          }
+        }
+      } catch {
+        // Keys can still be entered manually via UI prompt
+      }
+
       const sessions = await runtime.sessions.getAllMetadata()
       const sorted = sessions.slice().sort((a, b) => b.lastModified.localeCompare(a.lastModified))
-      if (sorted.length > 0) {
+
+      if (sessionBootstrap === 'new') {
+        if (initialSessionId) {
+          const seeded = await runtime.sessions.get(initialSessionId)
+          await mountAgent(seeded || { id: initialSessionId })
+        } else {
+          await mountAgent(null)
+        }
+      } else if (sorted.length > 0) {
         const latest = await runtime.sessions.get(sorted[0].id)
         await mountAgent(latest)
       } else {
@@ -465,6 +503,7 @@ export default function PiNativeAdapter() {
     })().catch((error) => logPiError('Failed to initialize PI session', error))
 
     return () => {
+      persistCurrentSession().catch((error) => logPiError('Failed to persist session on cleanup', error))
       active = false
       observer.disconnect()
       unsubscribeActions()
@@ -475,7 +514,7 @@ export default function PiNativeAdapter() {
         rootEl.removeChild(shadowHost)
       }
     }
-  }, [defaultTools])
+  }, [defaultTools, panelId, sessionBootstrap, initialSessionId])
 
   return <div className="pi-native-wrapper" ref={rootRef} data-testid="pi-native-adapter" />
 }
