@@ -1,4 +1,28 @@
 services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.backend
+    environment:
+      DEPLOY_MODE: core
+      CONTROL_PLANE_PROVIDER: ${CONTROL_PLANE_PROVIDER:-supabase}
+      CONTROL_PLANE_APP_ID: ${CONTROL_PLANE_APP_ID:-boring-ui}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
+      BORING_SETTINGS_KEY: ${BORING_SETTINGS_KEY:-}
+      BORING_UI_SESSION_SECRET: ${BORING_UI_SESSION_SECRET:-}
+      COMPANION_URL: ${SANDBOX_COMPANION_URL:-/companion}
+    ports:
+      - "${BORING_UI_SANDBOX_BACKEND_PORT:-18001}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   sandbox:
     build:
       context: ../..
@@ -22,12 +46,15 @@ services:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.frontend
     depends_on:
+      backend:
+        condition: service_healthy
       sandbox:
         condition: service_healthy
     environment:
-      VITE_API_URL: ${SANDBOX_VITE_API_URL:-http://127.0.0.1:8081}
-      VITE_GATEWAY_URL: ${SANDBOX_VITE_GATEWAY_URL:-http://127.0.0.1:8081}
-      VITE_PROXY_API_TARGET: ${SANDBOX_VITE_PROXY_API_TARGET:-http://sandbox:8080}
+      VITE_API_URL: ${SANDBOX_VITE_API_URL:-http://127.0.0.1:5174}
+      VITE_PROXY_API_TARGET: ${SANDBOX_VITE_PROXY_API_TARGET:-http://backend:8000}
+      VITE_COMPANION_PROXY_TARGET: ${SANDBOX_VITE_COMPANION_PROXY_TARGET:-http://sandbox:8080}
       VITE_AGENT_RAIL_MODE: ${SANDBOX_VITE_AGENT_RAIL_MODE:-companion}
+      VITE_CONTROL_PLANE_ONBOARDING: ${SANDBOX_VITE_CONTROL_PLANE_ONBOARDING:-true}
     ports:
       - "${BORING_UI_FRONTEND_PROXY_PORT:-5174}:5173"
