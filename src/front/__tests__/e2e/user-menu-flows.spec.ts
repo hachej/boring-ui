@@ -22,10 +22,45 @@ const fulfillJson = (route: Route, status: number, body: unknown) => {
   })
 }
 
+const stubCapabilities = async (page: Page) => {
+  await page.route('**/api/capabilities', (route) =>
+    fulfillJson(route, 200, {
+      version: 'test',
+      features: {
+        files: true,
+        git: true,
+        pty: true,
+        chat_claude_code: true,
+        approval: true,
+        companion: true,
+      },
+      routers: [],
+    }),
+  )
+}
+
+const waitForUserMenuButton = async (page: Page) => {
+  const button = page.locator('[aria-label="User menu"]').first()
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await button.waitFor({ state: 'visible', timeout: 10000 })
+      return button
+    } catch (error) {
+      if (attempt === 2) throw error
+      await page.reload()
+    }
+  }
+  return button
+}
+
 test.describe('User Menu Control-Plane Flows', () => {
   // These flows involve prompt/dialog interactions + full-page navigation; give the suite
   // extra headroom under CI-like load.
   test.describe.configure({ timeout: 60_000 })
+
+  test.beforeEach(async ({ page }) => {
+    await stubCapabilities(page)
+  })
 
   test('switch workspace navigates to canonical /w/{id}/ after preflight', async ({ page }) => {
     const requests = trackApiRequests(page)
@@ -68,8 +103,14 @@ test.describe('User Menu Control-Plane Flows', () => {
       route.fulfill({ status: 200, contentType: 'text/html', body: '<html></html>' }),
     )
 
-    await page.goto('/')
-    await page.waitForSelector('[aria-label="User menu"]', { timeout: 15000 })
+    await page.goto('/w/ws-1/')
+    const userMenuButton = await waitForUserMenuButton(page)
+    await expect.poll(() => requests.map((r) => `${r.method} ${r.pathname}`)).toEqual(
+      expect.arrayContaining([
+        'GET /api/v1/me',
+        'GET /api/v1/workspaces',
+      ]),
+    )
 
     // Avoid flaky Playwright dialog handling: stub prompt directly and keep the test focused
     // on the canonical navigation + preflight request pattern.
@@ -77,7 +118,8 @@ test.describe('User Menu Control-Plane Flows', () => {
       window.prompt = () => 'ws-2'
     })
 
-    await page.getByRole('button', { name: 'User menu' }).click()
+    await userMenuButton.click()
+    await expect(page.getByRole('menuitem', { name: 'Switch workspace' })).toBeVisible()
     await page.getByRole('menuitem', { name: 'Switch workspace' }).click()
 
     await expect.poll(() => navRequests.map((pathname) => pathname.replace(/\/$/, ''))).toContain('/w/ws-2')
@@ -147,9 +189,8 @@ test.describe('User Menu Control-Plane Flows', () => {
     )
 
     await page.goto('/')
-    await page.waitForSelector('[aria-label="User menu"]', { timeout: 15000 })
-
-    await page.getByRole('button', { name: 'User menu' }).click()
+    const userMenuButton = await waitForUserMenuButton(page)
+    await userMenuButton.click()
     await page.getByRole('menuitem', { name: 'Create workspace' }).click()
 
     await expect.poll(() => navRequests.map((pathname) => pathname.replace(/\/$/, ''))).toContain('/w/ws-new')
@@ -181,13 +222,13 @@ test.describe('User Menu Control-Plane Flows', () => {
       route.fulfill({ status: 204, body: '' }),
     )
 
-    await page.goto('/')
-    await page.waitForSelector('[aria-label="User menu"]', { timeout: 15000 })
+    await page.goto('/w/ws-1/')
+    const userMenuButton = await waitForUserMenuButton(page)
 
     const logoutRequest = page.waitForRequest(
       (request) => new URL(request.url()).pathname === '/auth/logout',
     )
-    await page.getByRole('button', { name: 'User menu' }).click()
+    await userMenuButton.click()
     await page.getByRole('menuitem', { name: 'Logout' }).click()
     await logoutRequest
 
@@ -212,12 +253,12 @@ test.describe('User Menu Control-Plane Flows', () => {
     })
 
     await page.goto('/')
-    await page.waitForSelector('[aria-label="User menu"]', { timeout: 15000 })
-    await page.getByRole('button', { name: 'User menu' }).click()
+    const userMenuButton = await waitForUserMenuButton(page)
+    await userMenuButton.click()
 
     const userMenu = page.getByRole('menu', { name: 'User menu' })
     await expect(userMenu.getByRole('alert')).toHaveText(/Not signed in/i)
-    await expect(userMenu.getByRole('menuitem', { name: 'Switch workspace' })).toBeDisabled()
+    await expect(userMenu.getByRole('menuitem', { name: 'Switch workspace' })).toHaveCount(0)
     await expect(userMenu.getByRole('menuitem', { name: 'Create workspace' })).toBeDisabled()
     await expect(userMenu.getByRole('menuitem', { name: 'User settings' })).toBeDisabled()
     await expect(userMenu.getByRole('menuitem', { name: 'Logout' })).toBeDisabled()
@@ -243,12 +284,12 @@ test.describe('User Menu Control-Plane Flows', () => {
     })
 
     await page.goto('/')
-    await page.waitForSelector('[aria-label="User menu"]', { timeout: 15000 })
-    await page.getByRole('button', { name: 'User menu' }).click()
+    const userMenuButton = await waitForUserMenuButton(page)
+    await userMenuButton.click()
 
     const userMenu = page.getByRole('menu', { name: 'User menu' })
     await expect(userMenu.getByRole('alert')).toHaveText(/Failed to load workspaces|boom/i)
-    await expect(userMenu.getByRole('menuitem', { name: 'Switch workspace' })).toBeDisabled()
+    await expect(userMenu.getByRole('menuitem', { name: 'Switch workspace' })).toHaveCount(0)
 
     await userMenu.getByRole('button', { name: 'Retry' }).click()
     await expect.poll(() => workspacesCalls).toBeGreaterThan(1)

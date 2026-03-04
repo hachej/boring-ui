@@ -50,6 +50,7 @@ describe('controlPlane utils', () => {
   it('extracts user email from me payload variants', () => {
     expect(extractUserEmail({ email: 'direct@example.com' })).toBe('direct@example.com')
     expect(extractUserEmail({ user: { email: 'nested@example.com' } })).toBe('nested@example.com')
+    expect(extractUserEmail({ me: { email: 'me@example.com' } })).toBe('me@example.com')
     expect(extractUserEmail({ data: { email: 'data@example.com' } })).toBe('data@example.com')
   })
 
@@ -76,6 +77,11 @@ describe('controlPlane utils', () => {
     expect(extractWorkspaceSettingsPayload({ data: { settings: { theme: 'dark' } } })).toEqual({
       theme: 'dark',
     })
+    expect(
+      extractWorkspaceSettingsPayload({
+        settings: { workspace_id: 'ws-123', theme: 'light' },
+      }),
+    ).toEqual({ workspace_id: 'ws-123', theme: 'light' })
     expect(extractWorkspaceSettingsPayload({ data: { editor: 'vim' } })).toEqual({})
   })
 
