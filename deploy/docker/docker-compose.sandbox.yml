@@ -1,0 +1,33 @@
+services:
+  sandbox:
+    build:
+      context: ../..
+      dockerfile: deploy/sandbox/Dockerfile.sandbox
+    environment:
+      HOME: /home/sprite
+      BM_CHAT_PROVIDER: companion
+      BM_COMPANION_AUTOSTART: true
+      BM_CLICKHOUSE_URL: ${BM_CLICKHOUSE_URL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "${BORING_UI_SANDBOX_PORT:-8081}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.frontend
+    depends_on:
+      sandbox:
+        condition: service_healthy
+    environment:
+      VITE_API_URL: ${SANDBOX_VITE_API_URL:-http://127.0.0.1:8081}
+      VITE_GATEWAY_URL: ${SANDBOX_VITE_GATEWAY_URL:-http://127.0.0.1:8081}
+      VITE_PROXY_API_TARGET: ${SANDBOX_VITE_PROXY_API_TARGET:-http://sandbox:8080}
+      VITE_AGENT_RAIL_MODE: ${SANDBOX_VITE_AGENT_RAIL_MODE:-companion}
+    ports:
+      - "${BORING_UI_FRONTEND_PROXY_PORT:-5174}:5173"

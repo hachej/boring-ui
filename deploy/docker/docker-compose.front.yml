@@ -3,7 +3,6 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.backend
-    container_name: boring-ui-backend
     environment:
       DEPLOY_MODE: core
       CONTROL_PLANE_PROVIDER: ${CONTROL_PLANE_PROVIDER:-supabase}
@@ -11,6 +10,7 @@ services:
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
       SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
       BORING_SETTINGS_KEY: ${BORING_SETTINGS_KEY:-}
       BORING_UI_SESSION_SECRET: ${BORING_UI_SESSION_SECRET:-}
@@ -22,39 +22,18 @@ services:
       timeout: 5s
       retries: 10
 
-  frontend-core:
+  frontend:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.frontend
-    container_name: boring-ui-frontend-core
     depends_on:
       backend:
         condition: service_healthy
     environment:
-      VITE_API_URL: ${CORE_VITE_API_URL:-http://backend:8000}
+      VITE_API_URL: ${CORE_VITE_API_URL:-http://127.0.0.1:8000}
+      VITE_PROXY_API_TARGET: ${CORE_VITE_PROXY_API_TARGET:-http://backend:8000}
+      VITE_AGENT_RAIL_MODE: ${CORE_VITE_AGENT_RAIL_MODE:-pi}
+      # VITE_GATEWAY_URL intentionally omitted in front mode; vite.config.ts
+      # falls back gateway proxy routing to VITE_API_URL.
     ports:
       - "${BORING_UI_FRONTEND_PORT:-5173}:5173"
-
-  edge-proxy:
-    image: nginx:1.27-alpine
-    container_name: boring-ui-edge-proxy
-    profiles: ["sandbox-proxy"]
-    depends_on:
-      backend:
-        condition: service_healthy
-    volumes:
-      - ./nginx.sandbox-proxy.conf:/etc/nginx/conf.d/default.conf:ro
-    ports:
-      - "${BORING_UI_SANDBOX_PROXY_PORT:-8080}:8080"
-
-  frontend-sandbox-proxy:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile.frontend
-    container_name: boring-ui-frontend-sandbox-proxy
-    profiles: ["sandbox-proxy"]
-    environment:
-      VITE_API_URL: ${SANDBOX_VITE_API_URL:-http://edge-proxy:8080}
-      VITE_GATEWAY_URL: ${SANDBOX_VITE_GATEWAY_URL:-http://edge-proxy:8080}
-    ports:
-      - "${BORING_UI_FRONTEND_PROXY_PORT:-5174}:5173"
