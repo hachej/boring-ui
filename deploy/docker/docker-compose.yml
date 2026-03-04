@@ -23,7 +23,7 @@ services:
       backend:
         condition: service_healthy
     environment:
-      VITE_API_URL: http://backend:8000
+      VITE_API_URL: ${CORE_VITE_API_URL:-http://backend:8000}
     ports:
       - "${BORING_UI_FRONTEND_PORT:-5173}:5173"
 
@@ -45,11 +45,8 @@ services:
       dockerfile: deploy/docker/Dockerfile.frontend
     container_name: boring-ui-frontend-sandbox-proxy
     profiles: ["sandbox-proxy"]
-    depends_on:
-      edge-proxy:
-        condition: service_started
     environment:
-      VITE_API_URL: http://edge-proxy:8080
-      VITE_GATEWAY_URL: http://edge-proxy:8080
+      VITE_API_URL: ${SANDBOX_VITE_API_URL:-http://edge-proxy:8080}
+      VITE_GATEWAY_URL: ${SANDBOX_VITE_GATEWAY_URL:-http://edge-proxy:8080}
     ports:
       - "${BORING_UI_FRONTEND_PROXY_PORT:-5174}:5173"
