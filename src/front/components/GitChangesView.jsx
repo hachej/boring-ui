@@ -1,7 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useMemo } from 'react'
 import { Check, FileText } from 'lucide-react'
-import { apiFetchJson } from '../utils/transport'
-import { routes } from '../utils/routes'
+import { useGitStatus } from '../providers/data'
 
 const STATUS_CONFIG = {
   M: { label: 'Modified', className: 'git-status-modified', icon: 'M' },
@@ -12,34 +11,23 @@ const STATUS_CONFIG = {
 }
 
 export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
-  const [changes, setChanges] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const { data: gitStatus, isLoading, error } = useGitStatus({ refetchInterval: 5000 })
 
-  const fetchGitStatus = useCallback(() => {
-    const route = routes.git.status()
-    apiFetchJson(route.path, { query: route.query })
-      .then(({ data }) => {
-        if (data.available && data.files) {
-          setChanges(data.files)
-          setError(null)
-        } else if (!data.available) {
-          setError('Git not available')
-          setChanges({})
+  const changes = useMemo(() => {
+    const files = gitStatus?.files
+    if (Array.isArray(files)) {
+      return files.reduce((acc, entry) => {
+        if (entry?.path && entry?.status) {
+          acc[entry.path] = entry.status
         }
-        setLoading(false)
-      })
-      .catch((err) => {
-        setError(err.message)
-        setLoading(false)
-      })
-  }, [])
-
-  useEffect(() => {
-    fetchGitStatus()
-    const interval = setInterval(fetchGitStatus, 5000)
-    return () => clearInterval(interval)
-  }, [fetchGitStatus])
+        return acc
+      }, {})
+    }
+    if (files && typeof files === 'object') {
+      return files
+    }
+    return {}
+  }, [gitStatus])
 
   const handleFileClick = (path, status) => {
     if (onOpenDiff) {
@@ -68,7 +56,7 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
   // Order: Conflict (first, most urgent), Modified, Added, Untracked, Deleted
   const statusOrder = ['C', 'M', 'A', 'U', 'D']
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="git-changes-view">
         <div className="git-changes-loading">Loading changes...</div>
@@ -76,10 +64,18 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
     )
   }
 
+  if (gitStatus?.available === false) {
+    return (
+      <div className="git-changes-view">
+        <div className="git-changes-error">Git not available</div>
+      </div>
+    )
+  }
+
   if (error) {
     return (
       <div className="git-changes-view">
-        <div className="git-changes-error">{error}</div>
+        <div className="git-changes-error">{error.message || String(error)}</div>
       </div>
     )
   }
