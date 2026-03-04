@@ -9,7 +9,7 @@ import piAppCssUrl from '@mariozechner/pi-web-ui/app.css?url'
 import { useDataProvider } from '../data'
 import { getPiRuntime } from './runtime'
 import { createPiNativeTools, mergePiTools } from './defaultTools'
-import { applyChatPanelToolPolicy, getAdditionalChatPanelTools } from './chatPanelTools'
+import { getAdditionalChatPanelTools } from './chatPanelTools'
 import {
   publishPiSessionState,
   subscribePiSessionActions,
@@ -21,15 +21,12 @@ const PI_SYSTEM_PROMPT = [
   'Be concise, accurate, and action-oriented.',
 ].join(' ')
 
-let _agentConfig = { tools: [], systemPrompt: null, disableArtifactsTool: true }
+let _agentConfig = { tools: [], systemPrompt: null }
 
 export const setPiAgentConfig = (config = {}) => {
   if (Array.isArray(config.tools)) _agentConfig.tools = config.tools
   if (typeof config.systemPrompt === 'string' && config.systemPrompt.trim()) {
     _agentConfig.systemPrompt = config.systemPrompt
-  }
-  if (typeof config.disableArtifactsTool === 'boolean') {
-    _agentConfig.disableArtifactsTool = config.disableArtifactsTool
   }
 }
 
@@ -421,9 +418,6 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
               return false
             }
           },
-        })
-        applyChatPanelToolPolicy(agent, {
-          disableArtifactsTool: _agentConfig.disableArtifactsTool,
         })
         fixLitTree(chatPanelRef.current)
       }
