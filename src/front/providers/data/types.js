@@ -99,6 +99,10 @@
  * @typedef {Object} DataProvider
  * @property {FilesProvider} files - Filesystem operations.
  * @property {GitProvider} git     - Git operations.
+ * @property {(code: string, options?: { path?: string, cwd?: string }) => Promise<any>} [runPython]
+ *   Optional Python execution runtime (used by PI `python_exec` tool).
+ * @property {(command: string, options?: { cwd?: string, stream?: boolean }) => Promise<any>} [runCommand]
+ *   Optional shell command runtime (used by PI `exec_bash` tool).
  */
 
 export {}

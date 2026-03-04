@@ -96,6 +96,11 @@ export { default as ReviewPanel } from './panels/ReviewPanel'
 // Components - UI components
 // =============================================================================
 export { default as ThemeToggle } from './components/ThemeToggle'
+export {
+  setPiAgentConfig,
+  addPiAgentTools,
+  resetPiAgentConfig,
+} from './providers/pi/agentConfig'
 
 // =============================================================================
 // Main App

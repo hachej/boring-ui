@@ -7,6 +7,7 @@
 import LightningFS from '@isomorphic-git/lightning-fs'
 import { createLightningFsProvider } from './lightningFsProvider'
 import { createIsomorphicGitProvider } from './isomorphicGitProvider'
+import { createPyodidePythonRunner } from './pyodideRunner'
 
 const normalizeFsName = (name) => {
   const value = String(name || '').trim()
@@ -24,10 +25,11 @@ export const createLightningDataProvider = (opts = {}) => {
   const dir = String(opts.dir || '/')
   const fs = new LightningFS(fsName)
   const pfs = fs.promises
+  const runPython = createPyodidePythonRunner(pfs)
 
   return {
     files: createLightningFsProvider(pfs),
     git: createIsomorphicGitProvider({ fs, pfs, dir }),
+    runPython: (code, options) => runPython(code, options),
   }
 }
-

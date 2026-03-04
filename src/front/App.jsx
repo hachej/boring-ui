@@ -57,6 +57,7 @@ import {
   getDataProviderFactory,
   createHttpProvider,
   createLightningDataProvider,
+  createCheerpXDataProvider,
   queryKeys,
 } from './providers/data'
 import DataContext from './providers/data/DataContext'
@@ -449,6 +450,10 @@ export default function App() {
     DATA_FS_OVERRIDE || config.data?.lightningfs?.name || 'boring-fs',
   )
     .trim()
+  const configuredCheerpXWorkspaceRoot = String(config.data?.cheerpx?.workspaceRoot || '').trim()
+  const configuredCheerpXPrimaryDiskUrl = String(config.data?.cheerpx?.primaryDiskUrl || '').trim()
+  const configuredCheerpXOverlayName = String(config.data?.cheerpx?.overlayName || '').trim()
+  const configuredCheerpXEsmUrl = String(config.data?.cheerpx?.cheerpxEsmUrl || '').trim()
   const strictDataBackend = Boolean(config.data?.strictBackend)
   const dataProvider = useMemo(
     () => {
@@ -461,6 +466,15 @@ export default function App() {
 
       if (configuredDataBackend === 'lightningfs' || configuredDataBackend === 'lightning-fs') {
         return createLightningDataProvider({ fsName: configuredLightningFsName })
+      }
+
+      if (configuredDataBackend === 'cheerpx' || configuredDataBackend === 'cheerp-x') {
+        return createCheerpXDataProvider({
+          workspaceRoot: configuredCheerpXWorkspaceRoot || undefined,
+          primaryDiskUrl: configuredCheerpXPrimaryDiskUrl || undefined,
+          overlayName: configuredCheerpXOverlayName || undefined,
+          cheerpxEsmUrl: configuredCheerpXEsmUrl || undefined,
+        })
       }
 
       const factory = getDataProviderFactory(configuredDataBackend)
@@ -477,7 +491,15 @@ export default function App() {
       )
       return createHttpProvider()
     },
-    [configuredDataBackend, configuredLightningFsName, strictDataBackend],
+    [
+      configuredDataBackend,
+      configuredLightningFsName,
+      configuredCheerpXWorkspaceRoot,
+      configuredCheerpXPrimaryDiskUrl,
+      configuredCheerpXOverlayName,
+      configuredCheerpXEsmUrl,
+      strictDataBackend,
+    ],
   )
 
   useEffect(() => {

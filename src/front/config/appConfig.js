@@ -65,6 +65,7 @@ const DEFAULT_CONFIG = {
   // Data backend selection.
   // - 'http' uses the built-in HTTP provider.
   // - 'lightningfs' uses in-browser LightningFS + isomorphic-git.
+  // - 'cheerpx' uses in-browser Linux VM (CheerpX) for files/git/commands.
   // - Any other value resolves through a host-registered provider factory.
   data: {
     backend: 'http',
@@ -73,6 +74,13 @@ const DEFAULT_CONFIG = {
     // LightningFS storage namespace (IndexedDB database name).
     lightningfs: {
       name: 'boring-fs',
+    },
+    // CheerpX runtime options.
+    cheerpx: {
+      workspaceRoot: '/workspace',
+      primaryDiskUrl: 'wss://disks.webvm.io/alpine_20251007.ext2',
+      overlayName: 'boring-ui-cheerpx-overlay',
+      cheerpxEsmUrl: 'https://cdn.jsdelivr.net/npm/@leaningtech/cheerpx/+esm',
     },
   },
 

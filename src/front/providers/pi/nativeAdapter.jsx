@@ -8,6 +8,7 @@ import piAppCss from '@mariozechner/pi-web-ui/app.css?raw'
 import piAppCssUrl from '@mariozechner/pi-web-ui/app.css?url'
 import { useDataProvider } from '../data'
 import { getPiRuntime } from './runtime'
+import { getPiAgentConfig } from './agentConfig'
 import { createPiNativeTools, mergePiTools } from './defaultTools'
 import { getAdditionalChatPanelTools } from './chatPanelTools'
 import {
@@ -20,15 +21,6 @@ const PI_SYSTEM_PROMPT = [
   'Do not claim to be Claude Code or a terminal-native coding agent unless the user explicitly configured that mode.',
   'Be concise, accurate, and action-oriented.',
 ].join(' ')
-
-let _agentConfig = { tools: [], systemPrompt: null }
-
-export const setPiAgentConfig = (config = {}) => {
-  if (Array.isArray(config.tools)) _agentConfig.tools = config.tools
-  if (typeof config.systemPrompt === 'string' && config.systemPrompt.trim()) {
-    _agentConfig.systemPrompt = config.systemPrompt
-  }
-}
 
 const defaultModel = () => {
   return (
@@ -374,6 +366,7 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
 
       unsubscribeRef.current()
       unsubscribeRef.current = () => {}
+      const agentConfig = getPiAgentConfig()
 
       const model = sessionData?.model || defaultModel()
       if (!model) {
@@ -386,13 +379,13 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
 
       const agent = new Agent({
         initialState: {
-          systemPrompt: _agentConfig.systemPrompt || PI_SYSTEM_PROMPT,
+          systemPrompt: agentConfig.systemPrompt || PI_SYSTEM_PROMPT,
           model,
           thinkingLevel: sessionData?.thinkingLevel || 'off',
           messages: sessionData?.messages || [],
           tools: mergePiTools(
             defaultTools,
-            Array.isArray(_agentConfig.tools) ? _agentConfig.tools : [],
+            Array.isArray(agentConfig.tools) ? agentConfig.tools : [],
           ),
         },
         convertToLlm: defaultConvertToLlm,

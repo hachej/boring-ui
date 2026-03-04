@@ -88,6 +88,13 @@ const resolvePythonRunner = (provider) => {
   return null
 }
 
+const resolveCommandRunner = (provider) => {
+  if (typeof provider?.runCommand === 'function') return provider.runCommand.bind(provider)
+  if (typeof provider?.shell?.run === 'function') return provider.shell.run.bind(provider.shell)
+  if (typeof provider?.bash?.run === 'function') return provider.bash.run.bind(provider.bash)
+  return null
+}
+
 const formatPythonResult = (result) => {
   if (result === null || result === undefined) return ''
   if (typeof result === 'string') return result
@@ -105,6 +112,53 @@ const formatPythonResult = (result) => {
     return String(result)
   }
 }
+
+const formatCommandResult = (result) => {
+  if (result === null || result === undefined) return ''
+  if (typeof result === 'string') return result
+
+  const stdout = typeof result?.stdout === 'string'
+    ? result.stdout
+    : (typeof result?.output === 'string' ? result.output : '')
+  const stderr = typeof result?.stderr === 'string' ? result.stderr : ''
+  const exitCode = Number.isFinite(result?.exitCode)
+    ? Number(result.exitCode)
+    : (Number.isFinite(result?.status) ? Number(result.status) : null)
+
+  const chunks = []
+  if (stdout) chunks.push(stdout)
+  if (stderr) chunks.push(`[stderr]\n${stderr}`)
+  if (exitCode !== null && exitCode !== 0) chunks.push(`[exit_code] ${exitCode}`)
+  if (chunks.length > 0) return chunks.join('\n')
+
+  try {
+    return JSON.stringify(result, null, 2)
+  } catch {
+    return String(result)
+  }
+}
+
+const createExecBashTool = (runCommand, queryClient) => ({
+  name: 'exec_bash',
+  label: 'Exec Bash',
+  description: 'Execute a shell command in the active backend runtime.',
+  parameters: Type.Object({
+    command: Type.String({ description: 'Shell command to execute' }),
+    cwd: Type.Optional(Type.String({ description: 'Optional working directory (relative path)' })),
+  }),
+  execute: async (_toolCallId, params) => {
+    const command = String(params?.command || '').trim()
+    const cwd = params?.cwd !== undefined ? normalizePath(params.cwd) : undefined
+    if (!command) return textResult('Error: command is required')
+    try {
+      const result = await runCommand(command, { cwd })
+      await invalidateFileAndGitQueries(queryClient)
+      return textResult(formatCommandResult(result) || '(no output)')
+    } catch (error) {
+      return textResult(`Error running command: ${error?.message || String(error)}`)
+    }
+  },
+})
 
 const getOpenFileBridge = () => {
   if (typeof window === 'undefined') return null
@@ -177,7 +231,24 @@ export function createPiNativeUiTools() {
 }
 
 function createPiCoreTools(provider, queryClient, { includeUi = false } = {}) {
-  if (!provider?.files) return includeUi ? createPiNativeUiTools() : []
+  const runCommand = resolveCommandRunner(provider)
+  const hasFiles = Boolean(provider?.files)
+  const bashOnly = Boolean(provider?.pi?.bashOnly)
+
+  if (!hasFiles && !runCommand) return includeUi ? createPiNativeUiTools() : []
+
+  if (bashOnly) {
+    const tools = []
+    if (runCommand) tools.push(createExecBashTool(runCommand, queryClient))
+    return tools
+  }
+
+  if (!hasFiles) {
+    const tools = []
+    if (runCommand) tools.push(createExecBashTool(runCommand, queryClient))
+    if (includeUi) tools.push(...createPiNativeUiTools())
+    return tools
+  }
 
   const tools = [
     {
@@ -407,15 +478,19 @@ function createPiCoreTools(provider, queryClient, { includeUi = false } = {}) {
     tools.push({
       name: 'python_exec',
       label: 'Run Python',
-      description: 'Execute Python code using the active backend runtime.',
+      description: 'Execute Python code or run a Python file path using the active backend runtime.',
       parameters: Type.Object({
-        code: Type.String({ description: 'Python source code to execute' }),
+        code: Type.Optional(Type.String({ description: 'Python source code to execute' })),
+        path: Type.Optional(Type.String({ description: 'Relative Python file path to execute (e.g. scripts/main.py)' })),
+        cwd: Type.Optional(Type.String({ description: 'Optional working directory (relative path)' })),
       }),
       execute: async (_toolCallId, params) => {
         const code = String(params?.code || '')
-        if (!code.trim()) return textResult('Error: code is required')
+        const path = normalizeFilePath(params?.path)
+        const cwd = params?.cwd !== undefined ? normalizePath(params.cwd) : undefined
+        if (!code.trim() && !path) return textResult('Error: provide code or path')
         try {
-          const result = await runPython(code)
+          const result = await runPython(code, { path, cwd })
           await invalidateFileAndGitQueries(queryClient)
           return textResult(formatPythonResult(result) || '(no output)')
         } catch (error) {
@@ -423,6 +498,10 @@ function createPiCoreTools(provider, queryClient, { includeUi = false } = {}) {
         }
       },
     })
+  }
+
+  if (runCommand) {
+    tools.push(createExecBashTool(runCommand, queryClient))
   }
 
   return tools

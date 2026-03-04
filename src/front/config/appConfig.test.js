@@ -60,6 +60,7 @@ describe('appConfig', () => {
       expect(config.data.backend).toBe('http')
       expect(config.data.strictBackend).toBe(false)
       expect(config.data.lightningfs.name).toBe('boring-fs')
+      expect(config.data.cheerpx.workspaceRoot).toBe('/workspace')
     })
 
     it('has correct panel constraints', () => {
@@ -109,14 +110,16 @@ describe('appConfig', () => {
     it('allows overriding configured data backend', () => {
       const config = setConfig({
         data: {
-          backend: 'lightningfs',
+          backend: 'cheerpx',
           strictBackend: true,
           lightningfs: { name: 'boring-fs-test' },
+          cheerpx: { overlayName: 'boring-ui-cheerpx-overlay-test' },
         },
       })
-      expect(config.data.backend).toBe('lightningfs')
+      expect(config.data.backend).toBe('cheerpx')
       expect(config.data.strictBackend).toBe(true)
       expect(config.data.lightningfs.name).toBe('boring-fs-test')
+      expect(config.data.cheerpx.overlayName).toBe('boring-ui-cheerpx-overlay-test')
     })
 
     it('replaces arrays instead of merging', () => {

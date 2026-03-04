@@ -92,9 +92,58 @@ describe('createPiDefaultTools', () => {
     expect(runPython).toBeTruthy()
     const result = await runPython.execute('1', { code: 'print("ok")' })
 
-    expect(provider.runPython).toHaveBeenCalledWith('print("ok")')
+    expect(provider.runPython).toHaveBeenCalledWith('print("ok")', { path: '', cwd: undefined })
     expect(getText(result)).toBe('ok')
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2)
+  })
+
+  it('python_exec supports script path with optional cwd', async () => {
+    const provider = createMemoryProvider()
+    provider.runPython = vi.fn(async () => ({ stdout: 'from path', stderr: '' }))
+    const queryClient = { invalidateQueries: vi.fn(async () => undefined) }
+    const tools = createPiDefaultTools(provider, queryClient)
+    const runPython = getTool(tools, 'python_exec')
+
+    const result = await runPython.execute('1', { path: '/scripts/main.py', cwd: '/scripts' })
+
+    expect(provider.runPython).toHaveBeenCalledWith('', { path: 'scripts/main.py', cwd: 'scripts' })
+    expect(getText(result)).toBe('from path')
+  })
+
+  it('adds exec_bash when backend exposes runCommand', async () => {
+    const provider = createMemoryProvider()
+    provider.runCommand = vi.fn(async () => ({ stdout: 'ok', stderr: '', status: 0 }))
+    const queryClient = { invalidateQueries: vi.fn(async () => undefined) }
+    const tools = createPiDefaultTools(provider, queryClient)
+    const execBash = getTool(tools, 'exec_bash')
+
+    expect(execBash).toBeTruthy()
+    const result = await execBash.execute('1', { command: 'ls -la', cwd: '/docs' })
+
+    expect(provider.runCommand).toHaveBeenCalledWith('ls -la', { cwd: 'docs' })
+    expect(getText(result)).toBe('ok')
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2)
+  })
+
+  it('supports bash-only provider mode for PI agent tools', () => {
+    const provider = createMemoryProvider()
+    provider.runCommand = vi.fn(async () => ({ stdout: 'ok', stderr: '', status: 0 }))
+    provider.pi = { bashOnly: true }
+    const queryClient = { invalidateQueries: vi.fn(async () => undefined) }
+    const tools = createPiFilesystemTools(provider, queryClient)
+    const names = tools.map((tool) => tool.name).sort()
+
+    expect(names).toEqual(['exec_bash'])
+  })
+
+  it('bash-only mode suppresses UI tools in default set', () => {
+    const provider = createMemoryProvider()
+    provider.runCommand = vi.fn(async () => ({ stdout: 'ok', stderr: '', status: 0 }))
+    provider.pi = { bashOnly: true }
+    const queryClient = { invalidateQueries: vi.fn(async () => undefined) }
+    const tools = createPiDefaultTools(provider, queryClient)
+
+    expect(tools.map((tool) => tool.name)).toEqual(['exec_bash'])
   })
 
   it('returns UI tools when provider has no files interface', () => {
