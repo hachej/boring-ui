@@ -50,6 +50,16 @@ import paneRegistry, {
   getKnownComponents,
   getUnavailableEssentialPanes,
 } from './registry/panes'
+import { QueryClientProvider } from '@tanstack/react-query'
+import {
+  getQueryClient,
+  getDataProvider,
+  getDataProviderFactory,
+  createHttpProvider,
+  queryKeys,
+} from './providers/data'
+import DataContext from './providers/data/DataContext'
+import { PI_LIST_TABS_BRIDGE, PI_OPEN_FILE_BRIDGE } from './providers/pi/uiBridge'
 
 // POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
 const POC_MODE = new URLSearchParams(window.location.search).get('poc')
@@ -403,6 +413,33 @@ export default function App() {
   if (!frontendStateClientIdRef.current) {
     frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefix)
   }
+
+  // --- DataProvider infrastructure ---
+  // If setDataProvider() was called before mount (poc1/poc2), use that;
+  // otherwise resolve from config.data.backend (with HTTP fallback).
+  const queryClient = useMemo(() => getQueryClient(), [])
+  const configuredDataBackend = String(config.data?.backend || 'http')
+    .trim()
+    .toLowerCase()
+  const dataProvider = useMemo(
+    () => {
+      const injected = getDataProvider()
+      if (injected) return injected
+
+      if (!configuredDataBackend || configuredDataBackend === 'http') {
+        return createHttpProvider()
+      }
+
+      const factory = getDataProviderFactory(configuredDataBackend)
+      if (factory) return factory()
+
+      console.warn(
+        `[DataProvider] Unknown configured backend "${configuredDataBackend}", falling back to http`,
+      )
+      return createHttpProvider()
+    },
+    [configuredDataBackend],
+  )
 
   useEffect(() => {
     frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefix)
@@ -1298,16 +1335,18 @@ export default function App() {
         }
       }
 
-      const route = routes.files.read(path)
-      apiFetchJson(route.path, { query: route.query })
-        .then(({ data }) => {
-          addEditorPanel(data.content || '')
+      queryClient.fetchQuery({
+        queryKey: queryKeys.files.read(path),
+        queryFn: ({ signal }) => dataProvider.files.read(path, { signal }),
+      })
+        .then((content) => {
+          addEditorPanel(typeof content === 'string' ? content : '')
         })
         .catch(() => {
           addEditorPanel('')
         })
     },
-    [dockApi, getLiveCenterGroup]
+    [dataProvider, dockApi, getLiveCenterGroup, queryClient]
   )
 
   const openFile = useCallback(
@@ -1348,6 +1387,26 @@ export default function App() {
     },
     [dockApi, findCenterAnchorPanel, getLiveCenterGroup, openFileAtPosition]
   )
+
+  useEffect(() => {
+    const openFileBridge = (path) => openFile(String(path || '').trim())
+    const listTabsBridge = () => ({
+      activeFile: activeFile || '',
+      tabs: Object.keys(tabs),
+    })
+
+    window[PI_OPEN_FILE_BRIDGE] = openFileBridge
+    window[PI_LIST_TABS_BRIDGE] = listTabsBridge
+
+    return () => {
+      if (window[PI_OPEN_FILE_BRIDGE] === openFileBridge) {
+        delete window[PI_OPEN_FILE_BRIDGE]
+      }
+      if (window[PI_LIST_TABS_BRIDGE] === listTabsBridge) {
+        delete window[PI_LIST_TABS_BRIDGE]
+      }
+    }
+  }, [activeFile, openFile, tabs])
 
   const openFileToSide = useCallback(
     (path) => {
@@ -3266,9 +3325,13 @@ export default function App() {
 
   if (POC_MODE === 'chat') {
     return (
-      <ThemeProvider>
-        <ClaudeStreamChat />
-      </ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <DataContext.Provider value={dataProvider}>
+          <ThemeProvider>
+            <ClaudeStreamChat />
+          </ThemeProvider>
+        </DataContext.Provider>
+      </QueryClientProvider>
     )
   }
 
@@ -3282,45 +3345,49 @@ export default function App() {
   ].filter(Boolean).join(' ')
 
   return (
-    <ThemeProvider>
-      <div className="app-container">
-        {config.features?.showHeader !== false && (
-          <header className="app-header">
-            <div className="app-header-brand">
-              <div className="app-header-logo" aria-hidden="true">
-                {config.branding?.logo || 'B'}
+    <QueryClientProvider client={queryClient}>
+      <DataContext.Provider value={dataProvider}>
+        <ThemeProvider>
+          <div className="app-container">
+            {config.features?.showHeader !== false && (
+              <header className="app-header">
+                <div className="app-header-brand">
+                  <div className="app-header-logo" aria-hidden="true">
+                    {config.branding?.logo || 'B'}
+                  </div>
+                  <div className="app-header-title">
+                    {projectRoot?.split('/').pop() || config.branding?.name || 'Workspace'}
+                  </div>
+                </div>
+                <div className="app-header-controls">
+                  <ThemeToggle />
+                </div>
+              </header>
+            )}
+            {unavailableEssentials.length > 0 && (
+              <div className="capability-warning">
+                <strong>Warning:</strong> Some features are unavailable.
+                Missing capabilities for: {unavailableEssentials.map(p => p.title || p.id).join(', ')}.
               </div>
-              <div className="app-header-title">
-                {projectRoot?.split('/').pop() || config.branding?.name || 'Workspace'}
-              </div>
-            </div>
-            <div className="app-header-controls">
-              <ThemeToggle />
-            </div>
-          </header>
-        )}
-        {unavailableEssentials.length > 0 && (
-          <div className="capability-warning">
-            <strong>Warning:</strong> Some features are unavailable.
-            Missing capabilities for: {unavailableEssentials.map(p => p.title || p.id).join(', ')}.
+            )}
+            <CapabilitiesStatusContext.Provider value={{ pending: capabilitiesPending }}>
+              <CapabilitiesContext.Provider value={capabilities}>
+                <div data-testid="dockview" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+                  <DockviewReact
+                    className={dockviewClassName}
+                    components={components}
+                    tabComponents={tabComponents}
+                    rightHeaderActionsComponent={RightHeaderActions}
+                    onReady={onReady}
+                    showDndOverlay={showDndOverlay}
+                    onDidDrop={onDidDrop}
+                  />
+                </div>
+              </CapabilitiesContext.Provider>
+            </CapabilitiesStatusContext.Provider>
           </div>
-        )}
-        <CapabilitiesStatusContext.Provider value={{ pending: capabilitiesPending }}>
-          <CapabilitiesContext.Provider value={capabilities}>
-            <div data-testid="dockview" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-              <DockviewReact
-                className={dockviewClassName}
-                components={components}
-                tabComponents={tabComponents}
-                rightHeaderActionsComponent={RightHeaderActions}
-                onReady={onReady}
-                showDndOverlay={showDndOverlay}
-                onDidDrop={onDidDrop}
-              />
-            </div>
-          </CapabilitiesContext.Provider>
-        </CapabilitiesStatusContext.Provider>
-      </div>
-    </ThemeProvider>
+        </ThemeProvider>
+      </DataContext.Provider>
+    </QueryClientProvider>
   )
 }

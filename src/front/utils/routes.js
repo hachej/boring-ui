@@ -68,20 +68,6 @@ export const routes = {
       query: configPath ? { config_path: configPath } : undefined,
     }),
   },
-  files: {
-    list: (targetPath) => ({ path: '/api/v1/files/list', query: { path: targetPath } }),
-    read: (targetPath) => ({ path: '/api/v1/files/read', query: { path: targetPath } }),
-    write: (targetPath) => ({ path: '/api/v1/files/write', query: { path: targetPath } }),
-    delete: (targetPath) => ({ path: '/api/v1/files/delete', query: { path: targetPath } }),
-    rename: () => ({ path: '/api/v1/files/rename', query: undefined }),
-    move: () => ({ path: '/api/v1/files/move', query: undefined }),
-    search: (queryText) => ({ path: '/api/v1/files/search', query: { q: queryText } }),
-  },
-  git: {
-    status: () => ({ path: '/api/v1/git/status', query: undefined }),
-    diff: (targetPath) => ({ path: '/api/v1/git/diff', query: { path: targetPath } }),
-    show: (targetPath) => ({ path: '/api/v1/git/show', query: { path: targetPath } }),
-  },
   uiState: {
     upsert: () => ({ path: '/api/v1/ui/state', query: undefined }),
     list: () => ({ path: '/api/v1/ui/state', query: undefined }),

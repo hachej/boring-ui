@@ -2,16 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { routes } from './routes'
 
 describe('routes helper', () => {
-  it('builds canonical file routes with encoded query object payloads', () => {
-    expect(routes.files.read('src/App.jsx')).toEqual({
-      path: '/api/v1/files/read',
-      query: { path: 'src/App.jsx' },
-    })
-
-    expect(routes.files.search('needle')).toEqual({
-      path: '/api/v1/files/search',
-      query: { q: 'needle' },
-    })
+  it('does not expose file or git routes from the shared routes helper', () => {
+    expect(routes.files).toBeUndefined()
+    expect(routes.git).toBeUndefined()
   })
 
   it('builds config route descriptors with optional query values', () => {
@@ -22,6 +15,25 @@ describe('routes helper', () => {
     expect(routes.config.get('/tmp/app.config.js')).toEqual({
       path: '/api/config',
       query: { config_path: '/tmp/app.config.js' },
+    })
+  })
+
+  it('retains infrastructure bootstrap and session route descriptors', () => {
+    expect(routes.capabilities.get()).toEqual({
+      path: '/api/capabilities',
+      query: undefined,
+    })
+    expect(routes.project.root()).toEqual({
+      path: '/api/project',
+      query: undefined,
+    })
+    expect(routes.sessions.list()).toEqual({
+      path: '/api/v1/agent/normal/sessions',
+      query: undefined,
+    })
+    expect(routes.sessions.create()).toEqual({
+      path: '/api/v1/agent/normal/sessions',
+      query: undefined,
     })
   })
 

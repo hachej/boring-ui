@@ -1,0 +1,2 @@
+export const PI_OPEN_FILE_BRIDGE = '__BORING_UI_PI_OPEN_FILE__'
+export const PI_LIST_TABS_BRIDGE = '__BORING_UI_PI_LIST_TABS__'
