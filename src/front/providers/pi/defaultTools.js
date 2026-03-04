@@ -124,8 +124,6 @@ const formatTabsResult = (tabs, activeFile) => {
   return lines.join('\n')
 }
 
-const UI_TOOL_NAMES = new Set(['open_file', 'list_tabs'])
-
 const createOpenFileTool = () => ({
   name: 'open_file',
   label: 'Open File',
@@ -178,9 +176,8 @@ export function createPiNativeUiTools() {
   return [createOpenFileTool(), createListTabsTool()]
 }
 
-export function createPiDefaultTools(provider, queryClient) {
-  const uiTools = createPiNativeUiTools()
-  if (!provider?.files) return uiTools
+function createPiCoreTools(provider, queryClient, { includeUi = false } = {}) {
+  if (!provider?.files) return includeUi ? createPiNativeUiTools() : []
 
   const tools = [
     {
@@ -335,7 +332,10 @@ export function createPiDefaultTools(provider, queryClient) {
       },
     },
   ]
-  tools.push(...uiTools)
+
+  if (includeUi) {
+    tools.push(...createPiNativeUiTools())
+  }
 
   if (provider.git) {
     tools.push(
@@ -428,11 +428,12 @@ export function createPiDefaultTools(provider, queryClient) {
   return tools
 }
 
+export function createPiDefaultTools(provider, queryClient) {
+  return createPiCoreTools(provider, queryClient, { includeUi: true })
+}
+
 export function createPiFilesystemTools(provider, queryClient) {
-  if (!provider?.files) return []
-  return createPiDefaultTools(provider, queryClient).filter(
-    (tool) => !UI_TOOL_NAMES.has(String(tool?.name || '')),
-  )
+  return createPiCoreTools(provider, queryClient)
 }
 
 export function createPiNativeTools(provider, queryClient) {
