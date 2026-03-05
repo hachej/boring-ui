@@ -17,10 +17,16 @@ import modal
 
 app = modal.App("boring-sandbox")
 
-VENDOR_ROOT = Path(__file__).resolve().parents[2] / "vendor" / "boring-sandbox"
+# Resolve vendor root — only meaningful locally (the Modal CLI side).
+# Inside the container the script lives at /root/modal_app_sandbox.py
+# so the relative path won't resolve; we guard against that.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_CANDIDATE = _SCRIPT_DIR.parent.parent / "vendor" / "boring-sandbox"
+VENDOR_ROOT: Path | None = _CANDIDATE if _CANDIDATE.is_dir() else None
 
 
 def _base_image() -> modal.Image:
+    assert VENDOR_ROOT is not None, "vendor/boring-sandbox submodule not found"
     return (
         modal.Image.debian_slim(python_version="3.12")
         .pip_install(
@@ -46,24 +52,32 @@ def _base_image() -> modal.Image:
     )
 
 
-def _with_optional_macro_bundle(image: modal.Image) -> modal.Image:
+def _with_optional_macro_bundle(img: modal.Image) -> modal.Image:
+    if VENDOR_ROOT is None:
+        return img
     bundle = VENDOR_ROOT / "artifacts" / "boring-macro-bundle.tar.gz"
     if bundle.exists():
-        return image.add_local_file(
+        return img.add_local_file(
             str(bundle),
             "/root/artifacts/boring-macro-bundle.tar.gz",
             copy=True,
         )
-    return image
+    return img
 
 
-image = _with_optional_macro_bundle(_base_image()).env(
-    {
-        "PATH": "/root/.local/bin:/usr/local/bin:/usr/bin:/bin",
-        "PYTHONPATH": "/root/src",
-        "APP_ID_DEFAULT": "boring-macro",
-    }
-)
+# Image building is guarded by VENDOR_ROOT being available (local CLI only).
+if VENDOR_ROOT is not None:
+    image = _with_optional_macro_bundle(_base_image()).env(
+        {
+            "PATH": "/root/.local/bin:/usr/local/bin:/usr/bin:/bin",
+            "PYTHONPATH": "/root/src",
+            "APP_ID_DEFAULT": "boring-macro",
+        }
+    )
+else:
+    # Container-side fallback — the image is already built;
+    # Modal ignores the Image object at runtime.
+    image = modal.Image.debian_slim(python_version="3.12")
 
 # Modal secrets — create via `modal secret create boring-sandbox-secrets ...`
 secrets = modal.Secret.from_name("boring-sandbox-secrets")
