@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
@@ -132,6 +133,32 @@ def _runtime_state_payload(row) -> dict:
 def create_workspace_router_supabase(config: APIConfig) -> APIRouter:
     router = APIRouter(tags=["workspaces"])
 
+    async def _require_membership_or_error(request: Request, pool, ws_uuid: uuid.UUID, user_id: str):
+        try:
+            await require_membership(
+                pool,
+                ws_uuid,
+                uuid.UUID(str(user_id)),
+                app_id=config.control_plane_app_id,
+            )
+            return None
+        except WorkspaceNotFound as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    **exc.detail,
+                    "request_id": str(getattr(request.state, "request_id", "") or uuid.uuid4()),
+                },
+            )
+        except NotAMember as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    **exc.detail,
+                    "request_id": str(getattr(request.state, "request_id", "") or uuid.uuid4()),
+                },
+            )
+
     @router.post("/workspaces", status_code=status.HTTP_201_CREATED)
     async def create_workspace(request: Request):
         deny = enforce_delegated_policy_or_none(
@@ -155,22 +182,12 @@ def create_workspace_router_supabase(config: APIConfig) -> APIRouter:
         try:
             payload = await request.json()
         except Exception:
-            return error_response(
-                request,
-                status_code=400,
-                error="bad_request",
-                code="INVALID_JSON",
-                message="Expected JSON payload",
-            )
+            payload = {}
         name = str(payload.get("name", "")).strip() if isinstance(payload, dict) else ""
         if not name:
-            return error_response(
-                request,
-                status_code=400,
-                error="bad_request",
-                code="WORKSPACE_NAME_REQUIRED",
-                message="Workspace name is required",
-            )
+            # Frontends may call POST /workspaces without a body; provide a stable default.
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            name = f"Workspace {stamp}"
 
         if len(name) > 100:
             return error_response(
@@ -508,11 +525,3 @@ def create_workspace_router_supabase(config: APIConfig) -> APIRouter:
         return {"ok": True, "settings": payload}
 
     return router
-    async def _require_membership_or_error(request: Request, pool, ws_uuid: uuid.UUID, user_id: str):
-        try:
-            await require_membership(pool, ws_uuid, uuid.UUID(str(user_id)), app_id=config.control_plane_app_id)
-            return None
-        except WorkspaceNotFound as exc:
-            return JSONResponse(status_code=exc.status_code, content={**exc.detail, "request_id": str(getattr(request.state, "request_id", "") or uuid.uuid4())})
-        except NotAMember as exc:
-            return JSONResponse(status_code=exc.status_code, content={**exc.detail, "request_id": str(getattr(request.state, "request_id", "") or uuid.uuid4())})

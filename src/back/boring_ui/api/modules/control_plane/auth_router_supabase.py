@@ -326,6 +326,115 @@ def _render_supabase_login_html(
     return response
 
 
+_CALLBACK_BRIDGE_HTML_TEMPLATE: str = """\
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Completing sign-in...</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    .wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .card { width: min(480px, 100%); background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; }
+    h1 { margin: 0 0 8px; font-size: 1.1rem; }
+    p { margin: 0; color: #93a3b8; }
+    .status { margin-top: 10px; color: #93c5fd; }
+    .error { color: #fca5a5; }
+    a { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <main class="card">
+      <h1>Completing sign-in...</h1>
+      <p id="message">Processing authentication response.</p>
+      <p id="status" class="status" aria-live="polite"></p>
+    </main>
+  </div>
+  <script defer>
+    document.addEventListener("DOMContentLoaded", function() {
+    var fallbackRedirect = /*REDIRECT_JSON*/;
+    var statusEl = document.getElementById("status");
+    var messageEl = document.getElementById("message");
+
+    function setStatus(text, isError) {
+      statusEl.textContent = text || "";
+      statusEl.classList.toggle("error", !!isError);
+    }
+
+    async function run() {
+      var query = new URLSearchParams(window.location.search);
+      var hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      var redirectUri = query.get("redirect_uri") || fallbackRedirect || "/";
+
+      // If callback params are already present in query, let backend handle them.
+      if (query.get("code") || ((query.get("token_hash") || query.get("token")) && query.get("type"))) {
+        var url = new URL(window.location.href);
+        url.hash = "";
+        window.location.replace(url.toString());
+        return;
+      }
+
+      var accessToken = hash.get("access_token");
+      if (!accessToken) {
+        var err = hash.get("error_description") || query.get("error_description") || "Missing callback token.";
+        messageEl.textContent = "Authentication callback is incomplete.";
+        setStatus(err, true);
+        var loginUrl = new URL("/auth/login", window.location.origin);
+        loginUrl.searchParams.set("redirect_uri", redirectUri);
+        statusEl.insertAdjacentHTML("beforeend", ' <a href="' + loginUrl.toString() + '">Go to login</a>');
+        return;
+      }
+
+      setStatus("Exchanging session token...");
+      var resp = await fetch("/auth/token-exchange", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: accessToken,
+          redirect_uri: redirectUri,
+        }),
+      });
+      var payload = {};
+      try {
+        payload = await resp.json();
+      } catch (_) {
+        payload = {};
+      }
+      if (!resp.ok) {
+        messageEl.textContent = "Sign-in could not be completed.";
+        setStatus(payload.message || "Token exchange failed.", true);
+        return;
+      }
+      window.location.replace(payload.redirect_uri || redirectUri || "/");
+    }
+
+    run().catch(function(err) {
+      messageEl.textContent = "Sign-in could not be completed.";
+      setStatus(err && err.message ? err.message : "Unexpected callback error.", true);
+    });
+    });
+  </script>
+</body>
+</html>"""
+
+_REDIRECT_JSON_PLACEHOLDER = "/*REDIRECT_JSON*/"
+
+
+def _render_auth_callback_bridge_html(request: Request) -> HTMLResponse:
+    """Render a client-side bridge page that extracts the access token from the
+    URL hash fragment (invisible to the server) and exchanges it via the
+    ``/auth/token-exchange`` endpoint.  This handles Supabase implicit-grant and
+    magic-link flows where the token arrives in the hash."""
+    redirect_after = _safe_redirect_path(request.query_params.get("redirect_uri"))
+    redirect_json = json.dumps(redirect_after, separators=(",", ":"))
+    html = _CALLBACK_BRIDGE_HTML_TEMPLATE.replace(_REDIRECT_JSON_PLACEHOLDER, redirect_json, 1)
+    response = HTMLResponse(content=html, status_code=200)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def _create_session_from_query(request: Request, config: APIConfig) -> tuple[str, str] | JSONResponse:
     user_id = str(request.query_params.get("user_id", "")).strip()
     email = str(request.query_params.get("email", "")).strip().lower()
@@ -451,6 +560,12 @@ def create_auth_session_router_supabase(config: APIConfig) -> APIRouter:
         verify_type = request.query_params.get("type")
 
         if not code and not ((token_hash or token) and verify_type):
+            # Supabase implicit-grant / magic-link flows deliver the token in the
+            # URL hash fragment which the server never sees.  Serve a small bridge
+            # page that extracts it client-side and posts to /auth/token-exchange.
+            accept = (request.headers.get("accept") or "").lower()
+            if "text/html" in accept or "*/*" in accept:
+                return _render_auth_callback_bridge_html(request)
             return _error(
                 request,
                 status_code=400,
