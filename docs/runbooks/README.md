@@ -141,7 +141,7 @@ export SUPABASE_URL="https://<project>.supabase.co"
 export SUPABASE_ANON_KEY="<anon-key>"
 export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
 export SUPABASE_JWT_SECRET="<jwt-secret>"
-export SUPABASE_DB_URL="postgresql://..."
+export SUPABASE_DB_URL="postgresql://postgres.<project-ref>:<password>@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
 export BORING_SETTINGS_KEY="<settings-encryption-key>"
 export BORING_UI_SESSION_SECRET="<cookie-signing-secret>"
 ```
@@ -151,6 +151,8 @@ Initialize schema once per database:
 ```bash
 psql "$SUPABASE_DB_URL" -f deploy/sql/control_plane_supabase_schema.sql
 ```
+
+`boring-ui` backend resolves the Supabase pooler host to IPv4 for container-runtime compatibility.
 
 Endpoints:
 - Core mode frontend: `http://localhost:5173`

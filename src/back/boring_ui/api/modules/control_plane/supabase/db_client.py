@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import logging
+import socket
 import threading
 import weakref
 from contextvars import ContextVar
@@ -24,6 +27,7 @@ _pool_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]
     weakref.WeakKeyDictionary()
 )
 _pool_lock_guard = threading.Lock()
+_logger = logging.getLogger(__name__)
 
 
 def _get_pool_lock() -> asyncio.Lock:
@@ -52,10 +56,54 @@ def _uses_pgbouncer_pooling(db_url: str) -> bool:
     return any(v in {"1", "true", "yes", "on"} for v in values)
 
 
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_ipv4_hosts(host: str, port: int) -> list[str]:
+    if _is_ip_literal(host):
+        return [host]
+    try:
+        infos = socket.getaddrinfo(
+            host,
+            port,
+            family=socket.AF_INET,
+            type=socket.SOCK_STREAM,
+        )
+    except OSError:
+        return []
+
+    seen: set[str] = set()
+    resolved: list[str] = []
+    for info in infos:
+        addr = info[4][0]
+        if addr in seen:
+            continue
+        seen.add(addr)
+        resolved.append(addr)
+    return resolved
+
+
 def _pool_kwargs(db_url: str) -> dict[str, object]:
+    parsed = urlparse(db_url)
     kwargs: dict[str, object] = {"server_settings": {"application_name": "boring-ui"}}
     if _uses_pgbouncer_pooling(db_url):
         kwargs["statement_cache_size"] = 0
+    if parsed.hostname:
+        port = parsed.port or 5432
+        resolved_hosts = _resolve_ipv4_hosts(parsed.hostname, port)
+        if resolved_hosts:
+            kwargs["host"] = resolved_hosts
+            kwargs["port"] = port
+            _logger.info(
+                "Using IPv4 override for Supabase host %s (%d addresses)",
+                parsed.hostname,
+                len(resolved_hosts),
+            )
     return kwargs
 
 
