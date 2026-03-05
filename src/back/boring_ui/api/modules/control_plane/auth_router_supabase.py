@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 from urllib.parse import quote, urlencode, unquote, urlparse
 from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ...config import APIConfig
 from .auth_session import create_session_cookie, parse_session_cookie, SessionExpired, SessionInvalid
@@ -111,6 +112,241 @@ def _supabase_authorize_redirect(
     )
 
 
+def _render_supabase_login_html(
+    *,
+    request: Request,
+    config: APIConfig,
+    initial_mode: str,
+) -> HTMLResponse:
+    if not config.supabase_url or not config.supabase_anon_key:
+        return HTMLResponse(
+            status_code=500,
+            content=(
+                "<!doctype html><html><body>"
+                "<h1>Auth not configured</h1>"
+                "<p>SUPABASE_URL and SUPABASE_ANON_KEY are required.</p>"
+                "</body></html>"
+            ),
+        )
+
+    callback = f"{_public_origin(request).rstrip('/')}/auth/callback"
+    redirect_after = _safe_redirect_path(request.query_params.get("redirect_uri"))
+    cfg = {
+        "supabaseUrl": config.supabase_url.rstrip("/"),
+        "supabaseAnonKey": config.supabase_anon_key,
+        "callbackUrl": callback,
+        "redirectUri": redirect_after,
+        "initialMode": "sign_up" if initial_mode == "sign_up" else "sign_in",
+    }
+    cfg_json = json.dumps(cfg, separators=(",", ":"))
+
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in</title>
+  <style>
+    body {{ margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }}
+    .wrap {{ min-height: 100vh; display: grid; place-items: center; padding: 24px; }}
+    .card {{ width: min(440px, 100%); background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; }}
+    h1 {{ margin: 0 0 6px; font-size: 1.25rem; }}
+    p {{ margin: 0 0 16px; color: #93a3b8; }}
+    label {{ display: block; margin: 12px 0 6px; font-size: 0.9rem; color: #cbd5e1; }}
+    input {{ width: 100%; box-sizing: border-box; background: #0b1220; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; }}
+    .row {{ display: flex; gap: 8px; margin-top: 14px; }}
+    button {{ border: 1px solid #334155; background: #1d4ed8; color: #eff6ff; border-radius: 8px; padding: 10px 12px; font-weight: 600; cursor: pointer; }}
+    button.secondary {{ background: #0b1220; color: #dbeafe; }}
+    .status {{ min-height: 22px; margin-top: 12px; color: #93c5fd; font-size: 0.9rem; }}
+    .error {{ color: #fca5a5; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <main class="card">
+      <h1 id="title">Sign in</h1>
+      <p id="subtitle">Use email/password or a magic link.</p>
+      <form id="auth-form" autocomplete="on">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <div class="row">
+          <button id="submit" type="submit">Sign in</button>
+          <button id="toggle" class="secondary" type="button">Switch to sign up</button>
+          <button id="magic" class="secondary" type="button">Send magic link</button>
+        </div>
+      </form>
+      <div id="status" class="status" aria-live="polite"></div>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const AUTH = {cfg_json};
+    const statusEl = document.getElementById("status");
+    const titleEl = document.getElementById("title");
+    const subtitleEl = document.getElementById("subtitle");
+    const form = document.getElementById("auth-form");
+    const emailEl = document.getElementById("email");
+    const passwordEl = document.getElementById("password");
+    const submitEl = document.getElementById("submit");
+    const toggleEl = document.getElementById("toggle");
+    const magicEl = document.getElementById("magic");
+    const supabaseLib = window.supabase;
+    const client = (supabaseLib && typeof supabaseLib.createClient === "function")
+      ? supabaseLib.createClient(AUTH.supabaseUrl, AUTH.supabaseAnonKey)
+      : null;
+
+    let mode = AUTH.initialMode === "sign_up" ? "sign_up" : "sign_in";
+
+    function setStatus(message, isError = false) {{
+      statusEl.textContent = message || "";
+      statusEl.classList.toggle("error", !!isError);
+    }}
+
+    function isEmailRateLimited(error) {{
+      if (!error) return false;
+      const status = Number(error.status || 0);
+      if (status === 429) return true;
+      const raw = [
+        error.code || "",
+        error.error_code || "",
+        error.message || "",
+      ].join(" ").toLowerCase();
+      return raw.includes("over_email_send_rate_limit")
+        || raw.includes("email rate limit")
+        || raw.includes("too many requests");
+    }}
+
+    function rateLimitMessage() {{
+      return "Too many email attempts right now. Please wait about 60 seconds, then try again.";
+    }}
+
+    function callbackUrl() {{
+      const url = new URL(AUTH.callbackUrl, window.location.origin);
+      url.searchParams.set("redirect_uri", AUTH.redirectUri || "/");
+      return url.toString();
+    }}
+
+    function setMode(nextMode) {{
+      mode = nextMode === "sign_up" ? "sign_up" : "sign_in";
+      titleEl.textContent = mode === "sign_up" ? "Create account" : "Sign in";
+      subtitleEl.textContent = mode === "sign_up"
+        ? "Create your account, then confirm by email if prompted."
+        : "Use email/password or a magic link.";
+      submitEl.textContent = mode === "sign_up" ? "Create account" : "Sign in";
+      toggleEl.textContent = mode === "sign_up" ? "Switch to sign in" : "Switch to sign up";
+      passwordEl.autocomplete = mode === "sign_up" ? "new-password" : "current-password";
+      setStatus("");
+    }}
+
+    toggleEl.addEventListener("click", () => {{
+      setMode(mode === "sign_in" ? "sign_up" : "sign_in");
+    }});
+
+    magicEl.addEventListener("click", async () => {{
+      if (!client) {{
+        setStatus("Auth library failed to load.", true);
+        return;
+      }}
+      const email = (emailEl.value || "").trim();
+      if (!email) {{
+        setStatus("Enter your email.", true);
+        return;
+      }}
+      setStatus("Sending magic link...");
+      const result = await client.auth.signInWithOtp({{
+        email,
+        options: {{ emailRedirectTo: callbackUrl() }},
+      }});
+      if (result.error) {{
+        if (isEmailRateLimited(result.error)) {{
+          setStatus(rateLimitMessage(), true);
+          return;
+        }}
+        setStatus(result.error.message || "Unable to send magic link.", true);
+        return;
+      }}
+      setStatus("Check your email for the confirmation link.");
+    }});
+
+    form.addEventListener("submit", async (event) => {{
+      event.preventDefault();
+      if (!client) {{
+        setStatus("Auth library failed to load.", true);
+        return;
+      }}
+      const email = (emailEl.value || "").trim();
+      const password = passwordEl.value || "";
+      if (!email || !password) {{
+        setStatus("Enter email and password.", true);
+        return;
+      }}
+
+      if (mode === "sign_up") {{
+        setStatus("Creating account...");
+        const result = await client.auth.signUp({{
+          email,
+          password,
+          options: {{ emailRedirectTo: callbackUrl() }},
+        }});
+        if (result.error) {{
+          if (isEmailRateLimited(result.error)) {{
+            setStatus(rateLimitMessage(), true);
+            return;
+          }}
+          setStatus(result.error.message || "Unable to create account.", true);
+          return;
+        }}
+        setStatus("Account created. Confirm from your email, then sign in.");
+        return;
+      }}
+
+      setStatus("Signing in...");
+      const signIn = await client.auth.signInWithPassword({{
+        email,
+        password,
+      }});
+      if (signIn.error) {{
+        setStatus(signIn.error.message || "Unable to sign in.", true);
+        return;
+      }}
+      const accessToken = signIn.data && signIn.data.session && signIn.data.session.access_token;
+      if (!accessToken) {{
+        setStatus("No access token returned.", true);
+        return;
+      }}
+      const exchange = await fetch("/auth/token-exchange", {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{
+          access_token: accessToken,
+          redirect_uri: AUTH.redirectUri || "/",
+        }}),
+      }});
+      let payload = {{}};
+      try {{
+        payload = await exchange.json();
+      }} catch (_) {{
+        payload = {{}};
+      }}
+      if (!exchange.ok) {{
+        setStatus(payload.message || "Unable to complete session setup.", true);
+        return;
+      }}
+      window.location.assign(payload.redirect_uri || "/");
+    }});
+
+    setMode(mode);
+  </script>
+</body>
+</html>"""
+
+    response = HTMLResponse(content=html, status_code=200)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def _create_session_from_query(request: Request, config: APIConfig) -> tuple[str, str] | JSONResponse:
     user_id = str(request.query_params.get("user_id", "")).strip()
     email = str(request.query_params.get("email", "")).strip().lower()
@@ -191,14 +427,18 @@ def create_auth_session_router_supabase(config: APIConfig) -> APIRouter:
             _set_session_cookie(response, token, config)
             return response
 
-        return _supabase_authorize_redirect(request=request, config=config)
+        return _render_supabase_login_html(
+            request=request,
+            config=config,
+            initial_mode="sign_in",
+        )
 
     @router.get("/signup")
     async def auth_signup(request: Request):
-        return _supabase_authorize_redirect(
+        return _render_supabase_login_html(
             request=request,
             config=config,
-            screen_hint="signup",
+            initial_mode="sign_up",
         )
 
     @router.get("/callback")
@@ -228,9 +468,10 @@ def create_auth_session_router_supabase(config: APIConfig) -> APIRouter:
 
         code = request.query_params.get("code")
         token_hash = request.query_params.get("token_hash")
+        token = request.query_params.get("token")
         verify_type = request.query_params.get("type")
 
-        if not code and not (token_hash and verify_type):
+        if not code and not ((token_hash or token) and verify_type):
             return _error(
                 request,
                 status_code=400,
@@ -251,9 +492,17 @@ def create_auth_session_router_supabase(config: APIConfig) -> APIRouter:
                     resp = await client.post(token_url, json={"code": code}, headers=headers)
                 else:
                     verify_url = f"{config.supabase_url.rstrip('/')}/auth/v1/verify"
+                    verify_payload: dict[str, str] = {"type": str(verify_type)}
+                    if token_hash:
+                        verify_payload["token_hash"] = str(token_hash)
+                    elif token:
+                        # Supabase email links currently expose `token=<hash>` in the
+                        # URL. The verify endpoint still expects the value under
+                        # `token_hash`.
+                        verify_payload["token_hash"] = str(token)
                     resp = await client.post(
                         verify_url,
-                        json={"type": verify_type, "token_hash": token_hash},
+                        json=verify_payload,
                         headers=headers,
                     )
             if resp.status_code != 200:
