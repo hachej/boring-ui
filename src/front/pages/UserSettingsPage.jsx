@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, User, Palette, Shield } from 'lucide-react'
 import { apiFetchJson } from '../utils/transport'
 import { buildApiUrl } from '../utils/apiBase'
 import { routes } from '../utils/routes'
@@ -94,7 +94,7 @@ export default function UserSettingsPage({ workspaceId }) {
   return (
     <PageShell title="User Settings" backHref={backHref}>
       <div className="settings-card">
-        <SettingsSection title="Profile">
+        <SettingsSection title="Profile" icon={User}>
           <SettingsField label="Email" description="Your account email address">
             <input
               type="email"
@@ -112,9 +112,24 @@ export default function UserSettingsPage({ workspaceId }) {
               placeholder="Enter display name"
             />
           </SettingsField>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="settings-btn settings-btn-primary"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+            {saveMessage && (
+              <span className={`settings-save-message ${saveMessage.includes('Failed') ? 'error' : 'success'}`}>
+                {saveMessage}
+              </span>
+            )}
+          </div>
         </SettingsSection>
 
-        <SettingsSection title="Appearance">
+        <SettingsSection title="Appearance" icon={Palette}>
           <SettingsField label="Theme" description="Choose light or dark mode">
             <button
               type="button"
@@ -126,23 +141,7 @@ export default function UserSettingsPage({ workspaceId }) {
           </SettingsField>
         </SettingsSection>
 
-        <div className="settings-actions">
-          <button
-            type="button"
-            className="settings-btn settings-btn-primary"
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-          {saveMessage && (
-            <span className={`settings-save-message ${saveMessage.includes('Failed') ? 'error' : 'success'}`}>
-              {saveMessage}
-            </span>
-          )}
-        </div>
-
-        <SettingsSection title="Account" danger>
+        <SettingsSection title="Account" icon={Shield} danger>
           <SettingsField label="Sign Out" description="Sign out of your account">
             <button
               type="button"

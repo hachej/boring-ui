@@ -1,5 +1,4 @@
 import { ArrowLeft } from 'lucide-react'
-import { useTheme } from '../hooks/useTheme'
 import ThemeToggle from '../components/ThemeToggle'
 
 export default function PageShell({ title, children, backHref, backLabel = 'Back to workspace' }) {
@@ -26,11 +25,14 @@ export default function PageShell({ title, children, backHref, backLabel = 'Back
   )
 }
 
-export function SettingsSection({ title, description, children, danger = false }) {
+export function SettingsSection({ title, description, children, icon: Icon, danger = false }) {
   return (
     <section className={`settings-section ${danger ? 'settings-section-danger' : ''}`}>
       <div className="settings-section-header">
-        <h2 className="settings-section-title">{title}</h2>
+        <div className="settings-section-heading">
+          {Icon ? <Icon size={16} className="settings-section-icon" aria-hidden="true" /> : null}
+          <h2 className="settings-section-title">{title}</h2>
+        </div>
         {description && <p className="settings-section-description">{description}</p>}
       </div>
       <div className="settings-section-body">

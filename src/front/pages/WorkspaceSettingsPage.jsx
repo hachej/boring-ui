@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Loader2 } from 'lucide-react'
-import { apiFetchJson, apiFetch } from '../utils/transport'
+import { Loader2, Cog, Activity, Lock, AlertTriangle, Copy, Check } from 'lucide-react'
+import { apiFetchJson } from '../utils/transport'
 import { buildApiUrl } from '../utils/apiBase'
 import { routes } from '../utils/routes'
 import PageShell, { SettingsSection, SettingsField } from './PageShell'
@@ -8,7 +8,6 @@ import PageShell, { SettingsSection, SettingsField } from './PageShell'
 export default function WorkspaceSettingsPage({ workspaceId }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [workspace, setWorkspace] = useState(null)
   const [runtime, setRuntime] = useState(null)
   const [settings, setSettings] = useState({})
   const [workspaceName, setWorkspaceName] = useState('')
@@ -17,6 +16,7 @@ export default function WorkspaceSettingsPage({ workspaceId }) {
   const [retrying, setRetrying] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [workspaceIdCopied, setWorkspaceIdCopied] = useState(false)
 
   const backRoute = routes.controlPlane.workspaces.scope(workspaceId)
   const backHref = buildApiUrl(backRoute.path, backRoute.query)
@@ -39,7 +39,6 @@ export default function WorkspaceSettingsPage({ workspaceId }) {
         const workspaces = workspacesResult.data?.workspaces || []
         const ws = workspaces.find((w) => w.id === workspaceId)
         if (ws) {
-          setWorkspace(ws)
           setWorkspaceName(ws.name || '')
         }
 
@@ -118,6 +117,16 @@ export default function WorkspaceSettingsPage({ workspaceId }) {
     }
   }
 
+  const handleCopyWorkspaceId = async () => {
+    try {
+      await navigator.clipboard.writeText(workspaceId)
+      setWorkspaceIdCopied(true)
+      setTimeout(() => setWorkspaceIdCopied(false), 1500)
+    } catch {
+      // Ignore clipboard errors silently to avoid noisy UX.
+    }
+  }
+
   if (loading) {
     return (
       <PageShell title="Workspace Settings" backHref={backHref}>
@@ -146,7 +155,7 @@ export default function WorkspaceSettingsPage({ workspaceId }) {
   return (
     <PageShell title="Workspace Settings" backHref={backHref}>
       <div className="settings-card">
-        <SettingsSection title="General">
+        <SettingsSection title="General" icon={Cog}>
           <SettingsField label="Workspace Name">
             <div className="settings-field-inline">
               <input
@@ -172,16 +181,27 @@ export default function WorkspaceSettingsPage({ workspaceId }) {
             )}
           </SettingsField>
           <SettingsField label="Workspace ID" description="Unique identifier for this workspace">
-            <input
-              type="text"
-              className="settings-input settings-input-mono"
-              value={workspaceId}
-              disabled
-            />
+            <div className="settings-field-inline">
+              <input
+                type="text"
+                className="settings-input settings-input-mono"
+                value={workspaceId}
+                disabled
+              />
+              <button
+                type="button"
+                className="settings-btn settings-btn-secondary"
+                onClick={handleCopyWorkspaceId}
+                aria-label="Copy workspace ID"
+              >
+                {workspaceIdCopied ? <Check size={14} /> : <Copy size={14} />}
+                {workspaceIdCopied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
           </SettingsField>
         </SettingsSection>
 
-        <SettingsSection title="Runtime">
+        <SettingsSection title="Runtime" icon={Activity}>
           <SettingsField label="Status">
             <div className="settings-runtime-status">
               <span className={`settings-runtime-badge settings-runtime-badge-${runtimeState}`}>
@@ -217,7 +237,7 @@ export default function WorkspaceSettingsPage({ workspaceId }) {
         </SettingsSection>
 
         {settingKeys.length > 0 && (
-          <SettingsSection title="Configuration" description="Encrypted workspace settings">
+          <SettingsSection title="Configuration" icon={Lock} description="Encrypted workspace settings">
             {settingKeys.map((key) => (
               <SettingsField key={key} label={key}>
                 <span className="settings-configured-badge">
@@ -233,7 +253,7 @@ export default function WorkspaceSettingsPage({ workspaceId }) {
           </SettingsSection>
         )}
 
-        <SettingsSection title="Danger Zone" danger>
+        <SettingsSection title="Danger Zone" icon={AlertTriangle} danger>
           <SettingsField label="Delete Workspace" description="Permanently delete this workspace and all its data">
             {showDeleteConfirm ? (
               <div className="settings-delete-confirm">
