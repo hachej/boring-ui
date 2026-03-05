@@ -142,5 +142,50 @@ describe('UserMenu', () => {
       expect(container.querySelector('.user-menu-dropdown')).toBeInTheDocument()
       expect(container.querySelector('.user-menu-item')).toBeInTheDocument()
     })
+
+    it('supports arrow-key navigation across menu items', () => {
+      renderWithTheme(<UserMenu {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
+
+      const appearance = screen.getByRole('menuitem', { name: /Appearance:/ })
+      const switchWorkspace = screen.getByRole('menuitem', { name: 'Switch workspace' })
+      const createWorkspace = screen.getByRole('menuitem', { name: 'Create workspace' })
+
+      expect(appearance).toHaveFocus()
+      fireEvent.keyDown(appearance, { key: 'ArrowDown' })
+      expect(switchWorkspace).toHaveFocus()
+      fireEvent.keyDown(switchWorkspace, { key: 'ArrowDown' })
+      expect(createWorkspace).toHaveFocus()
+      fireEvent.keyDown(createWorkspace, { key: 'ArrowUp' })
+      expect(switchWorkspace).toHaveFocus()
+    })
+
+    it('traps Tab focus within the open dropdown', () => {
+      renderWithTheme(<UserMenu {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
+
+      const firstItem = screen.getByRole('menuitem', { name: /Appearance:/ })
+      const lastItem = screen.getByRole('menuitem', { name: 'Logout' })
+
+      lastItem.focus()
+      fireEvent.keyDown(lastItem, { key: 'Tab' })
+      expect(firstItem).toHaveFocus()
+
+      firstItem.focus()
+      fireEvent.keyDown(firstItem, { key: 'Tab', shiftKey: true })
+      expect(lastItem).toHaveFocus()
+    })
+
+    it('closes on Escape and restores focus to trigger', () => {
+      renderWithTheme(<UserMenu {...makeProps()} />)
+      const trigger = screen.getByRole('button', { name: 'User menu' })
+      fireEvent.click(trigger)
+
+      const menu = screen.getByRole('menu')
+      fireEvent.keyDown(menu, { key: 'Escape' })
+
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+      expect(trigger).toHaveFocus()
+    })
   })
 })

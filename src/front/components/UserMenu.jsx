@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, ArrowLeftRight, Plus, Settings, LogOut, AlertCircle } from 'lucide-react'
 import { useTheme } from '../hooks/useTheme'
 
 /**
@@ -33,10 +33,25 @@ export default function UserMenu({
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const menuRef = useRef(null)
+  const triggerRef = useRef(null)
   const dropdownRef = useRef(null)
   const [collapsedMenuStyle, setCollapsedMenuStyle] = useState(null)
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
+
+  const getFocusableMenuElements = () => {
+    if (!dropdownRef.current) return []
+    return Array.from(
+      dropdownRef.current.querySelectorAll('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')
+    )
+  }
+
+  const closeMenu = (restoreFocus = false) => {
+    setIsOpen(false)
+    if (restoreFocus) {
+      queueMicrotask(() => triggerRef.current?.focus())
+    }
+  }
 
   // Get first letter of email (uppercase) for avatar
   const avatarLetter = email ? email.charAt(0).toUpperCase() : '?'
@@ -46,7 +61,7 @@ export default function UserMenu({
     function handleClickOutside(event) {
       const clickedTrigger = menuRef.current?.contains(event.target)
       const clickedMenu = dropdownRef.current?.contains(event.target)
-      if (!clickedTrigger && !clickedMenu) setIsOpen(false)
+      if (!clickedTrigger && !clickedMenu) closeMenu(false)
     }
 
     if (isOpen) {
@@ -61,7 +76,7 @@ export default function UserMenu({
   useEffect(() => {
     function handleEscape(event) {
       if (event.key === 'Escape') {
-        setIsOpen(false)
+        closeMenu(true)
       }
     }
 
@@ -85,16 +100,16 @@ export default function UserMenu({
         // failure UX is handled by parent flows; keep menu interactions resilient
       }
     }
-    setIsOpen(false)
+    closeMenu(true)
   }
 
   const actionItems = [
     ...(showSwitchWorkspace
-      ? [{ key: 'switch', label: 'Switch workspace', onClick: onSwitchWorkspace }]
+      ? [{ key: 'switch', label: 'Switch workspace', icon: ArrowLeftRight, onClick: onSwitchWorkspace }]
       : []),
-    { key: 'create', label: 'Create workspace', onClick: onCreateWorkspace },
-    { key: 'settings', label: 'User settings', onClick: onOpenUserSettings },
-    { key: 'logout', label: 'Logout', onClick: onLogout },
+    { key: 'create', label: 'Create workspace', icon: Plus, onClick: onCreateWorkspace },
+    { key: 'settings', label: 'User settings', icon: Settings, onClick: onOpenUserSettings },
+    { key: 'logout', label: 'Logout', icon: LogOut, onClick: onLogout },
   ]
 
   const reactId = useId()
@@ -103,13 +118,14 @@ export default function UserMenu({
   const safeId = reactId.replace(/:/g, '')
   const triggerId = `user-menu-trigger-${safeId}`
   const menuId = `user-menu-dropdown-${safeId}`
-  const displayEmail = email || 'Signed in user'
+  const isSignedIn = Boolean(String(email || '').trim())
+  const displayEmail = isSignedIn ? String(email).trim() : 'Not signed in'
   const workspaceNameValue = String(workspaceName || '').trim()
   const isUuidWorkspaceName = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceNameValue)
   const showWorkspace = workspaceNameValue.length > 0 && !isUuidWorkspaceName
   const workspaceLabel = showWorkspace
-    ? `workspace: ${workspaceName}`
-    : workspaceId ? `workspace id: ${workspaceId}` : 'workspace: not selected'
+    ? workspaceNameValue
+    : ''
 
   useEffect(() => {
     if (!isOpen || !collapsed || !menuRef.current) return
@@ -147,6 +163,62 @@ export default function UserMenu({
     }
   }, [isOpen, collapsed])
 
+  useEffect(() => {
+    if (!isOpen) return
+    const menuItems = Array.from(
+      dropdownRef.current?.querySelectorAll('[role="menuitem"]:not([disabled])') || []
+    )
+    menuItems[0]?.focus()
+  }, [isOpen])
+
+  const handleMenuKeyDown = (event) => {
+    if (!dropdownRef.current) return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeMenu(true)
+      return
+    }
+
+    if (event.key === 'Tab') {
+      const focusables = getFocusableMenuElements()
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+      return
+    }
+
+    const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+    if (!keys.includes(event.key)) return
+    const menuItems = Array.from(
+      dropdownRef.current.querySelectorAll('[role="menuitem"]:not([disabled])')
+    )
+    if (menuItems.length === 0) return
+    event.preventDefault()
+    const currentIndex = menuItems.indexOf(document.activeElement)
+    if (event.key === 'Home') {
+      menuItems[0].focus()
+      return
+    }
+    if (event.key === 'End') {
+      menuItems[menuItems.length - 1].focus()
+      return
+    }
+    if (currentIndex === -1) {
+      menuItems[0].focus()
+      return
+    }
+    const delta = event.key === 'ArrowDown' ? 1 : -1
+    const nextIndex = (currentIndex + delta + menuItems.length) % menuItems.length
+    menuItems[nextIndex].focus()
+  }
+
   const dropdown = (
     <div
       className={`user-menu-dropdown ${collapsed ? 'user-menu-dropdown-portal' : ''}`}
@@ -154,20 +226,22 @@ export default function UserMenu({
       role="menu"
       aria-labelledby={triggerId}
       ref={dropdownRef}
+      onKeyDown={handleMenuKeyDown}
       style={collapsed ? collapsedMenuStyle || undefined : undefined}
     >
       <div className="user-menu-email">{displayEmail}</div>
-      <div className="user-menu-workspace">{workspaceLabel}</div>
+      {workspaceLabel ? <div className="user-menu-workspace">{workspaceLabel}</div> : null}
       {statusMessage ? (
         <div
           className={`user-menu-status user-menu-status-${statusTone}`}
           role="alert"
         >
+          <AlertCircle size={12} className="user-menu-status-icon" aria-hidden="true" />
           <span className="user-menu-status-text">{statusMessage}</span>
           {typeof onRetry === 'function' ? (
             <button
               type="button"
-              className="user-menu-status-retry"
+              className="btn btn-secondary btn-sm user-menu-status-retry"
               onClick={() => {
                 try {
                   const result = onRetry()
@@ -186,7 +260,7 @@ export default function UserMenu({
       ) : null}
       <div className="user-menu-divider" />
       <button
-        className="user-menu-item user-menu-item-appearance"
+        className="btn btn-ghost user-menu-item user-menu-item-appearance"
         onClick={toggleTheme}
         role="menuitem"
       >
@@ -196,14 +270,16 @@ export default function UserMenu({
       <div className="user-menu-divider" />
       {actionItems.map((item) => {
         const disabled = typeof item.onClick !== 'function' || disabledActions.includes(item.key)
+        const ItemIcon = item.icon
         return (
           <button
             key={item.key}
-            className={`user-menu-item ${disabled ? 'user-menu-item-disabled' : ''}`}
+            className={`btn btn-ghost user-menu-item ${disabled ? 'user-menu-item-disabled' : ''}`}
             onClick={() => runAction(item.onClick)}
             role="menuitem"
             disabled={disabled}
           >
+            {ItemIcon ? <ItemIcon size={14} className="user-menu-item-icon" aria-hidden="true" /> : null}
             {item.label}
           </button>
         )
@@ -218,8 +294,9 @@ export default function UserMenu({
     >
       <button
         className={`user-menu-trigger ${collapsed ? 'compact' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen((prev) => !prev)}
         id={triggerId}
+        ref={triggerRef}
         aria-label="User menu"
         aria-expanded={isOpen}
         aria-haspopup="true"
@@ -229,7 +306,7 @@ export default function UserMenu({
         {!collapsed && (
           <span className="user-menu-trigger-meta">
             <span className="user-menu-trigger-primary">{displayEmail}</span>
-            <span className="user-menu-trigger-secondary">{workspaceLabel}</span>
+            {workspaceLabel ? <span className="user-menu-trigger-secondary">{workspaceLabel}</span> : null}
           </span>
         )}
       </button>

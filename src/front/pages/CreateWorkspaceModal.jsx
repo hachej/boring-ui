@@ -6,6 +6,7 @@ export default function CreateWorkspaceModal({ onClose, onCreate }) {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef(null)
+  const dialogRef = useRef(null)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -13,7 +14,26 @@ export default function CreateWorkspaceModal({ onClose, onCreate }) {
 
   useEffect(() => {
     const handleEscape = (e) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const focusables = Array.from(
+        dialog.querySelectorAll('button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])')
+      ).filter((el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true')
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
@@ -41,9 +61,16 @@ export default function CreateWorkspaceModal({ onClose, onCreate }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal-dialog"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-workspace-title"
+      >
         <div className="modal-header">
-          <h2 className="modal-title">Create Workspace</h2>
+          <h2 id="create-workspace-title" className="modal-title">Create Workspace</h2>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>

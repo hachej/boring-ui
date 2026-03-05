@@ -136,7 +136,7 @@ export default function FrontmatterEditor({
         <button type="button" className="frontmatter-toggle" aria-label={isCollapsed ? 'Expand' : 'Collapse'}>
           <ChevronDown
             size={12}
-            style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
+            style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform var(--transition-fast)' }}
           />
         </button>
         <span className="frontmatter-label">Metadata</span>

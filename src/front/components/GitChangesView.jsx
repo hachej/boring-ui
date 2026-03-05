@@ -88,6 +88,7 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
         <div className="git-changes-empty">
           <Check className="git-changes-empty-icon" size={24} />
           <span>No changes</span>
+          <span className="git-changes-empty-subtitle">Working tree is clean.</span>
         </div>
       </div>
     )
@@ -121,6 +122,14 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
                     key={path}
                     className={`git-change-item ${isActive ? 'git-change-item-active' : ''}`}
                     onClick={() => handleFileClick(path, status)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        handleFileClick(path, status)
+                      }
+                    }}
                   >
                     <span className="git-change-icon"><FileText size={14} /></span>
                     <div className="git-change-info">

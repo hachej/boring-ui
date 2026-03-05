@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, X, Folder, FolderOpen, FolderInput, ChevronRight, ChevronDown, MoreHorizontal, Settings } from 'lucide-react'
+import { Search, SearchX, X, Folder, FolderOpen, FolderInput, ChevronRight, ChevronDown, MoreHorizontal, Settings, Plus } from 'lucide-react'
 import { useQueryClient, useQueries } from '@tanstack/react-query'
 import { apiFetchJson } from '../utils/transport'
 import { routes } from '../utils/routes'
@@ -32,7 +32,19 @@ const formatSectionLabel = (path) => {
   return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
-export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRenamed, onFileMoved, projectRoot, activeFile, creatingFile, onFileCreated, onCancelCreate }) {
+export default function FileTree({
+  onOpen,
+  onOpenToSide,
+  onFileDeleted,
+  onFileRenamed,
+  onFileMoved,
+  projectRoot,
+  activeFile,
+  creatingFile,
+  onFileCreated,
+  onCancelCreate,
+  searchExpanded = false,
+}) {
   const provider = useDataProvider()
   const queryClient = useQueryClient()
   const [expandedDirs, setExpandedDirs] = useState({})
@@ -237,6 +249,12 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
       setNewFileInput({ parentDir: '', name: '' })
     }
   }, [creatingFile])
+
+  useEffect(() => {
+    if (searchExpanded) return
+    setSearchQuery('')
+    setDebouncedQuery('')
+  }, [searchExpanded])
 
   // Close context menu on click outside
   useEffect(() => {
@@ -581,6 +599,21 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
             )}
             {renderStatusBadge(fileStatus)}
             {dirHasChanges && <span className="dir-changes-dot" title="Contains changes" />}
+            {e.is_dir && !isRenaming && (
+              <button
+                type="button"
+                className="folder-new-file-btn"
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  handleNewFile(e.path)
+                }}
+                title={`New file in ${e.name}`}
+                aria-label={`New file in ${e.name}`}
+              >
+                <Plus size={11} />
+              </button>
+            )}
           </div>
           {e.is_dir && expandedDirs[e.path] && (
             <>
@@ -701,6 +734,14 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
         <div
           className={`file-tree-section-header ${hasChanges ? 'has-changes' : ''}`}
           onClick={() => toggleSection(sectionKey)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              toggleSection(sectionKey)
+            }
+          }}
         >
           <span className="section-collapse-icon">{isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
           <span className="section-icon">{React.createElement(section.icon, { size: 14 })}</span>
@@ -754,38 +795,52 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
 
   return (
     <div className="file-tree" onContextMenu={handleRootContextMenu}>
-      <div className="search-box">
-        <Search className="search-icon" size={14} />
-        <input
-          type="text"
-          className="search-input"
-          placeholder="Search files..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        {searchQuery && (
-          <button
-            type="button"
-            className="search-clear"
-            onClick={() => setSearchQuery('')}
-          >
-            <X size={12} />
-          </button>
-        )}
-      </div>
+      {searchExpanded && (
+        <div className="search-box">
+          <Search className="search-icon" size={14} />
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Search files..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => setSearchQuery('')}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      )}
 
       {trimmedQuery ? (
         <div className="search-results">
           {isSearching ? (
             <div className="search-status">Searching...</div>
           ) : searchResults.length === 0 ? (
-            <div className="search-status">No files found</div>
+            <div className="search-empty-state" role="status" aria-live="polite">
+              <SearchX size={16} className="search-empty-icon" aria-hidden="true" />
+              <div className="search-empty-title">No files found</div>
+              <div className="search-empty-hint">Try a different name or path fragment.</div>
+            </div>
           ) : (
             searchResults.map((result) => (
               <div
                 key={result.path}
                 className="search-result-item"
                 onClick={() => handleSearchResultClick(result)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleSearchResultClick(result)
+                  }
+                }}
               >
                 <span className="search-result-icon">{getFileIcon(result.name)}</span>
                 <div className="search-result-content">
@@ -822,9 +877,13 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
               ? renderSection(key, sections[key])
               : null
           )}
-          {/* Other section (discrete) */}
+          {/* Flatten "other" entries directly into tree (no redundant section header). */}
           {sections.other && sections.other.entries.length > 0 && (
-            renderSection('other', sections.other)
+            sections.other.entries.map((entry) => (
+              <React.Fragment key={entry.path}>
+                {renderEntries([entry], 0, '')}
+              </React.Fragment>
+            ))
           )}
         </div>
       ) : (
