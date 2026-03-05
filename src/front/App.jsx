@@ -235,24 +235,6 @@ const listDockPanels = (api) => {
 
 const getPanelComponent = (panel) => panel?.api?.component ?? panel?.component ?? ''
 
-const hasDragType = (dataTransfer, type) => {
-  const types = dataTransfer?.types
-  if (!types) return false
-  if (typeof types.includes === 'function') return types.includes(type)
-  if (typeof types.contains === 'function') return types.contains(type)
-  try {
-    return Array.from(types).includes(type)
-  } catch {
-    return false
-  }
-}
-
-const isFileDragDataTransfer = (dataTransfer) =>
-  hasDragType(dataTransfer, 'application/x-kurt-file')
-
-const isSeriesDragDataTransfer = (dataTransfer) =>
-  hasDragType(dataTransfer, 'text/series-id')
-
 const countAgentPanels = (api, family) => {
   const panels = listDockPanels(api)
   if (family === 'terminal') {
@@ -2164,10 +2146,9 @@ export default function App() {
       api.onUnhandledDragOverEvent((dragEvent) => {
         const dataTransfer = dragEvent?.nativeEvent?.dataTransfer
         const isInternalPanelDrag = typeof dragEvent?.getData === 'function' && !!dragEvent.getData()
-        const isExternalFileOrSeriesDrag = !!dataTransfer
-          && (isFileDragDataTransfer(dataTransfer) || isSeriesDragDataTransfer(dataTransfer))
+        const isExternalDrag = !!dataTransfer
 
-        if (isInternalPanelDrag || isExternalFileOrSeriesDrag) {
+        if (isInternalPanelDrag || isExternalDrag) {
           dragEvent.accept()
         }
       })
@@ -3536,7 +3517,16 @@ export default function App() {
       return
     }
 
-    const droppedSeriesId = String(dataTransfer.getData('text/series-id') || '').trim()
+    const droppedSeriesFromCustomType = String(dataTransfer.getData('text/series-id') || '').trim()
+    const droppedPlainText = String(dataTransfer.getData('text/plain') || '').trim()
+    const droppedSeriesId = droppedSeriesFromCustomType
+      || (
+        droppedPlainText
+        && !droppedPlainText.includes('/')
+        && !droppedPlainText.includes('\\')
+        ? droppedPlainText
+        : ''
+      )
     if (!droppedSeriesId) return
 
     const targetPanel = event?.panel || event?.group?.activePanel
