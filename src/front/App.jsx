@@ -3835,7 +3835,6 @@ export default function App() {
                       tabComponents={tabComponents}
                       rightHeaderActionsComponent={RightHeaderActions}
                       onReady={onReady}
-                      showDndOverlay={showDndOverlay}
                       onDidDrop={onDidDrop}
                     />
                   </div>
