@@ -325,7 +325,7 @@ def main() -> int:
         recipient = args.recipient.strip().lower()
     else:
         stamp = int(time.time())
-    recipient = f"qa+boring-ui-signup-{stamp}@mail.boringdata.io"
+        recipient = f"qa+boring-ui-signup-{stamp}@mail.boringdata.io"
     password = _random_password()
     sent_after_epoch = time.time()
     signup_mode = "public_signup"

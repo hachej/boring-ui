@@ -41,12 +41,8 @@ const resolveApiBase = () => {
 
   if (typeof window !== 'undefined' && window.location) {
     const { protocol, hostname, port, origin, pathname } = window.location
-    const workspaceBase = getWorkspaceBasePath(pathname)
-    if (port && isDevPort(port)) {
-      // In dev, keep API same-origin so Vite proxy handles /api and /ws.
-      return workspaceBase ? `${origin}${workspaceBase}` : origin
-    }
     if (origin) {
+      const workspaceBase = getWorkspaceBasePath(pathname)
       return workspaceBase ? `${origin}${workspaceBase}` : origin
     }
   }
