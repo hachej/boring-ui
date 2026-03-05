@@ -143,7 +143,7 @@ const styles = {
     textAlign: 'left',
     color: 'var(--chat-text)',
     fontSize: '14px',
-    transition: 'background-color 0.15s',
+    transition: 'background-color var(--transition-fast)',
   },
   optionSelected: {
     backgroundColor: 'var(--chat-accent)',

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { SendHorizontal } from 'lucide-react'
 import {
   publishPiSessionState,
   subscribePiSessionActions,
@@ -312,11 +313,12 @@ export default function PiBackendAdapter({ serviceUrl, panelId, sessionBootstrap
         />
         <button
           type="button"
-          className="pi-backend-send"
+          className="btn btn-primary pi-backend-send"
           disabled={!input.trim() || isSending || !currentSessionId}
           onClick={onSubmit}
         >
-          {isSending ? 'Sending…' : 'Send'}
+          <SendHorizontal size={14} aria-hidden="true" />
+          <span>{isSending ? 'Sending…' : 'Send'}</span>
         </button>
       </div>
       {error

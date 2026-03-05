@@ -2452,8 +2452,13 @@ const Thread = ({
         <EmptyState>
           <div className="claude-stream-empty">
             <Sparkles className="mark" size={24} />
-            <div className="headline">Claude Code</div>
-            <div className="hint">Type /model to pick the right tool for the job.</div>
+            <div className="headline">Ask me anything about your code</div>
+            <div className="hint">I can explain files, propose edits, or help debug workflows.</div>
+            <div className="claude-empty-prompts" aria-hidden="true">
+              <span className="claude-empty-prompt-pill">Summarize this workspace</span>
+              <span className="claude-empty-prompt-pill">Find potential regressions</span>
+              <span className="claude-empty-prompt-pill">Draft a refactor plan</span>
+            </div>
           </div>
         </EmptyState>
         <Messages

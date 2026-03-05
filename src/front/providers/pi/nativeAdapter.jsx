@@ -11,6 +11,7 @@ import { getPiRuntime } from './runtime'
 import { getPiAgentConfig } from './agentConfig'
 import { createPiNativeTools, mergePiTools } from './defaultTools'
 import { getAdditionalChatPanelTools } from './chatPanelTools'
+import { normalizeXmlToolMessages, transformAssistantXmlMessage } from './toolCallXmlTransform'
 import {
   publishPiSessionState,
   subscribePiSessionActions,
@@ -105,55 +106,30 @@ pi-chat-panel {
 }
 
 /* ── Bridge boring-ui design tokens → pi-web-ui (shadcn) tokens ── */
-/* Light mode defaults — these map our app's palette into the library's variable namespace */
+/* Inherits theme from boring-ui tokens (light + dark) via CSS variable inheritance on :host. */
 :host {
-  --background: #ffffff;
-  --foreground: #111827;
-  --card: #ffffff;
-  --card-foreground: #111827;
-  --popover: #ffffff;
-  --popover-foreground: #111827;
-  --primary: #ea580c;
-  --primary-foreground: #ffffff;
-  --secondary: #f3f4f6;
-  --secondary-foreground: #111827;
-  --muted: #f9fafb;
-  --muted-foreground: #6b7280;
-  --accent: #f3f4f6;
-  --accent-foreground: #ea580c;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --border: #e5e7eb;
-  --input: #e5e7eb;
-  --ring: #ea580c;
+  --background: var(--color-bg-primary);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-bg-secondary);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-bg-primary);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-ai-agent);
+  --primary-foreground: var(--color-ai-agent-foreground);
+  --secondary: var(--color-bg-tertiary);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-bg-secondary);
+  --muted-foreground: var(--color-text-secondary);
+  --accent: var(--color-bg-tertiary);
+  --accent-foreground: var(--color-ai-agent);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-text-inverse);
+  --border: var(--color-border);
+  --input: var(--color-border);
+  --ring: var(--color-ai-agent);
   --radius: 0.5rem;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
-}
-
-/* Dark mode — activated when boring-ui sets data-theme="dark" on the document */
-:host-context([data-theme="dark"]) :host,
-:host-context([data-theme="dark"]) .pi-root,
-:host(.dark) {
-  --background: #0f0f0f;
-  --foreground: #fafafa;
-  --card: #1a1a1a;
-  --card-foreground: #fafafa;
-  --popover: #1a1a1a;
-  --popover-foreground: #fafafa;
-  --primary: #fb923c;
-  --primary-foreground: #0f0f0f;
-  --secondary: #262626;
-  --secondary-foreground: #fafafa;
-  --muted: #1a1a1a;
-  --muted-foreground: #a1a1aa;
-  --accent: #262626;
-  --accent-foreground: #fb923c;
-  --destructive: #f87171;
-  --destructive-foreground: #fafafa;
-  --border: #2e2e2e;
-  --input: #2e2e2e;
-  --ring: #fb923c;
 }
 
 /* ── Typography — align with boring-ui (14px base, Inter) ── */
@@ -184,8 +160,12 @@ pi-chat-panel {
 /* ── Message area spacing ── */
 .pi-root .max-w-3xl {
   max-width: 100%;
-  padding-left: 12px;
-  padding-right: 12px;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.pi-root .shrink-0 .max-w-3xl {
+  padding-bottom: 16px;
 }
 
 /* ── Message editor input — compact for panel layout ── */
@@ -193,10 +173,48 @@ message-editor textarea {
   font-size: 14px !important;
   line-height: 1.5 !important;
   padding: 12px !important;
+  color: var(--foreground);
+}
+
+message-editor textarea::placeholder {
+  color: var(--color-text-placeholder, #9ca3af) !important;
 }
 
 message-editor .bg-card.rounded-xl.border {
-  border-radius: 12px;
+  border-style: solid !important;
+  border-radius: var(--radius-sm);
+}
+
+message-editor .px-2.pb-2 button {
+  opacity: 0.75;
+  transition: opacity var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
+}
+
+message-editor .px-2.pb-2 button:hover,
+message-editor .px-2.pb-2 button:focus-visible {
+  opacity: 1;
+}
+
+message-editor .px-2.pb-2 > .flex.gap-2.items-center:last-child > button:last-child {
+  opacity: 1;
+  border: 1px solid var(--border);
+}
+
+message-editor .px-2.pb-2 > .flex.gap-2.items-center:last-child > button:last-child:not([disabled]) {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+message-editor .px-2.pb-2 > .flex.gap-2.items-center:last-child > button:last-child:not([disabled]):hover {
+  background: color-mix(in srgb, var(--primary) 88%, black 12%);
+}
+
+message-editor .px-2.pb-2 > .flex.gap-2.items-center:last-child > button:last-child[disabled] {
+  background: transparent;
+  color: var(--muted-foreground);
+  border-color: var(--border);
+  opacity: 0.55;
 }
 
 /* ── Focus ring uses app accent ── */
@@ -226,9 +244,40 @@ message-editor button {
 }
 
 /* ── User message pill — use app accent instead of hardcoded orange ── */
+user-message > div {
+  justify-content: flex-end !important;
+  margin-right: 0 !important;
+  margin-left: 24px !important;
+}
+
 .user-message-container {
+  max-width: 85%;
+  border-radius: 12px 12px 4px 12px !important;
   background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 12%, transparent), color-mix(in srgb, var(--primary) 15%, transparent)) !important;
   border-color: color-mix(in srgb, var(--primary) 25%, transparent) !important;
+}
+
+assistant-message > div {
+  max-width: 95%;
+}
+
+/* ── Tool call cards (parsed XML + native tool calls) ── */
+tool-message > .p-2\\.5.border.border-border.rounded-md.bg-card.text-card-foreground.shadow-xs {
+  border-radius: 10px;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--card) 94%, var(--background));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+tool-message .text-green-600,
+tool-message .dark\\:text-green-500 {
+  color: var(--color-success) !important;
+}
+
+tool-message button {
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 
 /* ── Model selector dialog — align with app design ── */
@@ -264,7 +313,7 @@ agent-model-selector input[placeholder] {
   padding: 8px 12px;
   border: 1px solid var(--border);
   background: var(--background);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 agent-model-selector input:focus {
@@ -283,7 +332,7 @@ agent-model-selector .rounded-full {
 /* Model list items */
 agent-model-selector [data-model-item] {
   padding: 10px 16px !important;
-  transition: background 0.1s ease;
+  transition: background var(--transition-fast);
 }
 
 agent-model-selector [data-model-item] .text-sm {
@@ -586,6 +635,54 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
       await refreshSessionState()
     }
 
+    const transformAssistantEventMessage = (agent, event) => {
+      if (!agent || !event?.message || event.message.role !== 'assistant') return
+
+      const transformed = transformAssistantXmlMessage(event.message)
+      if (!transformed.changed) return
+
+      if (event.type === 'message_update') {
+        event.message = transformed.message
+        agent.state.streamMessage = transformed.message
+        return
+      }
+
+      if (event.type === 'message_end') {
+        const stateMessages = Array.isArray(agent.state.messages) ? agent.state.messages.slice() : []
+        let messageIndex = stateMessages.lastIndexOf(event.message)
+        if (messageIndex === -1) {
+          for (let idx = stateMessages.length - 1; idx >= 0; idx -= 1) {
+            const candidate = stateMessages[idx]
+            if (!candidate || candidate.role !== 'assistant') continue
+            if (candidate.timestamp !== event.message.timestamp) continue
+            messageIndex = idx
+            break
+          }
+        }
+        if (messageIndex === -1) return
+
+        const existingResultIds = new Set(
+          stateMessages
+            .filter((item) => item?.role === 'toolResult' && item?.toolCallId)
+            .map((item) => String(item.toolCallId)),
+        )
+
+        const nextMessages = stateMessages.slice(0, messageIndex)
+        nextMessages.push(transformed.message)
+
+        for (const toolResult of transformed.toolResults) {
+          const resultId = String(toolResult?.toolCallId || '')
+          if (!resultId || existingResultIds.has(resultId)) continue
+          existingResultIds.add(resultId)
+          nextMessages.push(toolResult)
+        }
+
+        nextMessages.push(...stateMessages.slice(messageIndex + 1))
+        agent.replaceMessages(nextMessages)
+        event.message = transformed.message
+      }
+    }
+
     const mountAgent = async (sessionData) => {
       if (!active) return
 
@@ -607,7 +704,7 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
           systemPrompt: agentConfig.systemPrompt || PI_SYSTEM_PROMPT,
           model,
           thinkingLevel: sessionData?.thinkingLevel || 'off',
-          messages: sessionData?.messages || [],
+          messages: normalizeXmlToolMessages(sessionData?.messages || []).messages,
           tools: mergePiTools(
             defaultTools,
             Array.isArray(agentConfig.tools) ? agentConfig.tools : [],
@@ -620,6 +717,9 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
 
       unsubscribeRef.current = agent.subscribe((event) => {
         if (!active) return
+        if (event.type === 'message_update' || event.type === 'message_end') {
+          transformAssistantEventMessage(agent, event)
+        }
         if (event.type === 'message_end' || event.type === 'agent_end') {
           persistCurrentSession().catch((error) => logPiError('Failed to persist session', error))
         }

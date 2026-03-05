@@ -137,7 +137,7 @@ const BashToolRenderer = ({
                 fontSize: '12px',
                 fontFamily: 'var(--font-mono)',
                 cursor: 'pointer',
-                transition: 'all 0.15s ease',
+                transition: 'all var(--transition-fast)',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = 'var(--color-bg-hover, rgba(255,255,255,0.15))'
