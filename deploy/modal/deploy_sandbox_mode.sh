@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reuse the existing boring-sandbox Modal deployment entrypoint.
-# Default repo location assumes sibling checkouts.
+# Deploy boring-sandbox gateway via Modal.
+#
+# Usage:
+#   ./deploy/modal/deploy_sandbox_mode.sh [gateway|gateway_ui_light]
+#
+# Env vars:
+#   BORING_SANDBOX_REPO — path to boring-sandbox checkout (default: sibling dir)
+#   MODAL_DEPLOY_NAME   — custom --name for modal deploy (optional)
+#   MODAL_ENV           — Modal environment (optional)
+
 BORING_SANDBOX_REPO="${BORING_SANDBOX_REPO:-$(cd "$(dirname "$0")/../../.." && pwd)/boring-sandbox}"
 ENTRYPOINT="${1:-gateway}"
 
@@ -21,4 +29,13 @@ case "${ENTRYPOINT}" in
     ;;
 esac
 
-exec modal deploy "${BORING_SANDBOX_REPO}/src/boring_sandbox/modal_app.py::${ENTRYPOINT}"
+cmd=(modal deploy)
+if [[ -n "${MODAL_DEPLOY_NAME:-}" ]]; then
+  cmd+=(--name "${MODAL_DEPLOY_NAME}")
+fi
+if [[ -n "${MODAL_ENV:-}" ]]; then
+  cmd+=(--env "${MODAL_ENV}")
+fi
+cmd+=("${BORING_SANDBOX_REPO}/src/boring_sandbox/modal_app.py::${ENTRYPOINT}")
+
+exec "${cmd[@]}"

@@ -1,0 +1,3 @@
+[submodule "vendor/boring-sandbox"]
+	path = vendor/boring-sandbox
+	url = https://github.com/boringdata/boring-sandbox.git
