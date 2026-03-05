@@ -93,26 +93,44 @@ _LOGIN_HTML_TEMPLATE: str = """\
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     :root {
-      --surface: #ffffff;
-      --surface-soft: #f8fafc;
-      --ink: #0f172a;
-      --ink-soft: #334155;
-      --accent: #0f766e;
-      --accent-strong: #115e59;
-      --line: #dbe3ea;
-      --danger: #b91c1c;
-      --focus: rgba(15, 118, 110, 0.2);
+      --color-bg-primary: #ffffff;
+      --color-bg-secondary: #f9fafb;
+      --color-text-primary: #111827;
+      --color-text-secondary: #6b7280;
+      --color-border: #e5e7eb;
+      --color-border-strong: #d1d5db;
+      --color-accent: #ea580c;
+      --color-accent-hover: #c2410c;
+      --color-accent-light: #fff7ed;
+      --color-error: #ef4444;
+      --color-info: #2563eb;
+      --focus: rgba(234, 88, 12, 0.18);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --color-bg-primary: #0f0f0f;
+        --color-bg-secondary: #1a1a1a;
+        --color-text-primary: #fafafa;
+        --color-text-secondary: #a1a1aa;
+        --color-border: #2e2e2e;
+        --color-border-strong: #404040;
+        --color-accent: #fb923c;
+        --color-accent-hover: #fdba74;
+        --color-accent-light: #431407;
+        --color-error: #f87171;
+        --color-info: #60a5fa;
+      }
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
-      color: var(--ink);
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--color-text-primary);
       background:
-        radial-gradient(circle at 15% 10%, #d1fae5 0, transparent 26%),
-        radial-gradient(circle at 90% 20%, #bfdbfe 0, transparent 22%),
-        linear-gradient(180deg, #f8fafc, #ecfeff 45%, #f8fafc);
+        radial-gradient(circle at 15% 8%, var(--color-accent-light) 0, transparent 28%),
+        linear-gradient(180deg, var(--color-bg-secondary), var(--color-bg-primary));
     }
     .wrap {
       min-height: 100vh;
@@ -128,12 +146,12 @@ _LOGIN_HTML_TEMPLATE: str = """\
       align-items: stretch;
     }
     .rail {
-      background: rgba(255, 255, 255, 0.72);
+      background: var(--color-bg-primary);
       backdrop-filter: blur(8px);
-      border: 1px solid rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--color-border);
       border-radius: 18px;
       padding: 28px;
-      box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.08);
       animation: enter 260ms ease-out both;
     }
     .kicker {
@@ -141,7 +159,7 @@ _LOGIN_HTML_TEMPLATE: str = """\
       align-items: center;
       gap: 8px;
       margin: 0;
-      color: #0f766e;
+      color: var(--color-accent);
       font-size: 0.82rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -151,8 +169,8 @@ _LOGIN_HTML_TEMPLATE: str = """\
       width: 8px;
       height: 8px;
       border-radius: 999px;
-      background: #14b8a6;
-      box-shadow: 0 0 0 6px rgba(20, 184, 166, 0.12);
+      background: var(--color-accent);
+      box-shadow: 0 0 0 6px rgba(234, 88, 12, 0.14);
     }
     .rail h1 {
       margin: 14px 0 10px;
@@ -162,7 +180,7 @@ _LOGIN_HTML_TEMPLATE: str = """\
     }
     .rail p {
       margin: 0;
-      color: #1e293b;
+      color: var(--color-text-secondary);
       line-height: 1.58;
       max-width: 36ch;
     }
@@ -174,7 +192,7 @@ _LOGIN_HTML_TEMPLATE: str = """\
       gap: 10px;
     }
     .proofs li {
-      color: #334155;
+      color: var(--color-text-secondary);
       font-size: 0.95rem;
     }
     .proofs li::before {
@@ -186,9 +204,9 @@ _LOGIN_HTML_TEMPLATE: str = """\
     .redirect-chip {
       margin-top: 18px;
       display: inline-block;
-      border: 1px solid #cbd5e1;
-      background: #ffffff;
-      color: #0f172a;
+      border: 1px solid var(--color-border-strong);
+      background: var(--color-bg-primary);
+      color: var(--color-text-primary);
       border-radius: 999px;
       padding: 8px 12px;
       font-size: 0.78rem;
@@ -200,18 +218,18 @@ _LOGIN_HTML_TEMPLATE: str = """\
     }
     .card {
       border-radius: 18px;
-      background: var(--surface);
-      border: 1px solid var(--line);
+      background: var(--color-bg-primary);
+      border: 1px solid var(--color-border);
       padding: 24px;
-      box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.1);
       animation: enter 260ms ease-out both;
     }
     .mode-tabs {
       display: grid;
       grid-template-columns: 1fr 1fr;
       border-radius: 12px;
-      background: var(--surface-soft);
-      border: 1px solid #e2e8f0;
+      background: var(--color-bg-secondary);
+      border: 1px solid var(--color-border);
       padding: 4px;
       margin-bottom: 16px;
       gap: 4px;
@@ -219,7 +237,7 @@ _LOGIN_HTML_TEMPLATE: str = """\
     .mode-tab {
       border: 0;
       background: transparent;
-      color: #64748b;
+      color: var(--color-text-secondary);
       border-radius: 9px;
       padding: 9px 11px;
       font-weight: 700;
@@ -227,9 +245,9 @@ _LOGIN_HTML_TEMPLATE: str = """\
       transition: background-color 140ms ease, color 140ms ease;
     }
     .mode-tab.is-active {
-      background: #ffffff;
-      color: #0f172a;
-      box-shadow: 0 1px 0 #dbe3ea;
+      background: var(--color-bg-primary);
+      color: var(--color-text-primary);
+      box-shadow: 0 1px 0 var(--color-border);
     }
     h2 {
       margin: 0;
@@ -238,30 +256,30 @@ _LOGIN_HTML_TEMPLATE: str = """\
     }
     .subtitle {
       margin: 8px 0 0;
-      color: var(--ink-soft);
+      color: var(--color-text-secondary);
       line-height: 1.5;
     }
     label {
       display: block;
       margin: 14px 0 6px;
       font-size: 0.9rem;
-      color: #1e293b;
+      color: var(--color-text-primary);
       font-weight: 700;
     }
     input {
       width: 100%;
-      border: 1px solid #cbd5e1;
-      background: #ffffff;
-      color: #0f172a;
+      border: 1px solid var(--color-border-strong);
+      background: var(--color-bg-primary);
+      color: var(--color-text-primary);
       border-radius: 10px;
       padding: 11px 12px;
       font-size: 0.96rem;
       transition: border-color 120ms ease, box-shadow 120ms ease;
     }
-    input::placeholder { color: #94a3b8; }
+    input::placeholder { color: var(--color-text-secondary); }
     input:focus-visible {
       outline: none;
-      border-color: #14b8a6;
+      border-color: var(--color-accent);
       box-shadow: 0 0 0 4px var(--focus);
     }
     .submit {
@@ -270,13 +288,13 @@ _LOGIN_HTML_TEMPLATE: str = """\
       border: 0;
       border-radius: 10px;
       padding: 12px 14px;
-      background: var(--accent);
-      color: #f0fdfa;
+      background: var(--color-accent);
+      color: #ffffff;
       font-weight: 800;
       cursor: pointer;
       transition: transform 120ms ease, background-color 120ms ease;
     }
-    .submit:hover { background: var(--accent-strong); }
+    .submit:hover { background: var(--color-accent-hover); }
     .submit:active { transform: translateY(1px); }
     .alt-actions {
       margin-top: 10px;
@@ -288,13 +306,13 @@ _LOGIN_HTML_TEMPLATE: str = """\
     }
     .muted {
       margin: 0;
-      color: #64748b;
+      color: var(--color-text-secondary);
       font-size: 0.87rem;
     }
     .link-btn {
       border: 0;
       background: transparent;
-      color: #0f766e;
+      color: var(--color-accent);
       font-weight: 700;
       padding: 0;
       cursor: pointer;
@@ -303,13 +321,13 @@ _LOGIN_HTML_TEMPLATE: str = """\
     }
     .switcher {
       margin-top: 12px;
-      color: #475569;
+      color: var(--color-text-secondary);
       font-size: 0.88rem;
     }
     .switcher button {
       border: 0;
       background: transparent;
-      color: #0f766e;
+      color: var(--color-accent);
       font-weight: 700;
       padding: 0;
       margin-left: 6px;
@@ -321,13 +339,13 @@ _LOGIN_HTML_TEMPLATE: str = """\
       min-height: 24px;
       margin-top: 14px;
       font-size: 0.9rem;
-      color: #0f766e;
+      color: var(--color-info);
       line-height: 1.4;
     }
-    .error { color: var(--danger); }
+    .error { color: var(--color-error); }
     .legal {
       margin: 12px 0 0;
-      color: #64748b;
+      color: var(--color-text-secondary);
       font-size: 0.78rem;
       line-height: 1.4;
     }
