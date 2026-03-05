@@ -24,7 +24,7 @@ def _base_image() -> modal.Image:
             "fastapi>=0.115",
             "httpx>=0.27",
             "asyncpg>=0.30",
-            "PyJWT>=2.9",
+            "PyJWT[crypto]>=2.9",
             "uvicorn>=0.30",
             "ptyprocess>=0.7",
             "websockets>=13",

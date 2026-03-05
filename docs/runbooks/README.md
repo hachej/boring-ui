@@ -170,6 +170,106 @@ curl -i http://127.0.0.1:8000/api/v1/me
 curl -i http://127.0.0.1:8000/api/v1/workspaces
 ```
 
+### Supabase QA with Vault Credentials
+
+Credential sources (Vault):
+- `secret/agent/boring-ui-supabase` (`db_password`)
+- `secret/agent/boring-ui-supabase-project-url` (`url`)
+- `secret/agent/boring-ui-supabase-publishable-key` (`key`)
+- `secret/agent/boring-ui-supabase-service-role-key` (`key`)
+
+Rules:
+- Never commit credentials or generated `.env` files.
+- Use temporary env files and remove them after tests.
+- Prefer Supabase pooler URL for Docker:
+  `postgresql://postgres.<project-ref>:<password>@aws-1-eu-west-1.pooler.supabase.com:5432/postgres`
+
+Core mode smoke with real Supabase:
+
+```bash
+TMP_ENV_CORE="$(mktemp)"
+PROJECT_URL="$(vault kv get -format=json secret/agent/boring-ui-supabase-project-url | jq -r '.data.data.url')"
+ANON_KEY="$(vault kv get -format=json secret/agent/boring-ui-supabase-publishable-key | jq -r '.data.data.key')"
+SERVICE_ROLE_KEY="$(vault kv get -format=json secret/agent/boring-ui-supabase-service-role-key | jq -r '.data.data.key')"
+DB_PASSWORD="$(vault kv get -format=json secret/agent/boring-ui-supabase | jq -r '.data.data.db_password')"
+ENC_DB_PASSWORD="$(DB_PASSWORD="$DB_PASSWORD" python3 - <<'PY'
+import os, urllib.parse
+print(urllib.parse.quote(os.environ["DB_PASSWORD"], safe=""))
+PY
+)"
+
+cat > "$TMP_ENV_CORE" <<EOF
+CONTROL_PLANE_PROVIDER=supabase
+CONTROL_PLANE_APP_ID=boring-ui
+SUPABASE_URL=${PROJECT_URL}
+SUPABASE_ANON_KEY=${ANON_KEY}
+SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+SUPABASE_DB_URL=postgresql://postgres.cnmiganmiuwipffuysvg:${ENC_DB_PASSWORD}@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
+BORING_SETTINGS_KEY=$(python3 - <<'PY'
+import secrets; print(secrets.token_hex(32))
+PY
+)
+BORING_UI_SESSION_SECRET=$(python3 - <<'PY'
+import secrets; print(secrets.token_urlsafe(48))
+PY
+)
+BORING_UI_BACKEND_PORT=18080
+BORING_UI_FRONTEND_PORT=5273
+CORE_VITE_API_URL=http://127.0.0.1:5273
+CORE_VITE_PROXY_API_TARGET=http://backend:8000
+EOF
+
+docker compose -p coreqa --env-file "$TMP_ENV_CORE" -f deploy/docker/docker-compose.front.yml up -d --build backend frontend
+curl -fsS http://127.0.0.1:18080/health
+curl -i http://127.0.0.1:18080/auth/login?redirect_uri=/
+curl -i http://127.0.0.1:18080/api/v1/me
+```
+
+Edge mode smoke with real Supabase:
+
+```bash
+TMP_ENV_EDGE="$(mktemp)"
+cat > "$TMP_ENV_EDGE" <<EOF
+CONTROL_PLANE_PROVIDER=supabase
+CONTROL_PLANE_APP_ID=boring-ui
+SUPABASE_URL=${PROJECT_URL}
+SUPABASE_ANON_KEY=${ANON_KEY}
+SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+SUPABASE_DB_URL=postgresql://postgres.cnmiganmiuwipffuysvg:${ENC_DB_PASSWORD}@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
+BORING_SETTINGS_KEY=$(python3 - <<'PY'
+import secrets; print(secrets.token_hex(32))
+PY
+)
+BORING_UI_SESSION_SECRET=$(python3 - <<'PY'
+import secrets; print(secrets.token_urlsafe(48))
+PY
+)
+BORING_UI_EDGE_BACKEND_PORT=19011
+BORING_UI_EDGE_PORT=8381
+BORING_UI_EDGE_FRONTEND_PORT=5276
+EDGE_VITE_API_URL=http://127.0.0.1:5276
+EDGE_VITE_PROXY_API_TARGET=http://backend:8000
+EDGE_VITE_COMPANION_PROXY_TARGET=http://sandbox:3456
+EDGE_UI_PROFILE=companion-httpfs
+BM_CHAT_PROVIDER=companion
+BM_COMPANION_AUTOSTART=true
+EOF
+
+docker compose -p edgeqa --env-file "$TMP_ENV_EDGE" -f deploy/docker/docker-compose.sandbox.yml up -d --build backend sandbox frontend
+curl -fsS http://127.0.0.1:19011/health
+curl -fsS http://127.0.0.1:8381/health
+curl -i http://127.0.0.1:19011/auth/login?redirect_uri=/
+curl -i http://127.0.0.1:5276/companion/api/v1/agent/companion/sessions
+```
+
+Cleanup:
+
+```bash
+docker compose -p coreqa -f deploy/docker/docker-compose.front.yml down -v
+docker compose -p edgeqa -f deploy/docker/docker-compose.sandbox.yml down -v
+rm -f "$TMP_ENV_CORE" "$TMP_ENV_EDGE"
+```
+
 ### Mode Compatibility Matrix
 
 | Mode | Frontend API base (`VITE_API_URL`) | Request path owner | Expected behavior |
