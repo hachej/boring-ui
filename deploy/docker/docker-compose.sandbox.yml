@@ -14,9 +14,9 @@ services:
       SUPABASE_DB_URL: ${SUPABASE_DB_URL:-}
       BORING_SETTINGS_KEY: ${BORING_SETTINGS_KEY:-}
       BORING_UI_SESSION_SECRET: ${BORING_UI_SESSION_SECRET:-}
-      COMPANION_URL: ${SANDBOX_COMPANION_URL:-/companion}
+      COMPANION_URL: ${EDGE_COMPANION_URL:-/companion}
     ports:
-      - "${BORING_UI_SANDBOX_BACKEND_PORT:-18001}:8000"
+      - "${BORING_UI_EDGE_BACKEND_PORT:-18001}:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 10s
@@ -34,7 +34,7 @@ services:
       BM_CLICKHOUSE_URL: ${BM_CLICKHOUSE_URL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
-      - "${BORING_UI_SANDBOX_PORT:-8081}:8080"
+      - "${BORING_UI_EDGE_PORT:-8081}:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 10s
@@ -51,10 +51,13 @@ services:
       sandbox:
         condition: service_healthy
     environment:
-      VITE_API_URL: ${SANDBOX_VITE_API_URL:-http://127.0.0.1:5174}
-      VITE_PROXY_API_TARGET: ${SANDBOX_VITE_PROXY_API_TARGET:-http://backend:8000}
-      VITE_COMPANION_PROXY_TARGET: ${SANDBOX_VITE_COMPANION_PROXY_TARGET:-http://sandbox:8080}
-      VITE_AGENT_RAIL_MODE: ${SANDBOX_VITE_AGENT_RAIL_MODE:-companion}
-      VITE_CONTROL_PLANE_ONBOARDING: ${SANDBOX_VITE_CONTROL_PLANE_ONBOARDING:-true}
+      VITE_API_URL: ${EDGE_VITE_API_URL:-http://127.0.0.1:5174}
+      VITE_PROXY_API_TARGET: ${EDGE_VITE_PROXY_API_TARGET:-http://backend:8000}
+      VITE_COMPANION_PROXY_TARGET: ${EDGE_VITE_COMPANION_PROXY_TARGET:-http://sandbox:8080}
+      VITE_DEPLOY_MODE: edge
+      VITE_UI_PROFILE: ${EDGE_UI_PROFILE:-companion-httpfs}
+      VITE_AGENT_RAIL_MODE: ${EDGE_VITE_AGENT_RAIL_MODE:-companion}
+      VITE_DATA_BACKEND: ${EDGE_VITE_DATA_BACKEND:-http}
+      VITE_CONTROL_PLANE_ONBOARDING: ${EDGE_VITE_CONTROL_PLANE_ONBOARDING:-true}
     ports:
-      - "${BORING_UI_FRONTEND_PROXY_PORT:-5174}:5173"
+      - "${BORING_UI_EDGE_FRONTEND_PORT:-5174}:5173"

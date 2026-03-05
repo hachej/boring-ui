@@ -32,9 +32,19 @@ services:
     environment:
       VITE_API_URL: ${CORE_VITE_API_URL:-http://127.0.0.1:5173}
       VITE_PROXY_API_TARGET: ${CORE_VITE_PROXY_API_TARGET:-http://backend:8000}
+      VITE_DEPLOY_MODE: core
+      # Core UI profiles:
+      # - pi-lightningfs (default)
+      # - pi-cheerpx
+      # - pi-httpfs (dev/debug)
+      VITE_UI_PROFILE: ${CORE_UI_PROFILE:-pi-lightningfs}
       VITE_AGENT_RAIL_MODE: ${CORE_VITE_AGENT_RAIL_MODE:-pi}
+      VITE_DATA_BACKEND: ${CORE_VITE_DATA_BACKEND:-lightningfs}
+      VITE_LIGHTNINGFS_NAME: ${CORE_VITE_LIGHTNINGFS_NAME:-boring-fs}
+      VITE_CHEERPX_WORKSPACE_ROOT: ${CORE_VITE_CHEERPX_WORKSPACE_ROOT:-}
+      VITE_CHEERPX_PRIMARY_DISK_URL: ${CORE_VITE_CHEERPX_PRIMARY_DISK_URL:-}
+      VITE_CHEERPX_OVERLAY_NAME: ${CORE_VITE_CHEERPX_OVERLAY_NAME:-}
+      VITE_CHEERPX_ESM_URL: ${CORE_VITE_CHEERPX_ESM_URL:-}
       VITE_CONTROL_PLANE_ONBOARDING: ${CORE_VITE_CONTROL_PLANE_ONBOARDING:-false}
-      # VITE_GATEWAY_URL intentionally omitted in front mode; vite.config.ts
-      # falls back gateway proxy routing to VITE_API_URL.
     ports:
       - "${BORING_UI_FRONTEND_PORT:-5173}:5173"

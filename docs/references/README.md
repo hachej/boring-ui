@@ -33,6 +33,7 @@ External references, API docs, and third-party documentation relevant to boring-
 |---|---|
 | [Extension Guide](EXTENSION_GUIDE.md) | Extending boring-ui with custom panels, routers, and configuration |
 | [Ownership Audit](OWNERSHIP_AUDIT.md) | Final keep-vs-move audit and sandbox cleanup checklist for service ownership split |
+| [Modes and Profiles](../runbooks/MODES_AND_PROFILES.md) | Canonical `core`/`edge` deployment contract and UI runtime profile matrix |
 
 ## Related Projects
 

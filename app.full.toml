@@ -1,14 +1,15 @@
 [server]
 host = "0.0.0.0"
 port = 8010
+# Disable Claude stream WebSocket for this sample; remove to use default (true).
 include_stream = false
 include_pty = true
 include_approval = true
-# Use the host-reachable IP so browsers off-box can connect directly.
-companion_url = "http://100.68.199.114:3456"
-pi_url = "http://100.68.199.114:8789"
+# For remote clients, replace 127.0.0.1 with your host-reachable IP.
+companion_url = "http://127.0.0.1:3456"
+pi_url = "http://127.0.0.1:8789"
 pi_mode = "backend"
-cors_origins = ["http://localhost:5176", "http://100.68.199.114:5176"]
+cors_origins = ["http://127.0.0.1:5176", "http://localhost:5176"]
 
 [services.companion]
 enabled = true
@@ -25,15 +26,16 @@ cors_origin = "*"
 [frontend]
 host = "0.0.0.0"
 port = 5176
-vite_api_url = "http://100.68.199.114:8010"
-# vite_gateway_url = "http://localhost:8080"
+vite_api_url = "http://127.0.0.1:8010"
+ui_profile = "pi-lightningfs"
 
 [deployment]
-# Supported modes: "core" (frontend -> boring-ui directly) or
-# "sandbox-proxy" (frontend -> boring-sandbox edge proxy -> boring-ui).
+# Supported modes:
+# - "core" (frontend -> boring-ui directly)
+# - "edge" (frontend -> boring-sandbox edge proxy -> boring-ui)
 mode = "core"
-# Optional override for sandbox proxy base URL in sandbox-proxy mode.
-# sandbox_proxy_url = "http://localhost:8080"
+# Optional override for edge proxy base URL in edge mode.
+# edge_proxy_url = "http://localhost:8080"
 
 [ui]
 # This table is serialized to app.config.js as-is.
@@ -41,4 +43,4 @@ mode = "core"
 # branding = { name = "My IDE", logo = "M" }
 # features = { controlPlaneOnboarding = false }
 # panels = { defaults = { filetree = 280 } }
-features = { codeSessions = true, agentRailMode = "all" }
+features = { codeSessions = true }

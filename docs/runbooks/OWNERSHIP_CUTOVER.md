@@ -19,10 +19,10 @@ For local containerized mode checks owned by this repo:
 this compose setup validates deployment topology and routing before rollout.
 
 ```bash
-# Front mode
+# Core mode
 docker compose -f deploy/docker/docker-compose.front.yml up --build backend frontend
 
-# Sandbox mode (sandbox artifact service + frontend)
+# Edge mode (sandbox artifact service + frontend)
 mkdir -p artifacts
 BUNDLE_OUTPUT="$PWD/artifacts/boring-macro-bundle.tar.gz" \
   bash deploy/sandbox/scripts/build_macro_bundle.sh /home/ubuntu/projects/boring-macro
@@ -32,10 +32,10 @@ docker compose -f deploy/docker/docker-compose.sandbox.yml up --build sandbox fr
 Modal deploy helpers:
 
 ```bash
-# Front/core mode
+# Core mode
 modal deploy deploy/modal/modal_app_front.py::core
 
-# Sandbox mode (reuse boring-sandbox Modal entrypoint)
+# Edge mode (reuse boring-sandbox Modal entrypoint)
 bash deploy/modal/deploy_sandbox_mode.sh gateway
 ```
 
@@ -44,7 +44,7 @@ bash deploy/modal/deploy_sandbox_mode.sh gateway
 1. Deploy `boring-ui` with canonical control-plane routes enabled.
 2. Confirm frontend deployment mode:
    - Core mode: `python3 scripts/run_full_app.py --deploy-mode core`
-   - Sandbox-proxy mode: `python3 scripts/run_full_app.py --deploy-mode sandbox-proxy --sandbox-proxy-url <proxy-url>`
+   - Edge mode: `python3 scripts/run_full_app.py --deploy-mode edge --edge-proxy-url <proxy-url>`
 3. Confirm sandbox allowlist (if enabled) only proxies these families:
    - `/auth/*`
    - `/api/v1/me*`
@@ -103,7 +103,7 @@ Rollback if any of the following occurs and cannot be corrected quickly:
 1. Freeze rollout and stop further traffic shifting.
 2. Route frontend traffic back to last known healthy API target.
    - Core mode: previous `boring-ui` deployment.
-   - Sandbox-proxy mode: previous edge config that is known-good.
+   - Edge mode: previous edge config that is known-good.
 3. Re-run fast validation:
 
 ```bash

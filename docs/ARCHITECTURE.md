@@ -92,7 +92,17 @@ Enforcement notes:
 Deployment can run in:
 
 1. Core mode: frontend routes directly to `boring-ui`.
-2. Proxy mode: frontend keeps canonical routes while `boring-sandbox` pass-through sits at the edge.
+2. Edge mode: frontend keeps canonical routes while `boring-sandbox` pass-through sits at the edge.
+
+Core mode runtime profiles:
+
+1. `pi-lightningfs` (default): PI rail + browser LightningFS.
+2. `pi-cheerpx`: PI rail + browser CheerpX runtime.
+3. `pi-httpfs` (dev/debug): PI rail + backend files/git APIs.
+
+Edge mode runtime profile:
+
+1. `companion-httpfs` (default): Companion rail + backend files/git via edge proxy.
 
 ## Backend Architecture
 

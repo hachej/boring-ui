@@ -84,6 +84,34 @@ For quick standalone backend testing without editing config:
 - `?data_backend=lightningfs`
 - `?data_backend=lightningfs&data_fs=myide-fs-alt`
 
+### Core/Edge Modes and UI Profiles
+
+Canonical contract:
+- Deploy mode: `core` or `edge`
+- UI profile: `pi-lightningfs`, `pi-cheerpx`, `pi-httpfs`, `companion-httpfs`
+
+Recommended defaults:
+- `core` -> `pi-lightningfs`
+- `edge` -> `companion-httpfs`
+
+Profile matrix:
+
+| UI Profile | Agent rail | Data backend |
+| --- | --- | --- |
+| `pi-lightningfs` | `pi` | `lightningfs` |
+| `pi-cheerpx` | `pi` | `cheerpx` |
+| `pi-httpfs` | `pi` | `http` |
+| `companion-httpfs` | `companion` | `http` |
+
+Environment contract:
+
+```bash
+VITE_DEPLOY_MODE=core|edge
+VITE_UI_PROFILE=pi-lightningfs|pi-cheerpx|pi-httpfs|companion-httpfs
+```
+
+Reference: `docs/runbooks/MODES_AND_PROFILES.md`
+
 ### PI Tool Extensions (Vertical Apps)
 
 Vertical apps (for example `boring-macro`) can register PI tools at startup:

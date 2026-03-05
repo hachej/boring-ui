@@ -13,6 +13,7 @@ Index of product specs for boring-ui features.
 | Tool Approval | (inline below) | Shipped |
 | Companion Chat | (inline below) | Shipped |
 | PI Chat | (inline below) | Shipped |
+| Deployment Modes + UI Profiles | `docs/runbooks/MODES_AND_PROFILES.md` | Shipped |
 | User Menu | `docs/exec-plans/backlog/SIDEBAR_USER_MENU_PLAN.md` | In progress |
 | Service Split | `docs/exec-plans/completed/bd-3g1g/` | Completed |
 

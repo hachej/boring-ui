@@ -5,6 +5,7 @@ Operational runbooks for common tasks.
 ## Ownership Migration
 
 - [Ownership Migration Cutover and Rollback](./OWNERSHIP_CUTOVER.md)
+- [Modes and Profiles Contract](./MODES_AND_PROFILES.md)
 
 ## Development
 
@@ -70,11 +71,11 @@ npm run preview
 # Core mode (single backend; default)
 python3 scripts/run_full_app.py --config app.full.toml --deploy-mode core
 
-# Sandbox-proxy mode (frontend points at edge proxy)
+# Edge mode (frontend points at edge proxy)
 python3 scripts/run_full_app.py \
   --config app.full.toml \
-  --deploy-mode sandbox-proxy \
-  --sandbox-proxy-url http://127.0.0.1:8080
+  --deploy-mode edge \
+  --edge-proxy-url http://127.0.0.1:8080
 
 # Shell wrapper (supports positional config + same flags)
 bash scripts/run_full_app.sh app.full.toml --deploy-mode core
@@ -86,11 +87,18 @@ bash scripts/run_full_app.sh app.full.toml --deploy-mode core
 this validates production topology and routing contracts, while the frontend
 container itself is still Vite-based for fast smoke verification.
 
+Use mode-specific compose files as canonical entry points:
+- `deploy/docker/docker-compose.front.yml` for `core`
+- `deploy/docker/docker-compose.sandbox.yml` for `edge`
+
+`deploy/docker/docker-compose.yml` is a legacy convenience wrapper and is not
+the canonical contract for downstream apps.
+
 ```bash
-# Front mode (frontend -> boring-ui backend directly)
+# Core mode (frontend -> boring-ui backend directly)
 docker compose -f deploy/docker/docker-compose.front.yml up --build backend frontend
 
-# Sandbox mode (frontend -> sandbox artifact service)
+# Edge mode (frontend -> sandbox artifact service)
 # 1) Build/refresh the macro artifact in boring-ui-owned path
 mkdir -p artifacts
 BUNDLE_OUTPUT="$PWD/artifacts/boring-macro-bundle.tar.gz" \
@@ -99,13 +107,27 @@ BUNDLE_OUTPUT="$PWD/artifacts/boring-macro-bundle.tar.gz" \
 docker compose -f deploy/docker/docker-compose.sandbox.yml up --build sandbox frontend
 ```
 
+`backend` is started automatically via `depends_on` in `docker-compose.sandbox.yml`.
+
+Environment-file shortcuts:
+
+```bash
+# Core mode
+cp deploy/docker/.env.core.example .env.core
+docker compose --env-file .env.core -f deploy/docker/docker-compose.front.yml up --build backend frontend
+
+# Edge mode
+cp deploy/docker/.env.edge.example .env.edge
+docker compose --env-file .env.edge -f deploy/docker/docker-compose.sandbox.yml up --build sandbox frontend
+```
+
 ### Modal Deployment
 
 ```bash
-# Front/core mode (boring-ui control-plane owner)
+# Core mode (boring-ui control-plane owner)
 modal deploy deploy/modal/modal_app_front.py::core
 
-# Sandbox mode (reuse existing boring-sandbox Modal app)
+# Edge mode (reuse existing boring-sandbox Modal app)
 bash deploy/modal/deploy_sandbox_mode.sh gateway
 # optional light entrypoint:
 # bash deploy/modal/deploy_sandbox_mode.sh gateway_ui_light
@@ -118,6 +140,7 @@ Set the following env vars before boot:
 export SUPABASE_URL="https://<project>.supabase.co"
 export SUPABASE_ANON_KEY="<anon-key>"
 export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
+export SUPABASE_JWT_SECRET="<jwt-secret>"
 export SUPABASE_DB_URL="postgresql://..."
 export BORING_SETTINGS_KEY="<settings-encryption-key>"
 export BORING_UI_SESSION_SECRET="<cookie-signing-secret>"
@@ -130,10 +153,10 @@ psql "$SUPABASE_DB_URL" -f deploy/sql/control_plane_supabase_schema.sql
 ```
 
 Endpoints:
-- Front mode frontend: `http://localhost:5173`
-- Sandbox mode frontend: `http://localhost:5174`
-- Front mode backend API: `http://localhost:8000`
-- Sandbox mode API/gateway: `http://localhost:8081`
+- Core mode frontend: `http://localhost:5173`
+- Edge mode frontend: `http://localhost:5174`
+- Core mode backend API: `http://localhost:8000`
+- Edge mode API/gateway: `http://localhost:8081`
 
 `boring-sandbox` remains optional for edge provisioning/proxy/token-injection concerns only.
 
@@ -150,7 +173,7 @@ curl -i http://127.0.0.1:8000/api/v1/workspaces
 | Mode | Frontend API base (`VITE_API_URL`) | Request path owner | Expected behavior |
 | --- | --- | --- | --- |
 | Core (frontend-only workspace wiring) | `boring-ui` backend URL | `boring-ui` directly | Canonical `/auth/*`, `/api/v1/me*`, `/api/v1/workspaces*`, `/api/v1/files*`, `/api/v1/git*` routes served by core. |
-| Sandbox-proxy (front+back with edge proxy) | `boring-sandbox` proxy URL | `boring-sandbox` pass-through -> `boring-ui` | Same canonical routes; sandbox only proxies/routing/provisioning/token injection (no workspace/user business logic). |
+| Edge (front+back with edge proxy) | `boring-sandbox` proxy URL | `boring-sandbox` pass-through -> `boring-ui` | Same canonical routes; sandbox only proxies/routing/provisioning/token injection (no workspace/user business logic). |
 
 Verification commands:
 
@@ -180,16 +203,16 @@ python3 scripts/package_app_assets.py \
 ```make
 BORING_UI_REPO ?= ../boring-ui
 
-up-frontend:
-	docker compose -f $(BORING_UI_REPO)/deploy/docker/docker-compose.front.yml up --build backend frontend
+	up-core:
+		docker compose -f $(BORING_UI_REPO)/deploy/docker/docker-compose.front.yml up --build backend frontend
 
 bundle-sandbox:
 	mkdir -p $(BORING_UI_REPO)/artifacts
 	BUNDLE_OUTPUT="$(BORING_UI_REPO)/artifacts/boring-macro-bundle.tar.gz" \
 	  bash $(BORING_UI_REPO)/deploy/sandbox/scripts/build_macro_bundle.sh $(CURDIR)
 
-up-sandbox: bundle-sandbox
-	docker compose -f $(BORING_UI_REPO)/deploy/docker/docker-compose.sandbox.yml up --build sandbox frontend
+	up-edge: bundle-sandbox
+		docker compose -f $(BORING_UI_REPO)/deploy/docker/docker-compose.sandbox.yml up --build sandbox frontend
 ```
 
 ## Configuration
@@ -211,6 +234,14 @@ up-sandbox: bundle-sandbox
 | `AUTH_SESSION_SECURE_COOKIE` | Set session cookie `Secure` flag | `false` |
 | `AUTH_DEV_LOGIN_ENABLED` | Enable query-param local login/callback adapter | `false` |
 | `LOCAL_PARITY_MODE` | `http` to exercise hosted code path locally | (unset) |
+| `VITE_DEPLOY_MODE` | Frontend deploy mode contract: `core` or `edge` | mode-specific |
+| `VITE_UI_PROFILE` | UI runtime profile (`pi-lightningfs`, `pi-cheerpx`, `pi-httpfs`, `companion-httpfs`) | mode-specific |
+| `VITE_AGENT_RAIL_MODE` | Explicit rail override (`pi`, `companion`, `native`, `all`) | derived from profile |
+| `VITE_DATA_BACKEND` | Explicit data backend override (`lightningfs`, `cheerpx`, `http`) | derived from profile |
+| `VITE_PROXY_API_TARGET` | Docker/dev proxy target for backend APIs in Vite | unset |
+| `VITE_COMPANION_PROXY_TARGET` | Docker/dev proxy target for companion API/WS in Vite | unset |
+| `BORING_UI_WORKSPACE_ROOT` | Workspace root for `@workspace` plugin alias resolution | unset |
+| `WORKSPACE_ROOT` | Fallback workspace root alias for local plugin loading | unset |
 
 ### Hosted Mode (Parity Testing)
 

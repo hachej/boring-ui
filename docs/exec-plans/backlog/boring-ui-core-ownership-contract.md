@@ -1,6 +1,6 @@
 # boring-ui Core Ownership Contract (vNext)
 
-Status: draft-for-implementation (bead `bd-2ptn`)  
+Status: implemented (bead `bd-2ptn`)  
 Date: 2026-03-04
 
 ## Goal
@@ -63,5 +63,5 @@ Frontend keeps the same canonical route families, now served by `boring-ui` core
 3. Move auth/session + user/workspace/collaboration APIs into core.
 4. Enforce `/w/{workspace_id}` precedence and policy at core boundary.
 5. Constrain sandbox to edge-only pass-through.
-6. Validate frontend-only and sandbox-proxy modes.
+6. Validate frontend-only (core) and edge modes.
 7. Final ownership audit, proof suite, and cutover runbook.

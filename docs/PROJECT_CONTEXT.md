@@ -21,12 +21,20 @@ The key design property: you compose the backend from independent routers and th
 - **Backend**: Python 3, FastAPI, uvicorn, ptyprocess (PTY), websockets
 - **Tests**: Vitest (unit), Playwright (e2e), pytest (backend)
 - **Build**: Vite for frontend (dev + lib modes), pip/pyproject.toml for backend
-- **Deploy**: Core mode (single `boring-ui` backend) or optional edge-proxy mode with `boring-sandbox`
+- **Deploy**: Core mode (single `boring-ui` backend) or optional edge mode with `boring-sandbox`
 
-## Two Operating Modes
+## Deployment Modes and Runtime Profiles
 
-- **LOCAL mode**: Backend runs in-process alongside the frontend dev server. File/git/PTY operations go directly to the local filesystem. Auth/session can be disabled for local development.
-- **PROXY mode (optional)**: `boring-ui` remains the business-logic authority while `boring-sandbox` can sit at the edge for proxy/routing/provisioning/token injection.
+- **Core mode**: frontend routes directly to `boring-ui` (no edge sandbox in request path).
+- **Edge mode (optional)**: frontend routes through `boring-sandbox` edge pass-through/provisioning layer; workspace business logic still lives in `boring-ui`.
+
+Core mode runtime profiles:
+- `pi-lightningfs` (default): PI rail + browser-local LightningFS.
+- `pi-cheerpx`: PI rail + browser VM/sandbox filesystem.
+- `pi-httpfs` (dev/debug): PI rail + backend filesystem APIs.
+
+Edge mode runtime profile:
+- `companion-httpfs` (default): Companion rail + backend filesystem via edge proxy.
 
 ## Repo Layout
 

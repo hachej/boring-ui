@@ -175,9 +175,9 @@ export default {
 
   // Feature flags
   features: {
-    gitStatus: true,
-    search: true,
-    cloudMode: false,
+    codeSessions: true,
+    agentRailMode: 'pi',
+    controlPlaneOnboarding: false,
   },
 
   // Design tokens (CSS variables)
@@ -204,6 +204,44 @@ function MyComponent() {
   )
 }
 ```
+
+### Vertical App Mode/Profile Contract
+
+For downstream vertical apps, configure deployment mode and runtime profile explicitly:
+
+```bash
+# core mode defaults (recommended)
+VITE_DEPLOY_MODE=core
+VITE_UI_PROFILE=pi-lightningfs
+
+# optional core profiles:
+# VITE_UI_PROFILE=pi-cheerpx
+# VITE_UI_PROFILE=pi-httpfs
+
+# edge mode defaults
+# VITE_DEPLOY_MODE=edge
+# VITE_UI_PROFILE=companion-httpfs
+```
+
+Equivalent `app.config.js` shape:
+
+```javascript
+export default {
+  mode: { deployMode: 'core', profile: 'pi-lightningfs' },
+  features: { agentRailMode: 'pi' },
+  data: { backend: 'lightningfs' }, // or cheerpx/http
+}
+```
+
+Ownership rule for vertical apps:
+
+- Keep workspace APIs in `boring-ui` core:
+  - `/auth/*`
+  - `/api/v1/me*`
+  - `/api/v1/workspaces*`
+  - `/api/v1/files/*`
+  - `/api/v1/git/*`
+- Add vertical/domain routes under your namespace (example: `/api/v1/macro/*`).
 
 ## Backend Router Registry
 
