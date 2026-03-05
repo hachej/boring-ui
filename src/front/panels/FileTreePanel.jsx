@@ -3,7 +3,7 @@ import { ChevronRight, FolderOpen, GitBranch, Plus } from 'lucide-react'
 import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
 import UserMenu from '../components/UserMenu'
-import SidebarSectionHeader, { LeftPaneHeader } from '../components/SidebarSectionHeader'
+import { LeftPaneHeader } from '../components/SidebarSectionHeader'
 
 export default function FileTreePanel({ params }) {
   const {
@@ -17,8 +17,7 @@ export default function FileTreePanel({ params }) {
     onToggleCollapse,
     onOpenChatTab,
     showSidebarToggle,
-    sectionCollapsed,
-    onToggleSection,
+    appName,
     userEmail,
     workspaceName,
     workspaceId,
@@ -91,67 +90,59 @@ export default function FileTreePanel({ params }) {
         <LeftPaneHeader
           onToggleSidebar={onToggleCollapse}
           onOpenChatTab={onOpenChatTab}
+          appName={appName}
         />
       )}
-      <SidebarSectionHeader
-        title="Files"
-        sectionCollapsed={sectionCollapsed}
-        onToggleSection={onToggleSection}
-      />
-      {!sectionCollapsed && (
-        <>
-          <div className="filetree-toolbar">
-            <div className="sidebar-view-toggle">
-              <button
-                type="button"
-                className={`view-toggle-btn ${viewMode === 'files' ? 'active' : ''}`}
-                onClick={() => setViewMode('files')}
-                title="File tree"
-              >
-                <FolderOpen size={14} />
-              </button>
-              <button
-                type="button"
-                className={`view-toggle-btn ${viewMode === 'changes' ? 'active' : ''}`}
-                onClick={() => setViewMode('changes')}
-                title="Git changes"
-              >
-                <GitBranch size={14} />
-              </button>
-            </div>
-            <div className="filetree-toolbar-spacer" />
-            {viewMode === 'files' && (
-              <button
-                type="button"
-                className="sidebar-action-btn"
-                onClick={handleNewFile}
-                title="New File"
-                aria-label="New File"
-              >
-                <Plus size={14} />
-              </button>
-            )}
-          </div>
-          <div className="filetree-body">
-            {viewMode === 'files' ? (
-              <FileTree
-                onOpen={onOpenFile}
-                onOpenToSide={onOpenFileToSide}
-                projectRoot={projectRoot}
-                activeFile={activeFile}
-                creatingFile={creatingFile}
-                onFileCreated={handleFileCreated}
-                onCancelCreate={handleCancelCreate}
-              />
-            ) : (
-              <GitChangesView
-                onOpenDiff={onOpenDiff}
-                activeDiffFile={activeDiffFile}
-              />
-            )}
-          </div>
-        </>
-      )}
+      <div className="filetree-toolbar">
+        <div className="sidebar-view-toggle">
+          <button
+            type="button"
+            className={`view-toggle-btn ${viewMode === 'files' ? 'active' : ''}`}
+            onClick={() => setViewMode('files')}
+            title="File tree"
+          >
+            <FolderOpen size={14} />
+          </button>
+          <button
+            type="button"
+            className={`view-toggle-btn ${viewMode === 'changes' ? 'active' : ''}`}
+            onClick={() => setViewMode('changes')}
+            title="Git changes"
+          >
+            <GitBranch size={14} />
+          </button>
+        </div>
+        <div className="filetree-toolbar-spacer" />
+        {viewMode === 'files' && (
+          <button
+            type="button"
+            className="sidebar-action-btn"
+            onClick={handleNewFile}
+            title="New File"
+            aria-label="New File"
+          >
+            <Plus size={14} />
+          </button>
+        )}
+      </div>
+      <div className="filetree-body">
+        {viewMode === 'files' ? (
+          <FileTree
+            onOpen={onOpenFile}
+            onOpenToSide={onOpenFileToSide}
+            projectRoot={projectRoot}
+            activeFile={activeFile}
+            creatingFile={creatingFile}
+            onFileCreated={handleFileCreated}
+            onCancelCreate={handleCancelCreate}
+          />
+        ) : (
+          <GitChangesView
+            onOpenDiff={onOpenDiff}
+            activeDiffFile={activeDiffFile}
+          />
+        )}
+      </div>
       <div className="filetree-footer">
         <UserMenu
           email={userEmail}

@@ -775,6 +775,23 @@ html {
 }
 
 /* Left pane header - thin bar at top of left sidebar with collapse toggle */
+.left-pane-brand {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
+}
+
+.left-pane-brand-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .left-pane-header {
   display: flex;
   align-items: center;
@@ -2436,6 +2453,12 @@ html {
 .companion-session-select {
   min-width: 140px;
   max-width: 220px;
+  background-color: var(--color-bg-secondary);
+}
+
+.companion-session-select option {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
 }
 
 .terminal-empty {

@@ -2265,8 +2265,7 @@ export default function App() {
             onToggleCollapse: toggleFiletree,
             onOpenChatTab: handleOpenChatTab,
             showSidebarToggle: leftSidebarPanelIds[0] === 'filetree',
-            sectionCollapsed: sectionCollapsed.filetree,
-            onToggleSection: () => toggleSectionCollapse('filetree'),
+            appName: config.branding?.name || '',
             userEmail: menuUserEmail,
             userMenuStatusMessage,
             userMenuStatusTone,
@@ -2358,24 +2357,12 @@ export default function App() {
         })
       }
 
-      // Add shell panel BELOW the center group - splits only center column
+      // Shell panel is available but not added to the default layout.
+      // It can be opened on demand via the command palette or menu.
       let shellPanel = api.getPanel('shell')
-      const shellPaneConfig = getPane('shell')
-      if (!shellPanel && emptyPanel?.group) {
-        shellPanel = api.addPanel({
-          id: 'shell',
-          component: 'shell',
-          tabComponent: shellPaneConfig?.tabComponent,
-          title: 'Shell',
-          position: { direction: 'below', referenceGroup: emptyPanel.group },
-          params: getDefaultParams('shell'),
-        })
-      }
-
-      // Show tabs for the shell group
       if (shellPanel?.group) {
         shellPanel.group.header.hidden = false
-        shellPanel.group.locked = true // Lock group to prevent closing tabs
+        shellPanel.group.locked = true
       }
 
       // Set centerGroupRef from editor panels if any exist
@@ -2939,8 +2926,7 @@ export default function App() {
             onToggleCollapse: toggleFiletree,
             onOpenChatTab: handleOpenChatTab,
             showSidebarToggle: leftSidebarPanelIds[0] === 'filetree',
-            sectionCollapsed: sectionCollapsed.filetree,
-            onToggleSection: () => toggleSectionCollapse('filetree'),
+            appName: config.branding?.name || '',
             userEmail: menuUserEmail,
             userMenuStatusMessage,
             userMenuStatusTone,

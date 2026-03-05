@@ -4,32 +4,39 @@ import { Bot, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
  * LeftPaneHeader - Thin header bar for the left sidebar pane with collapse toggle.
  * Rendered only by the first panel in the sidebar.
  */
-export function LeftPaneHeader({ onToggleSidebar, onOpenChatTab }) {
+export function LeftPaneHeader({ onToggleSidebar, onOpenChatTab, appName }) {
   if (typeof onToggleSidebar !== 'function') return null
   return (
-    <div className="left-pane-header">
-      <div className="left-pane-header-spacer" />
-      {typeof onOpenChatTab === 'function' && (
+    <>
+      {appName && (
+        <div className="left-pane-brand">
+          <span className="left-pane-brand-title">{appName}</span>
+        </div>
+      )}
+      <div className="left-pane-header">
+        <div className="left-pane-header-spacer" />
+        {typeof onOpenChatTab === 'function' && (
+          <button
+            type="button"
+            className="sidebar-action-btn"
+            onClick={onOpenChatTab}
+            title="Open new chat pane"
+            aria-label="Open new chat pane"
+          >
+            <Bot size={12} />
+          </button>
+        )}
         <button
           type="button"
-          className="sidebar-action-btn"
-          onClick={onOpenChatTab}
-          title="Open new chat pane"
-          aria-label="Open new chat pane"
+          className="sidebar-toggle-btn"
+          onClick={onToggleSidebar}
+          title="Collapse sidebar"
+          aria-label="Collapse sidebar"
         >
-          <Bot size={12} />
+          <ChevronLeft size={12} />
         </button>
-      )}
-      <button
-        type="button"
-        className="sidebar-toggle-btn"
-        onClick={onToggleSidebar}
-        title="Collapse sidebar"
-        aria-label="Collapse sidebar"
-      >
-        <ChevronLeft size={12} />
-      </button>
-    </div>
+      </div>
+    </>
   )
 }
 

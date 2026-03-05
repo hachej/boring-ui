@@ -351,10 +351,11 @@ _LOGIN_HTML_TEMPLATE: str = """\
     }
 
     function applyBranding() {
-      var appName = String(AUTH.appName || "").trim() || "<app-name>";
-      var appDescription = String(AUTH.appDescription || "").trim() || "<app-description>";
+      var appName = String(AUTH.appName || "").trim() || "Boring UI";
+      var appDescription = String(AUTH.appDescription || "").trim() || "";
       appNameEl.textContent = appName;
       appDescriptionEl.textContent = appDescription;
+      document.title = "Sign in — " + appName;
     }
 
     function setBusy(isBusy) {

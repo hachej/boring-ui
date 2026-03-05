@@ -32,7 +32,7 @@ const DEFAULT_CONFIG = {
 
   // Panel configuration
   panels: {
-    essential: ['filetree', 'terminal', 'shell'],
+    essential: ['filetree', 'terminal'],
     defaults: {
       filetree: 280,
       terminal: 400,
@@ -91,6 +91,7 @@ const DEFAULT_CONFIG = {
     cloudMode: false,
     workflows: false,
     controlPlaneOnboarding: false,
+    showHeader: false,
     // Right-rail agent chat mode: 'all' | 'native' | 'companion' | 'pi'
     agentRailMode: 'all',
   },

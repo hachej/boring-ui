@@ -198,8 +198,10 @@ export default function FileTree({ onOpen, onOpenToSide, onFileDeleted, onFileRe
       .catch(() => {})
   }, [fetchDir])
 
+  // Legacy kurt.config section fetching — disabled by default.
+  // Set VITE_CONFIG_PATH to enable project-specific file tree sections.
   useEffect(() => {
-    fetchConfig()
+    if (configPath) fetchConfig()
   }, [fetchConfig])
 
   // Debounce file search calls to avoid query churn on every key stroke.

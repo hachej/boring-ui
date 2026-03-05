@@ -143,10 +143,10 @@ class APIConfig:
         default_factory=lambda: _env_str('CONTROL_PLANE_APP_ID', 'boring-ui')
     )
     auth_app_name: str = field(
-        default_factory=lambda: _env_str('AUTH_APP_NAME', '<app-name>')
+        default_factory=lambda: _env_str('AUTH_APP_NAME', 'Boring UI')
     )
     auth_app_description: str = field(
-        default_factory=lambda: _env_str('AUTH_APP_DESCRIPTION', '<app-description>')
+        default_factory=lambda: _env_str('AUTH_APP_DESCRIPTION', 'Your collaborative development workspace.')
     )
     supabase_url: str | None = field(
         default_factory=lambda: os.environ.get('SUPABASE_URL')
