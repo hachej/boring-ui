@@ -43,6 +43,8 @@ __pycache__/
 playwright-report/
 test-results/
 artifacts/
+.bsw/
+.ntm/
 
 # Rejected patch files
 .beads/*.rej
