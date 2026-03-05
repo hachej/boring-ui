@@ -45,7 +45,9 @@
     "test:ui": "vitest --ui",
     "test:e2e": "bash scripts/run-playwright-e2e.sh",
     "test:e2e:ui": "bash scripts/run-playwright-e2e.sh --ui",
-    "test:e2e:debug": "bash scripts/run-playwright-e2e.sh --debug"
+    "test:e2e:debug": "bash scripts/run-playwright-e2e.sh --debug",
+    "capture:ui-polish": "bash scripts/capture-ui-polish-screenshots.sh",
+    "capture:ui-polish:smoke": "bash scripts/capture-ui-polish-screenshots.sh --smoke"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.11.53",
