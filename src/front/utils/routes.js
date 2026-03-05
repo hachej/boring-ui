@@ -21,10 +21,22 @@ export const routes = {
     },
     me: {
       get: () => ({ path: '/api/v1/me', query: undefined }),
+      settings: {
+        get: () => ({ path: '/api/v1/me/settings', query: undefined }),
+        update: () => ({ path: '/api/v1/me/settings', query: undefined }),
+      },
     },
     workspaces: {
       list: () => ({ path: '/api/v1/workspaces', query: undefined }),
       create: () => ({ path: '/api/v1/workspaces', query: undefined }),
+      update: (workspaceId) => ({
+        path: `/api/v1/workspaces/${encodeSegment(workspaceId)}`,
+        query: undefined,
+      }),
+      delete: (workspaceId) => ({
+        path: `/api/v1/workspaces/${encodeSegment(workspaceId)}`,
+        query: undefined,
+      }),
       runtime: {
         get: (workspaceId) => ({
           path: `/api/v1/workspaces/${encodeSegment(workspaceId)}/runtime`,

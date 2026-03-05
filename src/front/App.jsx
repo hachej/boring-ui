@@ -63,6 +63,9 @@ import {
 } from './providers/data'
 import DataContext from './providers/data/DataContext'
 import { PI_LIST_TABS_BRIDGE, PI_OPEN_FILE_BRIDGE, PI_OPEN_PANEL_BRIDGE } from './providers/pi/uiBridge'
+import UserSettingsPage from './pages/UserSettingsPage'
+import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage'
+import CreateWorkspaceModal from './pages/CreateWorkspaceModal'
 
 const URL_PARAMS = new URLSearchParams(window.location.search)
 // POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
@@ -412,6 +415,15 @@ export default function App() {
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState(() =>
     getWorkspaceIdFromPathname(window.location.pathname),
   )
+  const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
+
+  // Detect full-page views from URL path
+  const pagePathname = window.location.pathname
+  const workspaceSubpath = getWorkspacePathSuffix(pagePathname)
+  const isUserSettingsPage = pagePathname === '/auth/settings'
+  const isWorkspaceSettingsPage = currentWorkspaceId && workspaceSubpath === 'settings'
+  const isFullPageView = isUserSettingsPage || isWorkspaceSettingsPage
+
   const [collapsed, setCollapsed] = useState(() => {
     const saved = loadCollapsedState(storagePrefix)
     return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
@@ -988,18 +1000,29 @@ export default function App() {
     window.location.assign(buildApiUrl(route.path, route.query))
   }, [controlPlaneOnboardingEnabled, currentWorkspaceId, fetchWorkspaceList])
 
-  const handleCreateWorkspace = useCallback(async () => {
+  const handleCreateWorkspace = useCallback(() => {
+    setShowCreateWorkspaceModal(true)
+  }, [])
+
+  const handleCreateWorkspaceSubmit = useCallback(async (name) => {
     const createRoute = routes.controlPlane.workspaces.create()
     const { response, data } = await apiFetchJson(createRoute.path, {
       query: createRoute.query,
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
     })
-    if (!response.ok) return
+    if (!response.ok) {
+      throw new Error(data?.message || 'Failed to create workspace')
+    }
 
     const createdWorkspaceId = extractWorkspaceId(data)
-    if (!createdWorkspaceId) return
+    if (!createdWorkspaceId) {
+      throw new Error('No workspace ID returned')
+    }
 
     await fetchWorkspaceList()
+    setShowCreateWorkspaceModal(false)
 
     if (!controlPlaneOnboardingEnabled) {
       const route = routes.controlPlane.workspaces.scope(
@@ -3758,6 +3781,23 @@ export default function App() {
     )
   }
 
+  // Full-page settings views (render instead of DockView)
+  if (isUserSettingsPage) {
+    return (
+      <ThemeProvider>
+        <UserSettingsPage workspaceId={currentWorkspaceId} />
+      </ThemeProvider>
+    )
+  }
+
+  if (isWorkspaceSettingsPage) {
+    return (
+      <ThemeProvider>
+        <WorkspaceSettingsPage workspaceId={currentWorkspaceId} />
+      </ThemeProvider>
+    )
+  }
+
   // Build className with collapsed state flags for CSS targeting
   const dockviewClassName = [
     'dockview-theme-abyss',
@@ -3816,6 +3856,12 @@ export default function App() {
                 )}
               </CapabilitiesContext.Provider>
             </CapabilitiesStatusContext.Provider>
+            {showCreateWorkspaceModal && (
+              <CreateWorkspaceModal
+                onClose={() => setShowCreateWorkspaceModal(false)}
+                onCreate={handleCreateWorkspaceSubmit}
+              />
+            )}
           </div>
         </ThemeProvider>
       </DataContext.Provider>

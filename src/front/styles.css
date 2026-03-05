@@ -4094,3 +4094,485 @@ html {
 /* ==========================================================================
    Workflow Timeline Component
    ========================================================================== */
+
+/* ==========================================================================
+   Page Shell - Full-page settings/creation layouts
+   ========================================================================== */
+
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--color-bg-secondary);
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+}
+
+.page-shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border);
+  min-height: 48px;
+}
+
+.page-shell-header-left,
+.page-shell-header-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.page-shell-header-right {
+  justify-content: flex-end;
+}
+
+.page-shell-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, background 0.15s;
+}
+
+.page-shell-back:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+
+.page-shell-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  margin: 0;
+  text-align: center;
+}
+
+.page-shell-content {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: var(--space-8) var(--space-4);
+}
+
+/* ---------- Settings card ---------- */
+
+.settings-card {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.settings-section {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.settings-section-danger {
+  border-color: var(--color-error);
+}
+
+.settings-section-header {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-section-danger .settings-section-header {
+  border-bottom-color: var(--color-error);
+  background: var(--color-error-light);
+}
+
+.settings-section-title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  margin: 0;
+}
+
+.settings-section-danger .settings-section-title {
+  color: var(--color-error);
+}
+
+.settings-section-description {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin: var(--space-1) 0 0;
+}
+
+.settings-section-body {
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---------- Settings fields ---------- */
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (min-width: 480px) {
+  .settings-field {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .settings-field-control {
+    flex-shrink: 0;
+    min-width: 200px;
+    max-width: 320px;
+    width: 100%;
+  }
+}
+
+.settings-field-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-field-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+}
+
+.settings-field-description {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.settings-field-inline {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.settings-field-inline .settings-input {
+  flex: 1;
+}
+
+/* ---------- Inputs ---------- */
+
+.settings-input {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.settings-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-light);
+}
+
+.settings-input:disabled {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+}
+
+.settings-input-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+/* ---------- Buttons ---------- */
+
+.settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  font-family: var(--font-sans);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.settings-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-btn-primary {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border-color: var(--color-accent);
+}
+
+.settings-btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.settings-btn-secondary {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+
+.settings-btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+
+.settings-btn-danger {
+  background: var(--color-error);
+  color: var(--color-text-inverse);
+  border-color: var(--color-error);
+}
+
+.settings-btn-danger:hover:not(:disabled) {
+  background: var(--color-error-hover);
+  border-color: var(--color-error-hover);
+}
+
+/* ---------- Settings actions bar ---------- */
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.settings-save-message {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+.settings-save-message.success {
+  color: var(--color-success);
+}
+
+.settings-save-message.error {
+  color: var(--color-error);
+}
+
+/* ---------- Runtime status ---------- */
+
+.settings-runtime-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.settings-runtime-badge {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  border-radius: var(--radius-full);
+  text-transform: capitalize;
+}
+
+.settings-runtime-badge-ready,
+.settings-runtime-badge-running,
+.settings-runtime-badge-active {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.settings-runtime-badge-pending,
+.settings-runtime-badge-provisioning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.settings-runtime-badge-error,
+.settings-runtime-badge-failed {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.settings-runtime-badge-unknown {
+  background: var(--color-neutral-bg);
+  color: var(--color-text-secondary);
+}
+
+.settings-runtime-error {
+  font-size: var(--text-sm);
+  color: var(--color-error);
+  font-family: var(--font-mono);
+  background: var(--color-error-light);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  word-break: break-word;
+}
+
+/* ---------- Configured settings badge ---------- */
+
+.settings-configured-badge {
+  display: inline-block;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.settings-configured-date {
+  color: var(--color-text-secondary);
+}
+
+/* ---------- Delete confirmation ---------- */
+
+.settings-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settings-delete-warning {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-error);
+}
+
+.settings-delete-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ---------- Page loading / error states ---------- */
+
+.page-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-16) 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.page-loading-icon {
+  animation: spin 1s linear infinite;
+}
+
+.page-error {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--color-error);
+  font-size: var(--text-sm);
+}
+
+/* ==========================================================================
+   Modal - Create Workspace
+   ========================================================================== */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.modal-dialog {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg, 0 10px 40px rgba(0, 0, 0, 0.15));
+  width: 90%;
+  max-width: 440px;
+  animation: scaleIn 0.15s ease-out;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  margin: 0;
+}
+
+.modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, color 0.15s;
+}
+
+.modal-close:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.modal-body {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.modal-error {
+  font-size: var(--text-sm);
+  color: var(--color-error);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

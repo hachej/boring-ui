@@ -248,6 +248,136 @@ def create_workspace_router_supabase(config: APIConfig) -> APIRouter:
         workspaces = [normalize_workspace_payload(row) for row in rows]
         return {"ok": True, "workspaces": workspaces, "count": len(workspaces)}
 
+    @router.patch("/workspaces/{workspace_id}")
+    async def update_workspace(request: Request, workspace_id: str):
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.files.write"},
+            operation="workspace-core.workspace.update",
+        )
+        if deny is not None:
+            return deny
+
+        ws_uuid, err = _parse_workspace_id(workspace_id, request)
+        if err:
+            return err
+
+        session_or_error = load_session(request, config)
+        if isinstance(session_or_error, JSONResponse):
+            return session_or_error
+        session = session_or_error
+
+        pool_or_error = ensure_pool(request)
+        if isinstance(pool_or_error, JSONResponse):
+            return pool_or_error
+        pool = pool_or_error
+
+        membership_err = await _require_membership_or_error(request, pool, ws_uuid, session.user_id)
+        if membership_err is not None:
+            return membership_err
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return error_response(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="INVALID_PAYLOAD",
+                message="Expected JSON object",
+            )
+
+        name = str(payload.get("name", "")).strip() if isinstance(payload, dict) else ""
+        if not name:
+            return error_response(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="NAME_REQUIRED",
+                message="Workspace name is required",
+            )
+
+        if len(name) > 100:
+            return error_response(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="WORKSPACE_NAME_TOO_LONG",
+                message="Workspace name must be 100 characters or fewer",
+            )
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE workspaces
+                SET name = $1
+                WHERE id = $2 AND deleted_at IS NULL
+                RETURNING id, app_id, name, created_by
+                """,
+                name,
+                ws_uuid,
+            )
+            if row is None:
+                return error_response(
+                    request,
+                    status_code=404,
+                    error="not_found",
+                    code="WORKSPACE_NOT_FOUND",
+                    message="Workspace not found",
+                )
+
+        data = normalize_workspace_payload(row)
+        return {"ok": True, "workspace": data, **data}
+
+    @router.delete("/workspaces/{workspace_id}")
+    async def delete_workspace(request: Request, workspace_id: str):
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.files.write"},
+            operation="workspace-core.workspace.delete",
+        )
+        if deny is not None:
+            return deny
+
+        ws_uuid, err = _parse_workspace_id(workspace_id, request)
+        if err:
+            return err
+
+        session_or_error = load_session(request, config)
+        if isinstance(session_or_error, JSONResponse):
+            return session_or_error
+        session = session_or_error
+
+        pool_or_error = ensure_pool(request)
+        if isinstance(pool_or_error, JSONResponse):
+            return pool_or_error
+        pool = pool_or_error
+
+        membership_err = await _require_membership_or_error(request, pool, ws_uuid, session.user_id)
+        if membership_err is not None:
+            return membership_err
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE workspaces
+                SET deleted_at = now()
+                WHERE id = $1 AND deleted_at IS NULL
+                RETURNING id
+                """,
+                ws_uuid,
+            )
+            if row is None:
+                return error_response(
+                    request,
+                    status_code=404,
+                    error="not_found",
+                    code="WORKSPACE_NOT_FOUND",
+                    message="Workspace not found or already deleted",
+                )
+
+        return {"ok": True, "deleted": True}
+
     @router.get("/workspaces/{workspace_id}/runtime")
     async def get_workspace_runtime(request: Request, workspace_id: str):
         deny = enforce_delegated_policy_or_none(
