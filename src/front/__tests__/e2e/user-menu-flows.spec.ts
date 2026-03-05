@@ -73,11 +73,11 @@ test.describe('User Menu Control-Plane Flows', () => {
       }
     })
 
-    await page.route('**/api/v1/me', (route) =>
+    await page.route('**/api/v1/me**', (route) =>
       fulfillJson(route, 200, { email: 'john@example.com' }),
     )
 
-    await page.route('**/api/v1/workspaces', async (route) => {
+    await page.route('**/api/v1/workspaces**', async (route) => {
       const req = route.request()
       if (req.method() === 'GET') {
         return fulfillJson(route, 200, {
@@ -90,16 +90,16 @@ test.describe('User Menu Control-Plane Flows', () => {
       return fulfillJson(route, 405, { detail: 'unexpected method' })
     })
 
-    await page.route('**/api/v1/workspaces/ws-2/runtime', (route) =>
+    await page.route('**/api/v1/workspaces/ws-2/runtime**', (route) =>
       fulfillJson(route, 200, { runtime: { status: 'ready' } }),
     )
-    await page.route('**/api/v1/workspaces/ws-2/settings', (route) =>
+    await page.route('**/api/v1/workspaces/ws-2/settings**', (route) =>
       fulfillJson(route, 200, { data: { workspace_settings: { shell: 'zsh' } } }),
     )
 
     // Intercept the navigation away from the UI and fulfill a minimal HTML response.
-    // Match both `/w/ws-2` and `/w/ws-2/` to avoid trailing-slash differences.
-    await page.route('**/w/ws-2*', (route) =>
+    // Use a regex so this stays robust across dev/prod base URLs.
+    await page.route(/\/w\/ws-2(\/|$)/, (route) =>
       route.fulfill({ status: 200, contentType: 'text/html', body: '<html></html>' }),
     )
 
