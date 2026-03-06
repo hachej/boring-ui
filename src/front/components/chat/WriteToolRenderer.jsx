@@ -27,8 +27,8 @@ const WriteToolRenderer = ({
       description={fileName}
       subtitle={subtitle}
       status={status}
-      collapsible={content && content.length > 500}
-      defaultExpanded={true}
+      collapsible={Boolean(content)}
+      defaultExpanded={status !== 'complete' || Boolean(error)}
     >
       {error ? (
         <ToolError message={error} />

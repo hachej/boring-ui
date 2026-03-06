@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 
 /**
  * ToolUseBlock - Wrapper component for tool use displays
@@ -20,6 +20,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 // Status colors use CSS variables from chatThemeVars
 const STATUS_COLORS = {
   running: 'var(--color-text-secondary)',
+  streaming: 'var(--color-text-secondary)',
   complete: 'var(--color-success)',
   error: 'var(--color-error)',
   pending: 'var(--color-text-secondary)',
@@ -37,13 +38,27 @@ const ToolUseBlock = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
   const bulletColor = STATUS_COLORS[status] || STATUS_COLORS.complete
+  const isInProgress = ['pending', 'running', 'streaming'].includes(status)
+  const isComplete = status === 'complete'
+  const toggleExpanded = () => setIsExpanded((prev) => !prev)
+  const onHeaderKeyDown = (event) => {
+    if (!collapsible) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      toggleExpanded()
+    }
+  }
 
   return (
-    <div className={`tool-use-block ${className}`}>
+    <div className={`tool-use-block status-${status} ${className}`.trim()}>
       {/* Header row with bullet, tool name, and description */}
       <div
         className={`tool-use-header ${collapsible ? 'clickable' : ''}`}
-        onClick={collapsible ? () => setIsExpanded(!isExpanded) : undefined}
+        onClick={collapsible ? toggleExpanded : undefined}
+        onKeyDown={onHeaderKeyDown}
+        role={collapsible ? 'button' : undefined}
+        tabIndex={collapsible ? 0 : undefined}
+        aria-expanded={collapsible ? isExpanded : undefined}
       >
         {/* Status bullet - color is dynamic */}
         <span className="tool-use-bullet" style={{ color: bulletColor }}>
@@ -56,6 +71,16 @@ const ToolUseBlock = ({
             <span className="tool-use-name">{toolName}</span>
             {description && (
               <span className="tool-use-description">{description}</span>
+            )}
+            {isInProgress && (
+              <span className="tool-use-status-indicator running" aria-label="In progress">
+                <Loader2 size={12} />
+              </span>
+            )}
+            {isComplete && (
+              <span className="tool-use-status-indicator complete" aria-label="Completed">
+                <Check size={12} />
+              </span>
             )}
             {collapsible && (
               <span className="tool-use-collapse-icon">

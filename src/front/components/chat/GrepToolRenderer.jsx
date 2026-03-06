@@ -39,8 +39,8 @@ const GrepToolRenderer = ({
       toolName="Grep"
       description={description}
       status={status}
-      collapsible={results.length > 5}
-      defaultExpanded={results.length <= 10}
+      collapsible={hasResults}
+      defaultExpanded={status !== 'complete' || Boolean(error)}
     >
       {error ? (
         <ToolError message={error} />

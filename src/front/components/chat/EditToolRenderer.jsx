@@ -29,6 +29,7 @@ const EditToolRenderer = ({
 
   // Parse diff lines if provided as string
   const diffLines = typeof diff === 'string' ? diff.split('\n') : diff || []
+  const hasDiffContent = diffLines.length > 0 || Boolean(oldContent && newContent)
 
   return (
     <ToolUseBlock
@@ -36,8 +37,8 @@ const EditToolRenderer = ({
       description={fileName}
       subtitle={subtitle}
       status={status}
-      collapsible={diffLines.length > 20}
-      defaultExpanded={true}
+      collapsible={hasDiffContent}
+      defaultExpanded={status !== 'complete' || Boolean(error)}
     >
       {error ? (
         <ToolError message={error} />

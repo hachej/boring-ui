@@ -30,8 +30,8 @@ const GlobToolRenderer = ({
       toolName="Glob"
       description={description}
       status={status}
-      collapsible={fileCount > 10}
-      defaultExpanded={fileCount <= 20}
+      collapsible={hasResults}
+      defaultExpanded={status !== 'complete' || Boolean(error)}
     >
       {error ? (
         <ToolError message={error} />

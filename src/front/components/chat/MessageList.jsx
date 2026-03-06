@@ -1,5 +1,7 @@
 import { ThreadPrimitive } from '@assistant-ui/react'
 import { forwardRef } from 'react'
+import { Sparkles, ArrowDown } from 'lucide-react'
+import { ICON_SIZE_INLINE, ICON_STROKE_WIDTH } from '../../utils/iconTokens'
 
 /**
  * MessageList - Scrollable container for messages
@@ -29,7 +31,9 @@ export const EmptyState = ({ children }) => {
     <ThreadPrimitive.Empty className="message-list-empty">
       {children || (
         <>
-          <div className="message-list-empty-icon">✨</div>
+          <div className="message-list-empty-icon">
+            <Sparkles size={ICON_SIZE_INLINE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+          </div>
           <div className="message-list-empty-title">Start a conversation</div>
           <div className="message-list-empty-subtitle">Type a message to begin</div>
         </>
@@ -59,7 +63,7 @@ export const ScrollToBottom = ({ children }) => {
     <ThreadPrimitive.ScrollToBottom className="scroll-to-bottom">
       {children || (
         <>
-          <span>↓</span>
+          <ArrowDown size={ICON_SIZE_INLINE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
           <span>Scroll to bottom</span>
         </>
       )}

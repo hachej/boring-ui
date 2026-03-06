@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Image, FileText, Loader2, Sparkles, ChevronLeft } from 'lucide-react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Image, FileText, Loader2, Sparkles, ChevronLeft, Coins, Globe, Command, Send, Square } from 'lucide-react'
 import {
   AssistantIf,
   AssistantRuntimeProvider,
@@ -27,6 +27,7 @@ import { buildWsUrl } from '../../utils/apiBase'
 import { apiFetch, apiFetchJson, openWebSocketUrl } from '../../utils/transport'
 import { routes } from '../../utils/routes'
 import { getDataProvider, createHttpProvider } from '../../providers/data'
+import Tooltip from '../Tooltip'
 
 // Generate a valid UUID, with fallback for environments without crypto.randomUUID
 const generateUUID = () => {
@@ -63,6 +64,112 @@ const extractResultText = (payload) => {
   return ''
 }
 
+const getByPath = (obj, path) =>
+  path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj)
+
+const pickNumber = (source, paths) => {
+  for (const path of paths) {
+    const value = Number(getByPath(source, path))
+    if (Number.isFinite(value)) return value
+  }
+  return null
+}
+
+const extractUsageMetrics = (payload) => {
+  const usageSources = [
+    payload?.usage,
+    payload?.result?.usage,
+    payload?.message?.usage,
+    payload?.result?.message?.usage,
+  ].filter((value) => value && typeof value === 'object')
+
+  let inputTokens = null
+  let outputTokens = null
+  let totalTokens = null
+  let costUsd = pickNumber(payload, [
+    'total_cost_usd',
+    'cost_usd',
+    'result.total_cost_usd',
+    'result.cost_usd',
+  ])
+
+  for (const usage of usageSources) {
+    if (inputTokens == null) {
+      inputTokens = pickNumber(usage, ['input_tokens', 'inputTokens', 'input'])
+    }
+    if (outputTokens == null) {
+      outputTokens = pickNumber(usage, ['output_tokens', 'outputTokens', 'output'])
+    }
+    if (totalTokens == null) {
+      totalTokens = pickNumber(usage, ['total_tokens', 'totalTokens', 'total'])
+    }
+    if (costUsd == null) {
+      costUsd = pickNumber(usage, [
+        'total_cost_usd',
+        'cost_usd',
+        'cost.total',
+        'cost.total_usd',
+      ])
+    }
+  }
+
+  if (totalTokens == null && (inputTokens != null || outputTokens != null)) {
+    totalTokens = (inputTokens || 0) + (outputTokens || 0)
+  }
+
+  const hasMetrics = [inputTokens, outputTokens, totalTokens, costUsd].some((value) => value != null)
+  if (!hasMetrics) return null
+
+  return { inputTokens, outputTokens, totalTokens, costUsd }
+}
+
+const compactTokenFormatter = new Intl.NumberFormat(undefined, {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
+
+const formatTokenCount = (value) => {
+  if (!Number.isFinite(value)) return null
+  if (value < 1000) return `${Math.round(value)} tokens`
+  return `${compactTokenFormatter.format(value)} tokens`
+}
+
+const formatUsd = (value) => {
+  if (!Number.isFinite(value)) return null
+  if (value < 0.01) return `$${value.toFixed(3)}`
+  if (value < 1) return `$${value.toFixed(2)}`
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+const formatUsageSummary = (usage) => {
+  if (!usage) return null
+
+  const totalTokenLabel = formatTokenCount(usage.totalTokens)
+  const costLabel = formatUsd(usage.costUsd)
+  const compactParts = [totalTokenLabel, costLabel].filter(Boolean)
+  if (compactParts.length === 0) return null
+
+  const tooltipParts = []
+  const inputRounded = Number.isFinite(usage.inputTokens) ? Math.round(usage.inputTokens) : null
+  const outputRounded = Number.isFinite(usage.outputTokens) ? Math.round(usage.outputTokens) : null
+  const totalRounded = Number.isFinite(usage.totalTokens) ? Math.round(usage.totalTokens) : null
+
+  if (inputRounded != null) tooltipParts.push(`Input: ${inputRounded.toLocaleString()} tokens`)
+  if (outputRounded != null) tooltipParts.push(`Output: ${outputRounded.toLocaleString()} tokens`)
+  if (totalRounded != null) tooltipParts.push(`Total: ${totalRounded.toLocaleString()} tokens`)
+  if (costLabel) tooltipParts.push(`Cost: ${costLabel}`)
+
+  return {
+    compact: compactParts.join(' · '),
+    tooltip: tooltipParts.join(' | '),
+  }
+}
+
 const SLASH_MENU_GROUPS = [
   { id: 'context', label: 'Context' },
   { id: 'model', label: 'Model' },
@@ -71,10 +178,47 @@ const SLASH_MENU_GROUPS = [
 ]
 
 const MODEL_OPTIONS = [
-  { id: 'sonnet', label: 'Sonnet', value: 'sonnet', description: 'Recommended' },
-  { id: 'opus', label: 'Opus', value: 'opus', description: 'Most capable' },
-  { id: 'haiku', label: 'Haiku', value: 'haiku', description: 'Fastest' },
+  { id: 'sonnet', label: 'Claude Sonnet', value: 'sonnet', description: 'Balanced quality and speed' },
+  { id: 'opus', label: 'Claude Opus', value: 'opus', description: 'Most capable reasoning' },
+  { id: 'haiku', label: 'Claude Haiku', value: 'haiku', description: 'Fastest responses' },
 ]
+
+const toTitleCase = (value) => value
+  .split(/\s+/)
+  .filter(Boolean)
+  .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+  .join(' ')
+
+const getModelDisplayName = (rawModelName) => {
+  const fullName = String(rawModelName || '').trim()
+  if (!fullName) return { shortName: 'Default model', fullName: '' }
+
+  const normalized = fullName.toLowerCase()
+  if (normalized.includes('sonnet')) return { shortName: 'Claude Sonnet', fullName }
+  if (normalized.includes('opus')) return { shortName: 'Claude Opus', fullName }
+  if (normalized.includes('haiku')) return { shortName: 'Claude Haiku', fullName }
+
+  const condensed = toTitleCase(
+    fullName
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+\d{8,}$/g, '')
+      .replace(/\s+\d+(?:\.\d+)?(?:\.\d+)?$/g, '')
+      .trim(),
+  )
+  return {
+    shortName: condensed || fullName,
+    fullName,
+  }
+}
+
+const getFocusableElements = (container) => {
+  if (!container) return []
+  return Array.from(
+    container.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.getAttribute('aria-hidden') !== 'true')
+}
 
 const DEFAULT_SLASH_COMMANDS = [
   // Context
@@ -432,8 +576,8 @@ const ToolFallback = ({ name, input, output }) => {
       toolName={name}
       description={input ? 'Custom tool input' : undefined}
       status="complete"
-      collapsible={Boolean(output)}
-      defaultExpanded={true}
+      collapsible={Boolean(output || input)}
+      defaultExpanded={false}
     >
       {input && (
         <ToolOutput>
@@ -1240,6 +1384,11 @@ const useClaudeStreamRuntime = (
               textPartIndex = parts.length - 1
             }
 
+            const usageMetrics = extractUsageMetrics(payload)
+            if (usageMetrics) {
+              parts.push({ type: 'usage_meta', ...usageMetrics })
+            }
+
             // Check for permission denials BEFORE signaling end
             // In --print mode, Claude reports denied tools in the result
             if (payload.permission_denials?.length > 0) {
@@ -1358,7 +1507,10 @@ const renderToolPart = (part) => {
 
 const AssistantMessage = () => {
   const message = useMessage()
-  const content = message.content || []
+  const rawContent = Array.isArray(message.content) ? message.content : []
+  const content = rawContent.filter((part) => part?.type !== 'usage_meta')
+  const usagePart = rawContent.find((part) => part?.type === 'usage_meta')
+  const usageSummary = formatUsageSummary(usagePart)
   const isStreaming = message.status?.type === 'running'
 
   // Find the index of the last text part to only show cursor there
@@ -1406,6 +1558,14 @@ const AssistantMessage = () => {
         }
         return null
       })}
+      {usageSummary && (
+        <div className="claude-message-metrics" title={usageSummary.tooltip}>
+          <span className="claude-message-metrics-icon" aria-hidden="true">
+            <Coins size={18} strokeWidth={1.5} />
+          </span>
+          <span className="claude-message-metrics-text">{usageSummary.compact}</span>
+        </div>
+      )}
     </MessagePrimitive.Root>
   )
 }
@@ -1437,9 +1597,13 @@ const formatBytes = (value) => {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
-const ImageIcon = () => <Image size={16} aria-hidden="true" />
+const ImageIcon = () => <Image size={18} aria-hidden="true" />
 
-const FileIcon = () => <FileText size={16} aria-hidden="true" />
+const FileIcon = () => <FileText size={18} aria-hidden="true" />
+
+const CommandIcon = () => <Command size={18} aria-hidden="true" />
+
+const MentionIcon = () => <Globe size={18} aria-hidden="true" />
 
 const INLINE_IMAGE_LIMIT = 80000
 
@@ -1481,6 +1645,9 @@ const ComposerShell = ({
   const currentMode = MODES.find((item) => item.id === mode) || MODES[0]
   const modeLabel = currentMode?.title || mode
   const modeIcon = (modeLabel || 'M').charAt(0).toUpperCase()
+  const hasText = Boolean((composerText || '').trim())
+  const hasReadyFileAttachments = fileAttachments.some((attachment) => attachment.status === 'ready')
+  const canSend = hasText || attachments.length > 0 || hasReadyFileAttachments
 
   const inputRef = useRef(null)
   const focusInput = useCallback(() => {
@@ -1738,7 +1905,7 @@ const ComposerShell = ({
                   }}
                   type="button"
                 >
-                  <ChevronLeft size={16} />
+                  <ChevronLeft size={18} />
                   <span>Model</span>
                 </button>
                 {MODEL_OPTIONS.map((model, idx) => {
@@ -1783,6 +1950,7 @@ const ComposerShell = ({
                       const isToggleItem = cmd.isToggle && cmd.id === 'thinking'
                       const toggleState = isToggleItem ? isThinkingEnabled : false
                       const isModelItem = cmd.hasSubmenu && cmd.id === 'model'
+                      const modelDisplay = isModelItem ? getModelDisplayName(currentModel) : null
                       return (
                         <button
                           key={cmd.id}
@@ -1798,10 +1966,18 @@ const ComposerShell = ({
                           <span>{cmd.label}</span>
                           {isToggleItem ? (
                             <span className={`toggle-indicator ${toggleState ? 'on' : 'off'}`}>
-                              {toggleState ? 'On' : 'Off'}
+                              <span className="toggle-indicator-track" aria-hidden="true">
+                                <span className="toggle-indicator-thumb" />
+                              </span>
+                              <span className="toggle-indicator-text">{toggleState ? 'On' : 'Off'}</span>
                             </span>
                           ) : isModelItem ? (
-                            <span className="desc">{currentModel || 'default'} ›</span>
+                            <Tooltip
+                              label={modelDisplay?.fullName || modelDisplay?.shortName || 'Default model'}
+                              disabled={!modelDisplay?.fullName || modelDisplay.fullName === modelDisplay.shortName}
+                            >
+                              <span className="desc claude-model-label">{`${modelDisplay?.shortName || 'Default model'} ›`}</span>
+                            </Tooltip>
                           ) : (
                             <span className="desc">{cmd.description}</span>
                           )}
@@ -1878,7 +2054,7 @@ const ComposerShell = ({
           <div className="claude-context-files">
             {contextFiles.map((file) => (
               <div key={file.id} className="claude-context-pill">
-                <span className="claude-context-pill-icon"><FileText size={14} /></span>
+                <span className="claude-context-pill-icon"><FileText size={18} /></span>
                 <span className="claude-context-pill-label">{file.label}</span>
                 <button
                   type="button"
@@ -1937,7 +2113,7 @@ const ComposerShell = ({
         </ComposerPrimitive.Input>
         <div className="claude-input-actions">
           <div className="claude-input-left">
-            <label className="claude-icon-button" title="Attach image">
+            <label className="claude-icon-button" title="Attach image" aria-label="Attach image">
               <ImageIcon />
               <input
                 type="file"
@@ -1960,7 +2136,7 @@ const ComposerShell = ({
                 }}
               />
             </label>
-            <label className="claude-icon-button" title="Attach file">
+            <label className="claude-icon-button" title="Attach file" aria-label="Attach file">
               <FileIcon />
               <input
                 type="file"
@@ -1977,6 +2153,7 @@ const ComposerShell = ({
               type="button"
               className="claude-icon-button"
               title="Slash commands"
+              aria-label="Open slash commands"
               onMouseDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -1992,12 +2169,13 @@ const ComposerShell = ({
                 setTimeout(() => focusInput(), 0)
               }}
             >
-              /
+              <CommandIcon />
             </button>
             <button
               type="button"
               className="claude-icon-button"
               title="Mention file"
+              aria-label="Mention file"
               onMouseDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -2013,7 +2191,7 @@ const ComposerShell = ({
                 setTimeout(() => focusInput(), 0)
               }}
             >
-              @
+              <MentionIcon />
             </button>
           </div>
           <div className="claude-input-right">
@@ -2052,17 +2230,20 @@ const ComposerShell = ({
               )}
             </div>
             {isRunning ? (
-              <ComposerPrimitive.Cancel className="claude-send claude-stop">
-                ■
+              <ComposerPrimitive.Cancel className="claude-send claude-stop" aria-label="Stop response">
+                <Square size={18} aria-hidden="true" />
               </ComposerPrimitive.Cancel>
-            ) : (
+            ) : canSend ? (
               <ComposerPrimitive.Send
-                className="claude-send"
+                className="claude-send claude-send-visible"
                 disabled={!isConnected || isUploadingAttachments}
                 onClick={() => appendAttachmentsToText()}
+                aria-label="Send message"
               >
-                ↑
+                <Send size={18} aria-hidden="true" />
               </ComposerPrimitive.Send>
+            ) : (
+              <span className="claude-send-placeholder" aria-hidden="true" />
             )}
           </div>
         </div>
@@ -2246,18 +2427,74 @@ const ErrorBanner = ({ error }) => {
 }
 
 const ErrorLogModal = ({ isOpen, errors, onClear, onClose }) => {
+  const modalId = useId().replace(/:/g, '')
+  const dialogRef = useRef(null)
+  const closeButtonRef = useRef(null)
+  const restoreFocusRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const activeElement = document.activeElement
+    restoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null
+    const frame = requestAnimationFrame(() => {
+      closeButtonRef.current?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (isOpen) return
+    restoreFocusRef.current?.focus?.()
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose?.()
+        return
+      }
+
+      if (event.key !== 'Tab') return
+      const focusable = getFocusableElements(dialogRef.current)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
+
   if (!isOpen) return null
   return (
     <div className="claude-settings-overlay" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="claude-settings-modal claude-error-log-modal"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={`claude-error-log-title-${modalId}`}
       >
         <div className="claude-settings-header">
-          <h3>Error log</h3>
-          <button type="button" className="claude-settings-close" onClick={onClose}>
+          <h3 id={`claude-error-log-title-${modalId}`}>Error log</h3>
+          <button
+            type="button"
+            className="claude-settings-close"
+            onClick={onClose}
+            ref={closeButtonRef}
+            aria-label="Close error log"
+          >
             ×
           </button>
         </div>
@@ -2306,7 +2543,7 @@ const ErrorLogModal = ({ isOpen, errors, onClear, onClose }) => {
 
 const ThinkingIndicator = () => (
   <div className="claude-status" role="status" aria-live="polite">
-    <Loader2 className="claude-thinking-spinner" size={16} />
+    <Loader2 className="claude-thinking-spinner" size={18} />
     <span>Thinking...</span>
   </div>
 )
@@ -2347,6 +2584,8 @@ const Thread = ({
 }) => {
   const [showModeMenu, setShowModeMenu] = useState(false)
   const sessionDropdownRef = useRef(null)
+  const sessionTriggerRef = useRef(null)
+  const sessionMenuId = `claude-session-menu-${useId().replace(/:/g, '')}`
 
   // Resizable input area via drag handle
   const INPUT_HEIGHT_KEY = 'claude-input-area-height'
@@ -2409,6 +2648,64 @@ const Thread = ({
     }
   }, [showSessionPicker, showSessionDropdown, setShowSessionDropdown])
 
+  useEffect(() => {
+    if (!showSessionDropdown) return
+    const frame = requestAnimationFrame(() => {
+      const menu = sessionDropdownRef.current?.querySelector('.claude-session-dropdown')
+      if (!menu) return
+      const activeItem = menu.querySelector('.claude-session-item.active')
+      const firstItem = menu.querySelector('button.claude-session-item')
+      ;(activeItem || firstItem)?.focus?.()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [showSessionDropdown, sessions, activeSessionId])
+
+  const handleSessionMenuKeyDown = useCallback((event) => {
+    const menu = sessionDropdownRef.current?.querySelector('.claude-session-dropdown')
+    if (!menu) return
+    const items = Array.from(menu.querySelectorAll('button.claude-session-item'))
+    if (items.length === 0) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setShowSessionDropdown(false)
+        requestAnimationFrame(() => sessionTriggerRef.current?.focus?.())
+      }
+      return
+    }
+
+    const currentIndex = items.indexOf(document.activeElement)
+    const focusAt = (index) => {
+      const bounded = Math.max(0, Math.min(items.length - 1, index))
+      items[bounded]?.focus()
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      focusAt(currentIndex >= 0 ? currentIndex + 1 : 0)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      focusAt(currentIndex >= 0 ? currentIndex - 1 : items.length - 1)
+      return
+    }
+    if (event.key === 'Home') {
+      event.preventDefault()
+      focusAt(0)
+      return
+    }
+    if (event.key === 'End') {
+      event.preventDefault()
+      focusAt(items.length - 1)
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setShowSessionDropdown(false)
+      requestAnimationFrame(() => sessionTriggerRef.current?.focus?.())
+    }
+  }, [setShowSessionDropdown])
+
   return (
     <ChatPanel className="chat-panel-light">
       {errorBanner && <ErrorBanner error={errorBanner} />}
@@ -2420,9 +2717,18 @@ const Thread = ({
             onTitleClick={() => setShowSessionDropdown((prev) => !prev)}
             onNewSession={onNewSession}
             showDropdown={true}
+            isDropdownOpen={showSessionDropdown}
+            dropdownMenuId={sessionMenuId}
+            triggerRef={sessionTriggerRef}
           />
           {showSessionDropdown && (
-            <div className="claude-session-dropdown">
+            <div
+              className="claude-session-dropdown"
+              id={sessionMenuId}
+              role="menu"
+              aria-label="Session list"
+              onKeyDown={handleSessionMenuKeyDown}
+            >
               {sessions.length === 0 ? (
                 <div className="claude-session-item empty">No other sessions</div>
               ) : (
@@ -2431,6 +2737,8 @@ const Thread = ({
                     key={s.id}
                     type="button"
                     className={`claude-session-item ${s.id === activeSessionId ? 'active' : ''}`}
+                    role="menuitemradio"
+                    aria-checked={s.id === activeSessionId}
                     onClick={() => {
                       onSelectSession(s.id)
                       setShowSessionDropdown(false)
@@ -2451,7 +2759,7 @@ const Thread = ({
       <MessageList>
         <EmptyState>
           <div className="claude-stream-empty">
-            <Sparkles className="mark" size={24} />
+            <Sparkles className="mark" size={18} />
             <div className="headline">Ask me anything about your code</div>
             <div className="hint">I can explain files, propose edits, or help debug workflows.</div>
             <div className="claude-empty-prompts" aria-hidden="true">

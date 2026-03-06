@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import ToolUseBlock, { ToolOutput, ToolError } from './ToolUseBlock'
 
@@ -25,6 +25,7 @@ const BashToolRenderer = ({
   compact = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isCompactResultExpanded, setIsCompactResultExpanded] = useState(false)
 
   const getOutputInfo = (text) => {
     if (!text) return { lines: [], totalLines: 0, hasMore: false }
@@ -42,14 +43,21 @@ const BashToolRenderer = ({
   const hasExitCode = typeof exitCode === 'number'
   const effectiveStatus = error ? 'error' : hasExitCode && exitCode !== 0 ? 'error' : status
   const isStreaming = ['pending', 'running', 'streaming'].includes(effectiveStatus)
+  const compactOutputLines = output ? output.split('\n') : []
+
+  useEffect(() => {
+    if (isStreaming && compactOutputLines.length > 0) {
+      setIsCompactResultExpanded(true)
+    }
+  }, [isStreaming, compactOutputLines.length])
 
   return (
     <ToolUseBlock
       toolName="Bash"
       description={description || (command?.length > 60 ? command.slice(0, 60) + '...' : command)}
       status={effectiveStatus}
-      collapsible={output && output.length > 300}
-      defaultExpanded={true}
+      collapsible={!compact && Boolean(output)}
+      defaultExpanded={!compact ? isStreaming : true}
     >
       {/* Command display */}
       {command && !compact && (
@@ -69,7 +77,7 @@ const BashToolRenderer = ({
               borderRadius: 'var(--radius-md, 8px)',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
-              border: '1px solid var(--chat-border)',
+              border: 'none',
               lineHeight: '1.5',
             }}
           >
@@ -84,21 +92,36 @@ const BashToolRenderer = ({
 
       {/* Output display */}
       {output && !error && compact && (
-        <pre className="claude-bash-compact">
-          {(() => {
-            const rawLines = output.split('\n')
-            const maxLines = 3
-            const shown = rawLines.slice(0, maxLines)
-            const formatted = shown.map((line, idx) =>
-              `${idx === 0 ? '└' : ' '} ${line}`.trimEnd()
-            )
-            if (rawLines.length > maxLines) {
-              formatted.push(`  ... +${rawLines.length - maxLines} lines`)
-            }
-            return formatted.join('\n')
-          })()}
-          {isStreaming && <span className="claude-streaming-cursor" aria-hidden="true">▌</span>}
-        </pre>
+        <div className="tool-result-collapsible">
+          <button
+            type="button"
+            className="tool-result-toggle"
+            onClick={() => setIsCompactResultExpanded((prev) => !prev)}
+          >
+            {isCompactResultExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <span>
+              {isCompactResultExpanded
+                ? 'Hide result'
+                : `Show result (${compactOutputLines.length} line${compactOutputLines.length === 1 ? '' : 's'})`}
+            </span>
+          </button>
+          {isCompactResultExpanded && (
+            <pre className="claude-bash-compact">
+              {(() => {
+                const maxLines = 3
+                const shown = compactOutputLines.slice(0, maxLines)
+                const formatted = shown.map((line, idx) =>
+                  `${idx === 0 ? '└' : ' '} ${line}`.trimEnd()
+                )
+                if (compactOutputLines.length > maxLines) {
+                  formatted.push(`  ... +${compactOutputLines.length - maxLines} lines`)
+                }
+                return formatted.join('\n')
+              })()}
+              {isStreaming && <span className="claude-streaming-cursor" aria-hidden="true">▌</span>}
+            </pre>
+          )}
+        </div>
       )}
 
       {output && !error && !compact && (
@@ -124,29 +147,8 @@ const BashToolRenderer = ({
           {outputInfo.hasMore && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginTop: 'var(--space-2, 8px)',
-                padding: '6px 12px',
-                background: 'var(--color-bg-active, rgba(255,255,255,0.1))',
-                border: '1px solid var(--chat-border)',
-                borderRadius: 'var(--radius-md, 8px)',
-                color: 'var(--chat-text-muted)',
-                fontSize: '12px',
-                fontFamily: 'var(--font-mono)',
-                cursor: 'pointer',
-                transition: 'all var(--transition-fast)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--color-bg-hover, rgba(255,255,255,0.15))'
-                e.currentTarget.style.color = 'var(--chat-text)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'var(--color-bg-active, rgba(255,255,255,0.1))'
-                e.currentTarget.style.color = 'var(--chat-text-muted)'
-              }}
+              type="button"
+              className="tool-result-toggle"
             >
               {isExpanded ? (
                 <>
