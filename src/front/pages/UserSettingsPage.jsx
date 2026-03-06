@@ -18,7 +18,7 @@ export default function UserSettingsPage({ workspaceId }) {
   const backRoute = workspaceId
     ? routes.controlPlane.workspaces.scope(workspaceId)
     : { path: '/', query: undefined }
-  const backHref = buildApiUrl(backRoute.path, backRoute.query)
+  const backHref = backRoute.path
 
   useEffect(() => {
     const load = async () => {
@@ -27,8 +27,8 @@ export default function UserSettingsPage({ workspaceId }) {
         const { response, data } = await apiFetchJson(meRoute.path, { query: meRoute.query })
         if (!response.ok) {
           if (response.status === 401) {
-            const loginRoute = routes.controlPlane.auth.login(window.location.pathname)
-            window.location.assign(buildApiUrl(loginRoute.path, loginRoute.query))
+            // No active session — show settings without profile data.
+            // Profile section will be hidden; theme/appearance still works.
             return
           }
           setError('Failed to load user info')
@@ -37,7 +37,7 @@ export default function UserSettingsPage({ workspaceId }) {
         setEmail(data.email || data.user?.email || '')
         setDisplayName(data.display_name || data.user?.display_name || '')
       } catch {
-        setError('Failed to reach server')
+        // Backend unreachable — show settings without profile data
       } finally {
         setLoading(false)
       }
@@ -91,43 +91,47 @@ export default function UserSettingsPage({ workspaceId }) {
     )
   }
 
+  const isAuthenticated = Boolean(email)
+
   return (
     <PageShell title="User Settings" backHref={backHref}>
       <div className="settings-card">
-        <SettingsSection title="Profile" icon={User}>
-          <SettingsField label="Email" description="Your account email address">
-            <input
-              type="email"
-              className="settings-input"
-              value={email}
-              disabled
-            />
-          </SettingsField>
-          <SettingsField label="Display Name">
-            <input
-              type="text"
-              className="settings-input"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Enter display name"
-            />
-          </SettingsField>
-          <div className="settings-actions">
-            <button
-              type="button"
-              className="settings-btn settings-btn-primary"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-            {saveMessage && (
-              <span className={`settings-save-message ${saveMessage.includes('Failed') ? 'error' : 'success'}`}>
-                {saveMessage}
-              </span>
-            )}
-          </div>
-        </SettingsSection>
+        {isAuthenticated && (
+          <SettingsSection title="Profile" icon={User}>
+            <SettingsField label="Email" description="Your account email address">
+              <input
+                type="email"
+                className="settings-input"
+                value={email}
+                disabled
+              />
+            </SettingsField>
+            <SettingsField label="Display Name">
+              <input
+                type="text"
+                className="settings-input"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Enter display name"
+              />
+            </SettingsField>
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="settings-btn settings-btn-primary"
+                onClick={handleSave}
+                disabled={saving}
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+              {saveMessage && (
+                <span className={`settings-save-message ${saveMessage.includes('Failed') ? 'error' : 'success'}`}>
+                  {saveMessage}
+                </span>
+              )}
+            </div>
+          </SettingsSection>
+        )}
 
         <SettingsSection title="Appearance" icon={Palette}>
           <SettingsField label="Theme" description="Choose light or dark mode">
@@ -141,17 +145,19 @@ export default function UserSettingsPage({ workspaceId }) {
           </SettingsField>
         </SettingsSection>
 
-        <SettingsSection title="Account" icon={Shield} danger>
-          <SettingsField label="Sign Out" description="Sign out of your account">
-            <button
-              type="button"
-              className="settings-btn settings-btn-danger"
-              onClick={handleLogout}
-            >
-              Sign Out
-            </button>
-          </SettingsField>
-        </SettingsSection>
+        {isAuthenticated && (
+          <SettingsSection title="Account" icon={Shield} danger>
+            <SettingsField label="Sign Out" description="Sign out of your account">
+              <button
+                type="button"
+                className="settings-btn settings-btn-danger"
+                onClick={handleLogout}
+              >
+                Sign Out
+              </button>
+            </SettingsField>
+          </SettingsSection>
+        )}
       </div>
     </PageShell>
   )

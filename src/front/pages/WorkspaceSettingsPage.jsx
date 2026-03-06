@@ -19,7 +19,7 @@ export default function WorkspaceSettingsPage({ workspaceId }) {
   const [workspaceIdCopied, setWorkspaceIdCopied] = useState(false)
 
   const backRoute = routes.controlPlane.workspaces.scope(workspaceId)
-  const backHref = buildApiUrl(backRoute.path, backRoute.query)
+  const backHref = backRoute.path
 
   useEffect(() => {
     const load = async () => {
