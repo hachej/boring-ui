@@ -834,8 +834,9 @@ export default function FileTree({
               type="button"
               className="search-clear"
               onClick={() => setSearchQuery('')}
+              aria-label="Clear search"
             >
-              <X size={12} />
+              <X size={16} />
             </button>
           )}
         </div>

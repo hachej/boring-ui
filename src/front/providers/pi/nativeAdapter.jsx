@@ -106,8 +106,9 @@ pi-chat-panel {
 }
 
 /* ── Bridge boring-ui design tokens → pi-web-ui (shadcn) tokens ── */
-/* Inherits theme from boring-ui tokens (light + dark) via CSS variable inheritance on :host. */
-:host {
+/* Inherits theme from boring-ui tokens (light + dark) via CSS variable inheritance on :host.
+   Must also override on .pi-root and .dark.pi-root so pi-web-ui's :root/.dark definitions don't win. */
+:host, .pi-root, .dark.pi-root {
   --background: var(--color-bg-primary);
   --foreground: var(--color-text-primary);
   --card: var(--color-bg-secondary);
@@ -124,8 +125,8 @@ pi-chat-panel {
   --accent-foreground: var(--color-ai-agent);
   --destructive: var(--color-error);
   --destructive-foreground: var(--color-text-inverse);
-  --border: var(--color-border);
-  --input: var(--color-border);
+  --border: var(--color-border-primary);
+  --input: var(--color-border-primary);
   --ring: var(--color-ai-agent);
   --radius: 0.5rem;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

@@ -239,7 +239,7 @@ export default function FileTreePanel({ params }) {
             >
               <button
                 type="button"
-                className={`sidebar-action-btn ${searchExpanded ? 'active' : ''}`}
+                className={`sidebar-action-btn${searchExpanded ? ' sidebar-action-btn--close' : ''}`}
                 onClick={() => {
                   if (searchExpanded) {
                     setSearchExpanded(false)
@@ -249,7 +249,7 @@ export default function FileTreePanel({ params }) {
                 }}
                 aria-label={searchExpanded ? 'Close quick file search' : 'Quick file search'}
               >
-                {searchExpanded ? <X size={ICON_SIZE_INLINE} /> : <Search size={ICON_SIZE_INLINE} />}
+                {searchExpanded ? <X size={20} /> : <Search size={ICON_SIZE_INLINE} />}
               </button>
             </Tooltip>
           </>
