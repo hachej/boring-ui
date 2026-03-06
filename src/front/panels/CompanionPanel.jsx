@@ -57,14 +57,10 @@ export default function CompanionPanel({ params }) {
     <div className="panel-content terminal-panel-content companion-panel-content" data-testid="companion-panel">
       <div className="terminal-header">
         {canSwitchProviders && (
-          <div className="flex items-center gap-1 ml-2">
+          <div className="companion-provider-switch">
             <button
               type="button"
-              className={`px-2 py-0.5 text-xs rounded ${
-                activeProvider === 'companion'
-                  ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)]'
-                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
-              }`}
+              className={`companion-provider-pill ${activeProvider === 'companion' ? 'active' : ''}`}
               onClick={() => setSelectedProvider('companion')}
               aria-label="Use Agent provider"
             >
@@ -72,11 +68,7 @@ export default function CompanionPanel({ params }) {
             </button>
             <button
               type="button"
-              className={`px-2 py-0.5 text-xs rounded ${
-                activeProvider === 'pi'
-                  ? 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)]'
-                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]'
-              }`}
+              className={`companion-provider-pill ${activeProvider === 'pi' ? 'active' : ''}`}
               onClick={() => setSelectedProvider('pi')}
               aria-label="Use secondary agent provider"
             >

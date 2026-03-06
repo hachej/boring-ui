@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { Check, FileText } from 'lucide-react'
+import { Command, FileText, GitBranch, Loader2 } from 'lucide-react'
 import { useGitStatus } from '../providers/data'
 
 const STATUS_CONFIG = {
@@ -11,7 +11,7 @@ const STATUS_CONFIG = {
 }
 
 export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
-  const { data: gitStatus, isLoading, error } = useGitStatus({ refetchInterval: 5000 })
+  const { data: gitStatus, isLoading, error, refetch } = useGitStatus({ refetchInterval: 5000 })
 
   const changes = useMemo(() => {
     const files = gitStatus?.files
@@ -59,7 +59,10 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
   if (isLoading) {
     return (
       <div className="git-changes-view">
-        <div className="git-changes-loading">Loading changes...</div>
+        <div className="git-changes-loading">
+          <Loader2 className="git-inline-spinner" size={14} />
+          <span>Loading changes...</span>
+        </div>
       </div>
     )
   }
@@ -67,7 +70,12 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
   if (gitStatus?.available === false) {
     return (
       <div className="git-changes-view">
-        <div className="git-changes-error">Git not available</div>
+        <div className="git-changes-error">
+          <div>Git not available</div>
+          <button type="button" className="git-changes-retry" onClick={() => refetch()}>
+            Retry
+          </button>
+        </div>
       </div>
     )
   }
@@ -75,7 +83,12 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
   if (error) {
     return (
       <div className="git-changes-view">
-        <div className="git-changes-error">{error.message || String(error)}</div>
+        <div className="git-changes-error">
+          <div>{error.message || String(error)}</div>
+          <button type="button" className="git-changes-retry" onClick={() => refetch()}>
+            Retry
+          </button>
+        </div>
       </div>
     )
   }
@@ -85,10 +98,16 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile }) {
   if (totalChanges === 0) {
     return (
       <div className="git-changes-view">
-        <div className="git-changes-empty">
-          <Check className="git-changes-empty-icon" size={24} />
-          <span>No changes</span>
-          <span className="git-changes-empty-subtitle">Working tree is clean.</span>
+        <div className="git-changes-empty empty-state">
+          <span className="empty-state-icon-wrap git-changes-empty-icon-wrap" aria-hidden="true">
+            <GitBranch className="git-changes-empty-icon" size={20} />
+          </span>
+          <span className="empty-state-title">Working tree is clean</span>
+          <span className="empty-state-message">No modified, added, or deleted files right now.</span>
+          <span className="empty-state-hint git-changes-empty-subtitle">
+            <Command size={14} aria-hidden="true" />
+            <span>Edit and save a file to generate a diff</span>
+          </span>
         </div>
       </div>
     )

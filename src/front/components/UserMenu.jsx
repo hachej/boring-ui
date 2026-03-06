@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
-import { Sun, Moon, ArrowLeftRight, Plus, Settings, LogOut, AlertCircle } from 'lucide-react'
+import { Sun, Moon, ArrowLeftRight, Plus, Settings, LogOut, AlertCircle, HelpCircle } from 'lucide-react'
 import { useTheme } from '../hooks/useTheme'
+import { ICON_SIZE_INLINE, ICON_SIZE_COMPACT, ICON_STROKE_WIDTH } from '../utils/iconTokens'
 
 /**
  * UserMenu - Avatar with dropdown menu for user and workspace actions
@@ -38,6 +39,7 @@ export default function UserMenu({
   const [collapsedMenuStyle, setCollapsedMenuStyle] = useState(null)
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
+  const themeLabel = isDark ? 'Dark' : 'Light'
 
   const getFocusableMenuElements = () => {
     if (!dropdownRef.current) return []
@@ -52,9 +54,6 @@ export default function UserMenu({
       queueMicrotask(() => triggerRef.current?.focus())
     }
   }
-
-  // Get first letter of email (uppercase) for avatar
-  const avatarLetter = email ? email.charAt(0).toUpperCase() : '?'
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -120,6 +119,7 @@ export default function UserMenu({
   const menuId = `user-menu-dropdown-${safeId}`
   const isSignedIn = Boolean(String(email || '').trim())
   const displayEmail = isSignedIn ? String(email).trim() : 'Not signed in'
+  const avatarLetter = isSignedIn ? displayEmail.charAt(0).toUpperCase() : ''
   const workspaceNameValue = String(workspaceName || '').trim()
   const isUuidWorkspaceName = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceNameValue)
   const showWorkspace = workspaceNameValue.length > 0 && !isUuidWorkspaceName
@@ -236,7 +236,12 @@ export default function UserMenu({
           className={`user-menu-status user-menu-status-${statusTone}`}
           role="alert"
         >
-          <AlertCircle size={12} className="user-menu-status-icon" aria-hidden="true" />
+          <AlertCircle
+            size={ICON_SIZE_COMPACT}
+            strokeWidth={ICON_STROKE_WIDTH}
+            className="user-menu-status-icon"
+            aria-hidden="true"
+          />
           <span className="user-menu-status-text">{statusMessage}</span>
           {typeof onRetry === 'function' ? (
             <button
@@ -263,9 +268,19 @@ export default function UserMenu({
         className="btn btn-ghost user-menu-item user-menu-item-appearance"
         onClick={toggleTheme}
         role="menuitem"
+        aria-label={`Theme: ${themeLabel}`}
       >
-        {isDark ? <Sun size={14} /> : <Moon size={14} />}
-        <span>Appearance: {isDark ? 'Dark' : 'Light'}</span>
+        <span className="user-menu-item-left">
+          {isDark ? (
+            <Sun size={ICON_SIZE_INLINE} strokeWidth={ICON_STROKE_WIDTH} className="user-menu-item-icon" />
+          ) : (
+            <Moon size={ICON_SIZE_INLINE} strokeWidth={ICON_STROKE_WIDTH} className="user-menu-item-icon" />
+          )}
+          <span>{`Theme: ${themeLabel}`}</span>
+        </span>
+        <span className={`user-menu-theme-switch ${isDark ? 'is-dark' : 'is-light'}`} aria-hidden="true">
+          <span className="user-menu-theme-knob" />
+        </span>
       </button>
       <div className="user-menu-divider" />
       {actionItems.map((item) => {
@@ -279,7 +294,14 @@ export default function UserMenu({
             role="menuitem"
             disabled={disabled}
           >
-            {ItemIcon ? <ItemIcon size={14} className="user-menu-item-icon" aria-hidden="true" /> : null}
+            {ItemIcon ? (
+              <ItemIcon
+                size={ICON_SIZE_INLINE}
+                strokeWidth={ICON_STROKE_WIDTH}
+                className="user-menu-item-icon"
+                aria-hidden="true"
+              />
+            ) : null}
             {item.label}
           </button>
         )
@@ -302,7 +324,18 @@ export default function UserMenu({
         aria-haspopup="true"
         aria-controls={isOpen ? menuId : undefined}
       >
-        <span className="user-avatar">{avatarLetter}</span>
+        <span className={`user-avatar ${isSignedIn ? '' : 'user-avatar-anonymous'}`}>
+          {isSignedIn ? (
+            avatarLetter
+          ) : (
+            <HelpCircle
+              size={ICON_SIZE_INLINE}
+              strokeWidth={ICON_STROKE_WIDTH}
+              className="user-avatar-help-icon"
+              aria-hidden="true"
+            />
+          )}
+        </span>
         {!collapsed && (
           <span className="user-menu-trigger-meta">
             <span className="user-menu-trigger-primary">{displayEmail}</span>

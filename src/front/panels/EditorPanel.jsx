@@ -63,7 +63,10 @@ export default function EditorPanel({ params: initialParams, api }) {
 
   const {
     data: diskContent,
+    isLoading: isDiskContentLoading,
+    isFetching: isDiskContentFetching,
     isSuccess: hasDiskContent,
+    error: diskContentError,
     refetch: refetchDiskContent,
   } = useFileContent(path, {
     enabled: Boolean(path) && !isDirty && !isSaving,
@@ -253,6 +256,8 @@ export default function EditorPanel({ params: initialParams, api }) {
 
   // Determine if this is a markdown file
   const isMarkdown = useMemo(() => isMarkdownFile(path), [path])
+  const showFileLoadingState = Boolean(path) && !hasDiskContent && (isDiskContentLoading || isDiskContentFetching) && !content
+  const showFileErrorState = Boolean(path) && !hasDiskContent && Boolean(diskContentError) && !content
 
   return (
     <div className="panel-content editor-panel-content">
@@ -279,7 +284,30 @@ export default function EditorPanel({ params: initialParams, api }) {
         </div>
       )}
 
-      {isMarkdown ? (
+      {showFileErrorState ? (
+        <div className="editor-loading-state editor-loading-error" role="alert">
+          <div className="editor-loading-title">Could not load file</div>
+          <div className="editor-loading-detail">{diskContentError.message || String(diskContentError)}</div>
+          <button
+            type="button"
+            className="editor-loading-retry"
+            onClick={() => refetchDiskContent()}
+          >
+            Retry
+          </button>
+        </div>
+      ) : showFileLoadingState ? (
+        <div className="editor-loading-state" role="status" aria-live="polite">
+          <div className="editor-loading-progress" />
+          <div className="editor-loading-skeleton">
+            <div className="editor-loading-line w-80" />
+            <div className="editor-loading-line w-65" />
+            <div className="editor-loading-line w-75" />
+            <div className="editor-loading-line w-58" />
+            <div className="editor-loading-line w-70" />
+          </div>
+        </div>
+      ) : isMarkdown ? (
         <Editor
           content={content}
           contentVersion={contentVersion}

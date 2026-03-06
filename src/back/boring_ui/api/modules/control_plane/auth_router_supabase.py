@@ -93,34 +93,43 @@ _LOGIN_HTML_TEMPLATE: str = """\
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&family=Fira+Code:wght@500;600&display=swap');
     :root {
       --color-bg-primary: #ffffff;
-      --color-bg-secondary: #fafafa;
-      --color-text-primary: #09090b;
-      --color-text-secondary: #52525b;
-      --color-border: #e4e4e7;
-      --color-border-strong: #d4d4d8;
-      --color-accent: #0070f3;
-      --color-accent-hover: #0060d3;
-      --color-accent-light: rgba(0, 112, 243, 0.1);
-      --color-error: #ef4444;
-      --color-info: #3b82f6;
+      --color-bg-secondary: #f8f8f8;
+      --color-text-primary: #1a1a1a;
+      --color-text-secondary: #6b6b6b;
+      --color-border: #e0e0e0;
+      --color-border-strong: #767676;
+      --color-accent: #007aff;
+      --color-accent-hover: #005bcc;
+      --color-accent-light: rgba(0, 122, 255, 0.1);
+      --color-accent-foreground: #ffffff;
+      /* Slightly darker than accent token for AA text contrast on white. */
+      --color-link: #005bcc;
+      --color-error: #dc3545;
+      --color-info: #17a2b8;
+      --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+      --shadow-auth: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
       --focus: rgba(0, 112, 243, 0.18);
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --color-bg-primary: #111111;
-        --color-bg-secondary: #18181b;
-        --color-text-primary: #ededed;
-        --color-text-secondary: #a1a1aa;
-        --color-border: rgba(255, 255, 255, 0.1);
-        --color-border-strong: rgba(255, 255, 255, 0.15);
-        --color-accent: #3b82f6;
-        --color-accent-hover: #60a5fa;
-        --color-accent-light: rgba(59, 130, 246, 0.15);
-        --color-error: #f87171;
-        --color-info: #60a5fa;
+        --color-bg-primary: #1f1f1f;
+        --color-bg-secondary: #242424;
+        --color-text-primary: #e0e0e0;
+        --color-text-secondary: #a8a8a8;
+        --color-border: #404040;
+        --color-border-strong: #6b6b6b;
+        --color-accent: #61dafb;
+        --color-accent-hover: #3d9dd6;
+        --color-accent-light: rgba(97, 218, 251, 0.15);
+        --color-accent-foreground: #1a1a1a;
+        --color-link: #61dafb;
+        --color-error: #e74c3c;
+        --color-info: #3498db;
+        --shadow-auth: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 8px 20px -10px rgb(0 0 0 / 0.58), 0 2px 8px -4px rgb(0 0 0 / 0.42);
+        --focus: rgba(97, 218, 251, 0.22);
       }
     }
     * { box-sizing: border-box; }
@@ -146,19 +155,40 @@ _LOGIN_HTML_TEMPLATE: str = """\
       align-items: stretch;
     }
     .rail {
+      position: relative;
+      overflow: hidden;
       background: var(--color-bg-primary);
       backdrop-filter: blur(8px);
       border: 1px solid var(--color-border);
       border-radius: 18px;
       padding: 28px;
-      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.08);
+      box-shadow: var(--shadow-auth);
       animation: enter 260ms ease-out both;
+    }
+    .rail::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at center, color-mix(in srgb, var(--color-accent) 22%, transparent) 1px, transparent 1.5px);
+      background-size: 12px 12px;
+      opacity: 0.22;
+    }
+    .rail::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 14%, transparent) 0%, transparent 55%);
     }
     .rail h1 {
       margin: 0 0 10px;
+      font-family: var(--font-mono);
+      font-weight: 600;
       font-size: clamp(1.55rem, 2.6vw, 2.1rem);
       line-height: 1.18;
-      letter-spacing: -0.01em;
+      letter-spacing: -0.02em;
     }
     .rail p {
       margin: 0;
@@ -166,12 +196,25 @@ _LOGIN_HTML_TEMPLATE: str = """\
       line-height: 1.58;
       max-width: 36ch;
     }
+    .rail-code {
+      margin: 18px 0 0;
+      border: 1px solid color-mix(in srgb, var(--color-border) 84%, var(--color-accent));
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: color-mix(in srgb, var(--color-bg-secondary) 86%, var(--color-bg-primary));
+      color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text-primary));
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      letter-spacing: 0;
+      white-space: pre-wrap;
+    }
     .card {
       border-radius: 18px;
       background: var(--color-bg-primary);
       border: 1px solid var(--color-border);
       padding: 24px;
-      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--shadow-auth);
       animation: enter 260ms ease-out both;
     }
     .mode-tabs {
@@ -190,13 +233,14 @@ _LOGIN_HTML_TEMPLATE: str = """\
       color: var(--color-text-secondary);
       border-radius: 9px;
       padding: 9px 11px;
-      font-weight: 700;
+      font-weight: 500;
       cursor: pointer;
       transition: background-color 140ms ease, color 140ms ease;
     }
     .mode-tab.is-active {
       background: var(--color-bg-primary);
       color: var(--color-text-primary);
+      font-weight: 700;
       box-shadow: 0 1px 0 var(--color-border);
     }
     h2 {
@@ -223,7 +267,7 @@ _LOGIN_HTML_TEMPLATE: str = """\
       color: var(--color-text-primary);
       border-radius: 10px;
       padding: 11px 12px;
-      font-size: 0.96rem;
+      font-size: 1rem;
       transition: border-color 120ms ease, box-shadow 120ms ease;
     }
     input::placeholder { color: var(--color-text-secondary); }
@@ -239,13 +283,19 @@ _LOGIN_HTML_TEMPLATE: str = """\
       border-radius: 10px;
       padding: 12px 14px;
       background: var(--color-accent);
-      color: #ffffff;
-      font-weight: 800;
+      color: var(--color-accent-foreground);
+      font-weight: 700;
       cursor: pointer;
       transition: transform 120ms ease, background-color 120ms ease;
     }
     .submit:hover { background: var(--color-accent-hover); }
     .submit:active { transform: translateY(1px); }
+    .submit:focus-visible,
+    .link-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 4px var(--focus);
+      border-radius: 8px;
+    }
     .alt-actions {
       margin-top: 10px;
       display: flex;
@@ -262,7 +312,7 @@ _LOGIN_HTML_TEMPLATE: str = """\
     .link-btn {
       border: 0;
       background: transparent;
-      color: var(--color-accent);
+      color: var(--color-link);
       font-weight: 700;
       padding: 0;
       cursor: pointer;
@@ -298,11 +348,14 @@ _LOGIN_HTML_TEMPLATE: str = """\
       <aside class="rail" aria-label="Product highlights">
         <h1 id="app-name">&lt;app-name&gt;</h1>
         <p id="app-description">&lt;app-description&gt;</p>
+        <pre class="rail-code" aria-hidden="true">const session = await auth.login(email)
+workspace.open(session.id)</pre>
       </aside>
-      <main class="card">
+      <main>
+        <div id="auth-panel" class="card" role="tabpanel" aria-labelledby="tab-signin">
         <div class="mode-tabs" role="tablist" aria-label="Authentication mode">
-          <button id="tab-signin" class="mode-tab is-active" role="tab" aria-selected="true" type="button">Sign in</button>
-          <button id="tab-signup" class="mode-tab" role="tab" aria-selected="false" type="button">Create account</button>
+          <button id="tab-signin" class="mode-tab is-active" role="tab" aria-selected="true" aria-controls="auth-panel" type="button">Sign in</button>
+          <button id="tab-signup" class="mode-tab" role="tab" aria-selected="false" aria-controls="auth-panel" type="button">Create account</button>
         </div>
         <h2 id="title">Welcome back</h2>
         <p id="subtitle" class="subtitle">Use your email and password to continue.</p>
@@ -318,16 +371,18 @@ _LOGIN_HTML_TEMPLATE: str = """\
           <button id="magic" class="link-btn" type="button">Use magic link instead</button>
         </div>
         <div id="status" class="status" aria-live="polite"></div>
+        </div>
       </main>
     </div>
   </div>
-  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js" integrity="sha384-z2hqtpr/vSDZ8zSjLOiNgnR/mpU799AD93s6rvkNJLI6Hl0YlKXEhDtREzNT749S" crossorigin="anonymous"></script>
   <script defer>
     document.addEventListener("DOMContentLoaded", function() {
     const AUTH = /*AUTH_CONFIG_JSON*/;
     const statusEl = document.getElementById("status");
     const appNameEl = document.getElementById("app-name");
     const appDescriptionEl = document.getElementById("app-description");
+    const panelEl = document.getElementById("auth-panel");
     const titleEl = document.getElementById("title");
     const subtitleEl = document.getElementById("subtitle");
     const form = document.getElementById("auth-form");
@@ -374,6 +429,9 @@ _LOGIN_HTML_TEMPLATE: str = """\
       tabSignUpEl.classList.toggle("is-active", isSignUp);
       tabSignInEl.setAttribute("aria-selected", isSignUp ? "false" : "true");
       tabSignUpEl.setAttribute("aria-selected", isSignUp ? "true" : "false");
+      if (panelEl) {
+        panelEl.setAttribute("aria-labelledby", isSignUp ? "tab-signup" : "tab-signin");
+      }
     }
 
     function isEmailRateLimited(error) {
@@ -585,29 +643,37 @@ _CALLBACK_BRIDGE_HTML_TEMPLATE: str = """\
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Completing sign-in...</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&family=Fira+Code:wght@500;600&display=swap');
     :root {
       --color-bg-primary: #ffffff;
-      --color-bg-secondary: #fafafa;
-      --color-text-primary: #09090b;
-      --color-text-secondary: #52525b;
-      --color-border: #e4e4e7;
-      --color-accent: #0070f3;
-      --color-accent-light: rgba(0, 112, 243, 0.1);
-      --color-error: #ef4444;
-      --color-info: #3b82f6;
+      --color-bg-secondary: #f8f8f8;
+      --color-text-primary: #1a1a1a;
+      --color-text-secondary: #6b6b6b;
+      --color-border: #e0e0e0;
+      --color-accent: #007aff;
+      --color-accent-light: rgba(0, 122, 255, 0.1);
+      /* Slightly darker than accent token for AA text contrast on white. */
+      --color-link: #005bcc;
+      --focus: rgba(0, 91, 204, 0.18);
+      --color-error: #dc3545;
+      --color-info: #17a2b8;
+      --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+      --shadow-auth: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --color-bg-primary: #111111;
-        --color-bg-secondary: #18181b;
-        --color-text-primary: #ededed;
-        --color-text-secondary: #a1a1aa;
-        --color-border: rgba(255, 255, 255, 0.1);
-        --color-accent: #3b82f6;
-        --color-accent-light: rgba(59, 130, 246, 0.15);
-        --color-error: #f87171;
-        --color-info: #60a5fa;
+        --color-bg-primary: #1f1f1f;
+        --color-bg-secondary: #242424;
+        --color-text-primary: #e0e0e0;
+        --color-text-secondary: #a8a8a8;
+        --color-border: #404040;
+        --color-accent: #61dafb;
+        --color-accent-light: rgba(97, 218, 251, 0.15);
+        --color-link: #61dafb;
+        --focus: rgba(97, 218, 251, 0.22);
+        --color-error: #e74c3c;
+        --color-info: #3498db;
+        --shadow-auth: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 8px 20px -10px rgb(0 0 0 / 0.58), 0 2px 8px -4px rgb(0 0 0 / 0.42);
       }
     }
     * { box-sizing: border-box; }
@@ -626,7 +692,7 @@ _CALLBACK_BRIDGE_HTML_TEMPLATE: str = """\
       border: 1px solid var(--color-border);
       border-radius: 18px;
       padding: 28px;
-      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.08);
+      box-shadow: var(--shadow-auth);
       text-align: center;
       animation: enter 260ms ease-out both;
     }
@@ -640,11 +706,22 @@ _CALLBACK_BRIDGE_HTML_TEMPLATE: str = """\
       animation: spin 0.8s linear infinite;
       margin-bottom: 16px;
     }
-    h1 { margin: 0 0 8px; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      font-family: var(--font-mono);
+    }
     p { margin: 0; color: var(--color-text-secondary); line-height: 1.5; }
     .status { margin-top: 14px; font-size: 0.9rem; color: var(--color-info); line-height: 1.4; }
     .error { color: var(--color-error); }
-    a { color: var(--color-accent); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+    a { color: var(--color-link); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+    a:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 4px var(--focus);
+      border-radius: 8px;
+    }
     @keyframes enter {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }

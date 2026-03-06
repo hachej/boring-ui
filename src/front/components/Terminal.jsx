@@ -28,6 +28,18 @@ function getTerminalTheme() {
 
 const HISTORY_STORAGE_PREFIX = 'kurt-web-pty-history'
 const HISTORY_LIMIT_BYTES = 200000
+const BRIDGE_LABEL_INFO = '\x1b[1;38;2;107;114;128m[bridge]\x1b[0m'
+const BRIDGE_LABEL_ERROR = '\x1b[1;38;2;255;107;107m[bridge]\x1b[0m'
+const BRIDGE_TEXT_INFO = '\x1b[38;2;107;114;128m'
+const BRIDGE_TEXT_ERROR = '\x1b[38;2;255;107;107m'
+
+const writeBridgeMessage = (term, message, tone = 'info') => {
+  if (!term || !message) return
+  const isError = tone === 'error'
+  const label = isError ? BRIDGE_LABEL_ERROR : BRIDGE_LABEL_INFO
+  const textColor = isError ? BRIDGE_TEXT_ERROR : BRIDGE_TEXT_INFO
+  term.writeln(`\r\n${label} ${textColor}${message}\x1b[0m\r\n`)
+}
 
 const getHistoryKey = (sessionId) => {
   if (!sessionId) return null
@@ -158,8 +170,9 @@ export default function Terminal({
     const term = new XTerm({
       cursorBlink: true,
       convertEol: false,
-      fontFamily: '"IBM Plex Mono", "SFMono-Regular", Menlo, monospace',
+      fontFamily: '"JetBrains Mono", "Fira Code", "SFMono-Regular", Menlo, monospace',
       fontSize: 13,
+      lineHeight: 20 / 13,
       theme: getTerminalTheme(),
     })
     const fitAddon = new FitAddon()
@@ -239,9 +252,7 @@ export default function Terminal({
         if (payload.type === 'session_not_found') {
           if (resume && !resumeMissingNotified) {
             resumeMissingNotified = true
-            term.writeln(
-              `\r\n[bridge] No saved conversation found. Starting a new session...\r\n`,
-            )
+            writeBridgeMessage(term, 'No saved conversation found. Starting a new session...')
             onResumeMissingRef.current?.()
           }
           return
@@ -266,9 +277,7 @@ export default function Terminal({
             payload.data.includes('No conversation found with session ID')
           ) {
             resumeMissingNotified = true
-            term.writeln(
-              `\r\n[bridge] No saved conversation found. Starting a new session...\r\n`,
-            )
+            writeBridgeMessage(term, 'No saved conversation found. Starting a new session...')
             onResumeMissingRef.current?.()
           }
           appendOutput(payload.data)
@@ -279,12 +288,12 @@ export default function Terminal({
             typeof payload.data === 'string' && payload.data.trim().length > 0
               ? payload.data
               : 'Unexpected bridge error'
-          term.writeln(`\r\n[bridge] ${bridgeError}\r\n`)
+          writeBridgeMessage(term, bridgeError, 'error')
         }
 
         if (payload.type === 'exit') {
           const code = payload.code ?? 'unknown'
-          term.writeln(`\r\n[bridge] ${providerLabel} CLI exited (${code}).\r\n`)
+          writeBridgeMessage(term, `${providerLabel} CLI exited (${code}).`)
         }
       }
 
@@ -343,7 +352,7 @@ export default function Terminal({
       socket.addEventListener('error', () => {
         // Only show error message after a few retries to avoid spam during startup
         if (retryCount >= 3) {
-          term.writeln(`\r\n[bridge] Unable to connect. Retrying...\r\n`)
+          writeBridgeMessage(term, 'Unable to connect. Retrying...', 'error')
         }
       })
 
@@ -351,7 +360,7 @@ export default function Terminal({
         if (!shouldReconnect) return
         retryCount++
         if (retryCount > MAX_RETRIES) {
-          term.writeln(`\r\n[bridge] Max retries reached. Click "New session" to try again.\r\n`)
+          writeBridgeMessage(term, 'Max retries reached. Click "New session" to try again.', 'error')
           return
         }
         reconnectTimer = window.setTimeout(() => {
@@ -547,7 +556,7 @@ export default function Terminal({
     if (!bannerMessage) return
     const term = termRef.current
     if (!term) return
-    term.writeln(`\r\n[bridge] ${bannerMessage}\r\n`)
+    writeBridgeMessage(term, bannerMessage)
     onBannerShownRef.current?.()
   }, [bannerMessage])
 

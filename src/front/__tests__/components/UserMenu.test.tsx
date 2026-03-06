@@ -22,9 +22,10 @@ describe('UserMenu', () => {
       expect(screen.getByRole('button', { name: 'User menu' })).toHaveTextContent('J')
     })
 
-    it('renders question mark when email is missing', () => {
-      renderWithTheme(<UserMenu {...makeProps()} email="" />)
-      expect(screen.getByRole('button', { name: 'User menu' })).toHaveTextContent('?')
+    it('renders anonymous help icon when email is missing', () => {
+      const { container } = renderWithTheme(<UserMenu {...makeProps()} email="" />)
+      expect(container.querySelector('.user-avatar-anonymous')).toBeInTheDocument()
+      expect(container.querySelector('.user-avatar-help-icon')).toBeInTheDocument()
     })
   })
 
@@ -147,7 +148,7 @@ describe('UserMenu', () => {
       renderWithTheme(<UserMenu {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
 
-      const appearance = screen.getByRole('menuitem', { name: /Appearance:/ })
+      const appearance = screen.getByRole('menuitem', { name: /Theme:/ })
       const switchWorkspace = screen.getByRole('menuitem', { name: 'Switch workspace' })
       const createWorkspace = screen.getByRole('menuitem', { name: 'Create workspace' })
 
@@ -164,7 +165,7 @@ describe('UserMenu', () => {
       renderWithTheme(<UserMenu {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
 
-      const firstItem = screen.getByRole('menuitem', { name: /Appearance:/ })
+      const firstItem = screen.getByRole('menuitem', { name: /Theme:/ })
       const lastItem = screen.getByRole('menuitem', { name: 'Logout' })
 
       lastItem.focus()

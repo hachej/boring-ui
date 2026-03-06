@@ -18,19 +18,19 @@ describe('GitDiff', () => {
     it('shows message when diff is null', () => {
       render(<GitDiff diff={null} />)
 
-      expect(screen.getByText('No git changes for this file.')).toBeInTheDocument()
+      expect(screen.getByText('No changes for this file')).toBeInTheDocument()
     })
 
     it('shows message when diff is undefined', () => {
       render(<GitDiff diff={undefined} />)
 
-      expect(screen.getByText('No git changes for this file.')).toBeInTheDocument()
+      expect(screen.getByText('No changes for this file')).toBeInTheDocument()
     })
 
     it('shows message when diff is empty string', () => {
       render(<GitDiff diff="" />)
 
-      expect(screen.getByText('No git changes for this file.')).toBeInTheDocument()
+      expect(screen.getByText('No changes for this file')).toBeInTheDocument()
     })
 
     it('renders empty diff table for invalid diff format', () => {
