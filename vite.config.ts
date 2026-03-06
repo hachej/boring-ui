@@ -86,6 +86,35 @@ export default defineConfig(({ mode }) => {
     base: './',
     server: {
       port: 5173,
+      watch: {
+        // This repo is large; fs.watch can exceed inotify limits in local/dev containers.
+        usePolling: true,
+        interval: 1000,
+        // Keep Vite focused on source files; large workspace folders can exceed inotify limits.
+        ignored: [
+          '**/.claude/**',
+          '**/.beads/**',
+          '**/.beads.old/**',
+          '**/.agent-evidence/**',
+          '**/.boring/**',
+          '**/.evidence/**',
+          '**/.bsw/**',
+          '**/.venv/**',
+          '**/artifacts/**',
+          '**/flows/**',
+          '**/playwright-report/**',
+          '**/test-results/**',
+          '**/dist/**',
+          '**/vendor/**',
+          '**/src/back/**',
+          '**/tests/**',
+          '**/examples/**',
+          '**/docs/**',
+          '**/deploy/**',
+          '**/__pycache__/**',
+          '**/*.pyc',
+        ],
+      },
       fs: {
         allow: ['.', ...(workspaceRoot ? [workspaceRoot] : [])],
       },
