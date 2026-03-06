@@ -5,7 +5,7 @@
  */
 
 // Module singletons (safe to call before React mount)
-export { getQueryClient } from './queryClient'
+export { createQueryClient, getQueryClient } from './queryClient'
 export {
   setDataProvider,
   getDataProvider,

@@ -11,6 +11,7 @@ import { apiFetch, apiFetchJson, getHttpErrorDetail } from './utils/transport'
 import { buildApiUrl } from './utils/apiBase'
 import { routes } from './utils/routes'
 import {
+  extractUserId,
   extractUserEmail,
   extractWorkspaceId,
   getWorkspaceIdFromPathname,
@@ -54,7 +55,7 @@ import paneRegistry, {
 } from './registry/panes'
 import { QueryClientProvider } from '@tanstack/react-query'
 import {
-  getQueryClient,
+  createQueryClient,
   getDataProvider,
   getDataProviderFactory,
   createHttpProvider,
@@ -62,6 +63,11 @@ import {
   createCheerpXDataProvider,
   queryKeys,
 } from './providers/data'
+import {
+  buildLightningFsNamespace,
+  resolveLightningFsUserScope,
+  resolveLightningFsWorkspaceScope,
+} from './providers/data/lightningFsNamespace'
 import DataContext from './providers/data/DataContext'
 import { PI_LIST_TABS_BRIDGE, PI_OPEN_FILE_BRIDGE, PI_OPEN_PANEL_BRIDGE } from './providers/pi/uiBridge'
 import UserSettingsPage from './pages/UserSettingsPage'
@@ -73,6 +79,9 @@ const URL_PARAMS = new URLSearchParams(window.location.search)
 const POC_MODE = URL_PARAMS.get('poc')
 const DATA_BACKEND_OVERRIDE = String(URL_PARAMS.get('data_backend') || '').trim().toLowerCase()
 const DATA_FS_OVERRIDE = String(URL_PARAMS.get('data_fs') || '').trim()
+const ALLOW_UNSAFE_DATA_FS_OVERRIDE = Boolean(import.meta?.env?.DEV)
+const MAX_SCOPED_CACHE_ENTRIES = 12
+const MAX_PRESERVED_IDENTITY_AGE_MS = 30_000
 
 // Debounce helper - delays function execution until after wait ms of inactivity
 const debounce = (fn, wait) => {
@@ -114,6 +123,32 @@ const getPanelSizeConfigValue = (sizeConfig, panelId, fallbackKey) => {
   const fallback = sizeConfig[fallbackKey]
   return Number.isFinite(fallback) ? fallback : undefined
 }
+
+const getCachedScopedValue = (cache, key, createValue, onEvict) => {
+  if (cache.has(key)) {
+    const existing = cache.get(key)
+    cache.delete(key)
+    cache.set(key, existing)
+    return existing
+  }
+
+  const created = createValue()
+  cache.set(key, created)
+  if (cache.size > MAX_SCOPED_CACHE_ENTRIES) {
+    const oldestKey = cache.keys().next().value
+    const oldestValue = cache.get(oldestKey)
+    cache.delete(oldestKey)
+    if (onEvict) onEvict(oldestValue, oldestKey)
+  }
+  return created
+}
+
+const isStableLightningUserScope = (scope) => (
+  scope.startsWith('u-')
+  || scope.startsWith('e-')
+  || scope.startsWith('anon-')
+  || scope.startsWith('auth-')
+)
 
 const createFrontendStateClientId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -408,6 +443,7 @@ export default function App() {
   const [approvalsLoaded, setApprovalsLoaded] = useState(false)
   const [activeFile, setActiveFile] = useState(null)
   const [activeDiffFile, setActiveDiffFile] = useState(null)
+  const [menuUserId, setMenuUserId] = useState('')
   const [menuUserEmail, setMenuUserEmail] = useState('')
   const [userMenuAuthStatus, setUserMenuAuthStatus] = useState('unknown') // unknown | authenticated | unauthenticated | error
   const [userMenuIdentityError, setUserMenuIdentityError] = useState('')
@@ -451,6 +487,9 @@ export default function App() {
   const frontendStateClientIdRef = useRef('')
   const frontendStateUnavailableRef = useRef(false)
   const frontendCommandUnavailableRef = useRef(false)
+  const lastIdentitySuccessAtRef = useRef(0)
+  const dataProviderCacheRef = useRef(new Map())
+  const queryClientCacheRef = useRef(new Map())
   const storagePrefixRef = useRef(storagePrefix) // Stable ref for callbacks
   storagePrefixRef.current = storagePrefix
   const layoutVersionRef = useRef(layoutVersion) // Stable ref for callbacks
@@ -464,19 +503,69 @@ export default function App() {
   // --- DataProvider infrastructure ---
   // If setDataProvider() was called before mount (poc1/poc2), use that;
   // otherwise resolve from config.data.backend (with HTTP fallback).
-  const queryClient = useMemo(() => getQueryClient(), [])
   const configuredDataBackend = String(DATA_BACKEND_OVERRIDE || config.data?.backend || 'http')
     .trim()
     .toLowerCase()
-  const configuredLightningFsName = String(
-    DATA_FS_OVERRIDE || config.data?.lightningfs?.name || 'boring-fs',
+  const configuredDataFsOverride = ALLOW_UNSAFE_DATA_FS_OVERRIDE ? DATA_FS_OVERRIDE : ''
+  const lightningFsSessionScope = useMemo(
+    () => getFrontendStateClientId(storagePrefix),
+    [storagePrefix],
+  )
+  const configuredLightningFsBaseName = String(
+    configuredDataFsOverride || config.data?.lightningfs?.name || 'boring-fs',
   )
     .trim()
+  const lightningFsUserScope = useMemo(
+    () => resolveLightningFsUserScope({
+      userId: menuUserId,
+      userEmail: menuUserEmail,
+      authStatus: userMenuAuthStatus,
+      sessionScope: lightningFsSessionScope,
+    }),
+    [menuUserId, menuUserEmail, userMenuAuthStatus, lightningFsSessionScope],
+  )
+  const lightningFsWorkspaceScope = useMemo(
+    () => resolveLightningFsWorkspaceScope(currentWorkspaceId),
+    [currentWorkspaceId],
+  )
+  const resolvedLightningFsName = useMemo(
+    () => (
+      configuredDataFsOverride
+        ? configuredLightningFsBaseName
+        : buildLightningFsNamespace({
+          baseName: configuredLightningFsBaseName,
+          origin: window.location.origin,
+          userScope: lightningFsUserScope,
+          workspaceScope: lightningFsWorkspaceScope,
+        })
+    ),
+    [
+      configuredDataFsOverride,
+      configuredLightningFsBaseName,
+      lightningFsUserScope,
+      lightningFsWorkspaceScope,
+    ],
+  )
   const configuredCheerpXWorkspaceRoot = String(config.data?.cheerpx?.workspaceRoot || '').trim()
   const configuredCheerpXPrimaryDiskUrl = String(config.data?.cheerpx?.primaryDiskUrl || '').trim()
   const configuredCheerpXOverlayName = String(config.data?.cheerpx?.overlayName || '').trim()
   const configuredCheerpXEsmUrl = String(config.data?.cheerpx?.cheerpxEsmUrl || '').trim()
   const strictDataBackend = Boolean(config.data?.strictBackend)
+  const lightningFsProviderCacheKey = `user:${lightningFsUserScope}|fs:${resolvedLightningFsName}`
+  const dataProviderScopeKey = (
+    configuredDataBackend === 'lightningfs' || configuredDataBackend === 'lightning-fs'
+      ? `lightningfs:${lightningFsProviderCacheKey}`
+      : `backend:${configuredDataBackend || 'http'}`
+  )
+  const queryClient = useMemo(
+    () => getCachedScopedValue(
+      queryClientCacheRef.current,
+      dataProviderScopeKey,
+      () => createQueryClient(),
+      (client) => client?.clear?.(),
+    ),
+    [dataProviderScopeKey],
+  )
   const dataProvider = useMemo(
     () => {
       const injected = getDataProvider()
@@ -487,7 +576,11 @@ export default function App() {
       }
 
       if (configuredDataBackend === 'lightningfs' || configuredDataBackend === 'lightning-fs') {
-        return createLightningDataProvider({ fsName: configuredLightningFsName })
+        return getCachedScopedValue(
+          dataProviderCacheRef.current,
+          lightningFsProviderCacheKey,
+          () => createLightningDataProvider({ fsName: resolvedLightningFsName }),
+        )
       }
 
       if (configuredDataBackend === 'cheerpx' || configuredDataBackend === 'cheerp-x') {
@@ -515,7 +608,8 @@ export default function App() {
     },
     [
       configuredDataBackend,
-      configuredLightningFsName,
+      lightningFsProviderCacheKey,
+      resolvedLightningFsName,
       configuredCheerpXWorkspaceRoot,
       configuredCheerpXPrimaryDiskUrl,
       configuredCheerpXOverlayName,
@@ -523,6 +617,35 @@ export default function App() {
       strictDataBackend,
     ],
   )
+
+  useEffect(() => {
+    if (!DATA_FS_OVERRIDE || ALLOW_UNSAFE_DATA_FS_OVERRIDE) return
+    console.warn('[DataProvider] Ignoring ?data_fs override outside development mode')
+  }, [])
+
+  useEffect(() => {
+    const isLightningBackend = (
+      configuredDataBackend === 'lightningfs'
+      || configuredDataBackend === 'lightning-fs'
+    )
+    if (!isLightningBackend) return
+    if (!isStableLightningUserScope(lightningFsUserScope)) return
+
+    const providerKeyPrefix = `user:${lightningFsUserScope}|`
+    const queryKeyPrefix = `lightningfs:${providerKeyPrefix}`
+
+    Array.from(dataProviderCacheRef.current.keys()).forEach((key) => {
+      if (key.startsWith(providerKeyPrefix)) return
+      dataProviderCacheRef.current.delete(key)
+    })
+
+    Array.from(queryClientCacheRef.current.entries()).forEach(([key, client]) => {
+      if (!key.startsWith('lightningfs:')) return
+      if (key.startsWith(queryKeyPrefix)) return
+      client?.clear?.()
+      queryClientCacheRef.current.delete(key)
+    })
+  }, [configuredDataBackend, lightningFsUserScope])
 
   useEffect(() => {
     frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefix)
@@ -906,8 +1029,19 @@ export default function App() {
       meData = result.data
     } catch (error) {
       console.warn('[UserMenu] Identity load failed:', error)
-      setMenuUserEmail('')
-      setUserMenuAuthStatus('error')
+      const now = Date.now()
+      const identityAgeMs = now - lastIdentitySuccessAtRef.current
+      const preserveStableIdentity = (
+        userMenuAuthStatus === 'authenticated'
+        && menuUserId.length > 0
+        && identityAgeMs >= 0
+        && identityAgeMs <= MAX_PRESERVED_IDENTITY_AGE_MS
+      )
+      if (!preserveStableIdentity) {
+        setMenuUserId('')
+        setMenuUserEmail('')
+        setUserMenuAuthStatus('error')
+      }
       setUserMenuIdentityError('Failed to reach control plane for identity.')
       return fetchWorkspaceList()
     }
@@ -915,26 +1049,34 @@ export default function App() {
     const workspaces = await fetchWorkspaceList()
 
     if (meResponse.ok) {
+      lastIdentitySuccessAtRef.current = Date.now()
       setUserMenuAuthStatus('authenticated')
+      const userId = extractUserId(meData)
       const email = extractUserEmail(meData)
+      setMenuUserId(userId || '')
       setMenuUserEmail(email || '')
       return workspaces
     }
 
-    setMenuUserEmail('')
     if (meResponse.status === 401) {
+      setMenuUserId('')
+      setMenuUserEmail('')
       setUserMenuAuthStatus('unauthenticated')
       setUserMenuIdentityError('Not signed in.')
     } else if (meResponse.status === 403) {
+      setMenuUserId('')
+      setMenuUserEmail('')
       setUserMenuAuthStatus('error')
       setUserMenuIdentityError('Permission denied while loading identity.')
     } else {
+      setMenuUserId('')
+      setMenuUserEmail('')
       setUserMenuAuthStatus('error')
       setUserMenuIdentityError(getHttpErrorDetail(meResponse, meData, 'Failed to load identity'))
     }
 
     return workspaces
-  }, [fetchWorkspaceList])
+  }, [fetchWorkspaceList, menuUserId, userMenuAuthStatus])
 
   useEffect(() => {
     refreshUserMenuData().catch(() => {})
@@ -3771,8 +3913,8 @@ export default function App() {
 
   if (POC_MODE === 'chat') {
     return (
-      <QueryClientProvider client={queryClient}>
-        <DataContext.Provider value={dataProvider}>
+      <QueryClientProvider key={dataProviderScopeKey} client={queryClient}>
+        <DataContext.Provider key={dataProviderScopeKey} value={dataProvider}>
           <ThemeProvider>
             <ClaudeStreamChat />
           </ThemeProvider>
@@ -3808,8 +3950,8 @@ export default function App() {
   ].filter(Boolean).join(' ')
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <DataContext.Provider value={dataProvider}>
+    <QueryClientProvider key={dataProviderScopeKey} client={queryClient}>
+      <DataContext.Provider key={dataProviderScopeKey} value={dataProvider}>
         <ThemeProvider>
           <div className="app-container">
             {config.features?.showHeader !== false && (

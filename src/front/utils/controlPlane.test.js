@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  extractUserId,
   extractUserEmail,
   extractWorkspaceId,
   extractWorkspaceSettingsPayload,
@@ -52,6 +53,13 @@ describe('controlPlane utils', () => {
     expect(extractUserEmail({ user: { email: 'nested@example.com' } })).toBe('nested@example.com')
     expect(extractUserEmail({ me: { email: 'me@example.com' } })).toBe('me@example.com')
     expect(extractUserEmail({ data: { email: 'data@example.com' } })).toBe('data@example.com')
+  })
+
+  it('extracts user id from me payload variants', () => {
+    expect(extractUserId({ user_id: 'u-direct' })).toBe('u-direct')
+    expect(extractUserId({ user: { userId: 'u-nested' } })).toBe('u-nested')
+    expect(extractUserId({ me: { id: 'u-me' } })).toBe('u-me')
+    expect(extractUserId({ data: { user_id: 'u-data' } })).toBe('u-data')
   })
 
   it('parses canonical workspace paths', () => {

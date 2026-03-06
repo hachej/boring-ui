@@ -63,6 +63,24 @@ export const extractUserEmail = (payload) => {
   )
 }
 
+export const extractUserId = (payload) => {
+  if (!isRecord(payload)) return ''
+  return getFirstString(
+    payload.user_id,
+    payload.userId,
+    payload.id,
+    payload.user?.user_id,
+    payload.user?.userId,
+    payload.user?.id,
+    payload.me?.user_id,
+    payload.me?.userId,
+    payload.me?.id,
+    payload.data?.user_id,
+    payload.data?.userId,
+    payload.data?.id,
+  )
+}
+
 export const getWorkspaceIdFromPathname = (pathname = '') => {
   const match = String(pathname).match(/^\/w\/([^/]+)/)
   return match ? decodeURIComponent(match[1]) : ''
