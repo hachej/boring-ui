@@ -1,10 +1,15 @@
-import React, { useState } from 'react'
-import { ChevronRight, FolderOpen, GitBranch, Search } from 'lucide-react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Database, FolderOpen, GitBranch, Loader2, Search, X } from 'lucide-react'
 import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
 import UserMenu from '../components/UserMenu'
 import Tooltip from '../components/Tooltip'
-import SidebarSectionHeader, { LeftPaneHeader } from '../components/SidebarSectionHeader'
+import SidebarSectionHeader, {
+  CollapsedSidebarActivityBar,
+  LeftPaneHeader,
+} from '../components/SidebarSectionHeader'
+import { ICON_SIZE_INLINE } from '../utils/iconTokens'
+import { useGitStatus } from '../providers/data'
 
 export default function FileTreePanel({ params }) {
   const {
@@ -20,6 +25,9 @@ export default function FileTreePanel({ params }) {
     appName,
     sectionCollapsed,
     onToggleSection,
+    onActivateSidebarPanel,
+    activeSidebarPanelId,
+    filetreeActivityIntent,
     userEmail,
     workspaceName,
     workspaceId,
@@ -36,6 +44,27 @@ export default function FileTreePanel({ params }) {
   const [creatingFile, setCreatingFile] = useState(false)
   const [viewMode, setViewMode] = useState('files') // 'files' | 'changes'
   const [searchExpanded, setSearchExpanded] = useState(false)
+  const { isLoading: isGitLoading, isFetching: isGitFetching } = useGitStatus({
+    refetchInterval: 5000,
+    enabled: viewMode === 'changes',
+  })
+  const showGitHeaderSpinner = viewMode === 'changes' && (isGitLoading || isGitFetching)
+
+  useEffect(() => {
+    if (!filetreeActivityIntent || filetreeActivityIntent.panelId !== 'filetree') return
+    if (filetreeActivityIntent.mode === 'changes') {
+      setViewMode('changes')
+      setSearchExpanded(false)
+      return
+    }
+    if (filetreeActivityIntent.mode === 'search') {
+      setViewMode('files')
+      setSearchExpanded(true)
+      return
+    }
+    setViewMode('files')
+    setSearchExpanded(false)
+  }, [filetreeActivityIntent])
 
   const handleFileCreated = (path) => {
     setCreatingFile(false)
@@ -48,20 +77,97 @@ export default function FileTreePanel({ params }) {
     setCreatingFile(false)
   }
 
+  const openQuickFileSearch = useCallback(() => {
+    if (viewMode !== 'files') {
+      setViewMode('files')
+    }
+    if (collapsed && typeof onToggleCollapse === 'function') {
+      onToggleCollapse()
+    }
+    if (sectionCollapsed && typeof onToggleSection === 'function') {
+      onToggleSection()
+    }
+    setSearchExpanded(true)
+  }, [viewMode, collapsed, onToggleCollapse, sectionCollapsed, onToggleSection])
+
+  useEffect(() => {
+    const handleQuickOpenShortcut = (event) => {
+      const key = String(event.key || '').toLowerCase()
+      if (key !== 'p' || event.shiftKey || event.altKey) return
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      event.stopPropagation()
+      openQuickFileSearch()
+    }
+
+    window.addEventListener('keydown', handleQuickOpenShortcut)
+    return () => window.removeEventListener('keydown', handleQuickOpenShortcut)
+  }, [openQuickFileSearch])
+
+  const activateSidebarPanel = useCallback(
+    (panelId, options = {}) => {
+      if (typeof onActivateSidebarPanel === 'function') {
+        onActivateSidebarPanel(panelId, options)
+        return
+      }
+      if (collapsed && typeof onToggleCollapse === 'function') {
+        onToggleCollapse()
+      }
+    },
+    [collapsed, onActivateSidebarPanel, onToggleCollapse],
+  )
+
+  const activityItems = [
+    {
+      id: 'files',
+      label: 'Files',
+      icon: FolderOpen,
+      active: activeSidebarPanelId === 'filetree' && viewMode === 'files' && !searchExpanded,
+      onClick: () => {
+        setViewMode('files')
+        setSearchExpanded(false)
+        activateSidebarPanel('filetree', { mode: 'files' })
+      },
+    },
+    {
+      id: 'data-catalog',
+      label: 'Data Catalog',
+      icon: Database,
+      active: activeSidebarPanelId === 'data-catalog',
+      onClick: () => activateSidebarPanel('data-catalog'),
+    },
+    {
+      id: 'git',
+      label: 'Git Changes',
+      icon: GitBranch,
+      active: activeSidebarPanelId === 'filetree' && viewMode === 'changes',
+      onClick: () => {
+        setViewMode('changes')
+        setSearchExpanded(false)
+        activateSidebarPanel('filetree', { mode: 'changes' })
+      },
+    },
+    {
+      id: 'search',
+      label: 'Quick Search',
+      icon: Search,
+      active: activeSidebarPanelId === 'filetree' && viewMode === 'files' && searchExpanded,
+      onClick: () => {
+        setViewMode('files')
+        setSearchExpanded(true)
+        activateSidebarPanel('filetree', { mode: 'search' })
+      },
+    },
+  ]
+
   if (collapsed) {
     return (
       <div className="panel-content filetree-panel filetree-collapsed">
-        {showSidebarToggle && typeof onToggleCollapse === 'function' && (
-          <Tooltip label="Expand sidebar">
-            <button
-              type="button"
-              className="sidebar-toggle-btn"
-              onClick={onToggleCollapse}
-              aria-label="Expand sidebar"
-            >
-              <ChevronRight size={12} />
-            </button>
-          </Tooltip>
+        {showSidebarToggle && (
+          <CollapsedSidebarActivityBar
+            onExpandSidebar={onToggleCollapse}
+            items={activityItems}
+          />
         )}
         <div className="filetree-collapsed-footer">
           <UserMenu
@@ -108,7 +214,7 @@ export default function FileTreePanel({ params }) {
                   role="tab"
                   aria-selected={viewMode === 'files'}
                 >
-                  <FolderOpen size={14} />
+                  <FolderOpen size={ICON_SIZE_INLINE} />
                 </button>
               </Tooltip>
               <Tooltip label="Git changes">
@@ -120,21 +226,30 @@ export default function FileTreePanel({ params }) {
                   role="tab"
                   aria-selected={viewMode === 'changes'}
                 >
-                  <GitBranch size={14} />
+                  <GitBranch size={ICON_SIZE_INLINE} />
+                  {showGitHeaderSpinner && (
+                    <Loader2 size={12} className="git-view-header-spinner" aria-hidden="true" />
+                  )}
                 </button>
               </Tooltip>
             </div>
             <Tooltip
-              label={searchExpanded ? 'Hide search' : 'Search files'}
-              shortcut="Ctrl+P"
+              label={searchExpanded ? 'Close quick file search' : 'Quick file search'}
+              shortcut={searchExpanded ? '' : 'Ctrl+P'}
             >
               <button
                 type="button"
                 className={`sidebar-action-btn ${searchExpanded ? 'active' : ''}`}
-                onClick={() => setSearchExpanded((prev) => !prev)}
-                aria-label={searchExpanded ? 'Hide search' : 'Search files'}
+                onClick={() => {
+                  if (searchExpanded) {
+                    setSearchExpanded(false)
+                    return
+                  }
+                  openQuickFileSearch()
+                }}
+                aria-label={searchExpanded ? 'Close quick file search' : 'Quick file search'}
               >
-                <Search size={13} />
+                {searchExpanded ? <X size={ICON_SIZE_INLINE} /> : <Search size={ICON_SIZE_INLINE} />}
               </button>
             </Tooltip>
           </>

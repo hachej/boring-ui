@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, PanelLeftClose } from 'lucide-react'
 import Tooltip from './Tooltip'
+import { ICON_SIZE_ACTIVITY, ICON_SIZE_INLINE } from '../utils/iconTokens'
 
 /**
  * LeftPaneHeader - Minimal header bar for the left sidebar with only the collapse toggle.
@@ -22,6 +23,46 @@ export function LeftPaneHeader({ onToggleSidebar, appName }) {
             <PanelLeftClose size={14} />
           </button>
         </Tooltip>
+      </div>
+    </div>
+  )
+}
+
+export function CollapsedSidebarActivityBar({
+  onExpandSidebar,
+  items = [],
+}) {
+  return (
+    <div className="sidebar-activity-bar" role="toolbar" aria-label="Sidebar activity">
+      {typeof onExpandSidebar === 'function' && (
+        <Tooltip label="Expand sidebar">
+          <button
+            type="button"
+            className="sidebar-activity-btn sidebar-activity-expand"
+            onClick={onExpandSidebar}
+            aria-label="Expand sidebar"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </Tooltip>
+      )}
+      <div className="sidebar-activity-group">
+        {items.map((item) => {
+          const Icon = item.icon
+          return (
+            <Tooltip key={item.id} label={item.label}>
+              <button
+                type="button"
+                className={`sidebar-activity-btn${item.active ? ' active' : ''}`}
+                onClick={item.onClick}
+                aria-label={item.label}
+                aria-pressed={item.active ? 'true' : 'false'}
+              >
+                {Icon ? <Icon size={ICON_SIZE_ACTIVITY} /> : null}
+              </button>
+            </Tooltip>
+          )
+        })}
       </div>
     </div>
   )
@@ -60,7 +101,7 @@ export default function SidebarSectionHeader({
           {sectionCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
         </button>
       </Tooltip>
-      {Icon && <span className="sidebar-section-icon"><Icon size={13} /></span>}
+      {Icon && <span className="sidebar-section-icon"><Icon size={ICON_SIZE_INLINE} /></span>}
       <span className="sidebar-section-title">{title}</span>
       <div className="sidebar-section-actions">
         {children}

@@ -16,6 +16,7 @@ import {
   useGitStatus,
   queryKeys,
 } from '../providers/data'
+import { ICON_SIZE_INLINE } from '../utils/iconTokens'
 
 const configPath = import.meta.env.VITE_CONFIG_PATH || ''
 
@@ -63,6 +64,7 @@ export default function FileTree({
   const [collapsedSections, setCollapsedSections] = useState({ other: false })
   const renameInputRef = useRef(null)
   const newFileInputRef = useRef(null)
+  const searchInputRef = useRef(null)
 
   // Use ref to track expandedDirs for polling (avoids stale closure)
   const expandedDirsRef = useRef(expandedDirs)
@@ -74,6 +76,10 @@ export default function FileTree({
 
   const {
     data: entries = [],
+    isLoading: isTreeLoading,
+    isFetching: isTreeFetching,
+    error: treeError,
+    refetch: refetchEntries,
   } = useFileList('.', {
     // Preserve the old startup behavior where empty trees retry aggressively.
     refetchInterval: (query) => (
@@ -221,6 +227,7 @@ export default function FileTree({
 
   // Debounce file search calls to avoid query churn on every key stroke.
   const trimmedQuery = searchQuery.trim()
+  const showTreeLoading = !trimmedQuery && (isTreeLoading || isTreeFetching) && entries.length === 0
 
   useEffect(() => {
     if (!trimmedQuery) {
@@ -258,6 +265,15 @@ export default function FileTree({
     if (searchExpanded) return
     setSearchQuery('')
     setDebouncedQuery('')
+  }, [searchExpanded])
+
+  useEffect(() => {
+    if (!searchExpanded) return
+    const frame = requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
+    return () => cancelAnimationFrame(frame)
   }, [searchExpanded])
 
   // Close context menu on click outside
@@ -543,7 +559,7 @@ export default function FileTree({
     return (
       <div
         className="file-item file-item-new"
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        style={{ paddingLeft: `${depth * 16 + 16}px` }}
       >
         <span className="file-item-icon">{getFileIcon(newFileInput.name || 'file')}</span>
         <input
@@ -573,7 +589,7 @@ export default function FileTree({
         <React.Fragment key={e.path}>
           <div
             className={`file-item ${dirHasChanges ? 'has-changes' : ''} ${isDragOver ? 'drag-over' : ''} ${isActive ? 'file-item-active' : ''}`}
-            style={{ paddingLeft: `${depth * 16 + 8}px` }}
+            style={{ paddingLeft: `${depth * 16 + 16}px` }}
             onClick={() => !isRenaming && handleClick(e)}
             onContextMenu={(event) => handleContextMenu(event, e)}
             draggable={!isRenaming}
@@ -583,7 +599,7 @@ export default function FileTree({
             onDrop={(event) => handleDrop(event, e)}
           >
             <span className="file-item-icon">
-              {e.is_dir ? (expandedDirs[e.path] ? <FolderOpen size={14} /> : <Folder size={14} />) : getFileIcon(e.name)}
+              {e.is_dir ? (expandedDirs[e.path] ? <FolderOpen size={ICON_SIZE_INLINE} /> : <Folder size={ICON_SIZE_INLINE} />) : getFileIcon(e.name)}
             </span>
             {isRenaming ? (
               <input
@@ -750,7 +766,7 @@ export default function FileTree({
             }}
           >
             <span className="section-collapse-icon">{isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
-            <span className="section-icon">{React.createElement(section.icon, { size: 14 })}</span>
+            <span className="section-icon">{React.createElement(section.icon, { size: ICON_SIZE_INLINE })}</span>
             <span className="section-label">{section.label}</span>
             {hasChanges && <span className="dir-changes-dot" title="Contains changes" />}
           </div>
@@ -777,7 +793,7 @@ export default function FileTree({
                       if (entry) handleClick(entry)
                     }}
                   >
-                    <span className="file-item-icon"><FolderOpen size={14} /></span>
+                    <span className="file-item-icon"><FolderOpen size={ICON_SIZE_INLINE} /></span>
                     <span className="file-item-name">Loading...</span>
                   </div>
                 )}
@@ -804,8 +820,9 @@ export default function FileTree({
     <div className="file-tree" onContextMenu={handleRootContextMenu}>
       {searchExpanded && (
         <div className="search-box">
-          <Search className="search-icon" size={14} />
+          <Search className="search-icon" size={ICON_SIZE_INLINE} />
           <input
+            ref={searchInputRef}
             type="text"
             className="search-input"
             placeholder="Search files..."
@@ -861,6 +878,26 @@ export default function FileTree({
             ))
           )}
         </div>
+      ) : treeError ? (
+        <div className="file-tree-loading-state file-tree-loading-error" role="alert">
+          <div className="file-tree-loading-title">Unable to load files</div>
+          <div className="file-tree-loading-detail">{treeError.message || String(treeError)}</div>
+          <button
+            type="button"
+            className="file-tree-loading-retry"
+            onClick={() => refetchEntries()}
+          >
+            Retry
+          </button>
+        </div>
+      ) : showTreeLoading ? (
+        <div className="file-tree-skeleton" role="status" aria-live="polite">
+          <div className="file-tree-skeleton-row w-40" />
+          <div className="file-tree-skeleton-row w-56" />
+          <div className="file-tree-skeleton-row w-48" />
+          <div className="file-tree-skeleton-row w-52" />
+          <div className="file-tree-skeleton-row w-44" />
+        </div>
       ) : sections ? (
         // Sectioned view when kurt config is available
         <div className="file-tree-sections">
@@ -873,7 +910,7 @@ export default function FileTree({
               onClick={() => onOpen(configFile.path)}
               onContextMenu={(event) => handleContextMenu(event, configFile)}
             >
-              <span className="file-item-icon"><Settings size={14} /></span>
+              <span className="file-item-icon"><Settings size={ICON_SIZE_INLINE} /></span>
               <span className="file-item-name">{configFile.name}</span>
               {renderStatusBadge(getFileStatus(configFile.path))}
             </div>

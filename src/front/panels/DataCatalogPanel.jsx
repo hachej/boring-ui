@@ -1,6 +1,8 @@
-import { ChevronRight, Database } from 'lucide-react'
-import SidebarSectionHeader, { LeftPaneHeader } from '../components/SidebarSectionHeader'
-import Tooltip from '../components/Tooltip'
+import { Database, FolderOpen, GitBranch, Search } from 'lucide-react'
+import SidebarSectionHeader, {
+  CollapsedSidebarActivityBar,
+  LeftPaneHeader,
+} from '../components/SidebarSectionHeader'
 
 export default function DataCatalogPanel({ params }) {
   const {
@@ -10,22 +12,47 @@ export default function DataCatalogPanel({ params }) {
     appName,
     sectionCollapsed,
     onToggleSection,
+    onActivateSidebarPanel,
+    activeSidebarPanelId,
   } = params
 
   if (collapsed) {
     return (
       <div className="panel-content datacatalog-panel">
-        {showSidebarToggle && typeof onToggleCollapse === 'function' && (
-          <Tooltip label="Expand sidebar">
-            <button
-              type="button"
-              className="sidebar-toggle-btn"
-              onClick={onToggleCollapse}
-              aria-label="Expand sidebar"
-            >
-              <ChevronRight size={12} />
-            </button>
-          </Tooltip>
+        {showSidebarToggle && (
+          <CollapsedSidebarActivityBar
+            onExpandSidebar={onToggleCollapse}
+            items={[
+              {
+                id: 'files',
+                label: 'Files',
+                icon: FolderOpen,
+                active: activeSidebarPanelId === 'filetree',
+                onClick: () => onActivateSidebarPanel?.('filetree', { mode: 'files' }),
+              },
+              {
+                id: 'data-catalog',
+                label: 'Data Catalog',
+                icon: Database,
+                active: activeSidebarPanelId === 'data-catalog',
+                onClick: () => onActivateSidebarPanel?.('data-catalog'),
+              },
+              {
+                id: 'git',
+                label: 'Git Changes',
+                icon: GitBranch,
+                active: false,
+                onClick: () => onActivateSidebarPanel?.('filetree', { mode: 'changes' }),
+              },
+              {
+                id: 'search',
+                label: 'Quick Search',
+                icon: Search,
+                active: false,
+                onClick: () => onActivateSidebarPanel?.('filetree', { mode: 'search' }),
+              },
+            ]}
+          />
         )}
       </div>
     )
