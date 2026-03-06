@@ -34,9 +34,10 @@
   --color-focus-ring: #007aff;
 
   /* ---------- Color: domain-specific ---------- */
-  --color-chat-user-bg: #f0f0f0;
+  --color-chat-user-bg: #e8edf5;
   --color-chat-agent-bg: #ffffff;
-  --color-chat-tool-bg: #e8e8e8;
+  --color-chat-tool-bg: #f3f4f6;
+  --color-chat-border: #d8dbe0;
   --color-code-bg: #f5f5f5;
   --color-diff-added: #e6ffed;
   --color-diff-removed: #ffebeb;
@@ -296,7 +297,7 @@
   --color-background-tertiary: #2c2c2c;
   --color-background-elevated: #333333;
   --color-text-primary: #e0e0e0;
-  --color-text-secondary: #a8a8a8;
+  --color-text-secondary: #BDBDBD;
   --color-text-tertiary: #888888;
   --color-text-link: #61dafb;
   --color-border-primary: #404040;
@@ -317,9 +318,10 @@
   --color-info-bg: rgba(52, 152, 219, 0.12);
   --color-focus-ring: #61dafb;
 
-  --color-chat-user-bg: #2c2c2c;
-  --color-chat-agent-bg: #242424;
-  --color-chat-tool-bg: #333333;
+  --color-chat-user-bg: #2f3542;
+  --color-chat-agent-bg: #1f1f1f;
+  --color-chat-tool-bg: #2a2a2a;
+  --color-chat-border: #3a3a3a;
   --color-code-bg: #282c34;
   --color-diff-added: #1f4a2f;
   --color-diff-removed: #4a2f2f;
