@@ -3,7 +3,7 @@
  * Design Token Linter
  *
  * Enforces that CSS and JS/JSX files use design tokens (CSS custom properties)
- * instead of raw color values. Token definitions live in src/front/styles.css.
+ * instead of raw color values. Token definitions live in src/front/styles/tokens.css.
  *
  * Usage:
  *   node scripts/lint-design-tokens.mjs              # lint all frontend files
@@ -16,7 +16,7 @@ import { resolve, relative, extname } from 'path';
 import { execSync } from 'child_process';
 
 const ROOT = resolve(new URL('.', import.meta.url).pathname, '..');
-const TOKENS_FILE = resolve(ROOT, 'src/front/styles.css');
+const TOKENS_FILE = resolve(ROOT, 'src/front/styles/tokens.css');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -24,7 +24,7 @@ const TOKENS_FILE = resolve(ROOT, 'src/front/styles.css');
 
 // Files/directories that may contain raw color values (token definitions, vendor CSS)
 const ALLOWLIST = [
-  'src/front/styles.css',                        // Token definitions
+  'src/front/styles/tokens.css',                 // Token definitions
   'src/front/providers/companion/upstream.css',   // Upstream vendor CSS
   'src/front/providers/companion/upstream/',       // Upstream vendor dir
 ];
@@ -133,7 +133,7 @@ function lintCSS(filePath, content, tokenMap) {
       const suggestion = tokenMap.get(hex);
       const msg = suggestion
         ? `Raw color ${match[0]} — use ${suggestion} instead`
-        : `Raw color ${match[0]} — add a token to styles.css or use an existing one`;
+        : `Raw color ${match[0]} — add a token to styles/tokens.css or use an existing one`;
       violations.push({ line: i + 1, col: match.index + 1, msg });
     }
 
@@ -179,7 +179,7 @@ function lintJS(filePath, content, tokenMap) {
       const suggestion = tokenMap.get(hex);
       const msg = suggestion
         ? `Raw color '${hex}' — use CSS variable ${suggestion} instead`
-        : `Raw color '${hex}' — define a token in styles.css`;
+        : `Raw color '${hex}' — define a token in styles/tokens.css`;
       violations.push({ line: i + 1, col: match.index + 1, msg });
     }
   }
@@ -189,7 +189,7 @@ function lintJS(filePath, content, tokenMap) {
 
 // ---------------------------------------------------------------------------
 // Cross-validation: backend files that embed inline CSS tokens
-// Catches drift between server-rendered HTML templates and styles.css
+// Catches drift between server-rendered HTML templates and tokens.css
 // ---------------------------------------------------------------------------
 
 // Backend files known to embed CSS custom properties (add paths here)
@@ -254,7 +254,7 @@ function crossCheckFile(filePath, canonical) {
     if (canonicalValue && canonicalValue !== value) {
       violations.push({
         line: i + 1, col: 1,
-        msg: `Token drift: ${tokenName} is ${value} here but ${canonicalValue} in styles.css (${mode} mode)`,
+        msg: `Token drift: ${tokenName} is ${value} here but ${canonicalValue} in styles/tokens.css (${mode} mode)`,
       });
     }
   }
@@ -347,7 +347,7 @@ for (const { file, violations } of results) {
   console.log();
 }
 
-console.log('\x1b[2mFix: use var(--token-name) from src/front/styles.css, or add a new token.\x1b[0m');
+console.log('\x1b[2mFix: use var(--token-name) from src/front/styles/tokens.css, or add a new token.\x1b[0m');
 console.log('\x1b[2mBypass: add the file to ALLOWLIST in scripts/lint-design-tokens.mjs\x1b[0m');
 
 process.exit(1);

@@ -24,6 +24,20 @@ window.addEventListener('error', (event) => {
   }
 })
 
+let scrollbarIdleTimer = null
+const markScrollbarActive = () => {
+  document.documentElement.classList.add('scrollbar-active')
+  if (scrollbarIdleTimer) {
+    window.clearTimeout(scrollbarIdleTimer)
+  }
+  scrollbarIdleTimer = window.setTimeout(() => {
+    document.documentElement.classList.remove('scrollbar-active')
+  }, 1000)
+}
+
+document.addEventListener('scroll', markScrollbarActive, { capture: true, passive: true })
+document.addEventListener('mouseover', markScrollbarActive, { capture: true, passive: true })
+
 createRoot(document.getElementById('root')).render(
   <ConfigProvider config={appConfig}>
     <App />

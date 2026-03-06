@@ -1,0 +1,406 @@
+/*
+ * Canonical design tokens for boring-ui.
+ * Source of truth: docs/design-docs/design-tokens.md
+ */
+
+:root {
+  /* ---------- Color: base neutral ---------- */
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f8f8f8;
+  --color-background-tertiary: #f0f0f0;
+  --color-background-elevated: #ffffff;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #6b6b6b;
+  --color-text-tertiary: #767676;
+  --color-text-link: #007aff;
+  --color-border-primary: #e0e0e0;
+  --color-border-secondary: #f0f0f0;
+  --color-icon-primary: #4a4a4a;
+  --color-icon-secondary: #808080;
+
+  /* ---------- Color: semantic accent/status ---------- */
+  --color-accent-default: #007aff;
+  --color-accent-hover: #005bcc;
+  --color-accent-active: #0040a0;
+  --color-success: #28a745;
+  --color-warning: #ffc107;
+  --color-error: #dc3545;
+  --color-info: #17a2b8;
+  --color-success-bg: rgba(40, 167, 69, 0.1);
+  --color-warning-bg: rgba(255, 193, 7, 0.1);
+  --color-error-bg: rgba(220, 53, 69, 0.1);
+  --color-info-bg: rgba(23, 162, 184, 0.1);
+  --color-text-on-accent: #ffffff;
+  --color-focus-ring: #007aff;
+
+  /* ---------- Color: domain-specific ---------- */
+  --color-chat-user-bg: #f0f0f0;
+  --color-chat-agent-bg: #ffffff;
+  --color-chat-tool-bg: #e8e8e8;
+  --color-code-bg: #f5f5f5;
+  --color-diff-added: #e6ffed;
+  --color-diff-removed: #ffebeb;
+
+  /* ---------- Typography ---------- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-ui: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* ---------- Spacing ---------- */
+  --spacing-xxs: 2px;
+  --spacing-xs: 4px;
+  --spacing-1: 6px;
+  --spacing-sm: 8px;
+  --spacing-1-5: 10px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-xxl: 24px;
+  --spacing-3xl: 32px;
+
+  /* ---------- Shadow system ---------- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+
+  /* ---------- Border radius ---------- */
+  --radius-none: 0px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-input: 8px;
+  --radius-full: 9999px;
+
+  /* ---------- Z-index ---------- */
+  --z-below: -1;
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 100;
+  --z-overlay: 200;
+  --z-modal: 300;
+  --z-tooltip: 400;
+  --z-toast: 500;
+
+  /* ---------- Animation / easing ---------- */
+  --ease-out-fluid: cubic-bezier(0.3, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 100ms;
+  --duration-default: 150ms;
+  --duration-smooth: 200ms;
+  --duration-slow: 300ms;
+
+  /* ---------- Icon sizes ---------- */
+  --icon-size-inline: 16px;
+  --icon-size-toolbar: 18px;
+  --icon-size-activity: 20px;
+
+  /* ---------- Global interactive states ---------- */
+  --interactive-hover-bg: var(--color-background-tertiary);
+  --interactive-active-bg: var(--color-accent-active);
+  --interactive-disabled-opacity: 0.5;
+
+  /* ---------- Legacy bridge: typography ---------- */
+  --text-micro: var(--font-size-xs);
+  --text-xs: var(--font-size-sm);
+  --text-sm: var(--font-size-ui);
+  --text-base: var(--font-size-base);
+  --text-lg: var(--font-size-md);
+  --text-xl: var(--font-size-lg);
+  --text-2xl: 24px;
+
+  --font-normal: var(--font-weight-regular);
+  --font-medium: var(--font-weight-medium);
+  --font-semibold: var(--font-weight-semibold);
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.4;
+  --leading-relaxed: 1.6;
+
+  /* ---------- Legacy bridge: spacing ---------- */
+  --space-0: 0;
+  --space-1: var(--spacing-xs);
+  --space-2: var(--spacing-sm);
+  --space-3: var(--spacing-md);
+  --space-4: var(--spacing-lg);
+  --space-5: var(--spacing-xl);
+  --space-6: var(--spacing-xxl);
+  --space-8: var(--spacing-3xl);
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---------- Legacy bridge: component sizes ---------- */
+  --height-xs: 24px;
+  --height-sm: 28px;
+  --height-md: 32px;
+  --height-lg: 36px;
+
+  /* ---------- Legacy bridge: radius ---------- */
+  --radius-xs: var(--radius-sm);
+  --radius-tab: var(--radius-sm);
+  --radius-xl: var(--radius-lg);
+  --radius-2xl: var(--radius-lg);
+
+  /* ---------- Legacy bridge: semantic aliases ---------- */
+  --color-bg-canvas: var(--color-background-secondary);
+  --color-bg-primary: var(--color-background-primary);
+  --color-bg-secondary: var(--color-background-secondary);
+  --color-bg-tertiary: var(--color-background-tertiary);
+  --color-bg-hover: var(--interactive-hover-bg);
+  --color-bg-active: color-mix(in srgb, var(--color-accent-default) 12%, var(--color-background-tertiary));
+  --color-bg-inverse: var(--color-text-primary);
+
+  --color-border: var(--color-border-primary);
+  --color-border-strong: color-mix(in srgb, var(--color-border-primary) 80%, var(--color-text-primary));
+
+  --color-accent: var(--color-accent-default);
+  --color-accent-light: color-mix(in srgb, var(--color-accent-default) 14%, transparent);
+  --color-text-inverse: var(--color-text-on-accent);
+
+  --color-text-placeholder: var(--color-text-tertiary);
+
+  --color-success-hover: color-mix(in srgb, var(--color-success) 86%, black);
+  --color-success-light: var(--color-success-bg);
+  --color-warning-light: var(--color-warning-bg);
+  --color-error-hover: color-mix(in srgb, var(--color-error) 86%, black);
+  --color-error-light: var(--color-error-bg);
+  --color-info-hover: color-mix(in srgb, var(--color-info) 86%, black);
+  --color-info-light: var(--color-info-bg);
+
+  --color-ai-agent: #ea580c;
+  --color-ai-agent-hover: #c2410c;
+  --color-ai-agent-glow: rgba(234, 88, 12, 0.15);
+  --color-ai-agent-foreground: #18181b;
+
+  --color-git-modified: #e2c08d;
+  --color-git-added: #73c991;
+  --color-git-deleted: #f14c4c;
+  --color-git-modified-bg: rgba(226, 192, 141, 0.2);
+  --color-git-added-bg: rgba(115, 201, 145, 0.2);
+  --color-git-deleted-bg: rgba(241, 76, 76, 0.2);
+
+  --color-neutral-bg: rgba(107, 114, 128, 0.15);
+  --color-violet-bg: rgba(139, 92, 246, 0.15);
+
+  --color-highlight: #fef08a;
+  --color-selected: #e0e7ff;
+  --color-selected-hover: #c7d2fe;
+
+  --color-scrollbar: color-mix(in srgb, var(--color-border-primary) 80%, var(--color-icon-secondary));
+  --color-scrollbar-hover: color-mix(in srgb, var(--color-border-primary) 40%, var(--color-icon-primary));
+
+  --color-pre-bg: #1f2937;
+  --color-pre-text: #f9fafb;
+
+  --color-tool-bg: var(--color-chat-tool-bg);
+  --color-command-bg: color-mix(in srgb, var(--color-background-tertiary) 80%, var(--color-background-secondary));
+
+  --color-violet: #7c3aed;
+  --color-violet-light: #a78bfa;
+  --color-pink: #ec4899;
+  --color-pink-light: #f9a8d4;
+  --color-info-vivid: #60a5fa;
+  --color-indigo: #6366f1;
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-inset-shadow: rgba(0, 0, 0, 0.15);
+
+  --color-diff-divider: color-mix(in srgb, var(--color-border-primary) 60%, var(--color-icon-primary));
+  --color-diff-add-bg: var(--color-diff-added);
+  --color-diff-add-text: #166534;
+  --color-diff-remove-bg: var(--color-diff-removed);
+  --color-diff-remove-text: #991b1b;
+
+  --color-term-bg: #f8fafc;
+  --color-term-fg: #111827;
+  --color-term-cursor: #111827;
+  --color-term-selection: #bfdbfe;
+  --color-term-black: #0f172a;
+  --color-term-red: #dc2626;
+  --color-term-green: #16a34a;
+  --color-term-yellow: #f59e0b;
+  --color-term-blue: #2563eb;
+  --color-term-magenta: #db2777;
+  --color-term-cyan: #0891b2;
+  --color-term-white: #e2e8f0;
+
+  --color-companion-focus: color-mix(in srgb, var(--color-ai-agent) 30%, transparent);
+  --color-companion-focus-strong: color-mix(in srgb, var(--color-ai-agent) 40%, transparent);
+
+  --color-warning-muted: var(--color-warning-bg);
+  --color-warning-fg: var(--color-warning);
+  --color-warning-emphasis: var(--color-warning);
+  --color-accent-fg: var(--color-accent-default);
+  --color-danger-fg: var(--color-error);
+  --color-danger-subtle: var(--color-error-bg);
+  --color-canvas-default: var(--color-bg-primary);
+  --color-canvas-subtle: var(--color-bg-secondary);
+  --color-fg-default: var(--color-text-primary);
+  --color-fg-muted: var(--color-text-secondary);
+  --color-hover: var(--color-bg-hover);
+  --color-active: var(--color-bg-active);
+  --color-code-fg: var(--color-text-primary);
+  --color-overlay-subtle: color-mix(in srgb, var(--color-overlay) 40%, transparent);
+  --color-overlay-muted: color-mix(in srgb, var(--color-overlay) 80%, transparent);
+  --color-diff-copy-bg: color-mix(in srgb, var(--color-bg-inverse) 80%, transparent);
+  --color-diff-copy-border: color-mix(in srgb, var(--color-git-deleted) 60%, transparent);
+  --color-diff-copy-hover-bg: color-mix(in srgb, var(--color-git-deleted) 40%, transparent);
+  --color-diff-word-removed-bg: color-mix(in srgb, var(--color-git-deleted) 40%, transparent);
+  --color-diff-word-added-bg: color-mix(in srgb, var(--color-git-added) 40%, transparent);
+
+  --color-mode-act: #a28bff;
+  --color-mode-plan: #6fd3c1;
+  --color-mode-act-ring: rgba(162, 139, 255, 0.7);
+  --color-mode-plan-ring: rgba(111, 211, 193, 0.7);
+
+  --shadow-float: var(--shadow-lg);
+  --shadow-xl: var(--shadow-lg);
+  --shadow-toast: var(--shadow-lg);
+  --ring-focus: 0 0 0 2px var(--color-background-primary), 0 0 0 4px color-mix(in srgb, var(--color-focus-ring) 45%, transparent);
+  --shadow-focus: var(--ring-focus);
+  --shadow-card: var(--shadow-md);
+  --shadow-button: var(--shadow-sm);
+  --shadow-button-hover: var(--shadow-md);
+
+  --syntax-keyword: #d73a49;
+  --syntax-string: #032f62;
+  --syntax-number: #005cc5;
+  --syntax-comment: #6a737d;
+  --syntax-function: #6f42c1;
+  --syntax-variable: #24292e;
+  --syntax-operator: #d73a49;
+  --syntax-class: #6f42c1;
+  --syntax-property: #005cc5;
+  --syntax-punctuation: #24292e;
+
+  --transition-fast: var(--duration-fast) var(--ease-out-fluid);
+  --transition-normal: var(--duration-default) var(--ease-in-out);
+  --transition-slow: var(--duration-slow) var(--ease-in-out);
+}
+
+[data-theme="dark"] {
+  /* ---------- Canonical dark overrides ---------- */
+  --color-background-primary: #1f1f1f;
+  --color-background-secondary: #242424;
+  --color-background-tertiary: #2c2c2c;
+  --color-background-elevated: #333333;
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #a8a8a8;
+  --color-text-tertiary: #888888;
+  --color-text-link: #61dafb;
+  --color-border-primary: #404040;
+  --color-border-secondary: #303030;
+  --color-icon-primary: #b0b0b0;
+  --color-icon-secondary: #707070;
+
+  --color-accent-default: #61dafb;
+  --color-accent-hover: #3d9dd6;
+  --color-accent-active: #2a7399;
+  --color-success: #2ecc71;
+  --color-warning: #f1c40f;
+  --color-error: #e74c3c;
+  --color-info: #3498db;
+  --color-success-bg: rgba(46, 204, 113, 0.12);
+  --color-warning-bg: rgba(241, 196, 15, 0.12);
+  --color-error-bg: rgba(231, 76, 60, 0.12);
+  --color-info-bg: rgba(52, 152, 219, 0.12);
+  --color-focus-ring: #61dafb;
+
+  --color-chat-user-bg: #2c2c2c;
+  --color-chat-agent-bg: #242424;
+  --color-chat-tool-bg: #333333;
+  --color-code-bg: #282c34;
+  --color-diff-added: #1f4a2f;
+  --color-diff-removed: #4a2f2f;
+
+  --shadow-sm: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-md: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-lg: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+
+  /* ---------- Legacy dark bridge overrides ---------- */
+  --color-bg-canvas: #000000;
+  --color-bg-inverse: #ffffff;
+
+  --color-border-strong: color-mix(in srgb, var(--color-border-primary) 70%, var(--color-background-elevated));
+  --color-accent-light: color-mix(in srgb, var(--color-accent-default) 18%, transparent);
+
+  --color-success-hover: #22c55e;
+  --color-warning-light: #422006;
+  --color-error-hover: #f87171;
+  --color-info-hover: #60a5fa;
+
+  --color-ai-agent: #f97316;
+  --color-ai-agent-hover: #fb923c;
+  --color-ai-agent-glow: rgba(249, 115, 22, 0.15);
+
+  --color-git-added: #7ee787;
+  --color-git-deleted: #ffa198;
+  --color-git-modified-bg: rgba(226, 192, 141, 0.25);
+  --color-git-added-bg: rgba(126, 231, 135, 0.25);
+  --color-git-deleted-bg: rgba(255, 161, 152, 0.25);
+
+  --color-neutral-bg: rgba(156, 163, 175, 0.2);
+  --color-violet-bg: rgba(167, 139, 250, 0.2);
+
+  --color-highlight: #854d0e;
+  --color-selected: #312e81;
+  --color-selected-hover: #3730a3;
+
+  --color-scrollbar: #4b5563;
+  --color-scrollbar-hover: #6b7280;
+
+  --color-pre-bg: #11111b;
+  --color-pre-text: #cdd6f4;
+  --color-command-bg: #1a1b26;
+
+  --color-violet: #a78bfa;
+  --color-violet-light: #c4b5fd;
+  --color-pink: #f472b6;
+  --color-pink-light: #fbcfe8;
+  --color-info-vivid: #93c5fd;
+  --color-indigo: #818cf8;
+
+  --color-overlay: rgba(0, 0, 0, 0.7);
+  --color-inset-shadow: rgba(0, 0, 0, 0.3);
+  --color-diff-copy-bg: color-mix(in srgb, var(--color-bg-primary) 85%, var(--color-bg-inverse));
+
+  --color-diff-divider: #4b5563;
+  --color-diff-add-text: #86efac;
+  --color-diff-remove-text: #fca5a5;
+
+  --color-term-bg: #0f172a;
+  --color-term-fg: #e2e8f0;
+  --color-term-cursor: #e2e8f0;
+  --color-term-selection: #334155;
+  --color-term-red: #ef4444;
+  --color-term-green: #22c55e;
+  --color-term-blue: #3b82f6;
+  --color-term-magenta: #ec4899;
+  --color-term-cyan: #06b6d4;
+  --color-term-white: #f1f5f9;
+
+  --ring-focus: 0 0 0 2px var(--color-background-primary), 0 0 0 4px color-mix(in srgb, var(--color-focus-ring) 60%, transparent);
+
+  --syntax-keyword: #cba6f7;
+  --syntax-string: #a6e3a1;
+  --syntax-number: #fab387;
+  --syntax-comment: #6c7086;
+  --syntax-function: #89b4fa;
+  --syntax-variable: #cdd6f4;
+  --syntax-operator: #89dceb;
+  --syntax-class: #f9e2af;
+  --syntax-property: #94e2d5;
+  --syntax-punctuation: #bac2de;
+}

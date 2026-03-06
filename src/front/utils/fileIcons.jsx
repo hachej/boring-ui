@@ -20,6 +20,7 @@ import {
   FileAudio,
   FileArchive,
 } from 'lucide-react'
+import { ICON_SIZE_INLINE } from './iconTokens'
 
 /**
  * Icon mapping for file extensions.
@@ -295,7 +296,7 @@ export function getFileIconComponent(filename) {
  * @param {number} [size=14] - Icon size in pixels
  * @returns {React.ReactElement} Rendered icon element
  */
-export function getFileIcon(filename, size = 14) {
+export function getFileIcon(filename, size = ICON_SIZE_INLINE) {
   const IconComponent = getFileIconComponent(filename)
   return <IconComponent size={size} />
 }
