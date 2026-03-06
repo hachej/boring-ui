@@ -41,6 +41,7 @@ import {
 import ThemeToggle from './components/ThemeToggle'
 import Tooltip from './components/Tooltip'
 import ClaudeStreamChat from './components/chat/ClaudeStreamChat'
+import WorkspaceLoading from './components/WorkspaceLoading'
 import {
   CapabilitiesContext,
   CapabilitiesStatusContext,
@@ -418,7 +419,10 @@ function UnifiedDockTab({
       onPointerLeave={handlePointerLeave}
       className={tabClassName}
     >
-      <span className="dv-default-tab-content">{title || ''}</span>
+      <span className="dv-default-tab-content">
+        {title === 'Agent' && <Bot size={14} className="dv-tab-icon" />}
+        {title || ''}
+      </span>
       {!hideClose && (
         <button
           type="button"
@@ -1097,22 +1101,34 @@ export default function App() {
         sectionSizesRef.current = { ...sectionSizesRef.current, [panelId]: currentHeight }
       }
     }
-    const isLastPanel = leftSidebarPanelIds[leftSidebarPanelIds.length - 1] === panelId
     const isOnlyPanel = leftSidebarPanelIds.length <= 1
     setSectionCollapsed((prev) => {
       const next = { ...prev, [panelId]: !prev[panelId] }
       // Apply constraints immediately
       if (group) {
         if (next[panelId]) {
-          // Single-panel sidebar: last panel keeps flexible max so footer sticks to bottom.
-          // Multi-panel sidebar: all panels shrink so siblings can grow.
-          const keepFlexible = isLastPanel && isOnlyPanel
+          // Keep filetree (which has footer) flexible when all sections are collapsed,
+          // so margin-top:auto on the footer pushes user menu to the bottom.
+          const allWillBeCollapsed = !isOnlyPanel && leftSidebarPanelIds.every((id) => next[id])
+          const hasFooter = panelId === 'filetree'
+          const keepFlexible = isOnlyPanel || (allWillBeCollapsed && hasFooter)
           group.api.setConstraints({
             minimumHeight: collapsedHeight,
             maximumHeight: keepFlexible ? Number.MAX_SAFE_INTEGER : collapsedHeight,
           })
           if (!keepFlexible) {
             group.api.setSize({ height: collapsedHeight })
+          }
+          // When all sections become collapsed, update filetree to be flexible too.
+          if (allWillBeCollapsed && !hasFooter) {
+            const filetreeGroup = dockApi.getPanel('filetree')?.group
+            if (filetreeGroup) {
+              const filetreeCollapsedHeight = getSidebarCollapsedHeight('filetree')
+              filetreeGroup.api.setConstraints({
+                minimumHeight: filetreeCollapsedHeight,
+                maximumHeight: Number.MAX_SAFE_INTEGER,
+              })
+            }
           }
         } else {
           // When uncollapsing in a multi-panel sidebar, also release the
@@ -1196,15 +1212,20 @@ export default function App() {
 
   useEffect(() => {
     if (!dockApi) return
+    // When sidebar is fully collapsed, the layout effect handles height.
+    if (collapsed.filetree) return
     const isOnlyPanel = leftSidebarPanelIds.length <= 1
-    const lastPanelId = leftSidebarPanelIds[leftSidebarPanelIds.length - 1]
+    const allSectionsCollapsed = !isOnlyPanel && leftSidebarPanelIds.every((id) => sectionCollapsed[id])
     leftSidebarPanelIds.forEach((panelId) => {
       const group = dockApi.getPanel(panelId)?.group
       if (!group) return
       const collapsedHeight = getSidebarCollapsedHeight(panelId)
       const expandedMinHeight = getSidebarExpandedMinHeight(panelId)
       if (sectionCollapsed[panelId]) {
-        const keepFlexible = isOnlyPanel && panelId === lastPanelId
+        // Keep filetree flexible when it's the only panel OR when all sections
+        // are collapsed (so margin-top:auto on the footer pushes it to bottom).
+        const hasFooter = panelId === 'filetree'
+        const keepFlexible = isOnlyPanel || (allSectionsCollapsed && hasFooter)
         group.api.setConstraints({
           minimumHeight: collapsedHeight,
           maximumHeight: keepFlexible ? Number.MAX_SAFE_INTEGER : collapsedHeight,
@@ -1223,6 +1244,7 @@ export default function App() {
     dockApi,
     leftSidebarPanelIds,
     sectionCollapsed,
+    collapsed.filetree,
     getSidebarCollapsedHeight,
     getSidebarExpandedMinHeight,
   ])
@@ -1504,7 +1526,7 @@ export default function App() {
     const route = currentWorkspaceId
       ? routes.controlPlane.workspaces.scope(currentWorkspaceId, 'settings')
       : routes.controlPlane.auth.settings()
-    window.location.assign(buildApiUrl(route.path, route.query))
+    window.location.assign(route.path)
   }, [userMenuAuthStatus, storagePrefix, projectRoot, currentWorkspaceId])
 
   const handleLogout = useCallback(() => {
@@ -1559,20 +1581,50 @@ export default function App() {
       const collapsedWidth = leftSidebarCollapsedWidth
       const minWidth = leftSidebarMinWidth
       if (collapsed.filetree) {
-        leftGroups.forEach((group) => {
-          group.api.setConstraints({
+        // When sidebar is fully collapsed, give filetree all vertical space
+        // and hide non-filetree panels (they render empty when collapsed).
+        leftSidebarPanelIds.forEach((panelId) => {
+          const group = dockApi.getPanel(panelId)?.group
+          if (!group) return
+          const constraints = {
             minimumWidth: collapsedWidth,
             maximumWidth: collapsedWidth,
-          })
+          }
+          if (leftSidebarPanelIds.length > 1 && panelId !== 'filetree') {
+            constraints.minimumHeight = 0
+            constraints.maximumHeight = 0
+          }
+          group.api.setConstraints(constraints)
           group.api.setSize({ width: collapsedWidth })
+          if (leftSidebarPanelIds.length > 1 && panelId !== 'filetree') {
+            group.api.setSize({ height: 0 })
+          }
         })
       } else {
-        leftGroups.forEach((group) => {
-          // Use Number.MAX_SAFE_INTEGER to clear max constraint and allow resizing
-          group.api.setConstraints({
+        // Restore width AND height constraints when expanding.
+        // Height constraints must be restored because collapse sets non-filetree panels to height 0.
+        const allSectionsCollapsed = leftSidebarPanelIds.length > 1
+          && leftSidebarPanelIds.every((id) => sectionCollapsed[id])
+        leftSidebarPanelIds.forEach((panelId) => {
+          const group = dockApi.getPanel(panelId)?.group
+          if (!group) return
+          const constraints = {
             minimumWidth: minWidth,
             maximumWidth: Number.MAX_SAFE_INTEGER,
-          })
+          }
+          if (leftSidebarPanelIds.length > 1) {
+            if (sectionCollapsed[panelId]) {
+              const collapsedHeight = getSidebarCollapsedHeight(panelId)
+              const hasFooter = panelId === 'filetree'
+              const keepFlexible = allSectionsCollapsed && hasFooter
+              constraints.minimumHeight = collapsedHeight
+              constraints.maximumHeight = keepFlexible ? Number.MAX_SAFE_INTEGER : collapsedHeight
+            } else {
+              constraints.minimumHeight = getSidebarExpandedMinHeight(panelId)
+              constraints.maximumHeight = Number.MAX_SAFE_INTEGER
+            }
+          }
+          group.api.setConstraints(constraints)
         })
         // Only set size on subsequent runs (user toggled), not on initial load.
         if (!isFirstRun) {
@@ -4476,11 +4528,7 @@ export default function App() {
               <CapabilitiesStatusContext.Provider value={{ pending: capabilitiesPending }}>
                 <CapabilitiesContext.Provider value={capabilities}>
                   {capabilitiesPending ? (
-                    <div className="workspace-loading" role="status" aria-live="polite">
-                      <Loader2 className="workspace-loading-icon" size={40} />
-                      <h2 className="workspace-loading-title">Opening workspace</h2>
-                      <p className="workspace-loading-message">Connecting to backend services...</p>
-                    </div>
+                    <WorkspaceLoading />
                   ) : (
                     <div data-testid="dockview" className="dockview-host">
                       <DockviewReact
