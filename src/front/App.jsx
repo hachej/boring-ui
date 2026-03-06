@@ -73,6 +73,7 @@ import DataContext from './providers/data/DataContext'
 import { PI_LIST_TABS_BRIDGE, PI_OPEN_FILE_BRIDGE, PI_OPEN_PANEL_BRIDGE } from './providers/pi/uiBridge'
 import UserSettingsPage from './pages/UserSettingsPage'
 import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage'
+import AuthPage, { AuthCallbackPage } from './pages/AuthPage'
 import CreateWorkspaceModal from './pages/CreateWorkspaceModal'
 
 const URL_PARAMS = new URLSearchParams(window.location.search)
@@ -613,8 +614,10 @@ export default function App() {
   const pagePathname = window.location.pathname
   const workspaceSubpath = getWorkspacePathSuffix(pagePathname)
   const isUserSettingsPage = pagePathname === '/auth/settings'
+  const isAuthLoginPage = pagePathname === '/auth/login' || pagePathname === '/auth/signup'
+  const isAuthCallbackPage = pagePathname === '/auth/callback'
   const isWorkspaceSettingsPage = currentWorkspaceId && workspaceSubpath === 'settings'
-  const isFullPageView = isUserSettingsPage || isWorkspaceSettingsPage
+  const isFullPageView = isUserSettingsPage || isWorkspaceSettingsPage || isAuthLoginPage || isAuthCallbackPage
 
   const [collapsed, setCollapsed] = useState(() => {
     const saved = loadCollapsedState(storagePrefix)
@@ -4466,6 +4469,31 @@ export default function App() {
           </ThemeProvider>
         </DataContext.Provider>
       </QueryClientProvider>
+    )
+  }
+
+  // Full-page auth views
+  if (isAuthLoginPage) {
+    return (
+      <ThemeProvider>
+        <AuthPage authConfig={{
+          supabaseUrl: capabilities?.auth?.supabaseUrl || '',
+          supabaseAnonKey: capabilities?.auth?.supabaseAnonKey || '',
+          callbackUrl: capabilities?.auth?.callbackUrl || '',
+          redirectUri: new URLSearchParams(window.location.search).get('redirect_uri') || '/',
+          initialMode: pagePathname === '/auth/signup' ? 'sign_up' : 'sign_in',
+          appName: capabilities?.auth?.appName || '',
+          appDescription: capabilities?.auth?.appDescription || '',
+        }} />
+      </ThemeProvider>
+    )
+  }
+
+  if (isAuthCallbackPage) {
+    return (
+      <ThemeProvider>
+        <AuthCallbackPage />
+      </ThemeProvider>
     )
   }
 

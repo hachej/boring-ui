@@ -286,6 +286,17 @@ def create_capabilities_router(
                 'mode': config.pi_mode,
             }
 
+        # Auth configuration for SPA-rendered login pages
+        if config and config.supabase_url and config.supabase_anon_key:
+            capabilities['auth'] = {
+                'provider': 'supabase',
+                'supabaseUrl': config.supabase_url.rstrip('/'),
+                'supabaseAnonKey': config.supabase_anon_key,
+                'callbackUrl': '/auth/callback',
+                'appName': config.auth_app_name or '',
+                'appDescription': config.auth_app_description or '',
+            }
+
         return capabilities
 
     return router

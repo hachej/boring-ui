@@ -141,8 +141,10 @@ export default defineConfig(({ mode }) => {
           target: proxyApiTarget,
           changeOrigin: false,
           bypass(req) {
-            // Let SPA handle settings page; proxy all other auth routes to backend
+            // Let SPA handle these auth pages; proxy all other auth routes to backend
             if (req.url === '/auth/settings') return req.url
+            if (req.url?.startsWith('/auth/login')) return req.url
+            if (req.url?.startsWith('/auth/signup')) return req.url
           },
         },
         '/w': {
