@@ -84,6 +84,36 @@ export default defineConfig(({ mode }) => {
   return {
     ...baseConfig,
     base: './',
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            // Split heavy vendor libraries into separate cacheable chunks
+            if (id.includes('node_modules/@tiptap/') || id.includes('node_modules/lowlight/') || id.includes('node_modules/highlight.js/')) {
+              return 'vendor-editor'
+            }
+            if (id.includes('node_modules/xterm')) {
+              return 'vendor-terminal'
+            }
+            if (id.includes('node_modules/@mariozechner/')) {
+              return 'vendor-pi'
+            }
+            if (id.includes('node_modules/@assistant-ui/') || id.includes('node_modules/markdown-it') || id.includes('node_modules/remark') || id.includes('node_modules/unified') || id.includes('node_modules/mdast') || id.includes('node_modules/micromark')) {
+              return 'vendor-chat'
+            }
+            if (id.includes('node_modules/isomorphic-git')) {
+              return 'vendor-git'
+            }
+            if (id.includes('node_modules/dockview')) {
+              return 'vendor-dockview'
+            }
+            if (id.includes('node_modules/react-pdf') || id.includes('node_modules/pdfjs-dist')) {
+              return 'vendor-pdf'
+            }
+          },
+        },
+      },
+    },
     server: {
       port: 5173,
       watch: {

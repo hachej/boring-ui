@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { DockviewReact } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
 import { ChevronDown, ChevronUp, Loader2, Bot, X } from 'lucide-react'
@@ -40,7 +40,7 @@ import {
 } from './layout'
 import ThemeToggle from './components/ThemeToggle'
 import Tooltip from './components/Tooltip'
-import ClaudeStreamChat from './components/chat/ClaudeStreamChat'
+const ClaudeStreamChat = lazy(() => import('./components/chat/ClaudeStreamChat'))
 import WorkspaceLoading from './components/WorkspaceLoading'
 import {
   CapabilitiesContext,
@@ -4465,7 +4465,9 @@ export default function App() {
       <QueryClientProvider key={dataProviderScopeKey} client={queryClient}>
         <DataContext.Provider key={dataProviderScopeKey} value={dataProvider}>
           <ThemeProvider>
-            <ClaudeStreamChat />
+            <Suspense fallback={<div className="panel-lazy-loading" />}>
+              <ClaudeStreamChat />
+            </Suspense>
           </ThemeProvider>
         </DataContext.Provider>
       </QueryClientProvider>

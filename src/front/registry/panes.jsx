@@ -46,14 +46,38 @@
  * @module registry/panes
  */
 
+import { lazy, Suspense } from 'react'
 import FileTreePanel from '../panels/FileTreePanel'
 import DataCatalogPanel from '../panels/DataCatalogPanel'
-import EditorPanel from '../panels/EditorPanel'
-import TerminalPanel from '../panels/TerminalPanel'
-import ShellTerminalPanel from '../panels/ShellTerminalPanel'
 import EmptyPanel from '../panels/EmptyPanel'
-import ReviewPanel from '../panels/ReviewPanel'
-import CompanionPanel from '../panels/CompanionPanel'
+
+// Lazy-load heavy panels to reduce initial bundle size.
+// EditorPanel pulls tiptap+lowlight (~600KB), TerminalPanel pulls xterm (~300KB),
+// CompanionPanel pulls pi-ai+pi-web-ui (~900KB), etc.
+const LazyEditorPanel = lazy(() => import('../panels/EditorPanel'))
+const LazyTerminalPanel = lazy(() => import('../panels/TerminalPanel'))
+const LazyShellTerminalPanel = lazy(() => import('../panels/ShellTerminalPanel'))
+const LazyReviewPanel = lazy(() => import('../panels/ReviewPanel'))
+const LazyCompanionPanel = lazy(() => import('../panels/CompanionPanel'))
+
+// Wrap lazy components with Suspense so DockView gets a valid component
+function withSuspense(LazyComponent) {
+  function SuspenseWrapper(props) {
+    return (
+      <Suspense fallback={<div className="panel-lazy-loading" />}>
+        <LazyComponent {...props} />
+      </Suspense>
+    )
+  }
+  SuspenseWrapper.displayName = `Lazy(${LazyComponent.displayName || LazyComponent.name || 'Component'})`
+  return SuspenseWrapper
+}
+
+const EditorPanel = withSuspense(LazyEditorPanel)
+const TerminalPanel = withSuspense(LazyTerminalPanel)
+const ShellTerminalPanel = withSuspense(LazyShellTerminalPanel)
+const ReviewPanel = withSuspense(LazyReviewPanel)
+const CompanionPanel = withSuspense(LazyCompanionPanel)
 
 /**
  * @typedef {Object} PaneConfig
