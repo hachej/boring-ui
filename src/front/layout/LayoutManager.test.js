@@ -173,11 +173,11 @@ describe('LayoutManager', () => {
       expect(validateLayoutStructure(layout)).toBe(true)
     })
 
-    it('returns false when filetree is mixed with other essentials', () => {
+    it('allows essential panels to share a group', () => {
       const layout = createValidLayout()
-      // Put terminal in filetree's group
+      // Put terminal in filetree's group — should still be valid
       layout.grid.root.data[0].data.views.push({ id: 'terminal' })
-      expect(validateLayoutStructure(layout)).toBe(false)
+      expect(validateLayoutStructure(layout)).toBe(true)
     })
   })
 

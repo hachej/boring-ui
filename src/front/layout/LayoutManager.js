@@ -163,62 +163,6 @@ export const validateLayoutStructure = (layout) => {
     }
   }
 
-  // Extract groups and their panels from the grid structure
-  const groups = []
-  const extractGroups = (node) => {
-    if (!node) return
-    if (node.type === 'leaf' && node.data?.views) {
-      // This is a group - collect panel IDs
-      const groupPanels = node.data.views.map((v) => v.id).filter(Boolean)
-      groups.push(groupPanels)
-    }
-    // Recurse into branches
-    if (node.data && Array.isArray(node.data)) {
-      node.data.forEach(extractGroups)
-    }
-  }
-  extractGroups(layout.grid.root)
-
-  // Find which group each essential panel is in
-  const panelToGroup = {}
-  groups.forEach((groupPanels, groupIndex) => {
-    groupPanels.forEach((panelId) => {
-      panelToGroup[panelId] = groupIndex
-    })
-  })
-
-  // Validate filetree is alone in its group (except for non-essential panels)
-  const filetreeGroup = groups[panelToGroup['filetree']]
-  if (filetreeGroup) {
-    const otherInGroup = filetreeGroup.filter((p) => p !== 'filetree')
-    const invalidInGroup = otherInGroup.some((p) => essentials.includes(p))
-    if (invalidInGroup) {
-      console.warn('[Layout drift] filetree group has invalid panels:', otherInGroup)
-      return false
-    }
-  }
-
-  // Validate terminal is alone in its group (except for non-essential panels)
-  const terminalGroup = groups[panelToGroup['terminal']]
-  if (terminalGroup) {
-    const otherInGroup = terminalGroup.filter((p) => p !== 'terminal')
-    const invalidInGroup = otherInGroup.some((p) => essentials.includes(p))
-    if (invalidInGroup) {
-      console.warn('[Layout drift] terminal group has invalid panels:', otherInGroup)
-      return false
-    }
-  }
-
-  // Validate shell is not mixed with filetree or terminal
-  const shellGroupIdx = panelToGroup['shell']
-  if (shellGroupIdx !== undefined) {
-    const shellGroup = groups[shellGroupIdx]
-    if (shellGroup.includes('filetree') || shellGroup.includes('terminal')) {
-      console.warn('[Layout drift] shell is in wrong group with filetree/terminal')
-      return false
-    }
-  }
-
   return true
 }
 
