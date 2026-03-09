@@ -83,7 +83,7 @@ export default defineConfig(({ mode }) => {
   // Development/app build configuration
   return {
     ...baseConfig,
-    base: './',
+    base: '/',
     build: {
       rollupOptions: {
         output: {
