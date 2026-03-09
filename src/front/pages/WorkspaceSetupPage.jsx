@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react'
-import { Rocket, ArrowRight } from 'lucide-react'
-import GitHubConnect from '../components/GitHubConnect'
+import { useCallback, useEffect } from 'react'
+import { Rocket, ArrowRight, Github, ExternalLink, Loader2, Check } from 'lucide-react'
+import { useGitHubConnection } from '../components/GitHubConnect'
 import PageShell from './PageShell'
 
 /**
@@ -9,29 +9,21 @@ import PageShell from './PageShell'
  * Can be extended with more steps later.
  */
 export default function WorkspaceSetupPage({ workspaceId, workspaceName, capabilities, onComplete }) {
-  const [step, setStep] = useState(0)
   const githubEnabled = capabilities?.features?.github === true
+  const { status, loading, connect } = useGitHubConnection(workspaceId, { enabled: githubEnabled })
 
   const handleDone = useCallback(() => {
     onComplete?.()
   }, [onComplete])
 
-  const handleSkip = useCallback(() => {
-    // If no more steps, go to workspace
-    handleDone()
-  }, [handleDone])
-
-  const handleConnected = useCallback(() => {
-    // Auto-advance after connecting
-    handleDone()
-  }, [handleDone])
-
   // If GitHub is not enabled, skip the wizard entirely
-  if (!githubEnabled) {
-    // Render nothing — the parent should navigate away
-    handleDone()
-    return null
-  }
+  useEffect(() => {
+    if (!githubEnabled) handleDone()
+  }, [githubEnabled, handleDone])
+
+  if (!githubEnabled) return null
+
+  const connected = status?.connected
 
   return (
     <PageShell title={`Set up ${workspaceName || 'Workspace'}`}>
@@ -45,13 +37,27 @@ export default function WorkspaceSetupPage({ workspaceId, workspaceName, capabil
         </div>
 
         <div className="setup-wizard-step">
-          <GitHubConnect
-            workspaceId={workspaceId}
-            variant="wizard"
-            onConnected={handleConnected}
-            onSkip={handleSkip}
-            githubEnabled={githubEnabled}
-          />
+          {loading ? (
+            <div className="setup-wizard-loading">
+              <Loader2 className="git-inline-spinner" size={16} />
+              <span>Checking GitHub status...</span>
+            </div>
+          ) : connected ? (
+            <div className="setup-wizard-connected">
+              <Check size={16} />
+              <span>GitHub connected</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="settings-btn settings-btn-primary"
+              onClick={connect}
+            >
+              <Github size={16} />
+              Connect GitHub
+              <ExternalLink size={14} />
+            </button>
+          )}
         </div>
 
         <div className="setup-wizard-footer">
@@ -60,7 +66,7 @@ export default function WorkspaceSetupPage({ workspaceId, workspaceName, capabil
             className="settings-btn settings-btn-primary setup-wizard-continue"
             onClick={handleDone}
           >
-            Continue to workspace
+            {connected ? 'Continue to workspace' : 'Skip for now'}
             <ArrowRight size={16} />
           </button>
         </div>

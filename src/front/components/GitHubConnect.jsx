@@ -1,33 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Github, ExternalLink, Check, Unlink, Loader2, AlertCircle } from 'lucide-react'
+import { Github, ExternalLink, Unlink, Loader2, AlertCircle } from 'lucide-react'
 import { apiFetchJson } from '../utils/transport'
 import { routes } from '../utils/routes'
 
 /**
- * Reusable GitHub connection component.
- *
- * Variants:
- *   - "full"     : Settings page — shows status, connect/disconnect, repo info
- *   - "compact"  : Git changes panel — small "Connect GitHub" button
- *   - "wizard"   : Onboarding wizard — full-width card with skip
+ * Hook for GitHub connection state and actions.
+ * Shared by all GitHub connection UI surfaces.
  */
-export default function GitHubConnect({
-  workspaceId,
-  variant = 'full',
-  onConnected,
-  onSkip,
-  githubEnabled = true,
-}) {
+export function useGitHubConnection(workspaceId, { enabled = true } = {}) {
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [disconnecting, setDisconnecting] = useState(false)
   const [error, setError] = useState('')
 
   const fetchStatus = useCallback(async () => {
-    if (!githubEnabled) {
-      setLoading(false)
-      return
-    }
+    if (!enabled) { setLoading(false); return }
     try {
       const route = routes.github.status(workspaceId)
       const qs = route.query ? '?' + new URLSearchParams(route.query).toString() : ''
@@ -38,35 +25,30 @@ export default function GitHubConnect({
     } finally {
       setLoading(false)
     }
-  }, [workspaceId, githubEnabled])
+  }, [workspaceId, enabled])
 
-  useEffect(() => {
-    fetchStatus()
-  }, [fetchStatus])
+  useEffect(() => { fetchStatus() }, [fetchStatus])
 
-  // Listen for OAuth callback via popup/redirect
+  // Listen for OAuth callback via postMessage from popup
   useEffect(() => {
     const handler = (event) => {
+      if (event.origin !== window.location.origin) return
       if (event.data?.type === 'github-callback' && event.data?.success) {
         fetchStatus()
-        onConnected?.()
       }
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [fetchStatus, onConnected])
+  }, [fetchStatus])
 
-  const handleConnect = () => {
-    // Open GitHub OAuth in new tab — the authorize endpoint redirects to GitHub
-    const route = routes.github.authorize()
-    window.open(route.path, '_blank', 'noopener')
-  }
+  const connect = useCallback(() => {
+    window.open(routes.github.authorize().path, '_blank', 'noopener')
+  }, [])
 
-  const handleDisconnect = async () => {
+  const disconnect = useCallback(async () => {
     setDisconnecting(true)
     try {
-      const route = routes.github.disconnect()
-      await apiFetchJson(route.path, {
+      await apiFetchJson(routes.github.disconnect().path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspace_id: workspaceId }),
@@ -77,81 +59,18 @@ export default function GitHubConnect({
     } finally {
       setDisconnecting(false)
     }
-  }
+  }, [workspaceId])
 
-  if (!githubEnabled) {
-    return null
-  }
+  return { status, loading, error, disconnecting, connect, disconnect, refetch: fetchStatus }
+}
 
-  // ── Compact variant (for git changes panel) ──────────────────────
-  if (variant === 'compact') {
-    if (loading) return null
-    if (status?.connected) return null
+/**
+ * Full GitHub connection UI for the workspace settings page.
+ * Shows status, connect/disconnect buttons, installation info.
+ */
+export default function GitHubConnect({ workspaceId }) {
+  const { status, loading, error, disconnecting, connect, disconnect } = useGitHubConnection(workspaceId)
 
-    return (
-      <button
-        type="button"
-        className="github-connect-compact"
-        onClick={handleConnect}
-        title="Connect GitHub for push/pull"
-      >
-        <Github size={14} />
-        <span>Connect GitHub</span>
-      </button>
-    )
-  }
-
-  // ── Wizard variant (for onboarding) ──────────────────────────────
-  if (variant === 'wizard') {
-    return (
-      <div className="github-connect-wizard">
-        <div className="github-connect-wizard-icon">
-          <Github size={32} />
-        </div>
-        <h3 className="github-connect-wizard-title">Connect to GitHub</h3>
-        <p className="github-connect-wizard-description">
-          Automatically sync your workspace files to a private GitHub repository.
-          Changes are backed up and versioned.
-        </p>
-        {loading ? (
-          <div className="github-connect-wizard-loading">
-            <Loader2 className="git-inline-spinner" size={16} />
-            <span>Checking GitHub status...</span>
-          </div>
-        ) : status?.connected ? (
-          <div className="github-connect-wizard-connected">
-            <Check size={16} />
-            <span>Connected to GitHub</span>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="settings-btn settings-btn-primary github-connect-wizard-btn"
-            onClick={handleConnect}
-          >
-            <Github size={16} />
-            Connect GitHub
-            <ExternalLink size={14} />
-          </button>
-        )}
-        {error && (
-          <div className="github-connect-wizard-error">
-            <AlertCircle size={14} />
-            {error}
-          </div>
-        )}
-        <button
-          type="button"
-          className="github-connect-wizard-skip"
-          onClick={onSkip}
-        >
-          Skip for now
-        </button>
-      </div>
-    )
-  }
-
-  // ── Full variant (for settings page) ─────────────────────────────
   return (
     <div className="github-connect-full">
       {loading ? (
@@ -181,7 +100,7 @@ export default function GitHubConnect({
           <button
             type="button"
             className="settings-btn settings-btn-secondary"
-            onClick={handleDisconnect}
+            onClick={disconnect}
             disabled={disconnecting}
           >
             <Unlink size={14} />
@@ -196,7 +115,7 @@ export default function GitHubConnect({
           <button
             type="button"
             className="settings-btn settings-btn-primary"
-            onClick={handleConnect}
+            onClick={connect}
           >
             <Github size={16} />
             Connect GitHub

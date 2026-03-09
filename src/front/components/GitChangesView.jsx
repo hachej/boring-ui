@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react'
-import { Command, FileText, GitBranch, Loader2 } from 'lucide-react'
+import { Command, FileText, Github, GitBranch, Loader2 } from 'lucide-react'
 import { useGitStatus } from '../providers/data'
-import GitHubConnect from './GitHubConnect'
+import { useGitHubConnection } from './GitHubConnect'
 
 const STATUS_CONFIG = {
   M: { label: 'Modified', className: 'git-status-modified', icon: 'M' },
@@ -9,6 +9,22 @@ const STATUS_CONFIG = {
   A: { label: 'Added', className: 'git-status-added', icon: 'A' },
   D: { label: 'Deleted', className: 'git-status-deleted', icon: 'D' },
   C: { label: 'Conflict', className: 'git-status-conflict', icon: 'C' },
+}
+
+function ConnectGitHubButton({ workspaceId }) {
+  const { status, loading, connect } = useGitHubConnection(workspaceId)
+  if (loading || status?.connected || !status?.configured) return null
+  return (
+    <button
+      type="button"
+      className="github-connect-compact"
+      onClick={connect}
+      title="Connect GitHub for push/pull"
+    >
+      <Github size={14} />
+      <span>Connect GitHub</span>
+    </button>
+  )
 }
 
 export default function GitChangesView({ onOpenDiff, activeDiffFile, workspaceId, githubEnabled }) {
@@ -112,7 +128,7 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile, workspaceId
         </div>
         {githubEnabled && (
           <div className="git-changes-github-connect">
-            <GitHubConnect workspaceId={workspaceId} variant="compact" githubEnabled={githubEnabled} />
+            <ConnectGitHubButton workspaceId={workspaceId} />
           </div>
         )}
       </div>
@@ -123,9 +139,7 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile, workspaceId
     <div className="git-changes-view">
       <div className="git-changes-summary">
         {totalChanges} changed file{totalChanges !== 1 ? 's' : ''}
-        {githubEnabled && (
-          <GitHubConnect workspaceId={workspaceId} variant="compact" githubEnabled={githubEnabled} />
-        )}
+        {githubEnabled && <ConnectGitHubButton workspaceId={workspaceId} />}
       </div>
       <div className="git-changes-list">
         {statusOrder.map((status) => {
