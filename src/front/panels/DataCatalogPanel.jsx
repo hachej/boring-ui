@@ -10,6 +10,7 @@ export default function DataCatalogPanel({ params }) {
     onToggleCollapse,
     showSidebarToggle,
     appName,
+    onOpenChatTab,
     sectionCollapsed,
     onToggleSection,
     onActivateSidebarPanel,
@@ -61,7 +62,7 @@ export default function DataCatalogPanel({ params }) {
   return (
     <div className="panel-content datacatalog-panel">
       {showSidebarToggle && (
-        <LeftPaneHeader onToggleSidebar={onToggleCollapse} appName={appName} />
+        <LeftPaneHeader onToggleSidebar={onToggleCollapse} appName={appName} onOpenChatTab={onOpenChatTab} />
       )}
       <SidebarSectionHeader
         title="Data Catalog"
