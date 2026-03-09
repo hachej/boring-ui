@@ -101,7 +101,7 @@ export default defineConfig({
   // Web Server configuration for running tests against dev server
   webServer: [
     {
-      command: `env -u NO_COLOR -u FORCE_COLOR VITE_API_URL=http://127.0.0.1:${e2eApiPort} npm run dev -- --host 127.0.0.1 --port ${e2eFrontendPort} --strictPort`,
+      command: `env -u NO_COLOR -u FORCE_COLOR VITE_API_URL=http://127.0.0.1:${e2eApiPort} VITE_CONTROL_PLANE_ONBOARDING=1 npm run dev -- --host 127.0.0.1 --port ${e2eFrontendPort} --strictPort`,
       url: frontendUrl,
       reuseExistingServer,
       timeout: 120000,

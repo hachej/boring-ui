@@ -201,6 +201,12 @@ test.describe('User Menu Control-Plane Flows', () => {
     await userMenuButton.click()
     await page.getByRole('menuitem', { name: 'Create workspace' }).click()
 
+    // Fill in the Create Workspace modal and submit
+    const dialog = page.getByRole('dialog', { name: 'Create Workspace' })
+    await expect(dialog).toBeVisible()
+    await dialog.getByLabel('Workspace Name').fill('New')
+    await dialog.getByRole('button', { name: 'Create' }).click()
+
     await expect.poll(() => navRequests.map((pathname) => pathname.replace(/\/$/, ''))).toContain('/w/ws-new')
     await expect.poll(() => workspacesGetCount).toBeGreaterThan(0)
     expect(JSON.parse(settingsPutBody)).toEqual({ shell: 'zsh' })
