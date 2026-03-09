@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ...config import APIConfig
 from ...policy import enforce_delegated_policy_or_none
@@ -116,6 +118,7 @@ async def _forward_http_request(request: Request, target_path: str, workspace_id
         key: value
         for key, value in response.headers.items()
         if key.lower() not in _HOP_BY_HOP_HEADERS
+        and key.lower() != "content-encoding"
     }
     return Response(
         content=response.content,
@@ -241,6 +244,14 @@ def create_workspace_boundary_router_supabase(config: APIConfig) -> APIRouter:
                 message="Reserved workspace path",
             )
         if not _is_allowed_workspace_passthrough_target(normalized):
+            # Non-API paths are frontend client routes — serve SPA index.html
+            static_dir = os.environ.get("BORING_UI_STATIC_DIR", "")
+            index_html = Path(static_dir) / "index.html" if static_dir else None
+            if index_html and index_html.exists():
+                return FileResponse(
+                    index_html,
+                    headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+                )
             return error_response(
                 request,
                 status_code=404,

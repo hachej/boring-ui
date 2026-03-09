@@ -472,7 +472,6 @@ export default function App() {
   const isCoreDeploy = config.mode?.deployMode !== 'edge'
   const localDataBackend = String(config.data?.backend || '').toLowerCase()
   const hasLocalDataBackend = localDataBackend === 'lightningfs' || localDataBackend === 'cheerpx'
-  const controlPlaneOnboardingEnabled = config.features?.controlPlaneOnboarding === true
   const baseStoragePrefix = config.storage?.prefix || 'kurt-web'
   const layoutVersion = config.storage?.layoutVersion || 1
 
@@ -561,6 +560,9 @@ export default function App() {
     companionAgentEnabled,
     nativeAgentEnabled,
   ])
+  const controlPlaneOnboardingEnabled =
+    config.features?.controlPlaneOnboarding === true ||
+    capabilities?.features?.control_plane === true
   const capabilitiesRef = useRef(capabilities)
   const capabilitiesLoadingRef = useRef(capabilitiesLoading)
   capabilitiesRef.current = capabilities
@@ -4008,6 +4010,7 @@ export default function App() {
         onCreateWorkspace: handleCreateWorkspace,
         onOpenUserSettings: handleOpenUserSettings,
         onLogout: handleLogout,
+        githubEnabled: capabilities?.features?.github === true,
       })
     }
     linkedSidebarPanels.forEach((panel) => {
@@ -4057,6 +4060,7 @@ export default function App() {
     activateSidebarPanel,
     filetreeActivityIntent,
     catalogActivityIntent,
+    capabilities,
   ])
 
   // Helper to focus a review panel
@@ -4550,6 +4554,36 @@ export default function App() {
       </ThemeProvider>
     )
   }
+
+  // Auth guard: redirect unauthenticated users to login when control plane is enabled
+  if (
+    capabilities?.features?.control_plane &&
+    userMenuAuthStatus === 'unauthenticated' &&
+    !isAuthLoginPage &&
+    !isAuthCallbackPage
+  ) {
+    const redirectUri = encodeURIComponent(window.location.pathname + window.location.search)
+    window.location.replace(`/auth/login?redirect_uri=${redirectUri}`)
+    return null
+  }
+
+  // Workspace redirect: authenticated user on `/` with no workspace → redirect to first workspace
+  const needsWorkspaceRedirect =
+    capabilities?.features?.control_plane &&
+    userMenuAuthStatus === 'authenticated' &&
+    !currentWorkspaceId &&
+    pagePathname === '/'
+
+  useEffect(() => {
+    if (!needsWorkspaceRedirect) return
+    if (workspaceOptions.length > 0) {
+      const firstWs = workspaceOptions[0]
+      const route = routes.controlPlane.workspaces.scope(firstWs.id)
+      window.location.replace(route.path)
+    } else {
+      setShowCreateWorkspaceModal(true)
+    }
+  }, [needsWorkspaceRedirect, workspaceOptions])
 
   // Full-page settings views (render instead of DockView)
   if (isUserSettingsPage) {
