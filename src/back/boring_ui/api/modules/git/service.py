@@ -1,6 +1,8 @@
 """Git operations service for boring-ui API."""
 import os
 import re
+import shlex
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -13,6 +15,12 @@ _ALLOWED_CLONE_SCHEMES = {'http', 'https', 'git', 'ssh'}
 _SAFE_NAME_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9._\-/]*$')
 # scp-style: user@host:path (no scheme, colon without //)
 _SCP_STYLE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._\-]*@[A-Za-z0-9][A-Za-z0-9._\-]*:.+$')
+
+# Patterns that may leak credentials in git stderr
+_CREDENTIAL_PATTERNS = re.compile(
+    r'(https?://)[^\s@]+@',  # embedded creds in URLs
+    re.IGNORECASE,
+)
 
 
 def _validate_git_ref(value: str, label: str = 'value') -> None:
@@ -34,9 +42,49 @@ def _validate_git_url(url: str) -> None:
         )
 
 
+def _create_askpass_script(username: str, password: str) -> str:
+    """Create a GIT_ASKPASS script with proper shell escaping.
+
+    Creates the file with 0700 permissions from the start (no world-readable
+    window). Uses shlex.quote() to prevent shell injection via credentials.
+
+    Returns:
+        Path to the temporary script file.
+    """
+    # Use os.open with explicit mode to avoid permission window
+    path = tempfile.mktemp(suffix='.sh', prefix='git_askpass_')
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, stat.S_IRWXU)
+    try:
+        os.write(fd, (
+            '#!/bin/sh\n'
+            'case "$1" in\n'
+            f'  *sername*) echo {shlex.quote(username)} ;;\n'
+            f'  *) echo {shlex.quote(password)} ;;\n'
+            'esac\n'
+        ).encode())
+    finally:
+        os.close(fd)
+    return path
+
+
+def _cleanup_askpass(path: str | None) -> None:
+    """Remove a temporary askpass script."""
+    if path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _sanitize_git_error(stderr: str) -> str:
+    """Strip credentials from git error messages before returning to client."""
+    sanitized = _CREDENTIAL_PATTERNS.sub(r'\1***@', stderr)
+    return sanitized.strip()
+
+
 class GitService:
     """Service class for git operations.
-    
+
     Handles git command execution and path validation.
     """
     
@@ -82,28 +130,15 @@ class GitService:
             HTTPException: If git command fails
         """
         env = None
-        askpass_file = None
+        askpass_path = None
         try:
             if credentials:
-                # Create a temporary GIT_ASKPASS script that returns the
-                # appropriate value based on git's prompt.
-                # Git calls GIT_ASKPASS with "Username for ..." or "Password for ...".
-                askpass_file = tempfile.NamedTemporaryFile(
-                    mode='w', suffix='.sh', delete=False,
+                askpass_path = _create_askpass_script(
+                    credentials.get('username', ''),
+                    credentials.get('password', ''),
                 )
-                username = credentials.get('username', '')
-                password = credentials.get('password', '')
-                askpass_file.write(
-                    '#!/bin/sh\n'
-                    'case "$1" in\n'
-                    f'  *sername*) echo "{username}" ;;\n'
-                    f'  *) echo "{password}" ;;\n'
-                    'esac\n'
-                )
-                askpass_file.close()
-                os.chmod(askpass_file.name, 0o700)
                 env = os.environ.copy()
-                env['GIT_ASKPASS'] = askpass_file.name
+                env['GIT_ASKPASS'] = askpass_path
                 env['GIT_TERMINAL_PROMPT'] = '0'
 
             result = subprocess.run(
@@ -115,15 +150,11 @@ class GitService:
                 env=env,
             )
         finally:
-            if askpass_file:
-                try:
-                    os.unlink(askpass_file.name)
-                except OSError:
-                    pass
+            _cleanup_askpass(askpass_path)
         if result.returncode != 0:
             raise HTTPException(
                 status_code=500,
-                detail=f'Git error: {result.stderr.strip()}'
+                detail=f'Git error: {_sanitize_git_error(result.stderr)}'
             )
         return result.stdout
     
@@ -300,7 +331,7 @@ class GitService:
             timeout=30,
         )
         if result.returncode != 0:
-            msg = (result.stderr or result.stdout or '').strip()
+            msg = _sanitize_git_error(result.stderr or result.stdout or '')
             # "nothing to commit" is a client error, not a server error
             if 'nothing to commit' in msg.lower():
                 raise HTTPException(status_code=400, detail=f'Git error: {msg}')
@@ -358,25 +389,15 @@ class GitService:
             _validate_git_ref(branch, 'branch')
 
         env = None
-        askpass_file = None
+        askpass_path = None
         try:
             if credentials:
-                askpass_file = tempfile.NamedTemporaryFile(
-                    mode='w', suffix='.sh', delete=False,
+                askpass_path = _create_askpass_script(
+                    credentials.get('username', ''),
+                    credentials.get('password', ''),
                 )
-                username = credentials.get('username', '')
-                password = credentials.get('password', '')
-                askpass_file.write(
-                    '#!/bin/sh\n'
-                    'case "$1" in\n'
-                    f'  *sername*) echo "{username}" ;;\n'
-                    f'  *) echo "{password}" ;;\n'
-                    'esac\n'
-                )
-                askpass_file.close()
-                os.chmod(askpass_file.name, 0o700)
                 env = os.environ.copy()
-                env['GIT_ASKPASS'] = askpass_file.name
+                env['GIT_ASKPASS'] = askpass_path
                 env['GIT_TERMINAL_PROMPT'] = '0'
 
             args = ['clone', '--depth', '1']
@@ -392,13 +413,9 @@ class GitService:
                 env=env,
             )
         finally:
-            if askpass_file:
-                try:
-                    os.unlink(askpass_file.name)
-                except OSError:
-                    pass
+            _cleanup_askpass(askpass_path)
         if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=f'Git error: {result.stderr.strip()}')
+            raise HTTPException(status_code=500, detail=f'Git error: {_sanitize_git_error(result.stderr)}')
         return {'cloned': True}
 
     def add_remote(self, name: str, url: str) -> dict:

@@ -1,4 +1,5 @@
 """Unit tests for boring_ui.api.modules.git module."""
+import os
 import subprocess
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -69,10 +70,11 @@ class TestStatusEndpoint:
             data = r.json()
             assert data['is_repo'] is True
             assert data['available'] is True
-            # Modified file should be in status
-            assert 'file.txt' in data['files']
+            # files is a list of {path, status} dicts
+            files_by_path = {f['path']: f['status'] for f in data['files']}
+            assert 'file.txt' in files_by_path
             # M for modified (unstaged)
-            assert 'M' in data['files']['file.txt']
+            assert files_by_path['file.txt'] == 'M'
 
     @pytest.mark.asyncio
     async def test_status_not_a_repo(self, non_git_app):
@@ -102,7 +104,8 @@ class TestStatusEndpoint:
             data = r.json()
             assert data['is_repo'] is True
             # Should have no modified files
-            assert 'file.txt' not in data['files']
+            files_by_path = {f['path']: f['status'] for f in data['files']}
+            assert 'file.txt' not in files_by_path
 
     @pytest.mark.asyncio
     async def test_status_with_staged_file(self, git_repo):
@@ -122,9 +125,10 @@ class TestStatusEndpoint:
             r = await client.get('/api/v1/git/status')
             assert r.status_code == 200
             data = r.json()
-            assert 'file.txt' in data['files']
-            # M in index position (staged)
-            assert data['files']['file.txt'] in ['M', 'M ']
+            files_by_path = {f['path']: f['status'] for f in data['files']}
+            assert 'file.txt' in files_by_path
+            # M for modified (staged)
+            assert files_by_path['file.txt'] == 'M'
 
     @pytest.mark.asyncio
     async def test_status_with_untracked_file(self, git_repo):
@@ -141,9 +145,10 @@ class TestStatusEndpoint:
             r = await client.get('/api/v1/git/status')
             assert r.status_code == 200
             data = r.json()
-            assert 'untracked.txt' in data['files']
+            files_by_path = {f['path']: f['status'] for f in data['files']}
+            assert 'untracked.txt' in files_by_path
             # U for untracked (normalized from '??')
-            assert data['files']['untracked.txt'] == 'U'
+            assert files_by_path['untracked.txt'] == 'U'
 
 
 class TestDiffEndpoint:
@@ -310,3 +315,71 @@ class TestPathSecurity:
             r = await client.get('/api/v1/git/show?path=/etc/passwd')
             assert r.status_code == 400
             assert 'traversal' in r.json()['detail'].lower()
+
+
+class TestAskpassSecurity:
+    """Security tests for GIT_ASKPASS credential handling."""
+
+    def test_askpass_escapes_shell_metacharacters(self):
+        """Verify credentials with shell metacharacters are properly escaped."""
+        from boring_ui.api.modules.git.service import _create_askpass_script, _cleanup_askpass
+        import stat
+
+        path = None
+        try:
+            path = _create_askpass_script(
+                'x-access-token',
+                '$(echo INJECTED)',
+            )
+            # File should exist with 0700 permissions
+            st = os.stat(path)
+            assert st.st_mode & 0o777 == 0o700
+
+            # Read the script and verify shlex.quote() was applied
+            with open(path) as f:
+                content = f.read()
+            # shlex.quote wraps in single quotes: '$(echo INJECTED)'
+            assert "'$(echo INJECTED)'" in content
+            # The unquoted form should NOT appear
+            assert 'echo "$(echo INJECTED)"' not in content
+
+            # Actually execute the script to verify it outputs the literal
+            result = subprocess.run(
+                ['sh', path, 'Password for ...'],
+                capture_output=True, text=True,
+            )
+            assert result.stdout.strip() == '$(echo INJECTED)'
+        finally:
+            _cleanup_askpass(path)
+
+    def test_askpass_escapes_double_quotes(self):
+        """Verify double quotes in credentials don't break the script."""
+        from boring_ui.api.modules.git.service import _create_askpass_script, _cleanup_askpass
+
+        path = None
+        try:
+            path = _create_askpass_script('user', 'pass"word')
+            result = subprocess.run(
+                ['sh', path, 'Password for ...'],
+                capture_output=True, text=True,
+            )
+            assert result.stdout.strip() == 'pass"word'
+        finally:
+            _cleanup_askpass(path)
+
+    def test_sanitize_git_error_strips_credentials(self):
+        """Verify credential URLs are redacted in error messages."""
+        from boring_ui.api.modules.git.service import _sanitize_git_error
+
+        raw = "fatal: Authentication failed for 'https://x-access-token:ghs_secret123@github.com/org/repo.git'"
+        sanitized = _sanitize_git_error(raw)
+        assert 'ghs_secret123' not in sanitized
+        assert '***@' in sanitized
+        assert 'github.com' in sanitized
+
+    def test_sanitize_git_error_preserves_clean_messages(self):
+        """Verify clean error messages pass through unchanged."""
+        from boring_ui.api.modules.git.service import _sanitize_git_error
+
+        raw = "fatal: not a git repository"
+        assert _sanitize_git_error(raw) == raw
