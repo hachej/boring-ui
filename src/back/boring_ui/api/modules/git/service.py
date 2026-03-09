@@ -1,6 +1,8 @@
 """Git operations service for boring-ui API."""
+import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 from fastapi import HTTPException
@@ -64,25 +66,60 @@ class GitService:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     
-    def run_git(self, args: list[str]) -> str:
+    def run_git(self, args: list[str], credentials: dict | None = None,
+                timeout: int = 30) -> str:
         """Run git command in workspace.
-        
+
         Args:
             args: Git command arguments (without 'git' prefix)
-            
+            credentials: Optional dict with 'username' and 'password' for HTTPS auth.
+            timeout: Command timeout in seconds (default: 30).
+
         Returns:
             stdout from git command
-            
+
         Raises:
             HTTPException: If git command fails
         """
-        result = subprocess.run(
-            ['git'] + args,
-            cwd=self.config.workspace_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        env = None
+        askpass_file = None
+        try:
+            if credentials:
+                # Create a temporary GIT_ASKPASS script that returns the
+                # appropriate value based on git's prompt.
+                # Git calls GIT_ASKPASS with "Username for ..." or "Password for ...".
+                askpass_file = tempfile.NamedTemporaryFile(
+                    mode='w', suffix='.sh', delete=False,
+                )
+                username = credentials.get('username', '')
+                password = credentials.get('password', '')
+                askpass_file.write(
+                    '#!/bin/sh\n'
+                    'case "$1" in\n'
+                    f'  *sername*) echo "{username}" ;;\n'
+                    f'  *) echo "{password}" ;;\n'
+                    'esac\n'
+                )
+                askpass_file.close()
+                os.chmod(askpass_file.name, 0o700)
+                env = os.environ.copy()
+                env['GIT_ASKPASS'] = askpass_file.name
+                env['GIT_TERMINAL_PROMPT'] = '0'
+
+            result = subprocess.run(
+                ['git'] + args,
+                cwd=self.config.workspace_root,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+            )
+        finally:
+            if askpass_file:
+                try:
+                    os.unlink(askpass_file.name)
+                except OSError:
+                    pass
         if result.returncode != 0:
             raise HTTPException(
                 status_code=500,
@@ -271,12 +308,14 @@ class GitService:
         oid = self.run_git(['rev-parse', 'HEAD']).strip()
         return {'oid': oid, 'output': result.stdout.strip()}
 
-    def push(self, remote: str = 'origin', branch: str | None = None) -> dict:
+    def push(self, remote: str = 'origin', branch: str | None = None,
+             credentials: dict | None = None) -> dict:
         """Push to a remote.
 
         Args:
             remote: Remote name (default: origin).
             branch: Branch to push (default: current HEAD).
+            credentials: Optional dict with 'username' and 'password'.
         """
         _validate_git_ref(remote, 'remote')
         if branch:
@@ -284,15 +323,17 @@ class GitService:
         args = ['push', remote]
         if branch:
             args.append(branch)
-        self.run_git(args)
+        self.run_git(args, credentials=credentials, timeout=60)
         return {'pushed': True}
 
-    def pull(self, remote: str = 'origin', branch: str | None = None) -> dict:
+    def pull(self, remote: str = 'origin', branch: str | None = None,
+             credentials: dict | None = None) -> dict:
         """Pull from a remote.
 
         Args:
             remote: Remote name (default: origin).
             branch: Branch to pull.
+            credentials: Optional dict with 'username' and 'password'.
         """
         _validate_git_ref(remote, 'remote')
         if branch:
@@ -300,30 +341,62 @@ class GitService:
         args = ['pull', remote]
         if branch:
             args.append(branch)
-        self.run_git(args)
+        self.run_git(args, credentials=credentials, timeout=60)
         return {'pulled': True}
 
-    def clone_repo(self, url: str, branch: str | None = None) -> dict:
+    def clone_repo(self, url: str, branch: str | None = None,
+                   credentials: dict | None = None) -> dict:
         """Clone a repository into workspace.
 
         Args:
             url: Repository URL.
             branch: Branch to clone.
+            credentials: Optional dict with 'username' and 'password'.
         """
         _validate_git_url(url)
         if branch:
             _validate_git_ref(branch, 'branch')
-        args = ['clone', '--depth', '1']
-        if branch:
-            args.extend(['-b', branch])
-        args.extend(['--', url, str(self.config.workspace_root)])
-        # Clone runs from parent dir, not workspace_root
-        result = subprocess.run(
-            ['git'] + args,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+
+        env = None
+        askpass_file = None
+        try:
+            if credentials:
+                askpass_file = tempfile.NamedTemporaryFile(
+                    mode='w', suffix='.sh', delete=False,
+                )
+                username = credentials.get('username', '')
+                password = credentials.get('password', '')
+                askpass_file.write(
+                    '#!/bin/sh\n'
+                    'case "$1" in\n'
+                    f'  *sername*) echo "{username}" ;;\n'
+                    f'  *) echo "{password}" ;;\n'
+                    'esac\n'
+                )
+                askpass_file.close()
+                os.chmod(askpass_file.name, 0o700)
+                env = os.environ.copy()
+                env['GIT_ASKPASS'] = askpass_file.name
+                env['GIT_TERMINAL_PROMPT'] = '0'
+
+            args = ['clone', '--depth', '1']
+            if branch:
+                args.extend(['-b', branch])
+            args.extend(['--', url, str(self.config.workspace_root)])
+            # Clone runs from parent dir, not workspace_root
+            result = subprocess.run(
+                ['git'] + args,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=env,
+            )
+        finally:
+            if askpass_file:
+                try:
+                    os.unlink(askpass_file.name)
+                except OSError:
+                    pass
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=f'Git error: {result.stderr.strip()}')
         return {'cloned': True}

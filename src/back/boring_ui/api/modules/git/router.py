@@ -1,11 +1,38 @@
 """Git operation routes for boring-ui API."""
 import asyncio
+import logging
 
 from fastapi import APIRouter, Request
 
 from ...config import APIConfig
 from ...policy import enforce_delegated_policy_or_none
 from .service import GitService
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_credentials(config: APIConfig) -> dict | None:
+    """Try to resolve git credentials from the GitHub App service.
+
+    Returns credentials dict or None if GitHub App is not configured or
+    no workspace connection exists.
+    """
+    if not (config.github_app_id and config.github_app_private_key):
+        return None
+    try:
+        from ..github_auth.service import GitHubAppService
+        from ..github_auth.router import _workspace_connections
+        # Find the first connected workspace (single-workspace mode)
+        if not _workspace_connections:
+            return None
+        installation_id = next(iter(_workspace_connections.values()), None)
+        if installation_id is None:
+            return None
+        gh = GitHubAppService(config)
+        return gh.get_git_credentials(installation_id)
+    except Exception as exc:
+        logger.debug('Could not resolve GitHub credentials: %s', exc)
+        return None
 
 
 def create_git_router(config: APIConfig) -> APIRouter:
@@ -133,10 +160,12 @@ def create_git_router(config: APIConfig) -> APIRouter:
         if deny is not None:
             return deny
         body = await request.json()
+        creds = _resolve_credentials(config)
         return await asyncio.to_thread(
             service.push,
             body.get('remote', 'origin'),
             body.get('branch'),
+            creds,
         )
 
     @router.post('/pull')
@@ -150,10 +179,12 @@ def create_git_router(config: APIConfig) -> APIRouter:
         if deny is not None:
             return deny
         body = await request.json()
+        creds = _resolve_credentials(config)
         return await asyncio.to_thread(
             service.pull,
             body.get('remote', 'origin'),
             body.get('branch'),
+            creds,
         )
 
     @router.post('/clone')
@@ -171,7 +202,8 @@ def create_git_router(config: APIConfig) -> APIRouter:
         if not url:
             from fastapi import HTTPException as HE
             raise HE(status_code=400, detail='url is required')
-        return await asyncio.to_thread(service.clone_repo, url, body.get('branch'))
+        creds = _resolve_credentials(config)
+        return await asyncio.to_thread(service.clone_repo, url, body.get('branch'), creds)
 
     @router.post('/remote')
     async def add_remote(request: Request):
