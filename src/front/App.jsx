@@ -598,6 +598,7 @@ export default function App() {
   const [activeDiffFile, setActiveDiffFile] = useState(null)
   const [activeSidebarPanelId, setActiveSidebarPanelId] = useState('filetree')
   const [filetreeActivityIntent, setFiletreeActivityIntent] = useState(null)
+  const [catalogActivityIntent, setCatalogActivityIntent] = useState(null)
   const [menuUserId, setMenuUserId] = useState('')
   const [menuUserEmail, setMenuUserEmail] = useState('')
   const [userMenuAuthStatus, setUserMenuAuthStatus] = useState('unknown') // unknown | authenticated | unauthenticated | error
@@ -1185,6 +1186,13 @@ export default function App() {
         token: Date.now(),
       })
     }
+    if (panelId === 'data-catalog' && options?.mode) {
+      setCatalogActivityIntent({
+        panelId: 'data-catalog',
+        mode: options.mode,
+        token: Date.now(),
+      })
+    }
 
     const activate = () => {
       const panel = dockApi.getPanel(panelId)
@@ -1535,12 +1543,22 @@ export default function App() {
   }, [])
 
   // Keyboard shortcuts
+  const searchFiles = useCallback(() => {
+    activateSidebarPanel('filetree', { mode: 'search' })
+  }, [activateSidebarPanel])
+
+  const searchCatalog = useCallback(() => {
+    activateSidebarPanel('data-catalog', { mode: 'search' })
+  }, [activateSidebarPanel])
+
   useKeyboardShortcuts({
     toggleFiletree,
     toggleTerminal,
     toggleShell,
     closeTab,
     toggleTheme,
+    searchFiles,
+    searchCatalog,
   })
 
   // Apply collapsed state to dockview groups
@@ -2903,6 +2921,7 @@ export default function App() {
               onToggleSection: () => toggleSectionCollapse(panelId),
               activeSidebarPanelId,
               onActivateSidebarPanel: activateSidebarPanel,
+              catalogActivityIntent,
             }
           }
           return {}
@@ -3620,6 +3639,7 @@ export default function App() {
             onToggleSection: panelId ? () => toggleSectionCollapse(panelId) : undefined,
             activeSidebarPanelId,
             onActivateSidebarPanel: activateSidebarPanel,
+            catalogActivityIntent,
           })
         })
 
@@ -3895,6 +3915,7 @@ export default function App() {
     activeSidebarPanelId,
     activateSidebarPanel,
     filetreeActivityIntent,
+    catalogActivityIntent,
   ])
 
   // Track active panel to highlight in file tree and sync URL
@@ -3977,6 +3998,7 @@ export default function App() {
         onToggleSection: panelId ? () => toggleSectionCollapse(panelId) : undefined,
         activeSidebarPanelId,
         onActivateSidebarPanel: activateSidebarPanel,
+        catalogActivityIntent,
       })
     })
   }, [
@@ -4008,6 +4030,7 @@ export default function App() {
     activeSidebarPanelId,
     activateSidebarPanel,
     filetreeActivityIntent,
+    catalogActivityIntent,
   ])
 
   // Helper to focus a review panel

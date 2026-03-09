@@ -205,6 +205,7 @@ describe('DEFAULT_SHORTCUTS', () => {
     expect(DEFAULT_SHORTCUTS.toggleTerminal).toBeDefined()
     expect(DEFAULT_SHORTCUTS.toggleShell).toBeDefined()
     expect(DEFAULT_SHORTCUTS.searchFiles).toBeDefined()
+    expect(DEFAULT_SHORTCUTS.searchCatalog).toBeDefined()
     expect(DEFAULT_SHORTCUTS.toggleTheme).toBeDefined()
   })
 

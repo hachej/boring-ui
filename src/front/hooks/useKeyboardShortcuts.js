@@ -25,6 +25,7 @@ export const DEFAULT_SHORTCUTS = {
 
   // Navigation
   searchFiles: { key: 'p', modifiers: ['cmd'] },
+  searchCatalog: { key: 'k', modifiers: ['cmd'] },
   closeTab: { key: 'w', modifiers: ['cmd'] },
 
   // Theme
