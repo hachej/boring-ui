@@ -12,27 +12,33 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_credentials(config: APIConfig) -> dict | None:
-    """Try to resolve git credentials from the GitHub App service.
+    """Resolve git credentials for push/pull/clone.
 
-    Returns credentials dict or None if GitHub App is not configured or
-    no workspace connection exists.
+    Resolution order:
+    1. GitHub App installation token (if configured + workspace connected)
+    2. GIT_AUTH_TOKEN env var (PAT fallback for simple deployments)
+    3. None (git uses its own credential resolution)
     """
-    if not (config.github_app_id and config.github_app_private_key):
-        return None
-    try:
-        from ..github_auth.service import GitHubAppService
-        from ..github_auth.router import _workspace_connections
-        # Find the first connected workspace (single-workspace mode)
-        if not _workspace_connections:
-            return None
-        installation_id = next(iter(_workspace_connections.values()), None)
-        if installation_id is None:
-            return None
-        gh = GitHubAppService(config)
-        return gh.get_git_credentials(installation_id)
-    except Exception as exc:
-        logger.debug('Could not resolve GitHub credentials: %s', exc)
-        return None
+    # 1. GitHub App
+    if config.github_app_id and config.github_app_private_key:
+        try:
+            from ..github_auth.service import GitHubAppService
+            from ..github_auth.router import _workspace_connections
+            if _workspace_connections:
+                installation_id = next(iter(_workspace_connections.values()), None)
+                if installation_id is not None:
+                    gh = GitHubAppService(config)
+                    return gh.get_git_credentials(installation_id)
+        except Exception as exc:
+            logger.debug('Could not resolve GitHub App credentials: %s', exc)
+
+    # 2. PAT fallback
+    import os
+    pat = os.environ.get('GIT_AUTH_TOKEN')
+    if pat:
+        return {'username': 'x-access-token', 'password': pat}
+
+    return None
 
 
 def create_git_router(config: APIConfig) -> APIRouter:

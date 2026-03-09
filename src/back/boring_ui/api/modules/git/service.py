@@ -424,5 +424,15 @@ class GitService:
             parts = line.split()
             if len(parts) >= 2 and parts[-1] == '(fetch)' and parts[0] not in seen:
                 seen.add(parts[0])
-                remotes.append({'remote': parts[0], 'url': parts[1]})
+                remotes.append({'remote': parts[0], 'url': _sanitize_url(parts[1])})
         return {'remotes': remotes}
+
+
+def _sanitize_url(url: str) -> str:
+    """Strip embedded credentials from a URL for display."""
+    if '://' in url and '@' in url:
+        scheme_rest = url.split('://', 1)
+        if len(scheme_rest) == 2 and '@' in scheme_rest[1]:
+            host_path = scheme_rest[1].split('@', 1)[1]
+            return f'{scheme_rest[0]}://{host_path}'
+    return url

@@ -61,11 +61,12 @@ image = _base_image().env(
 #   BORING_SETTINGS_KEY
 #   BORING_UI_SESSION_SECRET
 core_secrets = modal.Secret.from_name("boring-ui-core-secrets")
+git_secrets = modal.Secret.from_name("boring-ui-git-secrets")
 
 
 @app.function(
     image=image,
-    secrets=[core_secrets],
+    secrets=[core_secrets, git_secrets],
     timeout=600,
     min_containers=1,
     memory=1024,
@@ -74,8 +75,47 @@ core_secrets = modal.Secret.from_name("boring-ui-core-secrets")
 @modal.asgi_app()
 def core():
     """Create and return the boring-ui FastAPI application with static frontend."""
+    import subprocess
+
     workspace_root = Path(os.environ.get("BORING_UI_WORKSPACE_ROOT", "/tmp/boring-ui-workspace"))
     workspace_root.mkdir(parents=True, exist_ok=True)
+
+    # Bootstrap workspace from git repo if GIT_REPO_URL is set and workspace is empty.
+    repo_url = os.environ.get("GIT_REPO_URL")
+    git_token = os.environ.get("GIT_AUTH_TOKEN")
+    if repo_url and not (workspace_root / ".git").exists():
+        # Inject credentials into URL for clone
+        clone_url = repo_url
+        if git_token and "://" in repo_url:
+            # https://github.com/... → https://x-access-token:TOKEN@github.com/...
+            clone_url = repo_url.replace("://", f"://x-access-token:{git_token}@", 1)
+        result = subprocess.run(
+            ["git", "clone", "--", clone_url, str(workspace_root)],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode == 0:
+            # Reset remote URL to the clean version (no embedded token)
+            subprocess.run(
+                ["git", "remote", "set-url", "origin", repo_url],
+                cwd=workspace_root, capture_output=True,
+            )
+            print(f"[boot] Cloned {repo_url} into workspace")
+        else:
+            print(f"[boot] Clone failed: {result.stderr[:200]}")
+    elif repo_url and (workspace_root / ".git").exists():
+        # Pull latest if already cloned
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=workspace_root, capture_output=True, text=True,
+            timeout=30, env=env,
+        )
+        print("[boot] Pulled latest into workspace")
+
+    # Configure git identity
+    subprocess.run(["git", "config", "--global", "user.name", "boring-ui"], capture_output=True)
+    subprocess.run(["git", "config", "--global", "user.email", "bot@boringdata.io"], capture_output=True)
 
     # runtime module creates app at import time, wiring create_app + static serving + SPA fallback.
     from boring_ui.runtime import app as runtime_app
