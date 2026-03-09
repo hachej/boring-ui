@@ -273,9 +273,233 @@ vault kv delete secret/agent/github-app-YOUR-APP
 
 ---
 
+## Git Sync Engine — Setup Guide
+
+### Architecture Overview
+
+```
+Frontend (browser)                    Backend (FastAPI)
+┌──────────────────────┐             ┌──────────────────────┐
+│ httpProvider.js      │ ─ HTTP ─→   │ git/router.py        │
+│   .git.init()        │             │   POST /git/init     │
+│   .git.add(paths)    │             │   POST /git/add      │
+│   .git.commit(msg)   │             │   POST /git/commit   │
+│   .git.push()        │             │   POST /git/push     │
+│   .git.pull()        │             │   POST /git/pull     │
+│   .git.clone(url)    │             │   POST /git/clone    │
+│   .git.status()      │             │   GET  /git/status   │
+│   .git.addRemote()   │             │   POST /git/remote   │
+│   .git.listRemotes() │             │   GET  /git/remotes  │
+│                      │             │                      │
+│ github provider      │             │ github_auth/         │
+│   .github.status()   │ ─ HTTP ─→   │   GET  /auth/github/ │
+│   .github.connect()  │             │     status           │
+│   .github.push/pull  │             │   POST .../connect   │
+│     (with creds)     │             │   GET  .../git-creds  │
+└──────────────────────┘             └──────────────────────┘
+                                            │
+                                            ▼
+                                     ┌──────────────┐
+                                     │ git CLI       │
+                                     │ (subprocess)  │
+                                     └──────────────┘
+```
+
+### Step 1: Start the Backend (Core Git — No GitHub)
+
+Core git operations (init, add, commit, status, diff, remotes) work without
+any GitHub configuration. This is the minimal setup:
+
+```bash
+cd boring-ui
+
+# Install backend
+pip3 install -e . --break-system-packages
+
+# Start (git features are always enabled)
+python3 -c "
+from boring_ui.api.app import create_app
+import uvicorn
+app = create_app()
+uvicorn.run(app, host='0.0.0.0', port=8000)
+"
+```
+
+Verify:
+```bash
+curl http://localhost:8000/health | python3 -m json.tool
+# Should show: "git": true in features
+```
+
+### Step 2: Run the Git Smoke Test
+
+```bash
+python3 tests/smoke/smoke_git_sync.py --base-url http://localhost:8000
+```
+
+This tests: health check, git init, file write, git add, commit, status,
+nothing-to-commit guard, remote add/list/replace, and security validations.
+
+### Step 3: Enable GitHub App Integration (Optional)
+
+GitHub App auth is **opt-in**. It only activates when both `GITHUB_APP_ID`
+and `GITHUB_APP_PRIVATE_KEY` environment variables are set. When disabled:
+
+- Core git operations work normally (init, add, commit, status, diff)
+- Push/pull work with any credentials the user provides manually
+- The `github` feature flag is `false` in `/api/capabilities`
+- GitHub auth endpoints return 503 ("GitHub App not configured")
+
+To enable, follow the GitHub App creation steps above, then:
+
+```bash
+# From Vault (if credentials are stored there)
+export GITHUB_APP_ID=$(vault kv get -field=app_id secret/agent/github-app-boring-ui)
+export GITHUB_APP_CLIENT_ID=$(vault kv get -field=client_id secret/agent/github-app-boring-ui)
+export GITHUB_APP_CLIENT_SECRET=$(vault kv get -field=client_secret secret/agent/github-app-boring-ui)
+export GITHUB_APP_PRIVATE_KEY=$(vault kv get -field=private_key secret/agent/github-app-boring-ui)
+
+# Or set directly
+export GITHUB_APP_ID="12345"
+export GITHUB_APP_CLIENT_ID="Iv1.abc123"
+export GITHUB_APP_CLIENT_SECRET="your-secret"
+export GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+...
+-----END RSA PRIVATE KEY-----"
+
+# Start backend — GitHub auth endpoints are now active
+python3 -c "
+from boring_ui.api.app import create_app
+import uvicorn
+app = create_app()
+uvicorn.run(app, host='0.0.0.0', port=8000)
+"
+```
+
+Verify:
+```bash
+curl http://localhost:8000/health | python3 -m json.tool
+# Should show: "github": true in features
+
+curl http://localhost:8000/api/v1/auth/github/status
+# Should show: {"configured": true, "connected": false}
+
+# Run smoke test with GitHub checks
+python3 tests/smoke/smoke_git_sync.py --base-url http://localhost:8000 --with-github
+```
+
+### Step 4: Child App Setup
+
+Each child app (boring-sandbox, boring-macro, etc.) can have its own
+GitHub App or share the parent's. To create a new app for a child service:
+
+1. Run the manifest flow (see Quick Start above) with the child's name
+2. Store credentials in Vault at `secret/agent/github-app-<child-name>`
+3. Set the 4 env vars in the child's deployment config
+4. The feature activates automatically — no code changes needed
+
+---
+
+## API Reference
+
+### Core Git Endpoints (Always Available)
+
+| Endpoint | Method | Body | Description |
+|---|---|---|---|
+| `/api/v1/git/status` | GET | — | File status (is_repo, files array) |
+| `/api/v1/git/diff` | GET | `?path=file.txt` | Diff for a file |
+| `/api/v1/git/show` | GET | `?path=file.txt` | Show file at HEAD |
+| `/api/v1/git/init` | POST | — | Initialize git repo |
+| `/api/v1/git/add` | POST | `{"paths": ["file.txt"]}` | Stage files (null = add all) |
+| `/api/v1/git/commit` | POST | `{"message": "...", "author": {...}}` | Commit staged changes |
+| `/api/v1/git/push` | POST | `{"remote": "origin", "branch": "main"}` | Push to remote |
+| `/api/v1/git/pull` | POST | `{"remote": "origin", "branch": "main"}` | Pull from remote |
+| `/api/v1/git/clone` | POST | `{"url": "https://...", "branch": "main"}` | Clone into workspace |
+| `/api/v1/git/remote` | POST | `{"name": "origin", "url": "https://..."}` | Add/replace remote |
+| `/api/v1/git/remotes` | GET | — | List configured remotes |
+
+### GitHub Auth Endpoints (Requires GitHub App Config)
+
+| Endpoint | Method | Body/Params | Description |
+|---|---|---|---|
+| `/api/v1/auth/github/status` | GET | `?workspace_id=ws-1` | Connection status |
+| `/api/v1/auth/github/authorize` | GET | — | Get GitHub OAuth URL |
+| `/api/v1/auth/github/callback` | GET | `?code=...&state=...` | OAuth callback |
+| `/api/v1/auth/github/connect` | POST | `{"workspace_id": "...", "installation_id": 123}` | Link workspace |
+| `/api/v1/auth/github/disconnect` | POST | `{"workspace_id": "..."}` | Unlink workspace |
+| `/api/v1/auth/github/installations` | GET | — | List user's installations |
+| `/api/v1/auth/github/repos` | GET | `?installation_id=123` | List repos for installation |
+| `/api/v1/auth/github/git-credentials` | GET | `?workspace_id=ws-1` | Get git credentials |
+
+### Security Validations
+
+- **Path traversal**: All paths validated to stay within workspace root
+- **Flag injection**: Remote names, branch names reject leading dashes
+- **URL validation**: Only `http://`, `https://`, `ssh://`, `git://`, and SCP-style URLs allowed
+- **`--` separators**: All subprocess git commands use `--` to prevent argument injection
+
+---
+
+## Testing
+
+### Unit Tests
+
+```bash
+cd boring-ui
+python3 -m pytest tests/unit/test_git_write_routes.py tests/unit/test_github_auth_routes.py -v
+```
+
+### Smoke Test (Against Running Backend)
+
+```bash
+# Core git only
+python3 tests/smoke/smoke_git_sync.py
+
+# With GitHub auth checks
+python3 tests/smoke/smoke_git_sync.py --with-github
+
+# Custom backend URL
+python3 tests/smoke/smoke_git_sync.py --base-url http://my-server:8000
+```
+
+### Frontend Integration
+
+The `httpProvider.js` data provider exposes all git operations:
+
+```javascript
+import { createHttpProvider } from './providers/data/httpProvider'
+
+const provider = createHttpProvider()
+
+// Core git
+await provider.git.init()
+await provider.git.status()
+await provider.git.add(['file.txt'])
+const { oid } = await provider.git.commit('my message', { author: { name: 'Me', email: 'me@x.com' } })
+
+// Remotes
+await provider.git.addRemote('origin', 'https://github.com/org/repo.git')
+const remotes = await provider.git.listRemotes()
+
+// Push/pull (requires credentials via GitHub App or manual config)
+await provider.git.push({ remote: 'origin', branch: 'main' })
+await provider.git.pull({ remote: 'origin', branch: 'main' })
+
+// GitHub auth (when configured)
+const status = await provider.github.status('workspace-id')
+if (status.configured && !status.connected) {
+  const { url } = await provider.github.authorize()
+  // redirect user to url for OAuth
+}
+```
+
+---
+
 ## For boring-ui Specifically
 
 Vault path: `secret/agent/github-app-boring-ui`
+App name: `boring-ui-app` (slug: `boring-ui-app`)
+App ID: `3045223`
 
 Backend env vars:
 ```bash
@@ -284,11 +508,3 @@ export GITHUB_APP_CLIENT_ID=$(vault kv get -field=client_id secret/agent/github-
 export GITHUB_APP_CLIENT_SECRET=$(vault kv get -field=client_secret secret/agent/github-app-boring-ui)
 export GITHUB_APP_PRIVATE_KEY=$(vault kv get -field=private_key secret/agent/github-app-boring-ui)
 ```
-
-Backend endpoints to implement:
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/api/v1/auth/github/authorize` | GET | Redirect to GitHub OAuth |
-| `/api/v1/auth/github/callback` | GET | Exchange code, store installation |
-| `/api/v1/auth/github/status` | GET | Check connection status |
-| `/api/v1/auth/github/disconnect` | POST | Remove stored tokens |
