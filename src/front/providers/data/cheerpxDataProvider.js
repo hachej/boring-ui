@@ -249,6 +249,101 @@ export const createCheerpXDataProvider = (opts = {}) => {
         if (result.status !== 0) return ''
         return String(result.output || '')
       },
+
+      init: async (options = {}) => {
+        throwIfAborted(options.signal)
+        const result = await runtime.exec(`/usr/bin/git -C ${shellQuote(workspaceRoot)} init`)
+        if (result.status !== 0) throw new Error(result.output || 'git init failed')
+      },
+
+      add: async (paths, options = {}) => {
+        throwIfAborted(options.signal)
+        if (!paths || paths.length === 0) {
+          const result = await runtime.exec(`/usr/bin/git -C ${shellQuote(workspaceRoot)} add -A`)
+          if (result.status !== 0) throw new Error(result.output || 'git add failed')
+          return
+        }
+        const quoted = paths.map((p) => shellQuote(normalizeFilePath(p))).join(' ')
+        const result = await runtime.exec(`/usr/bin/git -C ${shellQuote(workspaceRoot)} add -- ${quoted}`)
+        if (result.status !== 0) throw new Error(result.output || 'git add failed')
+      },
+
+      commit: async (message, options = {}) => {
+        throwIfAborted(options.signal)
+        const author = options.author || { name: 'Boring UI', email: 'auto@boring.ui' }
+        // Quote the entire key=value to prevent shell injection via author fields
+        const cmd = [
+          `/usr/bin/git -C ${shellQuote(workspaceRoot)}`,
+          `-c ${shellQuote(`user.name=${author.name}`)}`,
+          `-c ${shellQuote(`user.email=${author.email}`)}`,
+          `commit -m ${shellQuote(message)}`,
+        ].join(' ')
+        const result = await runtime.exec(cmd)
+        if (result.status !== 0) throw new Error(result.output || 'git commit failed')
+        // Get OID reliably via rev-parse instead of parsing commit output
+        const oidResult = await runtime.exec(`/usr/bin/git -C ${shellQuote(workspaceRoot)} rev-parse HEAD`)
+        return { oid: String(oidResult.output || '').trim() }
+      },
+
+      push: async (options = {}) => {
+        throwIfAborted(options.signal)
+        const remote = options.remote || 'origin'
+        if (remote.startsWith('-')) throw new Error('Invalid remote name: cannot start with a dash')
+        if (options.branch?.startsWith('-')) throw new Error('Invalid branch name: cannot start with a dash')
+        const branchArg = options.branch ? ` ${shellQuote(options.branch)}` : ''
+        const result = await runtime.exec(
+          `/usr/bin/git -C ${shellQuote(workspaceRoot)} push -- ${shellQuote(remote)}${branchArg}`,
+        )
+        if (result.status !== 0) throw new Error(result.output || 'git push failed')
+      },
+
+      pull: async (options = {}) => {
+        throwIfAborted(options.signal)
+        const remote = options.remote || 'origin'
+        if (remote.startsWith('-')) throw new Error('Invalid remote name: cannot start with a dash')
+        if (options.branch?.startsWith('-')) throw new Error('Invalid branch name: cannot start with a dash')
+        const branchArg = options.branch ? ` ${shellQuote(options.branch)}` : ''
+        const result = await runtime.exec(
+          `/usr/bin/git -C ${shellQuote(workspaceRoot)} pull -- ${shellQuote(remote)}${branchArg}`,
+        )
+        if (result.status !== 0) throw new Error(result.output || 'git pull failed')
+      },
+
+      clone: async (url, options = {}) => {
+        throwIfAborted(options.signal)
+        const branchArg = options.branch ? `-b ${shellQuote(options.branch)}` : ''
+        const result = await runtime.exec(
+          `/usr/bin/git clone --depth 1 ${branchArg} -- ${shellQuote(url)} ${shellQuote(workspaceRoot)}`,
+        )
+        if (result.status !== 0) throw new Error(result.output || 'git clone failed')
+      },
+
+      addRemote: async (name, url, options = {}) => {
+        throwIfAborted(options.signal)
+        // Remove first (ignore failure), then add
+        await runtime.exec(`/usr/bin/git -C ${shellQuote(workspaceRoot)} remote remove -- ${shellQuote(name)}`)
+        const result = await runtime.exec(
+          `/usr/bin/git -C ${shellQuote(workspaceRoot)} remote add -- ${shellQuote(name)} ${shellQuote(url)}`,
+        )
+        if (result.status !== 0) throw new Error(result.output || 'git remote add failed')
+      },
+
+      listRemotes: async (options = {}) => {
+        throwIfAborted(options.signal)
+        if (!(await isGitRepo(runtime, workspaceRoot, options.signal))) return []
+        const result = await runtime.exec(`/usr/bin/git -C ${shellQuote(workspaceRoot)} remote -v`)
+        if (result.status !== 0) return []
+        const remotes = []
+        const seen = new Set()
+        for (const line of String(result.output || '').split(/\r?\n/)) {
+          const match = line.match(/^(\S+)\s+(\S+)\s+\(fetch\)/)
+          if (match && !seen.has(match[1])) {
+            seen.add(match[1])
+            remotes.push({ remote: match[1], url: match[2] })
+          }
+        }
+        return remotes
+      },
     },
 
     runCommand: async (command, options = {}) => {

@@ -44,6 +44,11 @@ const normalizeStatus = (head, workdir, stage) => {
 }
 
 /**
+ * Default author used for auto-commits when none is configured.
+ */
+const DEFAULT_AUTHOR = { name: 'Boring UI', email: 'auto@boring.ui' }
+
+/**
  * Create an isomorphic-git-backed GitProvider.
  *
  * @param {{ fs?: any, pfs?: any, dir?: string }} [opts]
@@ -65,6 +70,10 @@ export const createIsomorphicGitProvider = (opts = {}) => {
   }
 
   return {
+    // -----------------------------------------------------------------------
+    // Read operations
+    // -----------------------------------------------------------------------
+
     status: async (statusOpts = {}) => {
       throwIfAborted(statusOpts.signal)
 
@@ -125,6 +134,95 @@ export const createIsomorphicGitProvider = (opts = {}) => {
       } catch {
         return ''
       }
+    },
+
+    // -----------------------------------------------------------------------
+    // Write operations
+    // -----------------------------------------------------------------------
+
+    init: async (initOpts = {}) => {
+      throwIfAborted(initOpts.signal)
+      await git.init(gitOpts)
+    },
+
+    add: async (paths, addOpts = {}) => {
+      throwIfAborted(addOpts.signal)
+      if (!paths || paths.length === 0) return
+      for (const filepath of paths) {
+        throwIfAborted(addOpts.signal)
+        const rel = String(filepath).replace(/^\//, '')
+        // Check if file was deleted — use remove instead of add
+        try {
+          await fsPromises.stat(joinPath(dir, rel))
+          await git.add({ ...gitOpts, filepath: rel })
+        } catch {
+          await git.remove({ ...gitOpts, filepath: rel })
+        }
+      }
+    },
+
+    commit: async (message, commitOpts = {}) => {
+      throwIfAborted(commitOpts.signal)
+      const author = commitOpts.author || DEFAULT_AUTHOR
+      const oid = await git.commit({ ...gitOpts, message, author })
+      return { oid }
+    },
+
+    push: async (pushOpts = {}) => {
+      throwIfAborted(pushOpts.signal)
+      const pushArgs = {
+        ...gitOpts,
+        remote: pushOpts.remote || 'origin',
+        corsProxy: pushOpts.corsProxy,
+        onAuth: pushOpts.onAuth,
+      }
+      if (pushOpts.branch) pushArgs.ref = pushOpts.branch
+      await git.push(pushArgs)
+    },
+
+    pull: async (pullOpts = {}) => {
+      throwIfAborted(pullOpts.signal)
+      const author = pullOpts.author || DEFAULT_AUTHOR
+      const pullArgs = {
+        ...gitOpts,
+        remote: pullOpts.remote || 'origin',
+        corsProxy: pullOpts.corsProxy,
+        onAuth: pullOpts.onAuth,
+        author,
+        singleBranch: true,
+      }
+      if (pullOpts.branch) pullArgs.ref = pullOpts.branch
+      await git.pull(pullArgs)
+    },
+
+    clone: async (url, cloneOpts = {}) => {
+      throwIfAborted(cloneOpts.signal)
+      await git.clone({
+        ...gitOpts,
+        url,
+        ref: cloneOpts.branch,
+        singleBranch: true,
+        depth: 1,
+        corsProxy: cloneOpts.corsProxy,
+        onAuth: cloneOpts.onAuth,
+      })
+    },
+
+    addRemote: async (name, url, remoteOpts = {}) => {
+      throwIfAborted(remoteOpts.signal)
+      // Remove existing remote with same name (if any) before adding
+      try {
+        await git.deleteRemote({ ...gitOpts, remote: name })
+      } catch {
+        // ok — remote didn't exist
+      }
+      await git.addRemote({ ...gitOpts, remote: name, url })
+    },
+
+    listRemotes: async (remoteOpts = {}) => {
+      throwIfAborted(remoteOpts.signal)
+      if (!(await isGitRepo())) return []
+      return git.listRemotes(gitOpts)
     },
   }
 }

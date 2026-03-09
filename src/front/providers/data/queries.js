@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDataProvider } from './DataContext'
+import { performSyncCycle } from './autoSync'
 
 // ---------------------------------------------------------------------------
 // Query-key factory — single source of truth for all cache keys
@@ -209,5 +210,143 @@ export const useGitShow = (path, options = {}) => {
     queryFn: ({ signal }) => provider.git.show(path, { signal }),
     enabled: path != null,
     ...options,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Git mutation hooks
+// ---------------------------------------------------------------------------
+
+/**
+ * Initialize a git repository.
+ */
+export const useGitInit = () => {
+  const provider = useDataProvider()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => provider.git.init(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.all })
+    },
+  })
+}
+
+/**
+ * Stage files.
+ */
+export const useGitAdd = () => {
+  const provider = useDataProvider()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ paths }) => provider.git.add(paths),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.status() })
+    },
+  })
+}
+
+/**
+ * Create a commit.
+ */
+export const useGitCommit = () => {
+  const provider = useDataProvider()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ message, author }) => provider.git.commit(message, { author }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.git.all })
+    },
+  })
+}
+
+/**
+ * Push to remote.
+ */
+export const useGitPush = () => {
+  const provider = useDataProvider()
+  return useMutation({
+    mutationFn: (opts) => provider.git.push(opts),
+  })
+}
+
+/**
+ * Pull from remote.
+ */
+export const useGitPull = () => {
+  const provider = useDataProvider()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (opts) => provider.git.pull(opts),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.files.all })
+      qc.invalidateQueries({ queryKey: queryKeys.git.all })
+    },
+  })
+}
+
+/**
+ * Clone a repository.
+ */
+export const useGitClone = () => {
+  const provider = useDataProvider()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ url, ...opts }) => provider.git.clone(url, opts),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.files.all })
+      qc.invalidateQueries({ queryKey: queryKeys.git.all })
+    },
+  })
+}
+
+/**
+ * Add or update a remote.
+ */
+export const useGitAddRemote = () => {
+  const provider = useDataProvider()
+  return useMutation({
+    mutationFn: ({ name, url }) => provider.git.addRemote(name, url),
+  })
+}
+
+/**
+ * List configured remotes.
+ */
+export const useGitRemotes = (options = {}) => {
+  const provider = useDataProvider()
+  return useQuery({
+    queryKey: [...queryKeys.git.all, 'remotes'],
+    queryFn: ({ signal }) => provider.git.listRemotes({ signal }),
+    enabled: typeof provider.git.listRemotes === 'function',
+    ...options,
+  })
+}
+
+/**
+ * One-shot sync: add all dirty → commit → pull → push.
+ * Uses the shared performSyncCycle from autoSync to avoid duplicated logic.
+ */
+export const useGitSync = () => {
+  const provider = useDataProvider()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ message, author, remoteOpts, pushEnabled = true } = {}) => {
+      const result = await performSyncCycle(provider.git, {
+        message: message || undefined,
+        author,
+        remoteOpts,
+        pushEnabled,
+        pullBeforePush: true,
+        autoInit: false,
+      })
+      if (result.pushError) {
+        throw new Error(result.pushError)
+      }
+      return result
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.files.all })
+      qc.invalidateQueries({ queryKey: queryKeys.git.all })
+    },
   })
 }

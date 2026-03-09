@@ -173,6 +173,20 @@ class APIConfig:
         default_factory=lambda: os.environ.get('BORING_SETTINGS_KEY')
     )
 
+    # GitHub App (for git sync OAuth)
+    github_app_id: str | None = field(
+        default_factory=lambda: os.environ.get('GITHUB_APP_ID')
+    )
+    github_app_client_id: str | None = field(
+        default_factory=lambda: os.environ.get('GITHUB_APP_CLIENT_ID')
+    )
+    github_app_client_secret: str | None = field(
+        default_factory=lambda: os.environ.get('GITHUB_APP_CLIENT_SECRET')
+    )
+    github_app_private_key: str | None = field(
+        default_factory=lambda: os.environ.get('GITHUB_APP_PRIVATE_KEY')
+    )
+
     def __post_init__(self) -> None:
         # Test harness hook: allow overriding the PTY provider commands without
         # changing default prod behavior.

@@ -74,4 +74,133 @@ def create_git_router(config: APIConfig) -> APIRouter:
             return deny
         return await asyncio.to_thread(service.get_show, path)
 
+    # -------------------------------------------------------------------
+    # Write operations
+    # -------------------------------------------------------------------
+
+    @router.post('/init')
+    async def init_repo(request: Request):
+        """Initialize a git repository."""
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.git.write"},
+            operation="workspace-core.git.init",
+        )
+        if deny is not None:
+            return deny
+        return await asyncio.to_thread(service.init_repo)
+
+    @router.post('/add')
+    async def add_files(request: Request):
+        """Stage files for commit."""
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.git.write"},
+            operation="workspace-core.git.add",
+        )
+        if deny is not None:
+            return deny
+        body = await request.json()
+        paths = body.get('paths')
+        return await asyncio.to_thread(service.add_files, paths)
+
+    @router.post('/commit')
+    async def commit(request: Request):
+        """Create a commit."""
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.git.write"},
+            operation="workspace-core.git.commit",
+        )
+        if deny is not None:
+            return deny
+        body = await request.json()
+        message = body.get('message', 'auto commit')
+        author = body.get('author') or {}
+        return await asyncio.to_thread(
+            service.commit, message,
+            author.get('name'), author.get('email'),
+        )
+
+    @router.post('/push')
+    async def push(request: Request):
+        """Push to remote."""
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.git.write"},
+            operation="workspace-core.git.push",
+        )
+        if deny is not None:
+            return deny
+        body = await request.json()
+        return await asyncio.to_thread(
+            service.push,
+            body.get('remote', 'origin'),
+            body.get('branch'),
+        )
+
+    @router.post('/pull')
+    async def pull(request: Request):
+        """Pull from remote."""
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.git.write"},
+            operation="workspace-core.git.pull",
+        )
+        if deny is not None:
+            return deny
+        body = await request.json()
+        return await asyncio.to_thread(
+            service.pull,
+            body.get('remote', 'origin'),
+            body.get('branch'),
+        )
+
+    @router.post('/clone')
+    async def clone_repo(request: Request):
+        """Clone a repository."""
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.git.write"},
+            operation="workspace-core.git.clone",
+        )
+        if deny is not None:
+            return deny
+        body = await request.json()
+        url = body.get('url')
+        if not url:
+            from fastapi import HTTPException as HE
+            raise HE(status_code=400, detail='url is required')
+        return await asyncio.to_thread(service.clone_repo, url, body.get('branch'))
+
+    @router.post('/remote')
+    async def add_remote(request: Request):
+        """Add or update a remote."""
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.git.write"},
+            operation="workspace-core.git.remote.add",
+        )
+        if deny is not None:
+            return deny
+        body = await request.json()
+        name = body.get('name')
+        url = body.get('url')
+        if not name or not url:
+            from fastapi import HTTPException as HE
+            raise HE(status_code=400, detail='name and url are required')
+        return await asyncio.to_thread(service.add_remote, name, url)
+
+    @router.get('/remotes')
+    async def list_remotes(request: Request):
+        """List configured remotes."""
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.git.read"},
+            operation="workspace-core.git.remotes",
+        )
+        if deny is not None:
+            return deny
+        return await asyncio.to_thread(service.list_remotes)
+
     return router

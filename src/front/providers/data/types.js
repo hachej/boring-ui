@@ -75,8 +75,37 @@
  */
 
 /**
- * Git provider — query repository state.
+ * A git remote entry.
  *
+ * @typedef {Object} GitRemote
+ * @property {string} remote - Remote name (e.g. 'origin').
+ * @property {string} url    - Remote URL.
+ */
+
+/**
+ * Git author identity.
+ *
+ * @typedef {Object} GitAuthor
+ * @property {string} name  - Author name.
+ * @property {string} email - Author email.
+ */
+
+/**
+ * Options for git push/pull/clone that may need auth and a CORS proxy.
+ *
+ * @typedef {Object} GitRemoteOpts
+ * @property {string} [remote]    - Remote name (default: 'origin').
+ * @property {string} [branch]    - Branch name.
+ * @property {string} [url]       - Remote URL (for clone/addRemote).
+ * @property {string} [corsProxy] - CORS proxy URL (browser backends only).
+ * @property {() => { username: string, password: string }} [onAuth] - Auth callback.
+ * @property {AbortSignal} [signal]
+ */
+
+/**
+ * Git provider — query and mutate repository state.
+ *
+ * Read operations (required):
  * @typedef {Object} GitProvider
  * @property {(opts?: { signal?: AbortSignal }) => Promise<GitStatus>} status
  *   Get working-tree status.
@@ -84,6 +113,24 @@
  *   Get diff for a specific file.
  * @property {(path: string, opts?: { signal?: AbortSignal }) => Promise<string>} show
  *   Show HEAD version of a file.
+ *
+ * Write operations (optional — present when backend supports git mutations):
+ * @property {(opts?: { signal?: AbortSignal }) => Promise<void>} [init]
+ *   Initialize a new git repository.
+ * @property {(paths: string[], opts?: { signal?: AbortSignal }) => Promise<void>} [add]
+ *   Stage files.
+ * @property {(message: string, opts?: { author?: GitAuthor, signal?: AbortSignal }) => Promise<{ oid: string }>} [commit]
+ *   Create a commit with staged changes.
+ * @property {(opts?: GitRemoteOpts) => Promise<void>} [push]
+ *   Push to remote.
+ * @property {(opts?: GitRemoteOpts & { author?: GitAuthor }) => Promise<void>} [pull]
+ *   Pull from remote.
+ * @property {(url: string, opts?: GitRemoteOpts) => Promise<void>} [clone]
+ *   Clone a remote repository.
+ * @property {(name: string, url: string, opts?: { signal?: AbortSignal }) => Promise<void>} [addRemote]
+ *   Add or update a remote.
+ * @property {(opts?: { signal?: AbortSignal }) => Promise<GitRemote[]>} [listRemotes]
+ *   List configured remotes.
  */
 
 /**

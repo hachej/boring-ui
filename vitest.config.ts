@@ -8,7 +8,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/front/__tests__/setup.ts'],
     include: ['src/front/**/*.{test,spec}.{js,jsx,ts,tsx}'],
-    exclude: ['src/front/__tests__/e2e/**'],
+    exclude: ['src/front/__tests__/e2e/**', 'src/front/**/*.integration.test.*'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

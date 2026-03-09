@@ -1,9 +1,35 @@
 """Git operations service for boring-ui API."""
+import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 from fastapi import HTTPException
 
 from ...config import APIConfig
+
+_ALLOWED_CLONE_SCHEMES = {'http', 'https', 'git', 'ssh'}
+_SAFE_NAME_RE = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9._\-/]*$')
+# scp-style: user@host:path (no scheme, colon without //)
+_SCP_STYLE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._\-]*@[A-Za-z0-9][A-Za-z0-9._\-]*:.+$')
+
+
+def _validate_git_ref(value: str, label: str = 'value') -> None:
+    """Reject values that could be interpreted as git flags."""
+    if not value or not _SAFE_NAME_RE.match(value):
+        raise HTTPException(status_code=400, detail=f'Invalid {label}: {value!r}')
+
+
+def _validate_git_url(url: str) -> None:
+    """Validate a git remote URL (scheme-based or scp-style)."""
+    if _SCP_STYLE_RE.match(url):
+        return  # git@github.com:user/repo.git
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in _ALLOWED_CLONE_SCHEMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f'Invalid git URL scheme: {parsed.scheme!r}. '
+                   f'Allowed: {", ".join(sorted(_ALLOWED_CLONE_SCHEMES))} or scp-style',
+        )
 
 
 class GitService:
@@ -80,10 +106,10 @@ class GitService:
         """Get git repository status.
 
         Returns:
-            dict with is_repo (bool) and files (dict of path -> normalized status)
+            dict with is_repo (bool) and files (list of {path, status} dicts)
         """
         if not self.is_git_repo():
-            return {'is_repo': False, 'files': []}
+            return {'is_repo': False, 'available': True, 'files': []}
 
         # Get status (porcelain v1 format for stable parsing)
         status = self.run_git(['status', '--porcelain'])
@@ -154,7 +180,7 @@ class GitService:
         return {
             'is_repo': True,
             'available': True,  # Compatibility with frontend
-            'files': files,
+            'files': [{'path': p, 'status': s} for p, s in files.items()],
         }
     
     def get_diff(self, path: str) -> dict:
@@ -177,17 +203,153 @@ class GitService:
     
     def get_show(self, path: str) -> dict:
         """Get file contents at HEAD.
-        
+
         Args:
             path: File path relative to workspace root
-            
+
         Returns:
             dict with content at HEAD (or null if not tracked)
         """
         rel_path = self.validate_and_relativize(path)
-        
+
         try:
             content = self.run_git(['show', f'HEAD:{rel_path}'])
             return {'content': content, 'path': path}
         except HTTPException:
             return {'content': None, 'path': path, 'error': 'Not in HEAD'}
+
+    # -------------------------------------------------------------------
+    # Write operations
+    # -------------------------------------------------------------------
+
+    def init_repo(self) -> dict:
+        """Initialize a git repository in the workspace."""
+        self.run_git(['init'])
+        return {'initialized': True}
+
+    def add_files(self, paths: list[str] | None = None) -> dict:
+        """Stage files for commit.
+
+        Args:
+            paths: Specific file paths to stage. If None, stages all.
+                   If empty list, returns without staging.
+        """
+        if paths is None:
+            self.run_git(['add', '-A'])
+        elif len(paths) == 0:
+            return {'staged': False}
+        else:
+            validated = [str(self.validate_and_relativize(p)) for p in paths]
+            self.run_git(['add', '--'] + validated)
+        return {'staged': True}
+
+    def commit(self, message: str, author_name: str | None = None,
+               author_email: str | None = None) -> dict:
+        """Create a commit with staged changes.
+
+        Args:
+            message: Commit message.
+            author_name: Optional author name override.
+            author_email: Optional author email override.
+        """
+        args = ['commit', '-m', message]
+        if author_name and author_email:
+            args.extend(['--author', f'{author_name} <{author_email}>'])
+        result = subprocess.run(
+            ['git'] + args,
+            cwd=self.config.workspace_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            msg = (result.stderr or result.stdout or '').strip()
+            # "nothing to commit" is a client error, not a server error
+            if 'nothing to commit' in msg.lower():
+                raise HTTPException(status_code=400, detail=f'Git error: {msg}')
+            raise HTTPException(status_code=500, detail=f'Git error: {msg}')
+        oid = self.run_git(['rev-parse', 'HEAD']).strip()
+        return {'oid': oid, 'output': result.stdout.strip()}
+
+    def push(self, remote: str = 'origin', branch: str | None = None) -> dict:
+        """Push to a remote.
+
+        Args:
+            remote: Remote name (default: origin).
+            branch: Branch to push (default: current HEAD).
+        """
+        _validate_git_ref(remote, 'remote')
+        if branch:
+            _validate_git_ref(branch, 'branch')
+        args = ['push', remote]
+        if branch:
+            args.append(branch)
+        self.run_git(args)
+        return {'pushed': True}
+
+    def pull(self, remote: str = 'origin', branch: str | None = None) -> dict:
+        """Pull from a remote.
+
+        Args:
+            remote: Remote name (default: origin).
+            branch: Branch to pull.
+        """
+        _validate_git_ref(remote, 'remote')
+        if branch:
+            _validate_git_ref(branch, 'branch')
+        args = ['pull', remote]
+        if branch:
+            args.append(branch)
+        self.run_git(args)
+        return {'pulled': True}
+
+    def clone_repo(self, url: str, branch: str | None = None) -> dict:
+        """Clone a repository into workspace.
+
+        Args:
+            url: Repository URL.
+            branch: Branch to clone.
+        """
+        _validate_git_url(url)
+        if branch:
+            _validate_git_ref(branch, 'branch')
+        args = ['clone', '--depth', '1']
+        if branch:
+            args.extend(['-b', branch])
+        args.extend(['--', url, str(self.config.workspace_root)])
+        # Clone runs from parent dir, not workspace_root
+        result = subprocess.run(
+            ['git'] + args,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f'Git error: {result.stderr.strip()}')
+        return {'cloned': True}
+
+    def add_remote(self, name: str, url: str) -> dict:
+        """Add or update a remote."""
+        _validate_git_ref(name, 'remote name')
+        _validate_git_url(url)
+        # Remove existing first (ignore failure)
+        try:
+            self.run_git(['remote', 'remove', '--', name])
+        except HTTPException:
+            pass
+        self.run_git(['remote', 'add', '--', name, url])
+        return {'added': True}
+
+    def list_remotes(self) -> dict:
+        """List configured remotes."""
+        if not self.is_git_repo():
+            return {'remotes': []}
+        output = self.run_git(['remote', '-v'])
+        remotes = []
+        seen = set()
+        for line in output.strip().split('\n'):
+            parts = line.split()
+            if len(parts) >= 2 and parts[-1] == '(fetch)' and parts[0] not in seen:
+                seen.add(parts[0])
+                remotes.append({'remote': parts[0], 'url': parts[1]})
+        return {'remotes': remotes}

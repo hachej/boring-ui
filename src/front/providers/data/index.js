@@ -32,7 +32,19 @@ export {
   useGitStatus,
   useGitDiff,
   useGitShow,
+  useGitInit,
+  useGitAdd,
+  useGitCommit,
+  useGitPush,
+  useGitPull,
+  useGitClone,
+  useGitAddRemote,
+  useGitRemotes,
+  useGitSync,
 } from './queries'
+
+// Auto-sync engine
+export { createAutoSyncEngine, performSyncCycle } from './autoSync'
 
 // Provider factories
 export { createHttpProvider } from './httpProvider'

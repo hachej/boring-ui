@@ -26,6 +26,14 @@ const API = {
     status: '/api/v1/git/status',
     diff: '/api/v1/git/diff',
     show: '/api/v1/git/show',
+    init: '/api/v1/git/init',
+    add: '/api/v1/git/add',
+    commit: '/api/v1/git/commit',
+    push: '/api/v1/git/push',
+    pull: '/api/v1/git/pull',
+    clone: '/api/v1/git/clone',
+    remote: '/api/v1/git/remote',
+    remotes: '/api/v1/git/remotes',
   },
 }
 
@@ -78,6 +86,41 @@ const sendJson = async (method, path, query, body, opts = {}) => {
  * @returns {import('./types').DataProvider}
  */
 export const createHttpProvider = () => ({
+  github: {
+    status: (workspaceId, opts) =>
+      fetchJson('/api/v1/auth/github/status', { workspace_id: workspaceId }, opts),
+
+    authorize: () =>
+      fetchJson('/api/v1/auth/github/authorize'),
+
+    callback: (code, state, opts) =>
+      fetchJson('/api/v1/auth/github/callback', { code, state }, opts),
+
+    connect: (workspaceId, installationId, opts) =>
+      sendJson('POST', '/api/v1/auth/github/connect', undefined, {
+        workspace_id: workspaceId,
+        installation_id: installationId,
+      }, opts),
+
+    disconnect: (workspaceId, opts) =>
+      sendJson('POST', '/api/v1/auth/github/disconnect', undefined, {
+        workspace_id: workspaceId,
+      }, opts),
+
+    installations: (opts) =>
+      fetchJson('/api/v1/auth/github/installations', undefined, opts),
+
+    repos: (installationId, opts) =>
+      fetchJson('/api/v1/auth/github/repos', { installation_id: installationId }, opts),
+
+    gitCredentials: async (workspaceId, opts) => {
+      const data = await fetchJson('/api/v1/auth/github/git-credentials', {
+        workspace_id: workspaceId,
+      }, opts)
+      return { username: data?.username, password: data?.password }
+    },
+  },
+
   files: {
     list: async (dir, opts) => {
       const data = await fetchJson(API.files.list, { path: dir }, opts)
@@ -122,6 +165,46 @@ export const createHttpProvider = () => ({
     show: async (path, opts) => {
       const data = await fetchJson(API.git.show, { path }, opts)
       return typeof data?.content === 'string' ? data.content : ''
+    },
+
+    init: (opts) =>
+      sendJson('POST', API.git.init, undefined, undefined, opts),
+
+    add: (paths, opts) =>
+      sendJson('POST', API.git.add, undefined, { paths }, opts),
+
+    commit: async (message, opts) => {
+      const data = await sendJson('POST', API.git.commit, undefined, {
+        message,
+        author: opts?.author,
+      }, opts)
+      return { oid: data?.oid || '' }
+    },
+
+    push: (opts) =>
+      sendJson('POST', API.git.push, undefined, {
+        remote: opts?.remote,
+        branch: opts?.branch,
+      }, opts),
+
+    pull: (opts) =>
+      sendJson('POST', API.git.pull, undefined, {
+        remote: opts?.remote,
+        branch: opts?.branch,
+      }, opts),
+
+    clone: (url, opts) =>
+      sendJson('POST', API.git.clone, undefined, {
+        url,
+        branch: opts?.branch,
+      }, opts),
+
+    addRemote: (name, url, opts) =>
+      sendJson('POST', API.git.remote, undefined, { name, url }, opts),
+
+    listRemotes: async (opts) => {
+      const data = await fetchJson(API.git.remotes, undefined, opts)
+      return Array.isArray(data?.remotes) ? data.remotes : []
     },
   },
 })

@@ -105,6 +105,8 @@ def create_app(
     pi_embedded_mode = config.pi_mode != 'iframe'
     pi_enabled = pi_embedded_mode or bool(config.pi_url)
 
+    github_enabled = bool(config.github_app_id and config.github_app_private_key)
+
     enabled_features = {
         'files': 'files' in enabled_routers,
         'git': 'git' in enabled_routers,
@@ -118,6 +120,8 @@ def create_app(
         'companion': True,
         # PI is available in embedded mode without PI_URL; iframe mode needs PI_URL.
         'pi': pi_enabled,
+        # GitHub App integration (opt-in, requires GITHUB_APP_ID + private key)
+        'github': github_enabled,
     }
 
     # Create app
@@ -200,6 +204,14 @@ def create_app(
             app.include_router(create_workspace_router(config), prefix='/api/v1')
             app.include_router(create_collaboration_router(config), prefix='/api/v1')
             app.include_router(create_workspace_boundary_router(config))
+
+    # GitHub App auth (optional, requires GITHUB_APP_ID + private key)
+    if config.github_app_id and config.github_app_private_key:
+        from .modules.github_auth import create_github_auth_router
+        app.include_router(
+            create_github_auth_router(config),
+            prefix='/api/v1/auth/github',
+        )
 
     # Workspace plugins are optional and disabled by default since they execute
     # workspace-local Python modules in-process.
