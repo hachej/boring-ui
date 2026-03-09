@@ -411,10 +411,14 @@ workspace.open(session.id)</pre>
       appNameEl.textContent = appName;
       appDescriptionEl.textContent = appDescription;
       document.title = "Sign in — " + appName;
+      var railCodeEl = document.querySelector(".rail-code");
       var railCode = String(AUTH.railCode || "").trim();
-      if (railCode) {
-        var railCodeEl = document.querySelector(".rail-code");
-        if (railCodeEl) railCodeEl.textContent = railCode;
+      if (railCodeEl) {
+        if (railCode) {
+          railCodeEl.textContent = railCode;
+        } else {
+          railCodeEl.style.display = "none";
+        }
       }
     }
 
