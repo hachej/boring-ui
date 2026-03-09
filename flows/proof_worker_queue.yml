@@ -1,0 +1,18 @@
+version: 1
+name: proof_workers
+
+source:
+  label: needs-proof
+
+workers:
+  count: 1
+  provider: codex
+  model: gpt-5-codex
+  effort: high
+  prompt: prompts/proof_worker_prompt.md
+
+transitions:
+  "proof:passed": needs-review
+  "proof:failed": needs-impl
+
+timeout: 2h

@@ -1,0 +1,19 @@
+version: 1
+name: implementation_workers
+
+source:
+  label: needs-impl
+  selector: graph-aware
+
+workers:
+  count: 2
+  provider: claude-code
+  model: opus
+  effort: high
+  prompt: prompts/implement_worker_prompt.md
+
+transitions:
+  "impl:done": needs-proof
+  "impl:error": needs-review
+
+timeout: 4h

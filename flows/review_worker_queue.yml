@@ -1,0 +1,18 @@
+version: 1
+name: review_workers
+
+source:
+  label: needs-review
+
+workers:
+  count: 1
+  provider: codex
+  model: gpt-5-codex
+  effort: high
+  prompt: prompts/review_worker_prompt.md
+
+transitions:
+  "review:passed": closed
+  "review:failed": needs-impl
+
+timeout: 2h
