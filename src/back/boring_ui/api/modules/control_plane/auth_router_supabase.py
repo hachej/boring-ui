@@ -1090,7 +1090,7 @@ def create_auth_session_router_supabase(config: APIConfig) -> APIRouter:
 
     @router.get("/logout")
     def auth_logout(request: Request):
-        response = JSONResponse({"ok": True, "status": "logged_out"})
+        response = RedirectResponse(url="/auth/login", status_code=302)
         _clear_session_cookie(response, config)
         return response
 
