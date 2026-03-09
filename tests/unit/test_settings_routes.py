@@ -208,3 +208,84 @@ def test_boundary_settings_put_forwards_to_settings_endpoint(tmp_path: Path) -> 
     get_resp = client.get(f"/api/v1/workspaces/{ws_id}/settings")
     settings = get_resp.json()["settings"]
     assert settings["theme"] == "light"
+
+
+# ── Workspace Switch Flow ─────────────────────────────────────────────
+
+
+def test_workspace_switch_list_multiple_workspaces(tmp_path: Path) -> None:
+    """Create two workspaces, list them, verify both appear."""
+    client = _client(tmp_path)
+    _login(client)
+    ws1 = _create_workspace(client, name="Workspace Alpha")
+    ws2 = _create_workspace(client, name="Workspace Beta")
+
+    resp = client.get("/api/v1/workspaces")
+    assert resp.status_code == 200
+    workspaces = resp.json()["workspaces"]
+    ids = {w.get("workspace_id") or w.get("id") for w in workspaces}
+    assert ws1 in ids
+    assert ws2 in ids
+
+
+def test_workspace_switch_settings_isolation_after_switch(tmp_path: Path) -> None:
+    """Simulate workspace switch: write settings to WS-A, switch to WS-B, verify isolation."""
+    client = _client(tmp_path)
+    _login(client)
+    ws_a = _create_workspace(client, name="WS-A")
+    ws_b = _create_workspace(client, name="WS-B")
+
+    # Write settings to WS-A
+    client.put(f"/api/v1/workspaces/{ws_a}/settings", json={"project": "alpha", "color": "blue"})
+
+    # "Switch" to WS-B — write different settings
+    client.put(f"/api/v1/workspaces/{ws_b}/settings", json={"project": "beta", "color": "red"})
+
+    # Verify WS-A settings untouched
+    resp_a = client.get(f"/api/v1/workspaces/{ws_a}/settings")
+    assert resp_a.json()["settings"]["project"] == "alpha"
+    assert resp_a.json()["settings"]["color"] == "blue"
+
+    # Verify WS-B settings correct
+    resp_b = client.get(f"/api/v1/workspaces/{ws_b}/settings")
+    assert resp_b.json()["settings"]["project"] == "beta"
+    assert resp_b.json()["settings"]["color"] == "red"
+
+
+def test_workspace_switch_boundary_routes_per_workspace(tmp_path: Path) -> None:
+    """Access two workspaces via boundary routes — settings are isolated."""
+    client = _client(tmp_path)
+    _login(client)
+    ws_a = _create_workspace(client, name="Boundary-A")
+    ws_b = _create_workspace(client, name="Boundary-B")
+    _bootstrap_membership(client, ws_a)
+    _bootstrap_membership(client, ws_b)
+
+    # Write via boundary to each workspace
+    client.put(f"/w/{ws_a}/settings", json={"env": "staging"})
+    client.put(f"/w/{ws_b}/settings", json={"env": "production"})
+
+    # Read back via boundary — each workspace returns its own settings
+    resp_a = client.get(f"/w/{ws_a}/settings")
+    assert resp_a.json()["settings"]["env"] == "staging"
+
+    resp_b = client.get(f"/w/{ws_b}/settings")
+    assert resp_b.json()["settings"]["env"] == "production"
+
+
+def test_workspace_switch_me_endpoint_via_both_boundaries(tmp_path: Path) -> None:
+    """The /me endpoint returns the same user regardless of which workspace boundary is used."""
+    client = _client(tmp_path)
+    _login(client, user_id="switcher-1", email="switch@example.com")
+    ws_a = _create_workspace(client, name="Me-A")
+    ws_b = _create_workspace(client, name="Me-B")
+    _bootstrap_membership(client, ws_a)
+    _bootstrap_membership(client, ws_b)
+
+    me_a = client.get(f"/w/{ws_a}/api/v1/me")
+    me_b = client.get(f"/w/{ws_b}/api/v1/me")
+
+    assert me_a.status_code == 200
+    assert me_b.status_code == 200
+    assert me_a.json()["email"] == "switch@example.com"
+    assert me_b.json()["email"] == "switch@example.com"

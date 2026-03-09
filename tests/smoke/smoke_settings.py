@@ -106,6 +106,50 @@ def main() -> int:
     assert ws_readback2.get("settings", {}).get("theme") == "light"
     print("[smoke] Workspace settings overwrite OK")
 
+    # --- Phase 11: Workspace switch — create second workspace ---
+    ws_name_b = f"smoke-settings-ws-b-{ts}"
+    client.set_phase("switch-create-ws-b")
+    print(f"[smoke] Creating second workspace '{ws_name_b}'...")
+    resp_b = client.post("/api/v1/workspaces", json={"name": ws_name_b}, expect_status=(200, 201))
+    if resp_b.status_code not in (200, 201):
+        raise RuntimeError(f"Create workspace B failed: {resp_b.status_code} {resp_b.text[:300]}")
+    ws_data_b = resp_b.json()
+    ws_b = ws_data_b.get("workspace") or ws_data_b
+    workspace_id_b = ws_b.get("workspace_id") or ws_b.get("id")
+    if not workspace_id_b:
+        raise RuntimeError(f"No workspace_id_b: {ws_data_b}")
+    print(f"[smoke] Second workspace created: {workspace_id_b}")
+
+    # --- Phase 12: Workspace switch — list shows both ---
+    client.set_phase("switch-list-both")
+    resp_list = client.get("/api/v1/workspaces", expect_status=(200,))
+    if resp_list.status_code != 200:
+        raise RuntimeError(f"List workspaces failed: {resp_list.status_code}")
+    all_ws = resp_list.json().get("workspaces", [])
+    all_ids = {(w.get("workspace_id") or w.get("id") or "") for w in all_ws}
+    assert workspace_id in all_ids, f"First workspace {workspace_id} not in list"
+    assert workspace_id_b in all_ids, f"Second workspace {workspace_id_b} not in list"
+    print(f"[smoke] Both workspaces present in list ({len(all_ws)} total)")
+
+    # --- Phase 13: Workspace switch — write settings to second workspace ---
+    update_workspace_settings(client, workspace_id_b, settings={
+        "theme": "dark",
+        "project": "beta",
+    })
+
+    # --- Phase 14: Workspace switch — verify settings isolation ---
+    client.set_phase("switch-isolation-verify")
+    print("[smoke] Verifying workspace settings isolation after switch...")
+    ws_a_settings = get_workspace_settings(client, workspace_id)
+    ws_b_settings = get_workspace_settings(client, workspace_id_b)
+    assert ws_a_settings.get("settings", {}).get("theme") == "light", \
+        f"WS-A theme changed unexpectedly: {ws_a_settings.get('settings', {}).get('theme')}"
+    assert ws_b_settings.get("settings", {}).get("theme") == "dark", \
+        f"WS-B theme mismatch: {ws_b_settings.get('settings', {}).get('theme')}"
+    assert ws_b_settings.get("settings", {}).get("project") == "beta", \
+        f"WS-B project mismatch: {ws_b_settings.get('settings', {}).get('project')}"
+    print("[smoke] Workspace switch settings isolation OK")
+
     # --- Report ---
     report = client.report()
     print(json.dumps(report, indent=2))

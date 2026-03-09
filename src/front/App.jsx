@@ -24,6 +24,11 @@ import {
   syncWorkspaceRuntimeAndSettings,
 } from './utils/workspaceNavigation'
 import {
+  getWorkspaceSwitchCandidates,
+  buildSwitchPrompt,
+  resolveWorkspaceSwitchTarget,
+} from './utils/workspaceSwitch'
+import {
   LAYOUT_VERSION,
   validateLayoutStructure,
   loadSavedTabs,
@@ -1404,27 +1409,15 @@ export default function App() {
 
   const handleSwitchWorkspace = useCallback(async () => {
     const workspaces = await fetchWorkspaceList()
-    const candidateWorkspaces = workspaces.filter(
-      (workspace) => workspace.id && workspace.id !== currentWorkspaceId,
-    )
+    const candidateWorkspaces = getWorkspaceSwitchCandidates(workspaces, currentWorkspaceId)
     if (candidateWorkspaces.length === 0) return
 
-    const defaultId = candidateWorkspaces[0].id
-    const optionsText = candidateWorkspaces
-      .map((workspace) => `- ${workspace.name || workspace.id} (${workspace.id})`)
-      .join('\n')
-    const promptValue = window.prompt(
-      `Select workspace id to switch:\n${optionsText}`,
-      defaultId,
-    )
-    if (!promptValue) return
-    const selectedId = promptValue.trim()
-    if (!selectedId || selectedId === currentWorkspaceId) return
+    const prompt = buildSwitchPrompt(candidateWorkspaces)
+    if (!prompt) return
+    const promptValue = window.prompt(prompt.message, prompt.defaultValue)
 
-    const selectedWorkspace = candidateWorkspaces.find(
-      (workspace) => workspace.id === selectedId || workspace.name === selectedId,
-    )
-    if (!selectedWorkspace?.id) return
+    const selectedWorkspace = resolveWorkspaceSwitchTarget(candidateWorkspaces, currentWorkspaceId, promptValue)
+    if (!selectedWorkspace) return
     const targetWorkspaceId = selectedWorkspace.id
 
     if (!controlPlaneOnboardingEnabled) {
