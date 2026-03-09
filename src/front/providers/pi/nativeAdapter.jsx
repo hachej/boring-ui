@@ -7,6 +7,7 @@ import { ChatPanel, defaultConvertToLlm } from '@mariozechner/pi-web-ui'
 import piAppCss from '@mariozechner/pi-web-ui/app.css?raw'
 import piAppCssUrl from '@mariozechner/pi-web-ui/app.css?url'
 import { useDataProvider } from '../data'
+import { useUserIdentity } from '../../components/UserIdentityContext'
 import { getPiRuntime } from './runtime'
 import { getPiAgentConfig } from './agentConfig'
 import { createPiNativeTools, mergePiTools } from './defaultTools'
@@ -491,6 +492,7 @@ const promptForApiKey = async (provider, runtime) => {
 }
 
 export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', initialSessionId = '' }) {
+  const { userId, authResolved } = useUserIdentity()
   const dataProvider = useDataProvider()
   const queryClient = useQueryClient()
   const defaultTools = useMemo(
@@ -504,11 +506,16 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
   const sessionIdRef = useRef('')
   const sessionTitleRef = useRef('New session')
 
+  // Defer PI initialization until auth has resolved so we know the correct
+  // user scope for IndexedDB. In local mode (no control plane) authResolved
+  // defaults to true and userId stays '' — we use the unscoped DB name.
+  const userScope = authResolved ? userId : null
+
   useEffect(() => {
     const rootEl = rootRef.current
-    if (!rootEl) return undefined
+    if (!rootEl || userScope === null) return undefined
 
-    const runtime = getPiRuntime()
+    const runtime = getPiRuntime(userScope)
     let active = true
 
     const shadowHost = document.createElement('div')
@@ -833,7 +840,7 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
         rootEl.removeChild(shadowHost)
       }
     }
-  }, [defaultTools, panelId, sessionBootstrap, initialSessionId])
+  }, [defaultTools, panelId, sessionBootstrap, initialSessionId, userScope])
 
   return <div className="pi-native-wrapper" ref={rootRef} data-testid="pi-native-adapter" />
 }

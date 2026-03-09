@@ -52,6 +52,7 @@ import {
   CapabilitiesStatusContext,
   createCapabilityGatedPane,
 } from './components/CapabilityGate'
+import { UserIdentityProvider } from './components/UserIdentityContext'
 import paneRegistry, {
   registerPane,
   getGatedComponents,
@@ -711,6 +712,11 @@ export default function App() {
       lightningFsUserScope,
       lightningFsWorkspaceScope,
     ],
+  )
+  const userIdentityAuthResolved = userMenuAuthStatus !== 'unknown'
+  const userIdentity = useMemo(
+    () => ({ userId: menuUserId, authResolved: userIdentityAuthResolved }),
+    [menuUserId, userIdentityAuthResolved],
   )
   const configuredCheerpXWorkspaceRoot = String(config.data?.cheerpx?.workspaceRoot || '').trim()
   const configuredCheerpXPrimaryDiskUrl = String(config.data?.cheerpx?.primaryDiskUrl || '').trim()
@@ -4593,25 +4599,27 @@ export default function App() {
                   Missing capabilities for: {unavailableEssentials.map(p => p.title || p.id).join(', ')}.
                 </div>
               )}
-              <CapabilitiesStatusContext.Provider value={{ pending: capabilitiesPending }}>
-                <CapabilitiesContext.Provider value={capabilities}>
-                  {capabilitiesPending ? (
-                    <WorkspaceLoading />
-                  ) : (
-                    <div data-testid="dockview" className="dockview-host">
-                      <DockviewReact
-                        className={dockviewClassName}
-                        components={components}
-                        tabComponents={tabComponents}
-                        defaultTabComponent={UnifiedDockTab}
-                        rightHeaderActionsComponent={RightHeaderActions}
-                        onReady={onReady}
-                        onDidDrop={onDidDrop}
-                      />
-                    </div>
-                  )}
-                </CapabilitiesContext.Provider>
-              </CapabilitiesStatusContext.Provider>
+              <UserIdentityProvider value={userIdentity}>
+                <CapabilitiesStatusContext.Provider value={{ pending: capabilitiesPending }}>
+                  <CapabilitiesContext.Provider value={capabilities}>
+                    {capabilitiesPending ? (
+                      <WorkspaceLoading />
+                    ) : (
+                      <div data-testid="dockview" className="dockview-host">
+                        <DockviewReact
+                          className={dockviewClassName}
+                          components={components}
+                          tabComponents={tabComponents}
+                          defaultTabComponent={UnifiedDockTab}
+                          rightHeaderActionsComponent={RightHeaderActions}
+                          onReady={onReady}
+                          onDidDrop={onDidDrop}
+                        />
+                      </div>
+                    )}
+                  </CapabilitiesContext.Provider>
+                </CapabilitiesStatusContext.Provider>
+              </UserIdentityProvider>
             </main>
             {showCreateWorkspaceModal && (
               <CreateWorkspaceModal

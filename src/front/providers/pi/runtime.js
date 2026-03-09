@@ -9,6 +9,7 @@ import {
 } from '@mariozechner/pi-web-ui'
 
 let runtime = null
+let runtimeScope = ''
 
 class OperationCallbackError extends Error {
   constructor(error) {
@@ -233,8 +234,22 @@ class FallbackStorageBackend {
   }
 }
 
-export function getPiRuntime() {
-  if (runtime) return runtime
+const sanitizeScope = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+export function getPiRuntime(userScope = '') {
+  const scope = sanitizeScope(userScope)
+  if (runtime && runtimeScope === scope) return runtime
+
+  // User changed — tear down the old runtime so we get a fresh DB.
+  if (runtime) {
+    runtime = null
+  }
 
   const settings = new SettingsStore()
   const providerKeys = new ProviderKeysStore()
@@ -248,13 +263,17 @@ export function getPiRuntime() {
     sessions.getConfig(),
   ]
 
+  const dbName = scope
+    ? `boring-ui-pi-agent-${scope}`
+    : 'boring-ui-pi-agent'
+
   const fallbackBackend = new MemoryStorageBackend({ stores })
   let primaryBackend
   if (typeof indexedDB === 'undefined') {
     primaryBackend = fallbackBackend
   } else {
     primaryBackend = new IndexedDBStorageBackend({
-      dbName: 'boring-ui-pi-agent',
+      dbName,
       version: 1,
       stores,
     })
@@ -273,6 +292,7 @@ export function getPiRuntime() {
   const storage = new AppStorage(settings, providerKeys, sessions, customProviders, backend)
   setAppStorage(storage)
 
+  runtimeScope = scope
   runtime = {
     storage,
     settings,
