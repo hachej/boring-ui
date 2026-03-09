@@ -473,7 +473,7 @@ export default function App() {
   const localDataBackend = String(config.data?.backend || '').toLowerCase()
   const hasLocalDataBackend = localDataBackend === 'lightningfs' || localDataBackend === 'cheerpx'
   const controlPlaneOnboardingEnabled = config.features?.controlPlaneOnboarding === true
-  const storagePrefix = config.storage?.prefix || 'kurt-web'
+  const baseStoragePrefix = config.storage?.prefix || 'kurt-web'
   const layoutVersion = config.storage?.layoutVersion || 1
 
   // Panel sizing configuration from config
@@ -609,6 +609,10 @@ export default function App() {
   const [menuUserId, setMenuUserId] = useState('')
   const [menuUserEmail, setMenuUserEmail] = useState('')
   const [userMenuAuthStatus, setUserMenuAuthStatus] = useState('unknown') // unknown | authenticated | unauthenticated | error
+  // Scope localStorage keys per user so layout/tabs/settings don't leak across accounts.
+  const storagePrefix = menuUserId
+    ? `${baseStoragePrefix}-u-${menuUserId.slice(0, 12)}`
+    : baseStoragePrefix
   const [userMenuIdentityError, setUserMenuIdentityError] = useState('')
   const [userMenuWorkspaceError, setUserMenuWorkspaceError] = useState('')
   const [workspaceOptions, setWorkspaceOptions] = useState([])
@@ -626,7 +630,7 @@ export default function App() {
   const isWorkspaceSettingsPage = currentWorkspaceId && workspaceSubpath === 'settings'
   const isWorkspaceSetupPage = currentWorkspaceId && workspaceSubpath === 'setup'
   const [collapsed, setCollapsed] = useState(() => {
-    const saved = loadCollapsedState(storagePrefix)
+    const saved = loadCollapsedState(baseStoragePrefix)
     return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
   })
   const [sectionCollapsed, setSectionCollapsed] = useState({})
@@ -638,7 +642,7 @@ export default function App() {
   const panelSizesRef = useRef({
     ...panelDefaults,
     companion: rightRailDefaults.companion,
-    ...(loadPanelSizes(storagePrefix) || {}),
+    ...(loadPanelSizes(baseStoragePrefix) || {}),
   })
   const collapsedEffectRan = useRef(false)
   const dismissedApprovalsRef = useRef(new Set())
@@ -3536,9 +3540,9 @@ export default function App() {
   // Restore layout once projectRoot is loaded and dockApi is available
   const layoutRestorationRan = useRef(false)
   useEffect(() => {
-    // Wait for both dockApi and projectRoot to be available
-    // projectRoot === null means not loaded yet
-    if (!dockApi || projectRoot === null || layoutRestorationRan.current) return
+    // Wait for dockApi, projectRoot, and auth resolution (so storagePrefix
+    // includes the userId and we load the correct per-user layout).
+    if (!dockApi || projectRoot === null || !userIdentityAuthResolved || layoutRestorationRan.current) return
     layoutRestorationRan.current = true
     const collapsedState = {
       filetree: collapsed.filetree,
@@ -3895,6 +3899,7 @@ export default function App() {
     projectRoot,
     storagePrefix,
     layoutVersion,
+    userIdentityAuthResolved,
     capabilities,
     capabilitiesLoading,
     collapsed.filetree,
