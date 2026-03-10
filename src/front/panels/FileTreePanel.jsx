@@ -300,6 +300,7 @@ export default function FileTreePanel({ params }) {
           githubConnected={ghStatus?.connected}
           viewMode={viewMode}
           onSetViewMode={setViewMode}
+          onOpenChatTab={onOpenChatTab}
         />
       )}
       <div className="filetree-footer">

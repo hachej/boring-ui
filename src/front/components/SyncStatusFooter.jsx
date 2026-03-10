@@ -18,28 +18,16 @@ const getSyncInterval = () => {
   } catch { return DEFAULT_SYNC_INTERVAL }
 }
 
-/** Inject a prompt into the agent chat input (works across shadow DOM). */
-const askAgent = (prompt) => {
-  // Fire event for React-based chat (ClaudeStreamChat / Companion Composer)
-  window.dispatchEvent(new CustomEvent('boring-ui:agent-prompt', { detail: { prompt } }))
-  // Also reach into shadow DOM textarea (native Lit-based chat panel)
-  try {
-    const shadowHost = document.querySelector('[style*="display: flex"]')
-    const roots = []
-    document.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) roots.push(el.shadowRoot) })
-    for (const root of roots) {
-      const ta = root.querySelector('textarea')
-      if (ta) {
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
-        if (setter) {
-          setter.call(ta, prompt)
-          ta.dispatchEvent(new Event('input', { bubbles: true }))
-        }
-        ta.focus()
-        return
-      }
-    }
-  } catch { /* fallback to event only */ }
+/** Open a new agent chat pane and pre-fill it with a prompt. */
+const askAgent = (prompt, onOpenChatTab) => {
+  // Open a fresh chat pane first
+  if (typeof onOpenChatTab === 'function') {
+    onOpenChatTab()
+  }
+  // Delay prompt injection so the new panel's listeners have time to mount
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('boring-ui:agent-prompt', { detail: { prompt } }))
+  }, 300)
 }
 
 /**
@@ -49,7 +37,7 @@ const askAgent = (prompt) => {
  *
  * Menu provides: sync now, pause/resume auto-sync, switch branch.
  */
-export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewMode }) {
+export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewMode, onOpenChatTab }) {
   const provider = useDataProvider()
   const { data: gitData } = useGitStatus()
   const { data: branch, refetch: refetchBranch } = useGitBranch({ refetchInterval: 30000 })
@@ -394,7 +382,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
             className="sync-menu-item sync-menu-item--agent"
             role="menuitem"
             onClick={() => {
-              askAgent(`Create a new git branch from ${branch || 'main'} for my next feature. Ask me what to name it.`)
+              askAgent(`Create a new git branch from ${branch || 'main'} for my next feature. Ask me what to name it.`, onOpenChatTab)
               setMenuOpen(false)
             }}
           >
@@ -406,7 +394,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
             className="sync-menu-item sync-menu-item--agent"
             role="menuitem"
             onClick={() => {
-              askAgent(`Merge the current branch (${branch || 'main'}) — list available branches and ask me which one to merge, then perform the merge.`)
+              askAgent(`Merge the current branch (${branch || 'main'}) — list available branches and ask me which one to merge, then perform the merge.`, onOpenChatTab)
               setMenuOpen(false)
             }}
           >
@@ -419,7 +407,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
               className="sync-menu-item sync-menu-item--agent"
               role="menuitem"
               onClick={() => {
-                askAgent('There are git merge conflicts in my workspace. List the conflicted files, show me the conflicts, and help me resolve them.')
+                askAgent('There are git merge conflicts in my workspace. List the conflicted files, show me the conflicts, and help me resolve them.', onOpenChatTab)
                 setMenuOpen(false)
               }}
             >
