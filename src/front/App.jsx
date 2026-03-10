@@ -4538,7 +4538,7 @@ export default function App() {
     !currentWorkspaceId &&
     pagePathname === '/'
 
-  const autoCreateAttempted = React.useRef(false)
+  const autoCreateAttempted = useRef(false)
   useEffect(() => {
     if (!needsWorkspaceRedirect) return
     if (workspaceOptions.length > 0) {
