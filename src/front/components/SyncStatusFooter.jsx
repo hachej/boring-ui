@@ -19,6 +19,7 @@ export default function SyncStatusFooter({ githubConnected }) {
   const { state: syncState, lastError } = useAutoSync({
     enabled: isRepo && githubConnected,
     pushEnabled: !!githubConnected,
+    initialPull: !!githubConnected,
     intervalMs: 10000,
   })
 

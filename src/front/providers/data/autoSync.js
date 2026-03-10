@@ -135,6 +135,7 @@ export const createAutoSyncEngine = (gitProvider, options = {}) => {
     pushEnabled = false,
     pullBeforePush = true,
     autoInit = true,
+    initialPull = false,
   } = options
 
   /** @type {SyncState} */
@@ -201,9 +202,29 @@ export const createAutoSyncEngine = (gitProvider, options = {}) => {
   }
 
   return {
-    start: () => {
+    start: async () => {
       if (timerId != null) return
       setState('idle')
+      // Pull from remote on first start to align local with remote
+      if (initialPull && typeof gitProvider.pull === 'function') {
+        const remotes = typeof gitProvider.listRemotes === 'function'
+          ? await gitProvider.listRemotes().catch(() => [])
+          : []
+        if (remotes.length > 0) {
+          try {
+            setState('syncing')
+            await gitProvider.pull(remoteOpts)
+            setState('idle')
+          } catch (err) {
+            if (err.isConflict) {
+              setState('conflict', err.message)
+            } else {
+              setState('error', `Initial pull failed: ${err.message}`)
+            }
+            // Continue anyway — sync loop will retry
+          }
+        }
+      }
       // Run first cycle immediately
       cycle()
       timerId = setInterval(cycle, intervalMs)

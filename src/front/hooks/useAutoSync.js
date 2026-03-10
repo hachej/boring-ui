@@ -16,6 +16,7 @@ import { queryKeys } from '../providers/data/queries'
  * @property {boolean} [enabled=false]          - Whether auto-sync is active.
  * @property {number} [intervalMs=10000]        - Sync interval in ms.
  * @property {boolean} [pushEnabled=false]      - Push to remote after commit.
+ * @property {boolean} [initialPull=false]      - Pull from remote on first start.
  * @property {import('../providers/data/types').GitAuthor} [author]
  * @property {import('../providers/data/types').GitRemoteOpts} [remoteOpts]
  */
@@ -37,6 +38,7 @@ export const useAutoSync = (options = {}) => {
     enabled = false,
     intervalMs = 10_000,
     pushEnabled = false,
+    initialPull = false,
     author,
     remoteOpts,
   } = options
@@ -72,6 +74,7 @@ export const useAutoSync = (options = {}) => {
     const engine = createAutoSyncEngine(provider.git, {
       intervalMs,
       pushEnabled,
+      initialPull,
       author,
       remoteOpts,
     })
@@ -94,7 +97,7 @@ export const useAutoSync = (options = {}) => {
       engine.stop()
       engineRef.current = null
     }
-  }, [enabled, intervalMs, pushEnabled, isSupported, provider, qc, author, remoteOpts])
+  }, [enabled, intervalMs, pushEnabled, initialPull, isSupported, provider, qc, author, remoteOpts])
 
   const syncNow = useCallback(() => {
     engineRef.current?.syncNow()

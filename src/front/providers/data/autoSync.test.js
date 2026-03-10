@@ -229,6 +229,49 @@ describe('createAutoSyncEngine', () => {
     expect(states).not.toContain('disabled')
   })
 
+  it('performs initial pull when initialPull is true and remotes exist', async () => {
+    const git = createGitMock([])
+    git.listRemotes = vi.fn(async () => [{ remote: 'origin', url: 'https://github.com/test/repo' }])
+    const engine = createAutoSyncEngine(git, { initialPull: true })
+
+    engine.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(git.listRemotes).toHaveBeenCalled()
+    expect(git.pull).toHaveBeenCalled()
+    engine.stop()
+  })
+
+  it('skips initial pull when no remotes configured', async () => {
+    const git = createGitMock([])
+    const engine = createAutoSyncEngine(git, { initialPull: true })
+
+    engine.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(git.listRemotes).toHaveBeenCalled()
+    expect(git.pull).not.toHaveBeenCalled()
+    engine.stop()
+  })
+
+  it('continues sync loop even if initial pull fails', async () => {
+    const git = createGitMock([])
+    git.listRemotes = vi.fn(async () => [{ remote: 'origin', url: 'https://github.com/test/repo' }])
+    git.pull.mockRejectedValueOnce(new Error('network error'))
+    const engine = createAutoSyncEngine(git, { initialPull: true })
+    const errors = []
+    engine.onStateChange((_s, err) => { if (err) errors.push(err) })
+
+    engine.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // Should have captured the initial pull error, even though cycle then clears it
+    expect(errors.some((e) => e.includes('Initial pull failed'))).toBe(true)
+    // Sync loop still runs after the error
+    expect(git.status).toHaveBeenCalled()
+    engine.stop()
+  })
+
   it('commit message truncates to 5 files', async () => {
     const files = Array.from({ length: 8 }, (_, i) => ({ path: `file${i}.txt`, status: 'M' }))
     const git = createGitMock(files)
