@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Check, GitBranch, Cloud, Loader2, AlertTriangle, CloudOff,
+  Check, FolderOpen, GitBranch, Cloud, Loader2, AlertTriangle, CloudOff,
   MoreHorizontal, RefreshCw, Pause, Play, GitBranchPlus, ChevronRight,
 } from 'lucide-react'
 import { useGitStatus, useGitBranch } from '../providers/data'
@@ -17,7 +17,7 @@ const SYNC_INTERVAL = 10000
  *
  * Menu provides: sync now, pause/resume auto-sync, switch branch.
  */
-export default function SyncStatusFooter({ githubConnected }) {
+export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewMode }) {
   const provider = useDataProvider()
   const { data: gitData } = useGitStatus()
   const { data: branch, refetch: refetchBranch } = useGitBranch({ refetchInterval: 30000 })
@@ -56,6 +56,8 @@ export default function SyncStatusFooter({ githubConnected }) {
   const [switching, setSwitching] = useState(false)
   const [menuError, setMenuError] = useState(null)
   const menuRef = useRef(null)
+  const branchBtnRef = useRef(null)
+  const [submenuPos, setSubmenuPos] = useState(null)
 
   // Close menu on outside click
   useEffect(() => {
@@ -74,7 +76,13 @@ export default function SyncStatusFooter({ githubConnected }) {
   useEffect(() => {
     if (!branchSubmenuOpen) {
       setBranches(null)
+      setSubmenuPos(null)
       return
+    }
+    // Calculate flyout position from the "Switch branch" button
+    if (branchBtnRef.current) {
+      const r = branchBtnRef.current.getBoundingClientRect()
+      setSubmenuPos({ top: r.top, left: r.right + 4 })
     }
     let cancelled = false
     provider.git.branches().then((data) => {
@@ -192,6 +200,30 @@ export default function SyncStatusFooter({ githubConnected }) {
           </span>
         </Tooltip>
       )}
+      {onSetViewMode && (
+        <div className="sync-footer-view-toggle">
+          <Tooltip label="Files">
+            <button
+              type="button"
+              className={`sync-footer-toggle-btn${viewMode === 'files' ? ' active' : ''}`}
+              onClick={() => onSetViewMode('files')}
+              aria-label="File tree view"
+            >
+              <FolderOpen size={12} />
+            </button>
+          </Tooltip>
+          <Tooltip label="Changes">
+            <button
+              type="button"
+              className={`sync-footer-toggle-btn${viewMode === 'changes' ? ' active' : ''}`}
+              onClick={() => onSetViewMode('changes')}
+              aria-label="Git changes view"
+            >
+              <GitBranch size={12} />
+            </button>
+          </Tooltip>
+        </div>
+      )}
       <span className="sync-state-spacer" />
       <Tooltip label={tooltipLabel}>
         <button
@@ -241,6 +273,7 @@ export default function SyncStatusFooter({ githubConnected }) {
           </button>
           <div className="sync-menu-divider" />
           <button
+            ref={branchBtnRef}
             type="button"
             className="sync-menu-item sync-menu-item--submenu"
             onClick={() => setBranchSubmenuOpen(!branchSubmenuOpen)}
@@ -249,8 +282,11 @@ export default function SyncStatusFooter({ githubConnected }) {
             <span>Switch branch</span>
             <ChevronRight size={12} className="sync-menu-chevron" />
           </button>
-          {branchSubmenuOpen && (
-            <div className="sync-branch-submenu">
+          {branchSubmenuOpen && submenuPos && (
+            <div
+              className="sync-branch-submenu"
+              style={{ top: submenuPos.top, left: submenuPos.left }}
+            >
               {branches === null ? (
                 <div className="sync-menu-item sync-menu-item--loading">
                   <Loader2 size={13} className="git-inline-spinner" />
