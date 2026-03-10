@@ -804,7 +804,7 @@ export default function Editor({
           type="button"
           className={`mode-btn${editorMode === 'rendered' ? ' active' : ''}`}
           onClick={() => onModeChange?.('rendered')}
-          title="Edit rendered content"
+          title="Edit content"
         >
           Edit
         </button>
@@ -812,17 +812,17 @@ export default function Editor({
           type="button"
           className={`mode-btn${editorMode === 'diff' ? ' active' : ''}`}
           onClick={() => onModeChange?.('diff')}
-          title="Edit with inline diff highlighting"
+          title="Review inline changes vs last commit"
         >
-          Diff
+          Changes
         </button>
         <button
           type="button"
           className={`mode-btn${editorMode === 'git-diff' ? ' active' : ''}`}
           onClick={() => onModeChange?.('git-diff')}
-          title="View git diff (read-only)"
+          title="View git unified diff"
         >
-          Raw
+          Patch
         </button>
       </div>
     )

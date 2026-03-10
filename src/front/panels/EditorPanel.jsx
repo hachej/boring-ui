@@ -331,6 +331,7 @@ export default function EditorPanel({ params: initialParams, api }) {
                 type="button"
                 className={`mode-btn ${editorMode === 'rendered' ? 'active' : ''}`}
                 onClick={() => handleModeChange('rendered')}
+                title="Edit code"
               >
                 Code
               </button>
@@ -339,8 +340,9 @@ export default function EditorPanel({ params: initialParams, api }) {
                   type="button"
                   className={`mode-btn ${editorMode === 'git-diff' ? 'active' : ''}`}
                   onClick={() => handleModeChange('git-diff')}
+                  title="View git unified diff"
                 >
-                  Diff
+                  Patch
                 </button>
               )}
             </div>
