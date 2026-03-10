@@ -783,6 +783,11 @@ html {
   opacity: 1;
   color: var(--color-text-primary);
 }
+.sidebar-action-btn--github-linked {
+  opacity: 1;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+}
 
 .left-pane-brand-title {
   font-size: var(--text-sm);
@@ -5820,6 +5825,24 @@ kbd {
   color: var(--text-muted);
   font-size: 12px;
   font-family: var(--font-mono);
+}
+.github-connect-repos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.github-connect-repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  text-decoration: none;
+}
+.github-connect-repo-link:hover {
+  color: var(--text-primary);
 }
 .github-connect-error {
   display: flex;

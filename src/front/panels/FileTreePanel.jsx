@@ -11,6 +11,8 @@ import SidebarSectionHeader, {
 } from '../components/SidebarSectionHeader'
 import { ICON_SIZE_INLINE } from '../utils/iconTokens'
 import { useGitStatus } from '../providers/data'
+import { apiFetchJson } from '../utils/transport'
+import { routes } from '../utils/routes'
 import SyncStatusFooter from '../components/SyncStatusFooter'
 
 export default function FileTreePanel({ params }) {
@@ -57,6 +59,18 @@ export default function FileTreePanel({ params }) {
   const showGitHeaderSpinner = viewMode === 'changes' && (isGitLoading || isGitFetching)
   const { status: ghStatus, connect: ghConnect } = useGitHubConnection(workspaceId, { enabled: !!githubEnabled })
   const showGitHubConnect = githubEnabled && ghStatus?.configured && !ghStatus?.connected
+  const showGitHubLinked = githubEnabled && ghStatus?.connected
+
+  const [ghRepoUrl, setGhRepoUrl] = useState(null)
+  useEffect(() => {
+    if (!ghStatus?.connected || !ghStatus?.installation_id) { setGhRepoUrl(null); return }
+    apiFetchJson(`${routes.github.repos().path}?installation_id=${ghStatus.installation_id}`)
+      .then(({ data }) => {
+        const repo = data?.repos?.[0]
+        if (repo?.clone_url) setGhRepoUrl(repo.clone_url.replace(/\.git$/, ''))
+      })
+      .catch(() => {})
+  }, [ghStatus?.connected, ghStatus?.installation_id])
 
   useEffect(() => {
     if (!filetreeActivityIntent || filetreeActivityIntent.panelId !== 'filetree') return
@@ -262,7 +276,19 @@ export default function FileTreePanel({ params }) {
                 {searchExpanded ? <X size={20} /> : <Search size={ICON_SIZE_INLINE} />}
               </button>
             </Tooltip>
-            {showGitHubConnect && (
+            {showGitHubLinked && ghRepoUrl ? (
+              <Tooltip label="Open GitHub repo">
+                <a
+                  className="sidebar-action-btn sidebar-action-btn--github sidebar-action-btn--github-linked"
+                  href={ghRepoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Open GitHub repo"
+                >
+                  <Github size={ICON_SIZE_INLINE} />
+                </a>
+              </Tooltip>
+            ) : showGitHubConnect ? (
               <Tooltip label="Connect GitHub">
                 <button
                   type="button"
@@ -273,7 +299,7 @@ export default function FileTreePanel({ params }) {
                   <Github size={ICON_SIZE_INLINE} />
                 </button>
               </Tooltip>
-            )}
+            ) : null}
           </>
         )}
       </SidebarSectionHeader>

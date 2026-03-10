@@ -115,6 +115,14 @@ export function useGitHubConnection(workspaceId, { enabled = true } = {}) {
  */
 export default function GitHubConnect({ workspaceId }) {
   const { status, loading, error, disconnecting, connect, disconnect } = useGitHubConnection(workspaceId)
+  const [repos, setRepos] = useState([])
+
+  useEffect(() => {
+    if (!status?.connected || !status?.installation_id) { setRepos([]); return }
+    apiFetchJson(`${routes.github.repos().path}?installation_id=${status.installation_id}`)
+      .then(({ data }) => setRepos(data?.repos || []))
+      .catch(() => setRepos([]))
+  }, [status?.connected, status?.installation_id])
 
   return (
     <div className="github-connect-full">
@@ -142,6 +150,23 @@ export default function GitHubConnect({ workspaceId }) {
               </span>
             )}
           </div>
+          {repos.length > 0 && (
+            <div className="github-connect-repos">
+              {repos.map((repo) => (
+                <a
+                  key={repo.full_name}
+                  className="github-connect-repo-link"
+                  href={repo.clone_url?.replace(/\.git$/, '') || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Github size={14} />
+                  <span>{repo.full_name}</span>
+                  <ExternalLink size={12} />
+                </a>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             className="settings-btn settings-btn-secondary"
