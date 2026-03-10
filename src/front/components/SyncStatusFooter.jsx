@@ -8,7 +8,15 @@ import { useDataProvider } from '../providers/data/DataContext'
 import { useAutoSync } from '../hooks/useAutoSync'
 import Tooltip from './Tooltip'
 
-const SYNC_INTERVAL = 10000
+const DEFAULT_SYNC_INTERVAL = 10000
+const SYNC_INTERVAL_KEY = 'boring-ui:sync-interval'
+
+const getSyncInterval = () => {
+  try {
+    const val = parseInt(localStorage.getItem(SYNC_INTERVAL_KEY), 10)
+    return val >= 5000 ? val : DEFAULT_SYNC_INTERVAL
+  } catch { return DEFAULT_SYNC_INTERVAL }
+}
 
 /** Inject a prompt into the agent chat input (works across shadow DOM). */
 const askAgent = (prompt) => {
@@ -47,12 +55,28 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
   const { data: branch, refetch: refetchBranch } = useGitBranch({ refetchInterval: 30000 })
   const isRepo = gitData?.is_repo
 
+  const [syncInterval, setSyncInterval] = useState(getSyncInterval)
+  // Re-read interval when another tab/component updates it
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === SYNC_INTERVAL_KEY) setSyncInterval(getSyncInterval())
+    }
+    window.addEventListener('storage', onStorage)
+    // Also listen for same-tab updates via custom event
+    const onLocalUpdate = () => setSyncInterval(getSyncInterval())
+    window.addEventListener('boring-ui:sync-interval-changed', onLocalUpdate)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('boring-ui:sync-interval-changed', onLocalUpdate)
+    }
+  }, [])
+
   const [paused, setPaused] = useState(false)
   const { state: syncState, lastError, lastSyncTimestamp, syncNow } = useAutoSync({
     enabled: isRepo && githubConnected && !paused,
     pushEnabled: !!githubConnected,
     initialPull: !!githubConnected,
-    intervalMs: SYNC_INTERVAL,
+    intervalMs: syncInterval,
   })
 
   // Countdown to next sync
@@ -64,13 +88,13 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
     }
     const tick = () => {
       const elapsed = Date.now() - lastSyncTimestamp
-      const remaining = Math.max(0, Math.ceil((SYNC_INTERVAL - elapsed) / 1000))
+      const remaining = Math.max(0, Math.ceil((syncInterval - elapsed) / 1000))
       setSecondsLeft(remaining)
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [lastSyncTimestamp, syncState])
+  }, [lastSyncTimestamp, syncState, syncInterval])
 
   // Menu state
   const [menuOpen, setMenuOpen] = useState(false)

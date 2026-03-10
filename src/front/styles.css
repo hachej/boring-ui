@@ -5492,6 +5492,11 @@ kbd {
   font-size: var(--text-xs);
 }
 
+.settings-select {
+  cursor: pointer;
+  max-width: 200px;
+}
+
 /* ---------- Buttons ---------- */
 
 .settings-btn {

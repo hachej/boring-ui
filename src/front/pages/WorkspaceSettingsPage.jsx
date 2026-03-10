@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Loader2, Cog, Activity, Lock, AlertTriangle, Copy, Check, Github, ChevronDown } from 'lucide-react'
+import { Loader2, Cog, Activity, Lock, AlertTriangle, Copy, Check, Github, ChevronDown, RefreshCw } from 'lucide-react'
 import { apiFetchJson } from '../utils/transport'
 import { buildApiUrl } from '../utils/apiBase'
 import { routes } from '../utils/routes'
@@ -77,6 +77,29 @@ export default function WorkspaceSettingsPage({ workspaceId, capabilities }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [workspaceIdCopied, setWorkspaceIdCopied] = useState(false)
+
+  // Sync interval (localStorage-backed)
+  const SYNC_INTERVAL_KEY = 'boring-ui:sync-interval'
+  const DEFAULT_SYNC_INTERVAL = 10000
+  const SYNC_INTERVAL_OPTIONS = [
+    { label: '5 seconds', value: 5000 },
+    { label: '10 seconds', value: 10000 },
+    { label: '30 seconds', value: 30000 },
+    { label: '1 minute', value: 60000 },
+    { label: '5 minutes', value: 300000 },
+  ]
+  const [syncInterval, setSyncIntervalState] = useState(() => {
+    try {
+      const val = parseInt(localStorage.getItem(SYNC_INTERVAL_KEY), 10)
+      return val >= 5000 ? val : DEFAULT_SYNC_INTERVAL
+    } catch { return DEFAULT_SYNC_INTERVAL }
+  })
+  const handleSyncIntervalChange = (value) => {
+    const ms = parseInt(value, 10)
+    setSyncIntervalState(ms)
+    localStorage.setItem(SYNC_INTERVAL_KEY, String(ms))
+    window.dispatchEvent(new Event('boring-ui:sync-interval-changed'))
+  }
 
   const backRoute = routes.controlPlane.workspaces.scope(workspaceId)
   const backHref = backRoute.path
@@ -279,6 +302,20 @@ export default function WorkspaceSettingsPage({ workspaceId, capabilities }) {
             <GitHubConnect workspaceId={workspaceId} />
           </SettingsSection>
         )}
+
+        <SettingsSection title="Auto-Sync" icon={RefreshCw} description="Automatically commit and push changes at a regular interval">
+          <SettingsField label="Sync Frequency" description="How often to check for changes and sync">
+            <select
+              className="settings-input settings-select"
+              value={syncInterval}
+              onChange={(e) => handleSyncIntervalChange(e.target.value)}
+            >
+              {SYNC_INTERVAL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </SettingsField>
+        </SettingsSection>
 
         {hasRuntime && <SettingsSection title="Runtime" icon={Activity}>
           <SettingsField label="Status">
