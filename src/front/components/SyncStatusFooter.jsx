@@ -149,22 +149,6 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
     }
   }
 
-  const syncLabel = () => {
-    if (paused) return 'Paused'
-    switch (syncState) {
-      case 'syncing':
-        return 'Syncing...'
-      case 'error':
-        return 'Sync error'
-      case 'conflict':
-        return 'Conflict'
-      case 'idle':
-        return 'Synced'
-      default:
-        return 'Saved'
-    }
-  }
-
   const syncClass = () => {
     if (paused) return 'sync-state--paused'
     switch (syncState) {
@@ -233,7 +217,6 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
           disabled={syncState === 'syncing' || paused}
         >
           {syncIcon()}
-          <span>{syncLabel()}</span>
         </button>
       </Tooltip>
       <Tooltip label="Sync options">

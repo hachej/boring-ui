@@ -632,10 +632,11 @@ html {
   text-overflow: ellipsis;
   max-width: 120px;
   cursor: default;
+  color: var(--color-text-tertiary);
 }
 
 .sync-branch--draft {
-  color: var(--color-accent);
+  color: var(--color-accent-muted, var(--color-text-tertiary));
 }
 
 .sync-branch-name {
