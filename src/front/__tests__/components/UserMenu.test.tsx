@@ -7,6 +7,10 @@ const makeProps = () => ({
   email: 'john@example.com',
   workspaceName: 'My Workspace',
   workspaceId: 'ws-123',
+  workspaceOptions: [
+    { id: 'ws-123', name: 'My Workspace' },
+    { id: 'ws-other', name: 'Other Workspace' },
+  ],
   onSwitchWorkspace: vi.fn(),
   onCreateWorkspace: vi.fn(),
   onOpenUserSettings: vi.fn(),
@@ -75,20 +79,20 @@ describe('UserMenu', () => {
       const props = makeProps()
       renderWithTheme(<UserMenu {...props} />)
       fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Switch workspace' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Create workspace' }))
 
-      expect(props.onSwitchWorkspace).toHaveBeenCalledWith({ workspaceId: 'ws-123' })
+      expect(props.onCreateWorkspace).toHaveBeenCalledWith({ workspaceId: 'ws-123' })
       expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     })
 
     it('safely handles async callback rejection paths', () => {
       const props = makeProps()
-      props.onSwitchWorkspace = vi.fn().mockRejectedValue(new Error('network failure'))
+      props.onCreateWorkspace = vi.fn().mockRejectedValue(new Error('network failure'))
       renderWithTheme(<UserMenu {...props} />)
       fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Switch workspace' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Create workspace' }))
 
-      expect(props.onSwitchWorkspace).toHaveBeenCalledWith({ workspaceId: 'ws-123' })
+      expect(props.onCreateWorkspace).toHaveBeenCalledWith({ workspaceId: 'ws-123' })
       expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     })
 
@@ -96,7 +100,8 @@ describe('UserMenu', () => {
       renderWithTheme(<UserMenu email="john@example.com" workspaceName="My Workspace" workspaceId="ws-123" />)
       fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
 
-      expect(screen.getByRole('menuitem', { name: 'Switch workspace' })).toBeDisabled()
+      // Switch workspace is not rendered without workspaceOptions
+      expect(screen.queryByRole('menuitem', { name: 'Switch workspace' })).not.toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Create workspace' })).toBeDisabled()
       expect(screen.getByRole('menuitem', { name: 'User settings' })).toBeDisabled()
       expect(screen.getByRole('menuitem', { name: 'Logout' })).toBeDisabled()

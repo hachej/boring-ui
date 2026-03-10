@@ -189,9 +189,15 @@ describe('WorkspaceSettingsPage', () => {
 
     fireEvent.click(screen.getByText('Retry'))
 
+    // After retry, runtime state becomes 'provisioning' which is excluded from
+    // hasRuntime, so the Runtime section hides. Verify the retry API was called.
     await waitFor(() => {
-      expect(screen.getByText('provisioning')).toBeInTheDocument()
+      expect(screen.queryByText('error')).not.toBeInTheDocument()
     })
+    const retryCalls = mockApiFetchJson.mock.calls.filter(
+      (c) => typeof c[0] === 'string' && c[0].includes('/runtime/retry')
+    )
+    expect(retryCalls).toHaveLength(1)
   })
 
   it('shows sprite URL when available', async () => {
@@ -302,13 +308,15 @@ describe('WorkspaceSettingsPage', () => {
     expect(backLink.closest('a')).toHaveAttribute('href', `/w/${WORKSPACE_ID}/`)
   })
 
-  it('shows page title "Workspace Settings"', async () => {
+  it('shows page title with workspace name and Settings', async () => {
     mockSuccessfulLoad()
 
     render(<WorkspaceSettingsPage workspaceId={WORKSPACE_ID} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Workspace Settings')).toBeInTheDocument()
+      expect(screen.getByText('Settings')).toBeInTheDocument()
     })
+    // The header title is composed: WorkspaceSwitcher / Settings
+    expect(screen.getByText('Test Workspace')).toBeInTheDocument()
   })
 })
