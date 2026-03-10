@@ -70,7 +70,7 @@ git_secrets = modal.Secret.from_name("boring-ui-git-secrets")
     image=image,
     secrets=[core_secrets, git_secrets],
     timeout=600,
-    min_containers=1,
+    min_containers=0,
     memory=1024,
 )
 @modal.concurrent(max_inputs=100)
