@@ -782,7 +782,10 @@ html {
 /* Branch submenu */
 .sync-branch-submenu {
   border-top: 1px solid var(--color-border);
-  padding: 4px 0 0;
+  padding: 4px 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--color-bg-active, rgba(0, 0, 0, 0.02));
 }
 
 .sync-branch-create {
@@ -791,6 +794,12 @@ html {
   gap: 8px;
   padding: 4px 12px 6px;
   color: var(--color-text-muted);
+  position: sticky;
+  bottom: 0;
+  background: var(--color-bg-surface);
+  border-top: 1px solid var(--color-border);
+  margin-top: 2px;
+  padding-top: 6px;
 }
 
 .sync-branch-input {
@@ -4297,6 +4306,24 @@ kbd {
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
   box-shadow: var(--shadow-sm);
+}
+
+/* Labeled variant — icon + text, replaces section title */
+.sidebar-view-toggle--labeled {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-section-header:has(.sidebar-view-toggle--labeled) .sidebar-section-title {
+  display: none;
+}
+.view-toggle-btn--labeled {
+  width: auto;
+  flex: 1;
+  gap: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .git-view-header-spinner {

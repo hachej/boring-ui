@@ -227,34 +227,32 @@ export default function FileTreePanel({ params }) {
       >
         {!sectionCollapsed && (
           <>
-            <div className="sidebar-view-toggle" role="tablist" aria-label="Sidebar view mode">
-              <Tooltip label="File tree">
-                <button
-                  type="button"
-                  className={`view-toggle-btn ${viewMode === 'files' ? 'active' : ''}`}
-                  onClick={() => setViewMode('files')}
-                  aria-label="File tree view"
-                  role="tab"
-                  aria-selected={viewMode === 'files'}
-                >
-                  <FolderOpen size={ICON_SIZE_INLINE} />
-                </button>
-              </Tooltip>
-              <Tooltip label="Git changes">
-                <button
-                  type="button"
-                  className={`view-toggle-btn ${viewMode === 'changes' ? 'active' : ''}`}
-                  onClick={() => setViewMode('changes')}
-                  aria-label="Git changes view"
-                  role="tab"
-                  aria-selected={viewMode === 'changes'}
-                >
-                  <GitBranch size={ICON_SIZE_INLINE} />
-                  {showGitHeaderSpinner && (
-                    <Loader2 size={12} className="git-view-header-spinner" aria-hidden="true" />
-                  )}
-                </button>
-              </Tooltip>
+            <div className="sidebar-view-toggle sidebar-view-toggle--labeled" role="tablist" aria-label="Sidebar view mode">
+              <button
+                type="button"
+                className={`view-toggle-btn view-toggle-btn--labeled ${viewMode === 'files' ? 'active' : ''}`}
+                onClick={() => setViewMode('files')}
+                aria-label="File tree view"
+                role="tab"
+                aria-selected={viewMode === 'files'}
+              >
+                <FolderOpen size={ICON_SIZE_INLINE} />
+                <span>Files</span>
+              </button>
+              <button
+                type="button"
+                className={`view-toggle-btn view-toggle-btn--labeled ${viewMode === 'changes' ? 'active' : ''}`}
+                onClick={() => setViewMode('changes')}
+                aria-label="Git changes view"
+                role="tab"
+                aria-selected={viewMode === 'changes'}
+              >
+                <GitBranch size={ICON_SIZE_INLINE} />
+                <span>Changes</span>
+                {showGitHeaderSpinner && (
+                  <Loader2 size={12} className="git-view-header-spinner" aria-hidden="true" />
+                )}
+              </button>
             </div>
             <Tooltip
               label={searchExpanded ? 'Close quick file search' : 'Quick file search'}
