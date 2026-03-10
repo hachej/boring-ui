@@ -184,6 +184,19 @@ async def _forward_http_request(request: Request, target_path: str, workspace_id
     )
 
 
+def _spa_response(config: APIConfig):
+    """Serve the SPA index.html for browser navigation to workspace pages."""
+    static_dir = os.environ.get("BORING_UI_STATIC_DIR", "")
+    if static_dir:
+        index = Path(static_dir) / "index.html"
+        if index.exists():
+            return FileResponse(
+                index,
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+            )
+    return JSONResponse({"error": "Frontend not available"}, status_code=404)
+
+
 def create_workspace_boundary_router(config: APIConfig) -> APIRouter:
     """Create workspace-scoped boundary router at `/w/{workspace_id}/...`."""
 
@@ -192,6 +205,11 @@ def create_workspace_boundary_router(config: APIConfig) -> APIRouter:
 
     @router.get("/w/{workspace_id}/setup")
     def workspace_setup(workspace_id: str, request: Request):
+        # Browser navigation → serve SPA HTML so the frontend handles rendering
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            return _spa_response(config)
+
         deny = enforce_delegated_policy_or_none(
             request,
             {"workspace.files.read"},

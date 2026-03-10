@@ -4538,16 +4538,22 @@ export default function App() {
     !currentWorkspaceId &&
     pagePathname === '/'
 
+  const autoCreateAttempted = React.useRef(false)
   useEffect(() => {
     if (!needsWorkspaceRedirect) return
     if (workspaceOptions.length > 0) {
       const firstWs = workspaceOptions[0]
       const route = routes.controlPlane.workspaces.scope(firstWs.id)
       window.location.replace(route.path)
-    } else {
-      setShowCreateWorkspaceModal(true)
+    } else if (!autoCreateAttempted.current) {
+      // Auto-create a default workspace instead of prompting for a name
+      autoCreateAttempted.current = true
+      handleCreateWorkspaceSubmit('My Workspace').catch(() => {
+        // Fall back to modal if auto-create fails
+        setShowCreateWorkspaceModal(true)
+      })
     }
-  }, [needsWorkspaceRedirect, workspaceOptions])
+  }, [needsWorkspaceRedirect, workspaceOptions, handleCreateWorkspaceSubmit])
 
   if (POC_MODE === 'chat') {
     return (
