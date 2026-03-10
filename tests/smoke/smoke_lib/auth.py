@@ -1,4 +1,4 @@
-"""Supabase auth flows: signup, email confirmation, signin + token exchange."""
+"""Auth flows: Supabase and Neon signup, email confirmation, signin + token exchange."""
 from __future__ import annotations
 
 import random
@@ -174,6 +174,191 @@ def signin_flow(
         raise RuntimeError(f"Token exchange not ok: {payload}")
 
     client.set_phase("session-check")
+    session_resp = client.get("/auth/session", expect_status=(200,))
+    if session_resp.status_code != 200:
+        raise RuntimeError(f"Session check failed: {session_resp.status_code}")
+    session = session_resp.json()
+    user_email = (session.get("user") or {}).get("email", "")
+    if str(user_email).strip().lower() != email.lower():
+        raise RuntimeError(f"Session email mismatch: expected {email}, got {user_email}")
+    print(f"[smoke] Session verified for {email}")
+    return session
+
+
+# ---------------------------------------------------------------------------
+# Neon Auth flows
+# ---------------------------------------------------------------------------
+
+
+def neon_signup(
+    *,
+    neon_auth_url: str,
+    email: str,
+    password: str,
+    name: str = "",
+    origin: str = "http://localhost:8000",
+    max_attempts: int = 3,
+) -> httpx.Response:
+    """Sign up via Neon Auth /sign-up/email. Returns the raw response."""
+    last_resp: httpx.Response | None = None
+    for attempt in range(1, max_attempts + 1):
+        resp = httpx.post(
+            f"{neon_auth_url.rstrip('/')}/sign-up/email",
+            headers={
+                "Content-Type": "application/json",
+                "Origin": origin,
+            },
+            json={
+                "email": email,
+                "password": password,
+                "name": name or email.split("@")[0],
+            },
+            timeout=30.0,
+        )
+        if resp.status_code in {200, 201}:
+            return resp
+        last_resp = resp
+        if resp.status_code != 429:
+            break
+        retry_after = resp.headers.get("retry-after", "").strip()
+        delay = int(retry_after) if retry_after.isdigit() else min(5 * attempt, 45)
+        time.sleep(min(max(delay, 1), 60))
+    if last_resp is None:
+        raise RuntimeError("Neon signup failed before receiving any response")
+    return last_resp
+
+
+def neon_signin(
+    *,
+    neon_auth_url: str,
+    email: str,
+    password: str,
+    origin: str = "http://localhost:8000",
+) -> httpx.Response:
+    """Sign in via Neon Auth /sign-in/email. Returns the raw response (with cookies)."""
+    resp = httpx.post(
+        f"{neon_auth_url.rstrip('/')}/sign-in/email",
+        headers={
+            "Content-Type": "application/json",
+            "Origin": origin,
+        },
+        json={"email": email, "password": password},
+        timeout=30.0,
+    )
+    return resp
+
+
+def neon_fetch_jwt(
+    *,
+    neon_auth_url: str,
+    session_cookies: dict[str, str],
+) -> str | None:
+    """Fetch EdDSA JWT from Neon Auth /token using session cookies.
+
+    Returns the JWT string, or None on failure.
+    """
+    resp = httpx.get(
+        f"{neon_auth_url.rstrip('/')}/token",
+        cookies=session_cookies,
+        timeout=15.0,
+    )
+    if resp.status_code != 200:
+        return None
+    try:
+        return resp.json().get("token")
+    except Exception:
+        return None
+
+
+def neon_signup_flow(
+    client: SmokeClient,
+    *,
+    neon_auth_url: str,
+    email: str,
+    password: str,
+    name: str = "",
+) -> str:
+    """Full Neon signup: create account -> fetch JWT -> token exchange.
+
+    Returns the JWT used for token exchange.
+    """
+    client.set_phase("neon-signup")
+    origin = client.base_url
+    print(f"[smoke] Neon signup {email}...")
+
+    resp = neon_signup(
+        neon_auth_url=neon_auth_url,
+        email=email,
+        password=password,
+        name=name,
+        origin=origin,
+    )
+    if resp.status_code not in {200, 201}:
+        raise RuntimeError(f"Neon signup failed: {resp.status_code} {resp.text[:300]}")
+
+    # Extract session cookies from signup response
+    session_cookies = dict(resp.cookies)
+    print(f"[smoke] Signup ok, got {len(session_cookies)} cookie(s)")
+
+    # Fetch JWT via /token
+    client.set_phase("neon-jwt-fetch")
+    jwt = neon_fetch_jwt(neon_auth_url=neon_auth_url, session_cookies=session_cookies)
+    if not jwt:
+        raise RuntimeError("Neon Auth /token did not return a JWT after signup")
+    print(f"[smoke] Got JWT ({len(jwt)} chars)")
+    return jwt
+
+
+def neon_signin_flow(
+    client: SmokeClient,
+    *,
+    neon_auth_url: str,
+    email: str,
+    password: str,
+) -> dict:
+    """Full Neon signin: authenticate -> fetch JWT -> token exchange -> session verify.
+
+    Returns the session payload from /auth/session.
+    """
+    client.set_phase("neon-signin")
+    origin = client.base_url
+    print(f"[smoke] Neon signin {email}...")
+
+    resp = neon_signin(
+        neon_auth_url=neon_auth_url,
+        email=email,
+        password=password,
+        origin=origin,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Neon signin failed: {resp.status_code} {resp.text[:300]}")
+
+    # Extract session cookies from signin response
+    session_cookies = dict(resp.cookies)
+    print(f"[smoke] Signin ok, got {len(session_cookies)} cookie(s)")
+
+    # Fetch JWT via /token
+    client.set_phase("neon-jwt-fetch")
+    jwt = neon_fetch_jwt(neon_auth_url=neon_auth_url, session_cookies=session_cookies)
+    if not jwt:
+        raise RuntimeError("Neon Auth /token did not return a JWT after signin")
+    print(f"[smoke] Got JWT ({len(jwt)} chars)")
+
+    # Exchange JWT for boring-ui session cookie
+    client.set_phase("neon-token-exchange")
+    exch_resp = client.post(
+        "/auth/token-exchange",
+        json={"access_token": jwt, "redirect_uri": "/"},
+        expect_status=(200,),
+    )
+    if exch_resp.status_code != 200:
+        raise RuntimeError(f"Token exchange failed: {exch_resp.status_code} {exch_resp.text[:300]}")
+    payload = exch_resp.json()
+    if not payload.get("ok"):
+        raise RuntimeError(f"Token exchange not ok: {payload}")
+
+    # Verify session
+    client.set_phase("neon-session-check")
     session_resp = client.get("/auth/session", expect_status=(200,))
     if session_resp.status_code != 200:
         raise RuntimeError(f"Session check failed: {session_resp.status_code}")

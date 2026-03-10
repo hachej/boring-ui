@@ -56,3 +56,11 @@ def anthropic_api_key() -> str:
         vault_path="secret/agent/anthropic",
         vault_field="api_key",
     )
+
+
+def neon_auth_url() -> str:
+    return secret(
+        env="NEON_AUTH_BASE_URL",
+        vault_path="secret/agent/boring-ui-neon-auth",
+        vault_field="base_url",
+    ).rstrip("/")
