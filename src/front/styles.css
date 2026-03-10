@@ -620,6 +620,7 @@ html {
   color: var(--color-text-muted);
   flex-shrink: 0;
   min-height: 26px;
+  position: relative;
 }
 
 .sync-branch {
@@ -651,7 +652,19 @@ html {
   align-items: center;
   gap: 3px;
   white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.sync-state:hover {
+  opacity: 0.8;
+}
+.sync-state:disabled {
   cursor: default;
+  opacity: 1;
 }
 
 .sync-state--ok {
@@ -668,6 +681,116 @@ html {
 
 .sync-state--error {
   color: var(--color-error);
+}
+
+.sync-state--paused {
+  color: var(--color-text-muted);
+}
+
+/* Sync menu trigger (three-dot button) */
+.sync-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  border-radius: 3px;
+  margin-left: 2px;
+}
+.sync-menu-trigger:hover,
+.sync-menu-trigger--active {
+  color: var(--color-text);
+  background: var(--color-bg-hover);
+}
+
+/* Sync popover menu */
+.sync-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  min-width: 180px;
+  padding: 4px 0;
+  z-index: 100;
+}
+
+.sync-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text);
+  text-align: left;
+  white-space: nowrap;
+}
+.sync-menu-item:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+.sync-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sync-menu-item--current {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+.sync-menu-item--submenu {
+  justify-content: flex-start;
+}
+.sync-menu-item--loading {
+  cursor: default;
+}
+.sync-menu-chevron {
+  margin-left: auto;
+}
+
+.sync-menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+/* Branch submenu */
+.sync-branch-submenu {
+  border-top: 1px solid var(--color-border);
+  padding: 4px 0 0;
+}
+
+.sync-branch-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 6px;
+  color: var(--color-text-muted);
+}
+
+.sync-branch-input {
+  flex: 1;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text);
+  outline: none;
+  min-width: 0;
+}
+.sync-branch-input:focus {
+  border-color: var(--color-accent);
 }
 
 /* Sidebar header with collapse button */

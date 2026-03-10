@@ -50,12 +50,12 @@ export const performSyncCycle = async (gitProvider, opts = {}) => {
   } = opts
 
   // 1. Check if repo exists; auto-init if needed
-  const status = await gitProvider.status()
+  let status = await gitProvider.status()
   if (!status.is_repo) {
     if (autoInit && typeof gitProvider.init === 'function') {
       await gitProvider.init()
-      const fresh = await gitProvider.status()
-      if (!fresh.files || fresh.files.length === 0) {
+      status = await gitProvider.status()
+      if (!status.files || status.files.length === 0) {
         return { skipped: true }
       }
     } else {
@@ -63,8 +63,8 @@ export const performSyncCycle = async (gitProvider, opts = {}) => {
     }
   }
 
-  // 2. Get dirty files
-  const { files = [] } = status.is_repo ? await gitProvider.status() : { files: [] }
+  // 2. Get dirty files (reuse status from step 1)
+  const { files = [] } = status
   const dirty = files.filter((f) => f.status && f.status !== 'C')
   const conflicts = files.filter((f) => f.status === 'C')
 
@@ -72,27 +72,28 @@ export const performSyncCycle = async (gitProvider, opts = {}) => {
     throw Object.assign(new Error(`${conflicts.length} conflicted file(s)`), { isConflict: true })
   }
 
-  if (dirty.length === 0) return { skipped: true }
+  let oid
+  if (dirty.length > 0) {
+    // 3. Stage all dirty files
+    const paths = dirty.map((f) => f.path)
+    await gitProvider.add(paths)
 
-  // 3. Stage all dirty files
-  const paths = dirty.map((f) => f.path)
-  await gitProvider.add(paths)
+    // 4. Commit
+    const names = paths.slice(0, 5).join(', ')
+    const suffix = paths.length > 5 ? `, +${paths.length - 5} more` : ''
+    const msg = message || `auto: update ${names}${suffix}`
+    ;({ oid } = await gitProvider.commit(msg, { author }))
+  }
 
-  // 4. Commit
-  const names = paths.slice(0, 5).join(', ')
-  const suffix = paths.length > 5 ? `, +${paths.length - 5} more` : ''
-  const msg = message || `auto: update ${names}${suffix}`
-  const { oid } = await gitProvider.commit(msg, { author })
-
-  // 5. Push (if enabled, remote ops available, and remotes configured)
+  // 5. Push (if enabled, remote ops available, and remotes configured).
+  //    Runs even when no dirty files — handles previously committed but
+  //    unpushed changes (e.g. from a failed push in a prior cycle).
   let pushError = null
   if (pushEnabled && typeof gitProvider.push === 'function') {
-    // Only push if at least one remote is configured
     const remotes = typeof gitProvider.listRemotes === 'function'
       ? await gitProvider.listRemotes()
       : []
     if (remotes.length > 0) {
-      // Pull first (separate error handling)
       if (pullBeforePush && typeof gitProvider.pull === 'function') {
         try {
           await gitProvider.pull({ ...remoteOpts, author })
@@ -100,7 +101,6 @@ export const performSyncCycle = async (gitProvider, opts = {}) => {
           pushError = `Pull failed: ${pullErr.message}`
         }
       }
-      // Only push if pull succeeded
       if (!pushError) {
         try {
           await gitProvider.push(remoteOpts)
@@ -111,6 +111,7 @@ export const performSyncCycle = async (gitProvider, opts = {}) => {
     }
   }
 
+  if (!oid && !pushError) return { skipped: true }
   return { oid, filesCount: dirty.length, pushError }
 }
 

@@ -1,27 +1,113 @@
-import { Check, GitBranch, Cloud, Loader2, AlertTriangle, CloudOff } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import {
+  Check, GitBranch, Cloud, Loader2, AlertTriangle, CloudOff,
+  MoreHorizontal, RefreshCw, Pause, Play, GitBranchPlus, ChevronRight,
+} from 'lucide-react'
 import { useGitStatus, useGitBranch } from '../providers/data'
+import { useDataProvider } from '../providers/data/DataContext'
 import { useAutoSync } from '../hooks/useAutoSync'
 import Tooltip from './Tooltip'
+
+const SYNC_INTERVAL = 10000
 
 /**
  * Sync status footer for the file tree sidebar.
  *
- * Shows: [branch indicator] [sync state icon + label]
+ * Shows: [branch indicator] [sync state] [...menu]
  *
- * When githubConnected is true, starts the auto-sync engine which
- * commits dirty files and pushes to the remote every 10s.
+ * Menu provides: sync now, pause/resume auto-sync, switch branch.
  */
 export default function SyncStatusFooter({ githubConnected }) {
+  const provider = useDataProvider()
   const { data: gitData } = useGitStatus()
-  const { data: branch } = useGitBranch({ refetchInterval: 30000 })
+  const { data: branch, refetch: refetchBranch } = useGitBranch({ refetchInterval: 30000 })
   const isRepo = gitData?.is_repo
 
-  const { state: syncState, lastError } = useAutoSync({
-    enabled: isRepo && githubConnected,
+  const [paused, setPaused] = useState(false)
+  const { state: syncState, lastError, lastSyncTimestamp, syncNow } = useAutoSync({
+    enabled: isRepo && githubConnected && !paused,
     pushEnabled: !!githubConnected,
     initialPull: !!githubConnected,
-    intervalMs: 10000,
+    intervalMs: SYNC_INTERVAL,
   })
+
+  // Countdown to next sync
+  const [secondsLeft, setSecondsLeft] = useState(null)
+  useEffect(() => {
+    if (!lastSyncTimestamp || syncState !== 'idle') {
+      setSecondsLeft(null)
+      return
+    }
+    const tick = () => {
+      const elapsed = Date.now() - lastSyncTimestamp
+      const remaining = Math.max(0, Math.ceil((SYNC_INTERVAL - elapsed) / 1000))
+      setSecondsLeft(remaining)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [lastSyncTimestamp, syncState])
+
+  // Menu state
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [branchSubmenuOpen, setBranchSubmenuOpen] = useState(false)
+  const [branches, setBranches] = useState(null)
+  const [newBranchName, setNewBranchName] = useState('')
+  const [switching, setSwitching] = useState(false)
+  const menuRef = useRef(null)
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false)
+        setBranchSubmenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [menuOpen])
+
+  // Fetch branches when submenu opens; reset on close
+  useEffect(() => {
+    if (!branchSubmenuOpen) {
+      setBranches(null)
+      return
+    }
+    let cancelled = false
+    provider.git.branches().then((data) => {
+      if (!cancelled) setBranches(data.branches || [])
+    }).catch(() => {
+      if (!cancelled) setBranches([])
+    })
+    return () => { cancelled = true }
+  }, [branchSubmenuOpen, provider])
+
+  const handleCheckout = useCallback(async (name) => {
+    setSwitching(true)
+    try {
+      await provider.git.checkout(name)
+      refetchBranch()
+    } catch { /* ignore */ }
+    setSwitching(false)
+    setMenuOpen(false)
+    setBranchSubmenuOpen(false)
+  }, [provider, refetchBranch])
+
+  const handleCreateBranch = useCallback(async () => {
+    const name = newBranchName.trim()
+    if (!name) return
+    setSwitching(true)
+    try {
+      await provider.git.createBranch(name, true)
+      refetchBranch()
+      setNewBranchName('')
+    } catch { /* ignore */ }
+    setSwitching(false)
+    setMenuOpen(false)
+    setBranchSubmenuOpen(false)
+  }, [provider, newBranchName, refetchBranch])
 
   if (!isRepo) return null
 
@@ -29,6 +115,7 @@ export default function SyncStatusFooter({ githubConnected }) {
   const isMain = branch === 'main' || branch === 'master'
 
   const syncIcon = () => {
+    if (paused) return <Pause size={12} />
     switch (syncState) {
       case 'syncing':
         return <Loader2 size={12} className="git-inline-spinner" />
@@ -42,6 +129,7 @@ export default function SyncStatusFooter({ githubConnected }) {
   }
 
   const syncLabel = () => {
+    if (paused) return 'Paused'
     switch (syncState) {
       case 'syncing':
         return 'Syncing...'
@@ -57,6 +145,7 @@ export default function SyncStatusFooter({ githubConnected }) {
   }
 
   const syncClass = () => {
+    if (paused) return 'sync-state--paused'
     switch (syncState) {
       case 'syncing':
         return 'sync-state--syncing'
@@ -70,10 +159,18 @@ export default function SyncStatusFooter({ githubConnected }) {
     }
   }
 
-  const tooltipLabel = lastError || (syncState === 'syncing' ? 'Committing & pushing...' : 'All changes synced')
+  const tooltipLabel = (() => {
+    if (paused) return 'Auto-sync paused'
+    if (lastError) return lastError
+    if (syncState === 'syncing') return 'Committing & pushing...'
+    if (syncState === 'idle' && secondsLeft != null) {
+      return `All changes synced · next check in ${secondsLeft}s`
+    }
+    return 'All changes synced'
+  })()
 
   return (
-    <div className="sync-status-footer">
+    <div className="sync-status-footer" ref={menuRef}>
       {branchLabel && (
         <Tooltip label={`Branch: ${branchLabel}`}>
           <span className={`sync-branch ${isMain ? '' : 'sync-branch--draft'}`}>
@@ -84,11 +181,94 @@ export default function SyncStatusFooter({ githubConnected }) {
       )}
       <span className="sync-state-spacer" />
       <Tooltip label={tooltipLabel}>
-        <span className={`sync-state ${syncClass()}`}>
+        <button
+          type="button"
+          className={`sync-state ${syncClass()}`}
+          onClick={syncNow}
+          disabled={syncState === 'syncing' || paused}
+        >
           {syncIcon()}
           <span>{syncLabel()}</span>
-        </span>
+        </button>
       </Tooltip>
+      <Tooltip label="Sync options">
+        <button
+          type="button"
+          className={`sync-menu-trigger${menuOpen ? ' sync-menu-trigger--active' : ''}`}
+          onClick={() => { setMenuOpen(!menuOpen); setBranchSubmenuOpen(false) }}
+          aria-label="Sync options"
+        >
+          <MoreHorizontal size={14} />
+        </button>
+      </Tooltip>
+      {menuOpen && (
+        <div className="sync-menu">
+          <button
+            type="button"
+            className="sync-menu-item"
+            onClick={() => { syncNow(); setMenuOpen(false) }}
+            disabled={syncState === 'syncing' || paused}
+          >
+            <RefreshCw size={13} />
+            <span>Sync now</span>
+          </button>
+          <button
+            type="button"
+            className="sync-menu-item"
+            onClick={() => { setPaused(!paused); setMenuOpen(false) }}
+          >
+            {paused ? <Play size={13} /> : <Pause size={13} />}
+            <span>{paused ? 'Resume auto-sync' : 'Pause auto-sync'}</span>
+          </button>
+          <div className="sync-menu-divider" />
+          <button
+            type="button"
+            className="sync-menu-item sync-menu-item--submenu"
+            onClick={() => setBranchSubmenuOpen(!branchSubmenuOpen)}
+          >
+            <GitBranch size={13} />
+            <span>Switch branch</span>
+            <ChevronRight size={12} className="sync-menu-chevron" />
+          </button>
+          {branchSubmenuOpen && (
+            <div className="sync-branch-submenu">
+              {branches === null ? (
+                <div className="sync-menu-item sync-menu-item--loading">
+                  <Loader2 size={13} className="git-inline-spinner" />
+                  <span>Loading...</span>
+                </div>
+              ) : (
+                <>
+                  {branches.map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      className={`sync-menu-item${b === branch ? ' sync-menu-item--current' : ''}`}
+                      onClick={() => b !== branch && handleCheckout(b)}
+                      disabled={switching || b === branch}
+                    >
+                      {b === branch ? <Check size={13} /> : <GitBranch size={13} />}
+                      <span>{b}</span>
+                    </button>
+                  ))}
+                  <div className="sync-menu-divider" />
+                  <div className="sync-branch-create">
+                    <GitBranchPlus size={13} />
+                    <input
+                      type="text"
+                      className="sync-branch-input"
+                      placeholder="New branch..."
+                      value={newBranchName}
+                      onChange={(e) => setNewBranchName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCreateBranch()}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
