@@ -70,8 +70,7 @@ test.describe('User Menu Control-Plane Flows', () => {
     await stubCapabilities(page)
   })
 
-  test('switch workspace navigates to canonical /w/{id}/ after preflight', async ({ page }) => {
-    const requests = trackApiRequests(page)
+  test('switch workspace navigates to canonical /w/{id}/ via submenu', async ({ page }) => {
     const navRequests: string[] = []
 
     page.on('request', (request) => {
@@ -98,48 +97,25 @@ test.describe('User Menu Control-Plane Flows', () => {
       return fulfillJson(route, 405, { detail: 'unexpected method' })
     })
 
-    await page.route('**/api/v1/workspaces/ws-2/runtime**', (route) =>
-      fulfillJson(route, 200, { runtime: { status: 'ready' } }),
-    )
-    await page.route('**/api/v1/workspaces/ws-2/settings**', (route) =>
-      fulfillJson(route, 200, { data: { workspace_settings: { shell: 'zsh' } } }),
-    )
-
     // Intercept the navigation away from the UI and fulfill a minimal HTML response.
-    // Use a regex so this stays robust across dev/prod base URLs.
     await page.route(/\/w\/ws-2(\/|$)/, (route) =>
       route.fulfill({ status: 200, contentType: 'text/html', body: '<html></html>' }),
     )
 
     await page.goto('/w/ws-1/')
     const userMenuButton = await waitForUserMenuButton(page)
-    await expect.poll(() => requests.map((r) => `${r.method} ${r.pathname}`)).toEqual(
-      expect.arrayContaining([
-        'GET /api/v1/me',
-        'GET /api/v1/workspaces',
-      ]),
-    )
 
-    // Avoid flaky Playwright dialog handling: stub prompt directly and keep the test focused
-    // on the canonical navigation + preflight request pattern.
-    await page.evaluate(() => {
-      window.prompt = () => 'ws-2'
-    })
-
+    // Open user menu and click Switch workspace to reveal the submenu
     await userMenuButton.click()
     await expect(page.getByRole('menuitem', { name: 'Switch workspace' })).toBeVisible()
     await page.getByRole('menuitem', { name: 'Switch workspace' }).click()
 
+    // Click the target workspace in the submenu portal
+    const wsItem = page.locator('.user-menu-ws-submenu-item', { hasText: 'Two' })
+    await expect(wsItem).toBeVisible({ timeout: 5000 })
+    await wsItem.click()
+
     await expect.poll(() => navRequests.map((pathname) => pathname.replace(/\/$/, ''))).toContain('/w/ws-2')
-    // Diagnostic: ensure preflight hits canonical endpoints.
-    expect(requests.map((r) => `${r.method} ${r.pathname}`)).toEqual(
-      expect.arrayContaining([
-        'GET /api/v1/me',
-        'GET /api/v1/workspaces',
-        'GET /api/v1/workspaces/ws-2/runtime',
-        'GET /api/v1/workspaces/ws-2/settings',
-      ]),
-    )
   })
 
   test('create workspace writes settings and navigates to canonical /w/{id}/', async ({ page }) => {

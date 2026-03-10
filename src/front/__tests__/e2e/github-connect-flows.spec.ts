@@ -242,8 +242,8 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
 
       await page.goto('/w/ws-gh-test/settings')
 
-      // Settings page is a full-page view — wait for the page title
-      await expect(page.locator('text=Workspace Settings')).toBeVisible({ timeout: 20000 })
+      // Settings page is a full-page view — wait for the General section (always present when loaded)
+      await expect(page.locator('h2:has-text("General")')).toBeVisible({ timeout: 20000 })
       await expect(page.locator('text=GitHub Integration')).toBeVisible({ timeout: 10000 })
 
       const connectBtn = page.locator('button', { hasText: 'Connect GitHub' })
@@ -257,7 +257,7 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
       await stubGitHubStatus(page, { configured: true, connected: false })
 
       await page.goto('/w/ws-gh-test/settings')
-      await expect(page.locator('text=Workspace Settings')).toBeVisible({ timeout: 20000 })
+      await expect(page.locator('h2:has-text("General")')).toBeVisible({ timeout: 20000 })
 
       const { waitForCall } = await interceptGitHubAuthorize(page)
 
@@ -277,7 +277,7 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
       await stubGitHubStatus(page, { configured: true, connected: true })
 
       await page.goto('/w/ws-gh-test/settings')
-      await expect(page.locator('text=Workspace Settings')).toBeVisible({ timeout: 20000 })
+      await expect(page.locator('h2:has-text("General")')).toBeVisible({ timeout: 20000 })
       await expect(page.locator('text=GitHub Integration')).toBeVisible({ timeout: 10000 })
       await expect(page.locator('.github-connect-connected')).toBeVisible()
       await expect(page.locator('button', { hasText: 'Disconnect' })).toBeVisible()
@@ -289,7 +289,7 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
       await stubWorkspaceData(page)
 
       await page.goto('/w/ws-gh-test/settings')
-      await expect(page.locator('text=Workspace Settings')).toBeVisible({ timeout: 20000 })
+      await expect(page.locator('h2:has-text("General")')).toBeVisible({ timeout: 20000 })
       await expect(page.locator('text=GitHub Integration')).not.toBeVisible()
     })
   })

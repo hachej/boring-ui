@@ -608,6 +608,60 @@ html {
   flex-shrink: 0;
 }
 
+/* ── Sync status footer ────────────────────────────────────────── */
+
+.sync-status-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  min-height: 26px;
+}
+
+.sync-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+  cursor: default;
+}
+
+.sync-branch--draft {
+  color: var(--color-accent);
+}
+
+.sync-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sync-state-spacer {
+  flex: 1;
+}
+
+.sync-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.sync-state--ok {
+  color: var(--color-success);
+}
+
+.sync-state--dirty {
+  color: var(--color-text-muted);
+}
+
 /* Sidebar header with collapse button */
 .sidebar-header {
   display: flex;
@@ -4771,7 +4825,7 @@ kbd {
   background: var(--color-bg-elevated, var(--panel-bg));
   border: 1px solid var(--color-border, var(--border-color));
   border-radius: var(--radius-md, 6px);
-  box-shadow: var(--shadow-lg, 0 4px 12px rgba(0, 0, 0, 0.15));
+  box-shadow: var(--shadow-lg);
   max-height: 200px;
   overflow-y: auto;
   padding: var(--space-1, 4px) 0;
@@ -4790,7 +4844,7 @@ kbd {
 }
 
 .user-menu-ws-submenu-item:hover {
-  background: var(--color-bg-hover, rgba(255, 255, 255, 0.06));
+  background: var(--color-bg-hover);
   color: var(--color-text-primary);
 }
 
@@ -5813,7 +5867,7 @@ kbd {
   font-size: 13px;
 }
 .github-connect-wizard-connected {
-  color: var(--accent-green, #4ade80);
+  color: var(--color-success);
 }
 .github-connect-wizard-error {
   display: flex;
