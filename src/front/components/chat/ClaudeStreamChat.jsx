@@ -1654,6 +1654,28 @@ const ComposerShell = ({
     inputRef.current?.focus?.()
   }, [])
 
+  // Listen for external agent prompt requests (e.g. from sync menu)
+  useEffect(() => {
+    const handlePrompt = (e) => {
+      const text = e.detail?.prompt
+      if (!text) return
+      composerApi?.setText?.(text)
+      if (inputRef.current) {
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLTextAreaElement.prototype,
+          'value'
+        )?.set
+        if (nativeSetter) {
+          nativeSetter.call(inputRef.current, text)
+          inputRef.current.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+        inputRef.current.focus()
+      }
+    }
+    window.addEventListener('boring-ui:agent-prompt', handlePrompt)
+    return () => window.removeEventListener('boring-ui:agent-prompt', handlePrompt)
+  }, [composerApi])
+
   const applyComposerText = useCallback((nextText) => {
     composerApi?.setText?.(nextText)
     if (inputRef.current) {

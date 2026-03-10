@@ -785,6 +785,13 @@ html {
 .sync-menu-item--loading {
   cursor: default;
 }
+.sync-menu-item--agent {
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+.sync-menu-item--agent:hover:not(:disabled) {
+  color: var(--color-accent);
+}
 .sync-menu-chevron {
   margin-left: auto;
 }

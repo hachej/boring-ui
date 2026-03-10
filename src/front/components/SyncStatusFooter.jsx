@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Check, FolderOpen, GitBranch, Cloud, Loader2, AlertTriangle, CloudOff,
-  MoreHorizontal, RefreshCw, Pause, Play, GitBranchPlus, ChevronRight,
+  Check, FolderOpen, GitBranch, GitMerge, Cloud, Loader2, AlertTriangle, CloudOff,
+  MoreHorizontal, RefreshCw, Pause, Play, GitBranchPlus, ChevronRight, MessageSquare,
 } from 'lucide-react'
 import { useGitStatus, useGitBranch } from '../providers/data'
 import { useDataProvider } from '../providers/data/DataContext'
@@ -9,6 +9,30 @@ import { useAutoSync } from '../hooks/useAutoSync'
 import Tooltip from './Tooltip'
 
 const SYNC_INTERVAL = 10000
+
+/** Inject a prompt into the agent chat input (works across shadow DOM). */
+const askAgent = (prompt) => {
+  // Fire event for React-based chat (ClaudeStreamChat / Companion Composer)
+  window.dispatchEvent(new CustomEvent('boring-ui:agent-prompt', { detail: { prompt } }))
+  // Also reach into shadow DOM textarea (native Lit-based chat panel)
+  try {
+    const shadowHost = document.querySelector('[style*="display: flex"]')
+    const roots = []
+    document.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) roots.push(el.shadowRoot) })
+    for (const root of roots) {
+      const ta = root.querySelector('textarea')
+      if (ta) {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+        if (setter) {
+          setter.call(ta, prompt)
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+        ta.focus()
+        return
+      }
+    }
+  } catch { /* fallback to event only */ }
+}
 
 /**
  * Sync status footer for the file tree sidebar.
@@ -304,6 +328,42 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
                 </>
               )}
             </div>
+          )}
+          <div className="sync-menu-divider" />
+          <button
+            type="button"
+            className="sync-menu-item sync-menu-item--agent"
+            onClick={() => {
+              askAgent(`Create a new git branch from ${branch || 'main'} for my next feature. Ask me what to name it.`)
+              setMenuOpen(false)
+            }}
+          >
+            <GitBranchPlus size={13} />
+            <span>Ask agent: create branch</span>
+          </button>
+          <button
+            type="button"
+            className="sync-menu-item sync-menu-item--agent"
+            onClick={() => {
+              askAgent(`Merge the current branch (${branch || 'main'}) — list available branches and ask me which one to merge, then perform the merge.`)
+              setMenuOpen(false)
+            }}
+          >
+            <GitMerge size={13} />
+            <span>Ask agent: merge branch</span>
+          </button>
+          {syncState === 'conflict' && (
+            <button
+              type="button"
+              className="sync-menu-item sync-menu-item--agent"
+              onClick={() => {
+                askAgent('There are git merge conflicts in my workspace. List the conflicted files, show me the conflicts, and help me resolve them.')
+                setMenuOpen(false)
+              }}
+            >
+              <MessageSquare size={13} />
+              <span>Ask agent: resolve conflicts</span>
+            </button>
           )}
         </div>
       )}

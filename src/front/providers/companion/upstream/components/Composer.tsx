@@ -49,6 +49,18 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const currentMode = sessionData?.permissionMode || "acceptEdits";
   const isPlan = currentMode === "plan";
 
+  // Listen for external agent prompt requests (e.g. from sync menu)
+  useEffect(() => {
+    const handlePrompt = (e: Event) => {
+      const prompt = (e as CustomEvent).detail?.prompt;
+      if (!prompt) return;
+      setText(prompt);
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    };
+    window.addEventListener("boring-ui:agent-prompt", handlePrompt);
+    return () => window.removeEventListener("boring-ui:agent-prompt", handlePrompt);
+  }, []);
+
   // Build command list from session data
   const allCommands = useMemo<CommandItem[]>(() => {
     const cmds: CommandItem[] = [];
