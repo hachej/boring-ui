@@ -4,6 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0, user-scalable=yes" />
     <title>Kurt Web UI</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100% }
+      html { background: #ffffff; color: #767676 }
+      [data-theme="dark"] { background: #1f1f1f; color: #888888 }
+      @keyframes _boot-spin { to { transform: rotate(360deg) } }
+    </style>
     <!-- Inline script to prevent flash of wrong theme -->
     <script>
       (function() {
@@ -21,16 +27,13 @@
   <body>
     <div id="root">
       <!-- Pre-React loading indicator (replaced when React mounts) -->
-      <div id="app-boot-loader" style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui,sans-serif;flex-direction:column;gap:12px">
+      <div
+        id="app-boot-loader"
+        style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;flex-direction:column;gap:12px;text-align:center"
+      >
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:_boot-spin 1s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg>
         <span style="font-size:13px;opacity:.7">Loading workspace</span>
       </div>
-      <style>
-        @keyframes _boot-spin{to{transform:rotate(360deg)}}
-        html,body{margin:0;padding:0;height:100%}
-        html{background:#ffffff;color:#767676}
-        [data-theme="dark"]{background:#1f1f1f;color:#888888}
-      </style>
     </div>
     <script type="module" src="/src/front/main.jsx"></script>
   </body>

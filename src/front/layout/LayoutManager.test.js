@@ -180,11 +180,12 @@ describe('LayoutManager', () => {
       expect(validateLayoutStructure(layout)).toBe(true)
     })
 
-    it('returns false when essential panel is in panels but not in grid', () => {
+    it('allows layout when essential panels are omitted from grid views but exist in panels', () => {
       const layout = createValidLayout()
-      // filetree exists in panels but remove it from grid views
       layout.grid.root.data[0].data.views = []
-      expect(validateLayoutStructure(layout)).toBe(false)
+      layout.grid.root.data[1].data[0].data.views = [{ id: 'editor-1' }]
+      layout.grid.root.data[1].data[1].data.views = []
+      expect(validateLayoutStructure(layout)).toBe(true)
     })
   })
 

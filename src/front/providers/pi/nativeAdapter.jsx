@@ -510,9 +510,6 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
   // user scope for IndexedDB. In local mode (no control plane) authResolved
   // defaults to true and userId stays '' — we use the unscoped DB name.
   const userScope = authResolved ? userId : null
-  if (authResolved) {
-    console.info('[PI] user scope for IndexedDB:', userScope ? `boring-ui-pi-agent-${userScope}` : 'boring-ui-pi-agent (unscoped)')
-  }
 
   useEffect(() => {
     const rootEl = rootRef.current

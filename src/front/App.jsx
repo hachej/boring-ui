@@ -30,7 +30,6 @@ import {
 } from './utils/workspaceSwitch'
 import {
   LAYOUT_VERSION,
-  validateLayoutStructure,
   loadSavedTabs,
   saveTabs,
   loadLayout,
@@ -581,14 +580,12 @@ export default function App() {
   }, [nativeAgentEnabled, workspaceComponents])
 
   const capabilitiesFeatureCount = Object.keys(capabilities?.features || {}).length
+  const hasResolvedCapabilities = !!capabilities && (
+    capabilitiesFeatureCount > 0 || capabilities?.version !== 'unknown'
+  )
   const capabilitiesPending = staticCapabilities
     ? false
-    : (capabilitiesLoading
-      || !capabilities
-      || (
-        capabilities?.version === 'unknown'
-        && capabilitiesFeatureCount === 0
-      ))
+    : !hasResolvedCapabilities
 
   // Check for unavailable essential panes
   const unavailableEssentials = !capabilitiesPending && capabilities
@@ -3238,43 +3235,18 @@ export default function App() {
       )
     }
 
-    // Check if there's a saved layout - if so, DON'T create panels here
-    // Let the layout restoration effect handle it to avoid creating->destroying->recreating
-    // We check localStorage directly since projectRoot isn't available yet
+    // Check if there's any saved layout for this storage prefix.
+    // Do not mutate localStorage here: startup-time purges can cause visible
+    // create->destroy->recreate jumps when identity/workspace scope settles.
+    // Validation/recovery is handled later by loadLayout().
     let hasSavedLayout = false
-    let invalidLayoutFound = false
     try {
-      // Use storagePrefix from config (available via closure from outer scope)
       const layoutKeyPrefix = `${storagePrefix}-`
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i)
         if (key && key.startsWith(layoutKeyPrefix) && key.endsWith('-layout')) {
-          const raw = localStorage.getItem(key)
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            const hasValidVersion = parsed?.version >= LAYOUT_VERSION
-            const hasPanels = !!parsed?.panels
-            const hasValidStructure = validateLayoutStructure(parsed)
-
-            // Check if layout is valid
-            if (hasValidVersion && hasPanels && hasValidStructure) {
-              hasSavedLayout = true
-              break
-            }
-
-            // Invalid layout detected - clean up and reload
-            if (!hasValidStructure || !hasValidVersion || !hasPanels) {
-              console.warn('[Layout] Invalid layout detected in onReady, clearing and reloading:', key)
-              localStorage.removeItem(key)
-              // Clear related session storage
-              const keyPrefix = key.replace('-layout', '')
-              localStorage.removeItem(`${keyPrefix}-tabs`)
-              localStorage.removeItem(`${storagePrefix}-terminal-sessions`)
-              localStorage.removeItem(`${storagePrefix}-terminal-active`)
-              localStorage.removeItem(`${storagePrefix}-terminal-chat-interface`)
-              invalidLayoutFound = true
-            }
-          }
+          hasSavedLayout = true
+          break
         }
       }
     } catch {
@@ -3295,7 +3267,7 @@ export default function App() {
           capabilitiesLoadingRef.current,
         )
       : ensureCorePanels
-    if (!hasSavedLayout || invalidLayoutFound) {
+    if (!hasSavedLayout) {
       panelBuilder()
     }
     ensureCorePanelsRef.current = panelBuilder
@@ -4593,6 +4565,15 @@ export default function App() {
     userMenuAuthStatus === 'authenticated' &&
     !currentWorkspaceId &&
     pagePathname === '/'
+  const showBootLoading =
+    capabilitiesPending ||
+    (
+      capabilities?.features?.control_plane &&
+      userMenuAuthStatus === 'unknown' &&
+      !isAuthLoginPage &&
+      !isAuthCallbackPage
+    ) ||
+    needsWorkspaceRedirect
 
   useEffect(() => {
     if (!needsWorkspaceRedirect) return
@@ -4680,7 +4661,7 @@ export default function App() {
               <UserIdentityProvider value={userIdentity}>
                 <CapabilitiesStatusContext.Provider value={{ pending: capabilitiesPending }}>
                   <CapabilitiesContext.Provider value={capabilities}>
-                    {capabilitiesPending ? (
+                    {showBootLoading ? (
                       <WorkspaceLoading />
                     ) : (
                       <div data-testid="dockview" className="dockview-host">
