@@ -1,5 +1,6 @@
-import { Check, GitBranch, Cloud } from 'lucide-react'
+import { Check, GitBranch, Cloud, Loader2, AlertTriangle, CloudOff } from 'lucide-react'
 import { useGitStatus, useGitBranch } from '../providers/data'
+import { useAutoSync } from '../hooks/useAutoSync'
 import Tooltip from './Tooltip'
 
 /**
@@ -7,23 +8,68 @@ import Tooltip from './Tooltip'
  *
  * Shows: [branch indicator] [sync state icon + label]
  *
- * Note: useGitStatus is shared via React Query's cache deduplication —
- * FileTreePanel's existing 5s poll populates the same query key, so this
- * component reads from cache without triggering duplicate requests.
- * Branch is polled at 30s since it only changes on explicit user action.
+ * When githubConnected is true, starts the auto-sync engine which
+ * commits dirty files and pushes to the remote every 10s.
  */
-export default function SyncStatusFooter() {
+export default function SyncStatusFooter({ githubConnected }) {
   const { data: gitData } = useGitStatus()
   const { data: branch } = useGitBranch({ refetchInterval: 30000 })
   const isRepo = gitData?.is_repo
-  const files = gitData?.files || []
-  const dirtyCount = files.filter((f) => f.status && f.status !== 'C').length
+
+  const { state: syncState, lastError } = useAutoSync({
+    enabled: isRepo && githubConnected,
+    pushEnabled: !!githubConnected,
+    intervalMs: 10000,
+  })
 
   if (!isRepo) return null
 
-  const isClean = dirtyCount === 0
   const branchLabel = branch || null
   const isMain = branch === 'main' || branch === 'master'
+
+  const syncIcon = () => {
+    switch (syncState) {
+      case 'syncing':
+        return <Loader2 size={12} className="git-inline-spinner" />
+      case 'error':
+        return <AlertTriangle size={12} />
+      case 'conflict':
+        return <CloudOff size={12} />
+      default:
+        return githubConnected ? <Cloud size={12} /> : <Check size={12} />
+    }
+  }
+
+  const syncLabel = () => {
+    switch (syncState) {
+      case 'syncing':
+        return 'Syncing...'
+      case 'error':
+        return 'Sync error'
+      case 'conflict':
+        return 'Conflict'
+      case 'idle':
+        return 'Synced'
+      default:
+        return 'Saved'
+    }
+  }
+
+  const syncClass = () => {
+    switch (syncState) {
+      case 'syncing':
+        return 'sync-state--syncing'
+      case 'error':
+      case 'conflict':
+        return 'sync-state--error'
+      case 'idle':
+        return 'sync-state--ok'
+      default:
+        return 'sync-state--ok'
+    }
+  }
+
+  const tooltipLabel = lastError || (syncState === 'syncing' ? 'Committing & pushing...' : 'All changes synced')
 
   return (
     <div className="sync-status-footer">
@@ -36,19 +82,10 @@ export default function SyncStatusFooter() {
         </Tooltip>
       )}
       <span className="sync-state-spacer" />
-      <Tooltip label={isClean ? 'All changes saved' : `${dirtyCount} unsaved change(s)`}>
-        <span className={`sync-state ${isClean ? 'sync-state--ok' : 'sync-state--dirty'}`}>
-          {isClean ? (
-            <>
-              <Check size={12} />
-              <span>Saved</span>
-            </>
-          ) : (
-            <>
-              <Cloud size={12} />
-              <span>{dirtyCount} change{dirtyCount !== 1 ? 's' : ''}</span>
-            </>
-          )}
+      <Tooltip label={tooltipLabel}>
+        <span className={`sync-state ${syncClass()}`}>
+          {syncIcon()}
+          <span>{syncLabel()}</span>
         </span>
       </Tooltip>
     </div>

@@ -300,7 +300,7 @@ export default function FileTreePanel({ params }) {
           )}
         </div>
       )}
-      {!sectionCollapsed && <SyncStatusFooter />}
+      {!sectionCollapsed && <SyncStatusFooter githubConnected={ghStatus?.connected} />}
       <div className="filetree-footer">
         <UserMenu
           email={userEmail}

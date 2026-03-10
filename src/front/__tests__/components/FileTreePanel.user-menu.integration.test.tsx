@@ -16,6 +16,10 @@ vi.mock('../../providers/data', () => ({
   useGitBranch: () => ({ data: 'main' }),
 }))
 
+vi.mock('../../hooks/useAutoSync', () => ({
+  useAutoSync: () => ({ state: 'disabled', lastError: null, syncNow: () => {} }),
+}))
+
 const makeParams = (overrides = {}) => ({
   onOpenFile: vi.fn(),
   onOpenFileToSide: vi.fn(),

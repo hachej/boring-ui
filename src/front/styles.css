@@ -662,6 +662,14 @@ html {
   color: var(--color-text-muted);
 }
 
+.sync-state--syncing {
+  color: var(--color-accent, #7c5cbf);
+}
+
+.sync-state--error {
+  color: var(--color-error, #f85149);
+}
+
 /* Sidebar header with collapse button */
 .sidebar-header {
   display: flex;

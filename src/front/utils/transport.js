@@ -12,7 +12,7 @@ const parseJsonResponse = async (response) => {
 
 export const apiFetch = (path, options = {}) => {
   const { query, ...init } = options
-  return fetch(buildApiUrl(path, query), init)
+  return fetch(buildApiUrl(path, query), { credentials: 'include', ...init })
 }
 
 export const apiFetchJson = async (path, options = {}) => {

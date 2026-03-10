@@ -134,13 +134,23 @@ def _require_workspace_member(
     _ensure_workspace_exists(service, workspace_id)
     membership = _membership_for_user(service, workspace_id, session.user_id)
     if membership is None:
-        return _error(
-            request,
-            status_code=403,
-            error="forbidden",
-            code="WORKSPACE_MEMBERSHIP_REQUIRED",
-            message="Workspace membership required",
-        )
+        # Auto-create membership in dev mode so local dev doesn't require manual setup
+        if config.auth_dev_login_enabled:
+            mid = f"{workspace_id}:{session.user_id}"
+            service.upsert_membership(mid, {
+                "workspace_id": workspace_id,
+                "user_id": session.user_id,
+                "role": "owner",
+            })
+            membership = _membership_for_user(service, workspace_id, session.user_id)
+        if membership is None:
+            return _error(
+                request,
+                status_code=403,
+                error="forbidden",
+                code="WORKSPACE_MEMBERSHIP_REQUIRED",
+                message="Workspace membership required",
+            )
     return session
 
 

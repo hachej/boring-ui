@@ -141,6 +141,63 @@ def create_app(
         allow_headers=['*'],
     )
 
+    # Auto-login middleware for local dev: injects a session cookie when
+    # AUTH_DEV_LOGIN_ENABLED=true and no session cookie is present.
+    if config.auth_dev_login_enabled and 'control_plane' in enabled_routers:
+        from .modules.control_plane.auth_session import create_session_cookie
+
+        _DEV_USER_ID = 'dev-user'
+        _DEV_EMAIL = 'dev@localhost'
+        _cookie_name = config.auth_session_cookie_name
+        _cookie_name_bytes = _cookie_name.encode()
+
+        def _make_dev_token() -> str:
+            return create_session_cookie(
+                _DEV_USER_ID, _DEV_EMAIL,
+                secret=config.auth_session_secret,
+                ttl_seconds=config.auth_session_ttl_seconds,
+            )
+
+        def _has_valid_session_cookie(scope) -> bool:
+            from .modules.control_plane.auth_session import parse_session_cookie, SessionError
+            for key, val in scope.get('headers', []):
+                if key == b'cookie' and _cookie_name_bytes in val:
+                    # Extract the cookie value and validate it
+                    for part in val.decode(errors='replace').split(';'):
+                        part = part.strip()
+                        if part.startswith(_cookie_name + '='):
+                            token = part[len(_cookie_name) + 1:]
+                            try:
+                                parse_session_cookie(token, secret=config.auth_session_secret)
+                                return True
+                            except SessionError:
+                                return False
+                    return False
+            return False
+
+        _inner_app = app.router
+
+        @app.middleware('http')
+        async def dev_auto_login(request: Request, call_next):
+            needs_cookie = not _has_valid_session_cookie(request.scope)
+            if needs_cookie:
+                token = _make_dev_token()
+                # Rewrite headers so downstream sees the cookie.
+                existing = request.headers.get('cookie', '')
+                new_cookie = f'{existing}; {_cookie_name}={token}' if existing else f'{_cookie_name}={token}'
+                new_headers = [
+                    (k, v) for k, v in request.scope['headers'] if k != b'cookie'
+                ]
+                new_headers.append((b'cookie', new_cookie.encode()))
+                request.scope['headers'] = new_headers
+
+            response = await call_next(request)
+
+            if needs_cookie:
+                cookie_val = f'{_cookie_name}={token}; HttpOnly; Max-Age={config.auth_session_ttl_seconds}; Path=/; SameSite=Lax'
+                response.headers.append('set-cookie', cookie_val)
+            return response
+
     # Mount routers from registry based on enabled set.
     router_args = {
         'files': (config, storage),

@@ -15,6 +15,10 @@ vi.mock('../../providers/data', () => ({
   useGitBranch: () => ({ data: 'main' }),
 }))
 
+vi.mock('../../hooks/useAutoSync', () => ({
+  useAutoSync: () => ({ state: 'disabled', lastError: null, syncNow: () => {} }),
+}))
+
 vi.mock('../../components/UserMenu', () => ({
   default: ({ collapsed = false }: { collapsed?: boolean }) => (
     <div data-testid={collapsed ? 'user-menu-collapsed' : 'user-menu-expanded'}>User menu</div>
