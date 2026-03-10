@@ -150,7 +150,10 @@ export const PANEL_SIZES_KEY = `${DEFAULT_STORAGE_PREFIX}-panel-sizes`
  *   When provided, essential panels whose requirements aren't met are skipped.
  * @returns {boolean} True if layout is valid
  */
-export const validateLayoutStructure = (layout, capabilities) => {
+// Track already-warned panels to avoid spamming the console on repeated saves.
+const _warnedPanels = new Set()
+
+export const validateLayoutStructure = (layout, capabilities, { silent = false } = {}) => {
   if (!layout?.grid || !layout?.panels) return false
 
   const essentials = essentialPanes()
@@ -162,7 +165,10 @@ export const validateLayoutStructure = (layout, capabilities) => {
   for (const essentialId of essentials) {
     if (capabilities && !checkRequirements(essentialId, capabilities)) continue
     if (!panelIds.includes(essentialId)) {
-      console.warn(`[Layout drift] Missing essential panel: ${essentialId}`)
+      if (!silent && !_warnedPanels.has(`missing:${essentialId}`)) {
+        _warnedPanels.add(`missing:${essentialId}`)
+        console.warn(`[Layout drift] Missing essential panel: ${essentialId}`)
+      }
       return false
     }
   }
@@ -185,7 +191,10 @@ export const validateLayoutStructure = (layout, capabilities) => {
   for (const essentialId of essentials) {
     if (capabilities && !checkRequirements(essentialId, capabilities)) continue
     if (!gridViewIds.has(essentialId)) {
-      console.warn(`[Layout drift] Essential panel not in grid: ${essentialId}`)
+      if (!silent && !_warnedPanels.has(`grid:${essentialId}`)) {
+        _warnedPanels.add(`grid:${essentialId}`)
+        console.warn(`[Layout drift] Essential panel not in grid: ${essentialId}`)
+      }
       return false
     }
   }
@@ -377,7 +386,7 @@ export const saveLayout = (prefix, projectRoot, layout, configLayoutVersion) => 
     localStorage.setItem(getStorageKey(prefix, projectRoot, 'layout'), JSON.stringify(layoutWithVersion))
 
     // If layout is valid, also save as lastKnownGoodLayout for recovery
-    if (validateLayoutStructure(layout)) {
+    if (validateLayoutStructure(layout, undefined, { silent: true })) {
       localStorage.setItem(
         getStorageKey(prefix, projectRoot, 'lastKnownGoodLayout'),
         JSON.stringify(layoutWithVersion)
