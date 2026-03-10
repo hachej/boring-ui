@@ -2,6 +2,11 @@
 
 Operational runbooks for common tasks.
 
+## Infrastructure
+
+- [Neon Setup](./NEON_SETUP.md) — Neon Postgres + Neon Auth setup for boring-ui and child projects
+- [PI Agent API Keys](./PI_AGENT_API_KEYS.md) — Managing PI agent provider keys
+
 ## Ownership Migration
 
 - [Ownership Migration Cutover and Rollback](./OWNERSHIP_CUTOVER.md)
@@ -135,34 +140,42 @@ docker compose --env-file .env.edge -f deploy/edge/docker-compose.yml up --build
 ### Modal Deployment
 
 ```bash
+# Build frontend first
+npm run build
+
 # Core mode (boring-ui control-plane owner)
 modal deploy deploy/core/modal_app.py
 
 # Edge mode (control plane + sandbox data plane)
-bash deploy/edge/deploy.sh
+modal deploy deploy/edge/modal_app.py
 ```
 
-Supabase-backed control-plane (same model as legacy sandbox) is enabled in compose by default.
-Set the following env vars before boot:
+**Neon (production default)**:
+
+Set `boring-ui-core-secrets` Modal secret with:
 
 ```bash
-export SUPABASE_URL="https://<project>.supabase.co"
-export SUPABASE_ANON_KEY="<anon-key>"
-export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
-# Optional for HS256 fallback paths; RS256/JWKS flows do not require this.
-export SUPABASE_JWT_SECRET=""
-export SUPABASE_DB_URL="postgresql://postgres.<project-ref>:<password>@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
-export BORING_SETTINGS_KEY="<settings-encryption-key>"
-export BORING_UI_SESSION_SECRET="<cookie-signing-secret>"
+modal secret create boring-ui-core-secrets \
+  CONTROL_PLANE_PROVIDER=neon \
+  DATABASE_URL="postgresql://neondb_owner:<pass>@ep-<id>-pooler.<region>.aws.neon.tech/neondb?sslmode=require" \
+  NEON_AUTH_BASE_URL="https://ep-<id>.neonauth.<region>.aws.neon.tech/neondb/auth" \
+  NEON_AUTH_JWKS_URL="https://ep-<id>.neonauth.<region>.aws.neon.tech/neondb/auth/.well-known/jwks.json" \
+  BORING_UI_SESSION_SECRET="<cookie-signing-secret>" \
+  BORING_SETTINGS_KEY="<settings-encryption-key>" \
+  --force
 ```
+
+See [Neon Setup](./NEON_SETUP.md) for full setup instructions.
 
 Initialize schema once per database:
 
 ```bash
-psql "$SUPABASE_DB_URL" -f deploy/sql/control_plane_supabase_schema.sql
+psql "$DATABASE_URL" -f deploy/sql/control_plane_supabase_schema.sql
 ```
 
-`boring-ui` preserves Supabase pooler hostnames for TLS SNI routing.
+**Supabase (legacy)**: Set `CONTROL_PLANE_PROVIDER=supabase` plus `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` in the Modal secret.
+
+`boring-ui` preserves both Supabase and Neon pooler hostnames for TLS SNI routing.
 For non-pooler Postgres hosts, backend may apply IPv4 resolution for container compatibility.
 
 Endpoints:
@@ -181,7 +194,24 @@ curl -i http://127.0.0.1:8000/api/v1/me
 curl -i http://127.0.0.1:8000/api/v1/workspaces
 ```
 
-### Supabase QA with Vault Credentials
+### Neon QA (Production)
+
+```bash
+# Source Neon credentials from local config
+export $(grep -v '^#' .boring/neon-config.env | xargs)
+export CONTROL_PLANE_PROVIDER=neon
+export BORING_UI_SESSION_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export BORING_SETTINGS_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+
+# Start backend
+python3 -c "from boring_ui.api.app import create_app; import uvicorn; app = create_app(); uvicorn.run(app, host='0.0.0.0', port=8000)"
+
+# Smoke check
+curl -s http://localhost:8000/api/capabilities | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('auth',{}), indent=2))"
+curl -i http://localhost:8000/auth/login
+```
+
+### Supabase QA (Legacy) with Vault Credentials
 
 Credential sources (Vault):
 - `secret/agent/boring-ui-supabase` (`db_password`)
@@ -342,7 +372,12 @@ bundle-sandbox:
 | `PI_MODE` | PI rendering: `embedded` or `iframe` | `embedded` |
 | `WORKSPACE_PLUGINS_ENABLED` | Enable workspace plugins | `false` |
 | `WORKSPACE_PLUGIN_ALLOWLIST` | Comma-separated allowed plugins | (empty = all if enabled) |
+| `CONTROL_PLANE_PROVIDER` | Auth provider: `neon` (production), `supabase` (legacy), `local` (dev) | `local` (auto-detects from env) |
+| `DATABASE_URL` | Postgres connection string (Neon pooler recommended) | None |
+| `NEON_AUTH_BASE_URL` | Neon Auth / Better Auth base URL | None |
+| `NEON_AUTH_JWKS_URL` | Neon Auth JWKS endpoint for EdDSA JWT verification | Derived from base URL |
 | `BORING_UI_SESSION_SECRET` | HMAC secret for `/auth/session` cookie signing | auto-generated (ephemeral) |
+| `BORING_SETTINGS_KEY` | Encryption key for stored settings | None |
 | `AUTH_SESSION_COOKIE_NAME` | Session cookie name for `/auth/*` routes | `boring_session` |
 | `AUTH_SESSION_TTL_SECONDS` | Session cookie TTL in seconds | `86400` |
 | `AUTH_SESSION_SECURE_COOKIE` | Set session cookie `Secure` flag | `false` |

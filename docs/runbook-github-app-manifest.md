@@ -166,16 +166,70 @@ print(f'Permissions: {json.dumps(app.get(\"permissions\",{}), indent=2)}')
 "
 ```
 
-### Step 5: Install on Repos
+### Step 5: Register Callback URL
+
+The app needs a callback URL registered before OAuth will work.
+**This cannot be done via API** — must be set in the web UI.
+
+1. Go to `https://github.com/settings/apps/<SLUG>`
+2. Under **"Callback URL"**, add your callback URL:
+   - Local dev: `http://<host>:<port>/api/v1/auth/github/callback`
+   - Production: `https://your-domain.com/api/v1/auth/github/callback`
+3. Save changes
+
+Without this, GitHub will show: *"The redirect_uri is not associated with this application."*
+
+### Step 6: Make the App Public (Recommended)
+
+By default, new apps are **private** — only the owner can see the install page.
+Make it public so users/orgs can install it:
+
+1. Go to `https://github.com/settings/apps/<SLUG>/advanced`
+2. Scroll to **"Make this GitHub App public"**
+3. Click the button, confirm
+
+Verify:
+```bash
+# Should return 200 (not 404)
+curl -s -o /dev/null -w "%{http_code}" https://api.github.com/apps/<SLUG>
+```
+
+### Step 7: Install on Repos
 
 ```bash
 SLUG=$(vault kv get -field=slug secret/agent/github-app-YOUR-APP)
 echo "Install at: https://github.com/apps/${SLUG}/installations/new"
 ```
 
-Open that URL, select repos, click Install.
+Open that URL, select the target account, grant access to repos, click Install.
 
-### Step 6: Get an Installation Token (for git ops)
+### Step 8: Run the GitHub Connect Smoke Test
+
+Once the app is installed and a test repo exists, run the E2E smoke test:
+
+```bash
+# Ensure backend is running with GITHUB_APP_* env vars (see Step 3 above)
+
+# Full E2E: connect → repos → credentials → git push → disconnect
+python3 tests/smoke/smoke_github_connect.py --base-url http://localhost:8000
+
+# API-only (no git push)
+python3 tests/smoke/smoke_github_connect.py --skip-git-push
+
+# Override auto-detected installation
+python3 tests/smoke/smoke_github_connect.py --installation-id 12345
+
+# Custom test repo
+python3 tests/smoke/smoke_github_connect.py --test-repo myorg/my-test-repo
+```
+
+The test validates 13 phases: capabilities, status, installations, connect,
+verify-connected, list-repos, credentials, verify-credentials, git-push,
+verify-push, disconnect, verify-disconnected, creds-after-disconnect.
+
+For boring-ui specifically, the test repo is `boringdata/boring-ui-test` (private).
+
+### Step 9: Get an Installation Token (for git ops)
 
 ```bash
 # List installations
@@ -250,9 +304,13 @@ Only request what you need. Users see the permission list during installation.
 | Manifest error: "url wasn't supplied" | Remove `hook_attributes` entirely. GitHub requires `hook_attributes.url` whenever the object is present. |
 | Code exchange fails | Code is single-use, 1-hour TTL. Re-create the app if expired. |
 | `bad credentials` on JWT | Check PEM key. Check system clock (JWT uses `iat`). |
-| `resource not accessible` | App not installed on that repo. Run Step 5. |
+| `resource not accessible` | App not installed on that repo. Run Step 7. |
 | `suspended` installation | User revoked. Prompt to re-install. |
 | Installation token expired | Tokens last 1 hour. Backend must auto-refresh. |
+| "redirect_uri is not associated" | Callback URL not registered. Set it in app settings (Step 5). **Cannot be set via API.** |
+| "is a private GitHub App" | App is private. Make it public (Step 6) or log in as the owner. |
+| `PATCH /app` returns 404 | Callback URLs and public/private toggle can only be changed via the GitHub web UI, not the API. |
+| No installations after making public | Users must visit `https://github.com/apps/<slug>/installations/new` to install. |
 
 ---
 

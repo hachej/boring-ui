@@ -129,7 +129,9 @@ modules/
 │   └── service.py
 ├── control_plane/  Workspace/user/collab metadata foundation
 │   ├── router.py   Foundation API at /api/v1/control-plane/*
-│   ├── auth_router.py Auth/session routes at /auth/*
+│   ├── auth_router.py Auth/session routes at /auth/* (local mode)
+│   ├── auth_router_neon.py Auth/session routes at /auth/* (Neon Auth / Better Auth)
+│   ├── auth_router_supabase.py Auth/session routes at /auth/* (Supabase GoTrue, legacy)
 │   ├── me_router.py User identity/settings at /api/v1/me*
 │   ├── workspace_router.py Workspace lifecycle/settings at /api/v1/workspaces*
 │   ├── collaboration_router.py Membership/invite routes at /api/v1/workspaces/{id}/{members,invites}*
@@ -137,7 +139,8 @@ modules/
 │   ├── auth_session.py HMAC session cookie primitives
 │   ├── service.py  Domain facade for users/workspaces/members/invites/settings/runtime
 │   ├── repository.py JSON-backed repository contracts + local implementation
-│   └── models.py   Persisted state model
+│   ├── models.py   Persisted state model
+│   └── supabase/   Postgres helpers (asyncpg pool, JWT verify, membership checks)
 ├── pty/            PTY terminal sessions via WebSocket
 │   ├── router.py   WS endpoint at /ws/pty
 │   ├── lifecycle.py REST lifecycle at /api/v1/pty/*
@@ -148,6 +151,28 @@ modules/
 └── agent_normal/   Agent-normal runtime session management
     └── router.py   REST at /api/v1/agent/normal/*
 ```
+
+### Auth Provider Architecture
+
+The control plane supports multiple auth providers, selected via `CONTROL_PLANE_PROVIDER`:
+
+| Provider | Auth mechanism | Database | When to use |
+|---|---|---|---|
+| `local` | Dev bypass (no real auth) | In-memory JSON | Local development |
+| `neon` | Neon Auth (Better Auth) | Neon Postgres (asyncpg) | **Production default** |
+| `supabase` | Supabase GoTrue | Supabase Postgres (asyncpg) | Legacy |
+
+**Neon Auth flow** (email/password):
+1. Frontend `POST`s to Neon Auth `/sign-in/email` (with `credentials: 'include'`) → gets session cookie
+2. Frontend fetches EdDSA JWT from Neon Auth `/token` endpoint (using session cookie)
+3. Frontend calls `POST /auth/token-exchange` with the JWT
+4. Backend verifies JWT via JWKS (`/.well-known/jwks.json`, EdDSA/Ed25519)
+5. Backend issues `boring_session` cookie (HS256 JWT, independent of provider)
+6. All subsequent requests use the `boring_session` cookie
+
+**Session cookies** are boring-ui's own format (HS256 JWT signed with `BORING_UI_SESSION_SECRET`), not provider-specific. This enables cross-service interop with boring-sandbox regardless of auth provider.
+
+**Database access** uses `asyncpg` with raw SQL — standard Postgres, no provider SDK. The same workspace/collaboration routers work with both Neon and Supabase.
 
 ### Cross-Cutting Concerns
 
