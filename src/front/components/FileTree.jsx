@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, SearchX, X, Folder, FolderOpen, FolderInput, ChevronRight, ChevronDown, MoreHorizontal, Settings, Plus } from 'lucide-react'
+import { Search, SearchX, X, Folder, FolderOpen, FolderPlus, FolderInput, ChevronRight, ChevronDown, MoreHorizontal, Settings, Plus } from 'lucide-react'
 import { useQueryClient, useQueries } from '@tanstack/react-query'
 import { apiFetchJson } from '../utils/transport'
 import { routes } from '../utils/routes'
@@ -58,12 +58,14 @@ export default function FileTree({
   const [renaming, setRenaming] = useState(null)
   const [dragOver, setDragOver] = useState(null)
   const [newFileInput, setNewFileInput] = useState(null) // { parentDir: string, name: string }
+  const [newFolderInput, setNewFolderInput] = useState(null) // { parentDir: string, name: string }
   const [kurtConfig, setKurtConfig] = useState(null)
   // Keep "Other" expanded by default so repos without configured sections
   // still show files immediately instead of appearing empty.
   const [collapsedSections, setCollapsedSections] = useState({ other: false })
   const renameInputRef = useRef(null)
   const newFileInputRef = useRef(null)
+  const newFolderInputRef = useRef(null)
   const searchInputRef = useRef(null)
 
   // Use ref to track expandedDirs for polling (avoids stale closure)
@@ -254,6 +256,12 @@ export default function FileTree({
     }
   }, [newFileInput])
 
+  useEffect(() => {
+    if (newFolderInput && newFolderInputRef.current) {
+      newFolderInputRef.current.focus()
+    }
+  }, [newFolderInput])
+
   // Handle creatingFile prop from parent (header button)
   useEffect(() => {
     if (creatingFile) {
@@ -358,7 +366,7 @@ export default function FileTree({
       await refreshTree()
       onFileDeleted?.(entry.path)
     } catch (err) {
-      alert(`Failed to delete: ${err.message}`)
+      console.warn(`Failed to delete: ${err.message}`)
     }
   }
 
@@ -383,7 +391,7 @@ export default function FileTree({
       await refreshTree()
       onFileRenamed?.(oldPath, newPath)
     } catch (err) {
-      alert(`Failed to rename: ${err.message}`)
+      console.warn(`Failed to rename: ${err.message}`)
     }
   }
 
@@ -428,7 +436,7 @@ export default function FileTree({
       await refreshTree()
       onFileCreated?.(filePath)
     } catch (err) {
-      alert(`Failed to create file: ${err.message}`)
+      console.warn(`Failed to create file: ${err.message}`)
     }
   }
 
@@ -439,6 +447,51 @@ export default function FileTree({
     } else if (e.key === 'Escape') {
       setNewFileInput(null)
       onCancelCreate?.()
+    }
+  }
+
+  const handleNewFolder = (parentDir = '') => {
+    setContextMenu(null)
+    // If parentDir is specified and it's a folder, expand it
+    if (parentDir && !expandedDirs[parentDir]) {
+      fetchDir(parentDir).then((children) => {
+        setExpandedDirs((prev) => ({
+          ...prev,
+          [parentDir]: children,
+        }))
+      })
+    }
+    setNewFolderInput({ parentDir, name: '' })
+  }
+
+  const handleNewFolderSubmit = async () => {
+    if (!newFolderInput || !newFolderInput.name.trim()) {
+      setNewFolderInput(null)
+      return
+    }
+
+    const folderName = newFolderInput.name.trim()
+    const folderPath = newFolderInput.parentDir
+      ? `${newFolderInput.parentDir}/${folderName}`
+      : folderName
+    // Create a .gitkeep file inside the folder to ensure the directory is created
+    const gitkeepPath = `${folderPath}/.gitkeep`
+
+    try {
+      await fileWriteMutation.mutateAsync({ path: gitkeepPath, content: '' })
+      setNewFolderInput(null)
+      await refreshTree()
+    } catch (err) {
+      console.warn(`Failed to create folder: ${err.message}`)
+    }
+  }
+
+  const handleNewFolderKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleNewFolderSubmit()
+    } else if (e.key === 'Escape') {
+      setNewFolderInput(null)
     }
   }
 
@@ -530,7 +583,7 @@ export default function FileTree({
       await refreshTree()
       onFileMoved?.(srcFile.path, buildMovedPath(srcFile.path, destEntry.path))
     } catch (err) {
-      alert(`Failed to move: ${err.message}`)
+      console.warn(`Failed to move: ${err.message}`)
     }
   }
 
@@ -550,7 +603,7 @@ export default function FileTree({
       await refreshTree()
       onFileMoved?.(srcFile.path, buildMovedPath(srcFile.path, '.'))
     } catch (err) {
-      alert(`Failed to move: ${err.message}`)
+      console.warn(`Failed to move: ${err.message}`)
     }
   }
 
@@ -571,6 +624,29 @@ export default function FileTree({
           onChange={(ev) => setNewFileInput({ ...newFileInput, name: ev.target.value })}
           onKeyDown={handleNewFileKeyDown}
           onBlur={handleNewFileSubmit}
+          onClick={(ev) => ev.stopPropagation()}
+        />
+      </div>
+    )
+  }
+
+  const renderNewFolderInput = (depth, parentDir) => {
+    if (!newFolderInput || newFolderInput.parentDir !== parentDir) return null
+    return (
+      <div
+        className="file-item file-item-new"
+        style={{ paddingLeft: `${depth * 16 + 16}px` }}
+      >
+        <span className="file-item-icon"><FolderPlus size={ICON_SIZE_INLINE} /></span>
+        <input
+          ref={newFolderInputRef}
+          type="text"
+          className="rename-input"
+          placeholder="folder name"
+          value={newFolderInput.name}
+          onChange={(ev) => setNewFolderInput({ ...newFolderInput, name: ev.target.value })}
+          onKeyDown={handleNewFolderKeyDown}
+          onBlur={handleNewFolderSubmit}
           onClick={(ev) => ev.stopPropagation()}
         />
       </div>
@@ -618,7 +694,7 @@ export default function FileTree({
               </span>
             )}
             {renderStatusBadge(fileStatus)}
-            {dirHasChanges && <span className="dir-changes-dot" title="Contains changes" />}
+            {dirHasChanges && <span className="dir-changes-dot" title="Contains changes" aria-label="Contains changes" role="status" />}
             {e.is_dir && !isRenaming && (
               <button
                 type="button"
@@ -638,6 +714,7 @@ export default function FileTree({
           {e.is_dir && expandedDirs[e.path] && (
             <>
               {renderNewFileInput(depth + 1, e.path)}
+              {renderNewFolderInput(depth + 1, e.path)}
               {renderEntries(expandedDirs[e.path], depth + 1, e.path)}
             </>
           )}
@@ -768,7 +845,7 @@ export default function FileTree({
             <span className="section-collapse-icon">{isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
             <span className="section-icon">{React.createElement(section.icon, { size: ICON_SIZE_INLINE })}</span>
             <span className="section-label">{section.label}</span>
-            {hasChanges && <span className="dir-changes-dot" title="Contains changes" />}
+            {hasChanges && <span className="dir-changes-dot" title="Contains changes" aria-label="Contains changes" role="status" />}
           </div>
         )}
         {(hideHeader || !isCollapsed) && (
@@ -777,6 +854,7 @@ export default function FileTree({
               // For main sections (projects, sources), render children directly from expandedDirs
               <>
                 {renderNewFileInput(0, section.path)}
+                {renderNewFolderInput(0, section.path)}
                 {expandedDirs[section.path] !== undefined ? (
                   expandedDirs[section.path].length > 0 ? (
                     renderEntries(expandedDirs[section.path], 0, section.path)
@@ -902,8 +980,9 @@ export default function FileTree({
       ) : sections ? (
         // Sectioned view when kurt config is available
         <div className="file-tree-sections">
-          {/* New file input at root level */}
+          {/* New file/folder input at root level */}
           {renderNewFileInput(0, '')}
+          {renderNewFolderInput(0, '')}
           {/* Config file at top */}
           {configFile && (
             <div
@@ -939,6 +1018,7 @@ export default function FileTree({
           onDrop={handleDropOnRoot}
         >
           {renderNewFileInput(0, '')}
+          {renderNewFolderInput(0, '')}
           {renderEntries(entries)}
         </div>
       )}
@@ -954,6 +1034,9 @@ export default function FileTree({
             <>
               <div className="context-menu-item" onClick={() => handleNewFile('')}>
                 New File
+              </div>
+              <div className="context-menu-item" onClick={() => handleNewFolder('')}>
+                New Folder
               </div>
               {projectRoot && (
                 <>
@@ -991,6 +1074,14 @@ export default function FileTree({
                 handleNewFile(parentDir)
               }}>
                 New File
+              </div>
+              <div className="context-menu-item" onClick={() => {
+                const parentDir = contextMenu.entry.is_dir
+                  ? contextMenu.entry.path
+                  : (contextMenu.entry.path.includes('/') ? contextMenu.entry.path.substring(0, contextMenu.entry.path.lastIndexOf('/')) : '')
+                handleNewFolder(parentDir)
+              }}>
+                New Folder
               </div>
               <div className="context-menu-separator" />
               <div className="context-menu-item" onClick={() => handleCopyPath(false)}>

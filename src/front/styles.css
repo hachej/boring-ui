@@ -818,6 +818,14 @@ html {
   margin: 4px 0;
 }
 
+.sync-menu-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  padding: 6px 12px 2px;
+}
+
 /* Branch submenu — fixed flyout beside parent menu */
 .sync-branch-submenu {
   position: fixed;

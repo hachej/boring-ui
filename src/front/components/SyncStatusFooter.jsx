@@ -104,20 +104,46 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
   const [switching, setSwitching] = useState(false)
   const [menuError, setMenuError] = useState(null)
   const menuRef = useRef(null)
+  const triggerRef = useRef(null)
+  const firstItemRef = useRef(null)
   const branchBtnRef = useRef(null)
   const [submenuPos, setSubmenuPos] = useState(null)
 
-  // Close menu on outside click
+  // Close menu on outside click — return focus to trigger
   useEffect(() => {
     if (!menuOpen) return
     const handleClick = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         setMenuOpen(false)
         setBranchSubmenuOpen(false)
+        triggerRef.current?.focus()
       }
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
+  }, [menuOpen])
+
+  // Close menu on Escape — return focus to trigger
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        setBranchSubmenuOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [menuOpen])
+
+  // Focus first menu item when menu opens
+  useEffect(() => {
+    if (menuOpen) {
+      requestAnimationFrame(() => {
+        firstItemRef.current?.focus()
+      })
+    }
   }, [menuOpen])
 
   // Fetch branches when submenu opens; reset on close
@@ -269,6 +295,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
       </Tooltip>
       <Tooltip label="Sync options">
         <button
+          ref={triggerRef}
           type="button"
           className={`sync-menu-trigger${menuOpen ? ' sync-menu-trigger--active' : ''}`}
           onClick={() => { setMenuOpen(!menuOpen); setBranchSubmenuOpen(false); setMenuError(null) }}
@@ -278,7 +305,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
         </button>
       </Tooltip>
       {menuOpen && (
-        <div className="sync-menu">
+        <div className="sync-menu" role="menu">
           {menuError && (
             <div className="sync-menu-error">
               <AlertTriangle size={12} />
@@ -286,8 +313,10 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
             </div>
           )}
           <button
+            ref={firstItemRef}
             type="button"
             className="sync-menu-item"
+            role="menuitem"
             onClick={() => { syncNow(); setMenuOpen(false) }}
             disabled={syncState === 'syncing' || paused}
           >
@@ -297,16 +326,19 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
           <button
             type="button"
             className="sync-menu-item"
+            role="menuitem"
             onClick={() => { setPaused(!paused); setMenuOpen(false) }}
           >
             {paused ? <Play size={13} /> : <Pause size={13} />}
             <span>{paused ? 'Resume auto-sync' : 'Pause auto-sync'}</span>
           </button>
-          <div className="sync-menu-divider" />
+          <div className="sync-menu-divider" role="separator" />
+          <div className="sync-menu-section-label">Git</div>
           <button
             ref={branchBtnRef}
             type="button"
             className="sync-menu-item sync-menu-item--submenu"
+            role="menuitem"
             onClick={() => setBranchSubmenuOpen(!branchSubmenuOpen)}
           >
             <GitBranch size={13} />
@@ -316,6 +348,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
           {branchSubmenuOpen && submenuPos && (
             <div
               className="sync-branch-submenu"
+              role="menu"
               style={{ top: submenuPos.top, left: submenuPos.left }}
             >
               {branches === null ? (
@@ -330,6 +363,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
                       key={b}
                       type="button"
                       className={`sync-menu-item${b === branch ? ' sync-menu-item--current' : ''}`}
+                      role="menuitem"
                       onClick={() => b !== branch && handleCheckout(b)}
                       disabled={switching || b === branch}
                     >
@@ -337,7 +371,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
                       <span>{b}</span>
                     </button>
                   ))}
-                  <div className="sync-menu-divider" />
+                  <div className="sync-menu-divider" role="separator" />
                   <div className="sync-branch-create">
                     <GitBranchPlus size={13} />
                     <input
@@ -353,10 +387,12 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
               )}
             </div>
           )}
-          <div className="sync-menu-divider" />
+          <div className="sync-menu-divider" role="separator" />
+          <div className="sync-menu-section-label">Agent</div>
           <button
             type="button"
             className="sync-menu-item sync-menu-item--agent"
+            role="menuitem"
             onClick={() => {
               askAgent(`Create a new git branch from ${branch || 'main'} for my next feature. Ask me what to name it.`)
               setMenuOpen(false)
@@ -368,6 +404,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
           <button
             type="button"
             className="sync-menu-item sync-menu-item--agent"
+            role="menuitem"
             onClick={() => {
               askAgent(`Merge the current branch (${branch || 'main'}) — list available branches and ask me which one to merge, then perform the merge.`)
               setMenuOpen(false)
@@ -380,6 +417,7 @@ export default function SyncStatusFooter({ githubConnected, viewMode, onSetViewM
             <button
               type="button"
               className="sync-menu-item sync-menu-item--agent"
+              role="menuitem"
               onClick={() => {
                 askAgent('There are git merge conflicts in my workspace. List the conflicted files, show me the conflicts, and help me resolve them.')
                 setMenuOpen(false)
