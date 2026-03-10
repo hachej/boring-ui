@@ -19,6 +19,29 @@ export function useGitHubConnection(workspaceId, { enabled = true } = {}) {
       const route = routes.github.status(workspaceId)
       const qs = route.query ? '?' + new URLSearchParams(route.query).toString() : ''
       const { data } = await apiFetchJson(route.path + qs)
+
+      // Auto-connect: if configured but not connected, check for existing installations
+      if (data?.configured && !data?.connected && workspaceId) {
+        try {
+          const { data: instData } = await apiFetchJson(routes.github.installations().path)
+          const installations = instData?.installations || []
+          if (installations.length > 0) {
+            const installationId = installations[0].id
+            const { response } = await apiFetchJson(routes.github.connect().path, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ workspace_id: workspaceId, installation_id: installationId }),
+            })
+            if (response.ok) {
+              setStatus({ configured: true, connected: true, installation_id: installationId })
+              return
+            }
+          }
+        } catch {
+          // Auto-connect failed silently — show normal disconnected state
+        }
+      }
+
       setStatus(data)
     } catch {
       setError('Failed to check GitHub status')
@@ -41,9 +64,31 @@ export function useGitHubConnection(workspaceId, { enabled = true } = {}) {
     return () => window.removeEventListener('message', handler)
   }, [fetchStatus])
 
-  const connect = useCallback(() => {
-    window.open(routes.github.authorize().path, '_blank', 'noopener')
-  }, [])
+  const connect = useCallback(async () => {
+    // First check if the app is already installed — auto-connect if so
+    try {
+      const { data: instData } = await apiFetchJson(routes.github.installations().path)
+      const installations = instData?.installations || []
+      if (installations.length > 0 && workspaceId) {
+        // App is already installed — connect directly without leaving the page
+        const installationId = installations[0].id
+        await apiFetchJson(routes.github.connect().path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workspace_id: workspaceId, installation_id: installationId }),
+        })
+        fetchStatus()
+        return
+      }
+    } catch {
+      // Fall through to installation flow
+    }
+
+    // No installation found — open GitHub App install page
+    const authPath = routes.github.authorize().path
+    const url = workspaceId ? `${authPath}?workspace_id=${encodeURIComponent(workspaceId)}` : authPath
+    window.open(url, '_blank')
+  }, [workspaceId, fetchStatus])
 
   const disconnect = useCallback(async () => {
     setDisconnecting(true)

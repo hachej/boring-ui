@@ -5,9 +5,11 @@
 
 .auth-page {
   min-height: 100vh;
+  width: 100%;
   display: grid;
   place-items: center;
   padding: var(--spacing-xxl);
+  overflow: auto;
   background:
     radial-gradient(circle at 15% 8%, color-mix(in srgb, var(--color-accent-default) 8%, transparent) 0, transparent 28%),
     linear-gradient(180deg, var(--color-bg-secondary), var(--color-bg-primary));

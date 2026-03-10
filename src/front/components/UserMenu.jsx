@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
-import { Sun, Moon, ArrowLeftRight, Plus, Settings, LogOut, AlertCircle, HelpCircle } from 'lucide-react'
+import { Sun, Moon, ArrowLeftRight, ChevronRight, Plus, Settings, Wrench, LogOut, AlertCircle, HelpCircle } from 'lucide-react'
 import { useTheme } from '../hooks/useTheme'
 import { ICON_SIZE_INLINE, ICON_SIZE_COMPACT, ICON_STROKE_WIDTH } from '../utils/iconTokens'
 
@@ -15,6 +15,8 @@ import { ICON_SIZE_INLINE, ICON_SIZE_COMPACT, ICON_STROKE_WIDTH } from '../utils
  * - onSwitchWorkspace: optional callback for switch action
  * - onCreateWorkspace: optional callback for create action
  * - onOpenUserSettings: optional callback for settings action
+ * - onOpenWorkspaceSettings: optional callback for workspace settings action
+ * - workspaceOptions: array of { workspace_id, name } for inline workspace switching
  * - onLogout: optional callback for logout action
  */
 export default function UserMenu({
@@ -30,9 +32,12 @@ export default function UserMenu({
   onSwitchWorkspace,
   onCreateWorkspace,
   onOpenUserSettings,
+  onOpenWorkspaceSettings,
+  workspaceOptions = [],
   onLogout,
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [showWsList, setShowWsList] = useState(false)
   const menuRef = useRef(null)
   const triggerRef = useRef(null)
   const dropdownRef = useRef(null)
@@ -50,6 +55,7 @@ export default function UserMenu({
 
   const closeMenu = (restoreFocus = false) => {
     setIsOpen(false)
+    setShowWsList(false)
     if (restoreFocus) {
       queueMicrotask(() => triggerRef.current?.focus())
     }
@@ -60,7 +66,9 @@ export default function UserMenu({
     function handleClickOutside(event) {
       const clickedTrigger = menuRef.current?.contains(event.target)
       const clickedMenu = dropdownRef.current?.contains(event.target)
-      if (!clickedTrigger && !clickedMenu) closeMenu(false)
+      // Check if click is inside the workspace submenu portal
+      const clickedSubmenu = event.target.closest?.('.user-menu-ws-submenu')
+      if (!clickedTrigger && !clickedMenu && !clickedSubmenu) closeMenu(false)
     }
 
     if (isOpen) {
@@ -102,11 +110,48 @@ export default function UserMenu({
     closeMenu(true)
   }
 
+  // Workspace list for inline switching (filter out current)
+  const switchableWorkspaces = workspaceOptions.filter(
+    (ws) => (ws.workspace_id || ws.id) !== workspaceId,
+  )
+  const showInlineSwitch = showSwitchWorkspace && switchableWorkspaces.length > 0
+
+  const switchItemRef = useRef(null)
+  const [wsSubMenuStyle, setWsSubMenuStyle] = useState(null)
+
+  // Position the ws submenu next to the switch button
+  useEffect(() => {
+    if (!showWsList || !switchItemRef.current) return
+    const rect = switchItemRef.current.getBoundingClientRect()
+    const subWidth = 200
+    const padding = 8
+    // Prefer right side; if no room, open left
+    let left = rect.right + 4
+    if (left + subWidth > window.innerWidth - padding) {
+      left = rect.left - subWidth - 4
+    }
+    let top = rect.top
+    const maxBottom = window.innerHeight - padding
+    if (top + 200 > maxBottom) {
+      top = maxBottom - 200
+    }
+    setWsSubMenuStyle({
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`,
+      minWidth: `${subWidth}px`,
+      zIndex: 1001,
+    })
+  }, [showWsList])
+
   const actionItems = [
-    ...(showSwitchWorkspace
-      ? [{ key: 'switch', label: 'Switch workspace', icon: ArrowLeftRight, onClick: onSwitchWorkspace }]
+    ...(showInlineSwitch
+      ? [{ key: 'switch', label: 'Switch workspace', icon: ArrowLeftRight, onClick: () => setShowWsList((v) => !v), noClose: true, hasSubmenu: true }]
       : []),
     { key: 'create', label: 'Create workspace', icon: Plus, onClick: onCreateWorkspace },
+    ...(workspaceId && onOpenWorkspaceSettings
+      ? [{ key: 'ws-settings', label: 'Workspace settings', icon: Wrench, onClick: onOpenWorkspaceSettings }]
+      : []),
     { key: 'settings', label: 'User settings', icon: Settings, onClick: onOpenUserSettings },
     { key: 'logout', label: 'Logout', icon: LogOut, onClick: onLogout },
   ]
@@ -287,25 +332,52 @@ export default function UserMenu({
         const disabled = typeof item.onClick !== 'function' || disabledActions.includes(item.key)
         const ItemIcon = item.icon
         return (
-          <button
-            key={item.key}
-            className={`btn btn-ghost user-menu-item ${disabled ? 'user-menu-item-disabled' : ''}`}
-            onClick={() => runAction(item.onClick)}
-            role="menuitem"
-            disabled={disabled}
-          >
-            {ItemIcon ? (
-              <ItemIcon
-                size={ICON_SIZE_INLINE}
-                strokeWidth={ICON_STROKE_WIDTH}
-                className="user-menu-item-icon"
-                aria-hidden="true"
-              />
-            ) : null}
-            {item.label}
-          </button>
+          <div key={item.key} ref={item.key === 'switch' ? switchItemRef : undefined}>
+            <button
+              className={`btn btn-ghost user-menu-item ${disabled ? 'user-menu-item-disabled' : ''} ${item.hasSubmenu ? 'user-menu-item-submenu' : ''}`}
+              onClick={() => item.noClose ? item.onClick() : runAction(item.onClick)}
+              role="menuitem"
+              disabled={disabled}
+            >
+              <span className="user-menu-item-left">
+                {ItemIcon ? (
+                  <ItemIcon
+                    size={ICON_SIZE_INLINE}
+                    strokeWidth={ICON_STROKE_WIDTH}
+                    className="user-menu-item-icon"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {item.label}
+              </span>
+              {item.hasSubmenu && (
+                <ChevronRight size={12} className="user-menu-item-chevron" aria-hidden="true" />
+              )}
+            </button>
+          </div>
         )
       })}
+      {showWsList && createPortal(
+        <div className="user-menu-ws-submenu" style={wsSubMenuStyle || undefined} ref={(el) => {
+          // Include submenu in outside-click detection
+          if (el) el._userMenuSubmenu = true
+        }}>
+          {switchableWorkspaces.map((ws) => {
+            const wsId = ws.workspace_id || ws.id
+            return (
+              <a
+                key={wsId}
+                className="user-menu-ws-submenu-item"
+                href={`/w/${encodeURIComponent(wsId)}/`}
+                onClick={() => closeMenu(true)}
+              >
+                <span className="user-menu-ws-item-name">{ws.name || wsId}</span>
+              </a>
+            )
+          })}
+        </div>,
+        document.body,
+      )}
     </div>
   )
 

@@ -287,7 +287,15 @@ def create_capabilities_router(
             }
 
         # Auth configuration for SPA-rendered login pages
-        if config and config.supabase_url and config.supabase_anon_key:
+        if config and config.use_neon_control_plane and config.neon_auth_base_url:
+            capabilities['auth'] = {
+                'provider': 'neon',
+                'neonAuthUrl': config.neon_auth_base_url.rstrip('/'),
+                'callbackUrl': '/auth/callback',
+                'appName': config.auth_app_name or '',
+                'appDescription': config.auth_app_description or '',
+            }
+        elif config and config.supabase_url and config.supabase_anon_key:
             capabilities['auth'] = {
                 'provider': 'supabase',
                 'supabaseUrl': config.supabase_url.rstrip('/'),

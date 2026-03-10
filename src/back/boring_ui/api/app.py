@@ -182,7 +182,25 @@ def create_app(
 
     # Auth/session is a control-plane-owned surface under /auth/*.
     if 'control_plane' in enabled_routers:
-        if config.use_supabase_control_plane:
+        if config.use_neon_control_plane:
+            from .modules.control_plane.auth_router_neon import create_auth_session_router_neon
+            from .modules.control_plane.me_router_neon import create_me_router_neon
+            # Workspace/collaboration/boundary routers are asyncpg SQL, not
+            # Supabase-specific — reuse the supabase versions for Neon.
+            from .modules.control_plane.workspace_router_supabase import create_workspace_router_supabase
+            from .modules.control_plane.collaboration_router_supabase import (
+                create_collaboration_router_supabase,
+            )
+            from .modules.control_plane.workspace_boundary_router_supabase import (
+                create_workspace_boundary_router_supabase,
+            )
+
+            app.include_router(create_auth_session_router_neon(config))
+            app.include_router(create_me_router_neon(config), prefix='/api/v1')
+            app.include_router(create_workspace_router_supabase(config), prefix='/api/v1')
+            app.include_router(create_collaboration_router_supabase(config), prefix='/api/v1')
+            app.include_router(create_workspace_boundary_router_supabase(config))
+        elif config.use_supabase_control_plane:
             from .modules.control_plane.auth_router_supabase import create_auth_session_router_supabase
             from .modules.control_plane.me_router_supabase import create_me_router_supabase
             from .modules.control_plane.workspace_router_supabase import create_workspace_router_supabase
@@ -263,13 +281,22 @@ def create_app(
         async def _start_plugin_watcher() -> None:
             plugin_manager.start_watcher()
 
-    if config.control_plane_enabled and config.use_supabase_control_plane and config.supabase_db_url:
+    _db_pool_url: str | None = None
+    if config.control_plane_enabled:
+        if config.use_supabase_control_plane and config.supabase_db_url:
+            _db_pool_url = config.supabase_db_url
+        elif config.use_neon_control_plane and config.effective_database_url:
+            _db_pool_url = config.effective_database_url
+
+    if _db_pool_url:
+        _startup_db_url = _db_pool_url  # capture for closure
+
         @app.on_event('startup')
-        async def _startup_supabase_pool() -> None:
-            await supabase_db_client.create_pool(config.supabase_db_url)
+        async def _startup_db_pool() -> None:
+            await supabase_db_client.create_pool(_startup_db_url)
 
         @app.on_event('shutdown')
-        async def _shutdown_supabase_pool() -> None:
+        async def _shutdown_db_pool() -> None:
             await supabase_db_client.close_pool()
 
     return app

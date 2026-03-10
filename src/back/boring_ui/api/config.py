@@ -81,6 +81,8 @@ def _normalize_control_plane_provider(raw: str | None) -> str:
         return "local"
     if value in {"supabase", "postgres"}:
         return "supabase"
+    if value == "neon":
+        return "neon"
     return "local"
 
 
@@ -172,6 +174,17 @@ class APIConfig:
     supabase_db_url: str | None = field(
         default_factory=lambda: os.environ.get('SUPABASE_DB_URL')
     )
+    # Canonical DATABASE_URL (used by Neon, falls back to SUPABASE_DB_URL)
+    database_url: str | None = field(
+        default_factory=lambda: os.environ.get('DATABASE_URL')
+    )
+    # Neon Auth (Better Auth) configuration
+    neon_auth_base_url: str | None = field(
+        default_factory=lambda: os.environ.get('NEON_AUTH_BASE_URL')
+    )
+    neon_auth_jwks_url: str | None = field(
+        default_factory=lambda: os.environ.get('NEON_AUTH_JWKS_URL')
+    )
     settings_encryption_key: str | None = field(
         default_factory=lambda: os.environ.get('BORING_SETTINGS_KEY')
     )
@@ -220,6 +233,10 @@ class APIConfig:
             )
             self.github_app_slug = None
 
+        # Auto-enable neon provider when explicit envs are present.
+        if self.control_plane_provider == "local" and self.neon_auth_base_url:
+            self.control_plane_provider = "neon"
+
         # Auto-enable supabase provider when explicit envs are present.
         if self.control_plane_provider == "local" and (
             (self.supabase_url and self.supabase_anon_key) or self.supabase_db_url
@@ -229,6 +246,15 @@ class APIConfig:
     @property
     def use_supabase_control_plane(self) -> bool:
         return self.control_plane_provider == "supabase"
+
+    @property
+    def use_neon_control_plane(self) -> bool:
+        return self.control_plane_provider == "neon"
+
+    @property
+    def effective_database_url(self) -> str | None:
+        """Return the canonical database URL: DATABASE_URL > SUPABASE_DB_URL."""
+        return self.database_url or self.supabase_db_url
 
     @property
     def github_configured(self) -> bool:

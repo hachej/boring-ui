@@ -46,11 +46,85 @@ function safeRedirectPath(raw) {
   return candidate
 }
 
+// --- Neon Auth helpers ---
+
+function parseNeonError(body) {
+  // Better Auth error shapes:
+  //   { message: "..." }
+  //   { error: { message: "..." } }
+  //   { code: "...", message: "..." }
+  if (!body) return 'An unknown error occurred.'
+  if (typeof body === 'string') return body
+  if (body.message) return body.message
+  if (body.error?.message) return body.error.message
+  if (body.statusText) return body.statusText
+  return JSON.stringify(body)
+}
+
+async function neonFetchJwt(neonAuthUrl) {
+  // After sign-in/sign-up, the Neon Auth session cookie is set in the browser.
+  // Call /token to exchange that cookie for a JWT we can send to our backend.
+  const resp = await fetch(`${neonAuthUrl}/token`, { credentials: 'include' })
+  if (!resp.ok) return null
+  const body = await resp.json().catch(() => ({}))
+  return body.token || null
+}
+
+async function neonSignUp(neonAuthUrl, email, password) {
+  const resp = await fetch(`${neonAuthUrl}/sign-up/email`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Origin': window.location.origin,
+    },
+    credentials: 'include',
+    body: JSON.stringify({ email, password, name: email.split('@')[0] }),
+  })
+  const body = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    const msg = resp.status === 429
+      ? 'Too many attempts. Please wait and try again.'
+      : parseNeonError(body)
+    return { error: msg }
+  }
+  // Fetch JWT using the session cookie set by sign-up
+  const jwt = await neonFetchJwt(neonAuthUrl)
+  return { token: jwt || body.token, user: body.user }
+}
+
+async function neonSignIn(neonAuthUrl, email, password) {
+  const resp = await fetch(`${neonAuthUrl}/sign-in/email`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Origin': window.location.origin,
+    },
+    credentials: 'include',
+    body: JSON.stringify({ email, password }),
+  })
+  const body = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    const msg = resp.status === 429
+      ? 'Too many attempts. Please wait and try again.'
+      : parseNeonError(body)
+    return { error: msg }
+  }
+  // Fetch JWT using the session cookie set by sign-in
+  const jwt = await neonFetchJwt(neonAuthUrl)
+  return { token: jwt || body.token, user: body.user }
+}
+
+// --- Main component ---
+
 export default function AuthPage({ authConfig }) {
   const config = getConfig()
   const branding = config?.branding || {}
   const appName = authConfig?.appName || branding.name || 'Boring UI'
   const appDescription = authConfig?.appDescription || ''
+
+  const provider = authConfig?.provider || 'supabase'
+  const isNeon = provider === 'neon'
+  const neonAuthUrl = authConfig?.neonAuthUrl || ''
 
   const supabaseUrl = authConfig?.supabaseUrl || ''
   const supabaseAnonKey = authConfig?.supabaseAnonKey || ''
@@ -58,7 +132,12 @@ export default function AuthPage({ authConfig }) {
   const redirectUri = safeRedirectPath(authConfig?.redirectUri || new URLSearchParams(window.location.search).get('redirect_uri'))
   const initialMode = authConfig?.initialMode === 'sign_up' ? 'sign_up' : 'sign_in'
 
-  const client = useSupabaseClient(supabaseUrl, supabaseAnonKey)
+  // Only load Supabase SDK when using supabase provider
+  const client = useSupabaseClient(
+    isNeon ? '' : supabaseUrl,
+    isNeon ? '' : supabaseAnonKey,
+  )
+
   const [mode, setMode] = useState(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -90,6 +169,76 @@ export default function AuthPage({ authConfig }) {
     return url.toString()
   }
 
+  // --- Neon submit handler ---
+  const handleNeonSubmit = async (e) => {
+    e.preventDefault()
+    if (busy) return
+    const trimmed = email.trim()
+    if (!trimmed || !password) { showStatus('Enter email and password.', true); return }
+
+    setBusy(true)
+    const isSignUp = mode === 'sign_up'
+
+    try {
+      if (isSignUp) {
+        showStatus('Creating account...')
+        const result = await neonSignUp(neonAuthUrl, trimmed, password)
+        if (result.error) {
+          showStatus(result.error, true)
+          return
+        }
+        // Neon sign-up returns a session token directly (no email confirmation needed)
+        const token = result.token
+        if (!token) {
+          showStatus('Account created but no session token returned. Try signing in.', true)
+          setPassword('')
+          setMode('sign_in')
+          return
+        }
+        // Exchange token with backend
+        showStatus('Setting up session...')
+        const resp = await fetch('/auth/token-exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: token, redirect_uri: redirectUri }),
+        })
+        const payload = await resp.json().catch(() => ({}))
+        if (!resp.ok) {
+          showStatus(payload.message || 'Unable to complete session setup.', true)
+          return
+        }
+        window.location.assign(payload.redirect_uri || '/')
+      } else {
+        showStatus('Signing in...')
+        const result = await neonSignIn(neonAuthUrl, trimmed, password)
+        if (result.error) {
+          showStatus(result.error, true)
+          return
+        }
+        const token = result.token
+        if (!token) {
+          showStatus('No session token returned.', true)
+          return
+        }
+        // Exchange token with backend
+        const resp = await fetch('/auth/token-exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: token, redirect_uri: redirectUri }),
+        })
+        const payload = await resp.json().catch(() => ({}))
+        if (!resp.ok) {
+          showStatus(payload.message || 'Unable to complete session setup.', true)
+          return
+        }
+        window.location.assign(payload.redirect_uri || '/')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // --- Supabase magic link handler ---
   const handleMagicLink = async () => {
     if (busy || !client) return
     const trimmed = email.trim()
@@ -116,7 +265,8 @@ export default function AuthPage({ authConfig }) {
     }
   }
 
-  const handleSubmit = async (e) => {
+  // --- Supabase submit handler ---
+  const handleSupabaseSubmit = async (e) => {
     e.preventDefault()
     if (busy || !client) return
     const trimmed = email.trim()
@@ -172,6 +322,11 @@ export default function AuthPage({ authConfig }) {
     }
   }
 
+  const handleSubmit = isNeon ? handleNeonSubmit : handleSupabaseSubmit
+
+  // For Neon, the form is ready immediately (no SDK to load).
+  // For Supabase, we need the client to be loaded.
+  const formReady = isNeon ? !!neonAuthUrl : !!client
   const isSignUp = mode === 'sign_up'
 
   return (
@@ -215,7 +370,7 @@ export default function AuthPage({ authConfig }) {
           <h2 className="auth-title">{isSignUp ? 'Create your account' : 'Welcome back'}</h2>
           <p className="auth-subtitle">
             {isSignUp
-              ? 'Get started in minutes. You may be asked to confirm from your email.'
+              ? 'Get started in minutes.'
               : 'Use your email and password to continue.'}
           </p>
 
@@ -247,23 +402,26 @@ export default function AuthPage({ authConfig }) {
               required
             />
 
-            <button className="auth-submit" type="submit" disabled={busy || !client}>
+            <button className="auth-submit" type="submit" disabled={busy || !formReady}>
               {busy && <Loader2 size={16} className="auth-spinner" />}
               {isSignUp ? 'Create account' : 'Continue'}
             </button>
           </form>
 
-          <div className="auth-alt-actions">
-            <p className="auth-muted">Prefer a one-time link?</p>
-            <button
-              type="button"
-              className="auth-link-btn"
-              onClick={handleMagicLink}
-              disabled={busy || !client}
-            >
-              {isSignUp ? 'Email me a signup link' : 'Use magic link instead'}
-            </button>
-          </div>
+          {/* Magic link option only available for Supabase provider */}
+          {!isNeon && (
+            <div className="auth-alt-actions">
+              <p className="auth-muted">Prefer a one-time link?</p>
+              <button
+                type="button"
+                className="auth-link-btn"
+                onClick={handleMagicLink}
+                disabled={busy || !client}
+              >
+                {isSignUp ? 'Email me a signup link' : 'Use magic link instead'}
+              </button>
+            </div>
+          )}
 
           {status && (
             <p className={`auth-status ${isError ? 'auth-status-error' : ''}`} aria-live="polite">
@@ -271,7 +429,8 @@ export default function AuthPage({ authConfig }) {
             </p>
           )}
 
-          {!client && supabaseUrl && (
+          {/* Loading indicator for Supabase SDK */}
+          {!isNeon && !client && supabaseUrl && (
             <p className="auth-status">
               <Loader2 size={14} className="auth-spinner" />
               Loading authentication...

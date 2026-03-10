@@ -25,6 +25,7 @@ _WORKSPACE_PASSTHROUGH_ROOTS = (
     "/api/v1/git",
     "/api/v1/ui",
     "/api/v1/agent",
+    "/api/v1/auth",
     "/api/v1/control-plane",
     "/api/capabilities",
     "/api/config",
@@ -72,6 +73,17 @@ def _service(config: APIConfig) -> ControlPlaneService:
 
 
 def _load_session(request: Request, config: APIConfig):
+    # Dev bypass: when no auth provider is configured, return a synthetic session
+    # so workspace routes work without requiring Supabase login.
+    if not config.use_supabase_control_plane:
+        from .auth_session import SessionPayload
+        import time
+        return SessionPayload(
+            user_id="dev-user",
+            email="dev@localhost",
+            exp=int(time.time()) + 86400,
+        )
+
     token = request.cookies.get(config.auth_session_cookie_name, "")
     if not token:
         return _error(
@@ -133,13 +145,22 @@ def _require_workspace_member(
     _ensure_workspace_exists(service, workspace_id)
     membership = _membership_for_user(service, workspace_id, session.user_id)
     if membership is None:
-        return _error(
-            request,
-            status_code=403,
-            error="forbidden",
-            code="WORKSPACE_MEMBERSHIP_REQUIRED",
-            message="Workspace membership required",
-        )
+        # Dev bypass: auto-grant membership when no auth provider is configured
+        if not config.use_supabase_control_plane:
+            membership_id = f"{workspace_id}:{session.user_id}"
+            service.upsert_membership(membership_id, {
+                "workspace_id": workspace_id,
+                "user_id": session.user_id,
+                "role": "owner",
+            })
+        else:
+            return _error(
+                request,
+                status_code=403,
+                error="forbidden",
+                code="WORKSPACE_MEMBERSHIP_REQUIRED",
+                message="Workspace membership required",
+            )
     return session
 
 

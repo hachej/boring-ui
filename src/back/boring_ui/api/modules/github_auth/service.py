@@ -55,27 +55,27 @@ class GitHubAppService:
     # ── OAuth flow ────────────────────────────────────────────────────
 
     def get_authorize_url(self, redirect_uri: str, state: str) -> str:
-        """Build the GitHub App install + authorize URL.
+        """Build the GitHub App installation URL.
 
-        Uses the combined flow: user installs the app on their org/repos
-        AND authorizes in one step. GitHub redirects to redirect_uri with
-        a code that can be exchanged for an access token.
+        Uses the installation flow — user installs the app on their account/org
+        and grants repo access. No OAuth "Act on your behalf" permission needed.
+        GitHub redirects to the Setup URL with installation_id and state.
         """
-        # The /installations/new URL handles both install and OAuth authorize.
-        # ?state= is forwarded to the callback for CSRF protection.
         slug = getattr(self, '_slug', None)
         if slug:
             return (
                 f'https://github.com/apps/{slug}/installations/new'
                 f'?state={state}'
             )
-        # Fallback to standard OAuth if slug is not known
-        return (
-            f'https://github.com/login/oauth/authorize'
-            f'?client_id={self.client_id}'
-            f'&redirect_uri={redirect_uri}'
-            f'&state={state}'
-        )
+        # Fallback to OAuth if slug not configured
+        if self.client_id:
+            return (
+                f'https://github.com/login/oauth/authorize'
+                f'?client_id={self.client_id}'
+                f'&redirect_uri={redirect_uri}'
+                f'&state={state}'
+            )
+        raise ValueError('Neither app slug nor client_id configured')
 
     def exchange_code(self, code: str) -> dict:
         """Exchange an OAuth code for a user access token.

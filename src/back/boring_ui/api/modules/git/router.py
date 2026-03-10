@@ -15,31 +15,44 @@ async def _resolve_credentials_async(config: APIConfig, request: Request) -> dic
     """Resolve git credentials for push/pull/clone.
 
     Resolution order:
-    1. GitHub App via workspace settings (installation_id from DB)
-    2. GIT_AUTH_TOKEN env var (PAT fallback for simple deployments)
-    3. None (git uses its own credential resolution)
+    1. GitHub App connection (cache + DB via github_auth router)
+    2. GitHub App via provisioning settings (repo_url + installation_id from DB)
+    3. GIT_AUTH_TOKEN env var (PAT fallback for simple deployments)
+    4. None (git uses its own credential resolution)
     """
     import os
 
-    # 1. GitHub App via workspace settings (DB-persisted)
-    if config.github_app_id and config.github_app_private_key:
-        workspace_id = request.headers.get('x-workspace-id')
-        if workspace_id:
-            try:
-                from ..github_auth.provisioning import read_workspace_git_settings
-                from ..github_auth.service import GitHubAppService
-                from ...modules.control_plane.supabase.db_client import get_pool
-                pool = get_pool()
-                settings_key = config.settings_encryption_key or os.environ.get('BORING_SETTINGS_KEY', '')
-                if pool and settings_key:
-                    git_settings = await read_workspace_git_settings(pool, workspace_id, settings_key)
-                    if git_settings and git_settings.get('installation_id'):
-                        gh = GitHubAppService(config)
-                        return gh.get_git_credentials(git_settings['installation_id'])
-            except Exception as exc:
-                logger.warning('Could not resolve credentials from workspace settings: %s', exc)
+    workspace_id = request.headers.get('x-workspace-id')
 
-    # 2. PAT fallback
+    if config.github_app_id and config.github_app_private_key and workspace_id:
+        # 1. GitHub connection (manual connect via settings page)
+        #    Checks in-memory cache first, then DB workspace_settings
+        try:
+            from ..github_auth.router import _resolve_connection
+            from ..github_auth.service import GitHubAppService
+            conn = await _resolve_connection(config, workspace_id)
+            if conn and conn.get('installation_id'):
+                gh = GitHubAppService(config)
+                return gh.get_git_credentials(conn['installation_id'])
+        except Exception as exc:
+            logger.warning('Could not resolve credentials from GitHub connection: %s', exc)
+
+        # 2. Provisioning settings (auto-provisioned repo with repo_url)
+        try:
+            from ..github_auth.provisioning import read_workspace_git_settings
+            from ..github_auth.service import GitHubAppService
+            from ...modules.control_plane.supabase.db_client import get_pool
+            pool = get_pool()
+            settings_key = config.settings_encryption_key or os.environ.get('BORING_SETTINGS_KEY', '')
+            if pool and settings_key:
+                git_settings = await read_workspace_git_settings(pool, workspace_id, settings_key)
+                if git_settings and git_settings.get('installation_id'):
+                    gh = GitHubAppService(config)
+                    return gh.get_git_credentials(git_settings['installation_id'])
+        except Exception as exc:
+            logger.warning('Could not resolve credentials from workspace settings: %s', exc)
+
+    # 3. PAT fallback
     pat = os.environ.get('GIT_AUTH_TOKEN')
     if pat:
         return {'username': 'x-access-token', 'password': pat}

@@ -60,7 +60,18 @@ def verify_token(
     supabase_url: str,
     supabase_jwt_secret: str | None = None,
     audience: str | None = None,
+    jwks_url: str | None = None,
 ) -> TokenPayload:
+    """Verify a JWT using JWKS (RS256/ES256/EdDSA) or HS256 fallback.
+
+    Args:
+        token: The JWT to verify.
+        supabase_url: Base URL used to derive the default JWKS endpoint.
+        supabase_jwt_secret: Optional HS256 shared secret for fallback.
+        audience: Expected ``aud`` claim (e.g. ``"authenticated"``).
+        jwks_url: Explicit JWKS URL override.  When provided, JWKS-based
+            algorithms use this URL instead of deriving one from *supabase_url*.
+    """
     try:
         header = pyjwt.get_unverified_header(token)
     except pyjwt.InvalidTokenError as exc:
@@ -68,8 +79,14 @@ def verify_token(
 
     alg = header.get("alg", "")
 
-    if alg in ("RS256", "ES256"):
-        return _verify_jwks(token, alg=alg, supabase_url=supabase_url, audience=audience)
+    if alg in ("RS256", "ES256", "EdDSA"):
+        return _verify_jwks(
+            token,
+            alg=alg,
+            supabase_url=supabase_url,
+            audience=audience,
+            jwks_url_override=jwks_url,
+        )
     if alg == "HS256":
         if not supabase_jwt_secret:
             raise TokenInvalid("HS256 token received but no JWT secret configured for fallback")
@@ -88,8 +105,9 @@ def _verify_jwks(
     alg: str,
     supabase_url: str,
     audience: str | None,
+    jwks_url_override: str | None = None,
 ) -> TokenPayload:
-    jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    jwks_url = jwks_url_override or f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
     client = _jwks_cache.get_client(jwks_url)
 
     try:

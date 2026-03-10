@@ -49,7 +49,7 @@ image = _base_image().env(
     }
 )
 
-# Core Supabase/session secrets (same as core mode).
+# Core auth/DB secrets (Neon or Supabase, same as core mode).
 core_secrets = modal.Secret.from_name("boring-ui-core-secrets")
 
 # Additional sandbox-specific secrets (sprite provisioning, sandbox API keys).

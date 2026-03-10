@@ -1,16 +1,75 @@
-import { useState, useEffect } from 'react'
-import { Loader2, Cog, Activity, Lock, AlertTriangle, Copy, Check, Github } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Loader2, Cog, Activity, Lock, AlertTriangle, Copy, Check, Github, ChevronDown } from 'lucide-react'
 import { apiFetchJson } from '../utils/transport'
 import { buildApiUrl } from '../utils/apiBase'
 import { routes } from '../utils/routes'
 import PageShell, { SettingsSection, SettingsField } from './PageShell'
 import GitHubConnect from '../components/GitHubConnect'
 
+/**
+ * Inline workspace switcher — dropdown that lists all workspaces
+ * and navigates to the selected one's settings page.
+ */
+function WorkspaceSwitcher({ workspaces, currentId }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+
+  const current = workspaces.find((w) => (w.workspace_id || w.id) === currentId)
+  const displayName = current?.name || currentId
+
+  if (workspaces.length <= 1) {
+    return <span className="ws-switcher-solo">{displayName}</span>
+  }
+
+  return (
+    <div className="ws-switcher" ref={ref}>
+      <button
+        type="button"
+        className="ws-switcher-trigger"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+      >
+        <span className="ws-switcher-name">{displayName}</span>
+        <ChevronDown size={14} className={`ws-switcher-chevron ${open ? 'open' : ''}`} />
+      </button>
+      {open && (
+        <div className="ws-switcher-dropdown">
+          {workspaces.map((ws) => {
+            const wsId = ws.workspace_id || ws.id
+            const active = wsId === currentId
+            return (
+              <a
+                key={wsId}
+                className={`ws-switcher-item ${active ? 'active' : ''}`}
+                href={routes.controlPlane.workspaces.scope(wsId, 'settings').path}
+                onClick={() => setOpen(false)}
+              >
+                <span className="ws-switcher-item-name">{ws.name || wsId}</span>
+                {active && <Check size={12} />}
+              </a>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function WorkspaceSettingsPage({ workspaceId, capabilities }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [runtime, setRuntime] = useState(null)
   const [settings, setSettings] = useState({})
+  const [workspaces, setWorkspaces] = useState([])
   const [workspaceName, setWorkspaceName] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
@@ -37,8 +96,9 @@ export default function WorkspaceSettingsPage({ workspaceId, capabilities }) {
           return
         }
 
-        const workspaces = workspacesResult.data?.workspaces || []
-        const ws = workspaces.find((w) => w.id === workspaceId)
+        const wsList = workspacesResult.data?.workspaces || []
+        setWorkspaces(wsList)
+        const ws = wsList.find((w) => (w.workspace_id || w.id) === workspaceId)
         if (ws) {
           setWorkspaceName(ws.name || '')
         }
@@ -128,6 +188,14 @@ export default function WorkspaceSettingsPage({ workspaceId, capabilities }) {
     }
   }
 
+  const headerTitle = (
+    <span className="settings-header-title-group">
+      <WorkspaceSwitcher workspaces={workspaces} currentId={workspaceId} />
+      <span className="settings-header-separator">/</span>
+      <span>Settings</span>
+    </span>
+  )
+
   if (loading) {
     return (
       <PageShell title="Workspace Settings" backHref={backHref}>
@@ -147,14 +215,18 @@ export default function WorkspaceSettingsPage({ workspaceId, capabilities }) {
     )
   }
 
-  const runtimeState = runtime?.state || runtime?.status || 'unknown'
+  const runtimeState = runtime?.state || runtime?.status || ''
   const runtimeRetryable = runtime?.retryable === true || runtimeState === 'error'
   const runtimeError = runtime?.last_error || ''
+  // Only show runtime section when there's a real runtime (hosted/edge mode with sprites)
+  const hasRuntime = runtime && runtimeState && runtimeState !== 'unknown' && runtimeState !== 'pending' && runtimeState !== 'provisioning'
 
-  const settingKeys = Object.keys(settings)
+  // Filter out workspace metadata keys — only show actual encrypted settings
+  const metadataKeys = new Set(['created_at', 'updated_at', 'workspace_id', 'deleted_at', 'app_id', 'name', 'created_by'])
+  const settingKeys = Object.keys(settings).filter((k) => !metadataKeys.has(k))
 
   return (
-    <PageShell title="Workspace Settings" backHref={backHref}>
+    <PageShell title={headerTitle} backHref={backHref}>
       <div className="settings-card">
         <SettingsSection title="General" icon={Cog}>
           <SettingsField label="Workspace Name">
@@ -202,7 +274,13 @@ export default function WorkspaceSettingsPage({ workspaceId, capabilities }) {
           </SettingsField>
         </SettingsSection>
 
-        <SettingsSection title="Runtime" icon={Activity}>
+        {capabilities?.features?.github && (
+          <SettingsSection title="GitHub Integration" icon={Github} description="Sync workspace files to a private GitHub repository">
+            <GitHubConnect workspaceId={workspaceId} />
+          </SettingsSection>
+        )}
+
+        {hasRuntime && <SettingsSection title="Runtime" icon={Activity}>
           <SettingsField label="Status">
             <div className="settings-runtime-status">
               <span className={`settings-runtime-badge settings-runtime-badge-${runtimeState}`}>
@@ -235,15 +313,7 @@ export default function WorkspaceSettingsPage({ workspaceId, capabilities }) {
               />
             </SettingsField>
           )}
-        </SettingsSection>
-
-        {capabilities?.features?.github && (
-          <SettingsSection title="GitHub Integration" icon={Github} description="Sync workspace files to a private GitHub repository">
-            <SettingsField label="Connection">
-              <GitHubConnect workspaceId={workspaceId} />
-            </SettingsField>
-          </SettingsSection>
-        )}
+        </SettingsSection>}
 
         {settingKeys.length > 0 && (
           <SettingsSection title="Configuration" icon={Lock} description="Encrypted workspace settings">

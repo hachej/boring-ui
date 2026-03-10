@@ -45,6 +45,16 @@ def _service(config: APIConfig) -> ControlPlaneService:
 
 
 def _load_session(request: Request, config: APIConfig):
+    # Dev bypass: when no auth provider is configured, return a synthetic session
+    if not config.use_supabase_control_plane:
+        from .auth_session import SessionPayload
+        import time
+        return SessionPayload(
+            user_id="dev-user",
+            email="dev@localhost",
+            exp=int(time.time()) + 86400,
+        )
+
     token = request.cookies.get(config.auth_session_cookie_name, "")
     if not token:
         return _error(

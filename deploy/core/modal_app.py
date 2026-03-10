@@ -51,15 +51,17 @@ image = _base_image().env(
 )
 
 
-# Create this secret in Modal with Supabase/session settings used by boring-ui core.
-# Example keys:
-#   SUPABASE_URL
-#   SUPABASE_ANON_KEY
-#   SUPABASE_SERVICE_ROLE_KEY
-#   SUPABASE_JWT_SECRET
-#   SUPABASE_DB_URL
-#   BORING_SETTINGS_KEY
-#   BORING_UI_SESSION_SECRET
+# Create this secret in Modal with auth/DB settings used by boring-ui core.
+# Required keys (Neon — production default):
+#   CONTROL_PLANE_PROVIDER=neon
+#   DATABASE_URL              (Neon pooler connection string)
+#   NEON_AUTH_BASE_URL        (Neon Auth / Better Auth endpoint)
+#   NEON_AUTH_JWKS_URL        (EdDSA JWKS endpoint)
+#   BORING_UI_SESSION_SECRET  (HS256 session cookie secret)
+#   BORING_SETTINGS_KEY       (encrypted settings key)
+# Legacy keys (Supabase — keep if needed for rollback):
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+#   SUPABASE_JWT_SECRET, SUPABASE_DB_URL
 core_secrets = modal.Secret.from_name("boring-ui-core-secrets")
 git_secrets = modal.Secret.from_name("boring-ui-git-secrets")
 

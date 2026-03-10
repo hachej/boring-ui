@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Database, FolderOpen, GitBranch, Loader2, Search, X } from 'lucide-react'
+import { Database, FolderOpen, GitBranch, Github, Loader2, Search, X } from 'lucide-react'
 import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
+import { useGitHubConnection } from '../components/GitHubConnect'
 import UserMenu from '../components/UserMenu'
 import Tooltip from '../components/Tooltip'
 import SidebarSectionHeader, {
@@ -34,8 +35,10 @@ export default function FileTreePanel({ params }) {
     workspaceId,
     onSwitchWorkspace,
     showSwitchWorkspace,
+    workspaceOptions,
     onCreateWorkspace,
     onOpenUserSettings,
+    onOpenWorkspaceSettings,
     onLogout,
     userMenuStatusMessage,
     userMenuStatusTone,
@@ -51,6 +54,8 @@ export default function FileTreePanel({ params }) {
     enabled: viewMode === 'changes',
   })
   const showGitHeaderSpinner = viewMode === 'changes' && (isGitLoading || isGitFetching)
+  const { status: ghStatus, connect: ghConnect } = useGitHubConnection(workspaceId, { enabled: !!githubEnabled })
+  const showGitHubConnect = githubEnabled && ghStatus?.configured && !ghStatus?.connected
 
   useEffect(() => {
     if (!filetreeActivityIntent || filetreeActivityIntent.panelId !== 'filetree') return
@@ -182,8 +187,10 @@ export default function FileTreePanel({ params }) {
             disabledActions={userMenuDisabledActions}
             showSwitchWorkspace={showSwitchWorkspace}
             onSwitchWorkspace={onSwitchWorkspace}
+            workspaceOptions={workspaceOptions}
             onCreateWorkspace={onCreateWorkspace}
             onOpenUserSettings={onOpenUserSettings}
+            onOpenWorkspaceSettings={onOpenWorkspaceSettings}
             onLogout={onLogout}
             collapsed
           />
@@ -254,6 +261,18 @@ export default function FileTreePanel({ params }) {
                 {searchExpanded ? <X size={20} /> : <Search size={ICON_SIZE_INLINE} />}
               </button>
             </Tooltip>
+            {showGitHubConnect && (
+              <Tooltip label="Connect GitHub">
+                <button
+                  type="button"
+                  className="sidebar-action-btn sidebar-action-btn--github"
+                  onClick={ghConnect}
+                  aria-label="Connect GitHub"
+                >
+                  <Github size={ICON_SIZE_INLINE} />
+                </button>
+              </Tooltip>
+            )}
           </>
         )}
       </SidebarSectionHeader>
@@ -291,8 +310,10 @@ export default function FileTreePanel({ params }) {
           disabledActions={userMenuDisabledActions}
           showSwitchWorkspace={showSwitchWorkspace}
           onSwitchWorkspace={onSwitchWorkspace}
+          workspaceOptions={workspaceOptions}
           onCreateWorkspace={onCreateWorkspace}
           onOpenUserSettings={onOpenUserSettings}
+          onOpenWorkspaceSettings={onOpenWorkspaceSettings}
           onLogout={onLogout}
         />
       </div>

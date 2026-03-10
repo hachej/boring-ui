@@ -1544,6 +1544,12 @@ export default function App() {
     window.location.assign(route.path)
   }, [userMenuAuthStatus, storagePrefix, projectRoot, currentWorkspaceId])
 
+  const handleOpenWorkspaceSettings = useCallback(() => {
+    if (!currentWorkspaceId) return
+    const route = routes.controlPlane.workspaces.scope(currentWorkspaceId, 'settings')
+    window.location.assign(route.path)
+  }, [currentWorkspaceId])
+
   const handleLogout = useCallback(() => {
     const route = routes.controlPlane.auth.logout()
     window.location.assign(buildApiUrl(route.path, route.query))
@@ -2902,8 +2908,10 @@ export default function App() {
             workspaceName: activeWorkspaceName,
             workspaceId: currentWorkspaceId,
             onSwitchWorkspace: handleSwitchWorkspace,
+            workspaceOptions,
             onCreateWorkspace: handleCreateWorkspace,
             onOpenUserSettings: handleOpenUserSettings,
+            onOpenWorkspaceSettings: handleOpenWorkspaceSettings,
             onLogout: handleLogout,
           }
         case 'shell':
@@ -3639,8 +3647,10 @@ export default function App() {
             workspaceName: activeWorkspaceName,
             workspaceId: currentWorkspaceId,
             onSwitchWorkspace: handleSwitchWorkspace,
+            workspaceOptions,
             onCreateWorkspace: handleCreateWorkspace,
             onOpenUserSettings: handleOpenUserSettings,
+            onOpenWorkspaceSettings: handleOpenWorkspaceSettings,
             onLogout: handleLogout,
             githubEnabled: capabilities?.features?.github === true,
           })
@@ -3924,6 +3934,7 @@ export default function App() {
     handleSwitchWorkspace,
     handleCreateWorkspace,
     handleOpenUserSettings,
+    handleOpenWorkspaceSettings,
     handleLogout,
     sectionCollapsed,
     toggleSectionCollapse,
@@ -4007,8 +4018,10 @@ export default function App() {
         workspaceName: activeWorkspaceName,
         workspaceId: currentWorkspaceId,
         onSwitchWorkspace: handleSwitchWorkspace,
+        workspaceOptions,
         onCreateWorkspace: handleCreateWorkspace,
         onOpenUserSettings: handleOpenUserSettings,
+        onOpenWorkspaceSettings: handleOpenWorkspaceSettings,
         onLogout: handleLogout,
         githubEnabled: capabilities?.features?.github === true,
       })
@@ -4052,6 +4065,7 @@ export default function App() {
     handleSwitchWorkspace,
     handleCreateWorkspace,
     handleOpenUserSettings,
+    handleOpenWorkspaceSettings,
     handleLogout,
     handleOpenChatTab,
     leftSidebarPanelIds,
@@ -4535,6 +4549,8 @@ export default function App() {
     return (
       <ThemeProvider>
         <AuthPage authConfig={{
+          provider: capabilities?.auth?.provider || 'supabase',
+          neonAuthUrl: capabilities?.auth?.neonAuthUrl || '',
           supabaseUrl: capabilities?.auth?.supabaseUrl || '',
           supabaseAnonKey: capabilities?.auth?.supabaseAnonKey || '',
           callbackUrl: capabilities?.auth?.callbackUrl || '',
@@ -4556,8 +4572,12 @@ export default function App() {
   }
 
   // Auth guard: redirect unauthenticated users to login when control plane is enabled
+  // Only enforce when an auth provider is actually configured (supabaseUrl or neonAuthUrl present);
+  // otherwise dev mode with control_plane but no auth would loop to a non-functional login page.
+  const authProviderConfigured = !!(capabilities?.auth?.supabaseUrl || capabilities?.auth?.neonAuthUrl)
   if (
     capabilities?.features?.control_plane &&
+    authProviderConfigured &&
     userMenuAuthStatus === 'unauthenticated' &&
     !isAuthLoginPage &&
     !isAuthCallbackPage

@@ -48,7 +48,11 @@ def _ensure_asyncpg() -> None:
 def _uses_pgbouncer_pooling(db_url: str) -> bool:
     parsed = urlparse(db_url)
     host = (parsed.hostname or "").lower()
+    # Supabase pooler
     if host.endswith(".pooler.supabase.com"):
+        return True
+    # Neon pooler: hostnames contain "-pooler" (e.g. ep-xyz-pooler.region.neon.tech)
+    if "-pooler" in host:
         return True
 
     query = parse_qs(parsed.query)

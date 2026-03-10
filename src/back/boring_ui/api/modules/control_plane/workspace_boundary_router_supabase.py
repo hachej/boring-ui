@@ -25,6 +25,7 @@ _WORKSPACE_PASSTHROUGH_ROOTS = (
     "/api/v1/git",
     "/api/v1/ui",
     "/api/v1/agent",
+    "/api/v1/auth",
     "/api/v1/control-plane",
     "/api/capabilities",
     "/api/config",

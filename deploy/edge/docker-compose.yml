@@ -5,8 +5,13 @@ services:
       dockerfile: deploy/shared/Dockerfile.backend
     environment:
       DEPLOY_MODE: core
-      CONTROL_PLANE_PROVIDER: ${CONTROL_PLANE_PROVIDER:-supabase}
+      CONTROL_PLANE_PROVIDER: ${CONTROL_PLANE_PROVIDER:-neon}
       CONTROL_PLANE_APP_ID: ${CONTROL_PLANE_APP_ID:-boring-ui}
+      # Neon
+      DATABASE_URL: ${DATABASE_URL:-}
+      NEON_AUTH_BASE_URL: ${NEON_AUTH_BASE_URL:-}
+      NEON_AUTH_JWKS_URL: ${NEON_AUTH_JWKS_URL:-}
+      # Supabase (legacy)
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
