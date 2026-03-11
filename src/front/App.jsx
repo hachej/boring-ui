@@ -3300,52 +3300,8 @@ export default function App() {
       )
     }
 
-    // Check if there's a saved layout - if so, DON'T create panels here
-    // Let the layout restoration effect handle it to avoid creating->destroying->recreating
-    // We check localStorage directly since projectRoot isn't available yet
     let hasSavedLayout = false
     let invalidLayoutFound = false
-    try {
-      // Use storagePrefix from config (available via closure from outer scope)
-      const layoutKeyPrefix = `${storagePrefix}-`
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key && key.startsWith(layoutKeyPrefix) && key.endsWith('-layout')) {
-          const raw = localStorage.getItem(key)
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            const hasValidVersion = parsed?.version >= LAYOUT_VERSION
-            const hasPanels = !!parsed?.panels
-            const capabilitiesSnapshot = capabilitiesRef.current || UNKNOWN_CAPABILITIES
-            const hasValidStructure = validateLayoutStructure(parsed, capabilitiesSnapshot)
-
-            // Check if layout is valid
-            if (hasValidVersion && hasPanels && hasValidStructure) {
-              hasSavedLayout = true
-              break
-            }
-
-            // Invalid layout detected - clean up and reload
-            if (!hasValidStructure || !hasValidVersion || !hasPanels) {
-              console.warn('[Layout] Invalid layout detected in onReady, clearing and reloading:', key)
-              localStorage.removeItem(key)
-              // Clear related session storage
-              const keyPrefix = key.replace('-layout', '')
-              localStorage.removeItem(`${keyPrefix}-tabs`)
-              localStorage.removeItem(`${storagePrefix}-terminal-sessions`)
-              localStorage.removeItem(`${storagePrefix}-terminal-active`)
-              localStorage.removeItem(`${storagePrefix}-terminal-chat-interface`)
-              invalidLayoutFound = true
-            }
-          }
-        }
-      }
-    } catch {
-      // Ignore errors checking localStorage
-    }
-
-    // Only create fresh panels if no saved layout exists
-    // Otherwise, layout restoration will handle panel creation
     const shouldUseConfigLayout = Array.isArray(config?.defaultLayout?.panels)
       ? config.defaultLayout.panels.length > 0
       : config?.defaultLayout && Object.prototype.hasOwnProperty.call(config.defaultLayout, 'panels')
@@ -3358,10 +3314,50 @@ export default function App() {
           capabilitiesLoadingRef.current,
         )
       : ensureCorePanels
-    if (!hasSavedLayout || invalidLayoutFound) {
+    ensureCorePanelsRef.current = panelBuilder
+
+    if (layoutPersistenceReady) {
+      // Check if there's a saved layout - if so, DON'T create panels here
+      // Let the layout restoration effect handle it to avoid creating->destroying->recreating.
+      try {
+        const layoutKeyPrefix = `${storagePrefix}-`
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && key.startsWith(layoutKeyPrefix) && key.endsWith('-layout')) {
+            const raw = localStorage.getItem(key)
+            if (raw) {
+              const parsed = JSON.parse(raw)
+              const hasValidVersion = parsed?.version >= LAYOUT_VERSION
+              const hasPanels = !!parsed?.panels
+              const capabilitiesSnapshot = capabilitiesRef.current || UNKNOWN_CAPABILITIES
+              const hasValidStructure = validateLayoutStructure(parsed, capabilitiesSnapshot)
+
+              if (hasValidVersion && hasPanels && hasValidStructure) {
+                hasSavedLayout = true
+                break
+              }
+
+              if (!hasValidStructure || !hasValidVersion || !hasPanels) {
+                console.warn('[Layout] Invalid layout detected in onReady, clearing and reloading:', key)
+                localStorage.removeItem(key)
+                const keyPrefix = key.replace('-layout', '')
+                localStorage.removeItem(`${keyPrefix}-tabs`)
+                localStorage.removeItem(`${storagePrefix}-terminal-sessions`)
+                localStorage.removeItem(`${storagePrefix}-terminal-active`)
+                localStorage.removeItem(`${storagePrefix}-terminal-chat-interface`)
+                invalidLayoutFound = true
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore errors checking localStorage.
+      }
+    }
+
+    if (layoutPersistenceReady && (!hasSavedLayout || invalidLayoutFound)) {
       panelBuilder()
     }
-    ensureCorePanelsRef.current = panelBuilder
 
     // Handle panel close to clean up tabs state
     api.onDidRemovePanel((e) => {
@@ -3613,9 +3609,15 @@ export default function App() {
   // Restore layout once projectRoot is loaded and dockApi is available
   const layoutRestorationRan = useRef(false)
   useEffect(() => {
-    // Wait for dockApi, projectRoot, and auth resolution (so storagePrefix
-    // includes the userId and we load the correct per-user layout).
-    if (!dockApi || projectRoot === null || !userIdentityAuthResolved || layoutRestorationRan.current) return
+    layoutRestorationRan.current = false
+    layoutRestored.current = false
+    collapsedEffectRan.current = false
+  }, [storagePrefix, projectRoot])
+
+  useEffect(() => {
+    // Wait for dockApi, projectRoot, and layout persistence hydration so we
+    // restore from the final per-user storage key only once.
+    if (!dockApi || projectRoot === null || !layoutPersistenceReady || layoutRestorationRan.current) return
     layoutRestorationRan.current = true
     const collapsedState = {
       filetree: collapsed.filetree,
@@ -3975,7 +3977,7 @@ export default function App() {
     projectRoot,
     storagePrefix,
     layoutVersion,
-    userIdentityAuthResolved,
+    layoutPersistenceReady,
     capabilities,
     capabilitiesLoading,
     collapsed.filetree,
@@ -4247,19 +4249,27 @@ export default function App() {
   // This repairs first-load races where onReady executed before
   // capabilities arrived and persisted an incomplete layout.
   useEffect(() => {
-    if (!dockApi || capabilitiesLoading || projectRoot === null) return
+    if (!dockApi || capabilitiesLoading || projectRoot === null || !layoutPersistenceReady) return
     if (layoutRestored.current) return
     if (ensureCorePanelsRef.current) {
       ensureCorePanelsRef.current()
     }
-  }, [dockApi, capabilitiesLoading, capabilities, nativeAgentEnabled, companionAgentEnabled, projectRoot])
+  }, [
+    dockApi,
+    capabilitiesLoading,
+    capabilities,
+    nativeAgentEnabled,
+    companionAgentEnabled,
+    projectRoot,
+    layoutPersistenceReady,
+  ])
 
   const startupChatOpened = useRef(false)
 
   // Remove legacy fixed right-rail chat panels from older layouts.
   // New chat panels are dynamic tab panels created via addChatPanel.
   useEffect(() => {
-    if (!dockApi || capabilitiesLoading) return
+    if (!dockApi || capabilitiesLoading || !layoutPersistenceReady) return
 
     let removedLegacyPanel = false
     ;['terminal', 'companion', 'pi-agent'].forEach((panelId) => {
@@ -4290,11 +4300,11 @@ export default function App() {
         startupChatOpened.current = true
       }
     }
-  }, [dockApi, capabilitiesLoading, nativeAgentEnabled, storagePrefix, addChatPanel])
+  }, [dockApi, capabilitiesLoading, nativeAgentEnabled, storagePrefix, addChatPanel, layoutPersistenceReady])
 
   // Always open one chat panel on startup when none exists.
   useEffect(() => {
-    if (!dockApi || capabilitiesLoading || projectRoot === null) return
+    if (!dockApi || capabilitiesLoading || projectRoot === null || !layoutPersistenceReady) return
     if (!isInitialized.current || startupChatOpened.current) return
 
     // Run startup auto-open only once, so user-closing the last chat
@@ -4303,7 +4313,7 @@ export default function App() {
     if (countAllAgentPanels(dockApi) === 0) {
       addChatPanel({ mode: 'split' })
     }
-  }, [dockApi, capabilitiesLoading, projectRoot, addChatPanel])
+  }, [dockApi, capabilitiesLoading, projectRoot, addChatPanel, layoutPersistenceReady])
 
   // Restore saved tabs when dockApi and projectRoot become available
   const hasRestoredTabs = useRef(false)
