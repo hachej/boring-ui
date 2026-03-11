@@ -91,6 +91,11 @@ const ALLOW_UNSAFE_DATA_FS_OVERRIDE = Boolean(import.meta?.env?.DEV)
 const MAIN_CONTENT_ID = 'workspace-main-content'
 const MAX_SCOPED_CACHE_ENTRIES = 12
 const MAX_PRESERVED_IDENTITY_AGE_MS = 30_000
+const UNKNOWN_CAPABILITIES = Object.freeze({
+  version: 'unknown',
+  features: {},
+  routers: [],
+})
 
 // Debounce helper - delays function execution until after wait ms of inactivity
 const debounce = (fn, wait) => {
@@ -342,6 +347,7 @@ const shouldUseCompactTab = (api, tabLocation) => {
 
 function UnifiedDockTab({
   api,
+  containerApi: _containerApi,
   hideClose = false,
   closeActionOverride,
   onPointerDown,
@@ -581,6 +587,8 @@ export default function App() {
   }, [nativeAgentEnabled, workspaceComponents])
 
   const capabilitiesFeatureCount = Object.keys(capabilities?.features || {}).length
+  const approvalFeatureEnabled = capabilities?.features?.approval === true
+  const uiStateFeatureEnabled = capabilities?.features?.ui_state === true
   const capabilitiesPending = staticCapabilities
     ? false
     : (capabilitiesLoading
@@ -837,6 +845,7 @@ export default function App() {
   const publishFrontendState = useCallback(async (api, options = {}) => {
     const targetApi = api || dockApi
     if (!targetApi) return false
+    if (!uiStateFeatureEnabled) return false
 
     const force = options.force === true
     const transport = options.transport === 'beacon' ? 'beacon' : 'fetch'
@@ -888,12 +897,12 @@ export default function App() {
       // Ignore transient publish failures (network/server startup races).
     }
     return false
-  }, [dockApi])
+  }, [dockApi, uiStateFeatureEnabled])
 
   useEffect(() => {
-    if (!dockApi || projectRoot === null) return
+    if (!dockApi || projectRoot === null || !uiStateFeatureEnabled) return
     void publishFrontendState(dockApi, { force: true })
-  }, [dockApi, projectRoot, publishFrontendState])
+  }, [dockApi, projectRoot, publishFrontendState, uiStateFeatureEnabled])
 
   // Refs for panel config (used in callbacks)
   const panelCollapsedRef = useRef({ ...panelCollapsed, companion: rightRailDefaults.companionCollapsed })
@@ -1737,6 +1746,12 @@ export default function App() {
 
   // Fetch approvals
   useEffect(() => {
+    if (!approvalFeatureEnabled) {
+      setApprovals([])
+      setApprovalsLoaded(true)
+      return
+    }
+
     let isActive = true
 
     const fetchApprovals = () => {
@@ -1761,7 +1776,7 @@ export default function App() {
       isActive = false
       clearInterval(interval)
     }
-  }, [])
+  }, [approvalFeatureEnabled])
 
   const handleDecision = useCallback(
     async (requestId, decision, reason) => {
@@ -2335,6 +2350,7 @@ export default function App() {
     async (api) => {
       const targetApi = api || dockApi
       if (!targetApi) return false
+      if (!uiStateFeatureEnabled) return false
       if (frontendStateUnavailableRef.current || frontendCommandUnavailableRef.current) {
         return false
       }
@@ -2357,11 +2373,11 @@ export default function App() {
         return false
       }
     },
-    [dockApi, executeFrontendCommand],
+    [dockApi, executeFrontendCommand, uiStateFeatureEnabled],
   )
 
   useEffect(() => {
-    if (!dockApi) return
+    if (!dockApi || !uiStateFeatureEnabled) return
 
     let isDisposed = false
     let timeoutId = null
@@ -2384,7 +2400,7 @@ export default function App() {
         window.clearTimeout(timeoutId)
       }
     }
-  }, [dockApi, consumeNextFrontendCommand])
+  }, [dockApi, consumeNextFrontendCommand, uiStateFeatureEnabled])
 
   useEffect(() => {
     if (!dockApi || !approvalsLoaded) return
@@ -3255,7 +3271,8 @@ export default function App() {
             const parsed = JSON.parse(raw)
             const hasValidVersion = parsed?.version >= LAYOUT_VERSION
             const hasPanels = !!parsed?.panels
-            const hasValidStructure = validateLayoutStructure(parsed, capabilitiesRef.current)
+            const capabilitiesSnapshot = capabilitiesRef.current || UNKNOWN_CAPABILITIES
+            const hasValidStructure = validateLayoutStructure(parsed, capabilitiesSnapshot)
 
             // Check if layout is valid
             if (hasValidVersion && hasPanels && hasValidStructure) {

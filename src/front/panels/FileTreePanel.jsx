@@ -261,7 +261,7 @@ export default function FileTreePanel({ params }) {
               <Tooltip label="Connect GitHub">
                 <button
                   type="button"
-                  className="sidebar-action-btn sidebar-action-btn--github"
+                  className="sidebar-action-btn sidebar-action-btn--github sidebar-action-btn--github-unlinked"
                   onClick={ghConnect}
                   aria-label="Connect GitHub"
                 >

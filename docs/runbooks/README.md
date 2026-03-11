@@ -167,6 +167,8 @@ modal secret create boring-ui-core-secrets \
 
 See [Neon Setup](./NEON_SETUP.md) for full setup instructions.
 
+Neon Auth note: `emailVerified: false` is expected by default (Better Auth does not send verification emails unless an email provider is configured). For child apps in boringdata, use the `boring-ui` email sender provider configured via `boringdatasetup`.
+
 Initialize schema once per database:
 
 ```bash

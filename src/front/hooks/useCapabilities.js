@@ -11,6 +11,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { apiFetchJson } from '../utils/transport'
 import { routes } from '../utils/routes'
 
+const UNKNOWN_CAPABILITIES = {
+  version: 'unknown',
+  features: {},
+  routers: [],
+}
+
 /**
  * Capabilities response from /api/capabilities endpoint.
  *
@@ -40,7 +46,7 @@ import { routes } from '../utils/routes'
  * }}
  */
 export const useCapabilities = () => {
-  const [capabilities, setCapabilities] = useState(null)
+  const [capabilities, setCapabilities] = useState(UNKNOWN_CAPABILITIES)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -62,9 +68,7 @@ export const useCapabilities = () => {
       // Preserve last known-good capabilities if available.
       setCapabilities((prev) => (
         prev || {
-          version: 'unknown',
-          features: {},
-          routers: [],
+          ...UNKNOWN_CAPABILITIES,
         }
       ))
     } finally {

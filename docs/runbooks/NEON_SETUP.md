@@ -114,6 +114,13 @@ JWT claims: `{sub, id, email, name, role, exp, iss, aud, iat, emailVerified}`
 JWT algorithm: EdDSA (Ed25519)
 JWT audience: Neon Auth origin URL (e.g., `https://ep-<id>.neonauth.<region>.aws.neon.tech`)
 
+### Email Verification Behavior (Neon / Better Auth)
+
+- Neon Auth (Better Auth) does not send verification emails by default.
+- `emailVerified: false` in the returned user/JWT payload is expected unless you configure an email sender.
+- If you need verification emails, configure a custom email provider on Neon.
+- For boringdata child apps, use the `boring-ui` email sender provider via `boringdatasetup` instead of per-app ad hoc email sender setup.
+
 ## Modal Deployment
 
 After completing steps 1-5, deploy to Modal:
@@ -211,6 +218,8 @@ boring-ui session cookies (`boring_session`) are HS256 JWTs. Any child app (bori
 3. **Do NOT issue session cookies** from the child app. Only boring-ui issues `boring_session` cookies. Child apps are consumers/validators only.
 
 4. **Check `app_id`** if the child app requires it. boring-sandbox rejects sessions without a matching `app_id` when an app is resolved. Set `CONTROL_PLANE_APP_ID` in boring-ui to match what the child expects.
+
+5. **Use boring-ui email sender wiring for verification flows**. If a child app needs signup email verification, route it through the `boring-ui` email sender provider configured by `boringdatasetup`.
 
 ### Checklist
 

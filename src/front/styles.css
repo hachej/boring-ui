@@ -983,6 +983,15 @@ html {
   opacity: 1;
   color: var(--color-text-primary);
 }
+.sidebar-action-btn--github-unlinked {
+  color: var(--color-danger);
+  opacity: 0.95;
+}
+
+.sidebar-action-btn--github-unlinked:hover {
+  color: var(--color-danger);
+  opacity: 1;
+}
 .sidebar-action-btn--github-linked {
   opacity: 1;
   color: var(--color-text-secondary);
