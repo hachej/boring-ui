@@ -95,7 +95,7 @@ describe('controlPlane utils', () => {
 
   it('uses fallback route and logs warning when preflight run fails', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const fallbackRoute = { path: '/w/ws-1/setup', query: undefined }
+    const fallbackRoute = { path: '/w/ws-1/', query: undefined }
 
     const resolvedRoute = await runWithPreflightFallback({
       run: async () => {
@@ -118,7 +118,7 @@ describe('controlPlane utils', () => {
 
     const resolvedRoute = await runWithPreflightFallback({
       run: async () => route,
-      fallbackRoute: { path: '/w/ws-1/setup', query: undefined },
+      fallbackRoute: { path: '/w/ws-1/', query: undefined },
       warningMessage: '[UserMenu] Create workspace preflight failed:',
     })
 

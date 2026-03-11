@@ -1529,8 +1529,10 @@ export default function App() {
           pathname: window.location.pathname,
         })
       },
-      // When preflight fails we cannot safely assume runtime is initialized; route to setup.
-      fallbackRoute: routes.controlPlane.workspaces.setup(targetWorkspaceId),
+      fallbackRoute: routes.controlPlane.workspaces.scope(
+        targetWorkspaceId,
+        getWorkspacePathSuffix(window.location.pathname),
+      ),
       warningMessage: '[UserMenu] Switch workspace preflight failed:',
     })
     window.location.assign(routeHref(route))
@@ -1583,7 +1585,10 @@ export default function App() {
           pathname: window.location.pathname,
         })
       },
-      fallbackRoute: routes.controlPlane.workspaces.setup(createdWorkspaceId),
+      fallbackRoute: routes.controlPlane.workspaces.scope(
+        createdWorkspaceId,
+        getWorkspacePathSuffix(window.location.pathname),
+      ),
       warningMessage: '[UserMenu] Create workspace preflight failed:',
     })
     window.location.assign(routeHref(route))

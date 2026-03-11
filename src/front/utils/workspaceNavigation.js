@@ -2,7 +2,6 @@ import { routes } from './routes'
 import {
   extractWorkspaceSettingsPayload,
   getWorkspacePathSuffix,
-  isRuntimeReady,
   shouldRetryRuntime,
 } from './controlPlane'
 
@@ -47,17 +46,11 @@ export const syncWorkspaceRuntimeAndSettings = async ({
 
 export const resolveWorkspaceNavigationRoute = ({
   workspaceId,
-  runtimePayload,
+  runtimePayload: _runtimePayload,
   currentWorkspacePathSuffix = '',
-  onboardingEnabled = true,
+  onboardingEnabled: _onboardingEnabled = true,
 }) => {
-  if (!onboardingEnabled) {
-    return routes.controlPlane.workspaces.scope(workspaceId, currentWorkspacePathSuffix)
-  }
-  if (isRuntimeReady(runtimePayload)) {
-    return routes.controlPlane.workspaces.scope(workspaceId, currentWorkspacePathSuffix)
-  }
-  return routes.controlPlane.workspaces.setup(workspaceId)
+  return routes.controlPlane.workspaces.scope(workspaceId, currentWorkspacePathSuffix)
 }
 
 // Derive suffix from the live URL pathname to avoid boot-race/stale-state issues
@@ -66,7 +59,7 @@ export const resolveWorkspaceNavigationRouteFromPathname = ({
   workspaceId,
   runtimePayload,
   pathname = '',
-  onboardingEnabled = true,
+  onboardingEnabled,
 }) => {
   return resolveWorkspaceNavigationRoute({
     workspaceId,

@@ -78,7 +78,7 @@ describe('workspaceNavigation transport regressions', () => {
     expect(apiFetch).not.toHaveBeenCalled()
   })
 
-  it('resolves canonical workspace navigation route by runtime readiness', () => {
+  it('resolves canonical workspace navigation route directly to workspace scope', () => {
     expect(
       resolveWorkspaceNavigationRoute({
         workspaceId: 'ws-ready',
@@ -97,12 +97,12 @@ describe('workspaceNavigation transport regressions', () => {
         currentWorkspacePathSuffix: 'app/editor',
       }),
     ).toEqual({
-      path: '/w/ws-setup/setup',
+      path: '/w/ws-setup/app/editor',
       query: undefined,
     })
   })
 
-  it('bypasses setup routing when onboarding is disabled', () => {
+  it('keeps direct workspace routing when onboarding is disabled', () => {
     expect(
       resolveWorkspaceNavigationRoute({
         workspaceId: 'ws-no-onboarding',
@@ -146,7 +146,7 @@ describe('workspaceNavigation transport regressions', () => {
         pathname: '/w/ws-current/app/editor',
       }),
     ).toEqual({
-      path: '/w/ws-live/setup',
+      path: '/w/ws-live/app/editor',
       query: undefined,
     })
   })
