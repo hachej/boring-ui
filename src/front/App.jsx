@@ -41,6 +41,7 @@ import {
   savePanelSizes,
   pruneEmptyGroups,
   getStorageKey,
+  getSharedStorageKey,
   getFileName,
 } from './layout'
 import ThemeToggle from './components/ThemeToggle'
@@ -623,6 +624,40 @@ export default function App() {
   const storagePrefix = menuUserId
     ? `${baseStoragePrefix}-u-${menuUserId.slice(0, 12)}`
     : baseStoragePrefix
+  const hasSharedPreferenceValue = (prefix, suffix) => {
+    if (!prefix) return false
+    try {
+      return localStorage.getItem(getSharedStorageKey(prefix, suffix)) !== null
+    } catch {
+      return false
+    }
+  }
+  const resolveSharedPreferencePrefix = (prefix, suffix) => {
+    if (hasSharedPreferenceValue(prefix, suffix)) return prefix
+    if (prefix !== baseStoragePrefix && hasSharedPreferenceValue(baseStoragePrefix, suffix)) {
+      return baseStoragePrefix
+    }
+    return prefix
+  }
+  const readPersistedCollapsedState = (prefix) => {
+    const effectivePrefix = resolveSharedPreferencePrefix(prefix, 'sidebar-collapsed')
+    const saved = loadCollapsedState(effectivePrefix)
+    return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
+  }
+  const readPersistedPanelSizes = (prefix) => {
+    const effectivePrefix = resolveSharedPreferencePrefix(prefix, 'panel-sizes')
+    return {
+      ...panelDefaults,
+      companion: rightRailDefaults.companion,
+      ...(loadPanelSizes(effectivePrefix) || {}),
+    }
+  }
+  const arePlainObjectsEqual = (left, right) => {
+    const leftEntries = Object.entries(left || {})
+    const rightEntries = Object.entries(right || {})
+    if (leftEntries.length !== rightEntries.length) return false
+    return leftEntries.every(([key, value]) => right?.[key] === value)
+  }
   const [userMenuIdentityError, setUserMenuIdentityError] = useState('')
   const [userMenuWorkspaceError, setUserMenuWorkspaceError] = useState('')
   const [workspaceOptions, setWorkspaceOptions] = useState([])
@@ -641,21 +676,15 @@ export default function App() {
   const isWorkspaceSettingsPage = currentWorkspaceId && workspaceSubpath === 'settings'
   const userSettingsWorkspaceId = String(pageSearchParams.get('workspace_id') || '').trim()
   const isWorkspaceSetupPage = currentWorkspaceId && workspaceSubpath === 'setup'
-  const [collapsed, setCollapsed] = useState(() => {
-    const saved = loadCollapsedState(baseStoragePrefix)
-    return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
-  })
+  const [collapsed, setCollapsed] = useState(() => readPersistedCollapsedState(storagePrefix))
+  const [layoutChromeHydratedPrefix, setLayoutChromeHydratedPrefix] = useState(storagePrefix)
   const [sectionCollapsed, setSectionCollapsed] = useState({})
   const sidebarToggleHostId = useMemo(() => {
     const hasFiletree = leftSidebarPanelIds.includes('filetree')
     if (collapsed.filetree && hasFiletree) return 'filetree'
     return leftSidebarPanelIds[0] || 'filetree'
   }, [collapsed.filetree, leftSidebarPanelIds])
-  const panelSizesRef = useRef({
-    ...panelDefaults,
-    companion: rightRailDefaults.companion,
-    ...(loadPanelSizes(baseStoragePrefix) || {}),
-  })
+  const panelSizesRef = useRef(readPersistedPanelSizes(storagePrefix))
   const collapsedEffectRan = useRef(false)
   const dismissedApprovalsRef = useRef(new Set())
   const agentAutoAddSuppressedRef = useRef({
@@ -732,6 +761,10 @@ export default function App() {
     ],
   )
   const userIdentityAuthResolved = userMenuAuthStatus !== 'unknown'
+  const layoutPersistenceReady = (
+    userIdentityAuthResolved
+    && layoutChromeHydratedPrefix === storagePrefix
+  )
   const userIdentity = useMemo(
     () => ({ userId: menuUserId, authResolved: userIdentityAuthResolved }),
     [menuUserId, userIdentityAuthResolved],
@@ -842,6 +875,18 @@ export default function App() {
     frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefix)
     frontendStateUnavailableRef.current = false
     frontendCommandUnavailableRef.current = false
+  }, [storagePrefix])
+
+  useEffect(() => {
+    const nextCollapsed = readPersistedCollapsedState(storagePrefix)
+    const nextPanelSizes = readPersistedPanelSizes(storagePrefix)
+    panelSizesRef.current = nextPanelSizes
+    setCollapsed((prev) => (
+      arePlainObjectsEqual(prev, nextCollapsed)
+        ? prev
+        : nextCollapsed
+    ))
+    setLayoutChromeHydratedPrefix(storagePrefix)
   }, [storagePrefix])
 
   const publishFrontendState = useCallback(async (api, options = {}) => {
