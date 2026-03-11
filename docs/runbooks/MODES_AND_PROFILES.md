@@ -72,6 +72,21 @@ Profiles define the chat rail + filesystem backend pairing.
 | `pi-httpfs` | `pi` | `http` | Dev/debug against backend workspace |
 | `companion-httpfs` | `companion` | `http` | Default edge mode profile |
 
+### `pi-lightningfs` behavior
+
+In `core` + `pi-lightningfs`:
+
+1. The file tree is browser-local LightningFS, not the backend server checkout.
+2. Git sync state must be derived from that same browser repo state.
+3. If the workspace has a selected GitHub repo and the browser workspace is empty, boring-ui bootstraps the repo into LightningFS on workspace load.
+
+Important implications:
+
+- Browser repo storage is scoped by origin, user, and workspace.
+- Refreshing the same workspace on the same origin should reopen the same LightningFS repo.
+- Opening the app on a different host or port starts from a different LightningFS namespace.
+- `pi-httpfs` is the debug profile when you explicitly want the file tree to mirror backend filesystem APIs instead.
+
 ## Recommended Defaults
 
 | Deploy mode | Default profile |
@@ -107,6 +122,11 @@ Core + PI + LightningFS:
 VITE_DEPLOY_MODE=core
 VITE_UI_PROFILE=pi-lightningfs
 ```
+
+Use this when you want local dev to behave like the deployed core app:
+- browser file tree
+- browser Git repo
+- GitHub-selected workspace repo cloned into LightningFS
 
 Core + PI + CheerpX:
 

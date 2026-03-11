@@ -25,6 +25,22 @@ Use `edge` only when you need edge proxy/provisioning/token-injection:
 
 ## Development
 
+### Settings surfaces
+
+- User settings: `/auth/settings`
+- Workspace settings: `/w/<workspace_id>/settings`
+
+Keep workspace-scoped configuration such as GitHub integration on the workspace settings page. User settings should only hold user-scoped preferences.
+
+### GitHub in core mode
+
+For `core` + `pi-lightningfs`, GitHub setup is a two-step workspace flow:
+
+1. connect the GitHub App installation
+2. select one repo from the installation's accessible repo list
+
+Only after repo selection should the workspace be considered linked. On an empty LightningFS workspace, the browser repo is then bootstrapped from that selected GitHub repo when the workspace opens.
+
 ### Start Local Dev Environment
 
 ```bash

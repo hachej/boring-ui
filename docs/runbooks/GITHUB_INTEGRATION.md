@@ -4,6 +4,18 @@
 
 boring-ui integrates with GitHub via a **GitHub App** (`boring-ui-app`) for workspace-level git operations. The App provides installation tokens that grant per-repo access without user PATs.
 
+In the current product there are two backend states for each workspace:
+
+1. `installation_connected`: the workspace is linked to a GitHub App installation
+2. `repo_selected`: the workspace has picked one repo from the installation's accessible repo list
+
+The main file-tree GitHub control intentionally collapses those into one user-facing state:
+
+- red/unlinked: app not installed, or no repo selected for this workspace
+- linked/clickable: a repo is selected for this workspace
+
+In `core` + `pi-lightningfs`, selecting a repo is also the trigger for browser-side repo bootstrap. An empty LightningFS workspace will clone that selected repo into the browser file tree on load.
+
 ## Architecture
 
 ```
@@ -21,7 +33,36 @@ User → boring-ui frontend → boring-ui backend → GitHub API
 
 **Frontend:**
 - `src/front/components/GitHubConnect.jsx` — `useGitHubConnection` hook + full settings UI
-- `src/front/panels/FileTreePanel.jsx` — GitHub connect icon in sidebar header
+- `src/front/components/SyncStatusFooter.jsx` — single GitHub control in the file-tree footer
+- `src/front/panels/FileTreePanel.jsx` — wires footer state to workspace GitHub status
+
+## UX Contract
+
+### Settings surfaces
+
+- `User settings`: `/auth/settings`
+- `Workspace settings`: `/w/<workspace_id>/settings`
+
+GitHub lives on the workspace settings page because installation link and repo selection are workspace-scoped.
+
+### Workspace GitHub flow
+
+1. Install or connect the GitHub App for the workspace
+2. Fetch the repo list for that installation
+3. Select exactly one repo for the workspace
+4. In `pi-lightningfs`, bootstrap that repo into the browser workspace if LightningFS is empty
+
+### GitHub control behavior
+
+- Nothing installed:
+  - GitHub control is red
+  - click opens install/authorize flow
+- Installation connected, no repo selected:
+  - GitHub control is still red
+  - click opens workspace settings so the user can pick a repo
+- Repo selected:
+  - GitHub control becomes linked
+  - click opens that exact repo
 
 ## GitHub App: `boring-ui-app`
 
@@ -95,14 +136,31 @@ All under prefix `/api/v1/auth/github`:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/status` | Check if GitHub is configured + workspace connection status |
+| `GET` | `/status` | Check config + installation link + selected repo state |
 | `GET` | `/authorize` | Start OAuth flow (redirects to GitHub) |
 | `GET` | `/callback` | Handle OAuth callback (returns HTML with postMessage) |
 | `POST` | `/connect` | Connect workspace to installation |
+| `POST` | `/repo` | Persist selected repo for a connected workspace |
 | `POST` | `/disconnect` | Disconnect workspace |
 | `GET` | `/installations` | List all app installations |
 | `GET` | `/repos` | List repos accessible to an installation |
 | `GET` | `/git-credentials` | Get `x-access-token` + installation token |
+
+`/status?workspace_id=...` currently returns:
+
+```json
+{
+  "configured": true,
+  "connected": true,
+  "installation_connected": true,
+  "installation_id": 123456,
+  "repo_selected": true,
+  "repo_url": "https://github.com/boringdata/boring-ui-repo"
+}
+```
+
+`connected` is effectively shorthand for `installation_connected`.
+The UI should only present the workspace as fully linked when `repo_selected` is also `true`.
 
 ## Test Repo: `boringdata/boring-ui-test`
 
@@ -133,15 +191,17 @@ Location: `tests/smoke/smoke_github_connect.py`
 | 2 | `github-status` | `/status` returns `configured: true` |
 | 3 | `installations` | `/installations` returns at least one |
 | 4 | `connect` | `POST /connect` links workspace to installation |
-| 5 | `verify-connected` | `/status?workspace_id=...` shows `connected: true` |
+| 5 | `verify-connected` | `/status?workspace_id=...` shows `installation_connected: true` |
 | 6 | `list-repos` | `/repos` includes `boringdata/boring-ui-test` |
-| 7 | `credentials` | `/git-credentials` returns valid token |
-| 8 | `verify-credentials` | Token works against `api.github.com` |
-| 9 | `git-push` | Clone, commit, push via installation token |
-| 10 | `verify-push` | File exists on GitHub (verified via PAT) |
-| 11 | `disconnect` | `POST /disconnect` removes connection |
-| 12 | `verify-disconnected` | `/status` shows `connected: false` |
-| 13 | `creds-after-disconnect` | `/git-credentials` returns 404 |
+| 7 | `select-repo` | `POST /repo` stores the selected repo |
+| 8 | `verify-selected` | `/status?workspace_id=...` shows `repo_selected: true` |
+| 9 | `credentials` | `/git-credentials` returns valid token |
+| 10 | `verify-credentials` | Token works against `api.github.com` |
+| 11 | `git-push` | Clone, commit, push via installation token |
+| 12 | `verify-push` | File exists on GitHub (verified via PAT) |
+| 13 | `disconnect` | `POST /disconnect` removes connection |
+| 14 | `verify-disconnected` | `/status` shows `connected: false` |
+| 15 | `creds-after-disconnect` | `/git-credentials` returns 404 |
 
 ### Running
 
@@ -214,6 +274,15 @@ JSON report with pass/fail per step:
 **"No installations found"**
 - The app needs to be installed on the target account
 - Visit: https://github.com/apps/boring-ui-app/installations/new (as `hachej`)
+
+**"Connected in settings, but repo is not linked in the file tree"**
+- That means the GitHub App installation is linked, but no repo has been selected for this workspace yet
+- Open workspace settings and pick one repo from the installation repo list
+
+**Empty file tree in `pi-lightningfs` after repo selection**
+- Repo selection is only metadata until LightningFS bootstrap completes
+- Open the workspace itself (not only settings) so the browser Git provider can clone into LightningFS
+- Browser repo state is namespaced by origin, user, and workspace; a different host or port starts with a fresh LightningFS store
 
 **"boring-ui-app is a private GitHub App"**
 - The app is private — only the owner can see the install page
