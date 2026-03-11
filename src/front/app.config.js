@@ -50,6 +50,9 @@ export default {
     deployMode,
     profile: uiProfile || 'custom',
   },
+  editors: {
+    markdownPane: 'potion',
+  },
   features: {
     codeSessions: true,
     agentRailMode,

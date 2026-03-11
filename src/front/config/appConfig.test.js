@@ -34,6 +34,7 @@ describe('appConfig', () => {
       expect(config.fileTree).toBeDefined()
       expect(config.storage).toBeDefined()
       expect(config.panels).toBeDefined()
+      expect(config.editors).toBeDefined()
       expect(config.api).toBeDefined()
       expect(config.data).toBeDefined()
       expect(config.features).toBeDefined()
@@ -68,6 +69,12 @@ describe('appConfig', () => {
 
       expect(config.panels.essential).toContain('filetree')
       expect(config.panels.essential).toContain('terminal')
+    })
+
+    it('defaults markdown pane to editor', () => {
+      const config = getDefaultConfig()
+
+      expect(config.editors.markdownPane).toBe('editor')
     })
   })
 

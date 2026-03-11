@@ -58,6 +58,11 @@ const DEFAULT_CONFIG = {
     },
   },
 
+  // Editor configuration
+  editors: {
+    markdownPane: 'editor',
+  },
+
   // Optional initial DockView layout override
   defaultLayout: null,
 
