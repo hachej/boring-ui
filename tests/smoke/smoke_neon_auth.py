@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Neon Auth E2E smoke test: signup -> JWT fetch -> token exchange -> session -> /me.
+"""Neon Auth E2E smoke test: verify-first signup/signin -> session -> /me.
 
 Usage:
     # Against production Modal deployment
@@ -24,10 +24,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from smoke_lib.auth import (
     random_password,
-    neon_signup_flow,
+    neon_signup_verify_flow,
     neon_signin_flow,
 )
 from smoke_lib.client import SmokeClient
+from smoke_lib.secrets import resend_api_key
 from smoke_lib.workspace import create_workspace, list_workspaces
 
 
@@ -72,6 +73,7 @@ def main() -> int:
                         help="Skip signup, use --email/--password for existing account")
     parser.add_argument("--email", help="Existing account email (with --skip-signup)")
     parser.add_argument("--password", help="Existing account password (with --skip-signup)")
+    parser.add_argument("--timeout", type=int, default=180, help="Verification email polling timeout seconds")
     args = parser.parse_args()
 
     client = SmokeClient(args.base_url)
@@ -87,40 +89,26 @@ def main() -> int:
         email = f"qa+smoke-neon-{int(time.time())}@mail.boringdata.io"
         password = random_password()
 
-        # Phase 1: Signup + JWT fetch
+        # Phase 1: Signup + verification email + token exchange
         print(f"\n{'='*60}")
-        print(f"Phase 1: Neon Signup")
+        print(f"Phase 1: Neon Signup + Verification")
         print(f"  Email: {email}")
         print(f"  Neon Auth: {neon_url}")
         print(f"  Target: {args.base_url}")
         print(f"{'='*60}")
-        jwt = neon_signup_flow(
+        session = neon_signup_verify_flow(
             client,
             neon_auth_url=neon_url,
+            resend_api_key=resend_api_key(),
             email=email,
             password=password,
+            timeout_seconds=args.timeout,
         )
-        print(f"[smoke] Signup JWT obtained: {jwt[:40]}...")
+        print(f"[smoke] Verification signup session: user_id={session.get('user', {}).get('user_id', '?')[:12]}...")
 
-        # Phase 2: Token exchange (from signup JWT)
-        print(f"\n{'='*60}")
-        print(f"Phase 2: Token Exchange (signup JWT)")
-        print(f"{'='*60}")
-        client.set_phase("signup-token-exchange")
-        exch_resp = client.post(
-            "/auth/token-exchange",
-            json={"access_token": jwt, "redirect_uri": "/"},
-            expect_status=(200,),
-        )
-        if exch_resp.status_code != 200:
-            print(f"[smoke] FAIL: Token exchange returned {exch_resp.status_code}: {exch_resp.text[:300]}")
-        else:
-            exch_data = exch_resp.json()
-            print(f"[smoke] Token exchange: ok={exch_data.get('ok')}")
-
-    # Phase 3: Signin + full flow
+    # Phase 2: Signin + full flow
     print(f"\n{'='*60}")
-    print(f"Phase 3: Neon Signin Flow")
+    print(f"Phase 2: Neon Signin Flow")
     print(f"{'='*60}")
     session = neon_signin_flow(
         client,
@@ -130,9 +118,9 @@ def main() -> int:
     )
     print(f"[smoke] Session: user_id={session.get('user', {}).get('user_id', '?')[:12]}...")
 
-    # Phase 4: Verify /auth/session
+    # Phase 3: Verify /auth/session
     print(f"\n{'='*60}")
-    print(f"Phase 4: Session Verification")
+    print(f"Phase 3: Session Verification")
     print(f"{'='*60}")
     client.set_phase("session-verify")
     session_resp = client.get("/auth/session", expect_status=(200,))
@@ -142,9 +130,9 @@ def main() -> int:
     else:
         print(f"[smoke] FAIL: /auth/session returned {session_resp.status_code}")
 
-    # Phase 5: Verify /api/v1/me
+    # Phase 4: Verify /api/v1/me
     print(f"\n{'='*60}")
-    print(f"Phase 5: Identity Check (/api/v1/me)")
+    print(f"Phase 4: Identity Check (/api/v1/me)")
     print(f"{'='*60}")
     client.set_phase("me-check")
     me_resp = client.get("/api/v1/me", expect_status=(200,))
@@ -154,9 +142,9 @@ def main() -> int:
     else:
         print(f"[smoke] FAIL: /api/v1/me returned {me_resp.status_code}: {me_resp.text[:200]}")
 
-    # Phase 6: Create workspace
+    # Phase 5: Create workspace
     print(f"\n{'='*60}")
-    print(f"Phase 6: Create Workspace")
+    print(f"Phase 5: Create Workspace")
     print(f"{'='*60}")
     ts = int(time.time())
     ws_data = create_workspace(client, name=f"smoke-neon-{ts}")
@@ -164,15 +152,15 @@ def main() -> int:
     workspace_id = ws.get("workspace_id") or ws.get("id")
     print(f"[smoke] Workspace ID: {workspace_id}")
 
-    # Phase 7: List workspaces
+    # Phase 6: List workspaces
     print(f"\n{'='*60}")
-    print(f"Phase 7: List Workspaces")
+    print(f"Phase 6: List Workspaces")
     print(f"{'='*60}")
     list_workspaces(client, expect_id=workspace_id)
 
-    # Phase 8: Logout
+    # Phase 7: Logout
     print(f"\n{'='*60}")
-    print(f"Phase 8: Logout")
+    print(f"Phase 7: Logout")
     print(f"{'='*60}")
     client.set_phase("logout")
     logout_resp = client.get("/auth/logout", expect_status=(302,))
@@ -184,7 +172,7 @@ def main() -> int:
     # Clear cookies client-side (httpx doesn't auto-delete on Set-Cookie max_age=0)
     client.cookies.clear()
 
-    # Phase 9: Confirm session is gone
+    # Phase 8: Confirm session is gone
     client.set_phase("post-logout-check")
     post_resp = client.get("/auth/session", expect_status=(401,))
     if post_resp.status_code == 401:

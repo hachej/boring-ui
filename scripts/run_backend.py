@@ -24,6 +24,12 @@ def load_local_env() -> None:
         value = value.strip()
         if value[:1] == value[-1:] and value[:1] in {"'", '"'}:
             value = value[1:-1]
+        if "\\n" in value and (
+            key.endswith("PRIVATE_KEY")
+            or key.endswith("_PEM")
+            or "BEGIN " in value
+        ):
+            value = value.replace("\\n", "\n")
         os.environ.setdefault(key, value)
 
 

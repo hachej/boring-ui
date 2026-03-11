@@ -34,6 +34,7 @@ describe('AuthPage', () => {
     vi.restoreAllMocks()
     // Reset supabase global
     delete window.supabase
+    global.fetch = vi.fn()
   })
 
   it('renders sign-in form by default', () => {
@@ -268,6 +269,68 @@ describe('AuthPage', () => {
     render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, initialMode: 'sign_up' }} />)
 
     expect(screen.getByLabelText('Password')).toHaveAttribute('autocomplete', 'new-password')
+  })
+
+  it('posts Neon sign-in to same-origin backend auth endpoint', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true, redirect_uri: '/dashboard' }),
+    })
+
+    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, provider: 'neon' }} />)
+
+    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'test@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } })
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/auth/sign-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'test@example.com',
+          password: 'password123',
+          redirect_uri: '/',
+        }),
+      })
+    })
+    expect(global.fetch).not.toHaveBeenCalledWith('/auth/token-exchange', expect.anything())
+  })
+
+  it('posts Neon sign-up to same-origin backend auth endpoint', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        ok: true,
+        requires_email_verification: true,
+        message: 'Check your email to verify your account.',
+        redirect_uri: '/',
+      }),
+    })
+
+    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, provider: 'neon', initialMode: 'sign_up' }} />)
+
+    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'new@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } })
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/auth/sign-up', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'new@example.com',
+          password: 'password123',
+          name: 'new',
+          redirect_uri: '/',
+        }),
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Check your email to verify your account.')).toBeInTheDocument()
+      expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    })
   })
 })
 

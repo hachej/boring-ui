@@ -1,14 +1,14 @@
 """Neon Auth (Better Auth) backed auth/session routes for boring-ui control-plane.
 
 This module mirrors the Supabase auth router but uses Neon Auth endpoints
-(email/password only, no magic-link/PKCE).  The flow is:
+(email/password only, no magic-link/PKCE). The main flows are:
 
-1. Frontend renders a login/signup form.
-2. On submit the form POSTs to the Neon Auth ``/sign-up/email`` or
-   ``/sign-in/email`` endpoint directly via ``fetch()``.
-3. On success the frontend calls ``/auth/token-exchange`` with the session token.
-4. The backend validates the token via ``GET {neon_auth_base}/get-session`` and
-   issues a boring-ui session cookie.
+1. Sign in: browser POSTs to boring-ui, backend authenticates against Neon,
+   fetches the JWT from ``/token``, and issues ``boring_session``.
+2. Sign up: browser POSTs to boring-ui, backend creates the Neon account and
+   returns a "check your email" response instead of auto-signing the user in.
+3. Email verification: Neon redirects back to ``/auth/callback`` and the
+   callback page exchanges the Neon session for a boring-ui session cookie.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import logging
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -92,7 +93,188 @@ def _clear_session_cookie(response: JSONResponse | RedirectResponse, config: API
 
 
 def _public_origin(request: Request) -> str:
+    origin = str(request.headers.get("origin", "")).strip()
+    parsed = urlparse(origin)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
     return str(request.base_url).rstrip("/")
+
+
+def _build_callback_url(request: Request, *, redirect_uri: str) -> str:
+    base = _public_origin(request)
+    return f"{base}/auth/callback?redirect_uri={redirect_uri}"
+
+
+def _parse_neon_error_message(payload: object, fallback: str) -> str:
+    if isinstance(payload, str):
+        text = payload.strip()
+        return text or fallback
+    if isinstance(payload, dict):
+        message = payload.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+        nested_error = payload.get("error")
+        if isinstance(nested_error, dict):
+            nested_message = nested_error.get("message")
+            if isinstance(nested_message, str) and nested_message.strip():
+                return nested_message.strip()
+        if isinstance(nested_error, str) and nested_error.strip():
+            return nested_error.strip()
+        status_text = payload.get("statusText")
+        if isinstance(status_text, str) and status_text.strip():
+            return status_text.strip()
+    return fallback
+
+
+def _issue_session_response(
+    request: Request,
+    *,
+    config: APIConfig,
+    access_token: str,
+    redirect_uri: str,
+) -> JSONResponse:
+    verified = _validate_neon_jwt(access_token, config=config)
+    if verified is None:
+        return _error(
+            request,
+            status_code=401,
+            error="unauthorized",
+            code="TOKEN_INVALID",
+            message="Neon Auth JWT verification failed",
+        )
+
+    user_id = str(verified.get("user_id", "")).strip()
+    email = str(verified.get("email", "")).strip().lower()
+
+    if not user_id or not email:
+        return _error(
+            request,
+            status_code=401,
+            error="unauthorized",
+            code="INCOMPLETE_IDENTITY",
+            message="Session did not return user_id or email",
+        )
+
+    session_value = create_session_cookie(
+        user_id,
+        email,
+        secret=config.auth_session_secret,
+        ttl_seconds=config.auth_session_ttl_seconds,
+        app_id=config.control_plane_app_id,
+    )
+
+    response = JSONResponse(
+        status_code=200,
+        content={"ok": True, "redirect_uri": redirect_uri},
+    )
+    _set_session_cookie(response, session_value, config)
+    return response
+
+
+async def _neon_password_auth(
+    request: Request,
+    *,
+    config: APIConfig,
+    endpoint_path: str,
+    payload: dict[str, str],
+    upstream_error_message: str,
+    missing_token_message: str,
+    complete_session: bool = True,
+) -> JSONResponse:
+    neon_base = (config.neon_auth_base_url or "").rstrip("/")
+    if not neon_base:
+        return _error(
+            request,
+            status_code=500,
+            error="server_error",
+            code="NEON_AUTH_NOT_CONFIGURED",
+            message="NEON_AUTH_BASE_URL is not configured",
+        )
+
+    redirect_uri = _safe_redirect_path(payload.pop("redirect_uri", "/"))
+    url = f"{neon_base}/{endpoint_path.lstrip('/')}"
+    origin = _public_origin(request)
+    upstream_payload = dict(payload)
+    upstream_payload["callbackURL"] = _build_callback_url(request, redirect_uri=redirect_uri)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            auth_response = await client.post(
+                url,
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": origin,
+                },
+                json=upstream_payload,
+            )
+            auth_body = auth_response.json() if auth_response.content else {}
+            if auth_response.status_code not in {200, 201}:
+                message = _parse_neon_error_message(auth_body, upstream_error_message)
+                status_code = auth_response.status_code if 400 <= auth_response.status_code < 500 else 502
+                return _error(
+                    request,
+                    status_code=status_code,
+                    error="auth_failed",
+                    code="NEON_AUTH_REJECTED",
+                    message=message,
+                )
+
+            access_token = ""
+            token_response = await client.get(f"{neon_base}/token")
+            token_body = token_response.json() if token_response.content else {}
+            if token_response.status_code == 200 and isinstance(token_body, dict):
+                candidate = token_body.get("token")
+                if isinstance(candidate, str):
+                    access_token = candidate.strip()
+
+            if not access_token and isinstance(auth_body, dict):
+                candidate = auth_body.get("token")
+                if isinstance(candidate, str):
+                    access_token = candidate.strip()
+    except httpx.TimeoutException:
+        return _error(
+            request,
+            status_code=504,
+            error="upstream_timeout",
+            code="NEON_AUTH_TIMEOUT",
+            message="Neon Auth did not respond in time",
+        )
+    except httpx.HTTPError as exc:
+        _logger.warning("Neon auth request failed: %s", exc)
+        return _error(
+            request,
+            status_code=502,
+            error="upstream_error",
+                    code="NEON_AUTH_UNAVAILABLE",
+                    message="Unable to reach Neon Auth",
+                )
+
+    if not complete_session:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "ok": True,
+                "requires_email_verification": True,
+                "message": "Check your email to verify your account.",
+                "redirect_uri": redirect_uri,
+            },
+        )
+
+    if not access_token:
+        return _error(
+            request,
+            status_code=502,
+            error="upstream_error",
+            code="NEON_AUTH_TOKEN_MISSING",
+            message=missing_token_message,
+        )
+
+    return _issue_session_response(
+        request,
+        config=config,
+        access_token=access_token,
+        redirect_uri=redirect_uri,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -458,16 +640,19 @@ workspace.open(session.id)</pre>
         return;
       }
 
-      setBusy(true);
+        setBusy(true);
       try {
         if (mode === "sign_up") {
           setStatus("Creating account...");
-          var signupBody = { email: email, password: password, name: (nameEl.value || "").trim() || email.split("@")[0] };
-          var signupResp = await fetch(AUTH.neonAuthUrl + "/sign-up/email", {
+          var signupResp = await fetch("/auth/sign-up", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Origin": window.location.origin },
-            body: JSON.stringify(signupBody),
-            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: email,
+              password: password,
+              name: (nameEl.value || "").trim() || email.split("@")[0],
+              redirect_uri: AUTH.redirectUri || "/"
+            }),
           });
           if (!signupResp.ok) {
             var signupErr = {};
@@ -476,40 +661,22 @@ workspace.open(session.id)</pre>
             return;
           }
           var signupData = await signupResp.json();
-          // Fetch JWT using the session cookie set by sign-up
-          var jwtResp = await fetch(AUTH.neonAuthUrl + "/token", { credentials: "include" });
-          var jwtData = {};
-          try { jwtData = await jwtResp.json(); } catch(_) {}
-          var signupToken = jwtData.token || signupData.token;
-          if (!signupToken) {
-            setStatus("Account created but no session token returned. Please sign in.", false);
-            setMode("sign_in");
-            return;
-          }
-          // Exchange JWT for boring-ui session
-          setStatus("Setting up session...");
-          var exchResp = await fetch("/auth/token-exchange", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ access_token: signupToken, redirect_uri: AUTH.redirectUri || "/" }),
-          });
-          var exchData = {};
-          try { exchData = await exchResp.json(); } catch(_) {}
-          if (!exchResp.ok) {
-            setStatus(exchData.message || "Unable to complete session setup.", true);
-            return;
-          }
-          window.location.assign(exchData.redirect_uri || "/");
+          passwordEl.value = "";
+          setMode("sign_in");
+          setStatus(signupData.message || "Check your email to verify your account.");
           return;
         }
 
         // sign_in mode
         setStatus("Signing in...");
-        var signinResp = await fetch(AUTH.neonAuthUrl + "/sign-in/email", {
+        var signinResp = await fetch("/auth/sign-in", {
           method: "POST",
-          headers: { "Content-Type": "application/json", "Origin": window.location.origin },
-          body: JSON.stringify({ email: email, password: password }),
-          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: email,
+            password: password,
+            redirect_uri: AUTH.redirectUri || "/"
+          }),
         });
         if (!signinResp.ok) {
           var signinErr = {};
@@ -518,29 +685,7 @@ workspace.open(session.id)</pre>
           return;
         }
         var signinData = await signinResp.json();
-        // Fetch JWT using the session cookie set by sign-in
-        var jwtResp2 = await fetch(AUTH.neonAuthUrl + "/token", { credentials: "include" });
-        var jwtData2 = {};
-        try { jwtData2 = await jwtResp2.json(); } catch(_) {}
-        var sessionToken = jwtData2.token || signinData.token;
-        if (!sessionToken) {
-          setStatus("No session token returned.", true);
-          return;
-        }
-
-        setStatus("Setting up session...");
-        var exchange = await fetch("/auth/token-exchange", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: sessionToken, redirect_uri: AUTH.redirectUri || "/" }),
-        });
-        var payload = {};
-        try { payload = await exchange.json(); } catch(_) {}
-        if (!exchange.ok) {
-          setStatus(payload.message || "Unable to complete session setup.", true);
-          return;
-        }
-        window.location.assign(payload.redirect_uri || "/");
+        window.location.assign(signinData.redirect_uri || "/");
       } finally {
         setBusy(false);
       }
@@ -554,6 +699,112 @@ workspace.open(session.id)</pre>
 </html>"""
 
 _AUTH_CONFIG_PLACEHOLDER = "/*AUTH_CONFIG_JSON*/"
+
+_NEON_CALLBACK_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Completing sign-in...</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1210;
+      --panel: #171f1b;
+      --text: #f3f5f4;
+      --muted: #b3bbb7;
+      --accent: #7be0a5;
+      --border: rgba(255,255,255,0.08);
+      --error: #ff8f8f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at top, rgba(123,224,165,0.12), transparent 40%), var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    .card {
+      width: min(100%, 420px);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.4rem; }
+    p { margin: 0; color: var(--muted); line-height: 1.5; }
+    .error { color: var(--error); margin-top: 16px; }
+    .link {
+      display: inline-block;
+      margin-top: 18px;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1 id="title">Completing sign-in...</h1>
+    <p id="status">Finishing email verification.</p>
+    <p id="error" class="error" hidden></p>
+    <a id="login-link" class="link" href="/auth/login" hidden>Go to login</a>
+  </main>
+  <script>
+    (function() {
+      var AUTH = /*AUTH_CONFIG_JSON*/;
+      var statusEl = document.getElementById("status");
+      var errorEl = document.getElementById("error");
+      var loginEl = document.getElementById("login-link");
+
+      function showError(message) {
+        statusEl.textContent = "Sign-in could not be completed.";
+        errorEl.hidden = false;
+        errorEl.textContent = message || "Unexpected callback error.";
+        loginEl.hidden = false;
+        loginEl.href = "/auth/login?redirect_uri=" + encodeURIComponent(AUTH.redirectUri || "/");
+      }
+
+      async function run() {
+        try {
+          var tokenResp = await fetch(AUTH.neonAuthUrl + "/token", { credentials: "include" });
+          var tokenPayload = {};
+          try { tokenPayload = await tokenResp.json(); } catch(_) {}
+          if (!tokenResp.ok || !tokenPayload.token) {
+            showError(tokenPayload.message || "Verification succeeded, but no session token was returned.");
+            return;
+          }
+
+          statusEl.textContent = "Starting your session...";
+          var exchangeResp = await fetch("/auth/token-exchange", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              access_token: tokenPayload.token,
+              redirect_uri: AUTH.redirectUri || "/"
+            }),
+          });
+          var exchangePayload = {};
+          try { exchangePayload = await exchangeResp.json(); } catch(_) {}
+          if (!exchangeResp.ok) {
+            showError(exchangePayload.message || "Token exchange failed.");
+            return;
+          }
+          window.location.replace(exchangePayload.redirect_uri || AUTH.redirectUri || "/");
+        } catch (error) {
+          showError((error && error.message) || "Unexpected callback error.");
+        }
+      }
+
+      run();
+    })();
+  </script>
+</body>
+</html>"""
 
 
 def _render_neon_login_html(
@@ -585,6 +836,34 @@ def _render_neon_login_html(
     cfg_json = json.dumps(cfg, separators=(",", ":"))
     html = _NEON_LOGIN_HTML_TEMPLATE.replace(_AUTH_CONFIG_PLACEHOLDER, cfg_json, 1)
 
+    response = HTMLResponse(content=html, status_code=200)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _render_neon_callback_html(
+    *,
+    request: Request,
+    config: APIConfig,
+) -> HTMLResponse:
+    if not config.neon_auth_base_url:
+        return HTMLResponse(
+            status_code=500,
+            content=(
+                "<!doctype html><html><body>"
+                "<h1>Auth not configured</h1>"
+                "<p>NEON_AUTH_BASE_URL is required.</p>"
+                "</body></html>"
+            ),
+        )
+
+    redirect_after = _safe_redirect_path(request.query_params.get("redirect_uri"))
+    cfg = {
+        "neonAuthUrl": config.neon_auth_base_url.rstrip("/"),
+        "redirectUri": redirect_after,
+    }
+    cfg_json = json.dumps(cfg, separators=(",", ":"))
+    html = _NEON_CALLBACK_HTML.replace(_AUTH_CONFIG_PLACEHOLDER, cfg_json, 1)
     response = HTMLResponse(content=html, status_code=200)
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -686,6 +965,99 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
             initial_mode="sign_up",
         )
 
+    @router.post("/sign-up")
+    async def auth_sign_up(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="INVALID_JSON",
+                message="Expected JSON payload",
+            )
+        if not isinstance(body, dict):
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="INVALID_JSON",
+                message="Expected JSON object",
+            )
+
+        email = str(body.get("email", "")).strip().lower()
+        password = str(body.get("password", "")).strip()
+        name = str(body.get("name", "")).strip() or email.split("@")[0]
+        if not email or not password:
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="EMAIL_PASSWORD_REQUIRED",
+                message="email and password are required",
+            )
+
+        return await _neon_password_auth(
+            request,
+            config=config,
+            endpoint_path="/sign-up/email",
+            payload={
+                "email": email,
+                "password": password,
+                "name": name,
+                "redirect_uri": body.get("redirect_uri", "/"),
+            },
+            upstream_error_message="Unable to create account.",
+            missing_token_message="Account created but Neon Auth did not return a session token.",
+            complete_session=False,
+        )
+
+    @router.post("/sign-in")
+    async def auth_sign_in(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="INVALID_JSON",
+                message="Expected JSON payload",
+            )
+        if not isinstance(body, dict):
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="INVALID_JSON",
+                message="Expected JSON object",
+            )
+
+        email = str(body.get("email", "")).strip().lower()
+        password = str(body.get("password", "")).strip()
+        if not email or not password:
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="EMAIL_PASSWORD_REQUIRED",
+                message="email and password are required",
+            )
+
+        return await _neon_password_auth(
+            request,
+            config=config,
+            endpoint_path="/sign-in/email",
+            payload={
+                "email": email,
+                "password": password,
+                "redirect_uri": body.get("redirect_uri", "/"),
+            },
+            upstream_error_message="Unable to sign in.",
+            missing_token_message="Neon Auth did not return a session token.",
+        )
+
     @router.get("/callback")
     async def auth_callback(request: Request):
         """Neon Auth callback handler.
@@ -718,8 +1090,10 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
             _set_session_cookie(response, token, config)
             return response
 
-        # For browser requests without callback parameters, redirect to login.
-        return RedirectResponse(url="/auth/login", status_code=302)
+        return _render_neon_callback_html(
+            request=request,
+            config=config,
+        )
 
     @router.post("/token-exchange")
     async def auth_token_exchange(request: Request):
@@ -769,44 +1143,13 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
                 message="access_token is required",
             )
 
-        # Validate the JWT via JWKS
-        verified = _validate_neon_jwt(access_token, config=config)
-        if verified is None:
-            return _error(
-                request,
-                status_code=401,
-                error="unauthorized",
-                code="TOKEN_INVALID",
-                message="Neon Auth JWT verification failed",
-            )
-
-        user_id = str(verified.get("user_id", "")).strip()
-        email = str(verified.get("email", "")).strip().lower()
-
-        if not user_id or not email:
-            return _error(
-                request,
-                status_code=401,
-                error="unauthorized",
-                code="INCOMPLETE_IDENTITY",
-                message="Session did not return user_id or email",
-            )
-
-        session_value = create_session_cookie(
-            user_id,
-            email,
-            secret=config.auth_session_secret,
-            ttl_seconds=config.auth_session_ttl_seconds,
-            app_id=config.control_plane_app_id,
-        )
-
         redirect_uri = _safe_redirect_path(body.get("redirect_uri"))
-        response = JSONResponse(
-            status_code=200,
-            content={"ok": True, "redirect_uri": redirect_uri},
+        return _issue_session_response(
+            request,
+            config=config,
+            access_token=access_token,
+            redirect_uri=redirect_uri,
         )
-        _set_session_cookie(response, session_value, config)
-        return response
 
     @router.get("/logout")
     def auth_logout(request: Request):

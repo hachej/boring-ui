@@ -4,6 +4,7 @@ from __future__ import annotations
 import random
 import string
 import time
+from urllib.parse import urlparse
 
 import httpx
 
@@ -307,6 +308,109 @@ def neon_signup_flow(
         raise RuntimeError("Neon Auth /token did not return a JWT after signup")
     print(f"[smoke] Got JWT ({len(jwt)} chars)")
     return jwt
+
+
+def neon_signup_verify_flow(
+    client: SmokeClient,
+    *,
+    neon_auth_url: str,
+    resend_api_key: str,
+    email: str,
+    password: str,
+    name: str = "",
+    timeout_seconds: int = 180,
+) -> dict:
+    """Replayable verify-first Neon signup flow through boring-ui.
+
+    Flow:
+    1. POST /auth/sign-up to boring-ui
+    2. Wait for verification email in Resend
+    3. Open Neon verification link
+    4. Fetch JWT from Neon /token using verification session cookies
+    5. Exchange JWT for boring-ui session
+    6. Verify /auth/session
+    """
+    client.set_phase("neon-signup")
+    sent_after = time.time()
+    origin = client.base_url.rstrip("/")
+    print(f"[smoke] Neon signup via app {email}...")
+
+    signup_resp = client.post(
+        "/auth/sign-up",
+        headers={"Origin": origin},
+        json={
+            "email": email,
+            "password": password,
+            "name": name or email.split("@")[0],
+            "redirect_uri": "/",
+        },
+        expect_status=(200,),
+    )
+    payload = signup_resp.json()
+    if signup_resp.status_code != 200 or not payload.get("ok"):
+        raise RuntimeError(f"App signup failed: {signup_resp.status_code} {signup_resp.text[:300]}")
+    if not payload.get("requires_email_verification"):
+        raise RuntimeError(f"Signup did not require email verification: {payload}")
+
+    client.set_phase("neon-wait-email")
+    email_summary = wait_for_email(
+        resend_api_key,
+        recipient=email,
+        sent_after_epoch=sent_after,
+        timeout_seconds=timeout_seconds,
+    )
+    email_id = str(email_summary.get("id") or "").strip()
+    if not email_id:
+        raise RuntimeError("Resend list did not include email id")
+    email_details = get_email(resend_api_key, email_id=email_id)
+    confirmation_url = extract_confirmation_url(email_details)
+    print(f"[smoke] Verification email received: {email_summary.get('subject', '?')}")
+
+    client.set_phase("neon-verify-email")
+    verify_client = httpx.Client(
+        headers={"Origin": origin},
+        timeout=30.0,
+        follow_redirects=True,
+    )
+    try:
+        verify_resp = verify_client.get(confirmation_url)
+        final_url = str(verify_resp.url)
+        parsed = urlparse(final_url)
+        expected_origin = urlparse(origin)
+        if (parsed.scheme, parsed.netloc) != (expected_origin.scheme, expected_origin.netloc):
+            raise RuntimeError(f"Verification landed on unexpected origin: {final_url}")
+
+        token_resp = verify_client.get(f"{neon_auth_url.rstrip('/')}/token")
+        if token_resp.status_code != 200:
+            raise RuntimeError(f"Neon /token failed after verification: {token_resp.status_code} {token_resp.text[:300]}")
+        token = (token_resp.json() or {}).get("token")
+        if not isinstance(token, str) or not token.strip():
+            raise RuntimeError("Neon /token did not return a JWT after verification")
+    finally:
+        verify_client.close()
+
+    client.set_phase("neon-token-exchange")
+    exch_resp = client.post(
+        "/auth/token-exchange",
+        json={"access_token": token, "redirect_uri": "/"},
+        expect_status=(200,),
+    )
+    if exch_resp.status_code != 200:
+        raise RuntimeError(f"Token exchange failed: {exch_resp.status_code} {exch_resp.text[:300]}")
+    exch_payload = exch_resp.json()
+    if not exch_payload.get("ok"):
+        raise RuntimeError(f"Token exchange not ok: {exch_payload}")
+
+    client.set_phase("neon-session-check")
+    session_resp = client.get("/auth/session", expect_status=(200,))
+    if session_resp.status_code != 200:
+        raise RuntimeError(f"Session check failed: {session_resp.status_code}")
+    session = session_resp.json()
+    user_email = (session.get("user") or {}).get("email", "")
+    if str(user_email).strip().lower() != email.lower():
+        raise RuntimeError(f"Session email mismatch: expected {email}, got {user_email}")
+    print(f"[smoke] Verification flow session verified for {email}")
+    return session
 
 
 def neon_signin_flow(

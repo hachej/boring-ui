@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import boring_ui.api.modules.control_plane.auth_router_neon as auth_router_neon
 from fastapi.testclient import TestClient
 
 from boring_ui.api import APIConfig, create_app
@@ -25,6 +26,54 @@ def _client(tmp_path: Path, *, auth_dev_login_enabled: bool = True) -> TestClien
     )
     app = create_app(config=config, include_pty=False, include_stream=False, include_approval=False)
     return TestClient(app)
+
+
+def _client_neon(tmp_path: Path) -> TestClient:
+    config = APIConfig(
+        workspace_root=tmp_path,
+        auth_dev_login_enabled=False,
+        auth_dev_auto_login=False,
+        control_plane_provider="neon",
+        database_url="postgresql://example.invalid/neondb",
+        neon_auth_base_url="https://example.neonauth.test/neondb/auth",
+        neon_auth_jwks_url="https://example.neonauth.test/neondb/auth/.well-known/jwks.json",
+    )
+    app = create_app(config=config, include_pty=False, include_stream=False, include_approval=False)
+    return TestClient(app)
+
+
+class _FakeAsyncResponse:
+    def __init__(self, status_code: int, payload: dict | None = None, content: bytes | None = None):
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {}
+        self.content = content if content is not None else b"{}"
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeAsyncClient:
+    post_response = _FakeAsyncResponse(200, {})
+    token_response = _FakeAsyncResponse(200, {"token": "jwt-from-neon"})
+    last_post: tuple[str, dict] | None = None
+    last_get: str | None = None
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url, *, headers=None, json=None):
+        type(self).last_post = (url, json or {})
+        return type(self).post_response
+
+    async def get(self, url):
+        type(self).last_get = url
+        return type(self).token_response
 
 
 def test_auth_login_requires_identity_params(tmp_path: Path) -> None:
@@ -135,3 +184,130 @@ def test_auth_logout_clears_cookie_and_session(tmp_path: Path) -> None:
     session = client.get("/auth/session")
     assert session.status_code == 401
     assert session.json()["code"] == "SESSION_REQUIRED"
+
+
+def test_neon_sign_in_sets_session_cookie_without_browser_direct_neon_calls(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client_neon(tmp_path)
+    _FakeAsyncClient.post_response = _FakeAsyncResponse(200, {})
+    _FakeAsyncClient.token_response = _FakeAsyncResponse(200, {"token": "jwt-from-neon"})
+    _FakeAsyncClient.last_post = None
+    _FakeAsyncClient.last_get = None
+    monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(
+        auth_router_neon,
+        "_validate_neon_jwt",
+        lambda token, *, config: {"user_id": "user-neon-1", "email": "owner@example.com"},
+    )
+
+    response = client.post(
+        "/auth/sign-in",
+        json={"email": "owner@example.com", "password": "password123", "redirect_uri": "/w/demo"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "redirect_uri": "/w/demo"}
+    assert "boring_session=" in response.headers.get("set-cookie", "")
+    assert _FakeAsyncClient.last_post == (
+        "https://example.neonauth.test/neondb/auth/sign-in/email",
+        {
+            "email": "owner@example.com",
+            "password": "password123",
+            "callbackURL": "http://testserver/auth/callback?redirect_uri=/w/demo",
+        },
+    )
+    assert _FakeAsyncClient.last_get == "https://example.neonauth.test/neondb/auth/token"
+
+    session = client.get("/auth/session")
+    assert session.status_code == 200
+    assert session.json()["user"]["email"] == "owner@example.com"
+
+
+def test_neon_sign_up_returns_upstream_validation_error(tmp_path: Path, monkeypatch) -> None:
+    client = _client_neon(tmp_path)
+    _FakeAsyncClient.post_response = _FakeAsyncResponse(
+        400,
+        {"message": "Invalid origin"},
+        content=b'{"message":"Invalid origin"}',
+    )
+    _FakeAsyncClient.token_response = _FakeAsyncResponse(200, {"token": "unused"})
+    monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
+
+    response = client.post(
+        "/auth/sign-up",
+        json={"email": "new@example.com", "password": "password123", "redirect_uri": "/"},
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["code"] == "NEON_AUTH_REJECTED"
+    assert payload["message"] == "Invalid origin"
+
+
+def test_neon_sign_up_requires_email_verification_instead_of_auto_login(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client_neon(tmp_path)
+    _FakeAsyncClient.post_response = _FakeAsyncResponse(200, {"user": {"email": "new@example.com"}})
+    _FakeAsyncClient.token_response = _FakeAsyncResponse(200, {"token": "unused"})
+    _FakeAsyncClient.last_post = None
+    _FakeAsyncClient.last_get = None
+    monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
+
+    response = client.post(
+        "/auth/sign-up",
+        json={"email": "new@example.com", "password": "password123", "redirect_uri": "/"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "requires_email_verification": True,
+        "message": "Check your email to verify your account.",
+        "redirect_uri": "/",
+    }
+    assert "set-cookie" not in {k.lower(): v for k, v in response.headers.items()}
+    assert _FakeAsyncClient.last_post == (
+        "https://example.neonauth.test/neondb/auth/sign-up/email",
+        {
+            "email": "new@example.com",
+            "password": "password123",
+            "name": "new",
+            "callbackURL": "http://testserver/auth/callback?redirect_uri=/",
+        },
+    )
+
+
+def test_neon_callback_renders_exchange_page(tmp_path: Path) -> None:
+    client = _client_neon(tmp_path)
+    response = client.get("/auth/callback?redirect_uri=/w/demo")
+    assert response.status_code == 200
+    assert "Finishing email verification." in response.text
+    assert '"neonAuthUrl":"https://example.neonauth.test/neondb/auth"' in response.text
+    assert "/w/demo" in response.text
+
+
+def test_neon_sign_up_uses_browser_origin_for_callback_url(tmp_path: Path, monkeypatch) -> None:
+    client = _client_neon(tmp_path)
+    _FakeAsyncClient.post_response = _FakeAsyncResponse(200, {"user": {"email": "new@example.com"}})
+    _FakeAsyncClient.token_response = _FakeAsyncResponse(200, {"token": "unused"})
+    _FakeAsyncClient.last_post = None
+    monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(auth_router_neon, "_public_origin", lambda request: "http://213.32.19.186:5176")
+
+    response = client.post(
+        "/auth/sign-up",
+        json={"email": "new@example.com", "password": "password123", "redirect_uri": "/"},
+    )
+
+    assert response.status_code == 200
+    assert _FakeAsyncClient.last_post == (
+        "https://example.neonauth.test/neondb/auth/sign-up/email",
+        {
+            "email": "new@example.com",
+            "password": "password123",
+            "name": "new",
+            "callbackURL": "http://213.32.19.186:5176/auth/callback?redirect_uri=/",
+        },
+    )

@@ -61,57 +61,22 @@ function parseNeonError(body) {
   return JSON.stringify(body)
 }
 
-async function neonFetchJwt(neonAuthUrl) {
-  // After sign-in/sign-up, the Neon Auth session cookie is set in the browser.
-  // Call /token to exchange that cookie for a JWT we can send to our backend.
-  const resp = await fetch(`${neonAuthUrl}/token`, { credentials: 'include' })
-  if (!resp.ok) return null
-  const body = await resp.json().catch(() => ({}))
-  return body.token || null
-}
-
-async function neonSignUp(neonAuthUrl, email, password) {
-  const resp = await fetch(`${neonAuthUrl}/sign-up/email`, {
+async function neonPasswordAuth(path, body) {
+  const resp = await fetch(path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Origin': window.location.origin,
     },
-    credentials: 'include',
-    body: JSON.stringify({ email, password, name: email.split('@')[0] }),
+    body: JSON.stringify(body),
   })
-  const body = await resp.json().catch(() => ({}))
+  const payload = await resp.json().catch(() => ({}))
   if (!resp.ok) {
     const msg = resp.status === 429
       ? 'Too many attempts. Please wait and try again.'
-      : parseNeonError(body)
+      : parseNeonError(payload)
     return { error: msg }
   }
-  // Fetch JWT using the session cookie set by sign-up
-  const jwt = await neonFetchJwt(neonAuthUrl)
-  return { token: jwt || body.token, user: body.user }
-}
-
-async function neonSignIn(neonAuthUrl, email, password) {
-  const resp = await fetch(`${neonAuthUrl}/sign-in/email`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Origin': window.location.origin,
-    },
-    credentials: 'include',
-    body: JSON.stringify({ email, password }),
-  })
-  const body = await resp.json().catch(() => ({}))
-  if (!resp.ok) {
-    const msg = resp.status === 429
-      ? 'Too many attempts. Please wait and try again.'
-      : parseNeonError(body)
-    return { error: msg }
-  }
-  // Fetch JWT using the session cookie set by sign-in
-  const jwt = await neonFetchJwt(neonAuthUrl)
-  return { token: jwt || body.token, user: body.user }
+  return payload
 }
 
 // --- Main component ---
@@ -124,7 +89,6 @@ export default function AuthPage({ authConfig }) {
 
   const provider = authConfig?.provider || 'supabase'
   const isNeon = provider === 'neon'
-  const neonAuthUrl = authConfig?.neonAuthUrl || ''
 
   const supabaseUrl = authConfig?.supabaseUrl || ''
   const supabaseAnonKey = authConfig?.supabaseAnonKey || ''
@@ -182,56 +146,39 @@ export default function AuthPage({ authConfig }) {
     try {
       if (isSignUp) {
         showStatus('Creating account...')
-        const result = await neonSignUp(neonAuthUrl, trimmed, password)
+        const result = await neonPasswordAuth('/auth/sign-up', {
+          email: trimmed,
+          password,
+          name: trimmed.split('@')[0],
+          redirect_uri: redirectUri,
+        })
         if (result.error) {
           showStatus(result.error, true)
           return
         }
-        // Neon sign-up returns a session token directly (no email confirmation needed)
-        const token = result.token
-        if (!token) {
-          showStatus('Account created but no session token returned. Try signing in.', true)
-          setPassword('')
-          setMode('sign_in')
+        if (!result.ok) {
+          showStatus(result.message || 'Unable to complete session setup.', true)
           return
         }
-        // Exchange token with backend
-        showStatus('Setting up session...')
-        const resp = await fetch('/auth/token-exchange', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: token, redirect_uri: redirectUri }),
-        })
-        const payload = await resp.json().catch(() => ({}))
-        if (!resp.ok) {
-          showStatus(payload.message || 'Unable to complete session setup.', true)
-          return
-        }
-        window.location.assign(payload.redirect_uri || '/')
+        setPassword('')
+        setMode('sign_in')
+        showStatus(result.message || 'Check your email to verify your account.')
       } else {
         showStatus('Signing in...')
-        const result = await neonSignIn(neonAuthUrl, trimmed, password)
+        const result = await neonPasswordAuth('/auth/sign-in', {
+          email: trimmed,
+          password,
+          redirect_uri: redirectUri,
+        })
         if (result.error) {
           showStatus(result.error, true)
           return
         }
-        const token = result.token
-        if (!token) {
-          showStatus('No session token returned.', true)
+        if (!result.ok) {
+          showStatus(result.message || 'Unable to complete session setup.', true)
           return
         }
-        // Exchange token with backend
-        const resp = await fetch('/auth/token-exchange', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: token, redirect_uri: redirectUri }),
-        })
-        const payload = await resp.json().catch(() => ({}))
-        if (!resp.ok) {
-          showStatus(payload.message || 'Unable to complete session setup.', true)
-          return
-        }
-        window.location.assign(payload.redirect_uri || '/')
+        window.location.assign(result.redirect_uri || '/')
       }
     } finally {
       setBusy(false)
@@ -326,7 +273,7 @@ export default function AuthPage({ authConfig }) {
 
   // For Neon, the form is ready immediately (no SDK to load).
   // For Supabase, we need the client to be loaded.
-  const formReady = isNeon ? !!neonAuthUrl : !!client
+  const formReady = isNeon ? true : !!client
   const isSignUp = mode === 'sign_up'
 
   return (
