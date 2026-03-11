@@ -294,19 +294,12 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
     })
   })
 
-  // ── Entry Point 3: Git Changes Panel Button ────────────────────────────────
-  // ConnectGitHubButton renders inside the DockView git changes sidebar panel.
-  // The tab has role="tab" aria-label="Git changes view" in FileTreePanel.jsx.
+  // ── Entry Point 3: Files Header GitHub Button ──────────────────────────────
+  // The compact GitHub connect trigger is rendered in the Files panel header
+  // when github is configured and the workspace is not connected yet.
 
-  test.describe('3. Git Changes Panel Button', () => {
-    /** Click the git changes tab using the real aria-label selector. */
-    const switchToGitChanges = async (page: Page) => {
-      const gitTab = page.getByRole('tab', { name: 'Git changes view' })
-      await expect(gitTab).toBeVisible({ timeout: 10000 })
-      await gitTab.click()
-    }
-
-    test('shows Connect GitHub button in git changes view when not connected', async ({ page }) => {
+  test.describe('3. Files Header GitHub Button', () => {
+    test('shows Connect GitHub button in files header when not connected', async ({ page }) => {
       await stubCapabilities(page, { github: true, control_plane: true })
       await stubIdentityAndWorkspaces(page)
       await stubWorkspaceData(page)
@@ -315,14 +308,11 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
 
       await page.goto('/w/ws-gh-test/')
       await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
-      await switchToGitChanges(page)
-
-      const compactBtn = page.locator('.github-connect-compact')
-      await expect(compactBtn).toBeVisible({ timeout: 10000 })
-      await expect(compactBtn.locator('text=Connect GitHub')).toBeVisible()
+      const connectBtn = page.getByRole('button', { name: 'Connect GitHub' })
+      await expect(connectBtn).toBeVisible({ timeout: 10000 })
     })
 
-    test('clicking Connect GitHub in changes panel calls authorize', async ({ page }) => {
+    test('clicking Connect GitHub in files header calls authorize', async ({ page }) => {
       await stubCapabilities(page, { github: true, control_plane: true })
       await stubIdentityAndWorkspaces(page)
       await stubWorkspaceData(page)
@@ -331,13 +321,11 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
 
       await page.goto('/w/ws-gh-test/')
       await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
-      await switchToGitChanges(page)
-
       const { waitForCall } = await interceptGitHubAuthorize(page)
 
-      const compactBtn = page.locator('.github-connect-compact')
-      await expect(compactBtn).toBeVisible({ timeout: 10000 })
-      await compactBtn.click()
+      const connectBtn = page.getByRole('button', { name: 'Connect GitHub' })
+      await expect(connectBtn).toBeVisible({ timeout: 10000 })
+      await connectBtn.click()
 
       await waitForCall()
       const url = await page.evaluate(() => (window as any).__githubAuthorizeUrl)
@@ -353,12 +341,7 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
 
       await page.goto('/w/ws-gh-test/')
       await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
-      await switchToGitChanges(page)
-
-      // Gate: wait for the changes view to render (tab is active)
-      await expect(page.getByRole('tab', { name: 'Git changes view' })).toHaveAttribute('aria-selected', 'true')
-      // Then assert the connect button is absent
-      await expect(page.locator('.github-connect-compact')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Connect GitHub' })).toHaveCount(0)
     })
 
     test('hides Connect GitHub button when github not configured', async ({ page }) => {
@@ -370,12 +353,7 @@ test.describe('GitHub Connect — 3 Entry Points', () => {
 
       await page.goto('/w/ws-gh-test/')
       await page.waitForSelector('[data-testid="dockview"]', { timeout: 20000 })
-      await switchToGitChanges(page)
-
-      // Gate: wait for the changes view to render (tab is active)
-      await expect(page.getByRole('tab', { name: 'Git changes view' })).toHaveAttribute('aria-selected', 'true')
-      // Then assert the connect button is absent
-      await expect(page.locator('.github-connect-compact')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Connect GitHub' })).toHaveCount(0)
     })
   })
 })

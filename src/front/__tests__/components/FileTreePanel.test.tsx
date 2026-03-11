@@ -11,12 +11,22 @@ vi.mock('../../components/GitChangesView', () => ({
 }))
 
 vi.mock('../../providers/data', () => ({
-  useGitStatus: () => ({ isLoading: false, isFetching: false }),
+  useGitStatus: () => ({ isLoading: false, isFetching: false, data: { is_repo: true } }),
   useGitBranch: () => ({ data: 'main' }),
 }))
 
 vi.mock('../../hooks/useAutoSync', () => ({
   useAutoSync: () => ({ state: 'disabled', lastError: null, syncNow: () => {} }),
+}))
+
+vi.mock('../../providers/data/DataContext', () => ({
+  useDataProvider: () => ({
+    git: {
+      branches: vi.fn(async () => ({ branches: [] })),
+      checkout: vi.fn(async () => {}),
+      createBranch: vi.fn(async () => {}),
+    },
+  }),
 }))
 
 vi.mock('../../components/UserMenu', () => ({
@@ -57,7 +67,7 @@ describe('FileTreePanel', () => {
   it('switches from file tree to git changes view', () => {
     render(<FileTreePanel params={makeParams()} />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Git changes view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Git changes view' }))
     expect(screen.getByTestId('git-changes-view')).toBeInTheDocument()
   })
 
