@@ -163,12 +163,15 @@ The control plane supports multiple auth providers, selected via `CONTROL_PLANE_
 | `supabase` | Supabase GoTrue | Supabase Postgres (asyncpg) | Legacy |
 
 **Neon Auth flow** (email/password):
-1. Frontend `POST`s to Neon Auth `/sign-in/email` (with `credentials: 'include'`) → gets session cookie
-2. Frontend fetches EdDSA JWT from Neon Auth `/token` endpoint (using session cookie)
-3. Frontend calls `POST /auth/token-exchange` with the JWT
-4. Backend verifies JWT via JWKS (`/.well-known/jwks.json`, EdDSA/Ed25519)
-5. Backend issues `boring_session` cookie (HS256 JWT, independent of provider)
-6. All subsequent requests use the `boring_session` cookie
+1. Frontend calls boring-ui `POST /auth/sign-in` or `POST /auth/sign-up` on the same origin
+2. boring-ui calls Neon Auth server-to-server and keeps provider-specific session handling out of the browser
+3. For verify-email signup, Neon redirects back to boring-ui `/auth/callback?redirect_uri=/w/<workspace_id>/...`
+4. boring-ui completes the follow-up Neon sign-in on the backend and redirects directly into the requested workspace path
+5. boring-ui verifies the EdDSA JWT via JWKS (`/.well-known/jwks.json`, EdDSA/Ed25519)
+6. boring-ui issues `boring_session` cookie (HS256 JWT, independent of provider)
+7. All subsequent requests use the `boring_session` cookie
+
+The older browser-driven Neon `/token` -> `/auth/token-exchange` flow still exists as a compatibility path, but it is no longer the preferred verify-email path.
 
 **Session cookies** are boring-ui's own format (HS256 JWT signed with `BORING_UI_SESSION_SECRET`), not provider-specific. This enables cross-service interop with boring-sandbox regardless of auth provider.
 

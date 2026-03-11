@@ -120,6 +120,24 @@ JWT audience: Neon Auth origin URL (e.g., `https://ep-<id>.neonauth.<region>.aws
 - `emailVerified: false` in the returned user/JWT payload is expected unless you configure an email sender.
 - If you need verification emails, configure a custom email provider on Neon.
 - For boringdata child apps, use the `boring-ui` email sender provider via `boringdatasetup` instead of per-app ad hoc email sender setup.
+- In boring-ui, Neon signup is verify-first:
+  - `POST /auth/sign-up` creates the account and returns `requires_email_verification: true`
+  - the verification link comes back to `/auth/callback?redirect_uri=/w/<workspace_id>/...`
+  - boring-ui completes the follow-up Neon sign-in on the backend
+  - the user is then redirected directly into the requested workspace path
+
+### boring-ui Neon Endpoints
+
+Prefer boring-ui's same-origin auth endpoints over calling Neon Auth directly from the browser:
+
+| boring-ui endpoint | Purpose |
+|---|---|
+| `POST /auth/sign-in` | Email/password sign-in through the boring-ui backend |
+| `POST /auth/sign-up` | Verify-first account creation through the boring-ui backend |
+| `GET /auth/callback` | Email verification landing that completes sign-in and redirects |
+| `POST /auth/token-exchange` | JWT-to-`boring_session` compatibility / fallback exchange |
+
+This keeps local dev origins out of the critical auth path and makes workspace redirect handling explicit.
 
 ## Modal Deployment
 
@@ -262,10 +280,12 @@ For new projects (boring-macro, boring-sandbox, etc.) that need their own Neon d
 
 **Session cookie not set (cross-domain)**
 - Neon Auth sets `__Secure-neon-auth.session_token` with `SameSite=None; Partitioned`
-- boring-ui uses its own `boring_session` cookie — the Neon cookie is only for JWT fetch
+- boring-ui uses its own `boring_session` cookie
+- verify-email flows should normally complete on the backend and redirect straight into the workspace
+- the Neon cookie is still relevant for compatibility paths that fetch `/token`
 
 **Token exchange returns 401 "TOKEN_INVALID"**
 - The `token` field from `/sign-in/email` is an opaque session ID, NOT a JWT
-- Frontend must call Neon Auth `/token` endpoint (with `credentials: 'include'`) to get the EdDSA JWT
+- Compatibility path: fetch Neon Auth `/token` endpoint (with `credentials: 'include'`) to get the EdDSA JWT
 - The JWT is then sent to boring-ui `/auth/token-exchange` for JWKS verification
 - Check that `NEON_AUTH_JWKS_URL` is reachable from the backend
