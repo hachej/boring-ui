@@ -16,22 +16,22 @@ describe('editorFiles', () => {
     expect(isMarkdownFile('')).toBe(false)
   })
 
-  it('routes markdown files to the potion pane', () => {
-    expect(getEditorPanelComponent('README.md', 'potion')).toBe('potion')
-    expect(getEditorPanelComponent('guide.mdx', 'potion')).toBe('potion')
+  it('routes markdown files to a host-defined pane', () => {
+    expect(getEditorPanelComponent('README.md', 'bdocs-markdown')).toBe('bdocs-markdown')
+    expect(getEditorPanelComponent('guide.mdx', 'bdocs-markdown')).toBe('bdocs-markdown')
     expect(getEditorPanelComponent('app.py')).toBe('editor')
   })
 
   it('derives markdown editor params from the selected pane', () => {
-    expect(getMarkdownEditorParam('README.md', 'potion')).toBe('potion')
     expect(getMarkdownEditorParam('README.md', 'editor')).toBe('tiptap')
-    expect(getMarkdownEditorParam('app.py', 'potion')).toBeUndefined()
+    expect(getMarkdownEditorParam('README.md', 'bdocs-markdown')).toBeUndefined()
+    expect(getMarkdownEditorParam('app.py', 'bdocs-markdown')).toBeUndefined()
   })
 
   it('normalizes markdown pane values', () => {
-    expect(normalizeMarkdownPane('potion')).toBe('potion')
     expect(normalizeMarkdownPane('editor')).toBe('editor')
-    expect(normalizeMarkdownPane('weird')).toBe('editor')
+    expect(normalizeMarkdownPane('bdocs-markdown')).toBe('bdocs-markdown')
+    expect(normalizeMarkdownPane('')).toBe('editor')
   })
 
   it('normalizes saved markdown editor panels to the selected pane', () => {
@@ -48,10 +48,26 @@ describe('editorFiles', () => {
       },
     }
 
-    const next = normalizeMarkdownEditorPanels(layout, 'potion')
+    const next = normalizeMarkdownEditorPanels(layout, 'editor')
 
-    expect(next.panels['editor-README.md'].contentComponent).toBe('potion')
-    expect(next.panels['editor-README.md'].params.markdownEditor).toBe('potion')
+    expect(next.panels['editor-README.md'].contentComponent).toBe('editor')
+    expect(next.panels['editor-README.md'].params.markdownEditor).toBe('tiptap')
     expect(next.panels['editor-src/app.py'].contentComponent).toBe('editor')
+  })
+
+  it('normalizes saved markdown editor panels to a host-defined pane id', () => {
+    const layout = {
+      panels: {
+        'editor-README.md': {
+          contentComponent: 'editor',
+          params: { path: 'README.md', markdownEditor: 'tiptap' },
+        },
+      },
+    }
+
+    const next = normalizeMarkdownEditorPanels(layout, 'bdocs-markdown')
+
+    expect(next.panels['editor-README.md'].contentComponent).toBe('bdocs-markdown')
+    expect(next.panels['editor-README.md'].params.markdownEditor).toBe('tiptap')
   })
 })

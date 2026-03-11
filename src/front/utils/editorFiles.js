@@ -1,5 +1,4 @@
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx'])
-const MARKDOWN_PANES = new Set(['editor', 'potion'])
 
 export const isMarkdownFile = (filepath) => {
   if (!filepath) return false
@@ -9,7 +8,7 @@ export const isMarkdownFile = (filepath) => {
 
 export const normalizeMarkdownPane = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
-  return MARKDOWN_PANES.has(normalized) ? normalized : 'editor'
+  return normalized || 'editor'
 }
 
 export const getEditorPanelComponent = (filepath, markdownPane = 'editor') =>
@@ -17,7 +16,9 @@ export const getEditorPanelComponent = (filepath, markdownPane = 'editor') =>
 
 export const getMarkdownEditorParam = (filepath, markdownPane = 'editor') => {
   if (!isMarkdownFile(filepath)) return undefined
-  return normalizeMarkdownPane(markdownPane) === 'potion' ? 'potion' : 'tiptap'
+  const normalizedPane = normalizeMarkdownPane(markdownPane)
+  if (normalizedPane === 'editor') return 'tiptap'
+  return undefined
 }
 
 export const normalizeMarkdownEditorPanels = (layout, markdownPane = 'editor') => {
@@ -30,6 +31,7 @@ export const normalizeMarkdownEditorPanels = (layout, markdownPane = 'editor') =
 
       const path = panel?.params?.path || panelId.replace(/^editor-/, '')
       if (!isMarkdownFile(path)) return [panelId, panel]
+      const markdownEditor = getMarkdownEditorParam(path, markdownPane)
 
       return [
         panelId,
@@ -38,7 +40,9 @@ export const normalizeMarkdownEditorPanels = (layout, markdownPane = 'editor') =
           contentComponent: nextComponent,
           params: {
             ...(panel?.params || {}),
-            markdownEditor: getMarkdownEditorParam(path, markdownPane),
+            ...(markdownEditor
+              ? { markdownEditor }
+              : {}),
           },
         },
       ]
