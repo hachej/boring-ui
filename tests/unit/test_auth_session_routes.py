@@ -37,6 +37,7 @@ def _client_neon(tmp_path: Path) -> TestClient:
         database_url="postgresql://example.invalid/neondb",
         neon_auth_base_url="https://example.neonauth.test/neondb/auth",
         neon_auth_jwks_url="https://example.neonauth.test/neondb/auth/.well-known/jwks.json",
+        cors_origins=["http://127.0.0.1:5176", "http://213.32.19.186:5176"],
     )
     app = create_app(config=config, include_pty=False, include_stream=False, include_approval=False)
     return TestClient(app)
@@ -214,7 +215,7 @@ def test_neon_sign_in_sets_session_cookie_without_browser_direct_neon_calls(
         {
             "email": "owner@example.com",
             "password": "password123",
-            "callbackURL": "http://testserver/auth/callback?redirect_uri=/w/demo",
+            "callbackURL": "http://127.0.0.1:5176/auth/callback?redirect_uri=/w/demo",
         },
     )
     assert _FakeAsyncClient.last_get == "https://example.neonauth.test/neondb/auth/token"
@@ -274,7 +275,7 @@ def test_neon_sign_up_requires_email_verification_instead_of_auto_login(
             "email": "new@example.com",
             "password": "password123",
             "name": "new",
-            "callbackURL": "http://testserver/auth/callback?redirect_uri=/",
+            "callbackURL": "http://127.0.0.1:5176/auth/callback?redirect_uri=/",
         },
     )
 
@@ -294,10 +295,10 @@ def test_neon_sign_up_uses_browser_origin_for_callback_url(tmp_path: Path, monke
     _FakeAsyncClient.token_response = _FakeAsyncResponse(200, {"token": "unused"})
     _FakeAsyncClient.last_post = None
     monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
-    monkeypatch.setattr(auth_router_neon, "_public_origin", lambda request: "http://213.32.19.186:5176")
 
     response = client.post(
         "/auth/sign-up",
+        headers={"Origin": "http://213.32.19.186:5176"},
         json={"email": "new@example.com", "password": "password123", "redirect_uri": "/"},
     )
 
@@ -309,5 +310,30 @@ def test_neon_sign_up_uses_browser_origin_for_callback_url(tmp_path: Path, monke
             "password": "password123",
             "name": "new",
             "callbackURL": "http://213.32.19.186:5176/auth/callback?redirect_uri=/",
+        },
+    )
+
+
+def test_neon_sign_up_ignores_untrusted_origin_for_callback_url(tmp_path: Path, monkeypatch) -> None:
+    client = _client_neon(tmp_path)
+    _FakeAsyncClient.post_response = _FakeAsyncResponse(200, {"user": {"email": "new@example.com"}})
+    _FakeAsyncClient.token_response = _FakeAsyncResponse(200, {"token": "unused"})
+    _FakeAsyncClient.last_post = None
+    monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
+
+    response = client.post(
+        "/auth/sign-up",
+        headers={"Origin": "https://attacker.example"},
+        json={"email": "new@example.com", "password": "password123", "redirect_uri": "/"},
+    )
+
+    assert response.status_code == 200
+    assert _FakeAsyncClient.last_post == (
+        "https://example.neonauth.test/neondb/auth/sign-up/email",
+        {
+            "email": "new@example.com",
+            "password": "password123",
+            "name": "new",
+            "callbackURL": "http://127.0.0.1:5176/auth/callback?redirect_uri=/",
         },
     )

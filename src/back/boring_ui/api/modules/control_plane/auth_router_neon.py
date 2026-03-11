@@ -92,16 +92,37 @@ def _clear_session_cookie(response: JSONResponse | RedirectResponse, config: API
     )
 
 
-def _public_origin(request: Request) -> str:
-    origin = str(request.headers.get("origin", "")).strip()
-    parsed = urlparse(origin)
+def _normalize_origin(raw: str) -> str:
+    text = str(raw or "").strip()
+    parsed = urlparse(text)
     if parsed.scheme and parsed.netloc:
         return f"{parsed.scheme}://{parsed.netloc}"
-    return str(request.base_url).rstrip("/")
+    return ""
 
 
-def _build_callback_url(request: Request, *, redirect_uri: str) -> str:
-    base = _public_origin(request)
+def _public_origin(request: Request, *, config: APIConfig) -> str:
+    origin = str(request.headers.get("origin", "")).strip()
+    normalized_origin = _normalize_origin(origin)
+    allowed_origins = {
+        normalized
+        for normalized in (_normalize_origin(item) for item in (config.cors_origins or []))
+        if normalized
+    }
+    if normalized_origin and normalized_origin in allowed_origins:
+        return normalized_origin
+
+    request_origin = _normalize_origin(str(request.base_url).rstrip("/"))
+    if request_origin and request_origin in allowed_origins:
+        return request_origin
+
+    if allowed_origins:
+        return sorted(allowed_origins)[0]
+
+    return request_origin or str(request.base_url).rstrip("/")
+
+
+def _build_callback_url(request: Request, *, config: APIConfig, redirect_uri: str) -> str:
+    base = _public_origin(request, config=config)
     return f"{base}/auth/callback?redirect_uri={redirect_uri}"
 
 
@@ -193,9 +214,9 @@ async def _neon_password_auth(
 
     redirect_uri = _safe_redirect_path(payload.pop("redirect_uri", "/"))
     url = f"{neon_base}/{endpoint_path.lstrip('/')}"
-    origin = _public_origin(request)
+    origin = _public_origin(request, config=config)
     upstream_payload = dict(payload)
-    upstream_payload["callbackURL"] = _build_callback_url(request, redirect_uri=redirect_uri)
+    upstream_payload["callbackURL"] = _build_callback_url(request, config=config, redirect_uri=redirect_uri)
 
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
