@@ -6,6 +6,15 @@ import { routes } from '../utils/routes'
 
 const LOCAL_GIT_METADATA = new Set(['.git'])
 
+export function normalizeRepoUrl(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw.startsWith('git@github.com:')) {
+    return `https://github.com/${raw.slice('git@github.com:'.length).replace(/\.git$/i, '')}`.toLowerCase()
+  }
+  return raw.replace(/\.git$/i, '').replace(/\/+$/g, '').toLowerCase()
+}
+
 const buildProviderUnavailableState = ({ installationConnected = false, repoUrl = '' } = {}) => {
   if (!installationConnected || !normalizeRepoUrl(repoUrl)) {
     return null
@@ -17,15 +26,6 @@ const buildProviderUnavailableState = ({ installationConnected = false, repoUrl 
     reason: 'provider',
     message: 'Open the workspace to finish browser GitHub sync in LightningFS.',
   }
-}
-
-export const normalizeRepoUrl = (value) => {
-  const raw = String(value || '').trim()
-  if (!raw) return ''
-  if (raw.startsWith('git@github.com:')) {
-    return `https://github.com/${raw.slice('git@github.com:'.length).replace(/\.git$/i, '')}`.toLowerCase()
-  }
-  return raw.replace(/\.git$/i, '').replace(/\/+$/g, '').toLowerCase()
 }
 
 export const classifyLightningFsBootstrap = ({

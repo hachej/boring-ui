@@ -89,6 +89,13 @@ const POC_MODE = URL_PARAMS.get('poc')
 const DATA_BACKEND_OVERRIDE = String(URL_PARAMS.get('data_backend') || '').trim().toLowerCase()
 const DATA_FS_OVERRIDE = String(URL_PARAMS.get('data_fs') || '').trim()
 const ALLOW_UNSAFE_DATA_FS_OVERRIDE = Boolean(import.meta?.env?.DEV)
+
+const arePlainObjectsEqual = (left, right) => {
+  const leftEntries = Object.entries(left || {})
+  const rightEntries = Object.entries(right || {})
+  if (leftEntries.length !== rightEntries.length) return false
+  return leftEntries.every(([key, value]) => right?.[key] === value)
+}
 const MAIN_CONTENT_ID = 'workspace-main-content'
 const MAX_SCOPED_CACHE_ENTRIES = 12
 const MAX_PRESERVED_IDENTITY_AGE_MS = 30_000
@@ -624,40 +631,34 @@ export default function App() {
   const storagePrefix = menuUserId
     ? `${baseStoragePrefix}-u-${menuUserId.slice(0, 12)}`
     : baseStoragePrefix
-  const hasSharedPreferenceValue = (prefix, suffix) => {
+  const hasSharedPreferenceValue = useCallback((prefix, suffix) => {
     if (!prefix) return false
     try {
       return localStorage.getItem(getSharedStorageKey(prefix, suffix)) !== null
     } catch {
       return false
     }
-  }
-  const resolveSharedPreferencePrefix = (prefix, suffix) => {
+  }, [])
+  const resolveSharedPreferencePrefix = useCallback((prefix, suffix) => {
     if (hasSharedPreferenceValue(prefix, suffix)) return prefix
     if (prefix !== baseStoragePrefix && hasSharedPreferenceValue(baseStoragePrefix, suffix)) {
       return baseStoragePrefix
     }
     return prefix
-  }
-  const readPersistedCollapsedState = (prefix) => {
+  }, [baseStoragePrefix, hasSharedPreferenceValue])
+  const readPersistedCollapsedState = useCallback((prefix) => {
     const effectivePrefix = resolveSharedPreferencePrefix(prefix, 'sidebar-collapsed')
     const saved = loadCollapsedState(effectivePrefix)
     return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
-  }
-  const readPersistedPanelSizes = (prefix) => {
+  }, [resolveSharedPreferencePrefix])
+  const readPersistedPanelSizes = useCallback((prefix) => {
     const effectivePrefix = resolveSharedPreferencePrefix(prefix, 'panel-sizes')
     return {
       ...panelDefaults,
       companion: rightRailDefaults.companion,
       ...(loadPanelSizes(effectivePrefix) || {}),
     }
-  }
-  const arePlainObjectsEqual = (left, right) => {
-    const leftEntries = Object.entries(left || {})
-    const rightEntries = Object.entries(right || {})
-    if (leftEntries.length !== rightEntries.length) return false
-    return leftEntries.every(([key, value]) => right?.[key] === value)
-  }
+  }, [resolveSharedPreferencePrefix, panelDefaults, rightRailDefaults.companion])
   const [userMenuIdentityError, setUserMenuIdentityError] = useState('')
   const [userMenuWorkspaceError, setUserMenuWorkspaceError] = useState('')
   const [workspaceOptions, setWorkspaceOptions] = useState([])
@@ -887,7 +888,7 @@ export default function App() {
         : nextCollapsed
     ))
     setLayoutChromeHydratedPrefix(storagePrefix)
-  }, [storagePrefix])
+  }, [storagePrefix, readPersistedCollapsedState, readPersistedPanelSizes])
 
   const publishFrontendState = useCallback(async (api, options = {}) => {
     const targetApi = api || dockApi
