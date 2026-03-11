@@ -96,6 +96,38 @@ const arePlainObjectsEqual = (left, right) => {
   if (leftEntries.length !== rightEntries.length) return false
   return leftEntries.every(([key, value]) => right?.[key] === value)
 }
+
+const hasSharedPreferenceValue = (prefix, suffix) => {
+  if (!prefix) return false
+  try {
+    return localStorage.getItem(getSharedStorageKey(prefix, suffix)) !== null
+  } catch {
+    return false
+  }
+}
+
+const resolveSharedPreferencePrefix = (prefix, fallbackPrefix, suffix) => {
+  if (hasSharedPreferenceValue(prefix, suffix)) return prefix
+  if (prefix !== fallbackPrefix && hasSharedPreferenceValue(fallbackPrefix, suffix)) {
+    return fallbackPrefix
+  }
+  return prefix
+}
+
+const readPersistedCollapsedState = (prefix, fallbackPrefix) => {
+  const effectivePrefix = resolveSharedPreferencePrefix(prefix, fallbackPrefix, 'sidebar-collapsed')
+  const saved = loadCollapsedState(effectivePrefix)
+  return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
+}
+
+const readPersistedPanelSizes = (prefix, fallbackPrefix, panelDefaults, companionSize) => {
+  const effectivePrefix = resolveSharedPreferencePrefix(prefix, fallbackPrefix, 'panel-sizes')
+  return {
+    ...panelDefaults,
+    companion: companionSize,
+    ...(loadPanelSizes(effectivePrefix) || {}),
+  }
+}
 const MAIN_CONTENT_ID = 'workspace-main-content'
 const MAX_SCOPED_CACHE_ENTRIES = 12
 const MAX_PRESERVED_IDENTITY_AGE_MS = 30_000
@@ -631,34 +663,6 @@ export default function App() {
   const storagePrefix = menuUserId
     ? `${baseStoragePrefix}-u-${menuUserId.slice(0, 12)}`
     : baseStoragePrefix
-  const hasSharedPreferenceValue = useCallback((prefix, suffix) => {
-    if (!prefix) return false
-    try {
-      return localStorage.getItem(getSharedStorageKey(prefix, suffix)) !== null
-    } catch {
-      return false
-    }
-  }, [])
-  const resolveSharedPreferencePrefix = useCallback((prefix, suffix) => {
-    if (hasSharedPreferenceValue(prefix, suffix)) return prefix
-    if (prefix !== baseStoragePrefix && hasSharedPreferenceValue(baseStoragePrefix, suffix)) {
-      return baseStoragePrefix
-    }
-    return prefix
-  }, [baseStoragePrefix, hasSharedPreferenceValue])
-  const readPersistedCollapsedState = useCallback((prefix) => {
-    const effectivePrefix = resolveSharedPreferencePrefix(prefix, 'sidebar-collapsed')
-    const saved = loadCollapsedState(effectivePrefix)
-    return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
-  }, [resolveSharedPreferencePrefix])
-  const readPersistedPanelSizes = useCallback((prefix) => {
-    const effectivePrefix = resolveSharedPreferencePrefix(prefix, 'panel-sizes')
-    return {
-      ...panelDefaults,
-      companion: rightRailDefaults.companion,
-      ...(loadPanelSizes(effectivePrefix) || {}),
-    }
-  }, [resolveSharedPreferencePrefix, panelDefaults, rightRailDefaults.companion])
   const [userMenuIdentityError, setUserMenuIdentityError] = useState('')
   const [userMenuWorkspaceError, setUserMenuWorkspaceError] = useState('')
   const [workspaceOptions, setWorkspaceOptions] = useState([])
@@ -677,7 +681,9 @@ export default function App() {
   const isWorkspaceSettingsPage = currentWorkspaceId && workspaceSubpath === 'settings'
   const userSettingsWorkspaceId = String(pageSearchParams.get('workspace_id') || '').trim()
   const isWorkspaceSetupPage = currentWorkspaceId && workspaceSubpath === 'setup'
-  const [collapsed, setCollapsed] = useState(() => readPersistedCollapsedState(storagePrefix))
+  const [collapsed, setCollapsed] = useState(() => (
+    readPersistedCollapsedState(storagePrefix, baseStoragePrefix)
+  ))
   const [layoutChromeHydratedPrefix, setLayoutChromeHydratedPrefix] = useState(storagePrefix)
   const [sectionCollapsed, setSectionCollapsed] = useState({})
   const sidebarToggleHostId = useMemo(() => {
@@ -685,7 +691,14 @@ export default function App() {
     if (collapsed.filetree && hasFiletree) return 'filetree'
     return leftSidebarPanelIds[0] || 'filetree'
   }, [collapsed.filetree, leftSidebarPanelIds])
-  const panelSizesRef = useRef(readPersistedPanelSizes(storagePrefix))
+  const panelSizesRef = useRef(
+    readPersistedPanelSizes(
+      storagePrefix,
+      baseStoragePrefix,
+      panelDefaults,
+      rightRailDefaults.companion,
+    ),
+  )
   const collapsedEffectRan = useRef(false)
   const dismissedApprovalsRef = useRef(new Set())
   const agentAutoAddSuppressedRef = useRef({
