@@ -74,9 +74,15 @@ async function neonPasswordAuth(path, body) {
     const msg = resp.status === 429
       ? 'Too many attempts. Please wait and try again.'
       : parseNeonError(payload)
-    return { error: msg }
+    return { error: msg, code: payload?.code || '' }
   }
   return payload
+}
+
+function isEmailNotVerifiedError(result) {
+  const code = String(result?.code || '').toUpperCase()
+  const message = String(result?.error || result?.message || '').toLowerCase()
+  return code === 'EMAIL_NOT_VERIFIED' || message.includes('email not verified')
 }
 
 // --- Main component ---
@@ -108,6 +114,7 @@ export default function AuthPage({ authConfig }) {
   const [status, setStatus] = useState('')
   const [isError, setIsError] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [verificationRecoveryEmail, setVerificationRecoveryEmail] = useState('')
   const emailRef = useRef(null)
 
   useEffect(() => {
@@ -118,6 +125,10 @@ export default function AuthPage({ authConfig }) {
   const showStatus = useCallback((message, error = false) => {
     setStatus(message)
     setIsError(error)
+  }, [])
+
+  const clearVerificationRecovery = useCallback(() => {
+    setVerificationRecoveryEmail('')
   }, [])
 
   const isRateLimited = (error) => {
@@ -145,6 +156,7 @@ export default function AuthPage({ authConfig }) {
 
     try {
       if (isSignUp) {
+        clearVerificationRecovery()
         showStatus('Creating account...')
         const result = await neonPasswordAuth('/auth/sign-up', {
           email: trimmed,
@@ -171,15 +183,48 @@ export default function AuthPage({ authConfig }) {
           redirect_uri: redirectUri,
         })
         if (result.error) {
+          if (isEmailNotVerifiedError(result)) {
+            setVerificationRecoveryEmail(trimmed.toLowerCase())
+            showStatus('Email not verified. Check your inbox or resend the verification email.', true)
+            return
+          }
+          clearVerificationRecovery()
           showStatus(result.error, true)
           return
         }
+        clearVerificationRecovery()
         if (!result.ok) {
           showStatus(result.message || 'Unable to complete session setup.', true)
           return
         }
         window.location.assign(result.redirect_uri || '/')
       }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleResendVerification = async () => {
+    if (busy) return
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed) {
+      showStatus('Enter your email to resend the verification link.', true)
+      return
+    }
+
+    setBusy(true)
+    showStatus('Sending verification email...')
+    try {
+      const result = await neonPasswordAuth('/auth/resend-verification', {
+        email: trimmed,
+        redirect_uri: redirectUri,
+      })
+      if (result.error) {
+        showStatus(result.error, true)
+        return
+      }
+      setVerificationRecoveryEmail(trimmed)
+      showStatus(result.message || 'Verification email sent. Check your inbox.')
     } finally {
       setBusy(false)
     }
@@ -275,6 +320,10 @@ export default function AuthPage({ authConfig }) {
   // For Supabase, we need the client to be loaded.
   const formReady = isNeon ? true : !!client
   const isSignUp = mode === 'sign_up'
+  const canResendVerification = isNeon
+    && !isSignUp
+    && !!verificationRecoveryEmail
+    && verificationRecoveryEmail === email.trim().toLowerCase()
 
   return (
     <div className="auth-page">
@@ -295,7 +344,7 @@ export default function AuthPage({ authConfig }) {
                 className={`auth-tab ${!isSignUp ? 'active' : ''}`}
                 role="tab"
                 aria-selected={!isSignUp}
-                onClick={() => { setMode('sign_in'); showStatus('') }}
+                onClick={() => { setMode('sign_in'); clearVerificationRecovery(); showStatus('') }}
                 disabled={busy}
               >
                 Sign in
@@ -305,7 +354,7 @@ export default function AuthPage({ authConfig }) {
                 className={`auth-tab ${isSignUp ? 'active' : ''}`}
                 role="tab"
                 aria-selected={isSignUp}
-                onClick={() => { setMode('sign_up'); showStatus('') }}
+                onClick={() => { setMode('sign_up'); clearVerificationRecovery(); showStatus('') }}
                 disabled={busy}
               >
                 Create account
@@ -331,7 +380,13 @@ export default function AuthPage({ authConfig }) {
               autoComplete="email"
               placeholder="you@company.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                const nextValue = e.target.value
+                setEmail(nextValue)
+                if (verificationRecoveryEmail && nextValue.trim().toLowerCase() !== verificationRecoveryEmail) {
+                  clearVerificationRecovery()
+                }
+              }}
               disabled={busy}
               required
             />
@@ -344,7 +399,9 @@ export default function AuthPage({ authConfig }) {
               autoComplete={isSignUp ? 'new-password' : 'current-password'}
               placeholder={isSignUp ? 'Create a password (8+ characters)' : 'Enter your password'}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value)
+              }}
               disabled={busy}
               required
             />
@@ -374,6 +431,20 @@ export default function AuthPage({ authConfig }) {
             <p className={`auth-status ${isError ? 'auth-status-error' : ''}`} aria-live="polite">
               {status}
             </p>
+          )}
+
+          {canResendVerification && (
+            <div className="auth-alt-actions">
+              <p className="auth-muted">Your account exists, but the email is still waiting for verification.</p>
+              <button
+                type="button"
+                className="auth-link-btn"
+                onClick={handleResendVerification}
+                disabled={busy}
+              >
+                Resend verification email
+              </button>
+            </div>
           )}
 
           {/* Loading indicator for Supabase SDK */}

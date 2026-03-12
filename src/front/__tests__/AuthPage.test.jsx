@@ -332,6 +332,53 @@ describe('AuthPage', () => {
       expect(screen.getByText('Welcome back')).toBeInTheDocument()
     })
   })
+
+  it('offers resend verification when Neon sign-in returns EMAIL_NOT_VERIFIED', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        json: () => Promise.resolve({
+          code: 'EMAIL_NOT_VERIFIED',
+          message: 'Email not verified',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          ok: true,
+          message: 'Verification email sent. Check your inbox.',
+          redirect_uri: '/',
+        }),
+      })
+
+    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, provider: 'neon' }} />)
+
+    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'test@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } })
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Email not verified. Check your inbox or resend the verification email.')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /resend verification email/i }))
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenLastCalledWith('/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'test@example.com',
+          redirect_uri: '/',
+        }),
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Verification email sent. Check your inbox.')).toBeInTheDocument()
+    })
+  })
 })
 
 describe('AuthPage — safeRedirectPath', () => {

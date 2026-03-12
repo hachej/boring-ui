@@ -283,6 +283,35 @@ def test_neon_sign_up_requires_email_verification_instead_of_auto_login(
     assert params["pending_login"]
 
 
+def test_neon_resend_verification_email_uses_same_origin_backend_endpoint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client_neon(tmp_path)
+    _FakeAsyncClient.post_response = _FakeAsyncResponse(200, {"ok": True})
+    _FakeAsyncClient.last_post = None
+    monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
+
+    response = client.post(
+        "/auth/resend-verification",
+        json={"email": "new@example.com", "redirect_uri": "/w/demo"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "message": "Verification email sent. Check your inbox.",
+        "redirect_uri": "/w/demo",
+    }
+    assert _FakeAsyncClient.last_post == (
+        "https://example.neonauth.test/neondb/auth/send-verification-email",
+        {
+            "email": "new@example.com",
+            "callbackURL": "http://127.0.0.1:5176/auth/callback?redirect_uri=/w/demo",
+        },
+    )
+
+
 def test_neon_callback_renders_exchange_page(tmp_path: Path) -> None:
     client = _client_neon(tmp_path)
     response = client.get("/auth/callback?redirect_uri=/w/demo")

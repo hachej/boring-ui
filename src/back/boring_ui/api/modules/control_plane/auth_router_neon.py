@@ -380,6 +380,83 @@ async def _complete_pending_sign_in(
     )
 
 
+async def _send_neon_verification_email(
+    request: Request,
+    *,
+    config: APIConfig,
+    email: str,
+    redirect_uri: str,
+) -> JSONResponse:
+    neon_base = (config.neon_auth_base_url or "").rstrip("/")
+    if not neon_base:
+        return _error(
+            request,
+            status_code=500,
+            error="server_error",
+            code="NEON_AUTH_NOT_CONFIGURED",
+            message="NEON_AUTH_BASE_URL is not configured",
+        )
+
+    callback_url = _build_callback_url(
+        request,
+        config=config,
+        redirect_uri=_safe_redirect_path(redirect_uri),
+    )
+    origin = _public_origin(request, config=config)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            auth_response = await client.post(
+                f"{neon_base}/send-verification-email",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": origin,
+                },
+                json={
+                    "email": email,
+                    "callbackURL": callback_url,
+                },
+            )
+            auth_body = auth_response.json() if auth_response.content else {}
+    except httpx.TimeoutException:
+        return _error(
+            request,
+            status_code=504,
+            error="upstream_timeout",
+            code="NEON_AUTH_TIMEOUT",
+            message="Neon Auth did not respond in time",
+        )
+    except httpx.HTTPError as exc:
+        _logger.warning("Neon verification resend failed: %s", exc)
+        return _error(
+            request,
+            status_code=502,
+            error="upstream_error",
+            code="NEON_AUTH_UNAVAILABLE",
+            message="Unable to reach Neon Auth",
+        )
+
+    if auth_response.status_code not in {200, 201}:
+        message = _parse_neon_error_message(auth_body, "Unable to resend verification email.")
+        status_code = auth_response.status_code if 400 <= auth_response.status_code < 500 else 502
+        return _error(
+            request,
+            status_code=status_code,
+            error="auth_failed",
+            code="NEON_AUTH_REJECTED",
+            message=message,
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "ok": True,
+            "message": "Verification email sent. Check your inbox.",
+            "redirect_uri": _safe_redirect_path(redirect_uri),
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Login / signup HTML template
 # ---------------------------------------------------------------------------
@@ -1159,6 +1236,44 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
             },
             upstream_error_message="Unable to sign in.",
             missing_token_message="Neon Auth did not return a session token.",
+        )
+
+    @router.post("/resend-verification")
+    async def auth_resend_verification(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="INVALID_JSON",
+                message="Expected JSON payload",
+            )
+        if not isinstance(body, dict):
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="INVALID_JSON",
+                message="Expected JSON object",
+            )
+
+        email = str(body.get("email", "")).strip().lower()
+        if not email:
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="EMAIL_REQUIRED",
+                message="email is required",
+            )
+
+        return await _send_neon_verification_email(
+            request,
+            config=config,
+            email=email,
+            redirect_uri=str(body.get("redirect_uri", "/")),
         )
 
     @router.get("/callback")
