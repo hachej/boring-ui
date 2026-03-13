@@ -34,13 +34,15 @@ type App struct {
 }
 
 type Backend struct {
-	Type    string   `toml:"type"`
-	Entry   string   `toml:"entry"`
-	Port    int      `toml:"port"`
-	Routers []string `toml:"routers"`
+	Type       string   `toml:"type"`
+	Entry      string   `toml:"entry"`
+	Port       int      `toml:"port"`
+	Routers    []string `toml:"routers"`
+	PythonPath []string `toml:"pythonpath"`
 }
 
 type Frontend struct {
+	Root     string           `toml:"root"`
 	Port     int              `toml:"port"`
 	Branding Branding         `toml:"branding"`
 	Features map[string]any   `toml:"features"`

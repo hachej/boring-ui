@@ -53,8 +53,12 @@ Run 'bui docs dev' for detailed setup guide.`,
 			}
 		}
 
-		// Symlink frontend
-		if err := framework.LinkFrontend(fwPath, root); err != nil {
+		// Symlink frontend (into frontend root if set, else project root)
+		frontendRoot := root
+		if cfg.Frontend.Root != "" {
+			frontendRoot = filepath.Join(root, cfg.Frontend.Root)
+		}
+		if err := framework.LinkFrontend(fwPath, frontendRoot); err != nil {
 			fmt.Printf("[bui] warn: frontend symlink: %v\n", err)
 		}
 
@@ -91,7 +95,12 @@ Run 'bui docs dev' for detailed setup guide.`,
 				"--port", fmt.Sprintf("%d", frontendPort),
 				"--host", "0.0.0.0",
 			)
-			vite.Dir = fwPath
+			// Run vite from frontend root if set, otherwise framework path
+			if cfg.Frontend.Root != "" {
+				vite.Dir = frontendRoot
+			} else {
+				vite.Dir = fwPath
+			}
 			vite.Env = append(procEnv,
 				fmt.Sprintf("VITE_API_URL=http://localhost:%d", backendPort),
 				fmt.Sprintf("BUI_APP_TOML=%s", filepath.Join(root, config.ConfigFile)),
@@ -152,14 +161,36 @@ func buildBackendCommand(root string, cfg *config.AppConfig, procEnv []string, b
 	configPath := filepath.Join(root, config.ConfigFile)
 	switch backendType(cfg) {
 	case "python":
+		entry := cfg.Backend.Entry
+		if entry == "" {
+			entry = "boring_ui.app_config_loader:app"
+		}
 		uvicorn := exec.Command(venvPy, "-m", "uvicorn",
-			"boring_ui.app_config_loader:app",
+			entry,
 			"--reload",
 			"--host", "0.0.0.0",
 			"--port", fmt.Sprintf("%d", backendPort),
 		)
 		uvicorn.Dir = root
-		uvicorn.Env = append(procEnv, fmt.Sprintf("BUI_APP_TOML=%s", configPath))
+		uvicornEnv := append(procEnv, fmt.Sprintf("BUI_APP_TOML=%s", configPath))
+		// Add extra PYTHONPATH entries
+		if len(cfg.Backend.PythonPath) > 0 {
+			var absPaths []string
+			for _, p := range cfg.Backend.PythonPath {
+				if filepath.IsAbs(p) {
+					absPaths = append(absPaths, p)
+				} else {
+					absPaths = append(absPaths, filepath.Join(root, p))
+				}
+			}
+			existing := os.Getenv("PYTHONPATH")
+			extra := strings.Join(absPaths, ":")
+			if existing != "" {
+				extra = extra + ":" + existing
+			}
+			uvicornEnv = append(uvicornEnv, "PYTHONPATH="+extra)
+		}
+		uvicorn.Env = uvicornEnv
 		return uvicorn, nil
 	case "go":
 		if _, err := lookPath("air"); err != nil {
