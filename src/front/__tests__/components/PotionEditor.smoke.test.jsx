@@ -1,45 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { createPlateEditor } from 'platejs/react'
-import { MarkdownPlugin } from '@platejs/markdown'
-import {
-  EMPTY_POTION_VALUE,
-  potionPlugins,
-} from '../../components/PotionEditor'
 import { fileContents } from '../fixtures/files'
+import { parseFrontmatter, reconstructContent } from '../../components/FrontmatterEditor'
 import {
-  parseFrontmatter,
-  reconstructContent,
-} from '../../components/FrontmatterEditor'
+  getEditorPanelComponent,
+  normalizeMarkdownEditorPanels,
+} from '../../utils/editorFiles'
 
-const normalizeMarkdown = (value) => String(value || '').trim()
-
-describe('PotionEditor smoke', () => {
-  it('round-trips an example markdown document and preserves edits', () => {
+describe('host-defined markdown pane smoke', () => {
+  it('keeps markdown routing generic and preserves frontmatter content', () => {
     const content = fileContents.markdown.withFrontmatter
     const { body, frontmatter } = parseFrontmatter(content)
+    const editedBody = `${body.trim()}\n\nUpdated in smoke test.\n`
 
-    const editor = createPlateEditor({
-      plugins: potionPlugins,
-      value: EMPTY_POTION_VALUE,
-    })
+    expect(getEditorPanelComponent('docs/guide.md', 'child-markdown')).toBe('child-markdown')
 
-    const nodes = editor.getApi(MarkdownPlugin).markdown.deserialize(body)
-    editor.tf.replaceNodes(nodes, {
-      at: [],
-      children: true,
-    })
+    const layout = normalizeMarkdownEditorPanels({
+      panels: {
+        'editor-docs/guide.md': {
+          contentComponent: 'editor',
+          params: { path: 'docs/guide.md', markdownEditor: 'stale-core-editor' },
+        },
+      },
+    }, 'child-markdown')
 
-    const roundTrip = editor.getApi(MarkdownPlugin).markdown.serialize()
-    expect(normalizeMarkdown(roundTrip)).toBe(normalizeMarkdown(body))
-
-    editor.tf.focus({ edge: 'endEditor' })
-    editor.tf.insertText(' Updated in smoke test.')
-
-    const editedBody = editor.getApi(MarkdownPlugin).markdown.serialize()
-    expect(editedBody).toContain('This is the content. Updated in smoke test.')
+    expect(layout.panels['editor-docs/guide.md'].contentComponent).toBe('child-markdown')
+    expect(layout.panels['editor-docs/guide.md'].params.markdownEditor).toBeUndefined()
 
     const fullDocument = reconstructContent(frontmatter, editedBody)
     expect(fullDocument).toContain('title: My Document')
-    expect(fullDocument).toContain('This is the content. Updated in smoke test.')
+    expect(fullDocument).toContain('Updated in smoke test.')
   })
 })

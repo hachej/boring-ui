@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyMarkdownPaneParams,
   getEditorPanelComponent,
   getMarkdownEditorParam,
   isMarkdownFile,
@@ -26,6 +27,14 @@ describe('editorFiles', () => {
     expect(getMarkdownEditorParam('README.md', 'editor')).toBe('tiptap')
     expect(getMarkdownEditorParam('README.md', 'bdocs-markdown')).toBeUndefined()
     expect(getMarkdownEditorParam('app.py', 'bdocs-markdown')).toBeUndefined()
+  })
+
+  it('drops core markdown editor params when routing to a host-defined pane', () => {
+    expect(applyMarkdownPaneParams(
+      { path: 'README.md', markdownEditor: 'tiptap', keep: true },
+      'README.md',
+      'bdocs-markdown',
+    )).toEqual({ path: 'README.md', keep: true })
   })
 
   it('normalizes markdown pane values', () => {
@@ -68,6 +77,6 @@ describe('editorFiles', () => {
     const next = normalizeMarkdownEditorPanels(layout, 'bdocs-markdown')
 
     expect(next.panels['editor-README.md'].contentComponent).toBe('bdocs-markdown')
-    expect(next.panels['editor-README.md'].params.markdownEditor).toBe('tiptap')
+    expect(next.panels['editor-README.md'].params.markdownEditor).toBeUndefined()
   })
 })

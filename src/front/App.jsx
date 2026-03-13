@@ -377,7 +377,7 @@ const countAllAgentPanels = (api) =>
 
 // Get capability-gated components from pane registry
 // Components with requiresFeatures/requiresRouters will show error states when unavailable
-const KNOWN_COMPONENTS = getKnownComponents()
+const getLiveKnownComponents = () => getKnownComponents()
 
 const COMPACT_TAB_COMPONENTS = new Set(['terminal', 'companion', 'shell'])
 const COMPACT_TAB_PREFIXES = ['terminal-chat-', 'companion-chat-', 'pi-agent-chat-']
@@ -623,6 +623,7 @@ export default function App() {
 
   // Workspace plugin components loaded dynamically
   const [workspaceComponents, setWorkspaceComponents] = useState({})
+  const [workspacePanesReady, setWorkspacePanesReady] = useState(false)
 
   const components = useMemo(() => {
     const gated = getGatedComponents(createCapabilityGatedPane)
@@ -1965,10 +1966,9 @@ export default function App() {
       const markdownEditor = getMarkdownEditorParam(path, markdownPane)
 
       if (existingPanel) {
-        const nextParams = {
-          ...extraParams,
-          ...(markdownEditor ? { markdownEditor } : {}),
-        }
+        const nextParams = isMarkdownFile(path)
+          ? { ...extraParams, markdownEditor }
+          : { ...extraParams }
         if (Object.keys(nextParams).length > 0) {
           existingPanel.api.updateParameters(nextParams)
         }
@@ -2009,7 +2009,6 @@ export default function App() {
           path,
           initialContent: content,
           contentVersion: 1,
-          ...(markdownEditor ? { markdownEditor } : {}),
           ...extraParams,
           onContentChange: (p, newContent) => {
             setTabs((prev) => ({
@@ -2027,6 +2026,9 @@ export default function App() {
               panel.api.setTitle(getFileName(p) + (dirty ? ' *' : ''))
             }
           },
+        }
+        if (isMarkdownFile(path)) {
+          panelParams.markdownEditor = markdownEditor
         }
 
         let panel = dockApi.addPanel({
@@ -2114,7 +2116,7 @@ export default function App() {
       const markdownEditor = getMarkdownEditorParam(path, markdownPane)
 
       if (existingPanel) {
-        if (markdownEditor) {
+        if (isMarkdownFile(path)) {
           existingPanel.api.updateParameters({ markdownEditor })
         }
         existingPanel.api.setActive()
@@ -3666,7 +3668,14 @@ export default function App() {
   useEffect(() => {
     // Wait for dockApi, projectRoot, and layout persistence hydration so we
     // restore from the final per-user storage key only once.
-    if (!dockApi || projectRoot === null || !layoutPersistenceReady || layoutRestorationRan.current) return
+    if (
+      !dockApi
+      || projectRoot === null
+      || !layoutPersistenceReady
+      || capabilitiesLoading
+      || !workspacePanesReady
+      || layoutRestorationRan.current
+    ) return
     if (suppressPendingLayoutRestoreRef.current) {
       layoutRestorationRan.current = true
       layoutRestored.current = true
@@ -3680,7 +3689,7 @@ export default function App() {
       shell: collapsed.shell,
     }
 
-    const savedLayout = loadLayout(storagePrefix, projectRoot, KNOWN_COMPONENTS, layoutVersion)
+    const savedLayout = loadLayout(storagePrefix, projectRoot, getLiveKnownComponents(), layoutVersion)
     if (!savedLayout) {
       if (ensureCorePanelsRef.current) {
         ensureCorePanelsRef.current()
@@ -3950,7 +3959,7 @@ export default function App() {
         }
 
         // Prune empty groups
-        const pruned = pruneEmptyGroups(dockApi, KNOWN_COMPONENTS)
+        const pruned = pruneEmptyGroups(dockApi, getLiveKnownComponents())
         if (pruned && typeof dockApi.toJSON === 'function') {
           saveLayout(storagePrefix, projectRoot, dockApi.toJSON(), layoutVersion)
         }
@@ -4037,6 +4046,7 @@ export default function App() {
     userIdentityAuthResolved,
     capabilities,
     capabilitiesLoading,
+    workspacePanesReady,
     collapsed.filetree,
     collapsed.terminal,
     collapsed.shell,
@@ -4284,17 +4294,39 @@ export default function App() {
   // Load workspace plugin panels when capabilities include them
   const workspacePanesKey = JSON.stringify(capabilities?.workspace_panes || [])
   useEffect(() => {
+    let cancelled = false
     const panes = capabilities?.workspace_panes
-    if (!panes || panes.length === 0) return
+    if (capabilitiesLoading) {
+      setWorkspacePanesReady(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    if (!panes || panes.length === 0) {
+      setWorkspacePanesReady(true)
+      return () => {
+        cancelled = true
+      }
+    }
 
     loadWorkspacePanes(panes).then((loaded) => {
+      if (cancelled) return
       for (const [id, component] of Object.entries(loaded)) {
         const name = id.replace('ws-', '')
         registerPane({ id, component, title: name, placement: 'center' })
       }
       setWorkspaceComponents(loaded)
+      setWorkspacePanesReady(true)
+    }).catch(() => {
+      if (cancelled) return
+      setWorkspacePanesReady(true)
     })
-  }, [workspacePanesKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    return () => {
+      cancelled = true
+    }
+  }, [capabilitiesLoading, workspacePanesKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // WebSocket for live workspace plugin hot-reload
   const workspacePluginsEnabled =

@@ -1,13 +1,5 @@
-import EditorPanel from './EditorPanel'
+import PotionEditor from '../components/PotionEditor'
 
-export default function PotionPanel(props) {
-  return (
-    <EditorPanel
-      {...props}
-      params={{
-        ...(props?.params || {}),
-        markdownEditor: 'potion',
-      }}
-    />
-  )
+export default function PotionPanel() {
+  return <PotionEditor />
 }

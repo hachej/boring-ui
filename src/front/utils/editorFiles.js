@@ -21,6 +21,20 @@ export const getMarkdownEditorParam = (filepath, markdownPane = 'editor') => {
   return undefined
 }
 
+export const applyMarkdownPaneParams = (params, filepath, markdownPane = 'editor') => {
+  const nextParams = { ...(params || {}) }
+  if (!isMarkdownFile(filepath)) return nextParams
+
+  const markdownEditor = getMarkdownEditorParam(filepath, markdownPane)
+  if (markdownEditor) {
+    nextParams.markdownEditor = markdownEditor
+  } else {
+    delete nextParams.markdownEditor
+  }
+
+  return nextParams
+}
+
 export const normalizeMarkdownEditorPanels = (layout, markdownPane = 'editor') => {
   if (!layout?.panels || typeof layout.panels !== 'object') return layout
 
@@ -31,19 +45,13 @@ export const normalizeMarkdownEditorPanels = (layout, markdownPane = 'editor') =
 
       const path = panel?.params?.path || panelId.replace(/^editor-/, '')
       if (!isMarkdownFile(path)) return [panelId, panel]
-      const markdownEditor = getMarkdownEditorParam(path, markdownPane)
 
       return [
         panelId,
         {
           ...panel,
           contentComponent: nextComponent,
-          params: {
-            ...(panel?.params || {}),
-            ...(markdownEditor
-              ? { markdownEditor }
-              : {}),
-          },
+          params: applyMarkdownPaneParams(panel?.params, path, markdownPane),
         },
       ]
     }),

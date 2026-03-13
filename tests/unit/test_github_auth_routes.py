@@ -46,7 +46,14 @@ def config_with_slug(tmp_path):
 
 @pytest.fixture
 def unconfigured_config(tmp_path):
-    return APIConfig(workspace_root=tmp_path)
+    return APIConfig(
+        workspace_root=tmp_path,
+        github_app_id=None,
+        github_app_client_id=None,
+        github_app_client_secret=None,
+        github_app_private_key=None,
+        github_app_slug=None,
+    )
 
 
 @pytest.fixture

@@ -51,7 +51,7 @@ export default {
     profile: uiProfile || 'custom',
   },
   editors: {
-    markdownPane: 'potion',
+    markdownPane: 'editor',
   },
   features: {
     codeSessions: true,

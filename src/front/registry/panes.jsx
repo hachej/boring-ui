@@ -35,7 +35,6 @@
  *
  * - `filetree`: requires `files` feature
  * - `editor`: requires `files` feature
- * - `potion`: requires `files` feature
  * - `terminal`: requires `chat_claude_code` router
  * - `shell`: requires `pty` router
  * - `review`: requires `approval` router
@@ -56,7 +55,6 @@ import EmptyPanel from '../panels/EmptyPanel'
 // EditorPanel pulls tiptap+lowlight (~600KB), TerminalPanel pulls xterm (~300KB),
 // CompanionPanel pulls pi-ai+pi-web-ui (~900KB), etc.
 const LazyEditorPanel = lazy(() => import('../panels/EditorPanel'))
-const LazyPotionPanel = lazy(() => import('../panels/PotionPanel'))
 const LazyTerminalPanel = lazy(() => import('../panels/TerminalPanel'))
 const LazyShellTerminalPanel = lazy(() => import('../panels/ShellTerminalPanel'))
 const LazyReviewPanel = lazy(() => import('../panels/ReviewPanel'))
@@ -76,7 +74,6 @@ function withSuspense(LazyComponent) {
 }
 
 const EditorPanel = withSuspense(LazyEditorPanel)
-const PotionPanel = withSuspense(LazyPotionPanel)
 const TerminalPanel = withSuspense(LazyTerminalPanel)
 const ShellTerminalPanel = withSuspense(LazyShellTerminalPanel)
 const ReviewPanel = withSuspense(LazyReviewPanel)
@@ -320,7 +317,6 @@ class PaneRegistry {
  * |-----------|-----------|-----------|------------------------|
  * | filetree  | yes       | left      | files feature          |
  * | editor    | no        | center    | files feature          |
- * | potion    | no        | center    | files feature          |
  * | terminal  | no        | right     | chat_claude_code router|
  * | shell     | yes       | bottom    | pty router             |
  * | empty     | no        | center    | none                   |
@@ -367,16 +363,6 @@ const createDefaultRegistry = () => {
     id: 'editor',
     component: EditorPanel,
     title: 'Editor',
-    placement: 'center',
-    essential: false,
-    requiresFeatures: ['files'],
-  })
-
-  // Potion markdown editor - center
-  registry.register({
-    id: 'potion',
-    component: PotionPanel,
-    title: 'Potion',
     placement: 'center',
     essential: false,
     requiresFeatures: ['files'],

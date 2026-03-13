@@ -307,7 +307,6 @@ describe('createDefaultRegistry', () => {
 
     expect(registry.has('filetree')).toBe(true)
     expect(registry.has('editor')).toBe(true)
-    expect(registry.has('potion')).toBe(true)
     expect(registry.has('terminal')).toBe(true)
     expect(registry.has('shell')).toBe(true)
     expect(registry.has('empty')).toBe(true)
@@ -321,7 +320,6 @@ describe('createDefaultRegistry', () => {
     expect(registry.isEssential('terminal')).toBe(false)
     expect(registry.isEssential('shell')).toBe(true)
     expect(registry.isEssential('editor')).toBe(false)
-    expect(registry.isEssential('potion')).toBe(false)
     expect(registry.isEssential('empty')).toBe(false)
   })
 
@@ -329,7 +327,6 @@ describe('createDefaultRegistry', () => {
     const registry = createDefaultRegistry()
 
     expect(registry.getRequiredFeatures('filetree')).toContain('files')
-    expect(registry.getRequiredFeatures('potion')).toContain('files')
     expect(registry.getRequiredRouters('terminal')).toContain('chat_claude_code')
     expect(registry.getRequiredRouters('shell')).toContain('pty')
   })

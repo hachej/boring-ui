@@ -125,6 +125,25 @@ describe('Layout Integration', () => {
       expect(loaded).toBeNull()
     })
 
+    it('accepts a late-registered pane when using a fresh known-components set', () => {
+      const registry = createDefaultRegistry()
+      const staleKnownComponents = registry.getKnownComponents()
+      registry.register({
+        id: 'child-markdown',
+        component: () => null,
+        title: 'Child Markdown',
+      })
+
+      const layout = createValidLayout()
+      layout.panels['editor-1'] = { contentComponent: 'child-markdown' }
+
+      saveLayout(prefix, projectRoot, layout, 1)
+
+      expect(loadLayout(prefix, projectRoot, staleKnownComponents, 1)).toBeNull()
+      saveLayout(prefix, projectRoot, layout, 1)
+      expect(loadLayout(prefix, projectRoot, registry.getKnownComponents(), 1)).toBeTruthy()
+    })
+
     it('validates essential panes are present', () => {
       // Layout missing essential pane
       const incompleteLayout = createValidLayout()

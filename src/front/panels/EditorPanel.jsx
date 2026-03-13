@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Code as CodeIcon, FileCode2, ChevronDown } from 'lucide-react'
 import Editor from '../components/Editor'
-import PotionEditor from '../components/PotionEditor'
 import CodeEditor from '../components/CodeEditor'
 import GitDiff from '../components/GitDiff'
 import {
@@ -91,7 +90,6 @@ export default function EditorPanel({ params: initialParams, api }) {
     onContentChange,
     onDirtyChange,
     initialMode,
-    markdownEditor = 'tiptap',
   } = params || {}
 
   const [content, setContent] = useState(initialContent || '')
@@ -362,37 +360,20 @@ export default function EditorPanel({ params: initialParams, api }) {
           </div>
         </div>
       ) : isMarkdown ? (
-        markdownEditor === 'potion' ? (
-          <PotionEditor
-            content={content}
-            contentVersion={contentVersion}
-            isDirty={isDirty}
-            isSaving={isSaving}
-            onChange={handleChange}
-            onAutoSave={handleAutoSave}
-            showDiffToggle={Boolean(path) && gitAvailable}
-            editorMode={editorMode}
-            diffText={diffText}
-            diffError={diffError}
-            originalContent={originalContent}
-            onModeChange={handleModeChange}
-          />
-        ) : (
-          <Editor
-            content={content}
-            contentVersion={contentVersion}
-            isDirty={isDirty}
-            isSaving={isSaving}
-            onChange={handleChange}
-            onAutoSave={handleAutoSave}
-            showDiffToggle={Boolean(path) && gitAvailable}
-            editorMode={editorMode}
-            diffText={diffText}
-            diffError={diffError}
-            originalContent={originalContent}
-            onModeChange={handleModeChange}
-          />
-        )
+        <Editor
+          content={content}
+          contentVersion={contentVersion}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          onChange={handleChange}
+          onAutoSave={handleAutoSave}
+          showDiffToggle={Boolean(path) && gitAvailable}
+          editorMode={editorMode}
+          diffText={diffText}
+          diffError={diffError}
+          originalContent={originalContent}
+          onModeChange={handleModeChange}
+        />
       ) : (
         <div className="code-viewer-container">
           {/* Mode dropdown for non-markdown files */}
