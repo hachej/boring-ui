@@ -213,6 +213,14 @@ class APIConfig:
     neon_auth_jwks_url: str | None = field(
         default_factory=lambda: os.environ.get('NEON_AUTH_JWKS_URL')
     )
+    # OAuth providers enabled in Neon Auth (e.g. ["google", "github"])
+    # Comma-separated env: AUTH_OAUTH_PROVIDERS=google,github
+    auth_oauth_providers: list[str] = field(
+        default_factory=lambda: [
+            p.strip() for p in os.environ.get('AUTH_OAUTH_PROVIDERS', '').split(',')
+            if p.strip()
+        ]
+    )
     settings_encryption_key: str | None = field(
         default_factory=lambda: os.environ.get('BORING_SETTINGS_KEY')
     )

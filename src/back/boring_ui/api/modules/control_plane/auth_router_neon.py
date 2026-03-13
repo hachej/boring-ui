@@ -682,6 +682,52 @@ _NEON_LOGIN_HTML_TEMPLATE: str = """\
       opacity: 0.65;
       cursor: not-allowed;
     }
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 18px 0;
+      color: var(--color-text-secondary);
+      font-size: 0.85rem;
+    }
+    .divider::before, .divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--color-border);
+    }
+    .oauth-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .oauth-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 10px;
+      padding: 11px 14px;
+      background: var(--color-bg-primary);
+      color: var(--color-text-primary);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background-color 120ms ease, border-color 120ms ease;
+    }
+    .oauth-btn:hover {
+      background: var(--color-bg-secondary);
+      border-color: var(--color-accent);
+    }
+    .oauth-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 4px var(--focus);
+    }
+    .oauth-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .oauth-hidden { display: none; }
     @keyframes enter {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
@@ -721,6 +767,19 @@ workspace.open(session.id)</pre>
           <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required>
           <button id="submit" class="submit" type="submit">Continue</button>
         </form>
+        <div id="oauth-section" class="oauth-hidden">
+          <div class="divider">or</div>
+          <div class="oauth-buttons">
+            <a id="oauth-google" class="oauth-btn oauth-hidden" href="#">
+              <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              Continue with Google
+            </a>
+            <a id="oauth-github" class="oauth-btn oauth-hidden" href="#">
+              <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+              Continue with GitHub
+            </a>
+          </div>
+        </div>
         <div id="status" class="status" aria-live="polite"></div>
         </div>
       </main>
@@ -870,8 +929,24 @@ workspace.open(session.id)</pre>
       }
     });
 
+    function setupOAuth() {
+      var providers = AUTH.oauthProviders || [];
+      if (!providers.length) return;
+      var sectionEl = document.getElementById("oauth-section");
+      sectionEl.classList.remove("oauth-hidden");
+      var redirectUri = AUTH.redirectUri || "/";
+      providers.forEach(function(p) {
+        var btn = document.getElementById("oauth-" + p);
+        if (btn) {
+          btn.classList.remove("oauth-hidden");
+          btn.href = "/auth/social/" + p + "?redirect_uri=" + encodeURIComponent(redirectUri);
+        }
+      });
+    }
+
     applyBranding();
     setMode(mode);
+    setupOAuth();
     });
   </script>
 </body>
@@ -1011,6 +1086,7 @@ def _render_neon_login_html(
         "appName": config.auth_app_name,
         "appDescription": config.auth_app_description,
         "railCode": config.auth_rail_code,
+        "oauthProviders": config.auth_oauth_providers or [],
     }
     cfg_json = json.dumps(cfg, separators=(",", ":"))
     html = _NEON_LOGIN_HTML_TEMPLATE.replace(_AUTH_CONFIG_PLACEHOLDER, cfg_json, 1)
@@ -1274,6 +1350,88 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
             email=email,
             redirect_uri=str(body.get("redirect_uri", "/")),
         )
+
+    @router.get("/social/{provider}")
+    async def auth_social_redirect(request: Request, provider: str):
+        """Initiate OAuth social sign-in via Neon Auth.
+
+        Redirects the browser to the OAuth provider (Google, GitHub, etc.)
+        via Neon Auth's ``/sign-in/social`` endpoint.
+        """
+        if not config.neon_auth_base_url:
+            return _error(
+                request,
+                status_code=500,
+                error="server_error",
+                code="NEON_AUTH_NOT_CONFIGURED",
+                message="NEON_AUTH_BASE_URL is not configured",
+            )
+
+        allowed_providers = {"google", "github", "discord"}
+        if provider not in allowed_providers:
+            return _error(
+                request,
+                status_code=400,
+                error="bad_request",
+                code="UNSUPPORTED_PROVIDER",
+                message=f"Unsupported OAuth provider: {provider}",
+            )
+
+        redirect_uri = _safe_redirect_path(request.query_params.get("redirect_uri"))
+        origin = _public_origin(request, config=config)
+        # Neon Auth requires a relative callbackURL + Origin header.
+        callback_path = f"/auth/callback?redirect_uri={quote(redirect_uri, safe='/')}"
+
+        neon_url = config.neon_auth_base_url.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{neon_url}/sign-in/social",
+                    json={
+                        "provider": provider,
+                        "callbackURL": callback_path,
+                    },
+                    headers={"Origin": origin},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    oauth_url = data.get("url")
+                    if oauth_url:
+                        return RedirectResponse(url=oauth_url, status_code=302)
+
+                # If Neon Auth returns the redirect as a 3xx, follow it
+                if resp.is_redirect:
+                    return RedirectResponse(
+                        url=str(resp.headers.get("location", "/")),
+                        status_code=302,
+                    )
+
+                _logger.warning(
+                    "Neon Auth social sign-in failed: status=%s body=%s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
+                error_data = {}
+                try:
+                    error_data = resp.json()
+                except Exception:
+                    pass
+                return _error(
+                    request,
+                    status_code=400,
+                    error="oauth_error",
+                    code=error_data.get("code", "SOCIAL_SIGNIN_FAILED"),
+                    message=error_data.get("error", f"Unable to start {provider} sign-in."),
+                )
+        except httpx.RequestError as exc:
+            _logger.exception("Neon Auth social sign-in request error")
+            return _error(
+                request,
+                status_code=502,
+                error="upstream_error",
+                code="NEON_AUTH_UNREACHABLE",
+                message="Unable to reach authentication service.",
+            )
 
     @router.get("/callback")
     async def auth_callback(request: Request):
