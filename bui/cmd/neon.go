@@ -64,7 +64,7 @@ func init() {
 	neonSetupCmd.Flags().StringVar(&neonRegion, "region", "aws-eu-central-1", "Neon region")
 	neonSetupCmd.Flags().StringVar(&neonProjectName, "name", "", "Project name (defaults to app name)")
 	neonSetupCmd.Flags().StringVar(&neonEnv, "env", "", "Override deploy environment (default from config)")
-	neonSetupCmd.Flags().StringVar(&neonEmailProvider, "email-provider", "", "Email provider for auth verification (resend, smtp, or none)")
+	neonSetupCmd.Flags().StringVar(&neonEmailProvider, "email-provider", "resend", "Email provider for auth verification (resend, smtp, or none)")
 	neonDestroyCmd.Flags().BoolVar(&neonDestroyForce, "force", false, "Skip confirmation prompt")
 	neonDestroyCmd.Flags().StringVar(&neonEnv, "env", "", "Override deploy environment (default from config)")
 	neonCmd.AddCommand(neonSetupCmd)
@@ -223,8 +223,9 @@ func runNeonSetup(cmd *cobra.Command, args []string) error {
 		configureEmailProvider(apiKey, projectID, neonEmailProvider, cfg.App.Name)
 	}
 
-	// 6. Generate session secret
+	// 6. Generate session secret + settings key
 	sessionSecret := generateRandomHex(32)
+	settingsKey := generateRandomHex(32)
 
 	// 7. Store credentials in Vault (per-app, per-env isolation)
 	vaultPath := cfg.AppVaultPath()
@@ -232,6 +233,7 @@ func runNeonSetup(cmd *cobra.Command, args []string) error {
 		"database_url":        poolerURL,
 		"database_direct_url": directURL,
 		"session_secret":      sessionSecret,
+		"settings_key":        settingsKey,
 		"neon_project_id":     projectID,
 		"neon_branch_id":      branchID,
 	}
@@ -458,15 +460,9 @@ func resetTomlNeonConfig(root string) error {
 	content = replaceTomlSection(content, "[deploy.neon]", `[deploy.neon]
 # Populated by 'bui neon setup'`)
 
-	// Reset [deploy.secrets] — keep non-Neon secrets
+	// Reset [deploy.secrets] — clear Neon-specific secrets
 	content = replaceTomlSection(content, "[deploy.secrets]", `[deploy.secrets]
-ANTHROPIC_API_KEY         = { vault = "secret/agent/anthropic", field = "api_key" }
-RESEND_API_KEY            = { vault = "secret/agent/services/resend", field = "api_key" }
-GITHUB_APP_ID             = { vault = "secret/agent/services/boring-ui-app", field = "app_id" }
-GITHUB_APP_CLIENT_ID      = { vault = "secret/agent/services/boring-ui-app", field = "client_id" }
-GITHUB_APP_CLIENT_SECRET  = { vault = "secret/agent/services/boring-ui-app", field = "client_secret" }
-GITHUB_APP_PRIVATE_KEY    = { vault = "secret/agent/services/boring-ui-app", field = "pem" }
-GITHUB_APP_SLUG           = { vault = "secret/agent/services/boring-ui-app", field = "slug" }`)
+# Populated by 'bui neon setup'`)
 
 	return os.WriteFile(tomlPath, []byte(content), 0o644)
 }
@@ -496,7 +492,7 @@ func configureEmailProvider(apiKey, projectID, provider, appName string) {
 			"port":         465,
 			"username":     "resend",
 			"password":     resendKey,
-			"sender_email": "noreply@boringdata.dev",
+			"sender_email": "auth@mail.boringdata.io",
 			"sender_name":  senderName,
 		})
 		if err != nil {
@@ -636,18 +632,21 @@ auth_url     = %q
 jwks_url     = %q`,
 		projectID, auth.BaseURL, auth.JWKSURL))
 
-	// Update [deploy.secrets] section — include DB URL and session secret from Vault
+	// Update [deploy.secrets] section — all secrets under app-specific vault path
 	content = replaceTomlSection(content, "[deploy.secrets]", fmt.Sprintf(`[deploy.secrets]
 DATABASE_URL              = { vault = %q, field = "database_url" }
 BORING_UI_SESSION_SECRET  = { vault = %q, field = "session_secret" }
-ANTHROPIC_API_KEY         = { vault = "secret/agent/anthropic", field = "api_key" }
-RESEND_API_KEY            = { vault = "secret/agent/services/resend", field = "api_key" }
-GITHUB_APP_ID             = { vault = "secret/agent/services/boring-ui-app", field = "app_id" }
-GITHUB_APP_CLIENT_ID      = { vault = "secret/agent/services/boring-ui-app", field = "client_id" }
-GITHUB_APP_CLIENT_SECRET  = { vault = "secret/agent/services/boring-ui-app", field = "client_secret" }
-GITHUB_APP_PRIVATE_KEY    = { vault = "secret/agent/services/boring-ui-app", field = "pem" }
-GITHUB_APP_SLUG           = { vault = "secret/agent/services/boring-ui-app", field = "slug" }`,
-		appVaultPath, appVaultPath))
+BORING_SETTINGS_KEY       = { vault = %q, field = "settings_key" }
+ANTHROPIC_API_KEY         = { vault = %q, field = "anthropic_api_key" }
+RESEND_API_KEY            = { vault = %q, field = "resend_api_key" }
+GITHUB_APP_ID             = { vault = %q, field = "github_app_id" }
+GITHUB_APP_CLIENT_ID      = { vault = %q, field = "github_client_id" }
+GITHUB_APP_CLIENT_SECRET  = { vault = %q, field = "github_client_secret" }
+GITHUB_APP_PRIVATE_KEY    = { vault = %q, field = "github_private_key" }
+GITHUB_APP_SLUG           = { vault = %q, field = "github_slug" }`,
+		appVaultPath, appVaultPath, appVaultPath,
+		appVaultPath, appVaultPath,
+		appVaultPath, appVaultPath, appVaultPath, appVaultPath, appVaultPath))
 
 	return os.WriteFile(tomlPath, []byte(content), 0o644)
 }
