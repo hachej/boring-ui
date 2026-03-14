@@ -327,6 +327,18 @@ async def _neon_password_auth(
                 )
 
     if not complete_session:
+        # Auto-send verification email — Better Auth doesn't send on signup.
+        signup_email = payload.get("email", "")
+        if signup_email and neon_base:
+            # Origin must match Neon Auth's own origin, not the app's origin.
+            parsed_neon = urlparse(neon_base)
+            neon_origin = f"{parsed_neon.scheme}://{parsed_neon.netloc}"
+            await _auto_send_verification_email(
+                neon_base=neon_base,
+                email=signup_email,
+                origin=neon_origin,
+            )
+
         return JSONResponse(
             status_code=200,
             content={
@@ -401,7 +413,9 @@ async def _send_neon_verification_email(
         config=config,
         redirect_uri=_safe_redirect_path(redirect_uri),
     )
-    origin = _public_origin(request, config=config)
+    # Origin must match Neon Auth's own origin, not the app's origin.
+    parsed_neon = urlparse(neon_base)
+    origin = f"{parsed_neon.scheme}://{parsed_neon.netloc}"
 
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
@@ -454,6 +468,37 @@ async def _send_neon_verification_email(
             "redirect_uri": _safe_redirect_path(redirect_uri),
         },
     )
+
+
+async def _auto_send_verification_email(
+    *,
+    neon_base: str,
+    email: str,
+    origin: str,
+) -> None:
+    """Best-effort send of verification email after signup."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.post(
+                f"{neon_base}/send-verification-email",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": origin,
+                },
+                json={
+                    "email": email,
+                },
+            )
+            if resp.status_code not in {200, 201}:
+                _logger.warning(
+                    "Auto-send verification email failed (%s): %s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
+            else:
+                _logger.info("Verification email auto-sent to %s", email)
+    except Exception:
+        _logger.warning("Auto-send verification email error for %s", email, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
