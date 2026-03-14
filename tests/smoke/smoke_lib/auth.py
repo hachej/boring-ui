@@ -284,7 +284,8 @@ def neon_signup_flow(
     Returns the JWT used for token exchange.
     """
     client.set_phase("neon-signup")
-    origin = client.base_url
+    parsed = urlparse(neon_auth_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
     print(f"[smoke] Neon signup {email}...")
 
     resp = neon_signup(
@@ -333,7 +334,8 @@ def neon_signup_verify_flow(
     """
     client.set_phase("neon-signup")
     sent_after = time.time()
-    origin = client.base_url.rstrip("/")
+    parsed = urlparse(neon_auth_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
     print(f"[smoke] Neon signup via app {email}...")
 
     signup_resp = client.post(
@@ -427,7 +429,9 @@ def neon_signin_flow(
     Returns the session payload from /auth/session.
     """
     client.set_phase("neon-signin")
-    origin = client.base_url
+    # Origin must match Neon Auth's own origin, not the app origin
+    parsed = urlparse(neon_auth_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
     print(f"[smoke] Neon signin {email}...")
 
     resp = neon_signin(

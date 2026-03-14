@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Settings smoke test — exercises user + workspace settings against local backend.
-
-Runs without Supabase: uses dev-login (auth_dev_login_enabled=True).
+"""Settings smoke test — exercises user + workspace settings.
 
 Usage:
-    python tests/smoke/smoke_settings.py [--base-url http://localhost:8000]
+    python tests/smoke/smoke_settings.py --base-url http://localhost:8000 --auth-mode dev
+    python tests/smoke/smoke_settings.py --base-url https://... --auth-mode neon --skip-signup --email ... --password ...
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from smoke_lib.client import SmokeClient
+from smoke_lib.session_bootstrap import ensure_session
 from smoke_lib.settings import (
     get_user_settings,
     update_user_settings,
@@ -27,33 +27,37 @@ from smoke_lib.settings import (
     rename_workspace,
     verify_workspace_name,
 )
-from smoke_lib.client import StepResult
 from smoke_lib.workspace import list_workspaces
-
-
-def dev_login(client: SmokeClient, *, user_id: str, email: str) -> None:
-    """Dev-mode login (no Supabase required)."""
-    client.set_phase("dev-login")
-    print(f"[smoke] Dev login as {email}...")
-    resp = client.get(
-        f"/auth/login?user_id={user_id}&email={email}&redirect_uri=/",
-        expect_status=(200, 302),
-    )
-    if resp.status_code not in (200, 302):
-        raise RuntimeError(f"Dev login failed: {resp.status_code}")
-    print("[smoke] Logged in OK")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument("--auth-mode", choices=["neon", "supabase", "dev"], default="dev")
+    parser.add_argument("--neon-auth-url", default="")
+    parser.add_argument("--skip-signup", action="store_true")
+    parser.add_argument("--email")
+    parser.add_argument("--password")
+    parser.add_argument("--recipient")
+    parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--evidence-out", default="")
     args = parser.parse_args()
 
     client = SmokeClient(args.base_url)
     ts = int(time.time())
 
-    # --- Phase 1: Dev login ---
-    dev_login(client, user_id=f"smoke-settings-{ts}", email=f"smoke-{ts}@test.local")
+    # --- Phase 1: Auth ---
+    ensure_session(
+        client,
+        auth_mode=args.auth_mode,
+        base_url=args.base_url,
+        neon_auth_url=args.neon_auth_url,
+        email=args.email,
+        password=args.password,
+        recipient=args.recipient,
+        skip_signup=args.skip_signup,
+        timeout_seconds=args.timeout,
+    )
 
     # --- Phase 2: User settings — read initial (empty) ---
     initial = get_user_settings(client)
@@ -66,7 +70,6 @@ def main() -> int:
     verify_user_settings(client, expected_display_name=f"Smoke User {ts}")
 
     # --- Phase 5: Create workspace ---
-    # Local mode returns 200, edge mode returns 201
     ws_name = f"smoke-settings-ws-{ts}"
     client.set_phase("create-workspace")
     print(f"[smoke] Creating workspace '{ws_name}'...")
@@ -88,22 +91,27 @@ def main() -> int:
     assert isinstance(ws_settings.get("settings"), dict), "Expected settings dict"
 
     # --- Phase 8: Workspace settings — update ---
-    update_workspace_settings(client, workspace_id, settings={
+    update_resp = update_workspace_settings(client, workspace_id, settings={
         "theme": "dark",
         "smoke_ts": str(ts),
     })
+    # Write response returns decrypted values
+    write_settings = update_resp.get("settings", {})
+    assert write_settings.get("theme") == "dark", f"Write response theme mismatch: {write_settings.get('theme')}"
+    assert write_settings.get("smoke_ts") == str(ts), f"Write response smoke_ts mismatch"
+    print("[smoke] Workspace settings write response OK")
 
     # --- Phase 9: Workspace settings — verify read-back ---
+    # GET returns metadata (configured + updated_at), not decrypted values
     ws_readback = get_workspace_settings(client, workspace_id)
     settings = ws_readback.get("settings", {})
-    assert settings.get("theme") == "dark", f"Expected theme=dark, got {settings.get('theme')}"
-    assert settings.get("smoke_ts") == str(ts), f"Expected smoke_ts={ts}"
-    print("[smoke] Workspace settings verification OK")
+    assert "theme" in settings, f"Expected 'theme' key in settings, got {list(settings.keys())}"
+    assert "smoke_ts" in settings, f"Expected 'smoke_ts' key in settings"
+    print("[smoke] Workspace settings read-back OK (keys present)")
 
     # --- Phase 10: Workspace settings — overwrite ---
-    update_workspace_settings(client, workspace_id, settings={"theme": "light"})
-    ws_readback2 = get_workspace_settings(client, workspace_id)
-    assert ws_readback2.get("settings", {}).get("theme") == "light"
+    overwrite_resp = update_workspace_settings(client, workspace_id, settings={"theme": "light"})
+    assert overwrite_resp.get("settings", {}).get("theme") == "light", "Overwrite response mismatch"
     print("[smoke] Workspace settings overwrite OK")
 
     # --- Phase 11: Workspace switch — create second workspace ---
@@ -138,20 +146,28 @@ def main() -> int:
     })
 
     # --- Phase 14: Workspace switch — verify settings isolation ---
+    # GET returns metadata (configured + updated_at), so verify key presence/absence
     client.set_phase("switch-isolation-verify")
     print("[smoke] Verifying workspace settings isolation after switch...")
     ws_a_settings = get_workspace_settings(client, workspace_id)
     ws_b_settings = get_workspace_settings(client, workspace_id_b)
-    assert ws_a_settings.get("settings", {}).get("theme") == "light", \
-        f"WS-A theme changed unexpectedly: {ws_a_settings.get('settings', {}).get('theme')}"
-    assert ws_b_settings.get("settings", {}).get("theme") == "dark", \
-        f"WS-B theme mismatch: {ws_b_settings.get('settings', {}).get('theme')}"
-    assert ws_b_settings.get("settings", {}).get("project") == "beta", \
-        f"WS-B project mismatch: {ws_b_settings.get('settings', {}).get('project')}"
+    a_keys = set(ws_a_settings.get("settings", {}).keys())
+    b_keys = set(ws_b_settings.get("settings", {}).keys())
+    assert "theme" in a_keys, f"WS-A missing 'theme': {a_keys}"
+    assert "theme" in b_keys, f"WS-B missing 'theme': {b_keys}"
+    assert "project" in b_keys, f"WS-B missing 'project': {b_keys}"
+    assert "project" not in a_keys, f"WS-A has unexpected 'project': {a_keys}"
     print("[smoke] Workspace switch settings isolation OK")
 
     # --- Report ---
     report = client.report()
+    if args.evidence_out:
+        client.write_report(args.evidence_out, extra={
+            "suite": "settings",
+            "base_url": args.base_url,
+            "auth_mode": args.auth_mode,
+        })
+
     print(json.dumps(report, indent=2))
 
     if report["ok"]:
