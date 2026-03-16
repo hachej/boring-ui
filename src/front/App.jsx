@@ -4893,7 +4893,7 @@ export default function App() {
               <UserIdentityProvider value={userIdentity}>
                 <CapabilitiesStatusContext.Provider value={{ pending: capabilitiesPending }}>
                   <CapabilitiesContext.Provider value={capabilities}>
-                    {capabilitiesPending ? (
+                    {(capabilitiesPending || !userIdentityAuthResolved) ? (
                       <WorkspaceLoading />
                     ) : (
                       <div data-testid="dockview" className="dockview-host">
