@@ -99,16 +99,27 @@ def ensure_session(
                     redirect_uri=redirect_uri,
                 )
             except RuntimeError:
-                # Fallback for OTP-based Neon Auth (no verification link)
-                neon_signup_then_signin(
-                    client,
-                    neon_auth_url=resolved_neon_url,
-                    resend_api_key=resend_api_key(),
-                    email=account_email,
-                    password=account_password,
-                    timeout_seconds=timeout_seconds,
-                    redirect_uri=redirect_uri,
-                )
+                # Signup likely succeeded but verification timed out.
+                # Try sign-in directly first (works without email verification),
+                # then fall back to full signup+signin if sign-in fails.
+                try:
+                    neon_signin_flow(
+                        client,
+                        neon_auth_url=resolved_neon_url,
+                        email=account_email,
+                        password=account_password,
+                        redirect_uri=redirect_uri,
+                    )
+                except RuntimeError:
+                    neon_signup_then_signin(
+                        client,
+                        neon_auth_url=resolved_neon_url,
+                        resend_api_key=resend_api_key(),
+                        email=account_email,
+                        password=account_password,
+                        timeout_seconds=timeout_seconds,
+                        redirect_uri=redirect_uri,
+                    )
         return {
             "auth_mode": mode,
             "email": account_email,
