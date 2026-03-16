@@ -194,7 +194,7 @@ def main() -> int:
         if has_files and not args.skip_files:
             # File tree
             client.set_phase("file-tree")
-            resp = client.get("/api/v1/files/tree", expect_status=(200,))
+            resp = client.get("/api/v1/files/list", params={"path": "."}, expect_status=(200,))
             if resp.status_code == 200:
                 try:
                     tree = resp.json()
@@ -205,13 +205,14 @@ def main() -> int:
             else:
                 print(f"[{app}] File tree: {resp.status_code}")
 
-            # Create file
+            # Create file (PUT with path as query param, content in body)
             client.set_phase("file-create")
             test_path = f"smoke-{app}-{ts}.txt"
             test_content = f"Smoke test for {app} at {ts}"
-            resp = client.post(
+            resp = client.put(
                 "/api/v1/files/write",
-                json={"path": test_path, "content": test_content},
+                params={"path": test_path},
+                json={"content": test_content},
                 expect_status=(200,),
             )
             if resp.status_code == 200:
@@ -237,16 +238,16 @@ def main() -> int:
                     print(f"[{app}] File read-back OK")
                 else:
                     print(f"[{app}] File read-back content mismatch")
-                    client._record("GET", f"/api/v1/files/read [content]",
+                    client._record("GET", "/api/v1/files/read [content]",
                                    resp, False, 0.0, "content mismatch")
             else:
                 print(f"[{app}] File read FAIL: {resp.status_code}")
 
-            # Delete file
+            # Delete file (DELETE with path as query param)
             client.set_phase("file-delete")
-            resp = client.post(
+            resp = client.delete(
                 "/api/v1/files/delete",
-                json={"path": test_path},
+                params={"path": test_path},
                 expect_status=(200,),
             )
             if resp.status_code == 200:

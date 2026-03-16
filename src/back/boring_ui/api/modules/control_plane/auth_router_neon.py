@@ -298,18 +298,15 @@ async def _neon_password_auth(
                 message = _parse_neon_error_message(auth_body, upstream_error_message)
                 status_code = auth_response.status_code if 400 <= auth_response.status_code < 500 else 502
                 _logger.warning(
-                    "Neon auth %s failed: status=%d origin=%s url=%s payload_keys=%s body=%s",
-                    endpoint_path, auth_response.status_code, neon_origin,
-                    url, list(upstream_payload.keys()), auth_body,
+                    "Neon auth %s failed: status=%d body=%s",
+                    endpoint_path, auth_response.status_code, auth_body,
                 )
-                # Include upstream details for diagnostics
-                debug_detail = f"{message} [upstream={auth_response.status_code} url={url} origin={neon_origin} keys={list(upstream_payload.keys())}]"
                 return _error(
                     request,
                     status_code=status_code,
                     error="auth_failed",
                     code="NEON_AUTH_REJECTED",
-                    message=debug_detail,
+                    message=message,
                 )
 
             access_token = ""
