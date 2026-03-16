@@ -84,10 +84,10 @@ def _base_image() -> modal.Image:
             f"git config --global user.email 'workspace@{_app_id}.app'",
             f"git config --global user.name '{_app_id}'",
         )
-        .pip_install(
-            f"boring-ui @ git+https://{_fw_repo}.git@{_fw_commit}",
-            *_extra_deps,
-            force_build=_fw_commit != "main",  # bust cache on commit change
+        .run_commands(
+            f"pip install --no-cache-dir 'boring-ui @ git+https://{_fw_repo}.git@{_fw_commit}'",
+            *(f"pip install --no-cache-dir '{dep}'" for dep in _extra_deps) if _extra_deps else [],
+            force_build=True,
         )
     )
 
