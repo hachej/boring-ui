@@ -35,7 +35,7 @@ Common flags:
 
 | Script | Surface | Typical use |
 |---|---|---|
-| `smoke_neon_auth.py` | Neon signup, verify-email, sign-in, session, `/api/v1/me`, logout | auth changes, Neon deploy validation |
+| `smoke_neon_auth.py` | 19-phase auth suite: signup, email delivery, signin, session, identity, workspace, logout, re-signin, wrong password, invalid/missing token, input validation, forged cookie, auth guard, duplicate signup, page rendering | auth changes, Neon deploy validation |
 | `smoke_supabase_resend_signup.py` | Supabase signup + email verification | legacy auth validation |
 | `smoke_workspace_lifecycle.py` | auth -> workspace create/list/setup/runtime/root/rename | control-plane and workspace routing |
 | `smoke_settings.py` | user settings + workspace settings persistence | settings pages and persistence |
@@ -84,6 +84,44 @@ python3 tests/smoke/smoke_core_mode.py --base-url https://<app-url>
 ```
 
 ## Focused Scripts
+
+### Neon Auth (smoke_neon_auth.py)
+
+Systematic 19-phase auth test covering positive flows, negative validation, and security:
+
+| Phase | Test | What it proves |
+|-------|------|----------------|
+| 1 | Signup + Email | Account creation, verification email delivery |
+| 2 | Signin | Password auth → JWT → token exchange → session cookie |
+| 3 | Session Check | Cookie validity, user data in session |
+| 4 | Identity | `/api/v1/me` resolves correct user |
+| 5 | Workspace | Session gates API access |
+| 6 | Logout | Cookie cleared, 401 after logout |
+| 7 | Re-Signin | Session round-trip after logout |
+| 8 | Wrong Password | 401 rejection |
+| 9 | Invalid Token | Garbage JWT rejected at token-exchange |
+| 10 | Missing Token | 400 for empty token-exchange |
+| 11 | Signup Validation | No email, no password, empty body, invalid JSON |
+| 12 | Signin Validation | No email, no password |
+| 13 | Resend Validation | No email, invalid JSON |
+| 14 | No-Cookie Session | 401 SESSION_REQUIRED |
+| 15 | Forged Cookie | 401 SESSION_INVALID |
+| 16 | API Auth Guard | `/api/v1/me` and `/api/v1/workspaces` require auth |
+| 17 | Duplicate Signup | Same email rejected |
+| 18 | Login Page | HTML renders |
+| 19 | Signup Page | HTML renders |
+
+Supports both link-based and OTP-based Neon Auth configurations.
+With `--skip-signup`, skips phase 1 and runs phases 2-19 against an existing account.
+
+```bash
+# Full suite with signup (requires Resend API key in Vault)
+python3 tests/smoke/smoke_neon_auth.py --base-url https://<app-url>
+
+# Skip signup, use existing account
+python3 tests/smoke/smoke_neon_auth.py --base-url https://<app-url> \
+  --skip-signup --email user@test.com --password Pass123
+```
 
 ### Workspace lifecycle
 
