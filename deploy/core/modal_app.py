@@ -58,7 +58,7 @@ _min_containers = _modal_cfg.get("min_containers", 0)
 _pythonpath = _backend_cfg.get("pythonpath", [])
 _extra_deps = _backend_cfg.get("dependencies", [])
 _boot_module = _deploy_cfg.get("boot_module", "")
-_entry = _backend_cfg.get("entry", "")  # e.g. "backend.app:app"
+_entry = _backend_cfg.get("entry", "")  # e.g. "backend.runtime:app"
 
 # ---------------------------------------------------------------------------
 # Modal app
@@ -121,6 +121,7 @@ _env = {
     "BORING_UI_WORKSPACE_ROOT": f"/tmp/{_app_id}-workspace",
     "AUTH_APP_NAME": _app_cfg.get("name", _app_id),
     "BUI_DEPLOY_TS": os.environ.get("BUI_DEPLOY_TS", "0"),
+    **({"BUI_APP_ENTRY": _entry} if _entry else {}),
 }
 
 # App-specific static env vars from [deploy.env_vars]
@@ -171,12 +172,12 @@ def web():
             mod.boot()
 
     # Use child app entry point if configured, else boring-ui default
-    if _entry:
+    entry = os.environ.get("BUI_APP_ENTRY", "")
+    if entry:
         import importlib
-        module_path, _, attr = _entry.partition(":")
+        module_path, _, attr = entry.partition(":")
         mod = importlib.import_module(module_path)
-        child_app = getattr(mod, attr or "app")
-        return child_app
+        return getattr(mod, attr or "app")
 
     from boring_ui.runtime import app as runtime_app
     return runtime_app
