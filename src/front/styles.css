@@ -5758,6 +5758,22 @@ kbd {
   gap: var(--space-3);
 }
 
+.settings-provider-key {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settings-provider-key-status {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.settings-provider-key-note {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
 .settings-save-message {
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
