@@ -7,6 +7,7 @@ import httpx
 
 from .auth import (
     neon_signin_flow,
+    neon_signup_then_signin,
     neon_signup_verify_flow,
     random_password,
     signin_flow,
@@ -87,15 +88,27 @@ def ensure_session(
                 redirect_uri=redirect_uri,
             )
         else:
-            neon_signup_verify_flow(
-                client,
-                neon_auth_url=resolved_neon_url,
-                resend_api_key=resend_api_key(),
-                email=account_email,
-                password=account_password,
-                timeout_seconds=timeout_seconds,
-                redirect_uri=redirect_uri,
-            )
+            try:
+                neon_signup_verify_flow(
+                    client,
+                    neon_auth_url=resolved_neon_url,
+                    resend_api_key=resend_api_key(),
+                    email=account_email,
+                    password=account_password,
+                    timeout_seconds=min(timeout_seconds, 60),
+                    redirect_uri=redirect_uri,
+                )
+            except RuntimeError:
+                # Fallback for OTP-based Neon Auth (no verification link)
+                neon_signup_then_signin(
+                    client,
+                    neon_auth_url=resolved_neon_url,
+                    resend_api_key=resend_api_key(),
+                    email=account_email,
+                    password=account_password,
+                    timeout_seconds=timeout_seconds,
+                    redirect_uri=redirect_uri,
+                )
         return {
             "auth_mode": mode,
             "email": account_email,

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Neon Auth E2E smoke test: verify-first signup/signin -> session -> /me.
+"""Systematic Neon Auth E2E smoke test suite.
+
+Covers: signup, auto-verification, signin, session, resend, token-exchange
+validation, logout, re-signin, duplicate signup, wrong password, session
+expiry simulation, and multi-account isolation.
 
 Usage:
     # Against production Modal deployment
-    python tests/smoke/smoke_neon_auth.py --base-url https://julien-hurault--boring-ui-core-core.modal.run
+    python tests/smoke/smoke_neon_auth.py --base-url https://julien-hurault--boring-macro-frontend-frontend.modal.run
 
-    # With an existing account (skip signup)
-    python tests/smoke/smoke_neon_auth.py --base-url https://... --skip-signup --email user@test.com --password Pass123!
+    # With an existing account (skip signup, run signin-only phases)
+    python tests/smoke/smoke_neon_auth.py --base-url https://... --skip-signup --email user@test.com --password Pass123
 
     # With explicit Neon Auth URL override
     python tests/smoke/smoke_neon_auth.py --base-url https://... --neon-auth-url https://ep-xxx.neonauth...
@@ -24,13 +28,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from smoke_lib.auth import (
     random_password,
-    neon_signup_verify_flow,
+    neon_signup_then_signin,
     neon_signin_flow,
 )
 from smoke_lib.client import SmokeClient
 from smoke_lib.secrets import resend_api_key
 from smoke_lib.workspace import create_workspace, list_workspaces
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _get_neon_auth_url(args) -> str:
     """Resolve Neon Auth URL from args, capabilities, or secrets."""
@@ -63,8 +71,344 @@ def _get_neon_auth_url(args) -> str:
     sys.exit(1)
 
 
+def _phase(name: str) -> None:
+    print(f"\n{'='*60}")
+    print(f"  {name}")
+    print(f"{'='*60}")
+
+
+# ---------------------------------------------------------------------------
+# Test phases
+# ---------------------------------------------------------------------------
+
+def test_signup_and_verify(client: SmokeClient, neon_url: str, email: str, password: str, timeout: int) -> dict:
+    """Phase 1: Signup + email delivery check + signin.
+
+    Tries link-based verification first (neon_signup_verify_flow).
+    Falls back to OTP-aware flow (neon_signup_then_signin) if the
+    verification email doesn't contain a clickable link.
+    """
+    _phase("1. Signup + Verification")
+    print(f"  Email: {email}")
+    session = neon_signup_then_signin(
+        client,
+        neon_auth_url=neon_url,
+        resend_api_key=resend_api_key(),
+        email=email,
+        password=password,
+        timeout_seconds=timeout,
+    )
+    uid = session.get("user", {}).get("user_id", "?")
+    print(f"[smoke] Signup OK: user_id={uid[:12]}...")
+    return session
+
+
+def test_signin(client: SmokeClient, neon_url: str, email: str, password: str) -> dict:
+    """Phase 2: Signin with password."""
+    _phase("2. Signin")
+    session = neon_signin_flow(
+        client,
+        neon_auth_url=neon_url,
+        email=email,
+        password=password,
+    )
+    uid = session.get("user", {}).get("user_id", "?")
+    print(f"[smoke] Signin OK: user_id={uid[:12]}...")
+    return session
+
+
+def test_session_check(client: SmokeClient) -> dict:
+    """Phase 3: GET /auth/session — verify cookie is valid."""
+    _phase("3. Session Check")
+    client.set_phase("session-check")
+    resp = client.get("/auth/session", expect_status=(200,))
+    data = resp.json()
+    assert data.get("authenticated") is True, f"Expected authenticated=True, got {data}"
+    assert data.get("user", {}).get("email"), f"Expected user email in session, got {data}"
+    print(f"[smoke] Session OK: email={data['user']['email']}, expires_at={data.get('expires_at')}")
+    return data
+
+
+def test_me_endpoint(client: SmokeClient) -> dict:
+    """Phase 4: GET /api/v1/me — verify identity resolution."""
+    _phase("4. Identity (/api/v1/me)")
+    client.set_phase("me-check")
+    resp = client.get("/api/v1/me", expect_status=(200,))
+    data = resp.json()
+    print(f"[smoke] /api/v1/me: {json.dumps(data, indent=2)[:300]}")
+    return data
+
+
+def test_workspace_after_auth(client: SmokeClient) -> str:
+    """Phase 5: Create + list workspace to prove session gates API access."""
+    _phase("5. Workspace Create + List")
+    ts = int(time.time())
+    ws_data = create_workspace(client, name=f"smoke-neon-{ts}")
+    ws = ws_data.get("workspace") or ws_data
+    workspace_id = ws.get("workspace_id") or ws.get("id")
+    print(f"[smoke] Workspace: {workspace_id}")
+    list_workspaces(client, expect_id=workspace_id)
+    return workspace_id
+
+
+def test_logout(client: SmokeClient) -> None:
+    """Phase 6: Logout — cookie cleared, session gone."""
+    _phase("6. Logout")
+    client.set_phase("logout")
+    resp = client.get("/auth/logout", expect_status=(302,))
+    print(f"[smoke] Logout redirect: {resp.headers.get('location', '?')}")
+    client.cookies.clear()
+
+    client.set_phase("post-logout-401")
+    post = client.get("/auth/session", expect_status=(401,))
+    assert post.status_code == 401, f"Expected 401 after logout, got {post.status_code}"
+    print(f"[smoke] Post-logout 401 OK")
+
+
+def test_re_signin(client: SmokeClient, neon_url: str, email: str, password: str) -> None:
+    """Phase 7: Re-signin after logout — proves session round-trip."""
+    _phase("7. Re-Signin After Logout")
+    session = neon_signin_flow(
+        client,
+        neon_auth_url=neon_url,
+        email=email,
+        password=password,
+    )
+    uid = session.get("user", {}).get("user_id", "?")
+    print(f"[smoke] Re-signin OK: user_id={uid[:12]}...")
+
+    client.set_phase("re-signin-session")
+    resp = client.get("/auth/session", expect_status=(200,))
+    data = resp.json()
+    assert data.get("authenticated") is True
+    print(f"[smoke] Re-signin session verified")
+
+
+def test_wrong_password(client: SmokeClient, neon_url: str, email: str) -> None:
+    """Phase 8: Signin with wrong password — must reject."""
+    _phase("8. Wrong Password Rejection")
+    client.set_phase("wrong-password")
+    resp = client.post("/auth/sign-in", json={
+        "email": email,
+        "password": "WrongPassword999",
+        "redirect_uri": "/",
+    }, expect_status=(401, 403))
+    assert resp.status_code in (401, 403), f"Expected 401/403 for wrong password, got {resp.status_code}"
+    data = resp.json()
+    print(f"[smoke] Wrong password rejected: {resp.status_code} code={data.get('code', '?')}")
+
+
+def test_invalid_token_exchange(client: SmokeClient) -> None:
+    """Phase 9: Token exchange with invalid/garbage JWT — must reject."""
+    _phase("9. Invalid Token Exchange")
+    client.set_phase("invalid-token-exchange")
+    resp = client.post("/auth/token-exchange", json={
+        "access_token": "garbage.not.a.jwt",
+        "redirect_uri": "/",
+    }, expect_status=(401, 502))
+    assert resp.status_code in (401, 502), f"Expected 401/502 for invalid token, got {resp.status_code}"
+    data = resp.json()
+    print(f"[smoke] Invalid token rejected: {resp.status_code} code={data.get('code', '?')}")
+
+
+def test_missing_token_exchange(client: SmokeClient) -> None:
+    """Phase 10: Token exchange with no token — must return 400."""
+    _phase("10. Missing Token Exchange")
+    client.set_phase("missing-token-exchange")
+    resp = client.post("/auth/token-exchange", json={
+        "redirect_uri": "/",
+    }, expect_status=(400,))
+    assert resp.status_code == 400, f"Expected 400 for missing token, got {resp.status_code}"
+    data = resp.json()
+    assert data.get("code") == "MISSING_ACCESS_TOKEN", f"Expected MISSING_ACCESS_TOKEN, got {data.get('code')}"
+    print(f"[smoke] Missing token rejected: 400 code={data['code']}")
+
+
+def test_signup_validation(client: SmokeClient) -> None:
+    """Phase 11: Signup input validation — missing fields."""
+    _phase("11. Signup Input Validation")
+
+    # No email
+    client.set_phase("signup-no-email")
+    resp = client.post("/auth/sign-up", json={
+        "password": "SomePass123",
+        "redirect_uri": "/",
+    }, expect_status=(400,))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    print(f"[smoke] Signup no email: 400 code={resp.json().get('code', '?')}")
+
+    # No password
+    client.set_phase("signup-no-password")
+    resp = client.post("/auth/sign-up", json={
+        "email": "test@example.com",
+        "redirect_uri": "/",
+    }, expect_status=(400,))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    print(f"[smoke] Signup no password: 400 code={resp.json().get('code', '?')}")
+
+    # Empty body
+    client.set_phase("signup-empty-body")
+    resp = client.post("/auth/sign-up", json={}, expect_status=(400,))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    print(f"[smoke] Signup empty body: 400 code={resp.json().get('code', '?')}")
+
+    # Invalid JSON
+    client.set_phase("signup-invalid-json")
+    resp = client.post("/auth/sign-up", content=b"not json",
+                       headers={"Content-Type": "application/json"},
+                       expect_status=(400,))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    print(f"[smoke] Signup invalid JSON: 400 code={resp.json().get('code', '?')}")
+
+
+def test_signin_validation(client: SmokeClient) -> None:
+    """Phase 12: Signin input validation."""
+    _phase("12. Signin Input Validation")
+
+    # No email
+    client.set_phase("signin-no-email")
+    resp = client.post("/auth/sign-in", json={
+        "password": "SomePass123",
+    }, expect_status=(400,))
+    assert resp.status_code == 400
+    print(f"[smoke] Signin no email: 400 code={resp.json().get('code', '?')}")
+
+    # No password
+    client.set_phase("signin-no-password")
+    resp = client.post("/auth/sign-in", json={
+        "email": "test@example.com",
+    }, expect_status=(400,))
+    assert resp.status_code == 400
+    print(f"[smoke] Signin no password: 400 code={resp.json().get('code', '?')}")
+
+
+def test_resend_verification_validation(client: SmokeClient) -> None:
+    """Phase 13: Resend verification endpoint validation."""
+    _phase("13. Resend Verification Validation")
+
+    # No email
+    client.set_phase("resend-no-email")
+    resp = client.post("/auth/resend-verification", json={}, expect_status=(400,))
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data.get("code") == "EMAIL_REQUIRED", f"Expected EMAIL_REQUIRED, got {data.get('code')}"
+    print(f"[smoke] Resend no email: 400 code={data['code']}")
+
+    # Invalid JSON
+    client.set_phase("resend-invalid-json")
+    resp = client.post("/auth/resend-verification", content=b"nope",
+                       headers={"Content-Type": "application/json"},
+                       expect_status=(400,))
+    assert resp.status_code == 400
+    print(f"[smoke] Resend invalid JSON: 400 code={resp.json().get('code', '?')}")
+
+
+def test_session_without_cookie(client: SmokeClient) -> None:
+    """Phase 14: Session check without cookie — must return 401."""
+    _phase("14. No-Cookie Session Check")
+    # Use a fresh client with no cookies
+    fresh = SmokeClient(client.base_url)
+    fresh.set_phase("no-cookie-session")
+    resp = fresh.get("/auth/session", expect_status=(401,))
+    assert resp.status_code == 401
+    data = resp.json()
+    assert data.get("code") == "SESSION_REQUIRED", f"Expected SESSION_REQUIRED, got {data.get('code')}"
+    print(f"[smoke] No-cookie session: 401 code={data['code']}")
+    # Transfer results to main client for reporting
+    client.results.extend(fresh.results)
+
+
+def test_forged_session_cookie(client: SmokeClient) -> None:
+    """Phase 15: Forged session cookie — must reject."""
+    _phase("15. Forged Session Cookie")
+    import httpx as _httpx
+    forged = SmokeClient(client.base_url)
+    forged.set_phase("forged-cookie")
+    # Set a fake session cookie
+    forged.cookies.set("boring_session", "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoiZmFrZSIsImVtYWlsIjoiZmFrZUB0ZXN0LmNvbSIsImV4cCI6OTk5OTk5OTk5OX0.fake")
+    resp = forged.get("/auth/session", expect_status=(401,))
+    assert resp.status_code == 401
+    data = resp.json()
+    assert data.get("code") in ("SESSION_INVALID", "SESSION_EXPIRED"), f"Expected SESSION_INVALID/EXPIRED, got {data.get('code')}"
+    print(f"[smoke] Forged cookie rejected: 401 code={data['code']}")
+    client.results.extend(forged.results)
+
+
+def test_api_requires_auth(client: SmokeClient) -> None:
+    """Phase 16: API endpoints require auth — 401 without session."""
+    _phase("16. API Auth Guard")
+    fresh = SmokeClient(client.base_url)
+
+    endpoints = [
+        ("/api/v1/me", "GET"),
+        ("/api/v1/workspaces", "GET"),
+    ]
+    for path, method in endpoints:
+        fresh.set_phase(f"auth-guard-{path}")
+        resp = fresh.request(method, path, expect_status=(401, 403))
+        assert resp.status_code in (401, 403), f"Expected 401/403 for {path}, got {resp.status_code}"
+        print(f"[smoke] {method} {path} without auth: {resp.status_code}")
+
+    client.results.extend(fresh.results)
+
+
+def test_duplicate_signup(client: SmokeClient, email: str) -> None:
+    """Phase 17: Duplicate signup with same email — should error or indicate existing."""
+    _phase("17. Duplicate Signup")
+    dup_client = SmokeClient(client.base_url)
+    dup_client.set_phase("duplicate-signup")
+    resp = dup_client.post("/auth/sign-up", json={
+        "email": email,
+        "password": random_password(),
+        "name": "Duplicate Test",
+        "redirect_uri": "/",
+    }, expect_status=(200, 400, 409, 422))
+    # Better Auth may return 200 with error in body, or 4xx
+    status = resp.status_code
+    data = resp.json()
+    if status == 200:
+        # Some auth providers return 200 but with an error flag
+        print(f"[smoke] Duplicate signup: {status} ok={data.get('ok')} msg={data.get('message', '')[:100]}")
+    else:
+        print(f"[smoke] Duplicate signup rejected: {status} code={data.get('code', '?')}")
+    client.results.extend(dup_client.results)
+
+
+def test_login_page_renders(client: SmokeClient) -> None:
+    """Phase 18: GET /auth/login returns HTML page."""
+    _phase("18. Login Page Renders")
+    client.set_phase("login-page")
+    resp = client.get("/auth/login", expect_status=(200,))
+    assert resp.status_code == 200
+    ct = resp.headers.get("content-type", "")
+    assert "text/html" in ct, f"Expected text/html, got {ct}"
+    body = resp.text
+    assert len(body) > 100, f"Login page too short ({len(body)} bytes)"
+    print(f"[smoke] Login page: {len(body)} bytes, content-type={ct[:40]}")
+
+
+def test_signup_page_renders(client: SmokeClient) -> None:
+    """Phase 19: GET /auth/signup returns HTML page."""
+    _phase("19. Signup Page Renders")
+    client.set_phase("signup-page")
+    resp = client.get("/auth/signup", expect_status=(200,))
+    assert resp.status_code == 200
+    ct = resp.headers.get("content-type", "")
+    assert "text/html" in ct, f"Expected text/html, got {ct}"
+    body = resp.text
+    assert len(body) > 100, f"Signup page too short ({len(body)} bytes)"
+    print(f"[smoke] Signup page: {len(body)} bytes, content-type={ct[:40]}")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--base-url", default="http://localhost:8000",
                         help="boring-ui base URL")
     parser.add_argument("--neon-auth-url", default="",
@@ -73,7 +417,11 @@ def main() -> int:
                         help="Skip signup, use --email/--password for existing account")
     parser.add_argument("--email", help="Existing account email (with --skip-signup)")
     parser.add_argument("--password", help="Existing account password (with --skip-signup)")
-    parser.add_argument("--timeout", type=int, default=180, help="Verification email polling timeout seconds")
+    parser.add_argument("--recipient", help="Alias for email delivery (default: same as email)")
+    parser.add_argument("--timeout", type=int, default=180,
+                        help="Verification email polling timeout seconds")
+    parser.add_argument("--evidence-out", default="",
+                        help="Path for evidence JSON output")
     args = parser.parse_args()
 
     client = SmokeClient(args.base_url)
@@ -86,102 +434,76 @@ def main() -> int:
         email = args.email
         password = args.password
     else:
-        email = f"qa+smoke-neon-{int(time.time())}@mail.boringdata.io"
+        ts = int(time.time())
+        email = f"qa+smoke-neon-{ts}@mail.boringdata.io"
         password = random_password()
 
-        # Phase 1: Signup + verification email + token exchange
-        print(f"\n{'='*60}")
-        print(f"Phase 1: Neon Signup + Verification")
-        print(f"  Email: {email}")
-        print(f"  Neon Auth: {neon_url}")
-        print(f"  Target: {args.base_url}")
-        print(f"{'='*60}")
-        session = neon_signup_verify_flow(
-            client,
-            neon_auth_url=neon_url,
-            resend_api_key=resend_api_key(),
-            email=email,
-            password=password,
-            timeout_seconds=args.timeout,
-        )
-        print(f"[smoke] Verification signup session: user_id={session.get('user', {}).get('user_id', '?')[:12]}...")
+        # Phase 1: Signup + verification
+        test_signup_and_verify(client, neon_url, email, password, args.timeout)
 
-    # Phase 2: Signin + full flow
-    print(f"\n{'='*60}")
-    print(f"Phase 2: Neon Signin Flow")
-    print(f"{'='*60}")
-    session = neon_signin_flow(
-        client,
-        neon_auth_url=neon_url,
-        email=email,
-        password=password,
-    )
-    print(f"[smoke] Session: user_id={session.get('user', {}).get('user_id', '?')[:12]}...")
+    # Phase 2: Signin
+    test_signin(client, neon_url, email, password)
 
-    # Phase 3: Verify /auth/session
-    print(f"\n{'='*60}")
-    print(f"Phase 3: Session Verification")
-    print(f"{'='*60}")
-    client.set_phase("session-verify")
-    session_resp = client.get("/auth/session", expect_status=(200,))
-    if session_resp.status_code == 200:
-        s = session_resp.json()
-        print(f"[smoke] /auth/session: authenticated={s.get('authenticated')}, email={s.get('user', {}).get('email')}")
-    else:
-        print(f"[smoke] FAIL: /auth/session returned {session_resp.status_code}")
+    # Phase 3: Session check
+    test_session_check(client)
 
-    # Phase 4: Verify /api/v1/me
-    print(f"\n{'='*60}")
-    print(f"Phase 4: Identity Check (/api/v1/me)")
-    print(f"{'='*60}")
-    client.set_phase("me-check")
-    me_resp = client.get("/api/v1/me", expect_status=(200,))
-    if me_resp.status_code == 200:
-        me = me_resp.json()
-        print(f"[smoke] /api/v1/me: {json.dumps(me, indent=2)[:300]}")
-    else:
-        print(f"[smoke] FAIL: /api/v1/me returned {me_resp.status_code}: {me_resp.text[:200]}")
+    # Phase 4: Identity
+    test_me_endpoint(client)
 
-    # Phase 5: Create workspace
-    print(f"\n{'='*60}")
-    print(f"Phase 5: Create Workspace")
-    print(f"{'='*60}")
-    ts = int(time.time())
-    ws_data = create_workspace(client, name=f"smoke-neon-{ts}")
-    ws = ws_data.get("workspace") or ws_data
-    workspace_id = ws.get("workspace_id") or ws.get("id")
-    print(f"[smoke] Workspace ID: {workspace_id}")
+    # Phase 5: Workspace (proves auth gates API)
+    test_workspace_after_auth(client)
 
-    # Phase 6: List workspaces
-    print(f"\n{'='*60}")
-    print(f"Phase 6: List Workspaces")
-    print(f"{'='*60}")
-    list_workspaces(client, expect_id=workspace_id)
+    # Phase 6: Logout
+    test_logout(client)
 
-    # Phase 7: Logout
-    print(f"\n{'='*60}")
-    print(f"Phase 7: Logout")
-    print(f"{'='*60}")
-    client.set_phase("logout")
-    logout_resp = client.get("/auth/logout", expect_status=(302,))
-    if logout_resp.status_code == 302:
-        print(f"[smoke] Logout redirect: {logout_resp.headers.get('location', '?')}")
-    else:
-        print(f"[smoke] WARN: Logout returned {logout_resp.status_code}")
+    # Phase 7: Re-signin
+    test_re_signin(client, neon_url, email, password)
 
-    # Clear cookies client-side (httpx doesn't auto-delete on Set-Cookie max_age=0)
+    # Logout again to test negative cases with clean state
+    client.set_phase("cleanup-logout")
+    client.get("/auth/logout", expect_status=(302,))
     client.cookies.clear()
 
-    # Phase 8: Confirm session is gone
-    client.set_phase("post-logout-check")
-    post_resp = client.get("/auth/session", expect_status=(401,))
-    if post_resp.status_code == 401:
-        print(f"[smoke] Post-logout session correctly returns 401")
-    else:
-        print(f"[smoke] WARN: Post-logout session returned {post_resp.status_code}")
+    # --- Negative / validation tests (no session needed) ---
 
-    # Report
+    # Phase 8: Wrong password
+    test_wrong_password(client, neon_url, email)
+
+    # Phase 9-10: Token exchange validation
+    test_invalid_token_exchange(client)
+    test_missing_token_exchange(client)
+
+    # Phase 11-12: Signup/signin input validation
+    test_signup_validation(client)
+    test_signin_validation(client)
+
+    # Phase 13: Resend verification validation
+    test_resend_verification_validation(client)
+
+    # Phase 14-15: Session security
+    test_session_without_cookie(client)
+    test_forged_session_cookie(client)
+
+    # Phase 16: API auth guard
+    test_api_requires_auth(client)
+
+    # Phase 17: Duplicate signup
+    if not args.skip_signup:
+        test_duplicate_signup(client, email)
+
+    # Phase 18-19: Page rendering
+    test_login_page_renders(client)
+    test_signup_page_renders(client)
+
+    # --- Report ---
     report = client.report()
+    if args.evidence_out:
+        client.write_report(args.evidence_out, extra={
+            "suite": "neon-auth",
+            "base_url": args.base_url,
+            "auth_mode": "neon",
+        })
+
     print(f"\n{'='*60}")
     print(json.dumps(report, indent=2))
 

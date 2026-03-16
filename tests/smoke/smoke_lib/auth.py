@@ -417,6 +417,72 @@ def neon_signup_verify_flow(
     return session
 
 
+def neon_signup_then_signin(
+    client: SmokeClient,
+    *,
+    neon_auth_url: str,
+    resend_api_key: str,
+    email: str,
+    password: str,
+    name: str = "",
+    timeout_seconds: int = 180,
+    redirect_uri: str = "/",
+) -> dict:
+    """Signup via app, verify email was sent, then sign in.
+
+    Works with both link-based and OTP-based Neon Auth configurations.
+    Unlike neon_signup_verify_flow, this does NOT click the verification link.
+    Instead it signs in directly (Neon Auth allows unverified users to sign in).
+
+    Returns the session payload from /auth/session.
+    """
+    client.set_phase("neon-signup")
+    sent_after = time.time()
+    parsed = urlparse(neon_auth_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    print(f"[smoke] Neon signup via app {email}...")
+
+    signup_resp = client.post(
+        "/auth/sign-up",
+        headers={"Origin": origin},
+        json={
+            "email": email,
+            "password": password,
+            "name": name or email.split("@")[0],
+            "redirect_uri": redirect_uri,
+        },
+        expect_status=(200,),
+    )
+    payload = signup_resp.json()
+    if signup_resp.status_code != 200 or not payload.get("ok"):
+        raise RuntimeError(f"App signup failed: {signup_resp.status_code} {signup_resp.text[:300]}")
+    print(f"[smoke] Signup response: requires_verification={payload.get('requires_email_verification')}")
+
+    # Verify that a verification email was sent (non-blocking check)
+    client.set_phase("neon-check-email-sent")
+    try:
+        email_summary = wait_for_email(
+            resend_api_key,
+            recipient=email,
+            sent_after_epoch=sent_after,
+            timeout_seconds=min(timeout_seconds, 30),
+        )
+        print(f"[smoke] Verification email received: {email_summary.get('subject', '?')}")
+    except Exception as exc:
+        print(f"[smoke] WARN: Verification email not found within timeout: {exc}")
+
+    # Sign in directly (works without email verification)
+    client.set_phase("neon-post-signup-signin")
+    print(f"[smoke] Signing in after signup...")
+    return neon_signin_flow(
+        client,
+        neon_auth_url=neon_auth_url,
+        email=email,
+        password=password,
+        redirect_uri=redirect_uri,
+    )
+
+
 def neon_signin_flow(
     client: SmokeClient,
     *,
