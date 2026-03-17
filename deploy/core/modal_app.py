@@ -179,6 +179,8 @@ def web():
         module_path, _, attr = entry.partition(":")
         mod = importlib.import_module(module_path)
         child_app = getattr(mod, attr or "app")
+        if callable(child_app) and not hasattr(child_app, "__asgi_app__"):
+            child_app = child_app()
     else:
         from boring_ui.runtime import app as child_app
 
