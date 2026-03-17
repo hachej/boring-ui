@@ -751,29 +751,58 @@ ssh_key_vault = "secret/agent/hetzner-ssh"
 
 ## Part 7: Frontend Simplifications
 
+### Two Agent Modes (Frontend + Backend)
+
+Child apps choose their agent mode via `boring.app.toml`:
+
+```toml
+[agents]
+mode = "frontend"     # PI runs in browser, user's API key, LightningFS
+mode = "backend"      # PI runs server-side, nsjail sandbox, backend API keys
+mode = "both"         # user picks at runtime (default for boring-ui itself)
+```
+
+| Aspect | Frontend Mode (existing) | Backend Mode (new) |
+|---|---|---|
+| PI agent runs in | Browser (pi-agent-core) | Server (Node.js sidecar) |
+| API keys | User provides (providerKeys.js) | Backend config (env vars) |
+| Filesystem | LightningFS (browser-local) | Host disk via Go backend API |
+| Python exec | Pyodide (WASM, browser) | nsjail (real Python, sandbox) |
+| Git | isomorphic-git (browser) | Go git module (subprocess) |
+| Isolation | Browser sandbox (natural) | nsjail namespace isolation |
+| Works offline | Yes | No (needs backend) |
+| Tools | defaultTools.js (client-side) | Shared tool endpoints (server-side) |
+
+Both modes use the same PI chat UI. The difference is the tool backend and where the LLM call happens.
+
 ### What Must Be Removed
 
 | Component | Reason |
 |---|---|
-| LightningFS data provider | Browser-local filesystem, split-brain risk |
-| CheerpX data provider | WASM runtime, not needed for hosted product |
-| Pyodide data provider | WASM Python, not needed for hosted product |
-| PI Native adapter (browser) | PI no longer runs client-side |
-| PI provider key management | Backend owns API keys |
-| PI `defaultTools.js` (18+ tools) | Tools defined server-side in PI service |
-| Companion adapter + panel | Legacy Claude CLI bridge |
-| `@isomorphic-git/lightning-fs` dep | ~50KB |
-| `isomorphic-git` dep | ~200KB |
-| `@mariozechner/pi-agent-core` dep (frontend) | ~100KB (stays in Node.js PI service) |
-| `@mariozechner/pi-web-ui` dep | ~200KB |
-
-**Estimated bundle savings**: ~620KB of JavaScript.
+| Companion adapter + panel | Legacy Claude CLI bridge — replaced by claude-code agent harness |
+| CheerpX data provider | Experimental, not part of either standard mode |
+| `DATA_BACKEND_OVERRIDE` URL param | Cleanup — mode selection via boring.app.toml instead |
 
 ### What Must Be Added
 
-- **PI chat panel**: WebSocket client to `/w/{id}/ws/agent/pi/sessions/{sid}/stream`. Reuses existing chat UI components (message rendering, tool use blocks, streaming).
+- **Backend PI chat panel**: WebSocket client to `/w/{id}/ws/agent/pi/sessions/{sid}/stream` for backend mode. Reuses existing chat UI components.
+- **Agent mode selector**: UI shows mode switch when `mode = "both"`. Auto-selects when `mode = "frontend"` or `mode = "backend"`.
+- **`/__bui/config` integration**: Frontend reads agent mode from config at boot.
 
-### What Stays
+### What Stays (Frontend Mode)
+
+These are required for frontend (browser) mode and must NOT be removed:
+
+- `@mariozechner/pi-agent-core` — PI agent logic (client-side)
+- `@mariozechner/pi-web-ui` — PI UI components
+- `@isomorphic-git/lightning-fs` — Browser filesystem
+- `isomorphic-git` — Git in browser
+- Pyodide provider — Python in browser
+- `defaultTools.js` — Client-side tools
+- `providerKeys.js` — User API key management
+- PI native adapter (`nativeAdapter.jsx`) — Browser PI harness
+
+### What Stays (Both Modes)
 
 - DockView layout system
 - Capability gating (`CapabilityGate`, `useCapabilities()`)
@@ -782,6 +811,7 @@ ssh_key_vault = "secret/agent/hetzner-ssh"
 - Auth flow (session cookie, login/callback)
 - UI state persistence
 - Route definitions
+- HTTP data provider (used by backend mode)
 
 ### Filesystem Event Consistency
 
