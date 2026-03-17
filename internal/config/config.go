@@ -14,15 +14,16 @@ const ConfigFile = "boring.app.toml"
 
 // Config mirrors the boring.app.toml contract used by bui and the Python backend.
 type Config struct {
-	ConfigPath  string    `toml:"-"`
-	CORSOrigins []string  `toml:"-"`
-	App         App       `toml:"app"`
-	Framework   Framework `toml:"framework"`
-	Backend     Backend   `toml:"backend"`
-	Frontend    Frontend  `toml:"frontend"`
-	CLI         CLI       `toml:"cli"`
-	Auth        Auth      `toml:"auth"`
-	Deploy      Deploy    `toml:"deploy"`
+	ConfigPath   string              `toml:"-"`
+	CORSOrigins  []string            `toml:"-"`
+	PTYProviders map[string][]string `toml:"-"`
+	App          App                 `toml:"app"`
+	Framework    Framework           `toml:"framework"`
+	Backend      Backend             `toml:"backend"`
+	Frontend     Frontend            `toml:"frontend"`
+	CLI          CLI                 `toml:"cli"`
+	Auth         Auth                `toml:"auth"`
+	Deploy       Deploy              `toml:"deploy"`
 }
 
 type Framework struct {
@@ -139,8 +140,13 @@ func (c *Config) applyDefaults() {
 	if len(c.CORSOrigins) == 0 {
 		c.CORSOrigins = defaultCORSOrigins()
 	}
+	if len(c.PTYProviders) == 0 {
+		c.PTYProviders = DefaultPTYProviders()
+	} else {
+		c.PTYProviders = ClonePTYProviders(c.PTYProviders)
+	}
 	if c.Backend.Type == "" {
-		c.Backend.Type = "python"
+		c.Backend.Type = "go"
 	}
 	if c.Backend.Host == "" {
 		c.Backend.Host = "0.0.0.0"
@@ -155,7 +161,7 @@ func (c *Config) applyDefaults() {
 		c.Auth.SessionCookie = "boring_session"
 	}
 	if c.Auth.SessionTTL == 0 {
-		c.Auth.SessionTTL = 86400
+		c.Auth.SessionTTL = 7 * 24 * 60 * 60
 	}
 	if c.Deploy.Env == "" {
 		c.Deploy.Env = "prod"
@@ -172,6 +178,12 @@ func (c *Config) applyEnvOverrides() error {
 	}
 	if host := os.Getenv("BORING_HOST"); host != "" {
 		c.Backend.Host = host
+	}
+	if raw := strings.TrimSpace(os.Getenv("BORING_UI_PTY_CLAUDE_COMMAND")); raw != "" {
+		if len(c.PTYProviders) == 0 {
+			c.PTYProviders = DefaultPTYProviders()
+		}
+		c.PTYProviders["claude"] = strings.Fields(raw)
 	}
 	return nil
 }
@@ -222,6 +234,23 @@ func defaultCORSOrigins() []string {
 		"http://213.32.19.186:5175",
 		"http://213.32.19.186:5176",
 	}
+}
+
+func DefaultPTYProviders() map[string][]string {
+	return map[string][]string{
+		"shell":  {"bash"},
+		"claude": {"claude", "--dangerously-skip-permissions"},
+	}
+}
+
+func ClonePTYProviders(source map[string][]string) map[string][]string {
+	cloned := make(map[string][]string, len(source))
+	for name, command := range source {
+		copied := make([]string, len(command))
+		copy(copied, command)
+		cloned[name] = copied
+	}
+	return cloned
 }
 
 // FindProjectRoot walks up from cwd looking for boring.app.toml.
