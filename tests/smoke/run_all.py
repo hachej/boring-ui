@@ -14,6 +14,9 @@ Usage:
     # Run specific suites only
     python tests/smoke/run_all.py --base-url https://... --suites health,capabilities,filesystem
 
+    # Include backend-agent WS verification explicitly
+    python tests/smoke/run_all.py --base-url https://... --include-agent-ws
+
     # Child apps: add extra suites via --extra-suites
     python tests/smoke/run_all.py --base-url https://... --extra-suites /path/to/smoke_macro.py
 """
@@ -41,7 +44,10 @@ BASE_SUITES: list[tuple[str, str, bool, list[str]]] = [
     ("settings",            "smoke_settings.py",            True,  []),
     ("ui-state",            "smoke_ui_state.py",            True,  []),
     ("git-sync",            "smoke_git_sync.py",            True,  []),
-    ("agent-ws",            "smoke_agent_ws.py",            True,  []),
+]
+
+OPTIONAL_SUITES: list[tuple[str, str, bool, list[str]]] = [
+    ("agent-ws", "smoke_agent_ws.py", True, []),
 ]
 
 
@@ -140,6 +146,8 @@ def main() -> int:
                         help="Comma-separated suite names to run (default: all)")
     parser.add_argument("--skip-suites", default="",
                         help="Comma-separated suite names to skip")
+    parser.add_argument("--include-agent-ws", action="store_true",
+                        help="Include backend-agent WS smoke (not part of default core path)")
     parser.add_argument("--extra-suites", default="",
                         help="Comma-separated paths to extra smoke scripts (child app tests)")
     parser.add_argument("--evidence-dir", default="",
@@ -158,8 +166,12 @@ def main() -> int:
     selected = set(s.strip() for s in args.suites.split(",") if s.strip()) if args.suites else None
     skipped = set(s.strip() for s in args.skip_suites.split(",") if s.strip())
 
+    suite_catalog = list(BASE_SUITES)
+    if args.include_agent_ws or (selected and "agent-ws" in selected):
+        suite_catalog.extend(OPTIONAL_SUITES)
+
     suites: list[tuple[str, str, bool, list[str]]] = []
-    for name, script, requires_auth, extra in BASE_SUITES:
+    for name, script, requires_auth, extra in suite_catalog:
         if selected and name not in selected:
             continue
         if name in skipped:

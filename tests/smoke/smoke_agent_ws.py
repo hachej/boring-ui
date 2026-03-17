@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Agent WebSocket smoke: auth -> workspace -> connect WS -> roundtrip message.
+"""Backend agent WebSocket smoke: auth -> workspace -> connect WS -> roundtrip.
 
 Tests the full agent WebSocket flow including connection handshake,
 message send, and assistant response.
+
+This is not part of the default core-mode smoke path, which uses the browser/PI
+runtime instead of a backend agent transport.
 
 Usage:
     python tests/smoke/smoke_agent_ws.py --base-url http://localhost:8000 --auth-mode dev
@@ -23,6 +26,19 @@ from smoke_lib.agent import agent_roundtrip
 from smoke_lib.client import SmokeClient
 from smoke_lib.session_bootstrap import ensure_session
 from smoke_lib.workspace import create_workspace
+
+
+def _router_names(routers: list) -> set[str]:
+    """Normalize router entries from /api/capabilities."""
+    names: set[str] = set()
+    for router in routers:
+        if isinstance(router, str):
+            names.add(router)
+        elif isinstance(router, dict):
+            name = str(router.get("name", "")).strip()
+            if name:
+                names.add(name)
+    return names
 
 
 def main() -> int:
@@ -76,8 +92,8 @@ def main() -> int:
     caps_resp = client.get("/api/capabilities", expect_status=(200,))
     if caps_resp.status_code == 200:
         caps = caps_resp.json()
-        routers = caps.get("routers", [])
-        has_agent = "chat_claude_code" in routers or "stream" in routers
+        router_names = _router_names(caps.get("routers", []))
+        has_agent = "chat_claude_code" in router_names or "stream" in router_names
         print(f"[smoke] Agent router available: {has_agent}")
         if not has_agent and not args.skip_agent:
             print(f"[smoke] WARN: Agent router not available, skipping WS test")
