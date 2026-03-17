@@ -1,6 +1,8 @@
 .git
 .beads
 .agent-evidence
+.bsw
+.claude
 .verify
 .pytest_cache
 node_modules
@@ -8,6 +10,8 @@ dist
 playwright-report
 test-results
 __pycache__
+server
+db.test
 *.pyc
 *.pyo
 *.pyd

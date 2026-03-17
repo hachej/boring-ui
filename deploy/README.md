@@ -12,6 +12,15 @@ All deployment configs live in boring-ui. The sandbox data plane uses
 
 ## Quick Reference
 
+### Docker — Go backend image
+
+```bash
+docker build -f deploy/go/Dockerfile -t boring-ui-go .
+docker run --rm -p 8000:8000 boring-ui-go
+```
+
+Service: `boring-ui-go` backend only (`/health` on :8000)
+
 ### Docker — Core mode
 
 ```bash
@@ -38,6 +47,14 @@ modal deploy deploy/core/modal_app.py
 ```
 
 Single Modal app `boring-ui-core`. Requires `boring-ui-core-secrets` Modal secret.
+
+### Modal — Go backend
+
+```bash
+modal deploy deploy/go/modal_app.py
+```
+
+Single Modal app `boring-ui-go`. Reuses `boring-ui-core-secrets` by default.
 
 ### Modal — Edge mode (full)
 
@@ -67,6 +84,9 @@ deploy/
 │   ├── modal_app.py                  # Core mode Modal app
 │   ├── docker-compose.yml            # Core mode (backend + frontend)
 │   └── .env.example                  # Core env template
+├── go/
+│   ├── Dockerfile                    # Go backend image (<30 MB target)
+│   └── modal_app.py                  # Go backend Modal app
 ├── edge/
 │   ├── modal_app.py                  # Edge control plane Modal app
 │   ├── modal_app_sandbox.py          # Sandbox data plane Modal app
@@ -119,6 +139,28 @@ cp /tmp/boring-macro-bundle.tar.gz artifacts/
 ```
 
 The bundle includes: wheel, web_static assets, bootstrap.sh.
+
+## Custom Backend Entry Points
+
+Child apps can define a custom FastAPI app via `[backend].entry` in `boring.app.toml`:
+
+```toml
+[backend]
+entry = "backend.app:app"
+```
+
+When set, `deploy/core/modal_app.py` imports this module instead of `boring_ui.runtime`.
+The framework **automatically mounts the built frontend** (SPA fallback + static assets)
+on the custom app if `BORING_UI_STATIC_DIR` is set and the app doesn't already define a
+`/{full_path:path}` catch-all route.
+
+If your custom app needs to control static serving itself, add your own SPA fallback route
+and the framework will skip auto-mounting:
+
+```python
+from boring_ui.runtime import mount_static
+mount_static(app, Path(os.environ["BORING_UI_STATIC_DIR"]))
+```
 
 ## Secrets
 

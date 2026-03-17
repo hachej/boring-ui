@@ -178,7 +178,21 @@ def web():
         import importlib
         module_path, _, attr = entry.partition(":")
         mod = importlib.import_module(module_path)
-        return getattr(mod, attr or "app")
+        child_app = getattr(mod, attr or "app")
+    else:
+        from boring_ui.runtime import app as child_app
 
-    from boring_ui.runtime import app as runtime_app
-    return runtime_app
+    # Mount built frontend (SPA fallback + static assets) when BORING_UI_STATIC_DIR
+    # is set and contains a build.  Without this, custom-entry child apps that skip
+    # boring_ui.runtime would return 404 on the root URL.
+    static_dir = os.environ.get("BORING_UI_STATIC_DIR", "")
+    if static_dir:
+        static_path = Path(static_dir)
+        if static_path.exists() and static_path.is_dir():
+            # Only mount if the app doesn't already have a catch-all SPA route
+            existing_paths = {r.path for r in getattr(child_app, "routes", [])}
+            if "/{full_path:path}" not in existing_paths:
+                from boring_ui.runtime import mount_static
+                mount_static(child_app, static_path)
+
+    return child_app
