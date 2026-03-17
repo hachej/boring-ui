@@ -439,11 +439,32 @@ Both modes use the same PI chat UI shape, but the app chooses one mode in config
 
 ### What Gets Removed
 
-| Component | Reason |
-|---|---|
-| Companion adapter + panel (~40 files) | Legacy Claude CLI frontend — replaced by standard PI chat UI |
-| CheerpX data provider | Experimental |
-| `DATA_BACKEND_OVERRIDE` | Cleanup |
+**Frontend (Phase 4)**:
+
+| Component | Location | Size | Reason |
+|---|---|---|---|
+| Companion adapter | `src/front/providers/companion/adapter.jsx` + `config.js` + `EmbeddedSessionToolbar.jsx` | ~10KB | Legacy Claude CLI bridge |
+| Companion upstream app | `src/front/providers/companion/upstream/` (App.tsx, ChatView, MessageFeed, ToolBlock, TaskPanel, Sidebar, Composer, etc.) | ~40 files | Full standalone Claude Code web UI — replaced by standard PI chat |
+| Companion panel | `src/front/panels/CompanionPanel.jsx` + test | ~10KB | Panel wrapper for companion |
+| Companion CSS | `src/front/providers/companion/overrides.css`, `theme-bridge.css`, `upstream.css` | ~40KB | Companion styling |
+| CheerpX provider | `src/front/providers/data/cheerpxDataProvider.js` + `cheerpxRuntime.js` + test | ~28KB | Experimental WASM runtime |
+| `DATA_BACKEND_OVERRIDE` | `src/front/App.jsx` (line ~96) | 1 line | Legacy URL param for data provider switching |
+| Deploy mode branching | `src/front/app.config.js` (core/edge profile inference) | ~10 lines | Legacy `core` vs `edge` distinction |
+
+**Backend (Phase 5 — after deployment validation)**:
+
+| Component | Location | Size | Reason |
+|---|---|---|---|
+| Go backend | `internal/`, `cmd/`, `bui/` | ~23K LOC | Superseded by Python. Assess whether to keep as optional reference. |
+| Go Dockerfile | `deploy/go/Dockerfile` | 1 file | Replace with Python Dockerfile |
+| Go CI jobs | `.github/workflows/` | varies | Remove Go-specific CI |
+| `agent_normal` module | `src/back/.../modules/agent_normal/` | ~100 LOC | Fold useful parts into `agents/` package or remove |
+
+**NOT removed** (needed for frontend agent mode):
+- PI native adapter, backendAdapter, defaultTools, providerKeys
+- LightningFS, isomorphic-git, Pyodide providers
+- `@mariozechner/pi-agent-core`, `pi-web-ui`, `pi-ai` npm deps
+- Stream module — stays as compatibility bridge during migration
 
 ### What Stays
 
@@ -558,29 +579,40 @@ Provider: Hetzner Cloud (cheapest MVP) or OVH (sovereignty).
 
 **Effort**: 3-5 days. PI service already exists. The work is wiring tools + sidecar management.
 
-### Phase 4: Frontend Updates
+### Phase 4: Frontend Updates + Deprecated Module Removal
 
-**Goal**: Add backend PI mode, remove companion, and align the frontend to app-level agent mode config.
+**Goal**: Add backend PI mode, remove all deprecated frontend modules, align to app-level agent mode.
 
 **Changes**:
 1. Add backend PI chat panel (WebSocket client to `/w/{id}/ws/agent/pi/sessions/{sid}/stream`)
 2. Frontend reads `/__bui/config` for app-level agent mode
-3. Remove companion adapter + panel (~40 files)
-4. Remove CheerpX provider
-5. Remove `DATA_BACKEND_OVERRIDE`
+3. Remove companion — full inventory:
+   - `src/front/providers/companion/` (entire directory, ~40 files)
+   - `src/front/providers/companion/upstream/` (App.tsx, ChatView, MessageFeed, ToolBlock, TaskPanel, Sidebar, Composer, etc.)
+   - `src/front/panels/CompanionPanel.jsx` + `CompanionPanel.test.jsx`
+4. Remove CheerpX: `cheerpxDataProvider.js` + `cheerpxRuntime.js` + test
+5. Remove `DATA_BACKEND_OVERRIDE` URL param from `App.jsx`
+6. Remove `core` vs `edge` deploy mode profile branching from `app.config.js`
+7. Verify no stale imports or references remain: `grep -r "companion\|cheerpx\|DATA_BACKEND_OVERRIDE" src/front/`
 
 **Effort**: 3-5 days.
 
-### Phase 5: Deployment + cleanup
+### Phase 5: Deployment + Go Backend Cleanup
 
-**Goal**: Production deployment on Hetzner/OVH + cleanup after validation.
+**Goal**: Production deployment on Hetzner/OVH + remove Go backend artifacts.
 
 **Changes**:
 1. Dockerfile with FastAPI + nsjail + Node.js + Python packages
 2. Docker Compose with Caddy
 3. `bui deploy` with `platform = "docker"` support
 4. GitHub Actions CI/CD pipeline
-5. Reassess whether any Go artifacts should be kept as reference or optional tooling
+5. Remove or archive Go backend:
+   - `internal/` (Go modules — ~23K LOC)
+   - `cmd/` (Go entrypoints)
+   - `bui/` (Go CLI source — keep `bui` binary itself, remove Go source if CLI stays as-is)
+   - `deploy/go/Dockerfile` (replace with Python Dockerfile)
+   - Go-specific CI jobs
+6. Fold `agent_normal` module into `agents/` package or remove
 6. Port existing Go-specific tests to Python equivalents where needed
 7. Run smoke tests against deployed instance
 
