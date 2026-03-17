@@ -1,0 +1,67 @@
+{
+  "invites": {
+    "invite-1": {
+      "accepted_at": null,
+      "created_at": "2026-03-16T07:00:11.918019+00:00",
+      "email": "editor@example.com",
+      "expires_at": "2026-03-20T00:00:00+00:00",
+      "invite_id": "invite-1",
+      "role": "editor",
+      "status": "pending",
+      "updated_at": "2026-03-16T07:00:11.918019+00:00",
+      "workspace_id": "workspace-1"
+    }
+  },
+  "memberships": {
+    "workspace-1:user-1": {
+      "created_at": "2026-03-16T07:00:11.917678+00:00",
+      "membership_id": "workspace-1:user-1",
+      "role": "owner",
+      "status": "active",
+      "updated_at": "2026-03-16T07:00:11.917678+00:00",
+      "user_id": "user-1",
+      "workspace_id": "workspace-1"
+    }
+  },
+  "users": {
+    "user-1": {
+      "created_at": "2026-03-16T07:00:11.915959+00:00",
+      "display_name": "Owner",
+      "email": "owner@example.com",
+      "settings": {
+        "theme": "dark"
+      },
+      "updated_at": "2026-03-16T07:00:11.915959+00:00",
+      "user_id": "user-1"
+    }
+  },
+  "workspace_runtime": {
+    "workspace-1": {
+      "created_at": "2026-03-16T07:00:11.918704+00:00",
+      "retry_count": 1,
+      "state": "ready",
+      "updated_at": "2026-03-16T07:00:11.918704+00:00",
+      "workspace_id": "workspace-1"
+    }
+  },
+  "workspace_settings": {
+    "workspace-1": {
+      "created_at": "2026-03-16T07:00:11.918374+00:00",
+      "shell": "zsh",
+      "theme": "light",
+      "updated_at": "2026-03-16T07:00:11.918374+00:00",
+      "workspace_id": "workspace-1"
+    }
+  },
+  "workspaces": {
+    "workspace-1": {
+      "app_id": "boring-ui",
+      "created_at": "2026-03-16T07:00:11.916691+00:00",
+      "created_by": "user-1",
+      "deleted_at": null,
+      "name": "Primary",
+      "updated_at": "2026-03-16T07:00:11.916691+00:00",
+      "workspace_id": "workspace-1"
+    }
+  }
+}
