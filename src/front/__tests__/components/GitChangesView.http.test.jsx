@@ -24,7 +24,7 @@ const renderWithProvider = (provider, props = {}) => {
   )
 }
 
-describe('GitChangesView integration', () => {
+describe('GitChangesView HTTP provider', () => {
   beforeEach(() => {
     setupApiMocks({
       '/api/v1/git/status': {
@@ -41,7 +41,7 @@ describe('GitChangesView integration', () => {
     vi.clearAllMocks()
   })
 
-  it('renders HTTP-provider git status groups and opens diff on click', async () => {
+  it('renders GitChangesView from the HTTP git status endpoint and opens diffs', async () => {
     const onOpenDiff = vi.fn()
 
     renderWithProvider(createHttpProvider(), { onOpenDiff })
