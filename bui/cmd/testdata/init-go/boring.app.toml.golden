@@ -1,0 +1,32 @@
+# boring.app.toml — Configuration for myapp
+
+[app]
+name = "myapp"
+logo = "M"
+id   = "myapp"
+
+[framework]
+repo   = "github.com/boringdata/boring-ui"
+commit = "<commit>"
+
+[backend]
+type  = "go"
+entry = "."
+port  = 8000
+
+[frontend]
+port = 5173
+
+[frontend.branding]
+name = "myapp"
+
+[frontend.features]
+agentRailMode = "all"
+
+[frontend.data]
+backend = "http"
+
+[auth]
+provider       = "local"
+session_cookie = "boring_session"
+session_ttl    = 86400

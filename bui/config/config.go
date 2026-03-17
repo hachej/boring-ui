@@ -121,7 +121,7 @@ func Load(dir string) (*AppConfig, error) {
 
 	// Defaults
 	if cfg.Backend.Type == "" {
-		cfg.Backend.Type = "python"
+		cfg.Backend.Type = "go"
 	}
 	if cfg.Backend.Port == 0 {
 		cfg.Backend.Port = 8000

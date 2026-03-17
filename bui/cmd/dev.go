@@ -196,7 +196,11 @@ func buildBackendCommand(root string, cfg *config.AppConfig, procEnv []string, b
 		if _, err := lookPath("air"); err != nil {
 			return nil, fmt.Errorf("backend.type=go requires `air` in PATH: %w", err)
 		}
-		airConfigPath, err := writeAirConfig(root)
+		target := strings.TrimSpace(cfg.Backend.Entry)
+		if target == "" {
+			target = "./cmd/server"
+		}
+		airConfigPath, err := writeAirConfig(root, target)
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +216,7 @@ func buildBackendCommand(root string, cfg *config.AppConfig, procEnv []string, b
 	}
 }
 
-func writeAirConfig(root string) (string, error) {
+func writeAirConfig(root string, target string) (string, error) {
 	airDir := filepath.Join(root, ".air")
 	if err := os.MkdirAll(airDir, 0o755); err != nil {
 		return "", fmt.Errorf("create .air dir: %w", err)
@@ -224,7 +228,7 @@ func writeAirConfig(root string) (string, error) {
 		"tmp_dir = \".air\"",
 		"",
 		"[build]",
-		"cmd = \"go build -o .air/server ./cmd/server\"",
+		fmt.Sprintf("cmd = \"go build -o .air/server %s\"", target),
 		"entrypoint = \".air/server\"",
 		"include_ext = [\"go\", \"toml\"]",
 		"exclude_dir = [\".git\", \".air\", \".venv\", \"node_modules\", \"dist\"]",

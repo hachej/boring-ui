@@ -1,0 +1,27 @@
+package hello
+
+import (
+	"net/http"
+
+	boringui "github.com/boringdata/boring-ui"
+)
+
+type Module struct{}
+
+func NewModule() *Module {
+	return &Module{}
+}
+
+func (m *Module) Name() string {
+	return "hello"
+}
+
+func (m *Module) RegisterRoutes(router boringui.Router) {
+	router.Route("/api/v1/hello", func(r boringui.Router) {
+		r.Method(http.MethodGet, "/ping", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true,"message":"hello from go child app"}`))
+		}))
+	})
+}

@@ -19,8 +19,14 @@ func Resolve(cfg *config.AppConfig, mode string) (string, error) {
 	}
 
 	// Dev mode: auto-detect local checkout
-	// 1. Sibling directory
+	// 1. Ancestor directory (supports examples nested inside a boring-ui checkout)
 	cwd, _ := os.Getwd()
+	if ancestor := findAncestorFramework(cwd); ancestor != "" {
+		checkDrift(ancestor, cfg.Framework.Commit)
+		return ancestor, nil
+	}
+
+	// 1. Sibling directory
 	sibling := filepath.Join(filepath.Dir(cwd), "boring-ui")
 	if isBoringUI(sibling) {
 		checkDrift(sibling, cfg.Framework.Commit)
@@ -46,6 +52,30 @@ func isBoringUI(dir string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+func findAncestorFramework(start string) string {
+	dir := filepath.Dir(start)
+	for dir != "" && dir != filepath.Dir(dir) {
+		if isFrameworkRoot(dir) {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	return ""
+}
+
+func isFrameworkRoot(dir string) bool {
+	if !isBoringUI(dir) {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(dir, "src", "front")); err == nil && info.IsDir() {
+		return true
+	}
+	if info, err := os.Stat(filepath.Join(dir, "cmd", "server")); err == nil && info.IsDir() {
+		return true
+	}
+	return false
 }
 
 // checkDrift warns if local HEAD differs from pinned commit.

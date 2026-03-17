@@ -50,14 +50,27 @@ var docTopics = map[string]string{
 === bui init — Child App Scaffolding ===
 
   bui init <name>
+  bui init --go <name>
 
-Creates a directory with:
+Default Python scaffold creates:
   boring.app.toml       App config (name, backend, frontend, deploy)
   pyproject.toml        Python package definition
   src/<name>/routers/   Custom FastAPI routers (example included)
   panels/               Custom React panels
   .gitignore            Standard ignores
   .env.example          Template for local dev secrets
+
+Go scaffold creates:
+  boring.app.toml       App config with [backend].type = "go"
+  go.mod / go.sum       Go module pinned to boring-ui
+  main.go               Child app entrypoint with default module wiring
+  hello/module.go       Example module and route
+  .gitignore            Standard ignores
+  .env.example          Template for local dev secrets
+
+If ../boring-ui is present, the Go scaffold adds a local replace and runs 'go mod tidy'
+so 'go build ./...' works immediately. Without a local framework sibling, init still
+completes and prints the follow-up 'go get ... && go mod tidy' step.
 
 After init:
   cd <name>
@@ -85,6 +98,11 @@ What happens on start:
   - pip install -e .               (child app, if pyproject.toml exists)
   - Symlinks node_modules/boring-ui → framework path
   - Reads .env for local secrets (ANTHROPIC_API_KEY, etc.)
+
+Go backend notes:
+  - backend.type = "go" requires air in PATH
+  - backend.entry becomes the go build target for air
+  - bui init --go writes backend.entry = "." so bui dev builds the app root
 
 Flags:
   --backend-only      Only uvicorn (attach debugger separately)

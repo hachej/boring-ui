@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestLoadDefaultsBackendTypeToPython(t *testing.T) {
+func TestLoadDefaultsBackendTypeToGo(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, ConfigFile)
 	if err := os.WriteFile(configPath, []byte("[app]\nname='demo'\n"), 0o644); err != nil {
@@ -17,7 +17,7 @@ func TestLoadDefaultsBackendTypeToPython(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.Backend.Type != "python" {
-		t.Fatalf("expected backend.type=python, got %q", cfg.Backend.Type)
+	if cfg.Backend.Type != "go" {
+		t.Fatalf("expected backend.type=go, got %q", cfg.Backend.Type)
 	}
 }

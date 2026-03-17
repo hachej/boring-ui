@@ -47,6 +47,28 @@ func TestBuildBackendCommandGoUsesAirAndWritesConfig(t *testing.T) {
 	}
 }
 
+func TestBuildBackendCommandGoUsesConfiguredEntry(t *testing.T) {
+	t.Cleanup(func() { lookPath = execLookPath })
+	lookPath = func(file string) (string, error) { return "/usr/bin/air", nil }
+
+	root := t.TempDir()
+	cfg := &config.AppConfig{}
+	cfg.Backend.Type = "go"
+	cfg.Backend.Entry = "."
+
+	if _, err := buildBackendCommand(root, cfg, nil, 18081, ""); err != nil {
+		t.Fatalf("buildBackendCommand returned error: %v", err)
+	}
+
+	airConfig, err := os.ReadFile(filepath.Join(root, ".air.toml"))
+	if err != nil {
+		t.Fatalf("read .air.toml: %v", err)
+	}
+	if !strings.Contains(string(airConfig), `cmd = "go build -o .air/server ."`) {
+		t.Fatalf("expected custom go entry in .air.toml, got %s", string(airConfig))
+	}
+}
+
 func TestBuildBackendCommandPythonMatchesExistingFlow(t *testing.T) {
 	root := t.TempDir()
 	cfg := &config.AppConfig{}
