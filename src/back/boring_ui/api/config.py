@@ -94,6 +94,14 @@ def _env_int(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _normalize_agents_mode(raw: str | None) -> str:
+    """Normalize agents mode: 'frontend' (default) or 'backend'."""
+    value = str(raw or "").strip().lower()
+    if value == "backend":
+        return "backend"
+    return "frontend"
+
+
 def _normalize_control_plane_provider(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
     if value in {"", "local"}:
@@ -246,6 +254,11 @@ class APIConfig:
     github_sync_enabled: bool = field(
         default_factory=lambda: _env_bool('GITHUB_SYNC_ENABLED', True)
     )
+    # Agent placement mode: "frontend" (browser PI) or "backend" (server-side PiHarness).
+    # Set via AGENTS_MODE env var or boring.app.toml [agents] mode.
+    agents_mode: str = field(
+        default_factory=lambda: _normalize_agents_mode(os.environ.get('AGENTS_MODE'))
+    )
 
     def __post_init__(self) -> None:
         # Test harness hook: allow overriding the PTY provider commands without
@@ -280,6 +293,12 @@ class APIConfig:
                 'Invalid GITHUB_APP_SLUG %r — clearing', self.github_app_slug,
             )
             self.github_app_slug = None
+
+        # Backend-agent workspace role: disable control plane when no DB is configured.
+        # The same image serves both control plane (has DATABASE_URL) and workspace
+        # (no DATABASE_URL, agents_mode=backend) roles on Fly.io.
+        if self.agents_mode == "backend" and not self.effective_database_url:
+            self.control_plane_enabled = False
 
         # Auto-enable neon provider when explicit envs are present.
         if self.control_plane_provider == "local" and self.neon_auth_base_url:
