@@ -1,4 +1,4 @@
-"""Shared helpers for Supabase-backed control-plane routes."""
+"""Shared helpers for hosted control-plane routes."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from ....config import APIConfig
-from ..auth_session import SessionExpired, SessionInvalid, SessionPayload, parse_session_cookie
+from ...config import APIConfig
+from .auth_session import SessionExpired, SessionInvalid, SessionPayload, parse_session_cookie
 from . import db_client
 
 
@@ -75,7 +75,7 @@ def ensure_pool(request: Request):
             status_code=500,
             error="server_error",
             code="DB_POOL_UNAVAILABLE",
-            message="Supabase DB pool is not initialized",
+            message="Control-plane DB pool is not initialized",
         )
 
 

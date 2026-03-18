@@ -1,4 +1,4 @@
-"""Supabase-backed canonical workspace collaboration routes."""
+"""Hosted-control-plane workspace collaboration routes."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from fastapi.responses import JSONResponse
 
 from ...config import APIConfig
 from ...policy import enforce_delegated_policy_or_none
-from .supabase.common import ensure_pool, error_response, load_session
-from .supabase.membership import MemberRole, NotAMember, WorkspaceNotFound, require_membership
+from .common import ensure_pool, error_response, load_session
+from .membership import MemberRole, NotAMember, WorkspaceNotFound, require_membership
 
 _TOKEN_BYTES = 32
 _DEFAULT_EXPIRY_DAYS = 7
@@ -82,7 +82,7 @@ async def _require_owner_role(request: Request, config: APIConfig, ws_uuid: uuid
     return pool, None
 
 
-def create_collaboration_router_supabase(config: APIConfig) -> APIRouter:
+def create_collaboration_router_hosted(config: APIConfig) -> APIRouter:
     router = APIRouter(tags=["collaboration"])
 
     @router.get("/workspaces/{workspace_id}/members")

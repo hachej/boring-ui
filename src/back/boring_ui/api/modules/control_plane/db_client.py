@@ -1,4 +1,4 @@
-"""AsyncPG client helpers for Supabase-backed control-plane."""
+"""AsyncPG client helpers for hosted control-plane backends."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import threading
 import weakref
 from contextvars import ContextVar
 from typing import Optional, TYPE_CHECKING
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 if TYPE_CHECKING:
     import asyncpg
@@ -42,14 +42,32 @@ def _get_pool_lock() -> asyncio.Lock:
 
 def _ensure_asyncpg() -> None:
     if asyncpg is None:
-        raise RuntimeError("asyncpg is required for Supabase DB pooling. Install project dependencies.")
+        raise RuntimeError("asyncpg is required for hosted control-plane DB pooling. Install project dependencies.")
+
+
+def _pool_is_closed(pool: "asyncpg.Pool") -> bool:
+    is_closing = getattr(pool, "is_closing", None)
+    if callable(is_closing):
+        try:
+            return bool(is_closing())
+        except TypeError:
+            pass
+    return bool(getattr(pool, "_closed", False))
+
+
+def _evict_pool_instances(target_pool: "asyncpg.Pool") -> None:
+    stale_urls = [
+        url for url, pool in _pools_by_url.items()
+        if pool is target_pool
+    ]
+    for url in stale_urls:
+        _pools_by_url.pop(url, None)
 
 
 def _uses_pgbouncer_pooling(db_url: str) -> bool:
     parsed = urlparse(db_url)
     host = (parsed.hostname or "").lower()
-    # Supabase pooler
-    if host.endswith(".pooler.supabase.com"):
+    if ".pooler." in host:
         return True
     # Neon pooler: hostnames contain "-pooler" (e.g. ep-xyz-pooler.region.neon.tech)
     if "-pooler" in host:
@@ -100,7 +118,7 @@ def _pool_kwargs(db_url: str) -> dict[str, object]:
         kwargs["statement_cache_size"] = 0
     if parsed.hostname:
         port = parsed.port or 5432
-        # Skip the IPv4 host override for Supabase pooler connections because
+        # Skip the IPv4 host override for provider-managed pooler connections because
         # the pooler uses TLS SNI (server_hostname) for tenant identification.
         # asyncpg passes `host` as `server_hostname` during TLS handshake, so
         # replacing the hostname with a raw IP breaks tenant routing.
@@ -110,11 +128,29 @@ def _pool_kwargs(db_url: str) -> dict[str, object]:
                 kwargs["host"] = resolved_hosts
                 kwargs["port"] = port
                 _logger.info(
-                    "Using IPv4 override for Supabase host %s (%d addresses)",
+                    "Using IPv4 override for DB host %s (%d addresses)",
                     parsed.hostname,
                     len(resolved_hosts),
                 )
     return kwargs
+
+
+def _normalize_neon_dsn(db_url: str) -> str:
+    parsed = urlparse(db_url)
+    host = (parsed.hostname or "").lower()
+    if not host or _uses_pgbouncer_pooling(db_url) or not host.startswith("ep-"):
+        return db_url
+    if ".neon.tech" not in host and ".aws.neon.tech" not in host:
+        return db_url
+
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    endpoint_id = host.split(".", 1)[0]
+    option_values = query.get("options", [])
+    if any(f"endpoint={endpoint_id}" in value for value in option_values):
+        return db_url
+
+    query["options"] = [*option_values, f"endpoint={endpoint_id}"]
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
 
 
 async def create_pool(
@@ -127,15 +163,18 @@ async def create_pool(
     global _pool
     _ensure_asyncpg()
     if _pool is not None:
-        await _pool.close()
+        _evict_pool_instances(_pool)
+        if not _pool_is_closed(_pool):
+            await _pool.close()
+    effective_url = _normalize_neon_dsn(db_url)
     _pool = await asyncpg.create_pool(
-        dsn=db_url,
+        dsn=effective_url,
         min_size=min_size,
         max_size=max_size,
         command_timeout=command_timeout,
-        **_pool_kwargs(db_url),
+        **_pool_kwargs(effective_url),
     )
-    _pools_by_url[db_url] = _pool
+    _pools_by_url[effective_url] = _pool
     return _pool
 
 
@@ -147,18 +186,22 @@ async def get_or_create_pool(
     command_timeout: int = 30,
 ) -> "asyncpg.Pool":
     _ensure_asyncpg()
+    effective_url = _normalize_neon_dsn(db_url)
     async with _get_pool_lock():
-        pool = _pools_by_url.get(db_url)
+        pool = _pools_by_url.get(effective_url)
         if pool is not None:
-            return pool
+            if _pool_is_closed(pool):
+                _pools_by_url.pop(effective_url, None)
+            else:
+                return pool
         pool = await asyncpg.create_pool(
-            dsn=db_url,
+            dsn=effective_url,
             min_size=min_size,
             max_size=max_size,
             command_timeout=command_timeout,
-            **_pool_kwargs(db_url),
+            **_pool_kwargs(effective_url),
         )
-        _pools_by_url[db_url] = pool
+        _pools_by_url[effective_url] = pool
         return pool
 
 

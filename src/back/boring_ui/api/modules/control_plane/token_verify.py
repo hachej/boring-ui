@@ -1,4 +1,4 @@
-"""Supabase JWT verification: JWKS (RS256) with HS256 fallback."""
+"""Hosted auth JWT verification: JWKS (RS256) with HS256 fallback."""
 
 from __future__ import annotations
 
@@ -57,8 +57,8 @@ _jwks_cache = _JWKSCache()
 def verify_token(
     token: str,
     *,
-    supabase_url: str,
-    supabase_jwt_secret: str | None = None,
+    issuer_base_url: str,
+    jwt_secret: str | None = None,
     audience: str | None = None,
     jwks_url: str | None = None,
 ) -> TokenPayload:
@@ -66,11 +66,11 @@ def verify_token(
 
     Args:
         token: The JWT to verify.
-        supabase_url: Base URL used to derive the default JWKS endpoint.
-        supabase_jwt_secret: Optional HS256 shared secret for fallback.
+        issuer_base_url: Base URL used to derive the default JWKS endpoint.
+        jwt_secret: Optional HS256 shared secret for fallback.
         audience: Expected ``aud`` claim (e.g. ``"authenticated"``).
-        jwks_url: Explicit JWKS URL override.  When provided, JWKS-based
-            algorithms use this URL instead of deriving one from *supabase_url*.
+        jwks_url: Explicit JWKS URL override. When provided, JWKS-based
+            algorithms use this URL instead of deriving one via the base URL.
     """
     try:
         header = pyjwt.get_unverified_header(token)
@@ -83,17 +83,17 @@ def verify_token(
         return _verify_jwks(
             token,
             alg=alg,
-            supabase_url=supabase_url,
+            issuer_base_url=issuer_base_url,
             audience=audience,
             jwks_url_override=jwks_url,
         )
     if alg == "HS256":
-        if not supabase_jwt_secret:
+        if not jwt_secret:
             raise TokenInvalid("HS256 token received but no JWT secret configured for fallback")
         return _verify_hs256(
             token,
-            secret=supabase_jwt_secret,
-            supabase_url=supabase_url,
+            secret=jwt_secret,
+            issuer_base_url=issuer_base_url,
             audience=audience,
         )
     raise TokenInvalid(f"Unsupported JWT algorithm: {alg}")
@@ -103,11 +103,11 @@ def _verify_jwks(
     token: str,
     *,
     alg: str,
-    supabase_url: str,
+    issuer_base_url: str,
     audience: str | None,
     jwks_url_override: str | None = None,
 ) -> TokenPayload:
-    jwks_url = jwks_url_override or f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    jwks_url = jwks_url_override or f"{issuer_base_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
     client = _jwks_cache.get_client(jwks_url)
 
     try:
@@ -130,10 +130,10 @@ def _verify_hs256(
     token: str,
     *,
     secret: str,
-    supabase_url: str,
+    issuer_base_url: str,
     audience: str | None,
 ) -> TokenPayload:
-    _ = supabase_url
+    _ = issuer_base_url
     decode_opts: dict[str, Any] = {
         "algorithms": ["HS256"],
         "leeway": _CLOCK_SKEW_LEEWAY,

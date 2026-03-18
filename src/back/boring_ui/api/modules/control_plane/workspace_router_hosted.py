@@ -1,4 +1,4 @@
-"""Supabase-backed canonical workspace lifecycle/settings routes."""
+"""Hosted-control-plane workspace lifecycle/settings routes."""
 
 from __future__ import annotations
 
@@ -11,8 +11,9 @@ from fastapi.responses import JSONResponse
 
 from ...config import APIConfig
 from ...policy import enforce_delegated_policy_or_none
-from .supabase.common import ensure_pool, error_response, load_session, normalize_workspace_payload
-from .supabase.membership import NotAMember, WorkspaceNotFound, require_membership
+from .common import ensure_pool, error_response, load_session, normalize_workspace_payload
+from .membership import NotAMember, WorkspaceNotFound, require_membership
+from .service import ensure_workspace_root_dir
 from .user_settings_state import read_user_github_link, user_state_service
 
 
@@ -131,7 +132,7 @@ def _runtime_state_payload(row) -> dict:
     return payload
 
 
-def create_workspace_router_supabase(config: APIConfig) -> APIRouter:
+def create_workspace_router_hosted(config: APIConfig) -> APIRouter:
     router = APIRouter(tags=["workspaces"])
     user_service = user_state_service(config)
 
@@ -229,6 +230,7 @@ def create_workspace_router_supabase(config: APIConfig) -> APIRouter:
                 "SELECT id, app_id, name, created_by FROM workspaces WHERE id = $1",
                 uuid.UUID(workspace_id),
             )
+        ensure_workspace_root_dir(config.workspace_root, workspace_id)
         data = normalize_workspace_payload(row)
 
         # Auto-provision GitHub repo if GitHub App is configured

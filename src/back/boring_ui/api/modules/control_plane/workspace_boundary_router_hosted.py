@@ -1,4 +1,4 @@
-"""Supabase-backed workspace-scoped `/w/{workspace_id}/...` boundary routes."""
+"""Hosted-control-plane `/w/{workspace_id}/...` boundary routes."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ...config import APIConfig
 from ...policy import enforce_delegated_policy_or_none
-from .supabase.common import error_response, load_session
-from .supabase.membership import NotAMember, WorkspaceNotFound, require_membership
-from .supabase import db_client
+from .common import error_response, load_session
+from .membership import NotAMember, WorkspaceNotFound, require_membership
+from . import db_client
 
 _RESERVED_SUBPATHS = {"setup", "runtime", "settings"}
 _WORKSPACE_PASSTHROUGH_ROOTS = (
@@ -80,7 +80,7 @@ async def _require_workspace_member(request: Request, config: APIConfig, workspa
             status_code=500,
             error="server_error",
             code="DB_POOL_UNAVAILABLE",
-            message="Supabase DB pool is not initialized",
+            message="Control-plane DB pool is not initialized",
         )
 
     try:
@@ -140,7 +140,7 @@ async def _forward_http_request(request: Request, target_path: str, workspace_id
     )
 
 
-def _spa_response_supabase():
+def _spa_response_hosted():
     """Serve the SPA index.html for browser navigation to workspace pages."""
     static_dir = os.environ.get("BORING_UI_STATIC_DIR", "")
     if static_dir:
@@ -156,7 +156,7 @@ def _spa_response_supabase():
 def _workspace_root_response(request: Request, workspace_id: str):
     accept = request.headers.get("accept", "")
     if request.method == "GET" and "text/html" in accept:
-        return _spa_response_supabase()
+        return _spa_response_hosted()
     return {
         "ok": True,
         "workspace_id": workspace_id,
@@ -164,7 +164,7 @@ def _workspace_root_response(request: Request, workspace_id: str):
     }
 
 
-def create_workspace_boundary_router_supabase(config: APIConfig) -> APIRouter:
+def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
     router = APIRouter(tags=["workspace-boundary"])
 
     @router.get("/w/{workspace_id}/setup")
@@ -172,7 +172,7 @@ def create_workspace_boundary_router_supabase(config: APIConfig) -> APIRouter:
         # Browser navigation → serve SPA HTML so the frontend handles rendering
         accept = request.headers.get("accept", "")
         if "text/html" in accept:
-            return _spa_response_supabase()
+            return _spa_response_hosted()
 
         deny = enforce_delegated_policy_or_none(
             request,
@@ -235,7 +235,7 @@ def create_workspace_boundary_router_supabase(config: APIConfig) -> APIRouter:
     async def workspace_settings_get(workspace_id: str, request: Request):
         accept = request.headers.get("accept", "")
         if request.method == "GET" and "text/html" in accept:
-            return _spa_response_supabase()
+            return _spa_response_hosted()
 
         deny = enforce_delegated_policy_or_none(
             request,
@@ -275,7 +275,7 @@ def create_workspace_boundary_router_supabase(config: APIConfig) -> APIRouter:
             if normalized == "/":
                 return _workspace_root_response(request, workspace_id)
             if not _is_allowed_workspace_passthrough_target(normalized, config=config):
-                return _spa_response_supabase()
+                return _spa_response_hosted()
 
         deny = enforce_delegated_policy_or_none(
             request,
