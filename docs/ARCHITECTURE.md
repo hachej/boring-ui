@@ -76,7 +76,7 @@ Dirty/autosave decisions compare against `savedContent`, not the transient live 
 
 ### Ownership Contract (vNext)
 
-Route and service ownership follows the `boring-ui` core contract in `docs/exec-plans/backlog/boring-ui-core-ownership-contract.md`:
+Route and service ownership follows the `boring-ui` core contract in `docs/plans/boring-ui-core-ownership-contract.md`:
 
 1. `boring-ui` core owns auth/session (`/auth/*`), user identity (`/api/v1/me`), workspace lifecycle/settings, membership/invites, and workspace-level files/git authority.
 2. `boring-macro` is domain-only and must stay under `/api/v1/macro/*`.
@@ -86,7 +86,7 @@ Enforcement notes:
 1. `create_app()` does not mount `/api/v1/macro/*` routes in core.
 2. Macro boundary guardrail tests live in `tests/unit/test_macro_boundary_guardrails.py`.
 3. Workspace boundary pass-through (`/w/{workspace_id}/{path}`) only forwards `/auth/*`, `/api/v1/me*`, `/api/v1/workspaces*`, `/api/v1/files*`, and `/api/v1/git*`.
-4. Final keep-vs-move + sandbox cleanup tracking is documented in `docs/references/OWNERSHIP_AUDIT.md`.
+4. Final keep-vs-move audit: see Ownership Audit appendix at end of this file.
 5. Cutover and rollback operations are documented in `docs/runbooks/OWNERSHIP_CUTOVER.md`.
 
 Deployment can run in:
