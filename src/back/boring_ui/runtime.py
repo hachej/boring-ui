@@ -74,8 +74,12 @@ def mount_static(app: FastAPI, static_path: Path) -> None:
         )
 
 
-workspace_root = Path(os.environ.get("BORING_UI_WORKSPACE_ROOT", "/home/sprite"))
-app = create_app(APIConfig(workspace_root=workspace_root))
+# Use app_config_loader to read boring.app.toml (if present) for runtime config
+# (app name, agents.mode, auth provider, etc.) served via /__bui/config.
+# Falls back to plain create_app() if no TOML is found.
+from .app_config_loader import _create_app as _create_configured_app
+
+app = _create_configured_app()
 
 static_dir = os.environ.get("BORING_UI_STATIC_DIR", "")
 if static_dir:
