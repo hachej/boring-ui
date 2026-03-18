@@ -305,6 +305,13 @@ def create_capabilities_router(
                 'appDescription': config.auth_app_description or '',
             }
 
+        # Workspace runtime info for backend-agent mode
+        if config and config.agents_mode == "backend":
+            capabilities['workspace_runtime'] = {
+                'placement': 'workspace_machine',
+                'agent_mode': 'backend',
+            }
+
         return capabilities
 
     return router
