@@ -6,6 +6,16 @@ from pathlib import Path
 from typing import Any
 
 from .repository import ControlPlaneRepository
+from ...workspace.paths import resolve_workspace_root
+
+
+def ensure_workspace_root_dir(workspace_root: Path, workspace_id: str) -> Path:
+    """Ensure the on-disk root exists for a workspace-scoped project."""
+    base_root = Path(workspace_root)
+    base_root.mkdir(parents=True, exist_ok=True)
+    resolved = resolve_workspace_root(base_root, workspace_id, single_mode=False)
+    resolved.mkdir(parents=True, exist_ok=True)
+    return resolved
 
 
 class ControlPlaneService:
@@ -39,7 +49,9 @@ class ControlPlaneService:
         return self._repository.list_users()
 
     def upsert_workspace(self, workspace_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._repository.upsert_workspace(workspace_id, payload)
+        stored = self._repository.upsert_workspace(workspace_id, payload)
+        ensure_workspace_root_dir(self._workspace_root, workspace_id)
+        return stored
 
     def list_workspaces(self) -> list[dict[str, Any]]:
         return self._repository.list_workspaces()

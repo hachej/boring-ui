@@ -1,7 +1,6 @@
 """Neon Auth (Better Auth) backed auth/session routes for boring-ui control-plane.
 
-This module mirrors the Supabase auth router but uses Neon Auth endpoints
-(email/password only, no magic-link/PKCE). The main flows are:
+This module uses Neon Auth endpoints for the hosted login flows. The main flows are:
 
 1. Sign in: browser POSTs to boring-ui, backend authenticates against Neon,
    fetches the JWT from ``/token``, and issues ``boring_session``.
@@ -36,7 +35,7 @@ _PENDING_LOGIN_TTL_SECONDS = 30 * 60
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers (mirrors auth_router_supabase private helpers)
+# Shared helpers for hosted auth flows.
 # ---------------------------------------------------------------------------
 
 def _request_id(request: Request) -> str:
@@ -1584,7 +1583,7 @@ def _validate_neon_jwt(
 
     Returns a dict with ``user_id`` and ``email`` on success, or ``None``.
     """
-    from .supabase.token_verify import verify_token, TokenError
+    from .token_verify import verify_token, TokenError
 
     jwks_url = config.neon_auth_jwks_url
     neon_base = (config.neon_auth_base_url or "").rstrip("/")
@@ -1604,7 +1603,7 @@ def _validate_neon_jwt(
             aud = f"{parsed.scheme}://{parsed.netloc}"
         payload = verify_token(
             jwt_token,
-            supabase_url=neon_base or "",
+            issuer_base_url=neon_base or "",
             jwks_url=jwks_url,
             audience=aud,
         )
@@ -2063,7 +2062,7 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
                 message="Expected JSON object",
             )
 
-        # Accept both "access_token" (matches frontend & Supabase router) and
+        # Accept both "access_token" (matches the frontend login flow) and
         # "session_token" for backward compatibility.
         access_token = body.get("access_token") or body.get("session_token")
         if not isinstance(access_token, str) or not access_token.strip():

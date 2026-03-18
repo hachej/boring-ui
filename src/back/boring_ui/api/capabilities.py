@@ -10,7 +10,9 @@ from typing import Callable, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .workspace_plugins import WorkspacePluginManager
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+
+from boring_ui.runtime_config import build_runtime_config_payload
 
 
 @dataclass
@@ -110,6 +112,7 @@ def create_default_registry() -> RouterRegistry:
     from .modules.pty import create_pty_router
     from .modules.stream import create_stream_router
     from .approval import create_approval_router
+    from .sandbox import create_sandbox_router
 
     registry = RouterRegistry()
 
@@ -141,6 +144,13 @@ def create_default_registry() -> RouterRegistry:
         create_control_plane_router,
         description='Workspace/user/membership/invite/settings metadata foundation',
         tags=['control-plane'],
+    )
+    registry.register(
+        'sandbox',
+        '/w/{workspace_id}/api/v1/sandbox',
+        create_sandbox_router,
+        description='Workspace-scoped sandbox command execution for internal agent tools',
+        tags=['sandbox'],
     )
 
     # Optional routers
@@ -196,17 +206,32 @@ def create_capabilities_router(
     router = APIRouter(tags=['capabilities'])
 
     @router.get('/capabilities')
-    async def get_capabilities():
+    async def get_capabilities(request: Request):
         """Get API capabilities and available features.
 
         Returns a stable JSON structure describing what features
         are enabled in this API instance. The UI uses this to
         conditionally render components.
         """
+        features = dict(enabled_features)
+        pi_harness = getattr(request.app.state, 'pi_harness', None)
+        if pi_harness is not None:
+            health = await pi_harness.healthy()
+            features['pi'] = health.ok
+
         capabilities = {
             'version': '0.1.0',
-            'features': enabled_features,
+            'features': features,
         }
+        runtime_config = build_runtime_config_payload(
+            config=config,
+            enabled_features=features,
+        )
+        agents_payload = runtime_config.get('agents') or {}
+        capabilities['agents'] = list(agents_payload.get('available', []))
+        capabilities['agent_mode'] = agents_payload.get('mode')
+        if agents_payload.get('default'):
+            capabilities['agent_default'] = agents_payload['default']
 
         # Add router details if registry provided
         if registry:
@@ -225,6 +250,10 @@ def create_capabilities_router(
                 "control_plane": {
                     "owner_service": "boring-ui",
                     "canonical_families": ["/api/v1/control-plane/*"],
+                },
+                "sandbox": {
+                    "owner_service": "workspace-core",
+                    "canonical_families": ["/w/{workspace_id}/api/v1/sandbox/*"],
                 },
                 "pty": {"owner_service": "pty-service", "canonical_families": ["/ws/pty", "/api/v1/pty/*"]},
                 "chat_claude_code": {
@@ -256,7 +285,7 @@ def create_capabilities_router(
                         else info.description
                     ),
                     'tags': info.tags,
-                    'enabled': enabled_features.get(info.name, False),
+                    'enabled': features.get(info.name, False),
                     'contract_metadata': (
                         contract_by_router.get(info.name) if include_contract_metadata else None
                     ),
@@ -269,21 +298,22 @@ def create_capabilities_router(
             ]
 
         # Workspace plugin panes
-        if plugin_manager is not None:
+        if plugin_manager is not None and (config is None or config.workspace_plugins_enabled):
             capabilities['workspace_panes'] = plugin_manager.list_workspace_panes()
             capabilities['workspace_routes'] = plugin_manager.list_workspace_routes()
 
         # Service connection info for direct-connect panels
-        if config and config.companion_url:
+        if pi_harness is not None:
             services = capabilities.setdefault('services', {})
-            services['companion'] = {
-                'url': config.companion_url,
-            }
-        if config and config.pi_url:
-            services = capabilities.setdefault('services', {})
+            base_url = str(request.base_url).rstrip('/')
+            workspace_id = (
+                str(request.path_params.get('workspace_id', '')).strip()
+                or str(request.headers.get('x-workspace-id', '')).strip()
+            )
+            service_url = f"{base_url}/w/{workspace_id}" if workspace_id else base_url
             services['pi'] = {
-                'url': config.pi_url,
-                'mode': config.pi_mode,
+                'url': service_url,
+                'mode': 'backend',
             }
 
         # Auth configuration for SPA-rendered login pages
@@ -295,16 +325,28 @@ def create_capabilities_router(
                 'appName': config.auth_app_name or '',
                 'appDescription': config.auth_app_description or '',
             }
-        elif config and config.supabase_url and config.supabase_anon_key:
-            capabilities['auth'] = {
-                'provider': 'supabase',
-                'supabaseUrl': config.supabase_url.rstrip('/'),
-                'supabaseAnonKey': config.supabase_anon_key,
-                'callbackUrl': '/auth/callback',
-                'appName': config.auth_app_name or '',
-                'appDescription': config.auth_app_description or '',
-            }
 
         return capabilities
+
+    return router
+
+
+def create_runtime_config_router(
+    config: "APIConfig | None" = None,
+    enabled_features: dict[str, bool] | None = None,
+) -> APIRouter:
+    """Create the canonical runtime config router for frontend boot."""
+    router = APIRouter(tags=['capabilities'])
+
+    @router.get('/__bui/config')
+    async def get_runtime_config(request: Request):
+        payload = getattr(request.app.state, 'bui_runtime_config', None)
+        if payload is not None:
+            return payload
+        state_features = getattr(request.app.state, 'enabled_features', None)
+        return build_runtime_config_payload(
+            config=config,
+            enabled_features=state_features or enabled_features or {},
+        )
 
     return router

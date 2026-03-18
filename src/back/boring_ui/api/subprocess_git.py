@@ -126,8 +126,14 @@ class SubprocessGitBackend(GitBackend):
     def __init__(self, workspace_root: Path):
         self.workspace_root = workspace_root
 
-    def _run(self, args: list[str], credentials: GitCredentials | None = None,
-             timeout: int = 30, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    def _run(
+        self,
+        args: list[str],
+        credentials: GitCredentials | None = None,
+        timeout: int = 30,
+        cwd: Path | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess:
         """Run a git command and return the CompletedProcess.
 
         Raises GitCommandError on non-zero exit. Caller gets full result
@@ -136,12 +142,16 @@ class SubprocessGitBackend(GitBackend):
         env = None
         askpass_path = None
         try:
+            if extra_env:
+                env = os.environ.copy()
+                env.update(extra_env)
             if credentials:
                 askpass_path = _create_askpass_script(
                     credentials.username,
                     credentials.password,
                 )
-                env = os.environ.copy()
+                if env is None:
+                    env = os.environ.copy()
                 env['GIT_ASKPASS'] = askpass_path
                 env['GIT_TERMINAL_PROMPT'] = '0'
 
@@ -252,10 +262,17 @@ class SubprocessGitBackend(GitBackend):
     def commit(self, message: str, author_name: str | None = None,
                author_email: str | None = None) -> str:
         args = ['commit', '-m', message]
+        extra_env = None
         if author_name and author_email:
             args.extend(['--author', f'{author_name} <{author_email}>'])
+            extra_env = {
+                'GIT_AUTHOR_NAME': author_name,
+                'GIT_AUTHOR_EMAIL': author_email,
+                'GIT_COMMITTER_NAME': author_name,
+                'GIT_COMMITTER_EMAIL': author_email,
+            }
 
-        self._run(args)
+        self._run(args, extra_env=extra_env)
         oid = self._run_stdout(['rev-parse', 'HEAD']).strip()
         return oid
 

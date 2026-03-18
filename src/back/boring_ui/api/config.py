@@ -5,6 +5,7 @@ import secrets
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 _GITHUB_SLUG_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9\-]*$')
 
@@ -71,6 +72,17 @@ def _env_str(name: str, default: str) -> str:
     return stripped if stripped else default
 
 
+def _env_optional_multiline(name: str) -> str | None:
+    """Read an optional env var and expand escaped newlines when present."""
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    return stripped.replace('\\n', '\n')
+
+
 def _env_cmd(name: str) -> list[str] | None:
     """Parse a command list from a string env var (shell-like splitting)."""
     raw = os.environ.get(name)
@@ -98,11 +110,47 @@ def _normalize_control_plane_provider(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
     if value in {"", "local"}:
         return "local"
-    if value in {"supabase", "postgres"}:
-        return "supabase"
     if value == "neon":
         return "neon"
     return "local"
+
+
+def _normalize_sandbox_backend(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"", "auto"}:
+        return "auto"
+    if value in {"exec", "validated_exec"}:
+        return "validated_exec"
+    if value == "boxlite":
+        return "boxlite"
+    if value == "nsjail":
+        return "nsjail"
+    raise ValueError(f"Unsupported SANDBOX_BACKEND: {raw}")
+
+
+def _normalize_agent_mode(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"", "frontend"}:
+        return "frontend"
+    if value == "backend":
+        return "backend"
+    raise ValueError(f"Unsupported agent mode: {raw}")
+
+
+@dataclass(frozen=True)
+class AgentRuntimeConfig:
+    """Serializable agent configuration sourced from boring.app.toml."""
+
+    enabled: bool = True
+    port: int | None = None
+    transport: str | None = None
+    command: tuple[str, ...] = ()
+    env: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _default_agents() -> dict[str, AgentRuntimeConfig]:
+    return {"pi": AgentRuntimeConfig(enabled=True)}
 
 
 @dataclass
@@ -121,19 +169,8 @@ class APIConfig:
         'shell': ['bash'],
         'claude': ['claude', '--dangerously-skip-permissions'],
     })
-    companion_url: str | None = field(
-        default_factory=lambda: os.environ.get('COMPANION_URL')
-    )
-    pi_url: str | None = field(
-        default_factory=lambda: os.environ.get('PI_URL')
-    )
-    # PI provider rendering mode:
-    # - embedded: use built-in chat UI (functional fallback/default)
-    # - iframe: render configured PI_URL inside iframe
-    pi_mode: str = field(
-        default_factory=lambda: (os.environ.get('PI_MODE') or 'embedded').strip().lower()
-    )
     # Disabled by default because workspace plugins execute local Python modules.
+    # Hosted backend-agent v1 keeps plugins as a local/dev-only escape hatch.
     workspace_plugins_enabled: bool = field(
         default_factory=lambda: _env_bool('WORKSPACE_PLUGINS_ENABLED', False)
     )
@@ -187,22 +224,7 @@ class APIConfig:
     auth_rail_code: str = field(
         default_factory=lambda: _env_str('AUTH_RAIL_CODE', '')
     )
-    supabase_url: str | None = field(
-        default_factory=lambda: os.environ.get('SUPABASE_URL')
-    )
-    supabase_anon_key: str | None = field(
-        default_factory=lambda: os.environ.get('SUPABASE_ANON_KEY')
-    )
-    supabase_service_role_key: str | None = field(
-        default_factory=lambda: os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
-    )
-    supabase_jwt_secret: str | None = field(
-        default_factory=lambda: os.environ.get('SUPABASE_JWT_SECRET')
-    )
-    supabase_db_url: str | None = field(
-        default_factory=lambda: os.environ.get('SUPABASE_DB_URL')
-    )
-    # Canonical DATABASE_URL (used by Neon, falls back to SUPABASE_DB_URL)
+    # Canonical hosted control-plane database URL.
     database_url: str | None = field(
         default_factory=lambda: os.environ.get('DATABASE_URL')
     )
@@ -236,7 +258,7 @@ class APIConfig:
         default_factory=lambda: os.environ.get('GITHUB_APP_CLIENT_SECRET')
     )
     github_app_private_key: str | None = field(
-        default_factory=lambda: os.environ.get('GITHUB_APP_PRIVATE_KEY')
+        default_factory=lambda: _env_optional_multiline('GITHUB_APP_PRIVATE_KEY')
     )
     github_app_slug: str | None = field(
         default_factory=lambda: os.environ.get('GITHUB_APP_SLUG')
@@ -246,6 +268,29 @@ class APIConfig:
     github_sync_enabled: bool = field(
         default_factory=lambda: _env_bool('GITHUB_SYNC_ENABLED', True)
     )
+    sandbox_backend: str = field(
+        default_factory=lambda: _normalize_sandbox_backend(os.environ.get("SANDBOX_BACKEND"))
+    )
+    boxlite_image: str = field(
+        default_factory=lambda: _env_str(
+            "BORING_UI_BOXLITE_IMAGE",
+            "ghcr.io/hachej/boring-ui-boxlite-guest:latest",
+        )
+    )
+    boxlite_rootfs_path: str | None = field(
+        default_factory=lambda: os.environ.get("BORING_UI_BOXLITE_ROOTFS_PATH")
+    )
+    internal_api_token: str = field(
+        default_factory=lambda: _env_str(
+            "BORING_INTERNAL_API_TOKEN",
+            _env_str("BORING_UI_INTERNAL_TOKEN", ""),
+        )
+    )
+    frontend_config: dict[str, Any] = field(default_factory=dict)
+    agents_mode: str = field(default_factory=lambda: _normalize_agent_mode(None))
+    agents_default: str | None = "pi"
+    agents: dict[str, AgentRuntimeConfig] = field(default_factory=_default_agents)
+    _execution_backend_instance: Any | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         # Test harness hook: allow overriding the PTY provider commands without
@@ -260,6 +305,10 @@ class APIConfig:
         if not self.auth_session_secret:
             # Generate an ephemeral secret when one is not configured explicitly.
             self.auth_session_secret = secrets.token_urlsafe(48)
+        if not self.internal_api_token:
+            # Temporary bridge for internal callers until a dedicated token
+            # provisioning flow exists.
+            self.internal_api_token = self.auth_session_secret
 
         # Normalize passthrough roots to canonical absolute roots without trailing slash.
         normalized_roots: list[str] = []
@@ -285,15 +334,62 @@ class APIConfig:
         if self.control_plane_provider == "local" and self.neon_auth_base_url:
             self.control_plane_provider = "neon"
 
-        # Auto-enable supabase provider when explicit envs are present.
-        if self.control_plane_provider == "local" and (
-            (self.supabase_url and self.supabase_anon_key) or self.supabase_db_url
-        ):
-            self.control_plane_provider = "supabase"
+        # Hosted backend-agent v1 runs with isolated execution backends and does
+        # not support in-process workspace plugins, including the auto-resolved path.
+        if self.resolve_sandbox_backend() in {"nsjail", "boxlite"}:
+            self.workspace_plugins_enabled = False
 
-    @property
-    def use_supabase_control_plane(self) -> bool:
-        return self.control_plane_provider == "supabase"
+        self.agents_mode = _normalize_agent_mode(self.agents_mode)
+        if not self.agents:
+            self.agents = _default_agents()
+        else:
+            normalized_agents: dict[str, AgentRuntimeConfig] = {}
+            for name, agent in self.agents.items():
+                agent_name = str(name or "").strip()
+                if not agent_name:
+                    continue
+                if isinstance(agent, AgentRuntimeConfig):
+                    normalized_agents[agent_name] = agent
+                    continue
+                if not isinstance(agent, dict):
+                    raise TypeError(
+                        f"Agent config for {agent_name!r} must be AgentRuntimeConfig or dict"
+                    )
+                command = tuple(str(part) for part in agent.get("command", ()) if str(part).strip())
+                env = {
+                    str(key): str(value)
+                    for key, value in dict(agent.get("env", {})).items()
+                }
+                metadata = {
+                    key: value
+                    for key, value in dict(agent).items()
+                    if key not in {"enabled", "port", "transport", "command", "env"}
+                }
+                normalized_agents[agent_name] = AgentRuntimeConfig(
+                    enabled=bool(agent.get("enabled", True)),
+                    port=int(agent["port"]) if agent.get("port") is not None else None,
+                    transport=str(agent.get("transport")).strip() or None,
+                    command=command,
+                    env=env,
+                    metadata=metadata,
+                )
+            self.agents = normalized_agents or _default_agents()
+
+        normalized_frontend = dict(self.frontend_config or {})
+        for key in ("branding", "features", "data", "panels"):
+            value = normalized_frontend.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, dict):
+                raise TypeError(f"frontend_config[{key!r}] must be a mapping when provided")
+            normalized_frontend[key] = dict(value)
+        self.frontend_config = normalized_frontend
+
+        if self.agents_default is not None:
+            default_name = str(self.agents_default).strip()
+            self.agents_default = default_name or None
+        if self.agents_default is None or self.agents_default not in self.agents:
+            self.agents_default = next(iter(self.available_agents), None)
 
     @property
     def use_neon_control_plane(self) -> bool:
@@ -301,8 +397,57 @@ class APIConfig:
 
     @property
     def effective_database_url(self) -> str | None:
-        """Return the canonical database URL: DATABASE_URL > SUPABASE_DB_URL."""
-        return self.database_url or self.supabase_db_url
+        """Return the canonical database URL for hosted control-plane mode."""
+        return self.database_url
+
+    def resolve_sandbox_backend(
+        self,
+        *,
+        nsjail_available: bool | None = None,
+        boxlite_available: bool | None = None,
+    ) -> str:
+        """Resolve the effective sandbox backend name."""
+        if self.sandbox_backend != "auto":
+            return self.sandbox_backend
+
+        if nsjail_available is None:
+            from .sandbox import NsjailBackend
+
+            nsjail_available = NsjailBackend.available()
+        if nsjail_available:
+            return "nsjail"
+
+        if boxlite_available is None:
+            from .sandbox import BoxLiteBackend
+
+            boxlite_available = BoxLiteBackend.available()
+        return "boxlite" if boxlite_available else "validated_exec"
+
+    def create_execution_backend(self):
+        """Construct the configured execution backend."""
+        if self._execution_backend_instance is not None:
+            return self._execution_backend_instance
+
+        backend_name = self.resolve_sandbox_backend()
+        if backend_name == "validated_exec":
+            from .sandbox import ValidatedExecBackend
+
+            backend = ValidatedExecBackend()
+        elif backend_name == "boxlite":
+            from .sandbox import BoxLiteBackend
+
+            backend = BoxLiteBackend(
+                home_dir=self.workspace_root / ".boring" / "boxlite",
+                image=self.boxlite_image,
+                rootfs_path=self.boxlite_rootfs_path,
+            )
+        else:
+            from .sandbox import NsjailBackend
+
+            backend = NsjailBackend()
+
+        self._execution_backend_instance = backend
+        return backend
 
     @property
     def github_configured(self) -> bool:
@@ -312,6 +457,21 @@ class APIConfig:
             and self.github_app_id
             and self.github_app_private_key
         )
+
+    @property
+    def available_agents(self) -> list[str]:
+        """Return enabled agents in stable configuration order."""
+        return [
+            name
+            for name, agent in self.agents.items()
+            if agent.enabled
+        ]
+
+    @property
+    def default_agent_name(self) -> str | None:
+        if self.agents_default and self.agents_default in self.available_agents:
+            return self.agents_default
+        return next(iter(self.available_agents), None)
 
     def validate_path(self, path: Path | str) -> Path:
         """Validate that a path is within workspace_root.

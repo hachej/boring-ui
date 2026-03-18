@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 from typing import Any, Optional
@@ -11,6 +12,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ...config import APIConfig
+from ...middleware.request_id import ensure_request_id, request_id_header_pair
+from ...observability import ensure_metrics_registry, log_event
+from ...workspace import resolve_websocket_workspace_context
 from .service import (
     StreamSession,
     build_stream_args,
@@ -21,6 +25,8 @@ from .service import (
     _SESSION_REGISTRY_LOCK,
     MAX_SESSIONS,
 )
+
+logger = logging.getLogger("boring_ui.stream")
 
 
 async def handle_stream_websocket(
@@ -46,7 +52,15 @@ async def handle_stream_websocket(
     - Forward Claude's JSON output directly
     - {"type": "system", "subtype": "...", ...} - System messages (errors, etc.)
     """
-    await websocket.accept()
+    request_id = ensure_request_id(websocket)
+    metrics = ensure_metrics_registry(websocket.app)
+    await websocket.accept(headers=[request_id_header_pair(request_id)])
+
+    async def _send_json(payload: dict[str, Any]) -> None:
+        if "request_id" not in payload:
+            payload = dict(payload)
+            payload["request_id"] = request_id
+        await websocket.send_json(payload)
 
     def _is_valid_uuid(value: str) -> bool:
         """Check if a string is a valid UUID."""
@@ -120,6 +134,7 @@ async def handle_stream_websocket(
             file_specs = _parse_file_specs(raw_files.split(","))
 
     extra_env = {
+        "BORING_UI_REQUEST_ID": request_id,
         "KURT_SESSION_PROVIDER": "claude-stream",
         "KURT_SESSION_NAME": session_id,
     }
@@ -229,6 +244,15 @@ async def handle_stream_websocket(
         await stale_session.terminate(force=True)
 
     await session.add_client(websocket)
+    metrics.set_gauge("pi_sessions_active", float(len(_SESSION_REGISTRY)))
+    log_event(
+        logger,
+        "stream_session_connected",
+        request_id=request_id,
+        workspace_id=str(websocket.headers.get("x-workspace-id", "") or ""),
+        session_id=session_id,
+        resumed=(not created and not force_new),
+    )
 
     if created:
         try:
@@ -236,7 +260,7 @@ async def handle_stream_websocket(
             await session.start_read_loop()
             await asyncio.sleep(0.2)
             if session.proc and session.proc.returncode is not None:
-                await websocket.send_json({
+                await _send_json({
                     "type": "system",
                     "subtype": "error",
                     "message": "Claude process exited unexpectedly. Session may be in use.",
@@ -245,7 +269,7 @@ async def handle_stream_websocket(
                 await session.terminate()
                 return
         except Exception as e:
-            await websocket.send_json({
+            await _send_json({
                 "type": "system",
                 "subtype": "error",
                 "message": f"Failed to start session: {e}",
@@ -256,7 +280,7 @@ async def handle_stream_websocket(
 
     current_options = getattr(session, "_options", None) or {}
     effective_model = current_options.get("model") or "sonnet"
-    await websocket.send_json({
+    await _send_json({
         "type": "system",
         "subtype": "connected",
         "session_id": session_id,
@@ -269,7 +293,7 @@ async def handle_stream_websocket(
 
     if not created and session._last_init_message:
         print("[Stream] Sending stored init message to resumed client")
-        await websocket.send_json(session._last_init_message)
+        await _send_json(session._last_init_message)
 
     try:
         while True:
@@ -329,7 +353,7 @@ async def handle_stream_websocket(
                         text_content = _extract_text_from_content(content)
                         triggered = False
                         if "__emit_permission__" in text_content:
-                            await websocket.send_json({
+                            await _send_json({
                                 "type": "control_request",
                                 "request_id": "perm-1",
                                 "request": {
@@ -346,7 +370,7 @@ async def handle_stream_websocket(
                             })
                             triggered = True
                         if "__emit_question__" in text_content:
-                            await websocket.send_json({
+                            await _send_json({
                                 "type": "control",
                                 "subtype": "user_question_request",
                                 "request_id": "quest-1",
@@ -373,7 +397,7 @@ async def handle_stream_websocket(
                             })
                             triggered = True
                         if "__emit_tool__" in text_content:
-                            await websocket.send_json({
+                            await _send_json({
                                 "type": "assistant",
                                 "message": {
                                     "role": "assistant",
@@ -386,7 +410,7 @@ async def handle_stream_websocket(
                                     }],
                                 },
                             })
-                            await websocket.send_json({
+                            await _send_json({
                                 "type": "user",
                                 "message": {
                                     "role": "user",
@@ -419,7 +443,7 @@ async def handle_stream_websocket(
 
                 if subtype == "initialize":
                     session._capabilities = payload.get("capabilities", {})
-                    await websocket.send_json({"type": "system", "subtype": "echo", "payload": payload})
+                    await _send_json({"type": "system", "subtype": "echo", "payload": payload})
                     continue
 
                 if subtype == "set_permission_mode":
@@ -533,14 +557,14 @@ async def handle_stream_websocket(
 
             elif msg_type == "interrupt":
                 await session.interrupt()
-                await websocket.send_json({
+                await _send_json({
                     "type": "system",
                     "subtype": "interrupted",
                     "session_id": session_id,
                 })
 
             elif msg_type == "ping":
-                await websocket.send_json({"type": "pong"})
+                await _send_json({"type": "pong"})
 
             elif msg_type == "restart":
                 await session.terminate()
@@ -556,7 +580,7 @@ async def handle_stream_websocket(
                 await session.spawn()
                 await session.start_read_loop()
                 await session.add_client(websocket)
-                await websocket.send_json({
+                await _send_json({
                     "type": "system",
                     "subtype": "restarted",
                     "session_id": session_id,
@@ -568,6 +592,14 @@ async def handle_stream_websocket(
         print(f"[Stream] WebSocket error: {e}")
     finally:
         await session.remove_client(websocket)
+        metrics.set_gauge("pi_sessions_active", float(len(_SESSION_REGISTRY)))
+        log_event(
+            logger,
+            "stream_session_disconnected",
+            request_id=request_id,
+            workspace_id=str(websocket.headers.get("x-workspace-id", "") or ""),
+            session_id=session_id,
+        )
 
 
 def create_stream_router(config: APIConfig) -> APIRouter:
@@ -577,6 +609,11 @@ def create_stream_router(config: APIConfig) -> APIRouter:
     # Canonical agent-normal stream endpoint (legacy `/ws/claude-stream` rewritten).
     @router.websocket("/stream")
     async def stream_websocket(websocket: WebSocket):
-        await handle_stream_websocket(websocket, cwd=str(config.workspace_root))
+        try:
+            ctx = await resolve_websocket_workspace_context(websocket, config=config)
+        except ValueError as exc:
+            await websocket.close(code=4004, reason=str(exc))
+            return
+        await handle_stream_websocket(websocket, cwd=str(ctx.root_path))
 
     return router
