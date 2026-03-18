@@ -2,7 +2,7 @@
 
 ## Status
 
-New plan candidate. Intended to supersede the Go-based plan after review, not by blind replacement:
+Approved canonical plan. This supersedes the Go-based plan as the implementation target:
 - Go backend: 70% done but not fully working. Would require finishing + sidecar complexity.
 - Node.js rewrite: Clean architecture but full rewrite effort.
 - **Python (FastAPI): 100% working, deployed, battle-tested.** Enhance with sandbox + PI sidecar.
@@ -41,7 +41,7 @@ The Python backend at `src/back/boring_ui/api/` is **complete and deployed**. Ev
 | **PTY** | `modules/pty/` | WebSocket terminal sessions, multi-client, idle cleanup | Working |
 | **Stream** | `modules/stream/` | Claude CLI bridge, WebSocket streaming, session management | Working |
 | **Control Plane** | `modules/control_plane/` | Users, workspaces, memberships, invites, settings, runtime | Working |
-| **Auth** | `control_plane/auth_*` | Local, Supabase, Neon Auth (Better Auth), JWKS JWT validation | Working |
+| **Auth** | `control_plane/auth_*` | Local, Neon Auth (Better Auth), JWKS JWT validation | Working |
 | **GitHub** | `modules/github_auth/` | OAuth flow, installation management, git credential resolution | Working |
 | **UI State** | `modules/ui_state/` | Panel state persistence, UI commands | Working |
 | **Agent Normal** | `modules/agent_normal/` | Session lifecycle, attachment uploads | Working |
@@ -56,7 +56,7 @@ The Python backend at `src/back/boring_ui/api/` is **complete and deployed**. Ev
 - `WorkspacePluginManager` — existing extension point for workspace-local routes/plugins
 - Session cookies (HS256 JWT, shared with boring-sandbox)
 - Policy enforcement via `X-Scope-Context` header
-- Database: local JSON + asyncpg (Neon/Supabase)
+- Database: local JSON + asyncpg (Neon hosted mode)
 - Deployment: Modal child-app path exists today; Docker/VM path should be formalized as part of this work
 
 **What this means**: We are NOT rewriting the backend. We are adding three new capabilities to a working system.
@@ -163,12 +163,14 @@ Important design rule:
 - thin HTTP wrappers can expose them outward
 - the backend should not force itself to call localhost HTTP just to read files or run git
 
-**Two implementations**:
+**Three implementations**:
 
 ```python
 # src/back/boring_ui/api/sandbox/nsjail.py
 class NsjailBackend:
-    """Production: per-command namespace isolation."""
+    """Production option A: per-command namespace isolation.
+    Requires nsjail binary (build from source — no distro package).
+    Lightweight: 0 RAM, ~1ms per command. Namespace-grade isolation."""
     async def run(self, *, workspace_root, command, **kw) -> ExecutionResult:
         proc = await asyncio.create_subprocess_exec(
             'nsjail', '--mode', 'once',
@@ -184,6 +186,32 @@ class NsjailBackend:
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds + 5)
         return ExecutionResult(exit_code=proc.returncode, stdout=stdout.decode(), ...)
+
+# src/back/boring_ui/api/sandbox/boxlite_backend.py
+class BoxLiteBackend:
+    """Production option B: micro-VM per workspace via BoxLite.
+    Install: pip install boxlite (30MB wheel, zero build deps, needs /dev/kvm).
+    Stronger isolation (own kernel) than nsjail. Natively stateful.
+    Heavier: ~500MB RAM per active workspace, ~7s cold boot / resume from pause.
+    Idle workspaces pause to near-zero RAM."""
+
+    def __init__(self):
+        from boxlite import SyncBoxlite
+        self.runtime = SyncBoxlite.default().start()
+        self._boxes = {}  # workspace_id → Box
+
+    async def run(self, *, workspace_root, command, **kw) -> ExecutionResult:
+        box = self._get_or_create_box(workspace_root)
+        execution = box.exec("bash", ["-c", command])
+        stdout = "\n".join(execution.stdout())
+        return ExecutionResult(exit_code=execution.exit_code, stdout=stdout, ...)
+
+    def available(self) -> bool:
+        try:
+            import boxlite
+            return Path("/dev/kvm").exists()
+        except ImportError:
+            return False
 
 # src/back/boring_ui/api/sandbox/validated_exec.py
 class ValidatedExecBackend:
@@ -374,7 +402,16 @@ Capabilities endpoint reports: `agents: ["pi"]`.
 
 ## Part 4: Simplification Of The Current Setup
 
-The plan should explicitly simplify the current product and deployment surface, not just add backend-agent features on top of all existing modes.
+This section is a finalized architecture decision, not an open question. The Python backend-agent rollout has one canonical deployment shape and keeps old deploy modes only as compatibility shims.
+
+### Phase 0 deployment decision (final)
+
+- **Canonical deployment shape:** one FastAPI backend (`backend.type = "python"`) plus a local Node.js PI sidecar plus `nsjail` on a normal Linux host.
+- **Edge mode:** legacy compatibility only. It is not a first-class deployment target for the backend-agent system.
+- **`boring-sandbox`:** optional legacy edge infrastructure for proxy/routing/provisioning/token injection. It is not required for new hosted deployments.
+- **Agent mode:** app-level config in `boring.app.toml` via `frontend|backend`, not a `core|edge` deploy toggle.
+- **Frontend runtime config source:** `/__bui/config` is the canonical runtime contract the frontend reads at boot.
+- **Workspace plugins policy for v1:** dev-only escape hatch, not part of the hosted canonical path. In hosted `nsjail` mode they are forced off and must not be advertised via capabilities.
 
 ### What should be simplified
 
@@ -395,16 +432,17 @@ Reason:
 - workspace state lives on the mounted filesystem; it does not need an external edge data plane
 - the old edge path mainly exists to support `boring-sandbox` proxy/orchestration concerns from the previous architecture
 
-The recommended stance is:
+The final stance is:
 
 - `edge mode` becomes a **legacy compatibility path**
-- the new canonical deployment path is a single backend deployment on a normal Linux host
+- the new canonical deployment path is a single FastAPI backend deployment on a normal Linux host with a local Node.js PI sidecar and `nsjail`
 - once the backend-agent deployment is validated, frontend config and docs should stop centering `core/edge` as the primary mental model
 
 ### What should remain after simplification
 
 - workspace-scoped routes such as `/w/{workspace_id}/...`
 - backend vs frontend **agent** mode as an app-level configuration choice
+- `/__bui/config` as the canonical runtime config surface for the frontend
 - child-app configuration through `boring.app.toml`
 
 ### What should be deprecated after validation
@@ -568,9 +606,19 @@ Provider: Hetzner Cloud (cheapest MVP) or OVH (sovereignty).
 3. Add nsjail to Dockerfile
 4. Add Python packages to Docker image (pre-installed)
 5. Create `.pip-local/` on workspace provisioning
-6. Config: `SANDBOX_BACKEND` env var
+6. Config: `SANDBOX_BACKEND` env var (`nsjail` | `boxlite` | `validated_exec` | `auto`)
+7. `auto` selection: tries nsjail → boxlite → validated_exec (best available)
 
 **Effort**: 3-5 days. nsjail is mature. Main work is mount configuration.
+
+**Backend selection** (config-driven via `SANDBOX_BACKEND` env var):
+
+| Backend | Install | Requires | Isolation | Overhead | Best for |
+|---|---|---|---|---|---|
+| `nsjail` | Build from source (C++) | Linux namespaces | Namespace (PID/mount/net) | ~1ms, 0 RAM | Lightweight production |
+| `boxlite` | `pip install boxlite` (30MB) | `/dev/kvm` | VM kernel (strongest) | ~21ms, ~500MB/active ws | Strong isolation, easy install |
+| `validated_exec` | Built-in | Nothing | Allowlist only | ~0ms | Dev/trusted only |
+| `auto` | — | — | Best available | — | Default (tries nsjail → boxlite → validated_exec) |
 
 ### Phase 3: PI Agent Harness + Sidecar
 
