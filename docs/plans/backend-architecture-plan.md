@@ -739,7 +739,7 @@ Add `platform = "docker"` to complement existing `platform = "modal"`:
 platform = "docker"                    # "modal" | "docker"
 
 [deploy.docker]
-registry = "ghcr.io/boringdata"
+registry = "ghcr.io/hachej"
 compose_file = "deploy/docker-compose.prod.yml"
 host = "boring-ui.example.com"
 ssh_key_vault = "secret/agent/hetzner-ssh"

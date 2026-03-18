@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Edge mode E2E smoke test: signup -> signin -> workspace -> provisioning -> sprite -> agent."""
+"""Edge mode E2E smoke test: auth -> workspace -> provisioning -> sprite -> agent."""
 
 from __future__ import annotations
 
@@ -7,14 +7,12 @@ import argparse
 import json
 import sys
 import time
-
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from smoke_lib.auth import random_password, signup_flow, signin_flow
 from smoke_lib.client import SmokeClient, StepResult
 from smoke_lib.files import check_file_tree, create_and_read_file, check_git_status
-from smoke_lib.secrets import supabase_url, supabase_anon_key, resend_api_key
+from smoke_lib.session_bootstrap import ensure_session
 from smoke_lib.workspace import (
     create_workspace,
     list_workspaces,
@@ -27,6 +25,8 @@ from smoke_lib.workspace import (
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument("--auth-mode", choices=["neon", "dev"], default="neon")
+    parser.add_argument("--neon-auth-url", default="")
     parser.add_argument("--recipient", help="Override test email address")
     parser.add_argument("--timeout", type=int, default=180, help="Resend polling timeout seconds")
     parser.add_argument("--provision-timeout", type=int, default=120, help="Sprite provisioning timeout")
@@ -39,36 +39,16 @@ def main() -> int:
     args = parser.parse_args()
 
     client = SmokeClient(args.base_url)
-    sb_url = supabase_url()
-    sb_anon = supabase_anon_key()
-
-    # --- Phases 1-4: Auth ---
-    if args.skip_signup:
-        if not args.email or not args.password:
-            print("--skip-signup requires --email and --password", file=sys.stderr)
-            return 1
-        email = args.email
-        password = args.password
-    else:
-        email = args.recipient or f"qa+smoke-edge-{int(time.time())}@mail.boringdata.io"
-        password = random_password()
-        resend_key = resend_api_key()
-        signup_flow(
-            client,
-            supabase_url=sb_url,
-            supabase_anon_key=sb_anon,
-            resend_api_key=resend_key,
-            email=email,
-            password=password,
-            timeout_seconds=args.timeout,
-        )
-
-    signin_flow(
+    ensure_session(
         client,
-        supabase_url=sb_url,
-        supabase_anon_key=sb_anon,
-        email=email,
-        password=password,
+        auth_mode=args.auth_mode,
+        base_url=args.base_url,
+        neon_auth_url=args.neon_auth_url,
+        email=args.email,
+        password=args.password,
+        recipient=args.recipient,
+        skip_signup=args.skip_signup,
+        timeout_seconds=args.timeout,
     )
 
     # --- Phase 5-6: Workspace ---

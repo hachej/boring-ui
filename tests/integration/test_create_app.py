@@ -58,6 +58,8 @@ class TestAppFactory:
         """Test that health endpoint is available."""
         paths = [r.path for r in app.routes if hasattr(r, 'path')]
         assert '/health' in paths
+        assert '/healthz' in paths
+        assert '/metrics' in paths
 
     def test_app_has_api_config_endpoint(self, app):
         """Test that config endpoint is available."""
@@ -126,6 +128,11 @@ class TestAppFactory:
         assert '/api/v1/control-plane/health' in paths
         assert '/api/v1/control-plane/snapshot' in paths
 
+    def test_app_has_workspace_sandbox_exec_endpoint(self, app):
+        """Test that workspace-scoped sandbox execution endpoint is available."""
+        paths = [r.path for r in app.routes if hasattr(r, 'path')]
+        assert '/w/{workspace_id}/api/v1/sandbox/exec' in paths
+
     def test_app_has_api_sessions_endpoints(self, app):
         """Test that session list/create endpoints are available."""
         paths = [r.path for r in app.routes if hasattr(r, 'path')]
@@ -168,6 +175,7 @@ class TestHealthEndpoint:
             assert features['git'] is True
             assert features['ui_state'] is True
             assert features['control_plane'] is True
+            assert features['sandbox'] is True
             assert features['pty'] is True
             assert features['chat_claude_code'] is True
             assert features['stream'] is True  # Backward compat alias
@@ -185,10 +193,46 @@ class TestHealthEndpoint:
             assert features['git'] is True
             assert features['ui_state'] is True
             assert features['control_plane'] is True
+            assert features['sandbox'] is True
             assert features['pty'] is False
             assert features['chat_claude_code'] is False
             assert features['stream'] is False
             assert features['approval'] is False
+
+    @pytest.mark.asyncio
+    async def test_healthz_returns_request_id_and_checks(self, app):
+        """Test healthz includes request correlation and combined checks."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.get('/healthz', headers={'x-request-id': 'req-healthz-1'})
+            assert response.status_code == 200
+            assert response.headers['x-request-id'] == 'req-healthz-1'
+            data = response.json()
+            assert data['status'] == 'ok'
+            assert data['request_id'] == 'req-healthz-1'
+            assert data['checks']['api'] == 'ok'
+            assert 'pi' in data['checks']
+            assert data['metrics']['gauges']['pi_sessions_active'] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_metrics_exposes_prometheus_output(self, app):
+        """Test metrics endpoint exposes Prometheus-style names."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.get('/metrics')
+            assert response.status_code == 200
+            assert response.headers['content-type'].startswith('text/plain')
+            assert 'pi_sessions_active' in response.text
+            assert '# TYPE pi_sessions_active gauge' in response.text
+
+    @pytest.mark.asyncio
+    async def test_request_id_header_is_generated_when_missing(self, app):
+        """Test middleware generates request IDs when callers omit the header."""
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            response = await client.get('/api/capabilities')
+            assert response.status_code == 200
+            assert response.headers['x-request-id']
 
 
 class TestCapabilitiesEndpoint:

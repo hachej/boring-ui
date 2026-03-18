@@ -11,11 +11,6 @@ def _client(tmp_path: Path) -> TestClient:
     config = APIConfig(
         workspace_root=tmp_path,
         control_plane_provider="local",
-        supabase_url=None,
-        supabase_anon_key=None,
-        supabase_service_role_key=None,
-        supabase_jwt_secret=None,
-        supabase_db_url=None,
         database_url=None,
         neon_auth_base_url=None,
         neon_auth_jwks_url=None,

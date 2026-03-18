@@ -19,11 +19,6 @@ def _client(
         auth_dev_login_enabled=auth_dev_login_enabled,
         auth_dev_auto_login=False,
         control_plane_provider=control_plane_provider,
-        supabase_url=None,
-        supabase_anon_key=None,
-        supabase_service_role_key=None,
-        supabase_jwt_secret=None,
-        supabase_db_url=None,
         database_url=None,
         neon_auth_base_url=None,
         neon_auth_jwks_url=None,
@@ -70,7 +65,7 @@ def test_me_returns_identity_and_compat_fields(tmp_path: Path) -> None:
     assert payload["data"]["email"] == "owner@example.com"
 
 
-@pytest.mark.parametrize("control_plane_provider", ["local", "supabase", "neon"])
+@pytest.mark.parametrize("control_plane_provider", ["local", "neon"])
 def test_me_settings_round_trip(tmp_path: Path, control_plane_provider: str) -> None:
     client = _client(tmp_path, control_plane_provider=control_plane_provider)
     _login(client, user_id="user-33", email="settings@example.com")

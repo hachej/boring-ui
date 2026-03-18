@@ -1,10 +1,20 @@
 # Modes and Profiles
 
-This document is the canonical deployment/runtime contract for `boring-ui`.
+This document describes the current compatibility deployment/runtime contract for `boring-ui`.
+
+Canonical backend-agent architecture for new work:
+- one FastAPI backend with `backend.type = "python"`
+- one local Node.js PI sidecar
+- `nsjail` isolation on a normal Linux host
+- app-level agent choice via `frontend|backend`
+
+`edge` remains a legacy compatibility deployment path. `boring-sandbox` is optional edge infrastructure only and is not required for the canonical backend-agent architecture.
+
+For the Python backend-agent architecture, `core` is the canonical deployment path. `edge` remains a supported legacy compatibility mode for deployments that still need `boring-sandbox` in front of `boring-ui`.
 
 ## Deployment Modes
 
-Two deployment modes exist:
+Two compatibility deployment modes still exist today:
 
 1. `core`
 2. `edge`
@@ -41,6 +51,7 @@ flowchart LR
 - Request path: `frontend -> boring-sandbox -> boring-ui`
 - Ownership: `boring-sandbox` is edge-only (proxy/routing/provisioning/token injection).
 - Workspace/user/collaboration business logic remains in `boring-ui`.
+- Status: legacy compatibility path, not the canonical backend-agent deployment shape.
 
 ### Edge Mode Request Flow (Detailed)
 
@@ -92,7 +103,7 @@ Important implications:
 | Deploy mode | Default profile |
 | --- | --- |
 | `core` | `pi-lightningfs` |
-| `edge` | `companion-httpfs` |
+| `edge` | `companion-httpfs` (legacy compatibility only) |
 
 ## Environment Variables
 

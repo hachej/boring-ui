@@ -105,8 +105,6 @@ deploy/
 │   ├── Dockerfile.frontend           # Vite dev frontend
 │   ├── nginx.sandbox-proxy.conf      # Nginx proxy for legacy edge profile
 │   └── docker-compose.legacy.yml     # Legacy all-in-one (core + edge profiles)
-├── sql/
-│   └── control_plane_supabase_schema.sql
 └── README.md
 ```
 
@@ -174,7 +172,7 @@ Create named secrets in Modal dashboard:
 
 | Secret name | Used by | Required keys |
 |---|---|---|
-| `boring-ui-core-secrets` | Core + Edge control plane | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, `SUPABASE_DB_URL`, `BORING_SETTINGS_KEY`, `BORING_UI_SESSION_SECRET` |
+| `boring-ui-core-secrets` | Core + Edge control plane | `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `NEON_AUTH_JWKS_URL`, `BORING_SETTINGS_KEY`, `BORING_UI_SESSION_SECRET` |
 | `boring-ui-sandbox-secrets` | Edge control plane | `BORING_SANDBOX_API_KEY`, `BORING_SANDBOX_BASE_URL` |
 | `boring-sandbox-secrets` | Sandbox gateway | `BORING_SESSION_SECRET` (must match `BORING_UI_SESSION_SECRET`) |
 | `boring-sandbox-macro-secrets` | Sandbox gateway | Macro runtime config |

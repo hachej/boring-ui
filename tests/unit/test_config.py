@@ -30,7 +30,6 @@ class TestAPIConfig:
             'AUTH_SESSION_SECURE_COOKIE',
             'AUTH_DEV_LOGIN_ENABLED',
             'AUTH_DEV_AUTO_LOGIN',
-            'SUPABASE_JWT_SECRET',
         ):
             monkeypatch.delenv(name, raising=False)
         config = APIConfig(workspace_root=tmp_path)
@@ -51,7 +50,6 @@ class TestAPIConfig:
         assert config.auth_dev_login_enabled is False
         assert isinstance(config.auth_session_secret, str)
         assert len(config.auth_session_secret) >= 32
-        assert config.supabase_jwt_secret is None
 
     def test_custom_cors_origins(self, tmp_path):
         """Test custom CORS origins."""
@@ -71,47 +69,46 @@ class TestAPIConfig:
         config = APIConfig(workspace_root=tmp_path)
         assert config.pty_providers["claude"] == ["bash"]
 
-    def test_companion_url_from_env(self, tmp_path, monkeypatch):
-        """Test companion_url reads from COMPANION_URL env var."""
-        monkeypatch.setenv('COMPANION_URL', 'http://localhost:3456')
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.companion_url == 'http://localhost:3456'
-
-    def test_companion_url_none_when_unset(self, tmp_path, monkeypatch):
-        """Test companion_url is None when COMPANION_URL is not set."""
-        monkeypatch.delenv('COMPANION_URL', raising=False)
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.companion_url is None
-
-    def test_pi_url_from_env(self, tmp_path, monkeypatch):
-        """Test pi_url reads from PI_URL env var."""
-        monkeypatch.setenv('PI_URL', 'http://localhost:8787')
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.pi_url == 'http://localhost:8787'
-
-    def test_pi_url_none_when_unset(self, tmp_path, monkeypatch):
-        """Test pi_url is None when PI_URL is not set."""
-        monkeypatch.delenv('PI_URL', raising=False)
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.pi_url is None
-
-    def test_pi_mode_defaults_to_embedded(self, tmp_path, monkeypatch):
-        """Test pi_mode defaults to embedded."""
-        monkeypatch.delenv('PI_MODE', raising=False)
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.pi_mode == 'embedded'
-
-    def test_pi_mode_reads_env(self, tmp_path, monkeypatch):
-        """Test pi_mode reads from PI_MODE env var."""
-        monkeypatch.setenv('PI_MODE', 'iframe')
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.pi_mode == 'iframe'
-
     def test_workspace_plugins_enabled_from_env(self, tmp_path, monkeypatch):
-        """Test workspace_plugins_enabled is parsed from env."""
+        """Plugins stay enabled only when auto resolves to validated_exec."""
         monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
+        monkeypatch.setenv('SANDBOX_BACKEND', 'auto')
+        monkeypatch.setattr('boring_ui.api.sandbox.NsjailBackend.available', staticmethod(lambda: False))
+        monkeypatch.setattr('boring_ui.api.sandbox.BoxLiteBackend.available', staticmethod(lambda: False))
         config = APIConfig(workspace_root=tmp_path)
         assert config.workspace_plugins_enabled is True
+
+    def test_workspace_plugins_forced_off_for_nsjail(self, tmp_path, monkeypatch):
+        """Hosted nsjail mode must not allow in-process workspace plugins."""
+        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
+        monkeypatch.setenv('SANDBOX_BACKEND', 'nsjail')
+        config = APIConfig(workspace_root=tmp_path)
+        assert config.workspace_plugins_enabled is False
+
+    def test_workspace_plugins_forced_off_for_boxlite(self, tmp_path, monkeypatch):
+        """Hosted BoxLite mode must not allow in-process workspace plugins."""
+        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
+        monkeypatch.setenv('SANDBOX_BACKEND', 'boxlite')
+        config = APIConfig(workspace_root=tmp_path)
+        assert config.workspace_plugins_enabled is False
+
+    def test_workspace_plugins_forced_off_for_auto_nsjail(self, tmp_path, monkeypatch):
+        """Auto-resolved nsjail mode must also disable in-process workspace plugins."""
+        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
+        monkeypatch.setenv('SANDBOX_BACKEND', 'auto')
+        monkeypatch.setattr('boring_ui.api.sandbox.NsjailBackend.available', staticmethod(lambda: True))
+        monkeypatch.setattr('boring_ui.api.sandbox.BoxLiteBackend.available', staticmethod(lambda: False))
+        config = APIConfig(workspace_root=tmp_path)
+        assert config.workspace_plugins_enabled is False
+
+    def test_workspace_plugins_forced_off_for_auto_boxlite(self, tmp_path, monkeypatch):
+        """Auto-resolved BoxLite mode must also disable in-process workspace plugins."""
+        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
+        monkeypatch.setenv('SANDBOX_BACKEND', 'auto')
+        monkeypatch.setattr('boring_ui.api.sandbox.NsjailBackend.available', staticmethod(lambda: False))
+        monkeypatch.setattr('boring_ui.api.sandbox.BoxLiteBackend.available', staticmethod(lambda: True))
+        config = APIConfig(workspace_root=tmp_path)
+        assert config.workspace_plugins_enabled is False
 
     def test_workspace_plugin_allowlist_from_env(self, tmp_path, monkeypatch):
         """Test plugin allowlist is parsed from comma-separated env."""
@@ -144,6 +141,12 @@ class TestAPIConfig:
         assert config.auth_session_secure_cookie is True
         assert config.auth_dev_login_enabled is True
         assert config.auth_session_secret == 'super-secret'
+
+    def test_github_private_key_unescapes_newlines(self, tmp_path, monkeypatch):
+        """Docker env files carry PEMs with escaped newlines."""
+        monkeypatch.setenv('GITHUB_APP_PRIVATE_KEY', 'line-1\\nline-2')
+        config = APIConfig(workspace_root=tmp_path)
+        assert config.github_app_private_key == 'line-1\nline-2'
 
 
 class TestValidatePath:

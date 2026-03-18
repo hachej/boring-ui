@@ -45,7 +45,7 @@ src/back/boring_ui/ Python backend (FastAPI app factory, config, modules)
 docs/               Architecture, design docs, execution plans, runbooks
 tests/              Backend pytest tests
 scripts/            Gates, E2E runner, utilities
-app.config.js       Frontend configuration overrides
+boring.app.toml     Runtime app + frontend configuration (served via /__bui/config)
 vite.config.ts      Vite build configuration
 pyproject.toml      Python packaging
 ```
