@@ -28,12 +28,11 @@ These docs define the boring-coding workflow. Read local copy if available; fall
 | Hard constraints | `docs/design-docs/boundaries.md` |
 | Design decisions (ADRs) | `docs/design-docs/decisions/` |
 | Domain deep-dives | `docs/domains/` |
-| Workflow (planning + impl) | `docs/workflow-symlinked/` |
-| Role prompts | `docs/workflow-symlinked/prompts/` |
 | Beads reference | `docs/workflow-symlinked/beads.md` |
 | Evidence conventions | `docs/workflow-symlinked/EVIDENCE.md` |
 | Session lifecycle | `docs/workflow-symlinked/OPERATIONS.md` |
 | Agent tools | `docs/workflow-symlinked/tools/` |
+| Role prompts | `/home/ubuntu/projects/boring-coding/prompts/` |
 | Execution plans | `docs/exec-plans/` |
 | Product specs | `docs/product-specs/` |
 | References | `docs/references/` |
