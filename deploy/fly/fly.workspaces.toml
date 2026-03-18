@@ -1,0 +1,52 @@
+# Reference config for boring-ui workspace Machines (backend-agent mode).
+#
+# NOTE: Workspace Machines are NOT deployed via `fly deploy`. They are created
+# dynamically by the control plane via the Fly Machines API (FlyProvisioner).
+# This file documents the Machine configuration payload for reference.
+#
+# The control plane creates Machines with this equivalent config:
+#
+#   POST /v1/apps/{workspace_app}/machines
+#   {
+#     "name": "ws-{workspace_id}",
+#     "region": "cdg",
+#     "config": {
+#       "image": "registry.fly.io/{workspace_app}:latest",
+#       "env": {
+#         "AGENTS_MODE": "backend",
+#         "BORING_SESSION_SECRET": "<from control plane>",
+#         "ANTHROPIC_API_KEY": "<from vault>",
+#         "BORING_UI_WORKSPACE_ROOT": "/workspace"
+#       },
+#       "mounts": [{"volume": "<vol_id>", "path": "/workspace"}],
+#       "services": [{
+#         "protocol": "tcp",
+#         "internal_port": 8000,
+#         "ports": [{"port": 443, "handlers": ["tls", "http"]}],
+#         "autostop": "suspend",
+#         "autostart": true
+#       }],
+#       "guest": {
+#         "cpu_kind": "shared",
+#         "cpus": 1,
+#         "memory_mb": 512
+#       }
+#     }
+#   }
+#
+# The Machine auto-suspends on idle and auto-starts on incoming requests.
+# The Firecracker VM is the isolation boundary — no bwrap/sandbox in MVP.
+# Volume at /workspace persists across stop/suspend/restart.
+
+app = "boring-workspaces"
+primary_region = "cdg"
+
+[env]
+  AGENTS_MODE = "backend"
+  BORING_UI_WORKSPACE_ROOT = "/workspace"
+  # BORING_SESSION_SECRET and ANTHROPIC_API_KEY injected per-machine via API
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
