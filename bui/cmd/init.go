@@ -94,9 +94,14 @@ backend = "http"
 
 [frontend.panels]
 
-# ─── CLI commands (agent-discoverable) ────────────────────
+# ─── CLI binary (agent-discoverable) ──────────────────────
 [cli]
-[cli.commands]
+# Child app CLI on PATH. bui run <args...> delegates here.
+name = %q
+
+# Optional legacy aliases:
+# [cli.commands]
+# hello = { run = %q, description = "Run the hello command" }
 
 # ─── Auth ─────────────────────────────────────────────────
 [auth]
@@ -122,7 +127,7 @@ ANTHROPIC_API_KEY = { vault = "secret/agent/anthropic", field = "api_key" }
 [deploy.modal]
 app_name       = %q
 min_containers = 0
-`, name, name, strings.ToUpper(name[:1]), name, fwSection, pyName, name, name)
+`, name, name, strings.ToUpper(name[:1]), name, fwSection, pyName, name, name, fmt.Sprintf("%s hello", name), name)
 
 	writeFile(filepath.Join(name, "boring.app.toml"), toml)
 

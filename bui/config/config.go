@@ -63,6 +63,7 @@ type Panel struct {
 }
 
 type CLI struct {
+	Name     string             `toml:"name"`
 	Commands map[string]Command `toml:"commands"`
 }
 
@@ -85,6 +86,7 @@ type Deploy struct {
 	BootModule string               `toml:"boot_module"`
 	Neon       NeonConfig           `toml:"neon"`
 	Modal      ModalConfig          `toml:"modal"`
+	Docker     DockerConfig         `toml:"docker"`
 }
 
 type SecretRef struct {
@@ -103,6 +105,19 @@ type ModalConfig struct {
 	AppName       string `toml:"app_name"`
 	MinContainers int    `toml:"min_containers"`
 	GPU           bool   `toml:"gpu"`
+}
+
+type DockerConfig struct {
+	Registry    string `toml:"registry"`
+	Image       string `toml:"image"`
+	ComposeFile string `toml:"compose_file"`
+	Dockerfile  string `toml:"dockerfile"`
+	CaddyFile   string `toml:"caddy_file"`
+	Host        string `toml:"host"`
+	SSHHost     string `toml:"ssh_host"`
+	SSHUser     string `toml:"ssh_user"`
+	SSHKeyVault string `toml:"ssh_key_vault"`
+	RemoteDir   string `toml:"remote_dir"`
 }
 
 // Load reads boring.app.toml from the given directory (or current dir).
