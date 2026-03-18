@@ -33,7 +33,7 @@ primary_region = "cdg"
     interval = "15s"
     method = "GET"
     timeout = "5s"
-    path = "/healthz"
+    path = "/health"
 
 [vm]
   cpu_kind = "shared"
