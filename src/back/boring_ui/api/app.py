@@ -61,7 +61,7 @@ def create_app(
         include_stream: Include Claude stream WebSocket router (default: True)
         include_approval: Include approval workflow router (default: True)
         routers: List of router names to include. If None, uses include_* flags.
-            Valid names: 'files', 'git', 'ui_state', 'control_plane', 'sandbox',
+            Valid names: 'files', 'git', 'ui_state', 'control_plane',
             'pty', 'stream', 'approval'
         registry: Custom router registry. Defaults to create_default_registry().
 
@@ -102,7 +102,7 @@ def create_app(
     if routers is not None:
         enabled_routers = set(routers)
     else:
-        enabled_routers = {'files', 'git', 'ui_state', 'sandbox'}  # Core routers always included
+        enabled_routers = {'files', 'git', 'ui_state'}  # Core routers always included
         if config.control_plane_enabled:
             enabled_routers.add('control_plane')
         if include_pty:
@@ -131,7 +131,6 @@ def create_app(
         'git': 'git' in enabled_routers,
         'ui_state': 'ui_state' in enabled_routers,
         'control_plane': 'control_plane' in enabled_routers,
-        'sandbox': 'sandbox' in enabled_routers,
         'pty': 'pty' in enabled_routers,
         'chat_claude_code': chat_enabled,
         'stream': chat_enabled,  # Backward compatibility alias
@@ -282,7 +281,6 @@ def create_app(
         'git': (config, git_backend),
         'ui_state': (),
         'control_plane': (config,),
-        'sandbox': (config,),
         'pty': (config,),
         'chat_claude_code': (config,),
         'stream': (config,),  # Alias

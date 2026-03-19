@@ -6,21 +6,28 @@ import asyncio
 import logging
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
 import httpx
+import jwt as pyjwt
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
 from ..config import APIConfig
 from ..middleware.request_id import ensure_request_id
-from ..sandbox.auth import create_workspace_token
 from ..workspace import WorkspaceContext, resolve_workspace_context
 from .harness import AgentHarness, HarnessHealth, SessionInfo, SessionRequest
 
 logger = logging.getLogger(__name__)
+
+
+def _create_workspace_token(workspace_id: str, *, secret: str, ttl_seconds: int = 300) -> str:
+    now = int(time.time())
+    payload = {"workspace_id": str(workspace_id).strip(), "scope": "workspace.sandbox.exec", "iat": now, "exp": now + ttl_seconds}
+    return pyjwt.encode(payload, secret, algorithm="HS256")
 
 
 class PiHarness(AgentHarness):
@@ -276,9 +283,9 @@ class PiHarness(AgentHarness):
             "x-boring-workspace-root": str(ctx.root_path),
         }
         if ctx.workspace_id:
-            token = create_workspace_token(
+            token = _create_workspace_token(
+                ctx.workspace_id,
                 secret=self.config.internal_api_token,
-                workspace_id=ctx.workspace_id,
             )
             headers["x-boring-internal-token"] = token
             headers["authorization"] = f"Bearer {token}"

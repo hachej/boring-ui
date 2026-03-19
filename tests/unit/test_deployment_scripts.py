@@ -14,9 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_FULL_APP = REPO_ROOT / "scripts" / "run_full_app.py"
 RUN_FULL_APP_SH = REPO_ROOT / "scripts" / "run_full_app.sh"
 RUN_BACKEND = REPO_ROOT / "scripts" / "run_backend.py"
-PROD_DOCKERFILE = REPO_ROOT / "deploy" / "python" / "Dockerfile"
 PROD_COMPOSE = REPO_ROOT / "deploy" / "docker-compose.prod.yml"
-KVM_COMPOSE = REPO_ROOT / "deploy" / "docker-compose.kvm.yml"
 
 def test_run_full_app_entrypoints_are_removed() -> None:
     assert not RUN_FULL_APP.exists()
@@ -48,12 +46,6 @@ def test_runtime_config_endpoint_supersedes_generated_frontend_env() -> None:
     assert "panels" in data["frontend"]
 
 
-def test_prod_dockerfile_marks_nsjail_setuid_root() -> None:
-    contents = PROD_DOCKERFILE.read_text(encoding="utf-8")
-
-    assert "chmod 4755 /usr/local/bin/nsjail" in contents
-
-
 def test_prod_compose_reads_backend_secrets_from_env_file() -> None:
     contents = PROD_COMPOSE.read_text(encoding="utf-8")
 
@@ -64,10 +56,8 @@ def test_prod_compose_reads_backend_secrets_from_env_file() -> None:
 
 def test_prod_compose_does_not_hard_require_kvm() -> None:
     contents = PROD_COMPOSE.read_text(encoding="utf-8")
-    kvm_contents = KVM_COMPOSE.read_text(encoding="utf-8")
 
     assert "/dev/kvm" not in contents
-    assert "/dev/kvm" in kvm_contents
 
 
 def test_prod_compose_mounts_host_workspace_volume() -> None:

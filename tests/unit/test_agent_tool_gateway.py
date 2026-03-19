@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from boring_ui.api.agents import ToolGateway
-from boring_ui.api.sandbox.backend import ExecutionResult
+from boring_ui.api.agents.tool_gateway import ExecutionResult
 from boring_ui.api.storage import LocalStorage
 from boring_ui.api.workspace import WorkspaceContext
 

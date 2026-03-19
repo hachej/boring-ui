@@ -10,8 +10,6 @@ from fastapi import HTTPException
 
 from boring_ui.api.config import APIConfig
 from boring_ui.api.modules.files.service import FileService
-from boring_ui.api.sandbox.nsjail import NsjailBackend
-from boring_ui.api.sandbox.validated_exec import ValidatedExecBackend
 from boring_ui.api.storage import LocalStorage
 from boring_ui.api.workspace.paths import openat2_available, resolve_path_beneath, safe_open
 
@@ -87,37 +85,3 @@ def test_file_service_rejects_symlink_escape_on_write(tmp_path: Path) -> None:
         outside.rmdir()
 
 
-@pytest.mark.skipif(not _symlinks_supported(), reason="Symlink creation not supported")
-def test_validated_exec_backend_rejects_symlink_escape_cwd(tmp_path: Path) -> None:
-    outside = tmp_path.parent / "outside-validated-exec"
-    outside.mkdir(exist_ok=True)
-    link = tmp_path / "linked"
-    link.symlink_to(outside, target_is_directory=True)
-
-    backend = ValidatedExecBackend()
-
-    try:
-        with pytest.raises(ValueError, match="traversal"):
-            backend._resolve_working_dir(tmp_path, "linked")
-    finally:
-        if link.exists() or link.is_symlink():
-            link.unlink()
-        outside.rmdir()
-
-
-@pytest.mark.skipif(not _symlinks_supported(), reason="Symlink creation not supported")
-def test_nsjail_backend_rejects_symlink_escape_cwd(tmp_path: Path) -> None:
-    outside = tmp_path.parent / "outside-nsjail"
-    outside.mkdir(exist_ok=True)
-    link = tmp_path / "linked"
-    link.symlink_to(outside, target_is_directory=True)
-
-    backend = NsjailBackend()
-
-    try:
-        with pytest.raises(ValueError, match="traversal"):
-            backend._resolve_working_dir(tmp_path, "linked")
-    finally:
-        if link.exists() or link.is_symlink():
-            link.unlink()
-        outside.rmdir()

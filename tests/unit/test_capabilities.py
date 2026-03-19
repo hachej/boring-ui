@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from boring_ui.api import create_app, RouterRegistry, create_default_registry
 from boring_ui.api.capabilities import create_capabilities_router
 from boring_ui.api.config import APIConfig
-from boring_ui.api.workspace_plugins import WorkspacePluginManager
 
 
 class TestRouterRegistry:
@@ -21,7 +20,6 @@ class TestRouterRegistry:
         assert 'git' in router_names
         assert 'ui_state' in router_names
         assert 'control_plane' in router_names
-        assert 'sandbox' in router_names
         assert 'pty' in router_names
         assert 'stream' in router_names
         assert 'approval' in router_names
@@ -98,7 +96,6 @@ class TestCapabilitiesEndpoint:
         assert 'git' in features
         assert 'ui_state' in features
         assert 'control_plane' in features
-        assert 'sandbox' in features
         assert 'pty' in features
         assert 'stream' in features
         assert 'approval' in features
@@ -158,7 +155,6 @@ class TestCapabilitiesEndpoint:
         assert features['git'] is True
         assert features['ui_state'] is False
         assert features['control_plane'] is False
-        assert features['sandbox'] is False
         assert features['pty'] is False
         assert features['stream'] is False
         assert features['approval'] is False
@@ -176,7 +172,6 @@ class TestCapabilitiesEndpoint:
         assert features['git'] is False
         assert features['ui_state'] is False
         assert features['control_plane'] is False
-        assert features['sandbox'] is False
         assert features['pty'] is False
         assert features['stream'] is False
         assert features['approval'] is True
@@ -280,36 +275,3 @@ class TestHealthEndpointFeatures:
         assert features['approval'] is False
 
 
-class TestWorkspacePluginCapabilities:
-    """Hosted-mode plugin panes must stay out of advertised capabilities."""
-
-    def test_hosted_nsjail_mode_omits_workspace_plugins(self, tmp_path, monkeypatch):
-        api_dir = tmp_path / 'kurt' / 'api'
-        panels_dir = tmp_path / 'kurt' / 'panels' / 'alpha'
-        api_dir.mkdir(parents=True)
-        panels_dir.mkdir(parents=True)
-        (api_dir / 'alpha.py').write_text(
-            "from fastapi import APIRouter\nrouter = APIRouter()\n",
-            encoding='utf-8',
-        )
-        (panels_dir / 'Panel.jsx').write_text("export default function Panel() { return null }\n", encoding='utf-8')
-
-        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
-        monkeypatch.setenv('SANDBOX_BACKEND', 'nsjail')
-        config = APIConfig(workspace_root=tmp_path)
-        registry = create_default_registry()
-        plugin_manager = WorkspacePluginManager(tmp_path)
-
-        app = FastAPI()
-        app.include_router(
-            create_capabilities_router({'files': True}, registry, config, plugin_manager),
-            prefix='/api',
-        )
-        client = TestClient(app)
-
-        response = client.get('/api/capabilities')
-        data = response.json()
-
-        assert config.workspace_plugins_enabled is False
-        assert 'workspace_panes' not in data
-        assert 'workspace_routes' not in data

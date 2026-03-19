@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..sandbox.backend import ExecutionResult
 from ..workspace import WorkspaceContext
+
+
+@dataclass
+class ExecutionResult:
+    exit_code: int
+    stdout: str
+    stderr: str
+    duration_ms: int
+    truncated: bool
 
 
 class ToolGateway:

@@ -112,7 +112,6 @@ def create_default_registry() -> RouterRegistry:
     from .modules.pty import create_pty_router
     from .modules.stream import create_stream_router
     from .approval import create_approval_router
-    from .sandbox import create_sandbox_router
 
     registry = RouterRegistry()
 
@@ -145,14 +144,6 @@ def create_default_registry() -> RouterRegistry:
         description='Workspace/user/membership/invite/settings metadata foundation',
         tags=['control-plane'],
     )
-    registry.register(
-        'sandbox',
-        '/w/{workspace_id}/api/v1/sandbox',
-        create_sandbox_router,
-        description='Workspace-scoped sandbox command execution for internal agent tools',
-        tags=['sandbox'],
-    )
-
     # Optional routers
     registry.register(
         'pty',
@@ -250,10 +241,6 @@ def create_capabilities_router(
                 "control_plane": {
                     "owner_service": "boring-ui",
                     "canonical_families": ["/api/v1/control-plane/*"],
-                },
-                "sandbox": {
-                    "owner_service": "workspace-core",
-                    "canonical_families": ["/w/{workspace_id}/api/v1/sandbox/*"],
                 },
                 "pty": {"owner_service": "pty-service", "canonical_families": ["/ws/pty", "/api/v1/pty/*"]},
                 "chat_claude_code": {

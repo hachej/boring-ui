@@ -1,8 +1,0 @@
-http://localhost, http://127.0.0.1 {
-    redir https://{host}{uri} 308
-}
-
-https://localhost, https://127.0.0.1 {
-    tls internal
-    reverse_proxy backend:8000
-}

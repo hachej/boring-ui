@@ -1,4 +1,4 @@
-"""Backend image guardrails for nsjail child CLI support."""
+"""Backend image guardrails for child CLI support."""
 
 from __future__ import annotations
 
@@ -14,5 +14,3 @@ def test_shared_backend_dockerfile_installs_child_cli_support_tools() -> None:
 
     for package in ("curl", "git", "jq", "nodejs", "npm", "ripgrep", "tree"):
         assert f"    {package} \\" in contents
-
-    assert "COPY --from=nsjail-build /tmp/nsjail/nsjail /usr/local/bin/nsjail" in contents

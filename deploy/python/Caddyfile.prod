@@ -1,4 +1,0 @@
-{$BUI_HOSTNAME} {
-    encode zstd gzip
-    reverse_proxy backend:8000
-}

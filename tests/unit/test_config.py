@@ -70,45 +70,10 @@ class TestAPIConfig:
         assert config.pty_providers["claude"] == ["bash"]
 
     def test_workspace_plugins_enabled_from_env(self, tmp_path, monkeypatch):
-        """Plugins stay enabled only when auto resolves to validated_exec."""
+        """Plugins enabled via env var."""
         monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
-        monkeypatch.setenv('SANDBOX_BACKEND', 'auto')
-        monkeypatch.setattr('boring_ui.api.sandbox.NsjailBackend.available', staticmethod(lambda: False))
-        monkeypatch.setattr('boring_ui.api.sandbox.BoxLiteBackend.available', staticmethod(lambda: False))
         config = APIConfig(workspace_root=tmp_path)
         assert config.workspace_plugins_enabled is True
-
-    def test_workspace_plugins_forced_off_for_nsjail(self, tmp_path, monkeypatch):
-        """Hosted nsjail mode must not allow in-process workspace plugins."""
-        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
-        monkeypatch.setenv('SANDBOX_BACKEND', 'nsjail')
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.workspace_plugins_enabled is False
-
-    def test_workspace_plugins_forced_off_for_boxlite(self, tmp_path, monkeypatch):
-        """Hosted BoxLite mode must not allow in-process workspace plugins."""
-        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
-        monkeypatch.setenv('SANDBOX_BACKEND', 'boxlite')
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.workspace_plugins_enabled is False
-
-    def test_workspace_plugins_forced_off_for_auto_nsjail(self, tmp_path, monkeypatch):
-        """Auto-resolved nsjail mode must also disable in-process workspace plugins."""
-        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
-        monkeypatch.setenv('SANDBOX_BACKEND', 'auto')
-        monkeypatch.setattr('boring_ui.api.sandbox.NsjailBackend.available', staticmethod(lambda: True))
-        monkeypatch.setattr('boring_ui.api.sandbox.BoxLiteBackend.available', staticmethod(lambda: False))
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.workspace_plugins_enabled is False
-
-    def test_workspace_plugins_forced_off_for_auto_boxlite(self, tmp_path, monkeypatch):
-        """Auto-resolved BoxLite mode must also disable in-process workspace plugins."""
-        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
-        monkeypatch.setenv('SANDBOX_BACKEND', 'auto')
-        monkeypatch.setattr('boring_ui.api.sandbox.NsjailBackend.available', staticmethod(lambda: False))
-        monkeypatch.setattr('boring_ui.api.sandbox.BoxLiteBackend.available', staticmethod(lambda: True))
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.workspace_plugins_enabled is False
 
     def test_workspace_plugin_allowlist_from_env(self, tmp_path, monkeypatch):
         """Test plugin allowlist is parsed from comma-separated env."""

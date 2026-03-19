@@ -128,11 +128,6 @@ class TestAppFactory:
         assert '/api/v1/control-plane/health' in paths
         assert '/api/v1/control-plane/snapshot' in paths
 
-    def test_app_has_workspace_sandbox_exec_endpoint(self, app):
-        """Test that workspace-scoped sandbox execution endpoint is available."""
-        paths = [r.path for r in app.routes if hasattr(r, 'path')]
-        assert '/w/{workspace_id}/api/v1/sandbox/exec' in paths
-
     def test_app_has_api_sessions_endpoints(self, app):
         """Test that session list/create endpoints are available."""
         paths = [r.path for r in app.routes if hasattr(r, 'path')]
@@ -175,7 +170,6 @@ class TestHealthEndpoint:
             assert features['git'] is True
             assert features['ui_state'] is True
             assert features['control_plane'] is True
-            assert features['sandbox'] is True
             assert features['pty'] is True
             assert features['chat_claude_code'] is True
             assert features['stream'] is True  # Backward compat alias
@@ -193,7 +187,6 @@ class TestHealthEndpoint:
             assert features['git'] is True
             assert features['ui_state'] is True
             assert features['control_plane'] is True
-            assert features['sandbox'] is True
             assert features['pty'] is False
             assert features['chat_claude_code'] is False
             assert features['stream'] is False

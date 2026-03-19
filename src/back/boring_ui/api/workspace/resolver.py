@@ -60,7 +60,7 @@ def build_workspace_context_resolver(
         single_mode=_default_single_mode(config) if single_mode is None else single_mode,
         storage_factory=_build_storage_factory(config, storage),
         git_backend_factory=_build_git_backend_factory(config, git_backend),
-        execution_backend_factory=lambda _root: config.create_execution_backend(),
+        execution_backend_factory=None,
     )
 
 
