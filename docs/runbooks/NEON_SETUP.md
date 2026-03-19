@@ -33,13 +33,15 @@ SELECT pgp_sym_encrypt('test', 'key');  -- should return bytea
 SELECT gen_random_uuid();                -- should return uuid
 ```
 
-## 3. Run Schema
+## 3. Apply The Control-Plane Schema
+
+Use the supported bootstrap path before first boot:
 
 ```bash
-psql "$DATABASE_URL" -f deploy/sql/control_plane_supabase_schema.sql
+bui neon setup
 ```
 
-The schema is standard Postgres — no Supabase-specific functions.
+That flow provisions the project, applies the current control-plane schema, enables Neon Auth, and stores the generated secrets. For manual database work, use the same schema/bootstrap assets that `bui neon setup` uses rather than relying on ad hoc SQL paths.
 
 ## 4. Enable Neon Auth
 

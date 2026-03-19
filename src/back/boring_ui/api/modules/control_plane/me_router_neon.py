@@ -1,10 +1,4 @@
-"""Neon-backed canonical user identity/settings routes.
-
-This is functionally identical to ``me_router_supabase.py`` — it reads the
-boring-ui session cookie (which is provider-agnostic HS256 JWT) and returns
-user identity.  Separated into its own file to keep the provider wiring
-explicit in ``app.py``.
-"""
+"""Hosted-control-plane user identity/settings routes for Neon mode."""
 
 from __future__ import annotations
 
@@ -13,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from ...config import APIConfig
 from ...policy import enforce_delegated_policy_or_none
-from .supabase.common import load_session
+from .common import load_session
 from .user_settings_state import (
     build_me_payload,
     read_user_settings,

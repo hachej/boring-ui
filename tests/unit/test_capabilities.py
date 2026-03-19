@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from boring_ui.api import create_app, RouterRegistry, create_default_registry
 from boring_ui.api.capabilities import create_capabilities_router
 from boring_ui.api.config import APIConfig
+from boring_ui.api.workspace_plugins import WorkspacePluginManager
 
 
 class TestRouterRegistry:
@@ -20,6 +21,7 @@ class TestRouterRegistry:
         assert 'git' in router_names
         assert 'ui_state' in router_names
         assert 'control_plane' in router_names
+        assert 'sandbox' in router_names
         assert 'pty' in router_names
         assert 'stream' in router_names
         assert 'approval' in router_names
@@ -96,33 +98,21 @@ class TestCapabilitiesEndpoint:
         assert 'git' in features
         assert 'ui_state' in features
         assert 'control_plane' in features
+        assert 'sandbox' in features
         assert 'pty' in features
         assert 'stream' in features
         assert 'approval' in features
-        assert 'companion' in features
         assert 'pi' in features
 
-    def test_default_embedded_agent_features_are_enabled(self):
-        """Companion/PI should be available by default in embedded mode."""
+    def test_default_pi_feature_is_enabled(self):
+        """PI should be available by default when the runtime exposes a pi agent."""
         app = create_app(config=APIConfig(workspace_root=Path.cwd()))
         client = TestClient(app)
 
         response = client.get('/api/capabilities')
         data = response.json()
 
-        assert data['features']['companion'] is True
         assert data['features']['pi'] is True
-
-    def test_pi_iframe_mode_without_url_is_disabled(self):
-        """PI iframe mode requires PI_URL to be configured."""
-        config = APIConfig(workspace_root=Path.cwd(), pi_url=None, pi_mode='iframe')
-        app = create_app(config=config)
-        client = TestClient(app)
-
-        response = client.get('/api/capabilities')
-        data = response.json()
-
-        assert data['features']['pi'] is False
 
     def test_capabilities_has_routers(self, client):
         """Response should include router details."""
@@ -168,6 +158,7 @@ class TestCapabilitiesEndpoint:
         assert features['git'] is True
         assert features['ui_state'] is False
         assert features['control_plane'] is False
+        assert features['sandbox'] is False
         assert features['pty'] is False
         assert features['stream'] is False
         assert features['approval'] is False
@@ -185,52 +176,13 @@ class TestCapabilitiesEndpoint:
         assert features['git'] is False
         assert features['ui_state'] is False
         assert features['control_plane'] is False
+        assert features['sandbox'] is False
         assert features['pty'] is False
         assert features['stream'] is False
         assert features['approval'] is True
 
-    def test_capabilities_includes_companion_service(self, monkeypatch):
-        """Companion service metadata should appear when configured."""
-        monkeypatch.setenv('COMPANION_URL', 'http://localhost:3456')
-        config = APIConfig(workspace_root=Path.cwd())
-        registry = create_default_registry()
-        enabled_features = {'companion': True}
-
-        app = FastAPI()
-        app.include_router(
-            create_capabilities_router(enabled_features, registry, config),
-            prefix='/api',
-        )
-        client = TestClient(app)
-
-        response = client.get('/api/capabilities')
-        data = response.json()
-
-        assert data['services']['companion']['url'] == 'http://localhost:3456'
-
-    def test_capabilities_omits_services_without_companion_url(self, monkeypatch):
-        """Services block should be absent when companion URL is unset."""
-        monkeypatch.delenv('COMPANION_URL', raising=False)
-        config = APIConfig(workspace_root=Path.cwd())
-        registry = create_default_registry()
-        enabled_features = {'companion': False}
-
-        app = FastAPI()
-        app.include_router(
-            create_capabilities_router(enabled_features, registry, config),
-            prefix='/api',
-        )
-        client = TestClient(app)
-
-        response = client.get('/api/capabilities')
-        data = response.json()
-
-        assert 'services' not in data
-
-    def test_capabilities_includes_pi_service(self, monkeypatch):
-        """PI service metadata should appear when configured."""
-        monkeypatch.setenv('PI_URL', 'http://localhost:8787')
-        monkeypatch.setenv('PI_MODE', 'iframe')
+    def test_capabilities_omits_services_without_pi_harness(self):
+        """Services block should be absent when no backend PI harness is mounted."""
         config = APIConfig(workspace_root=Path.cwd())
         registry = create_default_registry()
         enabled_features = {'pi': True}
@@ -245,29 +197,48 @@ class TestCapabilitiesEndpoint:
         response = client.get('/api/capabilities')
         data = response.json()
 
-        assert data['services']['pi']['url'] == 'http://localhost:8787'
-        assert data['services']['pi']['mode'] == 'iframe'
+        assert 'services' not in data
 
-    def test_capabilities_includes_both_companion_and_pi_services(self, monkeypatch):
-        """Both service blocks should appear when both URLs are configured."""
-        monkeypatch.setenv('COMPANION_URL', 'http://localhost:3456')
-        monkeypatch.setenv('PI_URL', 'http://localhost:8787')
-        config = APIConfig(workspace_root=Path.cwd())
-        registry = create_default_registry()
-        enabled_features = {'companion': True, 'pi': True}
-
-        app = FastAPI()
-        app.include_router(
-            create_capabilities_router(enabled_features, registry, config),
-            prefix='/api',
-        )
+    def test_runtime_config_endpoint_returns_state_payload(self):
+        """The runtime config endpoint should serve the app-provided payload."""
+        app = create_app()
+        app.state.bui_runtime_config = {
+            'app': {'id': 'child-app', 'name': 'Child App', 'logo': 'C'},
+            'frontend': {
+                'branding': {'name': 'Child App', 'logo': 'C'},
+                'data': {'backend': 'http'},
+                'panels': {'chart': {'component': 'chart-panel'}},
+                'mode': {'profile': 'backend'},
+            },
+            'agents': {'mode': 'backend', 'available': ['pi']},
+            'auth': None,
+        }
         client = TestClient(app)
 
-        response = client.get('/api/capabilities')
+        response = client.get('/__bui/config')
         data = response.json()
 
-        assert data['services']['companion']['url'] == 'http://localhost:3456'
-        assert data['services']['pi']['url'] == 'http://localhost:8787'
+        assert response.status_code == 200
+        assert data['app']['id'] == 'child-app'
+        assert data['frontend']['panels']['chart']['component'] == 'chart-panel'
+        assert data['agents']['available'] == ['pi']
+
+    def test_runtime_config_endpoint_falls_back_to_default_payload(self):
+        """The runtime config endpoint should still work without TOML-backed state."""
+        config = APIConfig(workspace_root=Path.cwd())
+        app = create_app(config=config)
+        client = TestClient(app)
+
+        response = client.get('/__bui/config')
+        data = response.json()
+
+        assert response.status_code == 200
+        assert data['app']['id'] == 'boring-ui'
+        assert data['frontend']['branding']['name'] == 'Boring UI'
+        assert 'panels' in data['frontend']
+        assert data['agents']['mode'] == 'frontend'
+        assert 'pi' in data['agents']['available']
+        assert data['frontend']['mode']['profile'] == 'frontend'
 
 
 class TestHealthEndpointFeatures:
@@ -307,3 +278,38 @@ class TestHealthEndpointFeatures:
         assert features['pty'] is False
         assert features['stream'] is False
         assert features['approval'] is False
+
+
+class TestWorkspacePluginCapabilities:
+    """Hosted-mode plugin panes must stay out of advertised capabilities."""
+
+    def test_hosted_nsjail_mode_omits_workspace_plugins(self, tmp_path, monkeypatch):
+        api_dir = tmp_path / 'kurt' / 'api'
+        panels_dir = tmp_path / 'kurt' / 'panels' / 'alpha'
+        api_dir.mkdir(parents=True)
+        panels_dir.mkdir(parents=True)
+        (api_dir / 'alpha.py').write_text(
+            "from fastapi import APIRouter\nrouter = APIRouter()\n",
+            encoding='utf-8',
+        )
+        (panels_dir / 'Panel.jsx').write_text("export default function Panel() { return null }\n", encoding='utf-8')
+
+        monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
+        monkeypatch.setenv('SANDBOX_BACKEND', 'nsjail')
+        config = APIConfig(workspace_root=tmp_path)
+        registry = create_default_registry()
+        plugin_manager = WorkspacePluginManager(tmp_path)
+
+        app = FastAPI()
+        app.include_router(
+            create_capabilities_router({'files': True}, registry, config, plugin_manager),
+            prefix='/api',
+        )
+        client = TestClient(app)
+
+        response = client.get('/api/capabilities')
+        data = response.json()
+
+        assert config.workspace_plugins_enabled is False
+        assert 'workspace_panes' not in data
+        assert 'workspace_routes' not in data

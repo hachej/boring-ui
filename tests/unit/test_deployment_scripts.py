@@ -1,53 +1,26 @@
-"""Deployment script guardrails for core vs edge modes (bd-8lda)."""
+"""Runtime boot and deployment guardrails."""
 
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from boring_ui.api import APIConfig, create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_FULL_APP = REPO_ROOT / "scripts" / "run_full_app.py"
 RUN_FULL_APP_SH = REPO_ROOT / "scripts" / "run_full_app.sh"
 RUN_BACKEND = REPO_ROOT / "scripts" / "run_backend.py"
+PROD_DOCKERFILE = REPO_ROOT / "deploy" / "python" / "Dockerfile"
+PROD_COMPOSE = REPO_ROOT / "deploy" / "docker-compose.prod.yml"
+KVM_COMPOSE = REPO_ROOT / "deploy" / "docker-compose.kvm.yml"
 
-
-def _load_run_full_app_module():
-    spec = importlib.util.spec_from_file_location("run_full_app", RUN_FULL_APP)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_run_full_app_help_includes_deployment_flags() -> None:
-    result = subprocess.run(
-        [sys.executable, str(RUN_FULL_APP), "--help"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0
-    assert "--deploy-mode" in result.stdout
-    assert "--edge-proxy-url" in result.stdout
-    assert "--ui-profile" in result.stdout
-
-
-def test_run_full_app_shell_help_includes_deployment_flags() -> None:
-    result = subprocess.run(
-        ["bash", str(RUN_FULL_APP_SH), "--help"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0
-    assert "--deploy-mode" in result.stdout
-    assert "--edge-proxy-url" in result.stdout
-    assert "--ui-profile" in result.stdout
+def test_run_full_app_entrypoints_are_removed() -> None:
+    assert not RUN_FULL_APP.exists()
+    assert not RUN_FULL_APP_SH.exists()
 
 
 def test_run_backend_help_includes_deploy_mode() -> None:
@@ -62,92 +35,54 @@ def test_run_backend_help_includes_deploy_mode() -> None:
     assert "--deploy-mode" in result.stdout
 
 
-def test_deployment_mode_resolution_prefers_cli_mode() -> None:
-    module = _load_run_full_app_module()
-    mode, proxy_url = module._resolve_deploy_mode(  # type: ignore[attr-defined]
-        cli_mode="edge",
-        cli_edge_proxy_url="http://127.0.0.1:8080/",
-        cfg={"deployment": {"mode": "core", "edge_proxy_url": "http://ignored"}},
-        env={"DEPLOY_MODE": "core"},
-    )
-    assert mode == "edge"
-    assert proxy_url == "http://127.0.0.1:8080"
+def test_runtime_config_endpoint_supersedes_generated_frontend_env() -> None:
+    app = create_app(config=APIConfig(workspace_root=REPO_ROOT))
+    client = TestClient(app)
+
+    response = client.get("/__bui/config")
+    data = response.json()
+
+    assert response.status_code == 200
+    assert "frontend" in data
+    assert "mode" in data["frontend"]
+    assert "panels" in data["frontend"]
 
 
-def test_deployment_mode_rejects_legacy_alias() -> None:
-    module = _load_run_full_app_module()
-    try:
-        module._resolve_deploy_mode(  # type: ignore[attr-defined]
-            cli_mode="sandbox-proxy",
-            cli_edge_proxy_url=None,
-            cfg={},
-            env={},
-        )
-    except ValueError:
-        return
-    raise AssertionError("Expected ValueError for unsupported legacy deploy mode alias")
+def test_prod_dockerfile_marks_nsjail_setuid_root() -> None:
+    contents = PROD_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert "chmod 4755 /usr/local/bin/nsjail" in contents
 
 
-def test_deployment_mode_defaults_to_core() -> None:
-    module = _load_run_full_app_module()
-    mode, proxy_url = module._resolve_deploy_mode(  # type: ignore[attr-defined]
-        cli_mode=None,
-        cli_edge_proxy_url=None,
-        cfg={},
-        env={},
-    )
-    assert mode == "core"
-    assert proxy_url is None
+def test_prod_compose_reads_backend_secrets_from_env_file() -> None:
+    contents = PROD_COMPOSE.read_text(encoding="utf-8")
+
+    assert "env_file:" in contents
+    assert "${BUI_BACKEND_ENV_FILE:-/dev/null}" in contents
+    assert "DATABASE_URL: ${DATABASE_URL:-}" not in contents
 
 
-def test_frontend_env_core_mode_uses_backend_api_url() -> None:
-    module = _load_run_full_app_module()
-    effective_ui = {"features": {"agentRailMode": "pi"}, "data": {"backend": "lightningfs", "lightningfs": {"name": "boring-fs"}}}
-    fe_env = module._resolve_frontend_env(  # type: ignore[attr-defined]
-        base_env={"DEPLOY_MODE": "core"},
-        frontend_cfg={"vite_api_url": "http://127.0.0.1:9000"},
-        effective_ui=effective_ui,
-        deploy_mode="core",
-        edge_proxy_url=None,
-        backend_port=8000,
-        ui_profile="pi-lightningfs",
-    )
-    assert fe_env["VITE_API_URL"] == "http://127.0.0.1:9000"
-    assert "VITE_GATEWAY_URL" not in fe_env
-    assert fe_env["VITE_UI_PROFILE"] == "pi-lightningfs"
-    assert fe_env["VITE_AGENT_RAIL_MODE"] == "pi"
-    assert fe_env["VITE_DATA_BACKEND"] == "lightningfs"
+def test_prod_compose_does_not_hard_require_kvm() -> None:
+    contents = PROD_COMPOSE.read_text(encoding="utf-8")
+    kvm_contents = KVM_COMPOSE.read_text(encoding="utf-8")
+
+    assert "/dev/kvm" not in contents
+    assert "/dev/kvm" in kvm_contents
 
 
-def test_frontend_env_core_mode_removes_stale_gateway_var() -> None:
-    module = _load_run_full_app_module()
-    effective_ui = {"features": {"agentRailMode": "pi"}, "data": {"backend": "lightningfs"}}
-    fe_env = module._resolve_frontend_env(  # type: ignore[attr-defined]
-        base_env={"DEPLOY_MODE": "core", "VITE_GATEWAY_URL": "http://stale"},
-        frontend_cfg={"vite_api_url": "http://127.0.0.1:9000"},
-        effective_ui=effective_ui,
-        deploy_mode="core",
-        edge_proxy_url=None,
-        backend_port=8000,
-        ui_profile="pi-lightningfs",
-    )
-    assert fe_env["VITE_API_URL"] == "http://127.0.0.1:9000"
-    assert "VITE_GATEWAY_URL" not in fe_env
+def test_prod_compose_mounts_host_workspace_volume() -> None:
+    contents = PROD_COMPOSE.read_text(encoding="utf-8")
+
+    assert "${BORING_UI_WORKSPACES_HOST_PATH:-/data/workspaces}:/data/workspaces" in contents
 
 
-def test_frontend_env_edge_mode_points_api_to_proxy() -> None:
-    module = _load_run_full_app_module()
-    effective_ui = {"features": {"agentRailMode": "companion"}, "data": {"backend": "http"}}
-    fe_env = module._resolve_frontend_env(  # type: ignore[attr-defined]
-        base_env={"DEPLOY_MODE": "edge"},
-        frontend_cfg={"vite_api_url": "http://127.0.0.1:9000"},
-        effective_ui=effective_ui,
-        deploy_mode="edge",
-        edge_proxy_url="http://127.0.0.1:8080",
-        backend_port=8000,
-        ui_profile="companion-httpfs",
-    )
-    assert fe_env["VITE_API_URL"] == "http://127.0.0.1:8080"
-    assert "VITE_GATEWAY_URL" not in fe_env
-    assert fe_env["VITE_AGENT_RAIL_MODE"] == "companion"
-    assert fe_env["VITE_DATA_BACKEND"] == "http"
+def test_prod_compose_uses_prod_caddyfile_by_default() -> None:
+    contents = PROD_COMPOSE.read_text(encoding="utf-8")
+
+    assert "${BUI_CADDYFILE:-./python/Caddyfile.prod}" in contents
+
+
+def test_prod_compose_caddy_healthcheck_uses_internal_http_probe() -> None:
+    contents = PROD_COMPOSE.read_text(encoding="utf-8")
+
+    assert 'test: ["CMD-SHELL", "wget -q --spider --header=\\"Host: ${BUI_HOSTNAME:-localhost}\\" http://127.0.0.1/healthz"]' in contents

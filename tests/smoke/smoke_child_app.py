@@ -43,7 +43,7 @@ def main() -> int:
                         help="Deployed child app URL")
     parser.add_argument("--app-name", default="child-app",
                         help="App name for reporting (e.g., boring-doctor)")
-    parser.add_argument("--auth-mode", choices=["neon", "supabase", "dev", "none"], default="neon")
+    parser.add_argument("--auth-mode", choices=["neon", "dev", "none"], default="neon")
     parser.add_argument("--neon-auth-url", default="")
     parser.add_argument("--skip-signup", action="store_true")
     parser.add_argument("--email")

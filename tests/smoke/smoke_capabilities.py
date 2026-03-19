@@ -83,7 +83,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--expect-auth", default="",
-                        help="Expected auth provider (neon, supabase, or empty for any)")
+                        help="Expected auth provider (neon, local, or empty for any)")
     parser.add_argument("--expect-features", default="",
                         help="Comma-separated features that must be present")
     parser.add_argument("--expect-routers", default="",

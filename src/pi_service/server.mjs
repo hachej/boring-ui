@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { Agent } from '@mariozechner/pi-agent-core'
 import { getEnvApiKey, getModel, registerBuiltInApiProviders } from '@mariozechner/pi-ai'
 
+import { buildSessionSystemPrompt, createWorkspaceTools, resolveSessionContext } from './tools.mjs'
+
 registerBuiltInApiProviders()
 
 const HOST = process.env.PI_SERVICE_HOST || '0.0.0.0'
@@ -118,7 +120,27 @@ function requireServerApiKey() {
   return typeof key === 'string' && key.trim().length > 0
 }
 
-function createSession() {
+function applySessionContext(session, nextContext = {}) {
+  if (nextContext.workspaceId) {
+    session.workspaceId = nextContext.workspaceId
+  }
+  if (nextContext.internalApiToken) {
+    session.internalApiToken = nextContext.internalApiToken
+  }
+  if (nextContext.backendUrl) {
+    session.backendUrl = nextContext.backendUrl
+  }
+
+  const toolContext = {
+    workspaceId: session.workspaceId,
+    internalApiToken: session.internalApiToken,
+    backendUrl: session.backendUrl,
+  }
+  session.agent.setSystemPrompt(buildSessionSystemPrompt(SYSTEM_PROMPT, toolContext))
+  session.agent.setTools(createWorkspaceTools(toolContext))
+}
+
+function createSession(sessionContext = {}) {
   if (sessions.size >= MAX_SESSIONS) {
     throw new Error(`PI session limit reached (${MAX_SESSIONS})`)
   }
@@ -132,9 +154,9 @@ function createSession() {
   const agent = new Agent({
     initialState: {
       model,
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt: buildSessionSystemPrompt(SYSTEM_PROMPT, sessionContext),
       thinkingLevel: 'off',
-      tools: [],
+      tools: createWorkspaceTools(sessionContext),
       messages: [],
     },
     getApiKey: async (provider) => getEnvApiKey(provider),
@@ -146,17 +168,22 @@ function createSession() {
     createdAt: nowIso(),
     lastModified: nowIso(),
     title: 'New session',
+    workspaceId: sessionContext.workspaceId || '',
+    internalApiToken: sessionContext.internalApiToken || '',
+    backendUrl: sessionContext.backendUrl || '',
     agent,
   }
   sessions.set(id, session)
   return session
 }
 
-function getOrCreateSession(sessionId) {
+function getOrCreateSession(sessionId, sessionContext = {}) {
   if (sessionId && sessions.has(sessionId)) {
-    return sessions.get(sessionId)
+    const session = sessions.get(sessionId)
+    applySessionContext(session, sessionContext)
+    return session
   }
-  return createSession()
+  return createSession(sessionContext)
 }
 
 function sendSse(res, event, payload) {
@@ -170,14 +197,7 @@ function listSortedSessions() {
     .map(toSessionSummary)
 }
 
-async function handleStream(req, res, session) {
-  let payload = {}
-  try {
-    payload = await readJsonBody(req)
-  } catch (error) {
-    sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
-    return
-  }
+async function handleStream(_req, res, session, payload = {}) {
   const prompt = String(payload?.message || '').trim()
   if (!prompt) {
     sendJson(res, 400, { error: 'message is required' })
@@ -210,7 +230,7 @@ async function handleStream(req, res, session) {
     }
   })
 
-  req.on('close', () => {
+  _req.on('close', () => {
     closed = true
     unsubscribe()
     if (session.agent.state.isStreaming) {
@@ -282,11 +302,40 @@ async function handleHttpRequest(req, res) {
 
   if (req.method === 'POST' && path === '/api/v1/agent/pi/sessions/create') {
     try {
-      const session = createSession()
+      const payload = await readJsonBody(req)
+      const session = createSession(resolveSessionContext(payload, req.headers))
       sendJson(res, 201, { session: toSessionSummary(session) })
     } catch (error) {
+      if (error instanceof Error && error.message === 'Invalid JSON payload') {
+        sendJson(res, 400, { error: error.message })
+        return
+      }
       sendJson(res, 429, { error: error instanceof Error ? error.message : String(error) })
     }
+    return
+  }
+
+  if (req.method === 'POST' && path === '/api/v1/agent/pi/sessions/context') {
+    let payload = {}
+    try {
+      payload = await readJsonBody(req)
+    } catch (error) {
+      sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
+      return
+    }
+    const sessionId = safeDecodeURIComponent(String(payload?.session_id || ''))
+    if (!sessionId) {
+      sendJson(res, 400, { error: 'session_id is required' })
+      return
+    }
+    const session = sessions.get(sessionId)
+    if (!session) {
+      sendJson(res, 404, { error: 'session not found' })
+      return
+    }
+    applySessionContext(session, resolveSessionContext(payload, req.headers))
+    session.lastModified = nowIso()
+    sendJson(res, 200, { ok: true, session: toSessionSummary(session) })
     return
   }
 
@@ -339,9 +388,10 @@ async function handleHttpRequest(req, res) {
       sendJson(res, 400, { error: 'invalid session id' })
       return
     }
-    const session = getOrCreateSession(sessionId)
     try {
-      await handleStream(req, res, session)
+      const payload = await readJsonBody(req)
+      const session = getOrCreateSession(sessionId, resolveSessionContext(payload, req.headers))
+      await handleStream(req, res, session, payload)
     } catch (error) {
       console.error('[pi-service] stream handler failed', error)
       if (!res.headersSent) {

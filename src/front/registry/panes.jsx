@@ -53,12 +53,12 @@ import EmptyPanel from '../panels/EmptyPanel'
 
 // Lazy-load heavy panels to reduce initial bundle size.
 // EditorPanel pulls tiptap+lowlight (~600KB), TerminalPanel pulls xterm (~300KB),
-// CompanionPanel pulls pi-ai+pi-web-ui (~900KB), etc.
+// AgentPanel pulls pi-ai+pi-web-ui (~900KB), etc.
 const LazyEditorPanel = lazy(() => import('../panels/EditorPanel'))
 const LazyTerminalPanel = lazy(() => import('../panels/TerminalPanel'))
 const LazyShellTerminalPanel = lazy(() => import('../panels/ShellTerminalPanel'))
 const LazyReviewPanel = lazy(() => import('../panels/ReviewPanel'))
-const LazyCompanionPanel = lazy(() => import('../panels/CompanionPanel'))
+const LazyAgentPanel = lazy(() => import('../panels/AgentPanel'))
 
 // Wrap lazy components with Suspense so DockView gets a valid component
 function withSuspense(LazyComponent) {
@@ -77,7 +77,7 @@ const EditorPanel = withSuspense(LazyEditorPanel)
 const TerminalPanel = withSuspense(LazyTerminalPanel)
 const ShellTerminalPanel = withSuspense(LazyShellTerminalPanel)
 const ReviewPanel = withSuspense(LazyReviewPanel)
-const CompanionPanel = withSuspense(LazyCompanionPanel)
+const AgentPanel = withSuspense(LazyAgentPanel)
 
 /**
  * @typedef {Object} PaneConfig
@@ -95,7 +95,7 @@ const CompanionPanel = withSuspense(LazyCompanionPanel)
  *   Checked against capabilities.features from /api/capabilities.
  *   Common values: 'files', 'git'. Default: [] (no feature requirements)
  * @property {string[]} [requiresAnyFeatures] - Backend features where at least one must be enabled.
- *   Useful for panes that can run against multiple backends (e.g. companion OR pi).
+ *   Useful for panes that can adapt to multiple backend capability states.
  *   Checked against capabilities.features from /api/capabilities.
  *   Default: [] (no OR feature requirements)
  * @property {string[]} [requiresRouters] - Backend routers this pane requires.
@@ -321,7 +321,7 @@ class PaneRegistry {
  * | shell     | yes       | bottom    | pty router             |
  * | empty     | no        | center    | none                   |
  * | review    | no        | center    | approval router        |
- * | companion | no        | right     | companion feature      |
+ * | agent     | no        | right     | pi feature             |
  *
  * @returns {PaneRegistry} Configured registry instance
  */
@@ -420,10 +420,10 @@ const createDefaultRegistry = () => {
     requiresRouters: ['approval'],
   })
 
-  // Agent (Companion backend) - alternative Claude chat panel (Direct Connect)
+  // Agent - PI chat panel for frontend or backend agent mode.
   registry.register({
-    id: 'companion',
-    component: CompanionPanel,
+    id: 'agent',
+    component: AgentPanel,
     title: 'Agent',
     placement: 'right',
     essential: false,
@@ -432,7 +432,7 @@ const createDefaultRegistry = () => {
     constraints: {
       minWidth: 250,
     },
-    requiresAnyFeatures: ['companion', 'pi'],
+    requiresFeatures: ['pi'],
   })
 
   return registry

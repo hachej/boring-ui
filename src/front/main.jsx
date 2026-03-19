@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Buffer } from 'buffer'
 import App from './App'
 import { ConfigProvider } from './config'
-import appConfig from './app.config.js'
+import { fetchRuntimeConfig, runtimeConfigToProviderConfig } from './config/runtimeConfig'
 import './styles.css'
 
 if (typeof globalThis !== 'undefined' && !globalThis.Buffer) {
@@ -43,8 +43,21 @@ const markScrollbarActive = () => {
 document.addEventListener('scroll', markScrollbarActive, { capture: true, passive: true })
 document.addEventListener('mouseover', markScrollbarActive, { capture: true, passive: true })
 
-createRoot(document.getElementById('root')).render(
-  <ConfigProvider config={appConfig}>
-    <App />
-  </ConfigProvider>
-)
+async function bootstrap() {
+  let appConfig = {}
+
+  try {
+    const runtimeConfig = await fetchRuntimeConfig()
+    appConfig = runtimeConfigToProviderConfig(runtimeConfig)
+  } catch (error) {
+    console.error('[bootstrap] failed to load /__bui/config, falling back to defaults', error)
+  }
+
+  createRoot(document.getElementById('root')).render(
+    <ConfigProvider config={appConfig}>
+      <App />
+    </ConfigProvider>
+  )
+}
+
+void bootstrap()

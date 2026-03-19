@@ -67,7 +67,6 @@ import {
   getDataProviderFactory,
   createHttpProvider,
   createLightningDataProvider,
-  createCheerpXDataProvider,
   queryKeys,
 } from './providers/data'
 import {
@@ -93,9 +92,6 @@ import {
 const URL_PARAMS = new URLSearchParams(window.location.search)
 // POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
 const POC_MODE = URL_PARAMS.get('poc')
-const DATA_BACKEND_OVERRIDE = String(URL_PARAMS.get('data_backend') || '').trim().toLowerCase()
-const DATA_FS_OVERRIDE = String(URL_PARAMS.get('data_fs') || '').trim()
-const ALLOW_UNSAFE_DATA_FS_OVERRIDE = Boolean(import.meta?.env?.DEV)
 
 const arePlainObjectsEqual = (left, right) => {
   const leftEntries = Object.entries(left || {})
@@ -124,14 +120,14 @@ const resolveSharedPreferencePrefix = (prefix, fallbackPrefix, suffix) => {
 const readPersistedCollapsedState = (prefix, fallbackPrefix) => {
   const effectivePrefix = resolveSharedPreferencePrefix(prefix, fallbackPrefix, 'sidebar-collapsed')
   const saved = loadCollapsedState(effectivePrefix)
-  return { filetree: false, terminal: false, shell: false, companion: false, ...saved }
+  return { filetree: false, terminal: false, shell: false, agent: false, ...saved }
 }
 
-const readPersistedPanelSizes = (prefix, fallbackPrefix, panelDefaults, companionSize) => {
+const readPersistedPanelSizes = (prefix, fallbackPrefix, panelDefaults, agentSize) => {
   const effectivePrefix = resolveSharedPreferencePrefix(prefix, fallbackPrefix, 'panel-sizes')
   return {
     ...panelDefaults,
-    companion: companionSize,
+    agent: agentSize,
     ...(loadPanelSizes(effectivePrefix) || {}),
   }
 }
@@ -347,41 +343,28 @@ const countAgentPanels = (api, family) => {
   if (family === 'terminal') {
     return panels.filter((panel) => getPanelComponent(panel) === 'terminal').length
   }
-  if (family === 'companion') {
-    return panels.filter(
-      (panel) =>
-        getPanelComponent(panel) === 'companion'
-        && (panel?.params?.provider || 'companion') === 'companion',
-    ).length
-  }
-  if (family === 'pi') {
-    return panels.filter(
-      (panel) =>
-        getPanelComponent(panel) === 'companion'
-        && ((panel?.params?.provider === 'pi') || panel.id === 'pi-agent'),
-    ).length
+  if (family === 'agent') {
+    return panels.filter((panel) => getPanelComponent(panel) === 'agent').length
   }
   return 0
 }
 
 const panelIdToAgentFamily = (panelId) => {
   if (panelId === 'terminal' || panelId.startsWith('terminal-chat-')) return 'terminal'
-  if (panelId === 'companion' || panelId.startsWith('companion-chat-')) return 'companion'
-  if (panelId === 'pi-agent' || panelId.startsWith('pi-agent-chat-')) return 'pi'
+  if (panelId === 'agent' || panelId.startsWith('agent-chat-')) return 'agent'
   return null
 }
 
 const countAllAgentPanels = (api) =>
   countAgentPanels(api, 'terminal')
-  + countAgentPanels(api, 'companion')
-  + countAgentPanels(api, 'pi')
+  + countAgentPanels(api, 'agent')
 
 // Get capability-gated components from pane registry
 // Components with requiresFeatures/requiresRouters will show error states when unavailable
 const getLiveKnownComponents = () => getKnownComponents()
 
-const COMPACT_TAB_COMPONENTS = new Set(['terminal', 'companion', 'shell'])
-const COMPACT_TAB_PREFIXES = ['terminal-chat-', 'companion-chat-', 'pi-agent-chat-']
+const COMPACT_TAB_COMPONENTS = new Set(['terminal', 'agent', 'shell'])
+const COMPACT_TAB_PREFIXES = ['terminal-chat-', 'agent-chat-']
 
 const shouldUseCompactTab = (api, tabLocation) => {
   if (tabLocation === 'headerOverflow') return true
@@ -513,33 +496,30 @@ export default function App() {
   const config = useConfig()
   const codeSessionsEnabled = config.features?.codeSessions !== false
   const urlAgentMode = new URLSearchParams(window.location.search).get('agent_mode')
-  const configAgentMode = config.features?.agentRailMode || 'all'
-  const validAgentModes = ['all', 'native', 'companion', 'pi']
-  const fallbackAgentMode = validAgentModes.includes(configAgentMode) ? configAgentMode : 'all'
-  const agentRailMode = validAgentModes.includes(urlAgentMode)
+  const configAgentMode = String(config.agents?.mode || 'frontend').toLowerCase()
+  const validAgentModes = ['frontend', 'backend']
+  const fallbackAgentMode = validAgentModes.includes(configAgentMode) ? configAgentMode : 'frontend'
+  const agentMode = validAgentModes.includes(urlAgentMode)
     ? urlAgentMode
     : fallbackAgentMode
-  const nativeAgentEnabled = codeSessionsEnabled && (agentRailMode === 'all' || agentRailMode === 'native')
-  const companionAgentEnabled = agentRailMode === 'all' || agentRailMode === 'companion'
-  const piAgentEnabled = agentRailMode === 'all' || agentRailMode === 'pi'
-  const isCoreDeploy = config.mode?.deployMode !== 'edge'
+  const nativeAgentEnabled = codeSessionsEnabled
   const localDataBackend = String(config.data?.backend || '').toLowerCase()
-  const hasLocalDataBackend = localDataBackend === 'lightningfs' || localDataBackend === 'cheerpx'
+  const hasLocalDataBackend = localDataBackend === 'lightningfs'
   const baseStoragePrefix = config.storage?.prefix || 'kurt-web'
   const layoutVersion = config.storage?.layoutVersion || 1
   const markdownPane = normalizeMarkdownPane(config.editors?.markdownPane)
 
   // Panel sizing configuration from config
-  const panelDefaults = config.panels?.defaults || { filetree: 280, terminal: 400, companion: 400, shell: 250 }
-  const panelMin = config.panels?.min || { filetree: 180, terminal: 250, companion: 250, shell: 100, center: 200 }
-  const panelCollapsed = config.panels?.collapsed || { filetree: 48, terminal: 48, companion: 48, shell: 36 }
+  const panelDefaults = config.panels?.defaults || { filetree: 280, terminal: 400, agent: 400, shell: 250 }
+  const panelMin = config.panels?.min || { filetree: 180, terminal: 250, agent: 250, shell: 100, center: 200 }
+  const panelCollapsed = config.panels?.collapsed || { filetree: 48, terminal: 48, agent: 48, shell: 36 }
   const rightRailDefaults = {
-    companion:
-      Number.isFinite(panelDefaults.companion) ? panelDefaults.companion : panelDefaults.terminal,
-    companionMin:
-      Number.isFinite(panelMin.companion) ? panelMin.companion : panelMin.terminal,
-    companionCollapsed:
-      Number.isFinite(panelCollapsed.companion) ? panelCollapsed.companion : panelCollapsed.terminal,
+    agent:
+      Number.isFinite(panelDefaults.agent) ? panelDefaults.agent : panelDefaults.terminal,
+    agentMin:
+      Number.isFinite(panelMin.agent) ? panelMin.agent : panelMin.terminal,
+    agentCollapsed:
+      Number.isFinite(panelCollapsed.agent) ? panelCollapsed.agent : panelCollapsed.terminal,
   }
   const leftSidebarPanelIds = useMemo(() => {
     const configured = config.panels?.leftSidebarPanels
@@ -578,14 +558,13 @@ export default function App() {
       const featureCount = Object.keys(serverCapabilities?.features || {}).length
       // In core/local mode, capability fetch can be unavailable. Infer minimal
       // local capabilities so PI rail and local data backends still render.
-      if (isCoreDeploy && serverCapabilities?.version === 'unknown' && featureCount === 0) {
+      if (serverCapabilities?.version === 'unknown' && featureCount === 0) {
         return {
           version: 'inferred-local',
           features: {
             files: hasLocalDataBackend,
             git: hasLocalDataBackend,
-            pi: piAgentEnabled,
-            companion: companionAgentEnabled,
+            pi: true,
             chat_claude_code: nativeAgentEnabled,
           },
           routers: [],
@@ -608,10 +587,7 @@ export default function App() {
   }, [
     staticCapabilities,
     serverCapabilities,
-    isCoreDeploy,
     hasLocalDataBackend,
-    piAgentEnabled,
-    companionAgentEnabled,
     nativeAgentEnabled,
   ])
   const controlPlaneOnboardingEnabled =
@@ -707,15 +683,14 @@ export default function App() {
       storagePrefix,
       baseStoragePrefix,
       panelDefaults,
-      rightRailDefaults.companion,
+      rightRailDefaults.agent,
     ),
   )
   const collapsedEffectRan = useRef(false)
   const dismissedApprovalsRef = useRef(new Set())
   const agentAutoAddSuppressedRef = useRef({
     terminal: false,
-    companion: false,
-    pi: false,
+    agent: false,
   })
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
@@ -744,16 +719,15 @@ export default function App() {
   // --- DataProvider infrastructure ---
   // If setDataProvider() was called before mount (poc1/poc2), use that;
   // otherwise resolve from config.data.backend (with HTTP fallback).
-  const configuredDataBackend = String(DATA_BACKEND_OVERRIDE || config.data?.backend || 'http')
+  const configuredDataBackend = String(config.data?.backend || 'http')
     .trim()
     .toLowerCase()
-  const configuredDataFsOverride = ALLOW_UNSAFE_DATA_FS_OVERRIDE ? DATA_FS_OVERRIDE : ''
   const lightningFsSessionScope = useMemo(
     () => getFrontendStateClientId(storagePrefix),
     [storagePrefix],
   )
   const configuredLightningFsBaseName = String(
-    configuredDataFsOverride || config.data?.lightningfs?.name || 'boring-fs',
+    config.data?.lightningfs?.name || 'boring-fs',
   )
     .trim()
   const lightningFsUserScope = useMemo(
@@ -770,18 +744,13 @@ export default function App() {
     [currentWorkspaceId],
   )
   const resolvedLightningFsName = useMemo(
-    () => (
-      configuredDataFsOverride
-        ? configuredLightningFsBaseName
-        : buildLightningFsNamespace({
-          baseName: configuredLightningFsBaseName,
-          origin: window.location.origin,
-          userScope: lightningFsUserScope,
-          workspaceScope: lightningFsWorkspaceScope,
-        })
-    ),
+    () => buildLightningFsNamespace({
+      baseName: configuredLightningFsBaseName,
+      origin: window.location.origin,
+      userScope: lightningFsUserScope,
+      workspaceScope: lightningFsWorkspaceScope,
+    }),
     [
-      configuredDataFsOverride,
       configuredLightningFsBaseName,
       lightningFsUserScope,
       lightningFsWorkspaceScope,
@@ -796,10 +765,6 @@ export default function App() {
     () => ({ userId: menuUserId, authResolved: userIdentityAuthResolved }),
     [menuUserId, userIdentityAuthResolved],
   )
-  const configuredCheerpXWorkspaceRoot = String(config.data?.cheerpx?.workspaceRoot || '').trim()
-  const configuredCheerpXPrimaryDiskUrl = String(config.data?.cheerpx?.primaryDiskUrl || '').trim()
-  const configuredCheerpXOverlayName = String(config.data?.cheerpx?.overlayName || '').trim()
-  const configuredCheerpXEsmUrl = String(config.data?.cheerpx?.cheerpxEsmUrl || '').trim()
   const strictDataBackend = Boolean(config.data?.strictBackend)
   const lightningFsProviderCacheKey = `user:${lightningFsUserScope}|fs:${resolvedLightningFsName}`
   const dataProviderScopeKey = (
@@ -833,15 +798,6 @@ export default function App() {
         )
       }
 
-      if (configuredDataBackend === 'cheerpx' || configuredDataBackend === 'cheerp-x') {
-        return createCheerpXDataProvider({
-          workspaceRoot: configuredCheerpXWorkspaceRoot || undefined,
-          primaryDiskUrl: configuredCheerpXPrimaryDiskUrl || undefined,
-          overlayName: configuredCheerpXOverlayName || undefined,
-          cheerpxEsmUrl: configuredCheerpXEsmUrl || undefined,
-        })
-      }
-
       const factory = getDataProviderFactory(configuredDataBackend)
       if (factory) return factory()
 
@@ -861,18 +817,9 @@ export default function App() {
       currentWorkspaceId,
       lightningFsProviderCacheKey,
       resolvedLightningFsName,
-      configuredCheerpXWorkspaceRoot,
-      configuredCheerpXPrimaryDiskUrl,
-      configuredCheerpXOverlayName,
-      configuredCheerpXEsmUrl,
       strictDataBackend,
     ],
   )
-
-  useEffect(() => {
-    if (!DATA_FS_OVERRIDE || ALLOW_UNSAFE_DATA_FS_OVERRIDE) return
-    console.warn('[DataProvider] Ignoring ?data_fs override outside development mode')
-  }, [])
 
   useEffect(() => {
     const isLightningBackend = (
@@ -979,10 +926,10 @@ export default function App() {
   }, [dockApi, projectRoot, publishFrontendState, uiStateFeatureEnabled])
 
   // Refs for panel config (used in callbacks)
-  const panelCollapsedRef = useRef({ ...panelCollapsed, companion: rightRailDefaults.companionCollapsed })
-  panelCollapsedRef.current = { ...panelCollapsed, companion: rightRailDefaults.companionCollapsed }
-  const panelMinRef = useRef({ ...panelMin, companion: rightRailDefaults.companionMin })
-  panelMinRef.current = { ...panelMin, companion: rightRailDefaults.companionMin }
+  const panelCollapsedRef = useRef({ ...panelCollapsed, agent: rightRailDefaults.agentCollapsed })
+  panelCollapsedRef.current = { ...panelCollapsed, agent: rightRailDefaults.agentCollapsed }
+  const panelMinRef = useRef({ ...panelMin, agent: rightRailDefaults.agentMin })
+  panelMinRef.current = { ...panelMin, agent: rightRailDefaults.agentMin }
   const activeWorkspaceName = useMemo(() => {
     const match = workspaceOptions.find((workspace) => workspace.id === currentWorkspaceId)
     if (match?.name) return match.name
@@ -1153,24 +1100,24 @@ export default function App() {
     })
   }, [collapsed.terminal, dockApi, nativeAgentEnabled])
 
-  const toggleCompanion = useCallback(() => {
-    if (!collapsed.companion && dockApi) {
-      const companionPanel = dockApi.getPanel('companion')
-      const companionGroup = companionPanel?.group
-      if (companionGroup) {
-        const currentWidth = companionGroup.api.width
-        if (currentWidth > panelCollapsedRef.current.companion) {
-          panelSizesRef.current = { ...panelSizesRef.current, companion: currentWidth }
+  const toggleAgent = useCallback(() => {
+    if (!collapsed.agent && dockApi) {
+      const agentPanel = dockApi.getPanel('agent')
+      const agentGroup = agentPanel?.group
+      if (agentGroup) {
+        const currentWidth = agentGroup.api.width
+        if (currentWidth > panelCollapsedRef.current.agent) {
+          panelSizesRef.current = { ...panelSizesRef.current, agent: currentWidth }
           savePanelSizes(panelSizesRef.current, storagePrefixRef.current)
         }
       }
     }
     setCollapsed((prev) => {
-      const next = { ...prev, companion: !prev.companion }
+      const next = { ...prev, agent: !prev.agent }
       saveCollapsedState(next, storagePrefixRef.current)
       return next
     })
-  }, [collapsed.companion, dockApi])
+  }, [collapsed.agent, dockApi])
 
   const SECTION_HEADER_HEIGHT = 30
   const LEFT_PANE_HEADER_HEIGHT = 42
@@ -1682,13 +1629,10 @@ export default function App() {
         })
       return Array.from(byId.values())
     })()
-    const companionGroups = (() => {
+    const agentGroups = (() => {
       const byId = new Map()
       listDockPanels(dockApi)
-        .filter((panel) => {
-          if (getPanelComponent(panel) !== 'companion') return false
-          return (panel?.params?.provider || 'companion') === 'companion'
-        })
+        .filter((panel) => getPanelComponent(panel) === 'agent')
         .forEach((panel) => {
           if (panel?.group?.id) byId.set(panel.group.id, panel.group)
         })
@@ -1773,20 +1717,20 @@ export default function App() {
       }
     })
 
-    companionGroups.forEach((companionGroup) => {
-      if (collapsed.companion) {
-        companionGroup.api.setConstraints({
-          minimumWidth: panelCollapsedRef.current.companion,
-          maximumWidth: panelCollapsedRef.current.companion,
+    agentGroups.forEach((agentGroup) => {
+      if (collapsed.agent) {
+        agentGroup.api.setConstraints({
+          minimumWidth: panelCollapsedRef.current.agent,
+          maximumWidth: panelCollapsedRef.current.agent,
         })
-        companionGroup.api.setSize({ width: panelCollapsedRef.current.companion })
+        agentGroup.api.setSize({ width: panelCollapsedRef.current.agent })
       } else {
-        companionGroup.api.setConstraints({
-          minimumWidth: panelMinRef.current.companion,
+        agentGroup.api.setConstraints({
+          minimumWidth: panelMinRef.current.agent,
           maximumWidth: Number.MAX_SAFE_INTEGER,
         })
         if (!isFirstRun) {
-          companionGroup.api.setSize({ width: panelSizesRef.current.companion })
+          agentGroup.api.setSize({ width: panelSizesRef.current.agent })
         }
       }
     })
@@ -2177,7 +2121,7 @@ export default function App() {
       }
 
       const emptyPanel = dockApi.getPanel('empty-center')
-      const companionPanel = dockApi.getPanel('companion')
+      const agentPanel = dockApi.getPanel('agent')
       const centerGroup = getLiveCenterGroup(dockApi)
       const existingCenterPanel = findCenterAnchorPanel(dockApi)
 
@@ -2192,8 +2136,8 @@ export default function App() {
           position = { referenceGroup: existingCenterPanel.group }
         } else if (emptyPanel?.group) {
           position = { referenceGroup: emptyPanel.group }
-        } else if (companionPanel) {
-          position = { direction: 'left', referencePanel: companionPanel.id }
+        } else if (agentPanel) {
+          position = { direction: 'left', referencePanel: agentPanel.id }
         } else {
           position = getLeftSidebarAnchorPosition(dockApi)
         }
@@ -2612,29 +2556,20 @@ export default function App() {
 
       const sourcePanel = sourcePanelId ? api.getPanel(sourcePanelId) : null
       const sourceComponent = getPanelComponent(sourcePanel)
-      const sourceProvider = sourcePanel?.params?.provider
 
       let component = sourceComponent
-      let provider = sourceProvider
 
       if (!component) {
-        const allowCompanionInLocalMode = isCoreDeploy && agentRailMode === 'companion'
-        const allowPiInLocalMode = isCoreDeploy && agentRailMode === 'pi'
-        if (companionAgentEnabled && (capabilities?.features?.companion === true || allowCompanionInLocalMode)) {
-          component = 'companion'
-          provider = 'companion'
+        if (capabilities?.features?.pi === true) {
+          component = 'agent'
         } else if (nativeAgentEnabled) {
           component = 'terminal'
-        } else if (piAgentEnabled && (capabilities?.features?.pi === true || allowPiInLocalMode)) {
-          component = 'companion'
-          provider = 'pi'
         } else {
           const fallbackPanel = listDockPanels(api).find((panel) => {
             const panelComponent = getPanelComponent(panel)
-            return panelComponent === 'terminal' || panelComponent === 'companion'
+            return panelComponent === 'terminal' || panelComponent === 'agent'
           })
           component = getPanelComponent(fallbackPanel)
-          provider = fallbackPanel?.params?.provider
         }
       }
 
@@ -2642,20 +2577,16 @@ export default function App() {
 
       if (component === 'terminal') {
         agentAutoAddSuppressedRef.current.terminal = false
-      } else if (provider === 'pi') {
-        agentAutoAddSuppressedRef.current.pi = false
       } else {
-        agentAutoAddSuppressedRef.current.companion = false
+        agentAutoAddSuppressedRef.current.agent = false
       }
 
       const panelIdPrefix = component === 'terminal'
         ? 'terminal-chat'
-        : provider === 'pi'
-          ? 'pi-agent-chat'
-          : 'companion-chat'
+        : 'agent-chat'
       const panelId = createUniquePanelId(api, panelIdPrefix)
-      const piInitialSessionId = component === 'companion'
-        && provider === 'pi'
+      const piInitialSessionId = component === 'agent'
+        && agentMode !== 'backend'
         && piSessionBootstrap === 'new'
         ? `pi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
         : ''
@@ -2663,9 +2594,7 @@ export default function App() {
         ? 'Code Sessions'
         : 'Agent'
       const matchingPanels = listDockPanels(api).filter(
-        (panel) =>
-          getPanelComponent(panel) === component
-          && (component !== 'companion' || (panel?.params?.provider || 'companion') === (provider || 'companion')),
+        (panel) => getPanelComponent(panel) === component,
       )
       const defaultReferencePanel = matchingPanels[0]
       let emptyCenterPanel = api.getPanel('empty-center')
@@ -2743,11 +2672,9 @@ export default function App() {
               panelId,
               collapsed: false,
               onToggleCollapse: undefined,
-              provider: provider || 'companion',
-              lockProvider: true,
-              ...(provider === 'pi'
-                ? { piSessionBootstrap, piInitialSessionId }
-                : {}),
+              mode: agentMode,
+              piSessionBootstrap,
+              piInitialSessionId,
             },
       })
       if (!panel) return false
@@ -2766,7 +2693,7 @@ export default function App() {
         panel.group.header.hidden = false
         const minWidth = component === 'terminal'
           ? panelMinRef.current.terminal
-          : panelMinRef.current.companion
+          : panelMinRef.current.agent
         panel.group.api.setConstraints({
           minimumWidth: minWidth,
           maximumWidth: Number.MAX_SAFE_INTEGER,
@@ -2774,11 +2701,8 @@ export default function App() {
         if (component === 'terminal' && !collapsed.terminal) {
           panel.group.api.setSize({ width: panelSizesRef.current.terminal })
         }
-        if (component === 'companion' && provider !== 'pi' && !collapsed.companion) {
-          panel.group.api.setSize({ width: panelSizesRef.current.companion })
-        }
-        if (component === 'companion' && provider === 'pi') {
-          panel.group.api.setSize({ width: panelSizesRef.current.companion })
+        if (component === 'agent' && !collapsed.agent) {
+          panel.group.api.setSize({ width: panelSizesRef.current.agent })
         }
 
         // Remove empty placeholder once a real chat panel is added to that group.
@@ -2796,16 +2720,13 @@ export default function App() {
     },
     [
       nativeAgentEnabled,
-      companionAgentEnabled,
-      piAgentEnabled,
       capabilities,
-      isCoreDeploy,
-      agentRailMode,
+      agentMode,
       createUniquePanelId,
       getLeftSidebarAnchorPosition,
       getLiveCenterGroup,
       collapsed.terminal,
-      collapsed.companion,
+      collapsed.agent,
       approvals,
       handleDecision,
       normalizeApprovalPath,
@@ -2831,26 +2752,22 @@ export default function App() {
 
     const agentPanels = listDockPanels(dockApi).filter((panel) => {
       const component = getPanelComponent(panel)
-      return component === 'terminal' || component === 'companion'
+      return component === 'terminal' || component === 'agent'
     })
 
     const activePanel = dockApi.activePanel
     const activeIsAgent = activePanel
-      && (getPanelComponent(activePanel) === 'terminal' || getPanelComponent(activePanel) === 'companion')
+      && (getPanelComponent(activePanel) === 'terminal' || getPanelComponent(activePanel) === 'agent')
     const preferredSource = activeIsAgent
       ? activePanel
       : (agentPanels.find((panel) => panel.id === 'terminal')
-        || agentPanels.find((panel) => panel.id === 'companion')
-        || agentPanels.find((panel) => panel.id === 'pi-agent')
+        || agentPanels.find((panel) => panel.id === 'agent')
         || agentPanels[0])
 
     if (preferredSource?.id) {
-      const provider = preferredSource?.params?.provider === 'pi' || preferredSource.id === 'pi-agent'
-        ? 'pi'
-        : 'companion'
       handleSplitChatPanel(
         preferredSource.id,
-        provider === 'pi' ? { piSessionBootstrap: 'new' } : {},
+        getPanelComponent(preferredSource) === 'agent' ? { piSessionBootstrap: 'new' } : {},
       )
       return
     }
@@ -3044,14 +2961,14 @@ export default function App() {
             onDecision: handleDecision,
             normalizeApprovalPath,
           }
-        case 'companion':
+        case 'agent':
           return {
-            panelId: 'companion',
+            panelId: 'agent',
             collapsed: false,
             onToggleCollapse: undefined,
             onSplitPanel: handleSplitChatPanel,
-            provider: 'companion',
-            lockProvider: true,
+            mode: agentMode,
+            piSessionBootstrap: 'latest',
           }
         default:
           if (leftSidebarPanelIds.includes(panelId)) {
@@ -3196,7 +3113,7 @@ export default function App() {
       applyPanelConstraints(
         api,
         paneRegistry,
-        { nativeAgentEnabled, companionAgentEnabled },
+        { nativeAgentEnabled },
         panelMinRef,
       )
       applyInitialSizes(
@@ -3314,7 +3231,7 @@ export default function App() {
       }
 
       if (!api.getPanel('empty-center')) {
-        const rightRailPanel = api.getPanel('terminal') || api.getPanel('companion')
+        const rightRailPanel = api.getPanel('terminal') || api.getPanel('agent')
         const emptyPosition = firstCenterPanel?.group
           ? { referenceGroup: firstCenterPanel.group }
           : rightRailPanel
@@ -3340,7 +3257,7 @@ export default function App() {
       applyPanelConstraints(
         api,
         registry,
-        { nativeAgentEnabled, companionAgentEnabled },
+        { nativeAgentEnabled },
         panelMinRef,
       )
       applyInitialSizes(
@@ -3472,8 +3389,8 @@ export default function App() {
       } else {
         // Fallback: keep center column between filetree and right-rail agent panel.
         const terminalPanel = api.getPanel('terminal')
-        const companionPanel = api.getPanel('companion')
-        const rightRailPanel = terminalPanel || companionPanel
+        const agentPanel = api.getPanel('agent')
+        const rightRailPanel = terminalPanel || agentPanel
         emptyPanel = api.addPanel({
           id: 'empty-center',
           component: 'empty',
@@ -3520,13 +3437,13 @@ export default function App() {
     const savePanelSizesNow = () => {
       const filetreePanel = api.getPanel('filetree')
       const terminalPanel = api.getPanel('terminal')
-      const companionPanel = api.getPanel('companion')
+      const agentPanel = api.getPanel('agent')
       const shellPanel = api.getPanel('shell')
 
       const leftGroups = getLeftSidebarGroups(api)
       const filetreeGroup = filetreePanel?.group
       const terminalGroup = terminalPanel?.group
-      const companionGroup = companionPanel?.group
+      const agentGroup = agentPanel?.group
       const shellGroup = shellPanel?.group
 
       const newSizes = { ...panelSizesRef.current }
@@ -3547,9 +3464,9 @@ export default function App() {
           changed = true
         }
       }
-      if (companionGroup && companionGroup.api.width > panelCollapsedRef.current.companion) {
-        if (newSizes.companion !== companionGroup.api.width) {
-          newSizes.companion = companionGroup.api.width
+      if (agentGroup && agentGroup.api.width > panelCollapsedRef.current.agent) {
+        if (newSizes.agent !== agentGroup.api.width) {
+          newSizes.agent = agentGroup.api.width
           changed = true
         }
       }
@@ -3688,7 +3605,7 @@ export default function App() {
     const collapsedState = {
       filetree: collapsed.filetree,
       terminal: collapsed.terminal,
-      companion: collapsed.companion,
+      agent: collapsed.agent,
       shell: collapsed.shell,
     }
 
@@ -3729,11 +3646,8 @@ export default function App() {
         if (countAgentPanels(dockApi, 'terminal') === 0) {
           agentAutoAddSuppressedRef.current.terminal = true
         }
-        if (countAgentPanels(dockApi, 'companion') === 0) {
-          agentAutoAddSuppressedRef.current.companion = true
-        }
-        if (countAgentPanels(dockApi, 'pi') === 0) {
-          agentAutoAddSuppressedRef.current.pi = true
+        if (countAgentPanels(dockApi, 'agent') === 0) {
+          agentAutoAddSuppressedRef.current.agent = true
         }
 
         // After restoring, apply locked panels and cleanup
@@ -3835,68 +3749,29 @@ export default function App() {
           }
         }
 
-        // Handle companion panel restored from saved layout.
-        const companionPanel = dockApi.getPanel('companion')
-        if (companionPanel) {
-          const allowCompanionInLocalMode = isCoreDeploy && agentRailMode === 'companion'
-          if (
-            !capabilitiesLoading
-            && (
-              !companionAgentEnabled
-              || (
-                capabilities?.features?.companion !== true
-                && !allowCompanionInLocalMode
-              )
-            )
-          ) {
-            companionPanel.api.close()
+        // Handle agent panel restored from saved layout.
+        const agentPanel = dockApi.getPanel('agent')
+        if (agentPanel) {
+          if (!capabilitiesLoading && capabilities?.features?.pi !== true) {
+            agentPanel.api.close()
           } else {
-            const companionGroup = companionPanel.group
-            if (companionGroup) {
-              companionGroup.locked = false
-              companionGroup.header.hidden = false
-              if (collapsed.companion) {
-                companionGroup.api.setConstraints({
-                  minimumWidth: panelCollapsedRef.current.companion,
-                  maximumWidth: panelCollapsedRef.current.companion,
+            const agentGroup = agentPanel.group
+            if (agentGroup) {
+              agentGroup.locked = false
+              agentGroup.header.hidden = false
+              if (collapsed.agent) {
+                agentGroup.api.setConstraints({
+                  minimumWidth: panelCollapsedRef.current.agent,
+                  maximumWidth: panelCollapsedRef.current.agent,
                 })
-                companionGroup.api.setSize({ width: panelCollapsedRef.current.companion })
+                agentGroup.api.setSize({ width: panelCollapsedRef.current.agent })
               } else {
-                companionGroup.api.setConstraints({
-                  minimumWidth: panelMinRef.current.companion,
+                agentGroup.api.setConstraints({
+                  minimumWidth: panelMinRef.current.agent,
                   maximumWidth: Number.MAX_SAFE_INTEGER,
                 })
-                companionGroup.api.setSize({ width: panelSizesRef.current.companion })
+                agentGroup.api.setSize({ width: panelSizesRef.current.agent })
               }
-            }
-          }
-        }
-
-        // Handle PI panel restored from saved layout.
-        const piPanel = dockApi.getPanel('pi-agent')
-        if (piPanel) {
-          const allowPiInLocalMode = isCoreDeploy && agentRailMode === 'pi'
-          if (
-            !capabilitiesLoading
-            && (
-              !piAgentEnabled
-              || (
-                capabilities?.features?.pi !== true
-                && !allowPiInLocalMode
-              )
-            )
-          ) {
-            piPanel.api.close()
-          } else {
-            const piGroup = piPanel.group
-            if (piGroup) {
-              piGroup.locked = false
-              piGroup.header.hidden = false
-              piGroup.api.setConstraints({
-                minimumWidth: panelMinRef.current.companion,
-                maximumWidth: Number.MAX_SAFE_INTEGER,
-              })
-              piGroup.api.setSize({ width: panelSizesRef.current.companion })
             }
           }
         }
@@ -3972,7 +3847,7 @@ export default function App() {
         requestAnimationFrame(() => {
           const leftGroups = getLeftSidebarGroups(dockApi)
           const tGroup = dockApi.getPanel('terminal')?.group
-          const cGroup = dockApi.getPanel('companion')?.group
+          const aGroup = dockApi.getPanel('agent')?.group
           const sGroup = dockApi.getPanel('shell')?.group
 
           // For collapsed panels, set collapsed size; for expanded, use saved size
@@ -4005,15 +3880,15 @@ export default function App() {
               }
             }
           }
-          if (cGroup) {
-            const cApi = dockApi.getGroup(cGroup.id)?.api
-            if (cApi) {
-              if (collapsed.companion) {
-                cApi.setConstraints({ minimumWidth: panelCollapsedRef.current.companion, maximumWidth: panelCollapsedRef.current.companion })
-                cApi.setSize({ width: panelCollapsedRef.current.companion })
+          if (aGroup) {
+            const aApi = dockApi.getGroup(aGroup.id)?.api
+            if (aApi) {
+              if (collapsed.agent) {
+                aApi.setConstraints({ minimumWidth: panelCollapsedRef.current.agent, maximumWidth: panelCollapsedRef.current.agent })
+                aApi.setSize({ width: panelCollapsedRef.current.agent })
               } else {
-                cApi.setConstraints({ minimumWidth: panelMinRef.current.companion, maximumWidth: Number.MAX_SAFE_INTEGER })
-                cApi.setSize({ width: panelSizesRef.current.companion })
+                aApi.setConstraints({ minimumWidth: panelMinRef.current.agent, maximumWidth: Number.MAX_SAFE_INTEGER })
+                aApi.setSize({ width: panelSizesRef.current.agent })
               }
             }
           }
@@ -4053,7 +3928,7 @@ export default function App() {
     collapsed.filetree,
     collapsed.terminal,
     collapsed.shell,
-    collapsed.companion,
+    collapsed.agent,
     openFile,
     openFileToSide,
     openDiff,
@@ -4074,11 +3949,7 @@ export default function App() {
     handleLogout,
     sectionCollapsed,
     toggleSectionCollapse,
-    companionAgentEnabled,
     nativeAgentEnabled,
-    piAgentEnabled,
-    isCoreDeploy,
-    agentRailMode,
     getLeftSidebarGroups,
     leftSidebarCollapsedWidth,
     leftSidebarMinWidth,
@@ -4272,27 +4143,23 @@ export default function App() {
     }
   }, [dockApi, collapsed.shell, toggleShell, projectRoot])
 
-  // Update companion panel params
+  // Update agent panel params
   useEffect(() => {
     if (!dockApi) return
-    const companionPanels = listDockPanels(dockApi).filter(
-      (panel) => getPanelComponent(panel) === 'companion',
+    const agentPanels = listDockPanels(dockApi).filter(
+      (panel) => getPanelComponent(panel) === 'agent',
     )
-    companionPanels.forEach((panel) => {
-      const provider = panel?.params?.provider === 'pi' || panel.id === 'pi-agent'
-        ? 'pi'
-        : 'companion'
+    agentPanels.forEach((panel) => {
       panel.api.updateParameters({
         ...(panel?.params || {}),
         panelId: panel.id,
         collapsed: false,
         onToggleCollapse: undefined,
         onSplitPanel: handleSplitChatPanel,
-        provider,
-        lockProvider: true,
+        mode: agentMode,
       })
     })
-  }, [dockApi, collapsed.companion, toggleCompanion, handleSplitChatPanel])
+  }, [dockApi, collapsed.agent, toggleAgent, handleSplitChatPanel, agentMode])
 
   // Load workspace plugin panels when capabilities include them
   const workspacePanesKey = JSON.stringify(capabilities?.workspace_panes || [])
@@ -4354,7 +4221,6 @@ export default function App() {
     capabilitiesLoading,
     capabilities,
     nativeAgentEnabled,
-    companionAgentEnabled,
     projectRoot,
     layoutPersistenceReady,
   ])
@@ -4367,7 +4233,7 @@ export default function App() {
     if (!dockApi || capabilitiesLoading || !layoutPersistenceReady) return
 
     let removedLegacyPanel = false
-    ;['terminal', 'companion', 'pi-agent'].forEach((panelId) => {
+    ;['terminal', 'agent'].forEach((panelId) => {
       const panel = dockApi.getPanel(panelId)
       if (panel) {
         panel.api.close()
@@ -4653,7 +4519,7 @@ export default function App() {
 
     if (targetPanel?.id) {
       openSeriesAtPosition(droppedSeriesId, {
-        direction: targetPanel.id === 'companion' ? 'left' : 'right',
+        direction: targetPanel.id === 'agent' ? 'left' : 'right',
         referencePanel: targetPanel.id,
       })
       return
@@ -4783,10 +4649,8 @@ export default function App() {
     return (
       <ThemeProvider>
         <AuthPage authConfig={{
-          provider: capabilities?.auth?.provider || 'supabase',
+          provider: capabilities?.auth?.provider || 'local',
           neonAuthUrl: capabilities?.auth?.neonAuthUrl || '',
-          supabaseUrl: capabilities?.auth?.supabaseUrl || '',
-          supabaseAnonKey: capabilities?.auth?.supabaseAnonKey || '',
           callbackUrl: capabilities?.auth?.callbackUrl || '',
           redirectUri: new URLSearchParams(window.location.search).get('redirect_uri') || '/',
           initialMode: pagePathname === '/auth/signup'
@@ -4810,9 +4674,9 @@ export default function App() {
   }
 
   // Auth guard: redirect unauthenticated users to login when control plane is enabled
-  // Only enforce when an auth provider is actually configured (supabaseUrl or neonAuthUrl present);
-  // otherwise dev mode with control_plane but no auth would loop to a non-functional login page.
-  const authProviderConfigured = !!(capabilities?.auth?.supabaseUrl || capabilities?.auth?.neonAuthUrl)
+  // Only enforce when hosted auth is configured; local/dev control-plane mode
+  // can run without a frontend login screen.
+  const authProviderConfigured = capabilities?.auth?.provider === 'neon' && !!capabilities?.auth?.neonAuthUrl
   if (
     capabilities?.features?.control_plane &&
     authProviderConfigured &&
@@ -4864,7 +4728,7 @@ export default function App() {
     'dockview-theme-abyss',
     collapsed.filetree && 'filetree-is-collapsed',
     collapsed.terminal && 'terminal-is-collapsed',
-    collapsed.companion && 'companion-is-collapsed',
+    collapsed.agent && 'agent-is-collapsed',
     collapsed.shell && 'shell-is-collapsed',
   ].filter(Boolean).join(' ')
 

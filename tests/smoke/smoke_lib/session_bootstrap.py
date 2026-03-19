@@ -10,12 +10,10 @@ from .auth import (
     neon_signup_then_signin,
     neon_signup_verify_flow,
     random_password,
-    signin_flow,
-    signup_flow,
 )
 from .client import SmokeClient
 from .secrets import neon_auth_url as secret_neon_auth_url
-from .secrets import resend_api_key, supabase_anon_key, supabase_url
+from .secrets import resend_api_key
 
 
 def dev_login(client: SmokeClient, *, user_id: str, email: str, redirect_uri: str = "/") -> dict:
@@ -125,34 +123,6 @@ def ensure_session(
             "email": account_email,
             "password": account_password,
             "neon_auth_url": resolved_neon_url,
-        }
-
-    if mode == "supabase":
-        sb_url = supabase_url()
-        sb_anon = supabase_anon_key()
-        account_email = email or recipient or f"qa+smoke-supabase-{int(time.time())}@boringdata.io"
-        account_password = password or random_password()
-        if not skip_signup:
-            signup_flow(
-                client,
-                supabase_url=sb_url,
-                supabase_anon_key=sb_anon,
-                resend_api_key=resend_api_key(),
-                email=account_email,
-                password=account_password,
-                timeout_seconds=timeout_seconds,
-            )
-        signin_flow(
-            client,
-            supabase_url=sb_url,
-            supabase_anon_key=sb_anon,
-            email=account_email,
-            password=account_password,
-        )
-        return {
-            "auth_mode": mode,
-            "email": account_email,
-            "password": account_password,
         }
 
     raise RuntimeError(f"Unsupported auth_mode: {auth_mode}")

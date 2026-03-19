@@ -27,9 +27,9 @@ export default function PiSessionToolbar({ panelId, onSplitPanel }) {
   const sessions = Array.isArray(state.sessions) ? state.sessions : []
 
   return (
-    <div className="companion-session-toolbar" data-testid="pi-session-toolbar">
+    <div className="agent-session-toolbar" data-testid="pi-session-toolbar">
       <select
-        className="terminal-select companion-session-select"
+        className="terminal-select agent-session-select"
         value={state.currentSessionId || ''}
         onChange={(e) => requestPiSwitchSession(panelId, e.target.value)}
         data-testid="pi-session-select"

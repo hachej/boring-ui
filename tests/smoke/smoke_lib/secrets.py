@@ -18,30 +18,6 @@ def secret(*, env: str, vault_path: str, vault_field: str) -> str:
     return vault(vault_path, vault_field)
 
 
-def supabase_url() -> str:
-    return secret(
-        env="SUPABASE_URL",
-        vault_path="secret/agent/boring-ui-supabase-project-url",
-        vault_field="url",
-    ).rstrip("/")
-
-
-def supabase_anon_key() -> str:
-    return secret(
-        env="SUPABASE_ANON_KEY",
-        vault_path="secret/agent/boring-ui-supabase-publishable-key",
-        vault_field="key",
-    )
-
-
-def supabase_service_role_key() -> str:
-    return secret(
-        env="SUPABASE_SERVICE_ROLE_KEY",
-        vault_path="secret/agent/boring-ui-supabase-service-role-key",
-        vault_field="key",
-    )
-
-
 def resend_api_key() -> str:
     return secret(
         env="RESEND_API_KEY",

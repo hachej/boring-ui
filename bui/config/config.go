@@ -63,6 +63,7 @@ type Panel struct {
 }
 
 type CLI struct {
+	Name     string             `toml:"name"`
 	Commands map[string]Command `toml:"commands"`
 }
 
@@ -109,10 +110,13 @@ type ModalConfig struct {
 
 type DockerConfig struct {
 	Registry    string `toml:"registry"`
+	Image       string `toml:"image"`
 	ComposeFile string `toml:"compose_file"`
 	Dockerfile  string `toml:"dockerfile"`
 	CaddyFile   string `toml:"caddy_file"`
 	Host        string `toml:"host"`
+	SSHHost     string `toml:"ssh_host"`
+	SSHUser     string `toml:"ssh_user"`
 	SSHKeyVault string `toml:"ssh_key_vault"`
 	RemoteDir   string `toml:"remote_dir"`
 }

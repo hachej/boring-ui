@@ -25,7 +25,7 @@ from smoke_lib.workspace import create_workspace, list_workspaces
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:8000")
-    parser.add_argument("--auth-mode", choices=["neon", "supabase", "dev"], default="neon")
+    parser.add_argument("--auth-mode", choices=["neon", "dev"], default="neon")
     parser.add_argument("--neon-auth-url", default="")
     parser.add_argument("--skip-signup", action="store_true", help="Skip signup, use --email/--password")
     parser.add_argument("--email", help="Existing account email (with --skip-signup)")

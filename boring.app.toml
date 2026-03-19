@@ -8,12 +8,20 @@ id   = "boring-ui"
 
 # ─── Backend ───────────────────────────────────────────────
 [backend]
+# Canonical backend for boring-ui and child apps.
 type  = "python"
 entry = "boring_ui.api.app:create_app"
 pythonpath = ["src/back"]
 port  = 8000
 # Additional FastAPI routers (Python dotted paths)
 routers = []
+
+[agents]
+mode = "frontend"  # browser PI / LightningFS
+default = "pi"
+
+[agents.pi]
+enabled = true
 
 # ─── Frontend ──────────────────────────────────────────────
 [frontend]
@@ -31,26 +39,27 @@ backend = "http"
 # Custom panels: id = { component, title, placement }
 [frontend.panels]
 
-# ─── CLI commands (agent-discoverable) ────────────────────
+# ─── CLI binary (agent-discoverable) ──────────────────────
 [cli]
-# Commands that `bui run <name>` will execute
-# The agent reads this section to know what's available
-[cli.commands]
+# Child app CLI on PATH. `bui run <args...>` delegates here.
+name = "bui"
+# Optional legacy aliases can still live under [cli.commands].
 
 # ─── Auth ─────────────────────────────────────────────────
 [auth]
-provider = "neon"               # "neon" | "local" | "none"
+provider = "neon"               # supported app configs: "neon" | "local"
 session_cookie = "boring_session"
 session_ttl = 86400
 
 # ─── Deploy ──────────────────────────────────────────────
 [deploy]
-platform = "modal"               # "modal" | "docker"
+platform = "fly"                 # "fly" | "modal" | "docker"
 env      = "prod"                # "prod" | "staging" | "dev" — Vault path isolation
 
 [deploy.secrets]
 DATABASE_URL              = { vault = "secret/agent/app/boring-ui/prod", field = "database_url" }
 BORING_UI_SESSION_SECRET  = { vault = "secret/agent/app/boring-ui/prod", field = "session_secret" }
+BORING_SETTINGS_KEY       = { vault = "secret/agent/app/boring-ui/prod", field = "settings_key" }
 ANTHROPIC_API_KEY         = { vault = "secret/agent/anthropic", field = "api_key" }
 RESEND_API_KEY            = { vault = "secret/agent/services/resend", field = "api_key" }
 GITHUB_APP_ID             = { vault = "secret/agent/services/boring-ui-app", field = "app_id" }
@@ -68,3 +77,12 @@ jwks_url     = "https://ep-solitary-darkness-ag6rrvrn.neonauth.c-2.eu-central-1.
 [deploy.modal]
 app_name = "boring-ui"
 min_containers = 0
+
+[deploy.docker]
+registry = "ghcr.io/hachej"
+compose_file = "deploy/docker-compose.prod.yml"
+dockerfile = "deploy/python/Dockerfile"
+caddy_file = "deploy/python/Caddyfile.prod"
+host = "46.225.19.111.sslip.io"
+ssh_key_vault = "secret/agent/hetzner-ssh"
+remote_dir = "/opt/boring-ui"

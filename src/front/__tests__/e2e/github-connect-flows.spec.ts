@@ -24,7 +24,7 @@ const stubCapabilities = async (page: Page, overrides: Record<string, boolean> =
         pty: true,
         chat_claude_code: true,
         approval: true,
-        companion: true,
+        pi: true,
         control_plane: true,
         github: true,
         ...overrides,

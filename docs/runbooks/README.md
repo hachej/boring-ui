@@ -15,14 +15,22 @@ Operational runbooks for common tasks.
 
 ## Quick Mode Choice
 
+Canonical target for new backend-agent work:
+- Single `boring-ui` FastAPI backend on a normal Linux host, with a local Node PI sidecar and `nsjail`
+- `backend.type = "python"` is the required app config baseline for that shape
+- `edge` is a legacy compatibility deployment path, not the recommended default
+- `boring-sandbox` is optional edge infrastructure, not a requirement for new hosted deployments
+- App-level agent mode should converge on `frontend|backend`, not `core|edge`
+
 Use `core` when you want the simplest standalone deployment:
 - Frontend -> `boring-ui` backend directly
-- Default UI profile: `pi-lightningfs`
+- Default UI profile today: `pi-lightningfs`
 
-Use `edge` only when you need edge proxy/provisioning/token-injection:
+Use `edge` only when you need legacy edge proxy/provisioning/token-injection behavior:
 - Frontend -> `boring-sandbox` -> `boring-ui`
 - Default UI profile: `companion-httpfs`
 - Workspace/user/membership/files/git ownership remains in `boring-ui`
+- `boring-sandbox` stays edge-only; it is not part of the canonical backend-agent architecture
 
 ## Development
 
@@ -100,21 +108,20 @@ npm run build:lib
 npm run preview
 ```
 
-### Launch Full Stack by Deployment Mode
+### Launch Full Stack
 
 ```bash
-# Core mode (single backend; default)
-python3 scripts/run_full_app.py --config app.full.toml --deploy-mode core
+# Backend API + runtime config bridge (app_config_loader wraps create_app() and serves /__bui/config)
+BUI_APP_TOML=./boring.app.toml uv run python -m uvicorn boring_ui.app_config_loader:app \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --reload
 
-# Edge mode (frontend points at edge proxy)
-python3 scripts/run_full_app.py \
-  --config app.full.toml \
-  --deploy-mode edge \
-  --edge-proxy-url http://127.0.0.1:8080
-
-# Shell wrapper (supports positional config + same flags)
-bash scripts/run_full_app.sh app.full.toml --deploy-mode core
+# Frontend dev server
+npm run dev
 ```
+
+The frontend now boots from the backend-served runtime payload at `/__bui/config`; there is no generated `app.config.js` step in the dev flow.
 
 ### Docker Compose Ownership (boring-ui)
 
@@ -191,12 +198,12 @@ Neon Auth note: `emailVerified: false` is expected by default (Better Auth does 
 Initialize schema once per database:
 
 ```bash
-psql "$DATABASE_URL" -f deploy/sql/control_plane_supabase_schema.sql
+bui neon setup
 ```
 
-**Supabase (legacy)**: Set `CONTROL_PLANE_PROVIDER=supabase` plus `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` in the Modal secret.
+The supported bootstrap path provisions the Neon project, applies the current control-plane schema, enables Neon Auth, and stores the generated secrets.
 
-`boring-ui` preserves both Supabase and Neon pooler hostnames for TLS SNI routing.
+`boring-ui` preserves Neon pooler hostnames for TLS SNI routing.
 For non-pooler Postgres hosts, backend may apply IPv4 resolution for container compatibility.
 
 Endpoints:
@@ -230,107 +237,6 @@ python3 -c "from boring_ui.api.app import create_app; import uvicorn; app = crea
 # Smoke check
 curl -s http://localhost:8000/api/capabilities | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('auth',{}), indent=2))"
 curl -i http://localhost:8000/auth/login
-```
-
-### Supabase QA (Legacy) with Vault Credentials
-
-Credential sources (Vault):
-- `secret/agent/boring-ui-supabase` (`db_password`)
-- `secret/agent/boring-ui-supabase-project-url` (`url`)
-- `secret/agent/boring-ui-supabase-publishable-key` (`key`)
-- `secret/agent/boring-ui-supabase-service-role-key` (`key`)
-
-Rules:
-- Never commit credentials or generated `.env` files.
-- Use temporary env files and remove them after tests.
-- Prefer Supabase pooler URL for Docker:
-  `postgresql://postgres.<project-ref>:<password>@aws-1-eu-west-1.pooler.supabase.com:5432/postgres`
-
-Core mode smoke with real Supabase:
-
-```bash
-TMP_ENV_CORE="$(mktemp)"
-PROJECT_URL="$(vault kv get -format=json secret/agent/boring-ui-supabase-project-url | jq -r '.data.data.url')"
-PROJECT_REF="$(echo "$PROJECT_URL" | sed -E 's#https?://([^.]+).*#\1#')"
-ANON_KEY="$(vault kv get -format=json secret/agent/boring-ui-supabase-publishable-key | jq -r '.data.data.key')"
-SERVICE_ROLE_KEY="$(vault kv get -format=json secret/agent/boring-ui-supabase-service-role-key | jq -r '.data.data.key')"
-DB_PASSWORD="$(vault kv get -format=json secret/agent/boring-ui-supabase | jq -r '.data.data.db_password')"
-ENC_DB_PASSWORD="$(DB_PASSWORD="$DB_PASSWORD" python3 - <<'PY'
-import os, urllib.parse
-print(urllib.parse.quote(os.environ["DB_PASSWORD"], safe=""))
-PY
-)"
-
-cat > "$TMP_ENV_CORE" <<EOF
-CONTROL_PLANE_PROVIDER=supabase
-CONTROL_PLANE_APP_ID=boring-ui
-SUPABASE_URL=${PROJECT_URL}
-SUPABASE_ANON_KEY=${ANON_KEY}
-SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
-SUPABASE_DB_URL=postgresql://postgres.${PROJECT_REF}:${ENC_DB_PASSWORD}@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
-BORING_SETTINGS_KEY=$(python3 - <<'PY'
-import secrets; print(secrets.token_hex(32))
-PY
-)
-BORING_UI_SESSION_SECRET=$(python3 - <<'PY'
-import secrets; print(secrets.token_urlsafe(48))
-PY
-)
-BORING_UI_BACKEND_PORT=18080
-BORING_UI_FRONTEND_PORT=5273
-CORE_VITE_API_URL=http://127.0.0.1:5273
-CORE_VITE_PROXY_API_TARGET=http://backend:8000
-EOF
-
-docker compose -p coreqa --env-file "$TMP_ENV_CORE" -f deploy/core/docker-compose.yml up -d --build backend frontend
-curl -fsS http://127.0.0.1:18080/health
-curl -i http://127.0.0.1:18080/auth/login?redirect_uri=/
-curl -i http://127.0.0.1:18080/api/v1/me
-```
-
-Edge mode smoke with real Supabase:
-
-```bash
-TMP_ENV_EDGE="$(mktemp)"
-cat > "$TMP_ENV_EDGE" <<EOF
-CONTROL_PLANE_PROVIDER=supabase
-CONTROL_PLANE_APP_ID=boring-ui
-SUPABASE_URL=${PROJECT_URL}
-SUPABASE_ANON_KEY=${ANON_KEY}
-SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
-SUPABASE_DB_URL=postgresql://postgres.${PROJECT_REF}:${ENC_DB_PASSWORD}@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
-BORING_SETTINGS_KEY=$(python3 - <<'PY'
-import secrets; print(secrets.token_hex(32))
-PY
-)
-BORING_UI_SESSION_SECRET=$(python3 - <<'PY'
-import secrets; print(secrets.token_urlsafe(48))
-PY
-)
-BORING_UI_EDGE_BACKEND_PORT=19011
-BORING_UI_EDGE_PORT=8381
-BORING_UI_EDGE_FRONTEND_PORT=5276
-EDGE_VITE_API_URL=http://127.0.0.1:5276
-EDGE_VITE_PROXY_API_TARGET=http://backend:8000
-EDGE_VITE_COMPANION_PROXY_TARGET=http://sandbox:3456
-EDGE_UI_PROFILE=companion-httpfs
-BM_CHAT_PROVIDER=companion
-BM_COMPANION_AUTOSTART=true
-EOF
-
-docker compose -p edgeqa --env-file "$TMP_ENV_EDGE" -f deploy/edge/docker-compose.yml up -d --build backend sandbox frontend
-curl -fsS http://127.0.0.1:19011/health
-curl -fsS http://127.0.0.1:8381/health
-curl -i http://127.0.0.1:19011/auth/login?redirect_uri=/
-curl -i http://127.0.0.1:5276/companion/api/v1/agent/companion/sessions
-```
-
-Cleanup:
-
-```bash
-docker compose -p coreqa -f deploy/core/docker-compose.yml down -v
-docker compose -p edgeqa -f deploy/edge/docker-compose.yml down -v
-rm -f "$TMP_ENV_CORE" "$TMP_ENV_EDGE"
 ```
 
 ### Mode Compatibility Matrix
@@ -393,7 +299,7 @@ bundle-sandbox:
 | `PI_MODE` | PI rendering: `embedded` or `iframe` | `embedded` |
 | `WORKSPACE_PLUGINS_ENABLED` | Enable workspace plugins | `false` |
 | `WORKSPACE_PLUGIN_ALLOWLIST` | Comma-separated allowed plugins | (empty = all if enabled) |
-| `CONTROL_PLANE_PROVIDER` | Auth provider: `neon` (production), `supabase` (legacy), `local` (dev) | `local` (auto-detects from env) |
+| `CONTROL_PLANE_PROVIDER` | Auth provider: `neon` (production) or `local` (dev) | `local` (auto-detects from env) |
 | `DATABASE_URL` | Postgres connection string (Neon pooler recommended) | None |
 | `NEON_AUTH_BASE_URL` | Neon Auth / Better Auth base URL | None |
 | `NEON_AUTH_JWKS_URL` | Neon Auth JWKS endpoint for EdDSA JWT verification | Derived from base URL |

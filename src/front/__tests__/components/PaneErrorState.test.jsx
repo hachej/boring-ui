@@ -32,13 +32,13 @@ describe('PaneErrorState', () => {
   it('lists missing routers', () => {
     render(
       <PaneErrorState
-        paneId="companion"
-        paneTitle="Companion"
-        missingRouters={['companion_router']}
+        paneId="agent"
+        paneTitle="Agent"
+        missingRouters={['agent_router']}
       />,
     )
 
-    expect(screen.getByText('companion_router')).toBeInTheDocument()
+    expect(screen.getByText('agent_router')).toBeInTheDocument()
   })
 
   it('shows hint about API server', () => {

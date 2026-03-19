@@ -1,0 +1,79 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+      VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      GHCR_USERNAME: ${{ github.actor }}
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BUI_DEPLOY_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.0'
+          cache: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push BoxLite guest image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/python/Dockerfile.boxlite-guest
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/boring-ui-boxlite-guest:latest
+
+      - name: Install Vault CLI
+        uses: hashicorp/setup-vault@v3
+        with:
+          version: 1.18.3
+
+      - name: Deploy with bui
+        run: go run ./bui deploy --env prod
+
+      - name: Health check
+        run: |
+          HOST=$(python3 - <<'PY'
+          import tomllib
+          with open("boring.app.toml", "rb") as fh:
+              data = tomllib.load(fh)
+          print(data["deploy"]["docker"]["host"])
+          PY
+          )
+          for _ in $(seq 1 20); do
+            if curl --fail --show-error --silent "https://${HOST}/healthz" >/tmp/healthz.json; then
+              cat /tmp/healthz.json
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1

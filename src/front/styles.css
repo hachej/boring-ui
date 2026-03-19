@@ -1391,17 +1391,17 @@ kbd {
   flex-direction: column;
 }
 
-.panel-content.terminal-panel-content:not(.companion-panel-content),
+.panel-content.terminal-panel-content:not(.agent-panel-content),
 .panel-content.shell-panel-content {
   border-top: 1px solid var(--color-border-secondary);
 }
 
-/* Right rail panels (Code Sessions + Companion) */
+/* Right rail panels (Code Sessions + Agent) */
 .right-rail-panel {
   background: var(--color-bg-secondary);
 }
 
-.companion-panel-content {
+.agent-panel-content {
   border-left: 1px solid var(--color-border-secondary);
 }
 
@@ -3050,45 +3050,6 @@ kbd {
   line-height: 20px;
 }
 
-.companion-provider-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-left: var(--space-2);
-  padding: 2px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--color-border-secondary);
-  background: var(--color-bg-secondary);
-}
-
-.companion-provider-pill {
-  min-height: 26px;
-  padding: 0 var(--space-2);
-  border: none;
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-  font-weight: var(--font-medium);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
-}
-
-.companion-provider-pill:hover {
-  color: var(--color-text-primary);
-  background: var(--color-bg-tertiary);
-}
-
-.companion-provider-pill.active {
-  color: var(--color-text-primary);
-  background: var(--color-bg-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.companion-provider-pill:active {
-  transform: scale(0.98);
-}
-
 .terminal-icon-btn {
   display: flex;
   align-items: center;
@@ -3176,7 +3137,7 @@ kbd {
   position: relative;
 }
 
-.companion-panel-content .companion-body {
+.agent-panel-content .agent-body {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3184,12 +3145,12 @@ kbd {
   overflow: hidden;
 }
 
-.companion-panel-content .terminal-header {
+.agent-panel-content .terminal-header {
   border-bottom: 1px solid var(--color-border-secondary);
   background: var(--color-bg-secondary);
 }
 
-.companion-panel-content .companion-instance {
+.agent-panel-content .agent-instance {
   position: relative;
   inset: auto;
   opacity: 1;
@@ -3201,14 +3162,14 @@ kbd {
   min-height: 0;
 }
 
-.companion-panel-content .provider-companion {
+.agent-panel-content .provider-agent {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
 }
 
-.companion-panel-content .provider-pi-native {
+.agent-panel-content .provider-pi-native {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -3216,21 +3177,14 @@ kbd {
   overflow: hidden;
 }
 
-.companion-panel-content .provider-pi-native .pi-native-wrapper {
+.agent-panel-content .provider-pi-native .pi-native-wrapper {
   display: flex;
   flex: 1;
   min-height: 0;
   height: 100%;
 }
 
-.companion-panel-content .provider-pi {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.companion-panel-content .pi-agent-frame {
+.agent-panel-content .pi-agent-frame {
   flex: 1;
   min-height: 0;
 }
@@ -3388,31 +3342,31 @@ kbd {
   }
 }
 
-.companion-session-toolbar {
+.agent-session-toolbar {
   display: inline-flex;
   align-items: center;
   gap: 0;
 }
 
-.companion-session-toolbar .terminal-select {
+.agent-session-toolbar .terminal-select {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   border-right: none;
 }
 
-.companion-session-toolbar .terminal-new-icon {
+.agent-session-toolbar .terminal-new-icon {
   border: 1px solid var(--color-border);
   border-left: none;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
-.companion-session-select {
+.agent-session-select {
   min-width: 140px;
   max-width: 220px;
   background-color: var(--color-bg-secondary);
 }
 
-.companion-session-select option {
+.agent-session-select option {
   background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
 }
@@ -6171,7 +6125,6 @@ kbd {
   .dockview-theme-abyss .dv-split-view-container > .dv-sash-container > .dv-sash.dv-enabled::after,
   .user-menu-dropdown,
   .user-menu-theme-knob,
-  .companion-provider-pill,
   .folder-chevron,
   .section-collapse-icon,
   .ui-tooltip,

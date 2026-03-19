@@ -129,6 +129,34 @@ class TestCommitEndpoint:
             assert r.status_code == 400
             assert 'nothing to commit' in r.json()['detail'].lower()
 
+    @pytest.mark.asyncio
+    async def test_commit_with_author_sets_committer_for_fresh_repo(self, empty_app, empty_dir):
+        transport = ASGITransport(app=empty_app)
+        async with AsyncClient(transport=transport, base_url='http://test') as client:
+            init_resp = await client.post('/api/v1/git/init')
+            assert init_resp.status_code == 200
+
+            (empty_dir / 'fresh.txt').write_text('fresh content')
+
+            add_resp = await client.post('/api/v1/git/add', json={'paths': ['fresh.txt']})
+            assert add_resp.status_code == 200
+
+            commit_resp = await client.post('/api/v1/git/commit', json={
+                'message': 'fresh commit',
+                'author': {'name': 'Smoke Bot', 'email': 'smoke@example.com'},
+            })
+            assert commit_resp.status_code == 200
+            assert commit_resp.json()['oid']
+
+        author = subprocess.run(
+            ['git', 'log', '--format=%an <%ae>|%cn <%ce>', '-1'],
+            cwd=empty_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert 'Smoke Bot <smoke@example.com>|Smoke Bot <smoke@example.com>' in author.stdout
+
 
 class TestRemoteEndpoints:
     @pytest.mark.asyncio

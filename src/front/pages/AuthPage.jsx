@@ -4,36 +4,6 @@ import { getConfig } from '../config'
 import ThemeToggle from '../components/ThemeToggle'
 import './auth.css'
 
-const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js'
-
-function useSupabaseClient(supabaseUrl, supabaseAnonKey) {
-  const [client, setClient] = useState(null)
-  const loadedRef = useRef(false)
-
-  useEffect(() => {
-    if (!supabaseUrl || !supabaseAnonKey || loadedRef.current) return
-    loadedRef.current = true
-
-    // Check if already loaded
-    if (window.supabase?.createClient) {
-      setClient(window.supabase.createClient(supabaseUrl, supabaseAnonKey))
-      return
-    }
-
-    const script = document.createElement('script')
-    script.src = SUPABASE_CDN
-    script.crossOrigin = 'anonymous'
-    script.onload = () => {
-      if (window.supabase?.createClient) {
-        setClient(window.supabase.createClient(supabaseUrl, supabaseAnonKey))
-      }
-    }
-    document.head.appendChild(script)
-  }, [supabaseUrl, supabaseAnonKey])
-
-  return client
-}
-
 function safeRedirectPath(raw) {
   const candidate = String(raw || '/').trim()
   try {
@@ -46,13 +16,7 @@ function safeRedirectPath(raw) {
   return candidate
 }
 
-// --- Neon Auth helpers ---
-
 function parseNeonError(body) {
-  // Better Auth error shapes:
-  //   { message: "..." }
-  //   { error: { message: "..." } }
-  //   { code: "...", message: "..." }
   if (!body) return 'An unknown error occurred.'
   if (typeof body === 'string') return body
   if (body.message) return body.message
@@ -85,7 +49,17 @@ function isEmailNotVerifiedError(result) {
   return code === 'EMAIL_NOT_VERIFIED' || message.includes('email not verified')
 }
 
-// --- Main component ---
+function buildLocalLoginUrl(emailValue, redirectUri) {
+  const normalizedEmail = String(emailValue || '').trim().toLowerCase()
+  const fallbackUserId = normalizedEmail
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'local-user'
+  const url = new URL('/auth/login', window.location.origin)
+  url.searchParams.set('user_id', `local-${fallbackUserId}`)
+  url.searchParams.set('email', normalizedEmail)
+  url.searchParams.set('redirect_uri', redirectUri)
+  return `${url.pathname}${url.search}`
+}
 
 export default function AuthPage({ authConfig }) {
   const config = getConfig()
@@ -93,12 +67,11 @@ export default function AuthPage({ authConfig }) {
   const appName = authConfig?.appName || branding.name || 'Boring UI'
   const appDescription = authConfig?.appDescription || ''
 
-  const provider = authConfig?.provider || 'supabase'
+  const provider = authConfig?.provider === 'neon' ? 'neon' : 'local'
   const isNeon = provider === 'neon'
+  const isLocal = provider === 'local'
   const urlSearchParams = new URLSearchParams(window.location.search)
 
-  const supabaseUrl = authConfig?.supabaseUrl || ''
-  const supabaseAnonKey = authConfig?.supabaseAnonKey || ''
   const callbackUrl = authConfig?.callbackUrl || `${window.location.origin}/auth/callback`
   const redirectUri = safeRedirectPath(authConfig?.redirectUri || urlSearchParams.get('redirect_uri'))
   const resetToken = String(urlSearchParams.get('token') || '').trim()
@@ -108,12 +81,6 @@ export default function AuthPage({ authConfig }) {
     : authConfig?.initialMode === 'reset_password'
       ? 'reset_password'
       : 'sign_in'
-
-  // Only load Supabase SDK when using supabase provider
-  const client = useSupabaseClient(
-    isNeon ? '' : supabaseUrl,
-    isNeon ? '' : supabaseAnonKey,
-  )
 
   const [mode, setMode] = useState(initialMode)
   const [email, setEmail] = useState('')
@@ -176,20 +143,6 @@ export default function AuthPage({ authConfig }) {
     showStatus(`Unable to use this reset link: ${resetLinkError}`, true)
   }, [mode, resetLinkError, resetToken, showStatus])
 
-  const isRateLimited = (error) => {
-    if (!error) return false
-    if (Number(error.status || 0) === 429) return true
-    const raw = [error.code, error.error_code, error.message].filter(Boolean).join(' ').toLowerCase()
-    return raw.includes('over_email_send_rate_limit') || raw.includes('email rate limit') || raw.includes('too many requests')
-  }
-
-  const buildCallbackUrl = () => {
-    const url = new URL(callbackUrl, window.location.origin)
-    url.searchParams.set('redirect_uri', redirectUri)
-    return url.toString()
-  }
-
-  // --- Neon submit handler ---
   const handleNeonSubmit = async (e) => {
     e.preventDefault()
     if (busy) return
@@ -337,101 +290,26 @@ export default function AuthPage({ authConfig }) {
     }
   }
 
-  // --- Supabase magic link handler ---
-  const handleMagicLink = async () => {
-    if (busy || !client) return
-    const trimmed = email.trim()
-    if (!trimmed) { showStatus('Enter your email.', true); return }
-
-    setBusy(true)
-    showStatus('Sending magic link...')
-    try {
-      const result = await client.auth.signInWithOtp({
-        email: trimmed,
-        options: { emailRedirectTo: buildCallbackUrl() },
-      })
-      if (result.error) {
-        showStatus(isRateLimited(result.error)
-          ? 'Too many email attempts. Please wait about 60 seconds.'
-          : (result.error.message || 'Unable to send magic link.'), true)
-        return
-      }
-      showStatus(mode === 'sign_up'
-        ? 'Check your email to confirm your account.'
-        : 'Check your email for the sign-in link.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // --- Supabase submit handler ---
-  const handleSupabaseSubmit = async (e) => {
+  const handleLocalSubmit = async (e) => {
     e.preventDefault()
-    if (busy || !client) return
-    const trimmed = email.trim()
-    if (!trimmed || !password) { showStatus('Enter email and password.', true); return }
-
-    setBusy(true)
-    if (mode === 'sign_up') {
-      showStatus('Creating account...')
-      try {
-        const result = await client.auth.signUp({
-          email: trimmed,
-          password,
-          options: { emailRedirectTo: buildCallbackUrl() },
-        })
-        if (result.error) {
-          showStatus(isRateLimited(result.error)
-            ? 'Too many email attempts. Please wait about 60 seconds.'
-            : (result.error.message || 'Unable to create account.'), true)
-          return
-        }
-        setPassword('')
-        setMode('sign_in')
-        showStatus('Account created. Confirm from your email, then sign in.')
-      } finally {
-        setBusy(false)
-      }
+    if (busy) return
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed || !password) {
+      showStatus('Enter email and password.', true)
       return
     }
-
-    showStatus('Signing in...')
-    try {
-      const signIn = await client.auth.signInWithPassword({ email: trimmed, password })
-      if (signIn.error) {
-        showStatus(signIn.error.message || 'Unable to sign in.', true)
-        return
-      }
-      const accessToken = signIn.data?.session?.access_token
-      if (!accessToken) { showStatus('No access token returned.', true); return }
-
-      const resp = await fetch('/auth/token-exchange', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ access_token: accessToken, redirect_uri: redirectUri }),
-      })
-      const payload = await resp.json().catch(() => ({}))
-      if (!resp.ok) {
-        showStatus(payload.message || 'Unable to complete session setup.', true)
-        return
-      }
-      window.location.assign(payload.redirect_uri || '/')
-    } finally {
-      setBusy(false)
-    }
+    window.location.assign(buildLocalLoginUrl(trimmed, redirectUri))
   }
 
   const handleSubmit = mode === 'reset_password'
     ? handleResetPasswordSubmit
     : isNeon
       ? handleNeonSubmit
-      : handleSupabaseSubmit
+      : handleLocalSubmit
 
-  // For Neon, the form is ready immediately (no SDK to load).
-  // For Supabase, we need the client to be loaded.
   const isSignUp = mode === 'sign_up'
   const isResetPassword = mode === 'reset_password'
-  const formReady = isNeon || isResetPassword ? true : !!client
+  const formReady = isNeon || isLocal || isResetPassword
   const canResendVerification = isNeon
     && mode === 'sign_in'
     && !!verificationRecoveryEmail
@@ -572,25 +450,16 @@ export default function AuthPage({ authConfig }) {
             </button>
           </form>
 
-          {/* Magic link option only available for Supabase provider */}
-          {!isNeon && (
-            <div className="auth-alt-actions">
-              <p className="auth-muted">Prefer a one-time link?</p>
-              <button
-                type="button"
-                className="auth-link-btn"
-                onClick={handleMagicLink}
-                disabled={busy || !client}
-              >
-                {isSignUp ? 'Email me a signup link' : 'Use magic link instead'}
-              </button>
-            </div>
-          )}
-
           {status && (
             <p className={`auth-status ${isError ? 'auth-status-error' : ''}`} aria-live="polite">
               {status}
             </p>
+          )}
+
+          {isLocal && !isResetPassword && (
+            <div className="auth-alt-actions">
+              <p className="auth-muted">Local dev auth creates a session directly from the email you enter.</p>
+            </div>
           )}
 
           {isNeon && mode === 'sign_in' && (
@@ -620,14 +489,6 @@ export default function AuthPage({ authConfig }) {
               </button>
             </div>
           )}
-
-          {/* Loading indicator for Supabase SDK */}
-          {!isNeon && !client && supabaseUrl && (
-            <p className="auth-status">
-              <Loader2 size={14} className="auth-spinner" />
-              Loading authentication...
-            </p>
-          )}
         </main>
       </div>
     </div>
@@ -648,7 +509,6 @@ export function AuthCallbackPage() {
       const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
       const redirectUri = query.get('redirect_uri') || '/'
 
-      // If code/token params in query, let the backend handle via redirect
       if (query.get('code') || ((query.get('token_hash') || query.get('token')) && query.get('type'))) {
         const url = new URL(window.location.href)
         url.hash = ''

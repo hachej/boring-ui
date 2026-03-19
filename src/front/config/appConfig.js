@@ -38,14 +38,14 @@ const DEFAULT_CONFIG = {
       filetree: 280,
       'data-catalog': 280,
       terminal: 400,
-      companion: 400,
+      agent: 400,
       shell: 250,
     },
     min: {
       filetree: 180,
       'data-catalog': 180,
       terminal: 250,
-      companion: 250,
+      agent: 250,
       shell: 100,
       center: 200, // Minimum height for the center/main content area
     },
@@ -53,7 +53,7 @@ const DEFAULT_CONFIG = {
       filetree: 48,
       'data-catalog': 48,
       terminal: 48,
-      companion: 48,
+      agent: 48,
       shell: 36,
     },
   },
@@ -74,7 +74,6 @@ const DEFAULT_CONFIG = {
   // Data backend selection.
   // - 'http' uses the built-in HTTP provider.
   // - 'lightningfs' uses in-browser LightningFS + isomorphic-git.
-  // - 'cheerpx' uses in-browser Linux VM (CheerpX) for files/git/commands.
   // - Any other value resolves through a host-registered provider factory.
   data: {
     backend: 'http',
@@ -84,13 +83,10 @@ const DEFAULT_CONFIG = {
     lightningfs: {
       name: 'boring-fs',
     },
-    // CheerpX runtime options.
-    cheerpx: {
-      workspaceRoot: '/workspace',
-      primaryDiskUrl: 'wss://disks.webvm.io/alpine_20251007.ext2',
-      overlayName: 'boring-ui-cheerpx-overlay',
-      cheerpxEsmUrl: 'https://cdn.jsdelivr.net/npm/@leaningtech/cheerpx/+esm',
-    },
+  },
+
+  agents: {
+    mode: 'frontend',
   },
 
   // Feature flags
@@ -101,8 +97,6 @@ const DEFAULT_CONFIG = {
     workflows: false,
     controlPlaneOnboarding: false,
     showHeader: false,
-    // Right-rail agent chat mode: 'all' | 'native' | 'companion' | 'pi'
-    agentRailMode: 'all',
   },
 
   // Design token customization (CSS variables)

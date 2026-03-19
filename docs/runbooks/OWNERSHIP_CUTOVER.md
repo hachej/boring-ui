@@ -6,6 +6,8 @@ This runbook defines production rollout and rollback for the ownership split:
 - `boring-macro` adds domain routes only (`/api/v1/macro/*`).
 - `boring-sandbox` is optional edge pass-through only (routing/provisioning/token injection), with no duplicated workspace business logic.
 
+For the Python backend-agent architecture, the canonical deployment path is direct `boring-ui` deployment on a Linux host. The `boring-sandbox` path remains supported only as a legacy compatibility option when an edge proxy is still required.
+
 ## Deployment Modes
 
 | Mode | Frontend API target | Backend ownership path |

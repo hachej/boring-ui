@@ -51,15 +51,8 @@ export { createAutoSyncEngine, performSyncCycle } from './autoSync'
 export { createHttpProvider } from './httpProvider'
 export { createLightningFsProvider } from './lightningFsProvider'
 export { createLightningDataProvider } from './lightningDataProvider'
-export { createCheerpXDataProvider } from './cheerpxDataProvider'
 export { createIsomorphicGitProvider } from './isomorphicGitProvider'
 export { createPyodidePythonRunner, loadPyodideRuntime } from './pyodideRunner'
-export {
-  createCheerpXRuntime,
-  CheerpXRuntime,
-  resolveWorkspacePath as resolveCheerpXWorkspacePath,
-  toRelativeWorkspacePath as toRelativeCheerpXPath,
-} from './cheerpxRuntime'
 
 // Shared LightningFS instance (for direct access if needed)
 export { fs as lightningFs, pfs as lightningPfs } from './lightningFs'

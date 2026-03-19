@@ -70,12 +70,9 @@ class LocalStorage(Storage):
         Raises:
             ValueError: If path escapes the root directory
         """
-        if isinstance(path, str):
-            path = Path(path)
-        resolved = (self.root / path).resolve()
-        if self.root not in resolved.parents and resolved != self.root:
-            raise ValueError(f'Path outside of workspace root: {path}')
-        return resolved
+        from .workspace.paths import resolve_path_beneath
+
+        return resolve_path_beneath(self.root, path)
 
     def list_dir(self, path: Path) -> list[dict[str, Any]]:
         base = self._abs(path)

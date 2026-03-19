@@ -10,7 +10,7 @@
 let provider = null
 /**
  * Named DataProvider factory registry.
- * Host applications can register provider factories (e.g. lightningfs, cheerpx)
+ * Host applications can register provider factories (e.g. lightningfs)
  * and select one via config.data.backend.
  *
  * @type {Map<string, () => import('./types').DataProvider>}
