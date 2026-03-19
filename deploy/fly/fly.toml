@@ -2,7 +2,7 @@ app = "boring-ui"
 primary_region = "cdg"
 
 [build]
-  dockerfile = "deploy/shared/Dockerfile.backend"
+  dockerfile = "../shared/Dockerfile.backend"
 
 [env]
   APP_ENV = "production"

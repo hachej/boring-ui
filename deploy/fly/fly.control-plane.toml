@@ -2,7 +2,7 @@
 # This Machine runs always-on, handles auth, workspace CRUD, and fly-replay routing.
 # Workspace Machines are created via the Fly Machines API, not fly deploy.
 
-app = "boring-cp"
+app = "boring-ui"
 primary_region = "cdg"
 
 [build]
