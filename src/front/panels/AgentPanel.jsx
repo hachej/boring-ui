@@ -52,10 +52,7 @@ export default function AgentPanel({ params }) {
                   )}
             </div>
           ) : (
-            <div
-              data-testid="agent-connecting"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)' }}
-            >
+            <div data-testid="agent-connecting" className="agent-connecting-state">
               Connecting to agent...
             </div>
           )}

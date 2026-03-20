@@ -58,13 +58,13 @@ describe('AgentPanel', () => {
     expect(screen.queryByTestId('mock-pi-native-app')).toBeNull()
   })
 
-  it('shows a connecting state when backend mode lacks a service URL', () => {
+  it('still renders the backend PI adapter when backend mode lacks a service URL', () => {
     mockIsPiBackendMode.mockReturnValue(true)
     mockGetPiServiceUrl.mockReturnValue('')
 
     render(<AgentPanel params={{ mode: 'backend' }} />)
 
-    expect(screen.getByTestId('agent-connecting')).toBeTruthy()
-    expect(screen.queryByTestId('mock-pi-backend-app')).toBeNull()
+    expect(screen.getByTestId('mock-pi-backend-app')).toBeTruthy()
+    expect(screen.queryByTestId('agent-connecting')).toBeNull()
   })
 })

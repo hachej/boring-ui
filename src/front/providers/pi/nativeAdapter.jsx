@@ -14,6 +14,10 @@ import { createPiNativeTools, mergePiTools } from './defaultTools'
 import { getAdditionalChatPanelTools } from './chatPanelTools'
 import { normalizeXmlToolMessages, transformAssistantXmlMessage } from './toolCallXmlTransform'
 import {
+  buildApiKeyPromptMessage,
+  recoverProviderAuthenticationError,
+} from './authErrorRecovery'
+import {
   publishPiSessionState,
   subscribePiSessionActions,
 } from './sessionBus'
@@ -473,7 +477,7 @@ const createSessionId = () => {
   return `pi-${Date.now()}-${suffix}`
 }
 
-const promptForApiKey = async (provider, runtime) => {
+const promptForApiKey = async (provider, runtime, options = {}) => {
   const allowInjectedTestKey = import.meta.env.DEV || import.meta.env.MODE === 'test'
   const injectedKey = allowInjectedTestKey ? String(window.__PI_TEST_API_KEY__ || '').trim() : ''
   if (injectedKey) {
@@ -481,9 +485,8 @@ const promptForApiKey = async (provider, runtime) => {
     return true
   }
 
-  const label = `${provider || 'model'} API key`
   const entry = typeof window?.prompt === 'function'
-    ? window.prompt(`Enter ${label} to use the agent in this browser session:`)
+    ? window.prompt(buildApiKeyPromptMessage(provider, options))
     : null
   const key = String(entry || '').trim()
   if (!key) return false
@@ -505,6 +508,7 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
   const unsubscribeRef = useRef(() => {})
   const sessionIdRef = useRef('')
   const sessionTitleRef = useRef('New session')
+  const handledProviderAuthFailuresRef = useRef(new Set())
 
   // Defer PI initialization until auth has resolved so we know the correct
   // user scope for IndexedDB. In local mode (no control plane) authResolved
@@ -729,6 +733,13 @@ export default function PiNativeAdapter({ panelId, sessionBootstrap = 'latest', 
         if (event.type === 'message_update' || event.type === 'message_end') {
           transformAssistantEventMessage(agent, event)
         }
+        recoverProviderAuthenticationError({
+          event,
+          agent,
+          runtime,
+          handledFailures: handledProviderAuthFailuresRef.current,
+          promptForKey: promptForApiKey,
+        }).catch((error) => logPiError('Failed to recover from provider authentication error', error))
         if (event.type === 'message_end' || event.type === 'agent_end') {
           persistCurrentSession().catch((error) => logPiError('Failed to persist session', error))
         }
