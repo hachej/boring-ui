@@ -34,7 +34,7 @@ name = "Boring UI"
 agentRailMode = "all"
 
 [frontend.data]
-backend = "http"
+backend = "lightningfs"
 
 # Custom panels: id = { component, title, placement }
 [frontend.panels]

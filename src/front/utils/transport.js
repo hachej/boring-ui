@@ -11,8 +11,8 @@ const parseJsonResponse = async (response) => {
 }
 
 export const apiFetch = (path, options = {}) => {
-  const { query, ...init } = options
-  return fetch(buildApiUrl(path, query), { credentials: 'include', ...init })
+  const { query, rootScoped = false, ...init } = options
+  return fetch(buildApiUrl(path, query, { rootScoped }), { credentials: 'include', ...init })
 }
 
 export const apiFetchJson = async (path, options = {}) => {

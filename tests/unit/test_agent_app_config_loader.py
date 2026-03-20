@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from boring_ui.app_config_loader import create_app_from_toml
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_agent_loader_hydrates_agents_and_runtime_config(tmp_path):
@@ -106,3 +111,15 @@ transport = "http"
     definitions = {definition["name"]: definition for definition in runtime["agents"]["definitions"]}
     assert definitions["pi"]["port"] is None
     assert definitions["worker"]["port"] == 9001
+
+
+def test_repo_frontend_mode_defaults_to_lightningfs(monkeypatch):
+    monkeypatch.delenv("AGENTS_MODE", raising=False)
+    monkeypatch.delenv("BUI_AGENTS_MODE", raising=False)
+    monkeypatch.delenv("BORING_UI_AGENTS_MODE", raising=False)
+
+    app = create_app_from_toml(str(REPO_ROOT / "boring.app.toml"))
+    runtime = TestClient(app).get("/__bui/config").json()
+
+    assert runtime["agents"]["mode"] == "frontend"
+    assert runtime["frontend"]["data"]["backend"] == "lightningfs"

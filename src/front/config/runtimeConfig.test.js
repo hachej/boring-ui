@@ -47,6 +47,36 @@ describe('fetchRuntimeConfig', () => {
     expect(payload.frontend.branding.name).toBe('Loaded')
   })
 
+  it('keeps runtime config on the root origin when booting inside a workspace route', async () => {
+    vi.stubEnv('VITE_API_URL', '')
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        protocol: 'https:',
+        hostname: 'example.com',
+        port: '',
+        origin: 'https://example.com',
+        pathname: '/w/ws-123/',
+      },
+    })
+
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ frontend: { branding: { name: 'Loaded' } } }),
+    })
+
+    try {
+      await fetchRuntimeConfig(fetchImpl)
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+
+    expect(fetchImpl).toHaveBeenCalledWith('https://example.com/__bui/config', {
+      credentials: 'include',
+    })
+  })
+
   it('throws on non-2xx responses', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: false,

@@ -87,6 +87,33 @@ describe('apiBase loopback rewrite', () => {
     }
   })
 
+  it('can force root-scoped api urls for public bootstrap endpoints under /w/{id}', () => {
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        protocol: 'https:',
+        hostname: 'example.com',
+        port: '',
+        origin: 'https://example.com',
+        pathname: '/w/ws-123/',
+      },
+    })
+    try {
+      expect(
+        buildApiUrl('/__bui/config', undefined, { rootScoped: true }),
+      ).toBe('https://example.com/__bui/config')
+      expect(
+        buildApiUrl('/api/capabilities', undefined, { rootScoped: true }),
+      ).toBe('https://example.com/api/capabilities')
+      expect(
+        buildApiUrl('/api/project', undefined, { rootScoped: true }),
+      ).toBe('https://example.com/api/project')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+  })
+
   it('builds workspace-scoped websocket url when running under /w/{id}', () => {
     const originalLocation = window.location
     Object.defineProperty(window, 'location', {

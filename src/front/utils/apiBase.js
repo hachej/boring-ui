@@ -35,13 +35,14 @@ const getWorkspaceBasePath = (pathname = '') => {
   return match ? match[0] : ''
 }
 
-const resolveApiBase = () => {
+const resolveApiBase = ({ rootScoped = false } = {}) => {
   const envUrl = import.meta.env.VITE_API_URL || ''
   if (envUrl) return normalizeBase(rewriteLoopbackForRemoteClient(normalizeBase(envUrl)))
 
   if (typeof window !== 'undefined' && window.location) {
     const { origin, pathname } = window.location
     if (origin) {
+      if (rootScoped) return origin
       const workspaceBase = getWorkspaceBasePath(pathname)
       return workspaceBase ? `${origin}${workspaceBase}` : origin
     }
@@ -50,9 +51,9 @@ const resolveApiBase = () => {
   return 'http://localhost:8000'
 }
 
-export const getApiBase = () => resolveApiBase()
+export const getApiBase = (options) => resolveApiBase(options)
 
-export const buildApiUrl = (path, query) => `${getApiBase()}${path}${toSearchParams(query)}`
+export const buildApiUrl = (path, query, options) => `${getApiBase(options)}${path}${toSearchParams(query)}`
 
 export const getWsBase = () => {
   const apiBase = getApiBase()

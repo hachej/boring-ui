@@ -20,7 +20,7 @@ export async function fetchRuntimeConfig(fetchImpl = globalThis.fetch) {
     throw new Error('fetchRuntimeConfig requires a fetch implementation')
   }
 
-  const response = await fetchImpl(buildApiUrl('/__bui/config'), {
+  const response = await fetchImpl(buildApiUrl('/__bui/config', undefined, { rootScoped: true }), {
     credentials: 'include',
   })
   if (!response.ok) {

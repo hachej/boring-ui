@@ -43,6 +43,10 @@ describe('useCapabilities', () => {
       expect(result.current.loading).toBe(false)
     })
 
+    expect(apiFetchJson).toHaveBeenCalledWith('/api/capabilities', {
+      query: {},
+      rootScoped: true,
+    })
     expect(result.current.capabilities).toEqual(MOCK_CAPABILITIES)
   })
 

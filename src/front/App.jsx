@@ -3532,7 +3532,10 @@ export default function App() {
     const maxRetries = 6 // ~3 seconds total before initial fallback
     const fetchProjectRoot = () => {
       const route = routes.project.root()
-      apiFetchJson(route.path, { query: route.query })
+      apiFetchJson(route.path, {
+        query: route.query,
+        rootScoped: true,
+      })
         .then(({ data }) => {
           const root = data.root || ''
           // Don't update projectRoot after fallback to avoid overwriting project-scoped state

@@ -59,7 +59,10 @@ export const useCapabilities = () => {
       setError(null)
 
       const route = routes.capabilities.get()
-      const { response, data } = await apiFetchJson(route.path, { query: route.query })
+      const { response, data } = await apiFetchJson(route.path, {
+        query: route.query,
+        rootScoped: true,
+      })
       if (!response.ok) {
         throw new Error(`Failed to fetch capabilities: ${response.status}`)
       }
