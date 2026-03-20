@@ -56,4 +56,23 @@ describe('GitChangesView HTTP provider', () => {
     fireEvent.click(screen.getByText('App.jsx'))
     expect(onOpenDiff).toHaveBeenCalledWith('src/App.jsx', 'M')
   })
+
+  it('renders a non-repo state instead of a misleading clean state', async () => {
+    setupApiMocks({
+      '/api/v1/git/status': {
+        available: true,
+        is_repo: false,
+        files: [],
+      },
+    })
+
+    renderWithProvider(createHttpProvider())
+
+    await waitFor(() => {
+      expect(screen.getByText('Git is not initialized yet')).toBeInTheDocument()
+      expect(screen.getByText('This workspace does not have a local git repository yet.')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Working tree is clean')).not.toBeInTheDocument()
+  })
 })

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Database, FolderOpen, GitBranch, Search, X } from 'lucide-react'
 import FileTree from '../components/FileTree'
 import GitChangesView from '../components/GitChangesView'
@@ -11,7 +11,7 @@ import SidebarSectionHeader, {
   LeftPaneHeader,
 } from '../components/SidebarSectionHeader'
 import { ICON_SIZE_INLINE } from '../utils/iconTokens'
-import { useGitStatus } from '../providers/data'
+import { useGitInit, useGitStatus } from '../providers/data'
 import { routes } from '../utils/routes'
 import SyncStatusFooter from '../components/SyncStatusFooter'
 
@@ -53,9 +53,11 @@ export default function FileTreePanel({ params }) {
   const [creatingFile, setCreatingFile] = useState(false)
   const [viewMode, setViewMode] = useState('files') // 'files' | 'changes'
   const [searchExpanded, setSearchExpanded] = useState(false)
-  useGitStatus({
+  const localGitInitAttemptsRef = useRef(new Set())
+  const { data: gitStatus, isLoading: gitStatusLoading } = useGitStatus({
     refetchInterval: viewMode === 'changes' ? 5000 : false,
   })
+  const gitInit = useGitInit()
   const { status: ghStatus, connect: ghConnect } = useGitHubConnection(workspaceId, { enabled: !!githubEnabled })
   const ghInstallationConnected = !!(ghStatus?.installation_connected ?? ghStatus?.connected)
   const ghRepoUrl = ghStatus?.repo_url ? String(ghStatus.repo_url).replace(/\.git$/, '') : null
@@ -80,6 +82,26 @@ export default function FileTreePanel({ params }) {
     }
     ghConnect()
   }, [ghConnect, ghInstallationConnected, ghSyncReady, workspaceId])
+
+  useEffect(() => {
+    if (!isLightningFsBackend) return
+    if (ghStatus?.repo_selected) return
+    if (gitStatusLoading || gitInit.isPending) return
+    if (gitStatus?.available === false || gitStatus?.is_repo !== false) return
+
+    const attemptKey = String(workspaceId || '__default__')
+    if (localGitInitAttemptsRef.current.has(attemptKey)) return
+    localGitInitAttemptsRef.current.add(attemptKey)
+    gitInit.mutate()
+  }, [
+    gitInit,
+    gitStatus?.available,
+    gitStatus?.is_repo,
+    gitStatusLoading,
+    ghStatus?.repo_selected,
+    isLightningFsBackend,
+    workspaceId,
+  ])
 
   useEffect(() => {
     if (!filetreeActivityIntent || filetreeActivityIntent.panelId !== 'filetree') return

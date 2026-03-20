@@ -151,6 +151,29 @@ export default function GitChangesView({ onOpenDiff, activeDiffFile, workspaceId
     )
   }
 
+  if (gitStatus?.is_repo === false) {
+    return (
+      <div className="git-changes-view">
+        <div className="git-changes-empty empty-state">
+          <span className="empty-state-icon-wrap git-changes-empty-icon-wrap" aria-hidden="true">
+            <GitBranch className="git-changes-empty-icon" size={20} />
+          </span>
+          <span className="empty-state-title">Git is not initialized yet</span>
+          <span className="empty-state-message">This workspace does not have a local git repository yet.</span>
+          <span className="empty-state-hint git-changes-empty-subtitle">
+            <Command size={14} aria-hidden="true" />
+            <span>Create or edit a file to bootstrap local git in frontend mode.</span>
+          </span>
+        </div>
+        {githubEnabled && (
+          <div className="git-changes-github-connect">
+            <ConnectGitHubButton workspaceId={workspaceId} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const totalChanges = Object.keys(changes).length
 
   if (totalChanges === 0) {
