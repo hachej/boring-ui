@@ -168,6 +168,20 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        # Auto git-init workspace on backend-agent Machines
+        if config.agents_mode == 'backend':
+            ws_root = config.workspace_root
+            git_dir = ws_root / '.git'
+            if not git_dir.exists():
+                import subprocess
+                try:
+                    subprocess.run(['git', 'init'], cwd=str(ws_root), check=True, capture_output=True)
+                    subprocess.run(['git', 'config', 'user.email', 'agent@boring.dev'], cwd=str(ws_root), check=True, capture_output=True)
+                    subprocess.run(['git', 'config', 'user.name', 'Boring Agent'], cwd=str(ws_root), check=True, capture_output=True)
+                    logger.info('Auto git-init workspace at %s', ws_root)
+                except Exception:
+                    logger.warning('Failed to auto git-init workspace', exc_info=True)
+
         if plugin_manager is not None:
             plugin_manager.start_watcher()
         if pi_harness is not None:
