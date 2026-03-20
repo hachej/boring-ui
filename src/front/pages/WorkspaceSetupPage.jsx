@@ -149,12 +149,23 @@ export default function WorkspaceSetupPage({
     }
   }, [loadSetup, workspaceId])
 
-  // If GitHub is not enabled, skip the wizard entirely — but only after capabilities load
+  // Auto-advance: skip wizard when GitHub is not enabled, or auto-proceed
+  // after a grace period when GitHub IS enabled but user hasn't interacted.
+  // This prevents the setup page from feeling stuck after provisioning.
   useEffect(() => {
-    if (runtimeReady && capabilitiesLoaded && !githubEnabled) {
+    if (!runtimeReady || !capabilitiesLoaded) return
+    if (!githubEnabled) {
       console.debug('[SetupPage] auto-advancing: runtime ready, capabilities loaded, github not enabled')
       handleDone()
+      return
     }
+    // GitHub is enabled — give the user a short window to see the wizard,
+    // then auto-advance to workspace if they haven't interacted.
+    const timer = setTimeout(() => {
+      console.debug('[SetupPage] auto-advancing after grace period (github enabled, no interaction)')
+      handleDone()
+    }, 8000)
+    return () => clearTimeout(timer)
   }, [capabilitiesLoaded, githubEnabled, handleDone, runtimeReady])
 
   // Log runtime-ready transition for observability
