@@ -37,6 +37,7 @@ export default function WorkspaceSetupPage({
       const route = routes.capabilities.get()
       const { response, data } = await apiFetchJson(route.path, {
         query: route.query,
+        rootScoped: true,
       })
       if (!response.ok) {
         throw new Error(`Capabilities fetch failed: ${response.status}`)

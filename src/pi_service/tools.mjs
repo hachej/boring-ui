@@ -1,5 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import { exec as execCb } from 'node:child_process'
+import { existsSync, mkdirSync } from 'node:fs'
 import { promisify } from 'node:util'
 
 const execAsync = promisify(execCb)
@@ -108,6 +109,11 @@ export function createWorkspaceTools(context = {}) {
           ? String(params.cwd).trim().replace(/^\/+/, '')
           : '.'
         const fullCwd = cwd === '.' ? wsRoot : `${wsRoot}/${cwd}`
+        // Ensure workspace directory exists — during provisioning the volume
+        // mount may not be ready yet, which causes ENOENT on exec.
+        if (!existsSync(fullCwd)) {
+          try { mkdirSync(fullCwd, { recursive: true }) } catch { /* best effort */ }
+        }
         const start = Date.now()
         try {
           const { stdout, stderr } = await execAsync(command, {
