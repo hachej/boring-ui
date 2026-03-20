@@ -89,3 +89,16 @@ def test_existing_asset_keeps_immutable_cache_headers(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/javascript")
     assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_missing_nonrecoverable_asset_is_not_cached(tmp_path: Path) -> None:
+    static_dir = tmp_path / "static"
+    assets_dir = static_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (static_dir / "index.html").write_text("<!doctype html><html></html>\n", encoding="utf-8")
+
+    client = _client(static_dir)
+    response = client.get("/assets/logo-missing.png")
+
+    assert response.status_code == 404
+    assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate, max-age=0"

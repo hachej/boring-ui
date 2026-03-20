@@ -140,7 +140,12 @@ def mount_static(app: FastAPI, static_path: Path) -> None:
         path = request.url.path or ""
         content_type = (response.headers.get("content-type") or "").lower()
         if path.startswith("/assets/"):
-            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+            if 200 <= int(getattr(response, "status_code", 500) or 500) < 400:
+                response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+            else:
+                response.headers["Cache-Control"] = (
+                    "no-store, no-cache, must-revalidate, max-age=0"
+                )
         elif "text/html" in content_type:
             response.headers["Cache-Control"] = (
                 "no-store, no-cache, must-revalidate, max-age=0"
