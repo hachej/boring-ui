@@ -7,11 +7,8 @@ Usage: python3 tests/smoke/smoke_backend_agent.py --base-url http://localhost:85
 Steps:
   1. Health endpoint returns ok with pi check
   2. Capabilities report backend mode + pi agent
-  3. Exec endpoint runs echo and returns stdout
-  4. File write + read roundtrip
-  5. Write a .py file and run it via exec
-  6. Exec cwd traversal rejected
-  7. File list includes written file
+  3. File write + read roundtrip
+  4. File list includes written file
 """
 from __future__ import annotations
 
@@ -88,22 +85,7 @@ def main() -> int:
     step("2. capabilities: backend mode + pi agent", check_capabilities)
 
     # -----------------------------------------------------------------------
-    # Step 3: Exec echo
-    # -----------------------------------------------------------------------
-    def check_exec():
-        resp = client.post(
-            "/api/v1/sandbox/exec",
-            json={"command": f"echo smoke-{run_tag}"},
-        )
-        assert resp.status_code == 200, f"status={resp.status_code}"
-        data = resp.json()
-        assert data["exit_code"] == 0, f"exit_code={data['exit_code']}"
-        assert f"smoke-{run_tag}" in data["stdout"], f"stdout={data['stdout']!r}"
-
-    step("3. exec: echo command", check_exec)
-
-    # -----------------------------------------------------------------------
-    # Step 4: File write + read roundtrip
+    # Step 3: File write + read roundtrip
     # -----------------------------------------------------------------------
     file_content = f"smoke-backend-{run_tag}"
     file_path = f"smoke-{run_tag}.txt"
@@ -122,48 +104,10 @@ def main() -> int:
         data = read_resp.json()
         assert data["content"] == file_content, f"content mismatch: {data['content']!r}"
 
-    step("4. file write + read roundtrip", check_file_roundtrip)
+    step("3. file write + read roundtrip", check_file_roundtrip)
 
     # -----------------------------------------------------------------------
-    # Step 5: Write .py file and run via exec
-    # -----------------------------------------------------------------------
-    py_path = f"smoke_script_{run_tag}.py"
-    py_output = f"hello-from-script-{run_tag}"
-
-    def check_write_and_exec():
-        # Write a Python script
-        write_resp = client.put(
-            f"/api/v1/files/write?path={py_path}",
-            json={"content": f'print("{py_output}")'},
-        )
-        assert write_resp.status_code == 200, f"write status={write_resp.status_code}"
-
-        # Execute it
-        exec_resp = client.post(
-            "/api/v1/sandbox/exec",
-            json={"command": f"python3 {py_path}"},
-        )
-        assert exec_resp.status_code == 200, f"exec status={exec_resp.status_code}"
-        data = exec_resp.json()
-        assert data["exit_code"] == 0, f"exit_code={data['exit_code']}, stderr={data.get('stderr', '')}"
-        assert py_output in data["stdout"], f"stdout={data['stdout']!r}"
-
-    step("5. write .py file + exec", check_write_and_exec)
-
-    # -----------------------------------------------------------------------
-    # Step 6: Exec cwd traversal rejected
-    # -----------------------------------------------------------------------
-    def check_traversal_rejected():
-        resp = client.post(
-            "/api/v1/sandbox/exec",
-            json={"command": "pwd", "cwd": "../../etc"},
-        )
-        assert resp.status_code == 400, f"status={resp.status_code} (expected 400)"
-
-    step("6. exec cwd traversal rejected", check_traversal_rejected)
-
-    # -----------------------------------------------------------------------
-    # Step 7: File list includes written file
+    # Step 4: File list includes written file
     # -----------------------------------------------------------------------
     def check_file_list():
         resp = client.get("/api/v1/files/list?path=.")
@@ -172,7 +116,7 @@ def main() -> int:
         names = [e["name"] for e in data.get("entries", [])]
         assert file_path in names, f"{file_path} not in {names}"
 
-    step("7. file list includes smoke file", check_file_list)
+    step("4. file list includes smoke file", check_file_list)
 
     # -----------------------------------------------------------------------
     # Summary

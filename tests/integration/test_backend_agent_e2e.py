@@ -3,14 +3,10 @@
 Starts the full app with AGENTS_MODE=backend, verifies:
 - Health endpoint works with PI harness status
 - Capabilities report backend mode + PI agent
-- Exec endpoint runs commands on workspace
 - File operations work (write + read + list)
 - PI agent routes are mounted
 """
 from __future__ import annotations
-
-import os
-from pathlib import Path
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -151,80 +147,6 @@ class TestBackendModeCapabilities:
 
 
 # ---------------------------------------------------------------------------
-# Exec endpoint
-# ---------------------------------------------------------------------------
-
-class TestBackendModeExec:
-    """Exec endpoint available only in backend-agent mode."""
-
-    @pytest.mark.asyncio
-    async def test_backend_mode_exec_endpoint(self, backend_app, workspace):
-        """POST /api/v1/sandbox/exec should run a command and return stdout."""
-        transport = ASGITransport(app=backend_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/sandbox/exec",
-                json={"command": "echo hello-backend"},
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["exit_code"] == 0
-            assert "hello-backend" in data["stdout"]
-            assert data["duration_ms"] >= 0
-
-    @pytest.mark.asyncio
-    async def test_backend_mode_exec_timeout(self, backend_app):
-        """A command exceeding timeout should be killed and return exit_code 124."""
-        transport = ASGITransport(app=backend_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/sandbox/exec",
-                json={"command": "sleep 60", "timeout_seconds": 1},
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["exit_code"] == 124
-            assert "timed out" in data["stderr"].lower()
-
-    @pytest.mark.asyncio
-    async def test_backend_mode_exec_cwd_traversal_rejected(self, backend_app):
-        """cwd=../../etc should return 400 (path traversal)."""
-        transport = ASGITransport(app=backend_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/sandbox/exec",
-                json={"command": "pwd", "cwd": "../../etc"},
-            )
-            assert response.status_code == 400
-            assert "workspace root" in response.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_backend_mode_exec_absolute_traversal_rejected(self, backend_app):
-        """cwd=/etc should return 400 (absolute path traversal)."""
-        transport = ASGITransport(app=backend_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/sandbox/exec",
-                json={"command": "pwd", "cwd": "/etc"},
-            )
-            assert response.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_backend_mode_exec_cwd_within_workspace(self, backend_app, workspace):
-        """cwd pointing to a subdirectory within workspace should work."""
-        subdir = workspace / "subdir"
-        subdir.mkdir()
-        transport = ASGITransport(app=backend_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/sandbox/exec",
-                json={"command": "pwd", "cwd": "subdir"},
-            )
-            assert response.status_code == 200
-            assert "subdir" in response.json()["stdout"]
-
-
-# ---------------------------------------------------------------------------
 # File operations
 # ---------------------------------------------------------------------------
 
@@ -297,10 +219,6 @@ class TestBackendModePiRoutes:
         assert "/api/v1/agent/pi/sessions" in paths
         assert "/api/v1/agent/pi/sessions/create" in paths
 
-    def test_backend_mode_exec_route_mounted(self, backend_app):
-        """Exec route should be mounted in backend mode."""
-        paths = [r.path for r in backend_app.routes if hasattr(r, "path")]
-        assert "/api/v1/sandbox/exec" in paths
 
 
 # ---------------------------------------------------------------------------
@@ -308,24 +226,7 @@ class TestBackendModePiRoutes:
 # ---------------------------------------------------------------------------
 
 class TestFrontendModeContrast:
-    """Verify exec endpoint is NOT mounted in frontend mode."""
-
-    def test_frontend_mode_no_exec_endpoint(self, frontend_app):
-        """In frontend mode, the exec endpoint should not exist."""
-        paths = [r.path for r in frontend_app.routes if hasattr(r, "path")]
-        assert "/api/v1/sandbox/exec" not in paths
-
-    @pytest.mark.asyncio
-    async def test_frontend_mode_exec_returns_404(self, frontend_app):
-        """POST to exec in frontend mode should return 404/405."""
-        transport = ASGITransport(app=frontend_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/sandbox/exec",
-                json={"command": "echo hello"},
-            )
-            # 404 (route not found) or 405 (method not allowed)
-            assert response.status_code in (404, 405)
+    """Verify frontend mode reports correct capabilities."""
 
     @pytest.mark.asyncio
     async def test_frontend_mode_capabilities_show_frontend(self, frontend_app):
