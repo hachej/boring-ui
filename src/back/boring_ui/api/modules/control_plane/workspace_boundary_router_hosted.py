@@ -110,6 +110,23 @@ def _is_allowed_workspace_passthrough_target(path: str, config: APIConfig | None
     )
 
 
+async def _try_fly_replay(workspace_id: str) -> Response | None:
+    """Return a fly-replay Response if the workspace has a Fly Machine, else None."""
+    try:
+        pool = db_client.get_pool()
+        ws_row = await pool.fetchrow(
+            "SELECT machine_id FROM workspaces WHERE id = $1", uuid.UUID(workspace_id)
+        )
+        if ws_row and ws_row.get("machine_id"):
+            return Response(
+                status_code=200,
+                headers={"fly-replay": f"instance={ws_row['machine_id']}"},
+            )
+    except Exception:
+        pass  # Fall through to internal forward
+    return None
+
+
 async def _forward_http_request(request: Request, target_path: str, workspace_id: str) -> Response:
     body = await request.body()
     headers = dict(request.headers)
@@ -186,6 +203,11 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
 
+        # Route to Fly Machine if workspace has one assigned
+        fly_replay = await _try_fly_replay(workspace_id)
+        if fly_replay is not None:
+            return fly_replay
+
         runtime_response = await _forward_http_request(
             request,
             f"/api/v1/workspaces/{workspace_id}/runtime",
@@ -216,6 +238,9 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         session_or_error = await _require_workspace_member(request, config, workspace_id)
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
+        fly_replay = await _try_fly_replay(workspace_id)
+        if fly_replay is not None:
+            return fly_replay
         return await _forward_http_request(request, f"/api/v1/workspaces/{workspace_id}/runtime", workspace_id)
 
     @router.post("/w/{workspace_id}/runtime/retry")
@@ -230,6 +255,9 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         session_or_error = await _require_workspace_member(request, config, workspace_id)
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
+        fly_replay = await _try_fly_replay(workspace_id)
+        if fly_replay is not None:
+            return fly_replay
         return await _forward_http_request(request, f"/api/v1/workspaces/{workspace_id}/runtime/retry", workspace_id)
 
     @router.get("/w/{workspace_id}/settings")
@@ -248,6 +276,9 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         session_or_error = await _require_workspace_member(request, config, workspace_id)
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
+        fly_replay = await _try_fly_replay(workspace_id)
+        if fly_replay is not None:
+            return fly_replay
         return await _forward_http_request(request, f"/api/v1/workspaces/{workspace_id}/settings", workspace_id)
 
     @router.put("/w/{workspace_id}/settings")
@@ -262,6 +293,9 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         session_or_error = await _require_workspace_member(request, config, workspace_id)
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
+        fly_replay = await _try_fly_replay(workspace_id)
+        if fly_replay is not None:
+            return fly_replay
         return await _forward_http_request(request, f"/api/v1/workspaces/{workspace_id}/settings", workspace_id)
 
     @router.api_route(
@@ -315,6 +349,9 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
                 code="WORKSPACE_PATH_DENIED",
                 message="Path is outside allowed workspace-scoped families",
             )
+        fly_replay = await _try_fly_replay(workspace_id)
+        if fly_replay is not None:
+            return fly_replay
         return await _forward_http_request(request, normalized, workspace_id)
 
     return router

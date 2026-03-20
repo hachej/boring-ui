@@ -15,7 +15,7 @@ def test_fly_toml_targets_backend_image_and_single_machine_http_service() -> Non
 
     assert data["app"] == "boring-ui"
     assert data["primary_region"] == "cdg"
-    assert data["build"]["dockerfile"] == "deploy/shared/Dockerfile.backend"
+    assert data["build"]["dockerfile"] == "../shared/Dockerfile.backend"
     assert data["http_service"]["internal_port"] == 8000
     assert data["http_service"]["force_https"] is True
     assert data["http_service"]["auto_stop_machines"] == "off"

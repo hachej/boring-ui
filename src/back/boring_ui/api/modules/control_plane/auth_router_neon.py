@@ -283,6 +283,55 @@ def _issue_session_response(
     return response
 
 
+async def _eager_workspace_provision(
+    request: Request,
+    *,
+    config: APIConfig,
+    access_token: str,
+) -> None:
+    """Best-effort create a default workspace for new users at login time.
+
+    Called after a successful token-exchange so the Fly Machine is already
+    being provisioned by the time the user lands on the dashboard.  Failures
+    are logged but never surface to the caller -- auth must always succeed.
+    """
+    import asyncio
+
+    try:
+        verified = _validate_neon_jwt(access_token, config=config)
+        if verified is None:
+            return
+        user_id = str(verified["user_id"]).strip()
+        if not user_id:
+            return
+
+        from . import db_client
+        pool = db_client.get_pool()
+
+        from .workspace_router_hosted import create_workspace_for_user
+        workspace_id, created = await create_workspace_for_user(
+            pool,
+            config.control_plane_app_id,
+            user_id,
+            "My Workspace",
+            is_default=True,
+        )
+        if created:
+            provisioner = getattr(request.app.state, "provisioner", None)
+            if provisioner:
+                from .workspace_router_hosted import _provision_workspace
+                asyncio.create_task(
+                    _provision_workspace(provisioner, pool, workspace_id, config)
+                )
+                _logger.info(
+                    "Eager workspace provisioning started for user %s: workspace=%s",
+                    user_id,
+                    workspace_id,
+                )
+    except Exception as exc:
+        _logger.warning("Eager workspace provisioning failed: %s", exc)
+
+
 async def _neon_password_auth(
     request: Request,
     *,
@@ -2075,12 +2124,20 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
             )
 
         redirect_uri = _safe_redirect_path(body.get("redirect_uri"))
-        return _issue_session_response(
+        response = _issue_session_response(
             request,
             config=config,
             access_token=access_token,
             redirect_uri=redirect_uri,
         )
+
+        # Eager workspace provisioning: create a default workspace for new
+        # users so the Fly Machine is already being provisioned by the time
+        # they land on the dashboard.
+        if response.status_code == 200:
+            await _eager_workspace_provision(request, config=config, access_token=access_token)
+
+        return response
 
     @router.get("/logout")
     def auth_logout(request: Request):

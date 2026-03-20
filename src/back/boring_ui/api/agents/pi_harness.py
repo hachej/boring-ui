@@ -59,6 +59,7 @@ class PiHarness(AgentHarness):
         self._monitor_task: asyncio.Task[None] | None = None
         self._stopping = False
         self._restart_backoff = 1.0
+        self._started = False
 
     @property
     def name(self) -> str:
@@ -68,15 +69,24 @@ class PiHarness(AgentHarness):
         return [self._router]
 
     async def start(self) -> None:
+        if self._started:
+            return
         if self._monitor_task is not None and not self._monitor_task.done():
             return
 
         self._stopping = False
+        self._started = True
         await self._spawn_process()
         self._monitor_task = asyncio.create_task(self._monitor_loop(), name="pi-harness-monitor")
 
+    async def ensure_started(self) -> None:
+        """Start the sidecar on first use if not already running."""
+        if not self._started:
+            await self.start()
+
     async def stop(self) -> None:
         self._stopping = True
+        self._started = False
 
         if self._monitor_task is not None:
             self._monitor_task.cancel()
@@ -309,6 +319,7 @@ class PiHarness(AgentHarness):
             *,
             ctx: WorkspaceContext,
         ) -> Response:
+            await self.ensure_started()
             request_id = ensure_request_id(request)
             body = await request.body()
             headers = self._proxy_headers(ctx, request_id)
@@ -340,6 +351,7 @@ class PiHarness(AgentHarness):
             *,
             ctx: WorkspaceContext,
         ) -> StreamingResponse:
+            await self.ensure_started()
             request_id = ensure_request_id(request)
             body = await request.body()
             headers = self._proxy_headers(ctx, request_id)

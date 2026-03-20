@@ -145,6 +145,26 @@ def create_app(
     pi_harness = None
     plugin_manager = None
     _db_pool_url: str | None = None
+    _provisioner = None
+
+    # Create Fly.io workspace provisioner when credentials are available.
+    if config.fly_api_token and config.fly_workspace_app:
+        from .workspace.fly_provisioner import FlyProvisioner
+
+        _fly_image = os.environ.get(
+            'FLY_IMAGE_REF',
+            f'registry.fly.io/{config.fly_workspace_app}:latest',
+        )
+        _provisioner = FlyProvisioner(
+            api_token=config.fly_api_token,
+            workspace_app=config.fly_workspace_app,
+            image=_fly_image,
+        )
+        logger.info(
+            'FlyProvisioner configured: app=%s image=%s',
+            config.fly_workspace_app,
+            _fly_image,
+        )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -163,6 +183,8 @@ def create_app(
         finally:
             if pi_harness is not None:
                 await pi_harness.stop()
+            if _provisioner is not None:
+                await _provisioner.close()
             if _db_pool_url:
                 await control_plane_db_client.close_pool()
 
@@ -174,6 +196,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.app_config = config
+    app.state.provisioner = _provisioner
     app.state.enabled_features = dict(enabled_features)
     metrics_registry = ensure_metrics_registry(app)
     metrics_registry.set_gauge('pi_sessions_active', 0.0)

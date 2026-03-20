@@ -233,6 +233,14 @@ class APIConfig:
         default_factory=lambda: os.environ.get('BORING_SETTINGS_KEY')
     )
 
+    # Fly.io workspace provisioner configuration
+    fly_api_token: str | None = field(
+        default_factory=lambda: os.environ.get('FLY_API_TOKEN')
+    )
+    fly_workspace_app: str | None = field(
+        default_factory=lambda: os.environ.get('FLY_WORKSPACE_APP')
+    )
+
     # GitHub App (for git sync OAuth)
     github_app_id: str | None = field(
         default_factory=lambda: os.environ.get('GITHUB_APP_ID')

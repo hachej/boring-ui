@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -15,6 +17,34 @@ from .common import ensure_pool, error_response, load_session, normalize_workspa
 from .membership import NotAMember, WorkspaceNotFound, require_membership
 from .service import ensure_workspace_root_dir
 from .user_settings_state import read_user_github_link, user_state_service
+
+logger = logging.getLogger(__name__)
+
+
+async def _provision_workspace(provisioner, pool, workspace_id: str, config: APIConfig):
+    """Background task: create Fly Machine + Volume, then update DB state."""
+    try:
+        result = await provisioner.create(workspace_id, region="cdg", size_gb=10)
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE workspaces SET machine_id = $1, volume_id = $2, fly_region = $3 WHERE id = $4""",
+                result.machine_id, result.volume_id, result.region, uuid.UUID(workspace_id),
+            )
+            await conn.execute(
+                """UPDATE workspace_runtimes SET state = 'ready', updated_at = now() WHERE workspace_id = $1""",
+                uuid.UUID(workspace_id),
+            )
+        logger.info(
+            "Provisioned workspace %s: machine=%s volume=%s",
+            workspace_id, result.machine_id, result.volume_id,
+        )
+    except Exception as exc:
+        logger.error("Failed to provision workspace %s: %s", workspace_id, exc)
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE workspace_runtimes SET state = 'error', last_error = $1, updated_at = now() WHERE workspace_id = $2""",
+                str(exc), uuid.UUID(workspace_id),
+            )
 
 
 def _parse_workspace_id(workspace_id: str, request: Request):
@@ -207,6 +237,11 @@ def create_workspace_router_hosted(config: APIConfig) -> APIRouter:
             session.user_id,
             name,
         )
+
+        # Provision Fly Machine in background if provisioner is configured
+        provisioner = getattr(request.app.state, 'provisioner', None)
+        if provisioner:
+            asyncio.create_task(_provision_workspace(provisioner, pool, workspace_id, config))
 
         github_link = read_user_github_link(user_service, str(session.user_id))
         default_installation_id = github_link.get("default_installation_id")
@@ -402,6 +437,23 @@ def create_workspace_router_hosted(config: APIConfig) -> APIRouter:
         membership_err = await _require_membership_or_error(request, pool, ws_uuid, session.user_id)
         if membership_err is not None:
             return membership_err
+
+        # Clean up Fly Machine + Volume before soft-deleting
+        provisioner = getattr(request.app.state, 'provisioner', None)
+        if provisioner:
+            async with pool.acquire() as conn:
+                ws_row = await conn.fetchrow(
+                    "SELECT machine_id, volume_id FROM workspaces WHERE id = $1",
+                    ws_uuid,
+                )
+            if ws_row and ws_row['machine_id']:
+                try:
+                    await provisioner.delete(ws_row['machine_id'], ws_row['volume_id'])
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to delete Fly resources for workspace %s: %s",
+                        workspace_id, exc,
+                    )
 
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
