@@ -5,6 +5,18 @@ import PiBackendAdapter from '../providers/pi/backendAdapter'
 import PiSessionToolbar from '../providers/pi/PiSessionToolbar'
 import { getPiServiceUrl, isPiBackendMode } from '../providers/pi/config'
 
+const agentConnectingStyle = {
+  display: 'flex',
+  flex: 1,
+  width: '100%',
+  height: '100%',
+  minHeight: '100%',
+  alignItems: 'center',
+  justifyContent: 'center',
+  textAlign: 'center',
+  color: 'var(--color-text-tertiary)',
+}
+
 export default function AgentPanel({ params }) {
   const {
     panelId,
@@ -52,7 +64,11 @@ export default function AgentPanel({ params }) {
                   )}
             </div>
           ) : (
-            <div data-testid="agent-connecting" className="agent-connecting-state">
+            <div
+              data-testid="agent-connecting"
+              className="agent-connecting-state"
+              style={agentConnectingStyle}
+            >
               Connecting to agent...
             </div>
           )}

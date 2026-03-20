@@ -9,6 +9,12 @@ describe('WorkspaceLoading', () => {
     const status = screen.getByRole('status')
     expect(status).toHaveClass('workspace-loading')
     expect(status).toHaveAttribute('aria-live', 'polite')
+    expect(status).toHaveStyle({
+      display: 'flex',
+      width: '100%',
+      justifyContent: 'center',
+      textAlign: 'center',
+    })
     expect(screen.getByText('Opening workspace')).toBeInTheDocument()
     expect(screen.getByText('Connecting to backend services...')).toBeInTheDocument()
   })

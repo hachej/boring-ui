@@ -23,5 +23,11 @@ describe('PaneLoadingState', () => {
     const status = screen.getByRole('status')
     expect(status).toHaveAttribute('aria-live', 'polite')
     expect(status).toHaveClass('pane-loading-state')
+    expect(status).toHaveStyle({
+      display: 'flex',
+      width: '100%',
+      justifyContent: 'center',
+      textAlign: 'center',
+    })
   })
 })
