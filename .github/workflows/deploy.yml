@@ -96,7 +96,7 @@ jobs:
             echo "No stale backend-agent machines to destroy"
             exit 0
           fi
-          fly machine destroy -a boring-ui-backend-agent -f "${destroy_ids[@]}"
+          printf 'y\n' | fly machine destroy -a boring-ui-backend-agent -f "${destroy_ids[@]}"
 
       - name: Sync workspace image ref
         run: |
