@@ -224,6 +224,13 @@ def _workspace_root_response(request: Request, workspace_id: str):
 def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
     router = APIRouter(tags=["workspace-boundary"])
 
+    async def _maybe_fly_replay(workspace_id: str) -> _FlyReplayResult:
+        # Frontend/core mode handles workspace requests locally even when older
+        # workspace rows still carry machine metadata from backend-mode runs.
+        if config.agents_mode != "backend":
+            return _FlyReplayResult(None)
+        return await _try_fly_replay(workspace_id)
+
     @router.get("/w/{workspace_id}/setup")
     async def workspace_setup(workspace_id: str, request: Request):
         # Browser navigation → serve SPA HTML so the frontend handles rendering
@@ -243,7 +250,7 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
             return session_or_error
 
         # Route to Fly Machine if workspace has one assigned
-        replay = await _try_fly_replay(workspace_id)
+        replay = await _maybe_fly_replay(workspace_id)
         if replay.response is not None:
             return replay.response
 
@@ -278,7 +285,7 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         session_or_error = await _require_workspace_member(request, config, workspace_id)
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
-        replay = await _try_fly_replay(workspace_id)
+        replay = await _maybe_fly_replay(workspace_id)
         if replay.response is not None:
             return replay.response
         return await _forward_http_request(
@@ -298,7 +305,7 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         session_or_error = await _require_workspace_member(request, config, workspace_id)
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
-        replay = await _try_fly_replay(workspace_id)
+        replay = await _maybe_fly_replay(workspace_id)
         if replay.response is not None:
             return replay.response
         return await _forward_http_request(
@@ -322,7 +329,7 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         session_or_error = await _require_workspace_member(request, config, workspace_id)
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
-        replay = await _try_fly_replay(workspace_id)
+        replay = await _maybe_fly_replay(workspace_id)
         if replay.response is not None:
             return replay.response
         return await _forward_http_request(
@@ -342,7 +349,7 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
         session_or_error = await _require_workspace_member(request, config, workspace_id)
         if isinstance(session_or_error, JSONResponse):
             return session_or_error
-        replay = await _try_fly_replay(workspace_id)
+        replay = await _maybe_fly_replay(workspace_id)
         if replay.response is not None:
             return replay.response
         return await _forward_http_request(
@@ -401,7 +408,7 @@ def create_workspace_boundary_router_hosted(config: APIConfig) -> APIRouter:
                 code="WORKSPACE_PATH_DENIED",
                 message="Path is outside allowed workspace-scoped families",
             )
-        replay = await _try_fly_replay(workspace_id)
+        replay = await _maybe_fly_replay(workspace_id)
         if replay.response is not None:
             return replay.response
         return await _forward_http_request(

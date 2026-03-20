@@ -147,8 +147,8 @@ def create_app(
     _db_pool_url: str | None = None
     _provisioner = None
 
-    # Create Fly.io workspace provisioner when credentials are available.
-    if config.fly_api_token and config.fly_workspace_app:
+    # Only backend-agent deployments provision dedicated workspace Machines.
+    if config.agents_mode == 'backend' and config.fly_api_token and config.fly_workspace_app:
         from .workspace.fly_provisioner import FlyProvisioner
 
         _fly_image = os.environ.get(

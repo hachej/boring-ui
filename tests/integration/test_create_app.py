@@ -143,6 +143,30 @@ class TestAppFactory:
         paths = [r.path for r in app.routes if hasattr(r, 'path')]
         assert '/api/capabilities' in paths
 
+    def test_frontend_mode_does_not_configure_fly_provisioner(self, workspace):
+        config = APIConfig(
+            workspace_root=workspace,
+            agents_mode='frontend',
+            fly_api_token='fly-token',
+            fly_workspace_app='boring-ui-workspaces',
+        )
+
+        app = create_app(config)
+
+        assert app.state.provisioner is None
+
+    def test_backend_mode_configures_fly_provisioner_when_fly_env_is_present(self, workspace):
+        config = APIConfig(
+            workspace_root=workspace,
+            agents_mode='backend',
+            fly_api_token='fly-token',
+            fly_workspace_app='boring-ui-workspaces',
+        )
+
+        app = create_app(config)
+
+        assert app.state.provisioner is not None
+
 
 class TestHealthEndpoint:
     """Integration tests for /health endpoint."""
