@@ -263,6 +263,85 @@ async def test_pi_harness_monitor_once_restarts_exited_process(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+async def test_pi_harness_ensure_ready_waits_for_sessions_probe(tmp_path: Path) -> None:
+    config = APIConfig(
+        workspace_root=tmp_path,
+        agents_mode="backend",
+        agents={"pi": AgentRuntimeConfig(enabled=True)},
+    )
+    harness = PiHarness(config)
+    harness._process = FakeProcess()
+    harness._started = True
+
+    probe_states = [
+        HarnessHealth(ok=False, detail="probe pending"),
+        HarnessHealth(ok=True),
+    ]
+    sleeps: list[float] = []
+
+    async def fake_healthy() -> HarnessHealth:
+        return HarnessHealth(ok=True)
+
+    async def fake_probe_ready() -> HarnessHealth:
+        return probe_states.pop(0)
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    harness.healthy = fake_healthy
+    harness._probe_ready = fake_probe_ready
+    harness._sleep = fake_sleep
+
+    await harness.ensure_ready(timeout=1.0, poll_interval=0.25)
+
+    assert sleeps == [0.25]
+
+
+def test_pi_harness_proxy_retries_once_on_transport_error(tmp_path: Path) -> None:
+    attempts = {"count": 0}
+    restarts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise httpx.ConnectError("connect failed", request=request)
+        return httpx.Response(201, json={"session": {"id": "sess-retry"}})
+
+    transport = httpx.MockTransport(handler)
+    config = APIConfig(
+        workspace_root=tmp_path,
+        agents_mode="backend",
+        control_plane_provider="neon",
+        agents={"pi": AgentRuntimeConfig(enabled=True, port=8789)},
+    )
+    harness = PiHarness(
+        config,
+        client_factory=lambda: httpx.AsyncClient(transport=transport),
+    )
+    harness.ensure_ready = lambda **kwargs: asyncio.sleep(0)
+
+    async def fake_restart(reason: str) -> None:
+        restarts.append(reason)
+
+    harness._restart = fake_restart
+
+    app = FastAPI()
+    for router in harness.routes():
+        app.include_router(router)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/agent/pi/sessions/create",
+        json={},
+        headers={"x-request-id": "req-pi-retry", "x-workspace-id": "ws-1"},
+    )
+
+    assert response.status_code == 201
+    assert attempts["count"] == 2
+    assert len(restarts) == 1
+
+
+@pytest.mark.asyncio
 async def test_pi_harness_ensure_ready_waits_for_health(tmp_path: Path) -> None:
     config = APIConfig(
         workspace_root=tmp_path,
@@ -288,6 +367,7 @@ async def test_pi_harness_ensure_ready_waits_for_health(tmp_path: Path) -> None:
 
     harness.ensure_started = fake_ensure_started
     harness.healthy = fake_healthy
+    harness._probe_ready = lambda: asyncio.sleep(0, result=HarnessHealth(ok=True))
     harness._sleep = fake_sleep
     harness._process = FakeProcess()
 

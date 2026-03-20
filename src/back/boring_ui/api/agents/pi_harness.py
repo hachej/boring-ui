@@ -105,10 +105,14 @@ class PiHarness(AgentHarness):
         while True:
             health = await self.healthy()
             if health.ok:
-                self._restart_backoff = 1.0
-                return
+                probe = await self._probe_ready()
+                if probe.ok:
+                    self._restart_backoff = 1.0
+                    return
+                last_detail = probe.detail or last_detail
+            else:
+                last_detail = health.detail or last_detail
 
-            last_detail = health.detail or last_detail
             process = self._process
             if process is None or process.returncode is not None:
                 await self._restart(last_detail)
@@ -161,6 +165,22 @@ class PiHarness(AgentHarness):
             return HarnessHealth(ok=False, detail="pi health payload not ok", metadata=payload)
 
         return HarnessHealth(ok=True, metadata=payload)
+
+    async def _probe_ready(self) -> HarnessHealth:
+        """Verify a real PI route is accepting requests before proxying."""
+        try:
+            async with self._client_factory() as client:
+                response = await client.get(self._service_url("/api/v1/agent/pi/sessions"), timeout=5.0)
+        except httpx.HTTPError as exc:
+            return HarnessHealth(ok=False, detail=str(exc))
+
+        if response.status_code != 200:
+            return HarnessHealth(
+                ok=False,
+                detail=f"pi readiness probe returned {response.status_code}",
+                metadata={"status_code": response.status_code},
+            )
+        return HarnessHealth(ok=True)
 
     async def create_session(self, ctx: WorkspaceContext, req: SessionRequest) -> SessionInfo:
         payload = req.metadata or {}
@@ -391,23 +411,36 @@ class PiHarness(AgentHarness):
             if content_type:
                 headers["content-type"] = content_type
 
-            async with self._client_factory() as client:
-                upstream = await client.request(
-                    request.method,
-                    self._service_url(upstream_path),
-                    content=body or None,
-                    headers=headers,
-                )
-                passthrough_headers = {
-                    key: value
-                    for key, value in upstream.headers.items()
-                    if key.lower() in {"cache-control", "content-type"}
-                }
-                return Response(
-                    content=upstream.content,
-                    status_code=upstream.status_code,
-                    headers=passthrough_headers,
-                )
+            last_error: httpx.HTTPError | None = None
+            for attempt in range(2):
+                try:
+                    async with self._client_factory() as client:
+                        upstream = await client.request(
+                            request.method,
+                            self._service_url(upstream_path),
+                            content=body or None,
+                            headers=headers,
+                        )
+                    passthrough_headers = {
+                        key: value
+                        for key, value in upstream.headers.items()
+                        if key.lower() in {"cache-control", "content-type"}
+                    }
+                    return Response(
+                        content=upstream.content,
+                        status_code=upstream.status_code,
+                        headers=passthrough_headers,
+                    )
+                except httpx.HTTPError as exc:
+                    last_error = exc
+                    if attempt >= 1:
+                        raise
+                    logger.warning("pi proxy request failed for %s, restarting sidecar: %s", upstream_path, exc)
+                    await self._restart(f"proxy request failed for {upstream_path}: {exc}")
+                    await self.ensure_ready()
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("pi proxy request failed without an upstream error")
 
         async def _proxy_stream(
             request: Request,
@@ -423,24 +456,38 @@ class PiHarness(AgentHarness):
             if content_type:
                 headers["content-type"] = content_type
 
-            client = self._client_factory()
-            upstream_request = client.build_request(
-                request.method,
-                self._service_url(upstream_path),
-                content=body or None, headers=headers,
-            )
-            upstream = await client.send(upstream_request, stream=True)
-            passthrough_headers = {
-                key: value
-                for key, value in upstream.headers.items()
-                if key.lower() in {"cache-control", "content-type"}
-            }
-            return StreamingResponse(
-                upstream.aiter_bytes(),
-                status_code=upstream.status_code,
-                headers=passthrough_headers,
-                background=BackgroundTask(self._close_stream, upstream, client),
-            )
+            last_error: httpx.HTTPError | None = None
+            for attempt in range(2):
+                client = self._client_factory()
+                try:
+                    upstream_request = client.build_request(
+                        request.method,
+                        self._service_url(upstream_path),
+                        content=body or None, headers=headers,
+                    )
+                    upstream = await client.send(upstream_request, stream=True)
+                    passthrough_headers = {
+                        key: value
+                        for key, value in upstream.headers.items()
+                        if key.lower() in {"cache-control", "content-type"}
+                    }
+                    return StreamingResponse(
+                        upstream.aiter_bytes(),
+                        status_code=upstream.status_code,
+                        headers=passthrough_headers,
+                        background=BackgroundTask(self._close_stream, upstream, client),
+                    )
+                except httpx.HTTPError as exc:
+                    last_error = exc
+                    await client.aclose()
+                    if attempt >= 1:
+                        raise
+                    logger.warning("pi proxy stream failed for %s, restarting sidecar: %s", upstream_path, exc)
+                    await self._restart(f"proxy stream failed for {upstream_path}: {exc}")
+                    await self.ensure_ready()
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("pi proxy stream failed without an upstream error")
 
         def _add_proxy_route(path: str, endpoint, methods: list[str]) -> None:
             router.add_api_route(path, endpoint, methods=methods)
