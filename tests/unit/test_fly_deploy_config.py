@@ -46,6 +46,6 @@ def test_fly_secrets_script_covers_core_and_hosted_secret_contract() -> None:
         assert f"{key}=" in contents
 
     assert "vault kv get -field=" in contents
-    assert 'app_toml_value "deploy.neon.auth_url"' in contents
-    assert 'app_toml_value "deploy.neon.jwks_url"' in contents
+    assert 'app_toml_value_or_env "NEON_AUTH_BASE_URL" "deploy.neon.auth_url"' in contents
+    assert 'app_toml_value_or_env "NEON_AUTH_JWKS_URL" "deploy.neon.jwks_url"' in contents
     assert 'secrets set --app "$APP_NAME"' in contents
