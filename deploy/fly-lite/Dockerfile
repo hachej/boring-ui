@@ -12,7 +12,7 @@ COPY index.html vite.config.ts tailwind.config.js ./
 COPY deploy/fly-lite/boring.app.toml ./boring.app.toml
 RUN npx vite build
 
-# Stage 2: Python-only runtime (no Node.js)
+# Stage 2: Runtime with dev toolchain
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,14 +24,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System packages — NO Node.js
+# System packages + Node.js 20 (needed inside workspace sandboxes)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bubblewrap \
     curl \
     git \
     jq \
+    make \
     ripgrep \
     tree \
+    unzip \
+    wget \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv

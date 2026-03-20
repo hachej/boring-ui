@@ -1,5 +1,6 @@
 """Command execution service for boring-ui API."""
 import asyncio
+import logging
 import shutil
 import time
 from pathlib import Path
@@ -9,6 +10,7 @@ from fastapi import HTTPException
 from ...config import APIConfig
 from ...workspace.paths import resolve_path_beneath
 
+logger = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 60
 _MAX_OUTPUT_BYTES = 512 * 1024  # 512 KB
@@ -18,15 +20,64 @@ _RO_BINDS = ('/usr', '/lib', '/lib64', '/bin', '/sbin', '/etc')
 
 _BWRAP_BIN: str | None = shutil.which('bwrap')
 
+# Track which workspace roots have been bootstrapped this process lifetime.
+_bootstrapped: set[str] = set()
+
+
+def _ensure_workspace_bootstrapped(workspace_root: Path) -> None:
+    """One-time workspace bootstrap: git init + virtualenv.
+
+    Idempotent — skips if already done (this process) or markers exist on disk.
+    """
+    root_str = str(workspace_root)
+    if root_str in _bootstrapped:
+        return
+
+    # Git init
+    git_dir = workspace_root / '.git'
+    if not git_dir.exists():
+        import subprocess
+        try:
+            subprocess.run(
+                ['git', 'init'],
+                cwd=root_str, check=True, capture_output=True,
+            )
+            subprocess.run(
+                ['git', 'config', 'user.email', 'workspace@boring.dev'],
+                cwd=root_str, check=True, capture_output=True,
+            )
+            subprocess.run(
+                ['git', 'config', 'user.name', 'Workspace'],
+                cwd=root_str, check=True, capture_output=True,
+            )
+            logger.info('Bootstrapped git repo at %s', workspace_root)
+        except Exception:
+            logger.warning('Failed to bootstrap git at %s', workspace_root, exc_info=True)
+
+    # Python virtualenv
+    venv_dir = workspace_root / '.venv'
+    if not venv_dir.exists():
+        import subprocess
+        try:
+            subprocess.run(
+                ['python3', '-m', 'venv', str(venv_dir)],
+                cwd=root_str, check=True, capture_output=True,
+            )
+            logger.info('Bootstrapped venv at %s', venv_dir)
+        except Exception:
+            logger.warning('Failed to create venv at %s', venv_dir, exc_info=True)
+
+    _bootstrapped.add(root_str)
+
 
 def _build_sandbox_argv(command: str, workspace_root: Path, cwd: Path) -> list[str]:
     """Build a bwrap command line that jails *command* into *workspace_root*.
 
     The sandbox sees:
-      /workspace  ← read-write bind of workspace_root
-      /tmp        ← private tmpfs
-      /dev, /proc ← minimal device + proc
-      /usr /lib …  ← read-only host binaries
+      /workspace  <- read-write bind of workspace_root
+      /tmp        <- private tmpfs
+      /dev, /proc <- minimal device + proc
+      /usr /lib ... <- read-only host binaries
     Nothing outside these mounts is visible — no /app, no other workspaces.
     """
     argv: list[str] = [
@@ -54,6 +105,21 @@ def _build_sandbox_argv(command: str, workspace_root: Path, cwd: Path) -> list[s
     return argv
 
 
+def _build_env(workspace_root: Path) -> dict[str, str]:
+    """Build the environment for a sandboxed command."""
+    sandboxed = _BWRAP_BIN is not None
+    home = '/workspace' if sandboxed else str(workspace_root)
+    venv = f'{home}/.venv'
+
+    return {
+        'HOME': home,
+        'PATH': f'{venv}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        'VIRTUAL_ENV': venv,
+        # pip install --user goes to workspace/.local
+        'PYTHONUSERBASE': f'{home}/.local',
+    }
+
+
 async def execute_command(
     command: str,
     cwd: str | None,
@@ -64,6 +130,8 @@ async def execute_command(
     When bubblewrap (bwrap) is available the command runs inside a
     filesystem-namespace sandbox that only exposes the workspace directory.
     Falls back to a plain subprocess when bwrap is not installed (local dev).
+
+    On first call per workspace, bootstraps git + Python venv.
 
     Args:
         command: Shell command to execute
@@ -85,10 +153,9 @@ async def execute_command(
     else:
         exec_dir = resolved_root
 
-    env = {
-        'HOME': '/workspace' if _BWRAP_BIN else str(resolved_root),
-        'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-    }
+    _ensure_workspace_bootstrapped(resolved_root)
+
+    env = _build_env(resolved_root)
 
     start = time.monotonic()
     try:
