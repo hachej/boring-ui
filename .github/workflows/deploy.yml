@@ -45,15 +45,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push BoxLite guest image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/python/Dockerfile.boxlite-guest
-          platforms: linux/amd64
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/boring-ui-boxlite-guest:latest
-
       - name: Install Vault CLI
         run: |
           curl -fsSLo /tmp/vault.zip https://releases.hashicorp.com/vault/1.18.3/vault_1.18.3_linux_amd64.zip
@@ -66,20 +57,16 @@ jobs:
           ln -sf "$HOME/.fly/bin/flyctl" "$HOME/.fly/bin/fly"
           echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
 
-      - name: Deploy with bui
-        run: go run ./bui deploy --env prod
+      - name: Set Fly secrets
+        run: bash deploy/fly/fly.secrets.sh boring-ui-backend-agent
+
+      - name: Deploy backend-agent app
+        run: fly deploy --remote-only -c deploy/fly/fly.backend-agent.toml
 
       - name: Health check
         run: |
-          HOST=$(python3 - <<'PY'
-          import tomllib
-          with open("boring.app.toml", "rb") as fh:
-              data = tomllib.load(fh)
-          print(data["deploy"]["docker"]["host"])
-          PY
-          )
           for _ in $(seq 1 20); do
-            if curl --fail --show-error --silent "https://${HOST}/healthz" >/tmp/healthz.json; then
+            if curl --fail --show-error --silent "https://boring-ui-backend-agent.fly.dev/healthz" >/tmp/healthz.json; then
               cat /tmp/healthz.json
               exit 0
             fi
