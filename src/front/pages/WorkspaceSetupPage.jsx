@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Rocket, ArrowRight, Github, ExternalLink, Loader2, Check, ServerCog, RefreshCw, AlertTriangle } from 'lucide-react'
 import { useGitHubConnection } from '../components/GitHubConnect'
 import { apiFetch, apiFetchJson } from '../utils/transport'
 import { routeHref, routes } from '../utils/routes'
 import { getRuntimeStatus, isRuntimeReady, shouldRetryRuntime } from '../utils/controlPlane'
 import PageShell from './PageShell'
+
+const CAPABILITIES_MAX_RETRIES = 5
+const CAPABILITIES_RETRY_INTERVAL_MS = 2000
 
 /**
  * Post-creation onboarding wizard.
@@ -14,15 +17,68 @@ import PageShell from './PageShell'
 export default function WorkspaceSetupPage({
   workspaceId,
   workspaceName,
-  capabilities,
-  capabilitiesPending = false,
+  capabilities: rootCapabilities,
+  capabilitiesPending: rootCapabilitiesPending = false,
   onComplete,
 }) {
   const [setupPayload, setSetupPayload] = useState(null)
   const [setupLoading, setSetupLoading] = useState(true)
   const [setupError, setSetupError] = useState('')
   const [retryingRuntime, setRetryingRuntime] = useState(false)
-  const capabilitiesLoaded = !capabilitiesPending && capabilities != null
+
+  // Workspace-scoped capabilities: self-sufficient fetch with bounded retries
+  // so the setup page does not depend on root-scoped app boot completing first.
+  const [wsCapabilities, setWsCapabilities] = useState(null)
+  const [wsCapabilitiesError, setWsCapabilitiesError] = useState('')
+  const wsCapRetryCount = useRef(0)
+
+  const fetchWsCapabilities = useCallback(async () => {
+    try {
+      const route = routes.capabilities.get()
+      const { response, data } = await apiFetchJson(route.path, {
+        query: route.query,
+      })
+      if (!response.ok) {
+        throw new Error(`Capabilities fetch failed: ${response.status}`)
+      }
+      const featureCount = Object.keys(data?.features || {}).length
+      if (featureCount > 0) {
+        setWsCapabilities(data)
+        setWsCapabilitiesError('')
+        console.debug('[SetupPage] workspace capabilities loaded, features=%d', featureCount)
+        return true
+      }
+      throw new Error('Capabilities response has no features')
+    } catch (err) {
+      console.debug('[SetupPage] capabilities fetch attempt %d failed: %s', wsCapRetryCount.current + 1, err.message)
+      setWsCapabilitiesError(err.message)
+      return false
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchWsCapabilities()
+  }, [fetchWsCapabilities])
+
+  // Bounded retry loop for capabilities
+  useEffect(() => {
+    if (wsCapabilities) return
+    if (wsCapRetryCount.current >= CAPABILITIES_MAX_RETRIES) {
+      console.debug('[SetupPage] capabilities retry budget exhausted (%d attempts)', CAPABILITIES_MAX_RETRIES)
+      return
+    }
+    const timer = setTimeout(async () => {
+      wsCapRetryCount.current += 1
+      await fetchWsCapabilities()
+    }, CAPABILITIES_RETRY_INTERVAL_MS)
+    return () => clearTimeout(timer)
+  }, [wsCapabilities, wsCapabilitiesError, fetchWsCapabilities])
+
+  // Use workspace-scoped capabilities if available, fall back to root-scoped
+  const capabilities = wsCapabilities || (rootCapabilitiesPending ? null : rootCapabilities)
+  const capabilitiesLoaded = capabilities != null && Object.keys(capabilities?.features || {}).length > 0
+  const capabilitiesFailed = !capabilitiesLoaded && !rootCapabilitiesPending && wsCapRetryCount.current >= CAPABILITIES_MAX_RETRIES
+
   const githubEnabled = capabilities?.features?.github === true
   const { status, loading, connect } = useGitHubConnection(workspaceId, { enabled: githubEnabled })
 
@@ -94,8 +150,20 @@ export default function WorkspaceSetupPage({
 
   // If GitHub is not enabled, skip the wizard entirely — but only after capabilities load
   useEffect(() => {
-    if (runtimeReady && capabilitiesLoaded && !githubEnabled) handleDone()
+    if (runtimeReady && capabilitiesLoaded && !githubEnabled) {
+      console.debug('[SetupPage] auto-advancing: runtime ready, capabilities loaded, github not enabled')
+      handleDone()
+    }
   }, [capabilitiesLoaded, githubEnabled, handleDone, runtimeReady])
+
+  // Log runtime-ready transition for observability
+  const prevRuntimeReady = useRef(false)
+  useEffect(() => {
+    if (runtimeReady && !prevRuntimeReady.current) {
+      console.debug('[SetupPage] runtime ready for workspace %s (state=%s)', workspaceId, runtimeState)
+    }
+    prevRuntimeReady.current = runtimeReady
+  }, [runtimeReady, runtimeState, workspaceId])
 
   const runtimeStateLabel = runtimeState
     ? runtimeState.charAt(0).toUpperCase() + runtimeState.slice(1)
@@ -206,17 +274,46 @@ export default function WorkspaceSetupPage({
       <PageShell title={`Preparing ${workspaceName || 'Workspace'}`}>
         <div className="setup-wizard">
           <div className="setup-wizard-header">
-            <Rocket size={24} />
-            <h2 className="setup-wizard-title">Workspace is ready</h2>
+            {capabilitiesFailed ? <AlertTriangle size={24} /> : <Rocket size={24} />}
+            <h2 className="setup-wizard-title">
+              {capabilitiesFailed ? 'Could not load workspace capabilities' : 'Workspace is ready'}
+            </h2>
             <p className="setup-wizard-subtitle">
-              Loading workspace tools and connection options…
+              {capabilitiesFailed
+                ? (wsCapabilitiesError || 'Capabilities could not be loaded after multiple attempts.')
+                : 'Loading workspace tools and connection options…'}
             </p>
           </div>
           <div className="setup-wizard-step setup-wizard-step-status">
-            <div className="setup-wizard-loading">
-              <Loader2 className="git-inline-spinner" size={16} />
-              <span>Loading workspace capabilities…</span>
-            </div>
+            {capabilitiesFailed ? (
+              <div className="setup-wizard-footer">
+                <button
+                  type="button"
+                  className="settings-btn settings-btn-primary setup-wizard-continue"
+                  onClick={() => {
+                    wsCapRetryCount.current = 0
+                    setWsCapabilitiesError('')
+                    fetchWsCapabilities()
+                  }}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="settings-btn setup-wizard-continue"
+                  onClick={() => onComplete?.()}
+                >
+                  Continue to workspace
+                  <ArrowRight size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="setup-wizard-loading">
+                <Loader2 className="git-inline-spinner" size={16} />
+                <span>Loading workspace capabilities…</span>
+              </div>
+            )}
           </div>
         </div>
       </PageShell>

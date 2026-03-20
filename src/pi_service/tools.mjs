@@ -4,7 +4,7 @@ import { promisify } from 'node:util'
 
 const execAsync = promisify(execCb)
 
-const WORKSPACE_ROOT = process.env.BORING_UI_WORKSPACE_ROOT || process.cwd()
+const DEFAULT_WORKSPACE_ROOT = process.env.BORING_UI_WORKSPACE_ROOT || process.cwd()
 
 const textResult = (text, details = {}) => ({
   content: [{ type: 'text', text }],
@@ -61,15 +61,27 @@ export function resolveSessionContext(payload = {}, headers = {}, env = process.
     || headers['X-Boring-Backend-Url']
     || env.BORING_BACKEND_URL
   )
+  const workspaceRoot = String(
+    payload.workspace_root
+    || payload.workspaceRoot
+    || headers['x-boring-workspace-root']
+    || headers['X-Boring-Workspace-Root']
+    || ''
+  ).trim()
 
-  return { workspaceId, internalApiToken, backendUrl }
+  return { workspaceId, internalApiToken, backendUrl, workspaceRoot }
 }
 
-export function buildSessionSystemPrompt(basePrompt, _context = {}) {
+export function getEffectiveWorkspaceRoot(context = {}) {
+  return context.workspaceRoot || DEFAULT_WORKSPACE_ROOT
+}
+
+export function buildSessionSystemPrompt(basePrompt, context = {}) {
   const prompt = String(basePrompt || '').trim()
+  const root = getEffectiveWorkspaceRoot(context)
   return [
     prompt,
-    `Workspace root: ${WORKSPACE_ROOT}.`,
+    `Workspace root: ${root}.`,
     'You have full shell access via the exec_bash tool.',
     'Use exec_bash for ALL operations: file creation, reading, editing, git, python, etc.',
     'Always use exec_bash — do not respond with file contents in text, use the tool.',
@@ -78,7 +90,8 @@ export function buildSessionSystemPrompt(basePrompt, _context = {}) {
 
 // --- Single tool: exec_bash ---
 
-export function createWorkspaceTools(_context) {
+export function createWorkspaceTools(context = {}) {
+  const wsRoot = getEffectiveWorkspaceRoot(context)
   return [
     {
       name: 'exec_bash',
@@ -94,14 +107,14 @@ export function createWorkspaceTools(_context) {
         const cwd = params?.cwd
           ? String(params.cwd).trim().replace(/^\/+/, '')
           : '.'
-        const fullCwd = cwd === '.' ? WORKSPACE_ROOT : `${WORKSPACE_ROOT}/${cwd}`
+        const fullCwd = cwd === '.' ? wsRoot : `${wsRoot}/${cwd}`
         const start = Date.now()
         try {
           const { stdout, stderr } = await execAsync(command, {
             cwd: fullCwd,
             timeout: 60_000,
             maxBuffer: 512 * 1024,
-            env: { ...process.env, HOME: WORKSPACE_ROOT },
+            env: { ...process.env, HOME: wsRoot },
           })
           return textResult(formatExecOutput({ stdout, stderr, exitCode: 0 }), {
             stdout, stderr, exitCode: 0, duration_ms: Date.now() - start,

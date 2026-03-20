@@ -535,7 +535,15 @@ export function AuthCallbackPage() {
         setStatus('Sign-in could not be completed.')
         return
       }
-      window.location.replace(payload.redirect_uri || redirectUri || '/')
+      // Prefer direct workspace navigation when the backend returns a
+      // workspace_id from eager provisioning — avoids the redirect bounce
+      // through `/` that can cause duplicate-workspace races.
+      let target = payload.redirect_uri || redirectUri || '/'
+      if (payload.workspace_id && (target === '/' || target === '')) {
+        target = `/w/${payload.workspace_id}/setup`
+        console.debug('[AuthCallback] navigating to eager-provisioned workspace %s', payload.workspace_id)
+      }
+      window.location.replace(target)
     }
 
     run().catch((err) => {

@@ -657,6 +657,7 @@ export default function App() {
   const [userMenuIdentityError, setUserMenuIdentityError] = useState('')
   const [userMenuWorkspaceError, setUserMenuWorkspaceError] = useState('')
   const [workspaceOptions, setWorkspaceOptions] = useState([])
+  const [workspaceListStatus, setWorkspaceListStatus] = useState('idle') // idle | loading | success | error
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState(() =>
     getWorkspaceIdFromPathname(window.location.pathname),
   )
@@ -1364,6 +1365,7 @@ export default function App() {
 
   const fetchWorkspaceList = useCallback(async () => {
     const route = routes.controlPlane.workspaces.list()
+    setWorkspaceListStatus('loading')
     try {
       const { response, data } = await apiFetchJson(route.path, {
         query: route.query,
@@ -1377,16 +1379,22 @@ export default function App() {
         } else {
           setUserMenuWorkspaceError(getHttpErrorDetail(response, data, 'Failed to load workspaces'))
         }
+        setWorkspaceListStatus('error')
+        console.debug('[WorkspaceRedirect] list fetch failed, status=%d', response.status)
         return []
       }
 
       setUserMenuWorkspaceError('')
       const workspaces = normalizeWorkspaceList(data)
       setWorkspaceOptions(workspaces)
+      setWorkspaceListStatus('success')
+      console.debug('[WorkspaceRedirect] list fetch success, count=%d', workspaces.length)
       return workspaces
     } catch (error) {
       console.warn('[UserMenu] Workspaces load failed:', error)
       setUserMenuWorkspaceError('Failed to reach control plane for workspaces.')
+      setWorkspaceListStatus('error')
+      console.debug('[WorkspaceRedirect] list fetch error:', error.message)
       return []
     }
   }, [])
@@ -4615,21 +4623,35 @@ export default function App() {
   const autoCreateAttempted = useRef(false)
   useEffect(() => {
     if (!needsWorkspaceRedirect) return
+    // Wait for the first workspace list fetch to resolve before deciding.
+    // workspaceOptions starts as [], so acting on length before the fetch
+    // completes causes a duplicate-create race in hosted signup.
+    if (workspaceListStatus !== 'success' && workspaceListStatus !== 'error') {
+      console.debug('[WorkspaceRedirect] waiting for workspace list fetch (status=%s)', workspaceListStatus)
+      return
+    }
+    if (workspaceListStatus === 'error') {
+      // List fetch failed — do not auto-create speculatively; surface existing error state
+      console.debug('[WorkspaceRedirect] list fetch failed, skipping auto-create')
+      return
+    }
     if (workspaceOptions.length > 0) {
       const firstWs = workspaceOptions[0]
+      console.debug('[WorkspaceRedirect] redirecting to workspace %s', firstWs.id)
       const route = routes.controlPlane.workspaces.scope(firstWs.id)
       // Use client-side navigation to avoid a full page reload bounce
       window.history.replaceState(null, '', route.path)
       setCurrentWorkspaceId(firstWs.id)
     } else if (!autoCreateAttempted.current) {
-      // Auto-create a default workspace instead of prompting for a name
+      // List resolved empty — auto-create a default workspace
+      console.debug('[WorkspaceRedirect] list resolved empty, auto-creating workspace')
       autoCreateAttempted.current = true
       handleCreateWorkspaceSubmit('My Workspace').catch(() => {
         // Fall back to modal if auto-create fails
         setShowCreateWorkspaceModal(true)
       })
     }
-  }, [needsWorkspaceRedirect, workspaceOptions, handleCreateWorkspaceSubmit])
+  }, [needsWorkspaceRedirect, workspaceOptions, workspaceListStatus, handleCreateWorkspaceSubmit])
 
   if (POC_MODE === 'chat') {
     return (

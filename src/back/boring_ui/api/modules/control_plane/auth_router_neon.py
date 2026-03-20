@@ -296,7 +296,7 @@ async def _eager_workspace_provision(
     *,
     config: APIConfig,
     user_id: str,
-) -> None:
+) -> str | None:
     """Best-effort create a default workspace for new users at login time.
 
     Called after a successful token-exchange so the Fly Machine is already
@@ -305,12 +305,14 @@ async def _eager_workspace_provision(
 
     ``user_id`` is passed directly by the caller (already validated from the
     JWT) to avoid redundant token re-validation.
+
+    Returns the workspace id (str) on success, or ``None`` on failure.
     """
     import asyncio
 
     try:
         if not user_id:
-            return
+            return None
 
         from . import db_client
         pool = db_client.get_pool()
@@ -322,6 +324,12 @@ async def _eager_workspace_provision(
             user_id,
             "My Workspace",
             is_default=True,
+        )
+        _logger.info(
+            "token-exchange: eager provision resolved user=%s workspace=%s created=%s",
+            user_id,
+            workspace_id,
+            created,
         )
         provisioner = getattr(request.app.state, "provisioner", None)
         if provisioner:
@@ -349,8 +357,10 @@ async def _eager_workspace_provision(
                     workspace_id,
                     created,
                 )
+        return workspace_id
     except Exception as exc:
         _logger.warning("Eager workspace provisioning failed: %s", exc)
+        return None
 
 
 async def _neon_password_auth(
@@ -2160,12 +2170,25 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
         # users so the Fly Machine is already being provisioned by the time
         # they land on the dashboard.
         _logger.info("token-exchange: status=%s, starting eager provision check", response.status_code)
+        eager_workspace_id = None
         if response.status_code == 200:
             verified = _validate_neon_jwt(access_token, config=config)
             if verified:
                 user_id = str(verified.get("user_id", "")).strip()
                 if user_id:
-                    await _eager_workspace_provision(request, config=config, user_id=user_id)
+                    eager_workspace_id = await _eager_workspace_provision(
+                        request, config=config, user_id=user_id,
+                    )
+
+        # Enrich the response payload with the workspace id so the frontend
+        # can navigate directly to /w/{id}/setup instead of bouncing via /.
+        if eager_workspace_id and response.status_code == 200:
+            import json
+            body = json.loads(response.body.decode("utf-8"))
+            body["workspace_id"] = eager_workspace_id
+            response.body = json.dumps(body).encode("utf-8")
+            # Update Content-Length after body mutation
+            response.headers["content-length"] = str(len(response.body))
 
         return response
 

@@ -21,6 +21,7 @@ import EditToolRenderer from './EditToolRenderer'
 import GlobToolRenderer from './GlobToolRenderer'
 import GrepToolRenderer from './GrepToolRenderer'
 import ToolUseBlock, { ToolOutput } from './ToolUseBlock'
+import { renderToolPart as renderToolPartShared, parseGrepResults, parseGlobFiles } from './toolRenderers'
 import PermissionPanel from './PermissionPanel'
 import './styles.css'
 import { buildWsUrl } from '../../utils/apiBase'
@@ -547,53 +548,7 @@ const dataUrlToImagePart = (dataUrl) => {
   }
 }
 
-const parseGrepResults = (output) => {
-  if (!output) return []
-  return output
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const match = line.match(/^(.*?):(\d+):(.*)$/)
-      if (!match) return { file: 'output', matches: [{ line: 1, content: line }] }
-      return {
-        file: match[1],
-        matches: [{ line: Number(match[2]), content: match[3] }],
-      }
-    })
-}
-
-const parseGlobFiles = (output) => {
-  if (!output) return []
-  return output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-}
-
-const ToolFallback = ({ name, input, output }) => {
-  return (
-    <ToolUseBlock
-      toolName={name}
-      description={input ? 'Custom tool input' : undefined}
-      status="complete"
-      collapsible={Boolean(output || input)}
-      defaultExpanded={false}
-    >
-      {input && (
-        <ToolOutput>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-            {JSON.stringify(input, null, 2)}
-          </pre>
-        </ToolOutput>
-      )}
-      {output && (
-        <ToolOutput style={{ marginTop: '8px' }}>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{output}</pre>
-        </ToolOutput>
-      )}
-    </ToolUseBlock>
-  )
-}
+// parseGrepResults, parseGlobFiles, and ToolFallback are now shared via toolRenderers.jsx
 
 const useClaudeStreamRuntime = (
   currentSessionId,
@@ -1434,76 +1389,8 @@ const useClaudeStreamRuntime = (
   }
 }
 
-const renderToolPart = (part) => {
-  const input = part.input || {}
-  const output = part.output || ''
-  const toolName = (part.name || '').toLowerCase()
-
-  if (toolName === 'bash') {
-    return (
-      <BashToolRenderer
-        command={input.command || input.cmd}
-        description={input.description}
-        output={output}
-        error={part.error}
-        status={part.status}
-        compact={true}
-      />
-    )
-  }
-  if (toolName === 'read') {
-    return (
-      <ReadToolRenderer
-        filePath={input.path || input.file_path}
-        content={null}
-        lineCount={part.lineCount || undefined}
-        status={part.status}
-        hideContent={true}
-      />
-    )
-  }
-  if (toolName === 'write') {
-    return (
-      <WriteToolRenderer
-        filePath={input.path || input.file_path}
-        content={input.content || output}
-        error={part.error}
-        status={part.status}
-      />
-    )
-  }
-  if (toolName === 'edit') {
-    return (
-      <EditToolRenderer
-        filePath={input.path || input.file_path}
-        diff={input.diff || output}
-        error={part.error}
-        status={part.status}
-      />
-    )
-  }
-  if (toolName === 'glob') {
-    return (
-      <GlobToolRenderer
-        pattern={input.pattern || input.glob}
-        files={parseGlobFiles(output)}
-        status={part.status}
-      />
-    )
-  }
-  if (toolName === 'grep') {
-    return (
-      <GrepToolRenderer
-        pattern={input.pattern || input.query}
-        path={input.path}
-        results={parseGrepResults(output)}
-        status={part.status}
-      />
-    )
-  }
-
-  return <ToolFallback name={part.name} input={input} output={output} />
-}
+// Delegate to the shared tool renderer mapping — one mapping for all chat providers.
+const renderToolPart = renderToolPartShared
 
 const AssistantMessage = () => {
   const message = useMessage()

@@ -92,16 +92,74 @@ function deriveTitle(messages) {
   return `${text.slice(0, 45)}...`
 }
 
+/**
+ * Normalize pi-agent-core message content blocks into a stable frontend
+ * vocabulary. Each part has a `type` field the UI can switch on:
+ * - { type: 'text', text }
+ * - { type: 'tool_use', toolCallId, toolName, args }
+ * The raw content array is preserved for forward compatibility.
+ */
+function normalizeContentParts(message) {
+  const content = message?.content
+  if (!Array.isArray(content)) {
+    const text = textFromMessage(message)
+    return text ? [{ type: 'text', text }] : []
+  }
+  return content
+    .map((block) => {
+      if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+        return { type: 'text', text: block.text }
+      }
+      if (block?.type === 'toolCall') {
+        return {
+          type: 'tool_use',
+          toolCallId: block.id || '',
+          toolName: block.name || '',
+          args: block.arguments || {},
+        }
+      }
+      return null
+    })
+    .filter(Boolean)
+}
+
 function toUiMessages(messages) {
+  // Build a map of tool results from toolResult messages so we can
+  // attach results to the tool_use parts on the preceding assistant message.
+  const toolResultMap = new Map()
+  for (const msg of messages) {
+    if (msg.role !== 'toolResult' || !Array.isArray(msg.content)) continue
+    for (const block of msg.content) {
+      if (block.toolCallId) {
+        toolResultMap.set(block.toolCallId, {
+          text: typeof block.result === 'string'
+            ? block.result
+            : (block.result?.content?.[0]?.text || JSON.stringify(block.result || '')),
+          isError: block.isError || false,
+        })
+      }
+    }
+  }
+
   return messages
     .filter((message) => message.role === 'user' || message.role === 'user-with-attachments' || message.role === 'assistant')
-    .map((message, index) => ({
-      id: message.id || `msg-${index}`,
-      role: message.role === 'assistant' ? 'assistant' : 'user',
-      text: textFromMessage(message),
-      timestamp: message.timestamp || Date.now(),
-    }))
-    .filter((message) => message.text.length > 0)
+    .map((message, index) => {
+      const parts = normalizeContentParts(message)
+      // Attach any resolved tool results to tool_use parts
+      for (const part of parts) {
+        if (part.type === 'tool_use' && toolResultMap.has(part.toolCallId)) {
+          part.result = toolResultMap.get(part.toolCallId)
+        }
+      }
+      return {
+        id: message.id || `msg-${index}`,
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        text: textFromMessage(message),
+        parts,
+        timestamp: message.timestamp || Date.now(),
+      }
+    })
+    .filter((message) => message.text.length > 0 || message.parts.length > 0)
 }
 
 function toSessionSummary(session) {
@@ -130,11 +188,15 @@ function applySessionContext(session, nextContext = {}) {
   if (nextContext.backendUrl) {
     session.backendUrl = nextContext.backendUrl
   }
+  if (nextContext.workspaceRoot) {
+    session.workspaceRoot = nextContext.workspaceRoot
+  }
 
   const toolContext = {
     workspaceId: session.workspaceId,
     internalApiToken: session.internalApiToken,
     backendUrl: session.backendUrl,
+    workspaceRoot: session.workspaceRoot,
   }
   session.agent.setSystemPrompt(buildSessionSystemPrompt(SYSTEM_PROMPT, toolContext))
   session.agent.setTools(createWorkspaceTools(toolContext))
@@ -171,6 +233,7 @@ function createSession(sessionContext = {}) {
     workspaceId: sessionContext.workspaceId || '',
     internalApiToken: sessionContext.internalApiToken || '',
     backendUrl: sessionContext.backendUrl || '',
+    workspaceRoot: sessionContext.workspaceRoot || '',
     agent,
   }
   sessions.set(id, session)
@@ -217,6 +280,7 @@ async function handleStream(_req, res, session, payload = {}) {
 
   let closed = false
   let assistantText = ''
+  let lastAssistantParts = []
 
   const unsubscribe = session.agent.subscribe((event) => {
     if (closed) return
@@ -227,6 +291,28 @@ async function handleStream(_req, res, session, payload = {}) {
     }
     if (event.type === 'message_end' && event.message?.role === 'assistant') {
       assistantText = textFromMessage(event.message)
+      lastAssistantParts = normalizeContentParts(event.message)
+    }
+    if (event.type === 'tool_execution_start') {
+      sendSse(res, 'tool_start', {
+        toolCallId: event.toolCallId || '',
+        toolName: event.toolName || '',
+        args: event.args || {},
+      })
+      return
+    }
+    if (event.type === 'tool_execution_end') {
+      const resultText = event.result?.content?.[0]?.text || ''
+      sendSse(res, 'tool_end', {
+        toolCallId: event.toolCallId || '',
+        toolName: event.toolName || '',
+        result: {
+          text: resultText,
+          details: event.result?.details || {},
+        },
+        isError: event.isError || false,
+      })
+      return
     }
   })
 
@@ -254,6 +340,7 @@ async function handleStream(_req, res, session, payload = {}) {
 
     sendSse(res, 'done', {
       text: assistantText,
+      parts: lastAssistantParts,
       session: toSessionSummary(session),
     })
   } catch (error) {

@@ -574,3 +574,74 @@ def test_neon_callback_completes_pending_sign_in_and_redirects_to_workspace(
             "password": "password123",
         },
     )
+
+
+def test_neon_token_exchange_includes_workspace_id_from_eager_provision(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Token-exchange response contains workspace_id when eager provision succeeds."""
+    client = _client_neon(tmp_path)
+    _FakeAsyncClient.post_response = _FakeAsyncResponse(200, {})
+    _FakeAsyncClient.token_response = _FakeAsyncResponse(200, {"token": "jwt-from-neon"})
+    _FakeAsyncClient.last_post = None
+    _FakeAsyncClient.last_get = None
+    _FakeAsyncClient.posts = []
+    monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(
+        auth_router_neon,
+        "_validate_neon_jwt",
+        lambda token, *, config: {"user_id": "user-neon-3", "email": "new@example.com"},
+    )
+
+    # Stub eager provision to return a workspace id
+    async def _fake_eager_provision(request, *, config, user_id):
+        return "ws-eager-123"
+
+    monkeypatch.setattr(auth_router_neon, "_eager_workspace_provision", _fake_eager_provision)
+
+    response = client.post(
+        "/auth/token-exchange",
+        json={"access_token": "valid-jwt", "redirect_uri": "/"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["workspace_id"] == "ws-eager-123"
+    assert "boring_session=" in response.headers.get("set-cookie", "")
+
+
+def test_neon_token_exchange_omits_workspace_id_when_eager_provision_returns_none(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Token-exchange response has no workspace_id when eager provision fails."""
+    client = _client_neon(tmp_path)
+    _FakeAsyncClient.post_response = _FakeAsyncResponse(200, {})
+    _FakeAsyncClient.token_response = _FakeAsyncResponse(200, {"token": "jwt-from-neon"})
+    _FakeAsyncClient.last_post = None
+    _FakeAsyncClient.last_get = None
+    _FakeAsyncClient.posts = []
+    monkeypatch.setattr(auth_router_neon.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(
+        auth_router_neon,
+        "_validate_neon_jwt",
+        lambda token, *, config: {"user_id": "user-neon-4", "email": "fail@example.com"},
+    )
+
+    # Stub eager provision to return None (failure)
+    async def _fake_eager_provision(request, *, config, user_id):
+        return None
+
+    monkeypatch.setattr(auth_router_neon, "_eager_workspace_provision", _fake_eager_provision)
+
+    response = client.post(
+        "/auth/token-exchange",
+        json={"access_token": "valid-jwt", "redirect_uri": "/"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert "workspace_id" not in payload

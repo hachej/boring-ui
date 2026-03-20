@@ -397,4 +397,79 @@ describe('AuthCallbackPage', () => {
       })
     })
   })
+
+  it('navigates to workspace setup when workspace_id is returned and redirect is /', async () => {
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: {
+        ...window.location,
+        hash: '#access_token=test-jwt-token&token_type=bearer',
+        search: '',
+        href: 'http://localhost/auth/callback#access_token=test-jwt-token&token_type=bearer',
+        origin: 'http://localhost',
+        replace: vi.fn(),
+      },
+    })
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true, redirect_uri: '/', workspace_id: 'ws-abc-123' }),
+    })
+
+    render(<AuthCallbackPage />)
+
+    await waitFor(() => {
+      expect(window.location.replace).toHaveBeenCalledWith('/w/ws-abc-123/setup')
+    })
+  })
+
+  it('uses redirect_uri over workspace_id when redirect is not root', async () => {
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: {
+        ...window.location,
+        hash: '#access_token=test-jwt-token&token_type=bearer',
+        search: '?redirect_uri=/w/existing/editor',
+        href: 'http://localhost/auth/callback?redirect_uri=/w/existing/editor#access_token=test-jwt-token&token_type=bearer',
+        origin: 'http://localhost',
+        replace: vi.fn(),
+      },
+    })
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true, redirect_uri: '/w/existing/editor', workspace_id: 'ws-abc-123' }),
+    })
+
+    render(<AuthCallbackPage />)
+
+    await waitFor(() => {
+      expect(window.location.replace).toHaveBeenCalledWith('/w/existing/editor')
+    })
+  })
+
+  it('falls back to / when no workspace_id is returned', async () => {
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: {
+        ...window.location,
+        hash: '#access_token=test-jwt-token&token_type=bearer',
+        search: '',
+        href: 'http://localhost/auth/callback#access_token=test-jwt-token&token_type=bearer',
+        origin: 'http://localhost',
+        replace: vi.fn(),
+      },
+    })
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true, redirect_uri: '/' }),
+    })
+
+    render(<AuthCallbackPage />)
+
+    await waitFor(() => {
+      expect(window.location.replace).toHaveBeenCalledWith('/')
+    })
+  })
 })
