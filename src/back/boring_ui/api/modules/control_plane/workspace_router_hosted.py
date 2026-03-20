@@ -21,12 +21,51 @@ from .user_settings_state import read_user_github_link, user_state_service
 logger = logging.getLogger(__name__)
 
 _background_tasks: set = set()
+_MACHINE_READY_TIMEOUT_SECONDS = 60.0
+_MACHINE_READY_POLL_INTERVAL_SECONDS = 1.0
+
+
+async def _wait_for_machine_started(
+    provisioner,
+    machine_id: str,
+    *,
+    timeout_seconds: float = _MACHINE_READY_TIMEOUT_SECONDS,
+    poll_interval_seconds: float = _MACHINE_READY_POLL_INTERVAL_SECONDS,
+) -> None:
+    """Wait until Fly reports the workspace machine as started.
+
+    The control plane should not advertise a workspace runtime as ``ready``
+    until Fly can actually route traffic to the machine. Marking ``ready``
+    immediately after machine creation causes the first replayed request to
+    race the machine boot and return a 500.
+    """
+
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    last_state = "unknown"
+    terminal_states = {"destroyed", "failed", "replacing", "stopped"}
+
+    while True:
+        state = str(await provisioner.status(machine_id) or "").strip().lower() or "unknown"
+        last_state = state
+        if state == "started":
+            return
+        if state in terminal_states:
+            raise RuntimeError(f"Workspace machine {machine_id} entered terminal state {state!r}")
+
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            raise RuntimeError(
+                f"Workspace machine {machine_id} did not reach 'started' within "
+                f"{timeout_seconds:.0f}s (last state: {last_state!r})"
+            )
+        await asyncio.sleep(min(poll_interval_seconds, remaining))
 
 
 async def _provision_workspace(provisioner, pool, workspace_id: str, config: APIConfig):
     """Background task: create Fly Machine + Volume, then update DB state."""
     try:
         result = await provisioner.create(workspace_id, region="cdg", size_gb=10)
+        await _wait_for_machine_started(provisioner, result.machine_id)
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE workspaces SET machine_id = $1, volume_id = $2, fly_region = $3 WHERE id = $4""",
