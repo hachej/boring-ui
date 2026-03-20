@@ -36,6 +36,7 @@ async def test_create_calls_volume_then_machine():
     vol_resp = _mock_response({"id": "vol_abc"})
     machine_resp = _mock_response({"id": "mach_xyz"})
     mock_client.post = AsyncMock(side_effect=[vol_resp, machine_resp])
+    mock_client.get = AsyncMock(return_value=_mock_response([]))
 
     p = _make_provisioner(client=mock_client)
     result = await p.create("ws-123", region="cdg", size_gb=10)
@@ -56,6 +57,7 @@ async def test_create_cleans_up_volume_on_machine_failure():
         httpx.HTTPStatusError("500", request=httpx.Request("POST", "http://x"), response=httpx.Response(500)),
     ])
     mock_client.delete = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_mock_response([]))
 
     p = _make_provisioner(client=mock_client)
     with pytest.raises(httpx.HTTPStatusError):
@@ -70,6 +72,7 @@ async def test_delete_stops_then_deletes():
     mock_client = AsyncMock()
     mock_client.post = AsyncMock()
     mock_client.delete = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_mock_response([]))
 
     p = _make_provisioner(client=mock_client)
     await p.delete("mach_1", "vol_1")
@@ -91,8 +94,52 @@ async def test_status_returns_state():
 async def test_resume_calls_start():
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=_mock_response({}))
+    mock_client.get = AsyncMock(return_value=_mock_response([]))
 
     p = _make_provisioner(client=mock_client)
     await p.resume("mach_1")
 
     assert "start" in str(mock_client.post.call_args)
+
+
+@pytest.mark.asyncio
+async def test_resolve_workspace_image_prefers_newest_non_workspace_machine():
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=_mock_response([
+        {
+            "id": "ws_1",
+            "name": "ws_abcd1234",
+            "created_at": "2026-03-20T15:00:00Z",
+            "config": {"image": "registry.fly.io/test:workspace"},
+        },
+        {
+            "id": "app_old",
+            "name": "boring-ui-backend-agent",
+            "created_at": "2026-03-20T15:01:00Z",
+            "config": {"image": "registry.fly.io/test:old"},
+        },
+        {
+            "id": "app_new",
+            "name": "boring-ui-backend-agent",
+            "created_at": "2026-03-20T15:02:00Z",
+            "config": {"image": "registry.fly.io/test:new"},
+        },
+    ]))
+
+    p = _make_provisioner(client=mock_client)
+
+    assert await p._resolve_workspace_image() == "registry.fly.io/test:new"
+
+
+@pytest.mark.asyncio
+async def test_resolve_workspace_image_falls_back_to_current_machine(monkeypatch: pytest.MonkeyPatch):
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[
+        httpx.HTTPStatusError("500", request=httpx.Request("GET", "http://x"), response=httpx.Response(500)),
+        _mock_response({"config": {"image": "registry.fly.io/test:current"}}),
+    ])
+    monkeypatch.setenv("FLY_MACHINE_ID", "app_current")
+
+    p = _make_provisioner(client=mock_client)
+
+    assert await p._resolve_workspace_image() == "registry.fly.io/test:current"

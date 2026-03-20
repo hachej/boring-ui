@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -100,16 +101,63 @@ class FlyProvisioner:
         resp.raise_for_status()
         return resp.json()
 
+    async def list_machines(self) -> list[dict[str, Any]]:
+        """Return the raw Fly Machines API payloads for all app machines."""
+        app = self.workspace_app
+        resp = await self._client.get(f"/apps/{app}/machines")
+        resp.raise_for_status()
+        payload = resp.json()
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        if isinstance(payload, dict):
+            for key in ("machines", "instances", "nodes"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return [item for item in value if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _machine_timestamp(machine: dict[str, Any]) -> datetime:
+        """Return a comparable timestamp for machine freshness ordering."""
+        for key in ("updated_at", "created_at"):
+            value = str(machine.get(key) or "").strip()
+            if not value:
+                continue
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+        return datetime.min.replace(tzinfo=timezone.utc)
+
     async def _resolve_workspace_image(self) -> str:
         """Resolve the image used for newly provisioned workspace machines.
 
-        ``:latest`` does not reliably follow the currently deployed backend.
-        When the configured image still points at ``latest``, derive the exact
-        image from the running Fly Machine serving this process.
+        Prefer the newest non-workspace app machine image. This avoids stale
+        workspace provisioning when an older app machine is still serving a
+        subset of requests during or after a deploy rollout.
         """
+        try:
+            machines = await self.list_machines()
+        except Exception:
+            logger.warning("Failed to list Fly machines for image resolution", exc_info=True)
+            machines = []
 
-        if self.image and not str(self.image).strip().endswith(":latest"):
-            return self.image
+        app_candidates = [
+            machine
+            for machine in machines
+            if not str(machine.get("name") or "").strip().startswith("ws_")
+        ]
+        if app_candidates:
+            newest = max(app_candidates, key=self._machine_timestamp)
+            resolved = str((newest.get("config") or {}).get("image") or "").strip()
+            if resolved:
+                logger.info(
+                    "Resolved workspace image from newest app machine %s: %s",
+                    newest.get("id"),
+                    resolved,
+                )
+                self.image = resolved
+                return self.image
 
         current_machine_id = str(os.environ.get("FLY_MACHINE_ID", "")).strip()
         if not current_machine_id:
@@ -118,7 +166,11 @@ class FlyProvisioner:
         try:
             info = await self.machine_info(current_machine_id)
         except Exception:
-            logger.warning("Failed to resolve current Fly image from machine %s", current_machine_id, exc_info=True)
+            logger.warning(
+                "Failed to resolve current Fly image from machine %s",
+                current_machine_id,
+                exc_info=True,
+            )
             return self.image
 
         resolved = str((info.get("config") or {}).get("image") or "").strip()
