@@ -292,9 +292,11 @@ async def test_pi_harness_ensure_ready_waits_for_sessions_probe(tmp_path: Path) 
     harness._probe_ready = fake_probe_ready
     harness._sleep = fake_sleep
 
+    assert not harness.ever_ready
     await harness.ensure_ready(timeout=1.0, poll_interval=0.25)
 
     assert sleeps == [0.25]
+    assert harness.ever_ready
 
 
 def test_pi_harness_proxy_retries_once_on_transport_error(tmp_path: Path) -> None:

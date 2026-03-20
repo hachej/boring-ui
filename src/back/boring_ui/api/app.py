@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .config import APIConfig
 from .git_backend import GitBackend
@@ -187,8 +187,9 @@ def create_app(
         if pi_harness is not None:
             try:
                 await pi_harness.start()
+                await pi_harness.ensure_ready()
             except Exception:
-                logger.exception('Failed to start PiHarness')
+                logger.exception('PI sidecar did not become ready during startup')
         if _db_pool_url:
             await control_plane_db_client.create_pool(_db_pool_url)
 
@@ -409,7 +410,20 @@ def create_app(
     # dependencies minimal and avoid coupling to control-plane-era modules.
     @app.get('/health')
     async def health():
-        """Health check endpoint."""
+        """Health check endpoint.
+
+        Returns 503 while the PI sidecar is still initialising for the first
+        time.  This prevents Fly from marking the Machine as healthy (and
+        therefore routable) before PI can actually serve requests.  Once the
+        sidecar has been proven ready at least once, /health always returns 200
+        — transient PI restarts handled by the monitor loop do not cause the
+        Machine to appear unhealthy to the platform.
+        """
+        if pi_harness is not None and not pi_harness.ever_ready:
+            return JSONResponse(
+                {'status': 'starting', 'detail': 'pi sidecar not yet ready'},
+                status_code=503,
+            )
         return {
             'status': 'ok',
             'workspace': str(config.workspace_root),

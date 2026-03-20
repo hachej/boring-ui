@@ -64,10 +64,16 @@ class PiHarness(AgentHarness):
         self._restart_backoff = 1.0
         self._started = False
         self._start_lock = asyncio.Lock()
+        self._ever_ready = False
 
     @property
     def name(self) -> str:
         return "pi"
+
+    @property
+    def ever_ready(self) -> bool:
+        """True once the sidecar has been proven healthy at least once."""
+        return self._ever_ready
 
     def routes(self) -> list[APIRouter]:
         return [self._router]
@@ -108,6 +114,7 @@ class PiHarness(AgentHarness):
                 probe = await self._probe_ready()
                 if probe.ok:
                     self._restart_backoff = 1.0
+                    self._ever_ready = True
                     return
                 last_detail = probe.detail or last_detail
             else:
