@@ -205,10 +205,11 @@ def create_capabilities_router(
         conditionally render components.
         """
         features = dict(enabled_features)
+        # PI is available if PiHarness exists (it lazy-starts on first request).
+        # Don't gate on health — the sidecar starts when needed.
         pi_harness = getattr(request.app.state, 'pi_harness', None)
         if pi_harness is not None:
-            health = await pi_harness.healthy()
-            features['pi'] = health.ok
+            features['pi'] = True
 
         capabilities = {
             'version': '0.1.0',
