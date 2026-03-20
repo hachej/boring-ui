@@ -23,6 +23,7 @@ class _FakeProvisioner:
         )
         self.status_calls: list[str] = []
         self.create_calls: list[tuple[str, str, int]] = []
+        self.machine_info_calls: list[str] = []
 
     async def create(self, workspace_id: str, region: str, size_gb: int) -> ProvisionResult:
         self.create_calls.append((workspace_id, region, size_gb))
@@ -34,6 +35,13 @@ class _FakeProvisioner:
             return next(self._states)
         except StopIteration:
             return "started"
+
+    async def machine_info(self, machine_id: str) -> dict[str, object]:
+        self.machine_info_calls.append(machine_id)
+        return {
+            "state": await self.status(machine_id),
+            "checks": [{"status": "passing"}] if len(self.machine_info_calls) > 1 else [{"status": "warning"}],
+        }
 
 
 class _FakeConn:
@@ -83,6 +91,7 @@ async def test_wait_for_machine_started_polls_until_started(
     )
 
     assert provisioner.status_calls == ["mach-1", "mach-1", "mach-1"]
+    assert provisioner.machine_info_calls == ["mach-1", "mach-1", "mach-1"]
     assert sleeps == [0.25, 0.25]
 
 
@@ -132,9 +141,9 @@ async def test_provision_workspace_marks_ready_only_after_machine_starts(
 
     assert provisioner.create_calls == [("11111111-1111-1111-1111-111111111111", "cdg", 10)]
     assert provisioner.status_calls == ["mach-1", "mach-1"]
+    assert provisioner.machine_info_calls == ["mach-1", "mach-1"]
     assert sleeps == [1.0]
     assert len(pool.conn.executed) == 2
     assert "UPDATE workspaces SET machine_id" in pool.conn.executed[0][0]
     assert pool.conn.executed[0][1][:3] == ("mach-1", "vol-1", "cdg")
     assert "UPDATE workspace_runtimes SET state = 'ready'" in pool.conn.executed[1][0]
-

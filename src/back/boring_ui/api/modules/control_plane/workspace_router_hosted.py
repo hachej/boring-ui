@@ -32,7 +32,7 @@ async def _wait_for_machine_started(
     timeout_seconds: float = _MACHINE_READY_TIMEOUT_SECONDS,
     poll_interval_seconds: float = _MACHINE_READY_POLL_INTERVAL_SECONDS,
 ) -> None:
-    """Wait until Fly reports the workspace machine as started.
+    """Wait until Fly reports the workspace machine as healthy.
 
     The control plane should not advertise a workspace runtime as ``ready``
     until Fly can actually route traffic to the machine. Marking ``ready``
@@ -45,9 +45,24 @@ async def _wait_for_machine_started(
     terminal_states = {"destroyed", "failed", "replacing", "stopped"}
 
     while True:
-        state = str(await provisioner.status(machine_id) or "").strip().lower() or "unknown"
+        info = None
+        if hasattr(provisioner, "machine_info"):
+            info = await provisioner.machine_info(machine_id)
+            state = str(info.get("state") or "").strip().lower() or "unknown"
+        else:
+            state = str(await provisioner.status(machine_id) or "").strip().lower() or "unknown"
         last_state = state
-        if state == "started":
+        checks = []
+        if isinstance(info, dict):
+            raw_checks = info.get("checks")
+            if isinstance(raw_checks, list):
+                checks = raw_checks
+        checks_passing = bool(checks) and all(
+            str((check or {}).get("status") or "").strip().lower() == "passing"
+            for check in checks
+        )
+
+        if state == "started" and (not checks or checks_passing):
             return
         if state in terminal_states:
             raise RuntimeError(f"Workspace machine {machine_id} entered terminal state {state!r}")

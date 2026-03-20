@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
@@ -92,11 +93,46 @@ class FlyProvisioner:
         )
         self._owns_client = http_client is None
 
+    async def machine_info(self, machine_id: str) -> dict[str, Any]:
+        """Return the raw Fly Machines API payload for a machine."""
+        app = self.workspace_app
+        resp = await self._client.get(f"/apps/{app}/machines/{machine_id}")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _resolve_workspace_image(self) -> str:
+        """Resolve the image used for newly provisioned workspace machines.
+
+        ``:latest`` does not reliably follow the currently deployed backend.
+        When the configured image still points at ``latest``, derive the exact
+        image from the running Fly Machine serving this process.
+        """
+
+        if self.image and not str(self.image).strip().endswith(":latest"):
+            return self.image
+
+        current_machine_id = str(os.environ.get("FLY_MACHINE_ID", "")).strip()
+        if not current_machine_id:
+            return self.image
+
+        try:
+            info = await self.machine_info(current_machine_id)
+        except Exception:
+            logger.warning("Failed to resolve current Fly image from machine %s", current_machine_id, exc_info=True)
+            return self.image
+
+        resolved = str((info.get("config") or {}).get("image") or "").strip()
+        if resolved:
+            logger.info("Resolved workspace image from current machine %s: %s", current_machine_id, resolved)
+            self.image = resolved
+        return self.image
+
     async def create(
         self, workspace_id: str, region: str = "cdg", size_gb: int = 10
     ) -> ProvisionResult:
         """Create a Fly Volume + Machine for a workspace."""
         app = self.workspace_app
+        image = await self._resolve_workspace_image()
 
         # 1. Create volume
         vol_resp = await self._client.post(
@@ -120,7 +156,7 @@ class FlyProvisioner:
                     "name": f"ws_{workspace_id[:8].replace('-', '_')}",
                     "region": region,
                     "config": {
-                        "image": self.image,
+                        "image": image,
                         "env": cfg.env,
                         "mounts": [{"volume": volume_id, "path": "/workspace"}],
                         "services": [
@@ -184,10 +220,7 @@ class FlyProvisioner:
 
     async def status(self, machine_id: str) -> str:
         """Return machine state: started, suspended, stopped, etc."""
-        app = self.workspace_app
-        resp = await self._client.get(f"/apps/{app}/machines/{machine_id}")
-        resp.raise_for_status()
-        return resp.json().get("state", "unknown")
+        return (await self.machine_info(machine_id)).get("state", "unknown")
 
     async def resume(self, machine_id: str) -> None:
         """Wake a suspended/stopped Machine."""

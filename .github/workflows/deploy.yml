@@ -67,6 +67,17 @@ jobs:
       - name: Deploy backend-agent app
         run: fly deploy --remote-only -c deploy/fly/fly.backend-agent.toml
 
+      - name: Sync workspace image ref
+        run: |
+          APP_IMAGE="$(fly status -a boring-ui-backend-agent | sed -n 's/^  Image    = //p' | head -n1 | tr -d '[:space:]')"
+          if [ -z "$APP_IMAGE" ]; then
+            echo "Failed to resolve deployed backend image" >&2
+            exit 1
+          fi
+          IMAGE_REF="registry.fly.io/${APP_IMAGE}"
+          echo "Setting FLY_IMAGE_REF=${IMAGE_REF}"
+          fly secrets set --app boring-ui-backend-agent FLY_IMAGE_REF="${IMAGE_REF}"
+
       - name: Health check
         run: |
           for _ in $(seq 1 20); do
