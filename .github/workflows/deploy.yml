@@ -76,7 +76,16 @@ jobs:
           fi
           IMAGE_REF="registry.fly.io/${APP_IMAGE}"
           echo "Setting FLY_IMAGE_REF=${IMAGE_REF}"
-          fly secrets set --app boring-ui-backend-agent FLY_IMAGE_REF="${IMAGE_REF}"
+          for attempt in $(seq 1 5); do
+            if fly secrets set --app boring-ui-backend-agent FLY_IMAGE_REF="${IMAGE_REF}"; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Failed to sync FLY_IMAGE_REF after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep 15
+          done
 
       - name: Health check
         run: |
