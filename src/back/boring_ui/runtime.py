@@ -11,12 +11,63 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, Response
 
 from .api import APIConfig, create_app
 
 _PREFIXED_ASSET_RE = re.compile(r"^(?:/w/[^/]+|/auth)(/assets/|/fonts/)")
+
+_STALE_JS_RECOVERY_SOURCE = """const marker='__buiChunkReloaded__';
+if (typeof window !== 'undefined') {
+  if (!window[marker]) {
+    window[marker] = true;
+    window.location.reload();
+  }
+}
+throw new Error('Missing stale asset chunk; reloading application shell.');
+"""
+
+
+def _missing_asset_recovery_response(path: str) -> Response | None:
+    raw = str(path or "").lstrip("/")
+    normalized = f"/assets/{raw}" if not raw.startswith(("assets/", "fonts/")) else f"/{raw}"
+    if not normalized.startswith("/assets/"):
+        return None
+    if normalized.endswith((".js", ".mjs")):
+        return Response(
+            content=_STALE_JS_RECOVERY_SOURCE,
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
+    if normalized.endswith(".css"):
+        return Response(
+            content="/* Missing stale asset chunk; stylesheet intentionally empty. */\n",
+            media_type="text/css",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
+    return None
+
+
+class _RecoveringStaticFiles(StaticFiles):
+    """Serve recovery payloads for stale hashed asset URLs after deploys."""
+
+    async def get_response(self, path: str, scope):
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            recovery = _missing_asset_recovery_response(path)
+            if recovery is not None:
+                return recovery
+            raise
+        if getattr(response, "status_code", None) == 404:
+            recovery = _missing_asset_recovery_response(path)
+            if recovery is not None:
+                return recovery
+        return response
 
 
 class _WorkspaceAssetRewriteMiddleware:
@@ -51,7 +102,7 @@ def mount_static(app: FastAPI, static_path: Path) -> None:
         path = request.url.path or ""
         content_type = (response.headers.get("content-type") or "").lower()
         if path.startswith("/assets/"):
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
         elif "text/html" in content_type:
             response.headers["Cache-Control"] = (
                 "no-store, no-cache, must-revalidate, max-age=0"
@@ -60,7 +111,7 @@ def mount_static(app: FastAPI, static_path: Path) -> None:
 
     assets_path = static_path / "assets"
     if assets_path.exists() and assets_path.is_dir():
-        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+        app.mount("/assets", _RecoveringStaticFiles(directory=assets_path), name="assets")
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):

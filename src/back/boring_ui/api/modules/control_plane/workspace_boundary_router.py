@@ -20,6 +20,16 @@ from .service import ControlPlaneService
 _RESERVED_SUBPATHS = {"setup", "runtime", "settings"}
 _STATIC_ASSET_PREFIXES = ("/assets/", "/fonts/")
 
+_STALE_JS_RECOVERY_SOURCE = """const marker='__buiChunkReloaded__';
+if (typeof window !== 'undefined') {
+  if (!window[marker]) {
+    window[marker] = true;
+    window.location.reload();
+  }
+}
+throw new Error('Missing stale asset chunk; reloading application shell.');
+"""
+
 
 def _resolve_static_dir() -> Path | None:
     """Resolve static dir from available env vars."""
@@ -245,6 +255,19 @@ def _static_asset_response(normalized_path: str) -> FileResponse | None:
             asset,
             headers={"Cache-Control": "public, max-age=31536000, immutable"},
         )
+    if normalized_path.startswith("/assets/"):
+        if normalized_path.endswith((".js", ".mjs")):
+            return Response(
+                content=_STALE_JS_RECOVERY_SOURCE,
+                media_type="text/javascript",
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+            )
+        if normalized_path.endswith(".css"):
+            return Response(
+                content="/* Missing stale asset chunk; stylesheet intentionally empty. */\n",
+                media_type="text/css",
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+            )
     return None
 
 
