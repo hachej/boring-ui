@@ -51,6 +51,15 @@ Use --env to target staging/dev. Use --dry-run to preview without executing.`,
 	},
 }
 
+func findFlyBinary() (string, error) {
+	for _, candidate := range []string{"fly", "flyctl"} {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("fly CLI not found on PATH (expected fly or flyctl)")
+}
+
 func deployFly(cfg *config.AppConfig, root string) error {
 	fly := cfg.Deploy.Fly
 	appName := fly.ControlPlaneApp
@@ -87,6 +96,11 @@ func deployFly(cfg *config.AppConfig, root string) error {
 		secrets["NEON_AUTH_JWKS_URL"] = cfg.Deploy.Neon.JWKSURL
 	}
 
+	flyBin, err := findFlyBinary()
+	if err != nil {
+		return err
+	}
+
 	// 5. Set secrets via fly CLI
 	if !deployDryRun {
 		fmt.Printf("[bui] setting secrets for %s...\n", appName)
@@ -94,7 +108,7 @@ func deployFly(cfg *config.AppConfig, root string) error {
 		for k, v := range secrets {
 			flySecretArgs = append(flySecretArgs, k+"="+v)
 		}
-		flyCmd := exec.Command("fly", flySecretArgs...)
+		flyCmd := exec.Command(flyBin, flySecretArgs...)
 		flyCmd.Stdout = os.Stdout
 		flyCmd.Stderr = os.Stderr
 		if err := flyCmd.Run(); err != nil {
@@ -114,7 +128,7 @@ func deployFly(cfg *config.AppConfig, root string) error {
 	// 7. Deploy
 	if !deployDryRun {
 		fmt.Printf("[bui] deploying %s...\n", appName)
-		deployCmd := exec.Command("fly", "deploy", "-c", flyToml)
+		deployCmd := exec.Command(flyBin, "deploy", "-c", flyToml)
 		deployCmd.Dir = root
 		deployCmd.Stdout = os.Stdout
 		deployCmd.Stderr = os.Stderr

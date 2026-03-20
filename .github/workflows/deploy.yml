@@ -15,6 +15,8 @@ jobs:
     env:
       VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      FLY_ACCESS_TOKEN: ${{ secrets.FLY_ACCESS_TOKEN }}
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUI_DEPLOY_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
@@ -53,9 +55,16 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/boring-ui-boxlite-guest:latest
 
       - name: Install Vault CLI
-        uses: hashicorp/setup-vault@v3
-        with:
-          version: 1.18.3
+        run: |
+          curl -fsSLo /tmp/vault.zip https://releases.hashicorp.com/vault/1.18.3/vault_1.18.3_linux_amd64.zip
+          unzip -o /tmp/vault.zip -d /tmp
+          sudo install /tmp/vault /usr/local/bin/vault
+
+      - name: Install Fly CLI
+        run: |
+          curl -fsSL https://fly.io/install.sh | sh
+          ln -sf "$HOME/.fly/bin/flyctl" "$HOME/.fly/bin/fly"
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
 
       - name: Deploy with bui
         run: go run ./bui deploy --env prod
