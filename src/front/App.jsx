@@ -554,7 +554,9 @@ export default function App() {
   // config.capabilities provides static overrides for browser-only mode
   // (no server). When present, server-fetched capabilities are merged on top.
   const staticCapabilities = config.capabilities || null
-  const { capabilities: serverCapabilities, loading: capabilitiesLoading, refetch: refetchCapabilities } = useCapabilities()
+  const { capabilities: serverCapabilities, loading: capabilitiesLoading, refetch: refetchCapabilities } = useCapabilities({
+    rootScoped: true,
+  })
   const capabilities = useMemo(() => {
     if (!staticCapabilities) {
       const featureCount = Object.keys(serverCapabilities?.features || {}).length
@@ -1361,7 +1363,10 @@ export default function App() {
   const fetchWorkspaceList = useCallback(async () => {
     const route = routes.controlPlane.workspaces.list()
     try {
-      const { response, data } = await apiFetchJson(route.path, { query: route.query })
+      const { response, data } = await apiFetchJson(route.path, {
+        query: route.query,
+        rootScoped: true,
+      })
       if (!response.ok) {
         if (response.status === 401) {
           setUserMenuWorkspaceError('Not signed in.')
@@ -1391,7 +1396,10 @@ export default function App() {
     let meResponse = null
     let meData = {}
     try {
-      const result = await apiFetchJson(meRoute.path, { query: meRoute.query })
+      const result = await apiFetchJson(meRoute.path, {
+        query: meRoute.query,
+        rootScoped: true,
+      })
       meResponse = result.response
       meData = result.data
     } catch (error) {

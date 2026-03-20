@@ -34,7 +34,7 @@ describe('useCapabilities', () => {
       data: MOCK_CAPABILITIES,
     })
 
-    const { result } = renderHook(() => useCapabilities())
+    const { result } = renderHook(() => useCapabilities({ rootScoped: true }))
 
     // Initial state: loading
     expect(result.current.loading).toBe(true)
@@ -45,6 +45,7 @@ describe('useCapabilities', () => {
 
     expect(apiFetchJson).toHaveBeenCalledWith('/api/capabilities', {
       query: {},
+      rootScoped: true,
     })
     expect(result.current.capabilities).toEqual(MOCK_CAPABILITIES)
   })
@@ -55,7 +56,7 @@ describe('useCapabilities', () => {
       data: MOCK_CAPABILITIES,
     })
 
-    const { result } = renderHook(() => useCapabilities())
+    const { result } = renderHook(() => useCapabilities({ rootScoped: true }))
 
     // Wait for initial fetch to complete
     await waitFor(() => {
@@ -86,7 +87,7 @@ describe('useCapabilities', () => {
       })
       .mockRejectedValueOnce(new Error('Network error'))
 
-    const { result } = renderHook(() => useCapabilities())
+    const { result } = renderHook(() => useCapabilities({ rootScoped: true }))
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)

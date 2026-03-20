@@ -28,4 +28,27 @@ describe('PI service URL config', () => {
       }),
     ).toBe(true)
   })
+
+  it('derives workspace-scoped backend url when capabilities omit pi url', () => {
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        origin: 'https://example.com',
+        pathname: '/w/ws-live/?doc=rr-hj',
+      },
+    })
+
+    try {
+      expect(
+        getPiServiceUrl({
+          services: {
+            pi: { mode: 'backend', url: '' },
+          },
+        }),
+      ).toBe('https://example.com/w/ws-live')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+  })
 })

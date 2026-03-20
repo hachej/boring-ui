@@ -45,11 +45,12 @@ const UNKNOWN_CAPABILITIES = {
  *   refetch: () => Promise<void>
  * }}
  */
-export const useCapabilities = () => {
+export const useCapabilities = (options = {}) => {
   const [capabilities, setCapabilities] = useState(UNKNOWN_CAPABILITIES)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const hasLoaded = useRef(false)
+  const rootScoped = options?.rootScoped === true
 
   const fetchCapabilities = useCallback(async () => {
     try {
@@ -61,6 +62,7 @@ export const useCapabilities = () => {
       const route = routes.capabilities.get()
       const { response, data } = await apiFetchJson(route.path, {
         query: route.query,
+        rootScoped,
       })
       if (!response.ok) {
         throw new Error(`Failed to fetch capabilities: ${response.status}`)
@@ -80,7 +82,7 @@ export const useCapabilities = () => {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [rootScoped])
 
   useEffect(() => {
     fetchCapabilities()
