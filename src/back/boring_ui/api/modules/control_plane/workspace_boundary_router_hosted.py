@@ -170,13 +170,10 @@ async def _forward_http_request(
     if not target_path.startswith("/auth/"):
         if not is_local_workspace:
             headers["x-workspace-id"] = workspace_id
-        elif (
-            target_path == "/api/capabilities"
-            or target_path.startswith("/api/v1/agent/")
-        ):
-            # Agent/capability routes still need the logical workspace id on
-            # the dedicated workspace Machine, but their filesystem root must
-            # remain the mounted volume root rather than a nested <root>/<id>.
+        else:
+            # Dedicated workspace Machine: pass the logical workspace id and
+            # the local-workspace flag so ALL routes (files, git, agent, etc.)
+            # resolve to the volume root rather than a nested <root>/<id> path.
             headers["x-workspace-id"] = workspace_id
             headers[_LOCAL_WORKSPACE_HEADER] = "1"
 

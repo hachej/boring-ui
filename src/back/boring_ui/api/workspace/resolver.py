@@ -115,6 +115,20 @@ async def resolve_workspace_context(
         app=request.app,
     )
     workspace_id = _workspace_id_from_scope(request.path_params, request.headers)
+
+    # On a dedicated workspace Machine the volume is mounted at the base root.
+    # The boundary router signals this via x-boring-local-workspace so the
+    # resolver uses the volume root directly instead of a nested <root>/<id>.
+    is_local_workspace = request.headers.get("x-boring-local-workspace") == "1"
+    if is_local_workspace:
+        resolver = WorkspaceContextResolver(
+            resolver.base_root,
+            single_mode=True,
+            storage_factory=resolver._storage_factory,
+            git_backend_factory=resolver._git_backend_factory,
+            execution_backend_factory=resolver._execution_backend_factory,
+        )
+
     try:
         ctx = resolver.resolve(workspace_id)
     except ValueError as exc:
@@ -153,6 +167,17 @@ async def resolve_websocket_workspace_context(
         app=websocket.app,
     )
     workspace_id = _workspace_id_from_scope(websocket.path_params, websocket.headers)
+
+    is_local_workspace = websocket.headers.get("x-boring-local-workspace") == "1"
+    if is_local_workspace:
+        resolver = WorkspaceContextResolver(
+            resolver.base_root,
+            single_mode=True,
+            storage_factory=resolver._storage_factory,
+            git_backend_factory=resolver._git_backend_factory,
+            execution_backend_factory=resolver._execution_backend_factory,
+        )
+
     ctx = resolver.resolve(workspace_id)
     log_event(
         logger,
