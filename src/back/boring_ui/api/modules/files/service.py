@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from ...config import APIConfig
 from ...storage import Storage
+from ...workspace.paths import resolve_path_beneath
 
 
 class FileService:
@@ -38,8 +39,8 @@ class FileService:
             HTTPException: If path is invalid or outside workspace
         """
         try:
-            validated = self.config.validate_path(Path(path))
-            return validated.relative_to(self.config.workspace_root)
+            validated = resolve_path_beneath(self.config.workspace_root, Path(path))
+            return validated.relative_to(self.config.workspace_root.resolve())
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     

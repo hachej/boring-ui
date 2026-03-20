@@ -143,12 +143,16 @@ dev = [
 s3 = [
     { name = "boto3" },
 ]
+sandbox = [
+    { name = "boxlite" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=23.0.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.28.0" },
+    { name = "boxlite", marker = "extra == 'sandbox'", specifier = ">=0.7.5" },
     { name = "fastapi", specifier = ">=0.100.0" },
     { name = "httpx", specifier = ">=0.24" },
     { name = "ptyprocess", specifier = ">=0.7.0" },
@@ -158,7 +162,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.23.0" },
     { name = "websockets", specifier = ">=11.0" },
 ]
-provides-extras = ["s3", "dev"]
+provides-extras = ["s3", "sandbox", "dev"]
 
 [[package]]
 name = "boto3"
@@ -186,6 +190,25 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7d/96/4eca9755ca444402c46c73cc8ff252c8eb73ab0ccf35ca76d89e7b7820ac/botocore-1.42.42.tar.gz", hash = "sha256:cb75639f5ba7bf73b83ac18bcd87f07b7f484f302748da974dad2801a83a1d60", size = 14926585, upload-time = "2026-02-04T20:28:33.66Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e6/51/aac7e419521d5519e13087a7198623655648c939822bd7f4bdc9ccbe07f9/botocore-1.42.42-py3-none-any.whl", hash = "sha256:1c9df5fc31e9073a9aa956271c4007d72f5d342cafca5f4154ea099bc6f83085", size = 14600186, upload-time = "2026-02-04T20:28:29.268Z" },
+]
+
+[[package]]
+name = "boxlite"
+version = "0.7.5"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/25/76d5b25f83a3eaba972b6d86822c8d39914a6948748f92abac7de0fa8fdd/boxlite-0.7.5-cp310-cp310-macosx_14_0_arm64.whl", hash = "sha256:06e97ed60ebb85ea515cca0d9166e44dfa938667f7b9c629df7a014100f1c45b", size = 33363657, upload-time = "2026-03-14T04:38:27.64Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/5b/76932447354da9cd87463d2ec6d7a7df9b6b7ee9dfc7b44c984425847821/boxlite-0.7.5-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:16990ec0954bd94901a9e3501c08f5dd284552c10c09f72d04cebe26fec0a869", size = 31376629, upload-time = "2026-03-14T04:38:30.755Z" },
+    { url = "https://files.pythonhosted.org/packages/62/31/b612ce994421a558faa7d5868d54411d177bf8672deb71b0f3b76ee58434/boxlite-0.7.5-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:7e8b00de7282b2622c76569f4c9525b5ad06a8e14244e94974233f847f9ee5d9", size = 33361404, upload-time = "2026-03-14T04:38:33.752Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/c3/b20c7c1a22dd4c8e3213ce61e4985194e40470a485f799e4cd1459e47dc2/boxlite-0.7.5-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:c6f34e65d62cf6f3a28761f57ff5eb365b871b1fb46bf2685c5e103cf47a8515", size = 31376289, upload-time = "2026-03-14T04:38:36.728Z" },
+    { url = "https://files.pythonhosted.org/packages/94/d7/eb20d1f7b8a1139b55ad76462898032f3f517d72ee32e872e0deaf16841d/boxlite-0.7.5-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:2a8ac83ca0c95ca235647e64d077d09001c43322f20b77b332d733238bb96cf7", size = 33353007, upload-time = "2026-03-14T04:38:39.351Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/41/cd23d9c2274fed6604b6dcb684b5a04b8e76ef00cf8a2ad923eb24288987/boxlite-0.7.5-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:b72b9f4fd0f19ba8e2140080c2b7767bd5baa380fa9531881bf6fe0f928c5212", size = 31372685, upload-time = "2026-03-14T04:38:42.351Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/34/05072a70a5abde0157af65ec94bff05a1e36f477ff14e4653dcc51bdc9bd/boxlite-0.7.5-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:d5dde08b4c2279c12b6271eb96bf1baa09121c245c714c3ac2fd22966c64c04e", size = 33354215, upload-time = "2026-03-14T04:38:45.434Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/c0/6a9f949d81c95255cc74c1e7e9ca387ac7985ef24c69d809a7085a361fe0/boxlite-0.7.5-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:8a43c5d0fe68c167aee59b72fe6c4e6d38e4278701678f7bc5a338143634f72c", size = 31371442, upload-time = "2026-03-14T04:38:48.58Z" },
+    { url = "https://files.pythonhosted.org/packages/60/69/f32c8d367f63296e917122e6c76a336434b49fbd082f1eb95b8e70edc986/boxlite-0.7.5-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:89f310a1fc1abfbab4f42dfafec459c1aec7c8eafd4abff1c2c1d63a6612379b", size = 33353319, upload-time = "2026-03-14T04:38:51.721Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/63/90d34be3d2085053364215c15b3c10fbf710a5b221d013853444d49d9ed8/boxlite-0.7.5-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:9bce1fb940db3d57c283ebe8b5ced41f54d011d38a05de31146e0f6dbab8cd6f", size = 31368770, upload-time = "2026-03-14T04:38:54.71Z" },
+    { url = "https://files.pythonhosted.org/packages/94/f6/41b26a8ab4ed8774237d1519c38a4a4d02119eab1f63c6f12b1b58a4cc2f/boxlite-0.7.5-cp314-cp314t-macosx_14_0_arm64.whl", hash = "sha256:bf446319a85700b41a58007bc1ef9d65826bb250d55b21fc8958eed92c1b17c9", size = 33352235, upload-time = "2026-03-14T04:38:57.785Z" },
+    { url = "https://files.pythonhosted.org/packages/95/68/1d4cc1eb7f8222cb6df7e1b5428c612ab0051508e4c3d2fe7db61c2911fa/boxlite-0.7.5-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:52a03fe08793cbb0a90e81f490553793df749246b16a7bed4dd84b13bcd8bd56", size = 31369499, upload-time = "2026-03-14T04:39:00.903Z" },
 ]
 
 [[package]]

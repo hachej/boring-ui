@@ -30,6 +30,9 @@ var infoCmd = &cobra.Command{
 		fmt.Printf("Backend:    port %d\n", cfg.Backend.Port)
 		fmt.Printf("Frontend:   port %d\n", cfg.Frontend.Port)
 		fmt.Printf("Auth:       %s\n", cfg.Auth.Provider)
+		if cfg.CLI.Name != "" {
+			fmt.Printf("CLI:        %s\n", cfg.CLI.Name)
+		}
 
 		if len(cfg.Backend.Routers) > 0 {
 			fmt.Println("\nRouters:")
@@ -46,7 +49,7 @@ var infoCmd = &cobra.Command{
 		}
 
 		if len(cfg.CLI.Commands) > 0 {
-			fmt.Println("\nCommands:")
+			fmt.Println("\nLegacy Commands:")
 			for name, c := range cfg.CLI.Commands {
 				fmt.Printf("  - %-15s %s\n", name, c.Description)
 			}

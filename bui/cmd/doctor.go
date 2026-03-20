@@ -16,12 +16,12 @@ import (
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Check that everything is wired correctly",
-	Long: `Validate Python, Node, config, framework, venv, symlinks, ports, and more.`,
+	Long:  `Validate Python, Node, config, framework, venv, symlinks, ports, and more.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		issues := 0
-		pass := func(msg string)             { fmt.Printf("  ✓ %s\n", msg) }
-		fail := func(msg string)             { fmt.Printf("  ✗ %s\n", msg); issues++ }
-		warn := func(msg string)             { fmt.Printf("  ! %s\n", msg) }
+		pass := func(msg string) { fmt.Printf("  ✓ %s\n", msg) }
+		fail := func(msg string) { fmt.Printf("  ✗ %s\n", msg); issues++ }
+		warn := func(msg string) { fmt.Printf("  ! %s\n", msg) }
 
 		fmt.Printf("\nbui doctor\n\n")
 
@@ -141,15 +141,30 @@ var doctorCmd = &cobra.Command{
 			pass("Panels: none (using boring-ui defaults)")
 		}
 
-		// 10. Commands
+		// 10. Child CLI
+		if cfg.CLI.Name != "" {
+			if _, err := exec.LookPath(cfg.CLI.Name); err != nil {
+				warn(fmt.Sprintf("CLI binary %q: not in PATH", cfg.CLI.Name))
+			} else {
+				pass(fmt.Sprintf("CLI binary %q: found on PATH", cfg.CLI.Name))
+			}
+		}
+
 		if len(cfg.CLI.Commands) > 0 {
-			pass(fmt.Sprintf("Commands: %d declared", len(cfg.CLI.Commands)))
+			pass(fmt.Sprintf("Legacy commands: %d declared", len(cfg.CLI.Commands)))
 			for name, c := range cfg.CLI.Commands {
-				bin := strings.Fields(c.Run)[0]
+				fields := strings.Fields(c.Run)
+				if len(fields) == 0 {
+					warn(fmt.Sprintf("  Legacy command %q: empty run string", name))
+					continue
+				}
+				bin := fields[0]
 				if _, err := exec.LookPath(bin); err != nil {
-					warn(fmt.Sprintf("  Command %q: %q not in PATH", name, bin))
+					warn(fmt.Sprintf("  Legacy command %q: %q not in PATH", name, bin))
 				}
 			}
+		} else if cfg.CLI.Name == "" {
+			warn("CLI: no [cli].name configured")
 		}
 
 		// 11. Ports

@@ -37,7 +37,7 @@ func printDocsIndex() {
 
   bui docs init       Scaffold a new child app
   bui docs dev        Dev server setup and framework resolution
-  bui docs deploy     Build, secrets, Modal deploy workflow
+  bui docs deploy     Build, secrets, Modal or Docker deploy workflow
   bui docs neon       Neon Postgres + Auth setup, teardown, troubleshooting
   bui docs config     boring.app.toml schema reference
   bui docs auth       Auth provider architecture and session cookies
@@ -117,9 +117,9 @@ Local auth shortcut:
 `,
 
 	"deploy": `
-=== bui deploy — Modal Deployment ===
+=== bui deploy — Deployment ===
 
-Builds frontend, resolves Vault secrets, deploys to Modal.
+Builds frontend, resolves Vault secrets, deploys to the configured platform.
 
 Steps:
   1. Check framework drift (warn if ../boring-ui HEAD != pinned commit)
@@ -127,7 +127,11 @@ Steps:
   3. Resolve [deploy.secrets] from Vault
   4. Inject [deploy.neon] config URLs as env vars
   5. Fallback: .boring/neon-config.env for DB URL if not in Vault
-  6. Run 'modal deploy' with all resolved env vars
+  6. Deploy using [deploy].platform
+
+Platforms:
+  modal    Run 'modal deploy' with resolved env vars
+  docker   Build + push image, copy compose/Caddy assets, restart remote Docker Compose over SSH
 
 Environment isolation (--env flag):
   --env prod      Vault: secret/agent/app/{id}/prod     Modal: {app_name}
@@ -136,13 +140,25 @@ Environment isolation (--env flag):
 
 Prerequisites:
   - Vault accessible (VAULT_ADDR + VAULT_TOKEN)
-  - modal CLI installed and authenticated
+  - modal CLI installed and authenticated for modal deploys
+  - docker buildx + registry login for docker deploys
+  - SSH access to the target host for docker deploys
   - Node.js + npm for frontend build
 
 Session persistence:
   BORING_UI_SESSION_SECRET must be stable across deploys.
   Without it, every redeploy invalidates all session cookies.
   'bui neon setup' generates and stores this automatically.
+
+Docker config example:
+  [deploy]
+  platform = "docker"
+
+  [deploy.docker]
+  registry = "ghcr.io/hachej"
+  compose_file = "deploy/docker-compose.prod.yml"
+  host = "app.example.com"
+  ssh_key_vault = "secret/agent/hetzner-ssh"
 `,
 
 	"neon": `
@@ -247,7 +263,11 @@ Commands:
   [frontend.panels]
     <id> = { component = "./panels/Foo.jsx", title = "Foo", placement = "left" }
 
+[cli]
+  name      Child app CLI binary on PATH (e.g. "bm")
+
 [cli.commands]
+  Legacy aliases only. Prefer bui run <args...> with [cli].name.
   <name> = { run = "cmd args", description = "..." }
 
 [auth]

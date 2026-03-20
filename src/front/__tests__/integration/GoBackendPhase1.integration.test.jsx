@@ -274,7 +274,6 @@ session_ttl = 86400
 
     const env = { ...process.env }
     delete env.DATABASE_URL
-    delete env.SUPABASE_DB_URL
     env.DEV_AUTOLOGIN = '1'
     env.BORING_UI_SESSION_SECRET = 'test-secret'
     env.BORING_SESSION_SECRET = 'test-secret'

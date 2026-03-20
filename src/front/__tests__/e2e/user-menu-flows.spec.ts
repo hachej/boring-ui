@@ -32,7 +32,7 @@ const stubCapabilities = async (page: Page) => {
         pty: true,
         chat_claude_code: true,
         approval: true,
-        companion: true,
+        pi: true,
       },
       routers: [],
     }),

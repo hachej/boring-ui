@@ -30,7 +30,6 @@ class TestAPIConfig:
             'AUTH_SESSION_SECURE_COOKIE',
             'AUTH_DEV_LOGIN_ENABLED',
             'AUTH_DEV_AUTO_LOGIN',
-            'SUPABASE_JWT_SECRET',
         ):
             monkeypatch.delenv(name, raising=False)
         config = APIConfig(workspace_root=tmp_path)
@@ -51,7 +50,6 @@ class TestAPIConfig:
         assert config.auth_dev_login_enabled is False
         assert isinstance(config.auth_session_secret, str)
         assert len(config.auth_session_secret) >= 32
-        assert config.supabase_jwt_secret is None
 
     def test_custom_cors_origins(self, tmp_path):
         """Test custom CORS origins."""
@@ -71,44 +69,8 @@ class TestAPIConfig:
         config = APIConfig(workspace_root=tmp_path)
         assert config.pty_providers["claude"] == ["bash"]
 
-    def test_companion_url_from_env(self, tmp_path, monkeypatch):
-        """Test companion_url reads from COMPANION_URL env var."""
-        monkeypatch.setenv('COMPANION_URL', 'http://localhost:3456')
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.companion_url == 'http://localhost:3456'
-
-    def test_companion_url_none_when_unset(self, tmp_path, monkeypatch):
-        """Test companion_url is None when COMPANION_URL is not set."""
-        monkeypatch.delenv('COMPANION_URL', raising=False)
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.companion_url is None
-
-    def test_pi_url_from_env(self, tmp_path, monkeypatch):
-        """Test pi_url reads from PI_URL env var."""
-        monkeypatch.setenv('PI_URL', 'http://localhost:8787')
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.pi_url == 'http://localhost:8787'
-
-    def test_pi_url_none_when_unset(self, tmp_path, monkeypatch):
-        """Test pi_url is None when PI_URL is not set."""
-        monkeypatch.delenv('PI_URL', raising=False)
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.pi_url is None
-
-    def test_pi_mode_defaults_to_embedded(self, tmp_path, monkeypatch):
-        """Test pi_mode defaults to embedded."""
-        monkeypatch.delenv('PI_MODE', raising=False)
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.pi_mode == 'embedded'
-
-    def test_pi_mode_reads_env(self, tmp_path, monkeypatch):
-        """Test pi_mode reads from PI_MODE env var."""
-        monkeypatch.setenv('PI_MODE', 'iframe')
-        config = APIConfig(workspace_root=tmp_path)
-        assert config.pi_mode == 'iframe'
-
     def test_workspace_plugins_enabled_from_env(self, tmp_path, monkeypatch):
-        """Test workspace_plugins_enabled is parsed from env."""
+        """Plugins enabled via env var."""
         monkeypatch.setenv('WORKSPACE_PLUGINS_ENABLED', 'true')
         config = APIConfig(workspace_root=tmp_path)
         assert config.workspace_plugins_enabled is True
@@ -144,6 +106,12 @@ class TestAPIConfig:
         assert config.auth_session_secure_cookie is True
         assert config.auth_dev_login_enabled is True
         assert config.auth_session_secret == 'super-secret'
+
+    def test_github_private_key_unescapes_newlines(self, tmp_path, monkeypatch):
+        """Docker env files carry PEMs with escaped newlines."""
+        monkeypatch.setenv('GITHUB_APP_PRIVATE_KEY', 'line-1\\nline-2')
+        config = APIConfig(workspace_root=tmp_path)
+        assert config.github_app_private_key == 'line-1\nline-2'
 
 
 class TestValidatePath:

@@ -1,7 +1,6 @@
 """Neon Auth (Better Auth) backed auth/session routes for boring-ui control-plane.
 
-This module mirrors the Supabase auth router but uses Neon Auth endpoints
-(email/password only, no magic-link/PKCE). The main flows are:
+This module uses Neon Auth endpoints for the hosted login flows. The main flows are:
 
 1. Sign in: browser POSTs to boring-ui, backend authenticates against Neon,
    fetches the JWT from ``/token``, and issues ``boring_session``.
@@ -36,7 +35,7 @@ _PENDING_LOGIN_TTL_SECONDS = 30 * 60
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers (mirrors auth_router_supabase private helpers)
+# Shared helpers for hosted auth flows.
 # ---------------------------------------------------------------------------
 
 def _request_id(request: Request) -> str:
@@ -282,6 +281,59 @@ def _issue_session_response(
     )
     _set_session_cookie(response, session_value, config)
     return response
+
+
+_background_tasks: set = set()
+
+
+async def _eager_workspace_provision(
+    request: Request,
+    *,
+    config: APIConfig,
+    user_id: str,
+) -> None:
+    """Best-effort create a default workspace for new users at login time.
+
+    Called after a successful token-exchange so the Fly Machine is already
+    being provisioned by the time the user lands on the dashboard.  Failures
+    are logged but never surface to the caller -- auth must always succeed.
+
+    ``user_id`` is passed directly by the caller (already validated from the
+    JWT) to avoid redundant token re-validation.
+    """
+    import asyncio
+
+    try:
+        if not user_id:
+            return
+
+        from . import db_client
+        pool = db_client.get_pool()
+
+        from .workspace_router_hosted import create_workspace_for_user
+        workspace_id, created = await create_workspace_for_user(
+            pool,
+            config.control_plane_app_id,
+            user_id,
+            "My Workspace",
+            is_default=True,
+        )
+        if created:
+            provisioner = getattr(request.app.state, "provisioner", None)
+            if provisioner:
+                from .workspace_router_hosted import _provision_workspace
+                task = asyncio.create_task(
+                    _provision_workspace(provisioner, pool, workspace_id, config)
+                )
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
+                _logger.info(
+                    "Eager workspace provisioning started for user %s: workspace=%s",
+                    user_id,
+                    workspace_id,
+                )
+    except Exception as exc:
+        _logger.warning("Eager workspace provisioning failed: %s", exc)
 
 
 async def _neon_password_auth(
@@ -1584,7 +1636,7 @@ def _validate_neon_jwt(
 
     Returns a dict with ``user_id`` and ``email`` on success, or ``None``.
     """
-    from .supabase.token_verify import verify_token, TokenError
+    from .token_verify import verify_token, TokenError
 
     jwks_url = config.neon_auth_jwks_url
     neon_base = (config.neon_auth_base_url or "").rstrip("/")
@@ -1604,7 +1656,7 @@ def _validate_neon_jwt(
             aud = f"{parsed.scheme}://{parsed.netloc}"
         payload = verify_token(
             jwt_token,
-            supabase_url=neon_base or "",
+            issuer_base_url=neon_base or "",
             jwks_url=jwks_url,
             audience=aud,
         )
@@ -2063,7 +2115,7 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
                 message="Expected JSON object",
             )
 
-        # Accept both "access_token" (matches frontend & Supabase router) and
+        # Accept both "access_token" (matches the frontend login flow) and
         # "session_token" for backward compatibility.
         access_token = body.get("access_token") or body.get("session_token")
         if not isinstance(access_token, str) or not access_token.strip():
@@ -2076,12 +2128,25 @@ def create_auth_session_router_neon(config: APIConfig) -> APIRouter:
             )
 
         redirect_uri = _safe_redirect_path(body.get("redirect_uri"))
-        return _issue_session_response(
+        response = _issue_session_response(
             request,
             config=config,
             access_token=access_token,
             redirect_uri=redirect_uri,
         )
+
+        # Eager workspace provisioning: create a default workspace for new
+        # users so the Fly Machine is already being provisioned by the time
+        # they land on the dashboard.  Extract user_id from the already-
+        # validated JWT to avoid redundant re-validation.
+        if response.status_code == 200:
+            verified = _validate_neon_jwt(access_token, config=config)
+            if verified:
+                user_id = str(verified.get("user_id", "")).strip()
+                if user_id:
+                    await _eager_workspace_provision(request, config=config, user_id=user_id)
+
+        return response
 
     @router.get("/logout")
     def auth_logout(request: Request):

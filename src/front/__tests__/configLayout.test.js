@@ -141,9 +141,8 @@ const createMockApi = () => {
 
 const createHarness = ({
   config = {},
-  capabilities = { features: { files: true, pty: true, chat_claude_code: true, companion: true } },
+  capabilities = { features: { files: true, pty: true, chat_claude_code: true, pi: true } },
   nativeAgentEnabled = true,
-  companionAgentEnabled = true,
   panelSizes = {},
   panelMin = {},
 } = {}) => {
@@ -154,7 +153,7 @@ const createHarness = ({
     current: {
       filetree: 280,
       terminal: 400,
-      companion: 400,
+      agent: 400,
       shell: 250,
       'data-catalog': 310,
       'chart-canvas': 620,
@@ -165,7 +164,7 @@ const createHarness = ({
     current: {
       filetree: 180,
       terminal: 250,
-      companion: 250,
+      agent: 250,
       shell: 100,
       center: 200,
       'data-catalog': 200,
@@ -203,12 +202,11 @@ const createHarness = ({
       return { collapsed: false, onToggleCollapse: () => {} }
     }
 
-    if (id === 'companion') {
+    if (id === 'agent') {
       return {
         collapsed: false,
         onToggleCollapse: () => {},
-        provider: 'companion',
-        lockProvider: true,
+        mode: 'frontend',
       }
     }
 
@@ -225,9 +223,7 @@ const createHarness = ({
         return
       }
 
-      const effectiveLocked = paneConfig.id === 'companion' && companionAgentEnabled
-        ? true
-        : paneConfig.locked
+      const effectiveLocked = paneConfig.locked
       if (typeof effectiveLocked === 'boolean') {
         group.locked = effectiveLocked
       }
@@ -304,7 +300,7 @@ const createHarness = ({
       })
     }
 
-    const rightRef = terminalPanel || api.getPanel('companion')
+    const rightRef = terminalPanel || api.getPanel('agent')
     let emptyPanel = api.getPanel('empty-center')
     if (!emptyPanel) {
       emptyPanel = api.addPanel({
@@ -530,7 +526,7 @@ describe('configurable layout builder', () => {
             { id: 'data-catalog' },
             { id: 'chart-canvas', position: 'right', ref: 'data-catalog' },
             { id: 'filetree', position: 'below', ref: 'data-catalog' },
-            { id: 'companion', position: 'right', ref: 'chart-canvas' },
+            { id: 'agent', position: 'right', ref: 'chart-canvas' },
             { id: 'shell', position: 'below', ref: 'chart-canvas' },
           ],
         },
@@ -544,7 +540,7 @@ describe('configurable layout builder', () => {
       'data-catalog',
       'chart-canvas',
       'filetree',
-      'companion',
+      'agent',
       'shell',
     ])
   })
@@ -645,7 +641,7 @@ describe('configurable layout builder', () => {
           panels: [
             { id: 'filetree' },
             { id: 'shell', position: 'below', ref: 'filetree' },
-            { id: 'companion', position: 'right', ref: 'filetree' },
+            { id: 'agent', position: 'right', ref: 'filetree' },
           ],
         },
       },
@@ -655,14 +651,13 @@ describe('configurable layout builder', () => {
 
     const filetreeParams = harness.api.getPanel('filetree').params
     const shellParams = harness.api.getPanel('shell').params
-    const companionParams = harness.api.getPanel('companion').params
+    const agentParams = harness.api.getPanel('agent').params
 
     expect(filetreeParams.workspaceId).toBe('ws-1')
     expect(filetreeParams.projectRoot).toBe('/tmp/project')
     expect(shellParams.collapsed).toBe(false)
     expect(typeof shellParams.onToggleCollapse).toBe('function')
-    expect(companionParams.provider).toBe('companion')
-    expect(companionParams.lockProvider).toBe(true)
+    expect(agentParams.mode).toBe('frontend')
   })
 
   it('9) panels.defaults sizing is applied for custom panel IDs', () => {

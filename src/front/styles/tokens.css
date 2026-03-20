@@ -237,8 +237,8 @@
   --color-term-cyan: #0891b2;
   --color-term-white: #e2e8f0;
 
-  --color-companion-focus: color-mix(in srgb, var(--color-ai-agent) 30%, transparent);
-  --color-companion-focus-strong: color-mix(in srgb, var(--color-ai-agent) 40%, transparent);
+  --color-agent-focus: color-mix(in srgb, var(--color-ai-agent) 30%, transparent);
+  --color-agent-focus-strong: color-mix(in srgb, var(--color-ai-agent) 40%, transparent);
 
   --color-warning-muted: var(--color-warning-bg);
   --color-warning-fg: var(--color-warning);

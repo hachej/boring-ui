@@ -35,7 +35,7 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", default="http://localhost:8000",
                         help="Backend base URL (default: http://localhost:8000)")
-    parser.add_argument("--auth-mode", choices=["neon", "supabase", "dev"], default="dev")
+    parser.add_argument("--auth-mode", choices=["neon", "dev"], default="dev")
     parser.add_argument("--neon-auth-url", default="")
     parser.add_argument("--skip-signup", action="store_true")
     parser.add_argument("--email")

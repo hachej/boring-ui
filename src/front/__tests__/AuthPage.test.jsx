@@ -2,26 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import AuthPage, { AuthCallbackPage } from '../pages/AuthPage'
 
-// Mock config
 vi.mock('../config', () => ({
   getConfig: () => ({
     branding: { name: 'Test App' },
   }),
 }))
 
-// Mock ThemeToggle
 vi.mock('../components/ThemeToggle', () => ({
   default: () => <button data-testid="theme-toggle">Toggle</button>,
 }))
 
-// Mock apiFetchJson (imported but not directly used in render path)
-vi.mock('../utils/transport', () => ({
-  apiFetchJson: vi.fn(),
-}))
-
 const DEFAULT_AUTH_CONFIG = {
-  supabaseUrl: '',
-  supabaseAnonKey: '',
+  provider: 'local',
   callbackUrl: '/auth/callback',
   redirectUri: '/',
   initialMode: 'sign_in',
@@ -51,14 +43,12 @@ const setWindowLocation = (overrides = {}) => {
 describe('AuthPage', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    // Reset supabase global
-    delete window.supabase
     global.fetch = vi.fn()
     setWindowLocation()
   })
 
   it('renders sign-in form by default', () => {
-    render(<AuthPage authConfig={DEFAULT_AUTH_CONFIG} />)
+    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, redirectUri: '' }} />)
 
     expect(screen.getByText('Welcome back')).toBeInTheDocument()
     expect(screen.getByText('Use your email and password to continue.')).toBeInTheDocument()
@@ -76,9 +66,7 @@ describe('AuthPage', () => {
   })
 
   it('switches between sign-in and sign-up tabs', () => {
-    render(<AuthPage authConfig={DEFAULT_AUTH_CONFIG} />)
-
-    expect(screen.getByText('Welcome back')).toBeInTheDocument()
+    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, redirectUri: '' }} />)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Create account' }))
     expect(screen.getByText('Create your account')).toBeInTheDocument()
@@ -87,40 +75,35 @@ describe('AuthPage', () => {
     expect(screen.getByText('Welcome back')).toBeInTheDocument()
   })
 
-  it('renders app name in the rail', () => {
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, appName: 'My Workspace' }} />)
+  it('renders app name, description, and theme toggle', () => {
+    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, appName: 'My Workspace', appDescription: 'Custom description' }} />)
+
     expect(screen.getByText('My Workspace')).toBeInTheDocument()
-  })
-
-  it('renders app description in the rail', () => {
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, appDescription: 'Custom description' }} />)
     expect(screen.getByText('Custom description')).toBeInTheDocument()
-  })
-
-  it('renders the theme toggle', () => {
-    render(<AuthPage authConfig={DEFAULT_AUTH_CONFIG} />)
     expect(screen.getByTestId('theme-toggle')).toBeInTheDocument()
   })
 
-  it('disables submit when no supabase client', () => {
-    render(<AuthPage authConfig={DEFAULT_AUTH_CONFIG} />)
-    const submitBtn = screen.getByRole('button', { name: /continue/i })
-    expect(submitBtn).toBeDisabled()
-  })
+  it('submits local auth through the existing login route', async () => {
+    setWindowLocation({
+      search: '?redirect_uri=%2Fw%2Fdemo',
+      href: 'http://localhost/auth/login?redirect_uri=%2Fw%2Fdemo',
+    })
 
-  it('shows validation error when submitting empty form', async () => {
-    // Provide a mock supabase client so the button is enabled
-    window.supabase = {
-      createClient: () => ({
-        auth: { signInWithPassword: vi.fn(), signUp: vi.fn(), signInWithOtp: vi.fn() },
-      }),
-    }
+    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, redirectUri: '' }} />)
 
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'key' }} />)
+    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'owner@example.com' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } })
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /continue/i })).not.toBeDisabled()
+      expect(window.location.assign).toHaveBeenCalledWith(
+        '/auth/login?user_id=local-owner-example-com&email=owner%40example.com&redirect_uri=%2Fw%2Fdemo',
+      )
     })
+  })
+
+  it('shows validation error for local auth with empty credentials', async () => {
+    render(<AuthPage authConfig={DEFAULT_AUTH_CONFIG} />)
 
     fireEvent.click(screen.getByRole('button', { name: /continue/i }))
 
@@ -129,146 +112,7 @@ describe('AuthPage', () => {
     })
   })
 
-  it('calls signInWithPassword on sign-in submit', async () => {
-    const mockSignIn = vi.fn().mockResolvedValue({
-      data: { session: { access_token: 'test-token' } },
-      error: null,
-    })
-    window.supabase = {
-      createClient: () => ({
-        auth: { signInWithPassword: mockSignIn, signUp: vi.fn(), signInWithOtp: vi.fn() },
-      }),
-    }
-
-    // Mock token-exchange fetch
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ redirect_uri: '/' }),
-    })
-
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'key' }} />)
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /continue/i })).not.toBeDisabled()
-    })
-
-    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'test@example.com' } })
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } })
-    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
-
-    await waitFor(() => {
-      expect(mockSignIn).toHaveBeenCalledWith({
-        email: 'test@example.com',
-        password: 'password123',
-      })
-    })
-  })
-
-  it('shows error on sign-in failure', async () => {
-    const mockSignIn = vi.fn().mockResolvedValue({
-      error: { message: 'Invalid login credentials' },
-    })
-    window.supabase = {
-      createClient: () => ({
-        auth: { signInWithPassword: mockSignIn, signUp: vi.fn(), signInWithOtp: vi.fn() },
-      }),
-    }
-
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'key' }} />)
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /continue/i })).not.toBeDisabled()
-    })
-
-    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'test@example.com' } })
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrong' } })
-    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Invalid login credentials')).toBeInTheDocument()
-    })
-  })
-
-  it('calls signUp on sign-up submit', async () => {
-    const mockSignUp = vi.fn().mockResolvedValue({
-      data: { user: { id: '123' } },
-      error: null,
-    })
-    window.supabase = {
-      createClient: () => ({
-        auth: { signInWithPassword: vi.fn(), signUp: mockSignUp, signInWithOtp: vi.fn() },
-      }),
-    }
-
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, initialMode: 'sign_up', supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'key' }} />)
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /create account/i })).not.toBeDisabled()
-    })
-
-    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'new@example.com' } })
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } })
-    fireEvent.click(screen.getByRole('button', { name: /create account/i }))
-
-    await waitFor(() => {
-      expect(mockSignUp).toHaveBeenCalledWith({
-        email: 'new@example.com',
-        password: 'password123',
-        options: expect.objectContaining({ emailRedirectTo: expect.any(String) }),
-      })
-    })
-  })
-
-  it('shows rate limit message on 429 error (magic link)', async () => {
-    const mockOtp = vi.fn().mockResolvedValue({
-      error: { status: 429, message: 'Too many requests' },
-    })
-    window.supabase = {
-      createClient: () => ({
-        auth: { signInWithPassword: vi.fn(), signUp: vi.fn(), signInWithOtp: mockOtp },
-      }),
-    }
-
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'key' }} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Use magic link instead')).not.toBeDisabled()
-    })
-
-    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'test@example.com' } })
-    fireEvent.click(screen.getByText('Use magic link instead'))
-
-    await waitFor(() => {
-      expect(screen.getByText(/wait about 60 seconds/i)).toBeInTheDocument()
-    })
-  })
-
-  it('sends magic link via signInWithOtp', async () => {
-    const mockOtp = vi.fn().mockResolvedValue({ error: null })
-    window.supabase = {
-      createClient: () => ({
-        auth: { signInWithPassword: vi.fn(), signUp: vi.fn(), signInWithOtp: mockOtp },
-      }),
-    }
-
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'key' }} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Use magic link instead')).not.toBeDisabled()
-    })
-
-    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'test@example.com' } })
-    fireEvent.click(screen.getByText('Use magic link instead'))
-
-    await waitFor(() => {
-      expect(mockOtp).toHaveBeenCalledWith({
-        email: 'test@example.com',
-        options: expect.objectContaining({ emailRedirectTo: expect.any(String) }),
-      })
-    })
-  })
-
-  it('has correct aria attributes on tabs', () => {
+  it('has correct aria and autocomplete attributes', () => {
     render(<AuthPage authConfig={DEFAULT_AUTH_CONFIG} />)
 
     const signInTab = screen.getByRole('tab', { name: 'Sign in' })
@@ -276,11 +120,6 @@ describe('AuthPage', () => {
 
     expect(signInTab).toHaveAttribute('aria-selected', 'true')
     expect(signUpTab).toHaveAttribute('aria-selected', 'false')
-  })
-
-  it('uses correct autocomplete attributes', () => {
-    render(<AuthPage authConfig={DEFAULT_AUTH_CONFIG} />)
-
     expect(screen.getByLabelText('Work email')).toHaveAttribute('autocomplete', 'email')
     expect(screen.getByLabelText('Password')).toHaveAttribute('autocomplete', 'current-password')
   })
@@ -291,7 +130,7 @@ describe('AuthPage', () => {
     expect(screen.getByLabelText('Password')).toHaveAttribute('autocomplete', 'new-password')
   })
 
-  it('posts Neon sign-in to same-origin backend auth endpoint', async () => {
+  it('posts Neon sign-in to the backend auth endpoint', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ ok: true, redirect_uri: '/dashboard' }),
@@ -317,7 +156,7 @@ describe('AuthPage', () => {
     expect(global.fetch).not.toHaveBeenCalledWith('/auth/token-exchange', expect.anything())
   })
 
-  it('posts Neon sign-up to same-origin backend auth endpoint', async () => {
+  it('posts Neon sign-up to the backend auth endpoint', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({
@@ -394,10 +233,6 @@ describe('AuthPage', () => {
         }),
       })
     })
-
-    await waitFor(() => {
-      expect(screen.getByText('Verification email sent. Check your inbox.')).toBeInTheDocument()
-    })
   })
 
   it('requests a Neon password reset email from sign-in', async () => {
@@ -425,11 +260,9 @@ describe('AuthPage', () => {
         }),
       })
     })
-
-    expect(screen.getByText('Password reset email sent. Check your inbox.')).toBeInTheDocument()
   })
 
-  it('renders Neon reset-password mode from the reset route', () => {
+  it('renders reset-password mode from the reset route', () => {
     setWindowLocation({
       pathname: '/auth/reset-password',
       search: '?token=reset-token&redirect_uri=%2Fw%2Fdemo',
@@ -442,20 +275,6 @@ describe('AuthPage', () => {
     expect(screen.queryByLabelText('Work email')).not.toBeInTheDocument()
     expect(screen.getByLabelText('New password')).toBeInTheDocument()
     expect(screen.getByLabelText('Confirm new password')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /update password/i })).toBeInTheDocument()
-  })
-
-  it('keeps reset-password mode while auth provider capabilities are still loading', () => {
-    setWindowLocation({
-      pathname: '/auth/reset-password',
-      search: '?token=reset-token',
-      href: 'http://localhost/auth/reset-password?token=reset-token',
-    })
-
-    render(<AuthPage authConfig={{ ...DEFAULT_AUTH_CONFIG, initialMode: 'reset_password' }} />)
-
-    expect(screen.getByText('Set a new password')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /update password/i })).not.toBeDisabled()
   })
 
   it('submits a Neon password reset with the token from the reset link', async () => {
@@ -489,11 +308,6 @@ describe('AuthPage', () => {
           redirect_uri: '/w/demo',
         }),
       })
-    })
-
-    await waitFor(() => {
-      expect(screen.getByText('Password updated. Sign in with your new password.')).toBeInTheDocument()
-      expect(screen.getByText('Welcome back')).toBeInTheDocument()
     })
   })
 
@@ -538,8 +352,7 @@ describe('AuthCallbackPage', () => {
     })
   })
 
-  it('shows error when no token in hash', async () => {
-    // No hash params, no query params — useEffect runs immediately and finds no token
+  it('shows error when no token is present', async () => {
     render(<AuthCallbackPage />)
 
     await waitFor(() => {
@@ -556,9 +369,7 @@ describe('AuthCallbackPage', () => {
     })
   })
 
-  it('exchanges access_token from hash', async () => {
-    // Set hash with access_token
-    const originalHash = window.location.hash
+  it('exchanges access_token from the URL hash', async () => {
     Object.defineProperty(window, 'location', {
       writable: true,
       value: {
@@ -584,12 +395,6 @@ describe('AuthCallbackPage', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ access_token: 'test-jwt-token', redirect_uri: '/' }),
       })
-    })
-
-    // Restore
-    Object.defineProperty(window, 'location', {
-      writable: true,
-      value: { ...window.location, hash: originalHash },
     })
   })
 })

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 
 import httpx
@@ -14,6 +15,21 @@ logger = logging.getLogger(__name__)
 FLY_API_BASE = "https://api.machines.dev/v1"
 
 
+def _default_machine_env() -> dict[str, str]:
+    """Build default env vars for workspace Machines."""
+    env = {
+        "AGENTS_MODE": "backend",
+        "BORING_UI_WORKSPACE_ROOT": "/workspace",
+    }
+    # Forward the session secret so workspace can validate cookies.
+    session_secret = os.environ.get("BORING_SESSION_SECRET") or os.environ.get(
+        "BORING_UI_SESSION_SECRET", ""
+    )
+    if session_secret:
+        env["BORING_SESSION_SECRET"] = session_secret
+    return env
+
+
 @dataclass
 class FlyMachineConfig:
     """Configuration for workspace Machines created by FlyProvisioner."""
@@ -21,7 +37,7 @@ class FlyMachineConfig:
     cpu_kind: str = "shared"
     cpus: int = 1
     memory_mb: int = 512
-    env: dict[str, str] = field(default_factory=dict)
+    env: dict[str, str] = field(default_factory=_default_machine_env)
     internal_port: int = 8000
 
 

@@ -1,29 +1,39 @@
 """Application factory for boring-ui API."""
+from contextlib import asynccontextmanager
+import logging
 import os
 import uuid
 from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import PlainTextResponse
 
 from .config import APIConfig
 from .git_backend import GitBackend
-from .storage import Storage, LocalStorage
 from .approval import ApprovalStore, InMemoryApprovalStore
+from .agents import AgentRegistry, PiHarness
 from .capabilities import (
     RouterRegistry,
     create_default_registry,
     create_capabilities_router,
+    create_runtime_config_router,
 )
+from .middleware.request_id import RequestIDMiddleware, ensure_request_id
 from .modules.agent_normal import create_agent_normal_router
 from .modules.control_plane import create_auth_session_router
 from .modules.control_plane import create_me_router
 from .modules.control_plane import create_workspace_router
 from .modules.control_plane import create_collaboration_router
 from .modules.control_plane import create_workspace_boundary_router
-from .modules.control_plane.supabase import db_client as supabase_db_client
+from .modules.control_plane import db_client as control_plane_db_client
 from .modules.pty.lifecycle import create_pty_lifecycle_router
+from .observability import configure_structured_logging, ensure_metrics_registry
+from .storage import Storage, LocalStorage
+from .workspace import build_workspace_context_resolver
 from .workspace_plugins import WorkspacePluginManager
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(
@@ -51,7 +61,8 @@ def create_app(
         include_stream: Include Claude stream WebSocket router (default: True)
         include_approval: Include approval workflow router (default: True)
         routers: List of router names to include. If None, uses include_* flags.
-            Valid names: 'files', 'git', 'ui_state', 'control_plane', 'pty', 'stream', 'approval'
+            Valid names: 'files', 'git', 'ui_state', 'control_plane',
+            'pty', 'stream', 'approval'
         registry: Custom router registry. Defaults to create_default_registry().
 
     Returns:
@@ -109,8 +120,7 @@ def create_app(
     # Build enabled features map for capabilities endpoint
     # Include both names for backward compatibility
     chat_enabled = 'chat_claude_code' in enabled_routers or 'stream' in enabled_routers
-    pi_embedded_mode = config.pi_mode != 'iframe'
-    pi_enabled = pi_embedded_mode or bool(config.pi_url)
+    pi_enabled = 'pi' in config.available_agents or config.agents_mode == 'backend'
 
     # In local-dev auto-login mode, surface GitHub UI even if app creds are not
     # configured yet so onboarding/settings can show the GitHub component.
@@ -125,21 +135,82 @@ def create_app(
         'chat_claude_code': chat_enabled,
         'stream': chat_enabled,  # Backward compatibility alias
         'approval': 'approval' in enabled_routers,
-        # Companion has a built-in embedded UI mode and does not require a service URL.
-        'companion': True,
-        # PI is available in embedded mode without PI_URL; iframe mode needs PI_URL.
         'pi': pi_enabled,
         # GitHub App integration (opt-in, requires GITHUB_APP_ID + private key)
         'github': github_enabled,
     }
+
+    configure_structured_logging()
+
+    pi_harness = None
+    plugin_manager = None
+    _db_pool_url: str | None = None
+    _provisioner = None
+
+    # Create Fly.io workspace provisioner when credentials are available.
+    if config.fly_api_token and config.fly_workspace_app:
+        from .workspace.fly_provisioner import FlyProvisioner
+
+        _fly_image = os.environ.get(
+            'FLY_IMAGE_REF',
+            f'registry.fly.io/{config.fly_workspace_app}:latest',
+        )
+        _provisioner = FlyProvisioner(
+            api_token=config.fly_api_token,
+            workspace_app=config.fly_workspace_app,
+            image=_fly_image,
+        )
+        logger.info(
+            'FlyProvisioner configured: app=%s image=%s',
+            config.fly_workspace_app,
+            _fly_image,
+        )
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        if plugin_manager is not None:
+            plugin_manager.start_watcher()
+        if pi_harness is not None:
+            try:
+                await pi_harness.start()
+            except Exception:
+                logger.exception('Failed to start PiHarness')
+        if _db_pool_url:
+            await control_plane_db_client.create_pool(_db_pool_url)
+
+        try:
+            yield
+        finally:
+            if pi_harness is not None:
+                await pi_harness.stop()
+            if _provisioner is not None:
+                await _provisioner.close()
+            if _db_pool_url:
+                await control_plane_db_client.close_pool()
 
     # Create app
     app = FastAPI(
         title='Boring UI API',
         description='A composition-based web IDE backend',
         version='0.1.0',
+        lifespan=lifespan,
     )
     app.state.app_config = config
+    app.state.provisioner = _provisioner
+    app.state.enabled_features = dict(enabled_features)
+    metrics_registry = ensure_metrics_registry(app)
+    metrics_registry.set_gauge('pi_sessions_active', 0.0)
+    agent_registry = AgentRegistry.from_config(config)
+    app.state.agent_registry = agent_registry
+    app.state.workspace_context_resolver = build_workspace_context_resolver(
+        config,
+        storage=storage,
+        git_backend=git_backend,
+    )
+    if config.agents_mode == 'backend' and 'pi' in config.available_agents:
+        pi_harness = PiHarness(config)
+        agent_registry.register_harness(pi_harness)
+        app.state.pi_harness = pi_harness
 
     # CORS middleware
     app.add_middleware(
@@ -149,6 +220,7 @@ def create_app(
         allow_methods=['*'],
         allow_headers=['*'],
     )
+    app.add_middleware(RequestIDMiddleware)
 
     # Auto-login middleware for local dev: injects a session cookie when
     # AUTH_DEV_LOGIN_ENABLED=true and no session cookie is present.
@@ -159,7 +231,7 @@ def create_app(
             os.environ.get('AUTH_DEV_USER_ID')
             or (
                 '00000000-0000-0000-0000-000000000001'
-                if (config.use_neon_control_plane or config.use_supabase_control_plane)
+                if config.use_neon_control_plane
                 else 'dev-user'
             )
         )
@@ -185,7 +257,7 @@ def create_app(
                             token = part[len(_cookie_name) + 1:]
                             try:
                                 payload = parse_session_cookie(token, secret=config.auth_session_secret)
-                                if config.use_neon_control_plane or config.use_supabase_control_plane:
+                                if config.use_neon_control_plane:
                                     try:
                                         uuid.UUID(str(payload.user_id))
                                     except ValueError:
@@ -259,48 +331,38 @@ def create_app(
     if 'pty' in enabled_routers:
         app.include_router(create_pty_lifecycle_router(config), prefix='/api/v1/pty')
 
+    # Direct exec — each workspace runs in its own Fly VM.
+    # Only mounted in backend-agent mode where the VM is a dedicated workspace.
+    if config.agents_mode == 'backend':
+        from .modules.exec.router import create_exec_router
+        app.include_router(create_exec_router(config))
+
     # agent-normal owns runtime-only session lifecycle endpoints under canonical prefix.
     app.include_router(
         create_agent_normal_router(config, pty_enabled=('pty' in enabled_routers)),
         prefix='/api/v1/agent/normal',
     )
+    for router in agent_registry.routes():
+        app.include_router(router)
 
     # Auth/session is a control-plane-owned surface under /auth/*.
     if 'control_plane' in enabled_routers:
         if config.use_neon_control_plane:
             from .modules.control_plane.auth_router_neon import create_auth_session_router_neon
             from .modules.control_plane.me_router_neon import create_me_router_neon
-            # Workspace/collaboration/boundary routers are asyncpg SQL, not
-            # Supabase-specific — reuse the supabase versions for Neon.
-            from .modules.control_plane.workspace_router_supabase import create_workspace_router_supabase
-            from .modules.control_plane.collaboration_router_supabase import (
-                create_collaboration_router_supabase,
+            from .modules.control_plane.workspace_router_hosted import create_workspace_router_hosted
+            from .modules.control_plane.collaboration_router_hosted import (
+                create_collaboration_router_hosted,
             )
-            from .modules.control_plane.workspace_boundary_router_supabase import (
-                create_workspace_boundary_router_supabase,
+            from .modules.control_plane.workspace_boundary_router_hosted import (
+                create_workspace_boundary_router_hosted,
             )
 
             app.include_router(create_auth_session_router_neon(config))
             app.include_router(create_me_router_neon(config), prefix='/api/v1')
-            app.include_router(create_workspace_router_supabase(config), prefix='/api/v1')
-            app.include_router(create_collaboration_router_supabase(config), prefix='/api/v1')
-            app.include_router(create_workspace_boundary_router_supabase(config))
-        elif config.use_supabase_control_plane:
-            from .modules.control_plane.auth_router_supabase import create_auth_session_router_supabase
-            from .modules.control_plane.me_router_supabase import create_me_router_supabase
-            from .modules.control_plane.workspace_router_supabase import create_workspace_router_supabase
-            from .modules.control_plane.collaboration_router_supabase import (
-                create_collaboration_router_supabase,
-            )
-            from .modules.control_plane.workspace_boundary_router_supabase import (
-                create_workspace_boundary_router_supabase,
-            )
-
-            app.include_router(create_auth_session_router_supabase(config))
-            app.include_router(create_me_router_supabase(config), prefix='/api/v1')
-            app.include_router(create_workspace_router_supabase(config), prefix='/api/v1')
-            app.include_router(create_collaboration_router_supabase(config), prefix='/api/v1')
-            app.include_router(create_workspace_boundary_router_supabase(config))
+            app.include_router(create_workspace_router_hosted(config), prefix='/api/v1')
+            app.include_router(create_collaboration_router_hosted(config), prefix='/api/v1')
+            app.include_router(create_workspace_boundary_router_hosted(config))
         else:
             app.include_router(create_auth_session_router(config))
             app.include_router(create_me_router(config), prefix='/api/v1')
@@ -320,7 +382,6 @@ def create_app(
 
     # Workspace plugins are optional and disabled by default since they execute
     # workspace-local Python modules in-process.
-    plugin_manager = None
     if config.workspace_plugins_enabled:
         allowlist = set(config.workspace_plugin_allowlist) if config.workspace_plugin_allowlist else None
         plugin_manager = WorkspacePluginManager(config.workspace_root, allowed_plugins=allowlist)
@@ -328,6 +389,9 @@ def create_app(
         app.include_router(plugin_manager.create_ws_router())
 
     # Always include capabilities router (pass plugin_manager for workspace_panes)
+    app.include_router(
+        create_runtime_config_router(config, enabled_features),
+    )
     app.include_router(
         create_capabilities_router(enabled_features, registry, config, plugin_manager),
         prefix='/api',
@@ -343,6 +407,30 @@ def create_app(
             'workspace': str(config.workspace_root),
             'features': enabled_features,
         }
+
+    @app.get('/healthz')
+    async def healthz(request: Request):
+        """Operational health endpoint with correlation and metrics snapshot."""
+        request_id = ensure_request_id(request)
+        pi_status = 'ok' if enabled_features.get('pi') else 'disabled'
+        if pi_harness is not None:
+            pi_health = await pi_harness.healthy()
+            pi_status = 'ok' if pi_health.ok else 'degraded'
+        return {
+            'status': 'ok',
+            'request_id': request_id,
+            'checks': {
+                'api': 'ok',
+                'pi': pi_status,
+            },
+            'workspace': str(config.workspace_root),
+            'metrics': metrics_registry.snapshot(),
+        }
+
+    @app.get('/metrics', response_class=PlainTextResponse)
+    async def metrics():
+        """Prometheus-compatible metrics output."""
+        return metrics_registry.render_prometheus()
 
     @app.get('/api/config')
     async def get_config():
@@ -362,28 +450,7 @@ def create_app(
             'root': str(config.workspace_root),
         }
 
-    if plugin_manager is not None:
-        # Start file watcher after startup.
-        @app.on_event('startup')
-        async def _start_plugin_watcher() -> None:
-            plugin_manager.start_watcher()
-
-    _db_pool_url: str | None = None
-    if config.control_plane_enabled:
-        if config.use_supabase_control_plane and config.supabase_db_url:
-            _db_pool_url = config.supabase_db_url
-        elif config.use_neon_control_plane and config.effective_database_url:
-            _db_pool_url = config.effective_database_url
-
-    if _db_pool_url:
-        _startup_db_url = _db_pool_url  # capture for closure
-
-        @app.on_event('startup')
-        async def _startup_db_pool() -> None:
-            await supabase_db_client.create_pool(_startup_db_url)
-
-        @app.on_event('shutdown')
-        async def _shutdown_db_pool() -> None:
-            await supabase_db_client.close_pool()
+    if config.control_plane_enabled and config.use_neon_control_plane and config.effective_database_url:
+        _db_pool_url = config.effective_database_url
 
     return app

@@ -26,7 +26,7 @@ python3 tests/smoke/<script>.py \
 Common flags:
 
 - `--base-url`: app origin to test
-- `--auth-mode`: `neon`, `supabase`, or `dev`
+- `--auth-mode`: `neon` or `dev`
 - `--skip-signup --email --password`: reuse an existing account
 - `--timeout`: email polling timeout for verify-first auth flows
 - `--evidence-out`: optional JSON artifact path
@@ -36,7 +36,6 @@ Common flags:
 | Script | Surface | Typical use |
 |---|---|---|
 | `smoke_neon_auth.py` | 19-phase auth suite: signup, email delivery, signin, session, identity, workspace, logout, re-signin, wrong password, invalid/missing token, input validation, forged cookie, auth guard, duplicate signup, page rendering | auth changes, Neon deploy validation |
-| `smoke_supabase_resend_signup.py` | Supabase signup + email verification | legacy auth validation |
 | `smoke_workspace_lifecycle.py` | auth -> workspace create/list/setup/runtime/root/rename | control-plane and workspace routing |
 | `smoke_settings.py` | user settings + workspace settings persistence | settings pages and persistence |
 | `smoke_filesystem.py` | workspace-scoped files list/write/read/rename/delete | filesystem APIs and browser workspace wiring |

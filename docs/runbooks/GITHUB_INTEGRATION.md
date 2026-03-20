@@ -254,7 +254,7 @@ Focused tests currently cover:
 Not fully covered yet:
 
 - multi-installation selection UI, because there is not yet a dedicated installation picker
-- provider-backed Supabase/Neon inheritance with a real DB integration test
+- provider-backed Neon/local inheritance with a real DB integration test
 - full real-browser signup -> linked account -> new workspace inherit -> repo selection end-to-end
 
 ### Output
@@ -282,7 +282,6 @@ JSON report with pass/fail per step:
 | Edge mode | `smoke_edge_mode.py` | Full edge deployment: signup → provisioning → sprite |
 | Git sync | `smoke_git_sync.py` | Git init → commit → remotes → security |
 | Settings | `smoke_settings.py` | User + workspace settings CRUD |
-| Signup (Supabase) | `smoke_supabase_resend_signup.py` | Supabase signup + email verification |
 | **Neon Auth** | `smoke_neon_auth.py` | Neon signup → JWT → session → workspace → logout |
 | **GitHub** | `smoke_github_connect.py` | GitHub App connect/disconnect lifecycle |
 
@@ -291,7 +290,7 @@ JSON report with pass/fail per step:
 | Module | Purpose |
 |--------|---------|
 | `client.py` | `SmokeClient` — httpx wrapper with cookie persistence + reporting |
-| `auth.py` | Supabase + Neon Auth signup/signin flows |
+| `auth.py` | Shared auth signup/signin helpers for smoke tests |
 | `workspace.py` | Workspace creation + runtime polling |
 | `files.py` | File CRUD operations |
 | `git.py` | Git operations + GitHub status checks |

@@ -1,12 +1,18 @@
 """PTY WebSocket router for boring-ui API."""
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 from ...config import APIConfig
+from ...middleware.request_id import ensure_request_id, request_id_header_pair
+from ...observability import log_event
 from ...policy import enforce_delegated_policy_ws_reason_or_none
+from ...workspace import resolve_websocket_workspace_context
 from .service import PTYService, SharedSession, _SERVICE
+
+logger = logging.getLogger("boring_ui.pty")
 
 
 # Use the singleton service instance from service.py
@@ -46,6 +52,7 @@ def create_pty_router(config: APIConfig) -> APIRouter:
             session_id: Optional session ID to reconnect to existing session
             provider: Provider name (must be in config.pty_providers)
         """
+        request_id = ensure_request_id(websocket)
         # Start cleanup task if not running
         await _pty_service.ensure_cleanup_running()
 
@@ -58,6 +65,11 @@ def create_pty_router(config: APIConfig) -> APIRouter:
             return
 
         command = config.pty_providers[provider]
+        try:
+            ctx = await resolve_websocket_workspace_context(websocket, config=config)
+        except ValueError as exc:
+            await websocket.close(code=4004, reason=str(exc))
+            return
 
         normalized_session_id: str | None = None
         if session_id is not None:
@@ -85,14 +97,22 @@ def create_pty_router(config: APIConfig) -> APIRouter:
             session, is_new = await _pty_service.get_or_create_session(
                 session_id=normalized_session_id,
                 command=command,
-                cwd=config.workspace_root,
+                cwd=ctx.root_path,
             )
         except ValueError as e:
             await websocket.close(code=4004, reason=str(e))
             return
 
         # Accept WebSocket
-        await websocket.accept()
+        await websocket.accept(headers=[request_id_header_pair(request_id)])
+        log_event(
+            logger,
+            "pty_websocket_connected",
+            request_id=request_id,
+            workspace_id=ctx.workspace_id or "",
+            provider=provider,
+            session_id=session.session_id,
+        )
         try:
             await session.add_client(websocket)
         except Exception as exc:
@@ -105,6 +125,7 @@ def create_pty_router(config: APIConfig) -> APIRouter:
                         "type": "error",
                         "data": _pty_start_error_message(exc, provider, command),
                         "session_id": session.session_id,
+                        "request_id": request_id,
                     }
                 )
             except Exception:
@@ -131,7 +152,7 @@ def create_pty_router(config: APIConfig) -> APIRouter:
                         cols = message.get('cols', 80)
                         session.resize(rows, cols)
                     elif msg_type == 'ping':
-                        await websocket.send_json({'type': 'pong'})
+                        await websocket.send_json({'type': 'pong', 'request_id': request_id})
 
                 except json.JSONDecodeError:
                     # Treat raw text as input
@@ -143,6 +164,14 @@ def create_pty_router(config: APIConfig) -> APIRouter:
             pass
         finally:
             await session.remove_client(websocket)
+            log_event(
+                logger,
+                "pty_websocket_disconnected",
+                request_id=request_id,
+                workspace_id=ctx.workspace_id or "",
+                provider=provider,
+                session_id=session.session_id,
+            )
 
     return router
 

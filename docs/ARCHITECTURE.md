@@ -30,7 +30,7 @@ Browser                            Backend (FastAPI)                   External
 
 ### Layers
 
-1. **Config** (`config/appConfig.js`, `ConfigProvider.jsx`): Loads `app.config.js`, deep-merges with defaults, provides via React context. Controls branding, storage prefix, panel defaults, feature flags, and theme tokens.
+1. **Config** (`app_config_loader.py`, `/__bui/config`, `config/appConfig.js`, `ConfigProvider.jsx`): Loads `boring.app.toml`, serves the runtime payload from `/__bui/config`, deep-merges frontend config defaults, and provides the result via React context. Controls branding, panel defaults, feature flags, and theme tokens.
 
 2. **Registry** (`registry/panes.js`): Declares all available panels with their component, placement, size constraints, and backend requirements (`requiresFeatures`, `requiresRouters`). Single source of truth for pane identity.
 
@@ -131,16 +131,21 @@ modules/
 │   ├── router.py   Foundation API at /api/v1/control-plane/*
 │   ├── auth_router.py Auth/session routes at /auth/* (local mode)
 │   ├── auth_router_neon.py Auth/session routes at /auth/* (Neon Auth / Better Auth)
-│   ├── auth_router_supabase.py Auth/session routes at /auth/* (Supabase GoTrue, legacy)
-│   ├── me_router.py User identity/settings at /api/v1/me*
-│   ├── workspace_router.py Workspace lifecycle/settings at /api/v1/workspaces*
-│   ├── collaboration_router.py Membership/invite routes at /api/v1/workspaces/{id}/{members,invites}*
-│   ├── workspace_boundary_router.py Reserved + pass-through routes at /w/{workspace_id}/...
+│   ├── me_router.py User identity/settings at /api/v1/me* (local mode)
+│   ├── me_router_neon.py User identity/settings at /api/v1/me* (Neon hosted mode)
+│   ├── workspace_router.py Workspace lifecycle/settings at /api/v1/workspaces* (local mode)
+│   ├── workspace_router_hosted.py Workspace lifecycle/settings at /api/v1/workspaces* (Neon hosted mode)
+│   ├── collaboration_router.py Membership/invite routes at /api/v1/workspaces/{id}/{members,invites}* (local mode)
+│   ├── collaboration_router_hosted.py Membership/invite routes at /api/v1/workspaces/{id}/{members,invites}* (Neon hosted mode)
+│   ├── workspace_boundary_router.py Reserved + pass-through routes at /w/{workspace_id}/... (local mode)
+│   ├── workspace_boundary_router_hosted.py Reserved + pass-through routes at /w/{workspace_id}/... (Neon hosted mode)
 │   ├── auth_session.py HMAC session cookie primitives
 │   ├── service.py  Domain facade for users/workspaces/members/invites/settings/runtime
 │   ├── repository.py JSON-backed repository contracts + local implementation
 │   ├── models.py   Persisted state model
-│   └── supabase/   Postgres helpers (asyncpg pool, JWT verify, membership checks)
+│   ├── common.py   Shared hosted control-plane helpers
+│   ├── db_client.py Asyncpg pool + Neon host handling
+│   └── membership.py Hosted membership helpers
 ├── pty/            PTY terminal sessions via WebSocket
 │   ├── router.py   WS endpoint at /ws/pty
 │   ├── lifecycle.py REST lifecycle at /api/v1/pty/*
@@ -154,13 +159,12 @@ modules/
 
 ### Auth Provider Architecture
 
-The control plane supports multiple auth providers, selected via `CONTROL_PLANE_PROVIDER`:
+The control plane supports two auth providers, selected via `CONTROL_PLANE_PROVIDER`:
 
 | Provider | Auth mechanism | Database | When to use |
 |---|---|---|---|
 | `local` | Dev bypass (no real auth) | In-memory JSON | Local development |
 | `neon` | Neon Auth (Better Auth) | Neon Postgres (asyncpg) | **Production default** |
-| `supabase` | Supabase GoTrue | Supabase Postgres (asyncpg) | Legacy |
 
 **Neon Auth flow** (email/password):
 1. Frontend calls boring-ui `POST /auth/sign-in` or `POST /auth/sign-up` on the same origin
@@ -175,7 +179,7 @@ The older browser-driven Neon `/token` -> `/auth/token-exchange` flow still exis
 
 **Session cookies** are boring-ui's own format (HS256 JWT signed with `BORING_UI_SESSION_SECRET`), not provider-specific. This enables cross-service interop with boring-sandbox regardless of auth provider.
 
-**Database access** uses `asyncpg` with raw SQL — standard Postgres, no provider SDK. The same workspace/collaboration routers work with both Neon and Supabase.
+**Database access** uses `asyncpg` with raw SQL for the hosted Neon path; local development uses the JSON-backed repository.
 
 ### Cross-Cutting Concerns
 

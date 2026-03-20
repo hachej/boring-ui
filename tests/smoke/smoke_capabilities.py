@@ -28,7 +28,7 @@ PANEL_REQUIREMENTS: dict[str, dict] = {
     "editor": {"features": ["files"], "essential": False},
     "terminal": {"routers": ["chat_claude_code"], "essential": False},
     "shell": {"routers": ["pty"], "essential": True},
-    "companion": {"any_features": ["companion", "pi"], "essential": False},
+    "agent": {"any_features": ["pi"], "essential": False},
     "review": {"routers": ["approval"], "essential": False},
     "data-catalog": {"features": [], "essential": False},
     "empty": {"features": [], "essential": False},
@@ -83,7 +83,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--expect-auth", default="",
-                        help="Expected auth provider (neon, supabase, or empty for any)")
+                        help="Expected auth provider (neon, local, or empty for any)")
     parser.add_argument("--expect-features", default="",
                         help="Comma-separated features that must be present")
     parser.add_argument("--expect-routers", default="",

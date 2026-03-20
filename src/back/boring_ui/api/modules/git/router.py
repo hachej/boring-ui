@@ -1,12 +1,14 @@
 """Git operation routes for boring-ui API."""
 import asyncio
 import logging
+from dataclasses import replace
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...config import APIConfig
 from ...policy import enforce_delegated_policy_or_none
 from ...git_backend import GitBackend
+from ...workspace import WorkspaceContext, resolve_workspace_context
 from .service import GitService
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,7 @@ async def _resolve_credentials_async(config: APIConfig, request: Request) -> dic
         try:
             from ..github_auth.provisioning import read_workspace_git_settings
             from ..github_auth.service import GitHubAppService
-            from ...modules.control_plane.supabase.db_client import get_pool
+            from ...modules.control_plane.db_client import get_pool
             pool = get_pool()
             settings_key = config.settings_encryption_key or os.environ.get('BORING_SETTINGS_KEY', '')
             if pool and settings_key:
@@ -72,10 +74,19 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         FastAPI router with git endpoints
     """
     router = APIRouter(tags=['git'])
-    service = GitService(config, backend=git_backend)
+
+    async def _workspace_context(request: Request) -> WorkspaceContext:
+        return await resolve_workspace_context(request, config=config, git_backend=git_backend)
+
+    def _service_for_context(ctx: WorkspaceContext) -> GitService:
+        request_config = replace(config, workspace_root=ctx.root_path)
+        return GitService(request_config, backend=ctx.git_backend)
 
     @router.get('/status')
-    async def get_status(request: Request):
+    async def get_status(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Get git repository status.
 
         Returns:
@@ -88,10 +99,15 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
         if deny is not None:
             return deny
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.get_status)
 
     @router.get('/diff')
-    async def get_diff(request: Request, path: str):
+    async def get_diff(
+        request: Request,
+        path: str,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Get diff for a specific file against HEAD.
 
         Args:
@@ -107,10 +123,15 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
         if deny is not None:
             return deny
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.get_diff, path)
 
     @router.get('/show')
-    async def get_show(request: Request, path: str):
+    async def get_show(
+        request: Request,
+        path: str,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Get file contents at HEAD.
 
         Args:
@@ -126,6 +147,7 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
         if deny is not None:
             return deny
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.get_show, path)
 
     # -------------------------------------------------------------------
@@ -133,7 +155,10 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
     # -------------------------------------------------------------------
 
     @router.post('/init')
-    async def init_repo(request: Request):
+    async def init_repo(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Initialize a git repository."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -142,10 +167,14 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
         if deny is not None:
             return deny
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.init_repo)
 
     @router.post('/add')
-    async def add_files(request: Request):
+    async def add_files(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Stage files for commit."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -156,10 +185,14 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
             return deny
         body = await request.json()
         paths = body.get('paths')
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.add_files, paths)
 
     @router.post('/commit')
-    async def commit(request: Request):
+    async def commit(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Create a commit."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -171,13 +204,17 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         body = await request.json()
         message = body.get('message', 'auto commit')
         author = body.get('author') or {}
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(
             service.commit, message,
             author.get('name'), author.get('email'),
         )
 
     @router.post('/push')
-    async def push(request: Request):
+    async def push(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Push to remote."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -188,6 +225,7 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
             return deny
         body = await request.json()
         creds = await _resolve_credentials_async(config, request)
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(
             service.push,
             body.get('remote', 'origin'),
@@ -196,7 +234,10 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
 
     @router.post('/pull')
-    async def pull(request: Request):
+    async def pull(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Pull from remote."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -207,6 +248,7 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
             return deny
         body = await request.json()
         creds = await _resolve_credentials_async(config, request)
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(
             service.pull,
             body.get('remote', 'origin'),
@@ -215,7 +257,10 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
 
     @router.post('/clone')
-    async def clone_repo(request: Request):
+    async def clone_repo(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Clone a repository."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -230,10 +275,14 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
             from fastapi import HTTPException as HE
             raise HE(status_code=400, detail='url is required')
         creds = await _resolve_credentials_async(config, request)
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.clone_repo, url, body.get('branch'), creds)
 
     @router.post('/remote')
-    async def add_remote(request: Request):
+    async def add_remote(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Add or update a remote."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -248,6 +297,7 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         if not name or not url:
             from fastapi import HTTPException as HE
             raise HE(status_code=400, detail='name and url are required')
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.add_remote, name, url)
 
     # -------------------------------------------------------------------
@@ -255,7 +305,10 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
     # -------------------------------------------------------------------
 
     @router.get('/branches')
-    async def list_branches(request: Request):
+    async def list_branches(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """List local branches and current branch."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -264,10 +317,14 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
         if deny is not None:
             return deny
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.list_branches)
 
     @router.get('/branch')
-    async def current_branch(request: Request):
+    async def current_branch(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Get the current branch name."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -276,10 +333,14 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
         if deny is not None:
             return deny
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.current_branch)
 
     @router.post('/branch')
-    async def create_branch(request: Request):
+    async def create_branch(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Create a new branch."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -293,10 +354,14 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         if not name:
             raise HTTPException(status_code=400, detail='name is required')
         checkout = body.get('checkout', True)
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.create_branch, name, checkout)
 
     @router.post('/checkout')
-    async def checkout(request: Request):
+    async def checkout(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Checkout a branch."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -309,10 +374,14 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         name = body.get('name')
         if not name:
             raise HTTPException(status_code=400, detail='name is required')
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.checkout_branch, name)
 
     @router.post('/merge')
-    async def merge(request: Request):
+    async def merge(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """Merge a branch into the current branch."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -326,10 +395,14 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         if not source:
             raise HTTPException(status_code=400, detail='source is required')
         message = body.get('message')
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.merge_branch, source, message)
 
     @router.get('/remotes')
-    async def list_remotes(request: Request):
+    async def list_remotes(
+        request: Request,
+        ctx: WorkspaceContext = Depends(_workspace_context),
+    ):
         """List configured remotes."""
         deny = enforce_delegated_policy_or_none(
             request,
@@ -338,6 +411,7 @@ def create_git_router(config: APIConfig, git_backend: GitBackend | None = None) 
         )
         if deny is not None:
             return deny
+        service = _service_for_context(ctx)
         return await asyncio.to_thread(service.list_remotes)
 
     return router

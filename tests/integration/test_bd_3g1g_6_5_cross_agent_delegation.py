@@ -22,7 +22,7 @@ from starlette.websockets import WebSocketDisconnect
 from boring_ui.api import APIConfig, create_app
 
 
-AGENT_SERVICES = ("agent-normal", "agent-companion", "agent-pi")
+AGENT_SERVICES = ("agent-normal", "agent-pi")
 
 
 @pytest.fixture

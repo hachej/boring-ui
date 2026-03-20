@@ -135,7 +135,7 @@
 
 /**
  * The unified DataProvider contract.
- * Adapters (HTTP, filesystem, CheerpX, ...) implement this interface.
+ * Adapters (HTTP, filesystem-backed, ...) implement this interface.
  *
  * Adapter requirements:
  * - Normalize git status codes to GitStatusCode values (M/U/A/D/C).

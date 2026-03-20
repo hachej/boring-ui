@@ -193,9 +193,7 @@ function lintJS(filePath, content, tokenMap) {
 // ---------------------------------------------------------------------------
 
 // Backend files known to embed CSS custom properties (add paths here)
-const CROSS_CHECK_FILES = [
-  'src/back/boring_ui/api/modules/control_plane/auth_router_supabase.py',
-];
+const CROSS_CHECK_FILES = [];
 
 function buildCanonicalTokens() {
   const css = readFileSync(TOKENS_FILE, 'utf8');

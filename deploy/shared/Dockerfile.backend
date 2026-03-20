@@ -1,15 +1,3 @@
-## Stage 1: Build frontend
-FROM node:20-bookworm-slim AS frontend-build
-
-WORKDIR /build
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY src/front ./src/front
-COPY vite.config.ts index.html ./
-COPY boring.app.toml ./
-RUN npm run build
-
-## Stage 2: Python backend + static frontend
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -21,9 +9,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Install system packages + Node.js 20 via nodesource PPA (need >= 18)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
+    jq \
+    ripgrep \
+    tree \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
@@ -36,8 +30,10 @@ COPY boring.app.toml ./
 
 RUN uv sync --frozen --no-dev
 
-# Copy built frontend from stage 1
-COPY --from=frontend-build /build/dist ./dist
+# pi_service (Node.js service)
+COPY src/pi_service ./src/pi_service
+COPY package.json package-lock.json ./
+RUN npm ci --production
 
 EXPOSE 8000
 

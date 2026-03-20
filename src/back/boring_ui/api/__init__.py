@@ -61,6 +61,7 @@ from .capabilities import (
     RouterInfo,
     create_default_registry,
     create_capabilities_router,
+    create_runtime_config_router,
 )
 
 # App factory
@@ -94,6 +95,7 @@ __all__ = [
     'RouterInfo',
     'create_default_registry',
     'create_capabilities_router',
+    'create_runtime_config_router',
     # App factory
     'create_app',
 ]

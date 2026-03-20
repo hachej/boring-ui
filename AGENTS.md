@@ -164,7 +164,7 @@ secret/agent/
 ├── openai, gemini, tavily # Other shared API keys
 ├── services/              # Shared infra
 │   ├── boring-ui-app      # GitHub App (app_id, client_id, client_secret, pem, slug)
-│   ├── resend             # Transactional email
+│   ├── resend             # Transactional email (verification emails via resend.com)
 │   ├── hetzner, hetzner-s3, cloudflare, clickhouse, huggingface
 │   └── ...
 └── app/                   # App-specific per-env secrets
@@ -181,6 +181,7 @@ secret/agent/
 # Common patterns
 export ANTHROPIC_API_KEY=$(vault kv get -field=api_key secret/agent/anthropic)
 export DATABASE_URL=$(vault kv get -field=database_url secret/agent/app/boring-ui/prod)
+export RESEND_API_KEY=$(vault kv get -field=api_key secret/agent/services/resend)
 vault kv list secret/agent/app/           # List all apps
 vault kv get secret/agent/app/boring-ui/prod  # Show all fields
 ```

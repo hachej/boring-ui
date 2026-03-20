@@ -61,22 +61,23 @@ app = create_app(routers=['files', 'git'])
 app = create_app(routers=['files', 'git', 'approval'])
 ```
 
-### Config-Driven UI
+### Runtime Config
 
-All behavior is configurable via `app.config.js`. Defaults match a working app, so config is optional.
+Frontend boot now reads runtime config from `GET /__bui/config`, backed by `boring.app.toml`.
 
-```javascript
-export default {
-  branding: { name: 'My IDE', logo: 'M' },
-  storage: { prefix: 'myide' },
-  panels: { defaults: { filetree: 300 } },
-  data: {
-    backend: 'lightningfs', // 'http' | 'lightningfs' | custom registered factory
-    strictBackend: true,    // throw on unknown backend instead of fallback
-    lightningfs: { name: 'myide-fs' },
-  },
-  styles: { light: { accent: '#2563eb' } },
-}
+```toml
+[app]
+name = "My IDE"
+logo = "M"
+id = "my-ide"
+
+[frontend.branding]
+name = "My IDE"
+
+[frontend.data]
+backend = "lightningfs"
+
+[frontend.panels]
 ```
 
 For quick standalone backend testing without editing config:
@@ -188,7 +189,7 @@ boring-ui/
 │                   ├── git/      # Git status/diff/show
 │                   ├── pty/      # Shell PTY WebSocket
 │                   └── stream/   # Claude chat WebSocket
-├── app.config.js                 # Your app configuration
+├── boring.app.toml              # Runtime app + frontend configuration
 └── vite.config.ts
 ```
 
@@ -396,18 +397,20 @@ uv sync
 
 ### Minimal Configuration
 
-Create `app.config.js` in your project root:
+Create `boring.app.toml` in your project root:
 
-```javascript
-export default {
-  branding: {
-    name: 'My IDE',
-    logo: 'M',
-  },
-  storage: {
-    prefix: 'myide',
-  },
-}
+```toml
+[app]
+name = "My IDE"
+logo = "M"
+id = "my-ide"
+
+[backend]
+entry = "boring_ui.api.app:create_app"
+routers = []
+
+[frontend.branding]
+name = "My IDE"
 ```
 
 ### Running
@@ -417,7 +420,7 @@ export default {
 npm run dev
 
 # Terminal 2: backend API server
-uv run python -m uvicorn boring_ui.runtime:app --host 0.0.0.0 --port 8000 --reload
+BUI_APP_TOML=./boring.app.toml uv run python -m uvicorn boring_ui.app_config_loader:app --host 0.0.0.0 --port 8000 --reload
 
 # Optional production build + preview
 npm run build

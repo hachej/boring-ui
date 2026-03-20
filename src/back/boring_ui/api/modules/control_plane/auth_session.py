@@ -5,8 +5,8 @@ It is issued by the auth callback and validated by the session middleware on
 every request.
 
 Cookie format is a standard JWT (3-part ``header.payload.signature``) so that
-both boring-ui (issuer) and boring-sandbox (edge validator) can share the same
-secret and interoperate without a shared library dependency.
+both the control plane (issuer) and workspace VMs (via Fly replay) can share
+the same secret and interoperate without a shared library dependency.
 """
 
 from __future__ import annotations

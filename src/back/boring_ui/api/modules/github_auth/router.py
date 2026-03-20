@@ -34,7 +34,7 @@ _workspace_connections: dict[str, dict] = {}
 def _get_pool_and_key(config: APIConfig):
     """Get DB pool and settings encryption key (if available)."""
     try:
-        from ..control_plane.supabase import db_client
+        from ..control_plane import db_client
         pool = db_client.get_pool_or_none()
     except Exception:
         pool = None
@@ -106,7 +106,7 @@ def _basic_auth_header(credentials: dict | None) -> str:
 
 def _local_read_connection(config: APIConfig, workspace_id: str) -> dict | None:
     """Read GitHub installation + selected repo from local workspace settings."""
-    if config.use_supabase_control_plane or config.use_neon_control_plane:
+    if config.use_neon_control_plane:
         return None
     try:
         service = _local_control_plane_service(config)
@@ -133,7 +133,7 @@ def _local_write_connection(
     repo_url: str | None = None,
 ) -> None:
     """Persist GitHub installation + selected repo in local workspace settings."""
-    if config.use_supabase_control_plane or config.use_neon_control_plane:
+    if config.use_neon_control_plane:
         return
     try:
         service = _local_control_plane_service(config)
@@ -149,7 +149,7 @@ def _local_write_connection(
 
 def _local_delete_connection(config: APIConfig, workspace_id: str) -> None:
     """Remove GitHub installation + selected repo from local workspace settings."""
-    if config.use_supabase_control_plane or config.use_neon_control_plane:
+    if config.use_neon_control_plane:
         return
     try:
         service = _local_control_plane_service(config)
