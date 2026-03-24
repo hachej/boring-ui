@@ -149,7 +149,12 @@ where = ["src"]
 	writeFile(filepath.Join(name, "pyproject.toml"), pyproject)
 
 	writeFile(filepath.Join(name, "src", pyName, "__init__.py"), "")
-	appPy := `"""Application entrypoint for the child app."""
+	appPy := `"""Application entrypoint — mounts custom routers before the SPA catch-all.
+
+The framework registers /health and a static /{path:path} catch-all.
+Custom routes must be inserted between these so they take priority.
+This module handles that automatically.
+"""
 from boring_ui.app_config_loader import create_app_from_toml
 
 from .routers.example import router as example_router
@@ -157,7 +162,28 @@ from .routers.example import router as example_router
 
 def create_app():
     app = create_app_from_toml()
+
+    # -- Route reordering: custom routes BEFORE the SPA catch-all ----------
+    # The framework adds: /health (default) + /{full_path:path} (SPA).
+    # We need: custom /health first, then other custom routes, then SPA last.
+
+    # 1. Remove the framework's default /health and the SPA catch-all
+    keep = []
+    spa_routes = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if path == "/health":
+            continue  # drop framework /health — we provide our own
+        if "{" in path and path.count("/") <= 1:
+            spa_routes.append(route)  # save SPA catch-all for re-append
+            continue
+        keep.append(route)
+
+    # 2. Rebuild: kept routes → custom routers → SPA catch-all (last)
+    app.routes[:] = keep
     app.include_router(example_router)
+    app.routes.extend(spa_routes)
+
     return app
 `
 	writeFile(filepath.Join(name, "src", pyName, "app.py"), appPy)
@@ -596,9 +622,19 @@ CMD ["/app/app"]
 }
 
 func printInitNextSteps(name string) {
+	pyName := strings.ReplaceAll(name, "-", "_")
 	fmt.Println()
 	fmt.Printf("[bui] %s created!\n\n", name)
-	fmt.Println("Next steps:")
+	fmt.Println("Files:")
+	fmt.Println("  boring.app.toml                 # app config (routers, panels, deploy)")
+	fmt.Println("  pyproject.toml                  # Python package")
+	fmt.Printf("  src/%s/app.py              # app entry (custom routes mounted here)\n", pyName)
+	fmt.Printf("  src/%s/routers/example.py  # example router → /api/x/example/*\n", pyName)
+	fmt.Println("  panels/                         # custom React panels")
+	fmt.Println("  deploy/fly/Dockerfile           # Fly.io deploy config")
+	fmt.Println("  deploy/fly/fly.toml")
+	fmt.Println()
+	fmt.Println("Workflow:")
 	fmt.Printf("  cd %s\n", name)
 	fmt.Println("  bui docs quickstart        # full walkthrough (read this first)")
 	fmt.Println("  bui dev                    # start dev server")
