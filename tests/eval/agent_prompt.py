@@ -1,14 +1,12 @@
 """Prompt generator for the child app E2E eval.
 
-Generates a self-contained, deterministic agent prompt from a RunManifest.
-The prompt includes everything the agent needs: naming contract, exact
-routes with verification_nonce, Vault paths, bui CLI location, constraints,
-and the final response contract with BEGIN/END markers.
+The prompt is intentionally minimal: it points the agent at ``bui --help``
+and specifies only what custom deliverables are required. The agent must
+discover the workflow autonomously from the CLI documentation.
 
 Usage::
 
     prompt = generate_prompt(manifest, profile="core")
-    # Save to evidence before agent launch
     Path(manifest.evidence_dir, "prompt.txt").write_text(prompt)
 """
 
@@ -19,295 +17,94 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
-from tests.eval.capabilities import get_profile_contract
 from tests.eval.contracts import RunManifest
-from tests.eval.report_schema import (
-    BEGIN_EVENT_MARKER,
-    BEGIN_MARKER,
-    END_EVENT_MARKER,
-    END_MARKER,
-)
+from tests.eval.report_schema import BEGIN_MARKER, END_MARKER
 
 
 def generate_prompt(
     manifest: RunManifest,
     profile: str = "core",
 ) -> str:
-    """Generate the agent prompt from a RunManifest.
+    """Generate a minimal agent prompt from a RunManifest.
 
     The prompt is deterministic given the same manifest values.
     """
-    contract = get_profile_contract(profile)
-    route_specs = _route_specs(manifest, profile)
-    response_shape = _response_json_shape(manifest)
-    task_steps = _task_steps(manifest, contract)
-    constraints = _constraints()
+    whoami_section = ""
+    if profile in ("auth-plus", "full-stack", "extensible"):
+        whoami_section = textwrap.dedent("""
+        GET /whoami  (authenticated)
+          200 → {"user_id": "...", "email": "..."}
+          401/403 when unauthenticated
+        """)
 
-    sections = [
-        _header(manifest),
-        _naming_section(manifest),
-        _task_section(task_steps),
-        route_specs,
-        constraints,
-        _response_contract(manifest, response_shape),
-        _environment_section(),
-        _footer(manifest),
-    ]
+    report_shape = json.dumps({
+        "eval_id": manifest.eval_id,
+        "verification_nonce": manifest.verification_nonce,
+        "app_slug": manifest.app_slug,
+        "project_root": manifest.project_root,
+        "deployed_url": "https://...",
+        "fly_app_name": "...",
+        "neon_project_id": "...",
+        "commands_run": ["..."],
+        "steps": {"scaffold": {"status": "succeeded", "attempted": True}},
+        "local_checks": [{"path": "/health", "status": 200}],
+        "live_checks": [{"path": "/health", "status": 200}],
+        "failures": [],
+        "known_issues": [],
+    }, indent=2)
 
-    return "\n\n".join(sections)
+    return textwrap.dedent(f"""\
+        # Task
+
+        Create, validate, and deploy a new boring-ui child app named `{manifest.app_slug}`.
+
+        Start with `bui --help` to discover the workflow.
+
+        ## App identity
+
+        - App name: `{manifest.app_slug}`
+        - Eval ID: `{manifest.eval_id}`
+        - Verification nonce: `{manifest.verification_nonce}`
+        - Project location: `{manifest.project_root}`
+
+        ## Custom routes to add
+
+        Add a router at `src/{manifest.python_module}/routers/status.py` with:
+
+        GET /health →
+          {{"ok": true, "app": "{manifest.app_slug}", "custom": true, "eval_id": "{manifest.eval_id}", "verification_nonce": "{manifest.verification_nonce}"}}
+
+        GET /info →
+          {{"name": "{manifest.app_slug}", "version": "0.1.0", "eval_id": "{manifest.eval_id}"}}
+        {whoami_section}
+        Wire these routes in `[backend].routers` in boring.app.toml.
+
+        ## Constraints
+
+        - Do not modify `../boring-ui/` or sibling directories.
+        - Do not hardcode secrets — use Vault-backed refs.
+        - Do not print raw secret values in your report.
+        - Use `bui` for all platform workflows (scaffold, validate, deploy).
+        - If a step fails, report the exact error — do not fabricate success.
+
+        ## Report
+
+        End with a machine-readable JSON block:
+
+        ```
+        {BEGIN_MARKER}
+        {report_shape}
+        {END_MARKER}
+        ```
+
+        Also write it to: `{manifest.report_output_path}`
+    """)
 
 
 def save_prompt(manifest: RunManifest, prompt: str) -> Path:
-    """Save the prompt to the evidence directory.
-
-    Returns the path to the saved prompt file.
-    """
+    """Save the prompt to the evidence directory."""
     evidence = Path(manifest.evidence_dir)
     evidence.mkdir(parents=True, exist_ok=True)
     prompt_path = evidence / "prompt.txt"
     prompt_path.write_text(prompt, encoding="utf-8")
     return prompt_path
-
-
-# ---------------------------------------------------------------------------
-# Section builders
-# ---------------------------------------------------------------------------
-
-def _header(manifest: RunManifest) -> str:
-    return textwrap.dedent(f"""\
-        # Child App E2E Eval — Agent Task
-
-        You are being evaluated on your ability to autonomously create, configure,
-        validate, deploy, and report on a brand-new boring-ui child app.
-
-        **Eval ID:** `{manifest.eval_id}`
-        **Profile:** `{manifest.platform_profile}`
-        **Spec Version:** `{manifest.eval_spec_version}`""")
-
-
-def _naming_section(manifest: RunManifest) -> str:
-    return textwrap.dedent(f"""\
-        ## Naming Contract
-
-        Use these identifiers exactly — they are generated by the harness and must
-        be used consistently throughout:
-
-        - **App slug:** `{manifest.app_slug}`
-        - **Python module:** `{manifest.python_module}`
-        - **Project root:** `{manifest.project_root}`
-        - **Eval ID:** `{manifest.eval_id}`
-        - **Verification nonce:** `{manifest.verification_nonce}`""")
-
-
-def _task_section(steps: list[str]) -> str:
-    numbered = "\n".join(f"{i}. {step}" for i, step in enumerate(steps, 1))
-    return textwrap.dedent(f"""\
-        ## Task Sequence
-
-        Complete the following steps in order:
-
-        {numbered}""")
-
-
-def _task_steps(manifest: RunManifest, contract: Any) -> list[str]:
-    steps = [
-        f"`cd {Path(manifest.project_root).parent}` and scaffold a new child app: "
-        f"`bui init {manifest.app_slug}`",
-
-        "Keep all changes isolated to the new app directory.",
-
-        "Initialize a git repo: `git init`, create an initial commit.",
-
-        "Configure required secrets safely using Vault-backed deploy secret references "
-        "(do NOT hardcode credentials in tracked files).",
-
-        f"Add the required custom verification router at "
-        f"`src/{manifest.python_module}/routers/status.py` "
-        f"with the routes specified below.",
-
-        "Validate the project: `bui doctor`",
-
-        "Start local runtime validation and verify the required local endpoints. "
-        "**Important:** This runs BEFORE neon setup — local dev uses "
-        "`auth.provider = \"local\"` and does not need DATABASE_URL.",
-
-        "`bui neon setup --region aws-eu-central-1 --email-provider none` — "
-        "all flags are required to avoid interactive prompts.",
-
-        "Configure deployment for Fly.io.",
-
-        "`bui deploy`",
-
-        "Verify the live deployment — check all required endpoints respond correctly.",
-
-        "Return a final report in both human-readable and machine-readable form "
-        "(see Response Contract below).",
-    ]
-    return steps
-
-
-def _route_specs(manifest: RunManifest, profile: str) -> str:
-    routes = textwrap.dedent(f"""\
-        ## Required Custom Routes
-
-        Implement these routes in `src/{manifest.python_module}/routers/status.py`
-        and wire them into the app:
-
-        ### GET /health
-
-        ```json
-        {{
-            "ok": true,
-            "app": "{manifest.app_slug}",
-            "custom": true,
-            "eval_id": "{manifest.eval_id}",
-            "verification_nonce": "{manifest.verification_nonce}"
-        }}
-        ```
-
-        ### GET /info
-
-        ```json
-        {{
-            "name": "{manifest.app_slug}",
-            "version": "0.1.0",
-            "eval_id": "{manifest.eval_id}"
-        }}
-        ```""")
-
-    if profile in ("auth-plus", "full-stack", "extensible"):
-        routes += textwrap.dedent("""
-
-        ### GET /whoami (authenticated)
-
-        - **200** with `{"user_id": "...", "email": "..."}` when signed in
-        - **401** or **403** when unauthenticated""")
-
-    return routes
-
-
-def _constraints() -> str:
-    return textwrap.dedent("""\
-        ## Constraints
-
-        - Do NOT modify `../boring-ui/` or any unrelated sibling directories.
-        - Do NOT hardcode secrets in tracked files (use Vault-backed deploy secret
-          references in `boring.app.toml`).
-        - Do NOT print raw secret values in the final report.
-        - Use `bui` for all supported platform workflows (scaffold, doctor, neon setup,
-          deploy). Do not bypass with manual provider-specific commands.
-        - Basic shell commands for editing, inspection, and process control are allowed.
-        - Do NOT claim a step succeeded unless you actually ran it or clearly mark it
-          as unverified.
-        - If a step fails, report the exact failing command and error summary instead
-          of inventing success.""")
-
-
-def _response_contract(manifest: RunManifest, response_shape: str) -> str:
-    return textwrap.dedent(f"""\
-        ## Response Contract
-
-        Your final response MUST include:
-
-        1. A short **human-readable operator summary** (what was done, what succeeded,
-           what failed, known issues).
-
-        2. A **machine-readable JSON block** between explicit markers:
-
-        ```
-        {BEGIN_MARKER}
-        <your JSON report>
-        {END_MARKER}
-        ```
-
-        Also write the same report to: `{manifest.report_output_path}`
-        And write progress events to: `{manifest.event_log_path}`
-
-        ### Required JSON shape:
-
-        ```json
-        {response_shape}
-        ```
-
-        ### Progress Events (encouraged)
-
-        During execution, emit incremental progress events:
-
-        ```
-        {BEGIN_EVENT_MARKER}
-        {{"phase": "<phase>", "status": "<started|completed|failed>", "detail": "..."}}
-        {END_EVENT_MARKER}
-        ```
-
-        These help the harness recover resource IDs if the run times out.""")
-
-
-def _response_json_shape(manifest: RunManifest) -> str:
-    shape = {
-        "eval_id": manifest.eval_id,
-        "eval_spec_version": manifest.eval_spec_version,
-        "report_schema_version": manifest.report_schema_version,
-        "platform_profile": manifest.platform_profile,
-        "verification_nonce": manifest.verification_nonce,
-        "app_slug": manifest.app_slug,
-        "project_root": manifest.project_root,
-        "python_module": manifest.python_module,
-        "deployed_url": f"https://{manifest.app_slug}.fly.dev",
-        "fly_app_name": manifest.app_slug,
-        "neon_project_id": "<neon-project-id or null>",
-        "vault_secret_refs": [
-            {"name": "ANTHROPIC_API_KEY", "vault": "secret/agent/anthropic", "field": "api_key"},
-        ],
-        "commands_run": ["bui init ...", "bui doctor", "bui neon setup ...", "bui deploy"],
-        "steps": {
-            "scaffold": {"status": "succeeded", "attempted": True},
-            "local_validate": {"status": "succeeded", "attempted": True},
-            "neon_setup": {"status": "succeeded", "attempted": True},
-            "deploy": {"status": "succeeded", "attempted": True},
-        },
-        "local_checks": [
-            {"path": "/health", "status": 200},
-            {"path": "/info", "status": 200},
-        ],
-        "live_checks": [
-            {"path": "/health", "status": 200},
-            {"path": "/info", "status": 200},
-        ],
-        "unverified_steps": [],
-        "failures": [],
-        "resource_inventory": {
-            "fly_app_name": manifest.app_slug,
-            "neon_project_id": "<neon-project-id or null>",
-        },
-        "timings_s": {},
-        "known_issues": [],
-    }
-    return json.dumps(shape, indent=2)
-
-
-def _environment_section() -> str:
-    return textwrap.dedent("""\
-        ## Environment
-
-        - `FLY_API_TOKEN` is available in the environment for Fly.io operations.
-        - Vault is available for reading secrets:
-          `vault kv get -field=api_key secret/agent/anthropic`
-        - `bui` CLI is available on PATH.
-        - Python 3.13+ and Node.js are available.
-        - The projects directory is `/home/ubuntu/projects/`.""")
-
-
-def _footer(manifest: RunManifest) -> str:
-    return textwrap.dedent(f"""\
-        ## Verification
-
-        The harness will independently verify:
-        - File structure and config correctness
-        - Local dev startup in a clean-room environment
-        - Live deployment endpoint responses
-        - Secret hygiene (no leaked credentials)
-        - Report truthfulness (claims vs observed evidence)
-
-        **Your verification nonce is: `{manifest.verification_nonce}`**
-        Echo this nonce in the `/health` and report JSON so the harness can prove
-        it is interacting with the app created for this specific run.""")
