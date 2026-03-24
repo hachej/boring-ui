@@ -55,9 +55,9 @@ def generate_prompt(
 
     return f"""# Task
 
-Create, validate, and deploy a new boring-ui child app named `{manifest.app_slug}`.
+Create, validate, and deploy a boring-ui child app to Fly.io.
 
-Start with `bui --help` to discover the workflow.
+Start with `bui --help` to discover the full workflow.
 
 ## App identity
 
@@ -66,29 +66,35 @@ Start with `bui --help` to discover the workflow.
 - Verification nonce: `{manifest.verification_nonce}`
 - Project location: `{manifest.project_root}`
 
-## Custom routes to add
+## What to build
 
-Add a router at `src/{manifest.python_module}/routers/status.py` with:
+**Verification endpoints** (`src/{manifest.python_module}/routers/status.py`):
 
-GET /health →
-  {{"ok": true, "app": "{manifest.app_slug}", "custom": true, "eval_id": "{manifest.eval_id}", "verification_nonce": "{manifest.verification_nonce}"}}
-
-GET /info →
-  {{"name": "{manifest.app_slug}", "version": "0.1.0", "eval_id": "{manifest.eval_id}"}}
+  GET /health → {{"ok": true, "app": "{manifest.app_slug}", "custom": true, "eval_id": "{manifest.eval_id}", "verification_nonce": "{manifest.verification_nonce}"}}
+  GET /info   → {{"name": "{manifest.app_slug}", "version": "0.1.0", "eval_id": "{manifest.eval_id}"}}
 {whoami_section}
-Wire these routes in `[backend].routers` in boring.app.toml.
+**Quick Notes feature** — a working pane + API for saving short text notes:
 
-## Constraints
+  Backend (`src/{manifest.python_module}/routers/notes.py`):
+    POST /notes       {{"text": "..."}}  → {{"id": "...", "text": "...", "created_at": "..."}}
+    GET  /notes                          → [{{"id": "...", "text": "...", "created_at": "..."}}]
+    DELETE /notes/{{id}}                  → {{"deleted": true}}
+
+  Frontend (`panels/NotesPanel.jsx`):
+    A panel that lists notes, lets you add new ones, and delete them.
+
+Wire all routers and the panel in boring.app.toml. Deploy the app to Fly.io.
+
+## Guidelines
 
 - Do not modify `../boring-ui/` or sibling directories.
-- Do not hardcode secrets — use Vault-backed refs.
-- Do not print raw secret values in your report.
-- Use `bui` for all platform workflows (scaffold, validate, deploy).
+- Do not hardcode secrets — use Vault-backed deploy secret refs.
+- Use `bui` for all platform workflows (scaffold, validate, provision, deploy).
 - If a step fails, report the exact error — do not fabricate success.
 
 ## Report
 
-End with a machine-readable JSON block:
+End with:
 
 ```
 {BEGIN_MARKER}
@@ -96,7 +102,7 @@ End with a machine-readable JSON block:
 {END_MARKER}
 ```
 
-Also write it to: `{manifest.report_output_path}`
+Write it to: `{manifest.report_output_path}`
 """
 
 
