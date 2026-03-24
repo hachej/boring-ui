@@ -70,16 +70,22 @@ Every app must include a status router with verification endpoints:
 - `GET /health` → `{"ok": true, "app": "<app_slug>", "custom": true, "eval_id": "<eval_id>", "verification_nonce": "<nonce>"}`
 - `GET /info` → `{"name": "<app_slug>", "version": "0.1.0", "eval_id": "<eval_id>"}`
 
-After deploying, run a full smoke check:
+After deploying, run smoke tests. Use the existing smoke test suite:
+
+```bash
+cd /home/ubuntu/projects/boring-ui
+python3 tests/smoke/smoke_neon_auth.py --base-url https://<app_slug>.fly.dev
+```
+
+If the smoke suite is not available, manually verify:
 
 1. `curl https://<app_slug>.fly.dev/health` — must return JSON with verification_nonce
 2. `curl https://<app_slug>.fly.dev/info` — must return JSON with eval_id
-3. `curl https://<app_slug>.fly.dev/api/capabilities` — must return auth provider
+3. `curl https://<app_slug>.fly.dev/api/capabilities` — must return `"auth":{"provider":"neon"}`
 4. Test all custom endpoints (notes CRUD, etc.)
-5. Test signup: `curl -X POST https://<app_slug>.fly.dev/auth/sign-up -H "Content-Type: application/json" -d '{"email":"test@eval.local","password":"eval-test-2026","name":"Eval"}'`
-   — If signup returns 200 but no verification email arrives, check that `bui neon setup` added the Fly URL to Neon trusted_origins
+5. Test auth: sign up with a test email, then sign in — both must return 200
 
-If any smoke check fails, diagnose and fix before writing the report.
+If any check fails, diagnose and fix before writing the report.
 
 ## Phase 4: Report
 
