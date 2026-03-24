@@ -84,13 +84,7 @@ Start with `bui --help` to discover the full workflow, then run `bui init`,
   Frontend (`panels/NotesPanel.jsx`):
     A panel that lists notes, lets you add new ones, and delete them.
 
-Wire all routers and the panel in boring.app.toml. Deploy the app to Fly.io.
-
-Use `bui` for all platform workflows. If a step fails, report the exact error.
-
-Constraints:
-- Do NOT modify `../boring-ui/` or sibling directories.
-- Do NOT hardcode secrets; use Vault-backed deploy secret refs.
+Wire all routers and the panel in boring.app.toml. Deploy to Fly.io.
 
 ## Report
 
