@@ -57,7 +57,8 @@ def generate_prompt(
 
 Create, validate, and deploy a boring-ui child app to Fly.io.
 
-Start with `bui --help` to discover the full workflow.
+Start with `bui --help` to discover the full workflow, then run `bui init`,
+`bui doctor`, and `bui deploy` to scaffold, validate, and deploy the app.
 
 ## App identity
 
@@ -87,8 +88,8 @@ Wire all routers and the panel in boring.app.toml. Deploy the app to Fly.io.
 
 ## Guidelines
 
-- Do not modify `../boring-ui/` or sibling directories.
-- Do not hardcode secrets — use Vault-backed deploy secret refs.
+- Do NOT modify `../boring-ui/` or sibling directories.
+- Do NOT hardcode secrets — use Vault-backed deploy secret refs.
 - Use `bui` for all platform workflows (scaffold, validate, provision, deploy).
 - If a step fails, report the exact error — do not fabricate success.
 
