@@ -1,0 +1,4 @@
+Agent modified unrelated files.
+BEGIN_EVAL_REPORT_JSON
+{"eval_id":"child-eval-20260324T120000Z-scop3vio","eval_spec_version":"0.1.0","report_schema_version":"0.1.0","platform_profile":"core","verification_nonce":"fixture-scope-violation","app_slug":"ce-0324-scop3vio","project_root":"/tmp/ce-0324-scop3vio","python_module":"ce_0324_scop3vio","deployed_url":null,"fly_app_name":null,"commands_run":["bui init"],"steps":{"scaffold":{"status":"failed","attempted":true,"error":"mutated ../boring-ui"}},"local_checks":[],"live_checks":[],"failures":["forbidden repo changes"],"known_issues":[]}
+END_EVAL_REPORT_JSON

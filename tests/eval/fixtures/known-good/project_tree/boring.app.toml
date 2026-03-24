@@ -1,0 +1,6 @@
+[app]
+name = "ce-0324-goodgood"
+id = "ce-0324-goodgood"
+
+[backend]
+entry = "ce_0324_abcd1234.api:create_app"

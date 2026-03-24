@@ -1,0 +1,5 @@
+{
+  "name": "env-missing",
+  "expected_status": "INVALID",
+  "description": "Fixture simulates a missing bui CLI or broken local environment."
+}

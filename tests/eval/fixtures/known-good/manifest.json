@@ -1,0 +1,5 @@
+{
+  "name": "known-good",
+  "expected_status": "PASS",
+  "description": "Complete child app with required routes, clean report, and deploy evidence."
+}

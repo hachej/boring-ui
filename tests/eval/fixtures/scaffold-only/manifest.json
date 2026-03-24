@@ -1,0 +1,5 @@
+{
+  "name": "scaffold-only",
+  "expected_status": "PARTIAL",
+  "description": "Scaffold completed but Neon setup and deploy were never attempted."
+}

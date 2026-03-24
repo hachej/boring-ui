@@ -11,9 +11,12 @@ Concrete implementations:
 from __future__ import annotations
 
 import asyncio
+import json
+import shutil
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from tests.eval.contracts import ObservedCommand, RunManifest
@@ -183,14 +186,16 @@ class SubprocessRunner(AgentRunner):
 class MockRunner(AgentRunner):
     """Replays recorded sessions for harness self-testing.
 
-    Accepts a pre-built RunResult to return, optionally with a delay.
+    Accepts a pre-built RunResult or replays a checked-in fixture directory.
     """
 
     def __init__(
         self,
         result: RunResult | None = None,
         delay_s: float = 0.0,
+        fixture_dir: str | Path | None = None,
     ) -> None:
+        self._fixture_dir = Path(fixture_dir) if fixture_dir else None
         self._result = result or RunResult(exit_code=0)
         self._delay = delay_s
 
@@ -214,16 +219,98 @@ class MockRunner(AgentRunner):
             timed_out = False
 
         elapsed = time.monotonic() - start
+        loaded = self._load_result(manifest)
 
         return RunResult(
-            exit_code=self._result.exit_code,
+            exit_code=loaded.exit_code,
             timed_out=timed_out,
-            stdout=self._result.stdout,
-            stderr=self._result.stderr,
-            final_response=self._result.final_response,
-            command_log=list(self._result.command_log),
+            stdout=loaded.stdout,
+            stderr=loaded.stderr,
+            final_response=loaded.final_response,
+            command_log=list(loaded.command_log),
             elapsed_s=elapsed,
         )
 
     async def cleanup(self) -> None:
         pass  # nothing to clean up
+
+    def _load_result(self, manifest: RunManifest) -> RunResult:
+        if self._fixture_dir is None:
+            return self._result
+        if not self._fixture_dir.exists():
+            return RunResult(
+                exit_code=-1,
+                stderr=f"Fixture directory not found: {self._fixture_dir}",
+            )
+
+        self._copy_project_tree(manifest)
+        stdout = self._read_text("agent_stdout.txt")
+        stderr = self._read_text("agent_stderr.txt")
+        final_response = self._read_text("final_response.txt") or stdout
+        command_log = self._load_command_log()
+
+        return RunResult(
+            exit_code=self._load_exit_code(),
+            stdout=stdout,
+            stderr=stderr,
+            final_response=final_response,
+            command_log=command_log,
+        )
+
+    def _copy_project_tree(self, manifest: RunManifest) -> None:
+        if self._fixture_dir is None:
+            return
+
+        tree = self._fixture_dir / "project_tree"
+        if not tree.exists():
+            return
+
+        destination = Path(manifest.project_root)
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(tree, destination, dirs_exist_ok=True)
+
+    def _read_text(self, filename: str) -> str:
+        if self._fixture_dir is None:
+            return ""
+        path = self._fixture_dir / filename
+        if not path.exists():
+            return ""
+        return path.read_text(encoding="utf-8")
+
+    def _load_exit_code(self) -> int:
+        raw = self._read_text("exit_code.txt").strip()
+        if not raw:
+            return 0
+        try:
+            return int(raw)
+        except ValueError:
+            return 0
+
+    def _load_command_log(self) -> list[ObservedCommand]:
+        raw = self._read_text("command_log.jsonl").strip()
+        if not raw:
+            return []
+
+        try:
+            if raw.startswith("["):
+                payload = json.loads(raw)
+                return [
+                    ObservedCommand.from_dict(item)
+                    for item in payload
+                    if isinstance(item, dict)
+                ]
+        except json.JSONDecodeError:
+            return []
+
+        commands: list[ObservedCommand] = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                commands.append(ObservedCommand.from_dict(payload))
+        return commands

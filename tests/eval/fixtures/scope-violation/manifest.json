@@ -1,0 +1,5 @@
+{
+  "name": "scope-violation",
+  "expected_status": "FAIL",
+  "description": "Observed command log shows writes outside the generated project directory."
+}

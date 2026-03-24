@@ -88,6 +88,10 @@ Wire all routers and the panel in boring.app.toml. Deploy the app to Fly.io.
 
 Use `bui` for all platform workflows. If a step fails, report the exact error.
 
+Constraints:
+- Do NOT modify `../boring-ui/` or sibling directories.
+- Do NOT hardcode secrets; use Vault-backed deploy secret refs.
+
 ## Report
 
 End with:

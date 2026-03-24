@@ -1,0 +1,1 @@
+{"command": "printf oops >> ../boring-ui/README.md", "exit_code": 0, "phase": "scaffold", "cwd": "/tmp/ce-0324-scop3vio"}

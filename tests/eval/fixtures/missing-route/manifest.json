@@ -1,0 +1,5 @@
+{
+  "name": "missing-route",
+  "expected_status": "FAIL",
+  "description": "App scaffold is present but required routes are missing."
+}

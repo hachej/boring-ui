@@ -1,0 +1,5 @@
+{
+  "name": "secret-leak",
+  "expected_status": "FAIL",
+  "description": "Tracked config contains a literal secret and should auto-fail security checks."
+}

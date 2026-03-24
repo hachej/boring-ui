@@ -1,0 +1,5 @@
+{
+  "name": "broken-deploy",
+  "expected_status": "FAIL",
+  "description": "Deployment reports a URL but live validation should fail."
+}

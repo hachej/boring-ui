@@ -36,6 +36,7 @@ from tests.eval.redaction import (
 )
 from tests.eval.report_schema import BEGIN_MARKER, END_MARKER
 from tests.eval.runners.base import MockRunner, RunResult, SubprocessRunner
+from tests.eval.runners.mock import MockRunner as FixtureMockRunner
 
 
 # ===================================================================
@@ -303,3 +304,74 @@ class TestRunners:
         assert d["exit_code"] == 0
         assert d["stdout_length"] == 100
         assert d["elapsed_s"] == 1.5
+
+    def test_fixture_mock_runner_replays_fixture_and_project_tree(self, tmp_path):
+        naming = NamingContract.from_eval_id(
+            "child-eval-20260324T120000Z-abcd1234",
+            projects_root=str(tmp_path),
+        )
+        manifest = RunManifest.from_naming(naming)
+        fixture_dir = (
+            Path(__file__).resolve().parents[1]
+            / "fixtures"
+            / "known-good"
+        )
+
+        runner = FixtureMockRunner(fixture_dir=fixture_dir)
+        result = asyncio.run(runner.run(manifest, "prompt", timeout_s=10))
+
+        assert result.exit_code == 0
+        assert BEGIN_MARKER in result.final_response
+        assert len(result.command_log) >= 3
+        assert (Path(manifest.project_root) / "boring.app.toml").exists()
+        assert (Path(manifest.project_root) / "src" / naming.python_module / "routers" / "status.py").exists()
+
+    def test_fixture_mock_runner_defaults_exit_code_to_zero(self, tmp_path):
+        fixture_dir = tmp_path / "fixture"
+        fixture_dir.mkdir()
+        (fixture_dir / "final_response.txt").write_text("fixture response", encoding="utf-8")
+        manifest = RunManifest.from_naming(
+            NamingContract.from_eval_id(
+                "child-eval-20260324T120000Z-efgh5678",
+                projects_root=str(tmp_path),
+            )
+        )
+
+        runner = FixtureMockRunner(fixture_dir=fixture_dir)
+        result = asyncio.run(runner.run(manifest, "prompt", timeout_s=10))
+
+        assert result.exit_code == 0
+        assert result.final_response == "fixture response"
+
+    def test_mock_runner_reports_timeout_when_delay_exceeds_budget(self, sample_manifest):
+        runner = MockRunner(
+            result=RunResult(exit_code=0, stdout="output"),
+            delay_s=0.05,
+        )
+
+        result = asyncio.run(runner.run(sample_manifest, "prompt", timeout_s=0.01))
+
+        assert result.timed_out is True
+
+    def test_fixture_catalog_contains_all_expected_scenarios(self):
+        fixtures_root = Path(__file__).resolve().parents[1] / "fixtures"
+        expected = {
+            "known-good": "PASS",
+            "secret-leak": "FAIL",
+            "missing-route": "FAIL",
+            "broken-deploy": "FAIL",
+            "malformed-json": "FAIL",
+            "scope-violation": "FAIL",
+            "liar-agent": "FAIL",
+            "scaffold-only": "PARTIAL",
+            "env-missing": "INVALID",
+        }
+
+        for fixture_name, expected_status in expected.items():
+            fixture_dir = fixtures_root / fixture_name
+            manifest_data = json.loads(
+                (fixture_dir / "manifest.json").read_text(encoding="utf-8")
+            )
+            assert manifest_data["expected_status"] == expected_status
+            assert (fixture_dir / "final_response.txt").exists()
+            assert (fixture_dir / "command_log.jsonl").exists()

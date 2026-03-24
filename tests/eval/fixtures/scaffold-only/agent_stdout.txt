@@ -1,0 +1,4 @@
+Scaffold succeeded, remaining steps skipped.
+BEGIN_EVAL_REPORT_JSON
+{"eval_id":"child-eval-20260324T120000Z-scaffold","eval_spec_version":"0.1.0","report_schema_version":"0.1.0","platform_profile":"core","verification_nonce":"fixture-scaffold-only","app_slug":"ce-0324-scaffold","project_root":"/tmp/ce-0324-scaffold","python_module":"ce_0324_scaffold","deployed_url":null,"fly_app_name":null,"commands_run":["bui init"],"steps":{"scaffold":{"status":"succeeded","attempted":true},"local_validate":{"status":"succeeded","attempted":true},"neon_setup":{"status":"not_attempted","attempted":false},"deploy":{"status":"not_attempted","attempted":false}},"local_checks":[{"path":"/health","status":200}],"live_checks":[],"failures":["deploy not attempted"],"known_issues":["No Neon or Fly setup"]}
+END_EVAL_REPORT_JSON

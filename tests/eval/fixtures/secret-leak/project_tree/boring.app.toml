@@ -1,0 +1,2 @@
+[deploy.secrets]
+DATABASE_URL = "postgres://user:supersecret@db.example/app"

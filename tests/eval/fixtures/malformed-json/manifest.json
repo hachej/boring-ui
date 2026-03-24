@@ -1,0 +1,5 @@
+{
+  "name": "malformed-json",
+  "expected_status": "FAIL",
+  "description": "Agent output contains a malformed structured report."
+}

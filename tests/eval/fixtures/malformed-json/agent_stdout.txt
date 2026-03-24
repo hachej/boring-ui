@@ -1,0 +1,4 @@
+Attempted report follows.
+BEGIN_EVAL_REPORT_JSON
+{"eval_id": "child-eval-20260324T120000Z-malformd", "commands_run": ["bui init"]
+END_EVAL_REPORT_JSON

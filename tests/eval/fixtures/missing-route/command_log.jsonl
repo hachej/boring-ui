@@ -1,0 +1,2 @@
+{"command": "bui init ce-0324-miss1ng0", "exit_code": 0, "phase": "scaffold"}
+{"command": "bui deploy", "exit_code": 0, "phase": "deploy"}
