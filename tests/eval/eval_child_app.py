@@ -42,6 +42,7 @@ from tests.eval.introspection import build_manifest_from_facts, discover_platfor
 from tests.eval.parsing import extract_report_json
 from tests.eval.reason_codes import Attribution, CheckStatus
 from tests.eval.redaction import SecretRegistry
+from tests.eval.cleanup import run_cleanup
 from tests.eval.runners.base import AgentRunner, MockRunner, RunResult, SubprocessRunner
 from tests.eval.scoring import compute_scores
 
@@ -72,6 +73,26 @@ def _save_run_state(
 def _load_run_state(path: str) -> dict[str, Any]:
     """Load run state from a previous crash."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def run_cleanup_from_state(
+    state_path: str,
+    *,
+    kill_local_processes: bool = False,
+    delete_project_dir: bool = True,
+):
+    """Run cleanup from a persisted ``run_state.json`` snapshot."""
+    state = _load_run_state(state_path)
+    manifest_data = state.get("manifest")
+    if not isinstance(manifest_data, dict):
+        raise ValueError("run_state.json is missing manifest data")
+
+    manifest = RunManifest.from_dict(manifest_data)
+    return run_cleanup(
+        manifest,
+        kill_local_processes=kill_local_processes,
+        delete_project_dir=delete_project_dir,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +248,7 @@ async def run_eval(
         "eval_id": naming.eval_id,
         "profile": profile,
         "completed_phases": [],
+        "manifest": manifest.to_dict(),
     })
 
     # 2. Preflight / introspection
@@ -248,6 +270,7 @@ async def run_eval(
         "eval_id": naming.eval_id,
         "completed_phases": ["preflight"],
         "capability_issues": [i.to_dict() for i in cap_issues],
+        "manifest": manifest.to_dict(),
     })
 
     # 3. Generate prompt
@@ -278,6 +301,7 @@ async def run_eval(
         "completed_phases": ["preflight", "agent_execution"],
         "exit_code": run_result.exit_code,
         "timed_out": run_result.timed_out,
+        "manifest": manifest.to_dict(),
     })
 
     # 5. Parse response
@@ -407,6 +431,10 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns exit code."""
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.cleanup_only:
+        cleanup = run_cleanup_from_state(args.cleanup_only)
+        return 0 if cleanup.completed else 1
 
     result = asyncio.run(run_eval(
         profile=args.profile,
