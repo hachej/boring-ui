@@ -487,6 +487,7 @@ primary_region = "cdg"
   AUTH_SESSION_SECURE_COOKIE = "true"
   BORING_UI_STATIC_DIR = "/app/dist/web"
   BUI_APP_TOML = "/app/boring.app.toml"
+  CORS_ORIGINS = "https://` + name + `.fly.dev"
 
 [http_service]
   internal_port = 8000

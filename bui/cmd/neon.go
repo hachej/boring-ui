@@ -218,6 +218,17 @@ func runNeonSetup(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  auth URL: %s\n", authResp.BaseURL)
 	fmt.Printf("  JWKS URL: %s\n", authResp.JWKSURL)
 
+	// 4b. Add trusted origins so verification emails and auth callbacks work.
+	// Derive the Fly URL from the app ID (the default deploy target).
+	flyURL := fmt.Sprintf("https://%s.fly.dev", cfg.App.ID)
+	fmt.Printf("[bui] adding trusted origin: %s\n", flyURL)
+	if err := neonSetTrustedOrigins(apiKey, projectID, branchID, []string{flyURL}); err != nil {
+		fmt.Printf("  warn: could not set trusted origins: %v\n", err)
+		fmt.Println("  Add manually in Neon Console → Settings → Auth → Trusted origins")
+	} else {
+		fmt.Println("  ✓ trusted origin added")
+	}
+
 	// 5. Configure email provider (if specified)
 	if neonEmailProvider != "" {
 		configureEmailProvider(apiKey, projectID, neonEmailProvider, cfg.App.Name)
@@ -527,6 +538,16 @@ func configureEmailProvider(apiKey, projectID, provider, appName string) {
 	default:
 		fmt.Printf("  Unknown email provider: %q (supported: resend, smtp, none)\n", provider)
 	}
+}
+
+// neonSetTrustedOrigins adds origins to the Neon Auth trusted_origins list.
+// PATCH /projects/{project_id}/branches/{branch_id}/auth
+func neonSetTrustedOrigins(apiKey, projectID, branchID string, origins []string) error {
+	path := fmt.Sprintf("/projects/%s/branches/%s/auth", projectID, branchID)
+	_, err := neonAPI("PATCH", path, apiKey, map[string]interface{}{
+		"trusted_origins": origins,
+	})
+	return err
 }
 
 // neonSetEmailVerificationMethod sets the email verification method (link or otp).
