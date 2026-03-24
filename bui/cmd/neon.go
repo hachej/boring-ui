@@ -674,7 +674,26 @@ GITHUB_APP_SLUG           = { vault = %q, field = "github_slug" }`,
 }
 
 func replaceTomlLine(content, old, new string) string {
-	return strings.Replace(content, old, new, 1)
+	// Try exact match first
+	if strings.Contains(content, old) {
+		return strings.Replace(content, old, new, 1)
+	}
+	// Handle whitespace-padded TOML values (e.g. "provider       = " vs "provider = ")
+	oldKey := strings.SplitN(old, "=", 2)
+	if len(oldKey) == 2 {
+		// Build a regex-like prefix match: key with any whitespace around =
+		prefix := strings.TrimSpace(oldKey[0])
+		for _, line := range strings.Split(content, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, prefix) && strings.Contains(trimmed, "=") {
+				parts := strings.SplitN(trimmed, "=", 2)
+				if strings.TrimSpace(parts[0]) == prefix && strings.TrimSpace(parts[1]) == strings.TrimSpace(oldKey[1]) {
+					return strings.Replace(content, line, new, 1)
+				}
+			}
+		}
+	}
+	return content
 }
 
 func replaceTomlSection(content, header, replacement string) string {
