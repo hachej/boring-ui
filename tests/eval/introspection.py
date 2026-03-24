@@ -108,17 +108,21 @@ def _git_dirty(repo_root: Path) -> bool:
 
 
 def _bui_version() -> str:
-    """Get bui CLI version."""
-    if not shutil.which("bui"):
+    """Detect whether the bui CLI is available.
+
+    ``bui`` does not currently expose a stable ``version`` subcommand, so
+    presence + successful help output is the reliable signal here.
+    """
+    bui_path = shutil.which("bui")
+    if not bui_path:
         return ""
-    rc, stdout, _ = _run(["bui", "version"])
-    if rc != 0:
-        return ""
-    # Parse "bui version X.Y.Z" or just "X.Y.Z"
-    line = stdout.split("\n")[0].strip()
-    if line.startswith("bui version "):
-        line = line[len("bui version "):]
-    return line
+
+    rc, stdout, stderr = _run(["bui", "--help"])
+    if rc == 0:
+        headline = (stdout or stderr).split("\n")[0].strip()
+        return headline or bui_path
+
+    return bui_path
 
 
 def _fly_version() -> str:

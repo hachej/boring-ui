@@ -411,7 +411,7 @@ class TestReasonCodes:
 
 class TestCheckCatalog:
     def test_catalog_count(self):
-        assert len(CATALOG) == 102
+        assert len(CATALOG) == 123
 
     def test_catalog_validation(self):
         errors = validate_catalog()
@@ -455,9 +455,14 @@ class TestCheckCatalog:
         assert "deploy.auth_signin" in ids
         assert "deploy.workspace_create" not in ids  # full-stack only
 
-    def test_full_stack_includes_everything(self):
+    def test_full_stack_includes_non_extensible(self):
         full = get_checks_for_profile("full-stack")
-        assert len(full) == len(CATALOG)
+        extensible_only = [s for s in CATALOG.values() if s.profile == "extensible"]
+        assert len(full) == len(CATALOG) - len(extensible_only)
+
+    def test_extensible_includes_everything(self):
+        ext = get_checks_for_profile("extensible")
+        assert len(ext) == len(CATALOG)
 
     def test_must_pass_checks(self):
         mp = get_must_pass_checks()
@@ -677,6 +682,11 @@ class TestCapabilities:
 
     def test_applicable_checks_full_stack(self):
         checks = applicable_checks("full-stack")
+        extensible_only = [s for s in CATALOG.values() if s.profile == "extensible"]
+        assert len(checks) == len(CATALOG) - len(extensible_only)
+
+    def test_applicable_checks_extensible(self):
+        checks = applicable_checks("extensible")
         assert len(checks) == len(CATALOG)
 
     def test_capability_manifest_from_platform_facts(self):

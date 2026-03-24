@@ -1,27 +1,46 @@
 {
-  "phase": "agent_done",
-  "eval_id": "child-eval-20260324T141537Z-36qxdmf0",
+  "phase": "preflight_done",
+  "eval_id": "child-eval-20260324T143520Z-xcb88mg1",
   "completed_phases": [
-    "preflight",
-    "agent_execution"
+    "preflight"
   ],
-  "exit_code": -9,
-  "timed_out": true,
+  "capability_issues": [
+    {
+      "requirement": "fly_available",
+      "detail": "Fly CLI not available \u2014 deploy checks will be INVALID",
+      "severity": "error"
+    },
+    {
+      "requirement": "deploy_support",
+      "detail": "Deploy support not detected \u2014 deploy checks will be INVALID",
+      "severity": "error"
+    },
+    {
+      "requirement": "vault_write",
+      "detail": "Vault write access not available \u2014 bui neon setup requires it",
+      "severity": "error"
+    },
+    {
+      "requirement": "network_ok",
+      "detail": "Network access not verified",
+      "severity": "warning"
+    }
+  ],
   "manifest": {
-    "eval_id": "child-eval-20260324T141537Z-36qxdmf0",
+    "eval_id": "child-eval-20260324T143520Z-xcb88mg1",
     "eval_spec_version": "0.1.0",
     "report_schema_version": "0.1.0",
     "platform_profile": "core",
-    "app_slug": "ce-0324-36qxdmf0",
-    "python_module": "ce_0324_36qxdmf0",
-    "project_root": "/home/ubuntu/projects/ce-0324-36qxdmf0",
-    "verification_nonce": "QPPqQinIs2-pi5lEoEV3EQ",
+    "app_slug": "ce-0324-xcb88mg1",
+    "python_module": "ce_0324_xcb88mg1",
+    "project_root": "/home/ubuntu/projects/ce-0324-xcb88mg1",
+    "verification_nonce": "zM1DD20nl-YWyZTaQIOINg",
     "required_routes": [
       "/health",
       "/info"
     ],
-    "report_output_path": "/home/ubuntu/projects/.eval-evidence/ce-0324-36qxdmf0/report.json",
-    "event_log_path": "/home/ubuntu/projects/.eval-evidence/ce-0324-36qxdmf0/events.jsonl",
+    "report_output_path": "/home/ubuntu/projects/.eval-evidence/ce-0324-xcb88mg1/report.json",
+    "event_log_path": "/home/ubuntu/projects/.eval-evidence/ce-0324-xcb88mg1/events.jsonl",
     "timeouts": {
       "scaffold": 300,
       "local_validation": 120,
@@ -31,6 +50,6 @@
       "cleanup": 120
     },
     "evidence_dir": "tests/eval/results/first-run",
-    "lease_id": "lease-ce-0324-36qxdmf0-ey6zlcuy"
+    "lease_id": "lease-ce-0324-xcb88mg1-vtj8osn5"
   }
 }

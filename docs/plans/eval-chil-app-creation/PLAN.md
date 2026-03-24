@@ -136,6 +136,8 @@ silently over-assume current scaffold capabilities:
 - `auth-plus` — `core` + one custom authenticated verification route
 - `full-stack` — `auth-plus` + workspace/file/git flows when the normalized platform capability
   profile advertises those features
+- `extensible` — `full-stack` + custom workspace pane + custom backend router exposed as agent-callable
+  tool (see [Extensible Profile](#extensible-profile--custom-pane--custom-agent-tool))
 
 Scores should be compared within the same profile.
 
@@ -160,6 +162,8 @@ Each profile contract should declare booleans such as:
 - `requires_files`
 - `requires_git`
 - `requires_frontend_shell`
+- `requires_custom_pane`
+- `requires_custom_tool`
 
 ## Result and Check Status Taxonomy
 
@@ -1006,6 +1010,232 @@ The harness itself should be tested before relying on it for benchmarking:
 2. Harness validation fixtures
 3. Repeatability testing
 
+## Extensible Profile — Custom Pane + Custom Agent Tool
+
+### Why This Profile Exists
+
+The `core` through `full-stack` profiles test whether an agent can create a child app that uses
+the platform's built-in capabilities (routes, auth, files, git). They do not test whether the
+agent can *extend* the platform — adding a new UI panel and a new agent-callable tool that
+exercise the platform's plugin and router-extension systems.
+
+The `extensible` profile closes this gap. It tests the two primary extension surfaces that
+differentiate a boring-ui child app from a generic FastAPI service:
+
+1. **Custom workspace pane** — a React component discovered by the backend, advertised via
+   `/api/capabilities`, dynamically loaded by the frontend, and rendered inside Dockview.
+2. **Custom backend router exposed as an agent-callable operation** — a FastAPI router declared
+   in `boring.app.toml` `[backend].routers`, mounted at `/api/x/<module>`, and invoked by the
+   agent during a chat session to demonstrate tool-like behavior.
+
+### Platform Extension Points (Current State)
+
+**Custom Panes** — well-supported:
+
+- Convention: `{workspace_root}/kurt/panels/{pane_name}/Panel.jsx`
+- Backend: `WorkspacePluginManager` discovers panels, reports them in `workspace_panes` on
+  `/api/capabilities`
+- Frontend: `loadWorkspacePanes()` dynamically imports components, `registerPane()` adds them
+  to the Dockview registry
+- Hot-reload: file changes trigger capabilities refetch and pane reload
+
+**Custom Agent Tools** — partially supported:
+
+- There is no declarative `[tools]` section in `boring.app.toml` today.
+- Agent tools are defined in code: `WORKSPACE_TOOLS` (Python messaging) or
+  `createWorkspaceTools()` (JS PI service).
+- However, child apps *can* add custom backend routers via `[backend].routers` in
+  `boring.app.toml`, and those routers are mounted, discoverable via capabilities, and callable
+  by the agent through `exec_bash` or direct HTTP.
+- The eval tests the agent's ability to create a router that performs a domain-specific operation
+  and to invoke that router from a chat session, which is the closest supported analog to a
+  "custom agent tool" in the current architecture.
+
+**Note**: A future `[tools]` config section that lets child apps declaratively register agent
+tools (with schema, handler module, and capability gating) would make the `extensible` profile
+significantly cleaner. Until then, the eval tests the router-as-tool pattern which is the
+recommended workaround.
+
+### Agent Task Contract — Extensible Additions
+
+In addition to all `full-stack` requirements, the agent must:
+
+1. Create a custom workspace pane at `kurt/panels/eval-status/Panel.jsx` that:
+   - Default-exports a React component
+   - Renders the `eval_id`, `verification_nonce`, and a human-readable status message
+   - Calls the custom backend router (see below) on mount or via a button and displays the
+     response
+
+2. Create a custom backend router at `src/<python_module>/routers/eval_tool.py` that:
+   - Exposes `GET /api/x/eval_tool/compute` accepting a query parameter `input`
+   - Returns `{"result": <deterministic transformation of input>, "eval_id": "<eval_id>",
+     "verification_nonce": "<verification_nonce>"}`
+   - The transformation must be non-trivial but deterministic (e.g., reverse + uppercase,
+     word count + SHA256 prefix, or similar) so the harness can independently verify correctness
+   - Is declared in `boring.app.toml` under `[backend].routers`
+
+3. Verify locally that:
+   - `/api/capabilities` includes the custom pane in `workspace_panes`
+   - The custom router responds correctly at its mounted path
+   - The pane component loads without JS errors (if testable via the dev server)
+
+4. After deployment, verify that:
+   - The custom router is live and returns the expected response
+   - The capabilities endpoint advertises the workspace pane
+
+### Verification Phase — Extensible Checks
+
+#### Phase X.P: Custom Pane Verification
+
+| Check | W | What |
+|---|---:|---|
+| `pane.file_exists` | 3 | `kurt/panels/eval-status/Panel.jsx` exists |
+| `pane.default_export` | 3 | File has a default export (static analysis or import check) |
+| `pane.in_capabilities` | 4 | **must_pass** — `/api/capabilities` `workspace_panes` includes an entry with `id: "ws-eval-status"` |
+| `pane.renders_eval_id` | 3 | Component source references `eval_id` and `verification_nonce` (static check) |
+| `pane.calls_backend` | 3 | Component source contains a fetch/call to the custom router endpoint (static check) |
+| `pane.no_import_errors` | 2 | Local dev server logs show no import errors for the pane module |
+| `pane.live_capabilities` | 3 | Live `/api/capabilities` includes the pane after deployment |
+
+#### Phase X.T: Custom Tool / Router Verification
+
+| Check | W | What |
+|---|---:|---|
+| `tool.router_file_exists` | 3 | Router module file exists at the expected path |
+| `tool.toml_declared` | 4 | **must_pass** — `boring.app.toml` `[backend].routers` includes the router module |
+| `tool.local_200` | 4 | **must_pass** — Local `GET /api/x/eval_tool/compute?input=test` returns 200 |
+| `tool.local_correct` | 4 | Response contains correct deterministic transformation + `eval_id` + `verification_nonce` |
+| `tool.local_schema` | 2 | Response is valid JSON with the required fields |
+| `tool.input_varies` | 3 | Different inputs produce different (but deterministic) outputs |
+| `tool.live_200` | 4 | **must_pass** — Live endpoint returns 200 |
+| `tool.live_correct` | 4 | Live response matches the same transformation contract |
+| `tool.live_nonce` | 3 | Live response includes correct `verification_nonce` |
+| `tool.in_capabilities` | 2 | Router appears in capabilities as an enabled router/feature |
+| `tool.agent_invocation` | 3 | (Stretch) Agent demonstrated calling the tool during a chat session in its transcript |
+
+#### Phase X.I: Integration — Pane + Tool Round-Trip
+
+| Check | W | What |
+|---|---:|---|
+| `integ.pane_calls_tool` | 4 | **must_pass** — Pane component source makes a request to the tool router's endpoint |
+| `integ.tool_contract_matches` | 3 | The URL and response shape the pane expects matches what the tool router produces |
+| `integ.both_share_nonce` | 3 | Both the pane and the router reference the same `verification_nonce` |
+
+### Scoring — Extensible Category
+
+| Category | Weight | Gate |
+|---|---:|---:|
+| Custom pane | 8% | 70% |
+| Custom tool/router | 8% | 70% |
+| Pane–tool integration | 4% | 65% |
+
+When the `extensible` profile is active, existing category weights are reduced proportionally
+to make room for the 20% extensible allocation:
+
+| Category | Base Weight | Extensible Weight |
+|---|---:|---:|
+| Scaffolding / Build correctness | 10% | 8% |
+| Workflow compliance | 10% | 8% |
+| Local dev / Runtime validation | 15% | 12% |
+| Deployment / Live validation | 30% | 24% |
+| Security / Scope hygiene | 25% | 20% |
+| Report quality / Observability | 10% | 8% |
+| Custom pane | — | 8% |
+| Custom tool/router | — | 8% |
+| Pane–tool integration | — | 4% |
+
+### Critical Auto-Fail — Extensible Additions
+
+The following should force `FAIL` in addition to the base critical auto-fail conditions:
+
+8. The custom pane file does not exist or has no default export.
+9. The custom router is not declared in `boring.app.toml` `[backend].routers`.
+10. The live custom router endpoint is unreachable or returns incorrect results.
+
+### Agent Prompt Additions for Extensible Profile
+
+The prompt should append these constraints when the `extensible` profile is selected:
+
+- Create a custom workspace pane at `kurt/panels/eval-status/Panel.jsx` that displays the
+  eval identity and calls your custom backend endpoint.
+- Create a custom backend router at `src/<python_module>/routers/eval_tool.py` that performs
+  a deterministic computation and returns results tagged with `eval_id` and
+  `verification_nonce`.
+- Declare the router in `boring.app.toml` under `[backend].routers`.
+- Verify both the pane discovery (via `/api/capabilities`) and the router response locally
+  before deploying.
+- The pane must call the tool router — they must work together, not just coexist.
+
+### Required Custom Router Contract
+
+    GET /api/x/eval_tool/compute?input=<string>
+
+    Response:
+    {
+      "result": "<deterministic_transform(input)>",
+      "input": "<original_input>",
+      "eval_id": "<eval_id>",
+      "verification_nonce": "<verification_nonce>"
+    }
+
+The harness should test with at least 3 different inputs and verify:
+- All responses include the correct `eval_id` and `verification_nonce`
+- `result` is deterministic (same input → same output across calls)
+- `result` varies with `input` (different inputs → different outputs)
+- The transformation is non-trivial (not identity, not constant)
+
+### Evidence Additions
+
+The evidence bundle should include for `extensible` runs:
+
+    http/
+      local_eval_tool_compute_1.json
+      local_eval_tool_compute_2.json
+      local_eval_tool_compute_3.json
+      deploy_eval_tool_compute_1.json
+      deploy_eval_tool_compute_2.json
+      deploy_eval_tool_compute_3.json
+      local_capabilities_pane.json
+      deploy_capabilities_pane.json
+    static_analysis/
+      pane_exports.json
+      pane_backend_call.json
+      router_toml_declaration.json
+
+### Harness Implementation Additions
+
+New modules:
+
+    tests/eval/checks/
+      custom_pane.py          # Phase X.P checks
+      custom_tool.py          # Phase X.T checks
+      pane_tool_integration.py # Phase X.I checks
+
+New check catalog entries should declare prerequisites:
+
+- `pane.*` checks require `scaff.dir_exists` to pass
+- `tool.local_*` checks require `local.clean_room_dev_starts` to pass
+- `tool.live_*` checks require `deploy.health_200` to pass
+- `integ.*` checks require both `pane.file_exists` and `tool.router_file_exists` to pass
+
+### Implementation Phase for Extensible
+
+This should be Phase 3b, after the base verification modules (Phase 3) and before scoring
+(Phase 4):
+
+### Phase 3b: Extensible verification modules
+
+1. Custom pane static analysis (file exists, default export, source references)
+2. Custom pane capabilities discovery (local + live)
+3. Custom tool router local smoke (3 inputs)
+4. Custom tool router live smoke (3 inputs)
+5. Pane–tool integration static analysis
+6. Check catalog registration with prerequisites
+
 ## Recommendation
 
 Implement this as a strict but not brittle end-to-end benchmark where the agent must both do the work **and** prove it did the work, while the harness independently verifies the local app, deployed system, security posture, scope discipline, and truthfulness of the report. That is the strongest practical design for measuring real autonomous delivery quality on this task.
+
+The `extensible` profile adds a meaningful layer: it tests whether the agent understands the
+platform's extension model, not just its scaffold. A child app that only has backend routes is
+a FastAPI service; one that also has a custom pane calling a custom tool is a boring-ui app.

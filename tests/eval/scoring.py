@@ -17,6 +17,7 @@ from tests.eval.check_catalog import (
     CATEGORY_GATES,
     CATEGORY_WEIGHTS,
     CATALOG,
+    EXTENSIBLE_CATEGORY_WEIGHTS,
     CheckSpec,
     check_applicable,
 )
@@ -39,6 +40,11 @@ CRITICAL_AUTOFAIL: dict[str, str] = {
     "deploy.health_200": "Deployment unreachable after warmup",
     "scaff.custom_router_impl": "Custom routes missing",
     "report.claims_match_evidence": "Agent claims disproved by harness",
+    # Extensible profile auto-fail conditions
+    "pane.file_exists": "Custom pane file missing",
+    "pane.default_export": "Custom pane has no default export",
+    "tool.toml_declared": "Custom router not declared in boring.app.toml",
+    "tool.live_200": "Live eval_tool endpoint unreachable",
 }
 
 
@@ -95,13 +101,26 @@ def compute_category_scores(
     return scores
 
 
-def compute_core_score(categories: list[CategoryScore]) -> float:
-    """Compute weighted average core score (0.0–1.0)."""
+def compute_core_score(
+    categories: list[CategoryScore],
+    profile: str = "core",
+) -> float:
+    """Compute weighted average core score (0.0–1.0).
+
+    When *profile* is ``"extensible"``, uses redistributed weights that
+    allocate 20% to the extensible categories (custom_pane, custom_tool,
+    pane_tool_integration) while proportionally reducing base weights.
+    """
+    weights = (
+        EXTENSIBLE_CATEGORY_WEIGHTS if profile == "extensible"
+        else CATEGORY_WEIGHTS
+    )
+
     weighted_sum = 0.0
     weight_sum = 0.0
 
     for cs in categories:
-        weight = CATEGORY_WEIGHTS.get(cs.name, 0.0)
+        weight = weights.get(cs.name, 0.0)
         if weight <= 0 or cs.total_weight == 0:
             continue
         weighted_sum += cs.score * weight
@@ -218,7 +237,7 @@ def compute_scores(
     This is the main entry point for scoring.
     """
     categories = compute_category_scores(checks, profile)
-    core_score = compute_core_score(categories)
+    core_score = compute_core_score(categories, profile)
 
     # Extension score (non-core checks)
     ext_checks = [

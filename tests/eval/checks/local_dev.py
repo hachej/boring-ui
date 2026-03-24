@@ -43,6 +43,7 @@ class LocalDevContext:
         config_status: int | None = None,
         capabilities_response: dict[str, Any] | None = None,
         capabilities_status: int | None = None,
+        eval_tool_probes: dict[str, dict[str, Any]] | None = None,
         clean_shutdown: bool = False,
     ) -> None:
         self.manifest = manifest
@@ -61,6 +62,7 @@ class LocalDevContext:
         self.config_status = config_status
         self.capabilities_response = capabilities_response
         self.capabilities_status = capabilities_status
+        self.eval_tool_probes = eval_tool_probes or {}
         self.clean_shutdown = clean_shutdown
 
 

@@ -252,6 +252,29 @@ def validate_profile_against_capabilities(
             severity="warning",
         ))
 
+    # Extensible profile requirements
+    if contract.requires_custom_pane:
+        if not manifest.bui_available:
+            issues.append(CapabilityIssue(
+                requirement="requires_custom_pane",
+                detail=(
+                    "Custom pane checks require bui CLI for workspace plugin "
+                    "discovery — pane checks will be SKIP"
+                ),
+                severity="warning",
+            ))
+
+    if contract.requires_custom_tool:
+        if not manifest.bui_available:
+            issues.append(CapabilityIssue(
+                requirement="requires_custom_tool",
+                detail=(
+                    "Custom tool checks require bui CLI for router mounting "
+                    "— tool checks will be SKIP"
+                ),
+                severity="warning",
+            ))
+
     return issues
 
 
@@ -303,5 +326,17 @@ def skip_reasons_for_manifest(
         # Workflow checks for neon need neon setup support
         if spec.id == "workflow.neon_supported" and not manifest.neon_setup_support:
             skips[spec.id] = "ENV_DEPENDENCY_MISSING: Neon setup not available"
+
+        # Extensible checks: live pane/tool checks need deploy support
+        if spec.category in ("custom_pane", "custom_tool", "pane_tool_integration"):
+            # Live checks need Fly
+            if "live" in spec.id and not manifest.fly_available:
+                skips[spec.id] = "ENV_FLY_AUTH: Fly CLI not available for live checks"
+            elif "live" in spec.id and not manifest.deploy_support:
+                skips[spec.id] = "ENV_DEPENDENCY_MISSING: deploy support not detected"
+
+            # All extensible checks need bui
+            if not manifest.bui_available:
+                skips[spec.id] = "ENV_BUI_MISSING: bui CLI not available for extensible checks"
 
     return skips

@@ -7,21 +7,21 @@ Start with `bui --help` to discover the full workflow, then run `bui init`,
 
 ## App identity
 
-- App name: `ce-0324-36qxdmf0`
-- Eval ID: `child-eval-20260324T141537Z-36qxdmf0`
-- Verification nonce: `QPPqQinIs2-pi5lEoEV3EQ`
-- Project location: `/home/ubuntu/projects/ce-0324-36qxdmf0`
+- App name: `ce-0324-xcb88mg1`
+- Eval ID: `child-eval-20260324T143520Z-xcb88mg1`
+- Verification nonce: `zM1DD20nl-YWyZTaQIOINg`
+- Project location: `/home/ubuntu/projects/ce-0324-xcb88mg1`
 
 ## What to build
 
-**Verification endpoints** (`src/ce_0324_36qxdmf0/routers/status.py`):
+**Verification endpoints** (`src/ce_0324_xcb88mg1/routers/status.py`):
 
-  GET /health → {"ok": true, "app": "ce-0324-36qxdmf0", "custom": true, "eval_id": "child-eval-20260324T141537Z-36qxdmf0", "verification_nonce": "QPPqQinIs2-pi5lEoEV3EQ"}
-  GET /info   → {"name": "ce-0324-36qxdmf0", "version": "0.1.0", "eval_id": "child-eval-20260324T141537Z-36qxdmf0"}
+  GET /health → {"ok": true, "app": "ce-0324-xcb88mg1", "custom": true, "eval_id": "child-eval-20260324T143520Z-xcb88mg1", "verification_nonce": "zM1DD20nl-YWyZTaQIOINg"}
+  GET /info   → {"name": "ce-0324-xcb88mg1", "version": "0.1.0", "eval_id": "child-eval-20260324T143520Z-xcb88mg1"}
 
 **Quick Notes feature** — a working pane + API for saving short text notes:
 
-  Backend (`src/ce_0324_36qxdmf0/routers/notes.py`):
+  Backend (`src/ce_0324_xcb88mg1/routers/notes.py`):
     POST /notes       {"text": "..."}  → {"id": "...", "text": "...", "created_at": "..."}
     GET  /notes                          → [{"id": "...", "text": "...", "created_at": "..."}]
     DELETE /notes/{id}                  → {"deleted": true}
@@ -42,10 +42,10 @@ End with:
 ```
 BEGIN_EVAL_REPORT_JSON
 {
-  "eval_id": "child-eval-20260324T141537Z-36qxdmf0",
-  "verification_nonce": "QPPqQinIs2-pi5lEoEV3EQ",
-  "app_slug": "ce-0324-36qxdmf0",
-  "project_root": "/home/ubuntu/projects/ce-0324-36qxdmf0",
+  "eval_id": "child-eval-20260324T143520Z-xcb88mg1",
+  "verification_nonce": "zM1DD20nl-YWyZTaQIOINg",
+  "app_slug": "ce-0324-xcb88mg1",
+  "project_root": "/home/ubuntu/projects/ce-0324-xcb88mg1",
   "deployed_url": "https://...",
   "fly_app_name": "...",
   "neon_project_id": "...",
@@ -76,4 +76,4 @@ BEGIN_EVAL_REPORT_JSON
 END_EVAL_REPORT_JSON
 ```
 
-Write it to: `/home/ubuntu/projects/.eval-evidence/ce-0324-36qxdmf0/report.json`
+Write it to: `/home/ubuntu/projects/.eval-evidence/ce-0324-xcb88mg1/report.json`

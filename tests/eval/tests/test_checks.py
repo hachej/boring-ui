@@ -14,6 +14,12 @@ import pytest
 from tests.eval.checks.deployment import DeploymentContext, run_deployment_checks
 from tests.eval.checks.local_dev import LocalDevContext, run_local_dev_checks
 from tests.eval.checks.preflight import run_preflight_checks
+from tests.eval.checks.custom_pane import CustomPaneContext, run_custom_pane_checks
+from tests.eval.checks.custom_tool import CustomToolContext, run_custom_tool_checks
+from tests.eval.checks.pane_tool_integration import (
+    PaneToolIntegrationContext,
+    run_pane_tool_integration_checks,
+)
 from tests.eval.checks.report_quality import run_report_quality_checks
 from tests.eval.checks.scaffolding import run_scaffolding_checks
 from tests.eval.checks.security import run_security_checks
@@ -93,6 +99,77 @@ def info():
     return {{"name": "{manifest.app_slug}", "version": "0.1.0",
              "eval_id": "{manifest.eval_id}"}}
 """)
+    return root
+
+
+@pytest.fixture
+def extensible_project(manifest, tmp_path):
+    """Create a project tree with extensible pane + eval_tool router."""
+    root = tmp_path / f"{manifest.app_slug}-ext"
+    root.mkdir()
+    manifest.project_root = str(root)
+    manifest.evidence_dir = str(tmp_path / "evidence-ext")
+    manifest.platform_profile = "extensible"
+
+    (root / "boring.app.toml").write_text(f"""
+[app]
+name = "{manifest.app_slug}"
+id = "{manifest.app_slug}"
+
+[backend]
+entry = "{manifest.python_module}.api.app:create_app"
+routers = ["{manifest.python_module}.routers.eval_tool:router"]
+
+[deploy]
+platform = "fly"
+""")
+
+    # Pane
+    pane_dir = root / "kurt" / "panels" / "eval-status"
+    pane_dir.mkdir(parents=True)
+    (pane_dir / "Panel.jsx").write_text(f"""
+import React, {{ useEffect, useState }} from 'react'
+
+export default function EvalStatusPanel() {{
+  const [data, setData] = useState(null)
+  useEffect(() => {{
+    fetch('/api/x/eval_tool/compute?input=test')
+      .then((r) => r.json())
+      .then(setData)
+  }}, [])
+
+  return (
+    <div>
+      <div>eval_id: {manifest.eval_id}</div>
+      <div>verification_nonce: {manifest.verification_nonce}</div>
+      <div>result: {{data?.result}}</div>
+      <div>tool_eval_id: {{data?.eval_id}}</div>
+      <div>tool_nonce: {{data?.verification_nonce}}</div>
+      <pre>{{JSON.stringify(data)}}</pre>
+    </div>
+  )
+}}
+""")
+
+    # Router
+    router_dir = root / "src" / manifest.python_module / "routers"
+    router_dir.mkdir(parents=True)
+    (router_dir / "__init__.py").write_text("")
+    (router_dir / "eval_tool.py").write_text(f"""
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get('/compute')
+def compute(input: str):
+    return {{
+        'result': input[::-1].upper(),
+        'input': input,
+        'eval_id': '{manifest.eval_id}',
+        'verification_nonce': '{manifest.verification_nonce}',
+    }}
+""")
+
     return root
 
 
@@ -217,6 +294,127 @@ class TestLocalDevChecks:
         results = run_local_dev_checks(ctx)
         skipped = [r for r in results if r.status == CheckStatus.SKIP]
         assert len(skipped) >= 8  # most checks need dev_started
+
+
+# ===================================================================
+# Extensible checks
+# ===================================================================
+
+
+class TestExtensibleChecks:
+    def _local_ctx(self, manifest):
+        return LocalDevContext(
+            manifest,
+            dev_started=True,
+            dev_stdout="",
+            dev_stderr="",
+            capabilities_status=200,
+            capabilities_response={
+                "workspace_panes": [{"id": "ws-eval-status"}],
+                "features": {"eval_tool": True},
+            },
+            eval_tool_probes={
+                "test": {
+                    "status": 200,
+                    "body": {
+                        "result": "TSET",
+                        "input": "test",
+                        "eval_id": manifest.eval_id,
+                        "verification_nonce": manifest.verification_nonce,
+                    },
+                },
+                "alpha": {
+                    "status": 200,
+                    "body": {
+                        "result": "AHPLA",
+                        "input": "alpha",
+                        "eval_id": manifest.eval_id,
+                        "verification_nonce": manifest.verification_nonce,
+                    },
+                },
+                "omega": {
+                    "status": 200,
+                    "body": {
+                        "result": "AGEMO",
+                        "input": "omega",
+                        "eval_id": manifest.eval_id,
+                        "verification_nonce": manifest.verification_nonce,
+                    },
+                },
+            },
+        )
+
+    def _deployment_ctx(self, manifest):
+        return DeploymentContext(
+            manifest,
+            deployed_url=f"https://{manifest.app_slug}.fly.dev",
+            responses={
+                "/api/capabilities": (
+                    200,
+                    {
+                        "workspace_panes": [{"id": "ws-eval-status"}],
+                        "features": {"eval_tool": True},
+                        "routers": [{"name": "eval_tool", "prefix": "/api/x/eval_tool"}],
+                    },
+                ),
+                "/api/x/eval_tool/compute?input=test": (
+                    200,
+                    {
+                        "result": "TSET",
+                        "input": "test",
+                        "eval_id": manifest.eval_id,
+                        "verification_nonce": manifest.verification_nonce,
+                    },
+                ),
+                "/api/x/eval_tool/compute?input=alpha": (
+                    200,
+                    {
+                        "result": "AHPLA",
+                        "input": "alpha",
+                        "eval_id": manifest.eval_id,
+                        "verification_nonce": manifest.verification_nonce,
+                    },
+                ),
+                "/api/x/eval_tool/compute?input=omega": (
+                    200,
+                    {
+                        "result": "AGEMO",
+                        "input": "omega",
+                        "eval_id": manifest.eval_id,
+                        "verification_nonce": manifest.verification_nonce,
+                    },
+                ),
+            },
+        )
+
+    def test_custom_pane_checks_pass(self, manifest, extensible_project):
+        ctx = CustomPaneContext(
+            manifest,
+            local_ctx=self._local_ctx(manifest),
+            deployment_ctx=self._deployment_ctx(manifest),
+        )
+        results = run_custom_pane_checks(ctx)
+        assert all(r.status == CheckStatus.PASS for r in results)
+
+    def test_custom_tool_checks_pass(self, manifest, extensible_project):
+        ctx = CustomToolContext(
+            manifest,
+            local_ctx=self._local_ctx(manifest),
+            deployment_ctx=self._deployment_ctx(manifest),
+            command_log=[ObservedCommand(command="curl /api/x/eval_tool/compute?input=test", exit_code=0)],
+            agent_text="Called /api/x/eval_tool/compute?input=test",
+        )
+        results = run_custom_tool_checks(ctx)
+        assert all(r.status in (CheckStatus.PASS, CheckStatus.SKIP) for r in results)
+        local_200 = [r for r in results if r.id == "tool.local_200"][0]
+        live_200 = [r for r in results if r.id == "tool.live_200"][0]
+        assert local_200.status == CheckStatus.PASS
+        assert live_200.status == CheckStatus.PASS
+
+    def test_pane_tool_integration_checks_pass(self, manifest, extensible_project):
+        ctx = PaneToolIntegrationContext(manifest)
+        results = run_pane_tool_integration_checks(ctx)
+        assert all(r.status == CheckStatus.PASS for r in results)
 
 
 # ===================================================================

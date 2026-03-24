@@ -53,6 +53,41 @@ def generate_prompt(
         "known_issues": [],
     }, indent=2)
 
+    extensible_section = ""
+    if profile == "extensible":
+        extensible_section = f"""
+## Extensible Profile — Custom Pane + Custom Tool
+
+In addition to everything above, you must create:
+
+**Custom workspace pane** (`kurt/panels/eval-status/Panel.jsx`):
+- Default-export a React component.
+- Render the `eval_id` ("{manifest.eval_id}") and `verification_nonce`
+  ("{manifest.verification_nonce}") visibly.
+- On mount or via a button, call `GET /api/x/eval_tool/compute?input=<value>`
+  and display the response.
+
+**Custom backend router** (`src/{manifest.python_module}/routers/eval_tool.py`):
+- Expose `GET /api/x/eval_tool/compute` accepting query parameter `input`.
+- Return:
+    {{"result": "<deterministic_transform(input)>", "input": "<original_input>", "eval_id": "{manifest.eval_id}", "verification_nonce": "{manifest.verification_nonce}"}}
+- The transformation must be non-trivial but deterministic (e.g., reverse +
+  uppercase, word count + SHA256 prefix, or similar).
+- Declare this router in `boring.app.toml` under `[backend].routers`.
+
+**Verification before deploy:**
+- `/api/capabilities` must include the custom pane in `workspace_panes`.
+- The custom router must respond correctly at its mounted path.
+- The pane component must load without JS errors.
+
+**After deploy, verify:**
+- The custom router is live and returns the expected response.
+- The capabilities endpoint advertises the workspace pane.
+
+**The pane must call the tool router** — they must work together, not just
+coexist.
+"""
+
     return f"""# Task
 
 Create, validate, and deploy a boring-ui child app to Fly.io.
@@ -85,7 +120,7 @@ Start with `bui --help` to discover the full workflow, then run `bui init`,
     A panel that lists notes, lets you add new ones, and delete them.
 
 Wire all routers and the panel in boring.app.toml. Deploy to Fly.io.
-
+{extensible_section}
 Constraints:
 - Do NOT modify `../boring-ui/` or sibling directories.
 - Do NOT hardcode secrets; use Vault-backed deploy secret refs.

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import tests.eval.eval_child_app as eval_child_app_module
 from tests.eval.agent_prompt import generate_prompt
 from tests.eval.check_catalog import get_checks_by_category
 from tests.eval.checks.deployment import DeploymentContext, run_deployment_checks
@@ -21,11 +22,12 @@ from tests.eval.checks.scaffolding import run_scaffolding_checks
 from tests.eval.checks.security import run_security_checks
 from tests.eval.checks.workflow import run_workflow_checks
 from tests.eval.contracts import CheckResult, RunManifest
-from tests.eval.eval_child_app import _load_run_state, _save_run_state, run_cleanup_from_state
+from tests.eval.eval_child_app import _load_run_state, _save_run_state, run_cleanup_from_state, run_eval
 from tests.eval.eval_logger import EvalLogger
 from tests.eval.evidence import write_evidence_bundle
 from tests.eval.reason_codes import Attribution, CheckStatus
 from tests.eval.redaction import SecretRegistry
+from tests.eval.report_schema import BEGIN_MARKER, END_MARKER
 from tests.eval.runners.mock import MockRunner
 from tests.eval.scoring import compute_scores
 from tests.eval.tests.helpers import make_project_tree
@@ -455,6 +457,114 @@ def test_dry_run_known_good_fixture_produces_pass_and_logs(tmp_path):
     assert "Phase started: agent_execution" in log_text
     assert "Phase ended: scoring" in log_text
     assert "ERROR" not in log_text
+
+
+def test_run_eval_uses_real_check_modules_instead_of_stub(tmp_path, monkeypatch):
+    class MaterializingRunner:
+        @property
+        def name(self) -> str:
+            return "materializing"
+
+        async def run(self, manifest: RunManifest, prompt: str, timeout_s: int = 600):
+            _materialize_project(manifest, "known-good")
+            report = {
+                "eval_id": manifest.eval_id,
+                "eval_spec_version": "0.1.0",
+                "report_schema_version": "0.1.0",
+                "platform_profile": "core",
+                "verification_nonce": manifest.verification_nonce,
+                "app_slug": manifest.app_slug,
+                "project_root": manifest.project_root,
+                "python_module": manifest.python_module,
+                "commands_run": ["bui init", "bui doctor", "bui deploy"],
+                "local_checks": [{"path": "/health", "status": 200}],
+                "live_checks": [{"path": "/health", "status": 0}],
+                "known_issues": [],
+                "steps": {
+                    "scaffold": {"status": "succeeded", "attempted": True},
+                    "local_validate": {"status": "succeeded", "attempted": True},
+                    "neon_setup": {"status": "failed", "attempted": True},
+                    "deploy": {"status": "failed", "attempted": True},
+                },
+            }
+            text = (
+                "Summary: scaffolded app, ran bui init, bui doctor, and bui deploy.\n"
+                f"{BEGIN_MARKER}\n{json.dumps(report)}\n{END_MARKER}\n"
+            )
+            return type("RunResultLike", (), {
+                "exit_code": 0,
+                "timed_out": False,
+                "stdout": text,
+                "stderr": "",
+                "final_response": text,
+                "command_log": [],
+                "elapsed_s": 0.1,
+            })()
+
+        async def cleanup(self) -> None:
+            return None
+
+    async def fake_local_dev_validation(manifest: RunManifest, timeout_s: int):
+        return (
+            LocalDevContext(
+                manifest,
+                doctor_exit_code=0,
+                doctor_stdout="All checks passed",
+                doctor_stderr="",
+                dev_started=True,
+                dev_port=8000,
+                dev_stdout="started",
+                dev_stderr="",
+                health_response={
+                    "ok": True,
+                    "app": manifest.app_slug,
+                    "eval_id": manifest.eval_id,
+                    "verification_nonce": manifest.verification_nonce,
+                },
+                health_status=200,
+                info_response={
+                    "name": manifest.app_slug,
+                    "version": "0.1.0",
+                    "eval_id": manifest.eval_id,
+                },
+                info_status=200,
+                config_response={"app": manifest.app_slug},
+                config_status=200,
+                capabilities_response={"features": {}, "routers": ["status"], "version": "0.1.0"},
+                capabilities_status=200,
+                clean_shutdown=True,
+            ),
+            0.25,
+        )
+
+    monkeypatch.setattr(
+        eval_child_app_module,
+        "_run_local_dev_validation",
+        fake_local_dev_validation,
+    )
+
+    evidence_dir = tmp_path / "evidence"
+    result = asyncio.run(run_eval(
+        profile="core",
+        evidence_dir=str(evidence_dir),
+        projects_root=str(tmp_path),
+        verify_timeout=5,
+        skip_deploy=True,
+        skip_cleanup=True,
+        runner=MaterializingRunner(),
+        quiet=True,
+    ))
+
+    by_id = {check.id: check for check in result.checks}
+    log_text = (evidence_dir / "eval.log").read_text(encoding="utf-8")
+
+    assert by_id["scaff.custom_router_impl"].status == CheckStatus.PASS
+    assert by_id["workflow.deploy_supported"].status == CheckStatus.PASS
+    assert by_id["local.custom_health"].status == CheckStatus.PASS
+    assert by_id["report.claims_match_evidence"].status == CheckStatus.PASS
+    assert by_id["deploy.health_200"].status == CheckStatus.SKIP
+    assert "not yet wired" not in log_text
+    assert "stub — no resources to clean" not in log_text
 
 
 @pytest.mark.parametrize("fixture_name", list(FIXTURE_MANIFESTS))

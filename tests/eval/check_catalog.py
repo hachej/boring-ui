@@ -38,6 +38,10 @@ CATEGORY_GATES: dict[str, float] = {
     "deployment": 0.65,
     "security": 0.80,
     "report_quality": 0.70,
+    # Extensible profile categories
+    "custom_pane": 0.70,
+    "custom_tool": 0.70,
+    "pane_tool_integration": 0.65,
 }
 
 CATEGORY_WEIGHTS: dict[str, float] = {
@@ -48,6 +52,25 @@ CATEGORY_WEIGHTS: dict[str, float] = {
     "deployment": 0.30,
     "security": 0.25,
     "report_quality": 0.10,
+    # Extensible profile categories (0 in base; scoring.py applies profile weights)
+    "custom_pane": 0.0,
+    "custom_tool": 0.0,
+    "pane_tool_integration": 0.0,
+}
+
+# Extensible profile redistributes weights: base categories scaled to 80%,
+# extensible categories get the remaining 20%.
+EXTENSIBLE_CATEGORY_WEIGHTS: dict[str, float] = {
+    "preflight": 0.0,
+    "scaffolding": 0.08,
+    "workflow": 0.08,
+    "local_dev": 0.12,
+    "deployment": 0.24,
+    "security": 0.20,
+    "report_quality": 0.08,
+    "custom_pane": 0.08,
+    "custom_tool": 0.08,
+    "pane_tool_integration": 0.04,
 }
 
 
@@ -798,6 +821,196 @@ _reg(CheckSpec(
     category="report_quality", weight=2,
     prerequisites=("report.json_parseable",),
     description="Any scope/isolation statement is accurate",
+))
+
+
+# -------------------------------------------------------------------
+# Phase X.P: Custom Pane Verification (extensible profile)
+# -------------------------------------------------------------------
+
+_reg(CheckSpec(
+    id="pane.file_exists",
+    category="custom_pane", weight=3,
+    profile="extensible",
+    prerequisites=("scaff.dir_exists",),
+    core_required=False,
+    description="kurt/panels/eval-status/Panel.jsx exists",
+))
+_reg(CheckSpec(
+    id="pane.default_export",
+    category="custom_pane", weight=3,
+    profile="extensible",
+    prerequisites=("pane.file_exists",),
+    core_required=False,
+    description="Pane file has a default export (static analysis)",
+))
+_reg(CheckSpec(
+    id="pane.in_capabilities",
+    category="custom_pane", weight=4,
+    profile="extensible",
+    must_pass=True,
+    prerequisites=("local.capabilities_200",),
+    core_required=False,
+    description="must_pass: /api/capabilities workspace_panes includes eval-status pane",
+))
+_reg(CheckSpec(
+    id="pane.renders_eval_id",
+    category="custom_pane", weight=3,
+    profile="extensible",
+    prerequisites=("pane.file_exists",),
+    core_required=False,
+    description="Component source references eval_id and verification_nonce (static check)",
+))
+_reg(CheckSpec(
+    id="pane.calls_backend",
+    category="custom_pane", weight=3,
+    profile="extensible",
+    prerequisites=("pane.file_exists",),
+    core_required=False,
+    description="Component source contains a fetch/call to the custom router endpoint",
+))
+_reg(CheckSpec(
+    id="pane.no_import_errors",
+    category="custom_pane", weight=2,
+    profile="extensible",
+    prerequisites=("local.clean_room_dev_starts",),
+    core_required=False,
+    description="Local dev server logs show no import errors for the pane module",
+))
+_reg(CheckSpec(
+    id="pane.live_capabilities",
+    category="custom_pane", weight=3,
+    profile="extensible",
+    prerequisites=("deploy.capabilities_200",),
+    core_required=False,
+    retry_policy=DEPLOY_RETRY,
+    description="Live /api/capabilities includes the custom pane after deployment",
+))
+
+# -------------------------------------------------------------------
+# Phase X.T: Custom Tool / Router Verification (extensible profile)
+# -------------------------------------------------------------------
+
+_reg(CheckSpec(
+    id="tool.router_file_exists",
+    category="custom_tool", weight=3,
+    profile="extensible",
+    prerequisites=("scaff.dir_exists",),
+    core_required=False,
+    description="Router module file exists at the expected path",
+))
+_reg(CheckSpec(
+    id="tool.toml_declared",
+    category="custom_tool", weight=4,
+    profile="extensible",
+    must_pass=True,
+    prerequisites=("scaff.toml_valid",),
+    core_required=False,
+    description="must_pass: boring.app.toml [backend].routers includes the eval_tool router",
+))
+_reg(CheckSpec(
+    id="tool.local_200",
+    category="custom_tool", weight=4,
+    profile="extensible",
+    must_pass=True,
+    prerequisites=("local.clean_room_dev_starts",),
+    core_required=False,
+    description="must_pass: Local GET /api/x/eval_tool/compute?input=test returns 200",
+))
+_reg(CheckSpec(
+    id="tool.local_correct",
+    category="custom_tool", weight=4,
+    profile="extensible",
+    prerequisites=("tool.local_200",),
+    core_required=False,
+    description="Local response contains correct deterministic transformation + eval_id + nonce",
+))
+_reg(CheckSpec(
+    id="tool.local_schema",
+    category="custom_tool", weight=2,
+    profile="extensible",
+    prerequisites=("tool.local_200",),
+    core_required=False,
+    description="Local response is valid JSON with required fields (result, input, eval_id, verification_nonce)",
+))
+_reg(CheckSpec(
+    id="tool.input_varies",
+    category="custom_tool", weight=3,
+    profile="extensible",
+    prerequisites=("tool.local_200",),
+    core_required=False,
+    description="Different inputs produce different (but deterministic) outputs",
+))
+_reg(CheckSpec(
+    id="tool.live_200",
+    category="custom_tool", weight=4,
+    profile="extensible",
+    must_pass=True,
+    prerequisites=("deploy.health_200",),
+    core_required=False,
+    retry_policy=DEPLOY_RETRY,
+    description="must_pass: Live eval_tool endpoint returns 200",
+))
+_reg(CheckSpec(
+    id="tool.live_correct",
+    category="custom_tool", weight=4,
+    profile="extensible",
+    prerequisites=("tool.live_200",),
+    core_required=False,
+    description="Live response matches the same transformation contract",
+))
+_reg(CheckSpec(
+    id="tool.live_nonce",
+    category="custom_tool", weight=3,
+    profile="extensible",
+    prerequisites=("tool.live_200",),
+    core_required=False,
+    description="Live response includes correct verification_nonce",
+))
+_reg(CheckSpec(
+    id="tool.in_capabilities",
+    category="custom_tool", weight=2,
+    profile="extensible",
+    prerequisites=("local.capabilities_200",),
+    core_required=False,
+    description="Router appears in capabilities as an enabled router/feature",
+))
+_reg(CheckSpec(
+    id="tool.agent_invocation",
+    category="custom_tool", weight=3,
+    profile="extensible",
+    core_required=False,
+    description="(Stretch) Agent demonstrated calling the tool during a chat session",
+))
+
+# -------------------------------------------------------------------
+# Phase X.I: Pane–Tool Integration (extensible profile)
+# -------------------------------------------------------------------
+
+_reg(CheckSpec(
+    id="integ.pane_calls_tool",
+    category="pane_tool_integration", weight=4,
+    profile="extensible",
+    must_pass=True,
+    prerequisites=("pane.file_exists", "tool.router_file_exists"),
+    core_required=False,
+    description="must_pass: Pane component source makes a request to the tool router endpoint",
+))
+_reg(CheckSpec(
+    id="integ.tool_contract_matches",
+    category="pane_tool_integration", weight=3,
+    profile="extensible",
+    prerequisites=("pane.file_exists", "tool.router_file_exists"),
+    core_required=False,
+    description="The URL and response shape the pane expects matches what the tool produces",
+))
+_reg(CheckSpec(
+    id="integ.both_share_nonce",
+    category="pane_tool_integration", weight=3,
+    profile="extensible",
+    prerequisites=("pane.file_exists", "tool.router_file_exists"),
+    core_required=False,
+    description="Both pane and router reference the same verification_nonce",
 ))
 
 
