@@ -7,6 +7,8 @@ import { useGitStatus, useGitBranch } from '../providers/data'
 import { useDataProvider } from '../providers/data/DataContext'
 import { useAutoSync } from '../hooks/useAutoSync'
 import Tooltip from './Tooltip'
+import { Input } from './ui/input'
+import { Separator } from './ui/separator'
 
 const DEFAULT_SYNC_INTERVAL = 10000
 const SYNC_INTERVAL_KEY = 'boring-ui:sync-interval'
@@ -385,7 +387,7 @@ export default function SyncStatusFooter({
             {paused ? <Play size={13} /> : <Pause size={13} />}
             <span>{paused ? 'Resume auto-sync' : 'Pause auto-sync'}</span>
           </button>
-          <div className="sync-menu-divider" role="separator" />
+          <Separator className="sync-menu-divider" />
           <div className="sync-menu-section-label">Git</div>
           <button
             ref={branchBtnRef}
@@ -424,10 +426,10 @@ export default function SyncStatusFooter({
                       <span>{b}</span>
                     </button>
                   ))}
-                  <div className="sync-menu-divider" role="separator" />
+                  <Separator className="sync-menu-divider" />
                   <div className="sync-branch-create">
                     <GitBranchPlus size={13} />
-                    <input
+                    <Input
                       type="text"
                       className="sync-branch-input"
                       placeholder="New branch..."
@@ -440,7 +442,7 @@ export default function SyncStatusFooter({
               )}
             </div>
           )}
-          <div className="sync-menu-divider" role="separator" />
+          <Separator className="sync-menu-divider" />
           <div className="sync-menu-section-label">Agent</div>
           <button
             type="button"

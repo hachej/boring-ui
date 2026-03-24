@@ -15,6 +15,7 @@ Operational runbooks for common tasks.
 - [Phase 1 Buttons and Badges Migration](./PHASE1_BUTTON_BADGE_MIGRATION.md) — shared-primitive migration slice notes and wrapper exceptions
 - [Phase 1 Overlay and Menu Migration](./PHASE1_OVERLAY_MENU_MIGRATION.md) — dialog/dropdown migration notes and intentional custom overlays
 - [Phase 1 Form Primitive Migration](./PHASE1_FORM_PRIMITIVE_MIGRATION.md) — input/textarea/label/select migration notes and intentional native exceptions
+- [Phase 1 Low-Risk Primitive Migration](./PHASE1_LOW_RISK_PRIMITIVE_MIGRATION.md) — tooltip/avatar/tabs/separator migration notes and intentional custom exceptions
 
 ## Ownership Migration
 

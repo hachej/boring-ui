@@ -5,6 +5,8 @@ import { useTheme } from '../hooks/useTheme'
 import { ICON_SIZE_INLINE, ICON_SIZE_COMPACT, ICON_STROKE_WIDTH } from '../utils/iconTokens'
 import { routes } from '../utils/routes'
 import { Button } from './ui/button'
+import { Avatar, AvatarFallback } from './ui/avatar'
+import { Separator } from './ui/separator'
 
 /**
  * UserMenu - Avatar with dropdown menu for user and workspace actions
@@ -310,7 +312,7 @@ export default function UserMenu({
           ) : null}
         </div>
       ) : null}
-      <div className="user-menu-divider" />
+      <Separator className="user-menu-divider" />
       <Button
         type="button"
         variant="ghost"
@@ -331,7 +333,7 @@ export default function UserMenu({
           <span className="user-menu-theme-knob" />
         </span>
       </Button>
-      <div className="user-menu-divider" />
+      <Separator className="user-menu-divider" />
       {actionItems.map((item) => {
         const disabled = typeof item.onClick !== 'function' || disabledActions.includes(item.key)
         const ItemIcon = item.icon
@@ -402,18 +404,20 @@ export default function UserMenu({
         aria-haspopup="true"
         aria-controls={isOpen ? menuId : undefined}
       >
-        <span className={`user-avatar ${isSignedIn ? '' : 'user-avatar-anonymous'}`}>
-          {isSignedIn ? (
-            avatarLetter
-          ) : (
-            <HelpCircle
-              size={ICON_SIZE_INLINE}
-              strokeWidth={ICON_STROKE_WIDTH}
-              className="user-avatar-help-icon"
-              aria-hidden="true"
-            />
-          )}
-        </span>
+        <Avatar className={`user-avatar ${isSignedIn ? '' : 'user-avatar-anonymous'}`}>
+          <AvatarFallback className="user-avatar-fallback">
+            {isSignedIn ? (
+              avatarLetter
+            ) : (
+              <HelpCircle
+                size={ICON_SIZE_INLINE}
+                strokeWidth={ICON_STROKE_WIDTH}
+                className="user-avatar-help-icon"
+                aria-hidden="true"
+              />
+            )}
+          </AvatarFallback>
+        </Avatar>
         {!collapsed && (
           <span className="user-menu-trigger-meta">
             <span className="user-menu-trigger-primary">{displayEmail}</span>

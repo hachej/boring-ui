@@ -5,6 +5,7 @@ import { routeHref, routes } from '../utils/routes'
 import ThemeToggle from '../components/ThemeToggle'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import './auth.css'
 
 function safeRedirectPath(raw) {
@@ -355,28 +356,29 @@ export default function AuthPage({ authConfig }) {
                 Back to sign in
               </button>
             ) : (
-              <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
-                <button
-                  type="button"
-                  className={`auth-tab ${!isSignUp ? 'active' : ''}`}
-                  role="tab"
-                  aria-selected={!isSignUp}
-                  onClick={() => switchMode('sign_in')}
-                  disabled={busy}
-                >
-                  Sign in
-                </button>
-                <button
-                  type="button"
-                  className={`auth-tab ${isSignUp ? 'active' : ''}`}
-                  role="tab"
-                  aria-selected={isSignUp}
-                  onClick={() => switchMode('sign_up')}
-                  disabled={busy}
-                >
-                  Create account
-                </button>
-              </div>
+              <Tabs
+                value={isSignUp ? 'sign_up' : 'sign_in'}
+                onValueChange={(nextValue) => switchMode(nextValue)}
+              >
+                <TabsList className="auth-tabs" aria-label="Authentication mode">
+                  <TabsTrigger
+                    value="sign_in"
+                    className="auth-tab"
+                    onClick={() => switchMode('sign_in')}
+                    disabled={busy}
+                  >
+                    Sign in
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="sign_up"
+                    className="auth-tab"
+                    onClick={() => switchMode('sign_up')}
+                    disabled={busy}
+                  >
+                    Create account
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             )}
             <ThemeToggle />
           </div>

@@ -5120,6 +5120,13 @@ kbd {
   color: var(--color-icon-secondary);
 }
 
+.user-avatar-fallback {
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
 .user-menu-trigger-meta {
   min-width: 0;
   display: flex;
@@ -5394,7 +5401,6 @@ kbd {
 }
 
 .ui-tooltip {
-  position: fixed;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -5409,13 +5415,26 @@ kbd {
   pointer-events: none;
   white-space: nowrap;
   z-index: 2400;
-  transform: translate(-50%, -100%);
-  animation: tooltip-fade-in var(--duration-fast) var(--ease-out-fluid);
 }
 
-.ui-tooltip.ui-tooltip-bottom {
-  transform: translate(-50%, 0%);
-  animation-name: tooltip-fade-in-bottom;
+.ui-tooltip[data-side='bottom'] {
+  transform-origin: top center;
+}
+
+.ui-tooltip[data-side='top'] {
+  transform-origin: bottom center;
+}
+
+.ui-tooltip[data-side='left'] {
+  transform-origin: center right;
+}
+
+.ui-tooltip[data-side='right'] {
+  transform-origin: center left;
+}
+
+.ui-tooltip-label {
+  white-space: nowrap;
 }
 
 .ui-tooltip-shortcut {

@@ -132,7 +132,8 @@
   transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.auth-tab.active {
+.auth-tab.active,
+.auth-tab[data-state='active'] {
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
   font-weight: var(--font-weight-semibold);
