@@ -119,6 +119,7 @@ class LocalControlPlaneRepository(ControlPlaneRepository):
 
     def _load_unlocked(self) -> ControlPlaneState:
         if not self.state_path.exists():
+            LOGGER.info("control-plane state file '%s' does not exist, returning empty", self.state_path)
             return ControlPlaneState()
         try:
             payload = json.loads(self.state_path.read_text(encoding="utf-8"))
@@ -153,11 +154,15 @@ class LocalControlPlaneRepository(ControlPlaneRepository):
     def _write_unlocked(self, state: ControlPlaneState) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.state_path.with_suffix(f"{self.state_path.suffix}.tmp")
-        tmp_path.write_text(
-            json.dumps(state.to_dict(), indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        payload = json.dumps(state.to_dict(), indent=2, sort_keys=True)
+        tmp_path.write_text(payload, encoding="utf-8")
         tmp_path.replace(self.state_path)
+        LOGGER.info(
+            "control-plane state written to '%s' (%d bytes, %d users)",
+            self.state_path,
+            len(payload),
+            len(state.users),
+        )
 
     @staticmethod
     def _sorted_values(bucket: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:

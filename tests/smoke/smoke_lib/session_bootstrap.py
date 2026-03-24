@@ -75,7 +75,9 @@ def ensure_session(
 
     if mode == "neon":
         resolved_neon_url = resolve_neon_auth_url(base_url, neon_auth_url)
-        account_email = email or recipient or f"qa+smoke-neon-{int(time.time())}@boringdata.io"
+        import random, string
+        _noise = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        account_email = email or recipient or f"qa+smoke-neon-{int(time.time())}-{_noise}@boringdata.io"
         account_password = password or random_password()
         if skip_signup:
             neon_signin_flow(

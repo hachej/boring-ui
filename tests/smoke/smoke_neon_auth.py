@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
+import string
 import sys
 import time
 
@@ -430,7 +432,8 @@ def main() -> int:
         password = args.password
     else:
         ts = int(time.time())
-        email = f"qa+smoke-neon-{ts}@mail.boringdata.io"
+        _noise = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        email = f"qa+smoke-neon-{ts}-{_noise}@mail.boringdata.io"
         password = random_password()
 
         # Phase 1: Signup + verification
