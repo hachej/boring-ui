@@ -11,7 +11,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['src/server/**/*.{test,spec}.{ts,tsx}'],
+    include: ['src/server/**/*.{test,spec}.{ts,tsx}', 'src/shared/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules', 'dist'],
   },
 })

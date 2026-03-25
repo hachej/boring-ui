@@ -1,5 +1,4 @@
 import { createHmac } from 'node:crypto'
-import * as jose from 'jose'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   createSessionCookie,
@@ -240,14 +239,25 @@ describe('auth/session', () => {
     })
 
     it('wraps non-Error verification failures', async () => {
-      vi.spyOn(jose, 'jwtVerify').mockRejectedValueOnce('boom' as never)
+      vi.resetModules()
+      vi.doMock('jose', async () => {
+        const actual = await vi.importActual<typeof import('jose')>('jose')
+        return {
+          ...actual,
+          jwtVerify: vi.fn().mockRejectedValueOnce('boom'),
+        }
+      })
 
-      await expect(parseSessionCookie('header.payload.signature', TEST_SECRET)).rejects.toMatchObject(
-        {
-          name: 'SessionInvalidError',
-          message: 'Invalid session token: boom',
-        },
-      )
+      const { parseSessionCookie: parseSessionCookieWithMock } = await import('../auth/session.js')
+
+      await expect(
+        parseSessionCookieWithMock('header.payload.signature', TEST_SECRET),
+      ).rejects.toMatchObject({
+        name: 'SessionInvalidError',
+        message: 'Invalid session token: boom',
+      })
+
+      vi.doUnmock('jose')
     })
 
     it('roundtrips correctly', async () => {

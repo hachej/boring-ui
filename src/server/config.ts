@@ -69,6 +69,8 @@ export interface ServerConfig {
   flyApiToken: string | undefined
   /** Fly.io workspace app */
   flyWorkspaceApp: string | undefined
+  /** Static file directory for serving built frontend (optional) */
+  staticDir: string | undefined
 }
 
 // --- Constants ---
@@ -225,6 +227,7 @@ export function loadConfig(): ServerConfig {
     controlPlaneAppId: envStr('CONTROL_PLANE_APP_ID', 'boring-ui'),
     flyApiToken: process.env.FLY_API_TOKEN,
     flyWorkspaceApp: process.env.FLY_WORKSPACE_APP,
+    staticDir: process.env.BORING_UI_STATIC_DIR || undefined,
   }
 }
 

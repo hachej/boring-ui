@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { loadConfig, validateConfig, type ServerConfig } from '../config.js'
+
+async function importFreshConfigModule() {
+  vi.resetModules()
+  return import('../config.js')
+}
 
 describe('loadConfig', () => {
   const originalEnv = { ...process.env }
@@ -64,6 +69,32 @@ describe('loadConfig', () => {
     const config = loadConfig()
     expect(config.sessionSecret).toBeTruthy()
     expect(config.sessionSecret!.length).toBeGreaterThan(20)
+  })
+
+  it('warns when auto-generating a session secret', async () => {
+    delete process.env.BORING_UI_SESSION_SECRET
+    delete process.env.BORING_SESSION_SECRET
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { loadConfig: loadFreshConfig } = await importFreshConfigModule()
+
+    const config = loadFreshConfig()
+
+    expect(config.sessionSecret).toBeTruthy()
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('generated an ephemeral session secret'),
+    )
+  })
+
+  it('does not warn when a session secret is configured', async () => {
+    process.env.BORING_UI_SESSION_SECRET = 'configured-secret'
+    delete process.env.BORING_SESSION_SECRET
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { loadConfig: loadFreshConfig } = await importFreshConfigModule()
+
+    const config = loadFreshConfig()
+
+    expect(config.sessionSecret).toBe('configured-secret')
+    expect(warnSpy).not.toHaveBeenCalled()
   })
 
   // Auto-detect neon
@@ -143,10 +174,30 @@ describe('loadConfig', () => {
     expect(config.publicAppOrigin).toBe('https://myapp.example.com')
   })
 
+  it('prefers BORING_UI_PUBLIC_ORIGIN over PUBLIC_APP_ORIGIN', () => {
+    process.env.BORING_UI_PUBLIC_ORIGIN = 'https://hosted.example.com'
+    process.env.PUBLIC_APP_ORIGIN = 'https://fallback.example.com'
+    const config = loadConfig()
+    expect(config.publicAppOrigin).toBe('https://hosted.example.com')
+  })
+
   it('rejects invalid public origin', () => {
     process.env.BORING_UI_PUBLIC_ORIGIN = 'not-a-url'
     const config = loadConfig()
     expect(config.publicAppOrigin).toBeUndefined()
+  })
+
+  it('maps AUTH_EMAIL_PROVIDER=none to the none provider', () => {
+    process.env.AUTH_EMAIL_PROVIDER = 'none'
+    const config = loadConfig()
+    expect(config.authEmailProvider).toBe('none')
+  })
+
+  it('maps NEON_AUTH_EMAIL_PROVIDER=off to the none provider', () => {
+    delete process.env.AUTH_EMAIL_PROVIDER
+    process.env.NEON_AUTH_EMAIL_PROVIDER = 'off'
+    const config = loadConfig()
+    expect(config.authEmailProvider).toBe('none')
   })
 })
 

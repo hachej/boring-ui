@@ -126,8 +126,20 @@ export async function registerExecRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const workspaceRoot = app.config.workspaceRoot
-    const result = startJob(workspaceRoot, body.command, { cwd: body.cwd })
-    return result
+
+    try {
+      const result = startJob(workspaceRoot, body.command, { cwd: body.cwd })
+      return result
+    } catch (err: any) {
+      if (err.message?.includes('within workspace')) {
+        return reply.code(400).send({
+          error: 'validation',
+          code: 'PATH_TRAVERSAL',
+          message: 'cwd must be within workspace',
+        })
+      }
+      throw err
+    }
   })
 
   // GET /exec/jobs/:jobId — Read output chunks from a job
