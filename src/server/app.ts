@@ -43,13 +43,15 @@ export interface CreateAppOptions {
 export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const config = options.config ?? loadConfig()
 
-  // Fail closed on misconfiguration (unless skipped for tests)
+  // Validate config unless explicitly skipped (e.g., tests).
+  // In production, index.ts validates first and exits on failure.
+  // Here we warn as a safety net for callers using partial configs.
   if (!options.skipValidation) {
     try {
       validateConfig(config)
-    } catch {
-      // In local mode, validation failures are warnings not crashes
-      // Production (neon) failures are caught by validateConfig
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(`[boring-ui] Config validation warning: ${msg}`)
     }
   }
 
