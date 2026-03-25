@@ -1,6 +1,7 @@
 """Shared auth/session bootstrap helpers for smoke tests."""
 from __future__ import annotations
 
+import os
 import time
 
 import httpx
@@ -61,6 +62,7 @@ def ensure_session(
     skip_signup: bool = False,
     timeout_seconds: int = 180,
     redirect_uri: str = "/",
+    public_app_base_url: str | None = None,
 ) -> dict:
     mode = str(auth_mode or "neon").strip().lower()
 
@@ -75,6 +77,15 @@ def ensure_session(
 
     if mode == "neon":
         resolved_neon_url = resolve_neon_auth_url(base_url, neon_auth_url)
+        public_origin = (
+            str(
+                public_app_base_url
+                or os.environ.get("BORING_UI_PUBLIC_ORIGIN")
+                or os.environ.get("PUBLIC_APP_ORIGIN")
+                or ""
+            ).strip()
+            or None
+        )
         import random, string
         _noise = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
         account_email = email or recipient or f"qa+smoke-neon-{int(time.time())}-{_noise}@boringdata.io"
@@ -97,6 +108,7 @@ def ensure_session(
                     password=account_password,
                     timeout_seconds=min(timeout_seconds, 60),
                     redirect_uri=redirect_uri,
+                    public_app_base_url=public_origin,
                 )
             except RuntimeError:
                 # Signup likely succeeded but verification timed out.
@@ -119,12 +131,14 @@ def ensure_session(
                         password=account_password,
                         timeout_seconds=timeout_seconds,
                         redirect_uri=redirect_uri,
+                        public_app_base_url=public_origin,
                     )
         return {
             "auth_mode": mode,
             "email": account_email,
             "password": account_password,
             "neon_auth_url": resolved_neon_url,
+            "public_app_base_url": public_origin,
         }
 
     raise RuntimeError(f"Unsupported auth_mode: {auth_mode}")

@@ -1,0 +1,231 @@
+{
+  "bead_id": "bd-f4iu0.2",
+  "generated_at": "2026-03-25T15:22:10Z",
+  "git_commit": "e56e712f01395e77da331b720e861b25781198da",
+  "status": "partial",
+  "notes": [
+    "Baseline runs were executed against isolated local Python servers with temporary workspace roots under /tmp to avoid mutating the repository checkout.",
+    "A temporary /tmp/boring-ui-smoke.toml override set frontend.data.backend=http so smoke_health reflected the deployed HTTP filesystem path instead of the default local LightningFS path.",
+    "This artifact records both successful proofs and current known failures/skips. It is intended to be the migration baseline for bd-f4iu0.*."
+  ],
+  "profiles": [
+    {
+      "id": "local-dev-httpfs",
+      "description": "Local Python app_config_loader server with local control plane and dev auto-login",
+      "base_url": "http://127.0.0.1:58545",
+      "workspace_root": "/tmp/boring-ui-smoke-workspace",
+      "auth_mode": "dev",
+      "control_plane_provider": "local",
+      "data_backend": "http"
+    },
+    {
+      "id": "local-neon-httpfs",
+      "description": "Local Python app_config_loader server with Neon auth + prod DB/session settings",
+      "base_url": "http://127.0.0.1:36213",
+      "workspace_root": "/tmp/boring-ui-smoke-neon",
+      "auth_mode": "neon",
+      "control_plane_provider": "neon",
+      "data_backend": "http"
+    },
+    {
+      "id": "local-dev-httpfs-github",
+      "description": "Local Python app_config_loader server with local control plane, dev auto-login, and real GitHub App credentials",
+      "base_url": "http://127.0.0.1:59261",
+      "workspace_root": "/tmp/boring-ui-smoke-gh",
+      "auth_mode": "dev",
+      "control_plane_provider": "local",
+      "data_backend": "http"
+    }
+  ],
+  "suite_inventory": [
+    {
+      "suite": "smoke_health.py",
+      "profile": "local-dev-httpfs",
+      "status": "passed",
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run/summary.json",
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run.log"
+      ]
+    },
+    {
+      "suite": "smoke_capabilities.py",
+      "profile": "local-dev-httpfs",
+      "status": "passed",
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run/summary.json",
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run.log"
+      ]
+    },
+    {
+      "suite": "smoke_workspace_lifecycle.py",
+      "profile": "local-dev-httpfs",
+      "status": "failed",
+      "failure": {
+        "summary": "Workspace rename route returned 404 during the rename step.",
+        "detail": "rename_workspace -> POST/PUT workspace rename path (via smoke_lib/settings.py) failed with 404 Not Found after workspace creation, listing, setup, runtime, and boundary checks had already passed."
+      },
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run.log"
+      ]
+    },
+    {
+      "suite": "smoke_filesystem.py",
+      "profile": "local-dev-httpfs",
+      "status": "passed",
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run/summary.json",
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run.log"
+      ]
+    },
+    {
+      "suite": "smoke_settings.py",
+      "profile": "local-dev-httpfs",
+      "status": "passed",
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run/summary.json",
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run.log"
+      ]
+    },
+    {
+      "suite": "smoke_ui_state.py",
+      "profile": "local-dev-httpfs",
+      "status": "passed",
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run/summary.json",
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run.log"
+      ]
+    },
+    {
+      "suite": "smoke_git_sync.py",
+      "profile": "local-dev-httpfs",
+      "status": "failed",
+      "failure": {
+        "summary": "Git clean-state assertion failed after commit.",
+        "detail": "The suite observed unexpected untracked state after commit: smoke-fs-persist.txt remained with status U, which strongly suggests workspace/file persistence leakage across suites or incorrect workspace scoping for git state."
+      },
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run.log"
+      ]
+    },
+    {
+      "suite": "smoke_agent_ws.py",
+      "profile": "local-dev-httpfs",
+      "status": "failed",
+      "failure": {
+        "summary": "Workspace-scoped agent websocket upgrade was rejected.",
+        "detail": "WS /w/<workspace_id>/ws/agent/normal/stream returned HTTP 403 during handshake."
+      },
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/dev-run.log"
+      ]
+    },
+    {
+      "suite": "smoke_core_mode.py",
+      "profile": "local-dev-httpfs",
+      "status": "passed",
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/core-mode-dev.log"
+      ]
+    },
+    {
+      "suite": "smoke_edge_mode.py",
+      "profile": "local-dev-httpfs",
+      "status": "passed_with_skips",
+      "notes": [
+        "Executed with --skip-sprite --skip-agent because no sandbox/sprite runtime was launched for this baseline."
+      ],
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/edge-mode-dev.log"
+      ]
+    },
+    {
+      "suite": "smoke_health.py",
+      "profile": "local-neon-httpfs",
+      "status": "passed",
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/neon-run/health.json",
+        ".agent-evidence/beads/bd-f4iu0.2/neon-run/health.log"
+      ]
+    },
+    {
+      "suite": "smoke_capabilities.py",
+      "profile": "local-neon-httpfs",
+      "status": "passed",
+      "notes": [
+        "Capabilities reported auth.provider=neon on the local Neon-backed server."
+      ],
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/neon-run/capabilities.json",
+        ".agent-evidence/beads/bd-f4iu0.2/neon-run/capabilities.log"
+      ]
+    },
+    {
+      "suite": "smoke_neon_auth.py",
+      "profile": "local-neon-httpfs",
+      "status": "failed",
+      "failure": {
+        "summary": "Verification callback was rejected by Neon Auth.",
+        "detail": "Phase 1 signup/verification failed with 403 INVALID_CALLBACKURL for http://127.0.0.1:36213/auth/callback?... . This blocks running the rest of the Neon-authenticated suite family locally against this callback origin."
+      },
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/neon-run/neon-auth.log"
+      ]
+    },
+    {
+      "suite": "smoke_github_connect.py",
+      "profile": "local-dev-httpfs-github",
+      "status": "passed_with_note",
+      "notes": [
+        "The first run using automatic installation selection failed because it picked the hachej installation, whose accessible repo set did not include boringdata/boring-ui-repo.",
+        "Re-running with --installation-id 115315424 (boringdata) passed end-to-end with --skip-git-push."
+      ],
+      "evidence": [
+        ".agent-evidence/beads/bd-f4iu0.2/github-connect.log",
+        ".agent-evidence/beads/bd-f4iu0.2/github-connect-boringdata.log"
+      ]
+    },
+    {
+      "suite": "smoke_child_app.py",
+      "profile": null,
+      "status": "skipped",
+      "skip_reason": "Requires a real child-app target (or deployed child-app URL) to exercise router/panel extension behavior meaningfully."
+    },
+    {
+      "suite": "smoke_backend_agent.py",
+      "profile": null,
+      "status": "skipped",
+      "skip_reason": "Requires backend-agent placement / sidecar runtime that was not launched in this local baseline session."
+    },
+    {
+      "suite": "smoke_pi_workspace.py",
+      "profile": null,
+      "status": "skipped",
+      "skip_reason": "Requires the PI workspace runtime/profile; not part of the local Python-only baseline servers started here."
+    }
+  ],
+  "aggregate": {
+    "passed": [
+      "smoke_health.py (local-dev-httpfs)",
+      "smoke_capabilities.py (local-dev-httpfs)",
+      "smoke_filesystem.py (local-dev-httpfs)",
+      "smoke_settings.py (local-dev-httpfs)",
+      "smoke_ui_state.py (local-dev-httpfs)",
+      "smoke_core_mode.py (local-dev-httpfs)",
+      "smoke_edge_mode.py (local-dev-httpfs, sprite/agent skipped)",
+      "smoke_health.py (local-neon-httpfs)",
+      "smoke_capabilities.py (local-neon-httpfs)",
+      "smoke_github_connect.py (local-dev-httpfs-github, installation pinned to boringdata)"
+    ],
+    "failed": [
+      "smoke_workspace_lifecycle.py (404 rename route)",
+      "smoke_git_sync.py (dirty state leakage / workspace scoping issue)",
+      "smoke_agent_ws.py (403 websocket handshake)",
+      "smoke_neon_auth.py (403 INVALID_CALLBACKURL)"
+    ],
+    "skipped": [
+      "smoke_child_app.py",
+      "smoke_backend_agent.py",
+      "smoke_pi_workspace.py"
+    ]
+  }
+}

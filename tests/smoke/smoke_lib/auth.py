@@ -155,6 +155,7 @@ def neon_signup_verify_flow(
     name: str = "",
     timeout_seconds: int = 180,
     redirect_uri: str = "/",
+    public_app_base_url: str | None = None,
 ) -> dict:
     """Replayable verify-first Neon signup flow through boring-ui.
 
@@ -170,8 +171,9 @@ def neon_signup_verify_flow(
     sent_after = time.time()
     parsed = urlparse(neon_auth_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
-    app_origin = client.base_url
+    app_origin = (public_app_base_url or client.base_url).rstrip("/")
     print(f"[smoke] Neon signup via app {email}...")
+    print(f"[smoke] Expecting verification callback origin: {app_origin}")
 
     signup_resp = client.post(
         "/auth/sign-up",
@@ -204,7 +206,7 @@ def neon_signup_verify_flow(
     confirmation_url = extract_confirmation_url(email_details)
     callback_url = assert_confirmation_callback_url(
         confirmation_url,
-        expected_app_base_url=client.base_url,
+        expected_app_base_url=app_origin,
         expected_redirect_uri=redirect_uri,
         require_pending_login=True,
     )
@@ -270,6 +272,7 @@ def neon_signup_then_signin(
     name: str = "",
     timeout_seconds: int = 180,
     redirect_uri: str = "/",
+    public_app_base_url: str | None = None,
 ) -> dict:
     """Signup via app, verify email was sent, then sign in.
 
@@ -283,8 +286,9 @@ def neon_signup_then_signin(
     sent_after = time.time()
     parsed = urlparse(neon_auth_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
-    app_origin = client.base_url
+    app_origin = (public_app_base_url or client.base_url).rstrip("/")
     print(f"[smoke] Neon signup via app {email}...")
+    print(f"[smoke] Expecting verification callback origin: {app_origin}")
 
     signup_resp = client.post(
         "/auth/sign-up",
@@ -318,7 +322,7 @@ def neon_signup_then_signin(
         confirmation_url = extract_confirmation_url(email_details)
         callback_url = assert_confirmation_callback_url(
             confirmation_url,
-            expected_app_base_url=client.base_url,
+            expected_app_base_url=app_origin,
             expected_redirect_uri=redirect_uri,
             require_pending_login=True,
         )

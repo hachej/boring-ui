@@ -9,6 +9,9 @@ Usage:
     # Against production Modal deployment
     python tests/smoke/smoke_neon_auth.py --base-url https://julien-hurault--boring-macro-frontend-frontend.modal.run
 
+    # Against a local backend when the verification callback must use an explicit public/browser origin
+    python tests/smoke/smoke_neon_auth.py --base-url http://127.0.0.1:8010 --public-origin http://127.0.0.1:8010
+
     # With an existing account (skip signup, run signin-only phases)
     python tests/smoke/smoke_neon_auth.py --base-url https://... --skip-signup --email user@test.com --password Pass123
 
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import string
 import sys
@@ -79,11 +83,31 @@ def _phase(name: str) -> None:
     print(f"{'='*60}")
 
 
+def _resolve_public_origin(args: argparse.Namespace) -> str:
+    return (
+        str(
+            args.public_origin
+            or os.environ.get("BORING_UI_PUBLIC_ORIGIN")
+            or os.environ.get("PUBLIC_APP_ORIGIN")
+            or args.base_url
+        )
+        .strip()
+        .rstrip("/")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Test phases
 # ---------------------------------------------------------------------------
 
-def test_signup_and_verify(client: SmokeClient, neon_url: str, email: str, password: str, timeout: int) -> dict:
+def test_signup_and_verify(
+    client: SmokeClient,
+    neon_url: str,
+    email: str,
+    password: str,
+    timeout: int,
+    public_origin: str = "",
+) -> dict:
     """Phase 1: Signup + click the exact delivered verification link."""
     _phase("1. Signup + Verification")
     print(f"  Email: {email}")
@@ -94,6 +118,7 @@ def test_signup_and_verify(client: SmokeClient, neon_url: str, email: str, passw
         email=email,
         password=password,
         timeout_seconds=timeout,
+        public_app_base_url=public_origin or None,
     )
     uid = session.get("user", {}).get("user_id", "?")
     print(f"[smoke] Signup OK: user_id={uid[:12]}...")
@@ -417,12 +442,18 @@ def main() -> int:
     parser.add_argument("--recipient", help="Alias for email delivery (default: same as email)")
     parser.add_argument("--timeout", type=int, default=180,
                         help="Verification email polling timeout seconds")
+    parser.add_argument(
+        "--public-origin",
+        default="",
+        help="Public app origin expected in verification emails when it differs from --base-url",
+    )
     parser.add_argument("--evidence-out", default="",
                         help="Path for evidence JSON output")
     args = parser.parse_args()
 
     client = SmokeClient(args.base_url)
     neon_url = _get_neon_auth_url(args)
+    public_origin = _resolve_public_origin(args)
 
     if args.skip_signup:
         if not args.email or not args.password:
@@ -437,7 +468,14 @@ def main() -> int:
         password = random_password()
 
         # Phase 1: Signup + verification
-        test_signup_and_verify(client, neon_url, email, password, args.timeout)
+        test_signup_and_verify(
+            client,
+            neon_url,
+            email,
+            password,
+            args.timeout,
+            public_origin,
+        )
 
     # Phase 2: Signin
     test_signin(client, neon_url, email, password)
@@ -499,6 +537,7 @@ def main() -> int:
         client.write_report(args.evidence_out, extra={
             "suite": "neon-auth",
             "base_url": args.base_url,
+            "public_origin": public_origin,
             "auth_mode": "neon",
         })
 

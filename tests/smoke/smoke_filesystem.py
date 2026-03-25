@@ -25,6 +25,7 @@ def main() -> int:
     parser.add_argument("--email")
     parser.add_argument("--password")
     parser.add_argument("--recipient")
+    parser.add_argument("--public-origin", default="")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--workspace-id", default="")
     parser.add_argument("--prefix", default="smoke-fs")
@@ -43,6 +44,7 @@ def main() -> int:
         recipient=args.recipient,
         skip_signup=args.skip_signup,
         timeout_seconds=args.timeout,
+        public_app_base_url=args.public_origin or None,
     )
 
     workspace_id = args.workspace_id.strip()

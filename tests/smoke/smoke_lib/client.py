@@ -1,13 +1,53 @@
 """SmokeClient: httpx wrapper with cookie jar, base_url switching, and reporting."""
 from __future__ import annotations
 
-import time
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import httpx
+
+
+_REDACTED_HEADERS = {"authorization", "cookie", "set-cookie", "x-api-key"}
+_REDACTED_JSON_KEYS = {
+    "access_token",
+    "session_token",
+    "token",
+    "jwt",
+    "password",
+    "new_password",
+    "client_secret",
+    "api_key",
+}
+
+
+def _redact_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): ("<redacted>" if str(key).lower() in _REDACTED_JSON_KEYS else _redact_value(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    return value
+
+
+def _sanitize_headers(headers: httpx.Headers | dict[str, Any] | None) -> dict[str, str]:
+    if not headers:
+        return {}
+    items = headers.items() if hasattr(headers, "items") else dict(headers).items()
+    sanitized: dict[str, str] = {}
+    for key, value in items:
+        sanitized[str(key)] = "<redacted>" if str(key).lower() in _REDACTED_HEADERS else str(value)
+    return sanitized
+
+
+def _decode_body(content: bytes) -> str:
+    if not content:
+        return ""
+    return content.decode("utf-8", errors="replace")
 
 
 @dataclass
@@ -19,14 +59,21 @@ class StepResult:
     ok: bool
     elapsed_ms: float
     detail: str = ""
+    url: str = ""
+    response_size: int = 0
+    request_headers: dict[str, str] = field(default_factory=dict)
+    response_headers: dict[str, str] = field(default_factory=dict)
+    request_body: Any = None
+    response_body: str = ""
 
 
 class SmokeClient:
     """httpx.Client wrapper with cookie persistence, base_url switching, result collection."""
 
-    def __init__(self, base_url: str, *, timeout: float = 30.0):
+    def __init__(self, base_url: str, *, timeout: float = 30.0, capture_details: bool = False):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.capture_details = capture_details
         self.cookies = httpx.Cookies()
         self.results: list[StepResult] = []
         self._phase = "init"
@@ -45,7 +92,19 @@ class SmokeClient:
             follow_redirects=False,
         )
 
-    def _record(self, method: str, path: str, resp: httpx.Response, ok: bool, elapsed_ms: float, detail: str = "") -> None:
+    def _record(
+        self,
+        method: str,
+        path: str,
+        resp: httpx.Response,
+        ok: bool,
+        elapsed_ms: float,
+        detail: str = "",
+        *,
+        request_body: Any = None,
+    ) -> None:
+        capture_http_details = self.capture_details or not ok
+        response_body = resp.text if capture_http_details else ""
         self.results.append(StepResult(
             phase=self._phase,
             method=method,
@@ -54,10 +113,28 @@ class SmokeClient:
             ok=ok,
             elapsed_ms=elapsed_ms,
             detail=detail,
+            url=str(resp.request.url),
+            response_size=len(resp.content or b""),
+            request_headers=_sanitize_headers(resp.request.headers) if capture_http_details else {},
+            response_headers=_sanitize_headers(resp.headers) if capture_http_details else {},
+            request_body=_redact_value(request_body) if capture_http_details and request_body is not None else None,
+            response_body=response_body,
         ))
 
     def request(self, method: str, path: str, *, expect_status: int | tuple[int, ...] | None = None, **kw) -> httpx.Response:
         with self._client() as client:
+            request_body = None
+            if "json" in kw:
+                request_body = kw["json"]
+            elif "content" in kw:
+                request_body = _decode_body(kw["content"] if isinstance(kw["content"], bytes) else str(kw["content"]).encode())
+            elif "data" in kw:
+                request_body = kw["data"]
+            if kw.get("params") is not None:
+                request_body = {
+                    "params": _redact_value(dict(kw["params"])),
+                    **({"body": _redact_value(request_body)} if request_body is not None else {}),
+                }
             t0 = time.monotonic()
             resp = client.request(method, path, **kw)
             elapsed = (time.monotonic() - t0) * 1000
@@ -69,7 +146,7 @@ class SmokeClient:
                 ok = resp.status_code in expect_status
             else:
                 ok = 200 <= resp.status_code < 400
-            self._record(method, path, resp, ok, elapsed)
+            self._record(method, path, resp, ok, elapsed, request_body=request_body)
             return resp
 
     def get(self, path: str, **kw) -> httpx.Response:
@@ -104,6 +181,12 @@ class SmokeClient:
                     "ok": r.ok,
                     "elapsed_ms": round(r.elapsed_ms, 1),
                     "detail": r.detail,
+                    "url": r.url,
+                    "response_size": r.response_size,
+                    **({"request_headers": r.request_headers} if r.request_headers else {}),
+                    **({"response_headers": r.response_headers} if r.response_headers else {}),
+                    **({"request_body": r.request_body} if r.request_body is not None else {}),
+                    **({"response_body": r.response_body} if r.response_body else {}),
                 }
                 for r in self.results
             ],

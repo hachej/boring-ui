@@ -28,6 +28,8 @@ def main() -> int:
     parser.add_argument("--auth-mode", choices=["neon", "dev"], default="neon")
     parser.add_argument("--neon-auth-url", default="")
     parser.add_argument("--recipient", help="Override test email address")
+    parser.add_argument("--public-origin", default="",
+                        help="Public app origin expected in verification emails when it differs from --base-url")
     parser.add_argument("--timeout", type=int, default=180, help="Resend polling timeout seconds")
     parser.add_argument("--provision-timeout", type=int, default=120, help="Sprite provisioning timeout")
     parser.add_argument("--skip-signup", action="store_true", help="Skip signup, use --email/--password")
@@ -49,6 +51,7 @@ def main() -> int:
         recipient=args.recipient,
         skip_signup=args.skip_signup,
         timeout_seconds=args.timeout,
+        public_app_base_url=args.public_origin or None,
     )
 
     # --- Phase 5-6: Workspace ---

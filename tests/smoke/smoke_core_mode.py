@@ -31,6 +31,8 @@ def main() -> int:
     parser.add_argument("--email", help="Existing account email (with --skip-signup)")
     parser.add_argument("--password", help="Existing account password (with --skip-signup)")
     parser.add_argument("--recipient", help="Override test email address")
+    parser.add_argument("--public-origin", default="",
+                        help="Public app origin expected in verification emails when it differs from --base-url")
     parser.add_argument("--timeout", type=int, default=180, help="Auth/bootstrap timeout seconds")
     parser.add_argument("--evidence-out", default="")
     args = parser.parse_args()
@@ -46,6 +48,7 @@ def main() -> int:
         recipient=args.recipient,
         skip_signup=args.skip_signup,
         timeout_seconds=args.timeout,
+        public_app_base_url=args.public_origin or None,
     )
 
     # Phase 1: Create workspace

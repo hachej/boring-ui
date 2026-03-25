@@ -78,6 +78,8 @@ def build_auth_args(args: argparse.Namespace) -> list[str]:
         auth_args.extend(["--password", args.password])
     if hasattr(args, "recipient") and args.recipient:
         auth_args.extend(["--recipient", args.recipient])
+    if hasattr(args, "public_origin") and args.public_origin:
+        auth_args.extend(["--public-origin", args.public_origin])
     if hasattr(args, "timeout") and args.timeout:
         auth_args.extend(["--timeout", str(args.timeout)])
     return auth_args
@@ -139,6 +141,8 @@ def main() -> int:
     parser.add_argument("--email")
     parser.add_argument("--password")
     parser.add_argument("--recipient")
+    parser.add_argument("--public-origin", default="",
+                        help="Public app origin expected in verification emails when it differs from --base-url")
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--suite-timeout", type=int, default=300,
                         help="Max seconds per suite (default: 300)")
@@ -194,6 +198,10 @@ def main() -> int:
                 suite_extra.extend(["--email", args.email])
             if args.password:
                 suite_extra.extend(["--password", args.password])
+            if args.recipient:
+                suite_extra.extend(["--recipient", args.recipient])
+            if args.public_origin:
+                suite_extra.extend(["--public-origin", args.public_origin])
             if args.neon_auth_url:
                 suite_extra.extend(["--neon-auth-url", args.neon_auth_url])
             if args.timeout:
@@ -214,7 +222,7 @@ def main() -> int:
             else:
                 print(f"[runner] WARN: extra suite not found: {path}")
 
-    evidence_dir = Path(args.evidence_dir) if args.evidence_dir else None
+    evidence_dir = Path(args.evidence_dir).resolve() if args.evidence_dir else None
     if evidence_dir:
         evidence_dir.mkdir(parents=True, exist_ok=True)
 
