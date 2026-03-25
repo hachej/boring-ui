@@ -107,9 +107,6 @@ def _normalize_origin(raw: str) -> str:
 
 
 def _public_origin(request: Request, *, config: APIConfig) -> str:
-    if config.public_app_origin:
-        return config.public_app_origin
-
     origin = str(request.headers.get("origin", "")).strip()
     normalized_origin = _normalize_origin(origin)
     # Fly.io terminates TLS — request.base_url is http://. Use X-Forwarded-Proto.
