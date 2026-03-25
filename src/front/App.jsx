@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { DockviewReact } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
-import { ChevronDown, ChevronUp } from 'lucide-react'
 
 import { ThemeProvider, useCapabilities, useKeyboardShortcuts, UNKNOWN_CAPABILITIES } from './hooks'
+import useApprovalPolling from './hooks/useApprovalPolling'
 import { useWorkspacePlugins } from './hooks/useWorkspacePlugins'
 import { loadWorkspacePanes } from './workspace/loader'
 import { useConfig } from './config'
@@ -65,7 +65,6 @@ import {
 } from './utils/panelConfig'
 import ThemeToggle from './components/ThemeToggle'
 import Tooltip from './components/Tooltip'
-const ClaudeStreamChat = lazy(() => import('./components/chat/ClaudeStreamChat'))
 import WorkspaceLoading from './components/WorkspaceLoading'
 import {
   CapabilitiesContext,
@@ -108,10 +107,6 @@ import {
   normalizeMarkdownEditorPanels,
   normalizeMarkdownPane,
 } from './utils/editorFiles'
-
-const URL_PARAMS = new URLSearchParams(window.location.search)
-// POC mode - add ?poc=chat, ?poc=diff, or ?poc=tiptap-diff to URL to test
-const POC_MODE = URL_PARAMS.get('poc')
 
 const MAIN_CONTENT_ID = 'workspace-main-content'
 const MAX_PRESERVED_IDENTITY_AGE_MS = 30_000
@@ -260,17 +255,24 @@ export default function App() {
 
   // Check for unavailable essential panes
   const unavailableEssentials = !capabilitiesPending && capabilities
-    ? getUnavailableEssentialPanes(capabilities).filter(
-        (pane) => nativeAgentEnabled || pane.id !== 'terminal',
-      )
+    ? getUnavailableEssentialPanes(capabilities)
     : []
 
   const [dockApi, setDockApi] = useState(null)
   const dockApiRef = useRef(null)
   dockApiRef.current = dockApi
   const [tabs, setTabs] = useState({}) // path -> { content, isDirty }
-  const [approvals, setApprovals] = useState([])
-  const [approvalsLoaded, setApprovalsLoaded] = useState(false)
+  // Approval polling (extracted to hook)
+  const {
+    approvals,
+    approvalsLoaded,
+    handleDecision: handleApprovalDecision,
+    normalizeApprovalPath,
+    getReviewTitle,
+  } = useApprovalPolling({
+    enabled: approvalFeatureEnabled,
+    projectRoot,
+  })
   const [activeFile, setActiveFile] = useState(null)
   const [activeDiffFile, setActiveDiffFile] = useState(null)
   const [activeSidebarPanelId, setActiveSidebarPanelId] = useState('filetree')
@@ -323,7 +325,7 @@ export default function App() {
     ),
   )
   const collapsedEffectRan = useRef(false)
-  const dismissedApprovalsRef = useRef(new Set())
+  // dismissedApprovalsRef moved into useApprovalPolling hook
   const agentAutoAddSuppressedRef = useRef({
     terminal: false,
     agent: false,
@@ -1397,98 +1399,16 @@ export default function App() {
 
   // Git status polling removed - not currently used in UI
 
-  // Fetch approvals
-  useEffect(() => {
-    if (!approvalFeatureEnabled) {
-      setApprovals([])
-      setApprovalsLoaded(true)
-      return
-    }
+  // Approval polling, decision handling, and path normalization
+  // are now in useApprovalPolling hook (see hooks/useApprovalPolling.js).
+  // The hook returns: approvals, approvalsLoaded, handleApprovalDecision,
+  // normalizeApprovalPath, getReviewTitle.
 
-    let isActive = true
-
-    const fetchApprovals = () => {
-      const route = routes.approval.pending()
-      apiFetchJson(route.path, { query: route.query })
-        .then(({ data }) => {
-          if (!isActive) return
-          const requests = Array.isArray(data.requests) ? data.requests : []
-          const filtered = requests.filter(
-            (req) => !dismissedApprovalsRef.current.has(req.id),
-          )
-          setApprovals(filtered)
-          setApprovalsLoaded(true)
-        })
-        .catch(() => {})
-    }
-
-    fetchApprovals()
-    const interval = setInterval(fetchApprovals, 1000)
-
-    return () => {
-      isActive = false
-      clearInterval(interval)
-    }
-  }, [approvalFeatureEnabled])
-
+  // Wrap handleApprovalDecision to inject dockApi
   const handleDecision = useCallback(
-    async (requestId, decision, reason) => {
-      if (requestId) {
-        dismissedApprovalsRef.current.add(requestId)
-        setApprovals((prev) => prev.filter((req) => req.id !== requestId))
-        if (dockApi) {
-          const panel = dockApi.getPanel(`review-${requestId}`)
-          if (panel) {
-            panel.api.close()
-          }
-        }
-      } else {
-        setApprovals([])
-      }
-      try {
-        const route = routes.approval.decision()
-        await apiFetch(route.path, {
-          query: route.query,
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ request_id: requestId, decision, reason }),
-        })
-      } catch {
-        // Ignore decision errors; UI already dismissed.
-      }
-    },
-    [dockApi]
-  )
-
-  const normalizeApprovalPath = useCallback(
-    (approval) => {
-      if (!approval) return ''
-      if (approval.project_path) return approval.project_path
-      const filePath = approval.file_path || ''
-      if (!filePath) return ''
-      if (projectRoot) {
-        const root = projectRoot.endsWith('/') ? projectRoot : `${projectRoot}/`
-        if (filePath.startsWith(root)) {
-          return filePath.slice(root.length)
-        }
-      }
-      return filePath
-    },
-    [projectRoot],
-  )
-
-  const getReviewTitle = useCallback(
-    (approval) => {
-      const approvalPath = normalizeApprovalPath(approval)
-      if (approvalPath) {
-        return `Review: ${getFileName(approvalPath)}`
-      }
-      if (approval?.tool_name) {
-        return `Review: ${approval.tool_name}`
-      }
-      return 'Review'
-    },
-    [normalizeApprovalPath],
+    (requestId, decision, reason) =>
+      handleApprovalDecision(requestId, decision, reason, dockApi),
+    [handleApprovalDecision, dockApi],
   )
 
   const isLeftSidebarGroup = useCallback((group) => {
@@ -2188,56 +2108,27 @@ export default function App() {
       }
 
       const sourcePanel = sourcePanelId ? api.getPanel(sourcePanelId) : null
-      const sourceComponent = getPanelComponent(sourcePanel)
+      const component = 'agent'
 
-      let component = sourceComponent
+      agentAutoAddSuppressedRef.current.agent = false
 
-      if (!component) {
-        if (capabilities?.features?.pi === true) {
-          component = 'agent'
-        } else if (nativeAgentEnabled) {
-          component = 'terminal'
-        } else {
-          const fallbackPanel = listDockPanels(api).find((panel) => {
-            const panelComponent = getPanelComponent(panel)
-            return panelComponent === 'terminal' || panelComponent === 'agent'
-          })
-          component = getPanelComponent(fallbackPanel)
-        }
-      }
-
-      if (!component) return false
-
-      if (component === 'terminal') {
-        agentAutoAddSuppressedRef.current.terminal = false
-      } else {
-        agentAutoAddSuppressedRef.current.agent = false
-      }
-
-      const panelIdPrefix = component === 'terminal'
-        ? 'terminal-chat'
-        : 'agent-chat'
+      const panelIdPrefix = 'agent-chat'
       const panelId = createUniquePanelId(api, panelIdPrefix)
-      const piInitialSessionId = component === 'agent'
-        && agentMode !== 'backend'
+      const piInitialSessionId = agentMode !== 'backend'
         && piSessionBootstrap === 'new'
         ? `pi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
         : ''
-      const title = component === 'terminal'
-        ? 'Code Sessions'
-        : 'Agent'
+      const title = 'Agent'
       const matchingPanels = listDockPanels(api).filter(
         (panel) => getPanelComponent(panel) === component,
       )
       const defaultReferencePanel = matchingPanels[0]
       let emptyCenterPanel = api.getPanel('empty-center')
       let centerGroup = getLiveCenterGroup(api) || emptyCenterPanel?.group
-      const shellGroup = api.getPanel('shell')?.group
 
       // Ensure chat panels anchor in the center area, not side rails.
       if (!centerGroup) {
         const emptyCenterPosition = getLeftSidebarAnchorPosition(api)
-          || (shellGroup ? { direction: 'above', referenceGroup: shellGroup } : undefined)
         if (!emptyCenterPanel && emptyCenterPosition) {
           emptyCenterPanel = api.addPanel({
             id: 'empty-center',
@@ -2281,8 +2172,6 @@ export default function App() {
         }
       } else if (centerGroup) {
         position = { referenceGroup: centerGroup }
-      } else if (shellGroup) {
-        position = { direction: 'above', referenceGroup: shellGroup }
       } else {
         position = getLeftSidebarAnchorPosition(api)
       }
@@ -2292,23 +2181,14 @@ export default function App() {
         component,
         title,
         position,
-        params: component === 'terminal'
-          ? {
-              panelId,
-              collapsed: false,
-              onToggleCollapse: undefined,
-              approvals,
-              onDecision: handleDecision,
-              normalizeApprovalPath,
-            }
-          : {
-              panelId,
-              collapsed: false,
-              onToggleCollapse: undefined,
-              mode: agentMode,
-              piSessionBootstrap,
-              piInitialSessionId,
-            },
+        params: {
+          panelId,
+          collapsed: false,
+          onToggleCollapse: undefined,
+          mode: agentMode,
+          piSessionBootstrap,
+          piInitialSessionId,
+        },
       })
       if (!panel) return false
 
@@ -2324,17 +2204,11 @@ export default function App() {
       if (panel?.group) {
         panel.group.locked = false
         panel.group.header.hidden = false
-        const minWidth = component === 'terminal'
-          ? panelMinRef.current.terminal
-          : panelMinRef.current.agent
         panel.group.api.setConstraints({
-          minimumWidth: minWidth,
+          minimumWidth: panelMinRef.current.agent,
           maximumWidth: Number.MAX_SAFE_INTEGER,
         })
-        if (component === 'terminal' && !collapsed.terminal) {
-          panel.group.api.setSize({ width: panelSizesRef.current.terminal })
-        }
-        if (component === 'agent' && !collapsed.agent) {
+        if (!collapsed.agent) {
           panel.group.api.setSize({ width: panelSizesRef.current.agent })
         }
 
@@ -2352,17 +2226,11 @@ export default function App() {
       return true
     },
     [
-      nativeAgentEnabled,
-      capabilities,
       agentMode,
       createUniquePanelId,
       getLeftSidebarAnchorPosition,
       getLiveCenterGroup,
-      collapsed.terminal,
       collapsed.agent,
-      approvals,
-      handleDecision,
-      normalizeApprovalPath,
     ],
   )
 
@@ -2385,40 +2253,34 @@ export default function App() {
 
     const agentPanels = listDockPanels(dockApi).filter((panel) => {
       const component = getPanelComponent(panel)
-      return component === 'terminal' || component === 'agent'
+      return component === 'agent'
     })
 
     const activePanel = dockApi.activePanel
     const activeIsAgent = activePanel
-      && (getPanelComponent(activePanel) === 'terminal' || getPanelComponent(activePanel) === 'agent')
+      && getPanelComponent(activePanel) === 'agent'
     const preferredSource = activeIsAgent
       ? activePanel
-      : (agentPanels.find((panel) => panel.id === 'terminal')
-        || agentPanels.find((panel) => panel.id === 'agent')
-        || agentPanels[0])
+      : (agentPanels.find((panel) => panel.id === 'agent') || agentPanels[0])
 
     if (preferredSource?.id) {
-      handleSplitChatPanel(
-        preferredSource.id,
-        getPanelComponent(preferredSource) === 'agent' ? { piSessionBootstrap: 'new' } : {},
-      )
+      handleSplitChatPanel(preferredSource.id, { piSessionBootstrap: 'new' })
       return
     }
 
     addChatPanel({ mode: 'split', piSessionBootstrap: 'new', suppressPendingLayoutRestore: true })
   }, [addChatPanel, dockApi, handleSplitChatPanel])
 
-  // Right header actions component - shell collapse control + quick chat action in editor groups.
+  // Right header actions component for quick chat actions in center groups.
   const RightHeaderActions = useCallback(
     (props) => {
       const panels = props.group?.panels || []
-      const hasShellPanel = panels.some((p) => p.id === 'shell')
       const hasCenterTabs = panels.some((p) => {
         const id = typeof p?.id === 'string' ? p.id : ''
         return id.startsWith('editor-') || id.startsWith('review-') || id === 'empty-center'
       })
 
-      if (!hasShellPanel && !hasCenterTabs) return null
+      if (!hasCenterTabs) return null
 
       return (
         <div className="tab-header-actions">
@@ -2434,26 +2296,10 @@ export default function App() {
               </button>
             </Tooltip>
           )}
-          {hasShellPanel && (
-            <Tooltip label={collapsed.shell ? 'Expand panel' : 'Collapse panel'}>
-              <button
-                type="button"
-                className="tab-collapse-btn"
-                onClick={toggleShell}
-                aria-label={collapsed.shell ? 'Expand panel' : 'Collapse panel'}
-              >
-                {collapsed.shell ? (
-                  <ChevronDown size={14} />
-                ) : (
-                  <ChevronUp size={14} />
-                )}
-              </button>
-            </Tooltip>
-          )}
         </div>
       )
     },
-    [collapsed.shell, handleOpenChatTab, toggleShell],
+    [handleOpenChatTab],
   )
 
   const onReady = (event) => {
@@ -2493,18 +2339,13 @@ export default function App() {
       })
     }
 
-    const applyPanelConstraints = (api, registry, capabilityFlags, panelMinRef) => {
+    const applyPanelConstraints = (api, registry, panelMinRef) => {
       const paneConfigs = typeof registry?.list === 'function' ? registry.list() : []
 
       paneConfigs.forEach((paneConfig) => {
         const panel = api.getPanel(paneConfig.id)
         const group = panel?.group
         if (!group) return
-
-        const isTerminal = paneConfig.id === 'terminal'
-        if (isTerminal && !capabilityFlags.nativeAgentEnabled) {
-          return
-        }
 
         const effectiveLocked = paneConfig.locked
         if (typeof effectiveLocked === 'boolean') {
@@ -2579,21 +2420,6 @@ export default function App() {
             onOpenWorkspaceSettings: handleOpenWorkspaceSettings,
             onLogout: handleLogout,
           }
-        case 'shell':
-          return {
-            collapsed: false,
-            onToggleCollapse: () => {},
-          }
-        case 'terminal':
-          return {
-            panelId: 'terminal',
-            collapsed: false,
-            onToggleCollapse: undefined,
-            onSplitPanel: handleSplitChatPanel,
-            approvals,
-            onDecision: handleDecision,
-            normalizeApprovalPath,
-          }
         case 'agent':
           return {
             panelId: 'agent',
@@ -2623,12 +2449,11 @@ export default function App() {
     }
 
     const ensureCorePanels = () => {
-      // Layout goal: [filetree | [editor-chat / shell]]
+      // Layout goal: [filetree | editor/chat center column]
       //
       // Strategy: Create in order that establishes correct hierarchy
       // 1. filetree (left)
       // 2. empty-center (right of filetree) - center column for editor/chat tabs
-      // 4. shell (below empty-center) - bottom of center
 
       // Create left sidebar panels. Strategy:
       // 1. Create the first left panel (anchors the column)
@@ -2721,14 +2546,6 @@ export default function App() {
         if (panel) lastLeftPanel = panel
       }
 
-      // Shell panel is available but not added to the default layout.
-      // It can be opened on demand via the command palette or menu.
-      let shellPanel = api.getPanel('shell')
-      if (shellPanel?.group) {
-        shellPanel.group.header.hidden = true
-        shellPanel.group.locked = true
-      }
-
       // Set centerGroupRef from editor panels if any exist
       const panels = Array.isArray(api.panels)
         ? api.panels
@@ -2746,7 +2563,6 @@ export default function App() {
       applyPanelConstraints(
         api,
         paneRegistry,
-        { nativeAgentEnabled },
         panelMinRef,
       )
       applyInitialSizes(
@@ -2864,7 +2680,7 @@ export default function App() {
       }
 
       if (!api.getPanel('empty-center')) {
-        const rightRailPanel = api.getPanel('terminal') || api.getPanel('agent')
+        const rightRailPanel = api.getPanel('agent')
         const emptyPosition = firstCenterPanel?.group
           ? { referenceGroup: firstCenterPanel.group }
           : rightRailPanel
@@ -2890,7 +2706,6 @@ export default function App() {
       applyPanelConstraints(
         api,
         registry,
-        { nativeAgentEnabled },
         panelMinRef,
       )
       applyInitialSizes(
@@ -2998,9 +2813,6 @@ export default function App() {
       const centerGroup = getLiveCenterGroup(api)
       const groupStillExists = !!centerGroup
 
-      // Get shell panel to position relative to it
-      const shellPanel = api.getPanel('shell')
-
       let emptyPanel
       if (groupStillExists) {
         // Reuse the surviving center group (even if it's temporarily empty)
@@ -3011,25 +2823,14 @@ export default function App() {
           title: '',
           position: { referenceGroup: centerGroup },
         })
-      } else if (shellPanel?.group) {
-        // Center group is gone, add above shell panel
-        emptyPanel = api.addPanel({
-          id: 'empty-center',
-          component: 'empty',
-          title: '',
-          position: { direction: 'above', referenceGroup: shellPanel.group },
-        })
       } else {
-        // Fallback: keep center column between filetree and right-rail agent panel.
-        const terminalPanel = api.getPanel('terminal')
         const agentPanel = api.getPanel('agent')
-        const rightRailPanel = terminalPanel || agentPanel
         emptyPanel = api.addPanel({
           id: 'empty-center',
           component: 'empty',
           title: '',
-          position: rightRailPanel
-            ? { direction: 'left', referencePanel: rightRailPanel.id }
+          position: agentPanel
+            ? { direction: 'left', referencePanel: agentPanel.id }
             : getLeftSidebarAnchorPosition(api),
         })
       }
@@ -3726,61 +3527,6 @@ export default function App() {
     capabilities,
   ])
 
-  // Helper to focus a review panel
-  const focusReviewPanel = useCallback(
-    (requestId) => {
-      if (!dockApi) return
-      const panel = dockApi.getPanel(`review-${requestId}`)
-      if (panel) {
-        panel.api.setActive()
-      }
-    },
-    [dockApi]
-  )
-
-  // Update terminal panel params
-  useEffect(() => {
-    if (!dockApi) return
-    const terminalPanels = listDockPanels(dockApi).filter(
-      (panel) => getPanelComponent(panel) === 'terminal',
-    )
-    terminalPanels.forEach((panel) => {
-      panel.api.updateParameters({
-        panelId: panel.id,
-        collapsed: false,
-        onToggleCollapse: undefined,
-        onSplitPanel: handleSplitChatPanel,
-        approvals,
-        onFocusReview: focusReviewPanel,
-        onDecision: handleDecision,
-        normalizeApprovalPath,
-      })
-    })
-  }, [
-    dockApi,
-    collapsed.terminal,
-    toggleTerminal,
-    handleSplitChatPanel,
-    approvals,
-    focusReviewPanel,
-    handleDecision,
-    normalizeApprovalPath,
-  ])
-
-  // Update shell panel params
-  // projectRoot dependency ensures this runs after layout restoration
-  useEffect(() => {
-    if (!dockApi) return
-    const shellPanel = dockApi.getPanel('shell')
-    if (shellPanel) {
-      shellPanel.api.updateParameters({
-        panelId: shellPanel.id,
-        collapsed: collapsed.shell,
-        onToggleCollapse: toggleShell,
-      })
-    }
-  }, [dockApi, collapsed.shell, toggleShell, projectRoot])
-
   // Update agent panel params
   useEffect(() => {
     if (!dockApi) return
@@ -4281,20 +4027,6 @@ export default function App() {
       })
     }
   }, [needsWorkspaceRedirect, workspaceOptions, workspaceListStatus, handleCreateWorkspaceSubmit])
-
-  if (POC_MODE === 'chat') {
-    return (
-      <QueryClientProvider key={dataProviderScopeKey} client={queryClient}>
-        <DataContext.Provider key={dataProviderScopeKey} value={dataProvider}>
-          <ThemeProvider>
-            <Suspense fallback={<div className="panel-lazy-loading" />}>
-              <ClaudeStreamChat />
-            </Suspense>
-          </ThemeProvider>
-        </DataContext.Provider>
-      </QueryClientProvider>
-    )
-  }
 
   // Full-page auth views
   if (isAuthLoginPage) {
