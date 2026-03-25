@@ -57,15 +57,26 @@ The app is NOT done until ALL of these pass. Run each check and report pass/fail
 - [ ] `bui deploy` completes with healthy machines
 - [ ] App reachable at `https://<slug>.fly.dev`
 
-### Live smoke (after deploy)
-- [ ] `GET https://<slug>.fly.dev/health` returns JSON with verification_nonce
-- [ ] `GET https://<slug>.fly.dev/info` returns JSON with eval_id
-- [ ] `GET https://<slug>.fly.dev/api/capabilities` shows `auth.provider = "neon"`
-- [ ] All custom endpoints work live
-- [ ] Signup returns 200: `curl -X POST https://<slug>.fly.dev/auth/sign-up -H "Content-Type: application/json" -H "Origin: https://<slug>.fly.dev" -d '{"email":"eval@test.local","password":"eval-2026","name":"Test"}'`
-- [ ] Signin returns 200: `curl -X POST https://<slug>.fly.dev/auth/sign-in -H "Content-Type: application/json" -H "Origin: https://<slug>.fly.dev" -d '{"email":"eval@test.local","password":"eval-2026"}'`
+### Live smoke suite (after deploy — run ALL of these)
 
-If any check fails, fix and re-check. Do not write the report until all pass.
+Run the boring-ui smoke test suite from the framework repo:
+
+```bash
+cd /home/ubuntu/projects/boring-ui
+
+# 1. Health + config + capabilities (no auth)
+python3 tests/smoke/smoke_health.py --base-url https://<slug>.fly.dev
+
+# 2. Capabilities detail (verify neon auth, routers, features)
+python3 tests/smoke/smoke_capabilities.py --base-url https://<slug>.fly.dev --expect-auth neon
+
+# 3. Full auth suite (19 phases: signup, signin, session, logout, guards, etc.)
+python3 tests/smoke/smoke_neon_auth.py --base-url https://<slug>.fly.dev
+```
+
+Also test custom endpoints (notes CRUD etc.) with curl.
+
+Every smoke script must exit 0. If any fails, diagnose, fix, redeploy, re-run until green.
 
 ## Phase 4: Report
 
@@ -88,12 +99,10 @@ BEGIN_EVAL_REPORT_JSON
     "no_hardcoded_secrets": true,
     "neon_setup": true,
     "deploy_healthy": true,
-    "live_health": true,
-    "live_info": true,
-    "live_capabilities_neon": true,
-    "live_custom_endpoints": true,
-    "live_signup": true,
-    "live_signin": true
+    "smoke_health_py": true,
+    "smoke_capabilities_py": true,
+    "smoke_neon_auth_py": true,
+    "live_custom_endpoints": true
   },
   "failures": [],
   "known_issues": []
