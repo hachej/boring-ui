@@ -7,12 +7,14 @@ import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply }
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import { loadConfig, type ServerConfig } from './config.js'
+import { registerRequestIdHook } from './middleware/requestId.js'
+import { PINO_REDACT_PATHS } from './middleware/secretRedaction.js'
+import { registerHealthRoutes } from './http/health.js'
 import { registerWorkspaceRoutes } from './http/workspaceRoutes.js'
 import { registerFileRoutes } from './http/fileRoutes.js'
 import { registerGitRoutes } from './http/gitRoutes.js'
 import { registerExecRoutes } from './http/execRoutes.js'
 import { registerMeRoutes } from './http/meRoutes.js'
-import { buildCapabilitiesResponse } from './services/capabilitiesImpl.js'
 
 // Extend Fastify types to include our custom properties
 declare module 'fastify' {
@@ -48,18 +50,11 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
   app.register(cookie)
 
-  // --- Health endpoint ---
-  app.get('/health', async () => {
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-    }
-  })
+  // --- Request ID middleware ---
+  app.register(registerRequestIdHook)
 
-  // --- Capabilities endpoint (abstract vocabulary) ---
-  app.get('/api/capabilities', async () => {
-    return buildCapabilitiesResponse(config)
-  })
+  // --- Health, capabilities, config endpoints (public, no auth) ---
+  app.register(registerHealthRoutes)
 
   // --- File routes ---
   app.register(registerFileRoutes, { prefix: '/api/v1' })
