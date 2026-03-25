@@ -835,7 +835,9 @@ src/
 │   │   ├── users.ts                     # User profile, settings
 │   │   ├── uiState.ts                   # UI state persistence
 │   │   ├── github.ts                    # GitHub App OAuth, credentials
-│   │   └── capabilities.ts              # Feature discovery
+│   │   ├── capabilities.ts              # Feature discovery
+│   │   ├── approval.ts                  # Approval workflow (experimental)
+│   │   └── collaboration.ts             # Members, invites
 │   │
 │   ├── http/                            # Legacy /api/v1/* routes (same handlers as tRPC)
 │   │   ├── auth.ts                      # /auth/* HTML pages + API routes
@@ -843,6 +845,12 @@ src/
 │   │   ├── git.ts                       # /api/v1/git/*
 │   │   ├── exec.ts                      # /api/v1/exec/*
 │   │   ├── workspaces.ts               # /api/v1/workspaces/*
+│   │   ├── users.ts                     # /api/v1/me, /api/v1/me/settings
+│   │   ├── uiState.ts                   # /api/v1/ui/*
+│   │   ├── collaboration.ts             # /api/v1/workspaces/{id}/members, invites
+│   │   ├── github.ts                    # /api/v1/auth/github/*
+│   │   ├── approval.ts                  # /api/approval/*
+│   │   ├── capabilities.ts              # /api/capabilities, /__bui/config
 │   │   └── health.ts                    # /health, /healthz, /metrics
 │   │
 │   ├── trpc/                            # Typed internal transport
@@ -915,16 +923,36 @@ src/
 │   ├── registry/panes.tsx              # updated: remove terminal/shell
 │   └── ...
 │
-├── shared/                              # Shared types
-│   └── types.ts                         # Common types between server + client
+├── shared/                              # Shared types (imported by server + client)
+│   ├── types.ts                         # Common types (ExecResult, Entry, GitStatus, etc.)
+│   ├── toolSchemas.ts                   # Agent tool Zod schemas (hybrid bundle)
+│   ├── capabilities.ts                  # Abstract capability vocabulary types
+│   ├── config.ts                        # Config types (AppConfig, WorkspaceBackend, AgentRuntime)
+│   └── errors.ts                        # Shared error codes
 │
 ├── drizzle/                             # DB migrations
 │   ├── 0000_init.sql                    # Initial schema
 │   └── meta/
 │
+├── deploy/
+│   ├── fly.toml                         # Single Fly.io config (replaces 3 variants)
+│   ├── Dockerfile                       # node:20-slim + bwrap + python3 + git
+│   └── fly.secrets.sh                   # Vault → Fly secrets injection (kept)
+│
+├── tests/
+│   ├── smoke/                           # Python smoke tests (kept, parity gate)
+│   ├── unit/                            # Vitest unit tests (new)
+│   ├── integration/                     # Vitest integration tests (new)
+│   └── eval/                            # Eval framework (kept)
+│
+├── bui/                                 # Go CLI (adapted, not replaced)
+│   └── cmd/                             # dev.go, build.go, deploy.go, init.go, neon.go, ...
+│
 ├── package.json                         # Single package
-├── tsconfig.json                        # TypeScript config
+├── tsconfig.json                        # TypeScript config (server)
+├── tsconfig.client.json                 # TypeScript config (shared types for frontend)
 ├── boring.app.toml                      # App config
+├── drizzle.config.ts                    # Drizzle ORM config
 └── vite.config.ts                       # Frontend build (kept)
 ```
 
