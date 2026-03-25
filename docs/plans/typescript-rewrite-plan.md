@@ -3,62 +3,196 @@
 ## Overview
 
 Rewrite the boring-ui backend from Python/FastAPI to TypeScript/Fastify+tRPC.
-Integrate JustBash for sandboxed bash and Monty for sandboxed Python.
-Collapse 3 deployment modes into 1 server with 2 configurable axes:
-workspace isolation (browser vs server) and agent runtime (PI vs AI SDK).
+Collapse 3 deployment modes into 1 server with a plug-and-play architecture:
+pick a workspace backend, pick an agent runtime. Two config fields, that's it.
 
 ## Architecture
 
-### Two Config Axes
+### Two Config Fields
 
 ```toml
 [workspace]
-isolation = "browser"   # tools execute in browser (JustBash WASM + LightningFS)
-# or
-isolation = "server"    # tools execute on server (JustBash ReadWriteFs + Monty)
+backend = "bwrap"         # "lightningfs" | "justbash" | "bwrap"
 
 [agent]
-runtime = "pi"          # PI runs in browser, LLM calls from browser (user's API key)
-# or
-runtime = "ai-sdk"      # AI SDK runs on server, LLM calls from server (server API key)
+runtime = "ai-sdk"        # "pi" | "ai-sdk"
 ```
 
-One deployment. One server. Two config fields.
+One deployment. One server. Everything else derives from these two fields.
 
-### Runtime Matrix
+### Workspace Backends (3 options, pluggable)
 
-| | `isolation = "browser"` | `isolation = "server"` |
-|---|---|---|
-| **`runtime = "pi"`** | PI in browser + tools in browser. Zero server exec. Good for demos, zero infra. | PI in browser + tools on server via HTTP. User provides API key. Server handles exec. |
-| **`runtime = "ai-sdk"`** | AI SDK on server + tool schemas bounced to browser for execution. Unusual but possible. | AI SDK on server + tools on server. Most powerful. Server owns API key + exec. |
+All three implement the same `WorkspaceBackend` interface. The frontend and agent
+don't know which is active — they call the same methods.
 
-Default: `runtime = "pi"` + `isolation = "server"` (closest to current agent-frontend behavior).
+```
+┌─────────────────────┬──────────────────────┬────────────────────┐
+│  lightningfs        │  justbash            │  bwrap             │
+│                     │                      │                    │
+│  Files: LightningFS │  Files: InMemoryFs   │  Files: real fs    │
+│  (IndexedDB)        │  (RAM)               │  (disk, scoped)   │
+│                     │                      │                    │
+│  Git: isomorphic-git│  Git: builtin (basic)│  Git: real git     │
+│  (pure JS, browser) │  (status,add,commit) │  (full: push/pull/ │
+│                     │                      │   rebase/cherry-   │
+│                     │                      │   pick/everything) │
+│                     │                      │                    │
+│  Exec: Pyodide      │  Exec: JustBash      │  Exec: real bash   │
+│  (WASM CPython)     │  (TS builtins:       │  + real npm/pip/   │
+│                     │   grep,sed,awk,jq)   │    python3/node    │
+│                     │                      │                    │
+│  Runs: browser      │  Runs: browser       │  Runs: server      │
+│  Persistence:       │  Persistence:        │  Persistence:      │
+│  IndexedDB          │  RAM (lost on reload)│  disk              │
+│                     │                      │                    │
+│  Best for:          │  Best for:           │  Best for:         │
+│  offline dev,       │  instant preview,    │  production,       │
+│  git-compatible     │  sandboxed demos,    │  full toolchain,   │
+│  browser workspace  │  lightweight eval    │  real isolation    │
+└─────────────────────┴──────────────────────┴────────────────────┘
+```
+
+Capability comparison:
+
+```
+                  lightningfs    justbash       bwrap
+  git push        ◐ (http only)  ✗              ✓ (SSH + HTTPS)
+  npm install     ✗              ✗              ✓
+  pip install     ✗              ✗              ✓
+  grep/sed/awk    ✗              ✓              ✓
+  python3         ◐ (Pyodide)    ◐ (WASM)       ✓ (real CPython)
+  persistence     ✓ (IndexedDB)  ✗ (RAM)        ✓ (disk)
+  offline         ✓              ✓              ✗
+  server needed   ✗ (auth only)  ✗ (auth only)  ✓
+```
+
+### Agent Runtimes (2 options, pluggable)
+
+| Runtime | LLM runs | API key | Frontend component |
+|---------|----------|---------|-------------------|
+| `pi` | In browser (PI agent) | User provides in browser | `PiNativeAdapter` (existing) |
+| `ai-sdk` | On server (AI SDK streamText) | Server env var | `AiChat` (new, useChat hook) |
+
+### The Full Matrix (6 valid combinations)
+
+| `backend` | `runtime` | What happens | Best for |
+|-----------|-----------|-------------|----------|
+| `lightningfs` | `pi` | Everything in browser. Zero server exec. | Offline dev, demos |
+| `lightningfs` | `ai-sdk` | Files in browser, LLM on server. | Managed demo |
+| `justbash` | `pi` | JustBash WASM in browser. User's API key. | Quick sandboxed previews |
+| `justbash` | `ai-sdk` | JustBash WASM in browser, LLM on server. | Lightweight managed preview |
+| `bwrap` | `pi` | Real sandbox on server. User's API key. | Self-serve production |
+| `bwrap` | `ai-sdk` | Real sandbox + LLM on server. Full managed. | Production, headless agents |
+
+### WorkspaceBackend Interface
+
+Single interface, three implementations:
+
+```typescript
+interface WorkspaceBackend {
+  // Filesystem
+  readFile(path: string): Promise<string>
+  writeFile(path: string, content: string): Promise<void>
+  deleteFile(path: string): Promise<void>
+  listDir(path: string): Promise<Entry[]>
+  searchFiles(query: string, path?: string): Promise<Match[]>
+  renameFile(oldPath: string, newPath: string): Promise<void>
+
+  // Exec (agent tools)
+  bash(command: string, opts?: { cwd?: string }): Promise<ExecResult>
+  python(code: string): Promise<ExecResult>
+
+  // Git
+  gitStatus(): Promise<GitStatus>
+  gitDiff(path: string): Promise<string>
+  gitAdd(paths: string[]): Promise<void>
+  gitCommit(message: string): Promise<CommitResult>
+  gitPush(opts?: { remote?: string }): Promise<void>
+  gitPull(opts?: { remote?: string }): Promise<void>
+  gitLog(opts?: { limit?: number }): Promise<Commit[]>
+  gitBranch(name: string): Promise<void>
+  gitCheckout(name: string): Promise<void>
+  gitBranches(): Promise<BranchList>
+}
+```
+
+Implementations:
+- `BwrapBackend` — port of existing `exec/service.py` (bwrap sandbox, already proven)
+- `LightningBackend` — wraps existing LightningFS + isomorphic-git + Pyodide (kept as-is)
+- `JustBashBrowserBackend` — JustBash WASM with InMemoryFs (new, lightweight)
+
+### How It Wires Up
+
+```
+backend = "lightningfs" or "justbash":
+
+  Browser calls backend directly — no server round-trip for workspace ops.
+  Server only needed for auth (Neon) and LLM proxy (AI SDK mode).
+
+  FileTreePanel → backend.listDir()    → IndexedDB or RAM (in-browser)
+  EditorPanel   → backend.readFile()   → IndexedDB or RAM (in-browser)
+  Agent tool    → backend.bash()       → Pyodide/JustBash WASM (in-browser)
+
+
+backend = "bwrap":
+
+  Browser calls server via tRPC. Server delegates to bwrap sandbox.
+
+  FileTreePanel → trpc.files.list()    → server → fs.readdir (workspace dir)
+  EditorPanel   → trpc.files.read()    → server → fs.readFile (workspace dir)
+  Agent tool    → trpc.exec.bash()     → server → bwrap subprocess
+```
+
+Frontend panels use a `WorkspaceProvider` context. They never know which backend is active:
+
+```tsx
+function FileTreePanel() {
+  const backend = useWorkspaceBackend()       // from context
+  const { data } = useQuery(['files', path],
+    () => backend.listDir(path)               // same call regardless of backend
+  )
+}
+```
 
 ### Agent Panel: Pluggable
 
-The frontend `AgentPanel` renders either:
-- **PI mode**: `nativeAdapter.jsx` (kept as-is) — PI web component, browser-side LLM
-- **AI SDK mode**: `AiChat.tsx` (new) — `useChat()` hook, server-side LLM streaming
-
-The panel reads `agent.runtime` from `/__bui/config` and renders the right component:
-
 ```tsx
-// src/front/panels/AgentPanel.jsx
 function AgentPanel({ workspaceId }) {
   const config = useRuntimeConfig()
   if (config.agent.runtime === 'ai-sdk') {
-    return <AiChat workspaceId={workspaceId} isolation={config.workspace.isolation} />
+    return <AiChat workspaceId={workspaceId} />
   }
-  return <PiNativeAdapter workspaceId={workspaceId} />  // existing PI component
+  return <PiNativeAdapter workspaceId={workspaceId} />
 }
 ```
+
+### Agent Tools: 2 Tools Only
+
+The LLM gets two tools. Bash covers everything — files, git, system ops.
+UI endpoints (files, git) are separate tRPC routes for the React panels.
+
+```
+Agent tools (what the LLM calls):
+  exec_bash({ command, cwd? })  → { stdout, stderr, exitCode }
+  exec_python({ code })         → { output, error? }
+
+UI endpoints (what React panels call, tRPC):
+  files.list / files.read / files.write / files.delete / files.rename / files.search
+  git.status / git.diff / git.add / git.commit / git.push / git.pull / git.log
+```
+
+Tool schemas live in `src/shared/toolSchemas.ts` — shared by both PI and AI SDK runtimes.
+Same interface, different executors depending on which backend is active.
 
 ### Stack
 
 ```
-Backend:   Fastify + tRPC + Drizzle + JustBash + Monty + jose
+Backend:   Fastify + tRPC + Drizzle + jose
+           + bwrap (system package, already in Dockerfile)
            + AI SDK (when runtime = "ai-sdk")
 Frontend:  React + Vite + TailwindCSS + shadcn + DockView
+           + LightningFS + isomorphic-git + Pyodide (when backend = "lightningfs")
+           + JustBash (when backend = "justbash")
            + PI (@mariozechner/pi-*) (when runtime = "pi")
            + useChat (@ai-sdk/react) (when runtime = "ai-sdk")
 Database:  Neon PostgreSQL (same as today)
@@ -123,49 +257,72 @@ ADDED (AI SDK — server agent runtime):
 
 ### Pluggable Subsystems
 
-The architecture has three pluggable axes. Each is a config field with exactly 2 options:
+Two config fields, two pluggable axes:
 
 ```
 [workspace]
-isolation = "browser" | "server"     # where tools execute
+backend = "lightningfs" | "justbash" | "bwrap"   # workspace backend (3 options)
 
 [agent]
-runtime = "pi" | "ai-sdk"           # where LLM orchestration runs
-
-[workspace.storage]                  # implicit from isolation:
-  browser → LightningFS (IndexedDB)
-  server  → HTTP API (real filesystem)
+runtime = "pi" | "ai-sdk"                        # agent runtime (2 options)
 ```
 
-Each pluggable axis is implemented as an **interface + 2 adapters**:
+#### Axis 1: Workspace Backend
+
+All three backends implement `WorkspaceBackend`. One interface, three adapters:
 
 ```typescript
-// 1. Filesystem — pluggable via DataProvider interface (already exists)
-interface DataProvider {
-  listDir(path: string): Promise<Entry[]>
-  readFile(path: string): Promise<string>
-  writeFile(path: string, content: string): Promise<void>
-  deleteFile(path: string): Promise<void>
-  gitStatus(): Promise<GitStatus>
-  runCommand?(command: string): Promise<ExecResult>  // optional
-  // ...
-}
-// Implementations: HttpDataProvider (server), LightningDataProvider (browser)
+// Shared interface — panels and agent tools call this, never know which backend is active
+interface WorkspaceBackend { /* readFile, writeFile, listDir, bash, python, git*, ... */ }
 
-// 2. Exec — pluggable via ExecBackend interface (new)
-interface ExecBackend {
-  bash(command: string, opts?: { cwd?: string }): Promise<ExecResult>
-  python?(code: string): Promise<ExecResult>
-}
-// Implementations: ServerExecBackend (JustBash+Monty via HTTP), BrowserExecBackend (JustBash WASM)
+// Three implementations:
+class BwrapBackend implements WorkspaceBackend
+  // Port of existing exec/service.py — real bash/git/npm/python3 in bwrap sandbox
+  // Server-only. Workspace dir mounted read-write at /workspace.
 
-// 3. Agent — pluggable via panel component selection
-// PI mode:     renders <PiNativeAdapter /> (existing)
-// AI SDK mode: renders <AiChat /> (new, uses useChat())
+class LightningBackend implements WorkspaceBackend
+  // Wraps existing LightningFS + isomorphic-git + Pyodide (kept as-is)
+  // Browser-only. Files in IndexedDB. Proven, works offline.
+
+class JustBashBrowserBackend implements WorkspaceBackend
+  // JustBash WASM with InMemoryFs — 100+ builtin commands (grep, sed, awk, jq)
+  // Browser-only. No real git/npm. Lightweight, instant startup.
 ```
 
-The frontend reads `/__bui/config` at boot and wires the right adapter for each axis.
-No runtime switching — the config is fixed per deployment.
+#### Axis 2: Agent Runtime
+
+Pluggable at the panel level — one component renders, the other is tree-shaken out:
+
+```tsx
+function AgentPanel({ workspaceId }) {
+  const { runtime } = useRuntimeConfig().agent
+  if (runtime === 'ai-sdk') return <AiChat workspaceId={workspaceId} />
+  return <PiNativeAdapter workspaceId={workspaceId} />
+}
+```
+
+#### Wiring
+
+The frontend reads `/__bui/config` at boot and creates the right backend:
+
+```tsx
+// Browser backends (lightningfs, justbash): direct JS calls, no server round-trip
+// Server backend (bwrap): tRPC calls → server → bwrap subprocess
+
+const backend = config.workspace.backend === 'bwrap'
+  ? createTrpcBackend(trpcClient, workspaceId)   // all ops go to server
+  : config.workspace.backend === 'lightningfs'
+    ? createLightningBackend(workspaceId)          // existing browser stack
+    : createJustBashBrowserBackend()               // JustBash WASM
+
+return <WorkspaceProvider backend={backend}>...</WorkspaceProvider>
+```
+
+Panels never know which backend is active. They call `backend.listDir()`,
+`backend.readFile()`, `backend.bash()` — same API regardless.
+
+A fourth backend (Docker, Firecracker, remote VM) slots in by implementing
+the same `WorkspaceBackend` interface. Zero changes to panels or agent tools.
 
 ### Auth System Cleanup
 
@@ -198,60 +355,106 @@ The rewrite is the opportunity to clean up the auth system properly.
 
 ### Unified Tool Interface
 
-The LLM tool interface must be **identical** regardless of runtime mode or isolation mode.
-Same tool names, same parameters, same response shapes. The difference is only WHERE execution happens.
+The LLM tool interface must be **identical** regardless of workspace backend or agent runtime.
+Same tool names, same parameters, same response shapes. Only WHERE execution happens differs.
 
 **Single source of truth**: `src/shared/toolSchemas.ts`
 
 ```
-src/shared/toolSchemas.ts         ← Zod schemas for ALL tools (shared by server + browser)
+src/shared/toolSchemas.ts           ← Zod schemas for ALL agent tools
   │
-  ├── src/server/agent/tools.ts   ← AI SDK mode: bind schemas to server executors
-  │     exec_bash → ctx.bash.exec() (JustBash on server)
-  │     read_file → fs.readFile() (real filesystem)
-  │     git_status → simpleGit.status() (subprocess git)
+  ├── src/server/agent/tools.ts     ← AI SDK mode: bind schemas to server executors
+  │     exec_bash → bwrapBackend.bash()
+  │     exec_python → bwrapBackend.python()
+  │     open_file → push UI command via SSE/tRPC
+  │     list_tabs → read UI state
   │
-  └── src/front/providers/pi/tools.ts  ← PI mode: bind schemas to browser executors
-        exec_bash → provider.runCommand() (JustBash WASM or HTTP to server)
-        read_file → provider.readFile() (LightningFS or HTTP)
-        git_status → provider.gitStatus() (isomorphic-git or HTTP)
+  └── src/front/providers/pi/tools.ts ← PI mode: bind schemas to browser executors
+        exec_bash → backend.bash() (LightningFS/JustBash/HTTP→bwrap)
+        exec_python → backend.python()
+        open_file → window bridge (existing PI_OPEN_FILE_BRIDGE)
+        list_tabs → window bridge (existing PI_LIST_TABS_BRIDGE)
 ```
 
-**Two layers: Agent tools (LLM) + UI endpoints (frontend panels)**
+**Three layers of tools:**
 
-Agent tools — what the LLM calls (minimal, 2 tools):
+#### 1. Workspace tools — exec in the sandbox (2 tools)
 
 | Tool | Parameters | Returns | Execution |
 |------|-----------|---------|-----------|
-| `exec_bash` | `{ command, cwd? }` | `{ stdout, stderr, exitCode }` | JustBash (covers files, git, system) |
-| `exec_python` | `{ code }` | `{ output, error? }` | Monty |
+| `exec_bash` | `{ command, cwd? }` | `{ stdout, stderr, exitCode }` | WorkspaceBackend.bash() |
+| `exec_python` | `{ code }` | `{ output, error? }` | WorkspaceBackend.python() |
 
-The LLM uses bash for everything: `cat`, `ls`, `grep`, `git status`, `git commit`, `npm install`, etc.
-No need for structured file/git tools — bash is the universal interface.
+The LLM uses bash for everything: `cat`, `ls`, `grep`, `git status`, `npm install`, etc.
 
-UI endpoints — what the frontend panels call (structured JSON, tRPC):
+#### 2. UI bridge tools — control the IDE (standard, always present)
 
-| Endpoint | Used by | Parameters | Returns |
-|----------|---------|-----------|---------|
-| `files.list` | FileTreePanel | `{ path }` | `{ entries: [{ name, path, isDir }] }` |
-| `files.read` | EditorPanel | `{ path }` | `{ content, path }` |
-| `files.write` | EditorPanel | `{ path, content }` | `{ success, path }` |
-| `files.search` | Search modal | `{ query, path? }` | `{ matches: [{ path }] }` |
-| `files.rename` | FileTreePanel | `{ oldPath, newPath }` | `{ success }` |
-| `files.delete` | FileTreePanel | `{ path }` | `{ success }` |
-| `git.status` | GitChangesView | `{}` | `{ isRepo, files: [...] }` |
-| `git.diff` | GitDiff | `{ path }` | `{ diff, path }` |
-| `git.add` | GitChangesView | `{ paths }` | `{ staged: [...] }` |
-| `git.commit` | GitChangesView | `{ message }` | `{ hash, message }` |
-| `git.push` | GitChangesView | `{ remote?, branch? }` | `{ pushed }` |
-| `git.pull` | GitChangesView | `{ remote?, branch? }` | `{ pulled }` |
+These let the agent interact with the IDE panels. They work the same in PI and AI SDK mode.
 
-UI endpoints are NOT agent tools. They exist to power the React panels with structured JSON.
-The LLM never calls `files.read` — it calls `exec_bash("cat src/main.js")` instead.
+| Tool | Parameters | Returns | How it works today |
+|------|-----------|---------|-------------------|
+| `open_file` | `{ path }` | `{ opened: true }` | PI: `window[PI_OPEN_FILE_BRIDGE](path)`. AI SDK: tRPC mutation → UI command queue. |
+| `list_tabs` | `{}` | `{ tabs: string[], activeFile? }` | PI: `window[PI_LIST_TABS_BRIDGE]()`. AI SDK: tRPC query → read UI state. |
+| `open_panel` | `{ panelId }` | `{ opened: true }` | PI: `window[PI_OPEN_PANEL_BRIDGE](id)`. AI SDK: tRPC mutation → UI command queue. |
 
-The Zod schemas in `toolSchemas.ts` define the 2 agent tools.
-The tRPC router schemas define the UI endpoints separately.
-Both share the same workspace context and isolation boundary.
+Reference: existing `src/front/providers/pi/uiBridge.js` defines the window bridges.
+These are ported to shared tool schemas so AI SDK mode can use them too (via the existing
+`/api/v1/ui/commands` endpoint — the backend queues a command, the frontend polls and executes).
+
+#### 3. Child app tools — extensible by child apps
+
+Child apps (boring-macro, bdocs, etc.) can register additional agent tools via `boring.app.toml`:
+
+```toml
+# child app's boring.app.toml
+[agent.tools]
+query_database = "src/tools/queryDatabase.ts"    # custom tool module
+analyze_data = "src/tools/analyzeData.ts"        # custom tool module
+```
+
+Each tool module exports a Zod schema + execute function:
+
+```typescript
+// src/tools/queryDatabase.ts (child app)
+import { z } from 'zod'
+
+export const schema = z.object({
+  query: z.string().describe('SQL query to execute'),
+  database: z.string().optional(),
+})
+
+export const description = 'Query a connected database and return results.'
+
+export async function execute({ query, database }, ctx: WorkspaceContext) {
+  // child app's custom logic — has access to workspace context
+  return { rows: [...], columns: [...] }
+}
+```
+
+The tool registry loads these at startup and merges them with the standard tools:
+
+```typescript
+// src/server/agent/registry.ts
+const standardTools = [execBash, execPython, openFile, listTabs, openPanel]
+const childAppTools = loadChildAppTools(config)  // from boring.app.toml [agent.tools]
+const allTools = [...standardTools, ...childAppTools]
+```
+
+For PI mode, child app tools are loaded as browser-side tool definitions
+(the child app ships a browser-compatible version of the execute function).
+
+#### UI endpoints (separate from agent tools)
+
+Frontend panels call structured tRPC endpoints — NOT agent tools:
+
+| Endpoint | Used by |
+|----------|---------|
+| `files.list / read / write / delete / rename / search` | FileTreePanel, EditorPanel |
+| `git.status / diff / add / commit / push / pull / log` | GitChangesView, GitDiff |
+| `ui.state / commands / panes / focus` | App shell (layout persistence) |
+
+UI endpoints are powered by the same `WorkspaceBackend` interface.
+The LLM never calls these — it uses `exec_bash("cat file.txt")` instead.
 
 ### bui CLI Cleanup
 
@@ -925,12 +1128,11 @@ name = "boring-ui"
 id = "boring-ui"
 
 [workspace]
-isolation = "server"    # "browser" | "server"
+backend = "bwrap"       # "lightningfs" | "justbash" | "bwrap"
 
 [agent]
-runtime = "pi"          # "pi" | "ai-sdk"
-# Only used when runtime = "ai-sdk":
-model = "claude-sonnet-4-5-20250929"
+runtime = "ai-sdk"      # "pi" | "ai-sdk"
+model = "claude-sonnet-4-5-20250929"  # only used when runtime = "ai-sdk"
 
 [auth]
 provider = "neon"
@@ -943,12 +1145,14 @@ platform = "fly"
 
 ### Config Combinations
 
-| Use case | `isolation` | `runtime` | Description |
-|----------|-------------|-----------|-------------|
-| **Local dev / demo** | `browser` | `pi` | Zero server exec. Everything in browser. User brings API key. |
-| **Standard hosted** | `server` | `pi` | PI in browser, tools on server. User brings API key. Cheapest hosted option. |
-| **Full managed** | `server` | `ai-sdk` | Server handles LLM + tools. Platform provides API key. Most capable. |
-| **Headless / webhooks** | `server` | `ai-sdk` | Required for Telegram/Slack bots, scheduled tasks, headless API. |
+| Use case | `backend` | `runtime` | Description |
+|----------|-----------|-----------|-------------|
+| **Offline dev** | `lightningfs` | `pi` | Everything in browser. IndexedDB + isomorphic-git. User brings API key. |
+| **Quick preview** | `justbash` | `pi` | JustBash WASM in browser. Instant, lightweight, no persistence. |
+| **Managed preview** | `justbash` | `ai-sdk` | JustBash in browser, LLM on server. Platform provides API key. |
+| **Self-serve production** | `bwrap` | `pi` | Real sandbox on server. User brings API key. Cheapest hosted. |
+| **Full managed production** | `bwrap` | `ai-sdk` | Real sandbox + LLM on server. Most capable. Headless agents possible. |
+| **Headless / webhooks** | `bwrap` | `ai-sdk` | Required for Telegram/Slack bots, scheduled tasks, headless API. |
 
 ---
 
