@@ -1323,7 +1323,8 @@ kbd {
 
 /* Terminal panel */
 .terminal-panel-content,
-.shell-panel-content {
+.shell-panel-content,
+.agent-panel-content {
   background: color-mix(in srgb, var(--color-term-bg) 16%, var(--color-bg-secondary));
   display: flex;
   flex-direction: column;
@@ -2960,7 +2961,8 @@ kbd {
   min-width: 0;
 }
 
-.terminal-header {
+.terminal-header,
+.agent-header {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -2973,11 +2975,13 @@ kbd {
   color: var(--color-text-secondary);
 }
 
-.terminal-header .sidebar-toggle-btn {
+.terminal-header .sidebar-toggle-btn,
+.agent-header .sidebar-toggle-btn {
   flex-shrink: 0;
 }
 
-.terminal-header-spacer {
+.terminal-header-spacer,
+.agent-header-spacer {
   flex: 1;
 }
 
@@ -3069,7 +3073,8 @@ kbd {
   box-shadow: none;
 }
 
-.terminal-body {
+.terminal-body,
+.agent-body {
   flex: 1;
   min-height: 0;
   position: relative;
@@ -3083,7 +3088,7 @@ kbd {
   overflow: hidden;
 }
 
-.agent-panel-content .terminal-header {
+.agent-panel-content .agent-header {
   border-bottom: 1px solid var(--color-border-secondary);
   background: var(--color-bg-secondary);
 }

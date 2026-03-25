@@ -16,11 +16,10 @@ import { Separator } from './ui/separator'
  * - workspaceName: Workspace name to display
  * - workspaceId: Workspace ID for actions
  * - collapsed: Render compact avatar-only trigger for collapsed sidebar
- * - onSwitchWorkspace: optional callback for switch action
  * - onCreateWorkspace: optional callback for create action
  * - onOpenUserSettings: optional callback for settings action
  * - onOpenWorkspaceSettings: optional callback for workspace settings action
- * - workspaceOptions: array of { workspace_id, name } for inline workspace switching
+ * - workspaceOptions: array of { workspace_id, name } for inline workspace switching links
  * - onLogout: optional callback for logout action
  */
 export default function UserMenu({
@@ -33,7 +32,6 @@ export default function UserMenu({
   onRetry,
   disabledActions = [],
   showSwitchWorkspace = true,
-  onSwitchWorkspace: _onSwitchWorkspace,
   onCreateWorkspace,
   onOpenUserSettings,
   onOpenWorkspaceSettings,

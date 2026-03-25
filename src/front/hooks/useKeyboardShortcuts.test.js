@@ -14,8 +14,6 @@ describe('useKeyboardShortcuts', () => {
   beforeEach(() => {
     handlers = {
       toggleFiletree: vi.fn(),
-      toggleTerminal: vi.fn(),
-      toggleShell: vi.fn(),
     }
 
     addEventListenerSpy = vi.spyOn(window, 'addEventListener')
@@ -161,8 +159,6 @@ describe('useKeyboardShortcuts', () => {
 
     // No handler should be called
     expect(handlers.toggleFiletree).not.toHaveBeenCalled()
-    expect(handlers.toggleTerminal).not.toHaveBeenCalled()
-    expect(handlers.toggleShell).not.toHaveBeenCalled()
     expect(preventDefaultSpy).not.toHaveBeenCalled()
   })
 })
@@ -202,8 +198,8 @@ describe('formatShortcut', () => {
 describe('DEFAULT_SHORTCUTS', () => {
   it('has expected shortcuts defined', () => {
     expect(DEFAULT_SHORTCUTS.toggleFiletree).toBeDefined()
-    expect(DEFAULT_SHORTCUTS.toggleTerminal).toBeDefined()
-    expect(DEFAULT_SHORTCUTS.toggleShell).toBeDefined()
+    expect(DEFAULT_SHORTCUTS.toggleTerminal).toBeUndefined()
+    expect(DEFAULT_SHORTCUTS.toggleShell).toBeUndefined()
     expect(DEFAULT_SHORTCUTS.searchFiles).toBeDefined()
     expect(DEFAULT_SHORTCUTS.searchCatalog).toBeDefined()
     expect(DEFAULT_SHORTCUTS.toggleTheme).toBeDefined()

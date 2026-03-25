@@ -19,12 +19,6 @@ const mockPiNativeAdapter = vi.fn(({ panelId, sessionBootstrap, initialSessionId
   </div>
 ))
 
-const mockPiBackendAdapter = vi.fn(({ serviceUrl, panelId, sessionBootstrap }) => (
-  <div data-testid="pi-backend-adapter">
-    backend:{panelId}:{sessionBootstrap}:{serviceUrl}
-  </div>
-))
-
 const mockPiSessionToolbar = vi.fn(({ panelId, onSplitPanel }) => (
   <button
     type="button"
@@ -37,10 +31,6 @@ const mockPiSessionToolbar = vi.fn(({ panelId, onSplitPanel }) => (
 
 vi.mock('../../providers/pi/nativeAdapter', () => ({
   default: (props) => mockPiNativeAdapter(props),
-}))
-
-vi.mock('../../providers/pi/backendAdapter', () => ({
-  default: (props) => mockPiBackendAdapter(props),
 }))
 
 vi.mock('../../providers/pi/PiSessionToolbar', () => ({
@@ -69,7 +59,7 @@ describe('AgentPanel integration', () => {
     vi.clearAllMocks()
   })
 
-  it('renders the frontend PI adapter when pi capability is available', () => {
+  it('renders the PI native adapter when agent chat capability is available', () => {
     renderGatedAgent({
       capabilities: {
         capabilities: { 'agent.chat': true },
@@ -86,7 +76,6 @@ describe('AgentPanel integration', () => {
     expect(screen.getByTestId('pi-native-adapter')).toHaveTextContent(
       'native:agent-panel-1:latest:sess-123',
     )
-    expect(screen.queryByTestId('pi-backend-adapter')).not.toBeInTheDocument()
     expect(mockPiNativeAdapter.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         panelId: 'agent-panel-1',
@@ -96,7 +85,7 @@ describe('AgentPanel integration', () => {
     )
   })
 
-  it('renders the backend PI adapter when backend mode and backend service capabilities are present', () => {
+  it('still renders the PI native adapter when backend mode params and backend service capabilities are present', () => {
     renderGatedAgent({
       capabilities: {
         capabilities: { 'agent.chat': true },
@@ -115,15 +104,13 @@ describe('AgentPanel integration', () => {
 
     expect(screen.getByTestId('agent-panel')).toBeInTheDocument()
     expect(screen.getByTestId('pi-session-toolbar')).toBeInTheDocument()
-    expect(screen.getByTestId('pi-backend-adapter')).toHaveTextContent(
-      `backend:agent-panel-1:new:${window.location.origin}/w/ws-123`,
+    expect(screen.getByTestId('pi-native-adapter')).toHaveTextContent(
+      'native:agent-panel-1:new:',
     )
-    expect(screen.queryByTestId('pi-native-adapter')).not.toBeInTheDocument()
-    expect(mockPiBackendAdapter.mock.calls[0][0]).toEqual(
+    expect(mockPiNativeAdapter.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         panelId: 'agent-panel-1',
         sessionBootstrap: 'new',
-        serviceUrl: `${window.location.origin}/w/ws-123`,
       }),
     )
   })

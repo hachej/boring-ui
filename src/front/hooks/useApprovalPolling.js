@@ -11,7 +11,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch, apiFetchJson } from '../utils/transport'
-import routes from '../utils/routes'
+import { routes } from '../utils/routes'
 
 function getFileName(path) {
   if (!path) return ''
@@ -46,7 +46,11 @@ export default function useApprovalPolling({ enabled = false, projectRoot = '' }
           setApprovals(filtered)
           setApprovalsLoaded(true)
         })
-        .catch(() => {})
+        .catch(() => {
+          if (!isActive) return
+          setApprovals([])
+          setApprovalsLoaded(true)
+        })
     }
 
     fetchApprovals()

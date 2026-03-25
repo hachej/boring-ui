@@ -68,7 +68,7 @@ describe('appConfig', () => {
       const config = getDefaultConfig()
 
       expect(config.panels.essential).toContain('filetree')
-      expect(config.panels.essential).toContain('terminal')
+      expect(config.panels.essential).not.toContain('terminal') // removed in Phase 5
     })
 
     it('defaults markdown pane to editor', () => {

@@ -316,6 +316,15 @@ describe('createDefaultRegistry', () => {
     expect(registry.has('agent')).toBe(true)
   })
 
+  it('does not register legacy terminal or shell panes', () => {
+    const registry = createDefaultRegistry()
+
+    expect(registry.has('terminal')).toBe(false)
+    expect(registry.has('shell')).toBe(false)
+    expect(registry.listIds()).not.toContain('terminal')
+    expect(registry.listIds()).not.toContain('shell')
+  })
+
   it('marks essential panes correctly', () => {
     const registry = createDefaultRegistry()
 

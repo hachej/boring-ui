@@ -45,7 +45,7 @@ vi.mock('../registry/panes', async () => {
   const actual = await vi.importActual('../registry/panes')
   return {
     ...actual,
-    essentialPanes: () => ['filetree', 'terminal', 'shell'],
+    essentialPanes: () => ['filetree'],
   }
 })
 
@@ -67,11 +67,11 @@ const createValidLayout = () => ({
           data: [
             {
               type: 'leaf',
-              data: { views: [{ id: 'shell' }, { id: 'editor-1' }] },
+              data: { views: [{ id: 'editor-1' }] },
             },
             {
               type: 'leaf',
-              data: { views: [{ id: 'terminal' }] },
+              data: { views: [{ id: 'agent' }] },
             },
           ],
         },
@@ -80,8 +80,7 @@ const createValidLayout = () => ({
   },
   panels: {
     filetree: { contentComponent: 'filetree' },
-    terminal: { contentComponent: 'terminal' },
-    shell: { contentComponent: 'shell' },
+    agent: { contentComponent: 'agent' },
     'editor-1': { contentComponent: 'editor' },
   },
 })

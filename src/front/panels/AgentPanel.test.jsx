@@ -5,22 +5,11 @@ vi.mock('../providers/pi/PiSessionToolbar', () => ({
   default: () => <div data-testid="mock-pi-toolbar">MockPiToolbar</div>,
 }))
 vi.mock('../providers/pi/nativeAdapter', () => ({
-  default: () => <div data-testid="mock-pi-native-app">MockPiNativeApp</div>,
-}))
-vi.mock('../providers/pi/backendAdapter', () => ({
-  default: () => <div data-testid="mock-pi-backend-app">MockPiBackendApp</div>,
-}))
-
-const mockIsPiBackendMode = vi.fn(() => false)
-const mockGetPiServiceUrl = vi.fn(() => '')
-vi.mock('../providers/pi/config', () => ({
-  isPiBackendMode: (...args) => mockIsPiBackendMode(...args),
-  getPiServiceUrl: (...args) => mockGetPiServiceUrl(...args),
-}))
-
-const mockCapabilities = { services: {}, features: { pi: true } }
-vi.mock('../components/CapabilityGate', () => ({
-  useCapabilitiesContext: () => mockCapabilities,
+  default: ({ panelId, sessionBootstrap, initialSessionId }) => (
+    <div data-testid="mock-pi-native-app">
+      {`MockPiNativeApp:${panelId}:${sessionBootstrap}:${initialSessionId}`}
+    </div>
+  ),
 }))
 
 import AgentPanel from './AgentPanel'
@@ -28,43 +17,38 @@ import AgentPanel from './AgentPanel'
 describe('AgentPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockCapabilities.services = {}
-    mockCapabilities.features = { pi: true }
-    mockIsPiBackendMode.mockReturnValue(false)
-    mockGetPiServiceUrl.mockReturnValue('')
   })
 
-  it('renders the frontend PI adapter by default', () => {
-    render(<AgentPanel params={{}} />)
+  it('renders the native PI adapter by default', () => {
+    render(<AgentPanel params={{ panelId: 'panel-1' }} />)
 
     expect(screen.getByTestId('agent-panel')).toBeTruthy()
     expect(screen.getByTestId('mock-pi-toolbar')).toBeTruthy()
     expect(screen.getByTestId('mock-pi-native-app')).toBeTruthy()
-    expect(screen.queryByTestId('mock-pi-backend-app')).toBeNull()
+    expect(screen.getByTestId('mock-pi-native-app')).toHaveTextContent('MockPiNativeApp:panel-1:latest:')
   })
 
-  it('renders the backend PI adapter when backend mode is configured', () => {
-    mockCapabilities.services = {
-      pi: { url: 'http://localhost:8789', mode: 'backend' },
-    }
-    mockIsPiBackendMode.mockReturnValue(true)
-    mockGetPiServiceUrl.mockReturnValue('http://localhost:8789')
-
-    render(<AgentPanel params={{ mode: 'backend' }} />)
+  it('still renders the native PI adapter when backend mode params are present', () => {
+    render(<AgentPanel params={{ panelId: 'panel-2', mode: 'backend' }} />)
 
     expect(screen.getByTestId('agent-panel')).toBeTruthy()
     expect(screen.getByTestId('mock-pi-toolbar')).toBeTruthy()
-    expect(screen.getByTestId('mock-pi-backend-app')).toBeTruthy()
-    expect(screen.queryByTestId('mock-pi-native-app')).toBeNull()
+    expect(screen.getByTestId('mock-pi-native-app')).toBeTruthy()
+    expect(screen.getByTestId('mock-pi-native-app')).toHaveTextContent('MockPiNativeApp:panel-2:latest:')
   })
 
-  it('still renders the backend PI adapter when backend mode lacks a service URL', () => {
-    mockIsPiBackendMode.mockReturnValue(true)
-    mockGetPiServiceUrl.mockReturnValue('')
+  it('forwards session bootstrap props to the native adapter', () => {
+    render(
+      <AgentPanel
+        params={{
+          panelId: 'panel-3',
+          mode: 'backend',
+          piSessionBootstrap: 'new',
+          piInitialSessionId: 'sess-123',
+        }}
+      />,
+    )
 
-    render(<AgentPanel params={{ mode: 'backend' }} />)
-
-    expect(screen.getByTestId('mock-pi-backend-app')).toBeTruthy()
-    expect(screen.queryByTestId('agent-connecting')).toBeNull()
+    expect(screen.getByTestId('mock-pi-native-app')).toHaveTextContent('MockPiNativeApp:panel-3:new:sess-123')
   })
 })

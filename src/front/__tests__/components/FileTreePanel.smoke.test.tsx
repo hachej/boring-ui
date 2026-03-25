@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 
@@ -22,7 +23,7 @@ vi.mock('../../components/UserMenu', () => ({
 }))
 
 vi.mock('../../components/Tooltip', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 
 vi.mock('../../components/SyncStatusFooter', () => ({

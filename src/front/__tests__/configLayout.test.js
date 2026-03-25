@@ -298,17 +298,7 @@ const createHarness = ({
       })
     }
 
-    let terminalPanel = api.getPanel('terminal')
-    if (nativeAgentEnabled && !terminalPanel) {
-      terminalPanel = api.addPanel({
-        id: 'terminal',
-        component: 'terminal',
-        title: 'Code Sessions',
-        position: { direction: 'right', referencePanel: 'filetree' },
-      })
-    }
-
-    const rightRef = terminalPanel || api.getPanel('agent')
+    const rightRef = api.getPanel('agent')
     let emptyPanel = api.getPanel('empty-center')
     if (!emptyPanel) {
       emptyPanel = api.addPanel({
@@ -324,17 +314,6 @@ const createHarness = ({
     if (emptyPanel?.group) {
       emptyPanel.group.header.hidden = true
       centerGroupRef.current = emptyPanel.group
-    }
-
-    if (!api.getPanel('shell') && emptyPanel?.group) {
-      api.addPanel({
-        id: 'shell',
-        component: 'shell',
-        title: 'Shell',
-        tabComponent: registry.get('shell')?.tabComponent,
-        position: { direction: 'below', referenceGroup: emptyPanel.group },
-        params: getDefaultParams('shell'),
-      })
     }
 
     applyPanelConstraints()
@@ -521,9 +500,8 @@ describe('configurable layout builder', () => {
     harness.ensureCorePanels()
 
     expect(harness.api.getPanel('filetree')).toBeTruthy()
-    expect(harness.api.getPanel('terminal')).toBeTruthy()
-    expect(harness.api.getPanel('shell')).toBeTruthy()
     expect(harness.api.getPanel('empty-center')).toBeTruthy()
+    // terminal and shell panels removed in Phase 5 (bd-f4p8s.2)
   })
 
   it('2) builds a 5-panel custom layout in configured order', () => {
@@ -535,7 +513,7 @@ describe('configurable layout builder', () => {
             { id: 'chart-canvas', position: 'right', ref: 'data-catalog' },
             { id: 'filetree', position: 'below', ref: 'data-catalog' },
             { id: 'agent', position: 'right', ref: 'chart-canvas' },
-            { id: 'shell', position: 'below', ref: 'chart-canvas' },
+            { id: 'review', position: 'below', ref: 'chart-canvas' },
           ],
         },
       },
@@ -549,7 +527,7 @@ describe('configurable layout builder', () => {
       'chart-canvas',
       'filetree',
       'agent',
-      'shell',
+      'review',
     ])
   })
 
@@ -559,18 +537,18 @@ describe('configurable layout builder', () => {
         defaultLayout: {
           panels: [
             { id: 'chart-canvas' },
-            { id: 'shell', position: 'below', ref: 'chart-canvas' },
+            { id: 'review', position: 'below', ref: 'chart-canvas' },
           ],
         },
       },
     })
 
     harness.buildLayoutFromConfig()
-    const shellCall = harness.api._addPanelCalls.find((call) => call.id === 'shell')
+    const reviewCall = harness.api._addPanelCalls.find((call) => call.id === 'review')
 
-    expect(shellCall.position.direction).toBe('below')
-    expect(shellCall.position.referenceGroup).toBe(harness.api.getPanel('chart-canvas').group)
-    expect(shellCall.position.referencePanel).toBeUndefined()
+    expect(reviewCall.position.direction).toBe('below')
+    expect(reviewCall.position.referenceGroup).toBe(harness.api.getPanel('chart-canvas').group)
+    expect(reviewCall.position.referencePanel).toBeUndefined()
   })
 
   it("4) 'tab' position shares the reference panel group", () => {
@@ -597,7 +575,7 @@ describe('configurable layout builder', () => {
           panels: [
             { id: 'filetree' },
             { id: 'chart-canvas', position: 'right', ref: 'missing-ref' },
-            { id: 'shell', position: 'below', ref: 'filetree' },
+            { id: 'review', position: 'below', ref: 'filetree' },
           ],
         },
       },
@@ -606,7 +584,7 @@ describe('configurable layout builder', () => {
     harness.buildLayoutFromConfig()
 
     expect(harness.api.getPanel('chart-canvas')).toBeNull()
-    expect(harness.api.getPanel('shell')).toBeTruthy()
+    expect(harness.api.getPanel('review')).toBeTruthy()
     expect(warnSpy).toHaveBeenCalledWith('[Layout] Panel "chart-canvas" references unknown ref "missing-ref", skipping')
   })
 
@@ -654,7 +632,6 @@ describe('configurable layout builder', () => {
         defaultLayout: {
           panels: [
             { id: 'filetree' },
-            { id: 'shell', position: 'below', ref: 'filetree' },
             { id: 'agent', position: 'right', ref: 'filetree' },
           ],
         },
@@ -664,13 +641,10 @@ describe('configurable layout builder', () => {
     harness.buildLayoutFromConfig()
 
     const filetreeParams = harness.api.getPanel('filetree').params
-    const shellParams = harness.api.getPanel('shell').params
     const agentParams = harness.api.getPanel('agent').params
 
     expect(filetreeParams.workspaceId).toBe('ws-1')
     expect(filetreeParams.projectRoot).toBe('/tmp/project')
-    expect(shellParams.collapsed).toBe(false)
-    expect(typeof shellParams.onToggleCollapse).toBe('function')
     expect(agentParams.mode).toBe('frontend')
   })
 
@@ -766,7 +740,7 @@ describe('configurable layout builder', () => {
     expect(built).toBe(false)
     expect(errorSpy).toHaveBeenCalledWith('[Layout] defaultLayout.panels must be an array, falling back to stock layout')
     expect(harness.api.getPanel('filetree')).toBeTruthy()
-    expect(harness.api.getPanel('shell')).toBeTruthy()
+    // shell removed in Phase 5 (bd-f4p8s.2)
   })
 
   it('registers custom panes in a mock PaneRegistry', () => {

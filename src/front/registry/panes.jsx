@@ -35,9 +35,9 @@
  *
  * - `filetree`: requires `workspace.files`
  * - `editor`: requires `workspace.files`
- * - `terminal`: requires `agent.chat`
- * - `shell`: requires `workspace.exec`
+ * - `data-catalog`: no requirements (always available)
  * - `review`: requires `agent.tools`
+ * - `agent`: requires `agent.chat`
  * - `empty`: no requirements (always available)
  *
  * When requirements are unmet, the pane renders an error state explaining
@@ -53,8 +53,8 @@ import EmptyPanel from '../panels/EmptyPanel'
 import PanelErrorBoundary from '../components/PanelErrorBoundary'
 
 // Lazy-load heavy panels to reduce initial bundle size.
-// EditorPanel pulls tiptap+lowlight (~600KB), TerminalPanel pulls xterm (~300KB),
-// AgentPanel pulls pi-ai+pi-web-ui (~900KB), etc.
+// EditorPanel pulls tiptap+lowlight (~600KB), AgentPanel pulls pi-ai+pi-web-ui
+// (~900KB), etc.
 const LazyEditorPanel = lazy(() => import('../panels/EditorPanel'))
 const LazyReviewPanel = lazy(() => import('../panels/ReviewPanel'))
 const LazyAgentPanel = lazy(() => import('../panels/AgentPanel'))

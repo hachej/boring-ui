@@ -10,7 +10,7 @@ vi.mock('../../utils/transport', () => ({
 
 // Mock routes
 vi.mock('../../utils/routes', () => ({
-  default: {
+  routes: {
     approval: {
       pending: () => ({ path: '/api/approval/pending', query: {} }),
       decision: () => ({ path: '/api/approval/decision', query: {} }),
@@ -78,6 +78,54 @@ describe('useApprovalPolling', () => {
       useApprovalPolling({ enabled: false }),
     )
     expect(result.current.getReviewTitle({})).toBe('Review')
+  })
+
+  it('marks approvals loaded even when the initial poll fails', async () => {
+    const { apiFetchJson } = await import('../../utils/transport')
+    apiFetchJson.mockRejectedValueOnce(new Error('boom'))
+
+    const { result } = renderHook(() =>
+      useApprovalPolling({ enabled: true }),
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.approvals).toEqual([])
+    expect(result.current.approvalsLoaded).toBe(true)
+  })
+
+  it('clears stale approvals when a later poll fails', async () => {
+    const { apiFetchJson } = await import('../../utils/transport')
+    apiFetchJson
+      .mockResolvedValueOnce({
+        data: {
+          requests: [{ id: 'req-1', tool_name: 'exec_bash' }],
+        },
+      })
+      .mockRejectedValueOnce(new Error('boom'))
+
+    const { result } = renderHook(() =>
+      useApprovalPolling({ enabled: true }),
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.approvals).toEqual([
+      { id: 'req-1', tool_name: 'exec_bash' },
+    ])
+    expect(result.current.approvalsLoaded).toBe(true)
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+      await Promise.resolve()
+    })
+
+    expect(result.current.approvals).toEqual([])
+    expect(result.current.approvalsLoaded).toBe(true)
   })
 
   it('handleDecision removes approval from list', async () => {

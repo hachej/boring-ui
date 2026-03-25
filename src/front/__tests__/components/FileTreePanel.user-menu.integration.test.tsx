@@ -1,7 +1,15 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { describe, it, expect, vi } from 'vitest'
+import '../setup.ts'
 import { fireEvent, render, screen } from '@testing-library/react'
 import FileTreePanel from '../../panels/FileTreePanel'
 import { ThemeProvider } from '../../hooks/useTheme'
+import { routes } from '../../utils/routes'
+
+const mockGitInitMutate = vi.fn()
+const mockGitHubConnect = vi.fn()
 
 vi.mock('../../components/FileTree', () => ({
   default: () => <div data-testid="file-tree">File tree</div>,
@@ -12,12 +20,34 @@ vi.mock('../../components/GitChangesView', () => ({
 }))
 
 vi.mock('../../providers/data', () => ({
-  useGitStatus: () => ({ isLoading: false, isFetching: false }),
-  useGitBranch: () => ({ data: 'main' }),
+  useGitStatus: () => ({
+    data: { is_repo: true, available: true },
+    isLoading: false,
+    isFetching: false,
+  }),
+  useGitInit: () => ({
+    mutate: mockGitInitMutate,
+    isPending: false,
+  }),
 }))
 
-vi.mock('../../hooks/useAutoSync', () => ({
-  useAutoSync: () => ({ state: 'disabled', lastError: null, syncNow: () => {} }),
+vi.mock('../../components/GitHubConnect', () => ({
+  useGitHubConnection: () => ({
+    status: null,
+    connect: mockGitHubConnect,
+  }),
+}))
+
+vi.mock('../../hooks/useLightningFsGitBootstrap', () => ({
+  useLightningFsGitBootstrap: () => ({
+    state: 'disabled',
+    message: '',
+    error: '',
+    busy: false,
+    syncReady: false,
+    remoteOpts: undefined,
+    retry: vi.fn(),
+  }),
 }))
 
 const makeParams = (overrides = {}) => ({
@@ -36,6 +66,10 @@ const makeParams = (overrides = {}) => ({
   userMenuDisabledActions: [],
   workspaceName: 'my-workspace',
   workspaceId: 'ws-123',
+  showSwitchWorkspace: true,
+  workspaceOptions: [
+    { workspace_id: 'ws-999', name: 'other-workspace' },
+  ],
   onSwitchWorkspace: vi.fn(),
   onCreateWorkspace: vi.fn(),
   onOpenUserSettings: vi.fn(),
@@ -59,15 +93,17 @@ describe('FileTreePanel + UserMenu integration', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('passes workspace context for switch/create/settings actions', async () => {
+  it('renders switch-workspace submenu links and preserves create/settings callback context', async () => {
     const params = makeParams()
     renderWithTheme(<FileTreePanel params={params} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Switch workspace' }))
-    expect(params.onSwitchWorkspace).toHaveBeenCalledWith({ workspaceId: 'ws-123' })
+    expect(screen.getByRole('link', { name: 'other-workspace' })).toHaveAttribute(
+      'href',
+      routes.controlPlane.workspaces.scope('ws-999').path,
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: 'User menu' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Create workspace' }))
     expect(params.onCreateWorkspace).toHaveBeenCalledWith({ workspaceId: 'ws-123' })
 

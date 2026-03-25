@@ -20,8 +20,6 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(na
 export const DEFAULT_SHORTCUTS = {
   // Panel toggles
   toggleFiletree: { key: 'b', modifiers: ['cmd'] },
-  toggleTerminal: { key: '`', modifiers: ['cmd'] },
-  toggleShell: { key: 'j', modifiers: ['cmd'] },
 
   // Navigation
   searchFiles: { key: 'p', modifiers: ['cmd'] },

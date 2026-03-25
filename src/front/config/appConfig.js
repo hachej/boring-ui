@@ -32,7 +32,7 @@ const DEFAULT_CONFIG = {
 
   // Panel configuration
   panels: {
-    essential: ['filetree', 'terminal'],
+    essential: ['filetree'],
     leftSidebarPanels: ['data-catalog', 'filetree'],
     defaults: {
       filetree: 280,
