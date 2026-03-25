@@ -17,6 +17,7 @@ import { registerExecRoutes } from './http/execRoutes.js'
 import { registerMeRoutes } from './http/meRoutes.js'
 import { registerWorkspaceBoundary } from './http/workspaceBoundary.js'
 import { registerCollaborationRoutes } from './http/collaborationRoutes.js'
+import { registerGitHubRoutes } from './http/githubRoutes.js'
 import { registerStaticRoutes } from './http/static.js'
 
 // Extend Fastify types to include our custom properties
@@ -76,6 +77,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
   // --- Collaboration routes (members + invites, require auth) ---
   app.register(registerCollaborationRoutes, { prefix: '/api/v1' })
+
+  // --- GitHub App routes (require auth) ---
+  app.register(registerGitHubRoutes, { prefix: '/api/v1' })
 
   // --- Workspace boundary routing (/w/{id}/*) ---
   app.register(registerWorkspaceBoundary)
