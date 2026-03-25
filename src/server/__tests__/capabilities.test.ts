@@ -84,7 +84,7 @@ describe('buildCapabilitiesResponse', () => {
 })
 
 describe('GET /api/capabilities', () => {
-  it('returns abstract capabilities (no legacy names)', async () => {
+  it('returns Python-compatible capabilities response', async () => {
     const app = createApp()
     const res = await app.inject({
       method: 'GET',
@@ -94,16 +94,12 @@ describe('GET /api/capabilities', () => {
     expect(res.statusCode).toBe(200)
     const body = JSON.parse(res.payload)
     expect(body).toHaveProperty('version')
-    expect(body).toHaveProperty('capabilities')
+    expect(body).toHaveProperty('features')
+    expect(body).toHaveProperty('routers')
 
-    // Must NOT contain legacy names
-    const keys = Object.keys(body.capabilities)
-    expect(keys).not.toContain('pty')
-    expect(keys).not.toContain('chat_claude_code')
-    expect(keys).not.toContain('stream')
-
-    // Must contain abstract names
-    expect(body.capabilities['workspace.files']).toBe(true)
+    // Python-compat: uses legacy feature names for smoke test parity
+    expect(body.features.files).toBe(true)
+    expect(body.features.git).toBe(true)
 
     await app.close()
   })

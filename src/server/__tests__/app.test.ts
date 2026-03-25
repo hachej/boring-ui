@@ -31,14 +31,16 @@ describe('GET /health', () => {
     expect(response.statusCode).toBe(200)
     const body = JSON.parse(response.payload)
     expect(body.status).toBe('ok')
-    expect(body).toHaveProperty('timestamp')
+    // Python-compat: workspace and features instead of timestamp
+    expect(body).toHaveProperty('workspace')
+    expect(body).toHaveProperty('features')
 
     await app.close()
   })
 })
 
-describe('GET /api/capabilities (stub)', () => {
-  it('responds with 200', async () => {
+describe('GET /api/capabilities (Python-compat)', () => {
+  it('responds with 200 and legacy features', async () => {
     const app = createApp()
 
     const response = await app.inject({
@@ -49,7 +51,10 @@ describe('GET /api/capabilities (stub)', () => {
     expect(response.statusCode).toBe(200)
     const body = JSON.parse(response.payload)
     expect(body).toHaveProperty('version')
-    expect(body).toHaveProperty('capabilities')
+    // Python-compat: uses 'features' key with legacy names
+    expect(body).toHaveProperty('features')
+    expect(body.features).toHaveProperty('files')
+    expect(body.features).toHaveProperty('git')
 
     await app.close()
   })
