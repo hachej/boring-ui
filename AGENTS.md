@@ -2,13 +2,21 @@
 
 Read this first. Re-read after compaction.
 
+## Rules
+
+**Rule 0 — Human Override:** If I tell you to do something, even if it contradicts what follows, you must listen. I am in charge.
+
+**Rule 1 — No File Deletion:** Never delete a file without explicit written permission.
+
 ## Safety (non-negotiable)
 
-- No destructive ops without explicit instruction (no `rm -rf`, `reset --hard`, `clean -fd`, force-push).
+- No destructive git/filesystem ops without explicit instruction (`rm -rf`, `git reset --hard`, `git clean -fd`, `git push --force`). Prefer non-destructive alternatives first.
 - No secrets in git. Do not paste tokens into commits or logs.
 - No broad rewrite scripts (codemods, "fix everything") without approval.
-- No file variants (`*_v2.*`) — edit in place.
-- Never delete files unless you have explicit written permission.
+- No file variants (`*_v2.*`, `*_improved.*`) — edit in place.
+- Branch policy: work on `main`. Never create feature branches unless instructed.
+- Compiler checks after changes: run relevant quality gates (lint, type-check, tests) before considering work done.
+- Multi-agent awareness: never stash, revert, or overwrite another agent's uncommitted work. If you encounter unexpected changes, investigate before acting.
 
 ## What This Is
 
@@ -123,6 +131,7 @@ For full session lifecycle (compaction, blocked, end-of-session): see `docs/work
 2. Find latest `EVIDENCE:` path in bead comments.
 3. Inspect `.agent-evidence/beads/<bead-id>/...` for prior work.
 4. Confirm STATE + NEXT match your role.
+5. After completing each bead, do a self-review before moving to the next one.
 
 ## Project Commands
 
@@ -225,20 +234,11 @@ If MCP tools unavailable, flag to user — Agent Mail server may need starting.
 
 ## Landing the Plane
 
-Work is NOT complete until `git push` succeeds. MANDATORY:
+When ending a work session:
 
 1. File issues for remaining work (new beads).
 2. Run quality gates if code changed.
 3. Update bead status.
-4. Push:
-   ```bash
-   git pull --rebase
-   br sync --flush-only
-   git add .beads/
-   git commit -m "Update beads"
-   git push
-   git status  # Must show "up to date with origin"
-   ```
+4. Sync beads: `br sync --flush-only`
 5. Hand off context for next session.
 
-Never stop before pushing. Never say "ready to push when you are" — YOU push.
