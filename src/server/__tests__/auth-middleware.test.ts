@@ -73,6 +73,10 @@ describe('validateRedirectUrl', () => {
     expect(validateRedirectUrl('//evil.com')).toBe('/')
   })
 
+  it('rejects javascript URLs', () => {
+    expect(validateRedirectUrl('javascript:alert(1)')).toBe('/')
+  })
+
   it('rejects backslash paths', () => {
     expect(validateRedirectUrl('\\\\evil.com')).toBe('/')
   })

@@ -11,6 +11,7 @@ import { registerWorkspaceRoutes } from './http/workspaceRoutes.js'
 import { registerFileRoutes } from './http/fileRoutes.js'
 import { registerGitRoutes } from './http/gitRoutes.js'
 import { registerExecRoutes } from './http/execRoutes.js'
+import { registerMeRoutes } from './http/meRoutes.js'
 import { buildCapabilitiesResponse } from './services/capabilitiesImpl.js'
 
 // Extend Fastify types to include our custom properties
@@ -68,6 +69,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
   // --- Exec routes ---
   app.register(registerExecRoutes, { prefix: '/api/v1' })
+
+  // --- User identity routes (require auth) ---
+  app.register(registerMeRoutes, { prefix: '/api/v1' })
 
   // --- Workspace routes (require auth) ---
   app.register(registerWorkspaceRoutes, { prefix: '/api/v1' })

@@ -78,6 +78,8 @@ const PUBLIC_ORIGIN_RE = /^(https?):\/\/([^/]+)$/
 const VALID_WORKSPACE_BACKENDS: WorkspaceBackend[] = ['bwrap', 'lightningfs', 'justbash']
 const VALID_AGENT_RUNTIMES: AgentRuntime[] = ['pi']
 const VALID_AGENT_PLACEMENTS: AgentPlacement[] = ['browser', 'server']
+const GENERATED_SESSION_SECRET_WARNING =
+  'BORING_UI_SESSION_SECRET and BORING_SESSION_SECRET are unset; generated an ephemeral session secret. Existing sessions will not survive process restart.'
 
 const DEFAULT_CORS_ORIGINS = [
   'http://localhost:5173',
@@ -90,6 +92,8 @@ const DEFAULT_CORS_ORIGINS = [
   'http://127.0.0.1:5175',
   'http://127.0.0.1:5176',
 ]
+
+let warnedAboutGeneratedSessionSecret = false
 
 // --- Helpers ---
 
@@ -165,6 +169,12 @@ function generateSessionSecret(): string {
   return randomBytes(48).toString('base64url')
 }
 
+function warnAboutGeneratedSessionSecret(): void {
+  if (warnedAboutGeneratedSessionSecret) return
+  warnedAboutGeneratedSessionSecret = true
+  console.warn(GENERATED_SESSION_SECRET_WARNING)
+}
+
 // --- Main ---
 
 export function loadConfig(): ServerConfig {
@@ -174,6 +184,7 @@ export function loadConfig(): ServerConfig {
     sessionSecret = process.env.BORING_SESSION_SECRET?.trim() || ''
   }
   if (!sessionSecret) {
+    warnAboutGeneratedSessionSecret()
     sessionSecret = generateSessionSecret()
   }
 
