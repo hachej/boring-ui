@@ -4,6 +4,8 @@ import 'dockview-react/dist/styles/dockview.css'
 
 import { ThemeProvider, useCapabilities, useKeyboardShortcuts, UNKNOWN_CAPABILITIES } from './hooks'
 import useApprovalPolling from './hooks/useApprovalPolling'
+import useDataProviderScope from './hooks/useDataProviderScope'
+import useFrontendStatePersist from './hooks/useFrontendStatePersist'
 import { useWorkspacePlugins } from './hooks/useWorkspacePlugins'
 import { loadWorkspacePanes } from './workspace/loader'
 import { useConfig } from './config'
@@ -47,8 +49,6 @@ import {
   listDockPanels,
   listDockGroups,
   getPanelComponent,
-  countAgentPanels,
-  panelIdToAgentFamily,
   countAllAgentPanels,
 } from './utils/dockHelpers'
 import {
@@ -58,8 +58,6 @@ import {
 import {
   arePlainObjectsEqual,
   getPanelSizeConfigValue,
-  getCachedScopedValue,
-  isStableLightningUserScope,
   readPersistedCollapsedState,
   readPersistedPanelSizes,
 } from './utils/panelConfig'
@@ -80,18 +78,8 @@ import paneRegistry, {
 } from './registry/panes'
 import { QueryClientProvider } from '@tanstack/react-query'
 import {
-  createQueryClient,
-  getDataProvider,
-  getDataProviderFactory,
-  createHttpProvider,
-  createLightningDataProvider,
   queryKeys,
 } from './providers/data'
-import {
-  buildLightningFsNamespace,
-  resolveLightningFsUserScope,
-  resolveLightningFsWorkspaceScope,
-} from './providers/data/lightningFsNamespace'
 import DataContext from './providers/data/DataContext'
 import { PI_LIST_TABS_BRIDGE, PI_OPEN_FILE_BRIDGE, PI_OPEN_PANEL_BRIDGE } from './providers/pi/uiBridge'
 import UserSettingsPage from './pages/UserSettingsPage'
@@ -234,12 +222,8 @@ export default function App() {
 
   const components = useMemo(() => {
     const gated = getGatedComponents(createCapabilityGatedPane)
-    const merged = { ...gated, ...workspaceComponents }
-    if (nativeAgentEnabled) return merged
-    const next = { ...merged }
-    delete next.terminal
-    return next
-  }, [nativeAgentEnabled, workspaceComponents])
+    return { ...gated, ...workspaceComponents }
+  }, [workspaceComponents])
 
   const capabilitiesFeatureCount = Object.keys(capabilities?.features || {}).length
   const approvalFeatureEnabled = capabilities?.features?.approval === true
@@ -326,10 +310,6 @@ export default function App() {
   )
   const collapsedEffectRan = useRef(false)
   // dismissedApprovalsRef moved into useApprovalPolling hook
-  const agentAutoAddSuppressedRef = useRef({
-    terminal: false,
-    agent: false,
-  })
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
   const layoutRestored = useRef(false)
@@ -338,62 +318,40 @@ export default function App() {
   const hasRestoredFromUrl = useRef(false)
   const [projectRoot, setProjectRoot] = useState(null) // null = not loaded yet, '' = loaded but empty
   const projectRootRef = useRef(null) // Stable ref for callbacks
-  const frontendStateClientIdRef = useRef('')
-  const frontendStateUnavailableRef = useRef(false)
+  // Frontend state refs (managed by hook — clientId generation + reset on prefix change)
+  const {
+    clientIdRef: frontendStateClientIdRef,
+    unavailableRef: frontendStateUnavailableRef,
+  } = useFrontendStatePersist({
+    enabled: uiStateFeatureEnabled,
+    storagePrefix,
+  })
   const frontendCommandUnavailableRef = useRef(false)
   const lastIdentitySuccessAtRef = useRef(0)
-  const dataProviderCacheRef = useRef(new Map())
-  const queryClientCacheRef = useRef(new Map())
   const storagePrefixRef = useRef(storagePrefix) // Stable ref for callbacks
   storagePrefixRef.current = storagePrefix
   const layoutVersionRef = useRef(layoutVersion) // Stable ref for callbacks
   layoutVersionRef.current = layoutVersion
   projectRootRef.current = projectRoot
 
-  if (!frontendStateClientIdRef.current) {
-    frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefix)
-  }
+  // clientIdRef is now initialized by useFrontendStatePersist hook
 
   // --- DataProvider infrastructure ---
   // If setDataProvider() was called before mount (poc1/poc2), use that;
   // otherwise resolve from config.data.backend (with HTTP fallback).
-  const configuredDataBackend = String(config.data?.backend || 'http')
-    .trim()
-    .toLowerCase()
-  const lightningFsSessionScope = useMemo(
-    () => getFrontendStateClientId(storagePrefix),
-    [storagePrefix],
-  )
-  const configuredLightningFsBaseName = String(
-    config.data?.lightningfs?.name || 'boring-fs',
-  )
-    .trim()
-  const lightningFsUserScope = useMemo(
-    () => resolveLightningFsUserScope({
-      userId: menuUserId,
-      userEmail: menuUserEmail,
-      authStatus: userMenuAuthStatus,
-      sessionScope: lightningFsSessionScope,
-    }),
-    [menuUserId, menuUserEmail, userMenuAuthStatus, lightningFsSessionScope],
-  )
-  const lightningFsWorkspaceScope = useMemo(
-    () => resolveLightningFsWorkspaceScope(currentWorkspaceId),
-    [currentWorkspaceId],
-  )
-  const resolvedLightningFsName = useMemo(
-    () => buildLightningFsNamespace({
-      baseName: configuredLightningFsBaseName,
-      origin: window.location.origin,
-      userScope: lightningFsUserScope,
-      workspaceScope: lightningFsWorkspaceScope,
-    }),
-    [
-      configuredLightningFsBaseName,
-      lightningFsUserScope,
-      lightningFsWorkspaceScope,
-    ],
-  )
+  const {
+    configuredDataBackend,
+    dataProviderScopeKey,
+    queryClient,
+    dataProvider,
+  } = useDataProviderScope({
+    config,
+    storagePrefix,
+    currentWorkspaceId,
+    menuUserId,
+    menuUserEmail,
+    userMenuAuthStatus,
+  })
   const userIdentityAuthResolved = userMenuAuthStatus !== 'unknown'
   const layoutPersistenceReady = (
     userIdentityAuthResolved
@@ -403,89 +361,9 @@ export default function App() {
     () => ({ userId: menuUserId, authResolved: userIdentityAuthResolved }),
     [menuUserId, userIdentityAuthResolved],
   )
-  const strictDataBackend = Boolean(config.data?.strictBackend)
-  const lightningFsProviderCacheKey = `user:${lightningFsUserScope}|fs:${resolvedLightningFsName}`
-  const dataProviderScopeKey = (
-    configuredDataBackend === 'lightningfs' || configuredDataBackend === 'lightning-fs'
-      ? `lightningfs:${lightningFsProviderCacheKey}`
-      : `backend:${configuredDataBackend || 'http'}`
-  )
-  const queryClient = useMemo(
-    () => getCachedScopedValue(
-      queryClientCacheRef.current,
-      dataProviderScopeKey,
-      () => createQueryClient(),
-      (client) => client?.clear?.(),
-    ),
-    [dataProviderScopeKey],
-  )
-  const dataProvider = useMemo(
-    () => {
-      const injected = getDataProvider()
-      if (injected) return injected
-
-      if (!configuredDataBackend || configuredDataBackend === 'http') {
-        return createHttpProvider({ workspaceId: currentWorkspaceId })
-      }
-
-      if (configuredDataBackend === 'lightningfs' || configuredDataBackend === 'lightning-fs') {
-        return getCachedScopedValue(
-          dataProviderCacheRef.current,
-          lightningFsProviderCacheKey,
-          () => createLightningDataProvider({ fsName: resolvedLightningFsName }),
-        )
-      }
-
-      const factory = getDataProviderFactory(configuredDataBackend)
-      if (factory) return factory()
-
-      if (strictDataBackend) {
-        throw new Error(
-          `[DataProvider] Unknown configured backend "${configuredDataBackend}" (strict mode enabled)`,
-        )
-      }
-
-      console.warn(
-        `[DataProvider] Unknown configured backend "${configuredDataBackend}", falling back to http`,
-      )
-      return createHttpProvider({ workspaceId: currentWorkspaceId })
-    },
-    [
-      configuredDataBackend,
-      currentWorkspaceId,
-      lightningFsProviderCacheKey,
-      resolvedLightningFsName,
-      strictDataBackend,
-    ],
-  )
 
   useEffect(() => {
-    const isLightningBackend = (
-      configuredDataBackend === 'lightningfs'
-      || configuredDataBackend === 'lightning-fs'
-    )
-    if (!isLightningBackend) return
-    if (!isStableLightningUserScope(lightningFsUserScope)) return
-
-    const providerKeyPrefix = `user:${lightningFsUserScope}|`
-    const queryKeyPrefix = `lightningfs:${providerKeyPrefix}`
-
-    Array.from(dataProviderCacheRef.current.keys()).forEach((key) => {
-      if (key.startsWith(providerKeyPrefix)) return
-      dataProviderCacheRef.current.delete(key)
-    })
-
-    Array.from(queryClientCacheRef.current.entries()).forEach(([key, client]) => {
-      if (!key.startsWith('lightningfs:')) return
-      if (key.startsWith(queryKeyPrefix)) return
-      client?.clear?.()
-      queryClientCacheRef.current.delete(key)
-    })
-  }, [configuredDataBackend, lightningFsUserScope])
-
-  useEffect(() => {
-    frontendStateClientIdRef.current = getFrontendStateClientId(storagePrefix)
-    frontendStateUnavailableRef.current = false
+    // clientIdRef and unavailableRef reset is handled by useFrontendStatePersist hook
     frontendCommandUnavailableRef.current = false
   }, [storagePrefix])
 
@@ -718,27 +596,6 @@ export default function App() {
     })
   }, [collapsed.filetree, dockApi, getLeftSidebarGroups, leftSidebarCollapsedWidth])
 
-  const toggleTerminal = useCallback(() => {
-    if (!nativeAgentEnabled) return
-    if (!collapsed.terminal && dockApi) {
-      // Capture current size before collapsing
-      const terminalPanel = dockApi.getPanel('terminal')
-      const terminalGroup = terminalPanel?.group
-      if (terminalGroup) {
-        const currentWidth = terminalGroup.api.width
-        if (currentWidth > panelCollapsedRef.current.terminal) {
-          panelSizesRef.current = { ...panelSizesRef.current, terminal: currentWidth }
-          savePanelSizes(panelSizesRef.current, storagePrefixRef.current)
-        }
-      }
-    }
-    setCollapsed((prev) => {
-      const next = { ...prev, terminal: !prev.terminal }
-      saveCollapsedState(next, storagePrefixRef.current)
-      return next
-    })
-  }, [collapsed.terminal, dockApi, nativeAgentEnabled])
-
   const toggleAgent = useCallback(() => {
     if (!collapsed.agent && dockApi) {
       const agentPanel = dockApi.getPanel('agent')
@@ -946,31 +803,11 @@ export default function App() {
     getSidebarExpandedMinHeight,
   ])
 
-  const toggleShell = useCallback(() => {
-    if (!collapsed.shell && dockApi) {
-      // Capture current size before collapsing
-      const shellPanel = dockApi.getPanel('shell')
-      const shellGroup = shellPanel?.group
-      if (shellGroup) {
-        const currentHeight = shellGroup.api.height
-        if (currentHeight > panelCollapsedRef.current.shell) {
-          panelSizesRef.current = { ...panelSizesRef.current, shell: currentHeight }
-          savePanelSizes(panelSizesRef.current, storagePrefixRef.current)
-        }
-      }
-    }
-    setCollapsed((prev) => {
-      const next = { ...prev, shell: !prev.shell }
-      saveCollapsedState(next, storagePrefixRef.current)
-      return next
-    })
-  }, [collapsed.shell, dockApi])
-
   // Close active tab handler for keyboard shortcut
   const closeTab = useCallback(() => {
     if (!dockApi) return
     const activePanel = dockApi.activePanel
-    // Only close editor tabs (not essential panels like filetree, terminal, shell)
+    // Only close editor tabs, not pinned workspace chrome.
     if (activePanel && activePanel.id.startsWith('editor-')) {
       activePanel.api.close()
     }
@@ -1233,8 +1070,6 @@ export default function App() {
 
   useKeyboardShortcuts({
     toggleFiletree,
-    toggleTerminal,
-    toggleShell,
     closeTab,
     toggleTheme,
     searchFiles,
@@ -1496,11 +1331,6 @@ export default function App() {
             return { referenceGroup: liveEmptyPanel.group }
           }
 
-          const shellPanel = dockApi.getPanel('shell')
-          if (shellPanel?.group) {
-            return { direction: 'above', referenceGroup: shellPanel.group }
-          }
-
           return getLeftSidebarAnchorPosition(dockApi)
         }
 
@@ -1622,9 +1452,8 @@ export default function App() {
         return true
       }
 
-      // Priority: existing editor group > centerGroupRef > empty panel > shell > fallback
+      // Priority: existing editor group > centerGroupRef > empty panel > fallback
       const emptyPanel = dockApi.getPanel('empty-center')
-      const shellPanel = dockApi.getPanel('shell')
       const centerGroup = getLiveCenterGroup(dockApi)
       const existingCenterPanel = findCenterAnchorPanel(dockApi)
 
@@ -1636,9 +1465,6 @@ export default function App() {
         position = { referenceGroup: existingCenterPanel.group }
       } else if (emptyPanel?.group) {
         position = { referenceGroup: emptyPanel.group }
-      } else if (shellPanel?.group) {
-        // Add above shell to maintain center column structure
-        position = { direction: 'above', referenceGroup: shellPanel.group }
       } else {
         position = getLeftSidebarAnchorPosition(dockApi)
       }
@@ -1805,9 +1631,8 @@ export default function App() {
         return
       }
 
-      // Use empty panel's group first to maintain layout hierarchy
+      // Use empty panel's group first to maintain layout hierarchy.
       const emptyPanel = dockApi.getPanel('empty-center')
-      const shellPanel = dockApi.getPanel('shell')
       const centerGroup = getLiveCenterGroup(dockApi)
 
       let position
@@ -1815,8 +1640,6 @@ export default function App() {
         position = { referenceGroup: emptyPanel.group }
       } else if (centerGroup) {
         position = { referenceGroup: centerGroup }
-      } else if (shellPanel?.group) {
-        position = { direction: 'above', referenceGroup: shellPanel.group }
       } else {
         position = getLeftSidebarAnchorPosition(dockApi)
       }
@@ -1837,11 +1660,6 @@ export default function App() {
     const centerGroup = getLiveCenterGroup(api)
     if (centerGroup) {
       return { referenceGroup: centerGroup }
-    }
-
-    const shellPanel = api.getPanel('shell')
-    if (shellPanel?.group) {
-      return { direction: 'above', referenceGroup: shellPanel.group }
     }
 
     return getLeftSidebarAnchorPosition(api)
@@ -2024,13 +1842,12 @@ export default function App() {
 
       // Get panel references for positioning
       const emptyPanel = dockApi.getPanel('empty-center')
-      const shellPanel = dockApi.getPanel('shell')
 
       // Find existing editor/review panels to add as sibling tab
       const allPanels = Array.isArray(dockApi.panels) ? dockApi.panels : []
       const existingEditorPanel = allPanels.find(p => p.id.startsWith('editor-') || p.id.startsWith('review-'))
 
-      // Priority: existing editor group > centerGroupRef > empty panel > shell > fallback
+      // Priority: existing editor group > centerGroupRef > empty panel > fallback
       const centerGroup = getLiveCenterGroup(dockApi)
       let position
       if (existingEditorPanel?.group) {
@@ -2040,9 +1857,6 @@ export default function App() {
         position = { referenceGroup: centerGroup }
       } else if (emptyPanel?.group) {
         position = { referenceGroup: emptyPanel.group }
-      } else if (shellPanel?.group) {
-        // Add above shell to maintain center column structure
-        position = { direction: 'above', referenceGroup: shellPanel.group }
       } else {
         position = getLeftSidebarAnchorPosition(dockApi)
       }
@@ -2109,8 +1923,6 @@ export default function App() {
 
       const sourcePanel = sourcePanelId ? api.getPanel(sourcePanelId) : null
       const component = 'agent'
-
-      agentAutoAddSuppressedRef.current.agent = false
 
       const panelIdPrefix = 'agent-chat'
       const panelId = createUniquePanelId(api, panelIdPrefix)
@@ -2779,11 +2591,6 @@ export default function App() {
 
     // Handle panel close to clean up tabs state
     api.onDidRemovePanel((e) => {
-      const removedFamily = panelIdToAgentFamily(e.id)
-      if (removedFamily && countAgentPanels(api, removedFamily) === 0) {
-        agentAutoAddSuppressedRef.current[removedFamily] = true
-      }
-
       if (e.id.startsWith('editor-')) {
         const path = e.id.replace('editor-', '')
         setTabs((prev) => {
@@ -3076,15 +2883,6 @@ export default function App() {
         // (e.g. stale grid structure), re-run panel builder to add them.
         if (ensureCorePanelsRef.current) {
           ensureCorePanelsRef.current()
-        }
-
-        // Respect persisted user choice when all agent panels were closed.
-        // If none exist in restored layout, suppress automatic re-creation.
-        if (countAgentPanels(dockApi, 'terminal') === 0) {
-          agentAutoAddSuppressedRef.current.terminal = true
-        }
-        if (countAgentPanels(dockApi, 'agent') === 0) {
-          agentAutoAddSuppressedRef.current.agent = true
         }
 
         // After restoring, apply locked panels and cleanup
