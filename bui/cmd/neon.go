@@ -188,23 +188,35 @@ func runNeonSetup(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("  database URL: %s\n", maskPassword(poolerURL))
 
-	// 3. Run schema
-	fmt.Println("[bui] running control-plane schema...")
-	schemaFile := filepath.Join(root, "deploy", "sql", "control_plane_supabase_schema.sql")
-	if _, err := os.Stat(schemaFile); err != nil {
-		fmt.Println("  warn: schema file not found, skipping")
-	} else {
-		dbURL := directURL
-		if dbURL == "" {
-			dbURL = poolerURL
+	// 3. Run schema — apply base schema + all numbered migrations
+	fmt.Println("[bui] running database schema...")
+	dbURL := directURL
+	if dbURL == "" {
+		dbURL = poolerURL
+	}
+	sqlDir := filepath.Join(root, "deploy", "sql")
+	sqlFiles := []string{
+		filepath.Join(sqlDir, "control_plane_supabase_schema.sql"),
+	}
+	// Add numbered migrations (002_*.sql, 003_*.sql, etc.)
+	if entries, err := os.ReadDir(sqlDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && e.Name() != "control_plane_supabase_schema.sql" && filepath.Ext(e.Name()) == ".sql" {
+				sqlFiles = append(sqlFiles, filepath.Join(sqlDir, e.Name()))
+			}
 		}
-		psql := exec.Command("psql", dbURL, "-f", schemaFile)
+	}
+	for _, sf := range sqlFiles {
+		if _, err := os.Stat(sf); err != nil {
+			continue
+		}
+		psql := exec.Command("psql", dbURL, "-f", sf)
 		psql.Stdout = os.Stdout
 		psql.Stderr = os.Stderr
 		if err := psql.Run(); err != nil {
-			fmt.Printf("  warn: schema failed: %v (you can run it manually)\n", err)
+			fmt.Printf("  warn: %s failed: %v\n", filepath.Base(sf), err)
 		} else {
-			fmt.Println("  schema applied")
+			fmt.Printf("  ✓ %s applied\n", filepath.Base(sf))
 		}
 	}
 

@@ -466,19 +466,27 @@ async def _neon_password_auth(
         verification_email_error: str | None = None
         if signup_email and neon_base:
             if verification_email_enabled:
-                # Send absolute callbackURL so Neon Auth's verification email
-                # links back to our app, not to Neon Auth's own host.
-                callback_url = _build_callback_url(
+                # Build callback URL and convert to relative path.
+                # Neon Auth rejects absolute callbackURLs that don't match
+                # their trusted_origins exactly, but accepts relative paths
+                # and resolves them against the Origin header.
+                full_callback = _build_callback_url(
                     request,
                     config=config,
                     redirect_uri=redirect_uri,
                     pending_login=verification_pending_login,
                 )
+                from urllib.parse import urlparse
+                parsed_cb = urlparse(full_callback)
+                relative_callback = parsed_cb.path
+                if parsed_cb.query:
+                    relative_callback += "?" + parsed_cb.query
+
                 verification_email_error = await _auto_send_verification_email(
                     neon_base=neon_base,
                     email=signup_email,
                     origin=public_origin,
-                    callback_url=callback_url,
+                    callback_url=relative_callback,
                 )
             else:
                 verification_email_error = _verification_email_disabled_message()
