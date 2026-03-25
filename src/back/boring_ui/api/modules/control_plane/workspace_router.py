@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, Request, status
+from fastapi import APIRouter, Body, HTTPException, Request, status
 
 from ...config import APIConfig
 from ...policy import enforce_delegated_policy_or_none
@@ -121,6 +121,36 @@ def create_workspace_router(config: APIConfig) -> APIRouter:
                 initial_settings["github_installation_id"] = str(github_link["default_installation_id"])
         service.set_workspace_settings(workspace_id, initial_settings)
         return {"ok": True, "workspace": workspace, "id": workspace_id}
+
+    @router.patch("/workspaces/{workspace_id}")
+    def update_workspace(
+        workspace_id: str,
+        request: Request,
+        body: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        deny = enforce_delegated_policy_or_none(
+            request,
+            {"workspace.files.write"},
+            operation="workspace-core.workspace.update",
+        )
+        if deny is not None:
+            return deny
+
+        workspace = _ensure_workspace_exists(service, workspace_id, name=workspace_id)
+        payload = dict(body or {})
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Workspace name is required")
+
+        updated = service.upsert_workspace(
+            workspace_id,
+            {
+                **workspace,
+                **payload,
+                "name": name,
+            },
+        )
+        return {"ok": True, "workspace": updated, "id": workspace_id}
 
     @router.get("/workspaces/{workspace_id}/runtime")
     def get_workspace_runtime(workspace_id: str, request: Request) -> dict[str, Any]:

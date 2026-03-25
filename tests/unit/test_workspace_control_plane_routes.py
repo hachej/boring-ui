@@ -23,6 +23,7 @@ def test_workspace_routes_are_mounted(tmp_path: Path) -> None:
     client = _client(tmp_path)
     paths = [route.path for route in client.app.routes if hasattr(route, "path")]
     assert "/api/v1/workspaces" in paths
+    assert "/api/v1/workspaces/{workspace_id}" in paths
     assert "/api/v1/workspaces/{workspace_id}/runtime" in paths
     assert "/api/v1/workspaces/{workspace_id}/runtime/retry" in paths
     assert "/api/v1/workspaces/{workspace_id}/settings" in paths
@@ -94,3 +95,38 @@ def test_workspace_settings_get_defaults_and_put_round_trip(tmp_path: Path) -> N
     loaded = settings_get_again.json()["settings"]
     assert loaded["theme"] == "dark"
     assert loaded["shell"] == "zsh"
+
+
+def test_workspace_patch_renames_existing_workspace(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    workspace_id = client.post("/api/v1/workspaces", json={"name": "Before"}).json()["id"]
+
+    renamed = client.patch(
+        f"/api/v1/workspaces/{workspace_id}",
+        json={"name": "After"},
+    )
+
+    assert renamed.status_code == 200
+    payload = renamed.json()
+    assert payload["ok"] is True
+    assert payload["id"] == workspace_id
+    assert payload["workspace"]["workspace_id"] == workspace_id
+    assert payload["workspace"]["name"] == "After"
+
+    listed = client.get("/api/v1/workspaces")
+    assert listed.status_code == 200
+    workspaces = listed.json()["workspaces"]
+    assert workspaces[0]["name"] == "After"
+
+
+def test_workspace_patch_requires_non_empty_name(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    workspace_id = client.post("/api/v1/workspaces", json={"name": "Before"}).json()["id"]
+
+    renamed = client.patch(
+        f"/api/v1/workspaces/{workspace_id}",
+        json={"name": "   "},
+    )
+
+    assert renamed.status_code == 400
+    assert renamed.json()["detail"] == "Workspace name is required"

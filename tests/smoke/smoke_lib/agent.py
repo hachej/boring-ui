@@ -13,6 +13,7 @@ async def _agent_roundtrip_async(
     cookies: dict[str, str] | None = None,
 ) -> dict:
     """Connect to agent WebSocket, send a message, wait for a response frame."""
+    loop = asyncio.get_running_loop()
     try:
         import websockets
     except ImportError:
@@ -37,9 +38,9 @@ async def _agent_roundtrip_async(
         await ws.send(json.dumps({"type": "user", "message": message}))
 
         # Wait for assistant response
-        deadline = asyncio.get_event_loop().time() + timeout_seconds
-        while asyncio.get_event_loop().time() < deadline:
-            remaining = deadline - asyncio.get_event_loop().time()
+        deadline = loop.time() + timeout_seconds
+        while loop.time() < deadline:
+            remaining = deadline - loop.time()
             raw = await asyncio.wait_for(ws.recv(), timeout=max(remaining, 1.0))
             frame = json.loads(raw)
             if frame.get("type") == "assistant":
@@ -63,7 +64,7 @@ def agent_roundtrip(
     host = base_url.replace("https://", "").replace("http://", "").rstrip("/")
     ws_url = f"{scheme}://{host}{ws_path}"
     print(f"[smoke] Agent roundtrip: {ws_url}")
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         _agent_roundtrip_async(ws_url, message=message, timeout_seconds=timeout_seconds, cookies=cookies)
     )
     if result.get("ok"):
