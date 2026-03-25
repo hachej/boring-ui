@@ -8,6 +8,7 @@ import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import { loadConfig, type ServerConfig } from './config.js'
 import { registerWorkspaceRoutes } from './http/workspaceRoutes.js'
+import { buildCapabilitiesResponse } from './services/capabilitiesImpl.js'
 
 // Extend Fastify types to include our custom properties
 declare module 'fastify' {
@@ -51,17 +52,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     }
   })
 
-  // --- Stub capabilities endpoint ---
-  // Full implementation in bd-1wkce.1; this is the minimal contract
+  // --- Capabilities endpoint (abstract vocabulary) ---
   app.get('/api/capabilities', async () => {
-    return {
-      version: '1.0.0',
-      features: {},
-      routers: [],
-      auth: {
-        provider: config.controlPlaneProvider,
-      },
-    }
+    return buildCapabilitiesResponse(config)
   })
 
   // --- Workspace routes (require auth) ---

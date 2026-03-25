@@ -49,7 +49,7 @@ describe('GET /api/capabilities (stub)', () => {
     expect(response.statusCode).toBe(200)
     const body = JSON.parse(response.payload)
     expect(body).toHaveProperty('version')
-    expect(body).toHaveProperty('features')
+    expect(body).toHaveProperty('capabilities')
 
     await app.close()
   })
