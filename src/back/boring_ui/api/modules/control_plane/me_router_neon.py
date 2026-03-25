@@ -100,7 +100,10 @@ def create_me_router_neon(config: APIConfig) -> APIRouter:
         pool = pool_or_error
 
         row = await _get_user_row(pool, session.user_id)
-        settings = json.loads(row["settings"]) if row and row["settings"] else {}
+        try:
+            settings = json.loads(row["settings"]) if row and row["settings"] else {}
+        except (json.JSONDecodeError, TypeError):
+            settings = {}
         return {"ok": True, "settings": settings}
 
     @router.put("/me/settings")
@@ -124,7 +127,10 @@ def create_me_router_neon(config: APIConfig) -> APIRouter:
 
         # Merge with existing
         row = await _get_user_row(pool, session.user_id)
-        existing = json.loads(row["settings"]) if row and row["settings"] else {}
+        try:
+            existing = json.loads(row["settings"]) if row and row["settings"] else {}
+        except (json.JSONDecodeError, TypeError):
+            existing = {}
         merged = {**existing, **dict(body or {})}
 
         display_name = str(merged.get("display_name", (row["display_name"] if row else "") or "")).strip()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -123,6 +124,7 @@ async def create_workspace_for_user(
     name: str,
     *,
     is_default: bool = False,
+    user_email: str = "",
 ) -> tuple[str, bool]:
     user_uuid = uuid.UUID(str(user_id))
     async with pool.acquire() as conn:
@@ -130,9 +132,10 @@ async def create_workspace_for_user(
             # Ensure user exists in the users table (Neon Auth manages
             # users externally; this syncs the local FK reference).
             await conn.execute(
-                """INSERT INTO users (id) VALUES ($1)
+                """INSERT INTO users (id, email) VALUES ($1, $2)
                    ON CONFLICT (id) DO NOTHING""",
                 user_uuid,
+                user_email or "unknown",
             )
             if is_default:
                 workspace_row = await conn.fetchrow(
@@ -234,8 +237,7 @@ async def _read_user_github_link_db(pool, user_id: str, app_id: str) -> dict:
     )
     if not row or not row["settings"]:
         return {"account_linked": False, "default_installation_id": None}
-    import json as _json
-    settings = _json.loads(row["settings"]) if isinstance(row["settings"], str) else row["settings"]
+    settings = json.loads(row["settings"]) if isinstance(row["settings"], str) else row["settings"]
     raw_installation_id = settings.get(GITHUB_DEFAULT_INSTALLATION_ID_KEY)
     default_installation_id = None
     if raw_installation_id not in (None, ""):

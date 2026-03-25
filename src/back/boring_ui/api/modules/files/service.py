@@ -95,7 +95,7 @@ class FileService:
         try:
             self.storage.write_file(rel_path, content)
             return {'success': True, 'path': path}
-        except Exception as e:
+        except OSError as e:
             raise HTTPException(status_code=500, detail=f'Write failed: {str(e)}')
     
     def delete_file(self, path: str) -> dict:
