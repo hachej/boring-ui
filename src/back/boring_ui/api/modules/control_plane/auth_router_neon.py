@@ -107,6 +107,9 @@ def _normalize_origin(raw: str) -> str:
 
 
 def _public_origin(request: Request, *, config: APIConfig) -> str:
+    if config.public_app_origin:
+        return config.public_app_origin
+
     origin = str(request.headers.get("origin", "")).strip()
     normalized_origin = _normalize_origin(origin)
     # Fly.io terminates TLS — request.base_url is http://. Use X-Forwarded-Proto.
@@ -241,6 +244,14 @@ def _parse_neon_error_message(payload: object, fallback: str) -> str:
         if isinstance(status_text, str) and status_text.strip():
             return status_text.strip()
     return fallback
+
+
+def _verification_email_disabled_message() -> str:
+    return "Account created, but verification email delivery is not configured for this deployment."
+
+
+def _verification_email_failed_message() -> str:
+    return "Account created, but we could not send the verification email. Try again later or contact the administrator."
 
 
 def _issue_session_response(
@@ -451,28 +462,46 @@ async def _neon_password_auth(
     if not complete_session:
         # Auto-send verification email — Better Auth doesn't send on signup.
         signup_email = payload.get("email", "")
+        verification_email_enabled = config.verification_email_enabled
+        verification_email_error: str | None = None
         if signup_email and neon_base:
-            # Send absolute callbackURL so Neon Auth's verification email
-            # links back to our app, not to Neon Auth's own host.
-            callback_url = _build_callback_url(
-                request,
-                config=config,
-                redirect_uri=redirect_uri,
-                pending_login=verification_pending_login,
+            if verification_email_enabled:
+                # Send absolute callbackURL so Neon Auth's verification email
+                # links back to our app, not to Neon Auth's own host.
+                callback_url = _build_callback_url(
+                    request,
+                    config=config,
+                    redirect_uri=redirect_uri,
+                    pending_login=verification_pending_login,
+                )
+                verification_email_error = await _auto_send_verification_email(
+                    neon_base=neon_base,
+                    email=signup_email,
+                    origin=public_origin,
+                    callback_url=callback_url,
+                )
+            else:
+                verification_email_error = _verification_email_disabled_message()
+
+        verification_email_sent = verification_email_enabled and not verification_email_error
+        message = (
+            "Check your email to verify your account."
+            if verification_email_sent
+            else (
+                _verification_email_disabled_message()
+                if not verification_email_enabled
+                else _verification_email_failed_message()
             )
-            await _auto_send_verification_email(
-                neon_base=neon_base,
-                email=signup_email,
-                origin=public_origin,
-                callback_url=callback_url,
-            )
+        )
 
         return JSONResponse(
             status_code=200,
             content={
                 "ok": True,
                 "requires_email_verification": True,
-                "message": "Check your email to verify your account.",
+                "verification_email_enabled": verification_email_enabled,
+                "verification_email_sent": verification_email_sent,
+                "message": message,
                 "redirect_uri": redirect_uri,
             },
         )
@@ -604,12 +633,22 @@ async def _auto_send_verification_email(
     email: str,
     origin: str,
     callback_url: str = "",
-) -> None:
+) -> str | None:
     """Best-effort send of verification email after signup."""
     try:
         payload: dict[str, str] = {"email": email}
         if callback_url:
-            payload["callbackURL"] = callback_url
+            # Neon Auth validates callbackURL against trusted_origins.
+            # Send a relative path instead of an absolute URL — Neon Auth
+            # resolves it against the Origin header, which avoids the
+            # INVALID_CALLBACKURL error when the absolute URL doesn't
+            # exactly match the trusted_origins list.
+            from urllib.parse import urlparse
+            parsed = urlparse(callback_url)
+            relative_callback = parsed.path
+            if parsed.query:
+                relative_callback += "?" + parsed.query
+            payload["callbackURL"] = relative_callback
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             resp = await client.post(
                 f"{neon_base}/send-verification-email",
@@ -619,16 +658,23 @@ async def _auto_send_verification_email(
                 },
                 json=payload,
             )
+            auth_body = resp.json() if resp.content else {}
             if resp.status_code not in {200, 201}:
                 _logger.warning(
                     "Auto-send verification email failed (%s): %s",
                     resp.status_code,
                     resp.text[:200],
                 )
+                return _parse_neon_error_message(
+                    auth_body,
+                    "Unable to send verification email.",
+                )
             else:
                 _logger.info("Verification email auto-sent to %s", email)
+                return None
     except Exception:
         _logger.warning("Auto-send verification email error for %s", email, exc_info=True)
+        return "Unable to send verification email."
 
 
 async def _request_neon_password_reset_email(
@@ -1616,6 +1662,7 @@ def _render_neon_login_html(
         "appName": config.auth_app_name,
         "appDescription": config.auth_app_description,
         "railCode": config.auth_rail_code,
+        "verificationEmailEnabled": config.verification_email_enabled,
         "oauthProviders": config.auth_oauth_providers or [],
     }
     cfg_json = json.dumps(cfg, separators=(",", ":"))
