@@ -49,23 +49,6 @@ One deployment. One server. Everything else derives from these two fields.
 > interface is designed for it, but shipping it is a separate track after the
 > backend migration stabilizes.
 
-### Config Migration: Compatibility Aliases
-
-During migration, legacy config fields are accepted as inputs and normalized
-to the canonical fields. Old configs keep working without changes.
-
-```
-Legacy field                    → Canonical field
-frontend.data.backend = "http"  → workspace.backend = "bwrap"
-frontend.data.backend = "lightningfs" → workspace.backend = "lightningfs"
-agents.mode = "frontend"        → agent.placement = "browser"
-agents.mode = "backend"         → agent.placement = "server"
-agents.default = "pi"           → agent.runtime = "pi"
-```
-
-The config loader normalizes everything into one canonical payload served from `/__bui/config`.
-Legacy fields are removed in the final cleanup phase AFTER all consumers use canonical fields.
-
 ### Resolver Layer
 
 Instead of scattered `if (config.backend === ...)` checks, two resolver functions
@@ -1225,18 +1208,10 @@ DOCS — update:
    - Update AGENTS.md, deploy/README.md
 ```
 
-### Phase 8: Remove Legacy Config + Add New Backends (days 19-20)
-
-Only AFTER all consumers use canonical config and cutover is stable:
+### Phase 8: Add New Backends + Final Polish (days 19-20)
 
 ```
-1. Remove legacy config aliases
-   - Delete normalization for agents.mode, frontend.data.backend
-   - Config loader rejects unknown fields instead of silently normalizing
-   - Update all boring.app.toml files to use canonical [workspace] + [agent] fields
-   - Update child app boring.app.toml configs
-
-2. Add JustBash browser backend (if desired)
+1. Add JustBash browser backend (if desired)
    - Implement JustBashBrowserBackend behind WorkspaceBackend interface
    - Add justbash npm dependency
    - Test: config resolver returns JustBashBrowserBackend when backend = "justbash"
