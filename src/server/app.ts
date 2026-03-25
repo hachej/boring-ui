@@ -10,6 +10,7 @@ import { loadConfig, type ServerConfig } from './config.js'
 import { registerWorkspaceRoutes } from './http/workspaceRoutes.js'
 import { registerFileRoutes } from './http/fileRoutes.js'
 import { registerGitRoutes } from './http/gitRoutes.js'
+import { registerExecRoutes } from './http/execRoutes.js'
 import { buildCapabilitiesResponse } from './services/capabilitiesImpl.js'
 
 // Extend Fastify types to include our custom properties
@@ -64,6 +65,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
   // --- Git routes ---
   app.register(registerGitRoutes, { prefix: '/api/v1' })
+
+  // --- Exec routes ---
+  app.register(registerExecRoutes, { prefix: '/api/v1' })
 
   // --- Workspace routes (require auth) ---
   app.register(registerWorkspaceRoutes, { prefix: '/api/v1' })
