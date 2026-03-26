@@ -90,3 +90,23 @@ def test_smoke_client_omits_verbose_http_details_on_success_when_capture_disable
     assert "response_headers" not in step
     assert "request_body" not in step
     assert "response_body" not in step
+
+
+def test_smoke_client_clears_deleted_cookie_from_set_cookie_header(monkeypatch) -> None:
+    response = httpx.Response(
+        302,
+        headers={"set-cookie": 'boring_session=""; Max-Age=0; Path=/'},
+        request=httpx.Request("GET", "https://example.test/auth/logout"),
+    )
+
+    def fake_request(self, method, path, **kwargs):
+        return response
+
+    monkeypatch.setattr(httpx.Client, "request", fake_request)
+
+    client = SmokeClient("https://example.test")
+    client.cookies["boring_session"] = "still-valid"
+
+    client.get("/auth/logout", expect_status=(302,))
+
+    assert "boring_session" not in client.cookies

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Comprehensive end-to-end journey smoke for boring-ui.
 
-Exercises the critical path in one sequential flow:
-health -> capabilities -> auth -> workspace -> files -> git -> exec ->
-settings -> ui-state -> isolation -> logout.
+Exercises the critical path in one sequential flow with a stable step
+contract for local TS-server validation:
+health -> capabilities -> config -> auth -> workspace -> files -> git ->
+exec -> settings -> ui-state -> workspace cleanup -> logout.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from smoke_lib.auth import (  # noqa: E402
 )
 from smoke_lib.client import SmokeClient  # noqa: E402
 from smoke_lib.exec import run_exec, start_exec_job, wait_for_exec_job  # noqa: E402
-from smoke_lib.files import delete_file, rename_file  # noqa: E402
+from smoke_lib.files import check_file_tree, delete_file, rename_file  # noqa: E402
 from smoke_lib.git import check_git_status, git_add, git_commit, git_init  # noqa: E402
 from smoke_lib.secrets import resend_api_key  # noqa: E402
 from smoke_lib.session_bootstrap import resolve_neon_auth_url, dev_login  # noqa: E402
@@ -127,10 +128,22 @@ def main() -> int:
         "email": args.email or args.recipient or "",
         "password": args.password or "",
         "workspace_id": "",
-        "workspace_two_id": "",
         "git_file_path": "",
+        "ui_client_id": "",
+        "workspace_name": "",
         "neon_auth_url": "",
     }
+    step_number = 1
+
+    def run_step(name: str, fn) -> None:
+        nonlocal step_number
+        _record_step(journey_steps, step_number, name, fn)
+        step_number += 1
+
+    def skip_step(name: str, detail: str) -> None:
+        nonlocal step_number
+        _skip_step(journey_steps, step_number, name, detail)
+        step_number += 1
 
     try:
         def step_1_health():
@@ -140,7 +153,7 @@ def main() -> int:
                 raise RuntimeError(f"/health returned {resp.status_code}")
             return "status=200"
 
-        _record_step(journey_steps, 1, "Health check", step_1_health)
+        run_step("Health check", step_1_health)
 
         def step_2_capabilities():
             client.set_phase("journey-capabilities")
@@ -155,11 +168,31 @@ def main() -> int:
                 raise RuntimeError(f"features is not a dict: {type(features).__name__}")
             if not isinstance(routers, list):
                 raise RuntimeError(f"routers is not a list: {type(routers).__name__}")
-            if not isinstance(auth, dict):
+            if auth is not None and not isinstance(auth, dict):
                 raise RuntimeError(f"auth is not a dict: {type(auth).__name__}")
-            return f"auth={auth.get('provider', 'none')}, routers={sorted(_router_names(routers))}"
+            auth_provider = auth.get("provider", "unknown") if isinstance(auth, dict) else "unknown"
+            return f"auth={auth_provider}, routers={sorted(_router_names(routers))}"
 
-        _record_step(journey_steps, 2, "Capabilities check", step_2_capabilities)
+        run_step("Capabilities check", step_2_capabilities)
+
+        def step_3_runtime_config():
+            client.set_phase("journey-runtime-config")
+            resp = client.get("/__bui/config", expect_status=(200,))
+            if resp.status_code != 200:
+                raise RuntimeError(f"/__bui/config returned {resp.status_code}")
+            payload = resp.json()
+            app = payload.get("app")
+            frontend = payload.get("frontend")
+            if not isinstance(app, dict):
+                raise RuntimeError(f"config.app is not an object: {type(app).__name__}")
+            if not isinstance(frontend, dict):
+                raise RuntimeError(f"config.frontend is not an object: {type(frontend).__name__}")
+            data = frontend.get("data")
+            if not isinstance(data, dict):
+                raise RuntimeError(f"config.frontend.data is not an object: {type(data).__name__}")
+            return f"app_id={app.get('id', '')}, data_backend={data.get('backend', '')}"
+
+        run_step("Runtime config", step_3_runtime_config)
 
         if args.auth_mode == "neon":
             resolved_neon_url = resolve_neon_auth_url(root_base, args.neon_auth_url)
@@ -177,11 +210,9 @@ def main() -> int:
                 state["password"] = random_password()
 
             if args.skip_signup:
-                _skip_step(journey_steps, 3, "Neon sign-up", "disabled via --skip-signup")
-                _skip_step(journey_steps, 4, "Email verification", "disabled via --skip-signup")
-                _record_step(
-                    journey_steps,
-                    5,
+                skip_step("Neon sign-up", "disabled via --skip-signup")
+                skip_step("Email verification", "disabled via --skip-signup")
+                run_step(
                     "Sign-in",
                     lambda: (
                         neon_signin_flow(
@@ -219,7 +250,7 @@ def main() -> int:
                         raise RuntimeError(f"signup did not require verification: {payload}")
                     return f"email={state['email']}"
 
-                _record_step(journey_steps, 3, "Neon sign-up", step_3_signup)
+                run_step("Neon sign-up", step_3_signup)
 
                 def step_4_verify():
                     client.set_phase("journey-neon-verify")
@@ -264,7 +295,7 @@ def main() -> int:
                         verify_client.close()
                     return callback_url or "callback verified"
 
-                _record_step(journey_steps, 4, "Email verification", step_4_verify)
+                run_step("Email verification", step_4_verify)
 
                 def step_5_token_exchange():
                     client.set_phase("journey-token-exchange")
@@ -278,7 +309,7 @@ def main() -> int:
                         raise RuntimeError(f"token exchange failed: {resp.status_code} {resp.text[:300]}")
                     return "token exchange ok"
 
-                _record_step(journey_steps, 5, "Sign-in", step_5_token_exchange)
+                run_step("Sign-in", step_5_token_exchange)
 
             def step_6_session():
                 client.set_phase("journey-session")
@@ -291,7 +322,7 @@ def main() -> int:
                     raise RuntimeError(f"session email mismatch: expected={state['email']} actual={actual_email}")
                 return f"user={actual_email}"
 
-            _record_step(journey_steps, 6, "Session check", step_6_session)
+            run_step("Session check", step_6_session)
         else:
             def step_3_dev_login():
                 ts = int(time.time())
@@ -305,9 +336,8 @@ def main() -> int:
                 )
                 return f"email={email}"
 
-            _record_step(journey_steps, 3, "Dev login", step_3_dev_login)
-            _skip_step(journey_steps, 4, "Email verification", "not applicable in dev mode")
-            _skip_step(journey_steps, 5, "Sign-in", "dev mode uses direct login")
+            run_step("Dev login", step_3_dev_login)
+
             def step_6_dev_session():
                 client.set_phase("journey-session")
                 resp = client.get("/auth/session", expect_status=(200,))
@@ -319,7 +349,7 @@ def main() -> int:
                     raise RuntimeError(f"session email mismatch: expected={state['email']} actual={actual_email}")
                 return f"user={actual_email}"
 
-            _record_step(journey_steps, 6, "Session check", step_6_dev_session)
+            run_step("Session check", step_6_dev_session)
 
         def step_7_create_workspace():
             ws_data = create_workspace(client, name=f"journey-{int(time.time())}")
@@ -328,15 +358,16 @@ def main() -> int:
             if not workspace_id:
                 raise RuntimeError(f"workspace id missing: {ws_data}")
             state["workspace_id"] = workspace_id
+            state["workspace_name"] = ws.get("name") or ""
             return str(workspace_id)
 
-        _record_step(journey_steps, 7, "Create workspace", step_7_create_workspace)
+        run_step("Create workspace", step_7_create_workspace)
 
         def step_8_list_workspaces():
             workspaces = list_workspaces(client, expect_id=str(state["workspace_id"]))
             return f"count={len(workspaces)}"
 
-        _record_step(journey_steps, 8, "List workspaces", step_8_list_workspaces)
+        run_step("List workspaces", step_8_list_workspaces)
 
         workspace_base = f"{root_base}/w/{state['workspace_id']}"
         client.switch_base(workspace_base)
@@ -353,7 +384,7 @@ def main() -> int:
                 raise RuntimeError(f"write failed: {resp.status_code} {resp.text[:300]}")
             return "journey.txt"
 
-        _record_step(journey_steps, 9, "Write file via workspace boundary", step_9_write_file)
+        run_step("Write file via workspace boundary", step_9_write_file)
 
         def step_10_read_file():
             client.set_phase("journey-file-read")
@@ -365,20 +396,30 @@ def main() -> int:
                 raise RuntimeError(f"unexpected content: {content!r}")
             return content
 
-        _record_step(journey_steps, 10, "Read file back", step_10_read_file)
-        _record_step(
-            journey_steps,
-            11,
-            "Rename file",
-            lambda: (rename_file(client, old_path="journey.txt", new_path="journey-renamed.txt"), "journey-renamed.txt")[1],
-        )
-        _record_step(
-            journey_steps,
-            12,
-            "Delete file",
-            lambda: (delete_file(client, path="journey-renamed.txt"), "deleted")[1],
-        )
-        _record_step(journey_steps, 13, "Git init", lambda: (git_init(client), "git init ok")[1])
+        run_step("Read file back", step_10_read_file)
+
+        def step_11_rename_file():
+            rename_file(client, old_path="journey.txt", new_path="journey-renamed.txt")
+            return "journey-renamed.txt"
+
+        run_step("Rename file", step_11_rename_file)
+
+        def step_12_list_directory():
+            listing = check_file_tree(client)
+            entries = listing.get("entries", listing.get("files", []))
+            names = {str(entry.get("name", "")) for entry in entries if isinstance(entry, dict)}
+            if "journey-renamed.txt" not in names:
+                raise RuntimeError(f"renamed file missing from directory listing: {sorted(names)}")
+            return f"entries={len(entries)}"
+
+        run_step("List directory", step_12_list_directory)
+
+        def step_13_delete_file():
+            delete_file(client, path="journey-renamed.txt")
+            return "deleted"
+
+        run_step("Delete file", step_13_delete_file)
+        run_step("Git init", lambda: (git_init(client), "git init ok")[1])
 
         def step_14_git_add_commit():
             client.set_phase("journey-git-file-write")
@@ -399,7 +440,7 @@ def main() -> int:
             )
             return commit.get("oid", "")
 
-        _record_step(journey_steps, 14, "Git add + commit", step_14_git_add_commit)
+        run_step("Git add + commit", step_14_git_add_commit)
 
         def step_15_git_status():
             status = check_git_status(client)
@@ -412,9 +453,25 @@ def main() -> int:
                 raise RuntimeError(f"git tree not clean: {dirty}")
             return "clean"
 
-        _record_step(journey_steps, 15, "Git status clean", step_15_git_status)
+        run_step("Git status clean", step_15_git_status)
 
-        def step_16_exec_short():
+        def step_16_git_diff():
+            client.set_phase("journey-git-diff")
+            resp = client.get(
+                "/api/v1/git/diff",
+                params={"path": str(state["git_file_path"])},
+                expect_status=(200,),
+            )
+            if resp.status_code != 200:
+                raise RuntimeError(f"git diff failed: {resp.status_code} {resp.text[:300]}")
+            diff = str(resp.json().get("diff", ""))
+            if diff.strip():
+                raise RuntimeError(f"expected empty git diff, got: {diff[:300]!r}")
+            return "empty diff"
+
+        run_step("Git diff empty", step_16_git_diff)
+
+        def step_17_exec_short():
             result = run_exec(client, command="printf 'hello journey'")
             stdout = str(result.get("stdout", ""))
             if "hello journey" not in stdout:
@@ -423,9 +480,9 @@ def main() -> int:
                 raise RuntimeError(f"unexpected exit_code: {result.get('exit_code')}")
             return stdout.strip()
 
-        _record_step(journey_steps, 16, "Exec short command", step_16_exec_short)
+        run_step("Exec short command", step_17_exec_short)
 
-        def step_17_exec_long():
+        def step_18_exec_long():
             job = start_exec_job(
                 client,
                 command="printf 'job-start\\n'; sleep 1; printf 'job-done\\n'",
@@ -438,33 +495,53 @@ def main() -> int:
                 raise RuntimeError(f"unexpected job exit_code: {result.get('exit_code')}")
             return output.strip()
 
-        _record_step(journey_steps, 17, "Exec long-running command", step_17_exec_long)
+        run_step("Exec long-running command", step_18_exec_long)
 
-        def step_18_user_settings():
-            update_user_settings(client, display_name="Journey Smoke")
+        def step_19_user_settings_write():
+            result = update_user_settings(client, display_name="Journey Smoke")
+            if result.get("display_name") != "Journey Smoke":
+                raise RuntimeError(f"display_name not written: {result}")
+            return "display_name=Journey Smoke"
+
+        run_step("User settings write", step_19_user_settings_write)
+
+        def step_20_user_settings_read():
             settings = get_user_settings(client).get("settings", {})
             if settings.get("display_name") != "Journey Smoke":
                 raise RuntimeError(f"display_name mismatch: {settings}")
             return "display_name=Journey Smoke"
 
-        _record_step(journey_steps, 18, "User settings write + read back", step_18_user_settings)
+        run_step("User settings read back", step_20_user_settings_read)
 
-        def step_19_workspace_settings():
-            update_workspace_settings(
+        client.switch_base(root_base)
+
+        def step_21_workspace_settings_write():
+            updated = update_workspace_settings(
                 client,
                 str(state["workspace_id"]),
                 settings={"journey": "ok", "theme": "midnight"},
             )
-            settings = get_workspace_settings(client, str(state["workspace_id"])).get("settings", {})
+            settings = updated.get("settings", updated)
             if "journey" not in settings or "theme" not in settings:
                 raise RuntimeError(f"workspace settings missing keys: {settings}")
             return "journey/theme keys present"
 
-        _record_step(journey_steps, 19, "Workspace settings write + read back", step_19_workspace_settings)
+        run_step("Workspace settings write", step_21_workspace_settings_write)
 
-        def step_20_ui_state():
+        def step_22_workspace_settings_read():
+            settings = get_workspace_settings(client, str(state["workspace_id"])).get("settings", {})
+            if settings.get("journey") != "ok" or settings.get("theme") != "midnight":
+                raise RuntimeError(f"workspace settings mismatch: {settings}")
+            return "journey/theme verified"
+
+        run_step("Workspace settings read back", step_22_workspace_settings_read)
+
+        client.switch_base(workspace_base)
+
+        def step_23_ui_state_save():
             client.set_phase("journey-ui-state-write")
             client_id = f"journey-ui-{int(time.time())}"
+            state["ui_client_id"] = client_id
             write_resp = client.put(
                 "/api/v1/ui/state",
                 json={
@@ -477,54 +554,99 @@ def main() -> int:
             )
             if write_resp.status_code != 200:
                 raise RuntimeError(f"ui-state write failed: {write_resp.status_code} {write_resp.text[:300]}")
+            return client_id
+
+        run_step("UI state save", step_23_ui_state_save)
+
+        def step_24_ui_state_read():
             client.set_phase("journey-ui-state-read")
-            read_resp = client.get(f"/api/v1/ui/state/{client_id}", expect_status=(200,))
+            read_resp = client.get(f"/api/v1/ui/state/{state['ui_client_id']}", expect_status=(200,))
             if read_resp.status_code != 200:
                 raise RuntimeError(f"ui-state read failed: {read_resp.status_code} {read_resp.text[:300]}")
             state_payload = read_resp.json().get("state", {})
             if state_payload.get("active_panel_id") != "editor":
                 raise RuntimeError(f"ui-state mismatch: {state_payload}")
-            return client_id
+            return str(state["ui_client_id"])
 
-        _record_step(journey_steps, 20, "UI state write + read back", step_20_ui_state)
+        run_step("UI state read back", step_24_ui_state_read)
 
-        def step_21_workspace_isolation():
-            client.switch_base(root_base)
-            ws_data = create_workspace(client, name=f"journey-isolation-{int(time.time())}")
-            ws = ws_data.get("workspace") or ws_data
-            workspace_two_id = ws.get("workspace_id") or ws.get("id")
-            if not workspace_two_id:
-                raise RuntimeError(f"second workspace id missing: {ws_data}")
-            state["workspace_two_id"] = workspace_two_id
-            client.switch_base(f"{root_base}/w/{workspace_two_id}")
-            read_resp = client.get(
-                "/api/v1/files/read",
-                params={"path": str(state["git_file_path"])},
-                expect_status=(404,),
+        def step_25_ui_state_delete():
+            client.set_phase("journey-ui-state-delete")
+            resp = client.delete(f"/api/v1/ui/state/{state['ui_client_id']}", expect_status=(200,))
+            if resp.status_code != 200:
+                raise RuntimeError(f"ui-state delete failed: {resp.status_code} {resp.text[:300]}")
+            return str(resp.json().get("deleted", ""))
+
+        run_step("UI state delete", step_25_ui_state_delete)
+
+        def step_26_ui_state_verify_deleted():
+            client.set_phase("journey-ui-state-verify-deleted")
+            resp = client.get(f"/api/v1/ui/state/{state['ui_client_id']}", expect_status=(404,))
+            if resp.status_code != 404:
+                raise RuntimeError(f"expected 404 after delete, got {resp.status_code}")
+            return "404"
+
+        run_step("UI state verify deleted", step_26_ui_state_verify_deleted)
+
+        client.switch_base(root_base)
+
+        def step_27_workspace_rename():
+            renamed_name = f"journey-renamed-{int(time.time())}"
+            state["workspace_name"] = renamed_name
+            resp = client.request(
+                "PATCH",
+                f"/api/v1/workspaces/{state['workspace_id']}",
+                json={"name": renamed_name},
+                expect_status=(200,),
             )
-            if read_resp.status_code != 404:
-                raise RuntimeError(f"expected 404 for first workspace file, got {read_resp.status_code}")
-            return str(workspace_two_id)
+            if resp.status_code != 200:
+                raise RuntimeError(f"workspace rename failed: {resp.status_code} {resp.text[:300]}")
+            workspace = resp.json().get("workspace", {})
+            actual_name = workspace.get("name")
+            if actual_name != renamed_name:
+                raise RuntimeError(f"workspace rename mismatch: expected={renamed_name!r} actual={actual_name!r}")
+            return renamed_name
 
-        _record_step(journey_steps, 21, "Create second workspace + verify isolation", step_21_workspace_isolation)
+        run_step("Workspace rename", step_27_workspace_rename)
 
-        def step_22_logout():
-            client.switch_base(root_base)
+        def step_28_workspace_delete():
+            resp = client.delete(f"/api/v1/workspaces/{state['workspace_id']}", expect_status=(200,))
+            if resp.status_code != 200:
+                raise RuntimeError(f"workspace delete failed: {resp.status_code} {resp.text[:300]}")
+            payload = resp.json()
+            if not payload.get("ok") or not payload.get("deleted"):
+                raise RuntimeError(f"workspace delete returned unexpected payload: {payload}")
+            return "deleted"
+
+        run_step("Workspace delete", step_28_workspace_delete)
+
+        def step_29_logout():
             resp = client.get("/auth/logout", expect_status=(302,))
             if resp.status_code != 302:
                 raise RuntimeError(f"logout returned {resp.status_code}")
             return resp.headers.get("location", "")
 
-        _record_step(journey_steps, 22, "Logout", step_22_logout)
+        run_step("Logout", step_29_logout)
 
-        def step_23_session_invalid():
+        def step_30_session_invalid():
             client.set_phase("journey-session-invalid")
-            resp = client.get("/auth/session", expect_status=(401,))
-            if resp.status_code != 401:
-                raise RuntimeError(f"expected 401 after logout, got {resp.status_code}")
-            return resp.json().get("code", "")
+            if args.auth_mode == "neon":
+                resp = client.get("/auth/session", expect_status=(401,))
+                if resp.status_code != 401:
+                    raise RuntimeError(f"expected 401 after logout, got {resp.status_code}")
+                return resp.json().get("code", "")
+            resp = client.get("/auth/session", expect_status=(200,))
+            if resp.status_code != 200:
+                raise RuntimeError(f"expected 200 after logout in dev mode, got {resp.status_code}")
+            payload = resp.json()
+            if payload.get("authenticated") is not False:
+                raise RuntimeError(f"expected unauthenticated session payload, got {payload}")
+            return "authenticated=false"
 
-        _record_step(journey_steps, 23, "Verify session invalid after logout", step_23_session_invalid)
+        run_step("Verify session invalid after logout", step_30_session_invalid)
+        expected_steps = 30 if args.auth_mode == "dev" else 31
+        if len(journey_steps) != expected_steps:
+            raise RuntimeError(f"expected {expected_steps} journey steps, got {len(journey_steps)}")
         exit_code = 0
     except Exception:
         exit_code = 1
@@ -548,7 +670,7 @@ def main() -> int:
         "journey_elapsed_ms": total_elapsed_ms,
         "email": state["email"],
         "workspace_id": state["workspace_id"],
-        "workspace_two_id": state["workspace_two_id"],
+        "ui_client_id": state["ui_client_id"],
         "neon_auth_url": state["neon_auth_url"],
     }
 

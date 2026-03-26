@@ -94,13 +94,24 @@ def git_nothing_to_commit(client: SmokeClient) -> None:
 
 
 def github_status(client: SmokeClient, workspace_id: str | None = None) -> dict:
-    """GET /api/v1/auth/github/status."""
+    """GET current TS GitHub status, falling back to the legacy Python route."""
     client.set_phase("github-status")
+    resp = client.get("/api/v1/github/status", expect_status=(200, 401, 404, 503))
+    if resp.status_code == 401:
+        raise RuntimeError("GitHub status requires an authenticated session")
+    if resp.status_code != 404:
+        data = resp.json()
+        configured = data.get("configured", False)
+        print(f"[smoke] GitHub status: configured={configured}, connected={data.get('connected', False)}")
+        return data
+
     params = {}
     if workspace_id:
         params["workspace_id"] = workspace_id
-    resp = client.get("/api/v1/auth/github/status", params=params, expect_status=(200, 503))
-    data = resp.json()
+    legacy_resp = client.get("/api/v1/auth/github/status", params=params, expect_status=(200, 401, 503))
+    if legacy_resp.status_code == 401:
+        raise RuntimeError("Legacy GitHub status requires an authenticated session")
+    data = legacy_resp.json()
     configured = data.get("configured", False)
     print(f"[smoke] GitHub status: configured={configured}, connected={data.get('connected', False)}")
     return data

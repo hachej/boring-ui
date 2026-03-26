@@ -1,6 +1,7 @@
 """SmokeClient: httpx wrapper with cookie jar, base_url switching, and reporting."""
 from __future__ import annotations
 
+from http.cookies import SimpleCookie
 import json
 import time
 from dataclasses import dataclass, field
@@ -50,6 +51,27 @@ def _decode_body(content: bytes) -> str:
     return content.decode("utf-8", errors="replace")
 
 
+def _deleted_cookie_names(headers: httpx.Headers | dict[str, Any] | None) -> set[str]:
+    if not headers:
+        return set()
+    if hasattr(headers, "get_list"):
+        raw_headers = [value for value in headers.get_list("set-cookie") if value]
+    else:
+        single = dict(headers).get("set-cookie")
+        raw_headers = [single] if single else []
+
+    deleted: set[str] = set()
+    for header_value in raw_headers:
+        cookie = SimpleCookie()
+        cookie.load(str(header_value))
+        for name, morsel in cookie.items():
+            expires = str(morsel["expires"] or "").lower()
+            max_age = str(morsel["max-age"] or "").strip()
+            if morsel.value == "" or max_age == "0" or "1970" in expires:
+                deleted.add(name)
+    return deleted
+
+
 @dataclass
 class StepResult:
     phase: str
@@ -74,7 +96,7 @@ class SmokeClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.capture_details = capture_details
-        self.cookies = httpx.Cookies()
+        self.cookies: dict[str, str] = {}
         self.results: list[StepResult] = []
         self._phase = "init"
 
@@ -82,12 +104,9 @@ class SmokeClient:
         self._phase = phase
 
     def _client(self) -> httpx.Client:
-        # Use a plain dict for cookies so they are sent regardless of domain
-        # (httpx.Cookies is domain-scoped and won't forward across base_url switches).
-        cookie_dict = dict(self.cookies)
         return httpx.Client(
             base_url=self.base_url,
-            cookies=cookie_dict,
+            cookies=dict(self.cookies),
             timeout=self.timeout,
             follow_redirects=False,
         )
@@ -138,8 +157,13 @@ class SmokeClient:
             t0 = time.monotonic()
             resp = client.request(method, path, **kw)
             elapsed = (time.monotonic() - t0) * 1000
-            # Persist any cookies set by the response
-            self.cookies.update(resp.cookies)
+            for cookie_name in _deleted_cookie_names(resp.headers):
+                self.cookies.pop(cookie_name, None)
+            for cookie_name, cookie_value in resp.cookies.items():
+                if not cookie_value:
+                    self.cookies.pop(str(cookie_name), None)
+                    continue
+                self.cookies[str(cookie_name)] = str(cookie_value)
             if expect_status is not None:
                 if isinstance(expect_status, int):
                     expect_status = (expect_status,)

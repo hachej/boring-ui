@@ -343,11 +343,14 @@ def test_session_without_cookie(client: SmokeClient) -> None:
 def test_forged_session_cookie(client: SmokeClient) -> None:
     """Phase 15: Forged session cookie — must reject."""
     _phase("15. Forged Session Cookie")
-    import httpx as _httpx
     forged = SmokeClient(client.base_url)
     forged.set_phase("forged-cookie")
     # Set a fake session cookie
-    forged.cookies.set("boring_session", "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoiZmFrZSIsImVtYWlsIjoiZmFrZUB0ZXN0LmNvbSIsImV4cCI6OTk5OTk5OTk5OX0.fake")
+    forged.cookies["boring_session"] = (
+        "eyJhbGciOiJIUzI1NiJ9."
+        "eyJ1c2VyX2lkIjoiZmFrZSIsImVtYWlsIjoiZmFrZUB0ZXN0LmNvbSIsImV4cCI6OTk5OTk5OTk5OX0."
+        "fake"
+    )
     resp = forged.get("/auth/session", expect_status=(401,))
     assert resp.status_code == 401
     data = resp.json()

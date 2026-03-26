@@ -27,6 +27,7 @@ class PreflightContext:
     def __init__(self, manifest: RunManifest) -> None:
         self.manifest = manifest
         self.projects_root = Path(manifest.project_root).parent
+        self.app_vault_data_path = f"secret/data/agent/app/{manifest.app_slug}/prod"
 
 
 def run_preflight_checks(manifest: RunManifest) -> list[CheckResult]:
@@ -122,20 +123,29 @@ def _check_vault_read_access(ctx: PreflightContext) -> CheckResult:
 
 def _check_vault_write_access(ctx: PreflightContext) -> CheckResult:
     cid = "preflight.vault_write_access"
-    # Write access is needed for bui neon setup to store creds
-    # We can't safely test write without side effects, so check token capabilities
     if not shutil.which("vault"):
         return _invalid(cid, "ENV_VAULT_WRITE_DENIED", "vault CLI not found")
-    rc, out, _ = _run_cmd(["vault", "token", "lookup", "-format=json"])
-    if rc == 0 and "agent" in out:
-        # Heuristic: agent tokens are typically read-only
-        return _invalid(
-            cid, "ENV_VAULT_WRITE_DENIED",
-            "Agent token detected — likely read-only",
+    rc, out, err = _run_cmd(["vault", "token", "capabilities", ctx.app_vault_data_path])
+    if rc != 0:
+        detail = (
+            f"Cannot inspect token capabilities for {ctx.app_vault_data_path}: "
+            f"{err or out or 'unknown error'}"
         )
-    if rc == 0:
-        return _pass(cid, "Vault token active (write access unverified)")
-    return _invalid(cid, "ENV_VAULT_WRITE_DENIED", "Vault token lookup failed")
+        return _invalid(cid, "ENV_VAULT_WRITE_DENIED", detail)
+
+    capabilities = {
+        token.strip().lower()
+        for token in out.replace(",", " ").split()
+        if token.strip()
+    }
+    if {"create", "update", "patch", "sudo", "root"} & capabilities:
+        return _pass(cid, f"Vault write available at {ctx.app_vault_data_path}")
+
+    return _invalid(
+        cid,
+        "ENV_VAULT_WRITE_DENIED",
+        f"No app-scoped Vault write access at {ctx.app_vault_data_path} (capabilities: {sorted(capabilities)})",
+    )
 
 
 def _check_network_reachable(ctx: PreflightContext) -> CheckResult:

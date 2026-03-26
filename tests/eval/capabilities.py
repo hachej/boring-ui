@@ -17,7 +17,8 @@ from dataclasses import dataclass, field, fields
 from typing import Any
 
 from tests.eval.check_catalog import CATALOG, CheckSpec, check_applicable
-from tests.eval.contracts import PlatformFacts
+from tests.eval.contracts import CheckResult, PlatformFacts
+from tests.eval.reason_codes import CheckStatus
 
 
 # ---------------------------------------------------------------------------
@@ -165,14 +166,34 @@ class CapabilityManifest:
             bui_available=bool(facts.bui_version),
             fly_available=bool(facts.fly_cli_version),
             vault_read=facts.vault_available,
-            vault_write=False,  # requires live test
+            vault_write=False,  # resolved from preflight against the app-scoped Vault path
             neon_cli_available=bool(facts.neon_cli_version),
-            network_ok=False,  # requires live test
+            network_ok=False,  # resolved from preflight
             scaffold_support=bool(facts.bui_version),
             doctor_support=bool(facts.bui_version),
             deploy_support=bool(facts.bui_version and facts.fly_cli_version),
             neon_setup_support=bool(facts.bui_version),
         )
+
+
+def enrich_manifest_with_preflight_results(
+    manifest: CapabilityManifest,
+    preflight_checks: list[CheckResult],
+) -> CapabilityManifest:
+    """Fold live preflight results into the capability manifest."""
+    check_by_id = {check.id: check for check in preflight_checks}
+
+    if check_by_id.get("preflight.vault_read_access", None) and check_by_id["preflight.vault_read_access"].status == CheckStatus.PASS:
+        manifest.vault_read = True
+    if check_by_id.get("preflight.vault_write_access", None) and check_by_id["preflight.vault_write_access"].status == CheckStatus.PASS:
+        manifest.vault_write = True
+    if check_by_id.get("preflight.network_reachable", None) and check_by_id["preflight.network_reachable"].status == CheckStatus.PASS:
+        manifest.network_ok = True
+    if check_by_id.get("preflight.fly_available", None) and check_by_id["preflight.fly_available"].status == CheckStatus.PASS:
+        manifest.fly_available = True
+        manifest.deploy_support = manifest.deploy_support or manifest.bui_available
+
+    return manifest
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +263,7 @@ def validate_profile_against_capabilities(
     if contract.requires_neon and not manifest.vault_write:
         issues.append(CapabilityIssue(
             requirement="vault_write",
-            detail="Vault write access not available — bui neon setup requires it",
+            detail="App-scoped Vault write access not available — bui neon setup needs secret/data/agent/app/<app>/prod",
         ))
 
     if not manifest.network_ok:

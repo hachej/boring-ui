@@ -19,8 +19,13 @@ Prerequisites:
 Usage:
     python3 tests/smoke/smoke_github_connect.py
     python3 tests/smoke/smoke_github_connect.py --base-url http://localhost:8000
+    python3 tests/smoke/smoke_github_connect.py --base-url https://<app-url> --auth-mode neon
     python3 tests/smoke/smoke_github_connect.py --skip-git-push  # skip destructive push
     python3 tests/smoke/smoke_github_connect.py --installation-id 12345
+
+Notes:
+  - On older/minimal TS builds, this smoke fails fast with an explicit parity-gap
+    error instead of cascading through removed Python-era routes.
 """
 
 from __future__ import annotations
@@ -35,10 +40,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from smoke_lib.client import SmokeClient
+from smoke_lib.session_bootstrap import ensure_session
 
 TEST_REPO = "boring-ui-repo"
 TEST_ACCOUNT = "boringdata"
 WORKSPACE_ID = "smoke-gh-test"
+CURRENT_GITHUB_ROUTE_BASE = "/api/v1/github"
+LEGACY_GITHUB_ROUTE_BASE = "/api/v1/auth/github"
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -67,6 +75,58 @@ def github_api(method: str, url: str, token: str, **kw) -> dict:
     return resp.json()
 
 
+def _resolve_auth_mode(requested: str, caps: dict) -> str:
+    mode = str(requested or "auto").strip().lower()
+    if mode != "auto":
+        return mode
+
+    provider = str(caps.get("auth", {}).get("provider", "")).strip().lower()
+    if provider == "neon":
+        return "neon"
+    if provider in {"local", "dev"}:
+        return "dev"
+    return "dev"
+
+
+def _uses_minimal_ts_github_surface(data: dict) -> bool:
+    return bool(data.get("ok")) and "connected" not in data and "installation_connected" not in data
+
+
+def _legacy_workspace_params(route_base: str, workspace_id: str | None) -> dict:
+    if route_base != LEGACY_GITHUB_ROUTE_BASE or not workspace_id:
+        return {}
+    return {"workspace_id": workspace_id}
+
+
+def _status_workspace_params(workspace_id: str | None) -> dict:
+    if not workspace_id:
+        return {}
+    return {"workspace_id": workspace_id}
+
+
+def _select_installation(
+    installations: list[dict],
+    requested_installation_id: int | None,
+    expected_repo: str,
+) -> dict:
+    if requested_installation_id is not None:
+        match = next((item for item in installations if item["id"] == requested_installation_id), None)
+        if not match:
+            raise RuntimeError(f"Installation {requested_installation_id} not found in discovered installations")
+        return match
+
+    expected_owner = str(expected_repo).split("/", 1)[0].strip().lower()
+    if expected_owner:
+        owner_match = next(
+            (item for item in installations if str(item.get("account", "")).strip().lower() == expected_owner),
+            None,
+        )
+        if owner_match:
+            return owner_match
+
+    return installations[0]
+
+
 # ── Test phases ─────────────────────────────────────────────────────────
 
 def phase_capabilities(client: SmokeClient) -> dict:
@@ -82,21 +142,79 @@ def phase_capabilities(client: SmokeClient) -> dict:
 
 
 def phase_github_status(client: SmokeClient, workspace_id: str | None = None) -> dict:
-    """Check GitHub configuration and connection status."""
+    """Check GitHub configuration/status and detect route surface."""
     client.set_phase("github-status")
-    params = {}
-    if workspace_id:
-        params["workspace_id"] = workspace_id
-    resp = client.get("/api/v1/auth/github/status", params=params, expect_status=(200,))
-    data = resp.json()
-    print(f"[smoke] GitHub status: configured={data.get('configured')}, connected={data.get('connected')}")
-    return data
+    current_resp = client.get(
+        f"{CURRENT_GITHUB_ROUTE_BASE}/status",
+        expect_status=(200, 401, 404, 503),
+    )
+    if current_resp.status_code == 401:
+        raise RuntimeError("GitHub status requires an authenticated session")
+    if current_resp.status_code != 404:
+        data = current_resp.json()
+        surface = "ts-minimal" if _uses_minimal_ts_github_surface(data) else "ts-parity"
+        print(
+            f"[smoke] GitHub status ({surface}): "
+            f"configured={data.get('configured')}, connected={data.get('connected')}"
+        )
+        return {
+            "route_base": CURRENT_GITHUB_ROUTE_BASE,
+            "surface": surface,
+            "status": data,
+        }
+
+    legacy_resp = client.get(
+        f"{LEGACY_GITHUB_ROUTE_BASE}/status",
+        params=_legacy_workspace_params(LEGACY_GITHUB_ROUTE_BASE, workspace_id),
+        expect_status=(200, 401, 503),
+    )
+    if legacy_resp.status_code == 401:
+        raise RuntimeError("Legacy GitHub status requires an authenticated session")
+    data = legacy_resp.json()
+    print(f"[smoke] GitHub status (legacy): configured={data.get('configured')}, connected={data.get('connected')}")
+    return {
+        "route_base": LEGACY_GITHUB_ROUTE_BASE,
+        "surface": "legacy-parity",
+        "status": data,
+    }
 
 
-def phase_list_installations(client: SmokeClient) -> list[dict]:
+def phase_require_full_lifecycle_surface(client: SmokeClient, route_info: dict) -> bool:
+    """Fail fast when the server only exposes the minimal TS GitHub surface."""
+    if route_info.get("surface") != "ts-minimal":
+        return True
+
+    import httpx
+
+    client.set_phase("github-lifecycle-parity")
+    detail = (
+        "TS server only exposes the minimal GitHub surface "
+        "(/status, /oauth/initiate, /oauth/callback, /installations, /disconnect); "
+        "missing connect/repos/git-credentials lifecycle routes required by this smoke"
+    )
+    client._record(
+        "GET",
+        f"{CURRENT_GITHUB_ROUTE_BASE}/status [lifecycle-parity]",
+        httpx.Response(
+            409,
+            json={"error": "parity_gap", "detail": detail},
+            request=httpx.Request(
+                "GET",
+                f"{client.base_url.rstrip('/')}{CURRENT_GITHUB_ROUTE_BASE}/status",
+            ),
+        ),
+        False,
+        0.0,
+        detail,
+    )
+    print(f"[smoke] FAIL: {detail}")
+    return False
+
+
+def phase_list_installations(client: SmokeClient, route_base: str) -> list[dict]:
     """List GitHub App installations."""
     client.set_phase("installations")
-    resp = client.get("/api/v1/auth/github/installations", expect_status=(200,))
+    resp = client.get(f"{route_base}/installations", expect_status=(200,))
     installations = resp.json().get("installations", [])
     for inst in installations:
         print(f"[smoke]   Installation #{inst['id']} — {inst['account']} ({inst['account_type']})")
@@ -106,11 +224,11 @@ def phase_list_installations(client: SmokeClient) -> list[dict]:
     return installations
 
 
-def phase_connect(client: SmokeClient, workspace_id: str, installation_id: int) -> dict:
+def phase_connect(client: SmokeClient, route_base: str, workspace_id: str, installation_id: int) -> dict:
     """Connect a workspace to a GitHub App installation."""
     client.set_phase("connect")
     resp = client.post(
-        "/api/v1/auth/github/connect",
+        f"{route_base}/connect",
         json={"workspace_id": workspace_id, "installation_id": installation_id},
         expect_status=(200,),
     )
@@ -121,12 +239,12 @@ def phase_connect(client: SmokeClient, workspace_id: str, installation_id: int) 
     return data
 
 
-def phase_verify_connected(client: SmokeClient, workspace_id: str, installation_id: int) -> None:
+def phase_verify_connected(client: SmokeClient, route_base: str, workspace_id: str, installation_id: int) -> None:
     """Verify workspace shows as connected."""
     client.set_phase("verify-connected")
     resp = client.get(
-        "/api/v1/auth/github/status",
-        params={"workspace_id": workspace_id},
+        f"{route_base}/status",
+        params=_status_workspace_params(workspace_id),
         expect_status=(200,),
     )
     data = resp.json()
@@ -136,11 +254,16 @@ def phase_verify_connected(client: SmokeClient, workspace_id: str, installation_
     print(f"[smoke] Verified: connected=True, installation_id={installation_id}")
 
 
-def phase_list_repos(client: SmokeClient, installation_id: int, expected_repo: str | None = None) -> list[dict]:
+def phase_list_repos(
+    client: SmokeClient,
+    route_base: str,
+    installation_id: int,
+    expected_repo: str | None = None,
+) -> list[dict]:
     """List repos accessible to an installation."""
     client.set_phase("list-repos")
     resp = client.get(
-        "/api/v1/auth/github/repos",
+        f"{route_base}/repos",
         params={"installation_id": installation_id},
         expect_status=(200,),
     )
@@ -156,11 +279,11 @@ def phase_list_repos(client: SmokeClient, installation_id: int, expected_repo: s
     return repos
 
 
-def phase_get_credentials(client: SmokeClient, workspace_id: str) -> dict:
+def phase_get_credentials(client: SmokeClient, route_base: str, workspace_id: str) -> dict:
     """Get git credentials for a connected workspace."""
     client.set_phase("credentials")
     resp = client.get(
-        "/api/v1/auth/github/git-credentials",
+        f"{route_base}/git-credentials",
         params={"workspace_id": workspace_id},
         expect_status=(200,),
     )
@@ -263,11 +386,11 @@ def phase_verify_push(client: SmokeClient, repo_full_name: str, file_name: str) 
     client._record("GET", f"github.com/{repo_full_name}/{file_name}", _FakeResp(), True, 0)
 
 
-def phase_disconnect(client: SmokeClient, workspace_id: str) -> None:
+def phase_disconnect(client: SmokeClient, route_base: str, workspace_id: str) -> None:
     """Disconnect workspace from GitHub."""
     client.set_phase("disconnect")
     resp = client.post(
-        "/api/v1/auth/github/disconnect",
+        f"{route_base}/disconnect",
         json={"workspace_id": workspace_id},
         expect_status=(200,),
     )
@@ -276,12 +399,12 @@ def phase_disconnect(client: SmokeClient, workspace_id: str) -> None:
     print(f"[smoke] Disconnected workspace={workspace_id}")
 
 
-def phase_verify_disconnected(client: SmokeClient, workspace_id: str) -> None:
+def phase_verify_disconnected(client: SmokeClient, route_base: str, workspace_id: str) -> None:
     """Verify workspace shows as disconnected."""
     client.set_phase("verify-disconnected")
     resp = client.get(
-        "/api/v1/auth/github/status",
-        params={"workspace_id": workspace_id},
+        f"{route_base}/status",
+        params=_status_workspace_params(workspace_id),
         expect_status=(200,),
     )
     data = resp.json()
@@ -290,11 +413,11 @@ def phase_verify_disconnected(client: SmokeClient, workspace_id: str) -> None:
     print(f"[smoke] Verified: connected=False after disconnect")
 
 
-def phase_creds_after_disconnect(client: SmokeClient, workspace_id: str) -> None:
+def phase_creds_after_disconnect(client: SmokeClient, route_base: str, workspace_id: str) -> None:
     """Verify git-credentials returns 404 after disconnect."""
     client.set_phase("creds-after-disconnect")
     resp = client.get(
-        "/api/v1/auth/github/git-credentials",
+        f"{route_base}/git-credentials",
         params={"workspace_id": workspace_id},
         expect_status=(404,),
     )
@@ -311,6 +434,14 @@ def main() -> int:
     )
     parser.add_argument("--base-url", default="http://localhost:8000",
                         help="Backend base URL (default: http://localhost:8000)")
+    parser.add_argument("--auth-mode", choices=["auto", "neon", "dev"], default="auto")
+    parser.add_argument("--neon-auth-url", default="")
+    parser.add_argument("--skip-signup", action="store_true")
+    parser.add_argument("--email")
+    parser.add_argument("--password")
+    parser.add_argument("--recipient")
+    parser.add_argument("--public-origin", default="")
+    parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--workspace-id", default=WORKSPACE_ID,
                         help=f"Workspace ID to use (default: {WORKSPACE_ID})")
     parser.add_argument("--installation-id", type=int, default=None,
@@ -324,16 +455,39 @@ def main() -> int:
     client = SmokeClient(args.base_url)
 
     # ── Phase 1: Capabilities ──────────────────────────────────────────
-    phase_capabilities(client)
+    caps = phase_capabilities(client)
 
-    # ── Phase 2: GitHub status (pre-connect) ───────────────────────────
-    status = phase_github_status(client)
+    # ── Phase 2: Auth bootstrap ────────────────────────────────────────
+    auth_mode = _resolve_auth_mode(args.auth_mode, caps)
+    ensure_session(
+        client,
+        auth_mode=auth_mode,
+        base_url=args.base_url,
+        neon_auth_url=args.neon_auth_url,
+        email=args.email,
+        password=args.password,
+        recipient=args.recipient,
+        skip_signup=args.skip_signup,
+        timeout_seconds=args.timeout,
+        public_app_base_url=args.public_origin or None,
+    )
+
+    # ── Phase 3: GitHub status (pre-connect) ───────────────────────────
+    route_info = phase_github_status(client, workspace_id=args.workspace_id)
+    status = route_info["status"]
     if not status.get("configured"):
         print("[FAIL] GitHub App not configured. Set GITHUB_APP_* env vars.", file=sys.stderr)
         return 1
 
-    # ── Phase 3: List installations ────────────────────────────────────
-    installations = phase_list_installations(client)
+    if not phase_require_full_lifecycle_surface(client, route_info):
+        report = client.report()
+        print(json.dumps(report, indent=2))
+        return 1
+
+    route_base = route_info["route_base"]
+
+    # ── Phase 4: List installations ────────────────────────────────────
+    installations = phase_list_installations(client, route_base)
     if not installations and not args.installation_id:
         print("\n[FAIL] No GitHub App installations found.", file=sys.stderr)
         print("[FAIL] Install the app at: https://github.com/apps/boring-ui-app/installations/new",
@@ -342,45 +496,47 @@ def main() -> int:
         print(json.dumps(report, indent=2))
         return 1
 
-    installation_id = args.installation_id or installations[0]["id"]
-    account = next(
-        (i["account"] for i in installations if i["id"] == installation_id),
-        "unknown",
+    selected_installation = _select_installation(
+        installations,
+        args.installation_id,
+        args.test_repo,
     )
+    installation_id = selected_installation["id"]
+    account = selected_installation.get("account", "unknown")
     print(f"\n[smoke] Using installation #{installation_id} (account: {account})")
 
-    # ── Phase 4: Connect workspace ─────────────────────────────────────
-    phase_connect(client, args.workspace_id, installation_id)
+    # ── Phase 5: Connect workspace ─────────────────────────────────────
+    phase_connect(client, route_base, args.workspace_id, installation_id)
 
-    # ── Phase 5: Verify connected ──────────────────────────────────────
-    phase_verify_connected(client, args.workspace_id, installation_id)
+    # ── Phase 6: Verify connected ──────────────────────────────────────
+    phase_verify_connected(client, route_base, args.workspace_id, installation_id)
 
-    # ── Phase 6: List repos ────────────────────────────────────────────
-    phase_list_repos(client, installation_id, expected_repo=args.test_repo)
+    # ── Phase 7: List repos ────────────────────────────────────────────
+    phase_list_repos(client, route_base, installation_id, expected_repo=args.test_repo)
 
-    # ── Phase 7: Get credentials ───────────────────────────────────────
-    creds = phase_get_credentials(client, args.workspace_id)
+    # ── Phase 8: Get credentials ───────────────────────────────────────
+    creds = phase_get_credentials(client, route_base, args.workspace_id)
 
-    # ── Phase 8: Verify credentials against GitHub API ─────────────────
+    # ── Phase 9: Verify credentials against GitHub API ─────────────────
     phase_verify_credentials(client, creds)
 
-    # ── Phase 9: Git push (optional) ───────────────────────────────────
+    # ── Phase 10: Git push (optional) ──────────────────────────────────
     if not args.skip_git_push:
         file_name = phase_git_push(client, creds, args.test_repo)
 
-        # ── Phase 10: Verify push ──────────────────────────────────────
+        # ── Phase 11: Verify push ──────────────────────────────────────
         phase_verify_push(client, args.test_repo, file_name)
     else:
         print("[smoke] Skipping git push (--skip-git-push)")
 
-    # ── Phase 11: Disconnect ───────────────────────────────────────────
-    phase_disconnect(client, args.workspace_id)
+    # ── Phase 12: Disconnect ───────────────────────────────────────────
+    phase_disconnect(client, route_base, args.workspace_id)
 
-    # ── Phase 12: Verify disconnected ──────────────────────────────────
-    phase_verify_disconnected(client, args.workspace_id)
+    # ── Phase 13: Verify disconnected ──────────────────────────────────
+    phase_verify_disconnected(client, route_base, args.workspace_id)
 
-    # ── Phase 13: Credentials 404 after disconnect ─────────────────────
-    phase_creds_after_disconnect(client, args.workspace_id)
+    # ── Phase 14: Credentials 404 after disconnect ─────────────────────
+    phase_creds_after_disconnect(client, route_base, args.workspace_id)
 
     # ── Report ─────────────────────────────────────────────────────────
     report = client.report()
