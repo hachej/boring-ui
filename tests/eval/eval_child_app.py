@@ -33,6 +33,7 @@ if __package__ in (None, ""):
 from tests.eval.agent_prompt import generate_prompt, save_prompt
 from tests.eval.capabilities import (
     applicable_checks,
+    enrich_manifest_with_preflight_results,
     skip_reasons_for_manifest,
     validate_profile_against_capabilities,
 )
@@ -593,6 +594,8 @@ async def run_eval(
     logger.phase_start("preflight")
     facts = discover_platform_facts()
     cap_manifest = build_manifest_from_facts(facts)
+    preflight_checks = run_preflight_checks(manifest)
+    cap_manifest = enrich_manifest_with_preflight_results(cap_manifest, preflight_checks)
     cap_issues = validate_profile_against_capabilities(profile, cap_manifest)
 
     if any(i.severity == "error" for i in cap_issues):
@@ -600,7 +603,6 @@ async def run_eval(
             f"Capability issues: {[i.detail for i in cap_issues if i.severity == 'error']}"
         )
 
-    preflight_checks = run_preflight_checks(manifest)
     skip_reasons = skip_reasons_for_manifest(profile, cap_manifest)
     preflight_invalid = sum(1 for check in preflight_checks if check.status == CheckStatus.INVALID)
     logger.phase_end(

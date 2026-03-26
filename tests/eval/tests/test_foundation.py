@@ -14,6 +14,7 @@ from tests.eval.capabilities import (
     CapabilityManifest,
     ProfileContract,
     applicable_checks,
+    enrich_manifest_with_preflight_results,
     get_profile_contract,
     skip_reasons_for_manifest,
     validate_profile_against_capabilities,
@@ -711,6 +712,22 @@ class TestCapabilities:
         issues = validate_profile_against_capabilities("core", bad)
         reqs = {i.requirement for i in issues}
         assert "bui_available" in reqs
+
+    def test_enrich_manifest_with_preflight_results(self):
+        manifest = CapabilityManifest()
+        preflight_checks = [
+            CheckResult("preflight.vault_read_access", "preflight", 0, CheckStatus.PASS),
+            CheckResult("preflight.vault_write_access", "preflight", 0, CheckStatus.PASS),
+            CheckResult("preflight.network_reachable", "preflight", 0, CheckStatus.PASS),
+            CheckResult("preflight.fly_available", "preflight", 0, CheckStatus.PASS),
+        ]
+
+        enrich_manifest_with_preflight_results(manifest, preflight_checks)
+
+        assert manifest.vault_read is True
+        assert manifest.vault_write is True
+        assert manifest.network_ok is True
+        assert manifest.fly_available is True
 
     def test_skip_reasons_no_fly(self):
         manifest = CapabilityManifest(bui_available=True, fly_available=False)

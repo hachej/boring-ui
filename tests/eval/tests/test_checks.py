@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.eval.checks import preflight as preflight_checks
 from tests.eval.checks.deployment import DeploymentContext, run_deployment_checks
 from tests.eval.checks.local_dev import LocalDevContext, run_local_dev_checks
-from tests.eval.checks.preflight import run_preflight_checks
+from tests.eval.checks.preflight import PreflightContext, run_preflight_checks
 from tests.eval.checks.custom_pane import CustomPaneContext, run_custom_pane_checks
 from tests.eval.checks.custom_tool import CustomToolContext, run_custom_tool_checks
 from tests.eval.checks.pane_tool_integration import (
@@ -578,3 +579,30 @@ class TestPreflightChecks:
         results = run_preflight_checks(manifest)
         for r in results:
             assert r.weight == 0
+
+    def test_vault_write_uses_app_scoped_path(self, manifest, monkeypatch):
+        def fake_which(name):
+            if name == "vault":
+                return "/usr/bin/vault"
+            return None
+
+        calls = []
+
+        def fake_run(cmd, timeout=10):
+            calls.append(cmd)
+            if cmd[:3] == ["vault", "token", "capabilities"]:
+                return 0, "create list read update", ""
+            raise AssertionError(f"Unexpected command: {cmd}")
+
+        monkeypatch.setattr(preflight_checks.shutil, "which", fake_which)
+        monkeypatch.setattr(preflight_checks, "_run_cmd", fake_run)
+
+        result = preflight_checks._check_vault_write_access(PreflightContext(manifest))
+
+        assert result.status == CheckStatus.PASS
+        assert calls == [[
+            "vault",
+            "token",
+            "capabilities",
+            f"secret/data/agent/app/{manifest.app_slug}/prod",
+        ]]

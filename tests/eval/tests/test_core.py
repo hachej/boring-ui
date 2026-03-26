@@ -62,16 +62,16 @@ class TestAgentPrompt:
         assert BEGIN_MARKER in prompt
         assert END_MARKER in prompt
 
-    def test_generate_contains_bui_commands(self, sample_manifest):
+    def test_generate_contains_bui_help(self, sample_manifest):
         prompt = generate_prompt(sample_manifest)
-        assert "bui init" in prompt
-        assert "bui doctor" in prompt
-        assert "bui deploy" in prompt
+        assert "bui --help" in prompt
 
     def test_generate_contains_constraints(self, sample_manifest):
         prompt = generate_prompt(sample_manifest)
         assert "Do NOT modify" in prompt
         assert "Do NOT hardcode" in prompt
+        assert f"secret/agent/app/{sample_manifest.app_slug}/prod" in prompt
+        assert "Neon auth" in prompt
 
     def test_generate_deterministic(self, sample_manifest):
         p1 = generate_prompt(sample_manifest)
@@ -81,6 +81,7 @@ class TestAgentPrompt:
     def test_auth_plus_includes_whoami(self, sample_manifest):
         prompt = generate_prompt(sample_manifest, profile="auth-plus")
         assert "/whoami" in prompt
+        assert "boring_session" in prompt
 
     def test_core_excludes_whoami(self, sample_manifest):
         prompt = generate_prompt(sample_manifest, profile="core")

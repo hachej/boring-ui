@@ -32,9 +32,13 @@ def generate_prompt(
     whoami_section = ""
     if profile in ("auth-plus", "full-stack", "extensible"):
         whoami_section = textwrap.dedent("""
+        **Authenticated identity route** (implement in your mounted backend routes):
+
         GET /whoami  (authenticated)
-          200 → {"user_id": "...", "email": "..."}
+          200 → {"user_id": "...", "email": "...", "app": "..."}
           401/403 when unauthenticated
+
+        Validate the shared `boring_session` cookie from the app config.
         """)
 
     report_shape = json.dumps({
@@ -90,10 +94,9 @@ coexist.
 
     return f"""# Task
 
-Create, validate, and deploy a boring-ui child app to Fly.io.
+I want you to build, validate, and deploy a boring-ui child app to Fly.io.
 
-Start with `bui --help` to discover the full workflow, then run `bui init`,
-`bui doctor`, and `bui deploy` to scaffold, validate, and deploy the app.
+Please discover the normal `bui` workflow yourself starting from `bui --help`.
 
 ## App identity
 
@@ -124,6 +127,9 @@ Wire all routers and the panel in boring.app.toml. Deploy to Fly.io.
 Constraints:
 - Do NOT modify `../boring-ui/` or sibling directories.
 - Do NOT hardcode secrets; use Vault-backed deploy secret refs.
+- Use app-scoped Vault refs under `secret/agent/app/{manifest.app_slug}/prod`.
+- Do NOT ship local-auth or dev-login shortcuts in the final deployed app.
+- The final deployed app must use Neon auth, not local auth.
 
 ## Report
 
