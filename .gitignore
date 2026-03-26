@@ -48,9 +48,16 @@ test-results/
 artifacts/
 .bsw/
 .ntm/
+ws-*/
+smoke-git-*.txt
+smoke-*.txt
+agent-test.txt
+local-update-*.txt
+*.tgz
 
 # Rejected patch files
 .beads/*.rej
+.beads.old/
 
 # Vendor (cloned at deploy time, not submoduled)
 vendor/
@@ -63,3 +70,4 @@ bui/bui
 .claude/settings.local.json
 storage.sqlite3
 storage.sqlite3-*
+gemini.mcp.json
