@@ -11,8 +11,7 @@ RUN npx vite build
 # Stage 2: TypeScript backend + frontend static
 FROM node:20-slim
 
-ENV NODE_ENV=production \
-    BORING_UI_STATIC_DIR=/app/dist
+ENV BORING_UI_STATIC_DIR=/app/dist
 
 WORKDIR /app
 
@@ -28,9 +27,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ALL dependencies (tsx + @types/node needed at runtime for TS execution)
+# Install ALL dependencies (tsx needed at runtime for TS execution)
+# NOTE: NODE_ENV must NOT be set to production before npm ci,
+# otherwise devDependencies (including tsx) are skipped.
 COPY package.json package-lock.json ./
 RUN npm ci
+
+# Set production env AFTER install so tsx is available
+ENV NODE_ENV=production
 
 # Copy server source (TypeScript, executed via tsx)
 COPY src/server ./src/server
