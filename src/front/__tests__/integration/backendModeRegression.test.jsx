@@ -237,4 +237,19 @@ describe('CreateWorkspaceModal centering', () => {
     expect(bodyRule).toContain('flex-direction: column')
     expect(bodyRule).toContain('display: flex')
   })
+
+  it('scaleIn animation preserves translate(-50%, -50%) centering', () => {
+    const cssPath = resolve(__dirname, '../../styles.css')
+    const css = readFileSync(cssPath, 'utf-8')
+
+    // The scaleIn animation must include translate(-50%, -50%) in both from/to,
+    // otherwise it overrides Tailwind's centering transforms and the dialog
+    // jumps to bottom-left after the animation completes.
+    const scaleInMatch = css.match(/@keyframes scaleIn\s*\{([^}]*\{[^}]*\}[^}]*\{[^}]*\})\s*\}/)
+    expect(scaleInMatch).not.toBeNull()
+    const keyframes = scaleInMatch[1]
+
+    expect(keyframes).toContain('translate(-50%, -50%) scale(0.95)')
+    expect(keyframes).toContain('translate(-50%, -50%) scale(1)')
+  })
 })

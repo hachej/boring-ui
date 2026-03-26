@@ -62,7 +62,7 @@ describe('Workspace runtime in backend mode', () => {
     expect(runtime.status).toBe('ready')
   })
 
-  it('creates workspace with runtime state "pending" when agentsMode is frontend', async () => {
+  it('creates workspace with runtime state "ready" in frontend mode too (TS backend has no provisioner)', async () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'bui-ws-frontend-'))
     const token = await testSessionCookie()
 
@@ -84,7 +84,7 @@ describe('Workspace runtime in backend mode', () => {
     expect(createRes.statusCode).toBe(201)
     const { workspace } = JSON.parse(createRes.payload)
 
-    // Check runtime state — should be "pending" (needs provisioning)
+    // The TS backend never provisions Fly Machines — runtime is always ready
     const runtimeRes = await app.inject({
       method: 'GET',
       url: `/api/v1/workspaces/${workspace.id}/runtime`,
@@ -92,10 +92,7 @@ describe('Workspace runtime in backend mode', () => {
     })
     expect(runtimeRes.statusCode).toBe(200)
     const { runtime } = JSON.parse(runtimeRes.payload)
-    // Local persistence always returns "ready" regardless;
-    // the "pending" behavior only applies to Neon persistence.
-    // For local persistence, "ready" is correct — it IS the runtime.
-    expect(['ready', 'pending']).toContain(runtime.state)
+    expect(runtime.state).toBe('ready')
   })
 
   it('setup page auto-advances when runtime is ready', async () => {

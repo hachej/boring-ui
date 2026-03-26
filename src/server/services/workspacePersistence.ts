@@ -490,15 +490,14 @@ function createHostedPersistence(config: ServerConfig): WorkspacePersistence {
           })
           .onConflictDoNothing()
 
-        // In backend mode the backend-agent process IS the runtime —
-        // no Fly Machine provisioning needed, so mark ready immediately.
-        const initialState = config.agentsMode === 'backend' ? 'ready' : 'pending'
-
+        // The TS backend never provisions Fly Machines — that only happens
+        // in the Python control plane. Mark workspace ready immediately so
+        // the setup page auto-advances instead of polling forever.
         await tx
           .insert(workspaceRuntimes)
           .values({
             workspaceId: workspace.id,
-            state: initialState,
+            state: 'ready',
           })
           .onConflictDoNothing()
 
