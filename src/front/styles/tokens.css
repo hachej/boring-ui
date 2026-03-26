@@ -46,12 +46,17 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   --font-size-xs: 11px;
+  --font-size-2xs: 10px;
+  --font-size-3xs: 9px;
+  --font-size-4xs: 8px;
   --font-size-sm: 12px;
   --font-size-ui: 13px;
   --font-size-base: 14px;
   --font-size-md: 16px;
   --font-size-lg: 18px;
   --font-size-xl: 20px;
+  --font-size-2xl: 22px;
+  --font-size-3xl: 28px;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -92,6 +97,8 @@
   --z-modal: 300;
   --z-tooltip: 400;
   --z-toast: 500;
+  --z-context-menu: 1000;
+  --z-popover: 1001;
 
   /* ---------- Animation / easing ---------- */
   --ease-out-fluid: cubic-bezier(0.3, 0, 0, 1);
@@ -114,12 +121,16 @@
 
   /* ---------- Legacy bridge: typography ---------- */
   --text-micro: var(--font-size-xs);
+  --text-2xs: var(--font-size-2xs);
+  --text-3xs: var(--font-size-3xs);
+  --text-4xs: var(--font-size-4xs);
   --text-xs: var(--font-size-sm);
   --text-sm: var(--font-size-ui);
   --text-base: var(--font-size-base);
   --text-lg: var(--font-size-md);
   --text-xl: var(--font-size-lg);
   --text-2xl: 24px;
+  --text-3xl: var(--font-size-3xl);
 
   --font-normal: var(--font-weight-regular);
   --font-medium: var(--font-weight-medium);

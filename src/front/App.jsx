@@ -2797,8 +2797,32 @@ export default function App() {
     !isAuthLoginPage &&
     !isAuthCallbackPage
   ) {
+    // Guard against infinite redirect loops: bail after 3 attempts
+    const url = new URL(window.location.href)
+    const attempts = parseInt(url.searchParams.get('auth_attempts') || '0', 10)
+    if (attempts >= 3) {
+      return (
+        <ThemeProvider>
+          <div className="app-error-boundary">
+            <div className="app-error-boundary-content">
+              <h1 className="app-error-boundary-title">Authentication Error</h1>
+              <p className="app-error-boundary-message">
+                Unable to sign in after multiple attempts. The auth service may be unavailable.
+              </p>
+              <button
+                type="button"
+                className="app-error-boundary-reload"
+                onClick={() => { window.location.href = '/auth/login' }}
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
+        </ThemeProvider>
+      )
+    }
     const redirectUri = encodeURIComponent(window.location.pathname + window.location.search)
-    window.location.replace(`/auth/login?redirect_uri=${redirectUri}`)
+    window.location.replace(`/auth/login?redirect_uri=${redirectUri}&auth_attempts=${attempts + 1}`)
     return null
   }
 
