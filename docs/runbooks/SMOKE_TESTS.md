@@ -133,6 +133,7 @@ Local Neon note:
 - verification emails must point at a callback origin already present in Neon Auth `trusted_origins`
 - when the browser/public origin differs from the backend API URL, set the same value on the backend with `BORING_UI_PUBLIC_ORIGIN` and pass it to the smoke via `--public-origin`
 - avoid ad hoc ephemeral loopback ports for phase 1 unless that exact origin is trusted by Neon Auth
+- for canonical Python rollback rehearsals, prefer `python3 scripts/rehearse_python_rollback.py` so the parity env, backend boot, and shared smoke matrix stay aligned with `docs/runbooks/OWNERSHIP_CUTOVER.md`
 
 Example:
 
@@ -205,6 +206,8 @@ The artifact contains:
 - auth mode
 - workspace id when applicable
 - step-by-step pass/fail results
+
+For rollback rehearsals, `scripts/rehearse_python_rollback.py --summary-out <path>` writes a matching JSON summary with phase timings and the redacted command list used for the rehearsal.
 
 ## Guidance For New Child Apps
 
