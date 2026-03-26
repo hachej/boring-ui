@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -486,6 +487,10 @@ func runNeonDestroy(cmd *cobra.Command, args []string) error {
 }
 
 func resetTomlNeonConfig(root string) error {
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
 	tomlPath := filepath.Join(root, config.ConfigFile)
 	data, err := os.ReadFile(tomlPath)
 	if err != nil {
@@ -500,9 +505,8 @@ func resetTomlNeonConfig(root string) error {
 	content = replaceTomlSection(content, "[deploy.neon]", `[deploy.neon]
 # Populated by 'bui neon setup'`)
 
-	// Reset [deploy.secrets] — clear Neon-specific secrets
-	content = replaceTomlSection(content, "[deploy.secrets]", `[deploy.secrets]
-# Populated by 'bui neon setup'`)
+	// Preserve existing shared secret refs and drop only Neon-managed app secrets.
+	content = replaceTomlSection(content, "[deploy.secrets]", renderDeploySecretsSection(dropNeonManagedDeploySecrets(cfg.Deploy.Secrets)))
 
 	return os.WriteFile(tomlPath, []byte(content), 0o644)
 }
@@ -701,6 +705,10 @@ func generateRandomHex(n int) string {
 }
 
 func updateTomlNeonConfig(root, projectID, appVaultPath string, auth *neonAuthResponse) error {
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
 	tomlPath := filepath.Join(root, config.ConfigFile)
 	data, err := os.ReadFile(tomlPath)
 	if err != nil {
@@ -719,23 +727,84 @@ auth_url     = %q
 jwks_url     = %q`,
 		projectID, auth.BaseURL, auth.JWKSURL))
 
-	// Update [deploy.secrets] section — all secrets under app-specific vault path
-	content = replaceTomlSection(content, "[deploy.secrets]", fmt.Sprintf(`[deploy.secrets]
-DATABASE_URL              = { vault = %q, field = "database_url" }
-BORING_UI_SESSION_SECRET  = { vault = %q, field = "session_secret" }
-BORING_SETTINGS_KEY       = { vault = %q, field = "settings_key" }
-ANTHROPIC_API_KEY         = { vault = %q, field = "anthropic_api_key" }
-RESEND_API_KEY            = { vault = %q, field = "resend_api_key" }
-GITHUB_APP_ID             = { vault = %q, field = "github_app_id" }
-GITHUB_APP_CLIENT_ID      = { vault = %q, field = "github_client_id" }
-GITHUB_APP_CLIENT_SECRET  = { vault = %q, field = "github_client_secret" }
-GITHUB_APP_PRIVATE_KEY    = { vault = %q, field = "github_private_key" }
-GITHUB_APP_SLUG           = { vault = %q, field = "github_slug" }`,
-		appVaultPath, appVaultPath, appVaultPath,
-		appVaultPath, appVaultPath,
-		appVaultPath, appVaultPath, appVaultPath, appVaultPath, appVaultPath))
+	// Update only the Neon-managed app secrets and preserve existing shared refs.
+	content = replaceTomlSection(content, "[deploy.secrets]", renderDeploySecretsSection(mergeNeonManagedDeploySecrets(cfg.Deploy.Secrets, appVaultPath)))
 
 	return os.WriteFile(tomlPath, []byte(content), 0o644)
+}
+
+func mergeNeonManagedDeploySecrets(existing map[string]config.SecretRef, appVaultPath string) map[string]config.SecretRef {
+	merged := map[string]config.SecretRef{
+		"DATABASE_URL":             {Vault: appVaultPath, Field: "database_url"},
+		"BORING_UI_SESSION_SECRET": {Vault: appVaultPath, Field: "session_secret"},
+		"BORING_SETTINGS_KEY":      {Vault: appVaultPath, Field: "settings_key"},
+	}
+	for name, ref := range existing {
+		if _, managed := merged[name]; managed {
+			continue
+		}
+		merged[name] = ref
+	}
+	return merged
+}
+
+func dropNeonManagedDeploySecrets(existing map[string]config.SecretRef) map[string]config.SecretRef {
+	filtered := map[string]config.SecretRef{}
+	for name, ref := range existing {
+		switch name {
+		case "DATABASE_URL", "BORING_UI_SESSION_SECRET", "BORING_SETTINGS_KEY":
+			continue
+		default:
+			filtered[name] = ref
+		}
+	}
+	return filtered
+}
+
+func renderDeploySecretsSection(refs map[string]config.SecretRef) string {
+	if len(refs) == 0 {
+		return `[deploy.secrets]
+# Populated by 'bui neon setup'`
+	}
+
+	preferred := []string{
+		"DATABASE_URL",
+		"BORING_UI_SESSION_SECRET",
+		"BORING_SETTINGS_KEY",
+	}
+	ordered := make([]string, 0, len(refs))
+	seen := map[string]struct{}{}
+	for _, name := range preferred {
+		if _, ok := refs[name]; ok {
+			ordered = append(ordered, name)
+			seen[name] = struct{}{}
+		}
+	}
+
+	extras := make([]string, 0, len(refs))
+	for name := range refs {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		extras = append(extras, name)
+	}
+	sort.Strings(extras)
+	ordered = append(ordered, extras...)
+
+	lines := []string{"[deploy.secrets]"}
+	for _, name := range ordered {
+		ref := refs[name]
+		lines = append(lines, fmt.Sprintf(`%s = { vault = %q, field = %q }`, padDeploySecretName(name), ref.Vault, ref.Field))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func padDeploySecretName(name string) string {
+	const width = 25
+	if len(name) >= width {
+		return name
+	}
+	return name + strings.Repeat(" ", width-len(name))
 }
 
 func replaceTomlLine(content, old, new string) string {

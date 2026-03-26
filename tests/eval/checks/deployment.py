@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
 
 try:
@@ -80,6 +81,15 @@ class DeploymentContext:
             time.sleep(delay * (attempt + 1))
 
         return (0, None)
+
+
+@dataclass
+class AuthSessionState:
+    client: Any
+    email: str
+    password: str
+    neon_auth_url: str
+    session: dict[str, Any] | None = None
 
 
 def run_deployment_checks(ctx: DeploymentContext) -> list[CheckResult]:
@@ -154,6 +164,79 @@ def _skip(check_id: str, detail: str, blocked_by: list[str] | None = None) -> Ch
         skipped=True,
         blocked_by=blocked_by or [],
     )
+
+
+def _profile_requires_auth(ctx: DeploymentContext) -> bool:
+    return ctx.manifest.platform_profile in {"auth-plus", "full-stack", "extensible"}
+
+
+def _profile_requires_full_stack(ctx: DeploymentContext) -> bool:
+    return ctx.manifest.platform_profile in {"full-stack", "extensible"}
+
+
+def _bootstrap_auth_state(ctx: DeploymentContext) -> AuthSessionState:
+    cached = getattr(ctx, "_auth_signup_state", None)
+    if cached is not None:
+        return cached
+
+    if not ctx.deployed_url:
+        raise RuntimeError("No deployed URL available")
+
+    from tests.smoke.smoke_lib.client import SmokeClient
+    from tests.smoke.smoke_lib.session_bootstrap import ensure_session
+
+    client = SmokeClient(ctx.deployed_url, capture_details=True)
+    auth_state = ensure_session(
+        client,
+        auth_mode="neon",
+        base_url=ctx.deployed_url,
+        timeout_seconds=180,
+        redirect_uri="/",
+    )
+    email = str(auth_state.get("email", "")).strip()
+    password = str(auth_state.get("password", "")).strip()
+    neon_auth_url = str(auth_state.get("neon_auth_url", "")).strip()
+    if not email or not password or not neon_auth_url:
+        raise RuntimeError(f"Incomplete auth bootstrap state: {sorted(auth_state.keys())}")
+
+    result = AuthSessionState(
+        client=client,
+        email=email,
+        password=password,
+        neon_auth_url=neon_auth_url,
+    )
+    ctx.auth_email = email
+    setattr(ctx, "_auth_signup_state", result)
+    return result
+
+
+def _signin_auth_state(ctx: DeploymentContext) -> AuthSessionState:
+    cached = getattr(ctx, "_auth_signin_state", None)
+    if cached is not None:
+        return cached
+
+    signup_state = _bootstrap_auth_state(ctx)
+
+    from tests.smoke.smoke_lib.auth import neon_signin_flow
+    from tests.smoke.smoke_lib.client import SmokeClient
+
+    client = SmokeClient(ctx.deployed_url or "", capture_details=True)
+    session = neon_signin_flow(
+        client,
+        neon_auth_url=signup_state.neon_auth_url,
+        email=signup_state.email,
+        password=signup_state.password,
+        redirect_uri="/",
+    )
+    result = AuthSessionState(
+        client=client,
+        email=signup_state.email,
+        password=signup_state.password,
+        neon_auth_url=signup_state.neon_auth_url,
+        session=session,
+    )
+    setattr(ctx, "_auth_signin_state", result)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -338,43 +421,101 @@ def _check_branding_match_if_profiled(ctx: DeploymentContext) -> CheckResult:
 
 def _check_auth_signup(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.auth_signup"
+    if not _profile_requires_auth(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require auth-plus checks")
     if not ctx.deployed_url:
         return _skip(cid, "No URL", blocked_by=["deploy.health_200"])
-    # Stub: real implementation would use smoke_lib auth helpers
-    return _skip(cid, "Auth signup check requires smoke_lib integration")
+    try:
+        state = _bootstrap_auth_state(ctx)
+    except Exception as exc:
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"Hosted signup/session bootstrap failed: {exc}")
+    return _pass(cid, f"Hosted Neon signup/session bootstrap succeeded for {state.email}")
 
 
 def _check_auth_signin(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.auth_signin"
-    return _skip(cid, "Auth signin requires smoke_lib", blocked_by=["deploy.auth_signup"])
+    if not _profile_requires_auth(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require auth-plus checks")
+    try:
+        state = _signin_auth_state(ctx)
+    except Exception as exc:
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"Hosted signin failed: {exc}")
+    return _pass(cid, f"Hosted Neon signin succeeded for {state.email}")
 
 
 def _check_session_valid(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.session_valid"
-    return _skip(cid, "Session check requires auth", blocked_by=["deploy.auth_signin"])
+    if not _profile_requires_auth(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require auth-plus checks")
+    try:
+        state = _signin_auth_state(ctx)
+        resp = state.client.get("/auth/session", expect_status=(200,))
+    except Exception as exc:
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"Session validation failed: {exc}")
+    if resp.status_code != 200:
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"/auth/session returned {resp.status_code}")
+    try:
+        payload = resp.json()
+    except Exception:
+        return _fail(cid, "DEPLOY_AUTH_FAILED", "/auth/session did not return JSON")
+    email = str(((payload or {}).get("user") or {}).get("email", "")).strip().lower()
+    if email != state.email.lower():
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"/auth/session email mismatch: {email!r}")
+    return _pass(cid, "/auth/session returned the signed-in identity")
 
 
 def _check_auth_guard(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.auth_guard"
+    if not _profile_requires_auth(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require auth-plus checks")
     if not ctx.deployed_url:
         return _skip(cid, "No URL", blocked_by=["deploy.health_200"])
-    # Check that a protected endpoint returns 401 without auth
-    status, _ = ctx.get("/api/v1/me")
+    status, _ = ctx.get("/whoami")
+    if status in (0, 404):
+        status, _ = ctx.get("/api/v1/me")
     if status in (401, 403):
-        return _pass(cid, f"/api/v1/me returns {status} without auth")
+        return _pass(cid, f"Protected endpoint returns {status} without auth")
     if status == 0:
-        return _skip(cid, "Could not reach /api/v1/me")
-    return _pass(cid, f"/api/v1/me returned {status} (may not require auth)")
+        return _skip(cid, "Could not reach protected auth endpoint")
+    return _fail(cid, "DEPLOY_AUTH_FAILED", f"Unauthenticated protected endpoint returned {status}")
 
 
 def _check_custom_protected_route(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.custom_protected_route"
-    return _skip(cid, "/whoami requires auth session", blocked_by=["deploy.auth_signin"])
+    if not _profile_requires_auth(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require auth-plus checks")
+    try:
+        state = _signin_auth_state(ctx)
+        resp = state.client.get("/whoami", expect_status=(200,))
+    except Exception as exc:
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"/whoami check failed: {exc}")
+    if resp.status_code != 200:
+        return _fail(cid, "DEPLOY_ROUTE_MISSING", f"/whoami returned {resp.status_code}")
+    try:
+        payload = resp.json()
+    except Exception:
+        return _fail(cid, "DEPLOY_ROUTE_MISSING", "/whoami did not return JSON")
+    email = str((payload or {}).get("email", "")).strip().lower()
+    if email != state.email.lower():
+        return _fail(cid, "DEPLOY_ROUTE_MISMATCH", f"/whoami email mismatch: {email!r}")
+    return _pass(cid, "/whoami returned the signed-in identity")
 
 
 def _check_logout(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.logout"
-    return _skip(cid, "Logout requires auth session", blocked_by=["deploy.auth_signin"])
+    if not _profile_requires_auth(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require auth-plus checks")
+    try:
+        state = _signin_auth_state(ctx)
+        logout = state.client.post("/auth/logout", expect_status=(200, 204, 302))
+        follow_up = state.client.get("/auth/session", expect_status=(401, 403))
+    except Exception as exc:
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"Logout flow failed: {exc}")
+    if logout.status_code not in (200, 204, 302):
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"/auth/logout returned {logout.status_code}")
+    if follow_up.status_code not in (401, 403):
+        return _fail(cid, "DEPLOY_AUTH_FAILED", f"/auth/session still returned {follow_up.status_code} after logout")
+    return _pass(cid, "Logout invalidated the hosted session")
 
 
 # ---------------------------------------------------------------------------
@@ -383,24 +524,34 @@ def _check_logout(ctx: DeploymentContext) -> CheckResult:
 
 def _check_workspace_create(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.workspace_create"
+    if not _profile_requires_full_stack(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require full-stack checks")
     return _skip(cid, "Workspace check requires smoke_lib", blocked_by=["deploy.auth_signin"])
 
 
 def _check_file_write(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.file_write"
+    if not _profile_requires_full_stack(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require full-stack checks")
     return _skip(cid, "File write requires workspace", blocked_by=["deploy.workspace_create"])
 
 
 def _check_file_read(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.file_read"
+    if not _profile_requires_full_stack(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require full-stack checks")
     return _skip(cid, "File read requires file_write", blocked_by=["deploy.file_write"])
 
 
 def _check_file_delete(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.file_delete"
+    if not _profile_requires_full_stack(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require full-stack checks")
     return _skip(cid, "File delete requires file_write", blocked_by=["deploy.file_write"])
 
 
 def _check_git_cycle(ctx: DeploymentContext) -> CheckResult:
     cid = "deploy.git_cycle"
+    if not _profile_requires_full_stack(ctx):
+        return _skip(cid, f"Profile {ctx.manifest.platform_profile!r} does not require full-stack checks")
     return _skip(cid, "Git cycle requires workspace", blocked_by=["deploy.workspace_create"])

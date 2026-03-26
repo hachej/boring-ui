@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.eval.checks import deployment as deployment_checks
 from tests.eval.checks import preflight as preflight_checks
 from tests.eval.checks.deployment import DeploymentContext, run_deployment_checks
 from tests.eval.checks.local_dev import LocalDevContext, run_local_dev_checks
@@ -563,6 +564,88 @@ class TestDeploymentChecks:
         custom = [r for r in results if r.id == "deploy.custom_router_live"][0]
         assert custom.status == CheckStatus.FAIL
         assert custom.reason_code == "DEPLOY_NONCE_MISMATCH"
+
+    def test_auth_plus_checks_use_hosted_session(self, manifest, monkeypatch):
+        manifest.platform_profile = "auth-plus"
+        ctx = DeploymentContext(
+            manifest,
+            deployed_url="https://test.fly.dev",
+            responses={
+                "/": (200, "<html>App</html>"),
+                "/health": (200, {
+                    "ok": True,
+                    "app": manifest.app_slug,
+                    "eval_id": manifest.eval_id,
+                    "verification_nonce": manifest.verification_nonce,
+                }),
+                "/info": (200, {"name": manifest.app_slug, "version": "0.1.0", "eval_id": manifest.eval_id}),
+                "/__bui/config": (200, {"app": {}}),
+                "/api/capabilities": (200, {"version": "0.1.0", "features": {}}),
+                "/whoami": (401, {"error": "unauthorized"}),
+            },
+        )
+
+        class FakeResponse:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self._payload = payload
+                self.text = json.dumps(payload) if isinstance(payload, (dict, list)) else str(payload)
+
+            def json(self):
+                if isinstance(self._payload, (dict, list)):
+                    return self._payload
+                raise ValueError("not json")
+
+        class FakeSignedInClient:
+            def __init__(self):
+                self.logged_out = False
+
+            def get(self, path, **_kw):
+                if path == "/auth/session":
+                    if self.logged_out:
+                        return FakeResponse(401, {"error": "unauthorized"})
+                    return FakeResponse(200, {"user": {"email": "user@example.com"}})
+                if path == "/whoami":
+                    return FakeResponse(200, {"user_id": "user-1", "email": "user@example.com", "app": manifest.app_slug})
+                raise AssertionError(f"Unexpected GET {path}")
+
+            def post(self, path, **_kw):
+                if path == "/auth/logout":
+                    self.logged_out = True
+                    return FakeResponse(302, {"ok": True})
+                raise AssertionError(f"Unexpected POST {path}")
+
+        monkeypatch.setattr(
+            deployment_checks,
+            "_bootstrap_auth_state",
+            lambda _ctx: deployment_checks.AuthSessionState(
+                client=object(),
+                email="user@example.com",
+                password="secret",
+                neon_auth_url="https://auth.example.test",
+            ),
+        )
+        monkeypatch.setattr(
+            deployment_checks,
+            "_signin_auth_state",
+            lambda _ctx: deployment_checks.AuthSessionState(
+                client=FakeSignedInClient(),
+                email="user@example.com",
+                password="secret",
+                neon_auth_url="https://auth.example.test",
+                session={"user": {"email": "user@example.com"}},
+            ),
+        )
+
+        results = run_deployment_checks(ctx)
+        by_id = {result.id: result for result in results}
+
+        assert by_id["deploy.auth_signup"].status == CheckStatus.PASS
+        assert by_id["deploy.auth_signin"].status == CheckStatus.PASS
+        assert by_id["deploy.session_valid"].status == CheckStatus.PASS
+        assert by_id["deploy.auth_guard"].status == CheckStatus.PASS
+        assert by_id["deploy.custom_protected_route"].status == CheckStatus.PASS
+        assert by_id["deploy.logout"].status == CheckStatus.PASS
 
 
 # ===================================================================

@@ -514,21 +514,17 @@ def _write_extensible_evidence(
         )
 
 
-def _default_agent_runner() -> AgentRunner:
+def _default_agent_runner(manifest: RunManifest) -> AgentRunner:
     """Build the default real-agent runner with a resolved Claude binary."""
     claude_cmd = shutil.which("claude") or "claude"
-    repo_root = Path(__file__).resolve().parents[2]
-    projects_root = repo_root.parent
     return SubprocessRunner(command=[
         claude_cmd,
         "--print",
         "--permission-mode",
         "bypassPermissions",
         "--add-dir",
-        str(repo_root),
-        "--add-dir",
-        str(projects_root),
-    ])
+        manifest.project_root,
+    ], cwd=manifest.project_root)
 
 
 # ---------------------------------------------------------------------------
@@ -631,7 +627,7 @@ async def run_eval(
     # 4. Run agent
     logger.phase_start("agent_execution")
     if runner is None:
-        runner = _default_agent_runner()
+        runner = _default_agent_runner(manifest)
 
     run_result = await runner.run(manifest, prompt, timeout_s=agent_timeout)
     await runner.cleanup()

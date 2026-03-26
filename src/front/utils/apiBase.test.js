@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { __apiBaseTestUtils, buildApiUrl, buildWsUrl } from './apiBase'
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('apiBase loopback rewrite', () => {
   it('rewrites loopback VITE_API_URL to current host for remote browser clients', () => {
@@ -82,6 +86,34 @@ describe('apiBase loopback rewrite', () => {
     })
     try {
       expect(buildApiUrl('/api/capabilities')).toBe('https://example.com/w/ws-123/api/capabilities')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+  })
+
+  it('preserves workspace scope when VITE_API_URL is configured under /w/{id}', () => {
+    vi.stubEnv('VITE_API_URL', 'http://127.0.0.1:8124')
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        protocol: 'http:',
+        hostname: '127.0.0.1',
+        port: '5178',
+        origin: 'http://127.0.0.1:5178',
+        pathname: '/w/ws-123/',
+      },
+    })
+    try {
+      expect(
+        buildApiUrl('/api/v1/files/list', { path: '.' }),
+      ).toBe('http://127.0.0.1:8124/w/ws-123/api/v1/files/list?path=.')
+      expect(
+        buildWsUrl('/ws/pty', { session_id: 'abc123' }),
+      ).toBe('ws://127.0.0.1:8124/w/ws-123/ws/pty?session_id=abc123')
+      expect(
+        buildApiUrl('/api/project', undefined, { rootScoped: true }),
+      ).toBe('http://127.0.0.1:8124/api/project')
     } finally {
       Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
     }

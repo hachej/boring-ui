@@ -35,9 +35,37 @@ const getWorkspaceBasePath = (pathname = '') => {
   return match ? match[0] : ''
 }
 
+const appendPathname = (baseUrl, pathname = '') => {
+  const trimmedPathname = String(pathname || '').trim()
+  if (!trimmedPathname) return baseUrl
+
+  try {
+    const url = new URL(baseUrl)
+    const basePath = url.pathname && url.pathname !== '/'
+      ? url.pathname.replace(/\/+$/, '')
+      : ''
+    url.pathname = `${basePath}${trimmedPathname}` || '/'
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return `${normalizeBase(baseUrl)}${trimmedPathname}`
+  }
+}
+
 const resolveApiBase = ({ rootScoped = false } = {}) => {
   const envUrl = import.meta.env.VITE_API_URL || ''
-  if (envUrl) return normalizeBase(rewriteLoopbackForRemoteClient(normalizeBase(envUrl)))
+  if (envUrl) {
+    const rewrittenEnvUrl = normalizeBase(rewriteLoopbackForRemoteClient(normalizeBase(envUrl)))
+    if (rootScoped) return rewrittenEnvUrl
+
+    if (typeof window !== 'undefined' && window.location) {
+      const workspaceBase = getWorkspaceBasePath(window.location.pathname)
+      if (workspaceBase) {
+        return appendPathname(rewrittenEnvUrl, workspaceBase)
+      }
+    }
+
+    return rewrittenEnvUrl
+  }
 
   if (typeof window !== 'undefined' && window.location) {
     const { origin, pathname } = window.location
@@ -68,6 +96,7 @@ export const getWsBase = () => {
 export const buildWsUrl = (path, query) => `${getWsBase()}${path}${toSearchParams(query)}`
 
 export const __apiBaseTestUtils = {
+  appendPathname,
   isDevPort,
   isLoopbackHost,
   rewriteLoopbackForRemoteClient,

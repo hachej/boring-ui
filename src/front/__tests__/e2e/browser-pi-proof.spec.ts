@@ -5,6 +5,8 @@ import { createRegressionLogger } from './regressionLogging'
 
 const REAL_BROWSER_PI_ENABLED = process.env.PW_REAL_BROWSER_PI === '1'
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 const waitForDockview = async (page: Page) => {
   await page.waitForSelector('[data-testid="dockview"]', {
     state: 'visible',
@@ -117,7 +119,9 @@ test.describe('Real Browser PI Workflow Proof', () => {
       await expect(page.locator('.filetree-body').getByText(fileName, { exact: true })).toBeVisible({
         timeout: 120000,
       })
-      await expect(page.getByText(expectedOutput, { exact: false })).toBeVisible({
+      await expect(page.locator('code').filter({
+        hasText: new RegExp(`^${escapeRegExp(expectedOutput)}$`),
+      }).last()).toBeVisible({
         timeout: 120000,
       })
 

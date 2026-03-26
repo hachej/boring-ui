@@ -14,6 +14,7 @@ import pytest
 
 from tests.eval.agent_prompt import generate_prompt, save_prompt
 from tests.eval.contracts import NamingContract, ObservedCommand, RunManifest
+from tests.eval.eval_child_app import _default_agent_runner
 from tests.eval.introspection import (
     build_manifest_from_facts,
     discover_platform_facts,
@@ -364,6 +365,13 @@ class TestRunners:
 
         assert result.exit_code == 0
         assert result.final_response == "fixture response"
+
+    def test_default_agent_runner_scopes_claude_to_repo_and_child_app(self, sample_manifest):
+        runner = _default_agent_runner(sample_manifest)
+        assert isinstance(runner, SubprocessRunner)
+        assert runner._cwd == sample_manifest.project_root
+        assert runner._command.count("--add-dir") == 1
+        assert sample_manifest.project_root in runner._command
 
     def test_mock_runner_reports_timeout_when_delay_exceeds_budget(self, sample_manifest):
         runner = MockRunner(

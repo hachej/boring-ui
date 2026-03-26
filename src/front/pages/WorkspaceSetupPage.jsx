@@ -99,7 +99,7 @@ export default function WorkspaceSetupPage({
   const loadSetup = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setSetupLoading(true)
     try {
-      const route = routes.controlPlane.workspaces.setup(workspaceId)
+      const route = routes.controlPlane.workspaces.runtime.get(workspaceId)
       const { response, data } = await apiFetchJson(route.path, {
         query: route.query,
         headers: { Accept: 'application/json' },

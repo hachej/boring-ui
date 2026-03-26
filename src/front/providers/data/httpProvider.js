@@ -54,7 +54,11 @@ let _extraHeaders = {}
 
 const fetchJson = async (path, query, opts = {}) => {
   const url = buildApiUrl(path, query)
-  const res = await fetch(url, { signal: opts.signal, headers: _extraHeaders })
+  const res = await fetch(url, {
+    credentials: 'include',
+    signal: opts.signal,
+    headers: _extraHeaders,
+  })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`HTTP ${res.status}: ${text || res.statusText} (${path})`)
@@ -71,6 +75,7 @@ const sendJson = async (method, path, query, body, opts = {}) => {
   const headers = { ..._extraHeaders, ...(hasBody ? { 'Content-Type': 'application/json' } : {}) }
   const res = await fetch(url, {
     method,
+    credentials: 'include',
     headers,
     body: hasBody ? JSON.stringify(body) : undefined,
     signal: opts.signal,
