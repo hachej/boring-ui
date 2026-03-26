@@ -11,8 +11,30 @@ if [[ -z "${FLY_BIN}" ]]; then
     FLY_BIN="$(command -v flyctl)"
   elif command -v fly >/dev/null 2>&1; then
     FLY_BIN="$(command -v fly)"
+  elif [[ -x "${HOME}/.fly/bin/flyctl" ]]; then
+    FLY_BIN="${HOME}/.fly/bin/flyctl"
+  elif [[ -x "${HOME}/.fly/bin/fly" ]]; then
+    FLY_BIN="${HOME}/.fly/bin/fly"
   else
-    echo "flyctl (or fly) is required on PATH" >&2
+    echo "flyctl (or fly) is required on PATH or at ~/.fly/bin/{fly,flyctl}" >&2
+    exit 1
+  fi
+fi
+
+case "${FLY_BIN}" in
+  "~/"*)
+    FLY_BIN="${HOME}/${FLY_BIN:2}"
+    ;;
+  "\$HOME/"*)
+    FLY_BIN="${HOME}/${FLY_BIN:6}"
+    ;;
+esac
+
+if [[ ! -x "${FLY_BIN}" ]]; then
+  if command -v "${FLY_BIN}" >/dev/null 2>&1; then
+    FLY_BIN="$(command -v "${FLY_BIN}")"
+  else
+    echo "FLYCTL_BIN points to a non-executable or unknown path: ${FLY_BIN}" >&2
     exit 1
   fi
 fi

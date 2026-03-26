@@ -3,22 +3,21 @@
 ## System Overview
 
 ```
-Browser                            Backend (FastAPI)                   External
+Browser                      Backend (TypeScript HTTP API)             External
 ┌──────────────────────┐           ┌──────────────────────────┐       ┌──────────┐
-│  React + DockView    │  HTTP     │  app.py (create_app)     │       │ Filesystem│
-│  ┌────────────────┐  │ ──────── │  ├── /api/capabilities   │ ───── │ Git repos │
-│  │ PaneRegistry   │  │          │  ├── modules/files/      │       │ PTY procs │
-│  │ LayoutManager  │  │  WS      │  ├── modules/git/        │       └──────────┘
-│  │ ControlPlane   │  │          │  ├── modules/control_plane│
-│  │ ConfigProvider │  │ ──────── │  ├── modules/pty/        │
-│  │ CapabilityGate │  │          │  ├── modules/stream/     │       ┌──────────┐
-│  └────────────────┘  │          │  ├── modules/agent_normal│       │ Claude   │
-│                      │          │  ├── approval.py         │ ───── │ API      │
-│  Panels:             │          │  ├── policy.py           │       └──────────┘
-│  FileTree, Editor,   │          │  └── workspace_plugins.py│
-│  Terminal, Shell,    │          └──────────────────────────┘
-│  Review, Companion,  │
-│  PI                  │
+│  React + DockView    │  HTTP     │  app.ts (createApp)      │       │ Filesystem│
+│  ┌────────────────┐  │ ──────── │  ├── /health + /api/     │ ───── │ Git repos │
+│  │ PaneRegistry   │  │          │  │   capabilities        │       │ bwrap     │
+│  │ LayoutManager  │  │  SSE     │  ├── http/fileRoutes.ts │       └──────────┘
+│  │ ConfigProvider │  │          │  ├── http/gitRoutes.ts  │
+│  │ CapabilityGate │  │ ──────── │  ├── http/execRoutes.ts │       ┌──────────┐
+│  │ DataProviders  │  │          │  ├── http/githubRoutes.ts│ ──── │ Anthropic│
+│  └────────────────┘  │          │  ├── http/piRoutes.ts   │       │ API      │
+│                      │          │  ├── http/aiSdkRoutes.ts│       └──────────┘
+│  Panels:             │          │  └── workspace/resolver.ts│
+│  FileTree, Editor,   │          └──────────────────────────┘
+│  Review, Agent,      │
+│  Data Catalog        │
 └──────────────────────┘
 ```
 
@@ -30,7 +29,7 @@ Browser                            Backend (FastAPI)                   External
 
 ### Layers
 
-1. **Config** (`app_config_loader.py`, `/__bui/config`, `config/appConfig.js`, `ConfigProvider.jsx`): Loads `boring.app.toml`, serves the runtime payload from `/__bui/config`, deep-merges frontend config defaults, and provides the result via React context. Controls branding, panel defaults, feature flags, and theme tokens.
+1. **Config** (`src/server/services/runtimeConfig.ts`, `/__bui/config`, `config/appConfig.js`, `ConfigProvider.jsx`): Builds the runtime payload served from `/__bui/config`, deep-merges frontend config defaults, and provides the result via React context. Controls branding, panel defaults, feature flags, and theme tokens.
 
 2. **Registry** (`registry/panes.js`): Declares all available panels with their component, placement, size constraints, and backend requirements (`requiresFeatures`, `requiresRouters`). Single source of truth for pane identity.
 
@@ -83,7 +82,7 @@ Route and service ownership follows the `boring-ui` core contract in `docs/plans
 3. `boring-sandbox` is optional edge infrastructure only (proxy/routing/provisioning/token injection) and must not duplicate workspace/user business logic.
 
 Enforcement notes:
-1. `create_app()` does not mount `/api/v1/macro/*` routes in core.
+1. `createApp()` does not mount `/api/v1/macro/*` routes in core.
 2. Macro boundary guardrail tests live in `tests/unit/test_macro_boundary_guardrails.py`.
 3. Workspace boundary pass-through (`/w/{workspace_id}/{path}`) only forwards `/auth/*`, `/api/v1/me*`, `/api/v1/workspaces*`, `/api/v1/files*`, and `/api/v1/git*`.
 4. Final keep-vs-move audit: see Ownership Audit appendix at end of this file.
@@ -146,11 +145,8 @@ src/server/
 │   ├── uiStateRoutes.ts    UI state snapshots + commands
 │   ├── workspaceBoundary.ts /w/{id}/* → workspace-scoped routing
 │   └── static.ts           Static file serving + SPA fallback
-├── trpc/                   tRPC router + procedures
-│   ├── router.ts           Root router (AppRouter type export)
-│   ├── context.ts          Request context (auth + workspace)
-│   ├── childApp.ts         Child app router merging
-│   └── framework.ts        Framework exports for child apps
+├── trpc/                   Child-app tRPC extension framework
+│   └── framework.ts        Framework exports for child routers/tools
 ├── adapters/               Workspace backend implementations
 │   ├── bwrapImpl.ts        Bubblewrap sandbox (production exec backend)
 │   └── bwrap.ts            WorkspaceBackend interface
@@ -186,7 +182,7 @@ The control plane supports two auth providers, selected via `CONTROL_PLANE_PROVI
 | Provider | Auth mechanism | Database | When to use |
 |---|---|---|---|
 | `local` | Dev bypass (no real auth) | In-memory JSON | Local development |
-| `neon` | Neon Auth (Better Auth) | Neon Postgres (asyncpg) | **Production default** |
+| `neon` | Neon Auth (Better Auth) | Neon Postgres (Drizzle + postgres.js) | **Production default** |
 
 **Neon Auth flow** (email/password):
 1. Frontend calls boring-ui `POST /auth/sign-in` or `POST /auth/sign-up` on the same origin
@@ -201,30 +197,29 @@ The older browser-driven Neon `/token` -> `/auth/token-exchange` flow still exis
 
 **Session cookies** are boring-ui's own format (HS256 JWT signed with `BORING_UI_SESSION_SECRET`), not provider-specific. This enables cross-service interop with boring-sandbox regardless of auth provider.
 
-**Database access** uses `asyncpg` with raw SQL for the hosted Neon path; local development uses the JSON-backed repository.
+**Database access** uses `drizzle-orm` with `postgres.js` in the TS server. Local mode still uses the dev bypass auth/control-plane path, while the Python backend remains only for parity and rollback workflows.
 
 ### Cross-Cutting Concerns
 
-- **Path Security**: `APIConfig.validate_path()` prevents traversal attacks. All file ops must call this.
-- **CORS**: Configured via `APIConfig.cors_origins`, defaults allow dev origins.
-- **Workspace Plugins**: Optional, disabled by default. Execute local Python modules. Guarded by allowlist.
-- **Approval Workflow**: `approval.py` + `policy.py`. In-memory store for tool use approval requests.
+- **Path Security**: enforced by TS safe-path helpers and route-level validation in `workspace/resolver.ts`, `http/fileRoutes.ts`, `http/execRoutes.ts`, and `services/aiSdkTools.ts`.
+- **CORS**: configured from `ServerConfig.corsOrigins` in `src/server/config.ts`.
+- **Approval Workflow**: `src/server/services/approval.ts` defines the transport-independent store contract, but the full TS approval surface is still a follow-up port.
 
 ## Data Flow
 
 ### File Operation
 ```
-FileTree -> fetch /api/v1/files/list -> files/router.py -> files/service.py -> os.listdir
+FileTree -> fetch /api/v1/files/list -> http/fileRoutes.ts -> fs/promises
 ```
 
-### Chat Session
+### AI SDK Chat Session
 ```
-Terminal -> WS /ws/agent/normal/stream -> stream/router.py -> stream_bridge.py -> Claude API
+AgentPanel -> POST /api/v1/agent/chat -> http/aiSdkRoutes.ts -> services/aiSdkTools.ts -> Anthropic API
 ```
 
-### PTY Shell
+### Server PI Streaming
 ```
-Shell -> WS /ws/pty?provider=shell -> pty/router.py -> pty/service.py -> ptyprocess.spawn('bash')
+AgentPanel -> POST/SSE /api/v1/agent/pi/sessions/:id/stream -> http/piRoutes.ts -> agent/piRuntime.ts
 ```
 
 ## Key Design Decisions

@@ -66,6 +66,9 @@ Review: `.boring/gemini-review-beads-and-tokens-v1.md`
 
 | Token                    | Size   | Weight | Line Height | Letter Spacing | Usage                          |
 | :----------------------- | :----- | :----- | :---------- | :------------- | :----------------------------- |
+| `--font-size-4xs`        | `8px`  | `400`  | `1.2`       | `0.02em`       | Tiny bullets, ultra-dense badges |
+| `--font-size-3xs`        | `9px`  | `400`  | `1.2`       | `0.02em`       | Dense micro labels, counters   |
+| `--font-size-2xs`        | `10px` | `400`  | `1.3`       | `0.02em`       | Compact pills, secondary chrome |
 | `--font-size-xs`         | `11px` | `400`  | `1.4`       | `0.02em`       | Cost metrics, very subtle labels |
 | `--font-size-sm`         | `12px` | `400`  | `1.4`       | `0.01em`       | Captions, helper text, status  |
 | `--font-size-ui`         | `13px` | `400`  | `1.4`       | `0em`          | Sidebar, file tree, tooling UI |
@@ -73,6 +76,8 @@ Review: `.boring/gemini-review-beads-and-tokens-v1.md`
 | `--font-size-md`         | `16px` | `500`  | `1.4`       | `0em`          | Subheadings, prominent labels  |
 | `--font-size-lg`         | `18px` | `600`  | `1.3`       | `-0.01em`      | Section titles, headers        |
 | `--font-size-xl`         | `20px` | `700`  | `1.2`       | `-0.01em`      | Major titles                   |
+| `--font-size-2xl`        | `22px` | `700`  | `1.2`       | `-0.01em`      | Empty states, modal hero lines |
+| `--font-size-3xl`        | `28px` | `700`  | `1.15`      | `-0.02em`      | Large standalone status titles |
 
 | Token                      | Value |
 | :------------------------- | :---- |

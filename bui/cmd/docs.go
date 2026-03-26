@@ -92,7 +92,8 @@ child app. Every step uses bui CLI — no manual framework wiring needed.
   6. Provision Neon (auth + database for production):
      bui neon setup
      # Auto-configures Resend for verification emails (if key in Vault)
-     # Updates boring.app.toml, stores creds in Vault or .boring/
+     # Updates boring.app.toml, switches the app to Neon auth for deploy,
+     # and stores creds in secret/agent/app/<app-id>/prod or .boring/
 
   7. Deploy to Fly:
      bui deploy
@@ -186,7 +187,7 @@ child app. Every step uses bui CLI — no manual framework wiring needed.
   MY_SECRET         = { vault = "secret/agent/app/<id>/prod", field = "my_secret" }
 
   bui deploy resolves these from Vault at deploy time.
-  bui neon setup auto-stores database/auth creds in Vault.
+  bui neon setup auto-stores database/auth creds in secret/agent/app/<id>/prod.
 
   IMPORTANT:
   - Never put literal secret values in boring.app.toml or source files.
@@ -246,8 +247,11 @@ After init:
   cd <name>
   cp .env.example .env          # add your API keys
   bui dev                       # auto-detects ../boring-ui
-  bui neon setup                # provision database + auth
+  bui neon setup                # provision database + auth for final deploy
   bui deploy                    # build + deploy to Fly.io
+
+For production, the final app should use Neon auth and app-scoped Vault refs under:
+  secret/agent/app/<name>/prod
 
 Name must be lowercase alphanumeric with hyphens (e.g. boring-macro).
 `,
@@ -255,19 +259,31 @@ Name must be lowercase alphanumeric with hyphens (e.g. boring-macro).
 	"dev": `
 === bui dev — Dev Server ===
 
-Starts uvicorn (backend) + vite (frontend) with hot-reload.
+Starts the configured backend + vite with hot-reload.
 
 Framework resolution (in order):
   1. ../boring-ui/ exists with boring.app.toml  → use it
   2. BUI_FRAMEWORK_PATH env var set             → use that path
   3. Neither                                    → git fetch [framework].commit to ~/.bui/cache/
 
+Backend runner by [backend].type:
+  - python      → uvicorn <entry> --reload
+  - typescript  → tsx watch <entry>
+  - go          → air (build target from backend.entry)
+
 What happens on start:
-  - Creates .venv if needed (per-project Python isolation)
-  - pip install -e <boring-ui>     (editable, instant reload)
-  - pip install -e .               (child app, if pyproject.toml exists)
+  - For python backends only:
+      - Creates .venv if needed (per-project Python isolation)
+      - pip install -e <boring-ui>     (editable, instant reload)
+      - pip install -e .               (child app, if pyproject.toml exists)
   - Symlinks node_modules/boring-ui → framework path
   - Reads .env for local secrets (ANTHROPIC_API_KEY, etc.)
+
+boring-ui core note:
+  - The framework itself now defaults to the TypeScript server path
+    (backend.type = "typescript", entry = "src/server/index.ts")
+  - Default child-app scaffolds still use python routers unless you opt into
+    a different backend type
 
 Go backend notes:
   - backend.type = "go" requires air in PATH
@@ -275,7 +291,7 @@ Go backend notes:
   - bui init --go writes backend.entry = "." so bui dev builds the app root
 
 Flags:
-  --backend-only      Only uvicorn (attach debugger separately)
+  --backend-only      Only backend process (attach debugger separately)
   --frontend-only     Only vite (use browser DevTools)
   --port N            Override backend port
   --vite-port N       Override frontend port
@@ -424,9 +440,14 @@ Commands:
   commit     Pinned commit hash (used for deploy; ignored in dev with ../boring-ui)
 
 [backend]
-  entry      Python entry point (e.g. "myapp.app:create_app")
+  type       "python" | "typescript" | "go"
+  entry      Backend entrypoint / watch target
+             - python: dotted ASGI target (e.g. "myapp.app:create_app")
+             - typescript: server entry file (e.g. "src/server/index.ts")
+             - go: build target for air (e.g. "." or "./cmd/server")
   port       Backend port (default: 8000)
-  routers    List of Python dotted paths (e.g. ["myapp.routers.api:router"])
+  routers    Python-only list of dotted router paths
+             (e.g. ["myapp.routers.api:router"])
 
 [frontend]
   port       Frontend port (default: 5173)
@@ -530,23 +551,26 @@ git operations. The App provides installation tokens for per-repo access.
 
 --- Workspace flow ---
 
-  1. User links GitHub account (OAuth)
-  2. App installation verified for user's account/org
-  3. Workspace bound to one installation
-  4. Repo selected for workspace
-  5. In pi-lightningfs mode, repo bootstrapped into browser workspace
+  Current TS route surface:
+  1. App config/status checked via /api/v1/github/status
+  2. OAuth URL built via /api/v1/github/oauth/initiate
+  3. OAuth callback handled at /api/v1/github/oauth/callback
+  4. Installations listed via /api/v1/github/installations
+  5. Workspace linked via /api/v1/github/connect
+  6. Installation repos listed via /api/v1/github/repos
+  7. Git credentials minted via /api/v1/github/git-credentials
+  8. Connection cleared via /api/v1/github/disconnect
 
---- API endpoints (under /api/v1/auth/github) ---
+--- API endpoints (under /api/v1/github) ---
 
-  GET  /status          Config + connection state
-  GET  /authorize       Start OAuth flow
-  GET  /callback        Handle OAuth callback
-  POST /connect         Connect workspace to installation
-  POST /repo            Select repo for workspace
-  POST /disconnect      Disconnect workspace
-  GET  /installations   List available installations
-  GET  /repos           List repos for installation
-  GET  /git-credentials Get installation token
+  GET  /status           GitHub App config + optional workspace status
+  GET  /oauth/initiate   Build OAuth URL + state
+  GET  /oauth/callback   Handle OAuth callback
+  GET  /installations    List app installations
+  POST /connect          Link workspace to installation
+  GET  /repos            List repos for installation
+  GET  /git-credentials  Mint workspace git credentials
+  POST /disconnect       Clear connection state
 
 --- Troubleshooting ---
 

@@ -271,7 +271,7 @@ deploy-time auth contract explicit instead of relying on local-dev defaults:
 # Push the shared Neon/Auth/GitHub secret bundle to the frontend-agent app
 bash deploy/fly/fly.secrets.sh boring-ui-frontend-agent
 
-# Deploy the hosted frontend-agent app config
+# Deploy the hosted TypeScript frontend-agent app config
 fly deploy -c deploy/fly/fly.frontend-agent.toml
 ```
 

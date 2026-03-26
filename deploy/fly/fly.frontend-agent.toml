@@ -2,10 +2,11 @@ app = "boring-ui-frontend-agent"
 primary_region = "cdg"
 
 [build]
-  dockerfile = "../shared/Dockerfile.backend"
+  dockerfile = "../shared/Dockerfile.ts-backend"
 
 [env]
   APP_ENV = "production"
+  NODE_ENV = "production"
   AGENTS_MODE = "frontend"
   AUTH_DEV_AUTO_LOGIN = "false"
   AUTH_DEV_LOGIN_ENABLED = "false"
@@ -15,6 +16,9 @@ primary_region = "cdg"
   BUI_APP_TOML = "/app/boring.app.toml"
   BUI_AGENTS_MODE = "frontend"
   DEPLOY_MODE = "core"
+  WORKSPACE_BACKEND = "bwrap"
+  AGENT_RUNTIME = "pi"
+  AGENT_PLACEMENT = "browser"
 
 [http_service]
   internal_port = 8000

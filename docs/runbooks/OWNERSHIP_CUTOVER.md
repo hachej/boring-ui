@@ -172,6 +172,10 @@ bash deploy/fly/fly.secrets.sh boring-ui-frontend-agent
 fly deploy -c deploy/fly/fly.frontend-agent.toml --remote-only
 ```
 
+The direct cutover path uses that same Fly app/config, but it now points at the TypeScript backend image (`deploy/shared/Dockerfile.ts-backend`).
+Treat `deploy/fly/fly.frontend-agent.toml` as canonical; `deploy/fly/fly.ts-backend.toml`
+is only a compatibility alias and must stay identical.
+
 Then run the printed hosted smoke command against the rollback target URL. Treat the rollback path as unproven until both the deploy and the smoke pass, and record the full wall-clock time from deploy start through smoke completion. Target: under 5 minutes.
 
 ## No-Retro-Compat Policy

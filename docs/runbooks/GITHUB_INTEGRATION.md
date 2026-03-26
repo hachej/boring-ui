@@ -122,7 +122,7 @@ export GITHUB_APP_PRIVATE_KEY="$(vault kv get -field=pem secret/agent/services/b
 export GITHUB_APP_SLUG=$(vault kv get -field=slug secret/agent/services/boring-ui-app)
 export ANTHROPIC_API_KEY=$(vault kv get -field=api_key secret/agent/anthropic)
 
-python3 -c "from boring_ui.api.app import create_app; import uvicorn; app = create_app(); uvicorn.run(app, host='0.0.0.0', port=8000)"
+npm run server:start
 ```
 
 ## Installing the App
@@ -143,44 +143,42 @@ To make the app public (allows any user to install):
 The GitHub App must have this callback URL registered:
 
 ```
-http://<your-host>/api/v1/auth/github/callback
+http://<your-host>/api/v1/github/oauth/callback
 ```
 
-For local dev: `http://213.32.19.186:5175/api/v1/auth/github/callback`
+For local dev: `http://213.32.19.186:5175/api/v1/github/oauth/callback`
 
 ## API Endpoints
 
-All under prefix `/api/v1/auth/github`:
+Current TypeScript route surface, all under prefix `/api/v1/github`:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/status` | Check config + user-linked state + workspace installation/repo state |
-| `GET` | `/authorize` | Start OAuth flow (redirects to GitHub) |
-| `GET` | `/callback` | Handle OAuth callback (returns HTML with postMessage) |
-| `POST` | `/connect` | Connect workspace to installation |
-| `POST` | `/repo` | Persist selected repo for a connected workspace |
-| `POST` | `/disconnect` | Disconnect workspace |
-| `GET` | `/installations` | List app installations available to the current flow; not used for default page load binding |
-| `GET` | `/repos` | List repos accessible to an installation |
-| `GET` | `/git-credentials` | Get `x-access-token` + installation token |
+| `GET` | `/status` | Check GitHub App config plus optional workspace connection state |
+| `GET` | `/oauth/initiate` | Build GitHub OAuth URL + state |
+| `GET` | `/oauth/callback` | Validate callback input and return `{ ok, connected }` |
+| `GET` | `/installations` | List GitHub App installations |
+| `POST` | `/connect` | Link a workspace to an installation |
+| `GET` | `/repos` | List repos visible to an installation |
+| `GET` | `/git-credentials` | Mint git credentials for a connected workspace |
+| `POST` | `/disconnect` | Clear GitHub connection state |
 
-`/status?workspace_id=...` currently returns:
+`/status` currently returns:
 
 ```json
 {
+  "ok": true,
   "configured": true,
-  "account_linked": true,
-  "default_installation_id": 123456,
-  "connected": true,
-  "installation_connected": true,
-  "installation_id": 123456,
-  "repo_selected": true,
-  "repo_url": "https://github.com/boringdata/boring-ui-repo"
+  "app_slug": "boring-ui-app",
+  "account_linked": false,
+  "default_installation_id": null,
+  "connected": false,
+  "installation_connected": false,
+  "installation_id": null,
+  "repo_selected": false,
+  "repo_url": null
 }
 ```
-
-`account_linked` is user-scoped. `connected` is effectively shorthand for `installation_connected` and is workspace-scoped.
-The UI should only present the workspace as fully linked when `repo_selected` is also `true`.
 
 ## Test Repo: `boringdata/boring-ui-test`
 
@@ -324,7 +322,7 @@ JSON report with pass/fail per step:
 
 **OAuth callback fails**
 - Check the callback URL is registered in the GitHub App settings
-- For dev: `http://213.32.19.186:5175/api/v1/auth/github/callback`
+- For dev: `http://213.32.19.186:5175/api/v1/github/oauth/callback`
 
 **Installation token 404**
 - The installation may have been revoked

@@ -26,7 +26,7 @@ var (
 var devCmd = &cobra.Command{
 	Use:   "dev",
 	Short: "Start dev server (backend + vite)",
-	Long: `Start backend + vite with hot-reload. Supports python (uvicorn), typescript (tsx), and go (air).
+	Long: `Start the configured backend + vite with hot-reload. Supports python (uvicorn), typescript (tsx), and go (air).
 
 Run 'bui docs dev' for detailed setup guide.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -114,7 +114,7 @@ Run 'bui docs dev' for detailed setup guide.`,
 }
 
 func init() {
-	devCmd.Flags().BoolVar(&backendOnly, "backend-only", false, "Only start backend (uvicorn)")
+	devCmd.Flags().BoolVar(&backendOnly, "backend-only", false, "Only start backend process")
 	devCmd.Flags().BoolVar(&frontendOnly, "frontend-only", false, "Only start frontend (vite)")
 	devCmd.Flags().IntVar(&portBackend, "port", 0, "Override backend port")
 	devCmd.Flags().IntVar(&portFrontend, "vite-port", 0, "Override frontend port")

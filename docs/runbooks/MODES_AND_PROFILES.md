@@ -24,12 +24,18 @@ placement = "browser"  # PI runs in the browser
 | Profile | workspace.backend | agent.placement | Status |
 |---------|-------------------|----------------|--------|
 | Local dev | `lightningfs` | `browser` | Supported — all ops in browser via IndexedDB |
-| Server PI | `bwrap` | `server` | **Deferred** — PI in-process on server |
-| JustBash | `justbash` | `browser` | **Experimental** — JustBash WASM, no persistence |
+| Server PI | `bwrap` | `server` | **Deferred** — reserved config path only; runtime wiring still missing |
+| JustBash | `justbash` | `browser` | **Experimental** — browser-only WASM shell, no persistence |
+| AI SDK | `bwrap` | `server` | Supported — server-side chat/tool runtime; requires `ANTHROPIC_API_KEY` |
+
+These are post-parity tracks, not current deploy defaults. The detailed contract
+for what is real versus merely reserved lives in
+[docs/plans/POST_PARITY_TRACKS.md](../plans/POST_PARITY_TRACKS.md).
 
 ## Legacy
 
-The Python backend (`src/back/`) and edge/core deployment modes are being replaced.
+The Python backend (`src/back/`) remains only for parity testing and rollback rehearsal.
+The canonical runtime/deploy path is the TypeScript backend above.
 
 ## Deployment Modes
 

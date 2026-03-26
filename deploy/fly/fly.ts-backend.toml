@@ -20,7 +20,6 @@ primary_region = "cdg"
   BUI_AGENTS_MODE = "frontend"
   DEPLOY_MODE = "core"
   WORKSPACE_BACKEND = "bwrap"
-  BORING_UI_WORKSPACE_ROOT = "/workspace"
   AGENT_RUNTIME = "pi"
   AGENT_PLACEMENT = "browser"
 

@@ -10,7 +10,7 @@ Uses the manifest flow — one browser click, everything else scripted.
 ./scripts/github-app-create.sh \
   --name "Boring UI" \
   --homepage "https://github.com/boringdata/boring-ui" \
-  --callback "https://your-domain.com/api/v1/auth/github/callback" \
+  --callback "https://your-domain.com/api/v1/github/oauth/callback" \
   --vault-path "secret/agent/github-app-boring-ui"
 
 # 2. Open the printed URL in your browser, click "Create GitHub App"
@@ -173,8 +173,8 @@ The app needs a callback URL registered before OAuth will work.
 
 1. Go to `https://github.com/settings/apps/<SLUG>`
 2. Under **"Callback URL"**, add your callback URL:
-   - Local dev: `http://<host>:<port>/api/v1/auth/github/callback`
-   - Production: `https://your-domain.com/api/v1/auth/github/callback`
+   - Local dev: `http://<host>:<port>/api/v1/github/oauth/callback`
+   - Production: `https://your-domain.com/api/v1/github/oauth/callback`
 3. Save changes
 
 Without this, GitHub will show: *"The redirect_uri is not associated with this application."*
@@ -336,9 +336,9 @@ vault kv delete secret/agent/github-app-YOUR-APP
 ### Architecture Overview
 
 ```
-Frontend (browser)                    Backend (FastAPI)
+Frontend (browser)                    Backend (TypeScript HTTP API)
 ┌──────────────────────┐             ┌──────────────────────┐
-│ httpProvider.js      │ ─ HTTP ─→   │ git/router.py        │
+│ httpProvider.js      │ ─ HTTP ─→   │ git HTTP routes      │
 │   .git.init()        │             │   POST /git/init     │
 │   .git.add(paths)    │             │   POST /git/add      │
 │   .git.commit(msg)   │             │   POST /git/commit   │
@@ -349,11 +349,14 @@ Frontend (browser)                    Backend (FastAPI)
 │   .git.addRemote()   │             │   POST /git/remote   │
 │   .git.listRemotes() │             │   GET  /git/remotes  │
 │                      │             │                      │
-│ github provider      │             │ github_auth/         │
-│   .github.status()   │ ─ HTTP ─→   │   GET  /auth/github/ │
-│   .github.connect()  │             │     status           │
-│   .github.push/pull  │             │   POST .../connect   │
-│     (with creds)     │             │   GET  .../git-creds  │
+│ github provider      │             │ githubRoutes.ts      │
+│   .github.status()   │ ─ HTTP ─→   │   GET  /github/status│
+│   .github.oauth()    │             │   GET  /github/oauth/│
+│   .github.disconnect()│            │     initiate/callback│
+│                      │             │   GET  /github/      │
+│                      │             │     installations    │
+│                      │             │   POST /github/      │
+│                      │             │     disconnect       │
 └──────────────────────┘             └──────────────────────┘
                                             │
                                             ▼
@@ -371,16 +374,11 @@ any GitHub configuration. This is the minimal setup:
 ```bash
 cd boring-ui
 
-# Install backend
-pip3 install -e . --break-system-packages
+# Install deps
+npm install
 
 # Start (git features are always enabled)
-python3 -c "
-from boring_ui.api.app import create_app
-import uvicorn
-app = create_app()
-uvicorn.run(app, host='0.0.0.0', port=8000)
-"
+npm run server:start
 ```
 
 Verify:
@@ -426,12 +424,7 @@ export GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
 -----END RSA PRIVATE KEY-----"
 
 # Start backend — GitHub auth endpoints are now active
-python3 -c "
-from boring_ui.api.app import create_app
-import uvicorn
-app = create_app()
-uvicorn.run(app, host='0.0.0.0', port=8000)
-"
+npm run server:start
 ```
 
 Verify:
@@ -439,8 +432,8 @@ Verify:
 curl http://localhost:8000/health | python3 -m json.tool
 # Should show: "github": true in features
 
-curl http://localhost:8000/api/v1/auth/github/status
-# Should show: {"configured": true, "connected": false}
+curl http://localhost:8000/api/v1/github/status
+# Should show: {"ok": true, "configured": true, "app_slug": "boring-ui-app"}
 
 # Run smoke test with GitHub checks
 python3 tests/smoke/smoke_git_sync.py --base-url http://localhost:8000 --with-github
@@ -476,18 +469,18 @@ GitHub App or share the parent's. To create a new app for a child service:
 | `/api/v1/git/remote` | POST | `{"name": "origin", "url": "https://..."}` | Add/replace remote |
 | `/api/v1/git/remotes` | GET | — | List configured remotes |
 
-### GitHub Auth Endpoints (Requires GitHub App Config)
+### GitHub Auth Endpoints (Current TS route surface)
 
 | Endpoint | Method | Body/Params | Description |
 |---|---|---|---|
-| `/api/v1/auth/github/status` | GET | `?workspace_id=ws-1` | Connection status |
-| `/api/v1/auth/github/authorize` | GET | — | Get GitHub OAuth URL |
-| `/api/v1/auth/github/callback` | GET | `?code=...&state=...` | OAuth callback |
-| `/api/v1/auth/github/connect` | POST | `{"workspace_id": "...", "installation_id": 123}` | Link workspace |
-| `/api/v1/auth/github/disconnect` | POST | `{"workspace_id": "..."}` | Unlink workspace |
-| `/api/v1/auth/github/installations` | GET | — | List user's installations |
-| `/api/v1/auth/github/repos` | GET | `?installation_id=123` | List repos for installation |
-| `/api/v1/auth/github/git-credentials` | GET | `?workspace_id=ws-1` | Get git credentials |
+| `/api/v1/github/status` | GET | `?workspace_id=...` | Report GitHub App config plus optional workspace connection state |
+| `/api/v1/github/oauth/initiate` | GET | — | Build OAuth URL + state |
+| `/api/v1/github/oauth/callback` | GET | `?code=...&state=...` | Validate callback input and return `{ ok, connected }` |
+| `/api/v1/github/installations` | GET | — | List GitHub App installations |
+| `/api/v1/github/connect` | POST | `{ workspace_id, installation_id }` | Link a workspace to an installation |
+| `/api/v1/github/repos` | GET | `?installation_id=...` | List repos visible to an installation |
+| `/api/v1/github/git-credentials` | GET | `?workspace_id=...` | Mint git credentials for a connected workspace |
+| `/api/v1/github/disconnect` | POST | `{ workspace_id }` | Clear GitHub connection state |
 
 ### Security Validations
 

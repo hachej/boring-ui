@@ -41,9 +41,10 @@ Common flags:
 | `smoke_settings.py` | user settings + workspace settings persistence | settings pages and persistence |
 | `smoke_filesystem.py` | workspace-scoped files list/write/read/rename/delete | filesystem APIs and browser workspace wiring |
 | `smoke_git_sync.py` | local git init/status/commit/remotes/security | core git API without GitHub |
-| `smoke_github_connect.py` | GitHub App installation/repo/credentials/connect/disconnect | GitHub integration |
+| `smoke_github_connect.py` | GitHub App lifecycle smoke; authenticates first and fails fast with a clear parity-gap error on older/minimal GitHub route surfaces | GitHub integration |
 | `smoke_core_mode.py` | end-to-end core mode | pre-release full-stack smoke |
 | `smoke_edge_mode.py` | end-to-end edge mode | edge/sandbox deploy validation |
+| `scripts/browser_pi_ts_proof.sh` | real browser-PI workflow proof against the TS backend via Playwright | authoritative AgentPanel/nativeAdapter validation |
 
 ## Recommended Sequence
 
@@ -74,7 +75,7 @@ python3 tests/smoke/smoke_settings.py --base-url https://<app-url>
 If the app exposes GitHub sync:
 
 ```bash
-python3 tests/smoke/smoke_github_connect.py --base-url https://<app-url> --skip-git-push
+python3 tests/smoke/smoke_github_connect.py --base-url https://<app-url> --auth-mode neon --skip-git-push
 ```
 
 If you need the highest confidence before shipping:
@@ -186,6 +187,24 @@ Example:
 python3 tests/smoke/smoke_filesystem.py \
   --base-url http://127.0.0.1:5176 \
   --auth-mode dev
+```
+
+### Real Browser PI Proof
+
+Use this when you need browser-visible proof of the canonical browser-PI profile against the TS backend, including file creation, command execution, and UI bridge behavior through the actual Agent panel.
+
+The runner:
+
+- starts the TS backend in local browser-PI mode
+- starts the Vite dev frontend with a browser-scoped Anthropic key
+- runs the focused Playwright proof in `src/front/__tests__/e2e/browser-pi-proof.spec.ts`
+- writes backend logs, Vite logs, and Playwright artifacts into one evidence directory
+
+Example:
+
+```bash
+./scripts/browser_pi_ts_proof.sh \
+  --artifact-dir .agent-evidence/browser-pi-proof
 ```
 
 ## Evidence

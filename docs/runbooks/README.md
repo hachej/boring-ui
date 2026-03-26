@@ -26,11 +26,13 @@ Operational runbooks for common tasks.
 ## Quick Mode Choice
 
 Canonical target for new backend-agent work:
-- Single `boring-ui` FastAPI backend on a normal Linux host, with a local Node PI sidecar and `nsjail`
-- `backend.type = "python"` is the required app config baseline for that shape
+- Single `boring-ui` TypeScript backend on a normal Linux host or Fly.io
+- Canonical hosted/runtime profile:
+  `[workspace] backend = "bwrap"`, `[agent] runtime = "pi"`, `[agent] placement = "browser"`
+- Optional server-side agent profile:
+  `[workspace] backend = "bwrap"`, `[agent] runtime = "ai-sdk"`, `[agent] placement = "server"`
 - `edge` is a legacy compatibility deployment path, not the recommended default
-- `boring-sandbox` is optional edge infrastructure, not a requirement for new hosted deployments
-- App-level agent mode should converge on `frontend|backend`, not `core|edge`
+- The Python backend is retained only for rollback/parity workflows, not as the primary path
 
 Use `core` when you want the simplest standalone deployment:
 - Frontend -> `boring-ui` backend directly
@@ -65,20 +67,26 @@ New workspaces may inherit the user's saved default installation, but repo selec
 ### Start Local Dev Environment
 
 ```bash
-# Terminal 1: Frontend dev server (HMR)
+# Terminal 1: TypeScript backend API
 npm install
+npm run server:dev
+
+# Terminal 2: Frontend dev server (HMR)
 npm run dev
 # -> http://localhost:5173
+```
 
-# Terminal 2: Backend API
-uv sync
-uv run python -m uvicorn boring_ui.runtime:app --host 0.0.0.0 --port 8000 --reload
+To exercise the hosted filesystem path locally instead of the default browser-local
+LightningFS profile:
+
+```bash
+WORKSPACE_BACKEND=bwrap npm run server:dev
 ```
 
 ### Start Optional Companion / PI Services
 
 ```bash
-# Separate terminal(s)
+# Legacy debugging only. Not part of the canonical TS runtime path.
 npm run companion:service
 npm run pi:service
 ```
@@ -95,7 +103,11 @@ npm test
 # Frontend E2E tests
 npm run test:e2e
 
-# Backend tests
+# TS backend tests
+npm run server:test
+npm run server:typecheck
+
+# Legacy Python parity / rollback tests
 python3 -m pytest tests/ -v
 
 # Lint
@@ -121,17 +133,14 @@ npm run preview
 ### Launch Full Stack
 
 ```bash
-# Backend API + runtime config bridge (app_config_loader wraps create_app() and serves /__bui/config)
-BUI_APP_TOML=./boring.app.toml uv run python -m uvicorn boring_ui.app_config_loader:app \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --reload
+# Backend API + runtime config bridge
+npm run server:dev
 
 # Frontend dev server
 npm run dev
 ```
 
-The frontend now boots from the backend-served runtime payload at `/__bui/config`; there is no generated `app.config.js` step in the dev flow.
+The frontend now boots from the TypeScript backend-served runtime payload at `/__bui/config`; there is no generated `app.config.js` step in the dev flow.
 
 ### Docker Compose Ownership (boring-ui)
 
@@ -241,8 +250,8 @@ export CONTROL_PLANE_PROVIDER=neon
 export BORING_UI_SESSION_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
 export BORING_SETTINGS_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 
-# Start backend
-python3 -c "from boring_ui.api.app import create_app; import uvicorn; app = create_app(); uvicorn.run(app, host='0.0.0.0', port=8000)"
+# Start TS backend
+npm run server:start
 
 # Smoke check
 curl -s http://localhost:8000/api/capabilities | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('auth',{}), indent=2))"
