@@ -81,7 +81,7 @@ const DEFAULT_ROUTERS: Omit<RouterMeta, 'enabled'>[] = [
 export function buildEnabledFeatures(config: ServerConfig): Record<string, boolean> {
   // In the TS server, core routers are always enabled
   const chatEnabled = true // chat_claude_code always available
-  const piEnabled = config.agentsMode === 'backend'
+  const piEnabled = config.agentsMode === 'backend' || config.agentPlacement === 'server'
   const githubEnabled = !!config.githubAppId
 
   return {
@@ -121,6 +121,12 @@ export interface PythonCompatCapabilitiesResponse {
   workspace_runtime?: {
     placement: string
     agent_mode: string
+  }
+  services?: {
+    pi?: {
+      mode: string
+      url: string
+    }
   }
 }
 

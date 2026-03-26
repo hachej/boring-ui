@@ -77,6 +77,19 @@ export interface ExecResult {
   exit_code: number
 }
 
+function terminateProcessGroup(pid: number | undefined, signal: NodeJS.Signals): void {
+  if (!pid) return
+  try {
+    process.kill(-pid, signal)
+  } catch {
+    try {
+      process.kill(pid, signal)
+    } catch {
+      // Ignore races where the process has already exited.
+    }
+  }
+}
+
 /**
  * Execute a command inside a bwrap sandbox.
  *
@@ -102,12 +115,14 @@ export function execInSandbox(
   return new Promise((resolve) => {
     const proc = spawn('bwrap', [...bwrapArgs, 'sh', '-c', command], {
       env,
+      detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
     let stdout = ''
     let stderr = ''
     let killed = false
+    let forceKillTimeout: NodeJS.Timeout | undefined
 
     proc.stdout.on('data', (data: Buffer) => {
       stdout += data.toString()
@@ -120,17 +135,16 @@ export function execInSandbox(
     // Timeout handling
     const timeout = setTimeout(() => {
       killed = true
-      proc.kill('SIGKILL')
+      terminateProcessGroup(proc.pid, 'SIGTERM')
       // Grace period
-      setTimeout(() => {
-        if (!proc.killed) {
-          proc.kill('SIGKILL')
-        }
+      forceKillTimeout = setTimeout(() => {
+        terminateProcessGroup(proc.pid, 'SIGKILL')
       }, KILL_GRACE_SECONDS * 1000)
     }, timeoutSeconds * 1000)
 
     proc.on('close', (code) => {
       clearTimeout(timeout)
+      if (forceKillTimeout) clearTimeout(forceKillTimeout)
       if (killed) {
         stderr += `\n[killed: timeout after ${timeoutSeconds}s]`
       }
@@ -143,6 +157,7 @@ export function execInSandbox(
 
     proc.on('error', (err) => {
       clearTimeout(timeout)
+      if (forceKillTimeout) clearTimeout(forceKillTimeout)
       resolve({
         stdout,
         stderr: stderr + `\n[error: ${err.message}]`,

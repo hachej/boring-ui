@@ -69,6 +69,7 @@ export const StartCommandSchema = z.object({
 /** Read output chunks from a running command job. */
 export const ReadCommandOutputSchema = z.object({
   job_id: z.string().min(1, 'job_id is required'),
+  cursor: z.number().int().nonnegative().optional(),
 })
 
 /** Cancel a running command job. */

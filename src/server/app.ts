@@ -22,6 +22,8 @@ import { registerUiStateRoutes } from './http/uiStateRoutes.js'
 import { registerGitHubRoutes } from './http/githubRoutes.js'
 import { registerStaticRoutes } from './http/static.js'
 import { registerAuthRoutes } from './http/authRoutes.js'
+import { registerAiSdkRoutes } from './http/aiSdkRoutes.js'
+import { registerPiRoutes } from './http/piRoutes.js'
 
 // Extend Fastify types to include our custom properties
 declare module 'fastify' {
@@ -60,6 +62,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     logger: options.logger
       ? { redact: PINO_REDACT_PATHS }
       : false,
+    bodyLimit: 16 * 1024 * 1024,
   })
 
   // Store config on app instance for route access
@@ -105,6 +108,21 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     scoped.addHook('onRequest', createAuthHook(app))
     scoped.register(registerExecRoutes)
   }, { prefix: '/api/v1' })
+
+  // Server-side agent routes (require auth when placement=server)
+  if (config.agentPlacement === 'server' && config.agentRuntime === 'pi') {
+    app.register(async (scoped) => {
+      scoped.addHook('onRequest', createAuthHook(app))
+      scoped.register(registerPiRoutes)
+    }, { prefix: '/api/v1' })
+  }
+
+  if (config.agentPlacement === 'server' && config.agentRuntime === 'ai-sdk') {
+    app.register(async (scoped) => {
+      scoped.addHook('onRequest', createAuthHook(app))
+      scoped.register(registerAiSdkRoutes)
+    }, { prefix: '/api/v1' })
+  }
 
   // UI State routes (require auth)
   app.register(async (scoped) => {

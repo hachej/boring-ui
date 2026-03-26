@@ -36,6 +36,8 @@ export interface RuntimeConfigPayload {
     }
     agents: {
       mode: string
+      runtime: string
+      placement: string
     }
     panels: Record<string, unknown>
     mode: {
@@ -44,6 +46,8 @@ export interface RuntimeConfigPayload {
   }
   agents: {
     mode: string
+    runtime: string
+    placement: string
     default: string | null
     available: string[]
     definitions: unknown[]
@@ -69,11 +73,7 @@ export function buildRuntimeConfigPayload(
     ''
   const profile = explicitProfile.trim().toLowerCase() || agentMode
 
-  // Build available agents list
-  const available: string[] = []
-  if (agentMode === 'backend') {
-    available.push('pi')
-  }
+  const available = [config.agentRuntime]
 
   // Build auth section
   let auth: RuntimeConfigPayload['auth'] = null
@@ -103,6 +103,8 @@ export function buildRuntimeConfigPayload(
       },
       agents: {
         mode: agentMode,
+        runtime: config.agentRuntime,
+        placement: config.agentPlacement,
       },
       panels: {},
       mode: {
@@ -111,7 +113,9 @@ export function buildRuntimeConfigPayload(
     },
     agents: {
       mode: agentMode,
-      default: null,
+      runtime: config.agentRuntime,
+      placement: config.agentPlacement,
+      default: config.agentRuntime,
       available: available.sort(),
       definitions: [],
     },

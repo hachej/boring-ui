@@ -21,6 +21,7 @@ declare module 'fastify' {
 const PASSTHROUGH_PREFIXES = [
   '/api/v1/files',
   '/api/v1/git',
+  '/api/v1/agent',
   '/api/v1/ui',
   '/api/v1/me',
   '/api/v1/workspaces',
@@ -32,7 +33,7 @@ const PASSTHROUGH_PREFIXES = [
 ]
 
 // Paths that bypass workspace auth (served as SPA pages)
-const SPA_PATHS = new Set(['', 'setup', 'settings'])
+const SPA_PATHS = new Set(['', 'setup', 'settings', 'runtime'])
 
 // UUID format
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -55,8 +56,8 @@ export async function registerWorkspaceBoundary(
     // Extract the remaining path after /w/{id}/
     const wildcard = (request.params as any)['*'] || ''
 
-    // SPA pages — serve index.html for browser navigation
-    if (SPA_PATHS.has(wildcard) && request.headers.accept?.includes('text/html')) {
+    // SPA pages — serve HTML for browser navigation and API clients
+    if (SPA_PATHS.has(wildcard)) {
       return reply.code(200).type('text/html').send('<!DOCTYPE html><html><body>SPA</body></html>')
     }
 

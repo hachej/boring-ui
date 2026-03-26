@@ -12,6 +12,18 @@ import {
 } from '../services/pythonCompatCapabilities.js'
 import { buildRuntimeConfigPayload } from '../services/runtimeConfig.js'
 
+const buildRequestOrigin = (request: FastifyRequest) => {
+  const forwardedProto = request.headers['x-forwarded-proto']
+  const forwardedHost = request.headers['x-forwarded-host']
+  const protocol = Array.isArray(forwardedProto)
+    ? forwardedProto[0]
+    : (forwardedProto || request.protocol || 'http')
+  const host = Array.isArray(forwardedHost)
+    ? forwardedHost[0]
+    : (forwardedHost || request.headers.host || '')
+  return host ? `${protocol}://${host}` : ''
+}
+
 export async function registerHealthRoutes(app: FastifyInstance): Promise<void> {
   const config = app.config
 
@@ -30,13 +42,17 @@ export async function registerHealthRoutes(app: FastifyInstance): Promise<void> 
   app.get('/healthz', async (request: FastifyRequest) => {
     const requestId =
       (request.headers['x-request-id'] as string) || randomUUID()
+    const hasServerPiKey = Boolean(process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY)
+    const piStatus = config.agentPlacement === 'server'
+      ? (hasServerPiKey ? 'ok' : 'degraded')
+      : 'disabled'
 
     return {
       status: 'ok',
       request_id: requestId,
       checks: {
         api: 'ok',
-        pi: 'disabled', // PI sidecar not yet ported
+        pi: piStatus,
       },
       workspace: config.workspaceRoot,
     }
@@ -44,8 +60,18 @@ export async function registerHealthRoutes(app: FastifyInstance): Promise<void> 
 
   // --- GET /api/capabilities ---
   // Python-compat: legacy feature names (files, git, pty, chat_claude_code).
-  app.get('/api/capabilities', async () => {
-    return buildPythonCompatCapabilities(config)
+  app.get('/api/capabilities', async (request: FastifyRequest) => {
+    const payload = buildPythonCompatCapabilities(config)
+    if (config.agentPlacement === 'server') {
+      payload.services = {
+        ...(payload.services || {}),
+        pi: {
+          mode: 'backend',
+          url: buildRequestOrigin(request),
+        },
+      }
+    }
+    return payload
   })
 
   // --- GET /__bui/config ---

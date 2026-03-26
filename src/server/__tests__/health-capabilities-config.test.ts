@@ -163,6 +163,27 @@ describe('GET /api/capabilities (Python-compat)', () => {
     expect(body.auth.neonAuthUrl).toBe('https://ep-test.neonauth.example.com')
     expect(body.auth.callbackUrl).toBe('/auth/callback')
   })
+
+  it('advertises backend PI service metadata when placement=server', async () => {
+    const config = testConfig({
+      agentPlacement: 'server',
+      workspaceBackend: 'bwrap',
+      databaseUrl: 'postgresql://test',
+    })
+    app = createApp({ config, skipValidation: true })
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/capabilities',
+      headers: { host: 'example.test' },
+    })
+    const body = JSON.parse(res.payload)
+
+    expect(body.features.pi).toBe(true)
+    expect(body.services?.pi).toEqual({
+      mode: 'backend',
+      url: 'http://example.test',
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -200,7 +221,27 @@ describe('GET /__bui/config', () => {
     const body = JSON.parse(res.payload)
     expect(body.agents).toBeDefined()
     expect(body.agents.mode).toBeDefined()
+    expect(body.agents.default).toBe('pi')
     expect(Array.isArray(body.agents.available)).toBe(true)
+    expect(body.agents.available).toEqual(['pi'])
+  })
+
+  it('exposes configured runtime and placement metadata', async () => {
+    const config = testConfig({
+      workspaceBackend: 'bwrap',
+      agentPlacement: 'server',
+      agentRuntime: 'ai-sdk' as const,
+      agentsMode: 'backend',
+      databaseUrl: 'postgresql://test',
+      controlPlaneProvider: 'local',
+    })
+    app = createApp({ config })
+    const res = await app.inject({ method: 'GET', url: '/__bui/config' })
+    const body = JSON.parse(res.payload)
+    expect(body.frontend.agents.runtime).toBe('ai-sdk')
+    expect(body.frontend.agents.placement).toBe('server')
+    expect(body.agents.default).toBe('ai-sdk')
+    expect(body.agents.available).toEqual(['ai-sdk'])
   })
 
   it('reflects workspace backend from config', async () => {

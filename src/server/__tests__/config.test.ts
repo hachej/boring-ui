@@ -138,6 +138,12 @@ describe('loadConfig', () => {
     expect(config.agentRuntime).toBe('pi')
   })
 
+  it('reads ai-sdk runtime from env', () => {
+    process.env.AGENT_RUNTIME = 'ai-sdk'
+    const config = loadConfig()
+    expect(config.agentRuntime).toBe('ai-sdk')
+  })
+
   // Agent placement
   it('defaults agent placement to browser', () => {
     const config = loadConfig()
@@ -309,13 +315,30 @@ describe('validateConfig', () => {
     ).not.toThrow()
   })
 
-  it('rejects ai-sdk as agent runtime (not yet supported)', () => {
+  it('accepts ai-sdk when paired with server placement on bwrap', () => {
     const config = loadConfig()
     expect(() =>
       validateConfig({
         ...config,
-        agentRuntime: 'ai-sdk' as any,
+        workspaceBackend: 'bwrap',
+        agentPlacement: 'server',
+        agentRuntime: 'ai-sdk',
+        databaseUrl: 'postgres://test@localhost/test',
+        controlPlaneProvider: 'local',
       }),
-    ).toThrow(/agent.runtime/)
+    ).not.toThrow()
+  })
+
+  it('rejects ai-sdk when placement is browser', () => {
+    const config = loadConfig()
+    expect(() =>
+      validateConfig({
+        ...config,
+        workspaceBackend: 'bwrap',
+        agentPlacement: 'browser',
+        agentRuntime: 'ai-sdk',
+        controlPlaneProvider: 'local',
+      }),
+    ).toThrow(/ai-sdk.*placement=server/)
   })
 })

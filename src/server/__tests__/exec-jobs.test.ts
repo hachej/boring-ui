@@ -4,10 +4,15 @@
  * Tests the job lifecycle: start → read → cancel, and SSE streaming.
  */
 import { describe, it, expect, afterEach } from 'vitest'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { createApp } from '../app.js'
 import { loadConfig } from '../config.js'
 import { testSessionCookie, TEST_SECRET } from './helpers.js'
 import type { FastifyInstance } from 'fastify'
+
+const WORKSPACE_ID = '00000000-0000-0000-0000-000000000001'
 
 function testConfig(overrides = {}) {
   return { ...loadConfig(), sessionSecret: TEST_SECRET, ...overrides }
@@ -66,6 +71,56 @@ describe('POST /api/v1/exec/start', () => {
     expect(res.statusCode).toBe(200)
     const body = JSON.parse(res.payload)
     expect(body.job_id).toBeDefined()
+  })
+
+  it('rejects missing cwd directories', async () => {
+    token = await testSessionCookie(); app = createApp({ config: testConfig(), skipValidation: true })
+    const res = await app.inject({
+      cookies: { boring_session: token },
+      method: 'POST',
+      url: '/api/v1/exec/start',
+      payload: { command: 'pwd', cwd: 'missing-dir' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    const body = JSON.parse(res.payload)
+    expect(body.code).toBe('CWD_NOT_FOUND')
+  })
+
+  it('uses the workspace-scoped root when x-workspace-id is present', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'bui-exec-job-workspace-'))
+    token = await testSessionCookie()
+    app = createApp({ config: testConfig({ workspaceRoot }), skipValidation: true })
+
+    const startRes = await app.inject({
+      cookies: { boring_session: token },
+      headers: { 'x-workspace-id': WORKSPACE_ID },
+      method: 'POST',
+      url: '/api/v1/exec/start',
+      payload: { command: 'printf async-boundary > async.txt' },
+    })
+    expect(startRes.statusCode).toBe(200)
+    const { job_id } = JSON.parse(startRes.payload)
+
+    let jobData: any
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 100))
+      const readRes = await app.inject({
+        cookies: { boring_session: token },
+        method: 'GET',
+        url: `/api/v1/exec/jobs/${job_id}`,
+      })
+      jobData = JSON.parse(readRes.payload)
+      if (jobData.done) break
+    }
+
+    expect(jobData.done).toBe(true)
+    const workspaceDir = join(workspaceRoot, WORKSPACE_ID)
+    expect(existsSync(join(workspaceDir, 'async.txt'))).toBe(true)
+    expect(readFileSync(join(workspaceDir, 'async.txt'), 'utf-8')).toBe('async-boundary')
+    expect(existsSync(join(workspaceRoot, 'async.txt'))).toBe(false)
+
+    rmSync(workspaceRoot, { recursive: true, force: true })
   })
 })
 
@@ -148,6 +203,19 @@ describe('GET /api/v1/exec/jobs/:jobId', () => {
     const body2 = JSON.parse(read2.payload)
     expect(body2.chunks.length).toBe(0)
   })
+
+  it('rejects negative cursor values', async () => {
+    token = await testSessionCookie(); app = createApp({ config: testConfig(), skipValidation: true })
+    const res = await app.inject({
+      cookies: { boring_session: token },
+      method: 'GET',
+      url: '/api/v1/exec/jobs/nonexistent-id?after=-1',
+    })
+
+    expect(res.statusCode).toBe(400)
+    const body = JSON.parse(res.payload)
+    expect(body.code).toBe('INVALID_CURSOR')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -187,6 +255,40 @@ describe('POST /api/v1/exec/jobs/:jobId/cancel', () => {
     })
 
     expect(res.statusCode).toBe(404)
+  })
+
+  it('treats cancelling a completed job as a success no-op', async () => {
+    token = await testSessionCookie(); app = createApp({ config: testConfig(), skipValidation: true })
+
+    const startRes = await app.inject({
+      cookies: { boring_session: token },
+      method: 'POST',
+      url: '/api/v1/exec/start',
+      payload: { command: 'echo "done"' },
+    })
+    const { job_id } = JSON.parse(startRes.payload)
+
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((r) => setTimeout(r, 100))
+      const readRes = await app.inject({
+        cookies: { boring_session: token },
+        method: 'GET',
+        url: `/api/v1/exec/jobs/${job_id}`,
+      })
+      if (JSON.parse(readRes.payload).done) break
+    }
+
+    const cancelRes = await app.inject({
+      cookies: { boring_session: token },
+      method: 'POST',
+      url: `/api/v1/exec/jobs/${job_id}/cancel`,
+    })
+
+    expect(cancelRes.statusCode).toBe(200)
+    expect(JSON.parse(cancelRes.payload)).toMatchObject({
+      cancelled: true,
+      job_id,
+    })
   })
 })
 

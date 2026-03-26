@@ -110,6 +110,17 @@ describe('execInSandbox', () => {
     const result = await execInSandbox(TEST_WORKSPACE, 'echo $HOME')
     expect(result.stdout.trim()).toBe('/workspace')
   })
+
+  it('terminates the whole sandbox process group on timeout', async () => {
+    const startedAt = Date.now()
+    const result = await execInSandbox(TEST_WORKSPACE, 'sleep 5', {
+      timeoutSeconds: 0.05,
+    })
+
+    expect(result.exit_code).toBe(-1)
+    expect(result.stderr).toContain('[killed: timeout after 0.05s]')
+    expect(Date.now() - startedAt).toBeLessThan(4000)
+  })
 })
 
 describe('BWRAP_TIMEOUT_SECONDS', () => {

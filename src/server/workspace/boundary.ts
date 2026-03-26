@@ -10,4 +10,5 @@ export const WORKSPACE_PASSTHROUGH_PREFIXES = [
   '/api/v1/workspaces',
   '/api/v1/files',
   '/api/v1/git',
+  '/api/v1/agent',
 ] as const
