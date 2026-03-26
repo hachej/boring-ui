@@ -8,6 +8,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { validatePath } from '../workspace/paths.js'
+import { hasBwrap } from '../workspace/helpers.js'
+import { buildBwrapArgs, buildSandboxEnv } from '../adapters/bwrapImpl.js'
 
 export type JobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -81,15 +83,30 @@ export function startJob(
     totalBytes: 0,
   }
 
-  // Spawn the process
-  const proc = spawn('bash', ['-c', command], {
-    cwd: effectiveCwd,
-    env: {
-      ...process.env,
-      HOME: workspaceRoot,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  // Spawn the process — use bwrap sandbox when available for filesystem isolation
+  const useBwrap = hasBwrap()
+  let proc: ChildProcess
+
+  if (useBwrap) {
+    const sandboxHome = '/workspace'
+    const sandboxCwd = effectiveCwd.startsWith(workspaceRoot)
+      ? sandboxHome + effectiveCwd.slice(workspaceRoot.length)
+      : sandboxHome
+    const bwrapArgs = buildBwrapArgs(workspaceRoot, sandboxHome, sandboxCwd)
+    proc = spawn('bwrap', [...bwrapArgs, 'bash', '-c', command], {
+      env: buildSandboxEnv(sandboxHome),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } else {
+    proc = spawn('bash', ['-c', command], {
+      cwd: effectiveCwd,
+      env: {
+        ...process.env,
+        HOME: workspaceRoot,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  }
 
   job.process = proc
 

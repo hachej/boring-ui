@@ -40,9 +40,8 @@ async function readJson(response) {
 
 export default function PiBackendAdapter({ serviceUrl, panelId, sessionBootstrap = 'latest' }) {
   const piRoutes = useMemo(() => createPiRoutes(serviceUrl), [serviceUrl])
-  const workspaceId = useMemo(
+  const [workspaceId, setWorkspaceId] = useState(
     () => (typeof window === 'undefined' ? '' : getWorkspaceIdFromPathname(window.location.pathname)),
-    [],
   )
   const [sessions, setSessions] = useState([])
   const [currentSessionId, setCurrentSessionId] = useState('')
@@ -57,6 +56,30 @@ export default function PiBackendAdapter({ serviceUrl, panelId, sessionBootstrap
   const listRef = useRef(null)
   const sessionsRef = useRef([])
   const currentSessionIdRef = useRef('')
+
+  // Track workspace changes from URL navigation
+  useEffect(() => {
+    const syncWorkspace = () => {
+      const next = getWorkspaceIdFromPathname(window.location.pathname)
+      setWorkspaceId((prev) => {
+        if (prev === next) return prev
+        // Reset session state for the new workspace
+        setSessions([])
+        setCurrentSessionId('')
+        setMessages([])
+        setStreamText('')
+        setActiveTools(new Map())
+        setError('')
+        return next
+      })
+    }
+    window.addEventListener('popstate', syncWorkspace)
+    window.addEventListener('boring-ui:location-change', syncWorkspace)
+    return () => {
+      window.removeEventListener('popstate', syncWorkspace)
+      window.removeEventListener('boring-ui:location-change', syncWorkspace)
+    }
+  }, [])
 
   useEffect(() => {
     sessionsRef.current = sessions

@@ -490,11 +490,15 @@ function createHostedPersistence(config: ServerConfig): WorkspacePersistence {
           })
           .onConflictDoNothing()
 
+        // In backend mode the backend-agent process IS the runtime —
+        // no Fly Machine provisioning needed, so mark ready immediately.
+        const initialState = config.agentsMode === 'backend' ? 'ready' : 'pending'
+
         await tx
           .insert(workspaceRuntimes)
           .values({
             workspaceId: workspace.id,
-            state: 'pending',
+            state: initialState,
           })
           .onConflictDoNothing()
 
