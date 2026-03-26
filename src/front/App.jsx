@@ -1589,7 +1589,32 @@ export default function App() {
 
 
     // When all editors are closed, show the empty panel again
-    api.onDidRemovePanel(() => {
+    api.onDidRemovePanel((e) => {
+      // When the last agent panel in a group is closed, DockView removes the
+      // group and redistributes its width to siblings — which inflates the
+      // left sidebar. Restore the sidebar to its saved width.
+      if (getPanelComponent(e) === 'agent') {
+        const hasAgentPanels = (Array.isArray(api.panels) ? api.panels : [])
+          .some((p) => p.id !== e.id && getPanelComponent(p) === 'agent')
+        if (!hasAgentPanels) {
+          requestAnimationFrame(() => {
+            const leftGroups = getLeftSidebarGroups(api)
+            if (leftGroups.length > 0) {
+              const savedWidth = Math.max(
+                panelSizesRef.current.filetree ?? leftSidebarMinWidth,
+                leftSidebarMinWidth,
+              )
+              leftGroups.forEach((g) => {
+                // Only restore if the sidebar grew beyond the saved width
+                if (g.api.width > savedWidth + 10) {
+                  g.api.setSize({ width: savedWidth })
+                }
+              })
+            }
+          })
+        }
+      }
+
       // Check if empty panel already exists
       const existingEmpty = api.getPanel('empty-center')
       if (existingEmpty) return
