@@ -20,29 +20,31 @@ Read this first. Re-read after compaction.
 
 ## What This Is
 
-boring-ui is a **composable, capability-gated web IDE framework**. Panel-based UI shell (React + DockView) backed by modular FastAPI routers. Panels declare backend requirements; the system degrades gracefully when features are absent. Ships as both a standalone app and a reusable base for child apps.
+boring-ui is a **composable, capability-gated web IDE framework**. Panel-based UI shell (React + DockView) backed by a modular TypeScript backend (Fastify + tRPC). Panels declare capability requirements; the system degrades gracefully when features are absent. Ships as both a standalone app and a reusable base for child apps.
 
 ### Stack
 
-- **Frontend**: React 18, Vite 5, TailwindCSS 4, DockView (panels), Zustand (state), xterm.js (terminal), TipTap (editor)
-- **Backend**: Python 3, FastAPI, uvicorn, ptyprocess, websockets
-- **Control Plane**: PostgreSQL (asyncpg), Neon Auth (Better Auth, EdDSA JWT)
+- **Frontend**: React 18, Vite 5, TailwindCSS 4, DockView (panels), Zustand (state), TipTap (editor)
+- **Backend**: TypeScript, Fastify 5, tRPC, Drizzle ORM, jose (JWT), simple-git
+- **Legacy Backend**: Python 3, FastAPI (being replaced — see `src/back/`)
+- **Control Plane**: PostgreSQL (Drizzle + postgres.js), Neon Auth (Better Auth, EdDSA JWT)
 - **CLI**: `bui` (Go) — dev orchestration, framework pinning, child app management
-- **Tests**: Vitest (unit), Playwright (e2e), pytest (backend)
+- **Tests**: Vitest (frontend + server unit), Playwright (e2e)
 
-### Agent Modes — Three Deployment Variants
+### Workspace Backends and Agent Placement
 
-The three modes differ in **where the agent runs** and **what's included**.
+Two configuration axes determine the runtime profile:
 
-| Mode | Fly app | Agent | Filesystem | Key traits |
-|------|---------|-------|------------|------------|
-| **agent-lite** | `boring-ui-lite` | PI (browser) | Server FS via HTTP API | Minimal footprint, bubblewrap sandbox for exec, no Node.js runtime |
-| **agent-frontend** | `boring-ui-frontend-agent` | PI (browser) | Server FS via HTTP API | Full backend (FastAPI + Vite static), no server-side agent |
-| **agent-backend** | `boring-ui-backend-agent` | Companion (server) | Server FS via HTTP API | Full stack + Node.js pi_service sidecar, server-side agent execution |
+| workspace.backend | Agent placement | Description |
+|-------------------|----------------|-------------|
+| `bwrap` | `browser` | **Production default.** PI in browser, server-side bwrap sandbox for file/git/exec |
+| `bwrap` | `server` | Server-side PI (future). Requires DATABASE_URL |
+| `lightningfs` | `browser` | **Local dev.** All operations in browser via IndexedDB + isomorphic-git |
+| `justbash` | `browser` | Experimental. JustBash WASM, in-memory FS, no persistence |
 
-All three use `data.backend = "http"` (real filesystem) and Neon Auth. Deploy configs and smoke tests: see `deploy/README.md`.
+Config: `boring.app.toml` `[workspace] backend` + `[agent] placement`. Validated at startup — invalid combos crash.
 
-**Local dev** uses `data.backend = "lightningfs"` (browser IndexedDB) by default. Set `LOCAL_PARITY_MODE=http` to exercise the deployed code path locally.
+**Local dev** uses `lightningfs` by default. Set `WORKSPACE_BACKEND=bwrap` to exercise the deployed code path locally.
 
 ### Child Apps
 
@@ -55,9 +57,8 @@ Each child has its own `boring.app.toml` pinning a boring-ui commit. `bui` resol
 
 | Provider | Auth | Database | When |
 |----------|------|----------|------|
-| `local` | Dev login bypass | File-based JSON | Local dev |
-| `neon` | Neon Auth (EdDSA JWT) | PostgreSQL via Neon | **Production** |
-| `supabase` | Supabase GoTrue | Supabase PostgreSQL | Legacy |
+| `local` | Dev login bypass | In-memory / file-based | Local dev |
+| `neon` | Neon Auth (EdDSA JWT) | PostgreSQL via Neon (Drizzle) | **Production** |
 
 Auto-detects: `NEON_AUTH_BASE_URL` set → upgrades to `neon`. Deep dive: `docs/runbooks/NEON_SETUP.md`.
 
@@ -73,21 +74,28 @@ These docs define the boring-coding workflow. Read local copy if available; fall
 
 ```
 src/front/              React frontend (App.jsx, components, panels, hooks, providers, registry)
-src/back/boring_ui/api/ FastAPI backend (app.py factory, config.py, modules/)
-  modules/files/        File CRUD
-  modules/git/          Git operations
-  modules/pty/          PTY terminal WebSocket
-  modules/stream/       Claude chat streaming WebSocket
-  modules/control_plane/ Auth, workspace, collaboration, membership
-  modules/ui_state/     UI state persistence
-  modules/github_auth/  GitHub OAuth
-  modules/agent_normal/ Agent-normal runtime
-src/control_plane/      Control plane service (DB, identity, provisioning, security)
+  hooks/                Extracted hooks: useApprovalPolling, useDataProviderScope,
+                        useFrontendStatePersist, useWorkspaceAuth, useWorkspaceRouter,
+                        usePanelActions, useDockLayout
+src/server/             TypeScript backend (Fastify + tRPC)
+  app.ts                Application factory (createApp)
+  config.ts             Config loader + startup validation (fail-closed)
+  index.ts              Server entry point
+  services/             Domain services (transport-independent business logic)
+  http/                 Fastify HTTP routes (/api/v1/*, /health, /auth)
+  trpc/                 tRPC router + procedures
+  adapters/             Workspace backends (bwrapImpl.ts)
+  auth/                 Session JWT (jose HS256), middleware, validation
+  workspace/            Resolver, membership, boundary routing
+  db/                   Drizzle schema + client (postgres.js)
+  jobs/                 Long-running exec job manager
+  middleware/            Request ID, secret redaction
+src/shared/             Shared types (used by server + potentially frontend)
+src/back/boring_ui/api/ Legacy Python backend (being replaced)
 tests/                  unit/, integration/, contract/, security/, smoke/
 docs/                   Architecture, plans, runbooks, extension guide, design tokens
 scripts/                Build, lint, E2E runner utilities
 bui/                    Go CLI tool
-personas/prompts/       Agent role prompts (orchestrator, reviewer, worker)
 .beads/                 Issue tracking (br)
 .agent-evidence/        Agent work artifacts
 ```
@@ -137,23 +145,29 @@ For full session lifecycle (compaction, blocked, end-of-session): see `docs/work
 
 ```bash
 # Install
-npm install && uv sync
+npm install
 
 # Frontend
 npm run dev                    # Vite dev server (port 5173)
 npm run build                  # Production build
 npm run lint                   # ESLint + stylelint + design token lint
-npm run test:run               # Unit tests (vitest, single run)
+npm run test:run               # Frontend unit tests (vitest, single run)
 npm run test:e2e               # E2E tests (Playwright)
 
-# Backend
-pip3 install -e . --break-system-packages   # Install backend
-python3 -m pytest tests/unit/ -v            # Backend unit tests
-python3 -m pytest tests/ -v                 # All backend tests
+# TS Backend
+npm run server:dev             # tsx watch (port 8000)
+npm run server:start           # node --import tsx (production-like)
+npm run server:typecheck       # tsc --noEmit -p tsconfig.server.json
+npm run server:test            # Server unit tests (vitest)
+
+# Legacy Python Backend (being replaced)
+pip3 install -e . --break-system-packages
+python3 -m pytest tests/unit/ -v
 
 # Full stack
 export ANTHROPIC_API_KEY=$(vault kv get -field=api_key secret/agent/anthropic)
-python3 scripts/run_full_app.py             # Or see scripts/run_full_app.sh
+npm run server:dev              # TS backend on :8000
+npm run dev                     # Vite frontend on :5173 (proxies /api to :8000)
 ```
 
 ## Credentials & Vault
