@@ -32,13 +32,14 @@ describe('verifyNeonAccessToken', () => {
   it('returns null for empty token', async () => {
     const result = await verifyNeonAccessToken('', {
       neonAuthBaseUrl: 'https://example.com',
+      neonAuthJwksUrl: undefined,
     })
     expect(result).toBeNull()
   })
 
   it('throws when neonAuthBaseUrl is not configured', async () => {
     await expect(
-      verifyNeonAccessToken('some.jwt.token', { neonAuthBaseUrl: '' }),
+      verifyNeonAccessToken('some.jwt.token', { neonAuthBaseUrl: '', neonAuthJwksUrl: undefined }),
     ).rejects.toThrow(/NEON_AUTH_BASE_URL/)
   })
 

@@ -906,14 +906,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   if (config.controlPlaneProvider !== 'neon') return
 
   app.get('/auth/login', async (request: FastifyRequest, reply: FastifyReply) => {
-    const query = (request.query as JsonRecord | undefined) || {}
-    const userId = String(query.user_id || '').trim()
-    const email = String(query.email || '').trim().toLowerCase()
-    if (userId && email) {
-      const redirectUri = safeRedirectPath(query.redirect_uri)
-      await handleLocalCallback(reply, config, userId, email, redirectUri)
-      return
-    }
+    // NOTE: No user_id/email shortcut in Neon mode — that would bypass auth.
+    // The local-mode shortcut is in the `if (config.controlPlaneProvider === 'local')` block above.
     return renderHostedAuthPage(reply, config, request, 'sign_in')
   })
 
@@ -1144,14 +1138,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/auth/callback', async (request: FastifyRequest, reply: FastifyReply) => {
     const query = (request.query as JsonRecord | undefined) || {}
-    const localUserId = String(query.user_id || '').trim()
-    const localEmail = String(query.email || '').trim().toLowerCase()
+    // NOTE: No user_id/email shortcut in Neon callback — that would bypass auth.
     const redirectUri = safeRedirectPath(query.redirect_uri)
-
-    if (localUserId && localEmail) {
-      await handleLocalCallback(reply, config, localUserId, localEmail, redirectUri)
-      return
-    }
 
     const pendingLoginToken = String(query.pending_login || '').trim()
     if (pendingLoginToken) {

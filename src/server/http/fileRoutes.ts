@@ -207,7 +207,10 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   // POST /files/rename
   app.post('/files/rename', async (request, reply) => {
     const root = getWorkspaceRoot(app, request)
-    const body = request.body as { old_path: string; new_path: string }
+    const body = request.body as { old_path?: string; new_path?: string } | null
+    if (!body?.old_path || !body?.new_path) {
+      return reply.code(400).send({ error: 'validation', message: 'old_path and new_path are required' })
+    }
 
     try {
       const oldAbs = await ensureExistingWorkspacePath(root, body.old_path)
@@ -238,7 +241,10 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   // POST /files/move
   app.post('/files/move', async (request, reply) => {
     const root = getWorkspaceRoot(app, request)
-    const body = request.body as { src_path: string; dest_dir: string }
+    const body = request.body as { src_path?: string; dest_dir?: string } | null
+    if (!body?.src_path || !body?.dest_dir) {
+      return reply.code(400).send({ error: 'validation', message: 'src_path and dest_dir are required' })
+    }
 
     try {
       const srcAbs = await ensureExistingWorkspacePath(root, body.src_path)
