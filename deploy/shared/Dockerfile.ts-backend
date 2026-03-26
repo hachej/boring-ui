@@ -28,9 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies (tsx needed at runtime for TS execution)
+# Install ALL dependencies (tsx + @types/node needed at runtime for TS execution)
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm install tsx
+RUN npm ci
 
 # Copy server source (TypeScript, executed via tsx)
 COPY src/server ./src/server
