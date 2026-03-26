@@ -4,12 +4,13 @@ This guide covers boring-ui's extension points for adding custom panels, routers
 
 ## Overview
 
-boring-ui provides four main extension points:
+boring-ui provides five main extension points:
 
 1. **Pane Registry** - Register custom panel components for the UI
 2. **Layout Manager** - Customize layout persistence and restoration
 3. **App Config** - Configure branding, storage, and features
 4. **Capabilities API** - Discover available features at runtime
+5. **tRPC Child App Routers** - Add backend routes via tRPC (TypeScript backend)
 
 ## Pane Registry
 
@@ -243,46 +244,48 @@ Ownership rule for vertical apps:
   - `/api/v1/git/*`
 - Add vertical/domain routes under your namespace (example: `/api/v1/macro/*`).
 
-## Backend Router Registry
+## tRPC Child App Routers (TypeScript Backend)
 
-Add custom routers to the backend API.
+Child apps add backend routes via tRPC. Register them in `boring.app.toml`:
 
-### Adding a Router
-
-```python
-from boring_ui.api import create_app, RouterRegistry, create_default_registry
-
-# Create custom registry
-registry = create_default_registry()
-
-# Register a custom router
-registry.register(
-    name='my-feature',
-    prefix='/api/my-feature',
-    factory=create_my_feature_router,
-    description='My custom feature endpoints',
-    tags=['custom'],
-)
-
-# Create app with custom registry
-app = create_app(registry=registry)
+```toml
+[backend]
+routers = ['src/server/routers/analytics:analyticsRouter']
 ```
 
-### Router Factory Pattern
+### Creating a Child App Router
 
-```python
-from fastapi import APIRouter
+```typescript
+// src/server/routers/analytics.ts
+import { router, publicProcedure } from 'boring-ui/trpc'
+import { z } from 'zod'
 
-def create_my_feature_router(config):
-    """Create router for my feature."""
-    router = APIRouter(tags=['my-feature'])
+export const analyticsRouter = router({
+  listEvents: publicProcedure
+    .input(z.object({ limit: z.number().optional() }))
+    .query(async ({ input }) => {
+      return { events: [], limit: input.limit ?? 100 }
+    }),
 
-    @router.get('/items')
-    async def list_items():
-        return {'items': []}
+  trackEvent: publicProcedure
+    .input(z.object({ name: z.string(), data: z.record(z.unknown()) }))
+    .mutation(async ({ input }) => {
+      // Store event...
+      return { ok: true }
+    }),
+})
+```
 
-    @router.post('/items')
-    async def create_item(data: dict):
+### How It Works
+
+1. boring-ui loads child routers at startup via dynamic import
+2. Each router is namespaced by module name: `analytics.listEvents`
+3. Frontend accesses via: `trpc.analytics.listEvents.useQuery({ limit: 50 })`
+4. Auth + workspace context are provided automatically via tRPC middleware
+
+### Legacy Python Router Registry
+
+The Python backend router registry (`create_default_registry()`) is still available in `src/back/` but is being replaced by the tRPC pattern above.
         return {'id': '123', **data}
 
     return router
