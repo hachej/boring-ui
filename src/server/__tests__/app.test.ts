@@ -17,6 +17,27 @@ describe('createApp', () => {
     expect(app.hasPlugin('@fastify/cors')).toBe(true)
     await app.close()
   })
+
+  it('allows PUT preflights for cross-origin workspace file writes', async () => {
+    const app = createApp()
+
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/v1/files/write?path=proof.txt',
+      headers: {
+        origin: 'http://127.0.0.1:5173',
+        'access-control-request-method': 'PUT',
+        'access-control-request-headers': 'content-type,x-workspace-id',
+      },
+    })
+
+    expect(response.statusCode).toBe(204)
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5173')
+    expect(response.headers['access-control-allow-credentials']).toBe('true')
+    expect(response.headers['access-control-allow-methods']).toContain('PUT')
+
+    await app.close()
+  })
 })
 
 describe('GET /health', () => {

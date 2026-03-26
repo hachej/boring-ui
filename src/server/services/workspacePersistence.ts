@@ -298,6 +298,19 @@ function normalizeMemberRow(row: {
   }
 }
 
+function localReadyRuntime(id: string) {
+  return {
+    workspace_id: id,
+    state: 'ready' as const,
+    status: 'ready' as const,
+    sprite_url: null,
+    sprite_name: null,
+    last_error: null,
+    updated_at: new Date().toISOString(),
+    retryable: false,
+  }
+}
+
 function createLocalPersistence(config: ServerConfig): WorkspacePersistence {
   return {
     async listWorkspaces(userId) {
@@ -316,28 +329,10 @@ function createLocalPersistence(config: ServerConfig): WorkspacePersistence {
       return localDeleteWorkspace(id)
     },
     async getWorkspaceRuntime(id) {
-      return {
-        workspace_id: id,
-        state: 'ready',
-        status: 'ready',
-        sprite_url: null,
-        sprite_name: null,
-        last_error: null,
-        updated_at: new Date().toISOString(),
-        retryable: false,
-      }
+      return localReadyRuntime(id)
     },
     async retryWorkspaceRuntime(id) {
-      return {
-        workspace_id: id,
-        state: 'ready',
-        status: 'ready',
-        sprite_url: null,
-        sprite_name: null,
-        last_error: null,
-        updated_at: new Date().toISOString(),
-        retryable: false,
-      }
+      return localReadyRuntime(id)
     },
     async getWorkspaceSettings(id) {
       return localGetWorkspaceSettings(id)

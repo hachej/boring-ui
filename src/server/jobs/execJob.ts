@@ -7,7 +7,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { resolve, relative, isAbsolute } from 'node:path'
+import { validatePath } from '../workspace/paths.js'
 
 export type JobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -58,19 +58,6 @@ const gcInterval = setInterval(gcOldJobs, 60_000)
 gcInterval.unref() // Don't block process exit
 
 /**
- * Validate that cwd is safely within workspace root.
- */
-function validateCwd(workspaceRoot: string, cwd: string): string | null {
-  const resolvedRoot = resolve(workspaceRoot)
-  const resolvedCwd = resolve(workspaceRoot, cwd)
-  const rel = relative(resolvedRoot, resolvedCwd)
-  if (rel.startsWith('..') || isAbsolute(rel)) {
-    return null // Path escapes workspace
-  }
-  return resolvedCwd
-}
-
-/**
  * Start a new long-running command job.
  */
 export function startJob(
@@ -80,14 +67,9 @@ export function startJob(
 ): { job_id: string } {
   const id = randomUUID()
 
-  let effectiveCwd = workspaceRoot
-  if (opts?.cwd) {
-    const validated = validateCwd(workspaceRoot, opts.cwd)
-    if (validated === null) {
-      throw new Error('cwd must be within workspace')
-    }
-    effectiveCwd = validated
-  }
+  const effectiveCwd = opts?.cwd
+    ? validatePath(workspaceRoot, opts.cwd)
+    : workspaceRoot
 
   const job: ExecJob = {
     id,

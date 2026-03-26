@@ -36,6 +36,9 @@ const PASSTHROUGH_PREFIXES = [
 // Paths that bypass workspace auth (served as SPA pages)
 const SPA_PATHS = new Set(['', 'setup', 'settings', 'runtime'])
 
+// Headers stripped when proxying workspace-scoped requests
+const SKIP_PROXY_HEADERS = new Set(['transfer-encoding', 'connection', 'keep-alive'])
+
 export async function registerWorkspaceBoundary(
   app: FastifyInstance,
 ): Promise<void> {
@@ -122,9 +125,8 @@ export async function registerWorkspaceBoundary(
     reply.code(injected.statusCode)
 
     // Forward response headers (skip hop-by-hop headers)
-    const skipHeaders = new Set(['transfer-encoding', 'connection', 'keep-alive'])
     for (const [key, value] of Object.entries(injected.headers)) {
-      if (!skipHeaders.has(key.toLowerCase()) && value) {
+      if (!SKIP_PROXY_HEADERS.has(key.toLowerCase()) && value) {
         reply.header(key, value)
       }
     }
