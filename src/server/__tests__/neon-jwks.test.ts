@@ -11,21 +11,6 @@ async function createEdDSAKeyPair() {
   return jose.generateKeyPair('EdDSA', { crv: 'Ed25519', extractable: true })
 }
 
-// Create a mock JWKS server using jose's local key set
-async function createTestToken(
-  privateKey: jose.KeyLike,
-  claims: Record<string, unknown>,
-  audience: string,
-) {
-  return new jose.SignJWT(claims)
-    .setProtectedHeader({ alg: 'EdDSA' })
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .setAudience(audience)
-    .setSubject(String(claims.sub || 'user-1'))
-    .sign(privateKey)
-}
-
 describe('neonOriginFromBaseUrl', () => {
   it('extracts origin from full URL', () => {
     expect(neonOriginFromBaseUrl('https://ep-xxx.neonauth.region.aws.neon.tech/neondb/auth'))
