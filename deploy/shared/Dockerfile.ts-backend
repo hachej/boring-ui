@@ -11,7 +11,8 @@ RUN npx vite build
 # Stage 2: TypeScript backend + frontend static
 FROM node:20-slim
 
-ENV BORING_UI_STATIC_DIR=/app/dist
+ENV BORING_UI_STATIC_DIR=/app/dist \
+    BORING_UI_WORKSPACE_ROOT=/workspace
 
 WORKDIR /app
 
@@ -48,6 +49,9 @@ COPY drizzle.config.ts ./
 
 # Frontend static files from build stage
 COPY --from=frontend-build /build/dist ./dist
+
+# Workspace directory — isolated from app code
+RUN mkdir -p /workspace
 
 EXPOSE 8000
 
