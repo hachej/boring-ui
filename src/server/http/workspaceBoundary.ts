@@ -5,6 +5,8 @@
  * request body, cookies, and response for non-browser clients (smoke tests, API).
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import {
   parseSessionCookie,
   appCookieName,
@@ -39,9 +41,29 @@ const SPA_PATHS = new Set(['', 'setup', 'settings', 'runtime'])
 // Headers stripped when proxying workspace-scoped requests
 const SKIP_PROXY_HEADERS = new Set(['transfer-encoding', 'connection', 'keep-alive'])
 
+/** Load index.html from the static dir for SPA fallback, or use a minimal shell. */
+function loadSpaHtml(staticDir: string | undefined): string {
+  if (staticDir) {
+    try {
+      return readFileSync(join(resolve(staticDir), 'index.html'), 'utf-8')
+    } catch { /* fall through */ }
+  }
+  return '<!DOCTYPE html><html><body>SPA</body></html>'
+}
+
+function sendSpaHtml(reply: FastifyReply, html: string): FastifyReply {
+  return reply
+    .code(200)
+    .type('text/html')
+    .header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+    .send(html)
+}
+
 export async function registerWorkspaceBoundary(
   app: FastifyInstance,
 ): Promise<void> {
+  const spaHtml = loadSpaHtml(app.config.staticDir)
+
   // Catch-all route for /w/:workspaceId/*
   app.all('/w/:workspaceId/*', async (request: FastifyRequest, reply: FastifyReply) => {
     const { workspaceId } = request.params as { workspaceId: string }
@@ -57,9 +79,9 @@ export async function registerWorkspaceBoundary(
     // Extract the remaining path after /w/{id}/
     const wildcard = (request.params as any)['*'] || ''
 
-    // SPA pages — serve HTML for browser navigation and API clients
+    // SPA pages — serve real index.html for browser navigation
     if (SPA_PATHS.has(wildcard)) {
-      return reply.code(200).type('text/html').send('<!DOCTYPE html><html><body>SPA</body></html>')
+      return sendSpaHtml(reply, spaHtml)
     }
 
     // Validate that the path is an allowed passthrough
@@ -136,6 +158,6 @@ export async function registerWorkspaceBoundary(
 
   // Workspace root — serve SPA
   app.get('/w/:workspaceId', async (request: FastifyRequest, reply: FastifyReply) => {
-    return reply.code(200).type('text/html').send('<!DOCTYPE html><html><body>SPA</body></html>')
+    return sendSpaHtml(reply, spaHtml)
   })
 }

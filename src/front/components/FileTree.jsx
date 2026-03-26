@@ -78,6 +78,8 @@ export default function FileTree({
 
   const expandedPaths = useMemo(() => Object.keys(expandedDirs), [expandedDirs])
 
+  const isEditing = Boolean(newFileInput || newFolderInput || renaming)
+
   const {
     data: entries = [],
     isLoading: isTreeLoading,
@@ -85,10 +87,10 @@ export default function FileTree({
     error: treeError,
     refetch: refetchEntries,
   } = useFileList('.', {
-    refetchInterval: 3000,
+    refetchInterval: isEditing ? false : 3000,
   })
 
-  const { data: rawGitStatus } = useGitStatus({ refetchInterval: 5000 })
+  const { data: rawGitStatus } = useGitStatus({ refetchInterval: isEditing ? false : 5000 })
 
   const gitStatus = useMemo(() => {
     const files = rawGitStatus?.files
@@ -148,7 +150,7 @@ export default function FileTree({
     queries: expandedPaths.map((path) => ({
       queryKey: queryKeys.files.list(path),
       queryFn: ({ signal }) => provider.files.list(path, { signal }),
-      refetchInterval: 3000,
+      refetchInterval: isEditing ? false : 3000,
     })),
   })
 
@@ -429,6 +431,18 @@ export default function FileTree({
       ? `${newFileInput.parentDir}/${fileName}`
       : fileName
 
+    // Check for duplicate name in the parent directory
+    const siblings = newFileInput.parentDir
+      ? (expandedDirs[newFileInput.parentDir] || [])
+      : entries
+    const duplicate = siblings.some((e) => e.name === fileName)
+    if (duplicate) {
+      console.warn(`File "${fileName}" already exists`)
+      setNewFileInput(null)
+      onCancelCreate?.()
+      return
+    }
+
     try {
       await fileWriteMutation.mutateAsync({ path: filePath, content: '' })
       setNewFileInput(null)
@@ -473,6 +487,18 @@ export default function FileTree({
     const folderPath = newFolderInput.parentDir
       ? `${newFolderInput.parentDir}/${folderName}`
       : folderName
+
+    // Check for duplicate name in the parent directory
+    const siblings = newFolderInput.parentDir
+      ? (expandedDirs[newFolderInput.parentDir] || [])
+      : entries
+    const duplicate = siblings.some((e) => e.name === folderName)
+    if (duplicate) {
+      console.warn(`"${folderName}" already exists`)
+      setNewFolderInput(null)
+      return
+    }
+
     // Create a .gitkeep file inside the folder to ensure the directory is created
     const gitkeepPath = `${folderPath}/.gitkeep`
 

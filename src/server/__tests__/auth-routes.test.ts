@@ -145,8 +145,11 @@ describe('hosted Neon auth routes', () => {
   })
 
   it('signs in with email/password and sets the boring session cookie', async () => {
+    // Real Neon Auth returns an opaque session ID in body.token AND sets session cookies.
+    // The code must use the cookie-based /token endpoint (which returns the real JWT),
+    // not the opaque body.token.
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse(200, {}, { 'set-cookie': 'better-auth.session=abc123; Path=/; HttpOnly' }))
+      .mockResolvedValueOnce(jsonResponse(200, { token: 'opaque-session-id' }, { 'set-cookie': 'better-auth.session=abc123; Path=/; HttpOnly' }))
       .mockResolvedValueOnce(jsonResponse(200, { token: 'jwt-from-neon' }))
     vi.stubGlobal('fetch', fetchMock)
     vi.spyOn(neonAuth, 'verifyNeonAccessToken').mockResolvedValue({
@@ -173,7 +176,10 @@ describe('hosted Neon auth routes', () => {
       redirect_uri: '/w/demo',
     })
     expect(res.headers['set-cookie']).toContain('boring_session=')
+    // Must call both sign-in AND /token (not stop at the opaque body.token)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [, tokenInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(tokenInit.headers).toHaveProperty('Cookie')
   })
 
   it('signs up and auto-sends a verification email using a relative callback path', async () => {
@@ -273,7 +279,7 @@ describe('hosted Neon auth routes', () => {
 
   it('completes pending login on callback and redirects to the target workspace', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse(200, {}, { 'set-cookie': 'better-auth.session=abc123; Path=/; HttpOnly' }))
+      .mockResolvedValueOnce(jsonResponse(200, { token: 'opaque-session-id' }, { 'set-cookie': 'better-auth.session=abc123; Path=/; HttpOnly' }))
       .mockResolvedValueOnce(jsonResponse(200, { token: 'jwt-from-neon' }))
     vi.stubGlobal('fetch', fetchMock)
     vi.spyOn(neonAuth, 'verifyNeonAccessToken').mockResolvedValue({
@@ -394,6 +400,173 @@ describe('hosted Neon auth routes', () => {
     const body = JSON.parse(String(init.body))
     expect(body.email).toBe('missing@example.com')
     expect(body.redirectTo).toBe('http://127.0.0.1:5176/auth/reset-password?redirect_uri=%2Fw%2Fdemo')
+  })
+
+  it('rejects sign-in with missing email or password', async () => {
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const noEmail = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-in',
+      payload: { password: 'password123' },
+    })
+    expect(noEmail.statusCode).toBe(400)
+    expect(JSON.parse(noEmail.payload).code).toBe('EMAIL_PASSWORD_REQUIRED')
+
+    const noPassword = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-in',
+      payload: { email: 'test@example.com' },
+    })
+    expect(noPassword.statusCode).toBe(400)
+    expect(JSON.parse(noPassword.payload).code).toBe('EMAIL_PASSWORD_REQUIRED')
+  })
+
+  it('returns 401 when Neon Auth rejects sign-in credentials', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(401, { code: 'INVALID_PASSWORD', message: 'Wrong password' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-in',
+      payload: { email: 'user@test.com', password: 'wrong' },
+    })
+
+    expect(res.statusCode).toBe(401)
+    expect(JSON.parse(res.payload).code).toBe('INVALID_PASSWORD')
+  })
+
+  it('returns 502 when sign-in succeeds but no access token is available', async () => {
+    // Neon returns 200 but no cookies and no body.token
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, {}))
+    vi.stubGlobal('fetch', fetchMock)
+
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-in',
+      payload: { email: 'user@test.com', password: 'password123' },
+    })
+
+    expect(res.statusCode).toBe(502)
+    expect(JSON.parse(res.payload).code).toBe('NEON_AUTH_TOKEN_MISSING')
+  })
+
+  it('returns 401 when access token fails JWT verification', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, { token: 'bad-jwt' }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(neonAuth, 'verifyNeonAccessToken').mockResolvedValue(null)
+
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-in',
+      payload: { email: 'user@test.com', password: 'password123' },
+    })
+
+    expect(res.statusCode).toBe(401)
+    expect(JSON.parse(res.payload).code).toBe('TOKEN_INVALID')
+  })
+
+  it('rejects sign-up with missing email or password', async () => {
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-up',
+      payload: { email: 'test@example.com' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.payload).code).toBe('EMAIL_PASSWORD_REQUIRED')
+  })
+
+  it('forwards Neon Auth sign-up rejection with correct status', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(422, { code: 'USER_EXISTS', message: 'Email already registered' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-up',
+      headers: {
+        origin: 'https://boring-ui-frontend-agent.fly.dev',
+        host: 'boring-ui-frontend-agent.fly.dev',
+        'x-forwarded-proto': 'https',
+      },
+      payload: { email: 'existing@test.com', password: 'password123' },
+    })
+
+    expect(res.statusCode).toBe(422)
+    expect(JSON.parse(res.payload).code).toBe('USER_EXISTS')
+  })
+
+  it('rejects token-exchange with missing access_token', async () => {
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/token-exchange',
+      payload: { redirect_uri: '/' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.payload).code).toBe('MISSING_ACCESS_TOKEN')
+  })
+
+  it('rejects token-exchange when JWT verification fails', async () => {
+    vi.spyOn(neonAuth, 'verifyNeonAccessToken').mockResolvedValue(null)
+
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/token-exchange',
+      payload: { access_token: 'forged-jwt' },
+    })
+
+    expect(res.statusCode).toBe(401)
+    expect(JSON.parse(res.payload).code).toBe('TOKEN_INVALID')
+  })
+
+  it('falls back to callback HTML when pending_login is expired or invalid', async () => {
+    app = createApp({ config: neonConfig() as any, skipValidation: true })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/auth/callback?redirect_uri=%2F&pending_login=garbage',
+    })
+
+    // Should render client-side callback page (not crash or redirect)
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/html')
+    expect(res.payload).toContain('Completing sign-in')
+  })
+
+  it('sanitizes redirect_uri to prevent open redirects', async () => {
+    app = createApp({ config: localConfig() as any, skipValidation: true })
+
+    const absolute = await app.inject({
+      method: 'GET',
+      url: '/auth/login?user_id=u&email=e@x.com&redirect_uri=https://evil.com',
+    })
+    expect(absolute.statusCode).toBe(302)
+    expect(absolute.headers.location).toBe('/')
+
+    const proto = await app.inject({
+      method: 'GET',
+      url: '/auth/login?user_id=u&email=e@x.com&redirect_uri=//evil.com',
+    })
+    expect(proto.statusCode).toBe(302)
+    expect(proto.headers.location).toBe('/')
   })
 
   it('proxies reset-password updates to Neon Auth', async () => {

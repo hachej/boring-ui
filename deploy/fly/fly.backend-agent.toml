@@ -2,7 +2,7 @@ app = "boring-ui-backend-agent"
 primary_region = "cdg"
 
 [build]
-  dockerfile = "../shared/Dockerfile.backend"
+  dockerfile = "../shared/Dockerfile.ts-backend"
 
 [deploy]
   # Backend-agent serves hashed Vite bundles from the same app process.
@@ -12,10 +12,16 @@ primary_region = "cdg"
 
 [env]
   APP_ENV = "production"
+  NODE_ENV = "production"
   AGENTS_MODE = "backend"
+  BUI_AGENTS_MODE = "backend"
+  AUTH_DEV_AUTO_LOGIN = "false"
+  AUTH_DEV_LOGIN_ENABLED = "false"
   CONTROL_PLANE_PROVIDER = "neon"
   CONTROL_PLANE_APP_ID = "boring-ui"
   AUTH_SESSION_SECURE_COOKIE = "true"
+  BUI_APP_TOML = "/app/boring.app.toml"
+  DEPLOY_MODE = "core"
 
 [http_service]
   internal_port = 8000

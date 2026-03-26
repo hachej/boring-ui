@@ -138,12 +138,15 @@ export async function signInWithPassword(
     body: JSON.stringify({ email, password }),
   })
 
-  let accessToken = extractAccessToken(body)
+  // Neon Auth's sign-in response `token` is an opaque session ID, NOT a JWT.
+  // Always prefer the cookie-based /token endpoint which returns the real JWT.
+  let accessToken = ''
+  const cookieHeader = toCookieHeader(getSetCookieValues(response.headers))
+  if (cookieHeader) {
+    accessToken = await fetchNeonSessionToken(config, cookieHeader)
+  }
   if (!accessToken) {
-    const cookieHeader = toCookieHeader(getSetCookieValues(response.headers))
-    if (cookieHeader) {
-      accessToken = await fetchNeonSessionToken(config, cookieHeader)
-    }
+    accessToken = extractAccessToken(body)
   }
 
   return { response, body, accessToken }

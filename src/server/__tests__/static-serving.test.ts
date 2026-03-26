@@ -204,6 +204,49 @@ describe('Workspace asset rewrite', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Workspace boundary serves real index.html (not placeholder)
+// ---------------------------------------------------------------------------
+describe('Workspace SPA pages serve real index.html', () => {
+  const WS_ID = '00000000-0000-0000-0000-000000000001'
+
+  it('serves real index.html at /w/{id} (workspace root)', async () => {
+    const config = testConfig({ staticDir: TEST_STATIC_DIR })
+    app = createApp({ config })
+    const res = await app.inject({ method: 'GET', url: `/w/${WS_ID}` })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/html')
+    expect(res.payload).toContain('boring-ui')
+    expect(res.payload).not.toBe('<!DOCTYPE html><html><body>SPA</body></html>')
+  })
+
+  it('serves real index.html at /w/{id}/ (empty wildcard)', async () => {
+    const config = testConfig({ staticDir: TEST_STATIC_DIR })
+    app = createApp({ config })
+    const res = await app.inject({ method: 'GET', url: `/w/${WS_ID}/` })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/html')
+    expect(res.payload).toContain('boring-ui')
+  })
+
+  it('serves real index.html at /w/{id}/setup', async () => {
+    const config = testConfig({ staticDir: TEST_STATIC_DIR })
+    app = createApp({ config })
+    const res = await app.inject({ method: 'GET', url: `/w/${WS_ID}/setup` })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/html')
+    expect(res.payload).toContain('boring-ui')
+  })
+
+  it('sets no-cache headers on workspace SPA pages', async () => {
+    const config = testConfig({ staticDir: TEST_STATIC_DIR })
+    app = createApp({ config })
+    const res = await app.inject({ method: 'GET', url: `/w/${WS_ID}` })
+    const cc = res.headers['cache-control'] as string
+    expect(cc).toContain('no-store')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // No static dir (default behavior)
 // ---------------------------------------------------------------------------
 describe('Without static dir', () => {

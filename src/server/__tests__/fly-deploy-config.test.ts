@@ -10,6 +10,9 @@ const flyTomlPath = fileURLToPath(new URL('../../../deploy/fly/fly.toml', import
 const flyFrontendAgentTomlPath = fileURLToPath(
   new URL('../../../deploy/fly/fly.frontend-agent.toml', import.meta.url),
 )
+const flyBackendAgentTomlPath = fileURLToPath(
+  new URL('../../../deploy/fly/fly.backend-agent.toml', import.meta.url),
+)
 const flyTsBackendTomlPath = fileURLToPath(
   new URL('../../../deploy/fly/fly.ts-backend.toml', import.meta.url),
 )
@@ -60,6 +63,29 @@ describe('Fly deploy config', () => {
     expect(env.BORING_UI_WORKSPACE_ROOT).toBeUndefined()
     expect(env.AGENT_RUNTIME).toBe('pi')
     expect(env.AGENT_PLACEMENT).toBe('browser')
+    expect(data.http_service.internal_port).toBe(8000)
+    expect(data.http_service.checks[0].path).toBe('/health')
+  })
+
+  it('locks the hosted backend-agent app to the TS image with backend agent mode', () => {
+    const data = readToml(flyBackendAgentTomlPath)
+    const env = data.env
+
+    expect(data.app).toBe('boring-ui-backend-agent')
+    expect(data.primary_region).toBe('cdg')
+    expect(data.build.dockerfile).toBe('../shared/Dockerfile.ts-backend')
+    expect(env.APP_ENV).toBe('production')
+    expect(env.NODE_ENV).toBe('production')
+    expect(env.AGENTS_MODE).toBe('backend')
+    expect(env.BUI_AGENTS_MODE).toBe('backend')
+    expect(env.BUI_APP_TOML).toBe('/app/boring.app.toml')
+    expect(env.DEPLOY_MODE).toBe('core')
+    expect(env.CONTROL_PLANE_PROVIDER).toBe('neon')
+    expect(env.CONTROL_PLANE_APP_ID).toBe('boring-ui')
+    expect(env.AUTH_SESSION_SECURE_COOKIE).toBe('true')
+    expect(env.AUTH_DEV_LOGIN_ENABLED).toBe('false')
+    expect(env.AUTH_DEV_AUTO_LOGIN).toBe('false')
+    expect(data.deploy.strategy).toBe('immediate')
     expect(data.http_service.internal_port).toBe(8000)
     expect(data.http_service.checks[0].path).toBe('/health')
   })
