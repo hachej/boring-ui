@@ -21,9 +21,11 @@ Run 'bui docs init' for the full child app guide.`,
 }
 
 var initGo bool
+var initPython bool
 
 func init() {
-	initCmd.Flags().BoolVar(&initGo, "go", false, "Scaffold a Go child app instead of the default Python app")
+	initCmd.Flags().BoolVar(&initGo, "go", false, "Scaffold a Go child app instead of the default TypeScript app")
+	initCmd.Flags().BoolVar(&initPython, "python", false, "Scaffold a Python child app instead of the default TypeScript app")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -44,11 +46,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("[bui] creating %s/\n", name)
 
+	if initGo && initPython {
+		return fmt.Errorf("choose at most one scaffold runtime flag (--go or --python)")
+	}
+
 	siblingBUI, fwCommit := detectFrameworkRepo()
 	if initGo {
 		return scaffoldGoApp(name, siblingBUI, fwCommit)
 	}
-	return scaffoldPythonApp(name, fwCommit)
+	if initPython {
+		return scaffoldPythonApp(name, fwCommit)
+	}
+	return scaffoldTypeScriptApp(name, fwCommit)
 }
 
 func scaffoldPythonApp(name, fwCommit string) error {
@@ -76,9 +85,9 @@ id   = %q
 %s
 # ─── Backend ───────────────────────────────────────────────
 [backend]
-entry   = "boring_ui.app_config_loader:app"
+entry   = "%s.app:create_app"
 port    = 8000
-routers = ["%s.routers.example:router"]
+routers = []
 
 # ─── Frontend ──────────────────────────────────────────────
 [frontend]
@@ -203,7 +212,167 @@ async def health():
 
 	writeFlyPythonFiles(name, pyName)
 	writeCommonFiles(name)
-	printInitNextSteps(name)
+	printInitNextSteps(name, "python")
+	return nil
+}
+
+func scaffoldTypeScriptApp(name, fwCommit string) error {
+	dirs := []string{
+		name,
+		filepath.Join(name, "deploy", "fly"),
+		filepath.Join(name, "src", "server", "routes"),
+		filepath.Join(name, "panels"),
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", d, err)
+		}
+	}
+
+	fwSection := frameworkSection(fwCommit)
+	toml := fmt.Sprintf(`# boring.app.toml — Configuration for %s
+
+[app]
+name = %q
+logo = %q
+id   = %q
+%s
+[workspace]
+backend = "bwrap"
+
+[agent]
+runtime   = "pi"
+placement = "browser"
+
+# ─── Backend ───────────────────────────────────────────────
+[backend]
+type    = "typescript"
+entry   = "src/server/index.ts"
+port    = 8000
+routers = []
+
+# ─── Frontend ──────────────────────────────────────────────
+[frontend]
+port = 5173
+
+[frontend.branding]
+name = %q
+
+[frontend.features]
+agentRailMode = "all"
+
+[frontend.data]
+backend = "http"
+
+[frontend.panels]
+
+# ─── CLI binary (agent-discoverable) ──────────────────────
+[cli]
+name = %q
+
+# ─── Auth ─────────────────────────────────────────────────
+[auth]
+provider       = "local"
+session_cookie = "boring_session"
+session_ttl    = 86400
+
+# ─── Deploy ──────────────────────────────────────────────
+[deploy]
+platform = "fly"
+env      = "prod"
+
+[deploy.secrets]
+ANTHROPIC_API_KEY = { vault = "secret/agent/anthropic", field = "api_key" }
+
+# [deploy.env_vars]
+# App-specific static env vars (non-secret, baked into container)
+# MY_SETTING = "value"
+
+[deploy.neon]
+# Populated by 'bui neon setup'
+
+[deploy.fly]
+org               = ""
+control_plane_app = %q
+region            = "cdg"
+`, name, name, strings.ToUpper(name[:1]), name, fwSection, name, name, name)
+	writeFile(filepath.Join(name, "boring.app.toml"), toml)
+
+	packageJSON := fmt.Sprintf(`{
+  "name": %q,
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:server": "tsx watch src/server/index.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.19.4"
+  }
+}
+`, name)
+	writeFile(filepath.Join(name, "package.json"), packageJSON)
+
+	serverEntry := fmt.Sprintf(`import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+
+import { registerExampleRoutes } from './routes/example.js'
+
+function resolveFrameworkRoot() {
+  const explicit = process.env.BUI_FRAMEWORK_ROOT?.trim()
+  if (explicit) return path.resolve(explicit)
+  return path.resolve(process.cwd(), '..', 'boring-ui')
+}
+
+async function importFrameworkModule(relativePath) {
+  const href = pathToFileURL(path.join(resolveFrameworkRoot(), relativePath)).href
+  return import(href)
+}
+
+const [{ createApp }, { loadConfig, validateConfig }] = await Promise.all([
+  importFrameworkModule('src/server/app.ts'),
+  importFrameworkModule('src/server/config.ts'),
+])
+
+const config = loadConfig()
+
+try {
+  validateConfig(config)
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err))
+  process.exit(1)
+}
+
+const app = createApp({ config, logger: true, skipValidation: true })
+
+app.get('/info', async () => ({
+  name: %q,
+  version: '0.1.0',
+}))
+
+registerExampleRoutes(app)
+
+app.listen({ port: config.port, host: config.host }, (err, address) => {
+  if (err) {
+    app.log.error(err)
+    process.exit(1)
+  }
+  app.log.info('Server listening at ' + address)
+})
+`, name)
+	writeFile(filepath.Join(name, "src", "server", "index.ts"), serverEntry)
+
+	exampleRoutes := fmt.Sprintf(`export function registerExampleRoutes(app) {
+  app.get('/api/x/example/ping', async () => ({
+    ok: true,
+    app: %q,
+  }))
+}
+`, name)
+	writeFile(filepath.Join(name, "src", "server", "routes", "example.ts"), exampleRoutes)
+
+	writeFlyTypeScriptFiles(name)
+	writeCommonFiles(name)
+	printInitNextSteps(name, "typescript")
 	return nil
 }
 
@@ -385,14 +554,14 @@ func (m *Module) RegisterRoutes(router boringui.Router) {
 	if siblingBUI == "" {
 		fmt.Println("[bui] warn: no local boring-ui sibling detected; skipping go mod tidy.")
 		fmt.Println("[bui] warn: once the framework module is reachable, run: go get github.com/boringdata/boring-ui@latest && go mod tidy")
-		printInitNextSteps(name)
+		printInitNextSteps(name, "go")
 		return nil
 	}
 	if err := finalizeGoModule(name); err != nil {
 		fmt.Printf("[bui] warn: %v\n", err)
 		fmt.Println("[bui] warn: run 'go mod tidy' after installing Go or fixing framework resolution.")
 	}
-	printInitNextSteps(name)
+	printInitNextSteps(name, "go")
 	return nil
 }
 
@@ -457,6 +626,21 @@ __pycache__/
 `
 	writeFile(filepath.Join(name, ".gitignore"), gitignore)
 
+	dockerignore := `.git
+.venv
+.air
+dist
+node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+*.egg-info
+.boring
+.env
+`
+	writeFile(filepath.Join(name, ".dockerignore"), dockerignore)
+
 	// .env.example
 	envExample := `# Local dev secrets — copy to .env and fill in
 ANTHROPIC_API_KEY=sk-ant-...
@@ -468,6 +652,11 @@ BORING_UI_SESSION_SECRET=dev-only-local-secret
 func writeFlyPythonFiles(name, pyName string) {
 	writeFile(filepath.Join(name, "deploy", "fly", "fly.toml"), flyTomlTemplate(name))
 	writeFile(filepath.Join(name, "deploy", "fly", "Dockerfile"), pythonFlyDockerfileTemplate(pyName))
+}
+
+func writeFlyTypeScriptFiles(name string) {
+	writeFile(filepath.Join(name, "deploy", "fly", "fly.toml"), flyTomlTemplate(name))
+	writeFile(filepath.Join(name, "deploy", "fly", "Dockerfile"), typeScriptFlyDockerfileTemplate())
 }
 
 func writeFlyGoFiles(name string) {
@@ -485,9 +674,12 @@ primary_region = "cdg"
 [env]
   APP_ENV = "production"
   AUTH_SESSION_SECURE_COOKIE = "true"
+  AGENT_PLACEMENT = "browser"
+  AGENT_RUNTIME = "pi"
   BORING_UI_STATIC_DIR = "/app/dist/web"
   BUI_APP_TOML = "/app/boring.app.toml"
-  CORS_ORIGINS = "https://` + name + `.fly.dev"
+  CORS_ORIGINS = "https://`+name+`.fly.dev"
+  WORKSPACE_BACKEND = "bwrap"
 
 [http_service]
   internal_port = 8000
@@ -562,6 +754,63 @@ CMD ["uvicorn", "%s.app:create_app", "--factory", "--host", "0.0.0.0", "--port",
 `, pyName)
 }
 
+func typeScriptFlyDockerfileTemplate() string {
+	return `# syntax=docker/dockerfile:1
+
+FROM node:20-bookworm-slim AS frontend-build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/app
+COPY . .
+
+RUN set -eux; \
+    FRAMEWORK_REPO="$(awk -F'"' '/^repo[[:space:]]*=/{print $2; exit}' boring.app.toml)"; \
+    FRAMEWORK_COMMIT="$(awk -F'"' '/^commit[[:space:]]*=/{print $2; exit}' boring.app.toml)"; \
+    if [ -z "$FRAMEWORK_REPO" ]; then FRAMEWORK_REPO="github.com/boringdata/boring-ui"; fi; \
+    git clone "https://${FRAMEWORK_REPO}.git" /opt/boring-ui; \
+    if [ -n "$FRAMEWORK_COMMIT" ]; then git -C /opt/boring-ui checkout "$FRAMEWORK_COMMIT"; fi; \
+    cd /opt/boring-ui; \
+    npm install --no-audit --no-fund; \
+    BUI_APP_TOML=/workspace/app/boring.app.toml npx vite build --outDir /workspace/app/dist/web
+
+FROM node:20-bookworm-slim
+
+ENV BORING_UI_STATIC_DIR=/app/dist/web \
+    BUI_APP_TOML=/app/boring.app.toml \
+    BUI_FRAMEWORK_ROOT=/opt/boring-ui \
+    NODE_ENV=production
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bubblewrap \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    python3 \
+    python3-venv \
+    ripgrep \
+    tree \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+COPY --from=frontend-build /opt/boring-ui /opt/boring-ui
+COPY --from=frontend-build /workspace/app/dist ./dist
+
+RUN cd /opt/boring-ui && npm install --no-audit --no-fund && \
+    cd /app && npm install --no-audit --no-fund
+
+EXPOSE 8000
+
+CMD ["node", "--import", "tsx", "src/server/index.ts"]
+`
+}
+
 func goFlyDockerfileTemplate() string {
 	return `# syntax=docker/dockerfile:1
 
@@ -622,16 +871,28 @@ CMD ["/app/app"]
 `
 }
 
-func printInitNextSteps(name string) {
+func printInitNextSteps(name string, runtime string) {
 	pyName := strings.ReplaceAll(name, "-", "_")
 	fmt.Println()
 	fmt.Printf("[bui] %s created!\n\n", name)
 	fmt.Println("Files:")
 	fmt.Println("  boring.app.toml                 # app config (routers, panels, deploy)")
-	fmt.Println("  pyproject.toml                  # Python package")
-	fmt.Printf("  src/%s/app.py              # app entry (custom routes mounted here)\n", pyName)
-	fmt.Printf("  src/%s/routers/example.py  # example router → /api/x/example/*\n", pyName)
+	switch runtime {
+	case "python":
+		fmt.Println("  pyproject.toml                  # Python package")
+		fmt.Printf("  src/%s/app.py              # app entry (custom routes mounted here)\n", pyName)
+		fmt.Printf("  src/%s/routers/example.py  # example router → /api/x/example/*\n", pyName)
+	case "go":
+		fmt.Println("  go.mod                         # Go module")
+		fmt.Println("  main.go                        # Go app entry")
+		fmt.Println("  hello/module.go                # example module → /api/v1/hello/ping")
+	default:
+		fmt.Println("  package.json                   # TS runtime dependency (tsx)")
+		fmt.Println("  src/server/index.ts            # TS app entry")
+		fmt.Println("  src/server/routes/example.ts   # example route → /api/x/example/ping")
+	}
 	fmt.Println("  panels/                         # custom React panels")
+	fmt.Println("  .dockerignore                  # keeps local build junk out of Fly builds")
 	fmt.Println("  deploy/fly/Dockerfile           # Fly.io deploy config")
 	fmt.Println("  deploy/fly/fly.toml")
 	fmt.Println()

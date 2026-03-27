@@ -81,20 +81,32 @@ RESEND_API_KEY=<resend-api-key>
 
 **Important**: Use the `-pooler` hostname in `DATABASE_URL` for production (connection pooling). Free tier has 100 connection limit.
 
-### Neon Auth Trusted Origins
+### Neon Auth Trusted Origins And Redirect Domains
 
-Neon Auth keeps its own `trusted_origins` list. This is separate from
-boring-ui's `CORS_ORIGINS`.
+Neon Auth keeps both a `trusted_origins` list and a separate redirect-domain
+whitelist for email/OAuth callback URLs. Both are separate from boring-ui's
+`CORS_ORIGINS`.
 
-Keep `trusted_origins` aligned with every real browser origin that can host the
-app or appear in auth emails:
+Keep both Neon auth lists aligned with every real browser origin that can host
+the app or appear in auth emails:
 
 - `https://boring-ui-frontend-agent.fly.dev`
 - canonical local loopback callback origins (`http://127.0.0.1:3000`, `http://127.0.0.1:5173-5176`)
 - any current Modal deploy URL
 - any custom production domain
 
-`bui neon setup` now seeds the Fly app URL plus the canonical `127.0.0.1` loopback origins above. It does not PATCH `http://localhost:*` into `trusted_origins`, because Neon currently rejects those entries via API. Existing Neon projects may still need a manual trusted-origins update in Neon Console.
+`bui neon setup` now seeds the Fly app URL plus the canonical `127.0.0.1`
+loopback origins above into both Neon auth lists. It does not PATCH
+`http://localhost:*` into `trusted_origins`, because Neon currently rejects
+those entries via API. Existing Neon projects may still need a manual redirect
+domain update in Neon Console or via the branch auth domains API.
+
+The branch redirect-domain API expects a full URI plus `auth_provider`, for
+example:
+
+```json
+{"auth_provider":"better_auth","domain":"https://my-app.fly.dev"}
+```
 
 If `trusted_origins` is stale, auth can partially work while email-based flows
 still break:
@@ -380,8 +392,8 @@ For new projects (boring-macro, boring-sandbox, etc.) that need their own Neon d
 - All auth POST requests need `Origin` header matching a trusted domain
 
 **Direct verification email link returns `INVALID_CALLBACKURL`**
-- Check Neon Auth `trusted_origins`
-- Add the current Fly/Modal/custom app origin, not just an old deploy URL
+- Check Neon Auth `trusted_origins` and redirect-domain whitelist
+- Add the current Fly/Modal/custom app origin as a full URI, not just an old deploy URL or bare hostname
 - For canonical local Python-server smoke runs, do not rely on an arbitrary `http://127.0.0.1:<ephemeral-port>` callback origin. Use a stable local app origin that Neon trusts instead, typically `BORING_UI_PUBLIC_ORIGIN=http://127.0.0.1:5176`, and pass the same value to `tests/smoke/smoke_neon_auth.py` via `--public-origin` when it differs from `--base-url`.
 - Re-run `tests/smoke/smoke_neon_auth.py` and confirm phase 1 clicks the exact delivered verification link successfully
 

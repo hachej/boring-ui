@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/boringdata/boring-ui/bui/config"
+	vaultpkg "github.com/boringdata/boring-ui/bui/vault"
 )
 
 func TestBuildBackendCommandGoUsesAirAndWritesConfig(t *testing.T) {
@@ -85,6 +86,21 @@ func TestBuildBackendCommandPythonMatchesExistingFlow(t *testing.T) {
 	}
 }
 
+func TestBuildBackendCommandPythonFactoryEntryUsesUvicornFactory(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.AppConfig{}
+	cfg.Backend.Entry = "childapp.app:create_app"
+
+	cmd, err := buildBackendCommand(root, cfg, nil, 8011, "/tmp/project/.venv/bin/python")
+	if err != nil {
+		t.Fatalf("buildBackendCommand returned error: %v", err)
+	}
+	got := strings.Join(cmd.Args, " ")
+	if !strings.Contains(got, "uvicorn childapp.app:create_app --factory --reload --host 0.0.0.0 --port 8011") {
+		t.Fatalf("expected python factory backend args, got %s", got)
+	}
+}
+
 func TestBuildBackendCommandTypescriptUsesTsx(t *testing.T) {
 	root := t.TempDir()
 	cfg := &config.AppConfig{}
@@ -139,3 +155,95 @@ func TestBuildBackendCommandTypescriptCustomEntry(t *testing.T) {
 }
 
 var execLookPath = lookPath
+
+func TestBuildProcessEnvInjectsNeonDeployConfigForLocalParity(t *testing.T) {
+	t.Cleanup(func() { resolveVaultSecrets = vaultpkg.ResolveSecrets })
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("EXTRA_FLAG=1\n"), 0o644); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+
+	cfg := &config.AppConfig{}
+	cfg.App.ID = "demo-app"
+	cfg.App.Name = "Demo App"
+	cfg.Auth.Provider = "neon"
+	cfg.Deploy.Secrets = map[string]config.SecretRef{
+		"DATABASE_URL":             {Vault: "secret/agent/app/demo/prod", Field: "database_url"},
+		"BORING_UI_SESSION_SECRET": {Vault: "secret/agent/app/demo/prod", Field: "session_secret"},
+	}
+	cfg.Deploy.Neon.AuthURL = "https://example.neonauth.test/neondb/auth"
+	cfg.Deploy.Neon.JWKSURL = "https://example.neonauth.test/neondb/auth/.well-known/jwks.json"
+
+	resolveVaultSecrets = func(map[string]config.SecretRef) (map[string]string, []string) {
+		return map[string]string{
+			"DATABASE_URL":             "postgres://pooler",
+			"BORING_UI_SESSION_SECRET": "session-secret",
+		}, nil
+	}
+
+	env, err := buildProcessEnv(root, cfg, 5176)
+	if err != nil {
+		t.Fatalf("buildProcessEnv returned error: %v", err)
+	}
+	joined := strings.Join(env, "\n")
+	for _, expected := range []string{
+		"DATABASE_URL=postgres://pooler",
+		"BORING_UI_SESSION_SECRET=session-secret",
+		"NEON_AUTH_BASE_URL=https://example.neonauth.test/neondb/auth",
+		"NEON_AUTH_JWKS_URL=https://example.neonauth.test/neondb/auth/.well-known/jwks.json",
+		"BORING_UI_PUBLIC_ORIGIN=http://127.0.0.1:5176",
+		"AUTH_SESSION_SECURE_COOKIE=false",
+		"AUTH_APP_NAME=Demo App",
+		"CONTROL_PLANE_APP_ID=demo-app",
+		"EXTRA_FLAG=1",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected env to contain %q, got %s", expected, joined)
+		}
+	}
+}
+
+func TestChildAppRuntimeEnvPrefersFrontendBrandingName(t *testing.T) {
+	cfg := &config.AppConfig{}
+	cfg.App.ID = "child-id"
+	cfg.App.Name = "App Name"
+	cfg.Frontend.Branding.Name = "Branded Name"
+
+	env := childAppRuntimeEnv(cfg)
+	if env["AUTH_APP_NAME"] != "Branded Name" {
+		t.Fatalf("expected AUTH_APP_NAME to use frontend branding, got %#v", env)
+	}
+	if env["CONTROL_PLANE_APP_ID"] != "child-id" {
+		t.Fatalf("expected CONTROL_PLANE_APP_ID to use app id, got %#v", env)
+	}
+}
+
+func TestPreferredLocalBackendPortUsesTrustedLoopbackForNeon(t *testing.T) {
+	t.Cleanup(func() { portAvailable = isLoopbackPortAvailable })
+	portAvailable = func(port int) bool { return port == 5176 }
+
+	cfg := &config.AppConfig{}
+	cfg.Auth.Provider = "neon"
+
+	port, reason := preferredLocalBackendPort(cfg, 8000)
+	if port != 5176 {
+		t.Fatalf("expected trusted loopback port 5176, got %d", port)
+	}
+	if !strings.Contains(reason, "trusted local auth port 5176") {
+		t.Fatalf("expected reason to mention trusted loopback selection, got %q", reason)
+	}
+}
+
+func TestPreferredLocalBackendPortRespectsExplicitNonDefaultPort(t *testing.T) {
+	t.Cleanup(func() { portAvailable = isLoopbackPortAvailable })
+	portAvailable = func(port int) bool { return true }
+
+	cfg := &config.AppConfig{}
+	cfg.Auth.Provider = "neon"
+
+	port, reason := preferredLocalBackendPort(cfg, 9010)
+	if port != 0 || reason != "" {
+		t.Fatalf("expected explicit configured port to be preserved, got port=%d reason=%q", port, reason)
+	}
+}

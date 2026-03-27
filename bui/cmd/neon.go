@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -195,22 +196,12 @@ func runNeonSetup(cmd *cobra.Command, args []string) error {
 	if dbURL == "" {
 		dbURL = poolerURL
 	}
-	sqlDir := filepath.Join(root, "deploy", "sql")
-	sqlFiles := []string{
-		filepath.Join(root, "internal", "db", "testdata", "control_plane_schema.sql"),
-	}
-	// Add numbered migrations (002_*.sql, 003_*.sql, etc.)
-	if entries, err := os.ReadDir(sqlDir); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() && filepath.Ext(e.Name()) == ".sql" {
-				sqlFiles = append(sqlFiles, filepath.Join(sqlDir, e.Name()))
-			}
-		}
+	frameworkRoot, _ := detectFrameworkRepo()
+	sqlFiles := collectNeonSchemaFiles(root, frameworkRoot)
+	if len(sqlFiles) == 0 {
+		fmt.Println("  warn: no schema files found under app or framework roots")
 	}
 	for _, sf := range sqlFiles {
-		if _, err := os.Stat(sf); err != nil {
-			continue
-		}
 		psql := exec.Command("psql", dbURL, "-f", sf)
 		psql.Stdout = os.Stdout
 		psql.Stderr = os.Stderr
@@ -225,22 +216,18 @@ func runNeonSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println("[bui] enabling Neon Auth...")
 	// Wait a moment for the project to be fully ready
 	time.Sleep(2 * time.Second)
-	authResp, err := neonEnableAuth(apiKey, projectID, branchID)
+	trustedOrigins := defaultNeonTrustedOrigins(cfg.App.ID)
+	fmt.Printf("[bui] seeding auth trusted origins: %s\n", strings.Join(trustedOrigins, ", "))
+	authResp, err := neonEnableAuth(apiKey, projectID, branchID, trustedOrigins)
 	if err != nil {
 		return fmt.Errorf("enable auth: %w", err)
 	}
+	if err := neonSeedAuthRedirectDomains(apiKey, projectID, branchID, trustedOrigins); err != nil {
+		return fmt.Errorf("seed auth callback domains: %w", err)
+	}
 	fmt.Printf("  auth URL: %s\n", authResp.BaseURL)
 	fmt.Printf("  JWKS URL: %s\n", authResp.JWKSURL)
-
-	// 4b. Add trusted origins so verification emails and auth callbacks work.
-	trustedOrigins := defaultNeonTrustedOrigins(cfg.App.ID)
-	fmt.Printf("[bui] adding trusted origins: %s\n", strings.Join(trustedOrigins, ", "))
-	if err := neonSetTrustedOrigins(apiKey, projectID, branchID, trustedOrigins); err != nil {
-		fmt.Printf("  warn: could not set trusted origins: %v\n", err)
-		fmt.Println("  Add manually in Neon Console → Settings → Auth → Trusted origins")
-	} else {
-		fmt.Println("  ✓ trusted origins added")
-	}
+	fmt.Println("  ✓ trusted origins and callback domains provisioned with auth")
 
 	// 5. Configure email provider.
 	// Auto-detect: if Resend API key is in Vault, use it. Override with --email-provider flag.
@@ -571,6 +558,59 @@ func defaultNeonTrustedOrigins(appID string) []string {
 	return origins
 }
 
+func collectNeonSchemaFiles(root, frameworkRoot string) []string {
+	searchRoots := []string{}
+	addRoot := func(candidate string) {
+		if candidate == "" {
+			return
+		}
+		absCandidate, err := filepath.Abs(candidate)
+		if err != nil {
+			absCandidate = candidate
+		}
+		for _, existing := range searchRoots {
+			if existing == absCandidate {
+				return
+			}
+		}
+		searchRoots = append(searchRoots, absCandidate)
+	}
+
+	addRoot(frameworkRoot)
+	addRoot(root)
+
+	files := []string{}
+	seen := map[string]struct{}{}
+	addFile := func(path string) {
+		if _, ok := seen[path]; ok {
+			return
+		}
+		if _, err := os.Stat(path); err != nil {
+			return
+		}
+		seen[path] = struct{}{}
+		files = append(files, path)
+	}
+
+	for _, base := range searchRoots {
+		sqlDir := filepath.Join(base, "deploy", "sql")
+		entries, err := os.ReadDir(sqlDir)
+		if err == nil {
+			for _, e := range entries {
+				if e.IsDir() || filepath.Ext(e.Name()) != ".sql" {
+					continue
+				}
+				addFile(filepath.Join(sqlDir, e.Name()))
+			}
+		}
+		if err != nil || len(entries) == 0 {
+			addFile(filepath.Join(base, "internal", "db", "testdata", "control_plane_schema.sql"))
+		}
+	}
+
+	return files
+}
+
 func neonSetupNextSteps(emailConfigured bool) []string {
 	if !emailConfigured {
 		return []string{
@@ -589,13 +629,24 @@ func neonSetupNextSteps(emailConfigured bool) []string {
 }
 
 // neonSetTrustedOrigins adds origins to the Neon Auth trusted_origins list.
-// PATCH /projects/{project_id}/branches/{branch_id}/auth
-func neonSetTrustedOrigins(apiKey, projectID, branchID string, origins []string) error {
-	path := fmt.Sprintf("/projects/%s/branches/%s/auth", projectID, branchID)
-	_, err := neonAPI("PATCH", path, apiKey, map[string]interface{}{
-		"trusted_origins": origins,
-	})
-	return err
+// trusted_origins must be supplied when Neon Auth is created.
+// Neon exposes POST /projects/{project_id}/branches/{branch_id}/auth for this,
+// and follow-up updates are not supported by the same branch endpoint.
+func neonAuthCreatePayload(origins []string) map[string]interface{} {
+	payload := map[string]interface{}{
+		"auth_provider": "better_auth",
+	}
+	if len(origins) > 0 {
+		payload["trusted_origins"] = origins
+	}
+	return payload
+}
+
+func neonAuthTrustedDomainPayload(origin string) map[string]interface{} {
+	return map[string]interface{}{
+		"auth_provider": "better_auth",
+		"domain":        origin,
+	}
 }
 
 // neonSetEmailVerificationMethod sets the email verification method (link or otp).
@@ -650,7 +701,10 @@ func neonAPI(method, path, apiKey string, body interface{}) ([]byte, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, &neonAPIHTTPError{
+			StatusCode: resp.StatusCode,
+			Body:       string(respBody),
+		}
 	}
 
 	return respBody, nil
@@ -676,11 +730,17 @@ func neonCreateProject(apiKey, name, region string) (*neonCreateResponse, error)
 	return &resp, nil
 }
 
-func neonEnableAuth(apiKey, projectID, branchID string) (*neonAuthResponse, error) {
-	payload := map[string]interface{}{
-		"auth_provider": "better_auth",
-	}
+type neonAPIHTTPError struct {
+	StatusCode int
+	Body       string
+}
 
+func (e *neonAPIHTTPError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
+}
+
+func neonEnableAuth(apiKey, projectID, branchID string, origins []string) (*neonAuthResponse, error) {
+	payload := neonAuthCreatePayload(origins)
 	path := fmt.Sprintf("/projects/%s/branches/%s/auth", projectID, branchID)
 	data, err := neonAPI("POST", path, apiKey, payload)
 	if err != nil {
@@ -692,6 +752,30 @@ func neonEnableAuth(apiKey, projectID, branchID string) (*neonAuthResponse, erro
 		return nil, fmt.Errorf("parse auth response: %w\n%s", err, string(data))
 	}
 	return &resp, nil
+}
+
+func neonSeedAuthRedirectDomains(apiKey, projectID, branchID string, origins []string) error {
+	path := fmt.Sprintf("/projects/%s/branches/%s/auth/domains", projectID, branchID)
+	for _, origin := range origins {
+		if strings.TrimSpace(origin) == "" {
+			continue
+		}
+		if _, err := neonAPI("POST", path, apiKey, neonAuthTrustedDomainPayload(origin)); err != nil {
+			if neonIsDomainAlreadyExistsError(err) {
+				continue
+			}
+			return fmt.Errorf("%s: %w", origin, err)
+		}
+	}
+	return nil
+}
+
+func neonIsDomainAlreadyExistsError(err error) bool {
+	var httpErr *neonAPIHTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	return httpErr.StatusCode == http.StatusBadRequest && strings.Contains(httpErr.Body, "DOMAIN_ALREADY_EXISTS")
 }
 
 // --- Config update helpers ---

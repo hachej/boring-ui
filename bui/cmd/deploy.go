@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,6 +158,11 @@ func deployFly(cfg *config.AppConfig, root string) error {
 	if cfg.Deploy.Neon.JWKSURL != "" {
 		secrets["NEON_AUTH_JWKS_URL"] = cfg.Deploy.Neon.JWKSURL
 	}
+	for key, value := range childAppRuntimeEnv(cfg) {
+		if _, exists := secrets[key]; !exists && strings.TrimSpace(value) != "" {
+			secrets[key] = value
+		}
+	}
 
 	flyBin, err := findFlyBinary()
 	if err != nil {
@@ -202,12 +209,16 @@ func deployFly(cfg *config.AppConfig, root string) error {
 	// 8. Deploy
 	if !deployDryRun {
 		fmt.Printf("[bui] deploying %s...\n", appName)
-		deployCmd := exec.Command(flyBin, "deploy", "-c", flyToml)
-		deployCmd.Dir = root
-		deployCmd.Stdout = os.Stdout
-		deployCmd.Stderr = os.Stderr
-		if err := deployCmd.Run(); err != nil {
-			return fmt.Errorf("fly deploy: %w", err)
+		output, err := runFlyDeploy(flyBin, root, flyToml)
+		if err != nil {
+			if shouldRetryFlyDeployWithoutDepot(output) {
+				fmt.Println("[bui] fly deploy via Depot failed; retrying with --depot=false")
+				if _, retryErr := runFlyDeploy(flyBin, root, flyToml, "--depot=false"); retryErr != nil {
+					return fmt.Errorf("fly deploy: %w (retry without depot: %v)", err, retryErr)
+				}
+			} else {
+				return fmt.Errorf("fly deploy: %w", err)
+			}
 		}
 		fmt.Println("[bui] deploy complete")
 	} else {
@@ -215,6 +226,30 @@ func deployFly(cfg *config.AppConfig, root string) error {
 	}
 
 	return nil
+}
+
+func runFlyDeploy(flyBin, root, flyToml string, extraArgs ...string) (string, error) {
+	args := []string{"deploy", "-c", flyToml}
+	args = append(args, extraArgs...)
+	deployCmd := exec.Command(flyBin, args...)
+	deployCmd.Dir = root
+	var output bytes.Buffer
+	writer := io.MultiWriter(os.Stdout, &output)
+	deployCmd.Stdout = writer
+	deployCmd.Stderr = writer
+	err := deployCmd.Run()
+	return output.String(), err
+}
+
+func shouldRetryFlyDeployWithoutDepot(output string) bool {
+	lower := strings.ToLower(output)
+	if !strings.Contains(lower, "depot") {
+		return false
+	}
+	return strings.Contains(lower, "authentication handshake failed") ||
+		strings.Contains(lower, "invalid token") ||
+		strings.Contains(lower, "failed to get status") ||
+		strings.Contains(lower, "failed to fetch an image or build from source")
 }
 
 func ensureFlyAppExists(flyBin, appName, org string) error {

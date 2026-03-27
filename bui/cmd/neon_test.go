@@ -31,6 +31,137 @@ func TestDefaultNeonTrustedOrigins(t *testing.T) {
 	}
 }
 
+func TestNeonAuthCreatePayloadIncludesTrustedOrigins(t *testing.T) {
+	origins := []string{"https://boring-ui.fly.dev", "http://127.0.0.1:5176"}
+	payload := neonAuthCreatePayload(origins)
+
+	if got := payload["auth_provider"]; got != "better_auth" {
+		t.Fatalf("expected auth_provider=better_auth, got %#v", got)
+	}
+	gotOrigins, ok := payload["trusted_origins"].([]string)
+	if !ok {
+		t.Fatalf("expected []string trusted_origins, got %#v", payload["trusted_origins"])
+	}
+	if !slices.Equal(gotOrigins, origins) {
+		t.Fatalf("expected trusted_origins %#v, got %#v", origins, gotOrigins)
+	}
+}
+
+func TestNeonAuthCreatePayloadOmitsTrustedOriginsWhenEmpty(t *testing.T) {
+	payload := neonAuthCreatePayload(nil)
+	if got := payload["auth_provider"]; got != "better_auth" {
+		t.Fatalf("expected auth_provider=better_auth, got %#v", got)
+	}
+	if _, exists := payload["trusted_origins"]; exists {
+		t.Fatalf("expected trusted_origins to be omitted for empty input, got %#v", payload["trusted_origins"])
+	}
+}
+
+func TestNeonAuthTrustedDomainPayload(t *testing.T) {
+	payload := neonAuthTrustedDomainPayload("https://boring-ui.fly.dev")
+	if got := payload["auth_provider"]; got != "better_auth" {
+		t.Fatalf("expected auth_provider=better_auth, got %#v", got)
+	}
+	if got := payload["domain"]; got != "https://boring-ui.fly.dev" {
+		t.Fatalf("expected full-URI domain payload, got %#v", got)
+	}
+}
+
+func TestNeonIsDomainAlreadyExistsError(t *testing.T) {
+	err := &neonAPIHTTPError{
+		StatusCode: 400,
+		Body:       `{"message":"request failed; reason:\"Domain already exists\", code:\"DOMAIN_ALREADY_EXISTS\""}`,
+	}
+	if !neonIsDomainAlreadyExistsError(err) {
+		t.Fatalf("expected duplicate-domain error to be detected")
+	}
+}
+
+func TestNeonIsDomainAlreadyExistsErrorRejectsOtherFailures(t *testing.T) {
+	cases := []error{
+		&neonAPIHTTPError{StatusCode: 400, Body: `{"message":"different failure"}`},
+		&neonAPIHTTPError{StatusCode: 409, Body: `{"message":"DOMAIN_ALREADY_EXISTS"}`},
+		fmt.Errorf("plain error"),
+	}
+	for _, err := range cases {
+		if neonIsDomainAlreadyExistsError(err) {
+			t.Fatalf("expected %v not to be treated as duplicate-domain success", err)
+		}
+	}
+}
+
+func TestCollectNeonSchemaFilesUsesFrameworkSchemaForChildApps(t *testing.T) {
+	parent := t.TempDir()
+	frameworkRoot := filepath.Join(parent, "boring-ui")
+	childRoot := filepath.Join(parent, "child-app")
+
+	mustMkdirAll := func(path string) {
+		t.Helper()
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+	}
+	mustWrite := func(path string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte("-- test\n"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	mustMkdirAll(filepath.Join(frameworkRoot, "internal", "db", "testdata"))
+	mustMkdirAll(filepath.Join(frameworkRoot, "deploy", "sql"))
+	mustMkdirAll(filepath.Join(childRoot, "deploy", "sql"))
+
+	frameworkBase := filepath.Join(frameworkRoot, "internal", "db", "testdata", "control_plane_schema.sql")
+	frameworkBootstrap := filepath.Join(frameworkRoot, "deploy", "sql", "001_hosted_control_plane_schema.sql")
+	frameworkMigration := filepath.Join(frameworkRoot, "deploy", "sql", "003_user_settings.sql")
+	childMigration := filepath.Join(childRoot, "deploy", "sql", "900_child.sql")
+	mustWrite(frameworkBase)
+	mustWrite(frameworkBootstrap)
+	mustWrite(frameworkMigration)
+	mustWrite(childMigration)
+
+	got := collectNeonSchemaFiles(childRoot, frameworkRoot)
+	want := []string{frameworkBootstrap, frameworkMigration, childMigration}
+	if !slices.Equal(got, want) {
+		t.Fatalf("expected schema files %#v, got %#v", want, got)
+	}
+}
+
+func TestCollectNeonSchemaFilesUsesRepoSchemaWhenFrameworkUnavailable(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "deploy", "sql"), 0o755); err != nil {
+		t.Fatalf("mkdir sql dir: %v", err)
+	}
+	base := filepath.Join(root, "deploy", "sql", "001_hosted_control_plane_schema.sql")
+	if err := os.WriteFile(base, []byte("-- schema\n"), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	got := collectNeonSchemaFiles(root, "")
+	want := []string{base}
+	if !slices.Equal(got, want) {
+		t.Fatalf("expected schema files %#v, got %#v", want, got)
+	}
+}
+
+func TestCollectNeonSchemaFilesFallsBackToLegacySchemaWhenNoDeploySQLExists(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal", "db", "testdata"), 0o755); err != nil {
+		t.Fatalf("mkdir schema dir: %v", err)
+	}
+	base := filepath.Join(root, "internal", "db", "testdata", "control_plane_schema.sql")
+	if err := os.WriteFile(base, []byte("-- legacy schema\n"), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	got := collectNeonSchemaFiles(root, "")
+	want := []string{base}
+	if !slices.Equal(got, want) {
+		t.Fatalf("expected fallback schema files %#v, got %#v", want, got)
+	}
+}
+
 func TestNeonSetupNextStepsWhenEmailConfigured(t *testing.T) {
 	lines := neonSetupNextSteps(true)
 	if len(lines) != 3 {

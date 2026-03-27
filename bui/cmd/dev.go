@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,16 +13,21 @@ import (
 	"github.com/boringdata/boring-ui/bui/config"
 	"github.com/boringdata/boring-ui/bui/framework"
 	"github.com/boringdata/boring-ui/bui/process"
+	vaultpkg "github.com/boringdata/boring-ui/bui/vault"
 	"github.com/spf13/cobra"
 )
 
 var (
-	backendOnly  bool
-	frontendOnly bool
-	portBackend  int
-	portFrontend int
-	lookPath     = exec.LookPath
+	backendOnly         bool
+	frontendOnly        bool
+	portBackend         int
+	portFrontend        int
+	lookPath            = exec.LookPath
+	resolveVaultSecrets = vaultpkg.ResolveSecrets
+	portAvailable       = isLoopbackPortAvailable
 )
+
+var trustedLocalAuthPorts = []int{5176, 5175, 5174, 5173, 3000}
 
 var devCmd = &cobra.Command{
 	Use:   "dev",
@@ -62,22 +68,26 @@ Run 'bui docs dev' for detailed setup guide.`,
 			fmt.Printf("[bui] warn: frontend symlink: %v\n", err)
 		}
 
-		// Load .env if present
-		envVars := loadDotEnv(root)
-
-		// Build process env
-		procEnv := os.Environ()
-		for k, v := range envVars {
-			procEnv = append(procEnv, k+"="+v)
-		}
-
 		backendPort := cfg.Backend.Port
 		frontendPort := cfg.Frontend.Port
 		if portBackend != 0 {
 			backendPort = portBackend
+		} else if preferredPort, reason := preferredLocalBackendPort(cfg, backendPort); preferredPort != 0 {
+			if preferredPort != backendPort {
+				fmt.Printf("[bui] %s\n", reason)
+			}
+			backendPort = preferredPort
 		}
 		if portFrontend != 0 {
 			frontendPort = portFrontend
+		}
+
+		procEnv, err := buildProcessEnv(root, cfg, backendPort)
+		if err != nil {
+			return err
+		}
+		if backendType(cfg) == "typescript" || backendType(cfg) == "ts" {
+			procEnv = append(procEnv, fmt.Sprintf("BUI_FRAMEWORK_ROOT=%s", fwPath))
 		}
 
 		sup := &process.Supervisor{}
@@ -165,12 +175,16 @@ func buildBackendCommand(root string, cfg *config.AppConfig, procEnv []string, b
 		if entry == "" {
 			entry = "boring_ui.app_config_loader:app"
 		}
-		uvicorn := exec.Command(venvPy, "-m", "uvicorn",
-			entry,
+		args := []string{"-m", "uvicorn", entry}
+		if pythonEntryNeedsFactory(entry) {
+			args = append(args, "--factory")
+		}
+		args = append(args,
 			"--reload",
 			"--host", "0.0.0.0",
 			"--port", fmt.Sprintf("%d", backendPort),
 		)
+		uvicorn := exec.Command(venvPy, args...)
 		uvicorn.Dir = root
 		uvicornEnv := append(procEnv, fmt.Sprintf("BUI_APP_TOML=%s", configPath))
 		// Add extra PYTHONPATH entries
@@ -226,6 +240,132 @@ func buildBackendCommand(root string, cfg *config.AppConfig, procEnv []string, b
 	default:
 		return nil, fmt.Errorf("unsupported backend.type %q (supported: python, go, typescript)", cfg.Backend.Type)
 	}
+}
+
+func buildProcessEnv(root string, cfg *config.AppConfig, backendPort int) ([]string, error) {
+	envVars := map[string]string{}
+	for key, value := range cfg.Deploy.DeployEnv {
+		envVars[key] = value
+	}
+	for key, value := range childAppRuntimeEnv(cfg) {
+		if _, exists := envVars[key]; !exists && strings.TrimSpace(value) != "" {
+			envVars[key] = value
+		}
+	}
+	if needsLocalNeonEnv(cfg) {
+		if err := injectLocalNeonEnv(root, cfg, envVars, backendPort); err != nil {
+			return nil, err
+		}
+	}
+	for key, value := range loadDotEnv(root) {
+		envVars[key] = value
+	}
+
+	procEnv := os.Environ()
+	for _, key := range sortedKeys(envVars) {
+		procEnv = append(procEnv, key+"="+envVars[key])
+	}
+	return procEnv, nil
+}
+
+func needsLocalNeonEnv(cfg *config.AppConfig) bool {
+	provider := strings.TrimSpace(strings.ToLower(cfg.Auth.Provider))
+	return provider == "neon" ||
+		strings.TrimSpace(cfg.Deploy.Neon.AuthURL) != "" ||
+		strings.TrimSpace(cfg.Deploy.Neon.JWKSURL) != ""
+}
+
+func injectLocalNeonEnv(root string, cfg *config.AppConfig, envVars map[string]string, backendPort int) error {
+	resolved, failed := resolveVaultSecrets(cfg.Deploy.Secrets)
+	_, failed, err := applyNeonFallbackSecrets(root, cfg.Deploy.Secrets, resolved, failed)
+	if err != nil {
+		return fmt.Errorf("resolve local Neon secrets: %w", err)
+	}
+	for _, name := range failed {
+		fmt.Printf("[bui] warn: local dev could not resolve %s from Vault or .boring fallback\n", name)
+	}
+	for key, value := range resolved {
+		envVars[key] = value
+	}
+	if cfg.Deploy.Neon.AuthURL != "" {
+		envVars["NEON_AUTH_BASE_URL"] = cfg.Deploy.Neon.AuthURL
+	}
+	if cfg.Deploy.Neon.JWKSURL != "" {
+		envVars["NEON_AUTH_JWKS_URL"] = cfg.Deploy.Neon.JWKSURL
+	}
+	if backendPort > 0 {
+		envVars["BORING_UI_PUBLIC_ORIGIN"] = fmt.Sprintf("http://127.0.0.1:%d", backendPort)
+	}
+	envVars["AUTH_SESSION_SECURE_COOKIE"] = "false"
+	return nil
+}
+
+func preferredLocalBackendPort(cfg *config.AppConfig, configuredPort int) (int, string) {
+	if !needsLocalNeonEnv(cfg) {
+		return 0, ""
+	}
+	trimmedProvider := strings.TrimSpace(strings.ToLower(cfg.Auth.Provider))
+	if configuredPort != 0 && configuredPort != 8000 {
+		return 0, ""
+	}
+	for _, candidate := range trustedLocalAuthPorts {
+		if portAvailable(candidate) {
+			reason := fmt.Sprintf(
+				"auth.provider=%s; using trusted local auth port %d (override with --port)",
+				nonEmptyProvider(trimmedProvider),
+				candidate,
+			)
+			return candidate, reason
+		}
+	}
+	return 0, ""
+}
+
+func nonEmptyProvider(provider string) string {
+	if provider == "" {
+		return "neon"
+	}
+	return provider
+}
+
+func childAppRuntimeEnv(cfg *config.AppConfig) map[string]string {
+	appName := strings.TrimSpace(cfg.Frontend.Branding.Name)
+	if appName == "" {
+		appName = strings.TrimSpace(cfg.App.Name)
+	}
+	appID := strings.TrimSpace(cfg.App.ID)
+
+	env := map[string]string{}
+	if appName != "" {
+		env["AUTH_APP_NAME"] = appName
+	}
+	if appID != "" {
+		env["CONTROL_PLANE_APP_ID"] = appID
+	}
+	return env
+}
+
+func isLoopbackPortAvailable(port int) bool {
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	_ = listener.Close()
+	return true
+}
+
+func pythonEntryNeedsFactory(entry string) bool {
+	parts := strings.SplitN(strings.TrimSpace(entry), ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	target := strings.TrimSpace(parts[1])
+	if target == "" {
+		return false
+	}
+	return strings.HasPrefix(target, "create_") ||
+		strings.HasPrefix(target, "_create_") ||
+		strings.HasSuffix(target, "_factory")
 }
 
 func writeAirConfig(root string, target string) (string, error) {

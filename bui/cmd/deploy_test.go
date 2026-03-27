@@ -155,6 +155,38 @@ func TestFindFlyBinaryFallsBackToHomeInstall(t *testing.T) {
 	}
 }
 
+func TestShouldRetryFlyDeployWithoutDepotRecognizesDepotHandshakeFailure(t *testing.T) {
+	output := `
+Waiting for depot builder...
+==> Building image with Depot
+Error: failed to fetch an image or build from source: error building: failed to get status: rpc error: code = Unavailable desc = connection error: desc = "transport: authentication handshake failed: EOF"
+`
+	if !shouldRetryFlyDeployWithoutDepot(output) {
+		t.Fatalf("expected depot handshake failure to trigger non-depot retry")
+	}
+}
+
+func TestShouldRetryFlyDeployWithoutDepotIgnoresNonDepotFailures(t *testing.T) {
+	output := `Error: app not found`
+	if shouldRetryFlyDeployWithoutDepot(output) {
+		t.Fatalf("expected generic fly failure not to trigger non-depot retry")
+	}
+}
+
+func TestChildAppRuntimeEnvFallsBackToAppName(t *testing.T) {
+	cfg := &config.AppConfig{}
+	cfg.App.ID = "child-id"
+	cfg.App.Name = "Child App"
+
+	env := childAppRuntimeEnv(cfg)
+	if env["AUTH_APP_NAME"] != "Child App" {
+		t.Fatalf("expected AUTH_APP_NAME to fall back to app name, got %#v", env)
+	}
+	if env["CONTROL_PLANE_APP_ID"] != "child-id" {
+		t.Fatalf("expected CONTROL_PLANE_APP_ID to equal app id, got %#v", env)
+	}
+}
+
 func TestApplyNeonFallbackSecretsUsesEnvFile(t *testing.T) {
 	root := t.TempDir()
 	boringDir := filepath.Join(root, ".boring")

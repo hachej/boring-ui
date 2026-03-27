@@ -11,8 +11,11 @@ import (
 
 func TestRunInitGoScaffoldsBuildableChildApp(t *testing.T) {
 	origGo := initGo
+	origPython := initPython
 	t.Cleanup(func() { initGo = origGo })
+	t.Cleanup(func() { initPython = origPython })
 	initGo = true
+	initPython = false
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -71,6 +74,8 @@ func TestRunInitGoScaffoldsBuildableChildApp(t *testing.T) {
 	}
 	assertGoldenFile(t, goldenRoot, filepath.Join(root, "myapp", "deploy", "fly", "Dockerfile"), string(dockerfile))
 
+	assertDockerignore(t, filepath.Join(root, "myapp", ".dockerignore"))
+
 	helloModule, err := os.ReadFile(filepath.Join(root, "myapp", "hello", "module.go"))
 	if err != nil {
 		t.Fatalf("read hello/module.go: %v", err)
@@ -89,10 +94,107 @@ func TestRunInitGoScaffoldsBuildableChildApp(t *testing.T) {
 	}
 }
 
+func TestRunInitTypeScriptScaffoldsAppEntrypoint(t *testing.T) {
+	origGo := initGo
+	origPython := initPython
+	t.Cleanup(func() { initGo = origGo })
+	t.Cleanup(func() { initPython = origPython })
+	initGo = false
+	initPython = false
+
+	root := t.TempDir()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd before chdir: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir root: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previous)
+	})
+
+	if err := runInit(initCmd, []string{"tsapp"}); err != nil {
+		t.Fatalf("runInit returned error: %v", err)
+	}
+
+	serverEntry, err := os.ReadFile(filepath.Join(root, "tsapp", "src", "server", "index.ts"))
+	if err != nil {
+		t.Fatalf("read src/server/index.ts: %v", err)
+	}
+	if !strings.Contains(string(serverEntry), "BUI_FRAMEWORK_ROOT") {
+		t.Fatalf("expected TS entry to resolve BUI_FRAMEWORK_ROOT, got %s", string(serverEntry))
+	}
+	if !strings.Contains(string(serverEntry), "registerExampleRoutes(app)") {
+		t.Fatalf("expected TS entry to mount example routes, got %s", string(serverEntry))
+	}
+
+	appToml, err := os.ReadFile(filepath.Join(root, "tsapp", "boring.app.toml"))
+	if err != nil {
+		t.Fatalf("read boring.app.toml: %v", err)
+	}
+	if !strings.Contains(string(appToml), `type    = "typescript"`) {
+		t.Fatalf("expected backend.type to be typescript, got %s", string(appToml))
+	}
+	if !strings.Contains(string(appToml), `entry   = "src/server/index.ts"`) {
+		t.Fatalf("expected backend entry to match generated TS entrypoint, got %s", string(appToml))
+	}
+	if !strings.Contains(string(appToml), `platform = "fly"`) {
+		t.Fatalf("expected boring.app.toml to default to Fly deploys, got %s", string(appToml))
+	}
+	if !strings.Contains(string(appToml), `[deploy.fly]`) {
+		t.Fatalf("expected boring.app.toml to include deploy.fly config, got %s", string(appToml))
+	}
+
+	flyToml, err := os.ReadFile(filepath.Join(root, "tsapp", "deploy", "fly", "fly.toml"))
+	if err != nil {
+		t.Fatalf("read deploy/fly/fly.toml: %v", err)
+	}
+	if !strings.Contains(string(flyToml), `app = "tsapp"`) {
+		t.Fatalf("expected fly.toml app to match scaffolded app id, got %s", string(flyToml))
+	}
+	if !strings.Contains(string(flyToml), `dockerfile = "Dockerfile"`) {
+		t.Fatalf("expected fly.toml to point at the generated Dockerfile, got %s", string(flyToml))
+	}
+	if !strings.Contains(string(flyToml), `WORKSPACE_BACKEND = "bwrap"`) {
+		t.Fatalf("expected fly.toml to pin the hosted workspace backend, got %s", string(flyToml))
+	}
+
+	dockerfile, err := os.ReadFile(filepath.Join(root, "tsapp", "deploy", "fly", "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read deploy/fly/Dockerfile: %v", err)
+	}
+	if !strings.Contains(string(dockerfile), `BUI_APP_TOML=/workspace/app/boring.app.toml`) {
+		t.Fatalf("expected Dockerfile to build with the generated boring.app.toml, got %s", string(dockerfile))
+	}
+	if !strings.Contains(string(dockerfile), `BUI_FRAMEWORK_ROOT=/opt/boring-ui`) {
+		t.Fatalf("expected Dockerfile to pin the framework root for TS entrypoints, got %s", string(dockerfile))
+	}
+	if !strings.Contains(string(dockerfile), `cd /app && npm install --no-audit --no-fund`) {
+		t.Fatalf("expected Dockerfile to install child app runtime dependencies in /app, got %s", string(dockerfile))
+	}
+	if !strings.Contains(string(dockerfile), `CMD ["node", "--import", "tsx", "src/server/index.ts"]`) {
+		t.Fatalf("expected Dockerfile to run the scaffolded TS entrypoint via tsx, got %s", string(dockerfile))
+	}
+
+	packageJSON, err := os.ReadFile(filepath.Join(root, "tsapp", "package.json"))
+	if err != nil {
+		t.Fatalf("read package.json: %v", err)
+	}
+	if !strings.Contains(string(packageJSON), `"tsx": "^4.19.4"`) {
+		t.Fatalf("expected package.json to include tsx, got %s", string(packageJSON))
+	}
+
+	assertDockerignore(t, filepath.Join(root, "tsapp", ".dockerignore"))
+}
+
 func TestRunInitPythonScaffoldsAppEntrypoint(t *testing.T) {
 	origGo := initGo
+	origPython := initPython
 	t.Cleanup(func() { initGo = origGo })
+	t.Cleanup(func() { initPython = origPython })
 	initGo = false
+	initPython = true
 
 	root := t.TempDir()
 	previous, err := os.Getwd()
@@ -128,40 +230,42 @@ func TestRunInitPythonScaffoldsAppEntrypoint(t *testing.T) {
 	if !strings.Contains(string(appToml), `entry   = "pyapp.app:create_app"`) {
 		t.Fatalf("expected backend entry to match generated app.py, got %s", string(appToml))
 	}
-	if !strings.Contains(string(appToml), `platform = "fly"`) {
-		t.Fatalf("expected boring.app.toml to default to Fly deploys, got %s", string(appToml))
-	}
-	if !strings.Contains(string(appToml), `[deploy.fly]`) {
-		t.Fatalf("expected boring.app.toml to include deploy.fly config, got %s", string(appToml))
-	}
 
-	flyToml, err := os.ReadFile(filepath.Join(root, "pyapp", "deploy", "fly", "fly.toml"))
-	if err != nil {
-		t.Fatalf("read deploy/fly/fly.toml: %v", err)
-	}
-	if !strings.Contains(string(flyToml), `app = "pyapp"`) {
-		t.Fatalf("expected fly.toml app to match scaffolded app id, got %s", string(flyToml))
-	}
-	if !strings.Contains(string(flyToml), `dockerfile = "deploy/fly/Dockerfile"`) {
-		t.Fatalf("expected fly.toml to point at the generated Dockerfile, got %s", string(flyToml))
-	}
+	assertDockerignore(t, filepath.Join(root, "pyapp", ".dockerignore"))
+}
 
-	dockerfile, err := os.ReadFile(filepath.Join(root, "pyapp", "deploy", "fly", "Dockerfile"))
+func TestRunInitRejectsMultipleRuntimeFlags(t *testing.T) {
+	origGo := initGo
+	origPython := initPython
+	t.Cleanup(func() { initGo = origGo })
+	t.Cleanup(func() { initPython = origPython })
+	initGo = true
+	initPython = true
+
+	root := t.TempDir()
+	previous, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("read deploy/fly/Dockerfile: %v", err)
+		t.Fatalf("getwd before chdir: %v", err)
 	}
-	if !strings.Contains(string(dockerfile), `BUI_APP_TOML=/workspace/app/boring.app.toml`) {
-		t.Fatalf("expected Dockerfile to build with the generated boring.app.toml, got %s", string(dockerfile))
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir root: %v", err)
 	}
-	if !strings.Contains(string(dockerfile), `CMD ["uvicorn", "pyapp.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]`) {
-		t.Fatalf("expected Dockerfile to run the scaffolded app factory via uvicorn, got %s", string(dockerfile))
+	t.Cleanup(func() {
+		_ = os.Chdir(previous)
+	})
+
+	if err := runInit(initCmd, []string{"invalid"}); err == nil {
+		t.Fatal("expected conflicting runtime flags to fail")
 	}
 }
 
 func TestRunInitGoWithoutSiblingSkipsModulePinning(t *testing.T) {
 	origGo := initGo
+	origPython := initPython
 	t.Cleanup(func() { initGo = origGo })
+	t.Cleanup(func() { initPython = origPython })
 	initGo = true
+	initPython = false
 
 	root := t.TempDir()
 	previous, err := os.Getwd()
@@ -249,4 +353,29 @@ func normalizeGoModForGolden(input string) string {
 		}
 	}
 	return strings.Join(normalized, "\n\n")
+}
+
+func assertDockerignore(t *testing.T, path string) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read .dockerignore: %v", err)
+	}
+
+	expected := strings.TrimSpace(`.git
+.venv
+.air
+dist
+node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+*.egg-info
+.boring
+.env`)
+	if strings.TrimSpace(string(data)) != expected {
+		t.Fatalf(".dockerignore mismatch for %s\nexpected:\n%s\nactual:\n%s", path, expected, strings.TrimSpace(string(data)))
+	}
 }
