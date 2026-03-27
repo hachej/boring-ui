@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import signal
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import tests.eval.eval_child_app as eval_child_app_module
 import tests.eval.introspection as introspection_module
 from tests.eval.agent_prompt import generate_prompt, save_prompt
 from tests.eval.contracts import NamingContract, ObservedCommand, RunManifest
@@ -64,22 +67,35 @@ class TestAgentPrompt:
         assert BEGIN_MARKER in prompt
         assert END_MARKER in prompt
 
+    def test_generate_report_shape_includes_required_schema_fields(self, sample_manifest):
+        prompt = generate_prompt(sample_manifest)
+        assert '"eval_spec_version": "0.1.0"' in prompt
+        assert '"report_schema_version": "0.1.0"' in prompt
+        assert f'"python_module": "{sample_manifest.python_module}"' in prompt
+        assert '"platform_profile": "core"' in prompt
+
     def test_generate_contains_bui_help(self, sample_manifest):
         prompt = generate_prompt(sample_manifest)
         assert "bui --help" in prompt
 
-    def test_generate_contains_constraints(self, sample_manifest):
+    def test_generate_keeps_prompt_minimal(self, sample_manifest):
         prompt = generate_prompt(sample_manifest)
+        assert "I want a boring-ui child app" in prompt
         assert "Do NOT modify" in prompt
-        assert "Do NOT hardcode" in prompt
-        assert f"secret/agent/app/{sample_manifest.app_slug}/prod" in prompt
-        assert "Neon auth" in prompt
+        assert "Do NOT hardcode" not in prompt
+        assert f"secret/agent/app/{sample_manifest.app_slug}/prod" not in prompt
+        assert "The final deployed app must use Neon auth" not in prompt
 
     def test_generate_avoids_legacy_python_path_instructions(self, sample_manifest):
         prompt = generate_prompt(sample_manifest, profile="auth-plus")
         assert f"src/{sample_manifest.python_module}/routers/status.py" not in prompt
         assert f"src/{sample_manifest.python_module}/routers/notes.py" not in prompt
-        assert "local validation first" in prompt
+        assert "Use the shortest supported workflow" in prompt
+
+    def test_generate_discourages_extra_repo_setup_and_manual_sweeps(self, sample_manifest):
+        prompt = generate_prompt(sample_manifest)
+        assert "git init" not in prompt
+        assert "broad manual endpoint sweeps" in prompt
 
     def test_generate_deterministic(self, sample_manifest):
         p1 = generate_prompt(sample_manifest)
@@ -101,6 +117,161 @@ class TestAgentPrompt:
         path = save_prompt(sample_manifest, prompt)
         assert path.exists()
         assert path.read_text() == prompt
+
+    def test_build_neon_local_dev_env_reads_app_scoped_vault_refs(self, tmp_path, monkeypatch):
+        root = tmp_path / "demo"
+        root.mkdir()
+        (root / "boring.app.toml").write_text(
+            """
+[app]
+name = "demo"
+id = "demo"
+
+[auth]
+provider = "neon"
+
+[deploy]
+platform = "fly"
+
+[deploy.secrets]
+DATABASE_URL = { vault = "secret/agent/app/demo/prod", field = "database_url" }
+BORING_UI_SESSION_SECRET = { vault = "secret/agent/app/demo/prod", field = "session_secret" }
+BORING_SETTINGS_KEY = { vault = "secret/agent/app/demo/prod", field = "settings_key" }
+
+[deploy.neon]
+auth_url = "https://auth.example.test"
+jwks_url = "https://auth.example.test/.well-known/jwks.json"
+""",
+            encoding="utf-8",
+        )
+
+        calls: list[list[str]] = []
+        values = {
+            "database_url": "postgres://demo",
+            "session_secret": "session-secret",
+            "settings_key": "settings-key",
+        }
+
+        def fake_run(cmd, capture_output, text, timeout, check):
+            calls.append(cmd)
+            field = cmd[3].split("=", 1)[1]
+            return SimpleNamespace(returncode=0, stdout=values[field] + "\n", stderr="")
+
+        monkeypatch.setattr(eval_child_app_module.subprocess, "run", fake_run)
+
+        env = eval_child_app_module._build_neon_local_dev_env(root, 5176)
+
+        assert env["DATABASE_URL"] == "postgres://demo"
+        assert env["BORING_UI_SESSION_SECRET"] == "session-secret"
+        assert env["BORING_SETTINGS_KEY"] == "settings-key"
+        assert env["NEON_AUTH_BASE_URL"] == "https://auth.example.test"
+        assert env["NEON_AUTH_JWKS_URL"] == "https://auth.example.test/.well-known/jwks.json"
+        assert env["BORING_UI_PUBLIC_ORIGIN"] == "http://127.0.0.1:5176"
+        assert calls == [
+            ["vault", "kv", "get", "-field=database_url", "secret/agent/app/demo/prod"],
+            ["vault", "kv", "get", "-field=session_secret", "secret/agent/app/demo/prod"],
+            ["vault", "kv", "get", "-field=settings_key", "secret/agent/app/demo/prod"],
+        ]
+
+    def test_load_report_output_text_reads_report_file(self, sample_manifest, tmp_path):
+        report_path = tmp_path / "report.json"
+        report_path.write_text(f"{BEGIN_MARKER}\n{{\"ok\":true}}\n{END_MARKER}\n", encoding="utf-8")
+        sample_manifest.report_output_path = str(report_path)
+
+        text = eval_child_app_module._load_report_output_text(sample_manifest)
+
+        assert BEGIN_MARKER in text
+        assert END_MARKER in text
+
+    def test_run_local_dev_validation_uses_process_group_and_file_backed_logs(self, sample_manifest, monkeypatch, tmp_path):
+        root = tmp_path / sample_manifest.app_slug
+        root.mkdir()
+        sample_manifest.project_root = str(root)
+
+        monkeypatch.setattr(
+            eval_child_app_module,
+            "_run_command_capture",
+            lambda *args, **kwargs: asyncio.sleep(0, result=(0, "doctor ok", "")),
+        )
+        monkeypatch.setattr(eval_child_app_module, "_pick_trusted_local_auth_port", lambda: 5176)
+        monkeypatch.setattr(eval_child_app_module, "_build_neon_local_dev_env", lambda *_args, **_kwargs: {})
+
+        calls = {}
+
+        class FakeProcess:
+            def __init__(self):
+                self.returncode = None
+                self.pid = 43210
+
+            async def wait(self):
+                self.returncode = 0
+                return 0
+
+            def send_signal(self, _sig):
+                raise AssertionError("expected process-group signaling instead of direct send_signal")
+
+            def kill(self):
+                raise AssertionError("expected process-group signaling instead of direct kill")
+
+            async def communicate(self):
+                raise AssertionError("communicate() should not be used for long-running bui dev")
+
+        async def fake_create_subprocess_exec(*cmd, **kwargs):
+            calls["cmd"] = cmd
+            calls["start_new_session"] = kwargs.get("start_new_session")
+            calls["stdout_is_pipe"] = kwargs.get("stdout") is asyncio.subprocess.PIPE
+            calls["stderr_is_pipe"] = kwargs.get("stderr") is asyncio.subprocess.PIPE
+            kwargs["stdout"].write(b"dev stdout line\n")
+            kwargs["stderr"].write(b"dev stderr line\n")
+            kwargs["stdout"].flush()
+            kwargs["stderr"].flush()
+            return FakeProcess()
+
+        probe_counts = {"health": 0, "notes": 0}
+
+        def fake_http_probe(url, timeout_s=3.0):
+            if url.endswith("/health"):
+                probe_counts["health"] += 1
+                return 200, {
+                    "ok": True,
+                    "app": sample_manifest.app_slug,
+                    "eval_id": sample_manifest.eval_id,
+                    "verification_nonce": sample_manifest.verification_nonce,
+                }
+            if url.endswith("/info"):
+                return 200, {"name": sample_manifest.app_slug, "version": "0.1.0", "eval_id": sample_manifest.eval_id}
+            if url.endswith("/notes"):
+                probe_counts["notes"] += 1
+                return (200, [{"id": "note-1", "text": "hello", "created_at": "2026-03-26T00:00:00+00:00"}]) if probe_counts["notes"] == 1 else (200, [])
+            if url.endswith("/__bui/config"):
+                return 200, {"app": {"name": sample_manifest.app_slug, "logo": "C"}}
+            if url.endswith("/api/capabilities"):
+                return 200, {"features": {}, "routers": ["status"], "version": "0.1.0", "auth": {"provider": "neon"}}
+            return None, None
+
+        def fake_http_json_request(url, method="POST", payload=None, timeout_s=3.0):
+            if url.endswith("/notes") and method == "POST":
+                return 200, {"id": "note-1", "text": "hello", "created_at": "2026-03-26T00:00:00+00:00"}
+            if "/notes/" in url and method == "DELETE":
+                return 200, {"deleted": True}
+            return None, None
+
+        signaled = []
+
+        monkeypatch.setattr(eval_child_app_module.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+        monkeypatch.setattr(eval_child_app_module, "_http_probe", fake_http_probe)
+        monkeypatch.setattr(eval_child_app_module, "_http_json_request", fake_http_json_request)
+        monkeypatch.setattr(eval_child_app_module, "_signal_subprocess_group", lambda process, sig: signaled.append((process.pid, sig)))
+
+        ctx, _ = asyncio.run(eval_child_app_module._run_local_dev_validation(sample_manifest, timeout_s=1))
+
+        assert calls["start_new_session"] is True
+        assert calls["stdout_is_pipe"] is False
+        assert calls["stderr_is_pipe"] is False
+        assert ctx.dev_started is True
+        assert "dev stdout line" in ctx.dev_stdout
+        assert "dev stderr line" in ctx.dev_stderr
+        assert signaled == [(43210, signal.SIGTERM)]
 
 
 # ===================================================================
@@ -144,6 +315,18 @@ class TestParsing:
     def test_extract_report_malformed_json(self):
         text = f"{BEGIN_MARKER}\n{{bad json\n{END_MARKER}"
         assert extract_report_json(text) is None
+
+    def test_extract_report_from_appended_nested_json_without_markers(self, sample_manifest):
+        report = self._make_report(
+            sample_manifest,
+            steps={"deploy": {"status": "succeeded", "attempted": True}},
+            local_checks=[{"path": "/health", "status": 200}],
+        )
+        text = f"Human summary first\n\n{json.dumps(report, indent=2)}"
+        result = extract_report_json(text)
+        assert result is not None
+        assert result["eval_id"] == sample_manifest.eval_id
+        assert result["steps"]["deploy"]["status"] == "succeeded"
 
     def test_extract_deployed_url_from_report(self, sample_manifest):
         report = self._make_report(sample_manifest)
@@ -380,7 +563,8 @@ class TestRunners:
         assert BEGIN_MARKER in result.final_response
         assert len(result.command_log) >= 3
         assert (Path(manifest.project_root) / "boring.app.toml").exists()
-        assert (Path(manifest.project_root) / "src" / naming.python_module / "routers" / "status.py").exists()
+        assert (Path(manifest.project_root) / "src" / "server" / "index.ts").exists()
+        assert (Path(manifest.project_root) / "src" / "server" / "routes" / "status.ts").exists()
 
     def test_fixture_mock_runner_defaults_exit_code_to_zero(self, tmp_path):
         fixture_dir = tmp_path / "fixture"

@@ -262,18 +262,17 @@ The agent prompt should require this sequence:
 
 1. `cd /home/ubuntu/projects/` and scaffold a new child app with the dedicated name using `bui init`.
 2. Keep all changes isolated to the new app directory.
-3. Initialize a git repo (`git init`, initial commit) so git-related checks and deploy workflows have context.
+3. Add the required custom verification routes/panel using the current TypeScript child-app scaffold.
 4. Configure required secrets safely, using Vault-backed deploy secret references where appropriate.
-5. Add the required custom verification router.
+5. Run `bui neon setup --region aws-eu-central-1 --email-provider none` early so the app uses the real Neon-backed auth/data contract rather than the insecure local default.
 6. Validate the project with `bui doctor`.
-7. Start local runtime validation and verify the required local endpoints. (This runs BEFORE neon setup, so local dev uses `auth.provider = "local"` and does not need DATABASE_URL.)
-8. Run `bui neon setup --region aws-eu-central-1 --email-provider none` to provision the hosted dependency path required for auth/data. (This changes `boring.app.toml` to `auth.provider = "neon"` and adds deploy secrets. All flags must be specified to avoid interactive prompts.)
-9. Configure deployment for Fly.io.
-10. Run `bui deploy`.
-11. Verify the live deployment.
-12. Return a final report in both human-readable and machine-readable form.
+7. Start local runtime validation and verify the required local endpoints and UI on the supported local Neon callback path.
+8. Configure deployment for Fly.io.
+9. Run `bui deploy`.
+10. Verify the live deployment.
+11. Return a final report in both human-readable and machine-readable form.
 
-Note: Steps 7 and 8 are deliberately ordered so local validation runs with local auth (no external dependencies). The harness's independent clean-room local verification (Phase B) should also use `CONTROL_PLANE_PROVIDER=local` environment override when launching `bui dev`, since it tests app startup and routing, not Neon integration. Neon integration is verified in the deployment phase (Phase C).
+The prompt should explicitly avoid requiring `git init`/initial commit or broad manual endpoint sweeps. The agent should use the shortest supported `bui` workflow and only add extra shell checks when diagnosing a failure.
 
 Required custom routes for `core` and above:
 
@@ -840,7 +839,7 @@ The harness should support:
     python tests/eval/eval_child_app.py --skip-cleanup
     python tests/eval/eval_child_app.py --eval-id child-eval-test-1
     python tests/eval/eval_child_app.py --evidence-dir ./out
-    python tests/eval/eval_child_app.py --agent-timeout 900
+    python tests/eval/eval_child_app.py --agent-timeout 1200
     python tests/eval/eval_child_app.py --verification-timeout 300 --cleanup-timeout 180
 
 Optional future flags:

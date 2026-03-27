@@ -68,17 +68,28 @@ child app. Every step uses bui CLI — no manual framework wiring needed.
      bui init <app-name>
      cd <app-name>
 
-     This creates boring.app.toml, pyproject.toml, example router, and
-     .gitignore. The example router is already wired into [backend].routers.
+     This creates boring.app.toml, package.json, starter backend wiring,
+     .gitignore, and .dockerignore. Treat the scaffold as a starting point —
+     replace the example feature with the real routes and panels your app needs.
 
-  2. Initialize git:
-     git init && git add -A && git commit -m "Initial scaffold"
+  2. Implement your app features using the current scaffold:
+     - Add or replace backend routes in src/server/index.ts or files under src/server/routes/.
+     - The default scaffold is TypeScript. Use 'bui init --python' only when you explicitly need the legacy Python child-app path.
+     - Add custom panels under panels/ and declare them in [frontend.panels].
+     - If you need root-level routes such as /health, /info, or /whoami,
+       add them in the scaffolded TS entrypoint before calling listen().
+     - If a feature must survive deploys, restarts, or multiple Fly machines,
+       back it with shared persistence such as DATABASE_URL-backed storage, not
+       process-local memory.
 
-  3. Add custom routes (edit src/<module>/routers/example.py or add new files):
-     - Add your router file: src/<module>/routers/status.py
-     - Wire it in boring.app.toml under [backend].routers:
-       routers = ["<module>.routers.example:router", "<module>.routers.status:router"]
-     - The framework mounts each router at /api/x/<filename> automatically
+     No separate git init/commit is required unless your own workflow
+     specifically needs local repo history.
+
+  3. Provision Neon (auth + database for local and hosted parity):
+     bui neon setup
+     # Auto-configures Resend for verification emails (if key in Vault)
+     # Stores app-specific creds in secret/agent/app/<app-id>/prod or .boring/
+     # For hosted apps, final auth should be Neon-backed, not local.
 
   4. Validate:
      bui doctor
@@ -86,99 +97,78 @@ child app. Every step uses bui CLI — no manual framework wiring needed.
   5. Local dev test:
      bui dev --backend-only
      # In another terminal:
-     curl http://localhost:8000/api/capabilities
-     curl http://localhost:8000/api/x/example/health
+     # After 'bui neon setup', bui dev prefers a trusted 127.0.0.1 loopback
+     # port for callback flows (for example :5176) unless you override --port.
+     curl http://127.0.0.1:5176/api/capabilities
+     curl http://127.0.0.1:5176/health
+     # Exercise the routes and panels you just added.
+     # Prefer focused checks for required behavior over broad redundant sweeps.
 
-  6. Provision Neon (auth + database for production):
-     bui neon setup
-     # Auto-configures Resend for verification emails (if key in Vault)
-     # Updates boring.app.toml, switches the app to Neon auth for deploy,
-     # and stores creds in secret/agent/app/<app-id>/prod or .boring/
-
-  7. Deploy to Fly:
+  6. Deploy to Fly:
      bui deploy
      # Creates Fly app if needed, builds frontend, resolves secrets, deploys
 
-  8. Verify live:
+  7. Verify live:
      curl https://<app-name>.fly.dev/health
      curl https://<app-name>.fly.dev/api/capabilities
+     # Then verify the specific routes and UI you added live.
 
 --- How it works under the hood ---
 
-  boring-ui is a framework. Your child app is a config + custom routers.
-  bui dev installs the framework (pip install -e ../boring-ui) and your
-  app (pip install -e .), then runs boring_ui.app_config_loader:app which:
-    1. Reads your boring.app.toml
-    2. Creates the base FastAPI app from boring-ui framework
-    3. Mounts your [backend].routers at /api/x/<name>
-    4. Serves frontend if built
+  boring-ui is a framework. Your child app is a config + custom code.
+  bui dev resolves the framework root, wires BUI_FRAMEWORK_ROOT for TS child
+  apps, and runs the [backend].entry from boring.app.toml.
 
-  Your app does NOT need its own create_app() or app.py — the framework
-  provides it. You only write routers, panels, and config.
+  The default TypeScript scaffold points [backend].entry at src/server/index.ts,
+  dynamically imports the framework server from BUI_FRAMEWORK_ROOT, and
+  registers your child routes on top of the framework app before listen().
+  If you explicitly need the legacy Python child-app loader, scaffold with
+  'bui init --python'.
 
 --- Key config fields ---
 
-  [backend].entry     The ASGI entrypoint (default: boring_ui.app_config_loader:app)
-  [backend].routers   Your custom routers (dotted paths like "myapp.routers.foo:router")
+  [backend].entry     The backend entrypoint (TS scaffold default: src/server/index.ts)
+  [backend].routers   Legacy Python-only dotted router paths
   [deploy].platform   "fly" (default), "modal", or "docker"
   [auth].provider     "local" (dev) or "neon" (production, set by bui neon setup)
 
---- Adding a custom router ---
+--- Adding backend routes ---
 
-  # src/<module>/routers/status.py
-  from fastapi import APIRouter
-  router = APIRouter(tags=["status"])
-
-  @router.get("/health")
-  async def health():
-      return {"ok": True, "app": "<app-name>"}
-
-  @router.get("/info")
-  async def info():
-      return {"name": "<app-name>", "version": "0.1.0"}
-
-  # boring.app.toml
-  routers = ["<module>.routers.status:router"]
-  # → mounted at /api/x/status/health and /api/x/status/info
+  Create the routes your app needs in src/server/index.ts or src/server/routes/*,
+  then register them on the Fastify app returned by the framework createApp().
+  If you explicitly use the Python scaffold instead, [backend].routers remains
+  available for dotted router paths.
 
 --- Root-level routes (overriding framework defaults) ---
 
-  By default, routers mount at /api/x/<name>. If you need routes at the
-  root level (e.g. /health instead of /api/x/status/health), create a
-  custom app entry point:
+  The default TS scaffold already gives you a custom entry point:
 
-  # src/<module>/app.py
-  from boring_ui.app_config_loader import create_app_from_toml
-  from <module>.routers import status, notes
+  # src/server/index.ts
+  const app = createApp({ config, logger: true, skipValidation: true })
+  app.get('/info', async () => ({ name: '<app>', version: '0.1.0' }))
+  registerMyRoutes(app)
+  app.listen(...)
 
-  app = create_app_from_toml()
-
-  # Mount custom routers at root BEFORE the SPA catch-all
-  # (the framework's static mount uses /{path:path} which catches everything)
-  app.include_router(status.router)
-  app.include_router(notes.router)
-
-  # boring.app.toml
-  [backend]
-  entry = "<module>.app:app"
-
-  IMPORTANT: When BORING_UI_STATIC_DIR is set (production), the framework
-  adds a catch-all route that serves index.html for all paths. Your custom
-  routes must be included BEFORE this catch-all or they'll return HTML
-  instead of JSON. The pattern above handles this correctly.
+  IMPORTANT: keep your app on the TypeScript backend path for the current
+  migration/eval lane. Do not switch back to the legacy Python child-app
+  loader unless you are intentionally using 'bui init --python'.
 
 --- Local dev testing ---
 
   bui dev --backend-only           # uses entry from boring.app.toml
   # Test in another terminal:
-  curl http://localhost:8000/health
-  curl http://localhost:8000/api/capabilities
+  # If auth is local, this usually binds :8000.
+  # If auth.provider = "neon", bui dev prefers a trusted 127.0.0.1 loopback
+  # port such as :5176 and injects the local callback env automatically.
+  curl http://127.0.0.1:5176/health
+  curl http://127.0.0.1:5176/api/capabilities
 
   If you need a specific port:
-  bui dev --backend-only --port 8321
+  # For local Neon auth/email callback testing, prefer a trusted loopback port:
+  bui dev --backend-only --port 5176
 
   To kill leftover dev servers:
-  pkill -f "uvicorn.*<module>" 2>/dev/null
+  pkill -f "tsx watch src/server/index.ts" 2>/dev/null
 
 --- Secrets (never hardcode) ---
 
@@ -188,6 +178,7 @@ child app. Every step uses bui CLI — no manual framework wiring needed.
 
   bui deploy resolves these from Vault at deploy time.
   bui neon setup auto-stores database/auth creds in secret/agent/app/<id>/prod.
+  For hosted apps, final auth should be Neon-backed, not local.
 
   IMPORTANT:
   - Never put literal secret values in boring.app.toml or source files.
@@ -222,13 +213,25 @@ child app. Every step uses bui CLI — no manual framework wiring needed.
 
   bui init <name>
   bui init --go <name>
+  bui init --python <name>
 
-Default Python scaffold creates:
+Default TypeScript scaffold creates:
   boring.app.toml       App config (name, backend, frontend, deploy)
+  package.json          TS runtime dependency for local/dev deploy usage
+  src/server/index.ts   Child app entrypoint
+  src/server/routes/    Example route module
+  panels/               Custom React panels
+  .gitignore            Standard ignores
+  .dockerignore         Keeps .git/.venv/dist/node_modules out of Fly builds
+  .env.example          Template for local dev secrets
+
+Python scaffold (--python) creates:
+  boring.app.toml       App config with Python backend entry
   pyproject.toml        Python package definition
   src/<name>/routers/   Custom FastAPI routers (example included)
   panels/               Custom React panels
   .gitignore            Standard ignores
+  .dockerignore         Keeps .git/.venv/dist/node_modules out of Fly builds
   .env.example          Template for local dev secrets
 
 Go scaffold creates:
@@ -237,6 +240,7 @@ Go scaffold creates:
   main.go               Child app entrypoint with default module wiring
   hello/module.go       Example module and route
   .gitignore            Standard ignores
+  .dockerignore         Keeps .git/.venv/dist/node_modules out of Fly builds
   .env.example          Template for local dev secrets
 
 If ../boring-ui is present, the Go scaffold adds a local replace and runs 'go mod tidy'
@@ -267,7 +271,7 @@ Framework resolution (in order):
   3. Neither                                    → git fetch [framework].commit to ~/.bui/cache/
 
 Backend runner by [backend].type:
-  - python      → uvicorn <entry> --reload
+  - python      → uvicorn <entry> [--factory] --reload
   - typescript  → tsx watch <entry>
   - go          → air (build target from backend.entry)
 
@@ -282,8 +286,8 @@ What happens on start:
 boring-ui core note:
   - The framework itself now defaults to the TypeScript server path
     (backend.type = "typescript", entry = "src/server/index.ts")
-  - Default child-app scaffolds still use python routers unless you opt into
-    a different backend type
+  - Default child-app scaffolds now use the TypeScript backend path
+  - Use 'bui init --python' only when you explicitly need the legacy Python scaffold
 
 Go backend notes:
   - backend.type = "go" requires air in PATH
@@ -295,6 +299,12 @@ Flags:
   --frontend-only     Only vite (use browser DevTools)
   --port N            Override backend port
   --vite-port N       Override frontend port
+
+Neon local-dev note:
+  - After 'bui neon setup', plain 'bui dev' prefers a trusted 127.0.0.1
+    loopback port (for example :5176) unless you override --port.
+  - It also injects BORING_UI_PUBLIC_ORIGIN and disables secure cookies for
+    the local callback flow.
 
 Local auth shortcut:
   export AUTH_DEV_LOGIN_ENABLED=true
@@ -370,7 +380,7 @@ Commands:
 
   1. Creates Neon project in specified region (default: aws-eu-central-1)
   2. Builds direct + pooler connection URLs
-  3. Runs control-plane schema (deploy/sql/control_plane_supabase_schema.sql)
+  3. Runs the framework control-plane bootstrap/migrations from deploy/sql/*.sql
   4. Enables Neon Auth (Better Auth, email/password, EdDSA JWT)
   5. Configures email provider if --email-provider is set
   6. Generates session secret

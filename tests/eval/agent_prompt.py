@@ -1,8 +1,9 @@
 """Prompt generator for the child app E2E eval.
 
-The prompt is intentionally minimal: it points the agent at ``bui --help``
-and specifies only what custom deliverables are required. The agent must
-discover the workflow autonomously from the CLI documentation.
+The prompt is intentionally minimal: it reads like a normal user request,
+points the agent at ``bui --help``, and specifies only the product
+deliverables. Workflow/auth/provider details are enforced by the harness
+checks and current ``bui`` docs, not by an over-prescriptive prompt.
 
 Usage::
 
@@ -43,9 +44,13 @@ def generate_prompt(
 
     report_shape = json.dumps({
         "eval_id": manifest.eval_id,
+        "eval_spec_version": manifest.eval_spec_version,
+        "report_schema_version": manifest.report_schema_version,
+        "platform_profile": profile,
         "verification_nonce": manifest.verification_nonce,
         "app_slug": manifest.app_slug,
         "project_root": manifest.project_root,
+        "python_module": manifest.python_module,
         "deployed_url": "https://...",
         "fly_app_name": "...",
         "neon_project_id": "...",
@@ -93,9 +98,11 @@ coexist.
 
     return f"""# Task
 
-I want you to build, validate, and deploy a boring-ui child app to Fly.io.
+I want a boring-ui child app for `{manifest.app_slug}`.
 
-Please discover the normal `bui` workflow yourself starting from `bui --help`.
+Please discover the normal supported workflow yourself starting from `bui --help`.
+Use the shortest supported workflow: build it locally, deploy it, then verify the live app.
+Avoid unnecessary repo setup or broad manual endpoint sweeps unless you need them to debug a failure.
 
 ## App identity
 
@@ -106,7 +113,8 @@ Please discover the normal `bui` workflow yourself starting from `bui --help`.
 
 ## What to build
 
-Build the child app using the current boring-ui child-app workflow and extension points. Do local validation first, then provision hosted auth/deploy, then validate the live app.
+Build the child app using the current boring-ui child-app workflow and extension points.
+Use the current TypeScript backend path, not the legacy Python child-app loader.
 
 Implement these product requirements:
 
@@ -125,18 +133,18 @@ Implement these product requirements:
   UI:
     A panel that lists notes, lets you add new ones, and delete them.
 
-Use the framework shape that `bui init` and current `bui` docs support today. Do not assume legacy file paths or auth defaults if the current scaffold expects something else. Deploy to Fly.io.
+  Hosted correctness:
+    Do not rely on process-local in-memory state for notes. Use persistence that
+    still works after deploys, restarts, and multiple Fly instances.
+
+Use the framework shape that `bui init` and current `bui` docs support today. Do not assume legacy file paths if the current scaffold expects something else. Deploy to Fly.io.
 {extensible_section}
 Constraints:
 - Do NOT modify `../boring-ui/` or sibling directories.
-- Do NOT hardcode secrets; use Vault-backed deploy secret refs.
-- Use app-scoped Vault refs under `secret/agent/app/{manifest.app_slug}/prod`.
-- Do NOT ship local-auth or dev-login shortcuts in the final deployed app.
-- The final deployed app must use Neon auth, not local auth.
 
 ## Report
 
-End with:
+End your final response with:
 
 ```
 {BEGIN_MARKER}
@@ -144,7 +152,8 @@ End with:
 {END_MARKER}
 ```
 
-Write it to: `{manifest.report_output_path}`
+Also write the same report object to `{manifest.report_output_path}` as plain JSON only.
+Do not include BEGIN/END markers in the file on disk.
 """
 
 
