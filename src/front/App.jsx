@@ -75,6 +75,9 @@ import {
   normalizeMarkdownPane,
 } from './utils/editorFiles'
 
+import { useChatCenteredShell } from './shell/useChatCenteredShell'
+import ChatCenteredWorkspace from './shell/ChatCenteredWorkspace'
+
 const MAIN_CONTENT_ID = 'workspace-main-content'
 const NARROW_VIEWPORT_BREAKPOINT = 960
 // Get capability-gated components from pane registry
@@ -84,6 +87,11 @@ const getLiveKnownComponents = () => getKnownComponents()
 export default function App() {
   // Get config (defaults are used until async load completes)
   const config = useConfig()
+
+  // Chat-centered shell feature flag — when enabled, renders the new shell
+  // instead of the Dockview-based layout. The hook reads config + URL overrides.
+  const { enabled: chatCenteredShellEnabled } = useChatCenteredShell()
+
   const codeSessionsEnabled = config.features?.codeSessions !== false
   const urlAgentMode = new URLSearchParams(window.location.search).get('agent_mode')
   const configAgentMode = String(config.agents?.mode || 'frontend').toLowerCase()
@@ -2913,6 +2921,13 @@ export default function App() {
     'app-container',
     isNarrowViewport && 'app-container-narrow',
   ].filter(Boolean).join(' ')
+
+  // ── Chat-centered shell branch ──
+  // When enabled, render the new workspace instead of the Dockview layout.
+  // The old shell stays exactly as-is when the flag is off.
+  if (chatCenteredShellEnabled) {
+    return <ChatCenteredWorkspace />
+  }
 
   return (
     <QueryClientProvider key={dataProviderScopeKey} client={queryClient}>

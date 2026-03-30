@@ -1,0 +1,618 @@
+/*
+ * shell.css — Layout styles for the Chat-Centered Workspace shell.
+ *
+ * Ported from poc-stage-wings/src/index.css with adjustments for
+ * the production component structure (NavRail, BrowseDrawer, ChatStage, SurfaceShell).
+ *
+ * Uses existing boring-ui CSS variables where available.
+ * Scoped under .chat-centered-workspace to avoid conflicts with the Dockview shell.
+ */
+
+/* ═══ WORKSPACE ROOT ═══ */
+.chat-centered-workspace {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-canvas, #0a0a0a);
+  color: var(--text-primary, #ededed);
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.chat-centered-workspace.reduced-motion,
+.chat-centered-workspace.reduced-motion * {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+
+/* ═══ NAV RAIL (48px icon strip, always visible) ═══ */
+.nav-rail {
+  width: 48px;
+  min-width: 48px;
+  height: 100%;
+  background: var(--bg-surface, #111113);
+  border-right: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  gap: 2px;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.nav-rail-brand {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md, 8px);
+  background: var(--accent-dim, rgba(59, 130, 246, 0.12));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent, #3b82f6);
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+  cursor: default;
+  margin-bottom: 2px;
+}
+
+/* Re-use .rail-icon-btn, .rail-new-icon, .rail-sep, .rail-spacer from chat-stage.css
+   or define here for standalone usage */
+.chat-centered-workspace .rail-icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary, #555);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius-md, 8px);
+  transition: all 0.15s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.chat-centered-workspace .rail-icon-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  color: var(--text-secondary, #888);
+}
+
+.chat-centered-workspace .rail-icon-btn:hover svg {
+  transform: scale(1.08);
+}
+
+.chat-centered-workspace .rail-icon-btn.active {
+  color: var(--text-primary, #ededed);
+  background: var(--bg-active, rgba(255, 255, 255, 0.08));
+}
+
+.chat-centered-workspace .rail-icon-btn.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  background: var(--text-primary, #ededed);
+  border-radius: 3px;
+}
+
+.chat-centered-workspace .rail-icon-btn svg {
+  transition: transform 0.15s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.chat-centered-workspace .rail-new-icon {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.chat-centered-workspace .rail-new-icon:hover {
+  color: #fff;
+  background: var(--accent, #3b82f6);
+  transform: scale(1.05);
+}
+
+.chat-centered-workspace .rail-sep {
+  width: 20px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 4px 0;
+}
+
+.chat-centered-workspace .rail-spacer {
+  flex: 1;
+}
+
+/* ═══ BROWSE DRAWER (220px, slides out from left) ═══ */
+.browse-drawer {
+  width: 220px;
+  min-width: 220px;
+  height: 100%;
+  background: var(--bg-surface, #111113);
+  border-right: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: browse-drawer-slide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+
+@keyframes browse-drawer-slide {
+  0% {
+    opacity: 0;
+    width: 0;
+    min-width: 0;
+  }
+  100% {
+    opacity: 1;
+    width: 220px;
+    min-width: 220px;
+  }
+}
+
+.browse-drawer-head {
+  padding: 16px 14px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary, #555);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.browse-drawer-sessions {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.browse-drawer-empty {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-tertiary, #555);
+}
+
+.browse-drawer-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.browse-drawer-date {
+  padding: 8px 14px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary, #555);
+  letter-spacing: 0.3px;
+}
+
+.browse-drawer-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  border-radius: var(--radius-md, 8px);
+  transition: all 0.15s;
+  font-size: 13px;
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+  text-align: left;
+  width: calc(100% - 16px);
+}
+
+.browse-drawer-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  color: var(--text-primary, #ededed);
+}
+
+.browse-drawer-btn.active {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary, #ededed);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.browse-drawer-btn-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Session status dots (reuse from POC) */
+.chat-centered-workspace .rail-session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chat-centered-workspace .rail-session-dot.active {
+  background: var(--accent, #3b82f6);
+}
+
+.chat-centered-workspace .rail-session-dot.paused {
+  background: var(--warning, #f59e0b);
+}
+
+.chat-centered-workspace .rail-session-dot.idle {
+  background: var(--text-tertiary, #555);
+}
+
+.browse-drawer-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.browse-drawer-placeholder {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-tertiary, #555);
+}
+
+/* ═══ CHAT STAGE AREA (center, fills remaining space) ═══ */
+.ccw-stage-area {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+  overflow: hidden;
+}
+
+/* ═══ SURFACE SHELL (floating island, right side) ═══ */
+.surface-shell {
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  margin: 10px 10px 10px 0;
+  height: calc(100vh - 20px);
+  min-width: 380px;
+  border-radius: var(--radius-xl, 16px);
+  background: rgba(17, 17, 19, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 24px 48px -12px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: sf-emerge 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  flex-shrink: 0;
+}
+
+@keyframes sf-emerge {
+  0% {
+    opacity: 0;
+    transform: translateX(16px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Surface resize handle */
+.chat-centered-workspace .sf-resize {
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+}
+
+.chat-centered-workspace .sf-resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  border-radius: 1px;
+  transition: background 0.15s;
+}
+
+.chat-centered-workspace .sf-resize:hover::after,
+.chat-centered-workspace .sf-resize:active::after {
+  background: var(--accent, #3b82f6);
+}
+
+/* Surface collapsed handle */
+.chat-centered-workspace .sf-handle {
+  width: 36px;
+  min-width: 36px;
+  height: calc(100vh - 20px);
+  margin: 10px 10px 10px 0;
+  background: var(--bg-surface, #111113);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-lg, 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12px;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.chat-centered-workspace .sf-handle:hover {
+  background: var(--bg-elevated, #151518);
+}
+
+.chat-centered-workspace .sf-handle svg {
+  color: var(--text-tertiary, #555);
+}
+
+.chat-centered-workspace .sf-handle-count {
+  font-size: 10px;
+  color: var(--text-tertiary, #555);
+  font-family: var(--font-mono, monospace);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  border-radius: var(--radius-sm, 4px);
+  padding: 1px 5px;
+}
+
+/* Surface main layout */
+.surface-shell .sf-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Surface top bar */
+.surface-shell .sf-topbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  min-height: 38px;
+  flex-shrink: 0;
+}
+
+/* Explorer toggle */
+.surface-shell .sf-explorer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary, #555);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+  cursor: pointer;
+  border-radius: var(--radius-md, 8px);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.surface-shell .sf-explorer-toggle:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  color: var(--text-secondary, #888);
+}
+
+.surface-shell .sf-explorer-toggle.active {
+  background: var(--bg-active, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #ededed);
+}
+
+.surface-shell .sf-explorer-toggle svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.surface-shell .sf-explorer-toggle-count {
+  font-size: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-tertiary, #555);
+  border-radius: var(--radius-sm, 4px);
+  padding: 0 4px;
+  font-family: var(--font-mono, monospace);
+  min-width: 14px;
+  text-align: center;
+}
+
+/* Surface tabs */
+.surface-shell .sf-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.surface-shell .sf-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary, #555);
+  cursor: pointer;
+  border-radius: var(--radius-md, 8px);
+  white-space: nowrap;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  user-select: none;
+  border: none;
+  background: transparent;
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+}
+
+.surface-shell .sf-tab:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  color: var(--text-secondary, #888);
+}
+
+.surface-shell .sf-tab.active {
+  background: var(--bg-active, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #ededed);
+}
+
+.surface-shell .sf-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.1s;
+  margin-left: 2px;
+  color: var(--text-tertiary, #555);
+}
+
+.surface-shell .sf-tab:hover .sf-tab-close {
+  opacity: 1;
+}
+
+/* Close/viewer button */
+.surface-shell .sf-viewer-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary, #555);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 4px);
+  transition: all 0.15s;
+}
+
+.surface-shell .sf-viewer-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  color: var(--text-primary, #ededed);
+}
+
+/* Surface body */
+.surface-shell .sf-body {
+  flex: 1;
+  overflow-y: auto;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 12px,
+    black calc(100% - 12px),
+    transparent 100%
+  );
+}
+
+/* Viewer */
+.surface-shell .sf-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.surface-shell .sf-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  flex-shrink: 0;
+}
+
+.surface-shell .sf-viewer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.surface-shell .sf-viewer-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #ededed);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.surface-shell .sf-viewer-type {
+  font-size: 11px;
+  color: var(--text-tertiary, #555);
+  text-transform: capitalize;
+}
+
+.surface-shell .sf-viewer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px 16px;
+}
+
+.surface-shell .sf-viewer-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-tertiary, #555);
+  font-size: 13px;
+}
+
+/* Empty state */
+.surface-shell .sf-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 10px;
+  padding: 40px;
+  text-align: center;
+}
+
+.surface-shell .sf-empty-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.01) 100%
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  margin-bottom: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  color: var(--text-secondary, #888);
+}
+
+.surface-shell .sf-empty-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-secondary, #888);
+}
+
+.surface-shell .sf-empty-sub {
+  font-size: 12px;
+  color: var(--text-tertiary, #555);
+  line-height: 1.6;
+}
