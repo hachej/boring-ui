@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft v3 - 2026-03-28
+Draft v5 - 2026-03-29
 
 Requested location: `docs/plan/codex-chat-centered-surface-redesign.md`
 
@@ -12,7 +12,11 @@ Builds on:
 - the validated "Stage + Wings" proof-of-concept described in that brief
 - the current shell implementation in `src/front/App.jsx` and related layout modules
 
-This document is the implementation plan. The existing draft in `docs/plans/` remains the source of truth for product intent. This file turns that brief into an execution strategy, architecture map, migration plan, and rollout checklist.
+Companion plan:
+
+- `docs/plan/pi-coding-agent-vercel-chat-migration.md` — details the chat rendering migration (pi-web-ui → Vercel useChat) and agent runtime upgrade (pi-agent-core → pi-coding-agent for server mode)
+
+This document is the shell implementation plan. The companion plan covers the chat/agent stack migration. Together they form the complete execution strategy.
 
 ---
 
@@ -140,7 +144,7 @@ These decisions keep the redesign tractable, prevent the implementation from dri
 7. **Split chat panes are removed from the primary UX.** Session switching replaces multi-chat tiling.
 8. **Dockview is retained initially only as an implementation detail for Surface internals where it still adds real value.**
 9. **The redesign ships behind a feature flag first, with the old shell available until persistence, parity, and tests are stable.**
-10. **This track does not change the agent runtime stack.** PI native/backend behavior stays intact while the shell around it changes.
+10. **This track changes the shell, not the agent brain.** The companion plan (`pi-coding-agent-vercel-chat-migration.md`) upgrades the server runtime to pi-coding-agent and replaces pi-web-ui rendering with Vercel useChat. This plan focuses on shell structure; the companion plan covers the chat/agent stack.
 11. **Responsive behavior is defined up front.** The redesign is desktop-first for v1, tablet-supported in simplified form, and does not require a full mobile parity pass before launch.
 12. **Power-user parity matters.** Existing capabilities such as file browse, reviews, search, and terminal-like workbench tools should remain reachable, even if their location and host change.
 13. **Use shadcn/ui components wherever possible.** Buttons, inputs, tabs, dropdowns, popovers, command palette, kbd hints, and scroll areas should use shadcn primitives rather than custom implementations. This accelerates delivery, ensures accessibility, and provides a consistent baseline.
@@ -298,8 +302,10 @@ Rules:
 - artifact tabs support drag-to-reorder and drag-to-split (side-by-side artifact viewing within the Surface)
 - split views allow comparing two artifacts (e.g., diff + original, chart + table) without leaving the Surface
 - this is the primary reason to retain Dockview inside the Surface — its split/tab infrastructure is already battle-tested
-- close/hide should not destroy chat state or necessarily destroy artifact state
+- **Surface must never unmount on close** — use `display: none` or `transform: translateX(100%)`, not conditional rendering (`{isOpen && <Surface/>}`). Unmounting destroys Monaco editor state, chart state, scroll position, and Dockview layout. The POC validates this: `poc-stage-wings/src/App.jsx` keeps Surface always mounted, toggling visibility via the `collapsed` prop.
+- close/hide should not destroy chat state or artifact state
 - if Dockview is reused inside the Surface, Dockview header chrome must not leak into the visible shell hierarchy
+- Dockview context menus and popups must portal outside the Surface island to avoid `overflow: hidden` clipping
 
 Minimum v1 artifact support:
 
@@ -346,6 +352,26 @@ Lifecycle expectations:
 5. chat card, explorer entry, and tab state stay in sync
 6. artifact remains restorable even if the Surface is temporarily closed
 7. dirty-state and destructive-close rules are respected for editable artifacts
+
+Streaming artifact behavior:
+
+When an agent writes or edits a file, the artifact should open immediately in a "streaming" state — not wait until the tool call completes. Vercel AI SDK supports streaming tool arguments; use this to feed content into the Surface renderer in real-time. The POC's `VercelPiChat.jsx` demonstrates tool-call cards appearing inline during streaming; the production version should also stream the artifact content into the Surface viewer simultaneously.
+
+Artifact states: `loading` → `streaming` → `ready` → `error`
+
+- `loading`: Surface opens, shows skeleton/spinner
+- `streaming`: content arrives incrementally (code streams into editor, chart data builds progressively)
+- `ready`: tool call complete, artifact fully rendered
+- `error`: tool failed, show error with retry
+
+Agent edit locking:
+
+When the agent is actively writing to an artifact (status = `streaming`), the Surface viewer must enter a read-only "Agent is editing..." state to prevent user cursor collisions. Rules:
+
+- agent starts `write_file` or `edit_file` → artifact locks, viewer shows "Agent is editing..." badge
+- agent tool completes → lock releases, viewer becomes interactive
+- if user was editing the same file, their unsaved changes are preserved in a shadow buffer and offered as a merge/diff after agent finishes
+- the artifact model tracks `lockedBy: 'agent' | null` alongside `status`
 
 Artifact card behavior in chat:
 
@@ -511,6 +537,27 @@ type ChatCenteredShellState = {
 
 If the current front-end architecture is easier to evolve with a local reducer hook than a new global store, prefer the reducer hook first. A new global state library is not required for this project.
 
+Session state ownership (unidirectional data flow):
+
+The shell state, transport layer, and Vercel `useChat` must not all think they own the active session. The data flow is:
+
+```
+Storage (IndexedDB / JSONL)  →  source of truth
+       ↓
+Shell state (activeSessionId)  →  pointer only
+       ↓
+useChat (id prop)  →  controlled consumer, re-initialized on session switch
+       ↓
+Transport  →  reads messages from storage, streams new ones
+```
+
+- Storage is the source of truth for session content (messages, metadata)
+- Shell state holds the *pointer* (`activeSessionId`) and shell layout state
+- `useChat` is a controlled consumer — when `activeSessionId` changes, `useChat` reinitializes with the new session's message history via the `id` prop or a fresh transport
+- The transport reads from and writes to storage, but does not own session selection
+
+This prevents the three-way race condition where shell state, `useChat` internal state, and storage disagree about which session is active.
+
 ### C. Introduce a stronger artifact model with canonical identity
 
 The redesign needs a shared artifact model rather than ad hoc panel IDs.
@@ -528,8 +575,13 @@ type SurfaceArtifact = {
   sourceMessageId?: string
   rendererKey: string
   params?: Record<string, unknown>
-  status: 'loading' | 'ready' | 'error'
+  // Content: renderers read from params or fetch via canonicalKey (e.g., file path → API read).
+  // The artifact model stores metadata + pointers, not the full content blob.
+  // For streaming artifacts, the renderer subscribes to the transport's stream directly.
+  status: 'loading' | 'streaming' | 'ready' | 'error'
+  lockedBy?: 'agent' | null
   dirty?: boolean
+  shadowBuffer?: string   // user's unsaved edits preserved while agent holds the lock
   createdAt: number
 }
 ```
@@ -552,20 +604,37 @@ Ordering rules:
 
 The initial implementation can derive these artifacts from existing panel-opening intents rather than requiring the agent protocol to change first.
 
-### D. Keep existing agent adapters, replace their host container
+### D. Unify chat rendering under Vercel AI SDK, keep PI agent runtime
 
-The fastest safe path is to keep:
+The codebase currently has two chat rendering paths — Pi Agent (`pi-web-ui` shadow DOM widget) and Vercel AI SDK (`useChat`). The redesign **unifies rendering under Vercel AI SDK `useChat`** while keeping PI agent as the runtime brain.
 
-- `PiNativeAdapter` (custom Pi Agent protocol via `@mariozechner/pi-web-ui` + shadow DOM)
-- `PiBackendAdapter` (backend-routed Pi Agent)
-- `AiChat` (Vercel AI SDK via `useChat` + `@ai-sdk/react`)
-- session management and event bus
+See companion plan: `docs/plan/pi-coding-agent-vercel-chat-migration.md`
 
-and move them out of `AgentPanel`'s Dockview framing into a dedicated chat-stage container.
+What gets replaced:
 
-The redesign should reuse the agent runtime and message renderer, not rewrite them. The work is in changing ownership, shell structure, focus management, and state semantics.
+- `PiNativeAdapter` (shadow DOM, Lit web components, 300+ CSS overrides) → deleted
+- `PiBackendAdapter` → replaced by `DefaultChatTransport` pointing at `/api/v1/agent/chat`
+- `pi-web-ui` + `mini-lit` dependencies → removed
 
-Chat rendering note: The codebase already has two chat paths — Pi Agent (custom shadow DOM widget) and Vercel AI SDK (`useChat`). The new chat stage should support both behind the existing runtime selection logic. For the Vercel AI SDK path, the existing `AiChat.jsx` already provides good streaming UX and can be styled to match the new design. For the Pi Agent path, the shadow DOM encapsulation means CSS changes are scoped — the chat stage wrapper handles layout, the Pi widget handles its own rendering internally. Do not attempt to unify these two rendering paths as part of this project.
+What stays:
+
+- `pi-agent-core` `Agent` class (browser mode runtime)
+- `pi-ai` (multi-provider model routing)
+- `defaultTools.js` (browser mode — tools call boring-ui backend API)
+- session management and event bus (refactored)
+
+What gets built:
+
+- `PiAgentCoreTransport` — custom `ChatTransport` wrapping PI Agent Core for browser mode
+- `ChatStage.jsx` — unified chat renderer using `useChat` + custom message components
+- Custom tool renderers, artifact cards, composer — all React, all composable with Surface
+
+The redesign should reuse the PI agent runtime, not rewrite it. The work is in replacing the rendering layer (shadow DOM → React) and changing state ownership (panel-scoped → shell-scoped).
+
+Transport selection:
+
+- **Browser mode**: `useChat` → `PiAgentCoreTransport` → `pi-agent-core` Agent (in-browser, custom tools via backend API)
+- **Server mode**: `useChat` → `DefaultChatTransport` → `/api/v1/agent/chat` → `pi-coding-agent` (server-side, compaction, built-in tools)
 
 ### E. Treat session state as session-scoped, not panel-scoped
 
@@ -639,6 +708,27 @@ There should be one code path for:
 
 That unification is one of the highest-leverage improvements in this redesign.
 
+The specific bridge between Vercel AI SDK tool rendering and the Surface:
+
+When `useChat` receives a tool-result part (e.g., agent called `write_file`), the custom React component rendering that tool result (`ToolCallCard.jsx`) fires a side-effect into the artifact controller:
+
+```jsx
+// Inside ToolCallCard render:
+useEffect(() => {
+  if (toolResult?.status === 'complete' && toolResult?.params?.path) {
+    artifactController.open({
+      kind: 'code',
+      canonicalKey: toolResult.params.path,
+      title: toolResult.params.path,
+      source: 'agent',
+      sourceSessionId: activeSessionId,
+    })
+  }
+}, [toolResult?.status])
+```
+
+The AI SDK handles the *timeline rendering* (showing the tool card in chat). The *side-effect* of opening the Surface is explicitly bridged through the artifact controller. This pattern is validated in the POC (`poc-stage-wings/src/VercelPiChat.jsx` line ~190, `onOpenArtifact` callback from tool result cards).
+
 ### J. Define an agent-to-Surface artifact protocol
 
 The agent runtime needs a structured way to declare artifacts, not just raw tool calls.
@@ -665,7 +755,18 @@ Benefits:
 - batch artifact creation (agent edits 5 files) can be expressed as a group with `autoOpen: false`
 - the bridge is testable independently from the UI
 
-### K. Preserve performance by avoiding unnecessary remounts
+### K. Guard against context overflow in browser mode
+
+Browser mode uses `pi-agent-core` without compaction. If a user opens 5 large files in the Surface and the agent tries to include them all in context, the token limit will be silently exceeded.
+
+Requirements:
+
+- the transport layer should estimate token usage before sending messages
+- if estimated tokens exceed 80% of the model's context window, warn the user before sending
+- the UI should show a context usage indicator (similar to Claude Code's token bar) so users can self-manage
+- server mode handles this automatically via pi-coding-agent's compaction; browser mode needs the guardrail explicitly
+
+### L. Preserve performance by avoiding unnecessary remounts
 
 The new shell will feel worse than the old one if it remounts heavy viewers or the chat runtime on every interaction.
 
@@ -678,7 +779,7 @@ Performance requirements:
 - Surface open/close animations should not trigger layout thrash across the whole app
 - restore from persistence should be incremental rather than blocking first paint on full artifact hydration
 
-### L. Isolate artifact renderer failures from the shell
+### M. Isolate artifact renderer failures from the shell
 
 A polymorphic rendering system will encounter renderer errors (bad chart data, corrupt file content, missing dependencies). These must not cascade.
 
@@ -747,8 +848,8 @@ Create a safe delivery envelope before any large shell edits.
 Deliverables:
 
 - snapshot the current layout boot path and smoke test it
-- add a feature flag such as `features.chatCenteredShell`
-- add a query override for local development and visual diffing
+- add a single feature flag: `features.chatCenteredShell` — this controls BOTH the shell redesign AND the Vercel chat migration (they are not independently useful). The companion plan's chat migration is not a separate flag; it ships as part of the shell flag.
+- add a query override (`?shell=chat-centered`) for local development and visual diffing
 - capture fresh UI baselines with the existing shell
 - freeze an acceptance matrix for desktop-large, desktop-standard, and tablet widths
 - record core smoke flows before shell extraction:
@@ -845,18 +946,26 @@ Move the agent experience out of the dock panel model.
 Deliverables:
 
 - mount the chat stage as a permanent React child of the new shell container
-- replace `AgentPanel` framing with a dedicated chat-stage container
-- reuse `PiNativeAdapter` and `PiBackendAdapter` inside the chat stage
-- move session controls out of the Dockview panel header
+- replace `AgentPanel` framing with a unified `ChatStage` using Vercel `useChat`
+- wire transport selection (browser: `PiAgentCoreTransport`, server: `DefaultChatTransport`)
+- build custom message renderer, composer, tool cards, artifact cards (all React)
+- move session controls out of the Dockview panel header into chat stage chrome
 - remove the primary "split chat panel" behavior from the new shell
+- remove `PiNativeAdapter` (shadow DOM) and `PiBackendAdapter` — replaced by transport layer
 - preserve per-session chat scroll and composer draft state if feasible
+
+See: `docs/plan/pi-coding-agent-vercel-chat-migration.md` Phases B-C for detailed component breakdown.
 
 Primary files:
 
-- `src/front/panels/AgentPanel.jsx`
+- `src/front/panels/AgentPanel.jsx` (gutted, becomes thin wrapper or deleted)
 - `src/front/providers/pi/PiSessionToolbar.jsx`
 - `src/front/providers/pi/sessionBus.js`
 - `src/front/shell/ChatCenteredWorkspace.jsx`
+- `src/front/shell/ChatStage.jsx` (new)
+- `src/front/shell/ChatMessage.jsx` (new)
+- `src/front/shell/ChatComposer.jsx` (new)
+- `src/front/providers/pi/piAgentCoreTransport.js` (new)
 
 Behavior changes:
 
@@ -1070,6 +1179,8 @@ Migration rules:
 - prefer a one-time reset into the new default shell
 - attempt best-effort recovery of open editor/review artifacts into initial Surface artifacts where practical
 - do not preserve old concepts such as permanent `filetree` or `shell` collapsed state as first-class new-shell concepts
+- **session migration**: existing pi-web-ui IndexedDB sessions must be migrated to the new storage format (or the new transport must be able to read the old IndexedDB format). Users should not lose chat history on rollout. Write a one-time migration script that runs on first load under the new flag.
+- persistence version: use a single `SHELL_VERSION` constant shared between shell layout and session storage so that a cold-start can clear both atomically on breaking changes
 
 Success criteria:
 
@@ -1223,6 +1334,21 @@ The redesigned shell should be considered functionally credible only if these fl
     - multi-artifact emissions show a summary card, not N individual auto-opens
     - chat retains composer focus during auto-open
 
+11. **Security: XSS neutralization**
+    - agent returns `<script>alert(1)</script>` in a message or tool output
+    - the script does NOT execute in chat or Surface
+    - DOMPurify strips it from markdown; iframe sandboxes it in dashboards
+
+12. **Browser mode: context limit guardrail**
+    - user sends messages until approaching model context window
+    - UI shows context usage indicator
+    - warning appears at 80% capacity before send
+
+13. **File attachment storage**
+    - user uploads a 10MB PDF in browser mode
+    - file is stored in OPFS/Cache API, NOT IndexedDB
+    - IndexedDB stores only metadata + reference
+
 ---
 
 ## Validated Design Tokens (from POC)
@@ -1308,9 +1434,9 @@ New modules:
 
 Mitigation:
 
-- keep PI adapters intact
-- build a thin wrapper that provides the same lifecycle props
-- test session creation, message rendering, and tool invocation early
+- PI agent runtime (`pi-agent-core` Agent class) is decoupled from rendering — it has zero DOM dependencies
+- the new `PiAgentCoreTransport` wraps the Agent class behind the `ChatTransport` interface, keeping rendering completely separate from the agent loop
+- test session creation, message streaming, and tool invocation in the new transport before wiring UI
 
 #### Risk: nested Dockview inside Surface creates double-chrome artifacts
 
@@ -1367,6 +1493,16 @@ Mitigation:
 - provide a jump-to-chat affordance
 - surface provenance subtly but consistently
 
+#### Risk: XSS in Surface renderers and chat markdown
+
+Mitigation:
+
+- all markdown/HTML rendering (chat messages, document artifacts, tool output) must pass through DOMPurify
+- the old pi-web-ui used sandboxed iframes for HTML artifacts; the new Surface renderers do not — this is a real regression unless mitigated
+- tool stdout/stderr must escape HTML entities before rendering
+- **dashboard/custom renderers that require JS execution MUST use a sandboxed iframe** with `sandbox="allow-scripts"` (explicitly NOT `allow-same-origin`). DOMPurify strips scripts, so it is not a valid alternative for dashboards. Use DOMPurify only for static markdown/document artifacts.
+- see companion plan security section for full details
+
 #### Risk: power-user workflows such as terminal or git review regress
 
 Mitigation:
@@ -1407,6 +1543,44 @@ This slice proves the "two workbenches" concept rather than just the new layout.
 4. validate acceptance matrix and telemetry
 
 Only after this slice should the team seriously discuss making the new shell the default.
+
+---
+
+## Unified Critical Path (both plans)
+
+This merges the phasing from both plans into one dependency-correct sequence:
+
+```
+1.  Flag + baseline                    (Plan 1: Phase 0)
+2.  Verify pi-coding-agent server-side (Plan 2: Phase A)
+3.  Build transports (headless)        (Plan 2: Phase B)     ← no UI dependency
+4.  Extract shell host                 (Plan 1: Phase 1)     ← parallel with step 3
+5.  Shell state + artifact controller  (Plan 1: Phase 2)
+6.  Build ChatStage React components   (Plan 2: Phase C)     ← depends on step 3
+7.  Mount chat as center stage         (Plan 1: Phase 3)     ← depends on steps 5+6
+8.  Wire session management            (Plan 2: Phase D)     ← depends on step 5
+9.  Build Surface shell                (Plan 1: Phase 4)     ← depends on step 5
+10. Route open actions → artifacts     (Plan 1: Phase 5)     ← depends on step 9
+11. Wire UI bridge tools               (Plan 2: Phase E)     ← depends on steps 9+10
+12. Browse drawer + workspace flows    (Plan 1: Phase 6)
+13. Model selector + file attachments  (Plan 2: Phase G)     ← MUST land before flag flip
+14. Security hardening (DOMPurify)     (Plan 2: Phase F)     ← parallel with 12+13
+15. UI bridge + persistence            (Plan 1: Phase 7+8)
+16. Observability                      (Plan 2: Phase H)
+17. Visual polish + accessibility      (Plan 1: Phase 9)
+18. Tests + baselines                  (Plan 1: Phase 10 + Plan 2: Phase J)
+19. Feature flag rollout               (Plan 2: Phase I)     ← old shell still available as fallback
+20. Post-GA cleanup: remove pi-web-ui  (Plan 2: Phase F deletion steps) ← ONLY after stable rollout
+```
+
+Steps 3+4 can run in parallel. Steps 12-14 can run in parallel. Steps 17-18 can overlap.
+
+Key dependency gates:
+- Chat cannot mount (step 7) until transport (step 3) AND shell state (step 5) AND ChatStage components (step 6) exist
+- Surface (step 9) cannot open artifacts until artifact controller (step 5) exists
+- Model selector + file attachments (step 13) must land before the feature flag enables the new shell for users
+- **pi-web-ui deletion (step 20) happens ONLY after GA rollout is stable** — the old shell remains as fallback until then
+- Security hardening (step 14) must complete before feature flag rollout (step 19)
 
 ---
 

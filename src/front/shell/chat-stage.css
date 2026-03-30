@@ -1,0 +1,445 @@
+/*
+ * Chat Stage styles — ported from poc-stage-wings/src/vercel-pi-chat.css
+ * and poc-stage-wings/src/index.css design tokens.
+ *
+ * Uses existing boring-ui CSS variables where available (--bg-*, --text-*, --border-*).
+ * Adds new variables only where the POC validated new values.
+ */
+
+/* ─── Design tokens (POC-validated, scoped to chat stage) ─── */
+.vc-stage {
+  --vc-chat-max-width: 680px;
+  --vc-chat-min-width: 320px;
+  --vc-radius-sm: 4px;
+  --vc-radius-md: 8px;
+  --vc-radius-lg: 12px;
+  --vc-spring: cubic-bezier(0.25, 1, 0.5, 1);
+  --vc-emerge: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Chat Stage container ─── */
+.vc-stage {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: var(--vc-chat-min-width);
+  background: transparent;
+  transition: flex 0.3s var(--vc-emerge);
+}
+
+/* ─── Scroll area with fade mask ─── */
+.vc-stage-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 20px,
+    black calc(100% - 20px),
+    transparent 100%
+  );
+}
+
+/* ─── Messages container ─── */
+.vc-stage-messages {
+  max-width: var(--vc-chat-max-width);
+  width: 100%;
+  margin: 0 auto;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+}
+
+/* ─── Empty state ─── */
+.vc-stage-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 8px;
+  color: var(--text-tertiary, #555);
+}
+
+.vc-stage-empty-icon {
+  opacity: 0.15;
+}
+
+.vc-stage-empty-title {
+  font-size: 15px;
+}
+
+.vc-stage-empty-hint {
+  font-size: 12px;
+}
+
+/* ─── Message ─── */
+.vc-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vc-msg-role {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary, #ededed);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+/* ─── Avatar ─── */
+.vc-msg-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--vc-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  flex-shrink: 0;
+}
+
+.vc-msg-avatar-user {
+  background: var(--bg-elevated, #151518);
+  color: var(--text-secondary, #888);
+}
+
+.vc-msg-avatar-agent {
+  background: var(--accent-dim, rgba(59, 130, 246, 0.12));
+  color: var(--accent, #3b82f6);
+}
+
+/* ─── Message body ─── */
+.vc-msg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vc-msg-text {
+  color: var(--text-primary, #ededed);
+  line-height: 1.55;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  font-weight: 400;
+  margin: 0;
+}
+
+/* ─── Reasoning (muted, collapsible) ─── */
+.vc-msg-reasoning {
+  color: var(--text-tertiary, #555);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  border-radius: var(--vc-radius-md);
+  border-left: 2px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  font-style: italic;
+}
+
+/* ─── Tool Call Card ─── */
+.vc-tool-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-elevated, #151518);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: var(--vc-radius-md);
+  font-size: 12px;
+  max-width: 380px;
+  transition: border-color 0.15s;
+}
+
+.vc-tool-card:hover {
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.12));
+}
+
+.vc-tool-card-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--vc-radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary, #888);
+  flex-shrink: 0;
+}
+
+.vc-tool-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.vc-tool-card-name {
+  font-weight: 500;
+  color: var(--text-primary, #ededed);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+
+.vc-tool-card-path {
+  color: var(--text-tertiary, #555);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vc-tool-card-status {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.vc-tool-spinner {
+  animation: vc-spin 1s linear infinite;
+  color: var(--text-tertiary, #555);
+}
+
+@keyframes vc-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vc-tool-check {
+  color: var(--success, #22c55e);
+}
+
+.vc-tool-error {
+  color: var(--danger, #ef4444);
+}
+
+/* Status-based border accents */
+.vc-tool-card[data-status='running'] {
+  border-color: var(--border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.vc-tool-card[data-status='complete'] {
+  border-color: rgba(34, 197, 94, 0.15);
+}
+
+.vc-tool-card[data-status='error'] {
+  border-color: rgba(239, 68, 68, 0.15);
+}
+
+/* ─── Artifact Card ─── */
+.vc-artifact-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.01) 100%
+  );
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: var(--vc-radius-lg);
+  cursor: pointer;
+  transition: all 0.2s var(--vc-emerge);
+  margin: 6px 0;
+  max-width: 380px;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.2);
+}
+
+.vc-artifact-card:hover {
+  background: var(--accent-dim, rgba(59, 130, 246, 0.12));
+  border-color: var(--accent, #3b82f6);
+}
+
+.vc-artifact-card.open {
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.12));
+}
+
+.vc-artifact-card.active {
+  background: var(--accent-dim, rgba(59, 130, 246, 0.12));
+  border-color: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 1px var(--accent-dim, rgba(59, 130, 246, 0.12));
+}
+
+.vc-artifact-card-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--vc-radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-secondary, #888);
+}
+
+.vc-artifact-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.vc-artifact-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #ededed);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vc-artifact-card-kind {
+  font-size: 11px;
+  color: var(--text-tertiary, #555);
+  text-transform: capitalize;
+}
+
+.vc-artifact-card-spacer {
+  flex: 1;
+}
+
+.vc-artifact-card-chevron {
+  color: var(--text-tertiary, #555);
+  opacity: 0.4;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.vc-artifact-card.open .vc-artifact-card-chevron {
+  opacity: 0.7;
+}
+
+.vc-artifact-card.active .vc-artifact-card-chevron {
+  opacity: 1;
+}
+
+/* ─── Composer ─── */
+.vc-composer-wrap {
+  padding: 12px 24px 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.vc-composer {
+  max-width: var(--vc-chat-max-width, 680px);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  background: var(--bg-surface, #111113);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: 24px;
+  transition: all 0.2s var(--vc-emerge);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.vc-composer:focus-within {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 8px 24px -6px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  background: var(--bg-elevated, #151518);
+}
+
+.vc-composer-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary, #ededed);
+  font-size: 14px;
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
+  min-height: 21px;
+  max-height: 120px;
+}
+
+.vc-composer-input::placeholder {
+  color: var(--text-tertiary, #555);
+}
+
+/* Keyboard hints */
+.vc-composer-hints {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.vc-kbd {
+  background: var(--bg-elevated, #151518);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--text-tertiary, #555);
+  font-family: var(--font-mono, monospace);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+  line-height: 1;
+}
+
+/* Send button */
+.vc-composer-send {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--text-primary, #ededed);
+  color: var(--bg-canvas, #0a0a0a);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s var(--vc-spring);
+  box-shadow: 0 2px 8px rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+
+.vc-composer-send:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.25);
+}
+
+.vc-composer-send:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Stop button */
+.vc-composer-stop {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--danger, #ef4444);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s var(--vc-spring);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+  flex-shrink: 0;
+}
+
+.vc-composer-stop:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 12px rgba(239, 68, 68, 0.4);
+}
