@@ -3322,6 +3322,8 @@ kbd {
 
 .pi-backend-row.is-assistant {
   justify-content: flex-start;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .pi-backend-bubble {
