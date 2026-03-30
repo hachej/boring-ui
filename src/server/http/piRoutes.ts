@@ -132,6 +132,7 @@ export async function registerPiRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(409).send({ error: 'session is busy' })
     }
 
+    reply.hijack()
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache',
@@ -182,6 +183,7 @@ export async function registerPiRoutes(app: FastifyInstance): Promise<void> {
     })
 
     request.raw.on('close', () => {
+      if (!request.raw.aborted) return  // Fastify lifecycle close, not client disconnect
       closed = true
       unsubscribe()
       if (!session.agent.state.isStreaming) return
