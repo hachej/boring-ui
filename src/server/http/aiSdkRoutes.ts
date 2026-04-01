@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from 'ai'
+import { convertToModelMessages, stepCountIs, streamText, type UIMessage, type ModelMessage } from 'ai'
 import { resolveAgentSessionContext, resolveUiWorkspaceKey } from '../agent/sessionContext.js'
 import { createAiSdkServerTools } from '../services/aiSdkTools.js'
 
-const DEFAULT_MODEL = 'claude-3-5-haiku-latest'
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001'
 const SYSTEM_PROMPT = [
   'You are an Agent integrated into Boring UI.',
   'Do not claim to be Claude Code.',
@@ -31,7 +31,13 @@ function readModelId(): string {
 }
 
 function formatStreamError(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message
+  if (error instanceof Error) {
+    // Include cause chain for debugging
+    const msg = error.message || 'unknown error'
+    const cause = (error as { cause?: unknown }).cause
+    if (cause instanceof Error) return `${msg}: ${cause.message}`
+    return msg
+  }
   if (typeof error === 'string' && error.trim()) return error
   if (error == null) return 'unknown error'
   try {
@@ -39,6 +45,43 @@ function formatStreamError(error: unknown): string {
   } catch {
     return 'unknown error'
   }
+}
+
+/**
+ * Remove tool-call parts from assistant messages that don't have a matching
+ * tool-result in the next user/tool message. Anthropic's API requires every
+ * tool_use block to have a corresponding tool_result.
+ */
+function stripOrphanedToolCalls(messages: ModelMessage[]): ModelMessage[] {
+  // Collect all tool-result IDs across the conversation
+  const toolResultIds = new Set<string>()
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) continue
+    for (const part of msg.content) {
+      if (part.type === 'tool-result' && 'toolCallId' in part) {
+        toolResultIds.add(part.toolCallId)
+      }
+    }
+  }
+
+  // Filter assistant messages to remove tool-call parts without matching results
+  return messages.map((msg) => {
+    if (msg.role !== 'assistant' || !Array.isArray(msg.content)) return msg
+
+    const filtered = msg.content.filter((part) => {
+      if (part.type === 'tool-call' && 'toolCallId' in part) {
+        return toolResultIds.has(part.toolCallId)
+      }
+      return true
+    })
+
+    // If all content was tool calls that got stripped, add a placeholder text
+    if (filtered.length === 0) {
+      return { ...msg, content: [{ type: 'text' as const, text: '(tool call omitted)' }] }
+    }
+
+    return filtered.length === msg.content.length ? msg : { ...msg, content: filtered }
+  })
 }
 
 export async function registerAiSdkRoutes(app: FastifyInstance): Promise<void> {
@@ -74,12 +117,19 @@ export async function registerAiSdkRoutes(app: FastifyInstance): Promise<void> {
       body,
       request.headers['x-workspace-id'] as string | undefined,
     )
+    const rawModelMessages = await convertToModelMessages(messages, {
+      ignoreIncompleteToolCalls: true,
+    })
+
+    // Strip incomplete tool calls — Anthropic requires every tool_use to have
+    // a matching tool_result. convertToModelMessages with ignoreIncompleteToolCalls
+    // only suppresses the validation error but keeps orphaned tool-call parts.
+    const modelMessages = stripOrphanedToolCalls(rawModelMessages)
+
     const result = streamText({
       model: anthropic(modelId as Parameters<typeof anthropic>[0]),
       system: buildAiSdkSystemPrompt(sessionContext.workspaceRoot),
-      messages: await convertToModelMessages(messages, {
-        ignoreIncompleteToolCalls: true,
-      }),
+      messages: modelMessages,
       tools: createAiSdkServerTools({
         workspaceRoot: sessionContext.workspaceRoot,
         uiWorkspaceKey,
