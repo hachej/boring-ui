@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { DockviewReact } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
-import { Bot } from 'lucide-react'
-
 import { ThemeProvider, useCapabilities, useKeyboardShortcuts, UNKNOWN_CAPABILITIES } from './shared/hooks'
 import { TooltipProvider } from './shared/components/ui/tooltip'
 import useApprovalPolling from './shared/hooks/useApprovalPolling'
@@ -16,6 +14,8 @@ import useWorkspaceAuth from './shared/hooks/useWorkspaceAuth'
 import useCollapsedLayout from './shared/hooks/useCollapsedLayout'
 import usePanelConfig from './shared/hooks/usePanelConfig'
 import useResolvedCapabilities from './shared/hooks/useResolvedCapabilities'
+import useChatPanelManager from './shared/hooks/useChatPanelManager'
+import useSeriesDropHandler from './shared/hooks/useSeriesDropHandler'
 import useWorkspaceRouter from './shared/hooks/useWorkspaceRouter'
 import { useWorkspacePlugins } from './shared/hooks/useWorkspacePlugins'
 import { loadWorkspacePanes } from './workspace/loader'
@@ -40,7 +40,6 @@ import { debounce } from './shared/utils/debounce'
 import {
   isCenterContentPanel,
   listDockPanels,
-  listDockGroups,
   getPanelComponent,
   countAllAgentPanels,
 } from './shared/utils/dockHelpers'
@@ -50,7 +49,6 @@ import {
   readPersistedPanelSizes,
 } from './shared/utils/panelConfig'
 import ThemeToggle from './shared/components/ThemeToggle'
-import Tooltip from './shared/components/Tooltip'
 import WorkspaceLoading from './shared/components/WorkspaceLoading'
 import {
   CapabilitiesContext,
@@ -616,223 +614,25 @@ export default function App() {
     getLeftSidebarAnchorPosition,
   ])
 
-  const createUniquePanelId = useCallback((api, prefix) => {
-    let counter = 1
-    let candidate = `${prefix}-${Date.now().toString(36)}`
-    while (api.getPanel(candidate)) {
-      candidate = `${prefix}-${Date.now().toString(36)}-${counter}`
-      counter += 1
-    }
-    return candidate
-  }, [])
-
-  const handleSplitChatPanelRef = useRef(null)
-
-  const addChatPanel = useCallback(
-    ({
-      mode = 'tab',
-      sourcePanelId = '',
-      piSessionBootstrap = 'latest',
-      suppressPendingLayoutRestore = false,
-    } = {}) => {
-      const api = dockApiRef.current
-      if (!api) return false
-      if (suppressPendingLayoutRestore) {
-        suppressPendingLayoutRestoreRef.current = true
-      }
-
-      const sourcePanel = sourcePanelId ? api.getPanel(sourcePanelId) : null
-      const component = 'agent'
-
-      const panelIdPrefix = 'agent-chat'
-      const panelId = createUniquePanelId(api, panelIdPrefix)
-      const piInitialSessionId = agentMode !== 'backend'
-        && piSessionBootstrap === 'new'
-        ? `pi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-        : ''
-      const title = 'Agent'
-      const matchingPanels = listDockPanels(api).filter(
-        (panel) => getPanelComponent(panel) === component,
-      )
-      const defaultReferencePanel = matchingPanels[0]
-      let emptyCenterPanel = api.getPanel('empty-center')
-      let centerGroup = getLiveCenterGroup(api) || emptyCenterPanel?.group
-
-      // Ensure chat panels anchor in the center area, not side rails.
-      if (!centerGroup) {
-        const emptyCenterPosition = getLeftSidebarAnchorPosition(api)
-        if (!emptyCenterPanel && emptyCenterPosition) {
-          emptyCenterPanel = api.addPanel({
-            id: 'empty-center',
-            component: 'empty',
-            title: '',
-            position: emptyCenterPosition,
-          })
-        }
-        if (emptyCenterPanel?.group) {
-          emptyCenterPanel.group.header.hidden = true
-          centerGroupRef.current = emptyCenterPanel.group
-          centerGroup = emptyCenterPanel.group
-          emptyCenterPanel.group.api.setConstraints({
-            minimumHeight: panelMinRef.current.center,
-            maximumHeight: Number.MAX_SAFE_INTEGER,
-          })
-        }
-      }
-
-      let position
-      if (mode === 'split' && sourcePanel) {
-        position = { direction: 'right', referencePanel: sourcePanel.id }
-      } else if (mode === 'tab' && !sourcePanel && centerGroup) {
-        position = { referenceGroup: centerGroup }
-      } else if (mode === 'split' && defaultReferencePanel) {
-        position = { direction: 'right', referencePanel: defaultReferencePanel.id }
-      } else if (sourcePanel?.group) {
-        position = { referenceGroup: sourcePanel.group }
-      } else if (defaultReferencePanel?.group) {
-        position = { referenceGroup: defaultReferencePanel.group }
-      } else if (mode === 'split') {
-        const emptyCenter = api.getPanel('empty-center')
-        if (emptyCenter) {
-          position = { direction: 'right', referencePanel: emptyCenter.id }
-        } else if (centerGroup?.activePanel?.id) {
-          position = { direction: 'right', referencePanel: centerGroup.activePanel.id }
-        } else if (centerGroup?.panels?.[0]?.id) {
-          position = { direction: 'right', referencePanel: centerGroup.panels[0].id }
-        } else if (centerGroup) {
-          position = { referenceGroup: centerGroup }
-        }
-      } else if (centerGroup) {
-        position = { referenceGroup: centerGroup }
-      } else {
-        position = getLeftSidebarAnchorPosition(api)
-      }
-
-      const panel = api.addPanel({
-        id: panelId,
-        component,
-        title,
-        position,
-        params: {
-          panelId,
-          collapsed: false,
-          onToggleCollapse: undefined,
-          mode: agentMode,
-          piSessionBootstrap,
-          piInitialSessionId,
-        },
-      })
-      if (!panel) return false
-
-      // Set onSplitPanel immediately so the "Split chat panel" button
-      // appears without waiting for the params sync effect to re-run.
-      if (handleSplitChatPanelRef.current) {
-        panel.api.updateParameters({
-          ...panel.params,
-          onSplitPanel: handleSplitChatPanelRef.current,
-        })
-      }
-
-      if (panel?.group) {
-        panel.group.locked = false
-        panel.group.header.hidden = false
-        panel.group.api.setConstraints({
-          minimumWidth: panelMinRef.current.agent,
-          maximumWidth: Number.MAX_SAFE_INTEGER,
-        })
-        if (!collapsed.agent) {
-          panel.group.api.setSize({ width: panelSizesRef.current.agent })
-        }
-
-        // Remove empty placeholder once a real chat panel is added to that group.
-        if (
-          emptyCenterPanel
-          && emptyCenterPanel.id !== panel.id
-          && emptyCenterPanel.group?.id === panel.group.id
-        ) {
-          emptyCenterPanel.api.close()
-        }
-      }
-
-      panel.api.setActive()
-      return true
-    },
-    [
-      agentMode,
-      createUniquePanelId,
-      getLeftSidebarAnchorPosition,
-      getLiveCenterGroup,
-      collapsed.agent,
-    ],
-  )
-
-  const handleSplitChatPanel = useCallback((panelId, options = {}) => {
-    if (!panelId) return
-    addChatPanel({
-      mode: 'split',
-      sourcePanelId: panelId,
-      piSessionBootstrap: options.piSessionBootstrap || 'latest',
-      suppressPendingLayoutRestore: true,
-    })
-  }, [addChatPanel])
-  handleSplitChatPanelRef.current = handleSplitChatPanel
-
-  const handleOpenChatTab = useCallback(() => {
-    if (!dockApi) {
-      addChatPanel({ mode: 'split', piSessionBootstrap: 'new', suppressPendingLayoutRestore: true })
-      return
-    }
-
-    const agentPanels = listDockPanels(dockApi).filter((panel) => {
-      const component = getPanelComponent(panel)
-      return component === 'agent'
-    })
-
-    const activePanel = dockApi.activePanel
-    const activeIsAgent = activePanel
-      && getPanelComponent(activePanel) === 'agent'
-    const preferredSource = activeIsAgent
-      ? activePanel
-      : (agentPanels.find((panel) => panel.id === 'agent') || agentPanels[0])
-
-    if (preferredSource?.id) {
-      handleSplitChatPanel(preferredSource.id, { piSessionBootstrap: 'new' })
-      return
-    }
-
-    addChatPanel({ mode: 'split', piSessionBootstrap: 'new', suppressPendingLayoutRestore: true })
-  }, [addChatPanel, dockApi, handleSplitChatPanel])
-
-  // Right header actions component for quick chat actions in center groups.
-  const RightHeaderActions = useCallback(
-    (props) => {
-      const panels = props.group?.panels || []
-      const hasCenterTabs = panels.some((p) => {
-        const id = typeof p?.id === 'string' ? p.id : ''
-        return id.startsWith('editor-') || id.startsWith('review-') || id === 'empty-center'
-      })
-
-      if (!hasCenterTabs) return null
-
-      return (
-        <div className="tab-header-actions">
-          {hasCenterTabs && (
-            <Tooltip label="Open new chat pane">
-              <button
-                type="button"
-                className="tab-collapse-btn"
-                onClick={handleOpenChatTab}
-                aria-label="Open new chat pane"
-              >
-                <Bot size={14} />
-              </button>
-            </Tooltip>
-          )}
-        </div>
-      )
-    },
-    [handleOpenChatTab],
-  )
+  // Chat panel lifecycle management (extracted to hook)
+  const {
+    addChatPanel,
+    handleSplitChatPanel,
+    handleSplitChatPanelRef,
+    handleOpenChatTab,
+    RightHeaderActions,
+  } = useChatPanelManager({
+    dockApi,
+    dockApiRef,
+    centerGroupRef,
+    panelMinRef,
+    panelSizesRef,
+    collapsed,
+    agentMode,
+    suppressPendingLayoutRestoreRef,
+    getLeftSidebarAnchorPosition,
+    getLiveCenterGroup,
+  })
 
   const onReady = (event) => {
     const api = event.api
@@ -2290,245 +2090,16 @@ export default function App() {
     }
   }, [dockApi, openFile, getLiveCenterGroup, tabs])
 
-  const readDroppedSeriesId = useCallback((dataTransfer) => {
-    const transferTypes = dataTransfer?.types && typeof dataTransfer.types[Symbol.iterator] === 'function'
-      ? Array.from(dataTransfer.types)
-      : []
-    const hasCustomSeriesType = transferTypes.includes('text/series-id')
-    const droppedSeriesFromCustomType = String(dataTransfer?.getData('text/series-id') || '').trim()
-    const droppedPlainText = String(dataTransfer?.getData('text/plain') || '').trim()
-    const droppedSeriesFromWindow = typeof window !== 'undefined'
-      ? String(window.__BM_DND_SERIES_ID || '').trim()
-      : ''
-    return droppedSeriesFromCustomType
-      || droppedSeriesFromWindow
-      || (
-        hasCustomSeriesType
-        && droppedPlainText
-        && !droppedPlainText.includes('/')
-        && !droppedPlainText.includes('\\')
-        ? droppedPlainText
-        : ''
-      )
-  }, [])
-
-  const routeSeriesDropToPanel = useCallback((targetPanel, droppedSeriesId) => {
-    if (!targetPanel || !droppedSeriesId) return
-    const nextDropNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const targetPanelId = String(targetPanel?.id || targetPanel?.api?.id || '')
-
-    // Primary delivery path for chart overlays: explicit browser event routed by panel id.
-    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-      window.dispatchEvent(new CustomEvent('bm-chart-overlay-drop', {
-        detail: {
-          panelId: targetPanelId,
-          seriesId: droppedSeriesId,
-          nonce: nextDropNonce,
-        },
-      }))
-    }
-    if (typeof targetPanel.api?.setActive === 'function') {
-      targetPanel.api.setActive()
-    }
-  }, [])
-
-  const openSeriesAtPosition = useCallback((seriesId, position, mode = 'chart') => {
-    if (!dockApi || !seriesId) return
-
-    const normalizedMode = mode === 'table' ? 'table' : 'chart'
-    const panelId = `chart-${seriesId}`
-    const existing = dockApi.getPanel(panelId)
-    if (existing) {
-      existing.api.updateParameters({ seriesId, mode: normalizedMode })
-      if (existing.group) existing.group.locked = false
-      existing.api.setActive()
-      return
-    }
-
-    const emptyPanel = dockApi.getPanel('empty-center')
-    const panel = dockApi.addPanel({
-      id: panelId,
-      component: 'chart-canvas',
-      title: seriesId,
-      params: { seriesId, mode: normalizedMode },
-      position,
-    })
-
-    if (panel?.group) {
-      panel.group.locked = false
-      panel.group.header.hidden = false
-      centerGroupRef.current = panel.group
-      panel.group.api?.setConstraints({
-        minimumHeight: panelMinRef.current.center,
-        maximumHeight: Number.MAX_SAFE_INTEGER,
-      })
-    }
-    panel?.api?.setActive()
-
-    if (emptyPanel) {
-      requestAnimationFrame(() => {
-        const staleEmpty = dockApi.getPanel('empty-center')
-        if (staleEmpty) {
-          staleEmpty.api.close()
-        }
-      })
-    }
-  }, [dockApi])
-
-  const resolveDropPosition = useCallback((dropEvent) => {
-    const dropGroup = dropEvent?.group
-    const dropPanel = dropEvent?.panel || dropGroup?.activePanel
-    const rawPosition = dropEvent?.position
-    const activePanelId = String(dropPanel?.id || '')
-
-    if (rawPosition && typeof rawPosition === 'object' && !Array.isArray(rawPosition)) {
-      return rawPosition
-    }
-
-    const mappedDirection = (() => {
-      switch (String(rawPosition || '')) {
-        case 'top':
-          return 'above'
-        case 'bottom':
-          return 'below'
-        case 'left':
-          return 'left'
-        case 'right':
-          return 'right'
-        case 'center':
-          return 'within'
-        default:
-          return ''
-      }
-    })()
-
-    if (mappedDirection && activePanelId) {
-      return { direction: mappedDirection, referencePanel: activePanelId }
-    }
-
-    if (dropGroup && !isLeftSidebarGroup(dropGroup)) {
-      return { referenceGroup: dropGroup }
-    }
-
-    const centerGroup = getLiveCenterGroup(dockApi)
-    if (centerGroup) {
-      return { referenceGroup: centerGroup }
-    }
-
-    return getLeftSidebarAnchorPosition(dockApi)
-  }, [dockApi, getLeftSidebarAnchorPosition, getLiveCenterGroup, isLeftSidebarGroup])
-
-  const onDidDrop = (event) => {
-    const dataTransfer = event?.nativeEvent?.dataTransfer
-    if (!dataTransfer) return
-
-    const fileDataStr = dataTransfer.getData('application/x-kurt-file')
-    if (fileDataStr) {
-      try {
-        const fileData = JSON.parse(fileDataStr)
-        const path = fileData.path
-
-        openFileAtPosition(path, resolveDropPosition(event))
-      } catch {
-        // Ignore parse errors
-      }
-      return
-    }
-
-    const droppedSeriesId = readDroppedSeriesId(dataTransfer)
-    if (!droppedSeriesId) return
-
-    const targetPanel = event?.panel || event?.group?.activePanel
-    if (targetPanel && getPanelComponent(targetPanel) === 'chart-canvas') {
-      routeSeriesDropToPanel(targetPanel, droppedSeriesId)
-      return
-    }
-
-    if (targetPanel?.id) {
-      openSeriesAtPosition(droppedSeriesId, {
-        direction: targetPanel.id === 'agent' ? 'left' : 'right',
-        referencePanel: targetPanel.id,
-      })
-      return
-    }
-
-    openSeriesAtPosition(droppedSeriesId, resolveDropPosition(event))
-  }
-
-  // Fallback drop bridge for browsers/paths where Dockview external drops are suppressed.
-  // Used for series overlay drops onto existing chart panels without split-target overlays.
-  useEffect(() => {
-    if (!dockApi || typeof document === 'undefined') return
-
-    const dockRoot = document.querySelector('[data-testid="dockview"]')
-    if (!dockRoot) return
-
-    const resolvePanelFromTabElement = (tabElement) => {
-      const tabTitle = String(
-        tabElement?.querySelector?.('.dv-default-tab-content')?.textContent
-          || tabElement?.textContent
-          || '',
-      ).trim()
-      if (!tabTitle) return null
-
-      const panels = listDockPanels(dockApi)
-      const titleMatches = panels.filter((panel) => String(panel?.title || '').trim() === tabTitle)
-      if (titleMatches.length === 0) return null
-      if (titleMatches.length === 1) return titleMatches[0]
-      return titleMatches.find((panel) => getPanelComponent(panel) === 'chart-canvas') || titleMatches[0]
-    }
-
-    const resolvePanelFromNativeTarget = (targetNode) => {
-      const tabElement = targetNode?.closest?.('.dv-tab')
-      if (tabElement) {
-        return resolvePanelFromTabElement(tabElement)
-      }
-
-      const groupElement = targetNode?.closest?.('.dv-groupview')
-      if (!groupElement) return null
-
-      const groups = listDockGroups(dockApi)
-      const group = groups.find((candidate) => candidate?.element === groupElement)
-      return group?.activePanel || null
-    }
-
-    const onDragOverCapture = (nativeEvent) => {
-      const droppedSeriesId = readDroppedSeriesId(nativeEvent.dataTransfer)
-      if (!droppedSeriesId) return
-
-      const targetNode = nativeEvent?.target
-      if (!targetNode || typeof targetNode?.closest !== 'function') return
-      const targetPanel = resolvePanelFromNativeTarget(targetNode)
-      if (!targetPanel || getPanelComponent(targetPanel) !== 'chart-canvas') return
-
-      nativeEvent.preventDefault()
-      if (nativeEvent.dataTransfer) {
-        nativeEvent.dataTransfer.dropEffect = 'copy'
-      }
-    }
-
-    const onDropCapture = (nativeEvent) => {
-      const droppedSeriesId = readDroppedSeriesId(nativeEvent.dataTransfer)
-      if (!droppedSeriesId) return
-
-      const targetNode = nativeEvent?.target
-      if (!targetNode || typeof targetNode?.closest !== 'function') return
-      const targetPanel = resolvePanelFromNativeTarget(targetNode)
-      if (!targetPanel || getPanelComponent(targetPanel) !== 'chart-canvas') return
-
-      nativeEvent.preventDefault()
-      nativeEvent.stopPropagation()
-      routeSeriesDropToPanel(targetPanel, droppedSeriesId)
-    }
-
-    dockRoot.addEventListener('dragover', onDragOverCapture, true)
-    dockRoot.addEventListener('drop', onDropCapture, true)
-
-    return () => {
-      dockRoot.removeEventListener('dragover', onDragOverCapture, true)
-      dockRoot.removeEventListener('drop', onDropCapture, true)
-    }
-  }, [dockApi, readDroppedSeriesId, routeSeriesDropToPanel])
+  // Series/chart drag-and-drop handling (extracted to hook)
+  const { onDidDrop } = useSeriesDropHandler({
+    dockApi,
+    centerGroupRef,
+    panelMinRef,
+    openFileAtPosition,
+    getLeftSidebarAnchorPosition,
+    getLiveCenterGroup,
+    isLeftSidebarGroup,
+  })
 
   // Full-page routing (auth, settings, setup pages)
   const pageRouterResult = PageRouter({
