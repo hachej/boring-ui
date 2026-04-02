@@ -14,7 +14,7 @@
  * v1: metrics stored in-memory only. Pipeline integration is a follow-up.
  */
 
-import { useRef, createContext, useContext, createElement } from 'react'
+import { useState, createContext, useContext, createElement } from 'react'
 
 /**
  * @typedef {{ name: string, timestamp: number }} MetricEvent
@@ -83,11 +83,8 @@ function createMetricsStore() {
  * is a fire-and-forget side-effect, not something the UI needs to react to.
  */
 export function useChatMetrics() {
-  const storeRef = useRef(null)
-  if (storeRef.current === null) {
-    storeRef.current = createMetricsStore()
-  }
-  return storeRef.current
+  const [store] = useState(() => createMetricsStore())
+  return store
 }
 
 /**

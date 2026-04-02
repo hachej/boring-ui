@@ -47,7 +47,7 @@ describe('PiBackendAdapter workspace switch', () => {
         try {
           const body = JSON.parse(opts.body)
           if (body.workspace_id) capturedWorkspaceIds.push(body.workspace_id)
-        } catch {}
+        } catch { /* ignore JSON parse errors */ }
       }
 
       // Sessions list

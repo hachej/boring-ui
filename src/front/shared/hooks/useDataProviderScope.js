@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   createQueryClient,
   getDataProvider,
@@ -23,8 +23,8 @@ export default function useDataProviderScope({
   menuUserEmail,
   userMenuAuthStatus,
 }) {
-  const dataProviderCacheRef = useRef(new Map())
-  const queryClientCacheRef = useRef(new Map())
+  const [dataProviderCache] = useState(() => new Map())
+  const [queryClientCache] = useState(() => new Map())
 
   const configuredDataBackend = String(config?.data?.backend || 'http')
     .trim()
@@ -78,12 +78,12 @@ export default function useDataProviderScope({
   )
   const queryClient = useMemo(
     () => getCachedScopedValue(
-      queryClientCacheRef.current,
+      queryClientCache,
       dataProviderScopeKey,
       () => createQueryClient(),
       (client) => client?.clear?.(),
     ),
-    [dataProviderScopeKey],
+    [dataProviderScopeKey, queryClientCache],
   )
   const dataProvider = useMemo(
     () => {
@@ -96,7 +96,7 @@ export default function useDataProviderScope({
 
       if (isLightningBackend) {
         return getCachedScopedValue(
-          dataProviderCacheRef.current,
+          dataProviderCache,
           lightningFsProviderCacheKey,
           () => createLightningDataProvider({ fsName: resolvedLightningFsName }),
         )
@@ -104,7 +104,7 @@ export default function useDataProviderScope({
 
       if (isJustBashBackend) {
         return getCachedScopedValue(
-          dataProviderCacheRef.current,
+          dataProviderCache,
           justBashProviderCacheKey,
           () => createJustBashDataProvider(),
         )
@@ -127,6 +127,7 @@ export default function useDataProviderScope({
     [
       configuredDataBackend,
       currentWorkspaceId,
+      dataProviderCache,
       isJustBashBackend,
       isLightningBackend,
       justBashProviderCacheKey,
@@ -146,18 +147,18 @@ export default function useDataProviderScope({
       : `justbash:${providerKeyPrefix}`
     const queryKeyStartsWith = isLightningBackend ? 'lightningfs:' : 'justbash:'
 
-    Array.from(dataProviderCacheRef.current.keys()).forEach((key) => {
+    Array.from(dataProviderCache.keys()).forEach((key) => {
       if (key.startsWith(providerKeyPrefix)) return
-      dataProviderCacheRef.current.delete(key)
+      dataProviderCache.delete(key)
     })
 
-    Array.from(queryClientCacheRef.current.entries()).forEach(([key, client]) => {
+    Array.from(queryClientCache.entries()).forEach(([key, client]) => {
       if (!key.startsWith(queryKeyStartsWith)) return
       if (key.startsWith(queryKeyPrefix)) return
       client?.clear?.()
-      queryClientCacheRef.current.delete(key)
+      queryClientCache.delete(key)
     })
-  }, [isJustBashBackend, isLightningBackend, lightningFsUserScope])
+  }, [dataProviderCache, isJustBashBackend, isLightningBackend, lightningFsUserScope, queryClientCache])
 
   return {
     configuredDataBackend,

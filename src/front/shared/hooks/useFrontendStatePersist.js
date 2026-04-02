@@ -24,15 +24,10 @@ export default function useFrontendStatePersist({ enabled = false, storagePrefix
   const clientIdRef = useRef('')
   const unavailableRef = useRef(false)
   const storagePrefixRef = useRef(storagePrefix)
-  storagePrefixRef.current = storagePrefix
 
-  // Initialize client ID
-  if (!clientIdRef.current && storagePrefix) {
-    clientIdRef.current = getFrontendStateClientId(storagePrefix)
-  }
-
-  // Reset on storagePrefix change
+  // Sync storagePrefixRef, initialize/reset client ID on storagePrefix change
   useEffect(() => {
+    storagePrefixRef.current = storagePrefix
     if (storagePrefix) {
       clientIdRef.current = getFrontendStateClientId(storagePrefix)
       unavailableRef.current = false

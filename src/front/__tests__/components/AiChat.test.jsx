@@ -183,7 +183,7 @@ describe('AiChat', () => {
           parts: [
             { type: 'text', text: 'Running a command' },
             { type: 'tool-input-start', id: 'tool-1', toolName: 'exec_bash' },
-            { type: 'tool-input-delta', id: 'tool-1', delta: '{\"command\":\"pwd\"}' },
+            { type: 'tool-input-delta', id: 'tool-1', delta: '{"command":"pwd"}' },
             { type: 'tool-call', toolCallId: 'tool-1', toolName: 'exec_bash', input: { command: 'pwd' } },
             {
               type: 'tool-result',

@@ -106,6 +106,8 @@ const createFsApi = (state) => ({
   }),
 })
 
+const encodeText = (text) => [...new TextEncoder().encode(text)]
+
 let bashExecMock
 let fsState
 
@@ -132,8 +134,6 @@ vi.mock('just-bash/browser', () => {
 
   return { Bash }
 })
-
-const encodeText = (text) => [...new TextEncoder().encode(text)]
 
 describe('createJustBashDataProvider', () => {
   beforeEach(() => {
