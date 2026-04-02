@@ -89,7 +89,7 @@ export function useToolBridge({
         sessionIdRef.current,
       )
 
-      if (shouldOpen && artifact && openArtifactRef.current) {
+      if (shouldOpen && artifact && typeof openArtifactRef.current === 'function') {
         openArtifactRef.current(artifact)
       }
     }
@@ -123,7 +123,6 @@ export function useToolBridge({
     window[PI_OPEN_FILE_BRIDGE] = openFile
     window[PI_OPEN_PANEL_BRIDGE] = openPanel
     window[PI_LIST_TABS_BRIDGE] = listTabs
-
 
     return () => {
       if (window[SURFACE_OPEN_FILE_BRIDGE] === openFile) {
