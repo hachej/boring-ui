@@ -116,7 +116,46 @@ function normalizeLegacyToolInvocation(toolInvocation) {
   }
 }
 
+function isStaticToolUiPart(part) {
+  if (!part || typeof part !== 'object') return false
+  const type = String(part.type || '')
+  if (!type.startsWith('tool-')) return false
+  return ![
+    'tool-call',
+    'tool-result',
+    'tool-error',
+    'tool-use',
+    'tool_use',
+    'tool-invocation',
+    'tool-input-available',
+    'tool-output-available',
+    'tool-output-error',
+  ].includes(type)
+}
+
 function normalizeToolPart(part) {
+  if (isStaticToolUiPart(part)) {
+    const state = String(part.state || '').toLowerCase()
+    const output = state === 'output-error'
+      ? (part.errorText || 'Tool failed')
+      : toolOutputToText(part.output)
+    const status = state === 'output-error'
+      ? 'error'
+      : (state === 'output-available'
+          ? (part.preliminary ? 'running' : 'complete')
+          : 'running')
+
+    return {
+      key: part.toolCallId || part.id,
+      name: part.toolName || String(part.type || '').slice('tool-'.length),
+      input: part.input || {},
+      output,
+      rawOutput: state === 'output-error' ? part.errorText : (part.output ?? null),
+      error: status === 'error' ? output : undefined,
+      status,
+    }
+  }
+
   if (part?.type === 'tool_use' || part?.type === 'tool-use') {
     const toolCallId = part.toolCallId || part.id
     const output = toolOutputToText(part.output || part.result)
@@ -221,6 +260,12 @@ function getToolPartId(part) {
 }
 
 function toolPartPriority(part) {
+  if (isStaticToolUiPart(part)) {
+    const state = String(part.state || '').toLowerCase()
+    if (state === 'output-error') return 3
+    if (state === 'output-available') return part.preliminary ? 1 : 2
+    return 0
+  }
   if (part?.type === 'tool_use' || part?.type === 'tool-use') {
     const status = String(part.status || '').toLowerCase()
     if (part.isError === true || status === 'error') return 3
@@ -412,6 +457,20 @@ function renderPart(part, index, visibleToolParts, onOpenArtifact, activeSession
       )
 
     default:
+      if (isStaticToolUiPart(part)) {
+        const toolCallId = getToolPartId(part)
+        if (toolCallId && visibleToolParts.get(toolCallId) !== part) {
+          return null
+        }
+        return (
+          <ToolPart
+            key={toolCallId || index}
+            part={part}
+            onOpenArtifact={onOpenArtifact}
+            activeSessionId={activeSessionId}
+          />
+        )
+      }
       if (HIDDEN_PROTOCOL_PARTS.has(part.type || '')) return null
       return null
   }

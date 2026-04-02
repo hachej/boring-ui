@@ -64,6 +64,24 @@ describe('ChatMessage', () => {
     expect(screen.getByText('main.js')).toBeInTheDocument()
   })
 
+  it('renders AI SDK v6 static tool parts with the shared tool renderer', () => {
+    const onOpenArtifact = vi.fn()
+    const msg = makeMessage('assistant', [
+      {
+        type: 'tool-open_file',
+        toolCallId: 'tc-open-1',
+        state: 'output-available',
+        input: { path: 'workbench.feret-overview.json' },
+        output: { opened: true, path: 'workbench.feret-overview.json' },
+      },
+    ])
+
+    render(<ChatMessage message={msg} onOpenArtifact={onOpenArtifact} activeSessionId="session-1" />)
+
+    expect(screen.getByText('open_file')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /open workbench\.feret-overview\.json/i })).toBeInTheDocument()
+  })
+
   it('renders file references as inline links instead of capped artifact cards', () => {
     const onOpenArtifact = vi.fn()
     const msg = makeMessage('assistant', [
