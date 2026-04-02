@@ -9,7 +9,7 @@
  *   hits /api/v1/agent/chat where pi-coding-agent runs server-side)
  */
 
-import { useMemo, useRef } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { DefaultChatTransport } from 'ai'
 import { PiAgentCoreTransport } from './piAgentCoreTransport'
 import { createPiNativeTools } from './defaultTools'
@@ -49,24 +49,21 @@ export function useChatTransport(capabilities) {
     [dataProvider, queryClient],
   )
 
-  const transportRef = useRef(null)
+  const [piTransport] = useState(() => new PiAgentCoreTransport({ tools: [] }))
+
+  useEffect(() => {
+    if (!isPiBackendMode(capabilities)) {
+      piTransport.updateTools(tools)
+    }
+  }, [capabilities, piTransport, tools])
 
   return useMemo(() => {
     if (isPiBackendMode(capabilities)) {
-      // SERVER MODE: pi-coding-agent via backend
       return new DefaultChatTransport({
         api: buildApiUrl('/api/v1/agent/chat'),
         credentials: 'include',
       })
     }
-
-    // BROWSER MODE: pi-agent-core in-browser
-    if (!transportRef.current) {
-      transportRef.current = new PiAgentCoreTransport({ tools })
-    } else {
-      // Update tools if they changed (provider reconnect, etc.)
-      transportRef.current.updateTools(tools)
-    }
-    return transportRef.current
-  }, [capabilities, tools])
+    return piTransport
+  }, [capabilities, piTransport])
 }
