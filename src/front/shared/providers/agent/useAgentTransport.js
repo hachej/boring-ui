@@ -17,7 +17,7 @@
  * @module providers/agent/useAgentTransport
  */
 
-import { useMemo, useRef, useCallback, useState } from 'react'
+import { useMemo, useEffect, useCallback, useState } from 'react'
 import { DefaultChatTransport } from 'ai'
 import { PiAgentCoreTransport } from '../pi/piAgentCoreTransport'
 import { createPiNativeTools, mergePiTools } from '../pi/defaultTools'
