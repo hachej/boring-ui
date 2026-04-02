@@ -13,12 +13,15 @@ import usePanelActions from './shared/hooks/usePanelActions'
 import useResponsiveSidebarCollapse from './shared/hooks/useResponsiveSidebarCollapse'
 import useViewportBreakpoint from './shared/hooks/useViewportBreakpoint'
 import useWorkspaceAuth from './shared/hooks/useWorkspaceAuth'
+import useCollapsedLayout from './shared/hooks/useCollapsedLayout'
+import usePanelConfig from './shared/hooks/usePanelConfig'
+import useResolvedCapabilities from './shared/hooks/useResolvedCapabilities'
 import useWorkspaceRouter from './shared/hooks/useWorkspaceRouter'
 import { useWorkspacePlugins } from './shared/hooks/useWorkspacePlugins'
 import { loadWorkspacePanes } from './workspace/loader'
 import { useConfig } from './shared/config'
 import { apiFetchJson } from './shared/utils/transport'
-import { routeHref, routes } from './shared/utils/routes'
+import { routes } from './shared/utils/routes'
 import {
   LAYOUT_VERSION,
   validateLayoutStructure,
@@ -32,6 +35,7 @@ import {
   getStorageKey,
   getFileName,
 } from './layout'
+import { applyInitialSizes } from './shared/utils/layoutSizing'
 import { debounce } from './shared/utils/debounce'
 import {
   isCenterContentPanel,
@@ -42,7 +46,6 @@ import {
 } from './shared/utils/dockHelpers'
 import {
   arePlainObjectsEqual,
-  getPanelSizeConfigValue,
   readPersistedCollapsedState,
   readPersistedPanelSizes,
 } from './shared/utils/panelConfig'
@@ -64,10 +67,7 @@ import paneRegistry, {
 import { QueryClientProvider } from '@tanstack/react-query'
 import DataContext from './shared/providers/data/DataContext'
 import { PI_OPEN_FILE_BRIDGE } from './shared/providers/pi/uiBridge'
-import UserSettingsPage from './pages/UserSettingsPage'
-import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage'
-import WorkspaceSetupPage from './pages/WorkspaceSetupPage'
-import AuthPage, { AuthCallbackPage } from './pages/AuthPage'
+import PageRouter from './components/PageRouter'
 import CreateWorkspaceModal from './pages/CreateWorkspaceModal'
 import { UnifiedDockTab, tabComponents } from './shared/components/DockTab'
 import {
@@ -110,45 +110,15 @@ export default function App() {
   const markdownPane = normalizeMarkdownPane(config.editors?.markdownPane)
 
   // Panel sizing configuration from config
-  const panelDefaults = config.panels?.defaults || { filetree: 280, terminal: 400, agent: 400, shell: 250 }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fallback object is stable across renders when config is unchanged
-  const panelMin = config.panels?.min || { filetree: 180, terminal: 250, agent: 250, shell: 100, center: 200 }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fallback object is stable across renders when config is unchanged
-  const panelCollapsed = config.panels?.collapsed || { filetree: 48, terminal: 48, agent: 48, shell: 36 }
-  const rightRailDefaults = {
-    agent:
-      Number.isFinite(panelDefaults.agent) ? panelDefaults.agent : panelDefaults.terminal,
-    agentMin:
-      Number.isFinite(panelMin.agent) ? panelMin.agent : panelMin.terminal,
-    agentCollapsed:
-      Number.isFinite(panelCollapsed.agent) ? panelCollapsed.agent : panelCollapsed.terminal,
-  }
-  const leftSidebarPanelIds = useMemo(() => {
-    const configured = config.panels?.leftSidebarPanels
-    if (!Array.isArray(configured) || configured.length === 0) {
-      return ['filetree']
-    }
-    const unique = []
-    configured.forEach((id) => {
-      if (typeof id !== 'string' || id.length === 0 || unique.includes(id)) return
-      unique.push(id)
-    })
-    return unique.length > 0 ? unique : ['filetree']
-  }, [config.panels?.leftSidebarPanels])
-  const leftSidebarCollapsedWidth = useMemo(() => {
-    const widths = leftSidebarPanelIds
-      .map((panelId) => getPanelSizeConfigValue(panelCollapsed, panelId, 'filetree'))
-      .filter((value) => Number.isFinite(value))
-    if (widths.length === 0) return panelCollapsed.filetree ?? 48
-    return Math.max(...widths)
-  }, [leftSidebarPanelIds, panelCollapsed])
-  const leftSidebarMinWidth = useMemo(() => {
-    const widths = leftSidebarPanelIds
-      .map((panelId) => getPanelSizeConfigValue(panelMin, panelId, 'filetree'))
-      .filter((value) => Number.isFinite(value))
-    if (widths.length === 0) return panelMin.filetree ?? 180
-    return Math.max(...widths)
-  }, [leftSidebarPanelIds, panelMin])
+  const {
+    panelDefaults,
+    panelMin,
+    panelCollapsed,
+    rightRailDefaults,
+    leftSidebarPanelIds,
+    leftSidebarCollapsedWidth,
+    leftSidebarMinWidth,
+  } = usePanelConfig(config)
 
   // Fetch backend capabilities for feature gating.
   // config.capabilities provides static overrides for browser-only mode
@@ -157,43 +127,12 @@ export default function App() {
   const { capabilities: serverCapabilities, loading: capabilitiesLoading, refetch: refetchCapabilities } = useCapabilities({
     rootScoped: true,
   })
-  const capabilities = useMemo(() => {
-    if (!staticCapabilities) {
-      const featureCount = Object.keys(serverCapabilities?.features || {}).length
-      // In core/local mode, capability fetch can be unavailable. Infer minimal
-      // local capabilities so PI rail and local data backends still render.
-      if (serverCapabilities?.version === 'unknown' && featureCount === 0) {
-        return {
-          version: 'inferred-local',
-          features: {
-            files: hasLocalDataBackend,
-            git: hasLocalDataBackend,
-            pi: true,
-            chat_claude_code: nativeAgentEnabled,
-          },
-          routers: [],
-        }
-      }
-      return serverCapabilities
-    }
-    if (!serverCapabilities || serverCapabilities.version === 'unknown') {
-      return {
-        version: staticCapabilities.version || 'static',
-        features: { ...staticCapabilities.features },
-        routers: staticCapabilities.routers || [],
-        ...(staticCapabilities.macro_catalog ? { macro_catalog: staticCapabilities.macro_catalog } : {}),
-      }
-    }
-    return {
-      ...serverCapabilities,
-      features: { ...staticCapabilities.features, ...serverCapabilities.features },
-    }
-  }, [
+  const capabilities = useResolvedCapabilities({
     staticCapabilities,
     serverCapabilities,
     hasLocalDataBackend,
     nativeAgentEnabled,
-  ])
+  })
   const controlPlaneOnboardingEnabled =
     config.features?.controlPlaneOnboarding === true ||
     capabilities?.features?.control_plane === true
@@ -310,7 +249,6 @@ export default function App() {
       rightRailDefaults.agent,
     ),
   )
-  const collapsedEffectRan = useRef(false)
   // dismissedApprovalsRef moved into useApprovalPolling hook
   const centerGroupRef = useRef(null)
   const isInitialized = useRef(false)
@@ -408,80 +346,6 @@ export default function App() {
     }
     return []
   }, [userMenuAuthStatus, userMenuWorkspaceError])
-
-  const applyInitialSizes = (
-    api,
-    panelSizesRefArg,
-    panelMinRefArg,
-    panelCollapsedRefArg,
-    collapsedState,
-    registry,
-  ) => {
-    requestAnimationFrame(() => {
-      const paneConfigs = typeof registry?.list === 'function' ? registry.list() : []
-      const seenGroups = new Set()
-
-      paneConfigs.forEach((paneConfig) => {
-        const panelId = paneConfig?.id
-        if (!panelId) return
-
-        const defaultSize = panelSizesRefArg?.current?.[panelId]
-        if (!Number.isFinite(defaultSize)) return
-
-        const panel = api.getPanel(panelId)
-        const group = panel?.group
-        if (!group || seenGroups.has(group.id)) return
-        seenGroups.add(group.id)
-
-        const groupApi = api.getGroup(group.id)?.api
-        if (!groupApi) return
-
-        const collapsedSize = panelCollapsedRefArg?.current?.[panelId]
-        const minSize = panelMinRefArg?.current?.[panelId]
-        const isCollapsed = !!collapsedState?.[panelId]
-        const sizeAxis = paneConfig?.placement === 'bottom' ? 'height' : 'width'
-
-        if (isCollapsed && Number.isFinite(collapsedSize)) {
-          if (sizeAxis === 'height') {
-            groupApi.setConstraints({
-              minimumHeight: collapsedSize,
-              maximumHeight: collapsedSize,
-            })
-            groupApi.setSize({ height: collapsedSize })
-          } else {
-            groupApi.setConstraints({
-              minimumWidth: collapsedSize,
-              maximumWidth: collapsedSize,
-            })
-            groupApi.setSize({ width: collapsedSize })
-          }
-          return
-        }
-
-        const size = Number.isFinite(minSize)
-          ? Math.max(defaultSize, minSize)
-          : defaultSize
-        if (sizeAxis === 'height') {
-          if (Number.isFinite(minSize)) {
-            groupApi.setConstraints({
-              minimumHeight: minSize,
-              maximumHeight: Number.MAX_SAFE_INTEGER,
-            })
-          }
-          groupApi.setSize({ height: size })
-          return
-        }
-
-        if (Number.isFinite(minSize)) {
-          groupApi.setConstraints({
-            minimumWidth: minSize,
-            maximumWidth: Number.MAX_SAFE_INTEGER,
-          })
-        }
-        groupApi.setSize({ width: size })
-      })
-    })
-  }
 
   // DockView layout helpers (extracted to hook)
   const {
@@ -599,161 +463,21 @@ export default function App() {
     searchCatalog,
   })
 
-  // Apply collapsed state to dockview groups
-  useEffect(() => {
-    if (!dockApi) return
-
-    // On first run, only apply constraints and collapsed sizes, not expanded sizes
-    // (layout restore already set the correct expanded sizes)
-    const isFirstRun = !collapsedEffectRan.current
-    if (isFirstRun) {
-      collapsedEffectRan.current = true
-    }
-
-    const leftGroups = getLeftSidebarGroups(dockApi)
-    const terminalGroups = (() => {
-      const byId = new Map()
-      listDockPanels(dockApi)
-        .filter((panel) => getPanelComponent(panel) === 'terminal')
-        .forEach((panel) => {
-          if (panel?.group?.id) byId.set(panel.group.id, panel.group)
-        })
-      return Array.from(byId.values())
-    })()
-    const agentGroups = (() => {
-      const byId = new Map()
-      listDockPanels(dockApi)
-        .filter((panel) => getPanelComponent(panel) === 'agent')
-        .forEach((panel) => {
-          if (panel?.group?.id) byId.set(panel.group.id, panel.group)
-        })
-      return Array.from(byId.values())
-    })()
-
-    if (leftGroups.length > 0) {
-      const collapsedWidth = leftSidebarCollapsedWidth
-      const minWidth = leftSidebarMinWidth
-      if (collapsed.filetree) {
-        // When sidebar is fully collapsed, give filetree all vertical space
-        // and hide non-filetree panels (they render empty when collapsed).
-        leftSidebarPanelIds.forEach((panelId) => {
-          const group = dockApi.getPanel(panelId)?.group
-          if (!group) return
-          const constraints = {
-            minimumWidth: collapsedWidth,
-            maximumWidth: collapsedWidth,
-          }
-          if (leftSidebarPanelIds.length > 1 && panelId !== 'filetree') {
-            constraints.minimumHeight = 0
-            constraints.maximumHeight = 0
-          }
-          group.api.setConstraints(constraints)
-          group.api.setSize({ width: collapsedWidth })
-          if (leftSidebarPanelIds.length > 1 && panelId !== 'filetree') {
-            group.api.setSize({ height: 0 })
-          }
-        })
-      } else {
-        // Restore width AND height constraints when expanding.
-        // Height constraints must be restored because collapse sets non-filetree panels to height 0.
-        const allSectionsCollapsed = leftSidebarPanelIds.length > 1
-          && leftSidebarPanelIds.every((id) => sectionCollapsed[id])
-        leftSidebarPanelIds.forEach((panelId) => {
-          const group = dockApi.getPanel(panelId)?.group
-          if (!group) return
-          const constraints = {
-            minimumWidth: minWidth,
-            maximumWidth: Number.MAX_SAFE_INTEGER,
-          }
-          if (leftSidebarPanelIds.length > 1) {
-            if (sectionCollapsed[panelId]) {
-              const collapsedHeight = getSidebarCollapsedHeight(panelId)
-              const hasFooter = panelId === 'filetree'
-              const keepFlexible = allSectionsCollapsed && hasFooter
-              constraints.minimumHeight = collapsedHeight
-              constraints.maximumHeight = keepFlexible ? Number.MAX_SAFE_INTEGER : collapsedHeight
-            } else {
-              constraints.minimumHeight = getSidebarExpandedMinHeight(panelId)
-              constraints.maximumHeight = Number.MAX_SAFE_INTEGER
-            }
-          }
-          group.api.setConstraints(constraints)
-        })
-        // Only set size on subsequent runs (user toggled), not on initial load.
-        if (!isFirstRun) {
-          const expandedWidth = Math.max(panelSizesRef.current.filetree ?? minWidth, minWidth)
-          leftGroups.forEach((group) => {
-            group.api.setSize({ width: expandedWidth })
-          })
-        }
-      }
-    }
-
-    terminalGroups.forEach((terminalGroup) => {
-      if (collapsed.terminal) {
-        terminalGroup.api.setConstraints({
-          minimumWidth: panelCollapsedRef.current.terminal,
-          maximumWidth: panelCollapsedRef.current.terminal,
-        })
-        terminalGroup.api.setSize({ width: panelCollapsedRef.current.terminal })
-      } else {
-        // Use Number.MAX_SAFE_INTEGER to clear max constraint and allow resizing
-        terminalGroup.api.setConstraints({
-          minimumWidth: panelMinRef.current.terminal,
-          maximumWidth: Number.MAX_SAFE_INTEGER,
-        })
-        if (!isFirstRun) {
-          terminalGroup.api.setSize({ width: panelSizesRef.current.terminal })
-        }
-      }
-    })
-
-    agentGroups.forEach((agentGroup) => {
-      if (collapsed.agent) {
-        agentGroup.api.setConstraints({
-          minimumWidth: panelCollapsedRef.current.agent,
-          maximumWidth: panelCollapsedRef.current.agent,
-        })
-        agentGroup.api.setSize({ width: panelCollapsedRef.current.agent })
-      } else {
-        agentGroup.api.setConstraints({
-          minimumWidth: panelMinRef.current.agent,
-          maximumWidth: Number.MAX_SAFE_INTEGER,
-        })
-        if (!isFirstRun) {
-          agentGroup.api.setSize({ width: panelSizesRef.current.agent })
-        }
-      }
-    })
-
-    const shellPanel = dockApi.getPanel('shell')
-    const shellGroup = shellPanel?.group
-
-    // Apply constraints to shell group
-    if (shellGroup) {
-      if (collapsed.shell) {
-        shellGroup.api.setConstraints({
-          minimumHeight: panelCollapsedRef.current.shell,
-          maximumHeight: panelCollapsedRef.current.shell,
-        })
-        shellGroup.api.setSize({ height: panelCollapsedRef.current.shell })
-      } else {
-        // Clear height constraints to allow resizing (use Number.MAX_SAFE_INTEGER as open-ended max)
-        shellGroup.api.setConstraints({
-          minimumHeight: panelMinRef.current.shell,
-          maximumHeight: Number.MAX_SAFE_INTEGER,
-        })
-        // Only set size on subsequent runs (user toggled), not on initial load
-        if (!isFirstRun) {
-          // Ensure saved size respects minimum constraint
-          const savedHeight = panelSizesRef.current.shell
-          const minHeight = panelMinRef.current.shell
-          shellGroup.api.setSize({ height: Math.max(savedHeight, minHeight) })
-        }
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally limited deps to avoid re-running layout logic on every config change
-  }, [dockApi, collapsed, getLeftSidebarGroups, leftSidebarCollapsedWidth, leftSidebarMinWidth])
+  // Apply collapsed state to dockview groups (extracted to hook)
+  const { collapsedEffectRan } = useCollapsedLayout({
+    dockApi,
+    collapsed,
+    leftSidebarPanelIds,
+    leftSidebarCollapsedWidth,
+    leftSidebarMinWidth,
+    sectionCollapsed,
+    getSidebarCollapsedHeight,
+    getSidebarExpandedMinHeight,
+    getLeftSidebarGroups,
+    panelSizesRef,
+    panelCollapsedRef,
+    panelMinRef,
+  })
 
   // Git status polling removed - not currently used in UI
 
@@ -2806,110 +2530,22 @@ export default function App() {
     }
   }, [dockApi, readDroppedSeriesId, routeSeriesDropToPanel])
 
-  // Full-page auth views
-  if (isAuthLoginPage) {
-    return (
-      <ThemeProvider>
-        <AuthPage authConfig={{
-          provider: capabilities?.auth?.provider || 'local',
-          neonAuthUrl: capabilities?.auth?.neonAuthUrl || '',
-          callbackUrl: capabilities?.auth?.callbackUrl || '',
-          emailProvider: capabilities?.auth?.emailProvider || '',
-          verificationEmailEnabled: capabilities?.auth?.verificationEmailEnabled !== false,
-          redirectUri: new URLSearchParams(window.location.search).get('redirect_uri') || '/',
-          initialMode: pagePathname === '/auth/signup'
-            ? 'sign_up'
-            : pagePathname === '/auth/reset-password'
-              ? 'reset_password'
-              : 'sign_in',
-          appName: capabilities?.auth?.appName || '',
-          appDescription: capabilities?.auth?.appDescription || '',
-        }} />
-      </ThemeProvider>
-    )
-  }
-
-  if (isAuthCallbackPage) {
-    return (
-      <ThemeProvider>
-        <AuthCallbackPage />
-      </ThemeProvider>
-    )
-  }
-
-  // Auth guard: redirect unauthenticated users to login when control plane is enabled
-  // Only enforce when hosted auth is configured; local/dev control-plane mode
-  // can run without a frontend login screen.
-  const authProviderConfigured = capabilities?.auth?.provider === 'neon' && !!capabilities?.auth?.neonAuthUrl
-  if (
-    capabilities?.features?.control_plane &&
-    authProviderConfigured &&
-    userMenuAuthStatus === 'unauthenticated' &&
-    !isAuthLoginPage &&
-    !isAuthCallbackPage
-  ) {
-    // Guard against infinite redirect loops: bail after 3 attempts
-    const url = new URL(window.location.href)
-    const attempts = parseInt(url.searchParams.get('auth_attempts') || '0', 10)
-    if (attempts >= 3) {
-      return (
-        <ThemeProvider>
-          <div className="app-error-boundary">
-            <div className="app-error-boundary-content">
-              <h1 className="app-error-boundary-title">Authentication Error</h1>
-              <p className="app-error-boundary-message">
-                Unable to sign in after multiple attempts. The auth service may be unavailable.
-              </p>
-              <button
-                type="button"
-                className="app-error-boundary-reload"
-                onClick={() => { window.location.href = '/auth/login' }}
-              >
-                Try Again
-              </button>
-            </div>
-          </div>
-        </ThemeProvider>
-      )
-    }
-    const redirectUri = encodeURIComponent(window.location.pathname + window.location.search)
-    window.location.replace(`/auth/login?redirect_uri=${redirectUri}&auth_attempts=${attempts + 1}`)
-    return null
-  }
-
-  // Full-page settings views (render instead of DockView)
-  if (isUserSettingsPage) {
-    return (
-      <ThemeProvider>
-        <UserSettingsPage workspaceId={userSettingsWorkspaceId || currentWorkspaceId} />
-      </ThemeProvider>
-    )
-  }
-
-  if (isWorkspaceSettingsPage) {
-    return (
-      <ThemeProvider>
-        <WorkspaceSettingsPage workspaceId={currentWorkspaceId} capabilities={capabilities} />
-      </ThemeProvider>
-    )
-  }
-
-  if (isWorkspaceSetupPage) {
-    return (
-      <ThemeProvider>
-        <WorkspaceSetupPage
-          workspaceId={currentWorkspaceId}
-          workspaceName={activeWorkspaceName}
-          capabilities={capabilities}
-          capabilitiesPending={capabilitiesPending}
-          onComplete={() => {
-            const scope = routes.controlPlane.workspaces.scope(currentWorkspaceId)
-            window.location.assign(routeHref(scope))
-          }}
-        />
-      </ThemeProvider>
-    )
-  }
+  // Full-page routing (auth, settings, setup pages)
+  const pageRouterResult = PageRouter({
+    isAuthLoginPage,
+    isAuthCallbackPage,
+    isUserSettingsPage,
+    isWorkspaceSettingsPage,
+    isWorkspaceSetupPage,
+    pagePathname,
+    capabilities,
+    capabilitiesPending,
+    userMenuAuthStatus,
+    userSettingsWorkspaceId,
+    currentWorkspaceId,
+    activeWorkspaceName,
+  })
+  if (pageRouterResult !== null) return pageRouterResult
 
   // Build className with collapsed state flags for CSS targeting
   const dockviewClassName = [
