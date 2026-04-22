@@ -1,0 +1,19 @@
+{
+  "name": "@boring/agent",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Harness management, streaming contract, sandbox, and UI toolkit (panes + chat). Self-contained: apps import agent and get everything needed to run and display an agent-backed workspace.",
+  "exports": {
+    "./shared": { "types": "./src/shared/index.ts", "import": "./src/shared/index.ts" },
+    "./server": { "types": "./src/server/index.ts", "import": "./src/server/index.ts" },
+    "./front": { "types": "./src/front/index.ts", "import": "./src/front/index.ts" }
+  },
+  "dependencies": {
+    "@boring/core": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsup src/shared/index.ts src/server/index.ts src/front/index.ts --format esm --dts",
+    "test": "vitest",
+    "clean": "rm -rf dist .tsbuildinfo"
+  }
+}
