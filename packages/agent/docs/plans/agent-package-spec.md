@@ -35,9 +35,23 @@ Each mode exposes **identical** HTTP endpoints, the **same** agent tool shapes, 
 
 ---
 
-## Central model — four orthogonal responsibilities
+## Central model — two layers
 
-The package is organized around four abstractions. Each is independent; they connect only in the direction shown. (Workspace provisioning is a minimal utility, not a 5th abstraction — see Workspace provisioning section.)
+The package has **two layers**. Treat the boundary as load-bearing.
+
+### Layer 1 — Core runtime (4 abstractions, interfaces locked in v1)
+
+**Harness · Catalog · Workspace · Sandbox.** These define *how* the agent executes tools. Interfaces are stable; adapter implementations swap per mode (direct / local / vercel-sandbox). Changing a Layer-1 interface is a breaking change.
+
+### Layer 2 — Integration services (3 replaceable plumbing pieces)
+
+**SessionStore · UiBridge · WorkspaceProvisioning.** Plumbing that connects the runtime to a host app. Each is an interface in `shared/` with a default impl; consumers inject alternatives via `createAgentApp({ sessionStore, uiBridge, ... })`. Evolving a service impl (or adding a new one) doesn't touch Layer 1.
+
+*(Pi plugins are a separate concern — user-installable catalog extensions that add tools at load time. They live alongside Layer 1 tools, not as their own layer. See the Plugin compat section.)*
+
+---
+
+The four Layer-1 abstractions are independent (Harness + Catalog swap freely; Workspace + Sandbox swap as a paired `RuntimeModeAdapter`); they connect only in the direction shown. (Environment provisioning — files and library tiers — is Layer-2 plumbing, not part of the runtime diagram.)
 
 ```
   ┌──────────────┐
@@ -76,7 +90,7 @@ Two implementation layers sit side by side under the catalog because they have d
 - **Sandbox is workspace-agnostic** from the catalog's perspective. Swap sandbox → fs tools unchanged.
 - **Workspace is sandbox-agnostic** from the catalog's perspective. Swap workspace → bash tool unchanged.
 - **Pairing rule:** when workspace is remote (e.g. `VercelSandboxWorkspace`), the sandbox MUST target the **same underlying VM instance** — otherwise the agent's `bash` would see a different fs than the workspace tools. Enforced at adapter construction (`createVercelSandboxExec(sandbox)` takes the same `sandbox` handle the workspace uses). Local pairings (`NodeWorkspace` + `BwrapSandbox`) naturally share the host fs via bind-mount.
-- **All four abstractions are swappable independently via configured adapters.** No knob affects the others' code.
+- **Swappability**: Harness and Catalog swap independently. Workspace and Sandbox swap as a **validated pair via `RuntimeModeAdapter`** — they must share a filesystem substrate (agent writes via Workspace and reads via Sandbox.exec; mismatched pair ⇒ split-brain). Pair members stay interface-decoupled; construction is joint.
 
 ### In one snippet — local mode
 
@@ -165,24 +179,36 @@ export const readTool = (workspace: Workspace): AgentTool => ({
 
 Both call `workspace.X()`. No fs-specific logic in either. **The adapter is where the location-choice lives.**
 
-### HTTP surface — each route is a thin wrapper
+### HTTP API reference (canonical)
 
-| Route | Method | Handler body | Workspace call |
+This table is the **single source of truth** for agent ↔ frontend HTTP contracts. Every route is a thin wrapper over a typed service call — no fs-specific logic in handlers. Other sections (Session management, UI bridge, Package layout) reference this table instead of restating routes.
+
+| Route | Method | Handler body | Service call |
 |---|---|---|---|
+| **Files & tree** | | | |
 | `/api/v1/tree` | GET | auth + validate | `workspace.readdir(path)` |
 | `/api/v1/files` | GET | auth + validate | `workspace.readFile(path)` |
 | `/api/v1/files` | POST | auth + validate + body | `workspace.writeFile(path, body)` |
-| `/api/v1/files` | DELETE | auth + validate | `workspace.unlink(path)` (add to interface) |
-| `/api/v1/files/search` | GET | auth + `?q=<glob>&limit=<n>` | `workspace.search(glob, limit)` — filename glob match via `sandbox.exec('find . -name …')` |
+| `/api/v1/files` | DELETE | auth + validate | `workspace.unlink(path)` |
+| `/api/v1/files/search` | GET | auth + `?q=<glob>&limit=<n>` | `fileSearch.search(glob, limit)` — default impl uses `sandbox.exec('find . -name …')`; browser adapter does fs-walk |
 | `/api/v1/stat` | GET | auth + validate | `workspace.stat(path)` |
-| ~~`/api/v1/git/*`~~ | — | **not in v1** — see below | — |
-| ~~`/api/v1/workspaces`~~ | — | not in v1 — workspace management owned by `@boring/cloud` | — |
-| `/api/v1/ui/state` | GET/PUT | auth | read / write opaque UI state blob (workspace-defined shape) |
-| `/api/v1/ui/commands` | POST | auth | agent posts command for UI (`open_file`, `open_panel`, `notify`) |
-| `/api/v1/ui/commands/next` | GET (SSE) | auth | workspace subscribes to next command for this session |
-| `/api/v1/agent/chat` | POST | auth + body | resolves workspace + sandbox pair, runs harness with the catalog |
-| `/api/v1/agent/sessions` | GET/POST | auth | `SessionStore.list/create` |
-| `/api/v1/agent/sessions/:id` | GET/DELETE | auth | `SessionStore.load/delete` |
+| **Agent chat & sessions** | | | |
+| `/api/v1/agent/chat` | POST | auth + body `{sessionId, message, …}` | resolves workspace + sandbox pair via `RuntimeModeAdapter`, runs harness with the catalog. Returns UIMessage stream. |
+| `/api/v1/agent/chat/:sessionId/:turnId` | GET (SSE) | auth + `?cursor=<n>` | stream resume (transport-owned). Replays from ring buffer if in-flight, from `SessionStore` if turn completed. |
+| `/api/v1/agent/sessions` | GET | auth | `SessionStore.list()` → `SessionSummary[]` (within configured workspace) |
+| `/api/v1/agent/sessions` | POST | auth | `SessionStore.create()` → `SessionSummary` |
+| `/api/v1/agent/sessions/:id` | GET | auth | `SessionStore.load(id)` → `SessionDetail` |
+| `/api/v1/agent/sessions/:id` | DELETE | auth | `SessionStore.delete(id)` → 204 |
+| `/api/v1/agent/sessions/:id/changes` | GET | auth | `{files: [{path, op, size}]}` since session start |
+| **UI bridge** | | | |
+| `/api/v1/ui/state` | GET/PUT | auth | read / write UI state blob (workspace-defined shape). Workspace PUTs with `causedBy` field. |
+| `/api/v1/ui/state/latest` | GET | auth | cached state snapshot for short-poll fallback (same shape as GET /state, separate endpoint for polling clients) |
+| `/api/v1/ui/commands` | POST | auth | agent posts command for UI. `{kind: 'openFile', params: {...}}` — camelCase `kind` field. Returns `{seq, status: 'ok'\|'error'}`. |
+| `/api/v1/ui/commands/next` | GET (SSE) | auth | workspace subscribes. Streams `event: command` with `{v:1, kind, params, seq}`. |
+| **Explicitly not in v1** | | | |
+| ~~`/api/v1/git/*`~~ | — | Dead code in v1 (no consumer) — see note below. Agent runs git internally via `bash`. | — |
+| ~~`/api/v1/workspaces`~~ | — | Workspace CRUD / multi-workspace provisioning owned by `@boring/cloud`. Agent v1 is single-workspace-per-instance. | — |
+| ~~Rename session~~ | — | Deferred to workspace package. Delete ships in v1. | — |
 
 **Git routes deferred from v1.** The workspace plan explicitly drops all git UI ("Git UI in workspace: Dropped entirely. Agent owns all git UI."). Agent v1 also doesn't ship git UI components (no status bar, no diff pane — chat + session toolbar only). **With no consumer in v1, the routes would be dead code.** Agent runs git internally via the `bash` tool (`sandbox.exec('git status')`) when needed. When git UI lands (agent v1.x adding a status/diff pane, or workspace reviving git badges), add the routes as ~200 LOC of thin `sandbox.exec` wrappers with output parsing. Git in remote mode (credentials via token-in-URL, latency, VM persistence) is documented here so we're ready when we need it; not implemented in v1.
 
@@ -190,7 +216,7 @@ Every route's file-system behavior is determined entirely by the adapter chosen 
 
 ### Invariants to preserve
 
-1. **No `node:fs` imports outside the `NodeWorkspace` adapter.** Not in routes, not in tools. Grep-enforceable.
+1. **No `node:fs` / `node:child_process` imports in routes, catalog, or tools.** These Node APIs are allowed only inside adapter implementations (`server/workspace/**`, `server/harness/**`, `server/sandbox/**`, `server/runtime/**`). Grep-enforceable.
 2. **Routes and tools both receive `Workspace` as a parameter** (not a path, not a root dir). Resolution to a specific adapter is the job of `resolveWorkspace(workspaceId)` — centralized.
 3. **Per-request, agent tools and HTTP routes share the same adapter instance.** Ensures a read concurrent with a write sees each other's effects without cache-coherence games.
 4. **Path validation is the adapter's responsibility.** Consumers pass user-supplied paths; the adapter rejects `../` / absolute / symlink-escape attacks internally.
@@ -214,12 +240,12 @@ export interface AgentHarness {
     ctx: RunContext,
   ): AsyncIterable<UIMessageChunk>
 
-  /** Optional: resume an in-flight stream (page reload). */
-  reconnect?(sessionId: string): AsyncIterable<UIMessageChunk> | null
-
   /** Session lifecycle; may delegate to an underlying runtime (e.g. pi's JSONL). */
   sessions: SessionStore
 }
+
+/* Resume is NOT a harness concern — see "Stream resumption" section.
+   The HTTP route owns cursor buffering + replay; harness stays reconnect-unaware. */
 
 export interface SendMessageInput {
   sessionId: string
@@ -260,8 +286,15 @@ export interface ToolResult {
   details?: unknown
 }
 
-/** A catalog binds to a Workspace (fs) and a Sandbox (exec). */
-export type ToolCatalog = (deps: { workspace: Workspace; sandbox: Sandbox }) => AgentTool[]
+export interface CatalogDeps {
+  workspace: Workspace
+  sandbox: Sandbox
+  uiBridge?: UiBridge          // optional; when present, catalog includes get_ui_state + exec_ui tools
+  fileSearch?: FileSearch      // optional; used by routes but not exposed as an agent tool
+}
+
+/** A catalog binds to workspace, sandbox, and optional integration services. */
+export type ToolCatalog = (deps: CatalogDeps) => AgentTool[]
 ```
 
 Shipped catalog (4 fs/exec + 2 UI bridge + 1 conditional isolated-code):
@@ -277,7 +310,7 @@ export const standardCatalog: ToolCatalog = ({ workspace, sandbox, uiBridge }) =
   if (uiBridge) {
     tools.push(
       getUiStateTool(uiBridge),           // uiBridge.getState
-      uiActionTool(uiBridge),             // uiBridge.postCommand({ type, ...params })
+      uiActionTool(uiBridge),             // uiBridge.postCommand({ kind, params })
     )
   }
   if (sandbox.capabilities.includes('isolated-code')) {
@@ -290,11 +323,11 @@ export const standardCatalog: ToolCatalog = ({ workspace, sandbox, uiBridge }) =
 - **4 fs/exec tools always:** bash, read, write, edit.
 - **2 UI bridge tools when `uiBridge` is wired** (default in v1):
   - `get_ui_state()` → returns current UI state blob
-  - `exec_ui({ type, ...params })` → generic dispatcher; types enumerated in tool description (`open-file`, `open-panel`, `notify`, extensible)
+  - `exec_ui({ kind, params })` → generic dispatcher; kinds enumerated in tool description (`openFile`, `openPanel`, `showNotification`, extensible)
 - **Conditional (sandbox-capability-gated):** `execute_isolated_code` — only if sandbox declares `'isolated-code'` capability.
 - Grep/find/ls done via bash; dedicated tools deferred.
 
-**Why `exec_ui` instead of one tool per command:** smaller LLM context (6 tools vs 8), extensible without new tools (new action types = schema enum addition), matches how the underlying `UiBridge.postCommand({ type, ...payload })` already works. The action schema is published as an enum on the tool's `parameters` so the LLM knows valid types.
+**Why `exec_ui` instead of one tool per command:** smaller LLM context (6 tools vs 8), extensible without new tools (new kind values = schema enum addition), matches how the underlying bridge `POST /api/v1/ui/commands` already works. The kind enum is published on the tool's `parameters` so the LLM knows valid commands.
 
 ### 3. Workspace (`src/shared/workspace.ts`)
 
@@ -308,8 +341,13 @@ export interface Workspace {
   unlink(relPath: string): Promise<void>
   readdir(relPath: string): Promise<Entry[]>
   stat(relPath: string): Promise<Stat>
-  search(glob: string, limit?: number): Promise<string[]>   // filename glob; returns matching paths
   /** Throws if relPath escapes the workspace root. */
+}
+
+// Separate interface — search can use exec (find) OR fs-walk, depending on environment.
+// Uncouples "what the Workspace guarantees" (path-bound fs primitives) from "how we find files".
+export interface FileSearch {
+  search(glob: string, limit?: number): Promise<string[]>
 }
 
 export interface Entry { name: string; isDir: boolean }
@@ -318,7 +356,7 @@ export interface Stat  { isDir: boolean; size: number; mtime: Date }
 
 Server impl (`createNodeWorkspace`) uses existing boring-ui helpers — port `validatePath`, `assertRealPathWithinWorkspace`, `ensureWritableWorkspacePath` from `packages/workspace/src/server/workspace/paths.ts` straight into `src/server/workspace/paths.ts` in this package.
 
-Workspace creation accepts an optional `templatePath` — if set, contents are copied into the workspace root synchronously on first creation (see Workspace provisioning section below). No abstraction layer in v1; upgrade path documented.
+Workspace creation accepts an optional `templatePath` — if set, contents are copied into the workspace root synchronously on first creation (see [Environment provisioning](#environment-provisioning)). No abstraction layer in v1; upgrade path documented.
 
 ### 4. Sandbox (`src/shared/sandbox.ts`)
 
@@ -356,15 +394,15 @@ export interface ExecOptions {
 }
 
 export interface ExecResult {
-  stdout: Buffer               // raw bytes; caller decodes
-  stderr: Buffer
-  stdoutText(): string         // convenience UTF-8 accessor (may contain U+FFFD on binary)
-  stderrText(): string
+  stdout: Uint8Array           // raw bytes; server adapter decodes
+  stderr: Uint8Array
   exitCode: number
   durationMs: number
   truncated: boolean           // true if maxOutputBytes was hit
-  encoding?: 'utf-8' | 'binary'  // best-effort classification for UI rendering
+  stdoutEncoding?: 'utf-8' | 'binary'   // best-effort classification for UI rendering
+  stderrEncoding?: 'utf-8' | 'binary'
 }
+// Decode helpers live in server adapters, not the shared contract.
 
 export interface IsolatedCodeInput {
   code: string
@@ -395,7 +433,7 @@ Sandbox takes a `Workspace` in `init()` so exec `cwd` defaults to the workspace 
 | **Catalog** | `standardCatalog` (4 tools: bash, read, write, edit) | App-registered extras via `extraTools` / pi extensions | 4 factory fns + 4 tool renderers + 1 fallback |
 | **Workspace** | **2 adapters: `NodeWorkspace` (local host fs) + `VercelSandboxWorkspace` (remote VM)** — single workspace per instance. `NodeWorkspace` is shared by `direct` and `local` modes. | `OpfsWorkspace`/`LightningFsWorkspace` (browser), `CloudflareSandboxWorkspace` | Interface + 2 adapters + path helpers |
 | **Sandbox** | **3 adapters: `DirectSandbox` (no isolation) + `BwrapSandbox` (Linux process isolation) + `VercelSandboxExec` (Firecracker VM)** — all declare `capabilities: ['exec']` | `VercelIsolatedCode` / `BoxliteSandbox` (add `'isolated-code'` capability), `JustBashSandbox` (browser) | Interface + capabilities + 3 adapters |
-| **Mode** | `direct` / `local` / `vercel-sandbox` — paired at the `resolveWorkspaceAndSandbox()` factory. WorkspaceId = env/config constant; no runtime workspace CRUD. | Multi-workspace provisioning owned by future `@boring/cloud` | `[runtime].mode` config + factory |
+| **Mode** | `direct` / `local` / `vercel-sandbox` — each a self-contained `RuntimeModeAdapter` under `src/server/runtime/modes/`. `resolveMode(mode)` produces a `RuntimeBundle` ({ workspace, sandbox, fileSearch }). Pairing invariant enforced by construction. | Multi-workspace provisioning owned by future `@boring/cloud` | `[runtime].mode` config + factory |
 
 ### External dependencies (not ours)
 
@@ -425,7 +463,7 @@ Sandbox takes a `Workspace` in `init()` so exec `cwd` defaults to the workspace 
 | `VercelSandboxExec` adapter | ~80 |
 | `resolveSandboxHandle()` — Vercel lifecycle (create/get/resume) + in-process cache | ~100 |
 | `SandboxHandleStore` interface + `FileHandleStore` default impl (~/.config/boring-agent/sandboxes.json) | ~60 |
-| Fastify routes (`/api/v1/files`, `/tree`, `/stat`, `/files/search`, `/agent/chat`, `/agent/sessions` list+create+switch+delete, `/ui/*` bridge) | ~310 |
+| Fastify routes (`/api/v1/files`, `/tree`, `/stat`, `/files/search`, `/agent/chat`, `/agent/sessions` list+create+detail+delete, `/ui/*` bridge) | ~310 |
 | `UiBridge` interface + in-memory impl + SSE fan-out | ~150 |
 | UI agent tools (`get_ui_state`, `exec_ui` dispatcher) | ~60 |
 | `<ChatPanel />`, `<SessionToolbar />`, `useAgentChat`, `useSessions` (list/create/switch/delete) | ~240 |
@@ -480,15 +518,24 @@ packages/agent/
     │   │       ├── createHarness.ts       (wraps createAgentSession)
     │   │       ├── stream-adapter.ts      (pi event → UIMessageChunk)
     │   │       └── sessions.ts            (PiSessionStore over pi JSONL)
+    │   ├── runtime/
+    │   │   ├── mode.ts                    (RuntimeModeAdapter contract)
+    │   │   ├── resolveMode.ts             (mode → RuntimeBundle)
+    │   │   └── modes/
+    │   │       ├── direct.ts              (NodeWorkspace + DirectSandbox + HostFindSearch)
+    │   │       ├── local.ts               (NodeWorkspace + BwrapSandbox + HostFindSearch)
+    │   │       └── vercel-sandbox.ts      (VercelSandboxWorkspace + VercelSandboxExec + VmFindSearch)
     │   ├── workspace/
-    │   │   ├── paths.ts                   (ported from current boring-ui — shared helpers)
-    │   │   ├── resolver.ts                (resolveWorkspaceAndSandbox: mode → adapter pair)
+    │   │   ├── paths.ts                   (path-boundary helpers, ported from boring-ui)
     │   │   ├── provision.ts               (copyTemplate — minimal v1 seeding)
-    │   │   ├── node/                      (LOCAL adapter pair — same-host fs + bwrap)
+    │   │   ├── node/
     │   │   │   └── createNodeWorkspace.ts
-    │   │   └── vercel-sandbox/            (REMOTE adapter pair — Firecracker VM)
+    │   │   └── vercel-sandbox/
     │   │       ├── createVercelSandboxWorkspace.ts
     │   │       └── sandboxHandles.ts      (resolveSandboxHandle cache, consumes SandboxHandleStore)
+    │   ├── file-search/
+    │   │   ├── hostFindSearch.ts          (default impl via sandbox.exec('find …'))
+    │   │   └── (future: browserFsWalkSearch.ts for browser-agent mode)
     │   ├── sandbox/
     │   │   ├── direct/                    (no isolation — child_process.exec)
     │   │   │   └── createDirectSandbox.ts
@@ -609,9 +656,9 @@ app.post('/api/v1/agent/chat', async (req, reply) => {
 
 ---
 
-## Session management
+## Session management (Layer 2 integration service)
 
-Sessions are a fourth concern, orthogonal to harness/catalog/sandbox. They're read-only from the frontend's perspective — **the harness does the writing as a side effect of its loop; the `SessionStore` handles lifecycle and reads.**
+Sessions are an **integration service** layered on top of Layer-1 runtime. Not a core runtime abstraction; evolves independently. They're read-only from the frontend's perspective — **the harness does the writing as a side effect of its loop; the `SessionStore` handles lifecycle and reads.**
 
 ### Interface (`src/shared/session.ts`)
 
@@ -652,15 +699,15 @@ export interface SessionCtx {
 
 Canonical persisted shape the API returns is always `UIMessage[]`. Pi's JSONL is an implementation detail behind the interface.
 
-### Stream resumption (v1)
+### Stream resumption (v1, transport-owned)
 
-The server tracks an in-flight stream per `(sessionId, turnId)` with a monotonic chunk index. A disconnected client reconnects via `GET /api/v1/agent/chat/:sessionId/:turnId?cursor=<n>` and resumes from chunk `n+1`. If the turn already completed, the endpoint replays from `PiSessionStore` and closes. `useChat` wired with `experimental_resume: true`. ~60 LOC in routes + stream adapter. This is critical UX — users will refresh mid-response and expect continuity.
+Resume is **owned by the HTTP/stream layer, not the harness**. The server wraps the harness's event stream in a per-turn ring buffer keyed on `(sessionId, turnId)` with monotonic chunk indices. A disconnected client reconnects via `GET /api/v1/agent/chat/:sessionId/:turnId?cursor=<n>` and resumes from chunk `n+1`. If the turn already completed, the endpoint replays from `PiSessionStore` and closes. `useChat` wired with `experimental_resume: true`. ~60 LOC in routes + stream adapter. Harness adapters stay reconnect-unaware — any future harness gets resume for free. Critical UX — users will refresh mid-response and expect continuity.
 
 ### What v1 defers
 
 - **Multi-user scoping** — `SessionCtx.userId` is in the signature but ignored. Workspace will pass it later.
 - **LLM-generated titles** — v1 defaults to `"New chat {timestamp}"`. Background title generation lands in M3.
-- **Rename session flow** — deferred to the workspace package (delete ships in v1).
+- **Rename session flow** — deferred to the workspace package (delete ships in v1; only rename is deferred).
 
 ### Future `SessionStore` implementations (each is one adapter)
 
@@ -673,22 +720,9 @@ The server tracks an in-flight stream per `(sessionId, turnId)` with a monotonic
 
 ### HTTP surface
 
-```
-GET    /api/v1/agent/sessions                → SessionSummary[] (within configured workspace)
-POST   /api/v1/agent/sessions                → SessionSummary (new)
-GET    /api/v1/agent/sessions/:id            → SessionDetail
-DELETE /api/v1/agent/sessions/:id            → 204
-GET    /api/v1/agent/sessions/:id/changes    → { files: [{path, op, size}] } since session start
+Routes are defined in the canonical [HTTP API reference](#http-api-reference-canonical) — rows `/api/v1/agent/sessions*` and `/api/v1/agent/chat*`. All delegate to the configured `SessionStore`. `POST /api/v1/agent/chat` takes a `sessionId` in the body; the server resolves the workspace + session, constructs a `Workspace` + `Sandbox` via `RuntimeModeAdapter`, and invokes the harness. Harness appends messages into that session as it runs (via pi's loop).
 
-POST   /api/v1/agent/chat                    → UIMessage stream (body: sessionId, message, …)
-GET    /api/v1/agent/chat/:sessionId/:turnId → stream resume from ?cursor=<n>
-
-// NOTE: workspaceId is resolved from process config in v1; never client-supplied.
-// Workspace CRUD (list/create/delete) belongs to @boring/cloud, not agent v1.
-// Rename/delete session routes deferred (workspace package territory).
-```
-
-Session routes delegate to the configured `SessionStore`. `POST /api/v1/agent/chat` takes a `sessionId` in the body; the server resolves the workspace + session, constructs a `Workspace` + `Sandbox`, and invokes the harness. Harness appends messages into that session as it runs (via pi's loop).
+**Invariants:** `workspaceId` is resolved from process config in v1 — never client-supplied. Workspace CRUD (list/create/delete) belongs to `@boring/cloud`, not agent v1. Session rename is deferred to the workspace package; delete ships in v1.
 
 ## UI bridge — workspace ↔ agent state + commands
 
@@ -708,18 +742,29 @@ The bridge carries two orthogonal flows between workspace (frontend) and agent (
 export interface UiBridge {
   getState(): Promise<UiState | null>
   setState(state: UiState): Promise<void>
-  postCommand(cmd: UiCommand): Promise<void>
-  subscribeCommands(handler: (cmd: UiCommand) => void): () => void
+  postCommand(cmd: UiCommand): Promise<CommandResult>
+  subscribeCommands(handler: (cmd: UiCommand & { seq: number }) => void): () => void
 }
 
 export type UiState = Record<string, unknown>   // workspace-defined shape
 
 export type UiCommand =
-  | { type: 'open-file'; path: string }
-  | { type: 'open-panel'; paneId: string; data?: unknown }
-  | { type: 'notify'; level: 'info' | 'warn' | 'error'; message: string }
-  | { type: string; [key: string]: unknown }    // extensible
+  | { kind: 'openFile'; params: { path: string; mode?: 'view' | 'edit' | 'diff' } }
+  | { kind: 'openPanel'; params: { id: string; component: string; params?: Record<string, unknown> } }
+  | { kind: 'closePanel'; params: { id: string } }
+  | { kind: 'showNotification'; params: { msg: string; level?: 'info' | 'warn' | 'error' } }
+  | { kind: 'navigateToLine'; params: { file: string; line: number } }
+  | { kind: 'expandToFile'; params: { path: string } }
+  | { kind: string; params: Record<string, unknown> }    // extensible
+
+export interface CommandResult {
+  seq: number                                   // monotonic sequence for this workspace
+  status: 'ok' | 'error'                       // simple: validated+queued or rejected
+  error?: { code: string; message: string }
+}
 ```
+
+**CommandResult matches the workspace plan's bridge contract.** Agent's `exec_ui` tool awaits the result — it can see whether the agent server accepted the command. The POST returns `{seq, status: 'ok'}` on success or `{seq, status: 'error', error: {code, message}}` on validation failure. No ack loop — the agent treats `ok` as "command will be delivered via SSE." Workspace execution is fire-and-forget from the agent's perspective; workspace publishes resulting state via `PUT /api/v1/ui/state`.
 
 ### v1 implementation
 
@@ -735,11 +780,11 @@ Just two tools — kept minimal on purpose:
 | Tool | Does | Bridge call |
 |---|---|---|
 | `get_ui_state` | Returns current UI state as JSON | `bridge.getState()` |
-| `exec_ui({ type, ...params })` | Generic dispatcher for UI commands | `bridge.postCommand({ type, ...params })` |
+| `exec_ui({ kind, params })` | Generic dispatcher for UI commands | `bridge.postCommand({ kind, params })` |
 
-The `exec_ui` tool has the action types enumerated in its `parameters.properties.type.enum`:
+The `exec_ui` tool has the command kinds enumerated in its `parameters.properties.kind.enum`:
 ```
-['open-file', 'open-panel', 'notify']
+['openFile', 'openPanel', 'closePanel', 'showNotification', 'navigateToLine', 'expandToFile']
 ```
 Extending = adding a new enum value + a switch case in workspace's dispatcher. No new agent-side code.
 
@@ -751,82 +796,27 @@ Total agent-visible tools in v1: **6** (`bash, read, write, edit, get_ui_state, 
 - On mount → subscribe to `/api/v1/ui/commands/next` via SSE
 - On command received → dispatch via Zustand store (opens file in editor, mounts panel, shows toast)
 
-### Duplication with chat-stream `data-ui-command` parts
+### Command transport — single dispatch channel
 
-We earlier designed commands as AI SDK `data-ui-command` parts in the chat stream. The bridge supersedes that for async commands: bridge commands work even outside a chat turn, support cross-tab delivery (SSE fan-out), and don't pollute the message transcript.
+`UiBridge` is the **single command transport**. One queue, one ordering model, one ack model.
 
-**Chat-stream commands stay** for in-turn UX (agent emits `open-file` mid-response, tied visually to that message). Bridge commands are for "background" intents. Both end up dispatched through the same workspace-side Zustand store.
+Chat-stream `data-ui-command` parts are **display-only derivatives** of bridge-dispatched commands — never their own dispatch source. Dispatch flows only through `UiBridge.postCommand` → SSE → workspace Zustand store.
 
----
+Concretely, the `exec_ui` handler: (1) calls `bridge.postCommand(cmd)` and awaits `{ seq, status }`; (2) emits a `data-ui-command` part into the chat stream carrying that same `seq`. The frontend:
+- On `data-ui-command` part: render a compact message card only (no dispatch). The `seq` ties the card to the already-delivered command.
+- On SSE command: dispatch via Zustand (actually opens file, etc.).
 
-## Two-layer dependency story
-
-Dependencies split across two layers, not conflated:
-
-| Layer | Concern | How |
-|---|---|---|
-| **Workspace** | *Files* — skills, READMEs, example configs, project source | `copyTemplate()` on workspace creation. Synchronous, small. |
-| **Sandbox (optional)** | *Runtime deps* — pip packages, npm packages, system libs, container image | Agent-driven via `execute_isolated_code({ packages, image })`. Per-call, ephemeral, pooled with TTL. Nao's model. |
-
-Neither layer does the other's job. `copyTemplate` never runs `pip install`; isolated-code never seeds project files (it copies the workspace into the VM as context). Clean seam.
-
-- **v1 with bwrap**: only layer 1 (files). Runtime deps are the host's responsibility (install Python + packages on the host; bwrap inherits). Good enough for a dev-scoped coding agent on an existing project.
-- **Future with VM sandbox**: both layers active. Agent picks `image: 'python:3.12-slim'` + `packages: ['pandas']` on demand, boxlite handles it.
-
-## Library pre-installation (per-mode, parallel design)
-
-Both modes support pre-installed Python/system packages via a symmetric two-tier design. Tier 1 is pre-baked and fast. Tier 2 is agent-driven and ephemeral.
-
-### Local mode (bwrap)
-
-| Tier | Where | How |
-|---|---|---|
-| 1 — shared, pre-installed | `/opt/venv` on the host container, bwrap bind-mounts read-only | Dockerfile builds it: `python3 -m venv /opt/venv && /opt/venv/bin/pip install …`. OR sandbox builds it on first boot from `[sandbox].python_packages` config, cached at `/var/cache/boring-agent/venvs/<hash>`. |
-| 2 — per-workspace overlay | `${workspace}/.venv` with `--system-site-packages` | Created lazily on first agent `pip install`. Inherits Tier 1. Persists across sessions. |
-
-### Remote mode (Vercel Sandbox)
-
-| Tier | Where | How |
-|---|---|---|
-| 1 — snapshot-based base | Vercel's snapshot storage, referenced by `snapshotId` | **One-time bake:** create seed sandbox → `pip install` → `sandbox.snapshot()` → store `snapshotId`. Every `Sandbox.create({ source: { type: 'snapshot', snapshotId } })` boots in ms with deps ready. |
-| 2 — in-sandbox overlay | The sandbox's own fs (at `/vercel/sandbox`) | Agent runs `pip install <extra>` via bash. Persists for the sandbox's lifetime (TTL + hibernation = hours to days). Lost on full VM expiry. |
-
-### Config shape (same schema, mode-interpreted)
-
-```toml
-[runtime]
-mode = "vercel-sandbox"        # or "local"
-
-[sandbox]
-python_packages = ["pandas", "numpy", "scipy"]
-system_packages = ["ripgrep", "jq"]        # local: apt-get; remote: dnf during bake
-
-# Remote-mode-specific:
-[sandbox.vercel]
-runtime = "python3.13"                      # one of: node24, node22, python3.13
-snapshot_id = "snap_abc123..."              # if set, use directly; overrides python_packages
-```
-
-If `snapshot_id` is set, skip the bake. Otherwise, v1 bootstrap code creates the seed sandbox + installs + snapshots on first backend startup and caches the resulting snapshotId in the DB — done once per unique `python_packages` hash.
-
-### Python exec — works without extra wiring
-
-Vercel Sandbox ships `python3.13` as a first-class runtime. Agent calls `python3 script.py` via the `bash` tool; `VercelSandboxExec.exec(cmd)` delegates to `sandbox.runCommand('sh', ['-c', cmd])` which runs inside the VM that has Python pre-installed (per `runtime` config + snapshot). Same tool, different sandbox — agent prompt doesn't change.
-
-### v1 scope for library pre-install
-
-- **M2 (remote mode):** ship the snapshot-bake flow. Bootstrap code in `src/server/sandbox/vercel-sandbox/bake.ts`: takes `python_packages` + `system_packages` from config, creates seed sandbox, installs, snapshots, caches snapshotId in DB. ~150 LOC. One-time per config hash.
-- **M3 (local mode):** ship the shared-venv + overlay flow for bwrap. Smaller: `python_packages` → `uv pip install` into `/var/cache/boring-agent/venvs/<hash>`, bwrap binds it. ~80 LOC.
-
-If neither `python_packages` nor `snapshot_id` is configured, workspace starts empty; agent installs on demand (matches current boring-macro).
+Result: one queue to reason about, in-turn visual context preserved.
 
 ---
 
-## Workspace provisioning (v1: minimal)
+## Environment provisioning
 
-File seeding is a separate concern from library pre-install. Fresh workspaces can optionally seed file contents from a template directory. **Deliberately minimal for v1 — no abstraction, no composition, no installers.** Matches the old boring-ui's "mkdir and done" default; adds *just* a template-copy escape hatch.
+One mental model, two axes: **what gets provisioned** (files vs. libraries) × **when** (pre-baked once vs. on-demand per sandbox). Neither layer does the other's job — `copyTemplate` never runs `pip install`; library tiers never seed project files.
 
-### How it works
+### Files — `copyTemplate` (workspace-owned)
+
+Fresh workspaces can optionally seed file contents from a template directory. **Deliberately minimal for v1 — no abstraction, no composition, no installers.** Matches the old boring-ui's "mkdir and done" default; adds *just* a template-copy escape hatch.
 
 ```ts
 // src/server/workspace/provision.ts
@@ -842,37 +832,76 @@ export async function copyTemplate(
 
 Called **synchronously** during workspace creation, after `mkdir(workspaceRoot)`. For expected template sizes (skill files, README, a config or two) copy is milliseconds — workspace POST stays fast. No async state machine, no background tasks.
 
-### Configuration
-
 Resolution order (first wins):
-
-1. `createAgentApp({ templatePath })` — primary API for embedders (workspace package, custom apps).
+1. `createAgentApp({ templatePath })` — primary API for embedders.
 2. `BORING_AGENT_TEMPLATE_PATH` env — fallback for standalone use.
-3. Unset → no seeding (matches old boring-ui exactly).
+3. Unset → no seeding.
 
-### Idempotency
+Idempotent: a marker file `${root}/.boring-agent/provisioned` is written after success; subsequent `copyTemplate` calls no-op. To re-seed: delete the workspace and recreate.
 
-- A marker file `${root}/.boring-agent/provisioned` is written after a successful copy.
-- If present, `copyTemplate` is a no-op — fresh workspaces get seeded, existing ones don't get re-stomped.
-- To re-seed: delete the workspace and recreate (acceptable for v1).
+### Libraries — two-tier, per-mode (sandbox-owned)
 
-### Upgrade path (explicitly deferred, not in v1)
+Each mode supports pre-installed Python/system packages via a symmetric two-tier design. Tier 1 is pre-baked and fast. Tier 2 is agent-driven and ephemeral.
 
-When any of these are needed, we either:
-- (a) extend the sandbox story with a VM backend that declares `'isolated-code'` capability (handles pip/npm/deps via per-call `packages`), OR
-- (b) introduce a `WorkspaceProvisioner` interface at the workspace layer (handles slow/async seeding: git clone, requirements bootstrap, remote skill libraries, composition, content-hash caching).
+**Local mode (bwrap):**
 
-Concrete deferred items:
-
-| Need | Layer | Trigger |
+| Tier | Where | How |
 |---|---|---|
-| Python `requirements.txt` install | Sandbox (`execute_isolated_code`) or Workspace (async provisioner) | First user with real Python workload |
-| Git-clone seeding | Workspace provisioner (`GitCloneProvisioner`) | When we port GitHub-connect flow |
-| Skill library from remote source | Workspace provisioner | When skills become shareable |
-| Multi-step composed provisioning | Workspace provisioner (`composedProvisioner`) | When we have >1 provisioner |
-| Content-hash re-provisioning | Workspace provisioner | Template-change UX need |
+| 1 — shared, pre-installed | `/opt/venv` on the host container, bwrap bind-mounts read-only | Dockerfile builds it: `python3 -m venv /opt/venv && /opt/venv/bin/pip install …`. OR sandbox builds it on first boot from `[sandbox].python_packages` config, cached at `/var/cache/boring-agent/venvs/<hash>`. |
+| 2 — per-workspace overlay | `${workspace}/.venv` with `--system-site-packages` | Created lazily on first agent `pip install`. Inherits Tier 1. Persists across sessions. |
 
-Until then, one function, one env var, one config option.
+**Remote mode (Vercel Sandbox):**
+
+| Tier | Where | How |
+|---|---|---|
+| 1 — snapshot-based base | Vercel's snapshot storage, referenced by `snapshotId` | **One-time bake:** create seed sandbox → `pip install` → `sandbox.snapshot()` → store `snapshotId`. Every `Sandbox.create({ source: { type: 'snapshot', snapshotId } })` boots in ms with deps ready. |
+| 2 — in-sandbox overlay | The sandbox's own fs (at `/vercel/sandbox`) | Agent runs `pip install <extra>` via bash. Persists for the sandbox's lifetime (TTL + hibernation = hours to days). Lost on full VM expiry. |
+
+Vercel Sandbox ships `python3.13` as a first-class runtime. Agent calls `python3 script.py` via the `bash` tool; `VercelSandboxExec.exec(cmd)` delegates to `sandbox.runCommand('sh', ['-c', cmd])` running inside the VM. Same tool, different sandbox — agent prompt doesn't change.
+
+### Config shape (one schema, mode-interpreted)
+
+```toml
+[runtime]
+mode = "vercel-sandbox"        # or "local"
+
+[workspace]
+template_path = "./templates/default"   # optional; copied into workspace on create
+
+[sandbox]
+python_packages = ["pandas", "numpy", "scipy"]
+system_packages = ["ripgrep", "jq"]     # local: apt-get; remote: dnf during bake
+
+# Remote-mode-specific:
+[sandbox.vercel]
+runtime = "python3.13"                  # one of: node24, node22, python3.13
+snapshot_id = "snap_abc123..."          # if set, use directly; overrides python_packages
+```
+
+If `snapshot_id` is set, skip the bake. Otherwise, v1 bootstrap creates the seed sandbox + installs + snapshots on first backend startup and caches the resulting snapshotId — done once per unique `python_packages` hash.
+
+### v1 scope
+
+- **M1 (files):** `copyTemplate` helper. ~30 LOC. Workspace-create synchronous.
+- **M2 (remote libs):** snapshot-bake flow in `src/server/sandbox/vercel-sandbox/bake.ts`: takes `python_packages` + `system_packages` from config, creates seed sandbox, installs, snapshots, caches snapshotId. ~150 LOC. One-time per config hash.
+- **M3 (local libs):** shared-venv + overlay flow for bwrap. `python_packages` → `uv pip install` into `/var/cache/boring-agent/venvs/<hash>`, bwrap binds it. ~80 LOC.
+
+If neither `template_path`, `python_packages`, nor `snapshot_id` is configured, workspace starts empty; agent installs on demand via the `bash` tool (matches current boring-macro).
+
+### Upgrade paths (explicitly deferred, not in v1)
+
+When needs grow beyond this, the escape hatches are:
+
+| Need | Layer / path | Trigger |
+|---|---|---|
+| Python `requirements.txt` install (project-specific) | Future `execute_isolated_code` tool (sandbox capability), or async `WorkspaceProvisioner` | First user with real Python workload |
+| Git-clone seeding | `WorkspaceProvisioner` interface (`GitCloneProvisioner`) | When we port GitHub-connect flow |
+| Skill library from remote source | `WorkspaceProvisioner` | When skills become shareable |
+| Multi-step composed provisioning | `WorkspaceProvisioner` (`composedProvisioner`) | When we have >1 provisioner |
+| Content-hash re-provisioning | `WorkspaceProvisioner` | Template-change UX need |
+| Per-call ephemeral pooled VM deps (nao model) | `Sandbox` adapter declaring `'isolated-code'` capability | Multi-tenant data-analysis workloads |
+
+Until then: one function (`copyTemplate`), one env var, a few config keys.
 
 ## Plugin compat
 
@@ -1048,6 +1077,39 @@ The agent package alone is a legitimate standalone product — you can ship to u
 
 ## Runtime modes — local vs vercel-sandbox (both shipped in v1)
 
+### `RuntimeModeAdapter` — one contract per mode
+
+Each mode is a single module exporting a `RuntimeModeAdapter`. The adapter produces the full runtime bundle (workspace, sandbox, fileSearch, optional uiBridge pass-through) for that mode. Pairing invariant is enforced by construction — you can't build a mismatched pair because each adapter owns all pieces.
+
+```ts
+// src/shared/runtime.ts
+export interface RuntimeModeAdapter {
+  readonly id: 'direct' | 'local' | 'vercel-sandbox'
+  create(ctx: ModeContext): Promise<RuntimeBundle>
+}
+
+export interface ModeContext {
+  workspaceId: string
+  workspaceRoot?: string                       // local/direct modes
+  sandboxHandleStore?: SandboxHandleStore      // vercel-sandbox mode
+  // ... mode-specific config from boring.app.toml
+}
+
+export interface RuntimeBundle {
+  workspace: Workspace
+  sandbox: Sandbox
+  fileSearch: FileSearch
+  uiBridge?: UiBridge            // pass-through; set by createAgentApp, same for all modes
+}
+```
+
+Package layout: `src/server/runtime/` holds `mode.ts` (contract) + `resolveMode.ts` (mode → bundle) + `modes/{direct,local,vercel-sandbox}.ts` (the three adapters). Each `modes/*.ts` file is self-contained — you understand what `direct` mode is by reading `modes/direct.ts`, not by cross-referencing 3 other directories.
+
+`resolveMode(mode)` replaces the earlier `resolveWorkspaceAndSandbox(mode)` factory.
+
+---
+
+
 ### Direct mode (`mode: "direct"`)
 
 - `NodeWorkspace` (host Node fs, path-boundary enforced)
@@ -1201,7 +1263,7 @@ Agent internals call `store.get/set/delete` — the adapter is the swap point. A
 - **Cloudflare Sandbox:** `CloudflareSandboxWorkspace` + `CloudflareSandboxExec` — parallel to Vercel mode, Cloudflare infra.
 - **Self-hosted VM isolation:** `BoxliteSandbox` for bare-metal KVM deployments.
 
-**Hard rule enforced throughout v1:** `AgentHarness`, `Workspace`, `Sandbox`, `AgentTool`, and all of `src/shared/*` must not leak Node types (`fs`, `Buffer`, `child_process`, etc.) into their public shapes. Server-only code stays in `src/server/**`.
+**Hard rule enforced throughout v1:** `AgentHarness`, `Workspace`, `Sandbox`, `AgentTool`, and all of `src/shared/*` must not leak Node-only APIs (`fs`, `child_process`, `process`, etc.) into their public shapes. Use `Uint8Array` (not `Buffer`) for binary data in shared contracts. Server-only code stays in `src/server/**`.
 
 ---
 
@@ -1228,7 +1290,7 @@ Smallest end-to-end thing where you type a message in the standalone app, agent 
 - [ ] `createNodeWorkspace()` with ported path helpers (validatePath, realpath checks).
 - [ ] `createDirectSandbox()` — trivial `child_process.exec` wrapper with `cwd = workspace.root`. ~40 LOC.
 - [ ] `createBwrapSandbox()` — `exec` wraps `bwrap --bind ${workspace.root} /workspace --chdir /workspace bash -c …`.
-- [ ] `resolveWorkspaceAndSandbox({ mode })` factory: auto-detect Linux+bwrap → `local`, else → `direct`. `vercel-sandbox` opt-in.
+- [ ] `resolveMode(mode)` factory: auto-detect Linux+bwrap → `local`, else → `direct`. `vercel-sandbox` opt-in. Each mode module in `src/server/runtime/modes/*.ts` is self-contained.
 - [ ] Catalog (4 tools): `bashTool(sandbox)`, `readTool(workspace)`, `writeTool(workspace)`, `editTool(workspace)`.
 - [ ] `createPiCodingAgentHarness()` — wraps `createAgentSession({ tools })`, in-memory session manager.
 - [ ] Pi → UIMessage stream adapter (text-delta, tool-input-*, tool-output-available, finish).
@@ -1254,7 +1316,7 @@ Prove the core architectural claim: swapping adapters flips from local to remote
 - [ ] `createVercelSandboxExec(sandbox)` — 30 LOC adapter wrapping `sandbox.runCommand`.
 - [ ] `SandboxHandleStore` interface (`shared/sandbox-handle-store.ts`) + `FileHandleStore` default impl at `~/.config/boring-agent/sandboxes.json`. Consumers (e.g. cloud package) inject a DB-backed impl via `createAgentApp({ sandboxHandleStore })`. Matches the `SessionStore` pattern. ~60 LOC.
 - [ ] `resolveSandboxHandle(workspaceId)` — create-or-get-or-resume-from-snapshot + in-process cache, persists via `SandboxHandleStore`.
-- [ ] `resolveWorkspaceAndSandbox({ mode: 'vercel-sandbox' })` returns paired adapters bound to the same handle.
+- [ ] `resolveMode('vercel-sandbox')` returns a `RuntimeBundle` whose workspace + sandbox are bound to the same Vercel sandbox handle.
 - [ ] Config: `BORING_AGENT_MODE`, `VERCEL_OIDC_TOKEN`, `VERCEL_TEAM_ID`.
 - [ ] Periodic snapshot for safety (cron every 10 min or on-idle hook).
 - [ ] Circuit breaker around the Vercel SDK client (exponential backoff, fast-fail when open). ~30 LOC.
@@ -1263,31 +1325,38 @@ Prove the core architectural claim: swapping adapters flips from local to remote
 
 **Gate:** `BORING_AGENT_MODE=vercel-sandbox pnpm dev` — same chat UI, same tools, files now living in a Firecracker VM. No other code changes. Switching modes mid-development is an env-var flip.
 
-### M3 — Full catalog + polished UI + sessions (≈ 1 week)
+### M3a — Core UX contracts: sessions + resume + bridge (≈ 4 days)
 
-Catalog completion and chat UX. Works in both modes.
+Load-bearing contracts that must be reliable before polish. If these aren't solid, no amount of chat UX polish helps.
 
-- [ ] Tool rendering — use ai-elements' `Tool` component as the generic renderer, `Terminal` for `bash` output, `CodeBlock` for `read` output. Only 1 specialized renderer authored: a unified-diff view for `edit` (can adapt from old boring-ui `packages/agent/src/front/components/chat/EditToolRenderer.jsx`). Expose `toolRenderers` prop on `<ChatPanel />` for overrides.
-- [ ] Copy ai-elements sources (Message, PromptInput → Composer, Tool, Terminal, CodeBlock, Reasoning) directly into `src/front/primitives/`, adapt to our CSS vars. Add provenance comment at top of each adapted file.
-- [ ] `<SessionToolbar />` — lightweight switcher adapted from `packages/agent/src/front/providers/pi/PiSessionToolbar.jsx`. Shows current session title + dropdown of recent + "new chat" button + per-session delete action (no rename dialog). Embedded in `<ChatPanel />` header.
-- [ ] `copyTemplate()` — sync template copy on workspace create. `createAgentApp({ templatePath })` + `BORING_AGENT_TEMPLATE_PATH` env fallback. In remote mode, template is packaged as a tarball and fed to `Sandbox.create({ source: { type: 'tarball', url } })`. Idempotency via `.boring-agent/provisioned` marker.
-- [ ] `theme.css` + CSS vars. Default dark theme.
 - [ ] `PiSessionStore` implementing `SessionStore` over pi's JSONL. CRUD via HTTP routes.
-- [ ] Background title generation on first reply (defer if it complicates M3; fallback is `"New chat {date}"`).
+- [ ] **Stream resumption:** backend tracks `(sessionId, turnId, lastChunkIdx)`; `GET /api/v1/agent/chat/:sessionId/:turnId?cursor=<n>` replays from cursor. `useChat` wired with `experimental_resume: true`. ~60 LOC.
 - [ ] Abort handling (`useChat.stop()` → pi `abortSignal` → sandbox exec cancellation).
 - [ ] SSE channel: backend emits `file_changed` events when the agent writes → frontend invalidates file-tree / file queries. Works for both modes.
-- [ ] **Stream resumption:** backend tracks `(sessionId, turnId, lastChunkIdx)`; `GET /api/v1/agent/chat/:sessionId/:turnId?cursor=<n>` replays from cursor. `useChat` wired with `experimental_resume: true`. ~60 LOC.
-- [ ] **Slash commands** infrastructure + 5 built-ins (`/clear`, `/reset`, `/model`, `/help`, `/cost`). Extension point: `useAgentChat.registerCommand()`. ~80 LOC.
-- [ ] **Heartbeat events** during long tool execution: synthetic `data-status` UIMessage parts emitted every 2s; `<Tool />` renders elapsed time. ~20 LOC in adapter + renderer.
-- [ ] **`/api/v1/agent/sessions/:id/changes`** endpoint: tracks writes/edits/deletes per session; returns `{files: [{path, op, size}]}`. Powers post-turn summary. ~80 LOC.
 - [ ] **UI bridge** (`UiBridge` interface + in-memory impl):
   - `GET/PUT /api/v1/ui/state` — opaque state KV keyed by workspaceId
   - `POST /api/v1/ui/commands` — agent posts UI command
   - `GET /api/v1/ui/commands/next` (SSE) — workspace subscribes to command stream
   - Agent tools `get_ui_state` + `exec_ui` wired into `standardCatalog` when `uiBridge` is provided (default in v1)
   - ~230 LOC total (interface + impl + 3 routes + 2 tools)
+- [ ] `copyTemplate()` — sync template copy on workspace create. `createAgentApp({ templatePath })` + `BORING_AGENT_TEMPLATE_PATH` env fallback. In remote mode, template is packaged as a tarball and fed to `Sandbox.create({ source: { type: 'tarball', url } })`. Idempotency via `.boring-agent/provisioned` marker.
 
-**Gate:** standalone app feels like a real chat in both modes; FileTree and Editor visibly update when the agent writes files; refresh mid-response resumes the stream cleanly; agent's `exec_ui({ type: 'open-file', path })` actually opens the file in workspace's editor.
+**Gate:** session CRUD + resume + UI bridge are reliable in both modes. Reliability bar > polish bar for this milestone.
+
+### M3b — Chat UX polish & operator ergonomics (≈ 3 days)
+
+UX polish on top of the M3a contracts. Pure frontend + minor backend additions.
+
+- [ ] Tool rendering — use ai-elements' `Tool` component as the generic renderer, `Terminal` for `bash` output, `CodeBlock` for `read` output. Only 1 specialized renderer authored: a unified-diff view for `edit` (can adapt from old boring-ui `packages/agent/src/front/components/chat/EditToolRenderer.jsx`). Expose `toolRenderers` prop on `<ChatPanel />` for overrides.
+- [ ] Copy ai-elements sources (Message, PromptInput → Composer, Tool, Terminal, CodeBlock, Reasoning) directly into `src/front/primitives/`, adapt to our CSS vars. Add provenance comment at top of each adapted file.
+- [ ] `<SessionToolbar />` — lightweight switcher adapted from `packages/agent/src/front/providers/pi/PiSessionToolbar.jsx`. Shows current session title + dropdown of recent + "new chat" button + per-session delete action (no rename dialog). Embedded in `<ChatPanel />` header.
+- [ ] `theme.css` + CSS vars. Default dark theme.
+- [ ] Background title generation on first reply (defer if it complicates M3b; fallback is `"New chat {date}"`).
+- [ ] **Slash commands** infrastructure + 5 built-ins (`/clear`, `/reset`, `/model`, `/help`, `/cost`). Extension point: `useAgentChat.registerCommand()`. ~80 LOC.
+- [ ] **Heartbeat events** during long tool execution: synthetic `data-status` UIMessage parts emitted every 2s; `<Tool />` renders elapsed time. ~20 LOC in adapter + renderer.
+- [ ] **`/api/v1/agent/sessions/:id/changes`** endpoint: tracks writes/edits/deletes per session; returns `{files: [{path, op, size}]}`. Powers post-turn summary. ~80 LOC.
+
+**Gate:** standalone app feels like a real chat in both modes; FileTree and Editor visibly update when the agent writes files.
 
 ### M4 — Plugin compat (≈ 2–3 days)
 
@@ -1375,20 +1444,20 @@ v1 is **prove the architecture works end-to-end**, not **productionize**. Each a
 
 ---
 
-## Open research items
+## Open research items (true unknowns only)
+
+*Items previously in this list that have been resolved: TypeBox vs JSON Schema → JSON Schema; SSE vs polling → SSE; ai-elements adoption → copy into `primitives/`.*
+
 
 1. **Pi built-in opt-out** — confirm `createAgentSession({ tools: [our...] })` fully replaces defaults. Docs imply yes; verify by test in M1.
 2. **Plugin name collision** — precedence when our `bash` and a plugin's `bash` coexist. Research + document in M4.
 3. **Pi abort propagation** — does pi's `abortSignal` reach child bash processes inside bwrap and Vercel Sandbox? Test in M1 (local) + M2 (remote).
-4. **ai-elements adoption method** — **resolved**: copy files into `primitives/` (shadcn model), we own the sources.
 5. **Tailwind v4 conflict risk** — when workspace also uses Tailwind, do our classes and theirs compose cleanly? Test in M5.
 6. **Pi SessionEntry → UIMessage mapping** — finalize conversion for all pi event types in M3; write a conformance test.
-7. **TypeBox vs JSON Schema** — pi uses TypeBox; AI SDK uses JSON Schema. Pick one for our AgentTool.parameters at M0. Reco: JSON Schema (AI SDK-native).
 8. **Vercel Sandbox latency on tight fs loops** — measure real numbers for 100-file tree listing, 50-file grep, during M2. If painful, plan mitigations (sandbox-side grep tool, batched reads, caching).
 9. **Vercel Sandbox cold-start + snapshot UX** — how long does first workspace creation take with and without snapshots? What's the right "restoring workspace..." UX? Test in M2.
 10. **Template → Vercel tarball flow** — build pipeline that packages `BORING_AGENT_TEMPLATE_PATH` into a tarball, uploads to Vercel Blob, references in `Sandbox.create({ source: { type: 'tarball', url } })`. Decide at M3 whether this deserves dedicated tooling or a README.
 11. **Vercel billing model** — active-CPU-ms pricing vs Fly machine hours at realistic usage. POC-quality numbers before any migration claim.
-12. **SSE vs polling for file-changed events** — SSE is cleaner but adds a long-lived connection concern. Decide in M3.
 13. **Pairing invariant enforcement** — can the factory guarantee you can't construct a mismatched pair? Type-level vs runtime check.
 
 ---
@@ -1420,11 +1489,11 @@ v1 is **prove the architecture works end-to-end**, not **productionize**. Each a
 
 ## Coordination with `@boring/workspace`
 
-The workspace package (spec: `/home/ubuntu/projects/boring-ui/packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`) is designed to be composed with this agent package. Contracts agreed across the two plans:
+The workspace package (spec: `/home/ubuntu/projects/boring-ui-v2/packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`) is designed to be composed with this agent package. Contracts agreed across the two plans:
 
 ### Backend ownership (single source of truth)
 
-All backend HTTP routes live in the **agent** package: `/api/v1/files/*`, `/api/v1/tree`, `/api/v1/stat`, `/api/v1/ui/*`, `/api/v1/agent/*`. Git routes (`/api/v1/git/*`) are deferred from v1 since neither agent nor workspace has git UI in v1 — no consumer, dead code. Workspace is a **pure frontend package** — no server code. (The workspace plan's line 43 contradicts its own "v1→v2 reference map" at line 850 which correctly says file/git/exec "moved to agent"; the reference-map version wins. UI bridge at `/api/v1/ui/*` is also agent-hosted — workspace can't host it because workspace is frontend-only.)
+All backend HTTP routes live in the **agent** package: `/api/v1/files/*`, `/api/v1/tree`, `/api/v1/stat`, `/api/v1/ui/*`, `/api/v1/agent/*`. Git routes (`/api/v1/git/*`) are deferred from v1 since neither agent nor workspace has git UI in v1 — no consumer, dead code. Workspace is a **pure frontend package** — no server code. UI bridge at `/api/v1/ui/*` is also agent-hosted — workspace can't host it because workspace is frontend-only.
 
 ### UI bridge (agent-hosted, workspace-consumed)
 
@@ -1436,9 +1505,9 @@ Three flows:
 |---|---|---|
 | Agent → UI display | AI SDK UIMessage stream (chat) | Render agent messages in `<ChatPanel />` |
 | UI → Agent state | `PUT /api/v1/ui/state` | Workspace pushes layout state; agent tool `get_ui_state` reads |
-| Agent → UI commands | `POST /api/v1/ui/commands` + SSE `GET /api/v1/ui/commands/next` | Agent calls `exec_ui({ type, ...params })`; workspace dispatches |
+| Agent → UI commands | `POST /api/v1/ui/commands` + SSE `GET /api/v1/ui/commands/next` | Agent calls `exec_ui({ kind, params })`; workspace dispatches |
 
-Agent sees 2 bridge tools: `get_ui_state` and `exec_ui({ type, ...params })`. Workspace defines UI state shape + action types (open-file, open-panel, notify, extensible). Agent doesn't know about DockView panels; workspace doesn't know about sandbox details. Clean ownership split.
+Agent sees 2 bridge tools: `get_ui_state` and `exec_ui({ kind, params })`. Workspace defines UI state shape + command kinds (`openFile`, `openPanel`, `showNotification`, extensible). Agent doesn't know about DockView panels; workspace doesn't know about sandbox details. Clean ownership split.
 
 ### Component exports consumed by workspace
 
@@ -1458,7 +1527,7 @@ const { sessions, activeSession, create, switch: switchTo, delete: remove } = us
 
 ### Cross-plan alignment status
 
-As of the 2026-04-22 alignment pass, the workspace plan (`/home/ubuntu/projects/boring-ui/packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`) has been updated to match this spec. Specific edits applied to the workspace plan:
+As of the 2026-04-22 alignment pass, the workspace plan (`/home/ubuntu/projects/boring-ui-v2/packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`) has been updated to match this spec. Specific edits applied to the workspace plan:
 
 - Backend ownership: workspace-server-owns claims removed; server-side ownership table rewritten to show agent owns all routes; workspace is frontend-only.
 - File-tree endpoints: `/api/v1/files/list` → `/api/v1/tree`; added concrete `/api/v1/files/search` route (filename glob via `find`) matching workspace's search-input need.
@@ -1486,7 +1555,7 @@ Two external reviews shaped this spec. Outcomes recorded here for traceability.
 | # | Finding | Integration |
 |---|---|---|
 | 1 | Workspace CRUD inconsistency | Removed `/api/v1/agent/workspaces` from HTTP surface; session routes trimmed. |
-| 2 | Exec safety caps | `ExecOptions { timeoutMs, maxOutputBytes }`; `ExecResult` adds `durationMs`, `truncated`, Buffer-typed stdout/stderr. |
+| 2 | Exec safety caps | `ExecOptions { timeoutMs, maxOutputBytes }`; `ExecResult` adds `durationMs`, `truncated`, Uint8Array-typed stdout/stderr. |
 | 6 (partial) | Vercel API resilience | Circuit breaker wrapping the Vercel SDK client. Skipped the lease/heartbeat/reconciler machinery (cloud-package territory). |
 | 11 | Export surface consistency | Decision #15 rewritten. `SessionToolbar` instead of `SessionList`; no rename/delete dialogs; no `useRegisterTool` hook. |
 
@@ -1510,7 +1579,7 @@ Focused on product-shaped gaps codex didn't cover. **All 11 feasible adopts inte
 | # | Finding | Where integrated |
 |---|---|---|
 | 1 | Stream resumption in v1 (not deferred) | Session management section + M3 milestone |
-| 2 | Buffer-typed exec output (binary-safe) | `ExecResult` interface |
+| 2 | Uint8Array-typed exec output (binary-safe) | `ExecResult` interface |
 | 3 | Slash commands (`/clear`, `/reset`, `/model`, `/help`, `/cost`) | New "Slash commands" section + M3 milestone |
 | 4 | CLI SSH/headless detection for browser-open | CLI startup sequence |
 | 5 | Auto-gitignore for workspace artifacts | CLI startup sequence |

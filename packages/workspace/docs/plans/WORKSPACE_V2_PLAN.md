@@ -1430,8 +1430,8 @@ export { createMockRegistry } from './testing/createMockRegistry'
 export { renderPane } from './testing/renderPane'
 ```
 
-**Server exports** (`src/server/index.ts`) — unchanged from v1. All ~52 route registrars,
-service interfaces, and adapter types remain valid.
+**Server exports**: None. Workspace v2 is frontend-only. The ~52 route registrars, service
+interfaces, and adapter types from v1 now live in `@boring/agent`.
 
 **Minimum viable for `minimal` / `custom-layout` apps:**
 ```
@@ -2364,7 +2364,7 @@ v1 uses `window.dispatchEvent(new CustomEvent(...))` for loose coupling. v2's br
 | `boring-ui:agent-prompt` | `bridge.sendMessage()` |
 | `boring-ui:shell-state` | `store.subscribe()` |
 | `theme-toggle-request` | `useTheme()` hook |
-| `bui:open-file` | `bridge.openFile()` |
+| `bui:openFile` | `bridge.openFile()` |
 | PI session events (4) | Agent package responsibility |
 
 ### localStorage key inventory (namespace collision avoidance)
