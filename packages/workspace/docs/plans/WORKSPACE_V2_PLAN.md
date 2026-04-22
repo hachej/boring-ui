@@ -14,11 +14,11 @@ A clean-slate workspace package that provides **layout composition with persiste
 | Nested dockview | Supported (DockviewShell inside a pane) | ChatLayout's artifact surface renders its own DockviewShell with own state, persistence key, and API. Outer shell doesn't know inner is dockview. Follows v1's SurfaceDockview pattern. |
 | Sizing constraints | GroupConfig only | PanelConfig has no constraints. Sizing is the group's concern, not the panel's. Clean separation: panels describe behavior, groups describe layout. |
 | Panel engine | Dockview | Evaluated react-resizable-panels. Dockview wins: tabs, drag-drop, `toJSON`/`fromJSON`, group locking, header hiding. ~130h to replicate with resizable-panels. |
-| Persistence | Zustand persist middleware, two keys | `boring-ui-v2:layout` (reset on schema change) + `boring-ui-v2:preferences` (theme, persists forever). Separate lifecycle. Auto-hydration on mount. |
+| Persistence | Zustand persist middleware, two keys | `boring-ui-v2:layout:{workspaceId}` (reset on schema change) + `boring-ui-v2:preferences` (theme, persists forever). Separate lifecycle. Auto-hydration on mount. `workspaceId` optional — falls back to `boring-ui-v2:layout` if not provided. |
 | Styling | Full shadcn/tailwind | Minimal custom CSS (~150 lines dockview-overrides.css for sash/drop targets). All workspace code is tailwind-only. |
 | Dockview styling | Wrap panels | All visible chrome is shadcn. Dockview is layout engine only. |
 | Code editor | CodeMirror 6 (NEW, not a port) | v1 uses react-simple-code-editor + Prism. v2 upgrades to CodeMirror 6. Full rewrite of code editing, not a port. |
-| Markdown editor | Tiptap (port from v1, reduced) | 11 extensions (down from 16). Drop Table suite (4 pkgs) + ImageResize. Replace with official Image. Keep DiffExtension. See Appendix J for full extension inventory. |
+| Markdown editor | Tiptap (port from v1, reduced) | 10 extensions (down from 16). Drop Table suite (4 pkgs) + ImageResize + DiffExtension (deferred with diff mode). Replace with official Image. See Appendix J for full extension inventory. |
 | Data layer | HTTP only, thin `DataProvider` context (React Query hooks + typed fetch) | Single HTTP provider shipped (no offline/second provider). `DataProvider` is a React context wrapper so panes can access data without threading fetch config through props — not an abstraction for swappable backends. |
 | Panes | File tree, Markdown editor, Data catalog, Code editor | Core set. Agent pane consumed from `@boring/agent`. Each pane = component + dockview wrapper. Components reusable standalone. |
 | Component vs Pane | Components export standalone | `FileTree` (component) usable anywhere. `FileTreePane` = FileTree in dockview. Apps like minimal import the component directly. |
@@ -39,19 +39,19 @@ A clean-slate workspace package that provides **layout composition with persiste
 | React version | React 19 safe | dockview 4.13.1 already supports React 19. All deps compatible. |
 | Git UI in workspace | Dropped entirely | No git status badges, no git diff viewer. Agent owns all git UI. |
 | File tree sections | Dropped | Flat tree. No Projects/Sources sections. |
-| Editor modes | Normal + diff (2 modes) | Drop v1's third mode (git-diff unified). Keep normal edit + side-by-side diff vs HEAD. |
+| Editor modes | Normal only in v1 | Drop git-diff modes entirely (side-by-side vs HEAD + unified). Git UI dropped, diff modes return when git routes ship in v1.x. |
 | Backend | **None — workspace is frontend-only** | All HTTP routes (files, tree, stat, ui-bridge, agent) are hosted by `@boring/agent`. Workspace consumes them. See `boring-ui-v2/packages/agent/docs/plans/agent-package-spec.md` for the full HTTP surface. |
 | ConnectedFileTree | Dropped (seventh pass) | Redundant. Keep FileTree (props) + FileTreePane (dockview wrapper). Pane IS the connected variant. |
 | v1 REST bridge | Dropped (seventh pass) | Hard cut. No backward-compat REST endpoints. SSE + POST only (ninth pass). |
-| Error recovery | 2-tier (seventh pass) | Error boundary per pane + reset to defaults. Dropped middle tier ("strip invalid panels"). |
+| Error recovery | 2-tier (seventh pass, clarified tenth) | Tier 1: error boundary per pane (includes stripping unknown panels during restore). Tier 2: full reset to defaults. The "strip unknown panels" step is part of Tier 1 restore, not a separate tier. |
 | Bridge commands | Return Promise\<CommandResult\> (seventh pass, updated eighth) | openFile(), openPanel(), etc. return `Promise<CommandResult>` with seq, status, and optional error. Fire-and-forget still works. |
 | Implementation ref | Added in sixth pass | API surface, WorkspaceProvider, core deps, bridge protocol, dockview config, shadcn inventory, phase DAG — see §Implementation Reference below Risk 14. |
-| Bridge transport | SSE + POST (agent-hosted) | Drop WebSocket entirely. Commands stream via SSE (`GET /api/v1/ui/commands/next`); state write via `PUT /api/v1/ui/state`; commands posted via `POST /api/v1/ui/commands`. All hosted by @boring/agent. Matches chat stream pattern. Short-poll (2s) fallback. |
+| Bridge transport | SSE + POST, command-based (agent-hosted, tenth pass) | Workspace Zustand is the authority. Agent posts commands via `POST /api/v1/ui/commands`; SSE `GET /api/v1/ui/commands/next` streams `event: command` to workspace; workspace executes locally; workspace pushes state via `PUT /api/v1/ui/state`; agent reads via `get_ui_state` tool. All events carry `v:1` protocol version. Short-poll (2s) fallback. |
 | Bridge validation | Per-kind Zod schemas (eighth pass, simplified ninth) | Zod validation per command kind (path length, allowed chars, registry existence). Rate limiting deferred to post-launch. |
 | Bridge events | Typed BridgeEventMap + select() (eighth pass) | Discriminated union replaces `subscribe(event: string, handler: Function)`. Selector-based `select<T>(selector, handler)` for slice subscriptions. Apps extend via module augmentation. |
 | Bridge state scope | Panels + lightweight file hints (eighth pass) | Bridge sends openPanels, activePanel, activeFile, visible file paths. NO full file tree state — agent queries files via its own tools. Eliminates bandwidth problem. |
 | Shell API | Extended (eighth pass) | Add `activatePanel()`, `updatePanelParams()`, `movePanel()`, `batch()` to DockviewShellApi. Batch defers layout recalculation for multi-op sequences. |
-| Panel lifecycle | Four hooks (eighth pass) | PanelConfig gains `onActivate`, `onDeactivate`, `onClose` (returns Promise to block close for unsaved changes), `serializeState` (persist scroll/cursor across sessions). |
+| Panel lifecycle | Four hooks via PanelLifecycleApi (eighth pass, tenth) | PanelConfig gains `onActivate`, `onDeactivate`, `onClose` (returns Promise to block close), `serializeState`. Hooks receive workspace-owned `PanelLifecycleApi` (not raw DockviewPanelApi) to maintain dockview encapsulation. |
 | Cascading errors | Dropped (ninth pass) | Individual pane error boundaries + bridge reconnection banner are sufficient for launch. WorkspaceHealthMonitor deferred to post-launch if correlated failures become a real problem. |
 | Dirty files | Store-level slice (eighth pass) | `dirtyFiles: Map<path, { panelId, savedAt }>` in Zustand store. Editors call `bridge.markDirty/markClean`. Agent gets `bridge.getDirtyFiles()`. |
 | Persistence hardening | Full (eighth pass) | Zod schema validation on restore, QuotaExceededError handling (disable + toast), cross-tab `storage` event listener, size budget <50KB. |
@@ -61,14 +61,14 @@ A clean-slate workspace package that provides **layout composition with persiste
 | Bundle budget | Two numbers (ninth pass) | Initial bundle (shell + registry) <150KB gz, total all-loaded <800KB gz. All panes lazy-loaded except `empty`. |
 | Pane loading | All lazy (eighth pass) | Every built-in pane is lazy-loaded via dynamic import(). Initial bundle = dockview + shadcn + zustand + registry only. ChatLayout apps never download FileTree/editors. |
 | Zustand selectors | Architectural (ninth pass) | `useWorkspaceStore()` is NOT exported. Only atomic hooks exported: `useActiveFile()`, `useActivePanel()`, `useSidebarState()`, `useOpenPanels()`, `useDirtyFiles()`. Selector discipline enforced by API design, not ESLint. |
-| Nested shell isolation | Minimal (ninth pass) | Each nested DockviewShell gets own `storageKey` for persistence. No panel ID namespacing, no bridge `shell` param, no `PanelState.shell` field. Add formal isolation protocol post-launch if multi-shell routing is needed. |
+| Nested shell isolation | Minimal + allowedPanels (ninth pass, tenth) | Each nested DockviewShell gets own `storageKey` + optional `allowedPanels` prop to filter registry. No panel ID namespacing, no bridge `shell` param. Add formal isolation protocol post-launch if multi-shell routing is needed. |
 | CSP | Target policy + test (eighth pass) | `style-src 'unsafe-inline'` for CM6 style-mod, tiptap HTML sanitizer configured, Playwright CSP test. |
 | definePanel() | Dropped (ninth pass) | Unnecessary — a typed object literal (`const myPanel: PanelConfig = { ... }`) gives the same autocomplete. Less API surface. |
 | Test harness | @boring/workspace/testing (eighth pass) | TestWorkspaceProvider, createMockBridge(), renderPane(). Child apps run full test suite themselves. |
 | Crash recovery | Accepted risk (eighth pass) | 1s auto-save debounce gap on crash accepted. No sessionStorage journal — complexity not worth it. |
-| Command palette | Static + file quick-open (eighth pass) | Static registerCommand() for v2. Dynamic command providers deferred to post-launch. File quick-open (no prefix) handles dynamic file search. |
+| Command palette | Static + file quick-open, separate CommandRegistry (eighth pass, tenth) | `registry/CommandRegistry.ts` with `CommandConfig { id, title, run, shortcut?, when? }`. Exported via `useCommandRegistry()`. Separate from PanelRegistry. Dynamic command providers deferred to post-launch. |
 | i18n | Dropped (ninth pass) | No `t()` wrapper, no `yarn extract-messages`. Plain strings. When i18n is needed, run a codemod (ast-grep/jscodeshift) to extract. |
-| Editor lifecycle | Shared hook (ninth pass) | `useEditorLifecycle()` hook (~100 LOC) extracted for both Tiptap and CM6: dirty tracking, auto-save debounce, external file change detection, bridge markDirty/markClean. Eliminates duplication. |
+| Editor lifecycle | Shared hook with flushSave (ninth pass, tenth) | `useEditorLifecycle()` hook (~100 LOC) for Tiptap and CM6: dirty tracking, auto-save debounce, external file change detection, bridge markDirty/markClean. Exposes `flushSave()` for onClose integration: onClose calls flushSave() first, then prompts if still dirty. Single save path. |
 | Git sidebar | Dropped (ninth pass) | No git changes view in sidebar. Agent owns all git UI. File tree is files-only. |
 | Offline mode | Permanently dropped (ninth pass) | No DataProvider abstraction, no LightningFS, no isomorphic-git, no Pyodide. HTTP-only is permanent. agent-frontend app cannot exist on v2. |
 | Terminal/PTY | Not used (ninth pass) | Terminal panels are no longer used in any app. Remove from migration concerns and "files not to port" rationale. |
@@ -76,6 +76,13 @@ A clean-slate workspace package that provides **layout composition with persiste
 | Sample app | Minimal playground (ninth pass) | `apps/workspace-playground`: IdeLayout + mock data provider, no backend needed. `pnpm --filter workspace-playground dev`. Isolated test environment for workspace package. |
 | Bridge E2E test | Added (ninth pass) | Playwright test that opens workspace + simulates agent HTTP client. Agent posts openFile command via POST → assert file panel appears via SSE state update. Tests real bridge protocol. ~50 LOC. |
 | CM6 languages | Measure first (ninth pass) | Bundle all 6 languages (JS/TS, Python, JSON, YAML, Markdown, SQL). Measure actual chunk size in Phase 2. Cut to 3 bundled + lazy rest only if total budget exceeded. |
+| Store topology | Single store, partitioned persist (tenth pass) | One `useWorkspaceStore()`. Persist middleware uses `partialize` to route: layout→localStorage, preferences→localStorage, bridge state→ephemeral (NOT persisted). Single file `store/index.ts`. `persistence/` and `bridge/` are thin modules reading/writing the single store. |
+| Bridge authority | Workspace Zustand is source of truth (tenth pass) | SSE streams commands (not state). Workspace executes locally, PUTs resulting state. Agent reads via `get_ui_state` tool. `causedBy: 'user' \| 'agent' \| 'restore'` on PUT body prevents echo loops. All events carry `v:1` protocol version field. |
+| PanelLifecycleApi | Workspace-owned wrapper (tenth pass) | Lifecycle hooks (`onActivate`, `onDeactivate`, `onClose`) receive `PanelLifecycleApi { panelId, title, setTitle, close, focus, isActive }` — not raw `DockviewPanelApi`. PanelChrome adapts. Maintains dockview encapsulation. |
+| Layout version | String + migration callback (tenth pass) | `version: '2.0'` (string, not number). `WorkspaceProviderProps.onLayoutVersionMismatch?(persisted, current, layout) => SerializedLayout \| null`. Default: null (reset). Zero cost now, clean extension point for future layout migrations. |
+| Standalone contract | Props-only, zero context (tenth pass) | Tier 3 standalone components (`FileTree`, `CodeEditor`, `MarkdownEditor`) accept ALL data via props. Never call hooks internally. `CodeEditor` takes `content: string, onChange, language`. DataProvider only needed by pane wrappers. |
+| Storage scoping | workspaceId in key (tenth pass) | Default key: `boring-ui-v2:layout:{workspaceId}`. Falls back to `boring-ui-v2:layout` if workspaceId not provided. Prevents data loss when multi-workspace arrives. |
+| Nested shell guard | allowedPanels prop (tenth pass) | DockviewShell accepts optional `allowedPanels: string[]` to filter registry for nested instances. ChatLayout artifact surface uses this to prevent outer-shell panels from rendering inside. Outer shell has no restriction. |
 
 ## Architecture
 
@@ -171,17 +178,16 @@ import { WorkspaceProvider, DockviewShell } from '@boring/workspace'
 #### Tier 3: Standalone components (no dockview)
 
 No layout engine at all. Import components and compose them in plain JSX.
-Only needs `DataProvider` for data fetching — no `WorkspaceProvider` required.
+No `WorkspaceProvider`, no `DataProvider`, no context — all data via props (tenth pass).
 
 ```tsx
-import { FileTree, CodeEditor, DataProvider } from '@boring/workspace'
+import { FileTree, CodeEditor } from '@boring/workspace'
 
-<DataProvider apiBaseUrl="/api/v1">
-  <div className="flex h-screen">
-    <FileTree files={files} onSelect={setPath} />
-    <CodeEditor path={selectedPath} />
-  </div>
-</DataProvider>
+<div className="flex h-screen">
+  <FileTree files={files} onSelect={setPath} />
+  <CodeEditor content={fileContent} onChange={setContent} language="typescript" />
+</div>
+// DataProvider is only needed by pane wrappers (CodeEditorPane, FileTreePane).
 ```
 
 #### Core principle: groups are fixed, panels are dynamic
@@ -200,8 +206,9 @@ DockviewShell auto-manages:
 
 ```typescript
 interface LayoutConfig {
-  version: number                            // increment when group structure changes — persisted layout
-                                              // with older version is discarded (Risk 12)
+  version: string                            // e.g. '2.0'. Increment when group structure changes.
+                                              // On mismatch: call WorkspaceProviderProps.onLayoutVersionMismatch()
+                                              // (default: discard persisted layout, use new config)
   groups: GroupConfig[]
 }
 
@@ -291,23 +298,38 @@ interface PanelConfig {
 
   // Lifecycle hooks — called by DockviewShell, run outside React render cycle.
   // PanelChrome wires these automatically; pane components don't subscribe manually.
-  onActivate?: (panelId: string, api: DockviewPanelApi) => void
-  onDeactivate?: (panelId: string, api: DockviewPanelApi) => void
-  onClose?: (panelId: string) => void | Promise<void>  // return Promise to block close (e.g., unsaved changes confirmation)
+  // Hooks receive PanelLifecycleApi (workspace-owned type), NOT raw DockviewPanelApi.
+  // This maintains dockview encapsulation — panel authors never import dockview types.
+  onActivate?: (api: PanelLifecycleApi) => void
+  onDeactivate?: (api: PanelLifecycleApi) => void
+  onClose?: (api: PanelLifecycleApi) => void | Promise<void>  // return Promise to block close (e.g., call flushSave() then prompt if still dirty)
 
   // State serialization for persistence. DockviewShell calls serializeState() during
   // toJSON() and passes the result back via params.__restoredState on fromJSON().
   // Enables panels to persist scroll position, cursor, expansion state across sessions.
-  serializeState?: (panelId: string) => Record<string, unknown> | null
+  // Max 4KB serialized per panel — PanelChrome enforces and logs warning if exceeded.
+  serializeState?: (panelId: string) => Record<string, JsonSerializable> | null
 
   // NOTE: No constraints here. Sizing is GroupConfig's concern, not the panel's.
+}
+
+// Workspace-owned panel lifecycle API — wraps DockviewPanelApi.
+// PanelChrome adapts dockview's API to this type before calling lifecycle hooks.
+// Panel authors never import from dockview-react directly.
+interface PanelLifecycleApi {
+  panelId: string
+  title: string
+  setTitle(title: string): void
+  close(): void
+  focus(): void
+  isActive: boolean
 }
 
 // Props injected into every pane component by the dockview wrapper
 interface PaneProps {
   panelId: string                            // dockview panel ID
   params: Record<string, unknown>            // params passed when opening (e.g., { path: '/src/main.ts' })
-  api: DockviewPanelApi                      // dockview panel API (title, close, focus)
+  api: PanelLifecycleApi                     // workspace-owned panel API (not raw DockviewPanelApi)
   bridge: WorkspaceBridge                    // workspace bridge for agent interaction
 }
 ```
@@ -426,9 +448,9 @@ The agent should feel like a co-user — seeing the same files, same open panels
    file tree state — the agent queries files via its own filesystem tools. This eliminates
    the bandwidth problem of broadcasting 10K+ file entries on every panel change.
 
-3. **Transport**: **SSE + POST**, agent-hosted (same pattern as chat streams). Workspace writes UI state via `PUT /api/v1/ui/state`; agent reads via `get_ui_state` tool. Agent sends commands via `POST /api/v1/ui/commands`; workspace subscribes via SSE `GET /api/v1/ui/commands/next`. Short-poll fallback (2s) for environments where SSE is unavailable. For browser-side agents (iframe/worker), **postMessage**. The bridge abstraction hides the transport.
+3. **Transport**: **SSE + POST, command-based** (tenth pass). Workspace Zustand store is the authority. Agent posts commands via `POST /api/v1/ui/commands` → agent server validates and queues → SSE `GET /api/v1/ui/commands/next` delivers `event: command` to workspace → workspace executes locally → workspace `PUT /api/v1/ui/state` with `causedBy` field → agent reads via `get_ui_state` tool. All events carry `v:1` protocol version. Short-poll fallback (2s) for environments where SSE is unavailable. For browser-side agents (iframe/worker), **postMessage**. The bridge abstraction hides the transport.
 
-4. **Server endpoint**: all UI bridge endpoints are hosted by `@boring/agent` (not workspace). Workspace is a client of `GET/PUT /api/v1/ui/state` + `POST /api/v1/ui/commands` + SSE `GET /api/v1/ui/commands/next`. See `boring-ui-v2/packages/agent/docs/plans/agent-package-spec.md`.
+4. **Server endpoint**: all UI bridge endpoints are hosted by `@boring/agent` (not workspace). Workspace is a client of `PUT /api/v1/ui/state` + SSE `GET /api/v1/ui/commands/next`. See `boring-ui-v2/packages/agent/docs/plans/agent-package-spec.md`.
 
 ### Server-side ownership
 
@@ -450,7 +472,7 @@ The agent should feel like a co-user — seeing the same files, same open panels
 
 **Total v2 workspace server: 0 lines.** Workspace is a frontend library — installed into an app that also wires up `@boring/agent`'s backend. See `boring-ui-v2/packages/agent/docs/plans/agent-package-spec.md` for the full HTTP surface + rationale.
 
-**Bridge transport**: SSE via `GET /api/v1/ui/commands/next` (agent→workspace commands) + `PUT /api/v1/ui/state` (workspace→agent state) + `POST /api/v1/ui/commands` (agent posts commands). Hosted by agent. Same pattern as the chat stream. No WebSocket.
+**Bridge transport (command-based, tenth pass)**: Agent posts commands via `POST /api/v1/ui/commands` → server validates and streams via SSE `GET /api/v1/ui/commands/next` (`event: command`) → workspace executes locally → workspace `PUT /api/v1/ui/state` with `causedBy` field. Workspace Zustand is the authority. All events carry `v:1` protocol version. No WebSocket.
 
 ### Dynamic panes (post-launch)
 
@@ -487,9 +509,9 @@ The agent should feel like a co-user — seeing the same files, same open panels
 
 1.4. **Persistence engine (Zustand persist middleware)**
    - Zustand store with `persist` middleware, two partitions:
-     - `boring-ui-v2:layout` — `{ version: 1, layout: DockviewSerializedLayout, sidebar: CollapsedState, sizes: PanelSizes }`
+     - `boring-ui-v2:layout:{workspaceId}` — `{ version: '2.0', layout: DockviewSerializedLayout, sidebar: CollapsedState, sizes: PanelSizes }`
      - `boring-ui-v2:preferences` — `{ theme: 'light' | 'dark' }` (never reset)
-   - Layout partition: version mismatch = reset to defaults. No migration system.
+   - Layout partition: version mismatch → call `onLayoutVersionMismatch()` callback (default: reset to defaults). Apps can provide custom migration.
    - `partialize` selects which state slices persist to which key
    - Auto-hydration on mount via Zustand's `onRehydrateStorage`
    - `useLayoutPersistence()` hook: auto-save on dockview `onDidLayoutChange` (**debounced 300ms**,
@@ -564,10 +586,10 @@ The agent should feel like a co-user — seeing the same files, same open panels
 
 2.2. **Markdown editor pane**
    - Port v1's tiptap editor: `packages/workspace/src/front/components/Editor.jsx` (912 lines)
-   - 11 extensions (reduced from 16): StarterKit, Underline, Link, Placeholder, TaskList+TaskItem, TextAlign, Highlight, Image (official, no resize), CodeBlockLowlight, Markdown, custom DiffExtension
+   - 10 extensions (reduced from 16): StarterKit, Underline, Link, Placeholder, TaskList+TaskItem, TextAlign, Highlight, Image (official, no resize), CodeBlockLowlight, Markdown. (DiffExtension dropped with diff mode.)
    - **Dropped**: Table suite (4 packages), `tiptap-extension-resize-image` (third-party), FrontmatterEditor
    - Toolbar: Bold, Italic, Underline, Strikethrough, H1/H2/H3, Bullet/Ordered/Task list, Quote, Code block, Link, Horizontal rule, Highlight, Image (URL prompt)
-   - Two modes: normal edit + diff (tiptap DiffExtension, inline diff decorations vs git HEAD)
+   - Single mode: normal edit. Diff-vs-HEAD deferred to v1.x (git routes not in v1).
    - Restyle with shadcn/tailwind (replace v1's custom CSS classes)
    - Read/write via HTTP provider. Auto-save debounced 1000ms.
    - Tab dirty state + external file change detection (same as code editor)
@@ -589,7 +611,7 @@ The agent should feel like a co-user — seeing the same files, same open panels
    - Language support: JS/TS, Python, JSON, YAML, Markdown, SQL (all bundled initially; measure chunk size in Phase 2 — cut to 3 bundled + lazy rest only if total budget exceeded)
    - Theme: wire CodeMirror theme to shadcn CSS variables via `EditorView.theme()`
    - Read/write via HTTP provider
-   - Two modes: normal edit + diff (CodeMirror merge extension, side-by-side vs git HEAD)
+   - Single mode: normal edit. Diff-vs-HEAD deferred to v1.x (git routes not in v1).
    - Line numbers, word wrap toggle
    - Tab dirty state: dot indicator on tab when unsaved changes exist
    - Auto-save: debounced 1000ms after last keystroke
@@ -648,20 +670,22 @@ The agent should feel like a co-user — seeing the same files, same open panels
        ```
      - Internal code CAN use `useWorkspaceStore(selector)` with selectors. External consumers cannot.
 
-3a.3. **Workspace bridge — server endpoint**
-   - `GET /api/v1/ui/commands/next` (SSE stream) for commands from agent to workspace. State from workspace → agent goes via `PUT /api/v1/ui/state`
-   - `POST /api/v1/ui/commands` for agent to send commands
-   - Commands: `{ action: 'openFile', params: { path, mode } }`
-   - State updates: `{ openPanels, activePanel, activeFile, visibleFiles, dirtyFiles }`
-   - Agent sends commands via POST → workspace executes → workspace pushes state via SSE
+3a.3. **Workspace bridge — server endpoint (command-based, tenth pass)**
+   - Agent posts commands via `POST /api/v1/ui/commands` → server validates (Zod) → queues
+   - SSE `GET /api/v1/ui/commands/next` delivers `event: command` to workspace
+   - Workspace executes commands locally (Zustand store update)
+   - Workspace pushes state via `PUT /api/v1/ui/state` with `causedBy: 'user' | 'agent' | 'restore'`
+   - Agent reads state via `get_ui_state` tool (from server's cached copy)
+   - All events carry `v:1` protocol version field
+   - Workspace Zustand store is the authority — server is a relay and cache
    - Matches existing chat stream pattern, ~20 LOC server
-   - **Short-poll fallback** (2s): `GET /api/v1/ui/state/latest` + `POST /api/v1/ui/commands` for environments where SSE is unavailable
+   - **Short-poll fallback** (2s): `GET /api/v1/ui/commands/next?poll=true` + `PUT /api/v1/ui/state` for environments where SSE is unavailable
 
 3a.4. **Chat-centered layout integration**
    - Chat layout shell with agent chat in main area
    - **Artifact surface = nested DockviewShell** (right panel, own state + persistence)
-     - `ArtifactSurfacePane` renders its own `<DockviewShell>` with `storageKey="v2:surface"`
-     - Follows v1's `SurfaceDockview` pattern: shares outer panel registry, gets layout via props, uses callbacks for state flow
+     - `ArtifactSurfacePane` renders its own `<DockviewShell>` with `storageKey="v2:surface"` and `allowedPanels` guard (tenth pass)
+     - Follows v1's `SurfaceDockview` pattern: filtered registry via `allowedPanels`, gets layout via props, uses callbacks for state flow
      - Sync suppression flag prevents feedback loops between outer and inner state
      - Only rendered when artifacts exist (conditional mount)
    - Session list UI (workspace renders, agent owns state — see resolved questions)
@@ -737,7 +761,7 @@ The agent should feel like a co-user — seeing the same files, same open panels
    **Layer 1: Unit tests (fast, precise)**
    - Hooks with mocked dockview API: `useSidebarLayout`, `usePanelSizing`, `usePanelActions`
    - Registry: register, get, capability checks, available panes
-   - Persistence: Zustand store serialize/deserialize, version mismatch → reset
+   - Persistence: Zustand store serialize/deserialize, version mismatch → callback (default reset)
    - Bridge: command validation, rate limiter, state subscriptions
    - Run: `vitest`, <5s total
 
@@ -934,13 +958,16 @@ v2/packages/workspace/
 │   │   ├── IdeLayout.tsx              # Preset: sidebar + center + right rail (~30 lines)
 │   │   ├── ChatLayout.tsx             # Preset: nav rail + chat + surface (~30 lines)
 │   │   └── types.ts                   # LayoutConfig, GroupConfig, IdeLayoutProps, ChatLayoutProps
+│   ├── store/                         # Single Zustand store (tenth pass — one store, partitioned persist)
+│   │   ├── index.ts                   # useWorkspaceStore (NOT exported). Persisted: layout, preferences. Ephemeral: bridge state.
+│   │   └── selectors.ts              # Atomic hooks: useActiveFile, useActivePanel, useSidebarState, etc.
 │   ├── persistence/
-│   │   ├── store.ts                   # Zustand store with persist middleware (two partitions)
 │   │   └── useLayoutPersistence.ts    # Auto-save/restore hook (wires dockview events to store)
 │   ├── registry/
 │   │   ├── PanelRegistry.ts           # Register/get/list/resolve panels
+│   │   ├── CommandRegistry.ts         # Register/get commands (tenth pass — separate from panels)
 │   │   ├── RegistryProvider.tsx       # React context
-│   │   ├── types.ts                   # PanelConfig, PaneProps — the extension contract
+│   │   ├── types.ts                   # PanelConfig, PaneProps, CommandConfig, PanelLifecycleApi
 │   │   └── dynamicLoader.ts           # Hot-load agent panes (Phase 3b, see Appendix I)
 │   ├── panes/                         # Dockview pane wrappers (component + panel params)
 │   │   ├── FileTreePane.tsx           # Wraps FileTree + dockview params
@@ -948,10 +975,9 @@ v2/packages/workspace/
 │   │   ├── CodeEditorPane.tsx         # Wraps CodeEditor + file load/save
 │   │   ├── DataCatalogPane.tsx        # Wraps DataCatalog
 │   │   └── EmptyPane.tsx              # Placeholder
-│   ├── bridge/                        # Agent-UI bridge (Phase 3)
-│   │   ├── store.ts                   # Zustand workspace state
-│   │   ├── commands.ts                # Command definitions
-│   │   ├── server.ts                  # SSE stream + POST endpoint
+│   ├── bridge/                        # Agent-UI bridge (Phase 3) — reads/writes the single store
+│   │   ├── commands.ts                # Command definitions (client-side types + dispatcher)
+│   │   ├── client.ts                  # SSE subscriber + PUT helpers hitting @boring/agent
 │   │   └── useWorkspaceBridge.ts      # Hook for panes to interact
 │   ├── hooks/
 │   │   ├── useDockLayout.ts           # Sidebar discovery, collapse
@@ -1024,7 +1050,7 @@ Guide for the implementing agent. For each v2 area, the v1 file(s) to study for 
 | `DockviewShell.tsx` | `packages/workspace/src/front/layouts/ide/IdeLayout.jsx` (lines 1–80, 400–500) | Dockview initialization: `<DockviewReact>` setup, `onReady` callback, component map registration, `api.fromJSON()` for restore. **Simplify**: v1 is 1718 lines — most is panel lifecycle that belongs in hooks, not the shell. |
 | `PanelChrome.tsx` | `packages/workspace/src/front/components/DockTab.jsx` (143 lines) | Tab rendering with file icons, close button, active state. Replace all custom CSS classes with shadcn/tailwind. |
 | `dockview-reset.css` | `packages/workspace/src/front/layouts/ide/IdeLayout.jsx` — look for `.dockview-*` overrides in imported CSS | Identify which dockview classes need zeroing out. Also check `node_modules/dockview-react/dist/styles/dockview.css` for the full default theme. |
-| `persistence/store.ts` | `packages/workspace/src/front/persistence/LayoutManager.js` (618 lines) | Layout save/restore logic: `dockApi.toJSON()` serialization, localStorage read/write, validation. **Drop**: version migration system, `lastKnownGoodLayout` backup, multi-key storage. Keep: `toJSON()`/`fromJSON()` round-trip, validation that essential panels exist. |
+| `store/index.ts` | `packages/workspace/src/front/persistence/LayoutManager.js` (618 lines) | Single Zustand store (tenth pass). Layout save/restore logic: `dockApi.toJSON()` serialization, localStorage read/write, validation. Persisted: layout, preferences. Ephemeral: bridge state. **Drop**: version migration system, `lastKnownGoodLayout` backup, multi-key storage. Keep: `toJSON()`/`fromJSON()` round-trip, validation. |
 | `PanelRegistry.ts` | `packages/workspace/src/front/registry/panes.jsx` (484 lines) | Registration pattern: `register(id, { component, title, icon, placement, constraints, requires })`. Lazy loading via `React.lazy()`. Capability gating pattern. **Drop**: `requiresRouters`, `requiresFeatures` (legacy). Keep: `requiresCapabilities` for optional runtime gating. |
 | `IdeLayout.tsx` | `packages/workspace/src/front/layouts/ide/IdeLayout.jsx` (full file, 1718 lines) | v1 is 1718 lines because layout logic, hooks, and panel lifecycle are inlined. **v2 approach**: IdeLayout is ~30 lines — it builds a `LayoutConfig` and passes it to `DockviewShell`. All the heavy logic lives in DockviewShell and shared hooks. Study v1 for the *group arrangement* (sidebar left locked, center tabs, right rail) and constraints, then express as a `LayoutConfig`. |
 | `ChatLayout.tsx` | `packages/workspace/src/front/layouts/chat/ChatCenteredWorkspace.jsx` (434 lines) | Same simplification as IdeLayout. v2 ChatLayout is ~30 lines building a `LayoutConfig` (nav rail left, chat center, surface right). Study v1 for group arrangement + `SurfaceShell.jsx` (544 lines) for the artifact surface dockview. |
@@ -1046,8 +1072,8 @@ Guide for the implementing agent. For each v2 area, the v1 file(s) to study for 
 
 | v2 target | v1 reference | What to learn |
 |-----------|-------------|---------------|
-| `bridge/store.ts` | `packages/workspace/src/server/services/uiStateImpl.ts` (201 lines) + `packages/workspace/src/front/utils/frontendState.js` (2.6 KB) | Current UI state bridge: panel snapshots, command queuing, client-scoped state. **Conceptually similar** but v2 bridge is Zustand (reactive) instead of REST polling. Study the state shape: `{ openPanels, activeFile, commands }`. |
-| `bridge/server.ts` | `packages/workspace/src/server/http/uiStateRoutes.ts` (289 lines) | Current HTTP endpoints: `GET /ui/state`, `POST /ui/command`, `GET /ui/panels`. **Replace** with SSE stream (`GET /api/v1/ui/commands/next`) + POST commands. Port the command vocabulary (openPanel, navigateFile, showNotification). |
+| `bridge/client.ts` + `bridge/commands.ts` | `packages/workspace/src/server/services/uiStateImpl.ts` (201 lines) + `packages/workspace/src/front/utils/frontendState.js` (2.6 KB) | Current UI state bridge: panel snapshots, command queuing, client-scoped state. v2: bridge reads/writes the single Zustand store (tenth pass). SSE client in `bridge/client.ts`, command dispatcher in `bridge/commands.ts`. Study the state shape: `{ openPanels, activeFile, commands }`. |
+| `bridge/client.ts` | `packages/workspace/src/server/http/uiStateRoutes.ts` (289 lines) | Current HTTP endpoints: `GET /ui/state`, `POST /ui/command`, `GET /ui/panels`. **Replace** with command-based bridge (tenth pass): SSE `event: command` stream + `PUT /api/v1/ui/state` with `causedBy` + POST commands. Port the command vocabulary (openPanel, navigateFile, showNotification). |
 | `dynamicLoader.ts` | No direct v1 equivalent | New for v2. Reference: Vite's `import.meta.glob()` for dynamic imports. React `lazy()` + `Suspense` pattern from v1's pane registry (`panes.jsx` lines 20-50). Error boundary pattern from `PanelErrorBoundary.jsx` (58 lines). |
 | Agent pane slot | `packages/workspace/src/front/registry/panes.jsx` — agent pane registration (lines 440-470) | How agent panel is registered with capability gating (`requiresCapabilities: ['agent.chat']`). Lazy loading pattern. |
 | Session list UI | `packages/workspace/src/front/layouts/chat/ChatCenteredWorkspace.jsx` (lines 50-120) + `packages/workspace/src/front/layouts/chat/NavRail.jsx` (133 lines) | Session switcher in nav rail. Session create/switch callbacks. Active session indicator. **Port the UI**, not the state management (agent owns state in v2). |
@@ -1273,9 +1299,9 @@ In dev mode, throw to catch typos early.
 **Risk**: User's localStorage has a saved layout. App ships a new LayoutConfig with different
 groups. Persisted layout wins → user never sees the new arrangement.
 
-**Mitigation**: LayoutConfig includes a `version: number` field. Persisted layout stores the
-config version it was created from. On restore, if versions differ → discard persisted layout,
-use new LayoutConfig. This is the same pattern as the existing Zustand schema version check.
+**Mitigation**: LayoutConfig includes a `version: string` field (e.g., `'2.0'`). Persisted layout stores the
+config version it was created from. On restore, if versions differ → call `onLayoutVersionMismatch()` callback
+(defaults to reset). Apps can provide custom migration logic. See tenth-pass decisions.
 
 ### Risk 13: filePatterns routing precedence (seventh-pass)
 
@@ -1353,6 +1379,7 @@ export { EmptyPane } from './panes/EmptyPane'
 
 // Registry & panel management
 export { PanelRegistry } from './registry/PanelRegistry'
+export { CommandRegistry, useCommandRegistry } from './registry/CommandRegistry'
 export { RegistryProvider, useRegistry } from './registry/RegistryProvider'
 
 // Bridge (agent-facing API)
@@ -1380,14 +1407,15 @@ export { ThemeProvider, useTheme } from './theme/ThemeProvider'
 export { getFileIcon } from './utils/fileIcons'
 
 // Atomic selector hooks (useWorkspaceStore is NOT exported — only these hooks)
-export { useActiveFile, useActivePanel, useSidebarState, useOpenPanels, useDirtyFiles } from './persistence/selectors'
+export { useActiveFile, useActivePanel, useSidebarState, useOpenPanels, useDirtyFiles } from './store/selectors'
 
 // Layout config (the composability primitive)
 export type { LayoutConfig, GroupConfig } from './layouts/types'
 
 // Types
 export type { WorkspaceBridge, PanelState, CommandResult, BridgeEventMap } from './bridge/types'
-export type { PanelConfig, PaneProps, PanelRegistryType } from './registry/types'
+export type { PanelConfig, PaneProps, PanelRegistryType, CommandConfig } from './registry/types'
+export type { PanelLifecycleApi } from './registry/types'
 export type { DockviewShellApi } from './layouts/DockviewShell'
 // NOTE: WorkspaceStoreState is NOT exported — store is internal. Use atomic hooks.
 export type { WorkspaceProviderProps } from './WorkspaceProvider'
@@ -1434,8 +1462,16 @@ interface WorkspaceProviderProps {
   onThemeChange?: (theme: 'light' | 'dark') => void
 
   // --- Persistence ---
-  storageKey?: string                 // Default: 'boring-ui-v2:layout'
+  workspaceId?: string                // Scopes persistence key: 'boring-ui-v2:layout:{workspaceId}'
+                                       // Omit for single-workspace apps (falls back to 'boring-ui-v2:layout')
+  storageKey?: string                 // Full override for persistence key (takes precedence over workspaceId)
   persistenceEnabled?: boolean        // Default: true. Set false for tests / ephemeral mode
+
+  // --- Layout version migration (tenth pass) ---
+  onLayoutVersionMismatch?: (persisted: string, current: string, layout: unknown) => SerializedLayout | null
+                                       // Called when persisted layout version !== LayoutConfig.version
+                                       // Return migrated layout or null (= reset to defaults)
+                                       // Default: () => null (reset)
 
   // --- Bridge (Phase 3) ---
   bridgeEndpoint?: string             // SSE endpoint for agent→workspace commands. Default: '/api/v1/ui/commands/next'
@@ -1505,19 +1541,21 @@ function App() {
 ```
 
 ```tsx
-// TIER 3: Standalone components (no dockview, no WorkspaceProvider)
-import { FileTree, CodeEditor, DataProvider } from '@boring/workspace'
+// TIER 3: Standalone components (no dockview, no WorkspaceProvider, no context)
+// All data via props — zero context dependency (tenth pass)
+import { FileTree, CodeEditor } from '@boring/workspace'
 
 function App() {
+  const [content, setContent] = useState('')
   return (
-    <DataProvider apiBaseUrl="/api/v1">
-      <div className="flex h-screen">
-        <FileTree files={files} onSelect={setPath} />
-        <CodeEditor path={selectedPath} />
-      </div>
-    </DataProvider>
+    <div className="flex h-screen">
+      <FileTree files={files} onSelect={setPath} />
+      <CodeEditor content={content} onChange={setContent} language="typescript" />
+    </div>
   )
 }
+// Note: DataProvider is only needed by pane wrappers (FileTreePane, CodeEditorPane).
+// Standalone components accept all data via props.
 ```
 
 ### C. @boring/core dependency contract
@@ -1584,31 +1622,73 @@ tools. This eliminates the bandwidth problem of broadcasting 10K+ entries on eve
 ```
 GET  /api/v1/ui/commands/next  — SSE stream (agent → workspace commands)
 POST /api/v1/ui/commands        — agent sends commands
+PUT  /api/v1/ui/state           — workspace publishes UI state (workspace → agent)
 GET  /api/v1/ui/state/latest    — one-shot full state snapshot (for reconnection or polling)
 ```
+
+#### Data flow (tenth pass — command-based, workspace-authoritative)
+
+```
+Agent POST {kind:'openFile', params:{path:'/foo.ts'}}
+  → agent server validates (Zod per-kind schema)
+  → agent server queues command
+  → SSE delivers: event: command  data: {v:1, kind:'openFile', params:{...}}
+  → workspace executes locally (Zustand store update)
+  → workspace PUT /api/v1/ui/state with {v:1, causedBy:'agent', ...}
+  → agent reads state via get_ui_state tool
+
+User clicks file in tree:
+  → workspace executes locally (Zustand store update)
+  → workspace PUT /api/v1/ui/state with {v:1, causedBy:'user', ...}
+  → agent reads state via get_ui_state tool
+```
+
+**Authority**: Workspace Zustand store is the source of truth. Agent server is a relay for commands and a cache for state that agents can query. The server NEVER modifies UI state — it only validates and forwards commands.
 
 #### SSE command stream (`GET /api/v1/ui/commands/next`)
 
 ```
-event: state
-data: {"openPanels":[...],"activePanel":"editor-1","activeFile":"/src/main.ts","visibleFiles":[...],"dirtyFiles":[]}
+event: command
+data: {"v":1,"kind":"openFile","params":{"path":"/src/main.ts","mode":"edit"}}
 
-event: state
-data: {"activeFile":"/src/app.ts"}
+event: command
+data: {"v":1,"kind":"showNotification","params":{"msg":"File saved","level":"info"}}
 
 event: error
-data: {"code":"invalid_command","message":"Unknown panel ID"}
+data: {"v":1,"code":"invalid_command","message":"Unknown panel ID"}
 
 event: heartbeat
 data: {}
 ```
 
-- On connect: server sends full state (all fields present).
-- Subsequent events are delta-only — absent field = unchanged.
-- State updates debounced server-side (100ms) to coalesce rapid UI changes.
+- On connect: server sends `event: init` with full state snapshot (for reconciliation).
+- Subsequent events are `event: command` — individual commands the workspace executes.
 - Browser `EventSource` auto-reconnects on disconnect (built-in).
 - Server sends `event: heartbeat` every 30s to keep the connection alive through proxies.
+- All events carry `v:1` protocol version. On version mismatch, workspace shows warning banner.
 - ~20 LOC server — same pattern as `GET /api/v1/agent/chat/:sessionId/:turnId`.
+
+#### State publishing (`PUT /api/v1/ui/state`)
+
+Workspace pushes its current UI state to the agent server after every meaningful state change.
+Agent reads this state via the `get_ui_state` tool (from the agent's own cached copy).
+
+```typescript
+// PUT body:
+interface UIStatePut {
+  v: 1                                    // protocol version
+  causedBy: 'user' | 'agent' | 'restore' // prevents agent echo loops
+  openPanels: PanelState[]
+  activePanel: string | null
+  activeFile: string | null
+  visibleFiles: string[]                  // file paths shown in tree
+  dirtyFiles: string[]                    // files with unsaved changes
+}
+```
+
+- Debounced client-side (100ms) to coalesce rapid UI changes (e.g., clicking through files).
+- `causedBy` allows agents to distinguish user actions from their own command results.
+- 204 No Content response. No validation beyond JSON parsing — workspace is the authority.
 
 #### Command format (`POST /api/v1/ui/commands`)
 
@@ -1662,20 +1742,23 @@ Standard HTTP auth on both endpoints:
 #### Reconnection
 
 SSE `EventSource` auto-reconnects with browser-default retry interval (~3s).
-On reconnect, server sends full state snapshot as first event. No delta replay.
+On reconnect, server sends `event: init` with cached state snapshot for reconciliation.
+Workspace compares with its Zustand store and resolves any conflicts (workspace wins — it's the authority).
 
 **Consistency guarantees:**
 - **At-most-once command delivery**: Commands are fire-and-forget during disconnect. Agent
   re-evaluates state and re-issues if needed.
 - **Server restart**: All bridge state is in-memory. Restart = clean slate. On reconnect,
-  client receives empty state, re-publishes its current panel state via `PUT /api/v1/ui/state`.
+  workspace re-PUTs its current state to the server.
 - **Idempotency**: `openPanel` with duplicate ID activates the existing panel (default
   `prefer_existing: true`). Makes accidental double-sends harmless.
 
 #### Short-poll fallback (for environments where SSE is unavailable)
 
-- `GET /api/v1/ui/state/latest` — poll every 2s for state
+- `GET /api/v1/ui/state/latest` — poll every 2s for cached state (for reconciliation)
 - `POST /api/v1/ui/commands` — enqueue command (same endpoint as SSE mode)
+- `PUT /api/v1/ui/state` — workspace pushes state (same endpoint as SSE mode)
+- Workspace polls `GET /api/v1/ui/commands/next?poll=true` for pending commands (returns batch, not SSE)
 - Same JSON format, just over standard request/response
 
 #### v1 REST bridge endpoints — DROPPED
@@ -1716,26 +1799,21 @@ interface DockviewShellProps {
   // Persistence key (for nested dockview — each instance gets its own)
   storageKey?: string                        // default: uses WorkspaceProvider's key
 
+  // Panel guard for nested shells (tenth pass)
+  allowedPanels?: string[]                   // filter registry to only these panel IDs
+                                              // undefined = full registry access (default for root shell)
+
   // Options
   className?: string
 }
 ```
 
 **Runtime API exposed via hook (panels are dynamic, imperative):**
-```typescript
-// useDockviewApi() — available inside any pane or hook within DockviewShell
-interface DockviewShellApi {
-  addPanel(groupId: string, config: {
-    id: string
-    component: string              // panel ID from registry
-    params?: Record<string, unknown>
-  }): void
-  removePanel(panelId: string): void
-  getGroup(id: string): DockviewGroupApi | null
-  getActivePanel(): string | null
-  setGroupCollapsed(groupId: string, collapsed: boolean): void
-}
-```
+
+See §Architecture > Runtime API (`useDockviewApi()`) for the full `DockviewShellApi` type
+(8 methods: `addPanel`, `removePanel`, `activatePanel`, `updatePanelParams`, `movePanel`,
+`batch`, `getGroup`, `getActivePanel`, `setGroupCollapsed`). Defined once there — not
+duplicated here to avoid spec drift.
 
 **DockviewShell internals:**
 ```tsx
@@ -1873,10 +1951,11 @@ function ArtifactSurfacePane({ artifacts, onSelectArtifact, onCloseArtifact }) {
         groups: [{ id: 'artifacts', position: 'center', dynamic: true, placeholder: 'empty' }]
       }}
       storageKey="boring-ui-v2:surface"    // own persistence, independent of outer shell
+      allowedPanels={['code-editor', 'markdown-editor', 'csv-viewer', 'empty']}  // tenth pass: guard against outer-shell panels
     />
   )
 }
-// Shares outer panel registry. Has own API, own state, own lifecycle.
+// Filters outer panel registry to allowed IDs. Has own API, own state, own lifecycle.
 // v1 pattern: SurfaceDockview uses syncingRef to prevent feedback loops.
 ```
 
@@ -1986,7 +2065,7 @@ KEY BLOCKERS:
   1. Phase 1 must complete before Phase 2/3a start
   2. CodeMirror 6 (2.4) is the longest single task (6-8 days)
   3. Dockview wrappers (1.3) are second longest (3-4 days)
-  4. Bridge WS (3a.3) is NEW code (no v1 reference) — higher risk
+  4. Bridge SSE+POST (3a.3) is NEW code (no v1 reference) — higher risk
 ```
 
 ### H. Risk mitigation — implementation patterns
@@ -1994,7 +2073,7 @@ KEY BLOCKERS:
 #### Risk 7: Zustand hydration race (pseudo-code)
 
 ```typescript
-// persistence/store.ts
+// store/index.ts — single store, partitioned persist (tenth pass)
 export const useWorkspaceStore = create<WorkspaceStoreState>()(
   persist(
     (set, get) => ({
@@ -2091,17 +2170,15 @@ interface FileTreeProps {
 
 export function FileTree(props: FileTreeProps) { /* pure render */ }
 
-// components/ConnectedFileTree.tsx — CONTEXT-AWARE (for use inside WorkspaceProvider)
-export function ConnectedFileTree(overrides?: Partial<FileTreeProps>) {
-  const { files, expandedDirs } = useFileData()
-  const bridge = useWorkspaceBridge()
+// panes/FileTreePane.tsx — the pane wrapper IS the connected variant (no separate ConnectedFileTree)
+export function FileTreePane({ params, bridge }: PaneProps) {
+  const { files, expandedDirs } = useFileData(params.dir as string)
   return (
     <FileTree
       files={files}
       expandedDirs={expandedDirs}
       onSelect={(path) => bridge.openFile(path)}
       onExpand={(dir) => bridge.expandToFile(dir)}
-      {...overrides}
     />
   )
 }
@@ -2347,11 +2424,11 @@ v1's `base.css` has hardcoded pixel breakpoints. v2 parameterizes all via tailwi
 | Image | `@tiptap/extension-image` | **REPLACE** (official, no resize handles) |
 | CodeBlockLowlight | `@tiptap/extension-code-block-lowlight` | **KEEP** |
 | Markdown | `@tiptap/markdown` | **KEEP** |
-| Custom DiffExtension | Inline in Editor.jsx | **KEEP** (port ProseMirror Plugin + Decoration) |
+| Custom DiffExtension | Inline in Editor.jsx | **DEFER** (tenth pass: dropped with diff mode. Returns when git diff viewing ships.) |
 | ~~Table suite~~ | `@tiptap/extension-table*` (4 packages) | **DROP** |
 | ~~ImageResize~~ | `tiptap-extension-resize-image` | **DROP** |
 
-**Result: 11 extensions (down from 16). Dropped 5 packages.**
+**Result: 10 extensions (down from 16). Dropped 6 packages (including DiffExtension — deferred with diff mode).**
 
 ### Deep import anti-pattern (v1 → v2 fix)
 
