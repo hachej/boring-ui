@@ -74,7 +74,7 @@ A clean-slate workspace package that provides **layout composition with persiste
 | Terminal/PTY | Not used (ninth pass) | Terminal panels are no longer used in any app. Remove from migration concerns and "files not to port" rationale. |
 | Dockview risk | Accepted (ninth pass) | Single-maintainer risk accepted. DockviewShell encapsulates all dockview interaction — panes never import dockview directly. If dockview dies, only DockviewShell internals (~500 LOC) change. No adapter layer (YAGNI). |
 | Sample app | Minimal playground (ninth pass) | `apps/workspace-playground`: IdeLayout + mock data provider, no backend needed. `pnpm --filter workspace-playground dev`. Isolated test environment for workspace package. |
-| Bridge E2E test | Added (ninth pass) | Playwright test that opens workspace + simulates agent HTTP client. Agent posts openFile command via POST → assert file panel appears via SSE state update. Tests real bridge protocol. ~50 LOC. |
+| Bridge E2E test | Added (ninth pass) | Playwright test that opens workspace + simulates agent HTTP client. Agent posts openFile command via POST → workspace receives on SSE `event: command` → applies locally → assert file panel appears. Tests real bridge protocol. ~50 LOC. |
 | CM6 languages | Measure first (ninth pass) | Bundle all 6 languages (JS/TS, Python, JSON, YAML, Markdown, SQL). Measure actual chunk size in Phase 2. Cut to 3 bundled + lazy rest only if total budget exceeded. |
 | Store topology | Single store, partitioned persist (tenth pass) | One `useWorkspaceStore()`. Persist middleware uses `partialize` to route: layout→localStorage, preferences→localStorage, bridge state→ephemeral (NOT persisted). Single file `store/index.ts`. `persistence/` and `bridge/` are thin modules reading/writing the single store. |
 | Bridge authority | Workspace Zustand is source of truth (tenth pass) | SSE streams commands (not state). Workspace executes locally, PUTs resulting state. Agent reads via `get_ui_state` tool. `causedBy: 'user' \| 'agent' \| 'restore'` on PUT body prevents echo loops. All events carry `v:1` protocol version field. |
@@ -400,7 +400,7 @@ The agent should feel like a co-user — seeing the same files, same open panels
      openPanel(config: DynamicPaneConfig): Promise<CommandResult>
      closePanel(id: string): Promise<CommandResult>
      expandToFile(path: string): Promise<CommandResult>
-     showNotification(msg: string, level?: 'info' | 'warn' | 'error'): void
+     showNotification(msg: string, level?: 'info' | 'warn' | 'error'): Promise<CommandResult>
      navigateToLine(file: string, line: number): Promise<CommandResult>
      markDirty(path: string): void
      markClean(path: string): void
@@ -777,8 +777,8 @@ The agent should feel like a co-user — seeing the same files, same open panels
    - Chat layout: session switch, artifact open, agent message
    - Bridge: agent opens file → workspace reflects, user action → bridge event fires
    - **Bridge protocol E2E** (~50 LOC): Playwright opens workspace UI + a separate HTTP client
-     simulates the agent. Agent POSTs `openFile` command → SSE stream delivers state update →
-     assert file panel appears in the UI. Tests the real SSE/polling path end-to-end.
+     simulates the agent. Agent POSTs `openFile` command → SSE `event: command` delivers to workspace →
+     workspace applies locally (Zustand) → file panel appears in the UI. Tests the real SSE/polling path end-to-end.
    - Run: CI, ~2 min
 
    **Layer 4: Bombadil property-based exploration (unknown unknowns)**
@@ -1320,9 +1320,9 @@ which wins? App-registered vs built-in — who takes priority?
 dockview panel creation). Agent calls openFile then immediately reads `getOpenPanels()` —
 file isn't there yet.
 
-**Mitigation**: Bridge commands return `Promise<void>`. Agent can await if it needs confirmation:
+**Mitigation**: Bridge commands return `Promise<CommandResult>` (matches agent's bridge contract). Agent can await if it needs confirmation:
 ```typescript
-await bridge.openFile('/file.ts')
+const { seq, status } = await bridge.openFile('/file.ts')
 const panels = bridge.getOpenPanels()  // now includes the file
 ```
 Fire-and-forget usage still works — just don't `await`.

@@ -204,7 +204,7 @@ This table is the **single source of truth** for agent ↔ frontend HTTP contrac
 | `/api/v1/ui/state` | GET/PUT | auth | read / write UI state blob (workspace-defined shape). Workspace PUTs with `causedBy` field. |
 | `/api/v1/ui/state/latest` | GET | auth | cached state snapshot for short-poll fallback (same shape as GET /state, separate endpoint for polling clients) |
 | `/api/v1/ui/commands` | POST | auth | agent posts command for UI. `{kind: 'openFile', params: {...}}` — camelCase `kind` field. Returns `{seq, status: 'ok'\|'error'}`. |
-| `/api/v1/ui/commands/next` | GET (SSE) | auth | workspace subscribes. Streams `event: command` with `{v:1, kind, params, seq}`. |
+| `/api/v1/ui/commands/next` | GET (SSE or poll) | auth | Default: SSE; streams `event: command` with `{v:1, kind, params, seq}`. With `?poll=true`: returns a batch of pending commands as JSON `{commands: [...]}` — short-poll fallback (~2s cadence) for environments where SSE is unavailable. |
 | **Explicitly not in v1** | | | |
 | ~~`/api/v1/git/*`~~ | — | Dead code in v1 (no consumer) — see note below. Agent runs git internally via `bash`. | — |
 | ~~`/api/v1/workspaces`~~ | — | Workspace CRUD / multi-workspace provisioning owned by `@boring/cloud`. Agent v1 is single-workspace-per-instance. | — |
@@ -1467,7 +1467,7 @@ v1 is **prove the architecture works end-to-end**, not **productionize**. Each a
 ### Owned by future packages
 
 - **`@boring/cloud`:** multi-workspace provisioning, per-user/per-tenant workspace lifecycle, workspace creation UI, Fly Machine / Modal / Vercel account orchestration, billing integration, multi-tenant auth. The agent package receives a resolved `workspaceId` — it does not create, list, or switch workspaces at runtime.
-- **`@boring/workspace`:** file tree component, editor, git panes, layout (DockView), layout persistence, full session-list sidebar with rename/delete dialogs. Agent exposes the HTTP endpoints that power these; workspace builds the UI on top.
+- **`@boring/workspace`:** file tree component, editor, layout (DockView), layout persistence, session-list sidebar (rename dialog in particular — delete ships in agent v1). Git UI is dropped from workspace v1 entirely; if it comes back in v1.x, agent will add `/api/v1/git/*` routes. Agent exposes the HTTP endpoints that power these; workspace builds the UI on top.
 
 ### Deferred (design seams exist; no implementation in v1)
 
@@ -1622,7 +1622,8 @@ Existing apps in `/home/ubuntu/projects/boring-ui/apps/*` use features that v2 a
 | Artifact viewer (side panel) | ❌ Not in agent v2 | Workspace package. ai-elements has `Artifact` component. |
 | Model selector in session toolbar | ⚠️ Moved to composer | Retain as feature, relocate UX. |
 | Thinking level selector | ⚠️ Moved to composer | Same. |
-| Session rename / delete | ❌ Not in v1 | Deferred — workspace package likely. |
+| Session delete | ✅ Ships in v1 | `DELETE /api/v1/agent/sessions/:id` + `SessionStore.delete`. |
+| Session rename | ❌ Not in v1 | Deferred — workspace package likely. |
 | Fly machine provisioning | ❌ Not in agent v2 | `@boring/cloud`. |
 
 **Concrete migration advice for each current app:**
