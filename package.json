@@ -8,6 +8,8 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "lint:invariants": "pnpm --dir packages/agent run lint:invariants",
+    "check:bundle-size": "node scripts/check-bundle-size.mjs",
+    "ci:bundle-size": "pnpm --filter @boring/workspace run build && pnpm check:bundle-size",
     "test": "pnpm -r run test",
     "e2e": "pnpm exec playwright test -c e2e/playwright.config.ts",
     "ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm lint:invariants && pnpm e2e",
