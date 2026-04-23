@@ -143,38 +143,14 @@ Loop back to §1 step 4.
 
 ## 3. Cross-review (mandatory, before every close)
 
-Every bead is reviewed by an agent of the **opposite kind** before closing — Claude Code asks Codex, Codex asks Claude Code. Catches model-specific blind spots and prevents single-agent rubber-stamping.
+Ask an agent of the **opposite kind** to review your staged diff. Catches model-specific blind spots.
 
-**When:** after implementation, tests green, staged for commit. Not on WIP.
+- **Claude Code agent → asks Codex via `cod exec "..."`**
+- **Codex agent → asks Claude Code via `cc -p "..."`**
 
-**Claude Code agent asks `cod`:**
-```bash
-cod exec "Review this change for bead <id>. Bead context, then staged diff.
+**Isolate your changes first** (`git add` only the files for this bead — don't send a diff polluted with unrelated work). The reviewer sees `git diff --staged`; keep it scoped.
 
-$(br show <id>)
-
-$(git diff --staged)
-
-Does the diff satisfy the acceptance criteria? Bugs, regressions, unsafe assumptions, missing edge cases, missing tests? Verdict: ship / revise / reject + concrete issues with file:line pointers."
-```
-
-**Codex agent asks `cc`:**
-```bash
-cc -p "Review this change for bead <id>.
-
-$(br show <id>)
-
-$(git diff --staged)
-
-Verdict: ship / revise / reject. List concrete issues with file:line pointers."
-```
-
-**Verdicts:**
-- **ship** → commit + close.
-- **revise** → fix, re-test, re-request. Cap 3 rounds → escalate via Agent Mail.
-- **reject** → spec drift. Stop. Agent Mail with reviewer output. `br update <id> -s blocked`.
-
-**Rules:** never self-review for closure; include reviewer name + verdict in close reason; if reviewer doesn't respond in 5 min, commit but flag bead "pending review" in Agent Mail.
+Verdicts: **ship** → commit + close. **revise** → fix + re-request (cap 3 rounds). **reject** → `br update <id> -s blocked`, escalate via Agent Mail. Never self-review for closure.
 
 ## 4. Commit + close
 
