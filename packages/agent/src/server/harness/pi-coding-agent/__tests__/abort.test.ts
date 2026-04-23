@@ -22,11 +22,13 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     },
   }),
   SessionManager: { inMemory: () => ({}) },
-  AuthStorage: { inMemory: () => ({}) },
+  AuthStorage: {
+    inMemory: () => ({}),
+    create: () => ({}),
+  },
   ModelRegistry: {
-    inMemory: () => ({
-      find: () => undefined,
-    }),
+    inMemory: (auth: unknown) => ({ find: () => undefined }),
+    create: (auth: unknown) => ({ find: () => undefined }),
   },
 }));
 
