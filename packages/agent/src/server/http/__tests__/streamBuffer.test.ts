@@ -76,7 +76,7 @@ describe('TurnBuffer', () => {
     vi.useRealTimers()
   })
 
-  it('markComplete + subscribe calls done immediately', () => {
+  it('markComplete + subscribe defers done via microtask', async () => {
     vi.useFakeTimers()
     const buf = new TurnBuffer()
     buf.markComplete(() => {})
@@ -89,6 +89,8 @@ describe('TurnBuffer', () => {
       },
     )
 
+    expect(doneCalled).toBe(false)
+    await Promise.resolve()
     expect(doneCalled).toBe(true)
     vi.useRealTimers()
   })
@@ -144,6 +146,18 @@ describe('TurnBuffer', () => {
     const all = buf.replay(-1)
     expect(all).toHaveLength(2000)
     expect(all[0].idx).toBe(1)
+  })
+
+  it('markComplete is idempotent', () => {
+    vi.useFakeTimers()
+    const buf = new TurnBuffer()
+    let evictCount = 0
+    buf.markComplete(() => evictCount++)
+    buf.markComplete(() => evictCount++)
+
+    vi.advanceTimersByTime(120_000)
+    expect(evictCount).toBe(1)
+    vi.useRealTimers()
   })
 
   it('highIdx / minIdx report correct values', () => {

@@ -7,9 +7,14 @@ import type { AgentHarness, RunContext } from '../../../shared/harness'
 import {
   createBodyValidator,
   ERROR_CODE_INTERNAL,
+  ERROR_CODE_VALIDATION_ERROR,
   ERROR_CODE_RANGE_NOT_SATISFIABLE,
 } from '../middleware'
 import { StreamBufferStore } from '../streamBuffer'
+
+function c(data: Record<string, unknown>): UIMessageChunk {
+  return data as unknown as UIMessageChunk
+}
 
 const chatBodySchema = z.object({
   sessionId: z.string().min(1).max(128),
@@ -114,9 +119,18 @@ export function chatRoutes(
     '/api/v1/agent/chat/:sessionId/stream',
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
-      const cursor = Number(
-        (request.query as Record<string, string>).cursor ?? '-1',
-      )
+      const raw = (request.query as Record<string, string>).cursor
+      const cursor = raw === undefined ? -1 : Number(raw)
+
+      if (!Number.isInteger(cursor) || cursor < -1) {
+        return reply.code(400).send({
+          error: {
+            code: ERROR_CODE_VALIDATION_ERROR,
+            message: 'cursor must be an integer >= -1',
+          },
+        })
+      }
+
       const active = buffers.getActive(sessionId)
 
       if (!active) {
@@ -129,28 +143,24 @@ export function chatRoutes(
             async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
               for (const msg of detail.messages) {
                 if (msg.role !== 'assistant') continue
+                writer.write(c({ type: 'message-start' }))
+                let ci = 0
                 for (const part of (msg as any).parts) {
-                  if (part.type === 'text')
-                    writer.write({
-                      type: 'text-delta',
-                      delta: part.text,
-                    } as UIMessageChunk)
+                  if (part.type === 'text') {
+                    writer.write(c({ type: 'text-start', contentIndex: ci }))
+                    writer.write(c({ type: 'text-delta', contentIndex: ci, delta: part.text }))
+                    writer.write(c({ type: 'text-end', contentIndex: ci, content: part.text }))
+                    ci++
+                  }
                   if (part.type === 'tool-invocation') {
-                    writer.write({
-                      type: 'tool-input-available',
-                      toolCallId: part.toolCallId,
-                      toolName: part.toolName,
-                      input: part.input,
-                    } as UIMessageChunk)
+                    writer.write(c({ type: 'tool-input-available', toolCallId: part.toolCallId, toolName: part.toolName, input: part.input }))
                     if (part.state === 'output-available')
-                      writer.write({
-                        type: 'tool-output-available',
-                        toolCallId: part.toolCallId,
-                        output: part.output,
-                      } as UIMessageChunk)
+                      writer.write(c({ type: 'tool-output-available', toolCallId: part.toolCallId, output: part.output }))
+                    ci++
                   }
                 }
-                writer.write({ type: 'finish' } as UIMessageChunk)
+                writer.write(c({ type: 'finish' }))
+                writer.write(c({ type: 'message-end' }))
               }
             },
           })
@@ -166,11 +176,11 @@ export function chatRoutes(
 
       const { buffer: buf } = active
 
-      if (cursor >= 0 && cursor > buf.highIdx) {
+      if (cursor > buf.highIdx || (cursor >= 0 && buf.minIdx > 0 && cursor < buf.minIdx - 1)) {
         return reply.code(416).send({
           error: {
             code: ERROR_CODE_RANGE_NOT_SATISFIABLE,
-            message: 'Cursor beyond buffer',
+            message: 'Cursor outside buffer range',
           },
         })
       }

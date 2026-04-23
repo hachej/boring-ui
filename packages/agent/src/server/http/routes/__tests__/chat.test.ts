@@ -417,6 +417,25 @@ describe('GET /api/v1/agent/chat/:sessionId/stream (resume)', () => {
     await app.close()
   })
 
+  test('invalid cursor returns 400', async () => {
+    const app = await buildApp()
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: validBody,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/sess-1/stream?cursor=abc',
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.code).toBe(ERROR_CODE_VALIDATION_ERROR)
+
+    await app.close()
+  })
+
   test('no active turn and no SessionStore returns 204', async () => {
     const app = await buildApp()
 

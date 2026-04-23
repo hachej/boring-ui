@@ -34,7 +34,7 @@ export class TurnBuffer {
 
   subscribe(handler: ChunkHandler, done: () => void): () => void {
     if (this._complete) {
-      done()
+      queueMicrotask(done)
       return () => {}
     }
     this.onChunk.add(handler)
@@ -46,6 +46,7 @@ export class TurnBuffer {
   }
 
   markComplete(onEvict: () => void): void {
+    if (this._complete) return
     this._complete = true
     for (const h of this.onDone) h()
     this.onChunk.clear()
