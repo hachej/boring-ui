@@ -6,12 +6,14 @@ import type { RuntimeModeId } from './runtime/mode'
 import { resolveMode } from './runtime/resolveMode'
 import { standardCatalog } from './catalog/standardCatalog'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
+import { loadPlugins, flattenPluginTools } from './harness/pi-coding-agent/pluginLoader'
 import { createAuthMiddleware } from './http/middleware'
 import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { treeRoutes } from './http/routes/tree'
 import { chatRoutes } from './http/routes/chat'
 import { sessionRoutes } from './http/routes/sessions'
+import { catalogRoutes } from './http/routes/catalog'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -45,6 +47,17 @@ export async function createAgentApp(
     tools.push(...opts.extraTools)
   }
 
+  const resolvedMode = opts.mode ?? 'direct'
+  if (resolvedMode !== 'vercel-sandbox') {
+    const pluginResult = await loadPlugins({ cwd: workspaceRoot })
+    if (pluginResult.errors.length > 0) {
+      for (const e of pluginResult.errors) {
+        console.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
+      }
+    }
+    tools.push(...flattenPluginTools(pluginResult))
+  }
+
   const harness = createPiCodingAgentHarness({ tools, cwd: workspaceRoot })
 
   const app = Fastify({ logger: opts.logger ?? true })
@@ -74,6 +87,7 @@ export async function createAgentApp(
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,
   })
+  await app.register(catalogRoutes, { tools })
 
   return app
 }
