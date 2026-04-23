@@ -12,7 +12,12 @@ import { fileURLToPath } from 'node:url'
 
 import { loadPlugins, type ImportFn } from '../pluginLoader'
 import { mergeTools, type PluginToolRegistration } from '../../../catalog/mergeTools'
-import type { AgentTool } from '../../../../shared/tool'
+import type { AgentTool, ToolExecContext } from '../../../../shared/tool'
+
+const stubCtx: ToolExecContext = {
+  abortSignal: new AbortController().signal,
+  toolCallId: 'test-call',
+}
 
 let workspaceDir: string
 
@@ -95,7 +100,7 @@ describe('Plugin sandbox bypass invariant', () => {
     const tool = result.plugins[0]!.tools.find((t) => t.name === 'host_probe')
     expect(tool).toBeDefined()
 
-    const execResult = await tool!.execute({})
+    const execResult = await tool!.execute({}, stubCtx)
     const output = JSON.parse(
       (execResult as { content: Array<{ text: string }> }).content[0]!.text,
     )
@@ -116,7 +121,7 @@ describe('Plugin sandbox bypass invariant', () => {
 
     expect(result.plugins).toHaveLength(1)
     const tool = result.plugins[0]!.tools[0]!
-    const execResult = await tool.execute({})
+    const execResult = await tool.execute({}, stubCtx)
     const output = JSON.parse(
       (execResult as { content: Array<{ text: string }> }).content[0]!.text,
     )
@@ -160,7 +165,7 @@ describe('Plugin sandbox bypass invariant', () => {
 
   it('plugin tool has full host access — not sandboxed', async () => {
     const tool = hostProcessTool()
-    const execResult = await tool.execute({})
+    const execResult = await tool.execute({}, stubCtx)
     const output = JSON.parse(
       (execResult as { content: Array<{ text: string }> }).content[0]!.text,
     )

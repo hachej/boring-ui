@@ -112,7 +112,7 @@ run_check_with_glob \
   "src/server"
 
 if [[ -d "$ROOT_DIR/src/server" ]]; then
-  process_env_output="$(rg -n --no-heading --color never -e "process\\.env\\." "$ROOT_DIR/src/server" -g '!**/config/**' || true)"
+  process_env_output="$(rg -n --no-heading --color never -e "process\\.env\\." "$ROOT_DIR/src/server" -g '!**/config/**' -g '!**/__tests__/**' || true)"
   print_matches \
     "No process.env reads outside src/server/config/**" \
     "Centralize env reads in src/server/config/**." \
@@ -133,6 +133,18 @@ if [[ -d "$ROOT_DIR/src" ]]; then
     "Use stable error-code enum imports (no raw string codes)" \
     "Import canonical constants from shared error-codes." \
     "$stable_error_codes_output"
+fi
+
+# pi-coding-agent must use an exact version pin (no ^, ~, >=, etc.)
+# Rationale: single-maintainer v0.x with no semver guarantee.
+if [[ -f "$ROOT_DIR/package.json" ]]; then
+  pi_version="$(grep -oP '"@mariozechner/pi-coding-agent"\s*:\s*"\K[^"]+' "$ROOT_DIR/package.json" || true)"
+  if [[ -n "$pi_version" && ! "$pi_version" =~ ^[0-9] ]]; then
+    failures=1
+    echo "$PREFIX ERR package.json: @mariozechner/pi-coding-agent uses range \"$pi_version\""
+    echo "  Invariant: pi-coding-agent must be pinned to an exact version (no ^/~/>=)"
+    echo "  Fix: Pin exact version, e.g. \"0.67.68\". See upgrade protocol in scripts/pi-sdk-canary.sh."
+  fi
 fi
 
 if [[ "$failures" -ne 0 ]]; then

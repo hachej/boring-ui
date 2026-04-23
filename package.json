@@ -38,6 +38,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "@mariozechner/pi-coding-agent": "0.67.68"
+    }
   }
 }

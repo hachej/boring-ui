@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@mariozechner/pi-coding-agent': 0.67.68
+
 importers:
 
   .:
@@ -82,7 +85,7 @@ importers:
         specifier: ^3.0.170
         version: 3.0.170(react@19.2.5)(zod@3.25.76)
       '@mariozechner/pi-coding-agent':
-        specifier: ^0.67.6
+        specifier: 0.67.68
         version: 0.67.68(ws@8.20.0)(zod@3.25.76)
       '@radix-ui/react-collapsible':
         specifier: ^1.1.12
