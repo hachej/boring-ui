@@ -2,6 +2,17 @@ export { cn } from "./lib/utils"
 export * from "./registry"
 export * from "./dock"
 export * from "./components/ui"
+export {
+  WorkspaceProvider,
+  useTheme,
+  useWorkspaceBridge,
+  useDataProvider,
+} from "./WorkspaceProvider"
+export type {
+  WorkspaceProviderProps,
+  WorkspaceBridgeContextValue,
+  DataProviderContextValue,
+} from "./WorkspaceProvider"
 export { createWorkspaceStore } from "./store"
 export type { CreateWorkspaceStoreOptions } from "./store"
 export {

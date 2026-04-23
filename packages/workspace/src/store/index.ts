@@ -50,16 +50,22 @@ function restorePreferences(key: string): { theme: "light" | "dark" } {
 
 export interface CreateWorkspaceStoreOptions {
   workspaceId?: string
+  storageKey?: string
+  persistenceEnabled?: boolean
   onLayoutVersionMismatch?: () => void
 }
 
 export function createWorkspaceStore(options: CreateWorkspaceStoreOptions = {}) {
-  const layoutKey = options.workspaceId
-    ? `boring-ui-v2:layout:${options.workspaceId}`
-    : "boring-ui-v2:layout"
+  const layoutKey = options.storageKey
+    ?? (options.workspaceId
+      ? `boring-ui-v2:layout:${options.workspaceId}`
+      : "boring-ui-v2:layout")
   const preferencesKey = "boring-ui-v2:preferences"
 
-  const restoredPreferences = restorePreferences(preferencesKey)
+  const noPersist = options.persistenceEnabled === false
+  const restoredPreferences = noPersist
+    ? { theme: "light" as const }
+    : restorePreferences(preferencesKey)
 
   const store = create<WorkspaceStore>()(
     persist(
@@ -86,10 +92,12 @@ export function createWorkspaceStore(options: CreateWorkspaceStoreOptions = {}) 
           set({ panelSizes: { ...get().panelSizes, [panelId]: size } }),
         setTheme: (theme) => {
           set({ preferences: { theme } })
-          safeSetItem(
-            preferencesKey,
-            JSON.stringify({ state: { theme }, version: 0 })
-          )
+          if (!noPersist) {
+            safeSetItem(
+              preferencesKey,
+              JSON.stringify({ state: { theme }, version: 0 })
+            )
+          }
         },
 
         openPanel: (panel) =>
@@ -155,50 +163,52 @@ export function createWorkspaceStore(options: CreateWorkspaceStoreOptions = {}) 
         onRehydrateStorage: () => (state) => {
           state?.setHydrationComplete(true)
         },
-        storage: {
-          getItem: (name) => {
-            try {
-              const raw = localStorage.getItem(name)
-              if (!raw) return null
-              const parsed = JSON.parse(raw)
+        storage: noPersist
+          ? { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+          : {
+              getItem: (name) => {
+                try {
+                  const raw = localStorage.getItem(name)
+                  if (!raw) return null
+                  const parsed = JSON.parse(raw)
 
-              if (parsed?.version !== undefined) {
-                const storedVersion = String(parsed.version)
-                if (storedVersion !== LAYOUT_VERSION) {
-                  if (options.onLayoutVersionMismatch) {
-                    options.onLayoutVersionMismatch()
-                  } else {
-                    localStorage.removeItem(name)
+                  if (parsed?.version !== undefined) {
+                    const storedVersion = String(parsed.version)
+                    if (storedVersion !== LAYOUT_VERSION) {
+                      if (options.onLayoutVersionMismatch) {
+                        options.onLayoutVersionMismatch()
+                      } else {
+                        localStorage.removeItem(name)
+                      }
+                      return null
+                    }
                   }
+
+                  const validated = validateLayoutPartition(parsed?.state)
+                  if (!validated) {
+                    console.error("Layout restored with defaults")
+                    return null
+                  }
+                  return { ...parsed, state: validated }
+                } catch {
+                  console.error("Layout restored with defaults")
                   return null
                 }
-              }
-
-              const validated = validateLayoutPartition(parsed?.state)
-              if (!validated) {
-                console.error("Layout restored with defaults")
-                return null
-              }
-              return { ...parsed, state: validated }
-            } catch {
-              console.error("Layout restored with defaults")
-              return null
-            }
-          },
-          setItem: (name, value) => {
-            const envelope = { ...value, version: LAYOUT_VERSION }
-            const serialized = JSON.stringify(envelope)
-            if (serialized.length > SIZE_WARN_THRESHOLD) {
-              console.warn(
-                `Workspace state serialized to ${serialized.length} bytes (budget: <${SIZE_WARN_THRESHOLD})`
-              )
-            }
-            safeSetItem(name, serialized)
-          },
-          removeItem: (name) => {
-            localStorage.removeItem(name)
-          },
-        },
+              },
+              setItem: (name, value) => {
+                const envelope = { ...value, version: LAYOUT_VERSION }
+                const serialized = JSON.stringify(envelope)
+                if (serialized.length > SIZE_WARN_THRESHOLD) {
+                  console.warn(
+                    `Workspace state serialized to ${serialized.length} bytes (budget: <${SIZE_WARN_THRESHOLD})`
+                  )
+                }
+                safeSetItem(name, serialized)
+              },
+              removeItem: (name) => {
+                localStorage.removeItem(name)
+              },
+            },
       }
     )
   )
