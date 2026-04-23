@@ -47,4 +47,26 @@ describe('mergeTools', () => {
       '[catalog] Tool "bash" overridden by plugin shell-override',
     )
   })
+
+  it('uses later plugin when two plugins register the same tool name', () => {
+    const pluginFirst = makeTool('dup_tool', 'first plugin impl')
+    const pluginSecond = makeTool('dup_tool', 'second plugin impl')
+    const warn = vi.fn()
+
+    const tools = mergeTools({
+      standardTools: [makeTool('bash')],
+      pluginTools: [
+        { pluginName: 'plugin-a', tools: [pluginFirst] },
+        { pluginName: 'plugin-b', tools: [pluginSecond] },
+      ],
+      logger: { warn },
+    })
+
+    const dupTools = tools.filter((tool) => tool.name === 'dup_tool')
+    expect(dupTools).toHaveLength(1)
+    expect(dupTools[0]).toBe(pluginSecond)
+    expect(warn).toHaveBeenCalledWith(
+      '[catalog] Tool "dup_tool" overridden by plugin plugin-b',
+    )
+  })
 })

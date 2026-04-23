@@ -50,6 +50,17 @@ replaces the earlier one and a warning is logged:
 
 `[catalog] Tool "bash" overridden by plugin <name>`
 
+### Plugin vs Plugin collisions
+
+If two plugins register the same tool name:
+
+- the later plugin registration wins
+- a warning is logged for the override
+- startup does **not** fail; no hard error is thrown
+
+The rule is implemented in `mergeTools` and is applied uniformly whether the
+previous tool came from built-ins, `extraTools`, or another plugin.
+
 ## Discovery Sources (direct/local)
 
 In `direct` and `local` mode, plugin discovery can load tools from:
