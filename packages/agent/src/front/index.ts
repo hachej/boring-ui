@@ -12,3 +12,12 @@ export {
   type ToolRenderer,
   type ToolRendererOverrides,
 } from './toolRenderers'
+export {
+  builtinCommands,
+  createCommandRegistry,
+  parseSlashCommand,
+  type CommandRegistry,
+  type ParsedCommand,
+  type SlashCommand,
+  type SlashCommandContext,
+} from './slashCommands'

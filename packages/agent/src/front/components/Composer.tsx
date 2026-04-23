@@ -96,6 +96,15 @@ export function Composer(props: ComposerProps) {
     storageImpl?.setItem(STORAGE_THINKING_KEY, thinkingLevel)
   }, [thinkingLevel, storageImpl])
 
+  useEffect(() => {
+    const onModelChange = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail
+      if (isModelId(detail)) setModel(detail)
+    }
+    globalThis.addEventListener?.('boring:model-change', onModelChange)
+    return () => globalThis.removeEventListener?.('boring:model-change', onModelChange)
+  }, [])
+
   async function submitMessage(): Promise<void> {
     const message = input.trim()
     if (!message || isStreaming) return

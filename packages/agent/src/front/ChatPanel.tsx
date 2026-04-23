@@ -1,8 +1,13 @@
 import type { UIMessage } from 'ai'
 import { isToolUIPart, getToolName } from 'ai'
+import { useMemo } from 'react'
 import type { UiBridge } from '../shared/ui-bridge'
 import { Composer, type ComposerSendInput } from './components/Composer'
+import { isModelId } from './components/ModelPicker'
 import { useAgentChat } from './hooks/useAgentChat'
+import { builtinCommands } from './slashCommands/builtins'
+import { parseSlashCommand } from './slashCommands/parser'
+import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
 import {
   mergeToolRenderers,
   resolveToolRenderer,
@@ -14,6 +19,8 @@ export interface ChatPanelProps {
   sessionId: string
   bridge?: UiBridge
   toolRenderers?: ToolRendererOverrides
+  extraCommands?: SlashCommand[]
+  onSessionReset?: () => void | Promise<void>
 }
 
 function isTextPart(part: UIMessage['parts'][number]): part is Extract<UIMessage['parts'][number], { type: 'text' }> {
@@ -32,13 +39,54 @@ function getToolParts(message: UIMessage): Array<UIMessage['parts'][number]> {
 }
 
 export function ChatPanel(props: ChatPanelProps) {
-  const { sessionId, toolRenderers } = props
-  const { messages, sendMessage, status, error } = useAgentChat({ sessionId })
+  const { sessionId, toolRenderers, extraCommands, onSessionReset } = props
+  const { messages, sendMessage, setMessages, status, error } = useAgentChat({ sessionId })
   const mergedToolRenderers = mergeToolRenderers(toolRenderers)
+
+  const registry = useMemo(
+    () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
+    [extraCommands],
+  )
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
   async function handleSend(input: ComposerSendInput): Promise<void> {
+    const parsed = parseSlashCommand(input.message)
+    if (parsed) {
+      const cmd = registry.get(parsed.name)
+      if (cmd) {
+        const ctx: SlashCommandContext = {
+          sessionId,
+          clearMessages: () => setMessages([]),
+          resetSession: () => {
+            setMessages([])
+            fetch(`/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => {})
+            void onSessionReset?.()
+          },
+          setModel: (model) => {
+            if (!isModelId(model)) return false
+            try { globalThis.localStorage?.setItem('boring-agent:composer:model', model) } catch {}
+            globalThis.dispatchEvent?.(new CustomEvent('boring:model-change', { detail: model }))
+            return true
+          },
+          listCommands: () => registry.list(),
+        }
+        const result = cmd.handler(parsed.args, ctx)
+        if (typeof result === 'string') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: globalThis.crypto?.randomUUID?.() ?? String(Date.now()),
+              role: 'assistant' as const,
+              content: result,
+              parts: [{ type: 'text' as const, text: result }],
+            },
+          ])
+        }
+        return
+      }
+    }
+
     await sendMessage(
       { text: input.message },
       {

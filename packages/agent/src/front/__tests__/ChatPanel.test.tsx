@@ -5,6 +5,7 @@ import type { ToolPart } from '../toolRenderers'
 
 const mockUseAgentChat = vi.fn()
 const mockSendMessage = vi.fn()
+const mockSetMessages = vi.fn()
 let capturedComposerProps: ComposerProps | undefined
 
 vi.mock('../hooks/useAgentChat', () => ({
@@ -23,10 +24,12 @@ import { ChatPanel } from '../ChatPanel'
 beforeEach(() => {
   capturedComposerProps = undefined
   mockSendMessage.mockReset()
+  mockSetMessages.mockReset()
   mockUseAgentChat.mockReset()
   mockUseAgentChat.mockReturnValue({
     messages: [],
     sendMessage: mockSendMessage,
+    setMessages: mockSetMessages,
     status: 'ready',
     error: undefined,
   })
@@ -164,6 +167,7 @@ describe('ChatPanel', () => {
         },
       ],
       sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
       status: 'ready',
       error: undefined,
     })
@@ -180,5 +184,116 @@ describe('ChatPanel', () => {
     expect(html).toContain('aria-expanded="true"')
     expect(html).toContain('&quot;x&quot;')
     expect(html).toContain('&quot;y&quot;')
+  })
+
+  test('slash command is intercepted and does not send to AI', async () => {
+    renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
+
+    await capturedComposerProps!.onSend({
+      message: '/cost',
+      model: { provider: 'anthropic', id: 'sonnet' },
+      thinkingLevel: 'off',
+    })
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockSetMessages).toHaveBeenCalled()
+  })
+
+  test('slash command result message is appended via setMessages', async () => {
+    renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
+
+    await capturedComposerProps!.onSend({
+      message: '/cost',
+      model: { provider: 'anthropic', id: 'sonnet' },
+      thinkingLevel: 'off',
+    })
+
+    const updater = mockSetMessages.mock.calls[0][0]
+    expect(typeof updater).toBe('function')
+    const result = updater([])
+    expect(result).toHaveLength(1)
+    expect(result[0].role).toBe('assistant')
+    expect(result[0].content).toBe('Coming soon.')
+  })
+
+  test('unknown slash command falls through as regular message', async () => {
+    renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
+
+    await capturedComposerProps!.onSend({
+      message: '/unknown hello',
+      model: { provider: 'anthropic', id: 'sonnet' },
+      thinkingLevel: 'off',
+    })
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: '/unknown hello' },
+      {
+        body: {
+          sessionId: 'sess-cmd',
+          message: '/unknown hello',
+          model: { provider: 'anthropic', id: 'sonnet' },
+          thinkingLevel: 'off',
+        },
+      },
+    )
+  })
+
+  test('extraCommands are available as slash commands', async () => {
+    const customHandler = vi.fn().mockReturnValue('custom result')
+    renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-ext"
+        extraCommands={[
+          { name: 'greet', description: 'Say hello', handler: customHandler },
+        ]}
+      />,
+    )
+
+    await capturedComposerProps!.onSend({
+      message: '/greet world',
+      model: { provider: 'anthropic', id: 'sonnet' },
+      thinkingLevel: 'off',
+    })
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(customHandler).toHaveBeenCalledWith('world', expect.objectContaining({ sessionId: 'sess-ext' }))
+  })
+
+  test('/clear calls setMessages with empty array', async () => {
+    renderToStaticMarkup(<ChatPanel sessionId="sess-clear" />)
+
+    await capturedComposerProps!.onSend({
+      message: '/clear',
+      model: { provider: 'anthropic', id: 'sonnet' },
+      thinkingLevel: 'off',
+    })
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockSetMessages).toHaveBeenCalledWith([])
+  })
+
+  test('/reset deletes server session and calls onSessionReset', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', mockFetch)
+    const onSessionReset = vi.fn()
+
+    renderToStaticMarkup(
+      <ChatPanel sessionId="sess-reset" onSessionReset={onSessionReset} />,
+    )
+
+    await capturedComposerProps!.onSend({
+      message: '/reset',
+      model: { provider: 'anthropic', id: 'sonnet' },
+      thinkingLevel: 'off',
+    })
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockSetMessages).toHaveBeenCalledWith([])
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/agent/sessions/sess-reset',
+      { method: 'DELETE' },
+    )
+    expect(onSessionReset).toHaveBeenCalledOnce()
   })
 })
