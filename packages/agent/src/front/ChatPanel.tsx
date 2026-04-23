@@ -81,7 +81,7 @@ function renderTextWithCodeBlocks(text: string): ReactNode {
     const before = text.slice(lastIndex, match.index)
     if (before.length > 0) {
       chunks.push(
-        <div key={`text-${lastIndex}`} style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+        <div key={`text-${lastIndex}`} className="boring-chat__text">
           {before}
         </div>,
       )
@@ -102,7 +102,7 @@ function renderTextWithCodeBlocks(text: string): ReactNode {
   const trailing = text.slice(lastIndex)
   if (trailing.length > 0 || chunks.length === 0) {
     chunks.push(
-      <div key={`text-${lastIndex}-tail`} style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+      <div key={`text-${lastIndex}-tail`} className="boring-chat__text">
         {trailing}
       </div>,
     )
@@ -179,14 +179,12 @@ export function ChatPanel(props: ChatPanelProps) {
       className="chat-panel"
       role="region"
       aria-label="Agent assistant"
-      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
       <div
-        className="chat-panel__messages"
+        className="chat-panel__messages boring-chat__messages"
         role="log"
         aria-label="Agent conversation"
         aria-live="polite"
-        style={{ flex: 1, overflow: 'auto', paddingBottom: '0.5rem' }}
       >
         {messages.map((message) => {
           const textParts = message.parts.filter(isTextPart)
@@ -229,7 +227,7 @@ export function ChatPanel(props: ChatPanelProps) {
         {error ? (
           <Message role="assistant">
             <MessagePartContainer>
-              <div role="alert" style={{ color: 'var(--boring-chat-error, #ef4444)' }}>
+              <div role="alert" className="boring-chat__error">
                 {error.message}
               </div>
             </MessagePartContainer>

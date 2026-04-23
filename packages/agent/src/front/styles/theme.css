@@ -87,6 +87,27 @@
   font-size: var(--boring-chat-font-size);
 }
 
+[data-boring-chat].chat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+[data-boring-chat] .boring-chat__messages {
+  flex: 1;
+  overflow: auto;
+  padding-bottom: 0.5rem;
+}
+
+[data-boring-chat] .boring-chat__text {
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+[data-boring-chat] .boring-chat__error {
+  color: var(--boring-chat-error, #ef4444);
+}
+
 /* ── Animations ───────────────────────────────────────── */
 
 @keyframes boring-pulse {

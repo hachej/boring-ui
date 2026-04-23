@@ -3,11 +3,12 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, test, vi } from 'vitest'
 
-import { EXAMPLE_CSP_POLICY, applyCspHeaders } from '../../examples/csp'
+import { EXAMPLE_CSP_POLICY, applyCspHeaders } from '../server/http/csp'
 
 const agentRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 const auditedFiles = [
+  'src/front/ChatPanel.tsx',
   'src/front-shadcn/ChatPanel.tsx',
   'examples/with-custom-tool/client.tsx',
   'examples/with-shadcn/client.tsx',
