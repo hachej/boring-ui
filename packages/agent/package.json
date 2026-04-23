@@ -39,6 +39,7 @@
   "scripts": {
     "build": "tsup && cp src/front-shadcn/styles/globals.css dist/front-shadcn/styles.css && vite build && pnpm run build:assert",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
+    "bench:vercel-cold-start": "tsx ./scripts/bench-vercel-cold-start.ts",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
     "test:watch": "vitest",
