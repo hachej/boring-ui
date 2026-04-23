@@ -12,6 +12,8 @@ export { CodeEditor } from "./components/CodeEditor"
 export type { CodeEditorProps } from "./components/CodeEditor"
 export { FileTree } from "./components/FileTree"
 export type { FileTreeProps, FileTreeNode } from "./components/FileTree"
+export { MarkdownEditor } from "./components/MarkdownEditor"
+export type { MarkdownEditorProps } from "./components/MarkdownEditor"
 export {
   WorkspaceProvider,
   useTheme,
