@@ -45,11 +45,14 @@ function validateWorkspaceRoot(workspaceRoot: string): void {
   }
 }
 
-export function buildBwrapArgs(workspaceRoot: string): string[] {
+export interface BwrapArgsOptions {
+  extraArgs?: string[]
+}
+
+export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[] {
   validateWorkspaceRoot(workspaceRoot)
 
   const args: string[] = [
-    // Mount a fresh root first; everything else is layered onto this namespace.
     '--unshare-all',
     '--share-net',
     '--die-with-parent',
@@ -61,6 +64,10 @@ export function buildBwrapArgs(workspaceRoot: string): string[] {
 
   for (const dir of RO_BIND_DIRS) {
     args.push('--ro-bind', dir, dir)
+  }
+
+  if (options?.extraArgs) {
+    args.push(...options.extraArgs)
   }
 
   args.push(

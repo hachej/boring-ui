@@ -30,6 +30,7 @@ export const EnvSchema = z.object({
   BORING_AGENT_NO_OPEN: z.enum(["0", "1"]).optional(),
   BORING_AGENT_NO_GITIGNORE: z.enum(["0", "1"]).optional(),
   BORING_AGENT_SNAPSHOT_KEEP: z.coerce.number().int().nonnegative().optional(),
+  BORING_AGENT_PYTHON_PACKAGES: z.string().optional(),
   VERCEL_OIDC_TOKEN: z.string().optional(),
   VERCEL_TEAM_ID: z.string().optional(),
 })
