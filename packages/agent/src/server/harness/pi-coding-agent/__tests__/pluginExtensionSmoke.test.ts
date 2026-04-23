@@ -1,18 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtemp, mkdir, rm, copyFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, copyFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 
 const {
   mockCreateAgentSession,
   mockAbort,
   mockDispose,
-  capturedToolOutputs,
 } = vi.hoisted(() => ({
   mockCreateAgentSession: vi.fn(),
   mockAbort: vi.fn().mockResolvedValue(undefined),
   mockDispose: vi.fn(),
-  capturedToolOutputs: [] as string[],
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", async () => {
@@ -32,19 +31,21 @@ vi.mock("@mariozechner/pi-coding-agent", async () => {
   };
 });
 
-import { loadPlugins, flattenPluginTools } from "../pluginLoader.js";
+import { loadPlugins, flattenPluginTools, type ImportFn } from "../pluginLoader.js";
 import { createPiCodingAgentHarness } from "../createHarness.js";
 
 describe("Plugin extension smoke test", () => {
   let tempDir: string;
+  const importFromFileUrl: ImportFn = async (url: string) => {
+    const source = await readFile(fileURLToPath(url), "utf-8");
+    const encoded = Buffer.from(source, "utf-8").toString("base64");
+    return import(`data:text/javascript;base64,${encoded}`) as Promise<Record<string, unknown>>;
+  };
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    capturedToolOutputs.length = 0;
 
-    tempDir = await mkdtemp(
-      join(process.cwd(), ".vitest-plugin-extension-smoke-"),
-    );
+    tempDir = await mkdtemp(join(tmpdir(), "plugin-extension-smoke-"));
     const extDir = join(tempDir, ".pi", "extensions");
     await mkdir(extDir, { recursive: true });
 
@@ -66,21 +67,6 @@ describe("Plugin extension smoke test", () => {
             };
           },
           prompt: async () => {
-            const helloTool = opts.customTools.find(
-              (tool: { name: string }) => tool.name === "hello_world",
-            );
-            if (helloTool) {
-              const toolResult = await helloTool.execute(
-                "tool-call-1",
-                { name: "Ada" },
-                new AbortController().signal,
-                undefined,
-                {},
-              );
-              const text = toolResult?.content?.[0]?.text;
-              capturedToolOutputs.push(typeof text === "string" ? text : "");
-            }
-
             for (const emit of subscribers) {
               emit({ type: "message_start" });
               emit({
@@ -117,6 +103,7 @@ describe("Plugin extension smoke test", () => {
     const pluginResult = await loadPlugins({
       cwd: tempDir,
       skipGlobal: true,
+      importFn: importFromFileUrl,
     });
 
     expect(pluginResult.errors).toEqual([]);
@@ -139,12 +126,44 @@ describe("Plugin extension smoke test", () => {
       chunks.push(chunk);
     }
 
-    expect(chunks.length).toBeGreaterThan(0);
+    const chunkTypes = chunks
+      .filter(
+        (chunk): chunk is { type: string } =>
+          typeof chunk === "object" && chunk !== null && "type" in chunk,
+      )
+      .map((chunk) => chunk.type);
+    expect(chunkTypes).toContain("message-start");
+    expect(chunkTypes).toContain("finish");
+
     expect(mockCreateAgentSession).toHaveBeenCalledTimes(1);
     const createArgs = mockCreateAgentSession.mock.calls[0]?.[0] as {
-      customTools?: Array<{ name: string }>;
+      customTools?: Array<{
+        name: string;
+        execute: (
+          toolCallId: string,
+          params: Record<string, unknown>,
+          signal?: AbortSignal,
+          onUpdate?: ((partial: string) => void) | undefined,
+          ctx?: unknown,
+        ) => Promise<{ content: Array<{ type: string; text: string }> }>;
+      }>;
     };
-    expect(createArgs.customTools?.map((tool) => tool.name)).toContain("hello_world");
-    expect(capturedToolOutputs).toContain("Hello, Ada! (from synthetic extension)");
+    expect(createArgs.customTools?.map((tool) => tool.name)).toContain(
+      "hello_world",
+    );
+    const helloTool = createArgs.customTools?.find(
+      (tool) => tool.name === "hello_world",
+    );
+    expect(helloTool).toBeDefined();
+    const toolResult = await helloTool!.execute(
+      "tool-call-1",
+      { name: "Ada" },
+      new AbortController().signal,
+      undefined,
+      {},
+    );
+    expect(toolResult.content[0]?.text).toBe(
+      "Hello, Ada! (from synthetic extension)",
+    );
   });
 });
