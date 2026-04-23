@@ -15,10 +15,9 @@ type VercelSandboxStatus =
   | 'stopping'
 
 export interface ResolveSandboxCreateParams {
-  source?: {
-    type: 'snapshot'
-    snapshotId: string
-  }
+  source?:
+    | { type: 'snapshot'; snapshotId: string }
+    | { type: 'tarball'; url: string }
 }
 
 export interface VercelSandboxClient {
@@ -108,29 +107,39 @@ async function persistAndCache(
   return sandbox
 }
 
-async function createFromSnapshot(
+async function createFresh(
   workspaceId: string,
   snapshotId: string | undefined,
+  tarballUrl: string | undefined,
   previous: SandboxHandleRecord | null,
   store: SandboxHandleStore,
   vercel: VercelSandboxClient,
 ): Promise<VercelSandbox> {
-  const sandbox = snapshotId
-    ? await vercel.create({
-      source: {
-        type: 'snapshot',
-        snapshotId,
-      },
+  let sandbox: VercelSandbox
+  if (snapshotId) {
+    sandbox = await vercel.create({
+      source: { type: 'snapshot', snapshotId },
     })
-    : await vercel.create()
+  } else if (tarballUrl) {
+    sandbox = await vercel.create({
+      source: { type: 'tarball', url: tarballUrl },
+    })
+  } else {
+    sandbox = await vercel.create()
+  }
 
   return await persistAndCache(workspaceId, sandbox, previous, store)
+}
+
+export interface ResolveSandboxHandleOptions {
+  tarballUrl?: string
 }
 
 export async function resolveSandboxHandle(
   workspaceId: string,
   store: SandboxHandleStore,
   vercel: VercelSandboxClient,
+  opts?: ResolveSandboxHandleOptions,
 ): Promise<VercelSandbox> {
   const workspaceKey = workspaceId.trim()
   if (workspaceKey.length === 0) {
@@ -166,9 +175,10 @@ export async function resolveSandboxHandle(
       }
     }
 
-    return await createFromSnapshot(
+    return await createFresh(
       workspaceKey,
       persisted?.snapshotId,
+      opts?.tarballUrl,
       persisted,
       store,
       vercel,

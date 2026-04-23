@@ -5,6 +5,11 @@ import { getEnv } from '../../config/env'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
 import { FileHandleStore } from '../../sandbox/vercel-sandbox/FileHandleStore'
 import {
+  collectFiles,
+  packageTemplate,
+  type PackageTemplateOptions,
+} from '../../sandbox/vercel-sandbox/packageTemplate'
+import {
   type VercelSandboxClient,
   resolveSandboxHandle,
 } from '../../sandbox/vercel-sandbox/resolveSandboxHandle'
@@ -23,13 +28,19 @@ export interface VercelSandboxModeAdapterOptions {
   vercelClient?: VercelSandboxClient
   getEnvVar?: EnvGetter
   logger?: ModeLogger
+  packageTemplateOpts?: PackageTemplateOptions
 }
 
 const DEFAULT_VERCEL_CLIENT: VercelSandboxClient = {
   async create(params) {
-    if (params?.source) {
+    if (params?.source?.type === 'snapshot') {
       return await VercelSandbox.create({
-        source: params.source,
+        source: { type: 'snapshot', snapshotId: params.source.snapshotId },
+      })
+    }
+    if (params?.source?.type === 'tarball') {
+      return await VercelSandbox.create({
+        source: { type: 'tarball', url: params.source.url },
       })
     }
     return await VercelSandbox.create()
@@ -68,19 +79,52 @@ export function createVercelSandboxModeAdapter(
       requireEnvVar('VERCEL_TEAM_ID', getEnvVar)
 
       const workspaceId = ctx.workspaceRoot
+      let tarballUrl: string | undefined
+
+      if (ctx.templatePath) {
+        try {
+          const result = await packageTemplate(ctx.templatePath, opts.packageTemplateOpts)
+          tarballUrl = result.url
+          logger.info('[vercel-sandbox:mode] template packaged', {
+            hash: result.hash,
+            url: result.url,
+          })
+        } catch (error) {
+          logger.info('[vercel-sandbox:mode] template packaging failed, will use writeFiles fallback', {
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+
       const sandboxHandle = await resolveSandboxHandle(
         workspaceId,
         store,
         vercelClient,
+        { tarballUrl },
       )
 
       logger.info('[vercel-sandbox:mode] resolved sandbox handle', {
         workspaceId,
         sandboxId: sandboxHandle.sandboxId,
         snapshotId: sandboxHandle.sourceSnapshotId ?? null,
+        tarballUrl: tarballUrl ?? null,
       })
 
       const workspace = createVercelSandboxWorkspace(sandboxHandle)
+
+      if (ctx.templatePath && !tarballUrl) {
+        logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {
+          templatePath: ctx.templatePath,
+        })
+        const files = await collectFiles(ctx.templatePath)
+        for (const file of files) {
+          await workspace.writeFile(file.rel, file.content.toString('utf-8'))
+        }
+        logger.info('[vercel-sandbox:mode] writeFiles fallback complete', {
+          fileCount: files.length,
+        })
+      }
+
       const sandbox = createVercelSandboxExec(sandboxHandle)
       await sandbox.init({ workspace, sessionId: ctx.sessionId })
 
