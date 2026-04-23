@@ -44,12 +44,11 @@ Design implication today: every interface that might need DB-backing in the futu
 **Build principles — apply these to every bead:**
 
 - **Composable** — every user-facing feature ships as a trio: default component + primitives + headless hook. Consumers pick the level they want; we never force a layout or a shell.
-- **Modular + short** — small interfaces, single-responsibility files, load-bearing seams (Harness / Catalog / Workspace / Sandbox / SessionStore / UiBridge). ~2,500 LOC total for agent v1 — if a bead's estimate balloons, split it.
+- **Modular + short** — small interfaces, single-responsibility files, load-bearing seams (Harness / Catalog / Workspace / Sandbox / SessionStore / UiBridge). 
 - **Easy to maintain** — platform-agnostic shared contracts (`Uint8Array` not `Buffer`, no `node:*` in `src/shared/**`). Adapters own platform specifics. Swapping an adapter = swap one file.
 - **Ship fast, accept known risk** — if a risk is enumerated in the spec's Risks section, we don't pre-engineer mitigations. We add them reactively when a user hits them.
 - **Port over re-research** — the old boring-ui has battle-hardened path validators, bwrap flags, fileRoutes. Port verbatim where possible.
 
-**Current state: pre-M0.** Specs are locked; interface + implementation beads are queued in `.beads/` under label `agent-v1`. Most `packages/` subdirs are empty shells awaiting M0 scaffold work.
 
 ### Target stack (per spec — not yet installed)
 
@@ -60,23 +59,6 @@ Design implication today: every interface that might need DB-backing in the futu
 - Package mgmt: pnpm workspace.
 
 ## Repo Layout
-
-```
-boring-ui-v2/
-├── AGENTS.md                         (this file)
-├── .beads/                           (br issue tracking — agent-v1 label = this project)
-├── packages/
-│   ├── agent/
-│   │   ├── package.json              (exists; minimal shell)
-│   │   ├── tsconfig.json             (exists)
-│   │   ├── docs/plans/
-│   │   │   └── agent-package-spec.md (LOCKED design — ~1,700 lines)
-│   │   └── src/                      (empty — M0 scaffolds shared/ + server/ + front/)
-│   └── workspace/
-│       ├── docs/plans/
-│       │   └── WORKSPACE_V2_PLAN.md  (LOCKED design)
-│       └── src/                      (empty — v2 workspace package; not in agent v1 scope)
-```
 
 No `apps/`, no `src/` at repo root, no CLI Go tool (`bui` is a v1 concept). Everything lives inside `packages/`.
 
@@ -116,7 +98,55 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 
 1. `br show <bead-id>` — goal, spec-level signatures, file paths, reference-file pointers, acceptance criteria.
 2. Each bead is **self-contained** — you should not need to re-read the spec to implement.
-3. Update status: `br update <id> -s in_progress` when claiming; `-s closed` when acceptance criteria are met + tests pass + code reviewed.
+3. Update status: `br update <id> -s in_progress` when claiming.
+4. Implement — write code + tests; run lint/type-check/tests locally.
+5. **Cross-review (mandatory before closing)** — see below.
+6. Address review feedback; re-run tests.
+7. Commit atomically per bead (see Commit style).
+8. Close bead: `br update <id> -s closed`; include the review verdict in the close reason.
+
+## Cross-review before closing
+
+Every bead goes through one cross-review pass by an agent of the **opposite kind** before being closed. Claude Code reviews ask Codex; Codex reviews ask Claude Code. This catches model-specific blind spots (each model has different failure modes) and prevents a single-agent rubber-stamp.
+
+**When:** after implementation is complete, tests pass, and you're ready to commit. Not before — don't waste a reviewer on WIP.
+
+**How (as a Claude Code agent → ask `cod`):**
+
+```bash
+# From the repo root, with changes staged but NOT yet committed:
+git diff --staged > /tmp/review-<bead-id>.diff
+cod exec "Review this change for bead <bead-id>. Bead context follows, then the diff.
+
+$(br show <bead-id>)
+
+$(cat /tmp/review-<bead-id>.diff)
+
+Check: does the diff actually satisfy the acceptance criteria? Bugs, regressions, unsafe assumptions, missing edge cases, missing tests? Tests pass locally but do they cover the risk surface? Report: verdict (ship / revise / reject) + concrete issues with file:line pointers."
+```
+
+**How (as a Codex agent → ask `cc`):**
+
+```bash
+git diff --staged > /tmp/review-<bead-id>.diff
+cc -p "Review this change for bead <bead-id>. Bead context:
+
+$(br show <bead-id>)
+
+Diff:
+
+$(cat /tmp/review-<bead-id>.diff)
+
+Verdict: ship / revise / reject. List concrete issues with file:line pointers."
+```
+
+**Review loop rules:**
+
+- If verdict is **ship**: proceed to commit + close.
+- If verdict is **revise**: fix the flagged issues, re-run tests, then re-request review. Cap at 3 review rounds — after that, escalate via agent-mail to the operator.
+- If verdict is **reject**: likely a misaligned bead or spec drift. Stop coding. Post to agent-mail, document in bead comments, unclaim with `br update <id> -s blocked`.
+- **Never self-review for closure.** Self-review catches typos; cross-review catches thinking errors. Both are required.
+- Include the reviewer's agent name + a 1-line verdict summary in the close reason: `br close <id> --reason "shipped — reviewed by FrostyBarn (cod): ship"`.
 
 ## Commit style
 
