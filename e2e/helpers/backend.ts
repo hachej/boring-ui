@@ -29,6 +29,8 @@ export interface SpawnBackendOptions {
   repoRoot: string
   port?: number
   timeoutMs?: number
+  mode?: 'direct' | 'local' | 'vercel-sandbox'
+  env?: Record<string, string>
 }
 
 interface LineCollector {
@@ -210,7 +212,7 @@ export async function spawnBackend(
       '--no-open',
       '--no-gitignore',
       '--mode',
-      'direct',
+      options.mode ?? 'direct',
       '--port',
       String(port),
       '--workspace',
@@ -221,6 +223,7 @@ export async function spawnBackend(
       env: {
         ...process.env,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? 'e2e-test-key',
+        ...options.env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     },
