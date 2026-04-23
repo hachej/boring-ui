@@ -22,6 +22,7 @@ interface ModeLogger {
 }
 
 type EnvGetter = (name: string) => string | undefined
+const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
 
 export interface VercelSandboxModeAdapterOptions {
   store?: SandboxHandleStore
@@ -100,7 +101,11 @@ export function createVercelSandboxModeAdapter(
         workspaceId,
         store,
         vercelClient,
-        { tarballUrl },
+        {
+          tarballUrl,
+          logger,
+          maxIdleMs: ORPHAN_GUARD_MAX_IDLE_MS,
+        },
       )
 
       logger.info('[vercel-sandbox:mode] resolved sandbox handle', {

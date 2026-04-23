@@ -13,6 +13,7 @@ import {
 
 type MutableSandbox = VercelSandbox & {
   setStatus(next: 'running' | 'stopped' | 'failed' | 'aborted'): void
+  stop(opts?: { signal?: AbortSignal; blocking?: boolean }): Promise<unknown>
 }
 
 function createSandboxHandle(
@@ -23,10 +24,12 @@ function createSandboxHandle(
   } = {},
 ): MutableSandbox {
   let status = opts.status ?? 'running'
+  const stop = vi.fn(async () => ({}))
 
   const sandbox = {
     sandboxId,
     sourceSnapshotId: opts.sourceSnapshotId,
+    stop,
     get status() {
       return status
     },
@@ -127,6 +130,31 @@ test('first call creates sandbox and persists handle record', async () => {
   expect(Number.isNaN(Date.parse(store.puts[0].lastUsedAt))).toBe(false)
 })
 
+test('create emits sandbox lifecycle log with cost annotation', async () => {
+  const store = createStore()
+  const created = createSandboxHandle('sb-created-log')
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => created),
+    get: vi.fn(),
+  }
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+  }
+
+  await resolveSandboxHandle('workspace-created-log', store, client, { logger })
+
+  expect(logger.info).toHaveBeenCalledWith(
+    '[sandbox] created',
+    expect.objectContaining({
+      workspaceId: 'workspace-created-log',
+      sandboxId: 'sb-created-log',
+      sourceType: 'empty',
+      estimatedAbandonedSessionCostUsd: 0.1,
+    }),
+  )
+})
+
 test('second call hits in-process cache without API calls', async () => {
   const store = createStore()
   const created = createSandboxHandle('sb-cache')
@@ -159,6 +187,70 @@ test('workspace ids are normalized before cache/store lookup', async () => {
   expect(client.create).toHaveBeenCalledTimes(1)
   expect(store.puts).toHaveLength(1)
   expect(store.puts[0].workspaceId).toBe('workspace-normalized')
+})
+
+test('stale persisted sandbox is stopped by orphan guard and recreated from snapshot', async () => {
+  const oldRecord: SandboxHandleRecord = {
+    workspaceId: 'workspace-orphan-guard',
+    sandboxId: 'sb-orphan-old',
+    snapshotId: 'snap-orphan',
+    createdAt: '2026-04-23T00:00:00.000Z',
+    lastUsedAt: '2026-04-23T00:00:00.000Z',
+  }
+  const store = createStore([oldRecord])
+  const stale = createSandboxHandle('sb-orphan-old', {
+    status: 'running',
+    sourceSnapshotId: 'snap-orphan',
+  })
+  const recreated = createSandboxHandle('sb-orphan-new', {
+    status: 'running',
+    sourceSnapshotId: 'snap-orphan',
+  })
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => recreated),
+    get: vi.fn(async () => stale),
+  }
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+  }
+
+  const resolved = await resolveSandboxHandle(
+    'workspace-orphan-guard',
+    store,
+    client,
+    {
+      maxIdleMs: 5 * 60 * 1000,
+      now: () => Date.parse('2026-04-23T01:00:00.000Z'),
+      logger,
+    },
+  )
+
+  expect(resolved).toBe(recreated)
+  expect(stale.stop).toHaveBeenCalledTimes(1)
+  expect(client.create).toHaveBeenCalledWith({
+    source: {
+      type: 'snapshot',
+      snapshotId: 'snap-orphan',
+    },
+  })
+  expect(logger.warn).toHaveBeenCalledWith(
+    '[sandbox] orphan-guard stale sandbox detected',
+    expect.objectContaining({
+      workspaceId: 'workspace-orphan-guard',
+      sandboxId: 'sb-orphan-old',
+      maxIdleMs: 5 * 60 * 1000,
+    }),
+  )
+  expect(logger.info).toHaveBeenCalledWith(
+    '[sandbox] stopped',
+    expect.objectContaining({
+      workspaceId: 'workspace-orphan-guard',
+      sandboxId: 'sb-orphan-old',
+      reason: 'orphan-guard-idle',
+      estimatedAbandonedSessionCostUsd: 0.1,
+    }),
+  )
 })
 
 test('concurrent requests use a single in-flight resolution', async () => {

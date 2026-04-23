@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
 import { createMockVercelSandboxHarness } from './helpers/mockVercelSandbox'
@@ -38,6 +38,75 @@ test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
         content: new Uint8Array(Buffer.from('snowman ☃', 'utf-8')),
       },
     ])
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('reuses stat/readdir cache entries inside ttl and refreshes after expiry', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const statSpy = vi.spyOn(harness.sandbox.fs, 'stat')
+  const readdirSpy = vi.spyOn(harness.sandbox.fs, 'readdir')
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+  const nowSpy = vi.spyOn(Date, 'now')
+
+  try {
+    nowSpy.mockReturnValue(0)
+    await workspace.mkdir('cache', { recursive: true })
+    await workspace.writeFile('cache/a.txt', 'a')
+
+    await workspace.stat('cache/a.txt')
+    await workspace.stat('cache/a.txt')
+    expect(statSpy).toHaveBeenCalledTimes(1)
+
+    await workspace.readdir('cache')
+    await workspace.readdir('cache')
+    expect(readdirSpy).toHaveBeenCalledTimes(1)
+
+    nowSpy.mockReturnValue(15_001)
+    await workspace.stat('cache/a.txt')
+    await workspace.readdir('cache')
+    expect(statSpy).toHaveBeenCalledTimes(2)
+    expect(readdirSpy).toHaveBeenCalledTimes(2)
+  } finally {
+    nowSpy.mockRestore()
+    await harness.cleanup()
+  }
+})
+
+test('invalidates metadata cache after write/unlink/mkdir/rename', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const statSpy = vi.spyOn(harness.sandbox.fs, 'stat')
+  const readdirSpy = vi.spyOn(harness.sandbox.fs, 'readdir')
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.mkdir('cache', { recursive: true })
+    await workspace.writeFile('cache/a.txt', 'a')
+
+    await workspace.stat('cache/a.txt')
+    await workspace.stat('cache/a.txt')
+    expect(statSpy).toHaveBeenCalledTimes(1)
+
+    await workspace.writeFile('cache/a.txt', 'b')
+    await workspace.stat('cache/a.txt')
+    expect(statSpy).toHaveBeenCalledTimes(2)
+
+    await workspace.readdir('cache')
+    await workspace.readdir('cache')
+    expect(readdirSpy).toHaveBeenCalledTimes(1)
+
+    await workspace.mkdir('cache/nested', { recursive: true })
+    await workspace.readdir('cache')
+    expect(readdirSpy).toHaveBeenCalledTimes(2)
+
+    await workspace.rename('cache/a.txt', 'cache/b.txt')
+    await workspace.stat('cache/b.txt')
+    expect(statSpy).toHaveBeenCalledTimes(3)
+
+    await workspace.unlink('cache/b.txt')
+    await expect(workspace.stat('cache/b.txt')).rejects.toThrow()
+    expect(statSpy).toHaveBeenCalledTimes(4)
   } finally {
     await harness.cleanup()
   }

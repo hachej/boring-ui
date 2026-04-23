@@ -25,6 +25,11 @@ export interface VercelSandboxClient {
   get(params: { sandboxId: string }): Promise<VercelSandbox>
 }
 
+interface SandboxLifecycleLogger {
+  info?(message: string, metadata: Record<string, unknown>): void
+  warn?(message: string, metadata: Record<string, unknown>): void
+}
+
 // Process-local cache keyed by workspace id. In multi-process deployments each
 // worker maintains its own cache and converges via SandboxHandleStore.
 const sandboxesByWorkspaceId = new Map<string, VercelSandbox>()
@@ -34,6 +39,7 @@ const EXPIRED_STATUSES: ReadonlySet<VercelSandboxStatus> = new Set([
   'failed',
   'stopped',
 ])
+const ESTIMATED_ABANDONED_SESSION_COST_USD = 0.10
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -107,6 +113,69 @@ async function persistAndCache(
   return sandbox
 }
 
+function parseIsoTimestamp(value: string | undefined): number | null {
+  if (!value) {
+    return null
+  }
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) {
+    return null
+  }
+  return parsed
+}
+
+function shouldRecycleFromIdle(
+  persisted: SandboxHandleRecord | null,
+  nowMs: number,
+  maxIdleMs: number,
+): { stale: boolean; idleMs: number | null } {
+  const lastUsedAtMs = parseIsoTimestamp(persisted?.lastUsedAt)
+  if (lastUsedAtMs === null) {
+    return { stale: false, idleMs: null }
+  }
+  const idleMs = Math.max(0, nowMs - lastUsedAtMs)
+  return {
+    stale: idleMs > maxIdleMs,
+    idleMs,
+  }
+}
+
+async function stopSandboxForOrphanGuard(
+  sandbox: VercelSandbox,
+): Promise<{ stopped: boolean; error: unknown | null }> {
+  const stop = (sandbox as unknown as { stop?: () => Promise<unknown> }).stop
+  if (typeof stop !== 'function') {
+    return { stopped: false, error: new Error('sandbox.stop is unavailable') }
+  }
+
+  try {
+    await stop.call(sandbox)
+    return { stopped: true, error: null }
+  } catch (error) {
+    return { stopped: false, error }
+  }
+}
+
+function logSandboxCreate(
+  logger: SandboxLifecycleLogger | undefined,
+  metadata: Record<string, unknown>,
+): void {
+  logger?.info?.('[sandbox] created', {
+    estimatedAbandonedSessionCostUsd: ESTIMATED_ABANDONED_SESSION_COST_USD,
+    ...metadata,
+  })
+}
+
+function logSandboxStop(
+  logger: SandboxLifecycleLogger | undefined,
+  metadata: Record<string, unknown>,
+): void {
+  logger?.info?.('[sandbox] stopped', {
+    estimatedAbandonedSessionCostUsd: ESTIMATED_ABANDONED_SESSION_COST_USD,
+    ...metadata,
+  })
+}
+
 async function createFresh(
   workspaceId: string,
   snapshotId: string | undefined,
@@ -114,13 +183,17 @@ async function createFresh(
   previous: SandboxHandleRecord | null,
   store: SandboxHandleStore,
   vercel: VercelSandboxClient,
+  logger?: SandboxLifecycleLogger,
 ): Promise<VercelSandbox> {
   let sandbox: VercelSandbox
+  let sourceType: 'empty' | 'snapshot' | 'tarball' = 'empty'
   if (snapshotId) {
+    sourceType = 'snapshot'
     sandbox = await vercel.create({
       source: { type: 'snapshot', snapshotId },
     })
   } else if (tarballUrl) {
+    sourceType = 'tarball'
     sandbox = await vercel.create({
       source: { type: 'tarball', url: tarballUrl },
     })
@@ -128,11 +201,21 @@ async function createFresh(
     sandbox = await vercel.create()
   }
 
+  logSandboxCreate(logger, {
+    workspaceId,
+    sandboxId: sandbox.sandboxId,
+    sourceType,
+    sourceSnapshotId: snapshotId ?? null,
+  })
+
   return await persistAndCache(workspaceId, sandbox, previous, store)
 }
 
 export interface ResolveSandboxHandleOptions {
   tarballUrl?: string
+  maxIdleMs?: number
+  now?: () => number
+  logger?: SandboxLifecycleLogger
 }
 
 export async function resolveSandboxHandle(
@@ -160,12 +243,58 @@ export async function resolveSandboxHandle(
   }
 
   const resolution = (async (): Promise<VercelSandbox> => {
+    const maxIdleMs = opts?.maxIdleMs
+    const orphanGuardEnabled = Number.isFinite(maxIdleMs) && (maxIdleMs as number) > 0
+    const nowMs = orphanGuardEnabled
+      ? (opts?.now ?? Date.now)()
+      : 0
     const persisted = await store.get(workspaceKey)
 
     if (persisted?.sandboxId) {
       try {
         const sandbox = await vercel.get({ sandboxId: persisted.sandboxId })
         if (!isSandboxExpired(sandbox)) {
+          const idle = orphanGuardEnabled
+            ? shouldRecycleFromIdle(persisted, nowMs, maxIdleMs as number)
+            : { stale: false, idleMs: null }
+          if (idle.stale) {
+            opts?.logger?.warn?.('[sandbox] orphan-guard stale sandbox detected', {
+              workspaceId: workspaceKey,
+              sandboxId: sandbox.sandboxId,
+              idleMs: idle.idleMs,
+              maxIdleMs,
+              lastUsedAt: persisted.lastUsedAt,
+            })
+            const stopResult = await stopSandboxForOrphanGuard(sandbox)
+            if (stopResult.stopped) {
+              logSandboxStop(opts?.logger, {
+                workspaceId: workspaceKey,
+                sandboxId: sandbox.sandboxId,
+                reason: 'orphan-guard-idle',
+                idleMs: idle.idleMs,
+                maxIdleMs,
+              })
+              return await createFresh(
+                workspaceKey,
+                persisted.snapshotId,
+                opts?.tarballUrl,
+                persisted,
+                store,
+                vercel,
+                opts?.logger,
+              )
+            }
+
+            opts?.logger?.warn?.('[sandbox] orphan-guard stop failed; reusing sandbox', {
+              workspaceId: workspaceKey,
+              sandboxId: sandbox.sandboxId,
+              idleMs: idle.idleMs,
+              maxIdleMs,
+              error: stopResult.error instanceof Error
+                ? stopResult.error.message
+                : String(stopResult.error),
+            })
+          }
           return await persistAndCache(workspaceKey, sandbox, persisted, store)
         }
       } catch (error) {
@@ -182,6 +311,7 @@ export async function resolveSandboxHandle(
       persisted,
       store,
       vercel,
+      opts?.logger,
     )
   })()
 
