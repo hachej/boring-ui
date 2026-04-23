@@ -6,6 +6,15 @@ import type { Workspace } from '../../../shared/workspace'
 interface WriteToolDetails {
   path: string
   bytesWritten: number
+  fileChanges: FileChangeMetadata[]
+}
+
+interface FileChangeMetadata {
+  op: 'write' | 'edit' | 'unlink' | 'rename' | 'mkdir'
+  path: string
+  oldPath?: string
+  timestamp: string
+  size?: number
 }
 
 interface WriteParams {
@@ -65,6 +74,10 @@ function bytesWritten(content: string): number {
   return new TextEncoder().encode(content).byteLength
 }
 
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
 function successResult(details: WriteToolDetails): ToolResult {
   return {
     content: [{ type: 'text', text: `wrote ${details.bytesWritten} bytes to ${details.path}` }],
@@ -120,9 +133,18 @@ export function createWriteTool(workspace: Workspace): AgentTool {
         }
         await workspace.rename(tmpPath, path)
         renamed = true
+        const writtenBytes = bytesWritten(content)
         return successResult({
           path,
-          bytesWritten: bytesWritten(content),
+          bytesWritten: writtenBytes,
+          fileChanges: [
+            {
+              op: 'write',
+              path,
+              size: writtenBytes,
+              timestamp: nowIso(),
+            },
+          ],
         })
       } catch (error) {
         const message =

@@ -20,6 +20,9 @@ importers:
       '@mariozechner/pi-coding-agent':
         specifier: ^0.67.6
         version: 0.67.68(ws@8.20.0)(zod@3.25.76)
+      '@tanstack/react-query':
+        specifier: ^5.0.0
+        version: 5.99.2(react@19.2.5)
       '@vercel/sandbox':
         specifier: ^1.10.0
         version: 1.10.0

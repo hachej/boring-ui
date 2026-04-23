@@ -15,9 +15,11 @@ interface MockWorkspace extends Workspace {
   operations: string[]
 }
 
-function enoent(path: string): Error & { code: 'ENOENT' } {
-  const error = new Error(`ENOENT: ${path}`) as Error & { code: 'ENOENT' }
-  error.code = 'ENOENT'
+const ENOENT_CODE = 'ENOENT'
+
+function enoent(path: string): Error & { code: string } {
+  const error = new Error(`ENOENT: ${path}`) as Error & { code: string }
+  error.code = ENOENT_CODE
   return error
 }
 
@@ -136,10 +138,18 @@ describe('createWriteTool', () => {
     )
 
     expect(result.isError).toBeFalsy()
-    expect(result.details).toEqual({
+    expect(result.details).toMatchObject({
       path: 'notes.txt',
       bytesWritten: 11,
+      fileChanges: [
+        {
+          op: 'write',
+          path: 'notes.txt',
+          size: 11,
+        },
+      ],
     })
+    expect(typeof (result.details as any).fileChanges[0].timestamp).toBe('string')
     expect(workspace.files.get('notes.txt')).toBe('hello world')
   })
 

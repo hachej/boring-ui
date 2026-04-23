@@ -150,6 +150,41 @@ describe("piEventToChunks — full mapping table", () => {
     expect((r[0] as any).toolCallId).toBe("tc-1");
   });
 
+  it("tool_execution_end with fileChanges emits data-file-changed before tool output", () => {
+    const r = piEventToChunks({
+      type: "tool_execution_end",
+      toolCallId: "tc-write-1",
+      toolName: "write",
+      result: {
+        content: [{ type: "text", text: "wrote 5 bytes" }],
+        details: {
+          fileChanges: [
+            {
+              op: "write",
+              path: "src/new-file.ts",
+              size: 5,
+              timestamp: "2026-04-23T00:00:00.000Z",
+            },
+          ],
+        },
+      },
+      isError: false,
+    } as AgentSessionEvent);
+
+    expect(r).toHaveLength(2);
+    expect((r[0] as any)).toEqual({
+      type: "data-file-changed",
+      data: {
+        op: "write",
+        path: "src/new-file.ts",
+        size: 5,
+        timestamp: "2026-04-23T00:00:00.000Z",
+        toolCallId: "tc-write-1",
+      },
+    });
+    expect((r[1] as any).type).toBe("tool-output-available");
+  });
+
   it("tool_execution_end (error) → tool-output-error", () => {
     const r = piEventToChunks({
       type: "tool_execution_end",

@@ -5,6 +5,76 @@ function chunk(data: Record<string, unknown>): UIMessageChunk {
   return data as unknown as UIMessageChunk;
 }
 
+type FileChangeOp = "write" | "edit" | "unlink" | "rename" | "mkdir";
+
+interface FileChangeData {
+  op: FileChangeOp;
+  path: string;
+  oldPath?: string;
+  size?: number;
+  timestamp: string;
+}
+
+const FILE_CHANGE_OPS: ReadonlySet<FileChangeOp> = new Set([
+  "write",
+  "edit",
+  "unlink",
+  "rename",
+  "mkdir",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeFileChangeEntry(value: unknown): FileChangeData | null {
+  if (!isRecord(value)) return null;
+
+  const op = value.op;
+  if (typeof op !== "string" || !FILE_CHANGE_OPS.has(op as FileChangeOp)) {
+    return null;
+  }
+
+  const path = value.path;
+  if (typeof path !== "string" || path.length === 0) {
+    return null;
+  }
+
+  const timestamp = typeof value.timestamp === "string"
+    ? value.timestamp
+    : new Date().toISOString();
+
+  const normalized: FileChangeData = {
+    op: op as FileChangeOp,
+    path,
+    timestamp,
+  };
+
+  if (typeof value.oldPath === "string" && value.oldPath.length > 0) {
+    normalized.oldPath = value.oldPath;
+  }
+
+  if (typeof value.size === "number" && Number.isFinite(value.size) && value.size >= 0) {
+    normalized.size = value.size;
+  }
+
+  return normalized;
+}
+
+function extractFileChanges(details: unknown): FileChangeData[] {
+  if (!isRecord(details)) return [];
+
+  const entries = details.fileChanges;
+  if (Array.isArray(entries)) {
+    return entries
+      .map(normalizeFileChangeEntry)
+      .filter((entry): entry is FileChangeData => entry !== null);
+  }
+
+  const singleEntry = normalizeFileChangeEntry(details.fileChange);
+  return singleEntry ? [singleEntry] : [];
+}
+
 export function piEventToChunks(event: AgentSessionEvent): UIMessageChunk[] {
   switch (event.type) {
     case "message_start":
@@ -110,7 +180,17 @@ export function piEventToChunks(event: AgentSessionEvent): UIMessageChunk[] {
           }),
         ];
       }
+      const fileChangeChunks = extractFileChanges(event.result?.details).map((fileChange) =>
+        chunk({
+          type: "data-file-changed",
+          data: {
+            ...fileChange,
+            toolCallId: event.toolCallId,
+          },
+        }),
+      );
       return [
+        ...fileChangeChunks,
         chunk({
           type: "tool-output-available",
           toolCallId: event.toolCallId,

@@ -75,10 +75,19 @@ describe('createEditTool', () => {
     )
 
     expect(result.isError).toBeFalsy()
-    expect(result.details).toEqual({
+    expect(result.details).toMatchObject({
       path: 'src/app.ts',
       replacements: 1,
+      bytesWritten: 20,
+      fileChanges: [
+        {
+          op: 'edit',
+          path: 'src/app.ts',
+          size: 20,
+        },
+      ],
     })
+    expect(typeof (result.details as any).fileChanges[0].timestamp).toBe('string')
     expect(workspace.files.get('src/app.ts')).toBe('const value = "new";')
     expect(workspace.writes).toEqual(['src/app.ts'])
   })
@@ -117,10 +126,19 @@ describe('createEditTool', () => {
     )
 
     expect(result.isError).toBeFalsy()
-    expect(result.details).toEqual({
+    expect(result.details).toMatchObject({
       path: 'src/app.ts',
       replacements: 3,
+      bytesWritten: 9,
+      fileChanges: [
+        {
+          op: 'edit',
+          path: 'src/app.ts',
+          size: 9,
+        },
+      ],
     })
+    expect(typeof (result.details as any).fileChanges[0].timestamp).toBe('string')
     expect(workspace.files.get('src/app.ts')).toBe('y + y + y')
     expect(workspace.writes).toEqual(['src/app.ts'])
   })

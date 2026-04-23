@@ -2,6 +2,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 
 let capturedTransportOpts: Record<string, unknown> | undefined
 const refStore = { current: undefined as unknown }
+const mockOnFileChangeData = vi.fn()
 
 vi.mock('@ai-sdk/react', () => ({
   useChat: vi.fn(() => ({
@@ -19,6 +20,10 @@ vi.mock('ai', () => ({
     capturedTransportOpts = opts as Record<string, unknown>
     return { __mockTransport: true }
   }),
+}))
+
+vi.mock('../useFileChangeStream', () => ({
+  useFileChangeStream: () => ({ onData: mockOnFileChangeData }),
 }))
 
 vi.mock('react', async () => {
@@ -134,5 +139,21 @@ describe('useAgentChat', () => {
     expect(useChat).toHaveBeenCalledWith(
       expect.objectContaining({ resume: true }),
     )
+  })
+
+  test('forwards onData callback to useChat', () => {
+    const onData = vi.fn()
+
+    useAgentChat({ sessionId: 'sess-1', onData })
+
+    const calls = vi.mocked(useChat).mock.calls
+    const lastCall = calls[calls.length - 1]?.[0] as { onData?: (part: unknown) => void }
+    expect(typeof lastCall.onData).toBe('function')
+
+    const dataPart = { type: 'data-file-changed', data: { path: 'x.ts' } }
+    lastCall.onData?.(dataPart)
+
+    expect(mockOnFileChangeData).toHaveBeenCalledWith(dataPart)
+    expect(onData).toHaveBeenCalledWith(dataPart)
   })
 })

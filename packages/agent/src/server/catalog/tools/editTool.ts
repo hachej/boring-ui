@@ -4,6 +4,16 @@ import type { Workspace } from '../../../shared/workspace'
 interface EditToolDetails {
   path: string
   replacements: number
+  bytesWritten: number
+  fileChanges: FileChangeMetadata[]
+}
+
+interface FileChangeMetadata {
+  op: 'write' | 'edit' | 'unlink' | 'rename' | 'mkdir'
+  path: string
+  oldPath?: string
+  timestamp: string
+  size?: number
 }
 
 interface EditParams {
@@ -53,6 +63,14 @@ function replaceAllOccurrences(
   newString: string,
 ): string {
   return content.split(oldString).join(newString)
+}
+
+function bytesWritten(content: string): number {
+  return new TextEncoder().encode(content).byteLength
+}
+
+function nowIso(): string {
+  return new Date().toISOString()
 }
 
 function successResult(details: EditToolDetails): ToolResult {
@@ -124,10 +142,20 @@ export function createEditTool(workspace: Workspace): AgentTool {
           : replaceFirstOccurrence(originalContent, oldString, newString)
 
         await workspace.writeFile(path, nextContent)
+        const writtenBytes = bytesWritten(nextContent)
 
         return successResult({
           path,
           replacements: replaceAll ? matches : 1,
+          bytesWritten: writtenBytes,
+          fileChanges: [
+            {
+              op: 'edit',
+              path,
+              size: writtenBytes,
+              timestamp: nowIso(),
+            },
+          ],
         })
       } catch (error) {
         const message =
