@@ -87,10 +87,28 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         })
       }
     },
-    async runCommand(command: string, args: string[] = []) {
-      const script = command === 'sh' && args[0] === '-c'
-        ? (args[1] ?? '')
-        : [command, ...args].join(' ').trim()
+    async runCommand(
+      commandOrParams: string | { cmd: string; args?: string[]; signal?: AbortSignal },
+      args: string[] = [],
+      opts?: { signal?: AbortSignal },
+    ) {
+      const command = typeof commandOrParams === 'string'
+        ? commandOrParams
+        : commandOrParams.cmd
+      const commandArgs = typeof commandOrParams === 'string'
+        ? args
+        : (commandOrParams.args ?? [])
+      const signal = typeof commandOrParams === 'string'
+        ? opts?.signal
+        : commandOrParams.signal
+
+      if (signal?.aborted) {
+        throw new Error('mock command aborted')
+      }
+
+      const script = command === 'sh' && commandArgs[0] === '-c'
+        ? (commandArgs[1] ?? '')
+        : [command, ...commandArgs].join(' ').trim()
 
       if (script.startsWith('cat ')) {
         const targetPath = script.slice(4).trim()
@@ -108,6 +126,14 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
             stdout: async () => '',
             stderr: async () => message,
           }
+        }
+      }
+
+      if (script.startsWith('echo ')) {
+        return {
+          exitCode: 0,
+          stdout: async () => `${script.slice(5)}\n`,
+          stderr: async () => '',
         }
       }
 
