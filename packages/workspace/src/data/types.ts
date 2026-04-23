@@ -18,5 +18,8 @@ export interface FetchClientOptions {
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
+  onTimeout?: (route: string) => void
   timeout?: number
+  maxRetries?: number
+  retryBaseMs?: number
 }

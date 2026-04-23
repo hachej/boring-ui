@@ -144,9 +144,9 @@ describe("FetchClient", () => {
     }
   })
 
-  it("throws FetchError on 500", async () => {
+  it("throws FetchError on 500 after exhausting retries", async () => {
     mockFetch.mockReturnValue(status(500))
-    const client = new FetchClient({ apiBaseUrl: "" })
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 0 })
     try {
       await client.getTree("/")
       expect.unreachable()
@@ -162,7 +162,99 @@ describe("FetchClient", () => {
         setTimeout(() => reject(new DOMException("Aborted", "AbortError")), 50)
       }),
     )
-    const client = new FetchClient({ apiBaseUrl: "", timeout: 1 })
+    const client = new FetchClient({ apiBaseUrl: "", timeout: 1, maxRetries: 0 })
     await expect(client.getTree("/")).rejects.toThrow()
+  })
+})
+
+describe("FetchClient — retry logic", () => {
+  const retryOpts = { retryBaseMs: 1 }
+
+  it("5xx response triggers automatic retry up to maxRetries", async () => {
+    mockFetch.mockImplementation(() => status(500))
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 3, ...retryOpts })
+    await expect(client.getTree("/")).rejects.toThrow()
+    expect(mockFetch).toHaveBeenCalledTimes(4)
+  })
+
+  it("successful retry returns data without surfacing error", async () => {
+    mockFetch
+      .mockImplementationOnce(() => status(500))
+      .mockImplementationOnce(() => status(503))
+      .mockImplementationOnce(() => ok({ entries: [{ name: "a.ts", kind: "file", path: "a.ts" }] }))
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 3, ...retryOpts })
+    const result = await client.getTree("/")
+    expect(result).toEqual([{ name: "a.ts", kind: "file", path: "a.ts" }])
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+  })
+
+  it("all retries fail propagates last error", async () => {
+    mockFetch.mockImplementation(() => status(502))
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 2, ...retryOpts })
+    try {
+      await client.getTree("/")
+      expect.unreachable()
+    } catch (e) {
+      expect(e).toBeInstanceOf(FetchError)
+      expect((e as FetchError).status).toBe(502)
+    }
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+  })
+
+  it("4xx responses are NOT retried", async () => {
+    mockFetch.mockImplementation(() => status(404))
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 3, ...retryOpts })
+    await expect(client.getTree("/")).rejects.toThrow()
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("network errors (TypeError) trigger retry", async () => {
+    mockFetch
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockImplementationOnce(() => ok({ entries: [] }))
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 3, ...retryOpts })
+    const result = await client.getTree("/")
+    expect(result).toEqual([])
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it("timeout triggers retry", async () => {
+    mockFetch
+      .mockRejectedValueOnce(new DOMException("Aborted", "AbortError"))
+      .mockImplementationOnce(() => ok({ entries: [] }))
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 3, timeout: 100, ...retryOpts })
+    const result = await client.getTree("/")
+    expect(result).toEqual([])
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("FetchClient — auth errors", () => {
+  it("401 fires onAuthError and is not retried", async () => {
+    mockFetch.mockImplementation(() => status(401))
+    const onAuthError = vi.fn()
+    const client = new FetchClient({ apiBaseUrl: "", onAuthError, maxRetries: 3, retryBaseMs: 1 })
+    await expect(client.getTree("/")).rejects.toThrow()
+    expect(onAuthError).toHaveBeenCalledWith(401)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("403 fires onAuthError and is not retried", async () => {
+    mockFetch.mockImplementation(() => status(403))
+    const onAuthError = vi.fn()
+    const client = new FetchClient({ apiBaseUrl: "", onAuthError, maxRetries: 3, retryBaseMs: 1 })
+    await expect(client.getFile("/a")).rejects.toThrow()
+    expect(onAuthError).toHaveBeenCalledWith(403)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("FetchClient — timeout", () => {
+  it("onTimeout callback fires on timeout", async () => {
+    mockFetch.mockRejectedValue(new DOMException("Aborted", "AbortError"))
+    const onTimeout = vi.fn()
+    const client = new FetchClient({ apiBaseUrl: "", timeout: 1, onTimeout, maxRetries: 0 })
+    await expect(client.getTree("/")).rejects.toThrow()
+    expect(onTimeout).toHaveBeenCalledWith(expect.stringContaining("/api/v1/tree"))
   })
 })

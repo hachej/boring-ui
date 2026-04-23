@@ -1,47 +1,101 @@
 import type { FetchClientOptions, FileContent, FileEntry, FileStat } from "./types"
 
+const DEFAULT_TIMEOUT = 10_000
+const DEFAULT_MAX_RETRIES = 3
+const RETRY_BASE_MS = 1_000
+
+function isRetryable(status: number): boolean {
+  return status >= 500
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export class FetchClient {
   private baseUrl: string
   private headers: Record<string, string>
   private onAuthError?: (statusCode: number) => void
+  private onTimeout?: (route: string) => void
   private timeout: number
+  private maxRetries: number
+  private retryBaseMs: number
 
   constructor(opts: FetchClientOptions) {
     this.baseUrl = opts.apiBaseUrl.replace(/\/$/, "")
     this.headers = { "Content-Type": "application/json", ...opts.authHeaders }
     this.onAuthError = opts.onAuthError
-    this.timeout = opts.timeout ?? 10_000
+    this.onTimeout = opts.onTimeout
+    this.timeout = opts.timeout ?? DEFAULT_TIMEOUT
+    this.maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES
+    this.retryBaseMs = opts.retryBaseMs ?? RETRY_BASE_MS
   }
 
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
+    requestTimeout?: number,
   ): Promise<T> {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeout)
+    const effectiveTimeout = requestTimeout ?? this.timeout
+    let lastError: Error | null = null
 
-    try {
-      const res = await fetch(`${this.baseUrl}${path}`, {
-        method,
-        headers: this.headers,
-        body: body != null ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      })
-
-      if (res.status === 401 || res.status === 403) {
-        this.onAuthError?.(res.status)
-        throw new FetchError(res.status, `Auth error: ${res.status}`)
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      if (attempt > 0) {
+        await delay(this.retryBaseMs * 2 ** (attempt - 1))
       }
 
-      if (!res.ok) {
-        throw new FetchError(res.status, `HTTP ${res.status}: ${res.statusText}`)
-      }
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), effectiveTimeout)
 
-      return (await res.json()) as T
-    } finally {
-      clearTimeout(timer)
+      try {
+        const res = await fetch(`${this.baseUrl}${path}`, {
+          method,
+          headers: this.headers,
+          body: body != null ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        })
+
+        clearTimeout(timer)
+
+        if (res.status === 401 || res.status === 403) {
+          this.onAuthError?.(res.status)
+          throw new FetchError(res.status, `Auth error: ${res.status}`)
+        }
+
+        if (isRetryable(res.status)) {
+          lastError = new FetchError(res.status, `HTTP ${res.status}: ${res.statusText}`)
+          continue
+        }
+
+        if (!res.ok) {
+          throw new FetchError(res.status, `HTTP ${res.status}: ${res.statusText}`)
+        }
+
+        return (await res.json()) as T
+      } catch (err) {
+        clearTimeout(timer)
+
+        if (err instanceof FetchError && !isRetryable(err.status)) {
+          throw err
+        }
+
+        if (err instanceof DOMException && err.name === "AbortError") {
+          this.onTimeout?.(path)
+          lastError = new FetchError(0, `Request timeout after ${effectiveTimeout}ms: ${path}`)
+          continue
+        }
+
+        if (err instanceof TypeError) {
+          lastError = err
+          continue
+        }
+
+        throw err
+      }
     }
+
+    throw lastError ?? new FetchError(0, "Request failed after retries")
   }
 
   async getTree(path: string): Promise<FileEntry[]> {
