@@ -88,4 +88,43 @@ describe("SessionList", () => {
     fireEvent.keyDown(item, { key: "Enter" })
     expect(onSwitch).toHaveBeenCalledWith("s1")
   })
+
+  it("uses active session as the keyboard tab stop", () => {
+    render(<SessionList sessions={sessions} activeId="s2" />)
+    const first = screen.getByText("First session").closest("[role=listitem]")!
+    const second = screen.getByText("Second session").closest("[role=listitem]")!
+    expect(first).toHaveAttribute("tabindex", "-1")
+    expect(second).toHaveAttribute("tabindex", "0")
+  })
+
+  it("supports arrow key navigation between sessions", () => {
+    render(<SessionList sessions={sessions} />)
+    const first = screen.getByText("First session").closest("[role=listitem]") as HTMLElement
+    const second = screen.getByText("Second session").closest("[role=listitem]") as HTMLElement
+    first.focus()
+    fireEvent.keyDown(first, { key: "ArrowDown" })
+    expect(second).toHaveFocus()
+    fireEvent.keyDown(second, { key: "ArrowUp" })
+    expect(first).toHaveFocus()
+  })
+
+  it("supports Home and End key focus movement", () => {
+    render(<SessionList sessions={sessions} />)
+    const first = screen.getByText("First session").closest("[role=listitem]") as HTMLElement
+    const second = screen.getByText("Second session").closest("[role=listitem]") as HTMLElement
+    const third = screen.getByText("Third session").closest("[role=listitem]") as HTMLElement
+    second.focus()
+    fireEvent.keyDown(second, { key: "End" })
+    expect(third).toHaveFocus()
+    fireEvent.keyDown(third, { key: "Home" })
+    expect(first).toHaveFocus()
+  })
+
+  it("only exposes delete action in tab order for the focused session", () => {
+    render(<SessionList sessions={sessions} activeId="s1" onDelete={vi.fn()} />)
+    const firstDelete = screen.getByLabelText("Delete First session")
+    const secondDelete = screen.getByLabelText("Delete Second session")
+    expect(firstDelete).toHaveAttribute("tabindex", "0")
+    expect(secondDelete).toHaveAttribute("tabindex", "-1")
+  })
 })

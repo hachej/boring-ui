@@ -59,21 +59,43 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
   const [query, setQuery] = useState("")
   const commandRegistry = useCommandRegistry()
   const inputRef = useRef<HTMLInputElement>(null)
+  const priorFocusRef = useRef<HTMLElement | null>(null)
+  const wasOpenRef = useRef(false)
 
   const isCommandMode = query.startsWith(">")
   const searchQuery = isCommandMode ? query.slice(1).trim() : query.trim()
 
+  const openPalette = useCallback(() => {
+    if (!open && document.activeElement instanceof HTMLElement) {
+      priorFocusRef.current = document.activeElement
+    }
+    setOpen(true)
+  }, [open])
+
   useKeyboardShortcuts({
     shortcuts: useMemo(
-      () => [{ key: "p", mod: true, handler: () => setOpen(true) }],
-      [],
+      () => [
+        { key: "p", mod: true, allowInEditable: true, handler: openPalette },
+        { key: "k", mod: true, allowInEditable: true, handler: openPalette },
+      ],
+      [openPalette],
     ),
   })
 
   useEffect(() => {
     if (open) {
       setQuery("")
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+      })
+    } else if (wasOpenRef.current) {
+      const prior = priorFocusRef.current
+      if (prior && prior.isConnected) {
+        prior.focus()
+      }
+      priorFocusRef.current = null
     }
+    wasOpenRef.current = open
   }, [open])
 
   const fileResults = useMemo(() => {

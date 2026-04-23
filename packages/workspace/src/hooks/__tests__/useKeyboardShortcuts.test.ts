@@ -13,6 +13,17 @@ function fireKey(key: string, opts: Partial<KeyboardEventInit> = {}) {
   return event
 }
 
+function fireKeyFrom(element: HTMLElement, key: string, opts: Partial<KeyboardEventInit> = {}) {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...opts,
+  })
+  element.dispatchEvent(event)
+  return event
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -112,6 +123,34 @@ describe("useKeyboardShortcuts", () => {
     )
     fireKey("p", { metaKey: true })
     expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it("does not fire inside editable targets by default", () => {
+    const handler = vi.fn()
+    const input = document.createElement("input")
+    document.body.appendChild(input)
+    input.focus()
+    renderHook(() =>
+      useKeyboardShortcuts({ shortcuts: [{ key: "p", mod: true, handler }] }),
+    )
+    fireKeyFrom(input, "p", { metaKey: true })
+    expect(handler).not.toHaveBeenCalled()
+    input.remove()
+  })
+
+  it("can opt into shortcuts inside editable targets", () => {
+    const handler = vi.fn()
+    const input = document.createElement("input")
+    document.body.appendChild(input)
+    input.focus()
+    renderHook(() =>
+      useKeyboardShortcuts({
+        shortcuts: [{ key: "p", mod: true, allowInEditable: true, handler }],
+      }),
+    )
+    fireKeyFrom(input, "p", { metaKey: true })
+    expect(handler).toHaveBeenCalledOnce()
+    input.remove()
   })
 })
 

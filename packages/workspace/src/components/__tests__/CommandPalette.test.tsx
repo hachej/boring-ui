@@ -53,6 +53,15 @@ describe("CommandPalette", () => {
       })
     })
 
+    it("opens on Cmd+K", async () => {
+      render(<CommandPalette />, { wrapper: createWrapper() })
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      fireKeydown("k", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+    })
+
     it("closes on Escape", async () => {
       const user = userEvent.setup()
       render(<CommandPalette />, { wrapper: createWrapper() })
@@ -85,6 +94,44 @@ describe("CommandPalette", () => {
       })
       const newInput = screen.getByPlaceholderText(/Search files/)
       expect(newInput).toHaveValue("")
+    })
+
+    it("restores focus to the previously focused element when closed", async () => {
+      const user = userEvent.setup()
+      render(
+        <>
+          <button type="button">Before Palette</button>
+          <CommandPalette />
+        </>,
+        { wrapper: createWrapper() },
+      )
+      const prior = screen.getByRole("button", { name: "Before Palette" })
+      prior.focus()
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      await user.keyboard("{Escape}")
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      })
+      expect(prior).toHaveFocus()
+    })
+
+    it("can open while an editable input is focused", async () => {
+      render(
+        <>
+          <input aria-label="scratch" />
+          <CommandPalette />
+        </>,
+        { wrapper: createWrapper() },
+      )
+      const input = screen.getByRole("textbox", { name: "scratch" })
+      input.focus()
+      fireKeydown("k", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
     })
   })
 

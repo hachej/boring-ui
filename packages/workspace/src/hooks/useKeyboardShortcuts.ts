@@ -6,6 +6,7 @@ export interface ShortcutBinding {
   key: string
   mod?: boolean
   shift?: boolean
+  allowInEditable?: boolean
   handler: () => void
 }
 
@@ -23,6 +24,14 @@ function matchesShortcut(e: KeyboardEvent, binding: ShortcutBinding): boolean {
   return e.key.toLowerCase() === binding.key.toLowerCase()
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  if (target.closest("[contenteditable='true']")) return true
+  if (target.getAttribute("role") === "textbox") return true
+  return Boolean(target.closest("input, textarea, select"))
+}
+
 export function useKeyboardShortcuts({ shortcuts, enabled = true }: UseKeyboardShortcutsOptions): void {
   const shortcutsRef = useRef(shortcuts)
   shortcutsRef.current = shortcuts
@@ -31,7 +40,9 @@ export function useKeyboardShortcuts({ shortcuts, enabled = true }: UseKeyboardS
     if (!enabled) return
 
     function handleKeyDown(e: KeyboardEvent) {
+      const inEditable = isEditableTarget(e.target)
       for (const binding of shortcutsRef.current) {
+        if (inEditable && !binding.allowInEditable) continue
         if (matchesShortcut(e, binding)) {
           e.preventDefault()
           e.stopPropagation()

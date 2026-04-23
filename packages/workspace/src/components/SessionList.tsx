@@ -1,5 +1,13 @@
 "use client"
 
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react"
 import { cn } from "../lib/utils"
 
 export interface SessionItem {
@@ -26,6 +34,61 @@ export function SessionList({
   onDelete,
   className,
 }: SessionListProps) {
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const sessionIds = useMemo(() => sessions.map((session) => session.id), [sessions])
+
+  useEffect(() => {
+    if (sessionIds.length === 0) {
+      setFocusedId(null)
+      return
+    }
+
+    setFocusedId((prev) => {
+      if (prev && sessionIds.includes(prev)) return prev
+      if (activeId && sessionIds.includes(activeId)) return activeId
+      return sessionIds[0] ?? null
+    })
+  }, [sessionIds, activeId])
+
+  const focusSession = useCallback((id: string) => {
+    setFocusedId(id)
+    rowRefs.current[id]?.focus()
+  }, [])
+
+  const handleSessionKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>, id: string) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault()
+        onSwitch?.(id)
+        return
+      }
+
+      const currentIndex = sessionIds.indexOf(id)
+      if (currentIndex < 0) return
+
+      let nextIndex = currentIndex
+      if (event.key === "ArrowDown") {
+        nextIndex = Math.min(currentIndex + 1, sessionIds.length - 1)
+      } else if (event.key === "ArrowUp") {
+        nextIndex = Math.max(currentIndex - 1, 0)
+      } else if (event.key === "Home") {
+        nextIndex = 0
+      } else if (event.key === "End") {
+        nextIndex = sessionIds.length - 1
+      } else {
+        return
+      }
+
+      event.preventDefault()
+      const nextId = sessionIds[nextIndex]
+      if (nextId) {
+        focusSession(nextId)
+      }
+    },
+    [focusSession, onSwitch, sessionIds],
+  )
+
   return (
     <div
       className={cn("flex h-full flex-col", className)}
@@ -58,7 +121,7 @@ export function SessionList({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto" role="list">
+      <div className="flex-1 overflow-y-auto" role="list" aria-label="Session list">
         {sessions.length === 0 && (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
             No sessions
@@ -69,8 +132,14 @@ export function SessionList({
             key={session.id}
             session={session}
             isActive={session.id === activeId}
+            isFocused={session.id === focusedId}
             onSwitch={onSwitch}
             onDelete={onDelete}
+            onFocus={() => setFocusedId(session.id)}
+            onKeyDown={handleSessionKeyDown}
+            rowRef={(node) => {
+              rowRefs.current[session.id] = node
+            }}
           />
         ))}
       </div>
@@ -81,31 +150,38 @@ export function SessionList({
 function SessionRow({
   session,
   isActive,
+  isFocused,
   onSwitch,
   onDelete,
+  onFocus,
+  onKeyDown,
+  rowRef,
 }: {
   session: SessionItem
   isActive: boolean
+  isFocused: boolean
   onSwitch?: (id: string) => void
   onDelete?: (id: string) => void
+  onFocus: () => void
+  onKeyDown: (event: KeyboardEvent<HTMLDivElement>, id: string) => void
+  rowRef: (node: HTMLDivElement | null) => void
 }) {
   return (
     <div
+      ref={rowRef}
       role="listitem"
+      data-focused={isFocused ? "true" : "false"}
       className={cn(
         "group flex items-center gap-2 border-b border-border px-3 py-2 text-sm cursor-pointer transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         isActive
           ? "bg-accent text-accent-foreground"
           : "text-foreground hover:bg-accent/50",
       )}
       onClick={() => onSwitch?.(session.id)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault()
-          onSwitch?.(session.id)
-        }
-      }}
-      tabIndex={0}
+      onFocus={onFocus}
+      onKeyDown={(event) => onKeyDown(event, session.id)}
+      tabIndex={isFocused ? 0 : -1}
       aria-current={isActive ? "true" : undefined}
     >
       <span className="flex-1 truncate">{session.title}</span>
@@ -118,11 +194,12 @@ function SessionRow({
       {onDelete && (
         <button
           type="button"
-          className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive group-hover:block"
+          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-data-[focused=true]:opacity-100"
           onClick={(e) => {
             e.stopPropagation()
             onDelete(session.id)
           }}
+          tabIndex={isFocused ? 0 : -1}
           aria-label={`Delete ${session.title}`}
         >
           <svg
