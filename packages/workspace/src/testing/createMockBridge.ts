@@ -118,15 +118,16 @@ export function createMockBridge(options: CreateMockBridgeOptions = {}): MockWor
     getDirtyFiles: spy(() => [...state.dirtyFiles]),
     getVisibleFiles: spy(() => [...state.visibleFiles]),
 
-    openFile: spy(async (path) => {
+    openFile: spy(async (path, opts) => {
       if (!state.visibleFiles.includes(path)) state.visibleFiles.push(path)
       state.activeFile = path
       const panelId = `file:${path}`
+      const mode = opts?.mode ?? "edit"
       if (!state.openPanels.some((panel) => panel.id === panelId)) {
-        state.openPanels.push({ id: panelId, component: "editor", params: { path } })
+        state.openPanels.push({ id: panelId, component: "editor", params: { path, mode } })
       }
       notifySelectors()
-      emit("file:opened", { path, mode: "edit" })
+      emit("file:opened", { path, mode })
       return nextResult()
     }),
 
@@ -156,7 +157,7 @@ export function createMockBridge(options: CreateMockBridgeOptions = {}): MockWor
       return nextResult()
     }),
 
-    navigateToLine: spy(async (file) => {
+    navigateToLine: spy(async (file, _line) => {
       state.activeFile = file
       if (!state.visibleFiles.includes(file)) state.visibleFiles.push(file)
       notifySelectors()

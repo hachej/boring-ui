@@ -35,7 +35,7 @@ describe("@boring/workspace/testing", () => {
     expect(registry.has("workspace-testing-default-panel")).toBe(true)
   })
 
-  it("createMockBridge exposes inspectable stubs and bridge.emit", () => {
+  it("createMockBridge exposes inspectable stubs and bridge.emit", async () => {
     const bridge = createMockBridge({
       fn: vi.fn,
       state: { activeFile: "/seed.ts", dirtyFiles: ["/seed.ts"] },
@@ -59,6 +59,10 @@ describe("@boring/workspace/testing", () => {
     bridge.setState({ activeFile: "/selected.ts" })
     expect(selected).toHaveBeenCalledWith("/selected.ts")
     stop()
+
+    await bridge.openFile("/mode.ts", { mode: "view" })
+    const modePanel = bridge.getOpenPanels().find((panel) => panel.id === "file:/mode.ts")
+    expect(modePanel?.params?.mode).toBe("view")
   })
 
   it("renderPane wires provider tree + fixture-backed data without a real server", async () => {

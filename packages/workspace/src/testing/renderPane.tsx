@@ -13,6 +13,7 @@ export interface RenderPaneOptions extends Omit<RenderOptions, "wrapper"> {
   apiBaseUrl?: string
   authHeaders?: Record<string, string>
   defaultTheme?: "light" | "dark"
+  timeout?: number
   injectBridgeProp?: boolean
 }
 
@@ -32,6 +33,7 @@ export function renderPane(
     apiBaseUrl,
     authHeaders,
     defaultTheme,
+    timeout,
     injectBridgeProp = true,
     ...renderOptions
   } = options
@@ -47,11 +49,11 @@ export function renderPane(
   const result = render(
     <TestWorkspaceProvider
       fixtures={fixtures}
-      bridge={bridge}
       registry={registry}
       apiBaseUrl={apiBaseUrl}
       authHeaders={authHeaders}
       defaultTheme={defaultTheme}
+      timeout={timeout}
     >
       {wrapped}
     </TestWorkspaceProvider>,
