@@ -9,12 +9,14 @@
     "lint": "pnpm -r run lint",
     "lint:invariants": "pnpm --dir packages/agent run lint:invariants",
     "test": "pnpm -r run test",
+    "e2e": "pnpm exec playwright test -c e2e/playwright.config.ts",
     "clean": "pnpm -r run clean"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "typescript": "^5.4.0"
   },
   "pnpm": {
