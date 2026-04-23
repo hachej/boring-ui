@@ -17,6 +17,7 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "axe-core": "^4.11.3",
     "@playwright/test": "^1.59.1",
     "typescript": "^5.4.0"
   },

@@ -11,7 +11,7 @@ vi.mock('../../front/hooks/useAgentChat', () => ({
 }))
 
 vi.mock('../primitives/conversation', () => ({
-  Conversation: ({ children, ...rest }: any) => <div data-testid="conversation" {...rest}>{children}</div>,
+  Conversation: ({ children, ...rest }: any) => <div data-testid="conversation" role="log" {...rest}>{children}</div>,
   ConversationContent: ({ children }: any) => <div data-testid="conversation-content">{children}</div>,
   ConversationEmptyState: ({ title, description }: any) => (
     <div data-testid="empty-state" data-title={title}>{description}</div>
@@ -63,6 +63,12 @@ describe('ChatPanel (shadcn)', () => {
   test('renders data-boring-chat attribute on root', () => {
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-1" />)
     expect(html).toMatch(/data-boring-chat(?:=| |>|\/>)/)
+    expect(html).toContain('role="region"')
+    expect(html).toContain('aria-label="Agent assistant"')
+    expect(html).toContain('data-testid="conversation"')
+    expect(html).toContain('role="log"')
+    expect(html).toContain('aria-label="Agent conversation"')
+    expect(html).toContain('aria-live="polite"')
   })
 
   test('renders empty state when no messages', () => {

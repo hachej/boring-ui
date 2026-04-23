@@ -106,6 +106,11 @@ describe('ChatPanel', () => {
   test('marks ChatPanel root with data-boring-chat attribute', () => {
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-theme-root" />)
     expect(html).toMatch(/data-boring-chat(?:=| |>|\/>)/)
+    expect(html).toContain('role="region"')
+    expect(html).toContain('aria-label="Agent assistant"')
+    expect(html).toContain('role="log"')
+    expect(html).toContain('aria-label="Agent conversation"')
+    expect(html).toContain('aria-live="polite"')
   })
 
   test('renders two chat instances with per-panel selector hooks', () => {

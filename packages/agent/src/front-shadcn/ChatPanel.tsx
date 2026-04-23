@@ -143,8 +143,10 @@ export function ChatPanel(props: ChatPanelProps) {
     <div
       data-boring-chat=""
       className={cn("flex h-full flex-col bg-background text-foreground", className)}
+      role="region"
+      aria-label="Agent assistant"
     >
-      <Conversation className="flex-1">
+      <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">
         <ConversationContent>
           {messages.length === 0 && (
             <ConversationEmptyState

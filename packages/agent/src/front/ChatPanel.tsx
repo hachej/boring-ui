@@ -177,10 +177,15 @@ export function ChatPanel(props: ChatPanelProps) {
     <div
       data-boring-chat=""
       className="chat-panel"
+      role="region"
+      aria-label="Agent assistant"
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
       <div
         className="chat-panel__messages"
+        role="log"
+        aria-label="Agent conversation"
+        aria-live="polite"
         style={{ flex: 1, overflow: 'auto', paddingBottom: '0.5rem' }}
       >
         {messages.map((message) => {

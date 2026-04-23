@@ -92,6 +92,7 @@ export const ConversationScrollButton = ({
         size="icon"
         type="button"
         variant="outline"
+        aria-label="Scroll to latest message"
         {...props}
       >
         <ArrowDownIcon className="size-4" />
@@ -160,6 +161,7 @@ export const ConversationDownload = ({
       size="icon"
       type="button"
       variant="outline"
+      aria-label="Download conversation"
       {...props}
     >
       {children ?? <DownloadIcon className="size-4" />}
