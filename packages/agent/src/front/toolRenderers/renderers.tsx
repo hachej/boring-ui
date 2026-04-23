@@ -4,6 +4,8 @@ import { Terminal } from '../primitives/Terminal'
 import { CodeBlock } from '../primitives/CodeBlock'
 import { DiffView } from './DiffView'
 
+const FALLBACK_RENDERER_KEY = '__fallback'
+
 export interface ToolPart {
   type: string
   toolName: string
@@ -123,6 +125,19 @@ function renderExecUi(part: ToolPart): ReactNode {
 }
 
 function renderFallback(part: ToolPart): ReactNode {
+  const renderJson = (value: unknown): ReactNode => (
+    <pre
+      style={{
+        margin: 0,
+        whiteSpace: 'pre-wrap',
+        fontSize: '0.8125rem',
+        fontFamily: 'var(--boring-chat-font-mono, monospace)',
+      }}
+    >
+      {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+    </pre>
+  )
+
   return (
     <Tool
       toolName={part.toolName}
@@ -131,6 +146,9 @@ function renderFallback(part: ToolPart): ReactNode {
       input={part.input}
       output={part.output}
       errorText={part.errorText}
+      defaultExpanded
+      renderInput={renderJson}
+      renderOutput={renderJson}
     />
   )
 }
@@ -148,5 +166,10 @@ export function resolveToolRenderer(
   toolName: string,
   overrides?: Record<string, ToolRenderer>,
 ): ToolRenderer {
-  return overrides?.[toolName] ?? defaultToolRenderers[toolName] ?? renderFallback
+  return (
+    overrides?.[toolName]
+    ?? defaultToolRenderers[toolName]
+    ?? overrides?.[FALLBACK_RENDERER_KEY]
+    ?? renderFallback
+  )
 }

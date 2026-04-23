@@ -121,9 +121,19 @@ describe('resolveToolRenderer', () => {
 
   test('returns fallback for unknown tool', () => {
     const renderer = resolveToolRenderer('unknown_tool')
-    const part = makePart({ toolName: 'unknown_tool', input: { x: 1 }, output: { y: 2 } })
+    const part = makePart({
+      toolName: 'unknown_tool',
+      input: { arbitrary: { nested: ['plugin', 1] } },
+      output: { ok: true, count: 2 },
+    })
     const html = renderToStaticMarkup(<>{renderer(part)}</>)
     expect(html).toContain('unknown_tool')
+    expect(html).toContain('&quot;arbitrary&quot;')
+    expect(html).toContain('&quot;nested&quot;')
+    expect(html).toContain('&quot;plugin&quot;')
+    expect(html).toContain('&quot;ok&quot;')
+    expect(html).toContain('&quot;count&quot;')
+    expect(html).toContain('aria-expanded="true"')
   })
 
   test('override takes precedence over default', () => {
@@ -140,5 +150,23 @@ describe('resolveToolRenderer', () => {
     expect(bashRenderer).toBe(defaultToolRenderers.bash)
     const readRenderer = resolveToolRenderer('read', { read: custom })
     expect(readRenderer).toBe(custom)
+  })
+
+  test('unknown tool uses __fallback override when provided', () => {
+    const customFallback = () => <div data-testid="fallback">Fallback</div>
+    const renderer = resolveToolRenderer('plugin_tool', {
+      __fallback: customFallback,
+    })
+    expect(renderer).toBe(customFallback)
+    const html = renderToStaticMarkup(<>{renderer(makePart({ toolName: 'plugin_tool' }))}</>)
+    expect(html).toContain('Fallback')
+  })
+
+  test('named default renderer beats __fallback override for known tools', () => {
+    const customFallback = () => <div>Fallback</div>
+    const renderer = resolveToolRenderer('edit', {
+      __fallback: customFallback,
+    })
+    expect(renderer).toBe(defaultToolRenderers.edit)
   })
 })
