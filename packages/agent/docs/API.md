@@ -51,3 +51,13 @@ public runtime exports yet:
 - `useAgentChat(...)`
 
 Track implementation progress in `docs/plans/agent-package-spec.md` and beads.
+
+## Deferred HTTP Git Surface (v1.x)
+
+`/api/v1/git/*` routes are intentionally not part of agent v1.
+
+- Reason: there is no first-party git UI consumer in agent/workspace v1, so
+  these routes would be dead code.
+- Current behavior: use the `bash` tool for git commands.
+- Activation point: when git UI returns (status/diff/badges), add the routes as
+  thin wrappers over sandbox git execution.

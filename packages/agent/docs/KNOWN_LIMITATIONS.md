@@ -65,3 +65,36 @@ Implement release-on-close lifecycle when either trigger is hit:
 3. Explicit CLI/server flag for forced idle-stop policy.
 
 v1 status: **accepted risk**, documented and monitored.
+
+## GitHub Connect + `/api/v1/git/*` deferred to v1.x (nfx)
+
+Git HTTP routes are intentionally not shipped in v1. Both `@boring/agent` v1
+and `@boring/workspace` v1 dropped git UI consumers, so `/api/v1/git/*` would
+be dead code today.
+
+### Current v1 behavior
+
+- Git operations run through the existing `bash` tool (`git status`, `git add`,
+  `git commit`, etc.).
+- No GitHub Connect token flow is wired into agent HTTP routes yet.
+
+### Why this is deferred
+
+- No first-party UI consumer exists yet (status bar, diff pane, git badges).
+- The design is non-trivial enough to avoid shipping unused backend surface.
+- Deferring keeps v1 smaller while preserving a clear activation path.
+
+### Planned migration path once a consumer lands
+
+1. Add `/api/v1/git/*` thin wrappers over `sandbox.exec('git ...')` with output
+   parsing.
+2. Add GitHub Connect credential injection for remote mode
+   (`https://x-access-token:$TOKEN@github.com/...`).
+3. Emit `data-git-changed` SSE invalidation events after write operations.
+4. Seed git config (`user.name`, `user.email`) when a sandbox workspace is
+   created.
+
+### Trigger to implement
+
+Ship when any UI consumer lands (agent v1.x git status/diff UI, or workspace
+reintroducing git badges/panels).
