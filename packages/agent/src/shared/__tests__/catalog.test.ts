@@ -5,6 +5,7 @@ import { standardCatalog } from '../../server/catalog/standardCatalog'
 import type { FileSearch } from '../file-search'
 import type { Sandbox } from '../sandbox'
 import type { AgentTool } from '../tool'
+import type { UiBridge } from '../ui-bridge'
 import type { Workspace } from '../workspace'
 
 const mockWorkspace: Workspace = {
@@ -44,7 +45,7 @@ test('CatalogDeps contract', () => {
   expectTypeOf<CatalogDeps>().toMatchTypeOf<{
     workspace: Workspace
     sandbox: Sandbox
-    uiBridge?: unknown
+    uiBridge?: UiBridge
     fileSearch?: FileSearch
   }>()
 })

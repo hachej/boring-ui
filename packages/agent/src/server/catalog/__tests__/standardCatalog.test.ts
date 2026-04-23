@@ -4,6 +4,7 @@ import { standardCatalog } from '../standardCatalog'
 import type { CatalogDeps } from '../../../shared/catalog'
 import type { Workspace } from '../../../shared/workspace'
 import type { Sandbox } from '../../../shared/sandbox'
+import type { UiBridge } from '../../../shared/ui-bridge'
 
 function mockWorkspace(): Workspace {
   return {
@@ -42,6 +43,21 @@ function baseDeps(overrides: Partial<CatalogDeps> = {}): CatalogDeps {
   }
 }
 
+function mockUiBridge(): UiBridge {
+  return {
+    async getState() {
+      return { activeFile: 'src/app.ts' }
+    },
+    async setState() {},
+    async postCommand() {
+      return { seq: 1, status: 'ok' }
+    },
+    subscribeCommands() {
+      return () => {}
+    },
+  }
+}
+
 describe('standardCatalog', () => {
   it('returns exactly 4 tools without uiBridge', () => {
     const tools = standardCatalog(baseDeps())
@@ -55,12 +71,12 @@ describe('standardCatalog', () => {
   })
 
   it('returns 6 tools with uiBridge', () => {
-    const tools = standardCatalog(baseDeps({ uiBridge: {} }))
+    const tools = standardCatalog(baseDeps({ uiBridge: mockUiBridge() }))
     expect(tools).toHaveLength(6)
   })
 
   it('appends get_ui_state and exec_ui after core tools', () => {
-    const tools = standardCatalog(baseDeps({ uiBridge: {} }))
+    const tools = standardCatalog(baseDeps({ uiBridge: mockUiBridge() }))
     const names = tools.map((t) => t.name)
     expect(names).toEqual([
       'bash',
@@ -76,7 +92,7 @@ describe('standardCatalog', () => {
     const tools = standardCatalog(
       baseDeps({
         sandbox: mockSandbox(['exec', 'isolated-code']),
-        uiBridge: {},
+        uiBridge: mockUiBridge(),
       })
     )
     expect(tools).toHaveLength(7)
@@ -87,7 +103,7 @@ describe('standardCatalog', () => {
     const tools = standardCatalog(
       baseDeps({
         sandbox: mockSandbox(['exec', 'isolated-code']),
-        uiBridge: {},
+        uiBridge: mockUiBridge(),
       })
     )
     const names = tools.map((t) => t.name)
@@ -99,7 +115,7 @@ describe('standardCatalog', () => {
     const tools = standardCatalog(
       baseDeps({
         sandbox: mockSandbox(['exec', 'isolated-code']),
-        uiBridge: {},
+        uiBridge: mockUiBridge(),
       })
     )
     for (const tool of tools) {
@@ -111,7 +127,7 @@ describe('standardCatalog', () => {
   })
 
   it('each tool has name and description', () => {
-    const tools = standardCatalog(baseDeps({ uiBridge: {} }))
+    const tools = standardCatalog(baseDeps({ uiBridge: mockUiBridge() }))
     for (const tool of tools) {
       expect(tool.name).toBeTruthy()
       expect(tool.description).toBeTruthy()
@@ -119,7 +135,7 @@ describe('standardCatalog', () => {
   })
 
   it('each tool has an execute function', () => {
-    const tools = standardCatalog(baseDeps({ uiBridge: {} }))
+    const tools = standardCatalog(baseDeps({ uiBridge: mockUiBridge() }))
     for (const tool of tools) {
       expect(typeof tool.execute).toBe('function')
     }

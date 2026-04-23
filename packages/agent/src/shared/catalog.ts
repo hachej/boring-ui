@@ -1,9 +1,8 @@
 import type { FileSearch } from './file-search'
 import type { Sandbox } from './sandbox'
 import type { AgentTool } from './tool'
+import type { UiBridge } from './ui-bridge'
 import type { Workspace } from './workspace'
-
-export interface UiBridge {}
 
 export interface CatalogDeps {
   workspace: Workspace
