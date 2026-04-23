@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useSyncExternalStore } from "react"
-import { useDockviewApi } from "../dock"
+import { useCallback, useEffect, useRef, useState } from "react"
+import type { DockviewShellApi } from "../dock"
 
 export interface ArtifactPanel {
   id: string
@@ -18,43 +18,60 @@ export interface UseArtifactPanelsReturn {
 }
 
 export function useArtifactPanels(
-  surfaceApi: ReturnType<typeof useDockviewApi> | null,
+  surfaceApi: DockviewShellApi | null,
 ): UseArtifactPanelsReturn {
-  const subscribe = useCallback(
-    (onStoreChange: () => void) => {
-      if (!surfaceApi) return () => {}
-      const interval = setInterval(onStoreChange, 500)
-      return () => clearInterval(interval)
-    },
-    [surfaceApi],
-  )
+  const [panels, setPanels] = useState<ArtifactPanel[]>([])
+  const panelsRef = useRef(panels)
+  panelsRef.current = panels
 
-  const getSnapshot = useCallback((): ArtifactPanel[] => {
-    if (!surfaceApi) return []
-    try {
-      const json = surfaceApi.toJSON()
-      const panels: ArtifactPanel[] = []
-      if (json && typeof json === "object" && "panels" in json) {
-        const raw = json as { panels?: Record<string, { id?: string; contentComponent?: string; params?: Record<string, unknown> }> }
-        if (raw.panels) {
-          for (const [, p] of Object.entries(raw.panels)) {
-            if (p.id) {
-              panels.push({
-                id: p.id,
-                component: p.contentComponent ?? p.id,
-                params: p.params,
-              })
+  useEffect(() => {
+    if (!surfaceApi) {
+      setPanels([])
+      return
+    }
+
+    function poll() {
+      try {
+        const json = surfaceApi!.toJSON()
+        const next: ArtifactPanel[] = []
+        if (json && typeof json === "object" && "panels" in json) {
+          const raw = json as {
+            panels?: Record<
+              string,
+              {
+                id?: string
+                contentComponent?: string
+                params?: Record<string, unknown>
+              }
+            >
+          }
+          if (raw.panels) {
+            for (const [, p] of Object.entries(raw.panels)) {
+              if (p.id) {
+                next.push({
+                  id: p.id,
+                  component: p.contentComponent ?? p.id,
+                  params: p.params,
+                })
+              }
             }
           }
         }
-      }
-      return panels
-    } catch {
-      return []
-    }
-  }, [surfaceApi])
 
-  const panels = useSyncExternalStore(subscribe, getSnapshot, () => [])
+        const prev = panelsRef.current
+        const changed =
+          prev.length !== next.length ||
+          prev.some((p, i) => p.id !== next[i]?.id)
+        if (changed) setPanels(next)
+      } catch {
+        // surface not ready yet
+      }
+    }
+
+    poll()
+    const interval = setInterval(poll, 500)
+    return () => clearInterval(interval)
+  }, [surfaceApi])
 
   const open = useCallback(
     (panel: ArtifactPanel) => {
@@ -82,8 +99,8 @@ export function useArtifactPanels(
   )
 
   const isOpen = useCallback(
-    (panelId: string) => panels.some((p) => p.id === panelId),
-    [panels],
+    (panelId: string) => panelsRef.current.some((p) => p.id === panelId),
+    [],
   )
 
   return { panels, open, close, activate, isOpen }
