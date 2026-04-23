@@ -49,6 +49,7 @@ export interface BodySchema<TBody> {
 export interface AuthMiddlewareOptions {
   authToken?: string
   workspaceId?: string
+  publicPaths?: string[]
   onDevModeWarning?: (message: string) => void
 }
 
@@ -94,6 +95,10 @@ export function createAuthMiddleware(opts: AuthMiddlewareOptions = {}) {
     const authToken = opts.authToken?.trim() || undefined
 
     ensureWorkspaceContext(request, workspaceId, false)
+
+    if (opts.publicPaths?.includes(request.url.split('?')[0])) {
+      return
+    }
 
     if (!authToken) {
       if (!warnedDevMode) {
