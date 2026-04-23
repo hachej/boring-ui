@@ -14,7 +14,8 @@
       "@boring/agent": ["src/front/index.ts"],
       "@boring/agent/front": ["src/front/index.ts"],
       "@boring/agent/server": ["src/server/index.ts"],
-      "@boring/agent/shared": ["src/shared/index.ts"]
+      "@boring/agent/shared": ["src/shared/index.ts"],
+      "@/*": ["src/*"]
     },
     "allowJs": true,
     "forceConsistentCasingInFileNames": true,

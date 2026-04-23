@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "default",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/front-shadcn/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/front-shadcn/ui",
+    "utils": "@/front-shadcn/lib",
+    "ui": "@/front-shadcn/ui",
+    "lib": "@/front-shadcn/lib",
+    "hooks": "@/front-shadcn/hooks"
+  }
+}

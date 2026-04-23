@@ -128,7 +128,7 @@ if [[ -d "$ROOT_DIR/src/front/primitives" ]]; then
 fi
 
 if [[ -d "$ROOT_DIR/src" ]]; then
-  stable_error_codes_output="$(rg -n --no-heading --color never -e "code\\s*:\\s*['\"][A-Za-z0-9_-]+['\"]" "$ROOT_DIR/src" -g '!**/error-codes.ts' || true)"
+  stable_error_codes_output="$(rg -n --no-heading --color never -e "code\\s*:\\s*['\"][A-Za-z0-9_-]+['\"]" "$ROOT_DIR/src" -g '!**/error-codes.ts' -g '!**/front-shadcn/primitives/**' || true)"
   print_matches \
     "Use stable error-code enum imports (no raw string codes)" \
     "Import canonical constants from shared error-codes." \

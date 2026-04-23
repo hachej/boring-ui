@@ -9,6 +9,7 @@ export default defineConfig([
       "shared/index": "src/shared/index.ts",
       "server/index": "src/server/index.ts",
       "front/index": "src/front/index.ts",
+      "front-shadcn/index": "src/front-shadcn/index.ts",
     },
     format: ["esm"],
     dts: true,
