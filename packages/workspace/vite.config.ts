@@ -13,7 +13,10 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: resolve(__dirname, "src/index.ts"),
+      entry: {
+        workspace: resolve(__dirname, "src/index.ts"),
+        testing: resolve(__dirname, "src/testing/index.ts"),
+      },
       formats: ["es"],
     },
     rollupOptions: {

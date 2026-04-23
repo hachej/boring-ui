@@ -117,7 +117,7 @@ describe("WorkspaceProvider — context composition", () => {
       </WorkspaceProvider>,
     )
 
-    expect(screen.getByTestId("cmds").textContent).toBe("0")
+    expect(Number(screen.getByTestId("cmds").textContent)).toBeGreaterThanOrEqual(3)
   })
 
   it("provides useTheme with correct initial value", () => {

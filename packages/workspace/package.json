@@ -12,6 +12,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/workspace.js"
     },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    },
     "./globals.css": "./src/globals.css"
   },
   "scripts": {

@@ -6,6 +6,10 @@ import { RegistryProvider } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function () {}
+}
+
 const RECENT_KEY = "boring-ui-v2:command-palette:recent"
 
 function createWrapper(commandRegistry?: CommandRegistry) {
