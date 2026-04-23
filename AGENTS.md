@@ -148,7 +148,7 @@ Ask an agent of the **opposite kind** to review your staged diff. Catches model-
 - **Claude Code agent → asks Codex via `cod exec "..."`**
 - **Codex agent → asks Claude Code via `cc -p "..."`**
 
-**Isolate your changes first** (`git add` only the files for this bead — don't send a diff polluted with unrelated work). The reviewer sees `git diff --staged`; keep it scoped.
+Isolate your changes to just this bead before sending them for review (best-effort — figure out the approach).
 
 Verdicts: **ship** → commit + close. **revise** → fix + re-request (cap 3 rounds). **reject** → `br update <id> -s blocked`, escalate via Agent Mail. Never self-review for closure.
 
