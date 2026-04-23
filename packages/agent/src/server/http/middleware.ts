@@ -7,6 +7,7 @@ export const ERROR_CODE_PATH_TOO_LONG = 'path_too_long'
 export const ERROR_CODE_VALIDATION_ERROR = 'validation_error'
 export const ERROR_CODE_PATH_REJECTED = 'path_rejected'
 export const ERROR_CODE_NOT_FOUND = 'not_found'
+export const ERROR_CODE_ALREADY_EXISTS = 'already_exists'
 export const ERROR_CODE_INTERNAL = 'internal'
 
 const DEV_MODE_WARNING =
