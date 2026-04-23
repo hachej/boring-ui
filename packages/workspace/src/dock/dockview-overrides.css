@@ -1,0 +1,103 @@
+/* Dockview theme overrides — map dockview CSS vars to shadcn design tokens. */
+
+.dv-shell {
+  --dv-background-color: var(--background);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-tabs-and-actions-container-font-size: 0.8125rem;
+  --dv-tabs-and-actions-container-height: 36px;
+  --dv-tab-close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+
+  --dv-drag-over-background-color: oklch(from var(--accent) l c h / 0.3);
+  --dv-drag-over-border-color: var(--accent);
+
+  --dv-separator-border: var(--border);
+
+  color: var(--foreground);
+  background-color: var(--background);
+}
+
+/* Tab strip background */
+.dv-shell .tab-container {
+  background-color: var(--muted);
+}
+
+/* Inactive tab */
+.dv-shell .tab {
+  color: var(--muted-foreground);
+  background-color: var(--muted);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.dv-shell .tab:hover {
+  color: var(--foreground);
+  background-color: oklch(from var(--accent) l c h / 0.5);
+}
+
+/* Active tab */
+.dv-shell .tab.active-tab {
+  color: var(--foreground);
+  background-color: var(--background);
+  border-bottom-color: var(--primary);
+}
+
+/* Tab close button */
+.dv-shell .tab .dv-default-tab-action {
+  color: var(--muted-foreground);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.dv-shell .tab:hover .dv-default-tab-action,
+.dv-shell .tab.active-tab .dv-default-tab-action {
+  opacity: 1;
+}
+
+.dv-shell .tab .dv-default-tab-action:hover {
+  color: var(--foreground);
+}
+
+/* Sash (resize handle) */
+.dv-shell .sash-container .sash {
+  transition: background-color 0.2s;
+}
+
+.dv-shell .sash-container .sash:hover,
+.dv-shell .sash-container .sash.active {
+  background-color: var(--primary);
+  transition-delay: 0.15s;
+}
+
+/* Drop target overlay */
+.dv-shell .drop-target-dropzone > .drop-target-selection {
+  background-color: oklch(from var(--primary) l c h / 0.15);
+  border: 2px dashed var(--primary);
+  border-radius: calc(var(--radius) - 2px);
+}
+
+/* Watermark (empty state) */
+.dv-shell .watermark {
+  color: var(--muted-foreground);
+}
+
+/* Panel content area */
+.dv-shell .groupview > .content-container {
+  background-color: var(--background);
+}
+
+/* Group header actions */
+.dv-shell .right-actions-container {
+  color: var(--muted-foreground);
+}
+
+.dv-shell .right-actions-container:hover {
+  color: var(--foreground);
+}
+
+/* Drag ghost */
+.dv-shell .dv-drag-image {
+  opacity: 0.85;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.15);
+}
