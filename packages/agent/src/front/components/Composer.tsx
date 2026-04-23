@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react'
+import { forwardRef, useImperativeHandle, useRef, type KeyboardEvent } from 'react'
 import { useEffect, useState } from 'react'
 import type { SendMessageInput } from '../../shared/harness'
 import { ModelPicker, type ModelId, isModelId } from './ModelPicker'
@@ -79,14 +79,23 @@ export function toComposerSendInput(args: {
   }
 }
 
-export function Composer(props: ComposerProps) {
+export interface ComposerHandle {
+  focus(): void
+}
+
+export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(props, ref) {
   const { onSend, isStreaming = false, placeholder = 'Send a message…', storage } = props
   const storageImpl = getStorageOverride(storage)
   const defaults = readComposerPreferences(storageImpl)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const [input, setInput] = useState('')
   const [model, setModel] = useState<ModelId>(defaults.model)
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(defaults.thinkingLevel)
+
+  useImperativeHandle(ref, () => ({
+    focus() { textareaRef.current?.focus() },
+  }))
 
   useEffect(() => {
     storageImpl?.setItem(STORAGE_MODEL_KEY, model)
@@ -137,6 +146,8 @@ export function Composer(props: ComposerProps) {
   return (
     <div className="composer">
       <textarea
+        ref={textareaRef}
+        autoFocus
         onChange={(event) => setInput(event.currentTarget.value)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
@@ -157,4 +168,4 @@ export function Composer(props: ComposerProps) {
       </button>
     </div>
   )
-}
+})

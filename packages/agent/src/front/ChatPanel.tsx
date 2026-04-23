@@ -1,9 +1,9 @@
 import type { UIMessage } from 'ai'
 import { isToolUIPart, getToolName } from 'ai'
-import { useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { UiBridge } from '../shared/ui-bridge'
 import './styles/theme.css'
-import { Composer, type ComposerSendInput } from './components/Composer'
+import { Composer, type ComposerHandle, type ComposerSendInput } from './components/Composer'
 import { isModelId } from './components/ModelPicker'
 import { useAgentChat } from './hooks/useAgentChat'
 import { CodeBlock } from './primitives/CodeBlock'
@@ -111,10 +111,18 @@ function renderTextWithCodeBlocks(text: string): ReactNode {
   return chunks
 }
 
+function statusText(status: string): string | null {
+  if (status === 'submitted') return 'Thinking…'
+  if (status === 'streaming') return 'Generating…'
+  return null
+}
+
 export function ChatPanel(props: ChatPanelProps) {
   const { sessionId, toolRenderers, extraCommands, onSessionReset } = props
   const { messages, sendMessage, setMessages, status, error } = useAgentChat({ sessionId })
   const mergedToolRenderers = mergeToolRenderers(toolRenderers)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const composerRef = useRef<ComposerHandle>(null)
 
   const registry = useMemo(
     () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
@@ -122,6 +130,10 @@ export function ChatPanel(props: ChatPanelProps) {
   )
 
   const isStreaming = status === 'submitted' || status === 'streaming'
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, status])
 
   async function handleSend(input: ComposerSendInput): Promise<void> {
     const parsed = parseSlashCommand(input.message)
@@ -171,6 +183,7 @@ export function ChatPanel(props: ChatPanelProps) {
         },
       },
     )
+    composerRef.current?.focus()
   }
 
   return (
@@ -186,6 +199,14 @@ export function ChatPanel(props: ChatPanelProps) {
         aria-label="Agent conversation"
         aria-live="polite"
       >
+        {messages.length === 0 && !isStreaming ? (
+          <div className="boring-chat__empty-state">
+            <p className="boring-chat__empty-heading">How can I help?</p>
+            <p className="boring-chat__empty-hint">
+              Ask me to build, debug, or explore files. Type <kbd>/help</kbd> for commands.
+            </p>
+          </div>
+        ) : null}
         {messages.map((message) => {
           const textParts = message.parts.filter(isTextPart)
           const reasoningParts = message.parts
@@ -233,9 +254,15 @@ export function ChatPanel(props: ChatPanelProps) {
             </MessagePartContainer>
           </Message>
         ) : null}
+        {statusText(status) ? (
+          <div className="boring-chat__status" aria-live="polite">
+            {statusText(status)}
+          </div>
+        ) : null}
+        <div ref={messagesEndRef} />
       </div>
 
-      <Composer isStreaming={isStreaming} onSend={handleSend} />
+      <Composer ref={composerRef} isStreaming={isStreaming} onSend={handleSend} />
     </div>
   )
 }
