@@ -2,6 +2,7 @@ import type { UIMessage } from 'ai'
 import { isToolUIPart, getToolName } from 'ai'
 import { useMemo } from 'react'
 import type { UiBridge } from '../shared/ui-bridge'
+import './styles/theme.css'
 import { Composer, type ComposerSendInput } from './components/Composer'
 import { isModelId } from './components/ModelPicker'
 import { useAgentChat } from './hooks/useAgentChat'
@@ -102,6 +103,7 @@ export function ChatPanel(props: ChatPanelProps) {
 
   return (
     <div
+      data-boring-chat=""
       className="chat-panel"
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >

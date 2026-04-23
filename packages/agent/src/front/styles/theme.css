@@ -1,0 +1,54 @@
+[data-boring-chat] {
+  --boring-chat-bg: #0b1220;
+  --boring-chat-fg: #e5e7eb;
+  --boring-chat-muted: #94a3b8;
+  --boring-chat-accent: #3b82f6;
+  --boring-chat-border: #334155;
+
+  --boring-chat-font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --boring-chat-font-mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  --boring-chat-font-size: 0.875rem;
+
+  --boring-chat-avatar-size: 2rem;
+  --boring-chat-message-gap: 0.75rem;
+  --boring-chat-message-padding: 1rem;
+  --boring-chat-message-radius: 0.5rem;
+  --boring-chat-part-gap: 0.5rem;
+  --boring-chat-user-bg: #1d4ed8;
+  --boring-chat-user-padding: 0.5rem 0.75rem;
+  --boring-chat-assistant-bg: transparent;
+
+  --boring-chat-reasoning-border: var(--boring-chat-border);
+  --boring-chat-reasoning-radius: 0.375rem;
+  --boring-chat-reasoning-header-bg: #0f172a;
+  --boring-chat-reasoning-fg: var(--boring-chat-fg);
+  --boring-chat-reasoning-text: #94a3b8;
+  --boring-chat-reasoning-streaming: var(--boring-chat-accent);
+
+  --boring-chat-tool-border: var(--boring-chat-border);
+  --boring-chat-tool-radius: 0.375rem;
+  --boring-chat-tool-header-bg: #0f172a;
+  --boring-chat-tool-running: var(--boring-chat-accent);
+  --boring-chat-tool-error: #ef4444;
+
+  --boring-chat-terminal-bg: #111827;
+  --boring-chat-terminal-fg: #d1d5db;
+  --boring-chat-terminal-radius: 0.375rem;
+  --boring-chat-terminal-header-bg: #1f2937;
+  --boring-chat-terminal-border: #374151;
+  --boring-chat-terminal-stderr: #f87171;
+  --boring-chat-terminal-success: #4ade80;
+  --boring-chat-terminal-error: #f87171;
+
+  --boring-chat-code-bg: #111827;
+  --boring-chat-code-fg: #d1d5db;
+  --boring-chat-code-radius: 0.375rem;
+  --boring-chat-code-header-bg: #1f2937;
+  --boring-chat-code-border: #374151;
+  --boring-chat-code-copy-bg: rgba(255, 255, 255, 0.1);
+
+  --boring-chat-diff-add: rgba(46, 160, 67, 0.15);
+  --boring-chat-diff-add-fg: #4ade80;
+  --boring-chat-diff-remove: rgba(248, 81, 73, 0.15);
+  --boring-chat-diff-remove-fg: #f87171;
+}

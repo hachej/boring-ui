@@ -22,8 +22,12 @@
     "./front": {
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
-    }
+    },
+    "./theme.css": "./dist/front/index.css"
   },
+  "sideEffects": [
+    "**/*.css"
+  ],
   "files": [
     "dist"
   ],

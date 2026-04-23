@@ -4,8 +4,13 @@ Styling contract for `@boring/agent` frontend surfaces.
 
 ## Current Status
 
-The full chat primitive system is still in progress. This file defines the
-intended contract and the guardrails already enforced in CI.
+Default token values live in `src/front/styles/theme.css` and are scoped to
+`[data-boring-chat]` so each `ChatPanel` instance can be themed independently.
+Package consumers should import the bundled stylesheet once:
+
+```ts
+import '@boring/agent/theme.css'
+```
 
 ## Invariants Enforced Today
 
@@ -32,26 +37,22 @@ Recommended variable names:
 - `--boring-chat-accent`
 - `--boring-chat-border`
 
-As the primitive set lands, this list will be expanded into the full reference
-table from the M3/M5 styling beads.
+The complete token reference lives in `src/front/styles/theme.css`.
 
 ## Scoped Theming
 
-Theme variables should be overridable at any parent boundary so app shells can
-scope themes per panel:
+Use parent-specific selectors that target each panel root:
 
-```tsx
-<section
-  style={
-    {
-      '--boring-chat-bg': '#0b1220',
-      '--boring-chat-fg': '#e5e7eb',
-      '--boring-chat-accent': '#22d3ee',
-    } as React.CSSProperties
-  }
->
-  {/* ChatPanel subtree */}
-</section>
+```css
+.panelA [data-boring-chat] {
+  --boring-chat-tool-border: #ff007a;
+  --boring-chat-tool-running: #ff007a;
+}
+
+.panelB [data-boring-chat] {
+  --boring-chat-tool-border: #00c2ff;
+  --boring-chat-tool-running: #00c2ff;
+}
 ```
 
 ## Guidance

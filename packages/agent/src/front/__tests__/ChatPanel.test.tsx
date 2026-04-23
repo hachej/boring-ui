@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ComposerProps } from '../components/Composer'
@@ -70,6 +71,41 @@ describe('ChatPanel', () => {
     expect(html).toContain('Hello from assistant')
     expect(html).toContain('data-tool-state')
     expect(html).toContain('bash')
+  })
+
+  test('marks ChatPanel root with data-boring-chat attribute', () => {
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-theme-root" />)
+    expect(html).toMatch(/data-boring-chat(?:=| |>|\/>)/)
+  })
+
+  test('renders two chat instances with per-panel selector hooks', () => {
+    const html = renderToStaticMarkup(
+      <div>
+        <style>
+          {`.scope-a [data-boring-chat]{--boring-chat-tool-border:#ff007a}
+            .scope-b [data-boring-chat]{--boring-chat-tool-border:#00c2ff}`}
+        </style>
+        <section className="scope-a">
+          <ChatPanel sessionId="sess-theme-a" />
+        </section>
+        <section className="scope-b">
+          <ChatPanel sessionId="sess-theme-b" />
+        </section>
+      </div>,
+    )
+
+    expect(html.match(/data-boring-chat(?:=| |>|\/>)/g)).toHaveLength(2)
+    expect(html).toContain('scope-a')
+    expect(html).toContain('scope-b')
+    expect(html).toContain('--boring-chat-tool-border:#ff007a')
+    expect(html).toContain('--boring-chat-tool-border:#00c2ff')
+  })
+
+  test('theme defaults are scoped to [data-boring-chat]', () => {
+    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8')
+    expect(css).toContain('[data-boring-chat]')
+    expect(css).toContain('--boring-chat-tool-border')
+    expect(css).toContain('--boring-chat-code-bg')
   })
 
   test('typing in composer send path forwards user message to useAgentChat', async () => {
