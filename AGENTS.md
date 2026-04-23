@@ -33,7 +33,13 @@ v1 boring-ui tangled chat, layout, sandboxing, and deploy concerns into a single
 
 - **`@boring/agent` is a product by itself** — `npx @boring/agent` is a legitimate standalone tool. Users who want "Claude Code in a browser against my repo" don't need layouts or panels or git UI.
 - **`@boring/workspace` is pure layout** — it composes the agent's chat pane with file/editor panes into a DockView IDE. It has no opinion about what the agent does; it just renders components the app-shell hands it.
-- **Future `@boring/cloud`** (not in v2) absorbs multi-workspace provisioning, billing, auth. Kept OUT of agent + workspace so self-hosters don't carry cloud weight.
+
+**Future packages (not in v2, but shape current decisions):**
+
+- **`@boring/core`** — the glue + shared infra. Brings agent + workspace together into a full product, plus owns DB management, user management, auth, and any shared-across-packages primitives (swappable `SessionStore` DB backends, `SandboxHandleStore` DB impls, etc.). Agent + workspace stay DB-free in v2 on purpose so core can inject persistence later without reworking adapters.
+- **`@boring/cloud`** — deployment + multi-tenancy. Multi-workspace provisioning, per-user/per-tenant workspace lifecycle, Fly/Modal/Vercel orchestration, billing integration, multi-tenant auth. Kept OUT of agent + workspace so self-hosters don't carry cloud weight.
+
+Design implication today: every interface that might need DB-backing in the future (`SessionStore`, `SandboxHandleStore`, etc.) ships with a file-based default in v2 + an injection seam (`createAgentApp({ sessionStore, sandboxHandleStore })`) so core/cloud can swap in DB impls without touching agent/workspace internals.
 
 **Build principles — apply these to every bead:**
 
