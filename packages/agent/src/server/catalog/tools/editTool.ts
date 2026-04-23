@@ -1,0 +1,139 @@
+import type { AgentTool, ToolExecContext, ToolResult } from '../../../shared/tool'
+import type { Workspace } from '../../../shared/workspace'
+
+interface EditToolDetails {
+  path: string
+  replacements: number
+}
+
+interface EditParams {
+  path?: unknown
+  oldString?: unknown
+  newString?: unknown
+  replaceAll?: unknown
+}
+
+function makeError(message: string): ToolResult {
+  return {
+    content: [{ type: 'text', text: message }],
+    isError: true,
+  }
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle.length === 0) return 0
+  let count = 0
+  let searchFrom = 0
+  while (true) {
+    const index = haystack.indexOf(needle, searchFrom)
+    if (index === -1) break
+    count += 1
+    searchFrom = index + needle.length
+  }
+  return count
+}
+
+function replaceFirstOccurrence(
+  content: string,
+  oldString: string,
+  newString: string,
+): string {
+  const index = content.indexOf(oldString)
+  if (index === -1) return content
+  return (
+    content.slice(0, index) +
+    newString +
+    content.slice(index + oldString.length)
+  )
+}
+
+function replaceAllOccurrences(
+  content: string,
+  oldString: string,
+  newString: string,
+): string {
+  return content.split(oldString).join(newString)
+}
+
+function successResult(details: EditToolDetails): ToolResult {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: `edited ${details.path} (${details.replacements} replacement${details.replacements === 1 ? '' : 's'})`,
+      },
+    ],
+    details,
+  }
+}
+
+export function createEditTool(workspace: Workspace): AgentTool {
+  return {
+    name: 'edit',
+    description:
+      'Edit an existing file via exact string replacement with optional replaceAll behavior.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        oldString: { type: 'string' },
+        newString: { type: 'string' },
+        replaceAll: { type: 'boolean' },
+      },
+      required: ['path', 'oldString', 'newString'],
+    },
+    async execute(input, ctx: ToolExecContext): Promise<ToolResult> {
+      const params = input as EditParams
+      if (typeof params.path !== 'string' || params.path.length === 0) {
+        return makeError('path is required')
+      }
+      if (typeof params.oldString !== 'string' || params.oldString.length === 0) {
+        return makeError('oldString must be a non-empty string')
+      }
+      if (typeof params.newString !== 'string') {
+        return makeError('newString must be a string')
+      }
+      if (
+        params.replaceAll !== undefined &&
+        typeof params.replaceAll !== 'boolean'
+      ) {
+        return makeError('replaceAll must be a boolean when provided')
+      }
+      if (ctx.abortSignal.aborted) {
+        return makeError('edit aborted')
+      }
+
+      const path = params.path
+      const oldString = params.oldString
+      const newString = params.newString
+      const replaceAll = params.replaceAll === true
+
+      try {
+        const originalContent = await workspace.readFile(path)
+        const matches = countOccurrences(originalContent, oldString)
+
+        if (matches === 0) {
+          return makeError('oldString not found; edit requires exact existing content')
+        }
+        if (!replaceAll && matches > 1) {
+          return makeError('ambiguous match; add context or set replaceAll=true')
+        }
+
+        const nextContent = replaceAll
+          ? replaceAllOccurrences(originalContent, oldString, newString)
+          : replaceFirstOccurrence(originalContent, oldString, newString)
+
+        await workspace.writeFile(path, nextContent)
+
+        return successResult({
+          path,
+          replacements: replaceAll ? matches : 1,
+        })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'unknown edit failure'
+        return makeError(`edit failed: ${message}`)
+      }
+    },
+  }
+}
