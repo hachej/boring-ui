@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify'
+import { basename } from 'node:path'
 import type { AgentTool } from '../shared/tool'
 import type { SessionStore } from '../shared/session'
 import { getEnv } from './config/env'
@@ -6,7 +7,8 @@ import type { RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { standardCatalog } from './catalog/standardCatalog'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
-import { loadPlugins, flattenPluginTools } from './harness/pi-coding-agent/pluginLoader'
+import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
+import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
 import { createAuthMiddleware } from './http/middleware'
 import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
@@ -17,6 +19,13 @@ import { catalogRoutes } from './http/routes/catalog'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
+
+function pluginNameFromPath(path: string): string {
+  const fileName = basename(path)
+  if (fileName.endsWith('.mjs')) return fileName.slice(0, -4)
+  if (fileName.endsWith('.js')) return fileName.slice(0, -3)
+  return fileName
+}
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
@@ -44,10 +53,8 @@ export async function createAgentApp(
     templatePath,
   })
 
-  const tools = standardCatalog(runtimeBundle)
-  if (opts.extraTools?.length) {
-    tools.push(...opts.extraTools)
-  }
+  const standardTools = standardCatalog(runtimeBundle)
+  const pluginTools: PluginToolRegistration[] = []
 
   if (resolvedMode !== 'vercel-sandbox') {
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
@@ -56,8 +63,20 @@ export async function createAgentApp(
         app.log.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
       }
     }
-    tools.push(...flattenPluginTools(pluginResult))
+    pluginTools.push(
+      ...pluginResult.plugins.map((plugin) => ({
+        pluginName: pluginNameFromPath(plugin.path),
+        tools: plugin.tools,
+      })),
+    )
   }
+
+  const tools = mergeTools({
+    standardTools,
+    extraTools: opts.extraTools,
+    pluginTools,
+    logger: app.log,
+  })
 
   const harness = createPiCodingAgentHarness({ tools, cwd: workspaceRoot })
 

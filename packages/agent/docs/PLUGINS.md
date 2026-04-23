@@ -37,6 +37,19 @@ Each tool should provide:
   mode adapter (do not bypass the agent runtime boundary).
 - Avoid `node:*` imports in shared/frontend code paths.
 
+## Tool Name Collisions
+
+Collision precedence is explicit: last-registered wins.
+
+- Built-in catalog tools are registered first.
+- App `extraTools` are registered next.
+- Plugin tools are registered last.
+
+If a plugin reuses an existing tool name (for example `bash`), the plugin tool
+replaces the earlier one and a warning is logged:
+
+`[catalog] Tool "bash" overridden by plugin <name>`
+
 ## Local-Only Caveat (Current Phase)
 
 Until remote runtime adapters and package-level plugin APIs are complete, treat
