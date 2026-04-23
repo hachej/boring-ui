@@ -92,6 +92,9 @@ export function mockWorkspace(initialFiles: Record<string, string> = {}): MockWo
     operations,
     async readFile(relPath) {
       const path = normalizePath(relPath)
+      if (dirs.has(path)) {
+        throw createFsError(EISDIR, `EISDIR: ${path}`)
+      }
       const data = files.get(path)
       if (data === undefined) {
         throw createFsError(ENOENT, `ENOENT: ${path}`)
@@ -179,8 +182,10 @@ export function mockWorkspace(initialFiles: Record<string, string> = {}): MockWo
       if (files.has(path)) {
         throw createFsError(EEXIST, `EEXIST: ${path}`)
       }
-      if (dirs.has(path)) return
-      if (path === '.') return
+      if (dirs.has(path)) {
+        if (opts?.recursive) return
+        throw createFsError(EEXIST, `EEXIST: ${path}`)
+      }
 
       if (opts?.recursive) {
         const parts = path.split('/')
@@ -203,6 +208,7 @@ export function mockWorkspace(initialFiles: Record<string, string> = {}): MockWo
     async rename(fromRelPath, toRelPath) {
       const fromPath = normalizePath(fromRelPath)
       const toPath = normalizePath(toRelPath)
+      if (fromPath === toPath) return
       ensureParentExists(toPath)
 
       const file = files.get(fromPath)
@@ -219,6 +225,9 @@ export function mockWorkspace(initialFiles: Record<string, string> = {}): MockWo
 
       if (!dirs.has(fromPath)) {
         throw createFsError(ENOENT, `ENOENT: ${fromPath}`)
+      }
+      if (toPath.startsWith(`${fromPath}/`)) {
+        throw createFsError(EPERM, `EPERM: ${fromPath} -> ${toPath}`)
       }
       if (fromPath === '.') {
         throw createFsError(EPERM, 'EPERM: cannot rename workspace root')

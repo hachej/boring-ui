@@ -13,6 +13,9 @@ import {
 } from './helpers'
 
 const ENOENT_CODE = 'ENOENT'
+const EEXIST_CODE = 'EEXIST'
+const EISDIR_CODE = 'EISDIR'
+const EPERM_CODE = 'EPERM'
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
@@ -34,6 +37,19 @@ describe('test helpers', () => {
       (error: unknown) =>
         (error as { code?: string }).code === ENOENT_CODE,
     )
+  })
+
+  test('mockWorkspace mirrors expected fs edge-case errors', async () => {
+    const workspace = mockWorkspace()
+
+    await workspace.mkdir('dir', { recursive: true })
+    await expect(workspace.readFile('dir')).rejects.toMatchObject({ code: EISDIR_CODE })
+    await expect(workspace.mkdir('dir')).rejects.toMatchObject({ code: EEXIST_CODE })
+
+    await workspace.mkdir('dir/sub', { recursive: true })
+    await expect(workspace.rename('dir', 'dir/sub/moved')).rejects.toMatchObject({
+      code: EPERM_CODE,
+    })
   })
 
   test('mockSandbox supports queueable exec results and call history', async () => {
