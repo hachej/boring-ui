@@ -56,7 +56,7 @@ export class OidcTokenRefresher {
     this.applyToken = opts.applyToken ?? (() => {})
     this.now = opts.now ?? Date.now
     this.minTtlMs = opts.minTtlMs ?? DEFAULT_MIN_TTL_MS
-    this.logger = opts.logger ?? createLogger('oidc')
+    this.logger = opts.logger ?? createLogger('[oidc]')
   }
 
   async getValidToken(): Promise<OidcTokenPayload> {
@@ -113,6 +113,7 @@ function coerceHttpStatus(value: unknown): number | null {
     return Number.isFinite(value) ? value : null
   }
   if (typeof value === 'string') {
+    // Some HTTP clients surface numeric status codes as strings.
     const parsed = Number.parseInt(value, 10)
     return Number.isFinite(parsed) ? parsed : null
   }

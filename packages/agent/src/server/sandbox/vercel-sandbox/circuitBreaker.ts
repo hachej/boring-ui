@@ -115,8 +115,8 @@ export class CircuitBreaker {
         ) {
           authRecoveryUsed = true
           await this.onAuthError(error)
-          // Even in half-open mode (maxAttempts=1), allow one retry after
-          // successful auth recovery.
+          // Allow one post-refresh retry even when the auth error occurred on
+          // what would otherwise be the terminal attempt.
           extraRetryAfterAuthRecovery = 1
           continue
         }
