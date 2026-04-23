@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { CircuitBreaker, CircuitOpenError } from '../circuitBreaker'
+import { OidcRefreshFailedError, isOidcAuthError } from '../oidcRefresh'
 
 describe('CircuitBreaker', () => {
   test('opens after 5 consecutive failures', async () => {
@@ -119,5 +120,53 @@ describe('CircuitBreaker', () => {
 
     expect(attempts).toBe(4)
     expect(sleeps).toEqual([100, 400, 1_600])
+  })
+
+  test('401/403 triggers OIDC refresh once and retries operation', async () => {
+    let attempts = 0
+    let refreshCalls = 0
+    const breaker = new CircuitBreaker({
+      sleep: async () => {},
+      isAuthError: isOidcAuthError,
+      onAuthError: async () => {
+        refreshCalls += 1
+      },
+    })
+
+    const result = await breaker.execute(async () => {
+      attempts += 1
+      if (attempts === 1) {
+        const error = new Error('Unauthorized') as Error & { status: number }
+        error.status = 401
+        throw error
+      }
+      return 'ok-after-refresh'
+    })
+
+    expect(result).toBe('ok-after-refresh')
+    expect(attempts).toBe(2)
+    expect(refreshCalls).toBe(1)
+  })
+
+  test('failed OIDC refresh surfaces stable OIDC_REFRESH_FAILED code', async () => {
+    const breaker = new CircuitBreaker({
+      sleep: async () => {},
+      isAuthError: isOidcAuthError,
+      onAuthError: async () => {
+        throw new OidcRefreshFailedError()
+      },
+    })
+
+    await expect(
+      breaker.execute(async () => {
+        const error = new Error('Unauthorized') as Error & {
+          response: { status: number }
+        }
+        error.response = { status: 403 }
+        throw error
+      }),
+    ).rejects.toMatchObject({
+      errorCode: 'OIDC_REFRESH_FAILED',
+    })
   })
 })

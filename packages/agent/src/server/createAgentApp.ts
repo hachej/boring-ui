@@ -18,8 +18,10 @@ import { sessionRoutes } from './http/routes/sessions'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { uiRoutes } from './http/routes/ui'
+import { readyStatusRoutes } from './http/routes/readyStatus'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createInMemoryBridge } from './ui-bridge/createInMemoryBridge'
+import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -85,20 +87,25 @@ export async function createAgentApp(
   const harness = createPiCodingAgentHarness({ tools, cwd: workspaceRoot })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
+  const readyTracker = new ReadyStatusTracker({
+    sandboxReady: resolvedMode !== 'vercel-sandbox',
+    harnessReady: true,
+  })
+  if (resolvedMode === 'vercel-sandbox') {
+    queueMicrotask(() => readyTracker.markSandboxReady())
+  }
+
   app.addHook(
     'onRequest',
     createAuthMiddleware({
       authToken: opts.authToken,
-      publicPaths: ['/health', '/ready'],
+      publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
     }),
   )
 
   await app.register(healthRoutes, {
     version: opts.version ?? DEFAULT_VERSION,
-    getReadiness: () => ({
-      sandboxReady: true,
-      harnessReady: true,
-    }),
+    getReadiness: () => readyTracker.getReadiness(),
   })
 
   await app.register(fileRoutes, { workspace: runtimeBundle.workspace })
@@ -114,6 +121,7 @@ export async function createAgentApp(
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
   await app.register(uiRoutes, { bridge: createInMemoryBridge() })
+  await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app
 }

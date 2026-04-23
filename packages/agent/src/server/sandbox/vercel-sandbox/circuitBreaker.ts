@@ -9,6 +9,8 @@ export interface CircuitBreakerOptions {
   failureRateThreshold?: number
   consecutiveFailuresToOpen?: number
   backoffDelaysMs?: readonly number[]
+  isAuthError?: (error: unknown) => boolean
+  onAuthError?: (error: unknown) => Promise<void>
 }
 
 const DEFAULT_WINDOW_MS = 60_000
@@ -47,6 +49,8 @@ export class CircuitBreaker {
   private readonly failureRateThreshold: number
   private readonly consecutiveFailuresToOpen: number
   private readonly backoffDelaysMs: readonly number[]
+  private readonly isAuthError: (error: unknown) => boolean
+  private readonly onAuthError: ((error: unknown) => Promise<void>) | null
 
   constructor(opts: CircuitBreakerOptions = {}) {
     this.now = opts.now ?? Date.now
@@ -58,6 +62,8 @@ export class CircuitBreaker {
     this.consecutiveFailuresToOpen =
       opts.consecutiveFailuresToOpen ?? DEFAULT_CONSECUTIVE_FAILURES_TO_OPEN
     this.backoffDelaysMs = opts.backoffDelaysMs ?? DEFAULT_BACKOFF_DELAYS_MS
+    this.isAuthError = opts.isAuthError ?? (() => false)
+    this.onAuthError = opts.onAuthError ?? null
   }
 
   getState(): CircuitBreakerState {
@@ -89,12 +95,22 @@ export class CircuitBreaker {
   ): Promise<T> {
     const maxAttempts = allowRetries ? this.backoffDelaysMs.length + 1 : 1
     let lastError: unknown
+    let authRecoveryUsed = false
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       try {
         return await operation()
       } catch (error) {
         lastError = error
+        if (
+          this.onAuthError
+          && !authRecoveryUsed
+          && this.isAuthError(error)
+        ) {
+          authRecoveryUsed = true
+          await this.onAuthError(error)
+          continue
+        }
         if (attempt === maxAttempts - 1) {
           break
         }
