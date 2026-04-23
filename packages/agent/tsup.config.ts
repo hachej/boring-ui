@@ -1,5 +1,8 @@
 import { defineConfig } from "tsup";
 
+const EXTERNALS = ["react", "react-dom"];
+const DEV_BUNDLE_EXTERNALS = ["@vitejs/plugin-react", "@babel/core"];
+
 export default defineConfig([
   {
     entry: {
@@ -13,7 +16,7 @@ export default defineConfig([
     clean: true,
     outDir: "dist",
     target: "es2022",
-    external: ["react", "react-dom"],
+    external: [...EXTERNALS, ...DEV_BUNDLE_EXTERNALS],
   },
   {
     entry: { "bin/boring-agent": "src/bin/boring-agent.ts" },
@@ -22,5 +25,6 @@ export default defineConfig([
     outDir: "dist",
     target: "es2022",
     platform: "node",
+    external: DEV_BUNDLE_EXTERNALS,
   },
 ]);
