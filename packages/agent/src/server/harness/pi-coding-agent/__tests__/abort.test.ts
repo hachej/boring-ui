@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { spawn, type ChildProcess } from "node:child_process";
+import { createAgentSession, type AgentSession } from "@mariozechner/pi-coding-agent";
 
 const { mockAbort, mockDispose, mockSubscribers } = vi.hoisted(() => ({
   mockAbort: vi.fn().mockResolvedValue(undefined),
@@ -34,6 +36,8 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 
 import { createPiCodingAgentHarness } from "../createHarness.js";
 import type { RunContext, SendMessageInput } from "../../../../shared/harness.js";
+
+const mockedCreateAgentSession = vi.mocked(createAgentSession);
 
 function emitPiEvent(event: any): void {
   for (const sub of mockSubscribers) sub(event);
@@ -196,4 +200,93 @@ describe("abort propagation", () => {
     abortController.abort();
     expect(mockAbort).not.toHaveBeenCalled();
   });
+
+  it.skipIf(process.platform === "win32")(
+    "client abort propagates to pi child process termination",
+    async () => {
+    let child: ChildProcess | null = null;
+    let exitSignal: NodeJS.Signals | null = null;
+    let exitCode: number | null = null;
+    const promptAbortController = new AbortController();
+    const abortSpy = vi.fn(async () => {
+      promptAbortController.abort();
+    });
+
+    const session: AgentSession = {
+      subscribe(listener: (event: any) => void) {
+        mockSubscribers.push(listener);
+        return () => {
+          const idx = mockSubscribers.indexOf(listener);
+          if (idx >= 0) mockSubscribers.splice(idx, 1);
+        };
+      },
+      prompt: async () => {
+        child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+          stdio: "ignore",
+          signal: promptAbortController.signal,
+        });
+        await new Promise<void>((resolve, reject) => {
+          child!.once("exit", (code, signal) => {
+            exitCode = code;
+            exitSignal = signal;
+            resolve();
+          });
+          child!.once("error", (err) => {
+            if ((err as Error).name === "AbortError") {
+              resolve();
+              return;
+            }
+            reject(err);
+          });
+        });
+      },
+      abort: abortSpy,
+      dispose: mockDispose,
+    } as AgentSession;
+
+    mockedCreateAgentSession.mockImplementationOnce(async () => ({
+      session,
+    }));
+
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-abort",
+    });
+
+    const abortController = new AbortController();
+    const ctx: RunContext = {
+      abortSignal: abortController.signal,
+      workdir: "/tmp/test-abort",
+    };
+    const input: SendMessageInput = {
+      sessionId: "sess-abort-child",
+      message: "hello",
+    };
+
+    try {
+      const iter = harness.sendMessage(input, ctx);
+      const pendingRead = iter[Symbol.asyncIterator]().next();
+
+      await vi.waitFor(() => {
+        expect(child).not.toBeNull();
+        expect(child!.exitCode).toBeNull();
+      });
+
+      abortController.abort();
+
+      const abortResult = await pendingRead;
+      expect(abortResult.done).toBe(true);
+
+      await vi.waitFor(() => {
+        expect(abortSpy).toHaveBeenCalledTimes(1);
+        expect(exitSignal).toBe("SIGTERM");
+      });
+      expect(exitCode).toBeNull();
+    } finally {
+      if (child && child.exitCode === null) {
+        child.kill("SIGKILL");
+      }
+    }
+    },
+  );
 });
