@@ -1,0 +1,5 @@
+policy,runtime_hours_per_day,active_cpu_vcpu_hours_per_day,vcpu,memory_gb,cpu_cost_per_day,mem_cost_per_day,snapshot_cost_per_day,create_cost_per_day,total_cost_per_day,total_cost_per_month
+stop_on_session_end,0.5,0.3,2,4,0.0384,0.0424,0.0013900183,0.0000006,0.0821906183,2.4657185490
+idle_stop_60m,1.0,0.3,2,4,0.0384,0.0848,0.0013900183,0.0000006,0.1245906183,3.7377185490
+timeout_5h,5.0,0.3,2,4,0.0384,0.4240,0.0013900183,0.0000006,0.4637906183,13.9137185490
+pinned_24h,24.0,0.3,2,4,0.0384,2.0352,0.0013900183,0.0000006,2.0749906183,62.2497185490
