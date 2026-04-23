@@ -5,7 +5,12 @@ Minimal code sketch showing how to add a custom tool to `@boring/agent`.
 ## Intent
 
 Demonstrate the shape of an `AgentTool` and how it is passed into the catalog/harness wiring.
-This directory is documentation-only right now (not a runnable package yet).
+This directory now includes two sketch files:
+
+- `server.ts` — planned server-side tool registration shape.
+- `client.tsx` — planned chat renderer + CSS variable override shape.
+
+It is still not a runnable package yet (the M5 runtime/UI APIs are in progress).
 
 ## Example
 
