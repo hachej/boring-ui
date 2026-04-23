@@ -3,6 +3,7 @@ export * from "./registry"
 export * from "./dock"
 export * from "./layouts"
 export * from "./data"
+export * from "./hooks"
 export * from "./components/ui"
 export {
   WorkspaceProvider,
