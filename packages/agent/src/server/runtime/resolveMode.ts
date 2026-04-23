@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 
+import { getEnv } from '../config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './mode'
 import { directModeAdapter } from './modes/direct'
 import { localModeAdapter } from './modes/local'
@@ -21,7 +22,7 @@ export function hasBwrap(): boolean {
 }
 
 export function autoDetectMode(): RuntimeModeId {
-  const explicitMode = process.env.BORING_AGENT_MODE
+  const explicitMode = getEnv('BORING_AGENT_MODE')
   if (explicitMode) {
     if (!isRuntimeModeId(explicitMode)) {
       throw new Error(
