@@ -83,18 +83,28 @@ Typical split in `boring-ui-v2`:
 
 Use the app shell to choose runtime mode, inject stores, and expose HTTP routes to the frontend.
 
+## Two UI Flavors
+
+| | `@boring/agent` (bare) | `@boring/agent/ui-shadcn` |
+|---|---|---|
+| Import | `import { ChatPanel } from '@boring/agent'` | `import { ChatPanel } from '@boring/agent/ui-shadcn'` |
+| Styling | CSS-var tokens, zero framework | Tailwind v4 + shadcn/ui |
+| When to use | Embed in an existing design system | Standalone / Vercel-style chatbot |
+
+Both are permanent. See [docs/UI-SHADCN.md](./docs/UI-SHADCN.md) for the full guide.
+
 ## Package Surfaces
 
 - `@boring/agent` for front-facing exports.
 - `@boring/agent/shared` for platform-agnostic contracts.
 - `@boring/agent/server` for Node/server-only entry points.
 - `@boring/agent/front` for frontend-only entry points.
+- `@boring/agent/ui-shadcn` for Tailwind + shadcn styled ChatPanel.
 
-## Custom Tools Example
+## Examples
 
-See the minimal integration sketch:
-
-- [examples/with-custom-tool](./examples/with-custom-tool/README.md)
+- [examples/with-custom-tool](./examples/with-custom-tool/README.md) — bare ChatPanel with a custom tool
+- [examples/with-shadcn](./examples/with-shadcn/) — Tailwind + shadcn styled ChatPanel
 
 ## Design Notes
 
@@ -107,6 +117,7 @@ See the minimal integration sketch:
 
 - [API](./docs/API.md)
 - [STYLING](./docs/STYLING.md)
+- [UI-SHADCN](./docs/UI-SHADCN.md)
 - [PLUGINS](./docs/PLUGINS.md)
 - [MIGRATION](./docs/MIGRATION.md)
 

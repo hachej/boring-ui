@@ -77,6 +77,47 @@ describe('file routes (NodeWorkspace integration)', () => {
     expect(readRes.json().content).toBe('export {}')
   })
 
+  test('multi-tab stale write overwrites newer content (last write wins)', async () => {
+    const { app } = await createTestApp()
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: 'shared.txt', content: 'base' },
+    })
+
+    const tabARead = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?path=shared.txt',
+    })
+    expect(tabARead.statusCode).toBe(200)
+    expect(tabARead.json().content).toBe('base')
+
+    const tabBWrite = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: 'shared.txt', content: 'tab-b-newer' },
+    })
+    expect(tabBWrite.statusCode).toBe(200)
+    expect(tabBWrite.json()).toEqual({ ok: true })
+
+    // Tab A writes using stale state; no optimistic version check rejects it.
+    const tabAWrite = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: 'shared.txt', content: 'tab-a-stale' },
+    })
+    expect(tabAWrite.statusCode).toBe(200)
+    expect(tabAWrite.json()).toEqual({ ok: true })
+
+    const finalRead = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?path=shared.txt',
+    })
+    expect(finalRead.statusCode).toBe(200)
+    expect(finalRead.json()).toEqual({ content: 'tab-a-stale' })
+  })
+
   test('POST /api/v1/files/move renames files', async () => {
     const { app } = await createTestApp()
 
