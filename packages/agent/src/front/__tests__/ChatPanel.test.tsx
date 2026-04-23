@@ -83,6 +83,7 @@ describe('ChatPanel', () => {
       {
         body: {
           sessionId: 'sess-42',
+          message: 'Run tests',
           model: { provider: 'anthropic', id: 'opus' },
           thinkingLevel: 'high',
         },

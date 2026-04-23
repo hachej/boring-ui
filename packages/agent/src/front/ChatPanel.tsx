@@ -39,6 +39,7 @@ export function ChatPanel(props: ChatPanelProps) {
       {
         body: {
           sessionId,
+          message: input.message,
           model: input.model,
           thinkingLevel: input.thinkingLevel,
         },
