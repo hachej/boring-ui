@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
+import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import {
   autoDetectMode,
   hasBwrap,
@@ -10,6 +11,9 @@ import {
 } from '../resolveMode'
 
 const tempDirs: string[] = []
+const ORIGINAL_MODE = getEnv('BORING_AGENT_MODE')
+const ORIGINAL_VERCEL_OIDC_TOKEN = getEnv('VERCEL_OIDC_TOKEN')
+const ORIGINAL_VERCEL_TEAM_ID = getEnv('VERCEL_TEAM_ID')
 
 afterEach(async () => {
   await Promise.all(
@@ -17,7 +21,9 @@ afterEach(async () => {
       await rm(dir, { recursive: true, force: true })
     }),
   )
-  delete process.env.BORING_AGENT_MODE
+  restoreEnvForTest('BORING_AGENT_MODE', ORIGINAL_MODE)
+  restoreEnvForTest('VERCEL_OIDC_TOKEN', ORIGINAL_VERCEL_OIDC_TOKEN)
+  restoreEnvForTest('VERCEL_TEAM_ID', ORIGINAL_VERCEL_TEAM_ID)
 })
 
 async function makeContext() {
@@ -69,20 +75,20 @@ test('resolveMode("local") returns NodeWorkspace + BwrapSandbox or errors gracef
 })
 
 test('autoDetectMode honors BORING_AGENT_MODE override', () => {
-  process.env.BORING_AGENT_MODE = 'direct'
+  setEnvForTest('BORING_AGENT_MODE', 'direct')
   expect(autoDetectMode()).toBe('direct')
 
-  process.env.BORING_AGENT_MODE = 'local'
+  setEnvForTest('BORING_AGENT_MODE', 'local')
   expect(autoDetectMode()).toBe('local')
 })
 
 test('autoDetectMode rejects invalid BORING_AGENT_MODE values', () => {
-  process.env.BORING_AGENT_MODE = 'invalid-mode'
+  setEnvForTest('BORING_AGENT_MODE', 'invalid-mode')
   expect(() => autoDetectMode()).toThrow('Invalid BORING_AGENT_MODE')
 })
 
 test('autoDetectMode defaults to linux+bwrap -> local, else direct', () => {
-  delete process.env.BORING_AGENT_MODE
+  setEnvForTest('BORING_AGENT_MODE', undefined)
 
   const expected = process.platform === 'linux' && hasBwrap()
     ? 'local'
@@ -91,10 +97,16 @@ test('autoDetectMode defaults to linux+bwrap -> local, else direct', () => {
   expect(autoDetectMode()).toBe(expected)
 })
 
-test('vercel-sandbox mode exists but is not available in M1', async () => {
+test('vercel-sandbox mode validates required env vars', async () => {
   const ctx = await makeContext()
 
   await expect(resolveMode('vercel-sandbox').create(ctx)).rejects.toThrow(
-    'not available in M1',
+    'VERCEL_OIDC_TOKEN is required for vercel-sandbox mode',
+  )
+
+  setEnvForTest('VERCEL_OIDC_TOKEN', 'token')
+
+  await expect(resolveMode('vercel-sandbox').create(ctx)).rejects.toThrow(
+    'VERCEL_TEAM_ID is required for vercel-sandbox mode',
   )
 })
