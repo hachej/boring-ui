@@ -11,6 +11,10 @@ import {
   ERROR_CODE_RANGE_NOT_SATISFIABLE,
 } from '../middleware'
 import { StreamBufferStore } from '../streamBuffer'
+import {
+  parseFileChangeChunk,
+  type SessionChangesTracker,
+} from '../sessionChangesTracker'
 
 function c(data: Record<string, unknown>): UIMessageChunk {
   return data as unknown as UIMessageChunk
@@ -33,6 +37,7 @@ type ChatBody = z.infer<typeof chatBodySchema>
 export interface ChatRouteOptions {
   harness: AgentHarness
   workdir: string
+  sessionChangesTracker?: SessionChangesTracker
 }
 
 export function chatRoutes(
@@ -40,7 +45,7 @@ export function chatRoutes(
   opts: ChatRouteOptions,
   done: (err?: Error) => void,
 ): void {
-  const { harness, workdir } = opts
+  const { harness, workdir, sessionChangesTracker } = opts
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
 
@@ -76,6 +81,10 @@ export function chatRoutes(
             try {
               for await (const chunk of chunks) {
                 const c = chunk as UIMessageChunk
+                const fileChange = parseFileChangeChunk(c)
+                if (fileChange) {
+                  sessionChangesTracker?.record(sessionId, fileChange)
+                }
                 buf.append(c)
                 writer.write(c)
               }

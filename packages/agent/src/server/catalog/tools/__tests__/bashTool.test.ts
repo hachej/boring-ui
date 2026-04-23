@@ -147,6 +147,78 @@ describe('createBashTool', () => {
     expect((result.details as any).durationMs).toBe(42)
   })
 
+  test('successful rm command records unlink file change metadata', async () => {
+    const sandbox = createSandbox(async () => makeExecResult({ exitCode: 0 }))
+    const tool = createBashTool(sandbox)
+
+    const result = await tool.execute({ command: 'rm old.txt' }, makeCtx())
+
+    expect(result.isError).toBeFalsy()
+    expect((result.details as any).fileChanges).toEqual([
+      expect.objectContaining({
+        op: 'unlink',
+        path: 'old.txt',
+        timestamp: expect.any(String),
+      }),
+    ])
+  })
+
+  test('failed bash command does not emit inferred file changes', async () => {
+    const sandbox = createSandbox(async () =>
+      makeExecResult({ exitCode: 1, stderr: encode('permission denied\n') }),
+    )
+    const tool = createBashTool(sandbox)
+
+    const result = await tool.execute({ command: 'rm old.txt' }, makeCtx())
+
+    expect(result.isError).toBe(true)
+    expect((result.details as any).fileChanges).toBeUndefined()
+  })
+
+  test('skips inference for commands containing || to avoid false positives', async () => {
+    const sandbox = createSandbox(async () =>
+      makeExecResult({ exitCode: 0, stdout: encode('fallback\n') }),
+    )
+    const tool = createBashTool(sandbox)
+
+    const result = await tool.execute(
+      { command: 'rm maybe.txt || echo fallback' },
+      makeCtx(),
+    )
+
+    expect(result.isError).toBeFalsy()
+    expect((result.details as any).fileChanges).toBeUndefined()
+  })
+
+  test('sed -i.bak with multiple files records edit changes for each file', async () => {
+    const sandbox = createSandbox(async () => makeExecResult({ exitCode: 0 }))
+    const tool = createBashTool(sandbox)
+
+    const result = await tool.execute(
+      { command: "sed -i.bak 's/x/y/' a.ts b.ts" },
+      makeCtx(),
+    )
+
+    expect((result.details as any).fileChanges).toEqual([
+      expect.objectContaining({ op: 'edit', path: 'a.ts' }),
+      expect.objectContaining({ op: 'edit', path: 'b.ts' }),
+    ])
+  })
+
+  test('redirect parser ignores > inside quoted strings', async () => {
+    const sandbox = createSandbox(async () => makeExecResult({ exitCode: 0 }))
+    const tool = createBashTool(sandbox)
+
+    const result = await tool.execute(
+      { command: "echo 'a > b' > out.txt" },
+      makeCtx(),
+    )
+
+    expect((result.details as any).fileChanges).toEqual([
+      expect.objectContaining({ op: 'write', path: 'out.txt' }),
+    ])
+  })
+
   test('sandbox.exec rejection returns structured error', async () => {
     const sandbox = createSandbox(async () => {
       throw new Error('spawn ENOENT')

@@ -15,7 +15,9 @@ import { fileRoutes } from './http/routes/file'
 import { treeRoutes } from './http/routes/tree'
 import { chatRoutes } from './http/routes/chat'
 import { sessionRoutes } from './http/routes/sessions'
+import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
+import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -79,6 +81,7 @@ export async function createAgentApp(
   })
 
   const harness = createPiCodingAgentHarness({ tools, cwd: workspaceRoot })
+  const sessionChangesTracker = new InMemorySessionChangesTracker()
 
   app.addHook(
     'onRequest',
@@ -101,10 +104,12 @@ export async function createAgentApp(
   await app.register(chatRoutes, {
     harness,
     workdir: runtimeBundle.workspace.root,
+    sessionChangesTracker,
   })
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,
   })
+  await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
 
   return app
