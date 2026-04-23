@@ -123,21 +123,12 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 ## 2. Per-bead development loop
 
 1. **Open the bead:** `br show <id>` — note goal, acceptance criteria, file paths, reference-file pointers, deps. Beads are self-contained; you shouldn't need to re-read the spec.
-2. **Claim publicly:** `br update <id> -s in_progress` + Agent Mail broadcast `[CLAIM] <id> <title>` with file scope + ETA.
-3. **Reserve files:** `file_reservation_paths(project_key="boring-ui-v2", paths=[...], reason="<id>")`.
-4. **Implement** — code + tests together, not sequentially.
-5. **Local quality gates (mandatory):**
-   ```bash
-   pnpm typecheck && pnpm lint && pnpm test
-   ```
-   All green before proceeding.
-6. **Self-review the diff** for typos, off-by-ones, missing error codes, unhandled edge cases.
-7. **Stage for cross-review:** `git add <files>` (don't commit yet).
-8. **Cross-review (mandatory — see §3)** on the staged diff.
-9. **Address feedback.** If `revise`: fix, re-test (step 5), re-request. Cap at 3 rounds.
-10. **Commit atomically** (see §4).
-11. **Close:** `br close <id> --reason "shipped — reviewed by <name> (cod|cc): ship"`.
-12. **Announce:** Agent Mail `[DONE] <id>` with commit sha + verdict; release file reservations.
+2. **Claim + reserve:** `br update <id> -s in_progress`; Agent Mail broadcast `[CLAIM] <id>` with file scope + ETA; `file_reservation_paths(...)`.
+3. **Implement** — code + tests together.
+4. **Verify locally:** `pnpm typecheck && pnpm lint && pnpm test` (all green), then self-review the diff.
+5. **Cross-review (mandatory — see §3).** If `revise`: fix, re-verify, re-request (cap 3 rounds).
+6. **Commit atomically** (see §4).
+7. **Close + announce:** `br close <id> --reason "shipped — reviewed by <name>: ship"`; Agent Mail `[DONE] <id>` with commit sha; release file reservations.
 
 Loop back to §1 step 4.
 
