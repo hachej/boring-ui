@@ -38,6 +38,7 @@ import { createPiCodingAgentHarness } from "../createHarness.js";
 import type { RunContext, SendMessageInput } from "../../../../shared/harness.js";
 
 const mockedCreateAgentSession = vi.mocked(createAgentSession);
+type CreateAgentSessionResult = Awaited<ReturnType<typeof createAgentSession>>;
 
 function emitPiEvent(event: any): void {
   for (const sub of mockSubscribers) sub(event);
@@ -212,7 +213,7 @@ describe("abort propagation", () => {
       promptAbortController.abort();
     });
 
-    const session: AgentSession = {
+    const session = {
       subscribe(listener: (event: any) => void) {
         mockSubscribers.push(listener);
         return () => {
@@ -242,10 +243,11 @@ describe("abort propagation", () => {
       },
       abort: abortSpy,
       dispose: mockDispose,
-    } as AgentSession;
+    } as unknown as AgentSession;
 
     mockedCreateAgentSession.mockImplementationOnce(async () => ({
       session,
+      extensionsResult: {} as CreateAgentSessionResult["extensionsResult"],
     }));
 
     const harness = createPiCodingAgentHarness({
@@ -283,8 +285,9 @@ describe("abort propagation", () => {
       });
       expect(exitCode).toBeNull();
     } finally {
-      if (child && child.exitCode === null) {
-        child.kill("SIGKILL");
+      const runningChild = child as ChildProcess | null;
+      if (runningChild?.exitCode === null) {
+        runningChild.kill("SIGKILL");
       }
     }
     },
