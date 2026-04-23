@@ -1,11 +1,7 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { UiBridge, UiCommand } from "../../../shared/ui-bridge.js";
-import {
-  createBodyValidator,
-  ERROR_CODE_INTERNAL,
-  ERROR_CODE_VALIDATION_ERROR,
-} from "../middleware.js";
+import { createBodyValidator } from "../middleware.js";
 
 const setStateBodySchema = z.object({
   state: z.record(z.unknown()),
