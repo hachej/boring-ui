@@ -3,7 +3,7 @@ import type { AgentTool } from '../shared/tool'
 import type { SessionStore } from '../shared/session'
 import { getEnv } from './config/env'
 import type { RuntimeModeId } from './runtime/mode'
-import { resolveMode } from './runtime/resolveMode'
+import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { standardCatalog } from './catalog/standardCatalog'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins, flattenPluginTools } from './harness/pi-coding-agent/pluginLoader'
@@ -35,8 +35,10 @@ export async function createAgentApp(
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
+  const app = Fastify({ logger: opts.logger ?? true })
 
-  const runtimeBundle = await resolveMode(opts.mode).create({
+  const resolvedMode = opts.mode ?? autoDetectMode()
+  const runtimeBundle = await resolveMode(resolvedMode).create({
     workspaceRoot,
     sessionId,
     templatePath,
@@ -47,20 +49,17 @@ export async function createAgentApp(
     tools.push(...opts.extraTools)
   }
 
-  const resolvedMode = opts.mode ?? 'direct'
   if (resolvedMode !== 'vercel-sandbox') {
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
     if (pluginResult.errors.length > 0) {
       for (const e of pluginResult.errors) {
-        console.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
+        app.log.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
       }
     }
     tools.push(...flattenPluginTools(pluginResult))
   }
 
   const harness = createPiCodingAgentHarness({ tools, cwd: workspaceRoot })
-
-  const app = Fastify({ logger: opts.logger ?? true })
 
   app.addHook(
     'onRequest',
