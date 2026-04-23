@@ -76,6 +76,16 @@ export {
   type UseArtifactRoutingOptions,
   type UseArtifactRoutingReturn,
 } from "./hooks"
+export {
+  useKeyboardShortcuts,
+  formatShortcut,
+  type ShortcutBinding,
+  type UseKeyboardShortcutsOptions,
+} from "./hooks"
+
+// Command Palette
+export { CommandPalette } from "./components/CommandPalette"
+export type { CommandPaletteProps } from "./components/CommandPalette"
 
 // Panes (dockview wrappers — require WorkspaceProvider)
 export { ArtifactSurfacePane } from "./panes"
@@ -92,7 +102,7 @@ export { MarkdownEditorPane } from "./panes"
 export type { MarkdownEditorPaneProps } from "./panes"
 
 // Theme
-export { createShadcnTheme } from "./theme"
+export { createShadcnTheme, useShadcnTheme } from "./theme"
 
 // Bridge
 export { createBridge } from "./bridge"

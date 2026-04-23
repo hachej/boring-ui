@@ -19,3 +19,9 @@ export {
   type UseArtifactRoutingOptions,
   type UseArtifactRoutingReturn,
 } from "./useArtifactRouting"
+export {
+  useKeyboardShortcuts,
+  formatShortcut,
+  type ShortcutBinding,
+  type UseKeyboardShortcutsOptions,
+} from "./useKeyboardShortcuts"

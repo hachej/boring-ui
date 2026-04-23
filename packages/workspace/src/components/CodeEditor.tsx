@@ -88,6 +88,7 @@ export function CodeEditor({
   const readOnlyCompartment = useRef(new Compartment())
   const lineNumbersCompartment = useRef(new Compartment())
   const wordWrapCompartment = useRef(new Compartment())
+  const themeCompartment = useRef(new Compartment())
 
   const isLargeFile = content.length >= LARGE_FILE_THRESHOLD
   const isDownloadFile = content.length >= DOWNLOAD_THRESHOLD
@@ -106,7 +107,7 @@ export function CodeEditor({
       highlightSelectionMatches(),
       foldGutter(),
       keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, ...searchKeymap]),
-      createShadcnTheme(),
+      themeCompartment.current.of(createShadcnTheme()),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     ]
 
@@ -192,6 +193,22 @@ export function CodeEditor({
       effects: languageCompartment.current.reconfigure(langExt ?? []),
     })
   }, [language, isLargeFile])
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const view = viewRef.current
+      if (!view) return
+      const dark = document.documentElement.getAttribute("data-theme") === "dark"
+      view.dispatch({
+        effects: themeCompartment.current.reconfigure(createShadcnTheme({ dark })),
+      })
+    })
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    })
+    return () => observer.disconnect()
+  }, [])
 
   if (isLargeFile) {
     return (

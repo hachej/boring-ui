@@ -2,69 +2,6 @@ import { EditorView } from "@codemirror/view"
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language"
 import { tags } from "@lezer/highlight"
 
-const theme = EditorView.theme({
-  "&": {
-    backgroundColor: "var(--background)",
-    color: "var(--foreground)",
-    height: "100%",
-  },
-  ".cm-content": {
-    caretColor: "var(--foreground)",
-    fontFamily: "var(--font-mono, ui-monospace, monospace)",
-  },
-  ".cm-gutters": {
-    backgroundColor: "var(--muted)",
-    color: "var(--muted-foreground)",
-    borderRight: "1px solid var(--border)",
-  },
-  ".cm-activeLineGutter": {
-    backgroundColor: "var(--accent)",
-  },
-  ".cm-activeLine": {
-    backgroundColor: "var(--accent)",
-  },
-  "&.cm-focused .cm-cursor": {
-    borderLeftColor: "var(--foreground)",
-  },
-  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-    backgroundColor: "var(--accent)",
-  },
-  ".cm-panels": {
-    backgroundColor: "var(--muted)",
-    color: "var(--foreground)",
-  },
-  ".cm-panels.cm-panels-top": {
-    borderBottom: "1px solid var(--border)",
-  },
-  ".cm-panels.cm-panels-bottom": {
-    borderTop: "1px solid var(--border)",
-  },
-  ".cm-searchMatch": {
-    backgroundColor: "oklch(0.8 0.15 80 / 0.3)",
-    outline: "1px solid oklch(0.8 0.15 80 / 0.5)",
-  },
-  ".cm-searchMatch.cm-searchMatch-selected": {
-    backgroundColor: "oklch(0.7 0.15 80 / 0.5)",
-  },
-  ".cm-tooltip": {
-    backgroundColor: "var(--popover)",
-    color: "var(--popover-foreground)",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-sm, 4px)",
-  },
-  ".cm-tooltip-autocomplete": {
-    "& > ul > li[aria-selected]": {
-      backgroundColor: "var(--accent)",
-      color: "var(--accent-foreground)",
-    },
-  },
-  ".cm-foldPlaceholder": {
-    backgroundColor: "var(--muted)",
-    border: "1px solid var(--border)",
-    color: "var(--muted-foreground)",
-  },
-})
-
 const highlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: "oklch(0.7 0.15 300)" },
   { tag: [tags.name, tags.deleted, tags.character, tags.macroName], color: "var(--foreground)" },
@@ -84,6 +21,71 @@ const highlightStyle = HighlightStyle.define([
   { tag: tags.invalid, color: "var(--destructive)" },
 ])
 
-export function createShadcnTheme() {
-  return [theme, syntaxHighlighting(highlightStyle)]
+export function createShadcnTheme(options?: { dark?: boolean }) {
+  const t = EditorView.theme(
+    {
+      "&": {
+        backgroundColor: "var(--background)",
+        color: "var(--foreground)",
+        height: "100%",
+      },
+      ".cm-content": {
+        caretColor: "var(--foreground)",
+        fontFamily: "var(--font-mono, ui-monospace, monospace)",
+      },
+      ".cm-gutters": {
+        backgroundColor: "var(--muted)",
+        color: "var(--muted-foreground)",
+        borderRight: "1px solid var(--border)",
+      },
+      ".cm-activeLineGutter": {
+        backgroundColor: "var(--accent)",
+      },
+      ".cm-activeLine": {
+        backgroundColor: "var(--accent)",
+      },
+      "&.cm-focused .cm-cursor": {
+        borderLeftColor: "var(--foreground)",
+      },
+      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+        backgroundColor: "var(--accent)",
+      },
+      ".cm-panels": {
+        backgroundColor: "var(--muted)",
+        color: "var(--foreground)",
+      },
+      ".cm-panels.cm-panels-top": {
+        borderBottom: "1px solid var(--border)",
+      },
+      ".cm-panels.cm-panels-bottom": {
+        borderTop: "1px solid var(--border)",
+      },
+      ".cm-searchMatch": {
+        backgroundColor: "oklch(0.8 0.15 80 / 0.3)",
+        outline: "1px solid oklch(0.8 0.15 80 / 0.5)",
+      },
+      ".cm-searchMatch.cm-searchMatch-selected": {
+        backgroundColor: "oklch(0.7 0.15 80 / 0.5)",
+      },
+      ".cm-tooltip": {
+        backgroundColor: "var(--popover)",
+        color: "var(--popover-foreground)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-sm, 4px)",
+      },
+      ".cm-tooltip-autocomplete": {
+        "& > ul > li[aria-selected]": {
+          backgroundColor: "var(--accent)",
+          color: "var(--accent-foreground)",
+        },
+      },
+      ".cm-foldPlaceholder": {
+        backgroundColor: "var(--muted)",
+        border: "1px solid var(--border)",
+        color: "var(--muted-foreground)",
+      },
+    },
+    { dark: options?.dark ?? false },
+  )
+  return [t, syntaxHighlighting(highlightStyle)]
 }

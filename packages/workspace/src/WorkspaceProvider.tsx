@@ -17,7 +17,18 @@ import { createWorkspaceStore } from "./store"
 import { bindStore, useThemePreference } from "./store/selectors"
 import { createBridge } from "./bridge/createBridge"
 import { createBridgeClient, type BridgeClient } from "./bridge/client"
+import { CommandPalette } from "./components/CommandPalette"
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts"
 import type { PanelConfig } from "./registry/types"
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getSystemTheme(): "light" | "dark" {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light"
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+}
 
 // ---------------------------------------------------------------------------
 // Theme context
@@ -25,15 +36,20 @@ import type { PanelConfig } from "./registry/types"
 
 interface ThemeContextValue {
   setTheme: (theme: "light" | "dark") => void
+  toggleTheme: () => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
-export function useTheme(): { theme: "light" | "dark"; setTheme: (theme: "light" | "dark") => void } {
+export function useTheme(): {
+  theme: "light" | "dark"
+  setTheme: (theme: "light" | "dark") => void
+  toggleTheme: () => void
+} {
   const ctx = useContext(ThemeContext)
   if (!ctx) throw new Error("useTheme must be used within a WorkspaceProvider")
   const theme = useThemePreference()
-  return { theme, setTheme: ctx.setTheme }
+  return { theme, setTheme: ctx.setTheme, toggleTheme: ctx.toggleTheme }
 }
 
 export interface ThemeProviderProps {
@@ -42,12 +58,13 @@ export interface ThemeProviderProps {
   onThemeChange?: (theme: "light" | "dark") => void
 }
 
-export function ThemeProvider({ children, defaultTheme = "light", onThemeChange }: ThemeProviderProps) {
+export function ThemeProvider({ children, defaultTheme, onThemeChange }: ThemeProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
     const s = createWorkspaceStore({ persistenceEnabled: false })
     bindStore(s)
-    if (defaultTheme !== "light") s.getState().setTheme(defaultTheme)
+    const initial = defaultTheme ?? getSystemTheme()
+    if (initial !== "light") s.getState().setTheme(initial)
     storeRef.current = s
   }
   const store = storeRef.current
@@ -60,7 +77,21 @@ export function ThemeProvider({ children, defaultTheme = "light", onThemeChange 
     [store, onThemeChange],
   )
 
-  const value = useMemo<ThemeContextValue>(() => ({ setTheme }), [setTheme])
+  const toggleTheme = useCallback(() => {
+    const next = store.getState().preferences.theme === "light" ? "dark" : "light"
+    setTheme(next)
+  }, [store, setTheme])
+
+  const theme = useThemePreference()
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme)
+    return () => {
+      document.documentElement.removeAttribute("data-theme")
+    }
+  }, [theme])
+
+  const value = useMemo<ThemeContextValue>(() => ({ setTheme, toggleTheme }), [setTheme, toggleTheme])
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
@@ -97,6 +128,54 @@ export function useDataProvider(): DataProviderContextValue {
 }
 
 // ---------------------------------------------------------------------------
+// Built-in workspace shortcuts (rendered inside the provider tree)
+// ---------------------------------------------------------------------------
+
+function WorkspaceShortcuts({
+  store,
+}: {
+  store: ReturnType<typeof createWorkspaceStore>
+}) {
+  const shortcuts = useMemo(
+    () => [
+      {
+        key: "b",
+        mod: true,
+        handler: () => {
+          const s = store.getState()
+          s.setSidebar({ collapsed: !s.sidebar.collapsed })
+        },
+      },
+      {
+        key: "\\",
+        mod: true,
+        handler: () => {
+          const s = store.getState()
+          const agentPanel = s.panels.find((p) => p.id === "agent")
+          if (agentPanel) {
+            s.closePanel("agent")
+          } else {
+            s.openPanel({ id: "agent", component: "agent" })
+          }
+        },
+      },
+      {
+        key: "w",
+        mod: true,
+        handler: () => {
+          const s = store.getState()
+          if (s.activePanel) s.closePanel(s.activePanel)
+        },
+      },
+    ],
+    [store],
+  )
+
+  useKeyboardShortcuts({ shortcuts })
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // WorkspaceProvider props
 // ---------------------------------------------------------------------------
 
@@ -106,7 +185,7 @@ export interface WorkspaceProviderProps {
   capabilities?: Record<string, boolean>
   apiBaseUrl?: string
   authHeaders?: Record<string, string>
-  defaultTheme?: "light" | "dark"
+  defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
   storageKey?: string
@@ -126,7 +205,7 @@ export function WorkspaceProvider({
   capabilities,
   apiBaseUrl = "",
   authHeaders,
-  defaultTheme = "light",
+  defaultTheme,
   onThemeChange,
   workspaceId,
   storageKey,
@@ -143,14 +222,15 @@ export function WorkspaceProvider({
     })
     bindStore(store)
 
-    if (defaultTheme !== "light" && !persistenceEnabled) {
-      store.getState().setTheme(defaultTheme)
-    } else if (defaultTheme !== "light") {
+    const resolvedDefault = defaultTheme ?? getSystemTheme()
+    if (resolvedDefault !== "light" && !persistenceEnabled) {
+      store.getState().setTheme(resolvedDefault)
+    } else if (resolvedDefault !== "light") {
       const hasPersistedPrefs =
         typeof localStorage !== "undefined" &&
         localStorage.getItem("boring-ui-v2:preferences") !== null
       if (!hasPersistedPrefs) {
-        store.getState().setTheme(defaultTheme)
+        store.getState().setTheme(resolvedDefault)
       }
     }
 
@@ -209,8 +289,41 @@ export function WorkspaceProvider({
       }
     }
 
+    cr.registerCommand({
+      id: "workspace.toggleSidebar",
+      title: "Toggle Sidebar",
+      shortcut: "⌘B",
+      run: () => {
+        const s = store.getState()
+        s.setSidebar({ collapsed: !s.sidebar.collapsed })
+      },
+    })
+    cr.registerCommand({
+      id: "workspace.toggleAgentPanel",
+      title: "Toggle Agent Panel",
+      shortcut: "⌘\\",
+      run: () => {
+        const s = store.getState()
+        const agentPanel = s.panels.find((p) => p.id === "agent")
+        if (agentPanel) {
+          s.closePanel("agent")
+        } else {
+          s.openPanel({ id: "agent", component: "agent" })
+        }
+      },
+    })
+    cr.registerCommand({
+      id: "workspace.closeTab",
+      title: "Close Tab",
+      shortcut: "⌘W",
+      run: () => {
+        const s = store.getState()
+        if (s.activePanel) s.closePanel(s.activePanel)
+      },
+    })
+
     return { panelRegistry: pr, commandRegistry: cr }
-  }, [capabilities, panels])
+  }, [capabilities, panels, store])
 
   const onThemeChangeRef = useRef(onThemeChange)
   onThemeChangeRef.current = onThemeChange
@@ -223,9 +336,23 @@ export function WorkspaceProvider({
     [store],
   )
 
+  const themeToggleTheme = useCallback(() => {
+    const next = store.getState().preferences.theme === "light" ? "dark" : "light"
+    themeSetTheme(next)
+  }, [store, themeSetTheme])
+
+  const currentTheme = useThemePreference()
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", currentTheme)
+    return () => {
+      document.documentElement.removeAttribute("data-theme")
+    }
+  }, [currentTheme])
+
   const themeValue = useMemo<ThemeContextValue>(
-    () => ({ setTheme: themeSetTheme }),
-    [themeSetTheme],
+    () => ({ setTheme: themeSetTheme, toggleTheme: themeToggleTheme }),
+    [themeSetTheme, themeToggleTheme],
   )
 
   const [bridgeConnected, setBridgeConnected] = useState(false)
@@ -245,6 +372,8 @@ export function WorkspaceProvider({
       <WorkspaceBridgeContext.Provider value={bridgeValue}>
         <DataProviderContext.Provider value={dataValue}>
           <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+            <WorkspaceShortcuts store={store} />
+            <CommandPalette />
             {children}
           </RegistryProvider>
         </DataProviderContext.Provider>
