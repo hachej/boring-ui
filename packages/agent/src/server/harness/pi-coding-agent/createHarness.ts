@@ -33,12 +33,30 @@ export function createPiCodingAgentHarness(opts: {
     const existing = piSessions.get(sessionId);
     if (existing) return existing;
 
-    const authStorage = AuthStorage.inMemory();
-    const modelRegistry = ModelRegistry.inMemory(authStorage);
+    // AuthStorage.create() reads env vars (ANTHROPIC_API_KEY etc.) + ~/.pi/agent/auth.json.
+    // AuthStorage.inMemory() would not pick up credentials.
+    const authStorage = AuthStorage.create();
+    const modelRegistry = ModelRegistry.create(authStorage);
 
-    const model = input.model
-      ? modelRegistry.find(input.model.provider, input.model.id)
+    // Map our short aliases → pi-ai's registered model IDs.
+    // Frontend sends {provider:'anthropic', id:'sonnet'|'haiku'|'opus'}; pi-ai
+    // registers 'claude-sonnet-4.6' / 'claude-haiku-4.5' / 'claude-opus-4.7'.
+    const ALIAS_TO_PI_ID: Record<string, string> = {
+      sonnet: "claude-sonnet-4.6",
+      haiku: "claude-haiku-4.5",
+      opus: "claude-opus-4.7",
+    };
+    const requestedId = input.model?.id;
+    const piId = requestedId
+      ? (ALIAS_TO_PI_ID[requestedId] ?? requestedId)
       : undefined;
+    const resolvedModel = input.model && piId
+      ? modelRegistry.find(input.model.provider, piId)
+      : undefined;
+    // Default: sonnet for anthropic if nothing resolved, preventing pi from
+    // falling back to openai-codex when only ANTHROPIC_API_KEY is set.
+    const model = resolvedModel
+      ?? modelRegistry.find("anthropic", ALIAS_TO_PI_ID.sonnet);
 
     const { session: piSession } = await createAgentSession({
       cwd: ctx.workdir,
@@ -89,11 +107,45 @@ export function createPiCodingAgentHarness(opts: {
       let streamError: unknown = null;
       let wake: (() => void) | null = null;
 
+      const activeTools = new Map<string, number>();
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+      function stopHeartbeat() {
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+      }
+
+      function startHeartbeat() {
+        if (heartbeatTimer) return;
+        heartbeatTimer = setInterval(() => {
+          const now = Date.now();
+          for (const [toolCallId, startTime] of activeTools) {
+            chunks.push({
+              type: "data-status",
+              data: { toolCallId, elapsedMs: now - startTime },
+            } as unknown as UIMessageChunk);
+          }
+          if (activeTools.size > 0 && wake) wake();
+        }, 2000);
+      }
+
       const unsubscribe = piSession.subscribe((event: AgentSessionEvent) => {
+        if (event.type === "tool_execution_start") {
+          activeTools.set(event.toolCallId, Date.now());
+          startHeartbeat();
+        }
+        if (event.type === "tool_execution_end") {
+          activeTools.delete(event.toolCallId);
+          if (activeTools.size === 0) stopHeartbeat();
+        }
+
         const converted = piEventToChunks(event);
         chunks.push(...converted);
         if (event.type === "agent_end") {
           done = true;
+          stopHeartbeat();
         }
         if (wake) wake();
       });
@@ -101,6 +153,7 @@ export function createPiCodingAgentHarness(opts: {
       const onAbort = () => {
         streamError = new Error("Aborted");
         done = true;
+        stopHeartbeat();
         piSession.abort().catch(() => {});
         if (wake) wake();
       };
@@ -125,6 +178,7 @@ export function createPiCodingAgentHarness(opts: {
           yield chunks.shift()!;
         }
       } finally {
+        stopHeartbeat();
         ctx.abortSignal.removeEventListener("abort", onAbort);
         unsubscribe();
         sessionStore.touchSession(input.sessionId);

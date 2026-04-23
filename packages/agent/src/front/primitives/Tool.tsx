@@ -3,7 +3,7 @@
  * Source: https://github.com/vercel-labs/ai/tree/main/packages/ai-elements
  * Copied: 2026-04-23. We own this file; upstream updates require re-port.
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 export type ToolState =
   | 'input-streaming'
@@ -60,7 +60,23 @@ export function Tool({
   renderOutput,
 }: ToolProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const isRunning = state === 'input-streaming' || state === 'input-available'
   const isComplete = state === 'output-available' || state === 'output-error' || state === 'output-denied'
+
+  const [elapsedSec, setElapsedSec] = useState(0)
+  const startRef = useRef(0)
+
+  useEffect(() => {
+    if (!isRunning) {
+      setElapsedSec(0)
+      return
+    }
+    startRef.current = Date.now()
+    const timer = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - startRef.current) / 1000))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [isRunning])
 
   return (
     <div
@@ -102,7 +118,7 @@ export function Tool({
             fontSize: '0.75rem',
           }}
         >
-          {stateLabel(state)}
+          {isRunning && elapsedSec >= 1 ? `Running… (${elapsedSec}s)` : stateLabel(state)}
         </span>
         {!isComplete && (
           <span
