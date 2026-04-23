@@ -44,6 +44,39 @@ function createHttpStatusError(status: number): Error & { response: { status: nu
   return error
 }
 
+function createDirectStatusError(status: number): Error & { status: number } {
+  const error = new Error(`HTTP ${status}`) as Error & { status: number }
+  error.status = status
+  return error
+}
+
+function createDeferred<T>(): {
+  promise: Promise<T>
+  resolve(value: T): void
+  reject(error: unknown): void
+} {
+  let resolveFn: ((value: T | PromiseLike<T>) => void) | null = null
+  let rejectFn: ((reason?: unknown) => void) | null = null
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveFn = resolve
+    rejectFn = reject
+  })
+
+  return {
+    promise,
+    resolve(value: T) {
+      if (resolveFn) {
+        resolveFn(value)
+      }
+    },
+    reject(error: unknown) {
+      if (rejectFn) {
+        rejectFn(error)
+      }
+    },
+  }
+}
+
 function createStore(
   initial: SandboxHandleRecord[] = [],
 ): SandboxHandleStore & { puts: SandboxHandleRecord[] } {
@@ -108,6 +141,46 @@ test('second call hits in-process cache without API calls', async () => {
   expect(resolved).toBe(created)
   expect(client.create).toHaveBeenCalledTimes(1)
   expect(client.get).not.toHaveBeenCalled()
+  expect(store.puts).toHaveLength(1)
+})
+
+test('workspace ids are normalized before cache/store lookup', async () => {
+  const store = createStore()
+  const created = createSandboxHandle('sb-normalized')
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => created),
+    get: vi.fn(),
+  }
+
+  await resolveSandboxHandle('  workspace-normalized  ', store, client)
+  const resolved = await resolveSandboxHandle('workspace-normalized', store, client)
+
+  expect(resolved).toBe(created)
+  expect(client.create).toHaveBeenCalledTimes(1)
+  expect(store.puts).toHaveLength(1)
+  expect(store.puts[0].workspaceId).toBe('workspace-normalized')
+})
+
+test('concurrent requests use a single in-flight resolution', async () => {
+  const store = createStore()
+  const deferred = createDeferred<VercelSandbox>()
+  const created = createSandboxHandle('sb-concurrent')
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => await deferred.promise),
+    get: vi.fn(),
+  }
+
+  const first = resolveSandboxHandle('workspace-concurrent', store, client)
+  const second = resolveSandboxHandle('workspace-concurrent', store, client)
+
+  await Promise.resolve()
+  expect(client.create).toHaveBeenCalledTimes(1)
+
+  deferred.resolve(created)
+  const [firstResolved, secondResolved] = await Promise.all([first, second])
+
+  expect(firstResolved).toBe(created)
+  expect(secondResolved).toBe(created)
   expect(store.puts).toHaveLength(1)
 })
 
@@ -216,6 +289,34 @@ test('404 from get recreates, and missing snapshot falls back to create() with n
   expect(client.create).toHaveBeenCalledWith()
 })
 
+test('direct status 410 from get recreates from snapshot', async () => {
+  const oldRecord: SandboxHandleRecord = {
+    workspaceId: 'workspace-status-410',
+    sandboxId: 'sb-status-410',
+    snapshotId: 'snap-status-410',
+    createdAt: '2026-04-23T00:00:00.000Z',
+    lastUsedAt: '2026-04-23T00:00:00.000Z',
+  }
+  const store = createStore([oldRecord])
+  const recreated = createSandboxHandle('sb-status-410-recreated')
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => recreated),
+    get: vi.fn(async () => {
+      throw createDirectStatusError(410)
+    }),
+  }
+
+  const resolved = await resolveSandboxHandle('workspace-status-410', store, client)
+
+  expect(resolved).toBe(recreated)
+  expect(client.create).toHaveBeenCalledWith({
+    source: {
+      type: 'snapshot',
+      snapshotId: 'snap-status-410',
+    },
+  })
+})
+
 test('non-retryable get errors are propagated', async () => {
   const oldRecord: SandboxHandleRecord = {
     workspaceId: 'workspace-auth-error',
@@ -236,6 +337,43 @@ test('non-retryable get errors are propagated', async () => {
     resolveSandboxHandle('workspace-auth-error', store, client),
   ).rejects.toThrow('HTTP 401')
   expect(client.create).not.toHaveBeenCalled()
+})
+
+test('store.put failure does not poison in-process cache', async () => {
+  const emitted = [
+    createSandboxHandle('sb-first-attempt'),
+    createSandboxHandle('sb-second-attempt'),
+  ]
+  let putAttempts = 0
+  const store: SandboxHandleStore = {
+    async get() {
+      return null
+    },
+    async put() {
+      putAttempts += 1
+      if (putAttempts === 1) {
+        throw new Error('put failed')
+      }
+    },
+    async delete() {
+      // no-op
+    },
+    async list() {
+      return []
+    },
+  }
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => emitted.shift() ?? createSandboxHandle('sb-fallback')),
+    get: vi.fn(),
+  }
+
+  await expect(
+    resolveSandboxHandle('workspace-put-failure', store, client),
+  ).rejects.toThrow('put failed')
+  const resolved = await resolveSandboxHandle('workspace-put-failure', store, client)
+
+  expect(resolved.sandboxId).toBe('sb-second-attempt')
+  expect(client.create).toHaveBeenCalledTimes(2)
 })
 
 test('empty workspaceId is rejected', async () => {

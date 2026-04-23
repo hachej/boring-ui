@@ -29,6 +29,7 @@ export interface VercelSandboxClient {
 // Process-local cache keyed by workspace id. In multi-process deployments each
 // worker maintains its own cache and converges via SandboxHandleStore.
 const sandboxesByWorkspaceId = new Map<string, VercelSandbox>()
+const inFlightResolutionsByWorkspaceId = new Map<string, Promise<VercelSandbox>>()
 const EXPIRED_STATUSES: ReadonlySet<VercelSandboxStatus> = new Set([
   'aborted',
   'failed',
@@ -65,6 +66,11 @@ function isSandboxExpired(sandbox: VercelSandbox): boolean {
 }
 
 function extractHttpStatus(error: unknown): number | null {
+  const directStatus = (error as { status?: unknown } | null)?.status
+  if (typeof directStatus === 'number') {
+    return directStatus
+  }
+
   const response = (error as { response?: { status?: unknown } } | null)?.response
   return typeof response?.status === 'number' ? response.status : null
 }
@@ -85,6 +91,7 @@ function buildRecord(
     workspaceId,
     sandboxId: sandbox.sandboxId,
     snapshotId: sandbox.sourceSnapshotId ?? previous?.snapshotId,
+    // Keep createdAt stable for the logical workspace handle lineage.
     createdAt: previous?.createdAt ?? timestamp,
     lastUsedAt: timestamp,
   }
@@ -96,8 +103,8 @@ async function persistAndCache(
   previous: SandboxHandleRecord | null,
   store: SandboxHandleStore,
 ): Promise<VercelSandbox> {
-  sandboxesByWorkspaceId.set(workspaceId, sandbox)
   await store.put(buildRecord(workspaceId, sandbox, previous))
+  sandboxesByWorkspaceId.set(workspaceId, sandbox)
   return sandbox
 }
 
@@ -125,42 +132,62 @@ export async function resolveSandboxHandle(
   store: SandboxHandleStore,
   vercel: VercelSandboxClient,
 ): Promise<VercelSandbox> {
-  if (workspaceId.trim().length === 0) {
+  const workspaceKey = workspaceId.trim()
+  if (workspaceKey.length === 0) {
     throw new Error('workspaceId must not be empty')
   }
 
-  const inProcess = sandboxesByWorkspaceId.get(workspaceId)
+  const inProcess = sandboxesByWorkspaceId.get(workspaceKey)
   if (inProcess && !isSandboxExpired(inProcess)) {
     return inProcess
   }
   if (inProcess) {
-    sandboxesByWorkspaceId.delete(workspaceId)
+    sandboxesByWorkspaceId.delete(workspaceKey)
   }
 
-  const persisted = await store.get(workspaceId)
+  const inFlightResolution = inFlightResolutionsByWorkspaceId.get(workspaceKey)
+  if (inFlightResolution) {
+    return await inFlightResolution
+  }
 
-  if (persisted?.sandboxId) {
-    try {
-      const sandbox = await vercel.get({ sandboxId: persisted.sandboxId })
-      if (!isSandboxExpired(sandbox)) {
-        return await persistAndCache(workspaceId, sandbox, persisted, store)
-      }
-    } catch (error) {
-      if (!shouldRecreateFromSnapshot(error)) {
-        throw error
+  const resolution = (async (): Promise<VercelSandbox> => {
+    const persisted = await store.get(workspaceKey)
+
+    if (persisted?.sandboxId) {
+      try {
+        const sandbox = await vercel.get({ sandboxId: persisted.sandboxId })
+        if (!isSandboxExpired(sandbox)) {
+          return await persistAndCache(workspaceKey, sandbox, persisted, store)
+        }
+      } catch (error) {
+        if (!shouldRecreateFromSnapshot(error)) {
+          throw error
+        }
       }
     }
-  }
 
-  return await createFromSnapshot(
-    workspaceId,
-    persisted?.snapshotId,
-    persisted,
-    store,
-    vercel,
-  )
+    return await createFromSnapshot(
+      workspaceKey,
+      persisted?.snapshotId,
+      persisted,
+      store,
+      vercel,
+    )
+  })()
+
+  inFlightResolutionsByWorkspaceId.set(workspaceKey, resolution)
+
+  try {
+    return await resolution
+  } finally {
+    const current = inFlightResolutionsByWorkspaceId.get(workspaceKey)
+    if (current === resolution) {
+      inFlightResolutionsByWorkspaceId.delete(workspaceKey)
+    }
+  }
 }
 
 export function resetSandboxHandleCacheForTests(): void {
   sandboxesByWorkspaceId.clear()
+  inFlightResolutionsByWorkspaceId.clear()
 }
