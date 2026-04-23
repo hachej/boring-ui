@@ -7,6 +7,7 @@ import { validatePath } from './paths'
 const VERCEL_SANDBOX_ROOT = '/vercel/sandbox'
 const CACHE_TTL_MS = 15_000
 const CACHE_MAX_ENTRIES = 512
+const metadataInvalidators = new WeakMap<VercelSandbox, Set<() => void>>()
 
 function toSandboxPath(relPath: string): string {
   return validatePath(VERCEL_SANDBOX_ROOT, relPath)
@@ -60,7 +61,35 @@ function cloneEntries(entries: Entry[]): Entry[] {
   return entries.map((entry) => ({ name: entry.name, kind: entry.kind }))
 }
 
-export function createVercelSandboxWorkspace(sandbox: VercelSandbox): Workspace {
+function registerMetadataInvalidator(
+  sandbox: VercelSandbox,
+  invalidate: () => void,
+): void {
+  const existing = metadataInvalidators.get(sandbox)
+  if (existing) {
+    existing.add(invalidate)
+    return
+  }
+  metadataInvalidators.set(sandbox, new Set([invalidate]))
+}
+
+export function invalidateVercelSandboxWorkspaceMetadataCache(
+  sandbox: VercelSandbox,
+): void {
+  const invalidators = metadataInvalidators.get(sandbox)
+  if (!invalidators) return
+  for (const invalidate of invalidators) {
+    invalidate()
+  }
+}
+
+export interface VercelSandboxWorkspace extends Workspace {
+  invalidateMetadataCache(): void
+}
+
+export function createVercelSandboxWorkspace(
+  sandbox: VercelSandbox,
+): VercelSandboxWorkspace {
   const statCache = createTimedLruCache<Stat>(CACHE_TTL_MS, CACHE_MAX_ENTRIES)
   const readdirCache = createTimedLruCache<Entry[]>(
     CACHE_TTL_MS,
@@ -72,8 +101,11 @@ export function createVercelSandboxWorkspace(sandbox: VercelSandbox): Workspace 
     readdirCache.clear()
   }
 
+  registerMetadataInvalidator(sandbox, invalidateMetadataCache)
+
   return {
     root: VERCEL_SANDBOX_ROOT,
+    invalidateMetadataCache,
     async readFile(relPath) {
       const sandboxPath = toSandboxPath(relPath)
       const content = await sandbox.fs.readFile(sandboxPath, 'utf8')

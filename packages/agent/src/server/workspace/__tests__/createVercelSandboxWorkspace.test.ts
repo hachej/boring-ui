@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 
+import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
 import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
 import { createMockVercelSandboxHarness } from './helpers/mockVercelSandbox'
 
@@ -107,6 +108,29 @@ test('invalidates metadata cache after write/unlink/mkdir/rename', async () => {
     await workspace.unlink('cache/b.txt')
     await expect(workspace.stat('cache/b.txt')).rejects.toThrow()
     expect(statSpy).toHaveBeenCalledTimes(4)
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('invalidates metadata cache after sandbox exec on shared handle', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const statSpy = vi.spyOn(harness.sandbox.fs, 'stat')
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+  const sandbox = createVercelSandboxExec(harness.sandbox)
+
+  try {
+    await workspace.writeFile('cache/exec.txt', 'before')
+
+    await workspace.stat('cache/exec.txt')
+    await workspace.stat('cache/exec.txt')
+    expect(statSpy).toHaveBeenCalledTimes(1)
+
+    const execResult = await sandbox.exec('echo cache-bust')
+    expect(execResult.exitCode).toBe(0)
+
+    await workspace.stat('cache/exec.txt')
+    expect(statSpy).toHaveBeenCalledTimes(2)
   } finally {
     await harness.cleanup()
   }

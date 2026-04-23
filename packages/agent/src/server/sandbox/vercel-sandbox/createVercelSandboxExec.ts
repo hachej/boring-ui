@@ -1,6 +1,7 @@
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import type { ExecResult, Sandbox } from '../../../shared/sandbox'
+import { invalidateVercelSandboxWorkspaceMetadataCache } from '../../workspace/createVercelSandboxWorkspace'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
@@ -111,6 +112,7 @@ export function createVercelSandboxExec(sandbox: VercelSandbox): Sandbox {
         }
         throw error
       } finally {
+        invalidateVercelSandboxWorkspaceMetadataCache(sandbox)
         if (timeoutHandle) clearTimeout(timeoutHandle)
         if (heartbeatHandle) clearInterval(heartbeatHandle)
         externalSignal?.removeEventListener('abort', abortFromExternalSignal)
