@@ -41,6 +41,7 @@
   "dependencies": {
     "@ai-sdk/react": "^3.0.170",
     "@mariozechner/pi-coding-agent": "^0.67.6",
+    "@vercel/sandbox": "^1.10.0",
     "ai": "^6.0.168",
     "fastify": "^5.3.3",
     "zod": "^3.25.76"
