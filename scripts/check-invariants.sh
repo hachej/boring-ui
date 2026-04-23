@@ -104,10 +104,11 @@ run_check \
   "Frontend must stay platform-agnostic." \
   "src/front"
 
-run_check \
+run_check_with_glob \
   "No console.* calls in src/server/**" \
   "console\\.(log|debug|info|warn|error)\\(" \
-  "Use the standard logger abstraction." \
+  "Use the standard logger abstraction (createLogger from src/server/logging.ts)." \
+  "!**/logging.ts" \
   "src/server"
 
 if [[ -d "$ROOT_DIR/src/server" ]]; then

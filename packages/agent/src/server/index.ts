@@ -9,6 +9,8 @@ export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { standardCatalog } from './catalog/standardCatalog'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export { createLogger } from './logging'
+export type { Logger, LogFields } from './logging'
 export type {
   ModeContext,
   RuntimeBundle,
