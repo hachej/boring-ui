@@ -67,20 +67,20 @@ function mockUiBridge(): UiBridge {
 }
 
 describe('standardCatalog', () => {
-  it('returns exactly 5 tools without uiBridge', () => {
+  it('returns exactly 6 tools without uiBridge', () => {
     const tools = standardCatalog(baseDeps())
-    expect(tools).toHaveLength(5)
+    expect(tools).toHaveLength(6)
   })
 
-  it('returns tools in correct order: bash, find_files, read, write, edit', () => {
+  it('returns tools in correct order: bash, find_files, grep_files, read, write, edit', () => {
     const tools = standardCatalog(baseDeps())
     const names = tools.map((t) => t.name)
-    expect(names).toEqual(['bash', 'find_files', 'read', 'write', 'edit'])
+    expect(names).toEqual(['bash', 'find_files', 'grep_files', 'read', 'write', 'edit'])
   })
 
-  it('returns 7 tools with uiBridge', () => {
+  it('returns 8 tools with uiBridge', () => {
     const tools = standardCatalog(baseDeps({ uiBridge: mockUiBridge() }))
-    expect(tools).toHaveLength(7)
+    expect(tools).toHaveLength(8)
   })
 
   it('appends get_ui_state and exec_ui after core tools', () => {
@@ -89,6 +89,7 @@ describe('standardCatalog', () => {
     expect(names).toEqual([
       'bash',
       'find_files',
+      'grep_files',
       'read',
       'write',
       'edit',
@@ -97,15 +98,15 @@ describe('standardCatalog', () => {
     ])
   })
 
-  it('returns 8 tools with isolated-code capability', () => {
+  it('returns 9 tools with isolated-code capability', () => {
     const tools = standardCatalog(
       baseDeps({
         sandbox: mockSandbox(['exec', 'isolated-code']),
         uiBridge: mockUiBridge(),
       })
     )
-    expect(tools).toHaveLength(8)
-    expect(tools[7].name).toBe('execute_isolated_code')
+    expect(tools).toHaveLength(9)
+    expect(tools[8].name).toBe('execute_isolated_code')
   })
 
   it('all tool names are unique', () => {
@@ -150,11 +151,12 @@ describe('standardCatalog', () => {
     }
   })
 
-  it('without fileSearch returns the legacy 4 core tools', () => {
+  it('without fileSearch returns 5 core tools', () => {
     const tools = standardCatalog(baseDeps({ fileSearch: undefined }))
-    expect(tools).toHaveLength(4)
+    expect(tools).toHaveLength(5)
     expect(tools.map((t) => t.name)).toEqual([
       'bash',
+      'grep_files',
       'read',
       'write',
       'edit',

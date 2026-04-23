@@ -5,6 +5,7 @@ import type { UiBridge, UiCommand } from '../../shared/ui-bridge'
 import { createBashTool } from './tools/bashTool'
 import { createEditTool } from './tools/editTool'
 import { createFindFilesTool } from './tools/findFilesTool'
+import { createGrepFilesTool } from './tools/grepFilesTool'
 import { createReadTool } from './tools/readTool'
 import { createWriteTool } from './tools/writeTool'
 
@@ -166,6 +167,8 @@ export const standardCatalog: ToolCatalog = ({
   if (fileSearch) {
     tools.push(createFindFilesTool(fileSearch))
   }
+
+  tools.push(createGrepFilesTool(sandbox))
 
   tools.push(
     createReadTool(workspace),
