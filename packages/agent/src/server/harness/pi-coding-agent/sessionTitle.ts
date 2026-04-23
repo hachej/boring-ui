@@ -139,7 +139,10 @@ export function createSessionTitleScheduler(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const pollMs = opts.pollMs ?? DEFAULT_POLL_MS;
   const getNow = opts.now ?? (() => new Date());
-  const model = opts.model ?? getEnv("BORING_AGENT_TITLE_MODEL")?.trim() ?? DEFAULT_TITLE_MODEL;
+  const model =
+    opts.model?.trim()
+    || getEnv("BORING_AGENT_TITLE_MODEL")?.trim()
+    || DEFAULT_TITLE_MODEL;
   const warn =
     opts.onWarn ??
     ((message: string, error?: unknown) => {
@@ -168,7 +171,7 @@ export function createSessionTitleScheduler(
 
       const fallbackTitle = formatFallbackTitle(getNow());
       const apiKey =
-        opts.getApiKey?.()?.trim() ?? getEnv("ANTHROPIC_API_KEY")?.trim() ?? "";
+        opts.getApiKey?.()?.trim() || getEnv("ANTHROPIC_API_KEY")?.trim() || "";
       if (!apiKey || !fetchImpl) {
         opts.writeTitle(input.sessionId, fallbackTitle);
         return;
