@@ -2,7 +2,11 @@ import Fastify from 'fastify'
 import { describe, test, expect, vi } from 'vitest'
 import { chatRoutes, type ChatRouteOptions } from '../chat'
 import type { AgentHarness, SendMessageInput, RunContext } from '../../../../shared/harness'
-import { ERROR_CODE_VALIDATION_ERROR, ERROR_CODE_INTERNAL } from '../../middleware'
+import {
+  ERROR_CODE_VALIDATION_ERROR,
+  ERROR_CODE_INTERNAL,
+  ERROR_CODE_RANGE_NOT_SATISFIABLE,
+} from '../../middleware'
 
 function createMockHarness(
   chunks: unknown[] = [{ type: 'text', text: 'hello' }],
@@ -297,6 +301,23 @@ describe('POST /api/v1/agent/chat', () => {
     await app.close()
   })
 
+  test('response includes X-Turn-Id header', async () => {
+    const app = await buildApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: validBody,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['x-turn-id']).toBeDefined()
+    expect(typeof res.headers['x-turn-id']).toBe('string')
+    expect((res.headers['x-turn-id'] as string).length).toBeGreaterThan(0)
+
+    await app.close()
+  })
+
   test('streams multiple chunks in order', async () => {
     const harness = createMockHarness([
       { type: 'text', text: 'one' },
@@ -315,6 +336,129 @@ describe('POST /api/v1/agent/chat', () => {
     expect(res.statusCode).toBe(200)
     const lines = res.body.split('\n').filter((l) => l.startsWith('data:'))
     expect(lines.length).toBeGreaterThanOrEqual(3)
+
+    await app.close()
+  })
+})
+
+describe('GET /api/v1/agent/chat/:sessionId/stream (resume)', () => {
+  test('replays completed turn from buffer', async () => {
+    const app = await buildApp()
+
+    const postRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: validBody,
+    })
+    expect(postRes.statusCode).toBe(200)
+
+    const resumeRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/sess-1/stream',
+    })
+    expect(resumeRes.statusCode).toBe(200)
+    expect(resumeRes.body).toContain('data:')
+
+    await app.close()
+  })
+
+  test('cursor skips already-received chunks', async () => {
+    const harness = createMockHarness([
+      { type: 'text-delta', delta: 'one' },
+      { type: 'text-delta', delta: 'two' },
+      { type: 'text-delta', delta: 'three' },
+    ])
+    const app = await buildApp({ harness })
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: validBody,
+    })
+
+    const fullRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/sess-1/stream?cursor=-1',
+    })
+    const fullLines = fullRes.body
+      .split('\n')
+      .filter((l: string) => l.startsWith('data:') && !l.includes('[DONE]'))
+
+    const partialRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/sess-1/stream?cursor=0',
+    })
+    const partialLines = partialRes.body
+      .split('\n')
+      .filter((l: string) => l.startsWith('data:') && !l.includes('[DONE]'))
+
+    expect(partialLines.length).toBeLessThan(fullLines.length)
+
+    await app.close()
+  })
+
+  test('cursor beyond buffer returns 416', async () => {
+    const harness = createMockHarness([{ type: 'text-delta', delta: 'a' }])
+    const app = await buildApp({ harness })
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: validBody,
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/sess-1/stream?cursor=9999',
+    })
+    expect(res.statusCode).toBe(416)
+    expect(res.json().error.code).toBe(ERROR_CODE_RANGE_NOT_SATISFIABLE)
+
+    await app.close()
+  })
+
+  test('no active turn and no SessionStore returns 204', async () => {
+    const app = await buildApp()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/unknown-session/stream',
+    })
+    expect(res.statusCode).toBe(204)
+
+    await app.close()
+  })
+
+  test('evicted buffer falls back to SessionStore', async () => {
+    const mockLoad = vi.fn().mockResolvedValue({
+      id: 'sess-fallback',
+      title: 'test',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      turnCount: 1,
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'restored from store' }],
+        },
+      ],
+    })
+    const harness = createMockHarness()
+    harness.sessions = { load: mockLoad } as any
+
+    const app = await buildApp({ harness })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/sess-fallback/stream',
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('data:')
+    expect(mockLoad).toHaveBeenCalledWith(
+      { workspaceId: 'default' },
+      'sess-fallback',
+    )
 
     await app.close()
   })

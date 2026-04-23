@@ -127,4 +127,12 @@ describe('useAgentChat', () => {
       __mockTransport: true,
     })
   })
+
+  test('enables resume on useChat', () => {
+    useAgentChat({ sessionId: 'sess-1' })
+
+    expect(useChat).toHaveBeenCalledWith(
+      expect.objectContaining({ resume: true }),
+    )
+  })
 })

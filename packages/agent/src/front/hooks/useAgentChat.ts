@@ -1,4 +1,4 @@
-import { useChat, type UseChatHelpers } from '@ai-sdk/react'
+import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { useMemo, useRef } from 'react'
 import type { SendMessageInput } from '../../shared/harness'
@@ -8,7 +8,7 @@ export type UseAgentChatOptions = Pick<
   'sessionId' | 'model' | 'thinkingLevel'
 >
 
-export function useAgentChat(opts: UseAgentChatOptions): UseChatHelpers {
+export function useAgentChat(opts: UseAgentChatOptions) {
   const { sessionId } = opts
   const optsRef = useRef(opts)
   optsRef.current = opts
@@ -26,5 +26,5 @@ export function useAgentChat(opts: UseAgentChatOptions): UseChatHelpers {
     [sessionId],
   )
 
-  return useChat({ id: sessionId, transport })
+  return useChat({ id: sessionId, transport, resume: true })
 }
