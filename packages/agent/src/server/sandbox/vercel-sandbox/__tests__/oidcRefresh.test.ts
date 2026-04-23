@@ -149,6 +149,12 @@ describe('OIDC auth status helpers', () => {
     expect(extractHttpStatus({ status: 401 })).toBe(401)
     expect(extractHttpStatus({ response: { status: 403 } })).toBe(403)
     expect(extractHttpStatus({ response: { status: '403' } })).toBe(403)
+    expect(extractHttpStatus({ response: { status: ' 403 ' } })).toBe(403)
+  })
+
+  test('extractHttpStatus ignores malformed status strings', () => {
+    expect(extractHttpStatus({ status: '403 forbidden' })).toBeNull()
+    expect(extractHttpStatus({ response: { status: '401 unauthorized' } })).toBeNull()
   })
 
   test('isOidcAuthError matches 401/403 only', () => {

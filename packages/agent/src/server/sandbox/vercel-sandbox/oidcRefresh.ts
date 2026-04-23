@@ -114,7 +114,11 @@ function coerceHttpStatus(value: unknown): number | null {
   }
   if (typeof value === 'string') {
     // Some HTTP clients surface numeric status codes as strings.
-    const parsed = Number.parseInt(value, 10)
+    const normalized = value.trim()
+    if (!/^\d+$/.test(normalized)) {
+      return null
+    }
+    const parsed = Number.parseInt(normalized, 10)
     return Number.isFinite(parsed) ? parsed : null
   }
   return null

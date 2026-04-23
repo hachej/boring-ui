@@ -108,6 +108,7 @@ export class CircuitBreaker {
       } catch (error) {
         lastError = error
         const totalAttempts = maxAttempts + extraRetryAfterAuthRecovery
+        const isTerminalAttempt = attempt === totalAttempts - 1
         if (
           this.onAuthError
           && !authRecoveryUsed
@@ -117,10 +118,12 @@ export class CircuitBreaker {
           await this.onAuthError(error)
           // Allow one post-refresh retry even when the auth error occurred on
           // what would otherwise be the terminal attempt.
-          extraRetryAfterAuthRecovery = 1
+          if (isTerminalAttempt) {
+            extraRetryAfterAuthRecovery = 1
+          }
           continue
         }
-        if (attempt === totalAttempts - 1) {
+        if (isTerminalAttempt) {
           break
         }
         await this.sleep(this.backoffDelaysMs[attempt] ?? 0)

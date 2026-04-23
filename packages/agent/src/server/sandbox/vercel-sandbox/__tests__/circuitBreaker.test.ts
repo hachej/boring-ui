@@ -148,6 +148,59 @@ describe('CircuitBreaker', () => {
     expect(refreshCalls).toBe(1)
   })
 
+  test('auth recovery before terminal attempt does not add retry budget', async () => {
+    let attempts = 0
+    let refreshCalls = 0
+    const breaker = new CircuitBreaker({
+      sleep: async () => {},
+      isAuthError: isOidcAuthError,
+      onAuthError: async () => {
+        refreshCalls += 1
+      },
+    })
+
+    await expect(
+      breaker.execute(async () => {
+        attempts += 1
+        if (attempts === 2) {
+          const error = new Error('Unauthorized') as Error & { status: number }
+          error.status = 401
+          throw error
+        }
+        throw new Error('still failing')
+      }),
+    ).rejects.toThrow('still failing')
+
+    // Default retry budget is 4 attempts total (1 + 3 backoff retries).
+    expect(attempts).toBe(4)
+    expect(refreshCalls).toBe(1)
+  })
+
+  test('auth recovery on terminal attempt allows one extra retry', async () => {
+    let attempts = 0
+    const breaker = new CircuitBreaker({
+      sleep: async () => {},
+      isAuthError: isOidcAuthError,
+      onAuthError: async () => {},
+    })
+
+    const result = await breaker.execute(async () => {
+      attempts += 1
+      if (attempts < 4) {
+        throw new Error('still failing')
+      }
+      if (attempts === 4) {
+        const error = new Error('Unauthorized') as Error & { status: number }
+        error.status = 401
+        throw error
+      }
+      return 'ok-after-terminal-refresh'
+    })
+
+    expect(result).toBe('ok-after-terminal-refresh')
+    expect(attempts).toBe(5)
+  })
+
   test('failed OIDC refresh surfaces stable OIDC_REFRESH_FAILED code', async () => {
     const breaker = new CircuitBreaker({
       sleep: async () => {},
