@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentTool } from '../shared/tool'
 import type { SessionStore } from '../shared/session'
+import { getEnv } from './config/env'
 import type { RuntimeModeId } from './runtime/mode'
 import { resolveMode } from './runtime/resolveMode'
 import { standardCatalog } from './catalog/standardCatalog'
@@ -18,6 +19,7 @@ const DEFAULT_SESSION_ID = 'default'
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
   sessionId?: string
+  templatePath?: string
   mode?: RuntimeModeId
   authToken?: string
   version?: string
@@ -30,10 +32,12 @@ export async function createAgentApp(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
+  const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
 
   const runtimeBundle = await resolveMode(opts.mode).create({
     workspaceRoot,
     sessionId,
+    templatePath,
   })
 
   const tools = standardCatalog(runtimeBundle)

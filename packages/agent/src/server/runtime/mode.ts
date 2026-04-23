@@ -13,6 +13,7 @@ export interface RuntimeModeAdapter {
 export interface ModeContext {
   workspaceRoot: string
   sessionId: string
+  templatePath?: string
   uiBridge?: UiBridge
 }
 

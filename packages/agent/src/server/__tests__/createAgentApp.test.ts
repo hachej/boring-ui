@@ -1,0 +1,114 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, expect, test } from 'vitest'
+
+import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
+import { createAgentApp } from '../createAgentApp'
+
+const tempDirs: string[] = []
+const ORIGINAL_TEMPLATE_PATH = getEnv('BORING_AGENT_TEMPLATE_PATH')
+
+afterEach(async () => {
+  await Promise.all(
+    tempDirs.splice(0).map(async (dir) => {
+      await rm(dir, { recursive: true, force: true })
+    }),
+  )
+  restoreEnvForTest('BORING_AGENT_TEMPLATE_PATH', ORIGINAL_TEMPLATE_PATH)
+})
+
+async function makeTempDir(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix))
+  tempDirs.push(dir)
+  return dir
+}
+
+async function createTemplate(
+  prefix: string,
+  files: Record<string, string>,
+): Promise<string> {
+  const root = await makeTempDir(prefix)
+  for (const [relPath, contents] of Object.entries(files)) {
+    const filePath = join(root, relPath)
+    await mkdir(join(filePath, '..'), { recursive: true })
+    await writeFile(filePath, contents, 'utf-8')
+  }
+  return root
+}
+
+test('createAgentApp provisions from templatePath option', async () => {
+  const parent = await makeTempDir('boring-ui-app-parent-')
+  const workspaceRoot = join(parent, 'workspace')
+  const templateRoot = await createTemplate('boring-ui-template-', {
+    'README.md': '# api-template\n',
+  })
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    templatePath: templateRoot,
+  })
+  await app.close()
+
+  await expect(readFile(join(workspaceRoot, 'README.md'), 'utf-8')).resolves.toBe('# api-template\n')
+})
+
+test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
+  const parent = await makeTempDir('boring-ui-app-parent-')
+  const workspaceRoot = join(parent, 'workspace')
+  const templateRoot = await createTemplate('boring-ui-template-', {
+    'FROM_ENV.txt': 'env-template\n',
+  })
+  setEnvForTest('BORING_AGENT_TEMPLATE_PATH', templateRoot)
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+  })
+  await app.close()
+
+  await expect(readFile(join(workspaceRoot, 'FROM_ENV.txt'), 'utf-8')).resolves.toBe('env-template\n')
+})
+
+test('createAgentApp option templatePath takes precedence over env fallback', async () => {
+  const parent = await makeTempDir('boring-ui-app-parent-')
+  const workspaceRoot = join(parent, 'workspace')
+  const envTemplate = await createTemplate('boring-ui-template-env-', {
+    'FROM_ENV.txt': 'env-template\n',
+  })
+  const apiTemplate = await createTemplate('boring-ui-template-api-', {
+    'FROM_API.txt': 'api-template\n',
+  })
+  setEnvForTest('BORING_AGENT_TEMPLATE_PATH', envTemplate)
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    templatePath: apiTemplate,
+  })
+  await app.close()
+
+  await expect(readFile(join(workspaceRoot, 'FROM_API.txt'), 'utf-8')).resolves.toBe('api-template\n')
+  await expect(readFile(join(workspaceRoot, 'FROM_ENV.txt'), 'utf-8')).rejects.toSatisfy(
+    (error: unknown) => (error as { code?: string }).code === 'ENOENT',
+  )
+})
+
+test('createAgentApp throws clearly when templatePath is missing', async () => {
+  const parent = await makeTempDir('boring-ui-app-parent-')
+  const workspaceRoot = join(parent, 'workspace')
+  const missingTemplate = join(parent, 'missing-template')
+
+  await expect(
+    createAgentApp({
+      workspaceRoot,
+      mode: 'direct',
+      logger: false,
+      templatePath: missingTemplate,
+    }),
+  ).rejects.toThrow(`Failed to copy template from "${missingTemplate}"`)
+})
