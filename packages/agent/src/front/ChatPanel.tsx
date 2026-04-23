@@ -1,19 +1,18 @@
 import type { UIMessage } from 'ai'
+import { isToolUIPart, getToolName } from 'ai'
 import type { UiBridge } from '../shared/ui-bridge'
 import { Composer, type ComposerSendInput } from './components/Composer'
 import { useAgentChat } from './hooks/useAgentChat'
+import { resolveToolRenderer, type ToolPart, type ToolRenderer } from './toolRenderers'
 
 export interface ChatPanelProps {
   sessionId: string
   bridge?: UiBridge
+  toolRenderers?: Record<string, ToolRenderer>
 }
 
 function isTextPart(part: UIMessage['parts'][number]): part is Extract<UIMessage['parts'][number], { type: 'text' }> {
   return part.type === 'text'
-}
-
-function isToolPart(part: UIMessage['parts'][number]): boolean {
-  return part.type === 'dynamic-tool' || part.type.startsWith('tool-')
 }
 
 function getMessageText(message: UIMessage): string {
@@ -24,11 +23,11 @@ function getMessageText(message: UIMessage): string {
 }
 
 function getToolParts(message: UIMessage): Array<UIMessage['parts'][number]> {
-  return message.parts.filter(isToolPart)
+  return message.parts.filter(isToolUIPart)
 }
 
 export function ChatPanel(props: ChatPanelProps) {
-  const { sessionId } = props
+  const { sessionId, toolRenderers } = props
   const { messages, sendMessage, status, error } = useAgentChat({ sessionId })
 
   const isStreaming = status === 'submitted' || status === 'streaming'
@@ -64,11 +63,12 @@ export function ChatPanel(props: ChatPanelProps) {
             <div key={message.id} data-role={message.role}>
               <div>{message.role}</div>
               {text ? <div>{text}</div> : null}
-              {toolParts.map((toolPart, index) => (
-                <pre key={`${message.id}-tool-${index}`}>
-                  {JSON.stringify(toolPart, null, 2)}
-                </pre>
-              ))}
+              {toolParts.map((toolPart) => {
+                const tp = toolPart as unknown as ToolPart
+                const name = getToolName(toolPart as any)
+                const render = resolveToolRenderer(name, toolRenderers)
+                return <div key={tp.toolCallId}>{render({ ...tp, toolName: name })}</div>
+              })}
             </div>
           )
         })}

@@ -64,8 +64,8 @@ describe('ChatPanel', () => {
 
     expect(html).toContain('Hello from user')
     expect(html).toContain('Hello from assistant')
-    expect(html).toContain('<pre>')
-    expect(html).toContain('tool-bash')
+    expect(html).toContain('data-tool-state')
+    expect(html).toContain('bash')
   })
 
   test('typing in composer send path forwards user message to useAgentChat', async () => {
