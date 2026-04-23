@@ -268,12 +268,12 @@ describe("WorkspaceProvider — persistence", () => {
   })
 })
 
-describe("WorkspaceProvider — bridge stub", () => {
-  it("bridgeEndpoint provided sets connected=true", () => {
+describe("WorkspaceProvider — bridge", () => {
+  it("bridgeEndpoint provided starts disconnected until server responds", () => {
     const { result } = renderHook(() => useWorkspaceBridge(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <WorkspaceProvider
-          bridgeEndpoint="/api/v1/ui/commands/next"
+          bridgeEndpoint="http://localhost:3000"
           persistenceEnabled={false}
         >
           {children}
@@ -281,7 +281,7 @@ describe("WorkspaceProvider — bridge stub", () => {
       ),
     })
 
-    expect(result.current.connected).toBe(true)
+    expect(result.current.connected).toBe(false)
   })
 
   it("bridgeEndpoint=null sets connected=false", () => {

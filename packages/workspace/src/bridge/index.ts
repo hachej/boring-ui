@@ -1,4 +1,6 @@
 export { createBridge } from "./createBridge"
+export { createBridgeClient } from "./client"
+export type { BridgeClient, BridgeClientOptions, UIStatePut } from "./client"
 export type {
   WorkspaceBridge,
   BridgeEventMap,

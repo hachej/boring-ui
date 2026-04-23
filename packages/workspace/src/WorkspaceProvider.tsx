@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react"
 import { PanelRegistry } from "./registry/PanelRegistry"
@@ -14,6 +15,8 @@ import { CommandRegistry } from "./registry/CommandRegistry"
 import { RegistryProvider } from "./registry/RegistryProvider"
 import { createWorkspaceStore } from "./store"
 import { bindStore, useThemePreference } from "./store/selectors"
+import { createBridge } from "./bridge/createBridge"
+import { createBridgeClient, type BridgeClient } from "./bridge/client"
 import type { PanelConfig } from "./registry/types"
 
 // ---------------------------------------------------------------------------
@@ -34,7 +37,7 @@ export function useTheme(): { theme: "light" | "dark"; setTheme: (theme: "light"
 }
 
 // ---------------------------------------------------------------------------
-// Bridge context (stub — implemented in Phase 3)
+// Bridge context
 // ---------------------------------------------------------------------------
 
 export interface WorkspaceBridgeContextValue {
@@ -94,12 +97,14 @@ export function WorkspaceProvider({
   panels,
   capabilities,
   apiBaseUrl = "",
+  authHeaders,
   defaultTheme = "light",
   onThemeChange,
   workspaceId,
   storageKey,
   persistenceEnabled = true,
   bridgeEndpoint,
+  onAuthError,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -124,12 +129,46 @@ export function WorkspaceProvider({
     storeRef.current = store
   }
   const store = storeRef.current
+  const bridgeClientRef = useRef<BridgeClient | null>(null)
+  const authHeadersRef = useRef(authHeaders)
+  authHeadersRef.current = authHeaders
+  const onAuthErrorRef = useRef(onAuthError)
+  onAuthErrorRef.current = onAuthError
 
   useEffect(() => {
     return () => {
+      bridgeClientRef.current?.disconnect()
+      bridgeClientRef.current = null
       store.cleanup()
     }
   }, [store])
+
+  useEffect(() => {
+    if (bridgeClientRef.current) {
+      bridgeClientRef.current.disconnect()
+      bridgeClientRef.current = null
+    }
+
+    if (!bridgeEndpoint) return
+
+    const bridge = createBridge(store)
+    const authToken = authHeadersRef.current?.["Authorization"]?.replace(/^Bearer\s+/i, "")
+    const client = createBridgeClient({
+      endpoint: bridgeEndpoint,
+      bridge,
+      store,
+      authToken,
+      onAuthError: (code) => onAuthErrorRef.current?.(code),
+      onConnectionChange: setBridgeConnected,
+    })
+    client.connect()
+    bridgeClientRef.current = client
+
+    return () => {
+      client.disconnect()
+      bridgeClientRef.current = null
+    }
+  }, [bridgeEndpoint, store])
 
   const { panelRegistry, commandRegistry } = useMemo(() => {
     const pr = new PanelRegistry(capabilities)
@@ -161,9 +200,11 @@ export function WorkspaceProvider({
     [themeSetTheme],
   )
 
+  const [bridgeConnected, setBridgeConnected] = useState(false)
+
   const bridgeValue = useMemo<WorkspaceBridgeContextValue>(
-    () => ({ connected: bridgeEndpoint != null }),
-    [bridgeEndpoint],
+    () => ({ connected: bridgeConnected }),
+    [bridgeConnected],
   )
 
   const dataValue = useMemo<DataProviderContextValue>(
