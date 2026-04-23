@@ -1,45 +1,29 @@
 # with-custom-tool
 
-Minimal code sketch showing how to add a custom tool to `@boring/agent`.
+Runnable example showing how to add a custom tool to `@boring/agent`, override
+its renderer in `ChatPanel`, and restyle via CSS variables.
 
-## Intent
+## Run
 
-Demonstrate the shape of an `AgentTool` and how it is passed into the catalog/harness wiring.
-This directory now includes two sketch files:
-
-- `server.ts` — planned server-side tool registration shape.
-- `client.tsx` — planned chat renderer + CSS variable override shape.
-
-It is still not a runnable package yet (the M5 runtime/UI APIs are in progress).
-
-## Example
-
-```ts
-import type { AgentTool } from '@boring/agent/shared'
-
-const helloTool: AgentTool = {
-  name: 'hello',
-  description: 'Returns a greeting',
-  parameters: {
-    type: 'object',
-    properties: {
-      name: { type: 'string' },
-    },
-    required: ['name'],
-  },
-  async execute(input, _ctx) {
-    const name = String((input as { name: unknown }).name ?? 'world')
-    return {
-      content: [{ type: 'text', text: `Hello, ${name}!` }],
-    }
-  },
-}
-
-// Then include `helloTool` in your tool catalog setup.
+```bash
+export ANTHROPIC_API_KEY=your_key_here
+pnpm --filter with-custom-tool dev
 ```
 
-## Notes
+This starts:
 
-- Keep tool inputs strictly schema-validated.
-- Prefer deterministic output contracts for UI rendering.
-- Use shared interfaces from `@boring/agent/shared` for typing.
+- an API server with a custom `reverse` tool (`server.ts`)
+- a Vite client rendering `ChatPanel` with `toolRenderers={{ reverse: ... }}`
+  and hotpink theme overrides (`client.tsx`)
+
+Then in chat, try:
+
+```ts
+reverse hello
+```
+
+You should see the custom renderer output:
+
+```
+Reversed: olleh
+```

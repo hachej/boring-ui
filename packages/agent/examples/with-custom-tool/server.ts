@@ -1,3 +1,9 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import react from '@vitejs/plugin-react'
+import { createServer as createViteServer } from 'vite'
+
 import type { AgentTool } from '../../src/shared/tool'
 import { createAgentApp } from '../../src/server/createAgentApp'
 
@@ -6,15 +12,17 @@ const reverseTool: AgentTool = {
   description: 'Reverse a string.',
   parameters: {
     type: 'object',
-    properties: { s: { type: 'string' } },
+    properties: {
+      s: { type: 'string' },
+    },
     required: ['s'],
   },
-  async execute(params, _ctx) {
-    const raw = params.s
-    const input = typeof raw === 'string' ? raw : ''
-
+  async execute(params) {
+    const input = typeof params.s === 'string' ? params.s : ''
+    const reversed = input.split('').reverse().join('')
     return {
-      content: [{ type: 'text', text: input.split('').reverse().join('') }],
+      content: [{ type: 'text', text: reversed }],
+      details: { reversed },
     }
   },
 }
@@ -22,7 +30,59 @@ const reverseTool: AgentTool = {
 const app = await createAgentApp({
   extraTools: [reverseTool],
   mode: 'direct',
+  sessionId: 'demo',
 })
 
-await app.listen({ port: 3000 })
-console.log('Agent running on http://localhost:3000')
+const apiAddress = await app.listen({ port: 0, host: '127.0.0.1' })
+const apiPort = Number(new URL(apiAddress).port)
+const apiTarget = `http://127.0.0.1:${apiPort}`
+
+const exampleRoot = path.dirname(fileURLToPath(import.meta.url))
+const vite = await createViteServer({
+  root: exampleRoot,
+  plugins: [
+    react(),
+    {
+      name: 'with-custom-tool-virtual-index',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.method === 'GET' && req.url && (req.url === '/' || req.url.startsWith('/?'))) {
+            res.statusCode = 200
+            res.setHeader('Content-Type', 'text/html; charset=utf-8')
+            res.end(
+              [
+                '<!doctype html>',
+                '<html lang="en">',
+                '  <head>',
+                '    <meta charset="UTF-8" />',
+                '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+                '    <title>with-custom-tool</title>',
+                '  </head>',
+                '  <body>',
+                '    <div id="root"></div>',
+                '    <script type="module" src="/client.tsx"></script>',
+                '  </body>',
+                '</html>',
+              ].join('\n'),
+            )
+            return
+          }
+          next()
+        })
+      },
+    },
+  ],
+  server: {
+    port: 5181,
+    strictPort: false,
+    proxy: {
+      '/api': apiTarget,
+      '/health': apiTarget,
+      '/ready': apiTarget,
+    },
+  },
+})
+
+await vite.listen()
+vite.printUrls()
+app.log.info(`with-custom-tool API listening at ${apiAddress}`)
