@@ -1,11 +1,14 @@
 import type { UIMessage } from 'ai'
 import { isToolUIPart, getToolName } from 'ai'
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import type { UiBridge } from '../shared/ui-bridge'
 import './styles/theme.css'
 import { Composer, type ComposerSendInput } from './components/Composer'
 import { isModelId } from './components/ModelPicker'
 import { useAgentChat } from './hooks/useAgentChat'
+import { CodeBlock } from './primitives/CodeBlock'
+import { Message, MessagePartContainer } from './primitives/Message'
+import { Reasoning } from './primitives/Reasoning'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
@@ -28,15 +31,84 @@ function isTextPart(part: UIMessage['parts'][number]): part is Extract<UIMessage
   return part.type === 'text'
 }
 
-function getMessageText(message: UIMessage): string {
-  return message.parts
-    .filter(isTextPart)
-    .map((part) => part.text)
-    .join('')
+interface ReasoningPartView {
+  text: string
+  state: 'streaming' | 'done'
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'object' || value === null) return null
+  return value as Record<string, unknown>
+}
+
+function getReasoningPart(part: UIMessage['parts'][number]): ReasoningPartView | null {
+  const record = asRecord(part)
+  if (!record || record.type !== 'reasoning') {
+    return null
+  }
+
+  const textCandidate = record.text ?? record.content
+  if (typeof textCandidate !== 'string' || textCandidate.length === 0) {
+    return null
+  }
+
+  const stateCandidate = record.state
+  return {
+    text: textCandidate,
+    state: stateCandidate === 'streaming' ? 'streaming' : 'done',
+  }
 }
 
 function getToolParts(message: UIMessage): Array<UIMessage['parts'][number]> {
   return message.parts.filter(isToolUIPart)
+}
+
+function roleForMessage(message: UIMessage): 'user' | 'assistant' | 'system' {
+  if (message.role === 'user' || message.role === 'assistant' || message.role === 'system') {
+    return message.role
+  }
+  return 'assistant'
+}
+
+function renderTextWithCodeBlocks(text: string): ReactNode {
+  const blockPattern = /```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g
+  const chunks: ReactNode[] = []
+  let lastIndex = 0
+  let match = blockPattern.exec(text)
+
+  while (match) {
+    const [full, language, code] = match
+    const before = text.slice(lastIndex, match.index)
+    if (before.length > 0) {
+      chunks.push(
+        <div key={`text-${lastIndex}`} style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+          {before}
+        </div>,
+      )
+    }
+
+    chunks.push(
+      <CodeBlock
+        key={`code-${match.index}`}
+        code={code}
+        language={language || undefined}
+      />,
+    )
+
+    lastIndex = match.index + full.length
+    match = blockPattern.exec(text)
+  }
+
+  const trailing = text.slice(lastIndex)
+  if (trailing.length > 0 || chunks.length === 0) {
+    chunks.push(
+      <div key={`text-${lastIndex}-tail`} style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+        {trailing}
+      </div>,
+    )
+  }
+
+  return chunks
 }
 
 export function ChatPanel(props: ChatPanelProps) {
@@ -109,26 +181,55 @@ export function ChatPanel(props: ChatPanelProps) {
     >
       <div
         className="chat-panel__messages"
-        style={{ flex: 1, overflow: 'auto' }}
+        style={{ flex: 1, overflow: 'auto', paddingBottom: '0.5rem' }}
       >
         {messages.map((message) => {
-          const text = getMessageText(message)
+          const textParts = message.parts.filter(isTextPart)
+          const reasoningParts = message.parts
+            .map(getReasoningPart)
+            .filter((part): part is ReasoningPartView => part !== null)
           const toolParts = getToolParts(message)
 
           return (
-            <div key={message.id} data-role={message.role}>
-              <div>{message.role}</div>
-              {text ? <div>{text}</div> : null}
+            <Message key={message.id} role={roleForMessage(message)}>
+              {reasoningParts.map((part, index) => (
+                <MessagePartContainer key={`reasoning-${message.id}-${index}`}>
+                  <Reasoning
+                    text={part.text}
+                    state={part.state}
+                    defaultExpanded={part.state === 'streaming'}
+                  />
+                </MessagePartContainer>
+              ))}
+
+              {textParts.map((part, index) => (
+                <MessagePartContainer key={`text-${message.id}-${index}`}>
+                  {renderTextWithCodeBlocks(part.text)}
+                </MessagePartContainer>
+              ))}
+
               {toolParts.map((toolPart) => {
                 const tp = toolPart as unknown as ToolPart
                 const name = getToolName(toolPart as any)
                 const render = resolveToolRenderer(name, mergedToolRenderers)
-                return <div key={tp.toolCallId}>{render({ ...tp, toolName: name })}</div>
+                return (
+                  <MessagePartContainer key={tp.toolCallId}>
+                    {render({ ...tp, toolName: name })}
+                  </MessagePartContainer>
+                )
               })}
-            </div>
+            </Message>
           )
         })}
-        {error ? <div role="alert">{error.message}</div> : null}
+        {error ? (
+          <Message role="assistant">
+            <MessagePartContainer>
+              <div role="alert" style={{ color: 'var(--boring-chat-error, #ef4444)' }}>
+                {error.message}
+              </div>
+            </MessagePartContainer>
+          </Message>
+        ) : null}
       </div>
 
       <Composer isStreaming={isStreaming} onSend={handleSend} />

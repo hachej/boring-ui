@@ -37,7 +37,7 @@ beforeEach(() => {
 })
 
 describe('ChatPanel', () => {
-  test('renders message rows and raw tool calls as pre JSON', () => {
+  test('renders messages and tool calls through styled primitives', () => {
     mockUseAgentChat.mockReturnValue({
       messages: [
         {
@@ -69,8 +69,38 @@ describe('ChatPanel', () => {
 
     expect(html).toContain('Hello from user')
     expect(html).toContain('Hello from assistant')
+    expect(html).toContain('data-role="user"')
+    expect(html).toContain('data-role="assistant"')
     expect(html).toContain('data-tool-state')
     expect(html).toContain('bash')
+  })
+
+  test('renders reasoning + fenced code text with primitives', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'm-assistant-reasoning',
+          role: 'assistant',
+          parts: [
+            { type: 'reasoning', text: 'thinking...', state: 'done' },
+            {
+              type: 'text',
+              text: 'Here is code:\n```ts\nconst x = 1\n```',
+            },
+          ],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'ready',
+      error: undefined,
+    })
+
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
+
+    expect(html).toContain('Thought process')
+    expect(html).toContain('data-state="done"')
+    expect(html).toContain('data-language="ts"')
+    expect(html).toContain('const x = 1')
   })
 
   test('marks ChatPanel root with data-boring-chat attribute', () => {
