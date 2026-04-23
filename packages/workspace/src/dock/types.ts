@@ -51,6 +51,7 @@ export interface DockviewShellApi {
     config: {
       id: string
       component: string
+      title?: string
       params?: Record<string, unknown>
     },
   ): void

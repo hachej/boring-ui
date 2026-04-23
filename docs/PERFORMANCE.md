@@ -60,6 +60,7 @@ pnpm --dir packages/agent exec tsx scripts/bench-vercel-fs-latency.ts \
 
 Vercel sandbox per-call filesystem operations are significantly slower than local operations, and command loops (`find`, `grep`) are >2x slower (actually ~11x at p50).  
 For agent behavior, this makes tight per-file loops high-cost in remote mode and validates batching/caching strategies.
+In `vercel-sandbox` mode, prefer the `find_files` catalog tool (backed by `FileSearch`) over `bash` + `find` loops for file enumeration.
 
 ## Mitigations Opened
 
@@ -68,4 +69,3 @@ Because measured slowdowns are >2x, follow-up mitigation beads were created:
 - `boring-ui-v2-jru.1` — Add `find_files` tool over `FileSearch` (avoid shell `find` loops)
 - `boring-ui-v2-jru.2` — Add `grep_files` batched tool (single call for multi-file search)
 - `boring-ui-v2-jru.3` — Add short-lived `readdir`/`stat` cache in vercel workspace adapter
-

@@ -4,6 +4,7 @@ import type { AgentTool, ToolResult } from '../../shared/tool'
 import type { UiBridge, UiCommand } from '../../shared/ui-bridge'
 import { createBashTool } from './tools/bashTool'
 import { createEditTool } from './tools/editTool'
+import { createFindFilesTool } from './tools/findFilesTool'
 import { createReadTool } from './tools/readTool'
 import { createWriteTool } from './tools/writeTool'
 
@@ -154,13 +155,23 @@ function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
   }
 }
 
-export const standardCatalog: ToolCatalog = ({ workspace, sandbox, uiBridge }) => {
-  const tools: AgentTool[] = [
-    createBashTool(sandbox),
+export const standardCatalog: ToolCatalog = ({
+  workspace,
+  sandbox,
+  uiBridge,
+  fileSearch,
+}) => {
+  const tools: AgentTool[] = [createBashTool(sandbox)]
+
+  if (fileSearch) {
+    tools.push(createFindFilesTool(fileSearch))
+  }
+
+  tools.push(
     createReadTool(workspace),
     createWriteTool(workspace),
     createEditTool(workspace),
-  ]
+  )
 
   if (uiBridge) {
     tools.push(createGetUiStateTool(uiBridge), createExecUiTool(uiBridge))

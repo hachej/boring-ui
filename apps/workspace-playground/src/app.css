@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../packages/workspace/src";
 
 html,
 body,

@@ -73,6 +73,7 @@ function createShellApi(
       api.addPanel({
         id: config.id,
         component: config.component,
+        title: config.title,
         params: config.params,
         position: group ? { referenceGroup: group } : undefined,
       })

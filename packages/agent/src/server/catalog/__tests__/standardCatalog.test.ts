@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import Ajv from 'ajv'
 import { standardCatalog } from '../standardCatalog'
 import type { CatalogDeps } from '../../../shared/catalog'
+import type { FileSearch } from '../../../shared/file-search'
 import type { Workspace } from '../../../shared/workspace'
 import type { Sandbox } from '../../../shared/sandbox'
 import type { UiBridge } from '../../../shared/ui-bridge'
@@ -35,10 +36,17 @@ function mockSandbox(capabilities: string[] = ['exec']): Sandbox {
   }
 }
 
+function mockFileSearch(): FileSearch {
+  return {
+    search: async () => [],
+  }
+}
+
 function baseDeps(overrides: Partial<CatalogDeps> = {}): CatalogDeps {
   return {
     workspace: mockWorkspace(),
     sandbox: mockSandbox(),
+    fileSearch: mockFileSearch(),
     ...overrides,
   }
 }
@@ -59,20 +67,20 @@ function mockUiBridge(): UiBridge {
 }
 
 describe('standardCatalog', () => {
-  it('returns exactly 4 tools without uiBridge', () => {
+  it('returns exactly 5 tools without uiBridge', () => {
     const tools = standardCatalog(baseDeps())
-    expect(tools).toHaveLength(4)
+    expect(tools).toHaveLength(5)
   })
 
-  it('returns tools in correct order: bash, read, write, edit', () => {
+  it('returns tools in correct order: bash, find_files, read, write, edit', () => {
     const tools = standardCatalog(baseDeps())
     const names = tools.map((t) => t.name)
-    expect(names).toEqual(['bash', 'read', 'write', 'edit'])
+    expect(names).toEqual(['bash', 'find_files', 'read', 'write', 'edit'])
   })
 
-  it('returns 6 tools with uiBridge', () => {
+  it('returns 7 tools with uiBridge', () => {
     const tools = standardCatalog(baseDeps({ uiBridge: mockUiBridge() }))
-    expect(tools).toHaveLength(6)
+    expect(tools).toHaveLength(7)
   })
 
   it('appends get_ui_state and exec_ui after core tools', () => {
@@ -80,6 +88,7 @@ describe('standardCatalog', () => {
     const names = tools.map((t) => t.name)
     expect(names).toEqual([
       'bash',
+      'find_files',
       'read',
       'write',
       'edit',
@@ -88,15 +97,15 @@ describe('standardCatalog', () => {
     ])
   })
 
-  it('returns 7 tools with isolated-code capability', () => {
+  it('returns 8 tools with isolated-code capability', () => {
     const tools = standardCatalog(
       baseDeps({
         sandbox: mockSandbox(['exec', 'isolated-code']),
         uiBridge: mockUiBridge(),
       })
     )
-    expect(tools).toHaveLength(7)
-    expect(tools[6].name).toBe('execute_isolated_code')
+    expect(tools).toHaveLength(8)
+    expect(tools[7].name).toBe('execute_isolated_code')
   })
 
   it('all tool names are unique', () => {
@@ -141,8 +150,8 @@ describe('standardCatalog', () => {
     }
   })
 
-  it('without uiBridge and without isolated-code returns 4 tools', () => {
-    const tools = standardCatalog(baseDeps())
+  it('without fileSearch returns the legacy 4 core tools', () => {
+    const tools = standardCatalog(baseDeps({ fileSearch: undefined }))
     expect(tools).toHaveLength(4)
     expect(tools.map((t) => t.name)).toEqual([
       'bash',
