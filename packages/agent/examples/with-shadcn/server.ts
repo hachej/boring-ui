@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { createServer as createViteServer } from 'vite'
 
+import { applyCspHeaders } from '../csp'
 import type { AgentTool } from '../../src/shared/tool'
 import { createAgentApp } from '../../src/server/createAgentApp'
 
@@ -48,6 +49,11 @@ const vite = await createViteServer({
     {
       name: 'with-shadcn-virtual-index',
       configureServer(server) {
+        server.middlewares.use((_req, res, next) => {
+          applyCspHeaders(res)
+          next()
+        })
+
         server.middlewares.use(async (req, res, next) => {
           if (req.method === 'GET' && req.url && (req.url === '/' || req.url.startsWith('/?'))) {
             const rawHtml = [

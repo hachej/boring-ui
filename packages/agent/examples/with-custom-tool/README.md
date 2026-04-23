@@ -27,3 +27,12 @@ You should see the custom renderer output:
 ```
 Reversed: olleh
 ```
+
+## CSP
+
+This example server applies a strict CSP header (see `../csp.ts`). Required
+policy baseline:
+
+```http
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'
+```

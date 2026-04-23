@@ -117,6 +117,7 @@ Both are permanent. See [docs/UI-SHADCN.md](./docs/UI-SHADCN.md) for the full gu
 
 - [API](./docs/API.md)
 - [STYLING](./docs/STYLING.md)
+- [CSP](./docs/CSP.md)
 - [UI-SHADCN](./docs/UI-SHADCN.md)
 - [PLUGINS](./docs/PLUGINS.md)
 - [MIGRATION](./docs/MIGRATION.md)
