@@ -6,7 +6,9 @@ export type { UseSessionsResult } from './hooks/useSessions'
 export {
   DiffView,
   defaultToolRenderers,
+  mergeToolRenderers,
   resolveToolRenderer,
   type ToolPart,
   type ToolRenderer,
+  type ToolRendererOverrides,
 } from './toolRenderers'

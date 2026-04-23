@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, test, expect } from 'vitest'
 import {
   defaultToolRenderers,
+  mergeToolRenderers,
   resolveToolRenderer,
   type ToolPart,
 } from '../renderers'
@@ -114,6 +115,17 @@ describe('exec_ui renderer', () => {
 })
 
 describe('resolveToolRenderer', () => {
+  test('mergeToolRenderers deep-merges overrides with defaults', () => {
+    const customBash = () => <div>custom bash</div>
+    const merged = mergeToolRenderers({
+      bash: customBash,
+    })
+
+    expect(merged.bash).toBe(customBash)
+    expect(merged.read).toBe(defaultToolRenderers.read)
+    expect(merged.edit).toBe(defaultToolRenderers.edit)
+  })
+
   test('returns default renderer for known tool', () => {
     const renderer = resolveToolRenderer('bash')
     expect(renderer).toBe(defaultToolRenderers.bash)

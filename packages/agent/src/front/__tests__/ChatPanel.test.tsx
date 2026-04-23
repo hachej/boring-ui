@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ComposerProps } from '../components/Composer'
+import type { ToolPart } from '../toolRenderers'
 
 const mockUseAgentChat = vi.fn()
 const mockSendMessage = vi.fn()
@@ -102,5 +103,82 @@ describe('ChatPanel', () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-1" />)
 
     expect(capturedComposerProps?.isStreaming).toBe(true)
+  })
+
+  test('toolRenderers override replaces default renderer for matching tool name', () => {
+    const customBashRenderer = vi.fn((part: ToolPart) => (
+      <div data-testid="custom-bash">custom:{part.toolCallId}</div>
+    ))
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'm-assistant',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-bash',
+              toolCallId: 'call-custom',
+              state: 'output-available',
+              input: { command: 'ls' },
+              output: { stdout: 'ok' },
+            },
+          ],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'ready',
+      error: undefined,
+    })
+
+    const html = renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-custom"
+        toolRenderers={{ bash: customBashRenderer }}
+      />,
+    )
+
+    expect(customBashRenderer).toHaveBeenCalledTimes(1)
+    expect(html).toContain('custom:call-custom')
+  })
+
+  test('non-overridden tool still uses default/fallback renderer', () => {
+    const customBashRenderer = vi.fn((part: ToolPart) => (
+      <div data-testid="custom-bash">custom:{part.toolCallId}</div>
+    ))
+
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'm-assistant',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-plugin_magic',
+              toolCallId: 'call-plugin',
+              state: 'output-available',
+              input: { x: 1 },
+              output: { y: 2 },
+            },
+          ],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'ready',
+      error: undefined,
+    })
+
+    const html = renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-plugin"
+        toolRenderers={{ bash: customBashRenderer }}
+      />,
+    )
+
+    expect(customBashRenderer).not.toHaveBeenCalled()
+    expect(html).toContain('plugin_magic')
+    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('&quot;x&quot;')
+    expect(html).toContain('&quot;y&quot;')
   })
 })

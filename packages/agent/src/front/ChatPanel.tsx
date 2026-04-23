@@ -3,12 +3,17 @@ import { isToolUIPart, getToolName } from 'ai'
 import type { UiBridge } from '../shared/ui-bridge'
 import { Composer, type ComposerSendInput } from './components/Composer'
 import { useAgentChat } from './hooks/useAgentChat'
-import { resolveToolRenderer, type ToolPart, type ToolRenderer } from './toolRenderers'
+import {
+  mergeToolRenderers,
+  resolveToolRenderer,
+  type ToolPart,
+  type ToolRendererOverrides,
+} from './toolRenderers'
 
 export interface ChatPanelProps {
   sessionId: string
   bridge?: UiBridge
-  toolRenderers?: Record<string, ToolRenderer>
+  toolRenderers?: ToolRendererOverrides
 }
 
 function isTextPart(part: UIMessage['parts'][number]): part is Extract<UIMessage['parts'][number], { type: 'text' }> {
@@ -29,6 +34,7 @@ function getToolParts(message: UIMessage): Array<UIMessage['parts'][number]> {
 export function ChatPanel(props: ChatPanelProps) {
   const { sessionId, toolRenderers } = props
   const { messages, sendMessage, status, error } = useAgentChat({ sessionId })
+  const mergedToolRenderers = mergeToolRenderers(toolRenderers)
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
@@ -66,7 +72,7 @@ export function ChatPanel(props: ChatPanelProps) {
               {toolParts.map((toolPart) => {
                 const tp = toolPart as unknown as ToolPart
                 const name = getToolName(toolPart as any)
-                const render = resolveToolRenderer(name, toolRenderers)
+                const render = resolveToolRenderer(name, mergedToolRenderers)
                 return <div key={tp.toolCallId}>{render({ ...tp, toolName: name })}</div>
               })}
             </div>

@@ -17,9 +17,33 @@ export interface ToolPart {
 }
 
 export type ToolRenderer = (part: ToolPart) => ReactNode
+export type ToolRendererOverrides = Partial<Record<string, ToolRenderer>>
 
 function asRecord(v: unknown): Record<string, unknown> {
   return (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  if (typeof v !== 'object' || v === null) return false
+  return Object.getPrototypeOf(v) === Object.prototype
+}
+
+function deepMergeRecords(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base }
+
+  for (const [key, overrideValue] of Object.entries(override)) {
+    const baseValue = merged[key]
+    if (isPlainObject(baseValue) && isPlainObject(overrideValue)) {
+      merged[key] = deepMergeRecords(baseValue, overrideValue)
+      continue
+    }
+    merged[key] = overrideValue
+  }
+
+  return merged
 }
 
 function langFromPath(path: string): string | undefined {
@@ -162,9 +186,22 @@ export const defaultToolRenderers: Record<string, ToolRenderer> = {
   exec_ui: renderExecUi,
 }
 
+export function mergeToolRenderers(
+  overrides?: ToolRendererOverrides,
+): Record<string, ToolRenderer> {
+  if (!overrides) {
+    return { ...defaultToolRenderers }
+  }
+
+  return deepMergeRecords(
+    defaultToolRenderers as unknown as Record<string, unknown>,
+    overrides as Record<string, unknown>,
+  ) as Record<string, ToolRenderer>
+}
+
 export function resolveToolRenderer(
   toolName: string,
-  overrides?: Record<string, ToolRenderer>,
+  overrides?: ToolRendererOverrides,
 ): ToolRenderer {
   return (
     overrides?.[toolName]
