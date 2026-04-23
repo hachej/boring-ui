@@ -169,4 +169,45 @@ describe('CircuitBreaker', () => {
       errorCode: 'OIDC_REFRESH_FAILED',
     })
   })
+
+  test('half-open mode allows one retry after successful auth recovery', async () => {
+    let nowMs = 0
+    let attempts = 0
+    let refreshCalls = 0
+    const breaker = new CircuitBreaker({
+      now: () => nowMs,
+      sleep: async () => {},
+      openDurationMs: 30_000,
+      isAuthError: isOidcAuthError,
+      onAuthError: async () => {
+        refreshCalls += 1
+      },
+    })
+
+    const failing = async () => {
+      throw new Error('failing')
+    }
+
+    for (let i = 0; i < 5; i += 1) {
+      await expect(breaker.execute(failing)).rejects.toThrow('failing')
+    }
+    expect(breaker.getState()).toBe('open')
+
+    nowMs += 30_001
+
+    const result = await breaker.execute(async () => {
+      attempts += 1
+      if (attempts === 1) {
+        const error = new Error('Unauthorized') as Error & { status: number }
+        error.status = 401
+        throw error
+      }
+      return 'ok'
+    })
+
+    expect(result).toBe('ok')
+    expect(refreshCalls).toBe(1)
+    expect(attempts).toBe(2)
+    expect(breaker.getState()).toBe('closed')
+  })
 })

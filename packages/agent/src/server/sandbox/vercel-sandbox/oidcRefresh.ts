@@ -49,13 +49,14 @@ export class OidcTokenRefresher {
   private readonly minTtlMs: number
   private readonly logger: Pick<Logger, 'info' | 'warn'>
   private cached: OidcTokenPayload | null = null
+  private inFlightRefresh: Promise<OidcTokenPayload> | null = null
 
   constructor(opts: OidcTokenRefresherOptions) {
     this.refresh = opts.refresh
     this.applyToken = opts.applyToken ?? (() => {})
     this.now = opts.now ?? Date.now
     this.minTtlMs = opts.minTtlMs ?? DEFAULT_MIN_TTL_MS
-    this.logger = opts.logger ?? createLogger('[oidc]')
+    this.logger = opts.logger ?? createLogger('oidc')
   }
 
   async getValidToken(): Promise<OidcTokenPayload> {
@@ -78,33 +79,58 @@ export class OidcTokenRefresher {
       }
     }
 
-    try {
-      const refreshed = validatePayload(await this.refresh(), this.now())
-      await this.applyToken(refreshed.token)
-      this.cached = refreshed
-      this.logger.info('[oidc] refreshed token', {
-        expiresAtMs: refreshed.expiresAtMs,
-        nextRefreshAtMs: refreshed.expiresAtMs - this.minTtlMs,
-      })
-      return refreshed
-    } catch (error) {
-      this.logger.warn('[oidc] refresh failed', { reason: errorMessage(error) })
-      throw new OidcRefreshFailedError(
-        'Vercel auth expired; restart with fresh VERCEL_OIDC_TOKEN',
-        error,
-      )
+    if (this.inFlightRefresh) {
+      return await this.inFlightRefresh
     }
+
+    this.inFlightRefresh = (async () => {
+      try {
+        const refreshed = validatePayload(await this.refresh(), this.now())
+        await this.applyToken(refreshed.token)
+        this.cached = refreshed
+        this.logger.info('refreshed token', {
+          expiresAtMs: refreshed.expiresAtMs,
+          nextRefreshAtMs: refreshed.expiresAtMs - this.minTtlMs,
+        })
+        return refreshed
+      } catch (error) {
+        this.logger.warn('refresh failed', { reason: errorMessage(error) })
+        throw new OidcRefreshFailedError(
+          'Vercel auth expired; restart with fresh VERCEL_OIDC_TOKEN',
+          error,
+        )
+      } finally {
+        this.inFlightRefresh = null
+      }
+    })()
+
+    return await this.inFlightRefresh
   }
 }
 
+function coerceHttpStatus(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
 export function extractHttpStatus(error: unknown): number | null {
-  const directStatus = (error as { status?: unknown } | null)?.status
-  if (typeof directStatus === 'number') {
+  const directStatus = coerceHttpStatus(
+    (error as { status?: unknown } | null)?.status,
+  )
+  if (directStatus !== null) {
     return directStatus
   }
 
-  const response = (error as { response?: { status?: unknown } } | null)?.response
-  return typeof response?.status === 'number' ? response.status : null
+  const responseStatus = coerceHttpStatus(
+    (error as { response?: { status?: unknown } } | null)?.response?.status,
+  )
+  return responseStatus
 }
 
 export function isOidcAuthError(error: unknown): boolean {

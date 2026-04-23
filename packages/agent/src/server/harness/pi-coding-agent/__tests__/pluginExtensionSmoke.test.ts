@@ -132,7 +132,7 @@ describe("Plugin extension smoke test", () => {
           typeof chunk === "object" && chunk !== null && "type" in chunk,
       )
       .map((chunk) => chunk.type);
-    expect(chunkTypes).toContain("message-start");
+    expect(chunkTypes).toContain("start");
     expect(chunkTypes).toContain("finish");
 
     expect(mockCreateAgentSession).toHaveBeenCalledTimes(1);

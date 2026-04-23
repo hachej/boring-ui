@@ -116,13 +116,39 @@ describe('OidcTokenRefresher', () => {
       OidcRefreshFailedError,
     )
   })
+
+  test('concurrent refresh calls share one in-flight refresh', async () => {
+    let now = 5_000
+    const refresh = vi.fn(async () => ({
+      token: 'token-concurrent',
+      expiresAtMs: now + 120_000,
+    }))
+    const applyToken = vi.fn(async () => {})
+    const refresher = new OidcTokenRefresher({
+      refresh,
+      applyToken,
+      now: () => now,
+      minTtlMs: 30_000,
+      logger: { info: () => {}, warn: () => {} },
+    })
+
+    const [first, second] = await Promise.all([
+      refresher.getValidToken(),
+      refresher.getValidToken(),
+    ])
+
+    expect(first.token).toBe('token-concurrent')
+    expect(second.token).toBe('token-concurrent')
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(applyToken).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('OIDC auth status helpers', () => {
   test('extractHttpStatus supports direct and nested response status', () => {
     expect(extractHttpStatus({ status: 401 })).toBe(401)
     expect(extractHttpStatus({ response: { status: 403 } })).toBe(403)
-    expect(extractHttpStatus({ response: { status: '403' } })).toBeNull()
+    expect(extractHttpStatus({ response: { status: '403' } })).toBe(403)
   })
 
   test('isOidcAuthError matches 401/403 only', () => {

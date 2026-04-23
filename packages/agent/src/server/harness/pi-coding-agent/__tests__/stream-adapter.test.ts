@@ -29,43 +29,48 @@ function msgUpdate(ameType: string, extra: Record<string, unknown> = {}): AgentS
 }
 
 describe("piEventToChunks — full mapping table", () => {
-  it("message_start → message-start", () => {
-    const r = piEventToChunks({ type: "message_start", message: fakeMsg } as AgentSessionEvent);
+  it("message_start → start (with messageId)", () => {
+    const r = piEventToChunks({ type: "message_start", message: { ...fakeMsg, id: "m1" } } as AgentSessionEvent);
     expect(r).toHaveLength(1);
-    expect((r[0] as any).type).toBe("message-start");
+    expect((r[0] as any).type).toBe("start");
+    expect((r[0] as any).messageId).toBe("m1");
   });
 
-  it("text_start → text-start", () => {
+  it("text_start → text-start with id", () => {
     const r = piEventToChunks(msgUpdate("text_start", { contentIndex: 0 }));
     expect(r).toHaveLength(1);
     expect((r[0] as any).type).toBe("text-start");
-    expect((r[0] as any).contentIndex).toBe(0);
+    expect((r[0] as any).id).toBe("0");
   });
 
-  it("text_delta → text-delta", () => {
+  it("text_delta → text-delta with id+delta", () => {
     const r = piEventToChunks(msgUpdate("text_delta", { contentIndex: 0, delta: "hello" }));
     expect(r).toHaveLength(1);
     expect((r[0] as any).type).toBe("text-delta");
+    expect((r[0] as any).id).toBe("0");
     expect((r[0] as any).delta).toBe("hello");
   });
 
-  it("text_end → text-end", () => {
+  it("text_end → text-end with id (no content field)", () => {
     const r = piEventToChunks(msgUpdate("text_end", { contentIndex: 0, content: "full text" }));
     expect(r).toHaveLength(1);
     expect((r[0] as any).type).toBe("text-end");
-    expect((r[0] as any).content).toBe("full text");
+    expect((r[0] as any).id).toBe("0");
+    expect((r[0] as any).content).toBeUndefined();
   });
 
   it("thinking_start → reasoning-start", () => {
     const r = piEventToChunks(msgUpdate("thinking_start", { contentIndex: 1 }));
     expect(r).toHaveLength(1);
     expect((r[0] as any).type).toBe("reasoning-start");
+    expect((r[0] as any).id).toBe("1");
   });
 
   it("thinking_delta → reasoning-delta", () => {
     const r = piEventToChunks(msgUpdate("thinking_delta", { contentIndex: 1, delta: "hmm" }));
     expect(r).toHaveLength(1);
     expect((r[0] as any).type).toBe("reasoning-delta");
+    expect((r[0] as any).id).toBe("1");
     expect((r[0] as any).delta).toBe("hmm");
   });
 
@@ -73,19 +78,17 @@ describe("piEventToChunks — full mapping table", () => {
     const r = piEventToChunks(msgUpdate("thinking_end", { contentIndex: 1, content: "thought" }));
     expect(r).toHaveLength(1);
     expect((r[0] as any).type).toBe("reasoning-end");
+    expect((r[0] as any).id).toBe("1");
   });
 
-  it("toolcall_start → tool-input-start", () => {
+  it("toolcall_start → [] (deferred until toolcall_end)", () => {
     const r = piEventToChunks(msgUpdate("toolcall_start", { contentIndex: 2 }));
-    expect(r).toHaveLength(1);
-    expect((r[0] as any).type).toBe("tool-input-start");
+    expect(r).toHaveLength(0);
   });
 
-  it("toolcall_delta → tool-input-delta", () => {
+  it("toolcall_delta → [] (deferred until toolcall_end)", () => {
     const r = piEventToChunks(msgUpdate("toolcall_delta", { contentIndex: 2, delta: '{"x":' }));
-    expect(r).toHaveLength(1);
-    expect((r[0] as any).type).toBe("tool-input-delta");
-    expect((r[0] as any).delta).toBe('{"x":');
+    expect(r).toHaveLength(0);
   });
 
   it("toolcall_end → tool-input-available", () => {
@@ -198,10 +201,9 @@ describe("piEventToChunks — full mapping table", () => {
     expect((r[0] as any).errorText).toBe("command failed");
   });
 
-  it("message_end → message-end", () => {
+  it("message_end → [] (finish emitted on done instead)", () => {
     const r = piEventToChunks({ type: "message_end", message: fakeMsg } as AgentSessionEvent);
-    expect(r).toHaveLength(1);
-    expect((r[0] as any).type).toBe("message-end");
+    expect(r).toEqual([]);
   });
 
   it("assistantMessageEvent start → empty", () => {

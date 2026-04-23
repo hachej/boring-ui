@@ -96,12 +96,18 @@ export class CircuitBreaker {
     const maxAttempts = allowRetries ? this.backoffDelaysMs.length + 1 : 1
     let lastError: unknown
     let authRecoveryUsed = false
+    let extraRetryAfterAuthRecovery = 0
 
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    for (
+      let attempt = 0;
+      attempt < maxAttempts + extraRetryAfterAuthRecovery;
+      attempt += 1
+    ) {
       try {
         return await operation()
       } catch (error) {
         lastError = error
+        const totalAttempts = maxAttempts + extraRetryAfterAuthRecovery
         if (
           this.onAuthError
           && !authRecoveryUsed
@@ -109,9 +115,12 @@ export class CircuitBreaker {
         ) {
           authRecoveryUsed = true
           await this.onAuthError(error)
+          // Even in half-open mode (maxAttempts=1), allow one retry after
+          // successful auth recovery.
+          extraRetryAfterAuthRecovery = 1
           continue
         }
-        if (attempt === maxAttempts - 1) {
+        if (attempt === totalAttempts - 1) {
           break
         }
         await this.sleep(this.backoffDelaysMs[attempt] ?? 0)

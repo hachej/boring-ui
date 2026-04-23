@@ -77,8 +77,12 @@ function extractFileChanges(details: unknown): FileChangeData[] {
 
 export function piEventToChunks(event: AgentSessionEvent): UIMessageChunk[] {
   switch (event.type) {
-    case "message_start":
-      return [chunk({ type: "message-start" })];
+    case "message_start": {
+      const messageId = (event as any).message?.id;
+      return [
+        chunk(messageId ? { type: "start", messageId } : { type: "start" }),
+      ];
+    }
 
     case "message_update": {
       const ame = event.assistantMessageEvent;
@@ -87,28 +91,29 @@ export function piEventToChunks(event: AgentSessionEvent): UIMessageChunk[] {
           return [];
 
         case "text_start":
-          return [chunk({ type: "text-start", contentIndex: ame.contentIndex })];
+          return [chunk({ type: "text-start", id: String(ame.contentIndex) })];
 
         case "text_delta":
-          return [chunk({ type: "text-delta", contentIndex: ame.contentIndex, delta: ame.delta })];
+          return [chunk({ type: "text-delta", id: String(ame.contentIndex), delta: ame.delta })];
 
         case "text_end":
-          return [chunk({ type: "text-end", contentIndex: ame.contentIndex, content: ame.content })];
+          return [chunk({ type: "text-end", id: String(ame.contentIndex) })];
 
         case "thinking_start":
-          return [chunk({ type: "reasoning-start", contentIndex: ame.contentIndex })];
+          return [chunk({ type: "reasoning-start", id: String(ame.contentIndex) })];
 
         case "thinking_delta":
-          return [chunk({ type: "reasoning-delta", contentIndex: ame.contentIndex, delta: ame.delta })];
+          return [chunk({ type: "reasoning-delta", id: String(ame.contentIndex), delta: ame.delta })];
 
         case "thinking_end":
-          return [chunk({ type: "reasoning-end", contentIndex: ame.contentIndex, content: ame.content })];
+          return [chunk({ type: "reasoning-end", id: String(ame.contentIndex) })];
 
         case "toolcall_start":
-          return [chunk({ type: "tool-input-start", contentIndex: ame.contentIndex })];
+          // pi streams contentIndex before toolCallId exists; defer until toolcall_end.
+          return [];
 
         case "toolcall_delta":
-          return [chunk({ type: "tool-input-delta", contentIndex: ame.contentIndex, delta: ame.delta })];
+          return [];
 
         case "toolcall_end":
           return [
@@ -200,7 +205,7 @@ export function piEventToChunks(event: AgentSessionEvent): UIMessageChunk[] {
       ];
 
     case "message_end":
-      return [chunk({ type: "message-end" })];
+      return [];
 
     case "agent_start":
     case "agent_end":

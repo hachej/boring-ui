@@ -152,13 +152,15 @@ export function chatRoutes(
             async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
               for (const msg of detail.messages) {
                 if (msg.role !== 'assistant') continue
-                writer.write(c({ type: 'message-start' }))
+                const messageId = (msg as any).id
+                writer.write(c(messageId ? { type: 'start', messageId } : { type: 'start' }))
                 let ci = 0
                 for (const part of (msg as any).parts) {
                   if (part.type === 'text') {
-                    writer.write(c({ type: 'text-start', contentIndex: ci }))
-                    writer.write(c({ type: 'text-delta', contentIndex: ci, delta: part.text }))
-                    writer.write(c({ type: 'text-end', contentIndex: ci, content: part.text }))
+                    const id = `${messageId ?? 'replay'}:${ci}`
+                    writer.write(c({ type: 'text-start', id }))
+                    writer.write(c({ type: 'text-delta', id, delta: part.text }))
+                    writer.write(c({ type: 'text-end', id }))
                     ci++
                   }
                   if (part.type === 'tool-invocation') {
@@ -169,7 +171,6 @@ export function chatRoutes(
                   }
                 }
                 writer.write(c({ type: 'finish' }))
-                writer.write(c({ type: 'message-end' }))
               }
             },
           })
