@@ -1,0 +1,63 @@
+{
+  "name": "@boring/workspace",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Frontend-only layout package. Composes ChatPanel + FileTree + Editor into IDE / Chat layouts via DockView.",
+  "files": ["dist", "src/globals.css"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/workspace.js"
+    },
+    "./globals.css": "./src/globals.css"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "echo 'lint not yet configured'"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@codemirror/state": {
+      "optional": true
+    },
+    "@codemirror/view": {
+      "optional": true
+    },
+    "@tiptap/react": {
+      "optional": true
+    },
+    "@tiptap/starter-kit": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "dockview-react": "^4.13.1",
+    "react-arborist": "^3.4.0",
+    "tailwind-merge": "^2.0.0",
+    "zod": "^3.23.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^2.0.0"
+  }
+}

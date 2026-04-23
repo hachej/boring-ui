@@ -1,2 +1,13 @@
 # bv (beads viewer) local config and caches
 .bv/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
