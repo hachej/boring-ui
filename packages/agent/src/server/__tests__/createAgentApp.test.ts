@@ -5,6 +5,7 @@ import { afterEach, expect, test } from 'vitest'
 
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import { createAgentApp } from '../createAgentApp'
+import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/pluginLoader'
 
 const tempDirs: string[] = []
 const ORIGINAL_TEMPLATE_PATH = getEnv('BORING_AGENT_TEMPLATE_PATH')
@@ -20,6 +21,14 @@ afterEach(async () => {
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix))
+  tempDirs.push(dir)
+  return dir
+}
+
+async function makeWorkspaceLocalTempDir(prefix: string): Promise<string> {
+  const baseDir = join(process.cwd(), '.tmp-test-workspaces')
+  await mkdir(baseDir, { recursive: true })
+  const dir = await mkdtemp(join(baseDir, prefix))
   tempDirs.push(dir)
   return dir
 }
@@ -185,4 +194,63 @@ test('createAgentApp throws clearly when templatePath is missing', async () => {
       templatePath: missingTemplate,
     }),
   ).rejects.toThrow(`Failed to copy template from "${missingTemplate}"`)
+})
+
+test('real local plugin file remains callable and appears in app catalog', async () => {
+  const workspaceRoot = await makeWorkspaceLocalTempDir('boring-ui-plugin-e2e-')
+  const pluginDir = join(workspaceRoot, '.pi', 'extensions')
+  await mkdir(pluginDir, { recursive: true })
+
+  const pluginPath = join(pluginDir, 'hello.mjs')
+  await writeFile(
+    pluginPath,
+    [
+      'export default {',
+      "  name: 'a4s_plugin_hello',",
+      "  description: 'hello plugin tool for compatibility smoke test',",
+      '  parameters: {',
+      "    type: 'object',",
+      "    properties: { name: { type: 'string' } },",
+      "    required: ['name'],",
+      '  },',
+      '  async execute(params) {',
+      "    const name = typeof params?.name === 'string' ? params.name : 'world'",
+      "    return { content: [{ type: 'text', text: `hello ${name}` }] }",
+      '  },',
+      '}',
+      '',
+    ].join('\n'),
+    'utf-8',
+  )
+
+  const pluginResult = await loadPlugins({ cwd: workspaceRoot, skipGlobal: true })
+  expect(pluginResult.errors).toEqual([])
+  const pluginTools = flattenPluginTools(pluginResult)
+  expect(pluginTools.map((tool) => tool.name)).toContain('a4s_plugin_hello')
+  await expect(
+    pluginTools.find((tool) => tool.name === 'a4s_plugin_hello')!.execute(
+      { name: 'Ada' },
+      { abortSignal: new AbortController().signal, toolCallId: 'plugin-call-1' },
+    ),
+  ).resolves.toMatchObject({
+    content: [{ type: 'text', text: 'hello Ada' }],
+  })
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+  })
+
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/catalog',
+    })
+    expect(res.statusCode).toBe(200)
+    const names = res.json().tools.map((t: { name: string }) => t.name)
+    expect(names).toContain('a4s_plugin_hello')
+  } finally {
+    await app.close()
+  }
 })
