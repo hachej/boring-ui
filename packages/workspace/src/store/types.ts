@@ -3,6 +3,7 @@ export interface PanelState {
   component: string
   params?: Record<string, unknown>
   groupId?: string
+  essential?: boolean
 }
 
 export interface Notification {

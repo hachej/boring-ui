@@ -4,6 +4,7 @@ export * from "./dock"
 export * from "./layouts"
 export * from "./data"
 export * from "./hooks"
+export * from "./bridge"
 export * from "./components/ui"
 export {
   WorkspaceProvider,
