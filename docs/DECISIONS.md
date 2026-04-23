@@ -2,6 +2,8 @@
 
 Source of truth for architectural decisions in `@boring/agent`. Any PR that changes a locked decision must update this document and include rationale in the PR description.
 
+See also: [REVIEW_DECISIONS.md](./REVIEW_DECISIONS.md) for adopted/deferred findings from external reviews.
+
 Each decision has four fields:
 
 - **What** -- the decision itself
