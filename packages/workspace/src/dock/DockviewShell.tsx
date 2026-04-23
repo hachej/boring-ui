@@ -130,6 +130,40 @@ function createShellApi(
   }
 }
 
+function resolveGroupConstraints(group: GroupConfig): {
+  minimumWidth?: number
+  maximumWidth?: number
+  minimumHeight?: number
+  maximumHeight?: number
+} | null {
+  if (!group.constraints) return null
+
+  let maximumWidth = group.constraints.maxWidth
+  const ratio = group.constraints.maxWidthViewportRatio
+
+  if (typeof ratio === "number" && ratio > 0 && typeof window !== "undefined") {
+    const ratioWidth = Math.floor(window.innerWidth * ratio)
+    maximumWidth = typeof maximumWidth === "number"
+      ? Math.min(maximumWidth, ratioWidth)
+      : ratioWidth
+  }
+
+  return {
+    minimumWidth: group.constraints.minWidth,
+    maximumWidth,
+    minimumHeight: group.constraints.minHeight,
+    maximumHeight: group.constraints.maxHeight,
+  }
+}
+
+function applyGroupConstraints(api: DockviewApi, group: GroupConfig): void {
+  const panel = api.getPanel(group.panel ?? group.id)
+  if (!panel?.group) return
+  const constraints = resolveGroupConstraints(group)
+  if (!constraints) return
+  panel.group.api.setConstraints(constraints)
+}
+
 function initializeDockview(
   event: DockviewReadyEvent,
   layout: DockviewShellProps["layout"],
@@ -172,14 +206,21 @@ function initializeDockview(
     if (!panel?.group) continue
     if (group.locked) panel.group.locked = "no-drop-target" as const
     if (group.hideHeader) panel.group.header.hidden = true
-    if (group.constraints) {
-      panel.group.api.setConstraints({
-        minimumWidth: group.constraints.minWidth,
-        maximumWidth: group.constraints.maxWidth,
-        minimumHeight: group.constraints.minHeight,
-        maximumHeight: group.constraints.maxHeight,
-      })
+    applyGroupConstraints(api, group)
+  }
+
+  const responsiveConstraintGroups = layout.groups.filter(
+    (group) => typeof group.constraints?.maxWidthViewportRatio === "number",
+  )
+  let removeResizeListener: (() => void) | undefined
+  if (responsiveConstraintGroups.length > 0) {
+    const onResize = () => {
+      for (const group of responsiveConstraintGroups) {
+        applyGroupConstraints(api, group)
+      }
     }
+    window.addEventListener("resize", onResize)
+    removeResizeListener = () => window.removeEventListener("resize", onResize)
   }
 
   let dispose: (() => void) | undefined
@@ -203,6 +244,11 @@ function initializeDockview(
       flushOnUnload()
       layoutDisposable.dispose()
       window.removeEventListener("beforeunload", flushOnUnload)
+      removeResizeListener?.()
+    }
+  } else {
+    dispose = () => {
+      removeResizeListener?.()
     }
   }
   return dispose

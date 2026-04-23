@@ -1,6 +1,6 @@
-import { DockviewShell } from "../dock"
 import type { LayoutConfig, GroupConfig } from "../dock"
 import type { IdeLayoutProps } from "./types"
+import { ResponsiveDockviewShell } from "./ResponsiveDockviewShell"
 
 export function buildIdeLayout(props: IdeLayoutProps = {}): LayoutConfig {
   const { sidebar = "filetree", center = "empty", right } = props
@@ -11,8 +11,8 @@ export function buildIdeLayout(props: IdeLayoutProps = {}): LayoutConfig {
       panel: sidebar,
       locked: true,
       collapsible: true,
-      collapsedWidth: 0,
-      constraints: { minWidth: 200, maxWidth: 400 },
+      collapsedWidth: 40,
+      constraints: { minWidth: 200, maxWidthViewportRatio: 0.5 },
     },
     {
       id: "center",
@@ -20,6 +20,7 @@ export function buildIdeLayout(props: IdeLayoutProps = {}): LayoutConfig {
       panel: center,
       dynamic: true,
       placeholder: "empty",
+      constraints: { minWidth: 300 },
     },
   ]
 
@@ -29,7 +30,7 @@ export function buildIdeLayout(props: IdeLayoutProps = {}): LayoutConfig {
       position: "right",
       panel: right,
       hideHeader: true,
-      constraints: { minWidth: 300 },
+      constraints: { minWidth: 250 },
     })
   }
 
@@ -37,5 +38,5 @@ export function buildIdeLayout(props: IdeLayoutProps = {}): LayoutConfig {
 }
 
 export function IdeLayout(props: IdeLayoutProps) {
-  return <DockviewShell layout={buildIdeLayout(props)} className={props.className} />
+  return <ResponsiveDockviewShell layout={buildIdeLayout(props)} className={props.className} />
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
 import { RegistryProvider } from "../../registry"
@@ -17,11 +18,11 @@ import {
 } from "../index"
 
 function DummyPanel() {
-  return <div>panel</div>
+  return <div data-testid="dummy-panel">panel</div>
 }
 
 function setup(panels: string[]) {
-  const store = createWorkspaceStore()
+  const store = createWorkspaceStore({ persistenceEnabled: false })
   bindStore(store)
 
   const panelRegistry = new PanelRegistry()
@@ -42,6 +43,15 @@ function renderWithRegistry(
       {ui}
     </RegistryProvider>,
   )
+}
+
+function setViewport(width: number) {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: width,
+  })
+  window.dispatchEvent(new Event("resize"))
 }
 
 describe("barrel exports", () => {
@@ -65,8 +75,11 @@ describe("buildIdeLayout", () => {
     expect(sidebar.panel).toBe("filetree")
     expect(sidebar.locked).toBe(true)
     expect(sidebar.collapsible).toBe(true)
-    expect(sidebar.collapsedWidth).toBe(0)
-    expect(sidebar.constraints).toEqual({ minWidth: 200, maxWidth: 400 })
+    expect(sidebar.collapsedWidth).toBe(40)
+    expect(sidebar.constraints).toEqual({
+      minWidth: 200,
+      maxWidthViewportRatio: 0.5,
+    })
 
     const center = config.groups[1]
     expect(center.id).toBe("center")
@@ -74,6 +87,7 @@ describe("buildIdeLayout", () => {
     expect(center.panel).toBe("empty")
     expect(center.dynamic).toBe(true)
     expect(center.placeholder).toBe("empty")
+    expect(center.constraints).toEqual({ minWidth: 300 })
   })
 
   it("applies sidebar override", () => {
@@ -90,7 +104,7 @@ describe("buildIdeLayout", () => {
     expect(right.position).toBe("right")
     expect(right.panel).toBe("agent")
     expect(right.hideHeader).toBe(true)
-    expect(right.constraints).toEqual({ minWidth: 300 })
+    expect(right.constraints).toEqual({ minWidth: 250 })
   })
 
   it("omits right group when right is undefined", () => {
@@ -126,8 +140,11 @@ describe("buildChatLayout", () => {
     expect(sidebar!.position).toBe("left")
     expect(sidebar!.panel).toBe("filetree")
     expect(sidebar!.collapsible).toBe(true)
-    expect(sidebar!.collapsedWidth).toBe(0)
-    expect(sidebar!.constraints).toEqual({ minWidth: 200, maxWidth: 350 })
+    expect(sidebar!.collapsedWidth).toBe(40)
+    expect(sidebar!.constraints).toEqual({
+      minWidth: 200,
+      maxWidthViewportRatio: 0.5,
+    })
   })
 
   it("adds surface group when surface is set", () => {
@@ -164,6 +181,93 @@ describe("IdeLayout component", () => {
       ["filetree", "empty"],
     )
     expect(container.querySelector(".custom-ide")).toBeInTheDocument()
+  })
+})
+
+describe("IdeLayout responsive behavior", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    setViewport(1280)
+  })
+
+  it("shows mobile hamburger under 768px and opens sheet sidebar", async () => {
+    setViewport(375)
+    const user = userEvent.setup()
+
+    renderWithRegistry(
+      <IdeLayout />,
+      ["filetree", "empty"],
+    )
+
+    const openButton = screen.getByLabelText("Open sidebar menu")
+    expect(openButton).toBeInTheDocument()
+
+    await user.click(openButton)
+    expect(await screen.findByText("filetree")).toBeInTheDocument()
+  })
+
+  it("auto-collapses sidebar rail on tablet and supports pin-open", async () => {
+    const user = userEvent.setup()
+
+    setViewport(1280)
+    renderWithRegistry(
+      <IdeLayout />,
+      ["filetree", "empty"],
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("dummy-panel")).toHaveLength(2)
+    })
+
+    act(() => {
+      setViewport(900)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Open collapsed sidebar")).toBeInTheDocument()
+      expect(screen.getAllByTestId("dummy-panel")).toHaveLength(1)
+    })
+
+    await user.click(screen.getByLabelText("Open collapsed sidebar"))
+    await user.click(await screen.findByLabelText("Pin sidebar open"))
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Open collapsed sidebar")).not.toBeInTheDocument()
+      expect(screen.getAllByTestId("dummy-panel")).toHaveLength(2)
+    })
+    expect(screen.getByLabelText("Collapse sidebar")).toBeInTheDocument()
+  })
+
+  it("transitions desktop → tablet → mobile → desktop modes", async () => {
+    renderWithRegistry(
+      <IdeLayout />,
+      ["filetree", "empty"],
+    )
+
+    expect(screen.queryByLabelText("Open sidebar menu")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("Open collapsed sidebar")).not.toBeInTheDocument()
+
+    act(() => {
+      setViewport(900)
+    })
+    await waitFor(() => {
+      expect(screen.getByLabelText("Open collapsed sidebar")).toBeInTheDocument()
+    })
+
+    act(() => {
+      setViewport(600)
+    })
+    await waitFor(() => {
+      expect(screen.getByLabelText("Open sidebar menu")).toBeInTheDocument()
+    })
+
+    act(() => {
+      setViewport(1280)
+    })
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Open sidebar menu")).not.toBeInTheDocument()
+      expect(screen.queryByLabelText("Open collapsed sidebar")).not.toBeInTheDocument()
+    })
   })
 })
 

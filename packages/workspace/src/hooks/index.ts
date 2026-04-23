@@ -4,6 +4,11 @@ export {
   type UseEditorLifecycleOptions,
   type UseEditorLifecycleReturn,
 } from "./useEditorLifecycle"
+export { useViewportBreakpoint } from "./useViewportBreakpoint"
+export {
+  useResponsiveSidebarCollapse,
+  type UseResponsiveSidebarCollapseOptions,
+} from "./useResponsiveSidebarCollapse"
 export {
   useArtifactPanels,
   type ArtifactPanel,

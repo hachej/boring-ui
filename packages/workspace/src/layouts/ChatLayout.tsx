@@ -1,6 +1,6 @@
-import { DockviewShell } from "../dock"
 import type { LayoutConfig, GroupConfig } from "../dock"
 import type { ChatLayoutProps } from "./types"
+import { ResponsiveDockviewShell } from "./ResponsiveDockviewShell"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const { nav = "session-list", center = "chat", surface, sidebar } = props
@@ -22,8 +22,8 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
       position: "left",
       panel: sidebar,
       collapsible: true,
-      collapsedWidth: 0,
-      constraints: { minWidth: 200, maxWidth: 350 },
+      collapsedWidth: 40,
+      constraints: { minWidth: 200, maxWidthViewportRatio: 0.5 },
     })
   }
 
@@ -41,5 +41,5 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
 }
 
 export function ChatLayout(props: ChatLayoutProps) {
-  return <DockviewShell layout={buildChatLayout(props)} className={props.className} />
+  return <ResponsiveDockviewShell layout={buildChatLayout(props)} className={props.className} />
 }

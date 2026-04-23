@@ -18,6 +18,7 @@ export interface GroupConfig {
   constraints?: {
     minWidth?: number
     maxWidth?: number
+    maxWidthViewportRatio?: number
     minHeight?: number
     maxHeight?: number
   }
