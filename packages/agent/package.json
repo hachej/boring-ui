@@ -31,7 +31,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit",
+    "lint": "pnpm run typecheck && pnpm run lint:invariants",
+    "lint:invariants": "bash ../../scripts/check-invariants.sh .",
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {

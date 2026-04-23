@@ -7,6 +7,7 @@
     "dev": "pnpm -r run dev",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
+    "lint:invariants": "pnpm --dir packages/agent run lint:invariants",
     "test": "pnpm -r run test",
     "clean": "pnpm -r run clean"
   },
