@@ -35,6 +35,10 @@ export function useSidebarState() {
   return useStore(getStore(), (s) => s.sidebar)
 }
 
+export function useSetSidebar() {
+  return useStore(getStore(), (s) => s.setSidebar)
+}
+
 export function useOpenPanels() {
   return useStore(getStore(), (s) => s.panels)
 }
@@ -49,4 +53,8 @@ export function useThemePreference() {
 
 export function useHydrationComplete() {
   return useStore(getStore(), (s) => s.hydrationComplete)
+}
+
+export function useResetLayout() {
+  return useStore(getStore(), (s) => s.resetLayout)
 }

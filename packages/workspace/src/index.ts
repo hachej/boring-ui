@@ -119,6 +119,10 @@ export {
 // shadcn UI primitives
 export * from "./components/ui"
 
+// Error handling
+export { PanelErrorBoundary } from "./components/PanelErrorBoundary"
+export type { PanelErrorBoundaryProps } from "./components/PanelErrorBoundary"
+
 // Standalone components (usable WITHOUT WorkspaceProvider)
 export { CodeEditor } from "./components/CodeEditor"
 export type { CodeEditorProps } from "./components/CodeEditor"
@@ -159,6 +163,7 @@ export {
   useDirtyFiles,
   useThemePreference,
   useHydrationComplete,
+  useResetLayout,
 } from "./store/selectors"
 export type {
   WorkspaceState,

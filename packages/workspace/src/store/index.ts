@@ -152,6 +152,14 @@ export function createWorkspaceStore(options: CreateWorkspaceStoreOptions = {}) 
           })),
         navigateToLine: (file, _line) =>
           set({ activeFile: file }),
+        resetLayout: () => {
+          localStorage.removeItem(layoutKey)
+          set({
+            layout: null,
+            sidebar: { collapsed: false, width: 260 },
+            panelSizes: {},
+          })
+        },
       }),
       {
         name: layoutKey,

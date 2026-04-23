@@ -29,6 +29,7 @@ function createMockStore() {
     showNotification: vi.fn(),
     dismissNotification: vi.fn(),
     navigateToLine: vi.fn(),
+    resetLayout: vi.fn(),
   }
 
   const subscribers = new Set<(s: WorkspaceStore, prev: WorkspaceStore) => void>()

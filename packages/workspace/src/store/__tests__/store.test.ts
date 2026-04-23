@@ -654,3 +654,77 @@ describe("Cross-tab storage events", () => {
     logSpy.mockRestore()
   })
 })
+
+describe("Corrupted state recovery", () => {
+  it("corrupted JSON string in localStorage resets to defaults", () => {
+    localStorage.setItem("boring-ui-v2:layout", "not-json{{{")
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const store = createWorkspaceStore()
+    bindStore(store)
+    store.persist.rehydrate()
+    expect(store.getState().layout).toBeNull()
+    expect(store.getState().sidebar).toEqual({ collapsed: false, width: 260 })
+    errSpy.mockRestore()
+  })
+
+  it("extra/unknown fields in persisted state are stripped by Zod", () => {
+    const valid = {
+      version: "2.0",
+      state: {
+        layout: null,
+        sidebar: { collapsed: true, width: 300 },
+        panelSizes: {},
+        unknownField: "should be stripped",
+      },
+    }
+    localStorage.setItem("boring-ui-v2:layout", JSON.stringify(valid))
+    const store = createWorkspaceStore()
+    bindStore(store)
+    store.persist.rehydrate()
+    const state = store.getState()
+    expect(state.sidebar.collapsed).toBe(true)
+    expect((state as unknown as Record<string, unknown>).unknownField).toBeUndefined()
+  })
+
+  it("resetLayout clears persisted layout and resets to defaults", () => {
+    const valid = {
+      version: "2.0",
+      state: {
+        layout: { grid: { root: {} }, panels: {} },
+        sidebar: { collapsed: true, width: 400 },
+        panelSizes: { "panel-1": 300 },
+      },
+    }
+    localStorage.setItem("boring-ui-v2:layout", JSON.stringify(valid))
+    const store = createWorkspaceStore()
+    bindStore(store)
+    store.persist.rehydrate()
+
+    expect(store.getState().sidebar.collapsed).toBe(true)
+
+    store.getState().resetLayout()
+
+    expect(store.getState().layout).toBeNull()
+    expect(store.getState().sidebar).toEqual({ collapsed: false, width: 260 })
+    expect(store.getState().panelSizes).toEqual({})
+    expect(localStorage.getItem("boring-ui-v2:layout")).toBeNull()
+  })
+
+  it("resetLayout with workspaceId clears the scoped key", () => {
+    localStorage.setItem(
+      "boring-ui-v2:layout:my-project",
+      JSON.stringify({
+        version: "2.0",
+        state: {
+          layout: null,
+          sidebar: { collapsed: false, width: 260 },
+          panelSizes: {},
+        },
+      })
+    )
+    const store = createWorkspaceStore({ workspaceId: "my-project" })
+    bindStore(store)
+    store.getState().resetLayout()
+    expect(localStorage.getItem("boring-ui-v2:layout:my-project")).toBeNull()
+  })
+})

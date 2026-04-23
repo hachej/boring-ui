@@ -49,6 +49,7 @@ export interface WorkspaceActions {
   showNotification: (notification: Omit<Notification, "id" | "timestamp">) => void
   dismissNotification: (id: string) => void
   navigateToLine: (file: string, line: number) => void
+  resetLayout: () => void
 }
 
 export type WorkspaceStore = WorkspaceState & WorkspaceActions
