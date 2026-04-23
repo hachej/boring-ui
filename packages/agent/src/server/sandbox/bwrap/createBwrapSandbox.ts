@@ -229,6 +229,9 @@ export function createBwrapSandbox(): Sandbox {
         if (opts?.signal) {
           const abort = (): void => {
             terminateProcess(child, 'SIGTERM')
+            killHandle = setTimeout(() => {
+              if (!settled) terminateProcess(child, 'SIGKILL')
+            }, KILL_GRACE_SECONDS * 1_000)
           }
 
           if (opts.signal.aborted) {

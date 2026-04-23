@@ -78,6 +78,38 @@ test('exec enforces timeout and kill-after-grace', async () => {
   expect(result.durationMs).toBeLessThan(8_000)
 }, 15_000)
 
+test('exec kills process when abort signal fires', async () => {
+  const { sandbox } = await initSandbox()
+  const ac = new AbortController()
+
+  const execPromise = sandbox.exec(
+    `node -e "setInterval(() => {}, 1000)"`,
+    { signal: ac.signal },
+  )
+
+  // Give process time to start
+  await new Promise((r) => setTimeout(r, 100))
+  ac.abort()
+
+  const result = await execPromise
+  expect(result.exitCode).not.toBe(0)
+  expect(result.durationMs).toBeLessThan(5_000)
+}, 10_000)
+
+test('exec handles already-aborted signal', async () => {
+  const { sandbox } = await initSandbox()
+  const ac = new AbortController()
+  ac.abort()
+
+  const result = await sandbox.exec(
+    `node -e "setInterval(() => {}, 1000)"`,
+    { signal: ac.signal },
+  )
+
+  expect(result.exitCode).not.toBe(0)
+  expect(result.durationMs).toBeLessThan(5_000)
+}, 10_000)
+
 test('exec caps output at maxOutputBytes and marks truncated', async () => {
   const { sandbox } = await initSandbox()
 

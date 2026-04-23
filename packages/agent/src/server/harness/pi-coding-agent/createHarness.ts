@@ -101,6 +101,7 @@ export function createPiCodingAgentHarness(opts: {
       const onAbort = () => {
         streamError = new Error("Aborted");
         done = true;
+        piSession.abort().catch(() => {});
         if (wake) wake();
       };
       ctx.abortSignal.addEventListener("abort", onAbort, { once: true });

@@ -154,6 +154,9 @@ export function createDirectSandbox(): Sandbox {
         if (opts?.signal) {
           const abort = (): void => {
             terminateProcess(child, 'SIGTERM')
+            killHandle = setTimeout(() => {
+              if (!settled) terminateProcess(child, 'SIGKILL')
+            }, TERMINATION_GRACE_MS)
           }
 
           if (opts.signal.aborted) {
