@@ -15,17 +15,19 @@ It works as:
 
 ## Quickstart
 
-Run the standalone agent in your current directory:
+Current scaffold (works today):
+
+```bash
+pnpm --dir packages/agent dev
+```
+
+This starts the Fastify + Vite dev setup added in M0.
+
+Planned package quickstart (after CLI beads land):
 
 ```bash
 npx @boring/agent
 ```
-
-What happens:
-
-1. A local backend starts.
-2. A browser UI opens.
-3. Chat requests run tools against your workspace using the selected runtime mode.
 
 ## Runtime Modes
 
@@ -35,15 +37,15 @@ What happens:
 | `local` | Host machine | `bwrap` sandbox | Host-level process isolation | Safer local/server Linux deployments |
 | `vercel-sandbox` | Remote VM | Vercel Sandbox | Firecracker microVM boundary | Multi-tenant or remote isolated execution |
 
+Status: only `direct` runtime is implemented in the current scaffold. `local` and `vercel-sandbox` are planned and tracked by later beads.
+
 ### Mode Selection
 
-Auto-detect defaults:
+Planned auto-detect defaults:
 
 - If Linux + `bwrap` is available: prefer `local`.
 - Otherwise: use `direct`.
 - `vercel-sandbox` is explicit opt-in.
-
-Your app can always force the mode at startup.
 
 ## Architecture
 
@@ -90,7 +92,7 @@ Use the app shell to choose runtime mode, inject stores, and expose HTTP routes 
 
 ## Custom Tools Example
 
-See the runnable example:
+See the minimal integration sketch:
 
 - [examples/with-custom-tool](./examples/with-custom-tool/README.md)
 

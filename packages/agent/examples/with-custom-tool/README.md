@@ -1,10 +1,11 @@
 # with-custom-tool
 
-Minimal example showing how to add a custom tool to `@boring/agent`.
+Minimal code sketch showing how to add a custom tool to `@boring/agent`.
 
 ## Intent
 
 Demonstrate the shape of an `AgentTool` and how it is passed into the catalog/harness wiring.
+This directory is documentation-only right now (not a runnable package yet).
 
 ## Example
 
@@ -21,7 +22,7 @@ const helloTool: AgentTool = {
     },
     required: ['name'],
   },
-  async execute(input) {
+  async execute(input, _ctx) {
     const name = String((input as { name: unknown }).name ?? 'world')
     return {
       content: [{ type: 'text', text: `Hello, ${name}!` }],
