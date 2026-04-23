@@ -17,7 +17,9 @@ import { chatRoutes } from './http/routes/chat'
 import { sessionRoutes } from './http/routes/sessions'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
+import { uiRoutes } from './http/routes/ui'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
+import { createInMemoryBridge } from './ui-bridge/createInMemoryBridge'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -111,6 +113,7 @@ export async function createAgentApp(
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
+  await app.register(uiRoutes, { bridge: createInMemoryBridge() })
 
   return app
 }
