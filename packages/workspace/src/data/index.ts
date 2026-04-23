@@ -2,6 +2,7 @@ export { DataProvider, useDataClient, useApiBaseUrl } from "./DataProvider"
 export { FetchClient, FetchError } from "./fetchClient"
 export {
   useFileContent,
+  useFileContent as useFileData,
   useFileList,
   useStat,
   useFileSearch,

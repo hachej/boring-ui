@@ -36,6 +36,34 @@ export function useTheme(): { theme: "light" | "dark"; setTheme: (theme: "light"
   return { theme, setTheme: ctx.setTheme }
 }
 
+export interface ThemeProviderProps {
+  children: ReactNode
+  defaultTheme?: "light" | "dark"
+  onThemeChange?: (theme: "light" | "dark") => void
+}
+
+export function ThemeProvider({ children, defaultTheme = "light", onThemeChange }: ThemeProviderProps) {
+  const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
+  if (!storeRef.current) {
+    const s = createWorkspaceStore({ persistenceEnabled: false })
+    bindStore(s)
+    if (defaultTheme !== "light") s.getState().setTheme(defaultTheme)
+    storeRef.current = s
+  }
+  const store = storeRef.current
+
+  const setTheme = useCallback(
+    (theme: "light" | "dark") => {
+      store.getState().setTheme(theme)
+      onThemeChange?.(theme)
+    },
+    [store, onThemeChange],
+  )
+
+  const value = useMemo<ThemeContextValue>(() => ({ setTheme }), [setTheme])
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+}
+
 // ---------------------------------------------------------------------------
 // Bridge context
 // ---------------------------------------------------------------------------

@@ -34,3 +34,11 @@ export interface CommandConfig {
   shortcut?: string
   when?: () => boolean
 }
+
+export interface PaneProps {
+  panelApi?: import("dockview-react").DockviewPanelApi
+  bridge?: import("../bridge/types").WorkspaceBridge
+  className?: string
+}
+
+export type PanelRegistryType = import("./PanelRegistry").PanelRegistry
