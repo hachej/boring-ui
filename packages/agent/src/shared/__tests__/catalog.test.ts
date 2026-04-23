@@ -1,6 +1,7 @@
 import { expectTypeOf, test } from 'vitest'
 
-import { standardCatalog, type CatalogDeps, type ToolCatalog } from '../catalog'
+import { type CatalogDeps, type ToolCatalog } from '../catalog'
+import { standardCatalog } from '../../server/catalog/standardCatalog'
 import type { FileSearch } from '../file-search'
 import type { Sandbox } from '../sandbox'
 import type { AgentTool } from '../tool'
