@@ -27,6 +27,22 @@ Read this first. Re-read after compaction.
 
 The two packages are designed to be composed by a final **app shell** (the end user's app). See `packages/agent/docs/plans/agent-package-spec.md` and `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md` for full designs.
 
+### Why two packages (and how we build)
+
+v1 boring-ui tangled chat, layout, sandboxing, and deploy concerns into a single repo. v2 untangles them on purpose:
+
+- **`@boring/agent` is a product by itself** — `npx @boring/agent` is a legitimate standalone tool. Users who want "Claude Code in a browser against my repo" don't need layouts or panels or git UI.
+- **`@boring/workspace` is pure layout** — it composes the agent's chat pane with file/editor panes into a DockView IDE. It has no opinion about what the agent does; it just renders components the app-shell hands it.
+- **Future `@boring/cloud`** (not in v2) absorbs multi-workspace provisioning, billing, auth. Kept OUT of agent + workspace so self-hosters don't carry cloud weight.
+
+**Build principles — apply these to every bead:**
+
+- **Composable** — every user-facing feature ships as a trio: default component + primitives + headless hook. Consumers pick the level they want; we never force a layout or a shell.
+- **Modular + short** — small interfaces, single-responsibility files, load-bearing seams (Harness / Catalog / Workspace / Sandbox / SessionStore / UiBridge). ~2,500 LOC total for agent v1 — if a bead's estimate balloons, split it.
+- **Easy to maintain** — platform-agnostic shared contracts (`Uint8Array` not `Buffer`, no `node:*` in `src/shared/**`). Adapters own platform specifics. Swapping an adapter = swap one file.
+- **Ship fast, accept known risk** — if a risk is enumerated in the spec's Risks section, we don't pre-engineer mitigations. We add them reactively when a user hits them.
+- **Port over re-research** — the old boring-ui has battle-hardened path validators, bwrap flags, fileRoutes. Port verbatim where possible.
+
 **Current state: pre-M0.** Specs are locked; interface + implementation beads are queued in `.beads/` under label `agent-v1`. Most `packages/` subdirs are empty shells awaiting M0 scaffold work.
 
 ### Target stack (per spec — not yet installed)
@@ -62,19 +78,18 @@ No `apps/`, no `src/` at repo root, no CLI Go tool (`bui` is a v1 concept). Ever
 
 | What | Where |
 |---|---|
-| Agent package spec | `packages/agent/docs/plans/agent-package-spec.md` |
-| Workspace package plan | `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md` |
-| Locked architectural decisions (23 items) | Bead `m0.decisions-registry` (future `docs/DECISIONS.md`) |
-| Review decisions (24 findings) | Bead `gov.review-decisions` (future `docs/REVIEW_DECISIONS.md`) |
-| Error code registry | Bead `gov.error-codes` (future `src/shared/error-codes.ts` + `docs/ERROR_CODES.md`) |
-| Cross-plan contracts with workspace | Bead `coord.workspace-plan-contract` (future `docs/WORKSPACE_CONTRACT.md`) |
-| Old boring-ui (reference — port/adapt code, don't re-research) | `/home/ubuntu/projects/boring-ui/` |
+| Agent package spec (canonical design) | `packages/agent/docs/plans/agent-package-spec.md` |
+| Workspace package plan (canonical design) | `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md` |
+| Execution plan (all tasks, decisions, risks, tests) | `.beads/` — `br ready`, `br show <id>` |
+| Old boring-ui (reference for porting — don't re-research) | `/home/ubuntu/projects/boring-ui/` |
 
-The agent spec has a "Reference files from the old boring-ui" section (§Reference files) that maps each M1 port task → the exact file to port from. **Port and adapt — no blind research.**
+The agent spec has a "Reference files from the old boring-ui" section (§Reference files) mapping each port task → the exact file to port from. **Port and adapt — no blind research.**
+
+Beads are the single source of truth for execution. Governance content (locked decisions, review outcomes, error codes, cross-plan contracts, invariant rules) lives in beads and gets published to `docs/` when its bead closes — check beads first, then `docs/` once they exist.
 
 ## Critical architectural invariants
 
-These are enforced in bead `infra.invariant-lint` + must hold in all code:
+These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-lint`):
 
 1. **No `node:*` imports in `src/shared/**`** — the shared layer is platform-agnostic (future browser impls). Server code stays in `src/server/**`.
 2. **No `Buffer` in `src/shared/**`** — use `Uint8Array`. Buffer is Node-only.
@@ -83,20 +98,19 @@ These are enforced in bead `infra.invariant-lint` + must hold in all code:
 5. **Workspace + Sandbox swap as a paired `RuntimeModeAdapter`** — they must share a filesystem substrate. Mixed pairings = split-brain.
 6. **`UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
 7. **Workspace package has ZERO imports from `@boring/agent`** — app shell wires `ChatPanel` via `WorkspaceProvider panels` prop.
-8. **Every error has a stable code** from `src/shared/error-codes.ts` (see `gov.error-codes`).
+8. **Every error has a stable code** from the canonical error-codes enum (one import site, no raw string codes).
 
 ## Session Startup
 
 1. Read `AGENTS.md` end-to-end (this file).
-2. Skim the relevant spec: `packages/agent/docs/plans/agent-package-spec.md` for agent work, or the workspace plan.
-3. Pick next bead: `bv --robot-next` or `br ready` (filter by label `agent-v1`).
-4. If starting M0: the 8 interface beads and scaffold bead are all unblocked + P1.
+2. Skim the relevant spec (agent or workspace) for context.
+3. Pick next bead: `bv --robot-next` or `br ready`.
 
 ## Bead Startup (per bead)
 
-1. `br show <bead-id>` — goal, spec-level signatures, file paths, reference-file pointers, success criteria.
-2. Each agent-v1 bead is **self-contained** — you should NOT need to re-read the spec to implement.
-3. Update status: `br update <id> -s in_progress` when claiming; `-s closed` when the acceptance criteria are met + tests pass + code reviewed.
+1. `br show <bead-id>` — goal, spec-level signatures, file paths, reference-file pointers, acceptance criteria.
+2. Each bead is **self-contained** — you should not need to re-read the spec to implement.
+3. Update status: `br update <id> -s in_progress` when claiming; `-s closed` when acceptance criteria are met + tests pass + code reviewed.
 
 ## Commit style
 
