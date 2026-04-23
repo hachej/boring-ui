@@ -1,19 +1,12 @@
-import { useCallback, useState } from "react"
 import {
   WorkspaceProvider,
   useTheme,
   IdeLayout,
   FileTreePane,
-  CodeEditorPane,
-  MarkdownEditorPane,
   EmptyPane,
   DataProvider,
 } from "@boring/workspace"
 import type { PanelConfig } from "@boring/workspace"
-
-function isMarkdown(path: string): boolean {
-  return /\.md$/i.test(path)
-}
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme()
@@ -28,22 +21,15 @@ function ThemeToggle() {
   )
 }
 
-function FileTreeWrapper() {
+function PlaygroundFileTree() {
   return <FileTreePane rootDir="" />
-}
-
-function EditorRouter({ path }: { path: string }) {
-  if (isMarkdown(path)) {
-    return <MarkdownEditorPane path={path} />
-  }
-  return <CodeEditorPane path={path} />
 }
 
 const panels: PanelConfig[] = [
   {
     id: "filetree",
     title: "Files",
-    component: FileTreeWrapper as React.ComponentType<unknown>,
+    component: PlaygroundFileTree as React.ComponentType<unknown>,
     placement: "left",
     source: "app",
   },
