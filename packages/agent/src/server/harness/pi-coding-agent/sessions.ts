@@ -7,8 +7,9 @@ import {
   mkdir,
   writeFile,
   appendFile,
+  utimes,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import {
   parseSessionEntries,
@@ -32,10 +33,14 @@ function defaultSessionDir(cwd: string): string {
   return join(homedir(), ".pi", "agent", "sessions", safePath);
 }
 
+const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+
 export class PiSessionStore implements SessionStore {
+  private cwd: string;
   private sessionDir: string;
 
   constructor(cwd: string, sessionDir?: string) {
+    this.cwd = cwd;
     this.sessionDir = sessionDir ?? defaultSessionDir(cwd);
   }
 
@@ -65,7 +70,7 @@ export class PiSessionStore implements SessionStore {
       version: CURRENT_SESSION_VERSION,
       id,
       timestamp: now,
-      cwd: this.sessionDir,
+      cwd: this.cwd,
     };
 
     const lines = [JSON.stringify(header)];
@@ -93,7 +98,7 @@ export class PiSessionStore implements SessionStore {
   }
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
-    const filepath = join(this.sessionDir, `${sessionId}.jsonl`);
+    const filepath = await this.resolveSessionFile(sessionId);
     let content: string;
     try {
       content = await readFile(filepath, "utf-8");
@@ -129,21 +134,48 @@ export class PiSessionStore implements SessionStore {
   }
 
   async delete(ctx: SessionCtx, sessionId: string): Promise<void> {
-    const filepath = join(this.sessionDir, `${sessionId}.jsonl`);
-    await rm(filepath, { force: true });
+    const filepath = await this.resolveSessionFile(sessionId).catch(
+      () => null,
+    );
+    if (filepath) await rm(filepath, { force: true });
   }
 
   touchSession(sessionId: string, title?: string): void {
-    if (!title) return;
-    const filepath = join(this.sessionDir, `${sessionId}.jsonl`);
-    const entry: SessionInfoEntry = {
-      type: "session_info",
-      id: randomUUID(),
-      parentId: null,
-      timestamp: new Date().toISOString(),
-      name: title,
-    };
-    appendFile(filepath, JSON.stringify(entry) + "\n").catch(() => {});
+    this.resolveSessionFile(sessionId)
+      .then((filepath) => {
+        if (title) {
+          const entry: SessionInfoEntry = {
+            type: "session_info",
+            id: randomUUID(),
+            parentId: null,
+            timestamp: new Date().toISOString(),
+            name: title,
+          };
+          return appendFile(filepath, JSON.stringify(entry) + "\n");
+        }
+        const now = new Date();
+        return utimes(filepath, now, now);
+      })
+      .catch(() => {});
+  }
+
+  private async resolveSessionFile(sessionId: string): Promise<string> {
+    if (!SAFE_ID.test(sessionId)) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    const direct = join(this.sessionDir, `${sessionId}.jsonl`);
+    try {
+      await fsStat(direct);
+      return direct;
+    } catch {
+      // Pi uses ${timestamp}_${id}.jsonl naming
+    }
+    const files = await readdir(this.sessionDir).catch(() => []);
+    const match = files.find(
+      (f) => f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
+    );
+    if (!match) throw new Error(`Session not found: ${sessionId}`);
+    return join(this.sessionDir, match);
   }
 
   private async summarizeFile(
