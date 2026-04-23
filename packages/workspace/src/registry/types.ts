@@ -4,6 +4,7 @@ interface PanelConfigBase {
   id: string
   title: string
   icon?: ComponentType<{ className?: string }>
+  placement?: "left" | "center" | "right" | "bottom"
   filePatterns?: string[]
   requiresCapabilities?: string[]
   essential?: boolean

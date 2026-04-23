@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, act } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
+import { Suspense, type ReactNode, useState } from "react"
 import {
   WorkspaceProvider,
   useTheme,
@@ -10,7 +11,6 @@ import {
 import { useRegistry, useCommandRegistry } from "../registry"
 import { useThemePreference } from "../store/selectors"
 import type { PanelConfig } from "../registry/types"
-import type { ReactNode } from "react"
 
 function DummyPanel() {
   return <div>panel</div>
@@ -28,7 +28,23 @@ const chatPanel: PanelConfig = {
   title: "Chat",
   component: DummyPanel,
   source: "app",
+  placement: "right",
   requiresCapabilities: ["agent.chat"],
+}
+
+function RegistryPanelHost({ panelId }: { panelId: string }) {
+  const reg = useRegistry()
+  const Panel = reg.getComponents()[panelId]
+
+  if (!Panel) {
+    return <div data-testid="panel-missing">missing</div>
+  }
+
+  return (
+    <Suspense fallback={<div data-testid="lazy-fallback">loading</div>}>
+      <Panel />
+    </Suspense>
+  )
 }
 
 let originalStorage: Storage
@@ -185,6 +201,111 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     expect(screen.getByTestId("title").textContent).toBe("Override")
+  })
+
+  it("preserves placement metadata for app-registered panel", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      const panel = reg.get("chat")
+      return <div data-testid="placement">{panel?.placement}</div>
+    }
+
+    render(
+      <WorkspaceProvider
+        panels={[chatPanel]}
+        capabilities={{ "agent.chat": true }}
+        persistenceEnabled={false}
+      >
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    expect(screen.getByTestId("placement").textContent).toBe("right")
+  })
+
+  it("lazy panel shows Suspense fallback before rendering", async () => {
+    const lazyPanel: PanelConfig = {
+      id: "agent-chat",
+      title: "Agent Chat",
+      source: "app",
+      lazy: true,
+      placement: "right",
+      requiresCapabilities: ["agent.chat"],
+      component: () =>
+        Promise.resolve({
+          default: () => <div data-testid="lazy-chat-panel">agent-chat</div>,
+        }),
+    }
+
+    render(
+      <WorkspaceProvider
+        panels={[lazyPanel]}
+        capabilities={{ "agent.chat": true }}
+        persistenceEnabled={false}
+      >
+        <RegistryPanelHost panelId="agent-chat" />
+      </WorkspaceProvider>,
+    )
+
+    expect(screen.getByTestId("lazy-fallback")).toBeInTheDocument()
+    expect(await screen.findByTestId("lazy-chat-panel")).toBeInTheDocument()
+  })
+
+  it("updating capabilities dynamically reveals gated panel", async () => {
+    function Harness() {
+      const [enabled, setEnabled] = useState(false)
+      return (
+        <WorkspaceProvider
+          panels={[chatPanel]}
+          capabilities={enabled ? { "agent.chat": true } : {}}
+          persistenceEnabled={false}
+        >
+          <button onClick={() => setEnabled(true)} type="button">
+            enable
+          </button>
+          <Inspector />
+        </WorkspaceProvider>
+      )
+    }
+
+    function Inspector() {
+      const reg = useRegistry()
+      const visible = reg.list().some((panel) => panel.id === "chat")
+      return <div data-testid="has-chat">{String(visible)}</div>
+    }
+
+    render(<Harness />)
+    expect(screen.getByTestId("has-chat").textContent).toBe("false")
+
+    await act(async () => {
+      screen.getByRole("button", { name: "enable" }).click()
+    })
+
+    expect(screen.getByTestId("has-chat").textContent).toBe("true")
+  })
+
+  it("undefined or null panels prop does not crash provider", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      return <div data-testid="count">{reg.list().length}</div>
+    }
+
+    render(
+      <WorkspaceProvider panels={undefined} persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+    expect(screen.getByTestId("count").textContent).toBe("0")
+
+    render(
+      <WorkspaceProvider
+        panels={null as unknown as PanelConfig[]}
+        persistenceEnabled={false}
+      >
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("0")
   })
 })
 
