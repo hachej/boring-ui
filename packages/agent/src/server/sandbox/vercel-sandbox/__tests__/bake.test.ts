@@ -177,3 +177,48 @@ test('bake failure logs warning and falls back without throwing', async () => {
   expect(failingSandbox.snapshot).not.toHaveBeenCalled()
   expect(failingSandbox.stop).toHaveBeenCalledTimes(1)
 })
+
+test('configured snapshot id skips bake work', async () => {
+  const cachePath = await makeCachePath('configured-snapshot')
+  const client: VercelBakeClient = {
+    create: vi.fn(async () => {
+      throw new Error('create should not run when snapshot_id is configured')
+    }),
+  }
+
+  const result = await bakeSnapshotIfNeeded({
+    client,
+    cachePath,
+    snapshotId: 'snap-configured',
+    pythonPackages: ['pandas'],
+  })
+
+  expect(result).toMatchObject({
+    status: 'skipped',
+    reason: 'snapshot-id-configured',
+    snapshotId: 'snap-configured',
+  })
+  expect(client.create).not.toHaveBeenCalled()
+})
+
+test('no packages configured skips bake', async () => {
+  const cachePath = await makeCachePath('no-packages')
+  const client: VercelBakeClient = {
+    create: vi.fn(async () => {
+      throw new Error('create should not run when no packages are configured')
+    }),
+  }
+
+  const result = await bakeSnapshotIfNeeded({
+    client,
+    cachePath,
+    pythonPackages: ['   '],
+    systemPackages: [],
+  })
+
+  expect(result).toMatchObject({
+    status: 'skipped',
+    reason: 'no-packages',
+  })
+  expect(client.create).not.toHaveBeenCalled()
+})
