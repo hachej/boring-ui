@@ -1,15 +1,7 @@
-import type { FileSearch } from '../../../shared/file-search'
 import type { RuntimeModeAdapter } from '../mode'
+import { createServerFileSearch } from '../createServerFileSearch'
 import { createBwrapSandbox } from '../../sandbox/bwrap/createBwrapSandbox'
 import { createNodeWorkspace } from '../../workspace/createNodeWorkspace'
-
-function createPendingFileSearch(modeId: RuntimeModeAdapter['id']): FileSearch {
-  return {
-    async search() {
-      throw new Error(`FileSearch is not configured for mode "${modeId}" yet`)
-    },
-  }
-}
 
 export const localModeAdapter: RuntimeModeAdapter = {
   id: 'local',
@@ -25,7 +17,7 @@ export const localModeAdapter: RuntimeModeAdapter = {
     return {
       workspace,
       sandbox,
-      fileSearch: createPendingFileSearch('local'),
+      fileSearch: createServerFileSearch(workspace, sandbox),
       uiBridge: ctx.uiBridge,
     }
   },

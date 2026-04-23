@@ -1,15 +1,7 @@
-import type { FileSearch } from '../../../shared/file-search'
 import type { RuntimeModeAdapter } from '../mode'
+import { createServerFileSearch } from '../createServerFileSearch'
 import { createDirectSandbox } from '../../sandbox/direct/createDirectSandbox'
 import { createNodeWorkspace } from '../../workspace/createNodeWorkspace'
-
-function createPendingFileSearch(modeId: RuntimeModeAdapter['id']): FileSearch {
-  return {
-    async search() {
-      throw new Error(`FileSearch is not configured for mode "${modeId}" yet`)
-    },
-  }
-}
 
 export const directModeAdapter: RuntimeModeAdapter = {
   id: 'direct',
@@ -21,7 +13,7 @@ export const directModeAdapter: RuntimeModeAdapter = {
     return {
       workspace,
       sandbox,
-      fileSearch: createPendingFileSearch('direct'),
+      fileSearch: createServerFileSearch(workspace, sandbox),
       uiBridge: ctx.uiBridge,
     }
   },
