@@ -12,6 +12,7 @@ import type { UIMessageChunk } from "../../../shared/message.js";
 import { adaptToolsForPi } from "./tool-adapter.js";
 import { piEventToChunks } from "./stream-adapter.js";
 import { PiSessionStore } from "./sessions.js";
+import { createSessionTitleScheduler } from "./sessionTitle.js";
 
 interface PiSessionHandle {
   piSession: AgentSession;
@@ -24,6 +25,13 @@ export function createPiCodingAgentHarness(opts: {
 }): AgentHarness {
   const sessionStore = new PiSessionStore(opts.cwd);
   const piSessions = new Map<string, PiSessionHandle>();
+  const scheduleSessionTitle = createSessionTitleScheduler({
+    loadSession: (sessionId) =>
+      sessionStore.load({ workspaceId: "default" }, sessionId),
+    writeTitle: (sessionId, title) => {
+      sessionStore.touchSession(sessionId, title);
+    },
+  });
 
   async function getOrCreatePiSession(
     sessionId: string,
@@ -106,6 +114,8 @@ export function createPiCodingAgentHarness(opts: {
       let done = false;
       let streamError: unknown = null;
       let wake: (() => void) | null = null;
+      let assistantText = "";
+      const textDeltaSeen = new Set<number>();
 
       const activeTools = new Map<string, number>();
       let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -132,6 +142,21 @@ export function createPiCodingAgentHarness(opts: {
       }
 
       const unsubscribe = piSession.subscribe((event: AgentSessionEvent) => {
+        if (event.type === "message_update") {
+          const ame = event.assistantMessageEvent;
+          if (ame.type === "text_delta") {
+            textDeltaSeen.add(ame.contentIndex);
+            assistantText += ame.delta;
+          }
+          if (
+            ame.type === "text_end"
+            && typeof ame.content === "string"
+            && !textDeltaSeen.has(ame.contentIndex)
+          ) {
+            assistantText += ame.content;
+          }
+        }
+
         if (event.type === "tool_execution_start") {
           activeTools.set(event.toolCallId, Date.now());
           startHeartbeat();
@@ -182,6 +207,13 @@ export function createPiCodingAgentHarness(opts: {
         ctx.abortSignal.removeEventListener("abort", onAbort);
         unsubscribe();
         sessionStore.touchSession(input.sessionId);
+        if (!streamError) {
+          scheduleSessionTitle({
+            sessionId: input.sessionId,
+            firstUserMessage: input.message,
+            firstAssistantReply: assistantText,
+          });
+        }
       }
     },
   };

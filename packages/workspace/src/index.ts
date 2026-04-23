@@ -4,8 +4,12 @@ export * from "./dock"
 export * from "./layouts"
 export * from "./data"
 export * from "./hooks"
+export * from "./panes"
+export * from "./theme"
 export * from "./bridge"
 export * from "./components/ui"
+export { CodeEditor } from "./components/CodeEditor"
+export type { CodeEditorProps } from "./components/CodeEditor"
 export {
   WorkspaceProvider,
   useTheme,
