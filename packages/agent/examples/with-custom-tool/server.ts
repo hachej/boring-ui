@@ -1,21 +1,7 @@
-// Example sketch for the planned M5 extension API.
-// This file documents target usage; runtime APIs are still landing.
-//
-// Intended shape:
-// - createAgentApp({ extraTools: [...] })
-// - mount under your app shell/server process
+import type { AgentTool } from '../../src/shared/tool'
+import { createAgentApp } from '../../src/server/createAgentApp'
 
-type ExampleTool = {
-  name: string
-  description: string
-  parameters: Record<string, unknown>
-  execute: (
-    params: Record<string, unknown>,
-    ctx: { toolCallId: string; abortSignal: AbortSignal },
-  ) => Promise<{ content: Array<{ type: 'text'; text: string }> }>
-}
-
-export const reverseTool: ExampleTool = {
+const reverseTool: AgentTool = {
   name: 'reverse',
   description: 'Reverse a string.',
   parameters: {
@@ -33,8 +19,10 @@ export const reverseTool: ExampleTool = {
   },
 }
 
-// Planned (not implemented yet):
-// import type { AgentTool } from '@boring/agent/shared'
-// import { createAgentApp } from '@boring/agent/server'
-// const app = createAgentApp({ extraTools: [reverseTool] })
-// await app.listen({ port: 3000 })
+const app = await createAgentApp({
+  extraTools: [reverseTool],
+  mode: 'direct',
+})
+
+await app.listen({ port: 3000 })
+console.log('Agent running on http://localhost:3000')

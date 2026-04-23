@@ -98,6 +98,80 @@ test('createAgentApp option templatePath takes precedence over env fallback', as
   )
 })
 
+test('extraTools appear in catalog endpoint', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-extra-tools-')
+
+  const customTool = {
+    name: 'reverse',
+    description: 'Reverse a string.',
+    parameters: {
+      type: 'object' as const,
+      properties: { s: { type: 'string' } },
+      required: ['s'],
+    },
+    async execute(params: Record<string, unknown>) {
+      const s = typeof params.s === 'string' ? params.s : ''
+      return { content: [{ type: 'text' as const, text: s.split('').reverse().join('') }] }
+    },
+  }
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    extraTools: [customTool],
+  })
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/catalog',
+  })
+
+  expect(res.statusCode).toBe(200)
+  const body = res.json()
+  const names = body.tools.map((t: { name: string }) => t.name)
+  expect(names).toContain('bash')
+  expect(names).toContain('reverse')
+
+  const reverseMeta = body.tools.find((t: { name: string }) => t.name === 'reverse')
+  expect(reverseMeta.description).toBe('Reverse a string.')
+  expect(reverseMeta.parameters.required).toEqual(['s'])
+
+  await app.close()
+})
+
+test('extraTools are appended after standardCatalog', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-extra-tools-order-')
+
+  const customTool = {
+    name: 'custom_last',
+    description: 'Should be after standard tools.',
+    parameters: { type: 'object' as const, properties: {} },
+    async execute() {
+      return { content: [{ type: 'text' as const, text: 'ok' }] }
+    },
+  }
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    extraTools: [customTool],
+  })
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/catalog',
+  })
+
+  const names = res.json().tools.map((t: { name: string }) => t.name)
+  const bashIdx = names.indexOf('bash')
+  const customIdx = names.indexOf('custom_last')
+  expect(bashIdx).toBeLessThan(customIdx)
+
+  await app.close()
+})
+
 test('createAgentApp throws clearly when templatePath is missing', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')
