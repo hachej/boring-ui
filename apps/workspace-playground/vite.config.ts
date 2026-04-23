@@ -10,6 +10,8 @@ export default defineConfig({
     alias: {
       "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
       "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
+      "@/": resolve(__dirname, "../../packages/workspace/src") + "/",
+      "@": resolve(__dirname, "../../packages/workspace/src"),
     },
   },
   server: {

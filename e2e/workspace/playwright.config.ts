@@ -1,8 +1,10 @@
 import { defineConfig, devices } from "@playwright/test"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 const CI = process.env.CI === "true" || process.env.CI === "1"
-const playgroundRoot = path.resolve(__dirname, "../../apps/workspace-playground")
+const thisDir = path.dirname(fileURLToPath(import.meta.url))
+const playgroundRoot = path.resolve(thisDir, "../../apps/workspace-playground")
 
 export default defineConfig({
   testDir: ".",
