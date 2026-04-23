@@ -37,7 +37,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup && vite build && pnpm run build:assert",
+    "build": "tsup && cp src/front-shadcn/styles/globals.css dist/front-shadcn/styles.css && vite build && pnpm run build:assert",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",

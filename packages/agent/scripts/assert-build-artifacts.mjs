@@ -21,6 +21,7 @@ const requiredFiles = [
   'dist/front/index.css',
   'dist/frontend/index.html',
   'dist/bin/boring-agent.js',
+  'dist/front-shadcn/styles.css',
 ]
 
 function resolveFromPackage(relPath) {
