@@ -29,3 +29,6 @@ jobs:
 
       - name: Run invariant checks
         run: pnpm lint:invariants
+
+      - name: Build agent package and assert dist artifacts
+        run: pnpm --dir packages/agent build

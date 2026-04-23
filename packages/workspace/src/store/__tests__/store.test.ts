@@ -206,6 +206,58 @@ describe("Persistence middleware", () => {
     expect(persisted.state).not.toHaveProperty("notifications")
   })
 
+  it("storageKey overrides workspaceId", () => {
+    const store = createWorkspaceStore({
+      workspaceId: "ignored",
+      storageKey: "custom-key",
+    })
+    store.getState().setLayout({ groups: [] })
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      "custom-key",
+      expect.any(String)
+    )
+    const keys = (localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: unknown[]) => c[0] as string
+    )
+    expect(keys.some((k: string) => k.includes("ignored"))).toBe(false)
+  })
+
+  it("persistenceEnabled=false prevents localStorage reads", () => {
+    const store = createWorkspaceStore({ persistenceEnabled: false })
+    expect(localStorage.getItem).not.toHaveBeenCalledWith("boring-ui-v2:layout")
+    expect(store.getState().layout).toBeNull()
+  })
+
+  it("persistenceEnabled=false prevents localStorage writes", () => {
+    const store = createWorkspaceStore({ persistenceEnabled: false })
+    ;(localStorage.setItem as ReturnType<typeof vi.fn>).mockClear()
+    store.getState().setLayout({ groups: [] })
+    expect(localStorage.setItem).not.toHaveBeenCalledWith(
+      "boring-ui-v2:layout",
+      expect.any(String)
+    )
+  })
+
+  it("persistenceEnabled=false prevents theme writes to localStorage", () => {
+    const store = createWorkspaceStore({ persistenceEnabled: false })
+    ;(localStorage.setItem as ReturnType<typeof vi.fn>).mockClear()
+    store.getState().setTheme("dark")
+    expect(store.getState().preferences.theme).toBe("dark")
+    expect(localStorage.setItem).not.toHaveBeenCalledWith(
+      "boring-ui-v2:preferences",
+      expect.any(String)
+    )
+  })
+
+  it("persistenceEnabled=false defaults theme to light", () => {
+    localStorage.setItem(
+      "boring-ui-v2:preferences",
+      JSON.stringify({ state: { theme: "dark" }, version: 0 })
+    )
+    const store = createWorkspaceStore({ persistenceEnabled: false })
+    expect(store.getState().preferences.theme).toBe("light")
+  })
+
   it("writes version field in persisted envelope", () => {
     const store = createWorkspaceStore()
     store.getState().setSidebar({ collapsed: true })

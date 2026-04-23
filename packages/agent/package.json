@@ -8,27 +8,28 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/front.d.ts",
-      "import": "./dist/front.js"
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
     },
     "./shared": {
-      "types": "./dist/shared.d.ts",
-      "import": "./dist/shared.js"
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
     },
     "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
     },
     "./front": {
-      "types": "./dist/front.d.ts",
-      "import": "./dist/front.js"
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && vite build && pnpm run build:assert",
+    "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
     "test:watch": "vitest",
