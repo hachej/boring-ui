@@ -60,6 +60,24 @@ test('returns workspace-relative paths from find output', async () => {
   await expect(fileSearch.search('*.ts')).resolves.toEqual(['a.ts', 'nested/b.ts'])
 })
 
+test('preserves meaningful leading/trailing spaces in filenames', async () => {
+  const sandbox = createSandbox(async () => ({
+    stdout: encoder.encode('./ leading.txt\n./trailing.txt \n'),
+    stderr: new Uint8Array(),
+    exitCode: 0,
+    durationMs: 1,
+    truncated: false,
+    stdoutEncoding: 'utf-8',
+    stderrEncoding: 'utf-8',
+  }))
+  const fileSearch = createServerFileSearch(createWorkspace(), sandbox)
+
+  await expect(fileSearch.search('*')).resolves.toEqual([
+    ' leading.txt',
+    'trailing.txt ',
+  ])
+})
+
 test('shell-quotes glob and applies default limit/options', async () => {
   let receivedCmd = ''
   let receivedCwd: string | undefined

@@ -49,7 +49,7 @@ export function createServerFileSearch(
       const decoded = new TextDecoder().decode(stdout)
       return decoded
         .split('\n')
-        .map((line) => line.trim())
+        .map((line) => line.replace(/\r$/, ''))
         .filter((line) => line.length > 0)
         .map((line) => line.replace(/^\.\//, ''))
     },
