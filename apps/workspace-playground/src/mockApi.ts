@@ -1,6 +1,6 @@
 import type { Plugin, ViteDevServer } from "vite"
 import { readFileSync, readdirSync } from "node:fs"
-import { join, basename, dirname, extname } from "node:path"
+import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -58,7 +58,7 @@ function allPaths(node: VirtualDir, prefix: string): string[] {
 }
 
 function ensureDir(root: VirtualDir, path: string): VirtualDir {
-  const parts = path.replace(/^\/+/, "").split("/").filter(Boolean)
+  const parts = path.replace(/^\/+/, "").split("/").filter((p) => p && p !== ".")
   let node: VirtualDir = root
   for (const part of parts) {
     let child = node.children.get(part)
