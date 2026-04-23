@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { readFile, mkdtemp, rm, cp } from "node:fs/promises";
+import { mkdtemp, rm, cp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { piEventToChunks } from "../stream-adapter.js";

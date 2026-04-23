@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'

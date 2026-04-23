@@ -12,8 +12,8 @@ export function workspaceConformance(
   make: () => Promise<WorkspaceConformanceHarness>,
 ): void {
   describe(`[${adapterId}] Workspace conformance`, () => {
-    let harness: WorkspaceConformanceHarness
-    let workspace: Workspace
+    let harness: WorkspaceConformanceHarness | undefined
+    let workspace!: Workspace
 
     beforeEach(async () => {
       harness = await make()
@@ -21,7 +21,8 @@ export function workspaceConformance(
     })
 
     afterEach(async () => {
-      await harness.cleanup?.()
+      await harness?.cleanup?.()
+      harness = undefined
     })
 
     test('read/write roundtrip + stat', async () => {

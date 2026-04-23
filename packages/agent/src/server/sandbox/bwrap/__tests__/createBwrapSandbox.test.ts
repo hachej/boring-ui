@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 
+import { restoreEnvForTest, setEnvForTest } from '../../../config/env'
 import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
 import { createBwrapSandbox } from '../createBwrapSandbox'
 
@@ -39,14 +40,13 @@ test('init verifies bwrap binary exists on PATH', async () => {
   const sandbox = createBwrapSandbox()
   const workspace = createNodeWorkspace(root)
 
-  const originalPath = process.env.PATH
-  process.env.PATH = ''
+  const originalPath = setEnvForTest('PATH', '')
   try {
     await expect(sandbox.init({ workspace, sessionId: 'session-check' }))
       .rejects
       .toThrow('not found on PATH')
   } finally {
-    process.env.PATH = originalPath
+    restoreEnvForTest('PATH', originalPath)
   }
 })
 

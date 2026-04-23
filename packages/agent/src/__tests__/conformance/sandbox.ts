@@ -23,11 +23,14 @@ export function sandboxConformance(
   opts: SandboxConformanceOptions = {},
 ): void {
   const scopedDescribe = opts.skip ? describe.skip : describe
+  const suiteTitle = opts.skip && opts.skipReason
+    ? `[${adapterId}] Sandbox conformance (${opts.skipReason})`
+    : `[${adapterId}] Sandbox conformance`
 
-  scopedDescribe(`[${adapterId}] Sandbox conformance`, () => {
-    let harness: SandboxConformanceHarness
-    let sandbox: Sandbox
-    let workspace: Workspace
+  scopedDescribe(suiteTitle, () => {
+    let harness: SandboxConformanceHarness | undefined
+    let sandbox!: Sandbox
+    let workspace!: Workspace
 
     beforeEach(async () => {
       harness = await make()
@@ -36,8 +39,9 @@ export function sandboxConformance(
     })
 
     afterEach(async () => {
-      await harness.cleanup?.()
-      await sandbox.dispose?.()
+      await sandbox?.dispose?.()
+      await harness?.cleanup?.()
+      harness = undefined
     })
 
     test('exec returns stdout and zero exit code', async () => {
@@ -68,16 +72,21 @@ export function sandboxConformance(
     })
 
     test('exec timeout returns timeout exit code', async () => {
-      const result = await sandbox.exec('sleep 30', { timeoutMs: 500 })
+      const result = await sandbox.exec('node -e "setInterval(() => {}, 1000)"', {
+        timeoutMs: 500,
+      })
 
       expect(result.exitCode).toBe(124)
       expect(result.durationMs).toBeGreaterThanOrEqual(500)
     }, 20_000)
 
     test('exec enforces maxOutputBytes and marks truncated', async () => {
-      const result = await sandbox.exec('yes x | head -c 1000000', {
+      const result = await sandbox.exec(
+        `node -e "process.stdout.write('x'.repeat(2_000_000))"`,
+        {
         maxOutputBytes: 1024,
-      })
+        },
+      )
 
       expect(result.truncated).toBe(true)
       expect(result.stdout.length + result.stderr.length).toBeLessThanOrEqual(1024)
@@ -85,7 +94,7 @@ export function sandboxConformance(
 
     test('exec onHeartbeat callback is invoked for long-running command', async () => {
       let heartbeatCount = 0
-      const result = await sandbox.exec('sleep 2', {
+      const result = await sandbox.exec('node -e "setTimeout(() => {}, 2100)"', {
         timeoutMs: 5_000,
         onHeartbeat() {
           heartbeatCount += 1
