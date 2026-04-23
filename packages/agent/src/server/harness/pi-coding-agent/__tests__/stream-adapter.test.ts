@@ -140,7 +140,7 @@ describe("piEventToChunks — full mapping table", () => {
     expect((r[1] as any).type).toBe("finish");
   });
 
-  it("tool_execution_end (success) → tool-output-available", () => {
+  it("tool_execution_end (success) → tool-output-available (no toolName)", () => {
     const r = piEventToChunks({
       type: "tool_execution_end",
       toolCallId: "tc-1",
@@ -151,6 +151,7 @@ describe("piEventToChunks — full mapping table", () => {
     expect(r).toHaveLength(1);
     expect((r[0] as any).type).toBe("tool-output-available");
     expect((r[0] as any).toolCallId).toBe("tc-1");
+    expect((r[0] as any).toolName).toBeUndefined();
   });
 
   it("tool_execution_end with fileChanges emits data-file-changed before tool output", () => {
@@ -188,7 +189,7 @@ describe("piEventToChunks — full mapping table", () => {
     expect((r[1] as any).type).toBe("tool-output-available");
   });
 
-  it("tool_execution_end (error) → tool-output-error", () => {
+  it("tool_execution_end (error) → tool-output-error (no toolName)", () => {
     const r = piEventToChunks({
       type: "tool_execution_end",
       toolCallId: "tc-2",
@@ -199,6 +200,7 @@ describe("piEventToChunks — full mapping table", () => {
     expect(r).toHaveLength(1);
     expect((r[0] as any).type).toBe("tool-output-error");
     expect((r[0] as any).errorText).toBe("command failed");
+    expect((r[0] as any).toolName).toBeUndefined();
   });
 
   it("message_end → [] (finish emitted on done instead)", () => {

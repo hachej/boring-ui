@@ -178,7 +178,6 @@ export function piEventToChunks(event: AgentSessionEvent): UIMessageChunk[] {
           chunk({
             type: "tool-output-error",
             toolCallId: event.toolCallId,
-            toolName: event.toolName,
             errorText:
               event.result?.content?.[0]?.text ??
               JSON.stringify(event.result),
@@ -199,7 +198,6 @@ export function piEventToChunks(event: AgentSessionEvent): UIMessageChunk[] {
         chunk({
           type: "tool-output-available",
           toolCallId: event.toolCallId,
-          toolName: event.toolName,
           output: event.result,
         }),
       ];
