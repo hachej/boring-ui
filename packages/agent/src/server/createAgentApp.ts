@@ -41,7 +41,7 @@ export async function createAgentApp(
     tools.push(...opts.extraTools)
   }
 
-  const harness = createPiCodingAgentHarness({ tools })
+  const harness = createPiCodingAgentHarness({ tools, cwd: workspaceRoot })
 
   const app = Fastify({ logger: opts.logger ?? true })
 

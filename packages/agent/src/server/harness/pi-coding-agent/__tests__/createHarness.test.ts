@@ -1,4 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createPiCodingAgentHarness } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import { PiSessionStore } from "../sessions.js";
@@ -15,7 +18,10 @@ const noopTool: AgentTool = {
 
 describe("createPiCodingAgentHarness", () => {
   it("returns an AgentHarness with correct shape", () => {
-    const harness = createPiCodingAgentHarness({ tools: [noopTool] });
+    const harness = createPiCodingAgentHarness({
+      tools: [noopTool],
+      cwd: "/tmp/test-harness",
+    });
     expect(harness.id).toBe("pi-coding-agent");
     expect(harness.placement).toBe("server");
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
@@ -85,9 +91,18 @@ describe("adaptToolsForPi", () => {
 
 describe("PiSessionStore", () => {
   const ctx = { workspaceId: "test-ws" };
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "pi-session-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
 
   it("creates and lists sessions", async () => {
-    const store = new PiSessionStore();
+    const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx, { title: "Test" });
     expect(session.id).toBeTruthy();
     expect(session.title).toBe("Test");
@@ -97,15 +112,15 @@ describe("PiSessionStore", () => {
     expect(list[0].id).toBe(session.id);
   });
 
-  it("loads a session with messages", async () => {
-    const store = new PiSessionStore();
+  it("loads a session with empty messages", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx);
     const detail = await store.load(ctx, session.id);
     expect(detail.messages).toEqual([]);
   });
 
   it("deletes a session", async () => {
-    const store = new PiSessionStore();
+    const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx);
     await store.delete(ctx, session.id);
     const list = await store.list(ctx);
@@ -113,15 +128,48 @@ describe("PiSessionStore", () => {
   });
 
   it("throws on load of nonexistent session", async () => {
-    const store = new PiSessionStore();
+    const store = new PiSessionStore("/tmp", tmpDir);
     await expect(store.load(ctx, "nope")).rejects.toThrow("Session not found");
   });
 
-  it("isolates sessions by workspaceId", async () => {
-    const store = new PiSessionStore();
-    await store.create({ workspaceId: "ws-a" });
-    await store.create({ workspaceId: "ws-b" });
-    expect(await store.list({ workspaceId: "ws-a" })).toHaveLength(1);
-    expect(await store.list({ workspaceId: "ws-b" })).toHaveLength(1);
+  it("list returns empty for missing directory", async () => {
+    const store = new PiSessionStore("/tmp", join(tmpDir, "nonexistent"));
+    const list = await store.list(ctx);
+    expect(list).toHaveLength(0);
+  });
+
+  it("list orders by updatedAt descending", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const s1 = await store.create(ctx, { title: "First" });
+    await new Promise((r) => setTimeout(r, 50));
+    const s2 = await store.create(ctx, { title: "Second" });
+
+    const list = await store.list(ctx);
+    expect(list).toHaveLength(2);
+    expect(list[0].id).toBe(s2.id);
+    expect(list[1].id).toBe(s1.id);
+  });
+
+  it("skips malformed JSONL lines without crashing", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Malformed test" });
+
+    const filepath = join(tmpDir, `${session.id}.jsonl`);
+    const { appendFile } = await import("node:fs/promises");
+    await appendFile(filepath, "NOT VALID JSON\n");
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const detail = await store.load(ctx, session.id);
+    expect(detail.title).toBe("Malformed test");
+    warn.mockRestore();
+  });
+
+  it("create+load roundtrip preserves title", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Roundtrip" });
+    const detail = await store.load(ctx, session.id);
+    expect(detail.title).toBe("Roundtrip");
+    expect(detail.id).toBe(session.id);
+    expect(detail.turnCount).toBe(0);
   });
 });

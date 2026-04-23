@@ -20,8 +20,9 @@ interface PiSessionHandle {
 
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
+  cwd: string;
 }): AgentHarness {
-  const sessionStore = new PiSessionStore();
+  const sessionStore = new PiSessionStore(opts.cwd);
   const piSessions = new Map<string, PiSessionHandle>();
 
   async function getOrCreatePiSession(

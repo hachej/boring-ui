@@ -1,0 +1,183 @@
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import { renderHook, waitFor, act } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
+import {
+  useFileContent,
+  useFileList,
+  useStat,
+  useFileSearch,
+  useFileWrite,
+  useCreateDir,
+  useMoveFile,
+  useDeleteFile,
+} from "../hooks"
+
+const TEST_BASE = "http://test"
+
+vi.mock("../DataProvider", () => ({
+  useDataClient: () => mockClient,
+  useApiBaseUrl: () => TEST_BASE,
+}))
+
+let mockClient: {
+  getFile: ReturnType<typeof vi.fn>
+  getTree: ReturnType<typeof vi.fn>
+  stat: ReturnType<typeof vi.fn>
+  search: ReturnType<typeof vi.fn>
+  writeFile: ReturnType<typeof vi.fn>
+  createDir: ReturnType<typeof vi.fn>
+  moveFile: ReturnType<typeof vi.fn>
+  deleteFile: ReturnType<typeof vi.fn>
+}
+
+let queryClient: QueryClient
+
+function wrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+}
+
+beforeEach(() => {
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  mockClient = {
+    getFile: vi.fn(),
+    getTree: vi.fn(),
+    stat: vi.fn(),
+    search: vi.fn(),
+    writeFile: vi.fn(),
+    createDir: vi.fn(),
+    moveFile: vi.fn(),
+    deleteFile: vi.fn(),
+  }
+})
+
+describe("useFileContent", () => {
+  it("fetches and returns file content", async () => {
+    mockClient.getFile.mockResolvedValue({ content: "hello" })
+    const { result } = renderHook(() => useFileContent("/a.ts"), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual({ content: "hello" })
+    expect(mockClient.getFile).toHaveBeenCalledWith("/a.ts")
+  })
+
+  it("is disabled when path is null", () => {
+    const { result } = renderHook(() => useFileContent(null), { wrapper })
+    expect(result.current.fetchStatus).toBe("idle")
+  })
+
+  it("uses different cache entries for different paths", async () => {
+    mockClient.getFile
+      .mockResolvedValueOnce({ content: "a" })
+      .mockResolvedValueOnce({ content: "b" })
+    const { result: r1 } = renderHook(() => useFileContent("/a.ts"), { wrapper })
+    const { result: r2 } = renderHook(() => useFileContent("/b.ts"), { wrapper })
+    await waitFor(() => expect(r1.current.isSuccess).toBe(true))
+    await waitFor(() => expect(r2.current.isSuccess).toBe(true))
+    expect(r1.current.data?.content).toBe("a")
+    expect(r2.current.data?.content).toBe("b")
+  })
+})
+
+describe("useFileList", () => {
+  it("returns directory listing", async () => {
+    const entries = [{ name: "a.ts", kind: "file" as const, path: "a.ts" }]
+    mockClient.getTree.mockResolvedValue(entries)
+    const { result } = renderHook(() => useFileList("/"), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual(entries)
+  })
+})
+
+describe("useStat", () => {
+  it("returns file metadata", async () => {
+    mockClient.stat.mockResolvedValue({ size: 42, mtimeMs: 100, kind: "file" })
+    const { result } = renderHook(() => useStat("/a.ts"), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual({ size: 42, mtimeMs: 100, kind: "file" })
+  })
+})
+
+describe("useFileSearch", () => {
+  it("fetches search results for non-empty query", async () => {
+    mockClient.search.mockResolvedValue(["/a.ts", "/b.ts"])
+    const { result } = renderHook(() => useFileSearch("*.ts", 10), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual(["/a.ts", "/b.ts"])
+    expect(mockClient.search).toHaveBeenCalledWith("*.ts", 10)
+  })
+
+  it("is disabled for empty query", () => {
+    const { result } = renderHook(() => useFileSearch(""), { wrapper })
+    expect(result.current.fetchStatus).toBe("idle")
+  })
+})
+
+describe("useFileWrite", () => {
+  it("calls writeFile and invalidates caches on success", async () => {
+    mockClient.writeFile.mockResolvedValue(undefined)
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+    const { result } = renderHook(() => useFileWrite(), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({ path: "/a.ts", content: "new" })
+    })
+
+    expect(mockClient.writeFile).toHaveBeenCalledWith("/a.ts", "new")
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/a.ts"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "tree"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/a.ts"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "search"] })
+  })
+})
+
+describe("useCreateDir", () => {
+  it("invalidates tree cache on success", async () => {
+    mockClient.createDir.mockResolvedValue(undefined)
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+    const { result } = renderHook(() => useCreateDir(), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({ path: "/new" })
+    })
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "tree"] })
+  })
+})
+
+describe("useMoveFile", () => {
+  it("invalidates tree, source, and destination caches", async () => {
+    mockClient.moveFile.mockResolvedValue(undefined)
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+    const { result } = renderHook(() => useMoveFile(), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({ from: "/a.ts", to: "/b.ts" })
+    })
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "tree"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/a.ts"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/b.ts"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/a.ts"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/b.ts"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "search"] })
+  })
+})
+
+describe("useDeleteFile", () => {
+  it("invalidates tree, file, stat, and search caches", async () => {
+    mockClient.deleteFile.mockResolvedValue(undefined)
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+    const { result } = renderHook(() => useDeleteFile(), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({ path: "/a.ts" })
+    })
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "tree"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/a.ts"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/a.ts"] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "search"] })
+  })
+})
