@@ -38,10 +38,14 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.170",
     "@mariozechner/pi-coding-agent": "^0.67.6",
-    "fastify": "^5.3.3"
+    "ai": "^6.0.168",
+    "fastify": "^5.3.3",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@types/node": "^22.15.3",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.3",

@@ -252,6 +252,51 @@ describe('POST /api/v1/agent/chat', () => {
     await app.close()
   })
 
+  test('returns 400 for sessionId exceeding max length', async () => {
+    const app = await buildApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { sessionId: 'x'.repeat(129), message: 'hello' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.code).toBe(ERROR_CODE_VALIDATION_ERROR)
+
+    await app.close()
+  })
+
+  test('returns 400 for message exceeding max length', async () => {
+    const app = await buildApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { sessionId: 's1', message: 'x'.repeat(100_001) },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.code).toBe(ERROR_CODE_VALIDATION_ERROR)
+
+    await app.close()
+  })
+
+  test('returns 400 for malformed model object', async () => {
+    const app = await buildApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat',
+      payload: { sessionId: 's1', message: 'hi', model: { provider: '' } },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.code).toBe(ERROR_CODE_VALIDATION_ERROR)
+
+    await app.close()
+  })
+
   test('streams multiple chunks in order', async () => {
     const harness = createMockHarness([
       { type: 'text', text: 'one' },
