@@ -110,7 +110,7 @@ v2/packages/workspace/          # This package
 ```
 @boring/workspace
   ├── @boring/core          (shared types, config, transport utils)
-  ├── @boring/agent         (ChatPanel — consumed as peer dependency)
+  ├── @boring/agent         (ChatPanel — injected by app shell via `panels` prop; workspace has ZERO agent imports)
   ├── dockview-react        (layout engine)
   ├── @codemirror/*         (code editor)
   ├── shadcn/ui components  (vendored into components/ui/)
@@ -578,8 +578,8 @@ The agent should feel like a co-user — seeing the same files, same open panels
    - Search/filter input at top (shadcn `Input`) with debounced search (200ms).
      Client-side filter for <5K files; falls back to server-side `/api/v1/files/search`
      for larger workspaces via `/api/v1/files/search` (threshold configurable via WorkspaceProvider prop).
-   - Context menu (shadcn `DropdownMenu`): new file, new folder, rename, delete, copy path, open to side
-   - Drag-and-drop file moving: drag file/folder onto directory to move. Drop validation (can't drop into self/children). Visual drag-over feedback.
+   - Context menu (shadcn `DropdownMenu`): new file (`POST /api/v1/files`), new folder (`POST /api/v1/dirs`), rename (`POST /api/v1/files/move`), delete (`DELETE /api/v1/files`), copy path (client-only), open to side (bridge command)
+   - Drag-and-drop file moving: drag file/folder onto directory to move via `POST /api/v1/files/move` (same op as rename — path change only). Drop validation (can't drop into self/children). Visual drag-over feedback.
    - Flat tree (no section system). Single root directory.
    - No git status badges (git UI is agent responsibility)
    - Used by both IdeLayout (sidebar) and ChatLayout (file browser in surface)
@@ -646,7 +646,7 @@ The agent should feel like a co-user — seeing the same files, same open panels
 **Tasks:**
 
 3a.1. **Agent pane slot**
-   - Workspace consumes `ChatPanel` from `@boring/agent` as peer dependency
+   - App shell imports `ChatPanel` from `@boring/agent` and passes it via `WorkspaceProvider`'s `panels` prop. **Workspace package does NOT import from `@boring/agent`** (see Risk 2 mitigation — avoids circular deps).
    - Registered in panel registry with `placement: 'right'` (IDE) or `slot: 'chat'` (Chat layout)
    - Lazy-loaded with Suspense wrapper
 

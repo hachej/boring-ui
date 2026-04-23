@@ -26,7 +26,7 @@ Each mode exposes **identical** HTTP endpoints, the **same** agent tool shapes, 
 - **Multi-workspace management — owned by the future `@boring/cloud` package.** Agent runs **one workspace per instance**; `workspaceId` is a configured constant or env var. No workspace CRUD, no workspace switcher UI, no per-user provisioning in the agent package.
 - Multi-user auth, billing, team features.
 - Full session list sidebar UI — agent ships a lightweight toolbar (current-session + switch) and the headless `useSessions()` hook. Rich session UX (persistent sidebar, folder organization, search) is a workspace-package concern.
-- FS panes, file tree, editor, git UI components — those live in `@boring/workspace`. (The agent package *exposes* the HTTP endpoints that power them.)
+- FS panes, file tree, editor — those live in `@boring/workspace`. (The agent package *exposes* the HTTP endpoints that power them.) Git UI is **dropped from workspace v1**; when it returns in v1.x, agent will add `/api/v1/git/*` thin-wrapper routes.
 - Cloud/edge deployment tooling.
 - Browser-agent implementation — interface stays runtime-agnostic but no browser harness yet.
 - Non-Anthropic model providers.
@@ -189,8 +189,10 @@ This table is the **single source of truth** for agent ↔ frontend HTTP contrac
 | `/api/v1/tree` | GET | auth + validate | `workspace.readdir(path)` |
 | `/api/v1/files` | GET | auth + validate | `workspace.readFile(path)` |
 | `/api/v1/files` | POST | auth + validate + body | `workspace.writeFile(path, body)` |
-| `/api/v1/files` | DELETE | auth + validate | `workspace.unlink(path)` |
+| `/api/v1/files` | DELETE | auth + validate | `workspace.unlink(path)` (file or empty dir) |
 | `/api/v1/files/search` | GET | auth + `?q=<glob>&limit=<n>` | `fileSearch.search(glob, limit)` — default impl uses `sandbox.exec('find . -name …')`; browser adapter does fs-walk |
+| `/api/v1/files/move` | POST | auth + body `{from, to}` | `workspace.rename(from, to)` — handles drag-and-drop move AND in-place rename (same op; UI just differs). |
+| `/api/v1/dirs` | POST | auth + body `{path, recursive?}` | `workspace.mkdir(path, {recursive})` — create new folder. |
 | `/api/v1/stat` | GET | auth + validate | `workspace.stat(path)` |
 | **Agent chat & sessions** | | | |
 | `/api/v1/agent/chat` | POST | auth + body `{sessionId, message, …}` | resolves workspace + sandbox pair via `RuntimeModeAdapter`, runs harness with the catalog. Returns UIMessage stream. |
@@ -338,10 +340,12 @@ export interface Workspace {
   readonly root: string                           // absolute path or opaque URI (browser)
   readFile(relPath: string): Promise<string>
   writeFile(relPath: string, data: string): Promise<void>
-  unlink(relPath: string): Promise<void>
+  unlink(relPath: string): Promise<void>          // removes a file OR an empty directory
   readdir(relPath: string): Promise<Entry[]>
   stat(relPath: string): Promise<Stat>
-  /** Throws if relPath escapes the workspace root. */
+  mkdir(relPath: string, opts?: { recursive?: boolean }): Promise<void>
+  rename(fromRelPath: string, toRelPath: string): Promise<void>   // handles drag-to-move and in-place rename
+  /** Throws if any relPath escapes the workspace root. */
 }
 
 // Separate interface — search can use exec (find) OR fs-walk, depending on environment.
@@ -463,7 +467,7 @@ Sandbox takes a `Workspace` in `init()` so exec `cwd` defaults to the workspace 
 | `VercelSandboxExec` adapter | ~80 |
 | `resolveSandboxHandle()` — Vercel lifecycle (create/get/resume) + in-process cache | ~100 |
 | `SandboxHandleStore` interface + `FileHandleStore` default impl (~/.config/boring-agent/sandboxes.json) | ~60 |
-| Fastify routes (`/api/v1/files`, `/tree`, `/stat`, `/files/search`, `/agent/chat`, `/agent/sessions` list+create+detail+delete, `/ui/*` bridge) | ~310 |
+| Fastify routes (`/api/v1/files` GET/POST/DELETE, `/files/move`, `/dirs`, `/tree`, `/stat`, `/files/search`, `/agent/chat`, `/agent/sessions` list+create+detail+delete, `/ui/*` bridge) | ~330 |
 | `UiBridge` interface + in-memory impl + SSE fan-out | ~150 |
 | UI agent tools (`get_ui_state`, `exec_ui` dispatcher) | ~60 |
 | `<ChatPanel />`, `<SessionToolbar />`, `useAgentChat`, `useSessions` (list/create/switch/delete) | ~240 |
@@ -555,7 +559,7 @@ packages/agent/
     │   │   ├── createInMemoryBridge.ts    (in-memory UiBridge impl)
     │   │   └── sseCommandStream.ts        (SSE fan-out helper)
     │   ├── routes/
-    │   │   ├── file.ts                    (GET/POST/DELETE /api/v1/files, /api/v1/stat)
+    │   │   ├── file.ts                    (GET/POST/DELETE /api/v1/files, /api/v1/stat, POST /api/v1/files/move, POST /api/v1/dirs)
     │   │   ├── tree.ts                    (GET /api/v1/tree — lazy recursive listing)
     │   │   ├── search.ts                  (GET /api/v1/files/search — filename glob)
     │   │   ├── ui.ts                      (GET/PUT /api/v1/ui/state, POST /api/v1/ui/commands, SSE /api/v1/ui/commands/next)
@@ -1509,13 +1513,28 @@ Three flows:
 
 Agent sees 2 bridge tools: `get_ui_state` and `exec_ui({ kind, params })`. Workspace defines UI state shape + command kinds (`openFile`, `openPanel`, `showNotification`, extensible). Agent doesn't know about DockView panels; workspace doesn't know about sandbox details. Clean ownership split.
 
-### Component exports consumed by workspace
+### Component exports — app-shell composition surface
 
-| Workspace imports | From agent | Notes |
-|---|---|---|
-| `ChatPanel` | `@boring/agent` (top-level barrel) | The single chat component. Full-height, pane-friendly. |
-| `useSessions()` | `@boring/agent` (or `@boring/agent/front`) | Powers whatever session UI workspace builds (sidebar, picker, etc.) — workspace renders UI, agent provides `{sessions, create, switch, delete}`. |
-| `useAgentChat()` | `@boring/agent` (top-level barrel) | Workspace can build custom chat shells on top (Tier 3 headless). |
+**Integration pattern (matches workspace plan Risk 2 mitigation):** the workspace package **does NOT import** from `@boring/agent`. Instead the app shell (the final application) imports components from BOTH packages and wires them together via `WorkspaceProvider`'s `panels` prop. This keeps workspace tree-shakable, avoids circular-dep risk, and lets apps mix/match chat surfaces.
+
+| Export | From agent | Consumed by | Purpose |
+|---|---|---|---|
+| `ChatPanel` | `@boring/agent` (top-level barrel) | **App shell** — passed as `panels[{id:'agent', component: ChatPanel, …}]` | The single chat component. Full-height, pane-friendly. Workspace renders it via its panel registry without knowing its internals. |
+| `useSessions()` | `@boring/agent` (or `@boring/agent/front`) | **App shell or Tier-3 headless consumers** | Powers custom session UI (sidebar, picker). Workspace v1 ships no session UI beyond SessionToolbar — apps that want richer session UX wire `useSessions()` in their own components. |
+| `useAgentChat()` | `@boring/agent` (top-level barrel) | **Tier-3 headless consumers** (rare) | For building custom chat shells; not used by workspace package or standard app shells. |
+
+**Example app-shell wiring (what `examples/with-custom-tool/` demonstrates):**
+```tsx
+// App code — imports from BOTH packages:
+import { WorkspaceProvider, IdeLayout } from '@boring/workspace'
+import { ChatPanel } from '@boring/agent'
+
+<WorkspaceProvider panels={[{ id: 'agent', component: ChatPanel, placement: 'right' }]}>
+  <IdeLayout />
+</WorkspaceProvider>
+```
+
+**Why not direct import:** If workspace imported ChatPanel, every workspace consumer would pull the entire agent bundle even when they don't want chat. The panels-prop pattern makes chat opt-in + keeps package boundaries clean (agent consumes workspace's bridge types from `@boring/core`, not from workspace directly).
 
 ### Session CRUD contract
 
