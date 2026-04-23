@@ -1,3 +1,5 @@
+export { ArtifactSurfacePane } from "./ArtifactSurfacePane"
+export type { ArtifactSurfacePaneProps } from "./ArtifactSurfacePane"
 export { EmptyPane } from "./EmptyPane"
 export type { EmptyPaneProps } from "./EmptyPane"
 export { DataCatalogPane } from "./DataCatalogPane"

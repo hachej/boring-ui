@@ -14,6 +14,8 @@ export { FileTree } from "./components/FileTree"
 export type { FileTreeProps, FileTreeNode } from "./components/FileTree"
 export { MarkdownEditor } from "./components/MarkdownEditor"
 export type { MarkdownEditorProps } from "./components/MarkdownEditor"
+export { SessionList } from "./components/SessionList"
+export type { SessionListProps, SessionItem } from "./components/SessionList"
 export {
   WorkspaceProvider,
   useTheme,
