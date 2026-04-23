@@ -1,4 +1,5 @@
-import { test as base, expect, type Page } from '@playwright/test'
+import { test as loggingTest, type LoggingFixture } from './fixtures/loggingHarness'
+import { expect, type Page } from '@playwright/test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -17,11 +18,12 @@ interface E2eFixtures {
   workspace: E2eWorkspace
   backend: SpawnedBackend
   browserPage: Page
+  logging: LoggingFixture
 }
 
 const fixturesDir = path.dirname(fileURLToPath(import.meta.url))
 
-export const test = base.extend<E2eFixtures>({
+export const test = loggingTest.extend<E2eFixtures>({
   workspace: async ({}, use) => {
     const workspace = await createE2eWorkspace()
     try {
