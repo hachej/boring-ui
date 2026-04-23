@@ -41,22 +41,6 @@
   border-bottom-color: var(--primary);
 }
 
-/* Tab close button */
-.dv-shell .tab .dv-default-tab-action {
-  color: var(--muted-foreground);
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-
-.dv-shell .tab:hover .dv-default-tab-action,
-.dv-shell .tab.active-tab .dv-default-tab-action {
-  opacity: 1;
-}
-
-.dv-shell .tab .dv-default-tab-action:hover {
-  color: var(--foreground);
-}
-
 /* Sash (resize handle) */
 .dv-shell .sash-container .sash {
   transition: background-color 0.2s;

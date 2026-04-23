@@ -60,7 +60,7 @@ export interface DockviewShellApi {
     target:
       | { groupId: string }
       | {
-          direction: "left" | "right" | "up" | "down"
+          direction: "left" | "right" | "above" | "below"
           referencePanelId: string
         },
   ): void

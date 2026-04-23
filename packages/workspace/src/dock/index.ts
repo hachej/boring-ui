@@ -1,6 +1,5 @@
 export { DockviewShell, useDockviewApi } from "./DockviewShell"
-export { PanelChrome, createLifecycleApi } from "./PanelChrome"
-export { ShadcnTab } from "./ShadcnTab"
+export { PanelChrome } from "./PanelChrome"
 export type {
   LayoutConfig,
   GroupConfig,

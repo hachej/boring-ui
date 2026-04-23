@@ -95,21 +95,23 @@ function createShellApi(
       const panel = api.getPanel(panelId)
       if (!panel) return
       const component = panel.view.contentComponent
+      const params = panel.params as Record<string, unknown> | undefined
+      const title = panel.title
 
       api.removePanel(panel)
+
+      const base = { id: panelId, component, params, title }
 
       if ("groupId" in target) {
         const group = api.groups.find((g) => g.id === target.groupId)
         api.addPanel({
-          id: panelId,
-          component,
+          ...base,
           position: group ? { referenceGroup: group } : undefined,
         })
       } else {
         const ref = api.getPanel(target.referencePanelId)
         api.addPanel({
-          id: panelId,
-          component,
+          ...base,
           position: ref
             ? { referencePanel: ref, direction: target.direction }
             : undefined,
@@ -127,8 +129,6 @@ function createShellApi(
     },
   }
 }
-
-const MAX_PANEL_STATE_BYTES = 4096
 
 function initializeDockview(
   event: DockviewReadyEvent,
@@ -182,6 +182,7 @@ function initializeDockview(
     }
   }
 
+  let dispose: (() => void) | undefined
   if (onLayoutChange) {
     let timer: ReturnType<typeof setTimeout> | null = null
     const debouncedPersist = () => {
@@ -190,7 +191,7 @@ function initializeDockview(
         onLayoutChange(api.toJSON() as SerializedLayout)
       }, PERSIST_DEBOUNCE_MS)
     }
-    api.onDidLayoutChange(debouncedPersist)
+    const layoutDisposable = api.onDidLayoutChange(debouncedPersist)
     const flushOnUnload = () => {
       if (timer) {
         clearTimeout(timer)
@@ -198,7 +199,13 @@ function initializeDockview(
       }
     }
     window.addEventListener("beforeunload", flushOnUnload)
+    dispose = () => {
+      flushOnUnload()
+      layoutDisposable.dispose()
+      window.removeEventListener("beforeunload", flushOnUnload)
+    }
   }
+  return dispose
 }
 
 export function DockviewShell({
@@ -213,6 +220,7 @@ export function DockviewShell({
   const hydrationComplete = useHydrationComplete()
   const apiRef = useRef<DockviewApi | null>(null)
   const pendingOnReady = useRef<DockviewReadyEvent | null>(null)
+  const disposeRef = useRef<(() => void) | undefined>(undefined)
 
   const components = useMemo(() => {
     const all = registry.getComponents()
@@ -226,7 +234,8 @@ export function DockviewShell({
 
   const doInit = useCallback(
     (event: DockviewReadyEvent) => {
-      initializeDockview(
+      disposeRef.current?.()
+      disposeRef.current = initializeDockview(
         event,
         layout,
         persistedLayout,
@@ -238,6 +247,10 @@ export function DockviewShell({
     },
     [layout, persistedLayout, registry, onLayoutChange, onReady],
   )
+
+  useEffect(() => {
+    return () => disposeRef.current?.()
+  }, [])
 
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {

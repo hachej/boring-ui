@@ -14,7 +14,7 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   return (
     <div
       className={cn(
-        "flex h-full items-center gap-1.5 px-3 text-sm select-none",
+        "group flex h-full items-center gap-1.5 px-3 text-sm select-none",
         "cursor-pointer transition-colors",
       )}
     >
