@@ -92,146 +92,77 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 
 # Agent Workflow
 
-This is the one section to master. If you read nothing else, read this.
-
 ## 0. Tools you have
 
-| Tool | What it's for | Key commands |
+| Tool | Purpose | Key commands |
 |---|---|---|
-| `br` | Issue tracking — **the** source of truth for work state | `br ready`, `br show <id>`, `br update <id> -s <status>`, `br close <id>`, `br sync --flush-only` |
-| `bv` | Triage sidecar — ranks work by impact. **Only `--robot-*` flags** (bare `bv` is TUI). | `bv --robot-next`, `bv --robot-triage`, `bv --robot-plan`, `bv --robot-insights`, `bv --robot-alerts` |
+| `br` | Issue tracking — source of truth for work state | `br ready`, `br show <id>`, `br update <id> -s <status>`, `br close <id>`, `br sync --flush-only` |
+| `bv` | Triage sidecar. **Only `--robot-*` flags** (bare `bv` is TUI). | `bv --robot-next`, `bv --robot-triage`, `bv --robot-plan`, `bv --robot-alerts` |
 | `git` | Atomic commits per bead | `git status`, `git diff --staged`, `git add`, `git commit` |
-| `cc -p "<prompt>"` | **Ask Claude Code for review** (codex agents use this) | non-interactive print mode |
-| `cod exec "<prompt>"` | **Ask Codex for review** (claude-code agents use this) | non-interactive exec mode |
-| MCP Agent Mail tools | Peer coordination, file reservations, thread-scoped messaging | `register_agent`, `send_message`, `fetch_inbox`, `acknowledge_message`, `file_reservation_paths`, `macro_start_session` |
-| `vault kv get/list` | Read-only access to `secret/agent/*` and `secret/shared/*` | `vault kv get -field=api_key secret/agent/anthropic` |
+| `cc -p "<prompt>"` | Ask Claude Code for review (codex agents use this) | non-interactive print mode |
+| `cod exec "<prompt>"` | Ask Codex for review (claude-code agents use this) | non-interactive exec mode |
+| MCP Agent Mail | Peer coordination, file reservations | `register_agent`, `send_message`, `fetch_inbox`, `file_reservation_paths` |
+| `vault kv get/list` | Read-only access to `secret/agent/*` + `secret/shared/*` | `vault kv get -field=api_key secret/agent/anthropic` |
 
-**Hard rules on tool use:**
-- **Never** launch bare `bv` (interactive TUI blocks your session).
-- **Never** edit `.beads/*.jsonl` by hand — use `br` commands + `br sync --flush-only`.
-- **Never** commit secrets. Vault tokens and API keys only in env vars.
-- **Never** use MCP HTTP wrappers for Agent Mail — use MCP tools natively.
+**Hard rules:** never launch bare `bv`; never edit `.beads/*.jsonl` by hand; never commit secrets; use MCP tools natively (not HTTP wrappers).
 
-## 1. On session startup (do this FIRST, every session)
+## 1. On session startup
 
-**Step 1 — Read this file end-to-end.** Yes, the whole thing. Even if you read it last session. Context drifts after compaction.
-
-**Step 2 — Register with Agent Mail.**
-```
-ensure_project(project_key="boring-ui-v2")
-register_agent(project_key="boring-ui-v2", program="claude-code" | "codex", model="<your model>")
-fetch_inbox(project_key="boring-ui-v2")  # catch up on threads
-```
-Introduce yourself in a broadcast message if first time in this session: `send_message(to=<all other agents>, subject="Intro: <your-name>", body="...")`.
-
-**Step 3 — Skim the relevant spec for the kind of work you'll do:**
-- Agent-package work → `packages/agent/docs/plans/agent-package-spec.md`.
-- Workspace-package work → `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`.
-- Cross-cutting / governance → skim both.
-
-**Step 4 — Pick a bead:**
-```bash
-bv --robot-next         # single top pick + claim command (preferred)
-bv --robot-triage       # see the ranked list with reasons
-br ready                # just list unblocked beads
-```
-
-**Step 5 — Check for collisions before claiming:**
-- `ntm locks list boring-ui-v2 --all-agents` (if NTM is running) OR
-- Agent Mail: check inbox for `[CLAIM]` messages on the same bead.
-- If someone else is on it → pick a different one.
+1. **Read this file end-to-end** (even if you read it last session — context drifts after compaction).
+2. **Register with Agent Mail + catch up on inbox:**
+   ```
+   ensure_project(project_key="boring-ui-v2")
+   register_agent(project_key="boring-ui-v2", program="claude-code" | "codex", model="<your model>")
+   fetch_inbox(project_key="boring-ui-v2")
+   ```
+   If first time this session, broadcast an intro message.
+3. **Skim the relevant spec** (agent or workspace).
+4. **Pick a bead:** `bv --robot-next` (preferred) or `br ready`.
+5. **Check for collisions** before claiming: inbox for `[CLAIM]` messages on the same bead; skip if taken.
 
 ## 2. Per-bead development loop
 
-**Step 1 — Open the bead:** `br show <bead-id>`. Note:
-- Goal + acceptance criteria (what "done" looks like).
-- File paths + interface signatures (where to write).
-- Reference-file pointers (what to port from old boring-ui).
-- Dependencies (what must be done first).
-- Each bead is **self-contained** — you should not need to re-read the spec.
+1. **Open the bead:** `br show <id>` — note goal, acceptance criteria, file paths, reference-file pointers, deps. Beads are self-contained; you shouldn't need to re-read the spec.
+2. **Claim publicly:** `br update <id> -s in_progress` + Agent Mail broadcast `[CLAIM] <id> <title>` with file scope + ETA.
+3. **Reserve files:** `file_reservation_paths(project_key="boring-ui-v2", paths=[...], reason="<id>")`.
+4. **Implement** — code + tests together, not sequentially.
+5. **Local quality gates (mandatory):**
+   ```bash
+   pnpm typecheck && pnpm lint && pnpm test
+   ```
+   All green before proceeding.
+6. **Self-review the diff** for typos, off-by-ones, missing error codes, unhandled edge cases.
+7. **Stage for cross-review:** `git add <files>` (don't commit yet).
+8. **Cross-review (mandatory — see §3)** on the staged diff.
+9. **Address feedback.** If `revise`: fix, re-test (step 5), re-request. Cap at 3 rounds.
+10. **Commit atomically** (see §4).
+11. **Close:** `br close <id> --reason "shipped — reviewed by <name> (cod|cc): ship"`.
+12. **Announce:** Agent Mail `[DONE] <id>` with commit sha + verdict; release file reservations.
 
-**Step 2 — Claim it publicly:**
-```bash
-br update <id> -s in_progress
-```
-Then announce via Agent Mail: `send_message(subject="[CLAIM] <bead-id> <title>", body="File scope: <paths>. ETA: <rough>.")`.
-
-**Step 3 — Reserve files** (advisory — prevents stomping):
-```
-file_reservation_paths(project_key="boring-ui-v2", paths=[...], reason="<bead-id>")
-```
-
-**Step 4 — Implement.** Write code + tests together — not sequentially. Tests are part of the bead, not an afterthought.
-
-**Step 5 — Local quality gates** (MANDATORY before review):
-```bash
-pnpm typecheck    # or tsc --noEmit
-pnpm lint         # if configured
-pnpm test         # vitest for the affected package
-```
-All three green. If red, fix before proceeding — don't ship red.
-
-**Step 6 — Self-review** (takes 2 minutes):
-- Re-read your own diff with fresh eyes.
-- Check: does it satisfy every line of the acceptance criteria?
-- Check: typos, off-by-ones, missing error codes, unhandled edge cases.
-- Fix obvious issues. This is cheap.
-
-**Step 7 — Stage for cross-review:**
-```bash
-git add <files>                           # stage but DO NOT commit yet
-git diff --staged > /tmp/review-<id>.diff
-```
-
-**Step 8 — Cross-review (MANDATORY — see §3).** Cross-review runs on the staged diff before commit.
-
-**Step 9 — Address review feedback.** If `revise`: fix, re-test (step 5), then re-request (step 8). Cap at 3 rounds.
-
-**Step 10 — Commit atomically** (see §4 for message style).
-
-**Step 11 — Close the bead:**
-```bash
-br update <id> -s closed
-# OR with close reason:
-br close <id> --reason "shipped — reviewed by <reviewer-name> (cod|cc): ship"
-```
-
-**Step 12 — Announce completion:**
-```
-send_message(subject="[DONE] <bead-id> <title>", body="<commit sha> — <reviewer verdict>")
-release_file_reservations(...)
-```
-
-Then loop back to §1 step 4 for the next bead.
+Loop back to §1 step 4.
 
 ## 3. Cross-review (mandatory, before every close)
 
-Every bead goes through one cross-review by an agent of the **opposite kind**:
-- **Claude Code agent → asks Codex** via `cod exec`.
-- **Codex agent → asks Claude Code** via `cc -p`.
-
-**Why:** each model has different failure modes. Single-agent review rubber-stamps. Cross-review catches model-specific blind spots (codex over-engineering, claude-code missing edge cases, etc.).
+Every bead is reviewed by an agent of the **opposite kind** before closing — Claude Code asks Codex, Codex asks Claude Code. Catches model-specific blind spots and prevents single-agent rubber-stamping.
 
 **When:** after implementation, tests green, staged for commit. Not on WIP.
 
-**How — Claude Code agent asks `cod`:**
+**Claude Code agent asks `cod`:**
 ```bash
-cod exec "Review this change for bead <bead-id>. Bead context follows, then the staged diff.
+cod exec "Review this change for bead <id>. Bead context, then staged diff.
 
-$(br show <bead-id>)
+$(br show <id>)
 
 $(git diff --staged)
 
-Check: does the diff actually satisfy the acceptance criteria? Bugs, regressions, unsafe assumptions, missing edge cases, missing tests? Report verdict: ship / revise / reject + concrete issues with file:line pointers."
+Does the diff satisfy the acceptance criteria? Bugs, regressions, unsafe assumptions, missing edge cases, missing tests? Verdict: ship / revise / reject + concrete issues with file:line pointers."
 ```
 
-**How — Codex agent asks `cc`:**
+**Codex agent asks `cc`:**
 ```bash
-cc -p "Review this change for bead <bead-id>. Bead context:
+cc -p "Review this change for bead <id>.
 
-$(br show <bead-id>)
-
-Staged diff:
+$(br show <id>)
 
 $(git diff --staged)
 
@@ -240,13 +171,10 @@ Verdict: ship / revise / reject. List concrete issues with file:line pointers."
 
 **Verdicts:**
 - **ship** → commit + close.
-- **revise** → fix flagged issues, re-test, re-request. Cap: 3 rounds. After that escalate via Agent Mail to operator.
-- **reject** → likely spec drift or misaligned bead. Stop coding. Post to Agent Mail with reviewer output. Set bead to blocked: `br update <id> -s blocked`. Let operator decide next step.
+- **revise** → fix, re-test, re-request. Cap 3 rounds → escalate via Agent Mail.
+- **reject** → spec drift. Stop. Agent Mail with reviewer output. `br update <id> -s blocked`.
 
-**Rules:**
-- **Never self-review for closure.** Self-review catches typos; cross-review catches thinking errors. Both are required.
-- Include reviewer name + verdict in the close reason.
-- If the reviewer takes >5 min to respond (they may be busy), proceed with commit but flag the bead as "pending review" in Agent Mail — reviewer can still file follow-up beads.
+**Rules:** never self-review for closure; include reviewer name + verdict in close reason; if reviewer doesn't respond in 5 min, commit but flag bead "pending review" in Agent Mail.
 
 ## 4. Commit + close
 
@@ -259,39 +187,32 @@ Verdict: ship / revise / reject. List concrete issues with file:line pointers."
 Co-Authored-By: <agent-name> <noreply@anthropic.com>
 ```
 - **Types:** `feat` / `fix` / `docs` / `chore` / `refactor` / `test` / `polish`.
-- **Scopes:** `plan` / `beads` / `agent` / `workspace` (pick what matches).
-- **Reference the bead ID** in subject or body: `fix(agent): path helpers reject null-byte vectors (boring-ui-v2-tx7)`.
-- **Atomic per bead** — one commit per bead unless the bead is explicitly a multi-commit task.
-- **Include `.beads/issues.jsonl`** in the same commit if bead state changed (`br sync --flush-only` first).
+- **Scopes:** `plan` / `beads` / `agent` / `workspace`.
+- **Reference bead ID** in subject or body: `fix(agent): path helpers reject null-byte vectors (boring-ui-v2-tx7)`.
+- **Atomic per bead.** Include `.beads/issues.jsonl` if bead state changed (`br sync --flush-only` first).
 
-**Priorities** (for new beads you file):
-- `0` critical · `1` high · `2` medium (default) · `3` low · `4` backlog.
+**Priorities for new beads:** `0` critical · `1` high · `2` medium (default) · `3` low · `4` backlog.
 
 ## 5. On session end ("landing the plane")
 
-Don't disappear mid-flight. Close out cleanly:
-
-1. **File issues** for anything you discovered but couldn't finish — new beads with clear scope.
-2. **Run quality gates** one more time (`pnpm build`, `pnpm test`, lint).
-3. **Update bead status** — close what's done, set blocked with a comment on anything stuck.
-4. **Sync beads:** `br sync --flush-only`.
-5. **Commit atomically** — include `.beads/issues.jsonl`.
-6. **Hand-off message** via Agent Mail: `[STATUS] <name> wrapping: <N> beads closed; <short summary of WIP + next suggestions>`.
-7. **Release file reservations:** `release_file_reservations(...)`.
+1. File new beads for anything you discovered but couldn't finish.
+2. Run quality gates one more time.
+3. Update bead status (close done, set `blocked` with comment on stuck).
+4. `br sync --flush-only`.
+5. Commit atomically — include `.beads/issues.jsonl`.
+6. Agent Mail `[STATUS]` hand-off: `<N> beads closed; <short WIP + next suggestions>`.
+7. `release_file_reservations(...)`.
 
 ## 6. Credentials (Vault)
-
-Never commit secrets. Read from Vault via env vars:
 
 ```bash
 export ANTHROPIC_API_KEY=$(vault kv get -field=api_key secret/agent/anthropic)
 export GITHUB_TOKEN=$(vault kv get -field=token secret/agent/boringdata-agent)
 
-vault kv list secret/agent/           # list agent-scoped secrets
+vault kv list secret/agent/           # agent-scoped secrets
 vault kv list secret/agent/app/       # per-app secrets
 ```
-
-Agent token is **read-only** for `secret/agent/*` and `secret/shared/*`.
+Agent token is read-only for `secret/agent/*` and `secret/shared/*`.
 
 ---
 
