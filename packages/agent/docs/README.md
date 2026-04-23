@@ -6,7 +6,7 @@ This folder contains user-facing package docs for `@boring/agent`.
 
 - [API](./API.md) — current export surface and contract status.
 - [STYLING](./STYLING.md) — CSS-variable theming contract and guardrails.
-- [PLUGINS](./PLUGINS.md) — extension model and current caveats.
+- [PLUGINS](./PLUGINS.md) — extension model and runtime-mode caveats.
 - [MIGRATION](./MIGRATION.md) — migration guidance for v1-style integrations.
 
 ## Scope
