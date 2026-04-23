@@ -75,7 +75,7 @@ export function SessionToolbar({ sessionId, onSessionChange }: SessionToolbarPro
       </button>
 
       {error && (
-        <span className="session-toolbar__error" role="alert" style={{ color: 'var(--text-error, red)', fontSize: 12, marginLeft: 8 }}>
+        <span className="session-toolbar__error" role="alert" style={{ color: 'var(--boring-chat-error)', fontSize: 12, marginLeft: 8 }}>
           {error.message}
         </span>
       )}
@@ -90,10 +90,10 @@ export function SessionToolbar({ sessionId, onSessionChange }: SessionToolbarPro
             left: 0,
             zIndex: 50,
             minWidth: 200,
-            background: 'var(--bg-surface, #fff)',
-            border: '1px solid var(--border, #ddd)',
-            borderRadius: 6,
-            boxShadow: '0 4px 12px rgba(0,0,0,.12)',
+            background: 'var(--boring-chat-dropdown-bg)',
+            border: '1px solid var(--boring-chat-dropdown-border)',
+            borderRadius: 'var(--boring-chat-dropdown-radius)',
+            boxShadow: 'var(--boring-chat-dropdown-shadow)',
             marginTop: 4,
           }}
         >
@@ -136,14 +136,14 @@ export function SessionToolbar({ sessionId, onSessionChange }: SessionToolbarPro
             style={{
               display: 'block',
               width: '100%',
-              borderTop: '1px solid var(--border, #ddd)',
+              borderTop: '1px solid var(--boring-chat-dropdown-border)',
               padding: '6px 10px',
               cursor: 'pointer',
               background: 'none',
               border: 'none',
               borderTopWidth: 1,
               borderTopStyle: 'solid',
-              borderTopColor: 'var(--border, #ddd)',
+              borderTopColor: 'var(--boring-chat-dropdown-border)',
               textAlign: 'left',
             }}
           >

@@ -108,6 +108,47 @@ describe('ChatPanel', () => {
     expect(css).toContain('--boring-chat-code-bg')
   })
 
+  test('parent --boring-chat-accent override scopes to that parent only', () => {
+    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8')
+    expect(css).toContain('--boring-chat-accent')
+    expect(css).toContain('--boring-chat-tool-running: var(--boring-chat-accent)')
+
+    const html = renderToStaticMarkup(
+      <div>
+        <style>
+          {`.accent-red [data-boring-chat]{--boring-chat-accent:red}`}
+        </style>
+        <section className="accent-red">
+          <ChatPanel sessionId="sess-accent-a" />
+        </section>
+        <section>
+          <ChatPanel sessionId="sess-accent-b" />
+        </section>
+      </div>,
+    )
+
+    expect(html).toContain('--boring-chat-accent:red')
+    const accentMatches = html.match(/--boring-chat-accent:red/g)
+    expect(accentMatches).toHaveLength(1)
+
+    const chatPanels = html.match(/data-boring-chat=""/g)
+    expect(chatPanels).toHaveLength(2)
+  })
+
+  test('theme.css defines @keyframes boring-pulse', () => {
+    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8')
+    expect(css).toContain('@keyframes boring-pulse')
+  })
+
+  test('theme.css defines dropdown and semantic color vars', () => {
+    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8')
+    expect(css).toContain('--boring-chat-dropdown-bg')
+    expect(css).toContain('--boring-chat-dropdown-border')
+    expect(css).toContain('--boring-chat-error')
+    expect(css).toContain('--boring-chat-success')
+    expect(css).toContain('--boring-chat-surface')
+  })
+
   test('typing in composer send path forwards user message to useAgentChat', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-42" />)
 

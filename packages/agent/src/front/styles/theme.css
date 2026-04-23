@@ -1,14 +1,31 @@
+/*
+ * Default dark theme for @boring/agent chat UI.
+ *
+ * All vars are scoped to [data-boring-chat]. Embedders override by setting
+ * the same vars on a parent element or via a more-specific selector:
+ *
+ *   .my-panel [data-boring-chat] { --boring-chat-accent: hotpink; }
+ *
+ * See STYLING.md for the full contract.
+ */
+
 [data-boring-chat] {
+  /* ── Core palette ─────────────────────────────────────── */
   --boring-chat-bg: #0b1220;
   --boring-chat-fg: #e5e7eb;
   --boring-chat-muted: #94a3b8;
   --boring-chat-accent: #3b82f6;
   --boring-chat-border: #334155;
+  --boring-chat-error: #ef4444;
+  --boring-chat-success: #4ade80;
+  --boring-chat-surface: #0f172a;
 
+  /* ── Typography ───────────────────────────────────────── */
   --boring-chat-font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --boring-chat-font-mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
   --boring-chat-font-size: 0.875rem;
 
+  /* ── Messages ─────────────────────────────────────────── */
   --boring-chat-avatar-size: 2rem;
   --boring-chat-message-gap: 0.75rem;
   --boring-chat-message-padding: 1rem;
@@ -18,28 +35,32 @@
   --boring-chat-user-padding: 0.5rem 0.75rem;
   --boring-chat-assistant-bg: transparent;
 
+  /* ── Reasoning ────────────────────────────────────────── */
   --boring-chat-reasoning-border: var(--boring-chat-border);
   --boring-chat-reasoning-radius: 0.375rem;
-  --boring-chat-reasoning-header-bg: #0f172a;
+  --boring-chat-reasoning-header-bg: var(--boring-chat-surface);
   --boring-chat-reasoning-fg: var(--boring-chat-fg);
   --boring-chat-reasoning-text: #94a3b8;
   --boring-chat-reasoning-streaming: var(--boring-chat-accent);
 
+  /* ── Tools ────────────────────────────────────────────── */
   --boring-chat-tool-border: var(--boring-chat-border);
   --boring-chat-tool-radius: 0.375rem;
-  --boring-chat-tool-header-bg: #0f172a;
+  --boring-chat-tool-header-bg: var(--boring-chat-surface);
   --boring-chat-tool-running: var(--boring-chat-accent);
-  --boring-chat-tool-error: #ef4444;
+  --boring-chat-tool-error: var(--boring-chat-error);
 
+  /* ── Terminal ──────────────────────────────────────────── */
   --boring-chat-terminal-bg: #111827;
   --boring-chat-terminal-fg: #d1d5db;
   --boring-chat-terminal-radius: 0.375rem;
   --boring-chat-terminal-header-bg: #1f2937;
   --boring-chat-terminal-border: #374151;
   --boring-chat-terminal-stderr: #f87171;
-  --boring-chat-terminal-success: #4ade80;
-  --boring-chat-terminal-error: #f87171;
+  --boring-chat-terminal-success: var(--boring-chat-success);
+  --boring-chat-terminal-error: var(--boring-chat-error);
 
+  /* ── Code blocks ──────────────────────────────────────── */
   --boring-chat-code-bg: #111827;
   --boring-chat-code-fg: #d1d5db;
   --boring-chat-code-radius: 0.375rem;
@@ -47,8 +68,28 @@
   --boring-chat-code-border: #374151;
   --boring-chat-code-copy-bg: rgba(255, 255, 255, 0.1);
 
+  /* ── Diff view ────────────────────────────────────────── */
   --boring-chat-diff-add: rgba(46, 160, 67, 0.15);
   --boring-chat-diff-add-fg: #4ade80;
   --boring-chat-diff-remove: rgba(248, 81, 73, 0.15);
   --boring-chat-diff-remove-fg: #f87171;
+
+  /* ── Session toolbar / dropdowns ──────────────────────── */
+  --boring-chat-dropdown-bg: var(--boring-chat-surface);
+  --boring-chat-dropdown-border: var(--boring-chat-border);
+  --boring-chat-dropdown-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --boring-chat-dropdown-radius: 0.375rem;
+
+  /* ── Apply base styles ────────────────────────────────── */
+  background: var(--boring-chat-bg);
+  color: var(--boring-chat-fg);
+  font-family: var(--boring-chat-font-family);
+  font-size: var(--boring-chat-font-size);
+}
+
+/* ── Animations ───────────────────────────────────────── */
+
+@keyframes boring-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
 }
