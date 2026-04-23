@@ -1,6 +1,7 @@
 import { expectTypeOf, test } from 'vitest'
 
 import { standardCatalog, type CatalogDeps, type ToolCatalog } from '../catalog'
+import type { FileSearch } from '../file-search'
 import type { Sandbox } from '../sandbox'
 import type { AgentTool } from '../tool'
 import type { Workspace } from '../workspace'
@@ -43,7 +44,7 @@ test('CatalogDeps contract', () => {
     workspace: Workspace
     sandbox: Sandbox
     uiBridge?: unknown
-    fileSearch?: unknown
+    fileSearch?: FileSearch
   }>()
 })
 
