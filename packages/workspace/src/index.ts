@@ -1,6 +1,7 @@
 export { cn } from "./lib/utils"
 export * from "./registry"
 export * from "./dock"
+export * from "./layouts"
 export * from "./components/ui"
 export {
   WorkspaceProvider,
