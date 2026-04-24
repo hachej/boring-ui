@@ -3,6 +3,23 @@
 **Status:** draft — interview-driven, architecture locked 2026-04-22
 **Path:** `boring-ui-v2/packages/agent/`
 
+## Execution Tracker (2026-04-24)
+
+Use this section as the handoff ledger for ongoing plan execution.
+
+- `DONE` `boring-ui-v2-qnxc` (P1 bug): refresh/history hydration regression fixed and closed.
+  - Commit: `764eda6` (`fix(agent): hydrate refresh history via messages route (boring-ui-v2-qnxc)`).
+  - Cross-review: Claude verdict `ship`.
+  - Contract now enforced:
+    - `GET /api/v1/agent/chat/:sessionId/stream` resumes only active streams; returns `204` when none are active.
+    - `GET /api/v1/agent/chat/:sessionId/messages` hydrates full persisted `UIMessage[]` (user + assistant).
+    - `useAgentChat` hydrates from `/messages` on mount/session switch (cache fallback retained).
+- Verification run in this pass:
+  - `pnpm --dir packages/agent test src/server/http/routes/__tests__/chat.test.ts src/front/hooks/__tests__/useAgentChat.test.ts`
+  - `pnpm --dir packages/agent lint`
+- Next handoff step:
+  - Continue from `br ready` (highest remaining priority after qnxc close: migration-track issues).
+
 ---
 
 ## Goal

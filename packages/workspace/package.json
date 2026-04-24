@@ -23,7 +23,7 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "echo 'lint not yet configured'"
+    "lint": "pnpm run typecheck"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
