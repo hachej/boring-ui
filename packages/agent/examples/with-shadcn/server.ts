@@ -1,4 +1,6 @@
 import path from 'node:path'
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 
 import react from '@vitejs/plugin-react'
@@ -28,8 +30,58 @@ const reverseTool: AgentTool = {
   },
 }
 
+// Demo-only bash tool. Runs `bash -lc <command>` directly; this is a local
+// developer example app with no network surface, so shell-quoting concerns
+// don't apply. In production deployments, route through the sandbox runtime
+// instead of exec().
+const execAsync = promisify(exec)
+const bashTool: AgentTool = {
+  name: 'bash',
+  description: 'Execute a bash command and return stdout, stderr, and exit code.',
+  parameters: {
+    type: 'object',
+    properties: {
+      command: { type: 'string', description: 'The shell command to run.' },
+      description: { type: 'string', description: 'A short human-readable label.' },
+    },
+    required: ['command'],
+  },
+  async execute(params) {
+    const command = typeof params.command === 'string' ? params.command : ''
+    if (!command) {
+      return {
+        content: [{ type: 'text', text: 'no command provided' }],
+        details: { stdout: '', stderr: 'no command provided', exitCode: 1 },
+      }
+    }
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: 10_000,
+        maxBuffer: 64 * 1024,
+        shell: '/bin/bash',
+      })
+      return {
+        content: [{ type: 'text', text: stdout || stderr || '(no output)' }],
+        details: { command, stdout, stderr, exitCode: 0 },
+      }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: number | string }
+      const exitCode = typeof e.code === 'number' ? e.code : 1
+      return {
+        content: [{ type: 'text', text: e.stderr || e.stdout || e.message }],
+        details: {
+          command,
+          stdout: e.stdout ?? '',
+          stderr: e.stderr ?? e.message ?? '',
+          exitCode,
+        },
+      }
+    }
+  },
+}
+
 const app = await createAgentApp({
-  extraTools: [reverseTool],
+  extraTools: [reverseTool, bashTool],
   mode: 'direct',
   sessionId: 'demo',
 })
@@ -39,10 +91,16 @@ const apiPort = Number(new URL(apiAddress).port)
 const apiTarget = `http://127.0.0.1:${apiPort}`
 
 const exampleRoot = path.dirname(fileURLToPath(import.meta.url))
+const packagesAgentSrc = path.resolve(exampleRoot, '..', '..', 'src')
 const vite = await createViteServer({
   root: exampleRoot,
   css: {
     postcss: exampleRoot,
+  },
+  resolve: {
+    alias: {
+      '@': packagesAgentSrc,
+    },
   },
   plugins: [
     react(),
@@ -50,7 +108,7 @@ const vite = await createViteServer({
       name: 'with-shadcn-virtual-index',
       configureServer(server) {
         server.middlewares.use((_req, res, next) => {
-          applyCspHeaders(res)
+          applyCspHeaders(res, { dev: true })
           next()
         })
 

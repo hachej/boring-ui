@@ -1,5 +1,20 @@
 @import 'tailwindcss';
 @import '../../src/front-shadcn/styles/globals.css';
+@plugin '@tailwindcss/typography';
+
+/* Tailwind v4 defaults dark: to prefers-color-scheme. We want the .dark
+ * class on an ancestor to trigger dark mode, so Shiki's dark-token classes
+ * (dark:text-[var(--shiki-dark,…)]) actually resolve. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v4 auto-scans files inside the project root; the shadcn components
+ * live in the monorepo src/ tree above the example root, so we explicitly point
+ * Tailwind at them. Without these @source directives, only classes used inside
+ * this example (client.tsx) end up in the compiled CSS, which is why the
+ * vendored shadcn primitives (prompt-input, message, button, etc.) rendered
+ * unstyled. */
+@source "../../src/front-shadcn/**/*.{ts,tsx,js,jsx}";
+@source "../../src/front/**/*.{ts,tsx,js,jsx}";
 
 @theme {
   --color-background: hsl(var(--background));
@@ -21,7 +36,14 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+
+  /* Register the radius scale with Tailwind v4 so `rounded-*` utilities map
+   * to our token ramp — single source of truth. */
+  --radius-sm: var(--radius-sm);
   --radius: var(--radius);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
 }
 
 @layer base {
