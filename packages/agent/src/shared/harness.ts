@@ -1,8 +1,5 @@
-type UIMessageChunk = unknown
-
-interface SessionStore {
-  // Concrete session contract lands in the dedicated session bead.
-}
+import type { UIMessageChunk } from './message'
+import type { SessionStore } from './session'
 
 export interface AgentHarness {
   readonly id: string

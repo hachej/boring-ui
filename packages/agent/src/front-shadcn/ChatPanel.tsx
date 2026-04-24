@@ -23,7 +23,7 @@ import { useAgentChat } from '../front/hooks/useAgentChat'
 import { builtinCommands } from '../front/slashCommands/builtins'
 import { parseSlashCommand } from '../front/slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from '../front/slashCommands/registry'
-import { isModelId, MODEL_IDS, type ModelId } from '../front/components/ModelPicker'
+import { isModelId, type ModelId } from '../front/components/ModelPicker'
 import {
   resolveToolRenderer,
   type ToolPart,
@@ -52,7 +52,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -63,14 +63,101 @@ import {
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
-const DEFAULT_MODEL: ModelId = 'sonnet'
 
-function readStoredModel(): ModelId {
+/**
+ * Selected model, stored as { provider, id } so the composer can speak
+ * pi-coding-agent's real registered IDs (claude-sonnet-4-6, gpt-5.2-codex,
+ * …) rather than a 3-alias shorthand. Legacy single-string values
+ * (sonnet/haiku/opus) are still honoured for back-compat.
+ */
+export interface ModelSelection {
+  provider: string
+  id: string
+}
+
+interface AvailableModel extends ModelSelection {
+  label: string
+  available: boolean
+}
+
+const DEFAULT_MODEL: ModelSelection = { provider: 'anthropic', id: 'sonnet' }
+
+function readStoredModel(): ModelSelection {
   try {
     const raw = globalThis.localStorage?.getItem(STORAGE_MODEL_KEY)
-    if (raw && isModelId(raw)) return raw
+    if (!raw) return DEFAULT_MODEL
+    if (raw.startsWith('{')) {
+      const parsed = JSON.parse(raw) as Partial<ModelSelection>
+      if (typeof parsed?.provider === 'string' && typeof parsed?.id === 'string') {
+        return { provider: parsed.provider, id: parsed.id }
+      }
+    }
+    if (isModelId(raw)) return { provider: 'anthropic', id: raw }
   } catch { /* storage unavailable */ }
   return DEFAULT_MODEL
+}
+
+function encodeModelKey(sel: ModelSelection): string {
+  return `${sel.provider}:${sel.id}`
+}
+function decodeModelKey(key: string): ModelSelection | null {
+  const idx = key.indexOf(':')
+  if (idx < 0) return null
+  return { provider: key.slice(0, idx), id: key.slice(idx + 1) }
+}
+
+/**
+ * Turn whatever AI SDK dumped into error.message into something readable.
+ * We try three shapes:
+ *   1) raw text (just return it)
+ *   2) JSON with { error: { code, message, field? } } — our Fastify shape
+ *   3) JSON with { message: … } — AI SDK's generic server-error response
+ *
+ * Also maps the known validation error codes to friendlier copy.
+ */
+interface FriendlyError {
+  title: string
+  detail?: string
+}
+function friendlyError(err: Error): FriendlyError {
+  const raw = err.message ?? ''
+  // Non-JSON error (network, etc.)
+  if (!raw.startsWith('{')) {
+    return { title: raw || 'Something went wrong.' }
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    const inner = parsed?.error ?? parsed
+    const code = typeof inner?.code === 'string' ? inner.code : undefined
+    const message = typeof inner?.message === 'string' ? inner.message : undefined
+    const field = typeof inner?.field === 'string' ? inner.field : undefined
+
+    if (code === 'validation_error') {
+      const label = field ? `\`${field}\`` : 'the request'
+      return {
+        title: 'Your message couldn’t be sent.',
+        detail: `${label} ${message?.toLowerCase() ?? 'failed validation'}.`,
+      }
+    }
+    if (code === 'internal' || code === 'internal_error') {
+      return { title: 'The server hit an internal error.', detail: message }
+    }
+    return { title: message ?? 'Something went wrong.', detail: code }
+  } catch {
+    return { title: raw }
+  }
+}
+
+function displayModelLabel(id: string): string {
+  // "claude-sonnet-4-6" → "Claude Sonnet 4.6"
+  // "gpt-5.3-codex" → "GPT-5.3 Codex"
+  return id
+    .replace(/[-_]/g, ' ')
+    .replace(/\s(\d+)\s(\d+)/g, ' $1.$2')
+    .replace(/\bgpt\b/g, 'GPT')
+    .replace(/\b(claude|sonnet|haiku|opus|codex|mini|max|spark)\b/g, (m) =>
+      m.charAt(0).toUpperCase() + m.slice(1),
+    )
 }
 
 export interface ChatPanelProps {
@@ -128,7 +215,9 @@ function ToolCard({ toolPart, mergedToolRenderers }: { toolPart: UIMessage['part
 
 export function ChatPanel(props: ChatPanelProps) {
   const { sessionId, toolRenderers, extraCommands, onSessionReset, className } = props
-  const { messages, sendMessage, setMessages, status, error } = useAgentChat({ sessionId })
+  const {
+    messages, sendMessage, setMessages, status, error, stop, clearError, regenerate,
+  } = useAgentChat({ sessionId })
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
   const registry = useMemo(
@@ -136,14 +225,49 @@ export function ChatPanel(props: ChatPanelProps) {
     [extraCommands],
   )
 
-  const [model, setModel] = useState<ModelId>(() => readStoredModel())
+  const [model, setModel] = useState<ModelSelection>(() => readStoredModel())
+  /**
+   * Client-side transient notice for attachment validation (too many files,
+   * single file too large, …). PromptInput's onError fires synchronously on
+   * selection; we mirror it to a small banner below the composer so the user
+   * gets immediate feedback without a mysterious silent drop.
+   */
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
   useEffect(() => {
-    try { globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, model) } catch { /* noop */ }
+    if (!attachmentNotice) return
+    const timer = setTimeout(() => setAttachmentNotice(null), 4000)
+    return () => clearTimeout(timer)
+  }, [attachmentNotice])
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
+
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(model))
+    } catch { /* noop */ }
   }, [model])
+
+  // Fetch the live list from pi's ModelRegistry so the dropdown reflects
+  // what the server actually has auth for, not a hardcoded alias set.
+  useEffect(() => {
+    let aborted = false
+    fetch('/api/v1/agent/models')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload: { models?: AvailableModel[] } | null) => {
+        if (aborted || !payload?.models) return
+        setAvailableModels(payload.models)
+      })
+      .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
+    return () => { aborted = true }
+  }, [])
+
+  // Legacy single-string event payload (used by the /model slash command)
+  // still works — treat it as an anthropic short alias.
   useEffect(() => {
     const onChange = (event: Event) => {
       const detail = (event as CustomEvent).detail
-      if (typeof detail === 'string' && isModelId(detail)) setModel(detail)
+      if (typeof detail === 'string' && isModelId(detail)) {
+        setModel({ provider: 'anthropic', id: detail })
+      }
     }
     globalThis.addEventListener?.('boring:model-change', onChange)
     return () => globalThis.removeEventListener?.('boring:model-change', onChange)
@@ -152,6 +276,15 @@ export function ChatPanel(props: ChatPanelProps) {
   const isStreaming = status === 'submitted' || status === 'streaming'
 
   async function handleSubmit({ text, files }: { text: string; files: FileUIPart[] }): Promise<void> {
+    // Guard against pointless empty submits (just Enter with nothing typed
+    // and no attachment). The server schema requires message.length >= 1,
+    // so an empty POST returns 400 — we catch it here and keep the
+    // composer in place with focus for the user to type.
+    const trimmed = text.trim()
+    if (trimmed.length === 0 && (!files || files.length === 0)) {
+      return
+    }
+
     const parsed = parseSlashCommand(text)
     if (parsed) {
       const cmd = registry.get(parsed.name)
@@ -225,7 +358,7 @@ export function ChatPanel(props: ChatPanelProps) {
           sessionId,
           // Payload actually sent to the agent (inlined text attachments).
           message: serverMessage,
-          model: { provider: 'anthropic', id: model },
+          model,
           attachments: files?.map((f) => ({
             filename: f.filename,
             mediaType: f.mediaType,
@@ -275,11 +408,14 @@ export function ChatPanel(props: ChatPanelProps) {
               >
                 <MessageContent
                   className={cn(
-                    // User bubble: pill-ish, primary-tinted, right-aligned.
+                    // Symmetric bubbles on both sides for visual parity —
+                    // user is tinted primary/12, assistant is a quieter
+                    // card/40 surface. Same radius, same padding, same
+                    // typography — only the tint differs.
+                    "!rounded-lg !px-4 !py-3 text-[15px] leading-relaxed text-foreground",
                     role === 'user'
-                      ? '!rounded-lg !bg-primary/12 !px-4 !py-3 text-[15px] leading-relaxed text-foreground max-w-[80%]'
-                      // Assistant: no bubble — just content with prose wrapping.
-                      : '!bg-transparent !px-0 !py-1 text-[15px] leading-relaxed',
+                      ? '!bg-primary/12 max-w-[80%]'
+                      : '!bg-card/40 !border !border-input/40',
                   )}
                 >
                   {fileParts.length > 0 && (
@@ -353,24 +489,73 @@ export function ChatPanel(props: ChatPanelProps) {
                       mergedToolRenderers={mergedToolRenderers}
                     />
                   ))}
+
+                  {role === 'assistant' && !isStreaming && textParts.length > 0 && (
+                    <MessageActionsBar
+                      text={textParts.map((p) => p.text).join('\n\n')}
+                      canRegenerate={Boolean(regenerate)}
+                      onRegenerate={() => {
+                        void regenerate?.()
+                      }}
+                    />
+                  )}
                 </MessageContent>
               </Message>
             )
           })}
-          {error ? (
-            <Message from="assistant" className="!max-w-full">
-              <MessageContent className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3">
-                <div role="alert" className="text-destructive text-sm">
-                  {error.message}
-                </div>
-              </MessageContent>
-            </Message>
-          ) : null}
+          {(() => {
+            if (!error) return null
+            const friendly = friendlyError(error)
+            return (
+              <Message from="assistant" className="!max-w-full">
+                <MessageContent className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3">
+                  <div role="alert" className="flex items-start gap-3 text-sm text-destructive">
+                    <div className="mt-0.5 shrink-0">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium">{friendly.title}</div>
+                      {friendly.detail && (
+                        <div className="mt-1 text-xs text-destructive/80">{friendly.detail}</div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => clearError()}
+                      className="shrink-0 rounded-md p-1 text-destructive/70 transition hover:bg-destructive/15 hover:text-destructive"
+                      aria-label="Dismiss"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </MessageContent>
+              </Message>
+            )
+          })()}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
 
       <div className="bg-gradient-to-b from-transparent via-background/70 to-background px-6 pb-8 pt-4">
+        {attachmentNotice && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "mx-auto mb-2 w-full max-w-3xl rounded-md border border-amber-500/40 bg-amber-500/10",
+              "px-3 py-2 text-xs text-amber-200",
+            )}
+          >
+            {attachmentNotice}
+          </div>
+        )}
         <div
           className={cn(
             "mx-auto w-full max-w-3xl",
@@ -387,52 +572,60 @@ export function ChatPanel(props: ChatPanelProps) {
             "overflow-hidden",
           )}
         >
-          <PromptInput onSubmit={handleSubmit} multiple>
+          <PromptInput
+            onSubmit={handleSubmit}
+            multiple
+            // Guard rails for the attachments pipeline. The server schema
+            // caps `attachments` at 20 entries; we match that client-side and
+            // add a 5 MB-per-file limit so a giant drag-drop doesn't blow
+            // localStorage's ~5 MB origin quota when the cached history grows.
+            maxFiles={20}
+            maxFileSize={5 * 1024 * 1024}
+            onError={(err) => {
+              if (err.code === 'max_files') {
+                setAttachmentNotice(`Up to ${err.max} attachments per message.`)
+              } else if (err.code === 'max_file_size') {
+                setAttachmentNotice(`Files must be under ${Math.round(err.max / 1024 / 1024)} MB each.`)
+              } else if (err.code === 'accept') {
+                setAttachmentNotice(`That file type isn't supported here.`)
+              } else {
+                setAttachmentNotice(err.message || 'Attachment rejected.')
+              }
+            }}
+          >
             <AttachmentsList />
             <PromptInputTextarea
               placeholder="Ask anything…"
               className={cn(
-                "min-h-[60px] resize-none border-0 bg-transparent shadow-none",
-                "px-5 pt-4 pb-3 text-[15px] leading-[1.55] placeholder:text-muted-foreground/60",
+                "min-h-[48px] resize-none border-0 bg-transparent shadow-none",
+                "px-5 pt-3 pb-2 text-[15px] leading-[1.5] placeholder:text-muted-foreground/60",
                 "focus-visible:ring-0 focus-visible:ring-offset-0",
               )}
             />
             <PromptInputFooter
               className={cn(
                 "flex items-center gap-2 border-0 bg-transparent",
-                "px-3 pb-3 pt-0",
+                "px-2.5 pb-2.5 pt-0",
               )}
             >
-              <AttachmentButton />
-              <Select
-                value={model}
-                onValueChange={(value) => { if (isModelId(value)) setModel(value) }}
-                disabled={isStreaming}
-              >
-                <SelectTrigger
-                  className={cn(
-                    composerActionClass,
-                    "px-3 text-xs font-medium capitalize",
-                  )}
-                  aria-label="Model"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODEL_IDS.map((id) => (
-                    <SelectItem key={id} value={id} className="text-xs font-medium capitalize">
-                      {id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="ml-auto" />
+              {/* Left-side actions cluster so attach + model feel like one
+               * group rather than two disconnected controls. */}
+              <div className="flex items-center gap-1">
+                <AttachmentButton />
+                <ModelSelect
+                  value={model}
+                  onChange={setModel}
+                  options={availableModels}
+                  disabled={isStreaming}
+                />
+              </div>
               <PromptInputSubmit
                 status={status}
+                onStop={stop}
                 className={cn(
-                  // Prominent, squared-off primary action. Slightly larger
-                  // than the other composer buttons so it carries weight.
-                  "h-9 w-9 rounded-md bg-primary text-primary-foreground shadow-sm transition",
+                  // Primary action pinned far-right; becomes a Stop affordance
+                  // (square icon + aria-label="Stop") while the turn streams.
+                  "ml-auto h-8 w-8 rounded-md bg-primary text-primary-foreground shadow-sm transition",
                   "hover:bg-primary/90 hover:shadow",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                   "disabled:pointer-events-none disabled:opacity-50",
@@ -448,6 +641,77 @@ export function ChatPanel(props: ChatPanelProps) {
 }
 
 // ---- Composer helpers ----
+
+/**
+ * Model picker whose options are pi-coding-agent's actual available
+ * models (fetched from /api/v1/agent/models). Groups by provider and
+ * shows a concise human-friendly label with the raw pi id as the
+ * SelectItem's stored value, encoded as "{provider}:{id}" to keep
+ * ids stable across providers.
+ */
+function ModelSelect({
+  value,
+  onChange,
+  options,
+  disabled,
+}: {
+  value: ModelSelection
+  onChange: (next: ModelSelection) => void
+  options: AvailableModel[]
+  disabled?: boolean
+}) {
+  // Group by provider, preserving the server's already-sorted order.
+  const groups = new Map<string, AvailableModel[]>()
+  for (const m of options) {
+    if (!m.available) continue
+    const list = groups.get(m.provider) ?? []
+    list.push(m)
+    groups.set(m.provider, list)
+  }
+
+  const currentKey = encodeModelKey(value)
+  // Trigger label prefers a live entry, falls back to raw id for offline /
+  // legacy short-alias sessions so the label never goes blank.
+  const current = options.find((m) => m.provider === value.provider && m.id === value.id)
+  const triggerLabel = current?.label ?? displayModelLabel(value.id)
+
+  return (
+    <Select
+      value={currentKey}
+      onValueChange={(next) => {
+        const parsed = decodeModelKey(next)
+        if (parsed) onChange(parsed)
+      }}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        className={cn(composerActionClass, "px-3 text-xs font-medium")}
+        aria-label="Model"
+      >
+        <SelectValue>{triggerLabel}</SelectValue>
+      </SelectTrigger>
+      <SelectContent className="max-h-[320px]">
+        {[...groups.entries()].map(([provider, list]) => (
+          <div key={provider} className="px-1 py-1">
+            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
+              {provider}
+            </div>
+            {list.map((m) => (
+              <SelectItem
+                key={encodeModelKey(m)}
+                value={encodeModelKey(m)}
+                className="text-xs font-medium"
+              >
+                {m.label || displayModelLabel(m.id)}
+              </SelectItem>
+            ))}
+          </div>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 
 // Shared composer-action surface — single opinion on size, radius, hover,
 // focus, and disabled states. Every button inside the composer footer
@@ -477,17 +741,91 @@ function AttachmentButton() {
 function AttachmentsList() {
   const attachments = usePromptInputAttachments()
   if (attachments.files.length === 0) return null
+  // data-align=block-start flips PromptInput's InputGroup into flex-col so
+  // this row occupies its own horizontal band and the chips anchor to the
+  // left edge instead of being center-distributed between textarea + footer.
   return (
-    <div className="border-b border-input/50 px-3 py-2">
-      <Attachments variant="list" className="gap-1.5">
-        {attachments.files.map((file) => (
-          <Attachment key={file.id} data={file} onRemove={() => attachments.remove(file.id)}>
-            <AttachmentPreview className="size-9 shrink-0 rounded-md" />
-            <AttachmentInfo className="min-w-0 flex-1" />
-            <AttachmentRemove />
-          </Attachment>
-        ))}
-      </Attachments>
+    <Attachments
+      data-align="block-start"
+      variant="inline"
+      className="w-full flex-wrap items-center justify-start gap-2 px-5 pt-3 pb-1"
+    >
+      {attachments.files.map((file) => (
+        <Attachment
+          key={file.id}
+          data={file}
+          onRemove={() => attachments.remove(file.id)}
+          className={cn(
+            // Compact pill — medium border, muted fill, room for a
+            // thumbnail + name + remove action.
+            "!h-9 !gap-2 !rounded-full !border-input/80 !bg-muted/40 !pl-1 !pr-2",
+            "transition-colors hover:!bg-muted/70 hover:!text-foreground",
+          )}
+        >
+          <AttachmentPreview
+            // Fixed thumbnail slot; <img> fills via object-cover.
+            className="!size-7 shrink-0 overflow-hidden !rounded-full bg-background/60"
+          />
+          <AttachmentInfo
+            className="min-w-0 !max-w-[180px] truncate text-[13px] font-medium"
+          />
+          <AttachmentRemove
+            className={cn(
+              // Always-visible remove affordance; default inline variant
+              // hides it until hover which is too discoverable-averse here.
+              "!size-5 !rounded-full !opacity-100 text-muted-foreground/80 hover:text-foreground",
+            )}
+          />
+        </Attachment>
+      ))}
+    </Attachments>
+  )
+}
+
+/**
+ * Per-message action bar. Appears on assistant messages once the turn
+ * has finished streaming, giving the user a quick copy and regenerate
+ * pair — standard ChatGPT/Claude affordances. Stays invisible until the
+ * user hovers the message so it doesn't clutter the idle reading state.
+ */
+function MessageActionsBar({
+  text,
+  canRegenerate,
+  onRegenerate,
+}: {
+  text: string
+  canRegenerate: boolean
+  onRegenerate: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = () => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    navigator.clipboard.writeText(text).then(
+      () => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      },
+      () => { /* permission denied — silently ignore */ },
+    )
+  }
+  const actionBtnClass = cn(
+    "inline-flex h-7 items-center gap-1.5 rounded-md px-2",
+    "text-[12px] font-medium text-muted-foreground transition",
+    "hover:bg-accent hover:text-foreground",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+  )
+  return (
+    <div className="mt-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+      <button type="button" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>
+        {copied ? <CheckIcon className="h-3.5 w-3.5 text-emerald-400" /> : <CopyIcon className="h-3.5 w-3.5" />}
+        <span>{copied ? 'Copied' : 'Copy'}</span>
+      </button>
+      {canRegenerate && (
+        <button type="button" onClick={onRegenerate} className={actionBtnClass} aria-label="Regenerate">
+          <RefreshCwIcon className="h-3.5 w-3.5" />
+          <span>Regenerate</span>
+        </button>
+      )}
     </div>
   )
 }

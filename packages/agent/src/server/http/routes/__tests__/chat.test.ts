@@ -2,6 +2,8 @@ import Fastify from 'fastify'
 import { describe, test, expect, vi } from 'vitest'
 import { chatRoutes, type ChatRouteOptions } from '../chat'
 import type { AgentHarness, SendMessageInput, RunContext } from '../../../../shared/harness'
+import type { UIMessageChunk } from '../../../../shared/message'
+import type { SessionStore } from '../../../../shared/session'
 import {
   ERROR_CODE_VALIDATION_ERROR,
   ERROR_CODE_INTERNAL,
@@ -25,11 +27,16 @@ function createMockHarness(
       if (opts?.throwOnSend) throw opts.throwOnSend
       return (async function* () {
         for (const chunk of chunks) {
-          yield chunk
+          yield chunk as UIMessageChunk
         }
       })()
     },
-    sessions: {},
+    sessions: {
+      list: async () => [],
+      create: async () => ({ id: 'new', title: 'New', createdAt: '', updatedAt: '', turnCount: 0 }),
+      load: async () => ({ id: 'new', title: 'New', createdAt: '', updatedAt: '', turnCount: 0, messages: [] }),
+      delete: async () => {},
+    } satisfies SessionStore,
   }
 }
 
@@ -293,7 +300,7 @@ describe('POST /api/v1/agent/chat', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/agent/chat',
-      payload: { sessionId: 's1', message: 'x'.repeat(100_001) },
+      payload: { sessionId: 's1', message: 'x'.repeat(1_000_001) },
     })
 
     expect(res.statusCode).toBe(400)

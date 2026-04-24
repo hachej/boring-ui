@@ -4,16 +4,23 @@
 
 Use this section as the live handoff ledger while executing this plan.
 
-- This pass focused on validating current implementation coverage against the plan and tightening quality gates.
-- Completed in this pass:
-  - Full package verification: `pnpm --dir packages/workspace typecheck && pnpm --dir packages/workspace test` (green: 601 tests passing).
-  - Replaced placeholder lint script with a real gate:
-    - `packages/workspace/package.json` now uses `"lint": "pnpm run typecheck"`.
-- Current assessment:
-  - Core plan phases (foundation, panes, bridge integration, responsive behaviors, testing harness) are present and covered by the existing suite.
-  - Remaining plan execution is now mostly migration/integration work in app shells (`apps/ide`, `apps/chat`, etc.), tracked in beads rather than missing package internals.
-- Next handoff step:
-  - Continue from `br ready` after closing active agent bugfix work; prioritize migration beads touching workspace consumers.
+### Pass 2 — Full milestone verification (2026-04-24)
+
+- Methodology: Three parallel verification agents compared every Phase 1-4 task item against actual source files, reading implementations line-by-line.
+- **Result: ALL Phase 1-4 tasks verified as complete.** No gaps found.
+- Verified items:
+  - **Phase 1 (Foundation):** package.json deps ✓, 18 shadcn components vendored ✓, DockviewShell with LayoutConfig ✓, PanelChrome ✓, dockview-overrides.css ✓, Zustand persist with 2 partition keys ✓, PanelRegistry (register/get/list/has/resolve + filePatterns + lazy loading) ✓, IdeLayout (~42 lines) + ChatLayout (~45 lines) ✓
+  - **Phase 2 (Panes):** FileTree (react-arborist) ✓, MarkdownEditor (tiptap, 10 extensions) ✓, CodeEditor (CodeMirror 6) ✓, DataCatalogPane ✓, EmptyPane ✓, DataProvider + useFileContent/useFileList/useFileWrite ✓, useEditorLifecycle shared hook ✓
+  - **Phase 3a (Integration):** Bridge SSE client ✓, Bridge command dispatch via Zustand ✓, ArtifactSurfacePane with nested DockviewShell ✓, WorkspaceProvider ✓
+  - **Phase 4 (Polish):** useTheme hook ✓, CommandPalette (Cmd+P/K) ✓, ResponsiveDockviewShell with Sheet for mobile ✓, PanelErrorBoundary ✓, Testing module (@boring/workspace/testing) ✓
+- Current assessment: Package is feature-complete per this plan. Remaining work is app-shell migration (tracked in beads).
+
+### Pass 1 — Initial validation (2026-04-24)
+
+- Full package verification: `pnpm --dir packages/workspace typecheck && pnpm --dir packages/workspace test` (green: 601 tests passing).
+- Replaced placeholder lint script with real gate: `packages/workspace/package.json` now uses `"lint": "pnpm run typecheck"`.
+- Core plan phases (foundation, panes, bridge integration, responsive behaviors, testing harness) are present and covered by the existing suite.
+- Remaining plan execution is now mostly migration/integration work in app shells (`apps/ide`, `apps/chat`, etc.), tracked in beads rather than missing package internals.
 
 ## Vision
 
@@ -122,19 +129,25 @@ v2/packages/workspace/          # This package
 
 ### Dependency graph
 
-```
-@boring/workspace
-  ├── @boring/core          (shared types, config, transport utils)
-  ├── @boring/agent         (ChatPanel — injected by app shell via `panels` prop; workspace has ZERO agent imports)
-  ├── dockview-react        (layout engine)
-  ├── @codemirror/*         (code editor)
-  ├── shadcn/ui components  (vendored into components/ui/)
-  └── tailwindcss           (styling)
+**Updated 2026-04-24 — fully inverted from v1.** Agent is the leaf. Workspace depends on agent (consumes `<ChatPanel />` as a pane). Core depends on workspace. Canonical graph lives in `packages/core/docs/plans/core-package-spec.md` §Dependency position.
 
-@boring/agent
-  ├── @boring/core
-  └── (does NOT depend on workspace — workspace consumes agent)
 ```
+@boring/agent                (leaf — ZERO internal deps; ships standalone CLI)
+
+@boring/workspace            (depends on agent)
+  ├── @boring/agent          (ChatPanel component + useAgentChat hook)
+  ├── dockview-react         (layout engine)
+  ├── @codemirror/*          (code editor)
+  ├── shadcn/ui components   (vendored in ui-shadcn/ — consumed by core)
+  └── tailwindcss            (styling)
+
+@boring/core                 (depends on workspace)
+  └── @boring/workspace      (imports shadcn primitives from /ui-shadcn)
+```
+
+Standalone agent (`createAgentApp()` / `npx @boring/agent`) keeps **zero dependency on core**; the CLI must boot without DB/auth. Core apps mount agent via `registerAgentRoutes(app)` Fastify plugin — additive, not mandatory.
+
+**Historical note**: sections below that mention `@boring/core` as a workspace dep (transport utils, config provider, hooks like `useTheme`/`useKeyboardShortcuts`) predate the inversion. In v2 these live in core. Sections that say "workspace never imports agent" are also outdated — workspace now consumes agent's `<ChatPanel />`. Read pre-2026-04-24 sections as v1 history, not v2 contract.
 
 ### Composability model
 

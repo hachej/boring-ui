@@ -19,3 +19,9 @@ e2e-artifacts/
 
 # Storybook build output
 storybook-static/
+
+# Swarm / review artifacts (local)
+.ntm/
+.ui-review/
+*_review.patch
+packages/agent/bench-results/

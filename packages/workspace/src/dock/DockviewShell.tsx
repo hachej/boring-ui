@@ -262,6 +262,9 @@ export function DockviewShell({
   onLayoutChange,
   allowedPanels,
   className,
+  prefixHeaderActions,
+  rightHeaderActions,
+  watermarkComponent,
 }: DockviewShellProps) {
   const registry = useRegistry()
   const hydrationComplete = useHydrationComplete()
@@ -334,6 +337,9 @@ export function DockviewShell({
         defaultTabComponent={
           ShadcnTab as React.FunctionComponent<IDockviewPanelHeaderProps>
         }
+        prefixHeaderActionsComponent={prefixHeaderActions as never}
+        rightHeaderActionsComponent={rightHeaderActions as never}
+        watermarkComponent={watermarkComponent as never}
         onReady={handleReady}
       />
     </DockviewApiContext.Provider>

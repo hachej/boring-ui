@@ -47,10 +47,10 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
       ref={dragHandle}
       style={style}
       className={cn(
-        "flex items-center gap-1.5 px-2 py-0.5 cursor-pointer text-sm select-none rounded-sm",
-        "hover:bg-accent/50",
-        node.isSelected && "bg-accent text-accent-foreground",
-        node.willReceiveDrop && "bg-accent/30 outline outline-1 outline-accent",
+        "group flex items-center gap-2 px-2 py-0.5 cursor-pointer text-[13px] select-none rounded-md",
+        "hover:bg-muted/70",
+        node.isSelected && "bg-muted text-foreground",
+        node.willReceiveDrop && "bg-muted outline outline-1 outline-border",
       )}
       onClick={(e) => {
         e.stopPropagation()
@@ -195,8 +195,8 @@ export function FileTree({
           openByDefault={false}
           width="100%"
           height={height}
-          rowHeight={28}
-          indent={16}
+          rowHeight={26}
+          indent={18}
           selection={selection}
           searchTerm={searchQuery ?? ""}
           searchMatch={searchMatch}

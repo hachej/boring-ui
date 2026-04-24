@@ -32,6 +32,12 @@ export interface DockviewShellProps {
   storageKey?: string
   allowedPanels?: string[]
   className?: string
+  /** Component rendered in the tab strip BEFORE the tabs. Useful for inline controls. */
+  prefixHeaderActions?: React.FunctionComponent<unknown>
+  /** Component rendered in the tab strip on the far right. */
+  rightHeaderActions?: React.FunctionComponent<unknown>
+  /** Component used as the empty-state watermark when a group has no panels. */
+  watermarkComponent?: React.FunctionComponent<unknown>
 }
 
 export type SerializedLayout = Parameters<DockviewApi["fromJSON"]>[0]

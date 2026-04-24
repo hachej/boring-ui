@@ -22,6 +22,8 @@ const SENSITIVE_KEYS = new Set([
   "refreshToken",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
+  "VERCEL_OIDC_TOKEN",
+  "VERCEL_TEAM_ID",
 ])
 
 function redact(fields: LogFields): LogFields {

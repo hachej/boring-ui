@@ -13,10 +13,11 @@ const MarkdownEditor = lazy(() =>
 export interface MarkdownEditorPaneProps {
   path: string
   panelApi?: DockviewPanelApi
+  chromeless?: boolean
   className?: string
 }
 
-export function MarkdownEditorPane({ path, panelApi, className }: MarkdownEditorPaneProps) {
+export function MarkdownEditorPane({ path, panelApi, chromeless, className }: MarkdownEditorPaneProps) {
   const { data: fileData, isLoading, error, dataUpdatedAt } = useFileContent(path)
   const { mutateAsync: writeFile } = useFileWrite()
 
@@ -82,36 +83,41 @@ export function MarkdownEditorPane({ path, panelApi, className }: MarkdownEditor
   const title = lifecycle.isDirty ? `${fileName} ●` : fileName
 
   if (error) {
-    return (
-      <PanelChrome title={fileName} panelApi={panelApi}>
-        <div className="flex h-full items-center justify-center text-destructive text-sm">
-          Failed to load file: {error.message}
-        </div>
-      </PanelChrome>
+    const body = (
+      <div className="flex h-full items-center justify-center text-destructive text-sm">
+        Failed to load file: {error.message}
+      </div>
     )
+    return chromeless ? body : <PanelChrome title={fileName} panelApi={panelApi}>{body}</PanelChrome>
   }
+
+  const editor = (
+    <Suspense
+      fallback={
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <span className="animate-pulse">Loading editor...</span>
+        </div>
+      }
+    >
+      {isLoading || localContent === null ? (
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <span className="animate-pulse">Loading file...</span>
+        </div>
+      ) : (
+        <MarkdownEditor
+          content={localContent}
+          onChange={handleChange}
+          className={className}
+        />
+      )}
+    </Suspense>
+  )
+
+  if (chromeless) return <div className="flex h-full min-h-0 flex-col">{editor}</div>
 
   return (
     <PanelChrome title={title} panelApi={panelApi}>
-      <Suspense
-        fallback={
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <span className="animate-pulse">Loading editor...</span>
-          </div>
-        }
-      >
-        {isLoading || localContent === null ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <span className="animate-pulse">Loading file...</span>
-          </div>
-        ) : (
-          <MarkdownEditor
-            content={localContent}
-            onChange={handleChange}
-            className={className}
-          />
-        )}
-      </Suspense>
+      {editor}
     </PanelChrome>
   )
 }

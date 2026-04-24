@@ -25,7 +25,7 @@ export function createShadcnTheme(options?: { dark?: boolean }) {
   const t = EditorView.theme(
     {
       "&": {
-        backgroundColor: "var(--background)",
+        backgroundColor: "transparent",
         color: "var(--foreground)",
         height: "100%",
       },

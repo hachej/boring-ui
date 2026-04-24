@@ -108,11 +108,13 @@ function ToolbarButton({ onClick, active, disabled, title, children }: ToolbarBu
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-pressed={active}
       className={cn(
-        "inline-flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground transition-colors",
-        "hover:bg-accent hover:text-accent-foreground",
+        "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors",
+        "hover:bg-muted hover:text-foreground",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-50",
-        active && "bg-accent text-accent-foreground",
+        active && "bg-muted text-foreground",
       )}
     >
       {children}
@@ -121,7 +123,7 @@ function ToolbarButton({ onClick, active, disabled, title, children }: ToolbarBu
 }
 
 function ToolbarSeparator() {
-  return <div className="mx-0.5 h-5 w-px bg-border" />
+  return <div aria-hidden="true" className="mx-1 h-4 w-px bg-border/60" />
 }
 
 export function isSafeUrl(url: string): boolean {
@@ -147,7 +149,7 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-0.5 border-b border-border px-2 py-1" role="toolbar" aria-label="Formatting toolbar">
+    <div className="flex items-center gap-0.5 overflow-x-auto border-b border-border/60 bg-background px-3 py-1.5 whitespace-nowrap [&::-webkit-scrollbar]:hidden" role="toolbar" aria-label="Formatting toolbar">
       <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")} title="Bold">
         <BoldIcon className="h-4 w-4" />
       </ToolbarButton>
@@ -231,7 +233,7 @@ export function MarkdownEditor({
     editable: !readOnly,
     editorProps: {
       attributes: {
-        class: "prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none min-h-[200px]",
+        class: "prose prose-sm dark:prose-invert max-w-none px-6 py-5 focus:outline-none min-h-[200px]",
       },
       transformPastedHTML: sanitizeHtml,
     },

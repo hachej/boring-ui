@@ -1,92 +1,46 @@
-import { useMemo } from "react"
+import { useCallback, useRef } from "react"
 import {
   WorkspaceProvider,
-  useTheme,
-  IdeLayout,
-  FileTreePane,
+  ChatCenteredShell,
+  SessionBrowser,
+  ChatStagePlaceholder,
+  SurfaceShell,
+  DataProvider,
   CodeEditorPane,
   MarkdownEditorPane,
   EmptyPane,
-  DataProvider,
-  useDockviewApi,
+  type ChatStageHandle,
 } from "@boring/workspace"
-import type { PanelConfig, DockviewShellApi } from "@boring/workspace"
+import type { PanelConfig } from "@boring/workspace"
+import { mockSessions, useMockSessions } from "./mockSessions"
 
-function ThemeToggle() {
-  const { theme, toggleTheme } = useTheme()
-  return (
-    <button
-      type="button"
-      data-testid="theme-toggle"
-      onClick={toggleTheme}
-      className="fixed top-2 right-2 z-50 rounded border border-border bg-background px-3 py-1 text-sm text-foreground hover:bg-accent"
-    >
-      {theme === "light" ? "Dark" : "Light"}
-    </button>
-  )
+// ----- Panel registry (used only by SurfaceShell's internal Dockview) -----
+
+function CodeEditorWrapper(props: Record<string, unknown>) {
+  const p = props as { params?: { path?: string }; api?: unknown; panelApi?: unknown }
+  const path = p.params?.path ?? ""
+  return <CodeEditorPane path={path} panelApi={(p.api ?? p.panelApi) as never} chromeless />
 }
 
-function createLocalBridge(shellApi: DockviewShellApi) {
-  return {
-    openFile(path: string, _opts?: { mode?: string }) {
-      const ext = path.split(".").pop()?.toLowerCase()
-      const component = ext === "md" || ext === "markdown"
-        ? "markdown-editor"
-        : "code-editor"
-      const panelId = `file:${path}`
-
-      shellApi.activatePanel(panelId)
-      if (shellApi.getActivePanel() === panelId) return { status: "ok" as const }
-
-      const title = path.split("/").pop() ?? path
-      shellApi.addPanel("center", {
-        id: panelId,
-        component,
-        title,
-        params: { path },
-      })
-      return { status: "ok" as const }
-    },
-    openPanel() { return { status: "ok" as const } },
-    closePanel() { return { status: "ok" as const } },
-    showNotification() { return { status: "ok" as const } },
-    navigateToLine() { return { status: "ok" as const } },
-    expandToFile() { return { status: "ok" as const } },
-    markDirty() {},
-    markClean() {},
-    getOpenPanels() { return [] },
-    getActiveFile() { return null },
-    getDirtyFiles() { return [] },
-    getVisibleFiles() { return [] },
-    subscribe() { return () => {} },
-    select() { return () => {} },
-  }
-}
-
-function PlaygroundFileTree() {
-  const shellApi = useDockviewApi()
-  const bridge = useMemo(() => createLocalBridge(shellApi), [shellApi])
-  return <FileTreePane rootDir="" bridge={bridge as any} />
-}
-
-function PlaygroundCodeEditor(props: Record<string, any>) {
-  const path = props.params?.path ?? props.path ?? ""
-  const panelApi = props.api ?? props.panelApi
-  return <CodeEditorPane path={path} panelApi={panelApi} />
-}
-
-function PlaygroundMarkdownEditor(props: Record<string, any>) {
-  const path = props.params?.path ?? props.path ?? ""
-  const panelApi = props.api ?? props.panelApi
-  return <MarkdownEditorPane path={path} panelApi={panelApi} />
+function MarkdownEditorWrapper(props: Record<string, unknown>) {
+  const p = props as { params?: { path?: string }; api?: unknown; panelApi?: unknown }
+  const path = p.params?.path ?? ""
+  return <MarkdownEditorPane path={path} panelApi={(p.api ?? p.panelApi) as never} chromeless />
 }
 
 const panels: PanelConfig[] = [
   {
-    id: "filetree",
-    title: "Files",
-    component: PlaygroundFileTree as React.ComponentType<unknown>,
-    placement: "left",
+    id: "code-editor",
+    title: "Editor",
+    component: CodeEditorWrapper as React.ComponentType<unknown>,
+    placement: "center",
+    source: "app",
+  },
+  {
+    id: "markdown-editor",
+    title: "Markdown",
+    component: MarkdownEditorWrapper as React.ComponentType<unknown>,
+    placement: "center",
     source: "app",
   },
   {
@@ -96,21 +50,64 @@ const panels: PanelConfig[] = [
     placement: "center",
     source: "app",
   },
-  {
-    id: "code-editor",
-    title: "Editor",
-    component: PlaygroundCodeEditor as React.ComponentType<unknown>,
-    placement: "center",
-    source: "app",
-  },
-  {
-    id: "markdown-editor",
-    title: "Markdown",
-    component: PlaygroundMarkdownEditor as React.ComponentType<unknown>,
-    placement: "center",
-    source: "app",
-  },
 ]
+
+// ----- Composition -----
+
+function SessionBrowserPanel() {
+  const { sessions, activeId } = useMockSessions()
+  return (
+    <SessionBrowser
+      sessions={sessions}
+      activeId={activeId}
+      onSwitch={mockSessions.switchTo}
+      onCreate={mockSessions.create}
+      onDelete={mockSessions.remove}
+    />
+  )
+}
+
+function ChatStagePanel({ stageRef }: { stageRef: React.MutableRefObject<ChatStageHandle | null> }) {
+  const { sessions, activeId } = useMockSessions()
+  const active = sessions.find((s) => s.id === activeId)
+  return (
+    <ChatStagePlaceholder
+      ref={(h) => {
+        stageRef.current = h
+      }}
+      sessionTitle={active?.title}
+      sessionId={active?.id}
+    />
+  )
+}
+
+const mockDataSources = [
+  { id: "users", name: "users", type: "table", description: "Account + profile rows" },
+  { id: "events", name: "events", type: "stream", description: "Raw event firehose" },
+  { id: "sessions", name: "sessions_daily", type: "view", description: "Rolled-up session metrics" },
+  { id: "logs", name: "app_logs", type: "index", description: "Structured application logs" },
+]
+
+function SurfacePanel() {
+  return <SurfaceShell rootDir="" storageKey="boring-ui-v2:chat-shell:surface" dataSources={mockDataSources} />
+}
+
+function Shell() {
+  const stageRef = useRef<ChatStageHandle | null>(null)
+  const focusComposer = useCallback(() => {
+    stageRef.current?.focusComposer()
+  }, [])
+
+  return (
+    <ChatCenteredShell
+      drawer={<SessionBrowserPanel />}
+      stage={<ChatStagePanel stageRef={stageRef} />}
+      surface={<SurfacePanel />}
+      onNewChat={mockSessions.create}
+      focusComposer={focusComposer}
+    />
+  )
+}
 
 export function App() {
   return (
@@ -118,12 +115,11 @@ export function App() {
       <WorkspaceProvider
         panels={panels}
         apiBaseUrl=""
-        persistenceEnabled
+        persistenceEnabled={false}
         storageKey="boring-ui-v2:layout:playground"
       >
         <DataProvider apiBaseUrl="" authHeaders={{}} timeout={5000}>
-          <ThemeToggle />
-          <IdeLayout sidebar="filetree" center="empty" />
+          <Shell />
         </DataProvider>
       </WorkspaceProvider>
     </div>

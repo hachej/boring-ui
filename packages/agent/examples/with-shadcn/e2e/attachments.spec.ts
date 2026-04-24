@@ -225,6 +225,40 @@ test.describe('composer attachments', () => {
     await expect(form.getByText('red-pixel.png')).toHaveCount(0, { timeout: 3000 })
   })
 
+  test('empty submit is blocked client-side (never hits the server)', async ({ page }) => {
+    // No text, no attachments. Pressing Enter with focus in the textarea
+    // must NOT issue a POST — the client-side guard returns early.
+    let postSeen = false
+    page.on('request', (req) => {
+      if (req.url().includes('/api/v1/agent/chat') && req.method() === 'POST') {
+        postSeen = true
+      }
+    })
+    await page.getByPlaceholder('Ask anything…').click()
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(1500)
+    expect(postSeen, 'empty submit should not hit /api/v1/agent/chat').toBe(false)
+
+    // A structured server validation error should therefore also not appear.
+    const alert = page.locator('[role=alert]')
+    await expect(alert).toHaveCount(0, { timeout: 500 })
+  })
+
+  test('submit button flips to Stop while streaming and aborts the turn on click', async ({ page }) => {
+    // Kick off a request that will stream. While in flight the submit button
+    // must expose aria-label="Stop". Clicking it should stop the turn —
+    // status returns to ready and the button returns to Submit.
+    await page.getByPlaceholder('Ask anything…').fill('count slowly from 1 to 20, one number per line')
+    await page.keyboard.press('Enter')
+
+    const stopBtn = page.getByRole('button', { name: 'Stop' })
+    await expect(stopBtn).toBeVisible({ timeout: 8000 })
+    await stopBtn.click()
+
+    // Within 3s the button should be the Submit affordance again.
+    await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible({ timeout: 3000 })
+  })
+
   test('user bubble does NOT include the inlined `[attached: …]` marker', async ({ page }) => {
     const fileChooserPromise = page.waitForEvent('filechooser')
     await page.getByRole('button', { name: 'Attach files' }).click()

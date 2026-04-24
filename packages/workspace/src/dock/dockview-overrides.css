@@ -4,8 +4,21 @@
   --dv-background-color: var(--background);
   --dv-paneview-header-border-color: var(--border);
   --dv-tabs-and-actions-container-font-size: 0.8125rem;
-  --dv-tabs-and-actions-container-height: 36px;
+  --dv-tabs-and-actions-container-height: 52px;
   --dv-tab-close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+
+  /* Dockview inner theme vars — map to our tokens so active/inactive tabs and group bg match light theme. */
+  --dv-group-view-background-color: var(--background);
+  --dv-tabs-and-actions-container-background-color: var(--background);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--muted);
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-tab-divider-color: transparent;
 
   --dv-drag-over-background-color: oklch(from var(--accent) l c h / 0.3);
   --dv-drag-over-border-color: var(--accent);
@@ -16,65 +29,131 @@
   background-color: var(--background);
 }
 
-/* Tab strip background */
+/* Force-override the tab strip visual to match the app */
+.dv-shell .dv-tabs-and-actions-container,
+.dv-shell .tabs-and-actions-container {
+  background-color: var(--background) !important;
+  border-bottom: 1px solid oklch(from var(--border) l c h / 0.6);
+  padding: 8px 6px 0 6px;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.dv-shell .dv-tabs-container,
 .dv-shell .tab-container {
-  background-color: var(--muted);
+  background-color: transparent !important;
+  gap: 4px;
 }
 
-/* Inactive tab */
+/* Workbench-specific tab strip height */
+.workbench-dockview .dv-shell .dv-tabs-and-actions-container,
+.workbench-dockview .dv-shell .tabs-and-actions-container,
+.workbench-dockview .dv-tabs-and-actions-container,
+.workbench-dockview .tabs-and-actions-container {
+  height: 52px !important;
+}
+
+/* Tab base — pill-style, rounded top */
+.dv-shell .dv-tab,
 .dv-shell .tab {
-  color: var(--muted-foreground);
-  background-color: var(--muted);
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s, background-color 0.15s;
+  color: var(--muted-foreground) !important;
+  background-color: transparent !important;
+  border: 1px solid transparent;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+  min-width: 110px;
+  max-width: 200px;
+  padding: 0;
+  height: 36px;
+  align-self: end;
+  font-size: 13px;
 }
 
+.dv-shell .dv-tab:hover,
 .dv-shell .tab:hover {
-  color: var(--foreground);
-  background-color: oklch(from var(--accent) l c h / 0.5);
+  color: var(--foreground) !important;
+  background-color: oklch(from var(--muted) l c h / 0.6) !important;
 }
 
-/* Active tab */
+/* Let our custom tab fill the slot */
+.dv-shell .dv-tab > *,
+.dv-shell .tab > * {
+  width: 100%;
+  height: 100%;
+}
+
+/* Active tab — raised card look */
+.dv-shell .dv-tab.dv-active-tab,
 .dv-shell .tab.active-tab {
-  color: var(--foreground);
-  background-color: var(--background);
-  border-bottom-color: var(--primary);
+  color: var(--foreground) !important;
+  background-color: var(--background) !important;
+  border-color: oklch(from var(--border) l c h / 0.6);
+  border-bottom-color: var(--background);
+  margin-bottom: -1px;
+  position: relative;
+  z-index: 1;
+  font-weight: 500;
 }
 
 /* Sash (resize handle) */
-.dv-shell .sash-container .sash {
+.dv-shell .sash-container .sash,
+.dv-shell .dv-sash-container .dv-sash {
   transition: background-color 0.2s;
 }
 
 .dv-shell .sash-container .sash:hover,
-.dv-shell .sash-container .sash.active {
+.dv-shell .sash-container .sash.active,
+.dv-shell .dv-sash-container .dv-sash:hover,
+.dv-shell .dv-sash-container .dv-sash.dv-active {
   background-color: var(--primary);
   transition-delay: 0.15s;
 }
 
 /* Drop target overlay */
-.dv-shell .drop-target-dropzone > .drop-target-selection {
+.dv-shell .drop-target-dropzone > .drop-target-selection,
+.dv-shell .dv-drop-target-dropzone > .dv-drop-target-selection {
   background-color: oklch(from var(--primary) l c h / 0.15);
   border: 2px dashed var(--primary);
   border-radius: calc(var(--radius) - 2px);
 }
 
 /* Watermark (empty state) */
-.dv-shell .watermark {
+.dv-shell .watermark,
+.dv-shell .dv-watermark {
   color: var(--muted-foreground);
 }
 
 /* Panel content area */
-.dv-shell .groupview > .content-container {
+.dv-shell,
+.dv-shell .dv-dockview,
+.dv-shell .dv-groupview,
+.dv-shell .groupview,
+.dv-shell .groupview > .content-container,
+.dv-shell .dv-view-container,
+.dv-shell .view-container {
   background-color: var(--background);
 }
 
-/* Group header actions */
-.dv-shell .right-actions-container {
-  color: var(--muted-foreground);
+.dv-shell .dv-groupview,
+.dv-shell .groupview {
+  color: var(--foreground);
 }
 
-.dv-shell .right-actions-container:hover {
+/* Group header actions */
+.dv-shell .right-actions-container,
+.dv-shell .left-actions-container,
+.dv-shell .dv-right-actions-container,
+.dv-shell .dv-left-actions-container {
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: center;
+}
+
+.dv-shell .right-actions-container:hover,
+.dv-shell .left-actions-container:hover,
+.dv-shell .dv-right-actions-container:hover,
+.dv-shell .dv-left-actions-container:hover {
   color: var(--foreground);
 }
 

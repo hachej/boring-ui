@@ -14,6 +14,7 @@ import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { treeRoutes } from './http/routes/tree'
 import { chatRoutes } from './http/routes/chat'
+import { modelsRoutes } from './http/routes/models'
 import { sessionRoutes } from './http/routes/sessions'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -118,6 +119,7 @@ export async function createAgentApp(
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,
   })
+  await app.register(modelsRoutes)
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
   await app.register(uiRoutes, { bridge: createInMemoryBridge() })

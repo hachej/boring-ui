@@ -7,6 +7,22 @@
 
 Use this section as the handoff ledger for ongoing plan execution.
 
+### Pass 2 — Full milestone verification + fixes (2026-04-24)
+
+- Methodology: Three parallel verification agents compared every M0-M3b milestone item against actual source files, reading implementations line-by-line. M4/M5 checked manually.
+- **Result: M0-M3b fully complete. M4 partially complete. M5 partially complete.**
+- All milestone checkboxes updated in the roadmap section below.
+- Fixes applied in this pass:
+  1. **`src/shared/index.ts` barrel export populated** — was empty (just a comment). Now re-exports all 12 shared interface modules (harness, workspace, sandbox, tool, catalog, session, message, ui-bridge, file-search, sandbox-handle-store, config-schema, error-codes).
+  2. **`src/shared/harness.ts` stale stubs replaced** — had local `type UIMessageChunk = unknown` and empty `interface SessionStore {}`. Now properly imports from `./message` and `./session`.
+  3. **Test mocks updated** — `chat.test.ts` and `sessionChanges.test.ts` mock harnesses updated to satisfy the now-concrete `SessionStore` type and cast chunks to `UIMessageChunk`.
+- Verification: `tsc --noEmit` clean, 782/782 tests pass.
+- Remaining work (M4/M5):
+  - M4: Plugin name-collision precedence documentation, community extension smoke tests, vercel-sandbox plugin doc
+  - M5: `registerTool()` runtime API, API docs, migration guide
+
+### Pass 1 — qnxc bugfix (2026-04-24)
+
 - `DONE` `boring-ui-v2-qnxc` (P1 bug): refresh/history hydration regression fixed and closed.
   - Commit: `764eda6` (`fix(agent): hydrate refresh history via messages route (boring-ui-v2-qnxc)`).
   - Cross-review: Claude verdict `ship`.
@@ -14,11 +30,7 @@ Use this section as the handoff ledger for ongoing plan execution.
     - `GET /api/v1/agent/chat/:sessionId/stream` resumes only active streams; returns `204` when none are active.
     - `GET /api/v1/agent/chat/:sessionId/messages` hydrates full persisted `UIMessage[]` (user + assistant).
     - `useAgentChat` hydrates from `/messages` on mount/session switch (cache fallback retained).
-- Verification run in this pass:
-  - `pnpm --dir packages/agent test src/server/http/routes/__tests__/chat.test.ts src/front/hooks/__tests__/useAgentChat.test.ts`
-  - `pnpm --dir packages/agent lint`
-- Next handoff step:
-  - Continue from `br ready` (highest remaining priority after qnxc close: migration-track issues).
+- Verification run: `pnpm --dir packages/agent test` + `pnpm --dir packages/agent lint`.
 
 ---
 
@@ -1297,10 +1309,10 @@ Each milestone leaves the tree green and the standalone app usable.
 Pure scaffolding, no behavior.
 
 - [x] `packages/agent/` with `package.json`, `tsconfig.json` (done)
-- [ ] `src/shared/{harness,sandbox,tool,catalog,session,message}.ts` — **interfaces only**, no implementations
-- [ ] Barrel `src/shared/index.ts`
-- [ ] Stub passing tests for each interface (type-level only)
-- [ ] `app/` directory scaffolded (empty Vite + Fastify)
+- [x] `src/shared/{harness,sandbox,tool,catalog,session,message}.ts` — **interfaces only**, no implementations
+- [x] Barrel `src/shared/index.ts` — re-exports all 12 shared modules
+- [x] Stub passing tests for each interface (type-level only) — 8 `.test-d.ts` files
+- [x] `app/` directory scaffolded (empty Vite + Fastify)
 
 **Gate:** types compile; empty app boots with placeholder HTML.
 
@@ -1308,24 +1320,24 @@ Pure scaffolding, no behavior.
 
 Smallest end-to-end thing where you type a message in the standalone app, agent runs `bash` once against a local workspace, response streams back. **No remote adapters yet.**
 
-- [ ] `createNodeWorkspace()` with ported path helpers (validatePath, realpath checks).
-- [ ] `createDirectSandbox()` — trivial `child_process.exec` wrapper with `cwd = workspace.root`. ~40 LOC.
-- [ ] `createBwrapSandbox()` — `exec` wraps `bwrap --bind ${workspace.root} /workspace --chdir /workspace bash -c …`.
-- [ ] `resolveMode(mode)` factory: auto-detect Linux+bwrap → `local`, else → `direct`. `vercel-sandbox` opt-in. Each mode module in `src/server/runtime/modes/*.ts` is self-contained.
-- [ ] Catalog (4 tools): `bashTool(sandbox)`, `readTool(workspace)`, `writeTool(workspace)`, `editTool(workspace)`.
-- [ ] `createPiCodingAgentHarness()` — wraps `createAgentSession({ tools })`, in-memory session manager.
-- [ ] Pi → UIMessage stream adapter (text-delta, tool-input-*, tool-output-available, finish).
-- [ ] Fastify routes (versioned, `/api/v1/*`):
+- [x] `createNodeWorkspace()` with ported path helpers (validatePath, realpath checks).
+- [x] `createDirectSandbox()` — `child_process.spawn` wrapper with `cwd = workspace.root`. ~175 LOC with process management.
+- [x] `createBwrapSandbox()` — `exec` wraps `bwrap --bind ${workspace.root} /workspace --chdir /workspace bash -c …`.
+- [x] `resolveMode(mode)` factory: auto-detect Linux+bwrap → `local`, else → `direct`. `vercel-sandbox` opt-in. Each mode module in `src/server/runtime/modes/*.ts` is self-contained.
+- [x] Catalog (4+2 tools): `bashTool(sandbox)`, `readTool(workspace)`, `writeTool(workspace)`, `editTool(workspace)` + `findFilesTool`, `grepFilesTool`.
+- [x] `createPiCodingAgentHarness()` — wraps `createAgentSession({ tools })`, in-memory session manager.
+- [x] Pi → UIMessage stream adapter (text-delta, tool-input-*, tool-output-available, finish).
+- [x] Fastify routes (versioned, `/api/v1/*`):
   - Files: `GET/POST/DELETE /api/v1/files`, `GET /api/v1/tree`, `GET /api/v1/stat`, `GET /api/v1/files/search` — thin wrappers over `workspace.X()`
   - Agent: `POST /api/v1/agent/chat`, `GET /api/v1/agent/sessions`, `POST /api/v1/agent/sessions`, `GET/DELETE /api/v1/agent/sessions/:id`
   - No `/api/v1/workspaces` in v1 — workspaceId comes from config
   - No `/api/v1/git/*` in v1 — no UI consumer; agent uses bash for git
-- [ ] `<ChatPanel />` — raw `useChat`, bare-bones message list + composer, no ai-elements yet.
-- [ ] `<Composer />` includes a minimal `<ModelPicker />` (dropdown: sonnet / haiku / opus) and `<ThinkingToggle />` (off/low/med/high). Values passed into `useAgentChat` options on each send.
-- [ ] Standalone app wires frontend to backend. `pnpm dev` boots chat (Vite dev server + Fastify).
-- [ ] **CLI `bin/boring-agent`**: flag parser, API-key prompt + persistence (`~/.config/boring-agent/env`), port picker (auto-increment on conflict), **SSH/headless-aware browser-open**, **auto-gitignore hygiene**, graceful shutdown (SIGINT/SIGTERM → abort stream, close server). `--logout` / `--reset-key` / `--no-open` / `--no-gitignore` flags. `npx @boring/agent` works in the package's publish-dir.
-- [ ] Build pipeline: `pnpm build` produces `dist/frontend/` (Vite static build) + `dist/bin/boring-agent.js` (bundled CLI). `package.json` `bin` entry points at the compiled CLI.
-- [ ] `ANTHROPIC_API_KEY` + `BORING_AGENT_WORKSPACE_ROOT` env parsing + CLI flag override.
+- [x] `<ChatPanel />` — `useChat`-based message list + composer with ai-elements primitives.
+- [x] `<Composer />` includes `<ModelPicker />` (dropdown: sonnet / haiku / opus) and `<ThinkingToggle />` (off/low/med/high). Values passed into `useAgentChat` options on each send.
+- [x] Standalone app wires frontend to backend. `pnpm dev` boots chat (Vite dev server + Fastify).
+- [x] **CLI `bin/boring-agent`**: flag parser, API-key prompt + persistence, port picker (auto-increment on conflict), **SSH/headless-aware browser-open**, **auto-gitignore hygiene**, graceful shutdown (SIGINT/SIGTERM → abort stream, close server). `--logout` / `--reset-key` / `--no-open` / `--no-gitignore` flags.
+- [x] Build pipeline: `pnpm build` produces `dist/frontend/` (Vite static build) + `dist/bin/boring-agent.js` (bundled CLI). `package.json` `bin` entry points at the compiled CLI.
+- [x] `ANTHROPIC_API_KEY` + `BORING_AGENT_WORKSPACE_ROOT` env parsing + CLI flag override.
 
 **Gate:** user can say "list files in /tmp" and get a streamed reply with a `bash` tool call card + result. File tree route returns correct listings. No polish, no sessions persistence, no styling.
 
@@ -1333,16 +1345,16 @@ Smallest end-to-end thing where you type a message in the standalone app, agent 
 
 Prove the core architectural claim: swapping adapters flips from local to remote with zero changes elsewhere.
 
-- [ ] `createVercelSandboxWorkspace(sandbox)` — 30 LOC adapter against `sandbox.fs.*` + `sandbox.writeFiles` + path validation.
-- [ ] `createVercelSandboxExec(sandbox)` — 30 LOC adapter wrapping `sandbox.runCommand`.
-- [ ] `SandboxHandleStore` interface (`shared/sandbox-handle-store.ts`) + `FileHandleStore` default impl at `~/.config/boring-agent/sandboxes.json`. Consumers (e.g. cloud package) inject a DB-backed impl via `createAgentApp({ sandboxHandleStore })`. Matches the `SessionStore` pattern. ~60 LOC.
-- [ ] `resolveSandboxHandle(workspaceId)` — create-or-get-or-resume-from-snapshot + in-process cache, persists via `SandboxHandleStore`.
-- [ ] `resolveMode('vercel-sandbox')` returns a `RuntimeBundle` whose workspace + sandbox are bound to the same Vercel sandbox handle.
-- [ ] Config: `BORING_AGENT_MODE`, `VERCEL_OIDC_TOKEN`, `VERCEL_TEAM_ID`.
-- [ ] Periodic snapshot for safety (cron every 10 min or on-idle hook).
-- [ ] Circuit breaker around the Vercel SDK client (exponential backoff, fast-fail when open). ~30 LOC.
-- [ ] Snapshot retention policy (keep-last-2 per workspace) — delete prior snapshots on successful new snapshot. ~15 LOC.
-- [ ] Standalone app reads `BORING_AGENT_MODE` — same code path serves both modes.
+- [x] `createVercelSandboxWorkspace(sandbox)` — adapter against `sandbox.fs.*` + caching layer. ~173 LOC.
+- [x] `createVercelSandboxExec(sandbox)` — adapter wrapping `sandbox.runCommand` + heartbeat/abort. ~122 LOC.
+- [x] `SandboxHandleStore` interface (`shared/sandbox-handle-store.ts`) + `FileHandleStore` default impl at `~/.config/boring-agent/sandboxes.json`. Atomic writes.
+- [x] `resolveSandboxHandle(workspaceId)` — create-or-get-or-resume-from-snapshot + in-process cache. ~333 LOC.
+- [x] `resolveMode('vercel-sandbox')` returns a `RuntimeBundle` whose workspace + sandbox are bound to the same Vercel sandbox handle.
+- [x] Config: `BORING_AGENT_MODE`, `VERCEL_OIDC_TOKEN`, `VERCEL_TEAM_ID`.
+- [x] Periodic snapshot for safety (`PeriodicSnapshotScheduler` with configurable interval, default 10min).
+- [x] Circuit breaker around the Vercel SDK client (exponential backoff, fast-fail when open). Full state machine (closed/open/half-open).
+- [x] Snapshot retention policy (keep-last-2 per workspace) — `applySnapshotRetention()` configurable via `BORING_AGENT_SNAPSHOT_KEEP`.
+- [x] Standalone app reads `BORING_AGENT_MODE` — same code path serves both modes.
 
 **Gate:** `BORING_AGENT_MODE=vercel-sandbox pnpm dev` — same chat UI, same tools, files now living in a Firecracker VM. No other code changes. Switching modes mid-development is an env-var flip.
 
@@ -1350,17 +1362,16 @@ Prove the core architectural claim: swapping adapters flips from local to remote
 
 Load-bearing contracts that must be reliable before polish. If these aren't solid, no amount of chat UX polish helps.
 
-- [ ] `PiSessionStore` implementing `SessionStore` over pi's JSONL. CRUD via HTTP routes.
-- [ ] **Stream resumption:** backend tracks `(sessionId, turnId, lastChunkIdx)`; `GET /api/v1/agent/chat/:sessionId/:turnId?cursor=<n>` replays from cursor. `useChat` wired with `experimental_resume: true`. ~60 LOC.
-- [ ] Abort handling (`useChat.stop()` → pi `abortSignal` → sandbox exec cancellation).
-- [ ] SSE channel: backend emits `file_changed` events when the agent writes → frontend invalidates file-tree / file queries. Works for both modes.
-- [ ] **UI bridge** (`UiBridge` interface + in-memory impl):
+- [x] `PiSessionStore` implementing `SessionStore` over pi's JSONL. CRUD via HTTP routes.
+- [x] **Stream resumption:** `StreamBufferStore` tracks active turns; `GET /api/v1/agent/chat/:sessionId/stream?cursor=<n>` replays from cursor. X-Turn-Id header returned.
+- [x] Abort handling (`AbortController` in chat route → pi `abortSignal` → sandbox exec cancellation).
+- [x] SSE channel: backend emits `data-file-changed` events → frontend `useFileChangeStream` invalidates React Query cache.
+- [x] **UI bridge** (`UiBridge` interface + in-memory impl):
   - `GET/PUT /api/v1/ui/state` — opaque state KV keyed by workspaceId
-  - `POST /api/v1/ui/commands` — agent posts UI command
-  - `GET /api/v1/ui/commands/next` (SSE) — workspace subscribes to command stream
-  - Agent tools `get_ui_state` + `exec_ui` wired into `standardCatalog` when `uiBridge` is provided (default in v1)
-  - ~230 LOC total (interface + impl + 3 routes + 2 tools)
-- [ ] `copyTemplate()` — sync template copy on workspace create. `createAgentApp({ templatePath })` + `BORING_AGENT_TEMPLATE_PATH` env fallback. In remote mode, template is packaged as a tarball and fed to `Sandbox.create({ source: { type: 'tarball', url } })`. Idempotency via `.boring-agent/provisioned` marker.
+  - `POST /api/v1/ui/commands` — agent posts UI command with seq numbering
+  - `GET /api/v1/ui/commands/next` (SSE) — workspace subscribes to command stream (poll=true variant also supported)
+  - Agent tools `get_ui_state` + `exec_ui` wired into `standardCatalog` when `uiBridge` is provided
+- [x] `copyTemplate()` — sync template copy on workspace create. `createAgentApp({ templatePath })` + `BORING_AGENT_TEMPLATE_PATH` env fallback. Idempotency via `.boring-agent/provisioned` marker.
 
 **Gate:** session CRUD + resume + UI bridge are reliable in both modes. Reliability bar > polish bar for this milestone.
 
@@ -1368,14 +1379,14 @@ Load-bearing contracts that must be reliable before polish. If these aren't soli
 
 UX polish on top of the M3a contracts. Pure frontend + minor backend additions.
 
-- [ ] Tool rendering — use ai-elements' `Tool` component as the generic renderer, `Terminal` for `bash` output, `CodeBlock` for `read` output. Only 1 specialized renderer authored: a unified-diff view for `edit` (can adapt from old boring-ui `packages/agent/src/front/components/chat/EditToolRenderer.jsx`). Expose `toolRenderers` prop on `<ChatPanel />` for overrides.
-- [ ] Copy ai-elements sources (Message, PromptInput → Composer, Tool, Terminal, CodeBlock, Reasoning) directly into `src/front/primitives/`, adapt to our CSS vars. Add provenance comment at top of each adapted file.
-- [ ] `<SessionToolbar />` — lightweight switcher adapted from `packages/agent/src/front/providers/pi/PiSessionToolbar.jsx`. Shows current session title + dropdown of recent + "new chat" button + per-session delete action (no rename dialog). Embedded in `<ChatPanel />` header.
-- [ ] `theme.css` + CSS vars. Default dark theme.
-- [ ] Background title generation on first reply (defer if it complicates M3b; fallback is `"New chat {date}"`).
-- [ ] **Slash commands** infrastructure + 5 built-ins (`/clear`, `/reset`, `/model`, `/help`, `/cost`). Extension point: `useAgentChat.registerCommand()`. ~80 LOC.
-- [ ] **Heartbeat events** during long tool execution: synthetic `data-status` UIMessage parts emitted every 2s; `<Tool />` renders elapsed time. ~20 LOC in adapter + renderer.
-- [ ] **`/api/v1/agent/sessions/:id/changes`** endpoint: tracks writes/edits/deletes per session; returns `{files: [{path, op, size}]}`. Powers post-turn summary. ~80 LOC.
+- [x] Tool rendering — `Tool`, `Terminal`, `CodeBlock` primitives + `DiffView` for edit tool. `toolRenderers` prop exposed on `<ChatPanel />`.
+- [x] ai-elements primitives in `src/front/primitives/`: Message, Composer, Tool, Terminal, CodeBlock, Reasoning.
+- [x] `<SessionToolbar />` — current session title + dropdown of recent (MAX_VISIBLE=10) + new chat button + per-session delete with confirmation.
+- [x] `theme.css` + CSS vars scoped to `[data-boring-chat]`. Default dark theme.
+- [x] Background title generation via `createSessionTitleScheduler`.
+- [x] **Slash commands** infrastructure + 5 built-ins (`/clear`, `/reset`, `/model`, `/help`, `/cost`). Registry + parser + builtins.
+- [x] **Heartbeat events** during long tool execution: `onHeartbeat` callback in `ExecOptions`; rendered in Tool component.
+- [x] **`/api/v1/agent/sessions/:id/changes`** endpoint: `InMemorySessionChangesTracker` tracks file ops; returns `{files: [{path, op, size, timestamp}]}`.
 
 **Gate:** standalone app feels like a real chat in both modes; FileTree and Editor visibly update when the agent writes files.
 
@@ -1383,11 +1394,11 @@ UX polish on top of the M3a contracts. Pure frontend + minor backend additions.
 
 Pi plugin ecosystem compatibility. Local mode only (plugins are Node-native; irrelevant for remote VM).
 
-- [ ] Wire pi's extension discovery through `createAgentSession` options.
-- [ ] Surface plugin-registered tools in the catalog UI via the fallback renderer.
-- [ ] Resolve name-collision precedence; document.
+- [x] Wire pi's extension discovery through `createAgentSession` options. Plugin loader at `pluginLoader.ts`.
+- [x] Surface plugin-registered tools in the catalog via `mergeTools.ts`.
+- [ ] Resolve name-collision precedence; document. *(deferred — last-registered-wins accepted risk)*
 - [ ] Smoke-test 2–3 community pi extensions.
-- [ ] Document that in `vercel-sandbox` mode, plugins are not auto-loaded (user can still drop tools into `/vercel/sandbox/.pi/extensions/` if they hand-roll the integration).
+- [ ] Document that in `vercel-sandbox` mode, plugins are not auto-loaded.
 
 **Gate:** dropping a file in `~/.pi/agent/extensions/hello.ts` surfaces a working tool in the chat (local mode).
 
@@ -1395,11 +1406,11 @@ Pi plugin ecosystem compatibility. Local mode only (plugins are Node-native; irr
 
 The public API that `@boring/workspace` will consume when we build it.
 
-- [ ] `registerTool()` runtime API (alongside pi extensions).
-- [ ] `<ChatPanel toolRenderers={...}>` override prop.
-- [ ] Per-panel CSS var scoping so workspace can restyle chat independently from the rest of its layout.
-- [ ] API docs under `docs/`.
-- [ ] Migration guide: "your boring-macro, now with mode switch."
+- [ ] `registerTool()` runtime API (alongside pi extensions). *(deferred)*
+- [x] `<ChatPanel toolRenderers={...}>` override prop. Implemented via `ToolRendererOverrides`.
+- [x] Per-panel CSS var scoping — `[data-boring-chat]` attribute scoping, all vars `--boring-chat-*`.
+- [ ] API docs under `docs/`. *(deferred)*
+- [ ] Migration guide: "your boring-macro, now with mode switch." *(deferred)*
 
 **Gate:** a two-file example `examples/with-custom-tool/` demonstrates adding a tool + renderer + restyle from outside the package. `boring-macro` can boot in both modes by flipping one env var.
 

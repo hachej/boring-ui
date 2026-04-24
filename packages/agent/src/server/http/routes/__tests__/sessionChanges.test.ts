@@ -2,6 +2,8 @@ import Fastify from 'fastify'
 import { describe, expect, test } from 'vitest'
 
 import type { AgentHarness, RunContext, SendMessageInput } from '../../../../shared/harness'
+import type { UIMessageChunk } from '../../../../shared/message'
+import type { SessionStore } from '../../../../shared/session'
 import { chatRoutes } from '../chat'
 import { sessionChangesRoutes } from '../sessionChanges'
 import { InMemorySessionChangesTracker } from '../../sessionChangesTracker'
@@ -16,11 +18,16 @@ function createMockHarness(
       const chunks = chunksByMessage[input.message] ?? []
       return (async function* () {
         for (const chunk of chunks) {
-          yield chunk
+          yield chunk as UIMessageChunk
         }
       })()
     },
-    sessions: {},
+    sessions: {
+      list: async () => [],
+      create: async () => ({ id: 'new', title: 'New', createdAt: '', updatedAt: '', turnCount: 0 }),
+      load: async () => ({ id: 'new', title: 'New', createdAt: '', updatedAt: '', turnCount: 0, messages: [] }),
+      delete: async () => {},
+    } satisfies SessionStore,
   }
 }
 

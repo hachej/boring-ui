@@ -22,7 +22,6 @@ const SURFACE_LAYOUT: LayoutConfig = {
       id: "artifacts",
       position: "center",
       dynamic: true,
-      placeholder: "empty",
     },
   ],
 }
@@ -34,6 +33,9 @@ export interface ArtifactSurfacePaneProps {
   persistedLayout?: SerializedLayout
   onLayoutChange?: (layout: SerializedLayout) => void
   onReady?: (api: DockviewApi) => void
+  prefixHeaderActions?: React.FunctionComponent<unknown>
+  rightHeaderActions?: React.FunctionComponent<unknown>
+  watermarkComponent?: React.FunctionComponent<unknown>
   className?: string
 }
 
@@ -44,6 +46,9 @@ export function ArtifactSurfacePane({
   persistedLayout,
   onLayoutChange,
   onReady,
+  prefixHeaderActions,
+  rightHeaderActions,
+  watermarkComponent,
   className,
 }: ArtifactSurfacePaneProps) {
   const suppressRef = useRef(false)
@@ -70,6 +75,9 @@ export function ArtifactSurfacePane({
         onReady={onReady}
         allowedPanels={allowedPanels}
         storageKey={storageKey}
+        prefixHeaderActions={prefixHeaderActions}
+        rightHeaderActions={rightHeaderActions}
+        watermarkComponent={watermarkComponent}
       />
     </div>
   )

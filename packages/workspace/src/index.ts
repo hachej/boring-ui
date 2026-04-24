@@ -145,6 +145,27 @@ export type { DataCatalogProps, DataSource } from "./components/DataCatalog"
 export { SessionList } from "./components/SessionList"
 export type { SessionListProps, SessionItem } from "./components/SessionList"
 
+// Chat-centered layout
+export {
+  ChatNavRail,
+  SessionBrowser,
+  ChatStagePlaceholder,
+  SurfaceShell,
+  WorkbenchLeftPane,
+  ChatCenteredShell,
+  useChatShell,
+} from "./components/chat"
+export type {
+  SessionBrowserProps,
+  ChatStagePlaceholderProps,
+  ChatStageHandle,
+  SurfaceShellProps,
+  WorkbenchLeftPaneProps,
+  WorkbenchLeftTab,
+  ChatCenteredShellProps,
+  ChatShellContextValue,
+} from "./components/chat"
+
 // Provider
 export {
   WorkspaceProvider,

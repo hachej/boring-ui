@@ -1,5 +1,5 @@
 import { readdir, stat, readFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { join, extname, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import type { AgentTool } from "../../../shared/tool.js";
@@ -125,7 +125,12 @@ async function loadNpmPlugin(
 
   const pkgJson = JSON.parse(await readFile(pkgJsonPath, "utf-8"));
   const main = pkgJson.main ?? "index.js";
-  return loadModule(join(pkgDir, main), importFn);
+  const resolvedMain = resolve(pkgDir, main);
+  const resolvedPkgDir = resolve(pkgDir);
+  if (resolvedMain !== resolvedPkgDir && !resolvedMain.startsWith(resolvedPkgDir + sep)) {
+    return [];
+  }
+  return loadModule(resolvedMain, importFn);
 }
 
 interface ExtensionsConfig {
