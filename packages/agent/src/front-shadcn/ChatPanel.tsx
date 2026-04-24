@@ -216,7 +216,7 @@ function ToolCard({ toolPart, mergedToolRenderers }: { toolPart: UIMessage['part
 export function ChatPanel(props: ChatPanelProps) {
   const { sessionId, toolRenderers, extraCommands, onSessionReset, className } = props
   const {
-    messages, sendMessage, setMessages, status, error, stop, clearError, regenerate,
+    messages, sendMessage, setMessages, status, error, stop, clearError,
   } = useAgentChat({ sessionId })
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
@@ -400,7 +400,7 @@ export function ChatPanel(props: ChatPanelProps) {
               description="Ask anything. I can reverse strings, explain code, and walk through ideas."
             />
           )}
-          {messages.map((message) => {
+          {messages.map((message, messageIndex) => {
             const role = message.role === 'user' || message.role === 'assistant' ? message.role : 'assistant'
             const textParts = message.parts.filter(isTextPart)
             const fileParts = message.parts.filter(isFilePart)
@@ -408,6 +408,11 @@ export function ChatPanel(props: ChatPanelProps) {
               .map(getReasoningPart)
               .filter((part): part is ReasoningPartView => part !== null)
             const toolParts = getToolParts(message)
+            // Regenerate is only meaningful for the most recent assistant
+            // reply — regenerating an older turn would fork history in
+            // ways we don't support. Restricting visibility to the tail
+            // keeps the UX honest.
+            const isLastMessage = messageIndex === messages.length - 1
 
             return (
               <Message
@@ -513,13 +518,22 @@ export function ChatPanel(props: ChatPanelProps) {
                 {/* Per-message action bar. Lives OUTSIDE MessageContent so
                  * it doesn't reserve layout space in idle reads. `hidden`
                  * → zero height when not hovered; `group-hover:flex` +
-                 * `group-focus-within:flex` reveal on interaction. */}
+                 * `group-focus-within:flex` reveal on interaction.
+                 * Regenerate is gated to the LAST assistant message — see
+                 * the regenerateLastTurn helper below for why we bypass
+                 * AI SDK's built-in `regenerate()`. */}
                 {role === 'assistant' && !isStreaming && textParts.length > 0 && (
                   <MessageActionsBar
                     text={textParts.map((p) => p.text).join('\n\n')}
-                    canRegenerate={Boolean(regenerate)}
+                    canRegenerate={isLastMessage}
                     onRegenerate={() => {
-                      void regenerate?.()
+                      void regenerateLastTurn({
+                        messages,
+                        setMessages,
+                        sendMessage,
+                        sessionId,
+                        model,
+                      })
                     }}
                   />
                 )}
@@ -849,6 +863,74 @@ function AttachmentsList() {
       ))}
     </Attachments>
   )
+}
+
+/**
+ * Rewind the most recent assistant turn and re-send the user message
+ * that produced it.
+ *
+ * We deliberately bypass AI SDK's built-in `regenerate()` because it
+ * POSTs to `/api/v1/agent/chat` with `trigger: "regenerate-message"`
+ * and no `message` field — our server Zod schema requires
+ * `message: z.string().min(1)`, so the built-in path fails validation
+ * silently and the button appears broken. Intercepting here keeps the
+ * server contract narrow (one request shape: new user turn + history
+ * comes from pi's server-side session store).
+ *
+ * Known limitation: because pi persists session history server-side,
+ * re-sending adds a duplicate user turn to the store. Acceptable for
+ * now — a proper fix is a server endpoint to truncate the last turn
+ * before re-sending. Client history is kept clean via setMessages.
+ */
+function regenerateLastTurn({
+  messages,
+  setMessages,
+  sendMessage,
+  sessionId,
+  model,
+}: {
+  messages: UIMessage[]
+  setMessages: (m: UIMessage[]) => void
+  sendMessage: ReturnType<typeof useAgentChat>['sendMessage']
+  sessionId: string
+  model: ModelSelection
+}): Promise<void> | void {
+  if (messages.length === 0) return
+  const tail = messages[messages.length - 1]
+  if (!tail || tail.role !== 'assistant') return
+
+  // Find the immediately preceding user message — walk backwards past
+  // any interleaved assistant/tool turns.
+  let userIdx = -1
+  for (let i = messages.length - 2; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      userIdx = i
+      break
+    }
+  }
+  if (userIdx < 0) return
+  const userMessage = messages[userIdx]
+
+  const text = userMessage.parts
+    .filter(isTextPart)
+    .map((p) => p.text)
+    .join('\n\n')
+  const files = userMessage.parts.filter(isFilePart)
+
+  // Rewind client-visible history to before the user turn. Server-side
+  // pi session store still retains it; see caveat in the doc above.
+  setMessages(messages.slice(0, userIdx))
+
+  return sendMessage(
+    { text, files },
+    {
+      body: {
+        sessionId,
+        message: text || '(regenerate)',
+        model,
+      },
+    },
+  ).then(() => undefined)
 }
 
 /**

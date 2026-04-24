@@ -259,6 +259,64 @@ test.describe('composer attachments', () => {
     await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible({ timeout: 3000 })
   })
 
+  test('regenerate button re-sends the last user turn and hits /api/v1/agent/chat', async ({ page }) => {
+    // 1. Send a plain-text message (no tool trigger — the Regenerate button
+    //    is gated on textParts.length > 0, so we need a text reply to show
+    //    the action bar at all).
+    const initialText = 'say hi in three words'
+    await page.getByPlaceholder('Ask anything…').fill(initialText)
+    await page.keyboard.press('Enter')
+
+    // Wait for an assistant reply with actual text content. `.is-assistant`
+    // tags the primitive; we additionally wait for the Regenerate button
+    // to enter the DOM, which only happens once the turn is non-streaming
+    // and has text parts.
+    await expect(page.locator('.is-assistant').first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('button[aria-label="Regenerate"]')).toHaveCount(1, { timeout: 20_000 })
+
+    // 2. Arm a listener for the NEXT POST to /api/v1/agent/chat (scope to the
+    //    base path; /stream is a different GET route).
+    const postPromise = page.waitForRequest(
+      (req) => {
+        if (req.method() !== 'POST') return false
+        const url = new URL(req.url())
+        return url.pathname === '/api/v1/agent/chat'
+      },
+      { timeout: 8000 },
+    )
+
+    // 3. Click Regenerate. The bar is display:none → group-hover:flex so it
+    //    only becomes actionable under :hover, and :hover propagation via
+    //    Tailwind's `group-hover` is flaky in headless Chromium's
+    //    synthesized pointer events. Dispatching the click directly on the
+    //    DOM node is the most reliable path — equivalent to a user click
+    //    from the handler's point of view.
+    const clicked = await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll<HTMLButtonElement>('button[aria-label="Regenerate"]')).at(-1)
+      if (!btn) return false
+      btn.click()
+      return true
+    })
+    expect(clicked, 'Regenerate button must exist in the DOM').toBe(true)
+
+    // 4. Assert: the regenerate POST MUST carry a `message` field (our
+    //    custom rewind+resend path, not AI SDK's built-in regenerate which
+    //    omits `message` and fails our server schema). It MUST be the same
+    //    user text we originally sent, and the trigger MUST be
+    //    'submit-message' (our handler routes through sendMessage, not the
+    //    built-in regenerate trigger).
+    const request = await postPromise
+    const body = request.postDataJSON() as {
+      message?: string
+      sessionId?: string
+      trigger?: string
+    }
+    expect(body.message, 'regenerate must re-send the original user text').toBeTruthy()
+    expect(body.message).toContain(initialText.slice(0, 6))
+    expect(body.sessionId).toBeTruthy()
+    expect(body.trigger, 'regenerate must use submit-message trigger (not built-in regenerate)').toBe('submit-message')
+  })
+
   test('user bubble does NOT include the inlined `[attached: …]` marker', async ({ page }) => {
     const fileChooserPromise = page.waitForEvent('filechooser')
     await page.getByRole('button', { name: 'Attach files' }).click()
