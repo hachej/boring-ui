@@ -3,6 +3,11 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 let capturedTransportOpts: Record<string, unknown> | undefined
 const refStore = { current: undefined as unknown }
 const mockOnFileChangeData = vi.fn()
+const mockSetMessages = vi.fn()
+const mockUseStateSetter = vi.fn()
+const mockFetch = vi.fn()
+const mockStorageGetItem = vi.fn()
+const mockStorageSetItem = vi.fn()
 
 vi.mock('@ai-sdk/react', () => ({
   useChat: vi.fn(() => ({
@@ -11,7 +16,7 @@ vi.mock('@ai-sdk/react', () => ({
     status: 'ready' as const,
     error: undefined,
     stop: vi.fn(),
-    setMessages: vi.fn(),
+    setMessages: mockSetMessages,
   })),
 }))
 
@@ -35,6 +40,13 @@ vi.mock('react', async () => {
       refStore.current = initial
       return refStore
     },
+    useState: <T,>(initial: T | (() => T)) => [
+      typeof initial === 'function' ? (initial as () => T)() : initial,
+      mockUseStateSetter,
+    ] as const,
+    useEffect: (effect: () => void | (() => void)) => {
+      effect()
+    },
   }
 })
 
@@ -42,9 +54,29 @@ import { useAgentChat } from '../useAgentChat'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 
+async function flushPromises(iterations = 8): Promise<void> {
+  for (let index = 0; index < iterations; index += 1) {
+    await Promise.resolve()
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   capturedTransportOpts = undefined
+  mockSetMessages.mockReset()
+  mockUseStateSetter.mockReset()
+  mockStorageGetItem.mockReset()
+  mockStorageSetItem.mockReset()
+  mockFetch.mockReset()
+  mockFetch.mockResolvedValue({
+    ok: false,
+    json: async () => null,
+  })
+  vi.stubGlobal('fetch', mockFetch)
+  vi.stubGlobal('localStorage', {
+    getItem: mockStorageGetItem,
+    setItem: mockStorageSetItem,
+  })
 })
 
 describe('useAgentChat', () => {
@@ -155,5 +187,32 @@ describe('useAgentChat', () => {
 
     expect(mockOnFileChangeData).toHaveBeenCalledWith(dataPart)
     expect(onData).toHaveBeenCalledWith(dataPart)
+  })
+
+  test('hydrates full chat history from /messages endpoint on mount', async () => {
+    const hydratedMessages = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'hi' }],
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'hello' }],
+      },
+    ]
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ messages: hydratedMessages }),
+    })
+
+    useAgentChat({ sessionId: 'sess-refresh' })
+    await flushPromises()
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/agent/chat/sess-refresh/messages',
+    )
+    expect(mockSetMessages).toHaveBeenCalledWith(hydratedMessages)
   })
 })

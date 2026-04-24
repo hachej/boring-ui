@@ -1,6 +1,6 @@
 import { useChat } from '@ai-sdk/react'
-import { DefaultChatTransport } from 'ai'
-import { useMemo, useRef } from 'react'
+import { DefaultChatTransport, type UIMessage } from 'ai'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SendMessageInput } from '../../shared/harness'
 import { useFileChangeStream } from './useFileChangeStream'
 
@@ -30,7 +30,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     [sessionId],
   )
 
-  return useChat({
+  const chat = useChat({
     id: sessionId,
     transport,
     resume: true,
@@ -39,4 +39,65 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       optsRef.current.onData?.(part)
     },
   })
+
+  // Hydrate history on mount / session change. Priority:
+  //  1. Server /messages endpoint (authoritative if the harness persists sessions)
+  //  2. localStorage cache (fallback when pi-coding-agent uses SessionManager.inMemory)
+  //
+  // `hydrated` gates the save-to-cache effect below — without it, the save
+  // effect fires first on mount with an empty messages array and wipes the
+  // cached history before hydration has a chance to restore it.
+  const setMessages = chat.setMessages
+  const cacheKey = sessionId ? `boring-agent:messages:${sessionId}` : null
+  const [hydrated, setHydrated] = useState(false)
+
+  useEffect(() => {
+    if (!sessionId || !cacheKey) return
+    let aborted = false
+    setHydrated(false)
+
+    const loadFromCache = () => {
+      try {
+        const cached = globalThis.localStorage?.getItem(cacheKey)
+        if (!cached) return
+        const parsed = JSON.parse(cached)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed as UIMessage[])
+        }
+      } catch { /* ignore parse errors */ }
+    }
+
+    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload: { messages?: UIMessage[] } | null) => {
+        if (aborted) return
+        const serverMessages = payload?.messages
+        if (Array.isArray(serverMessages) && serverMessages.length > 0) {
+          setMessages(serverMessages)
+          return
+        }
+        loadFromCache()
+      })
+      .catch(() => {
+        if (aborted) return
+        loadFromCache()
+      })
+      .finally(() => {
+        if (!aborted) setHydrated(true)
+      })
+
+    return () => { aborted = true }
+  }, [sessionId, cacheKey, setMessages])
+
+  // Mirror messages → localStorage whenever they change. Gated on `hydrated`
+  // so the initial empty state never overwrites a previously-cached history.
+  const messages = chat.messages
+  useEffect(() => {
+    if (!hydrated || !cacheKey) return
+    try {
+      globalThis.localStorage?.setItem(cacheKey, JSON.stringify(messages))
+    } catch { /* quota exceeded: drop cache silently */ }
+  }, [hydrated, cacheKey, messages])
+
+  return chat
 }

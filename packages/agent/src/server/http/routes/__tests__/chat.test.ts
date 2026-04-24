@@ -2,7 +2,6 @@ import Fastify from 'fastify'
 import { describe, test, expect, vi } from 'vitest'
 import { chatRoutes, type ChatRouteOptions } from '../chat'
 import type { AgentHarness, SendMessageInput, RunContext } from '../../../../shared/harness'
-import { expectChunksMatchAiSchema } from '../../../__tests__/uiMessageChunkContract'
 import {
   ERROR_CODE_VALIDATION_ERROR,
   ERROR_CODE_INTERNAL,
@@ -474,64 +473,81 @@ describe('GET /api/v1/agent/chat/:sessionId/stream (resume)', () => {
     await app.close()
   })
 
-  test('evicted buffer falls back to SessionStore', async () => {
+  test('no active turn returns 204 even when SessionStore has persisted messages', async () => {
     const mockLoad = vi.fn().mockResolvedValue({
-      id: 'sess-fallback',
-      title: 'test',
+      id: 'sess-ignored',
+      title: 'ignored',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      turnCount: 1,
+      turnCount: 2,
       messages: [
-        {
-          id: 'msg-1',
-          role: 'assistant',
-          parts: [{ type: 'text', text: 'restored from store' }],
-        },
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'user turn' }] },
+        { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'assistant turn' }] },
       ],
     })
     const harness = createMockHarness()
     harness.sessions = { load: mockLoad } as any
-
     const app = await buildApp({ harness })
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/chat/sess-fallback/stream',
+      url: '/api/v1/agent/chat/sess-ignored/stream',
+    })
+    expect(res.statusCode).toBe(204)
+    expect(mockLoad).not.toHaveBeenCalled()
+
+    await app.close()
+  })
+})
+
+describe('GET /api/v1/agent/chat/:sessionId/messages', () => {
+  test('returns full persisted history including user + assistant turns', async () => {
+    const messages = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'how are you?' }],
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'doing well' }],
+      },
+    ]
+    const mockLoad = vi.fn().mockResolvedValue({
+      id: 'sess-history',
+      title: 'history',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      turnCount: 2,
+      messages,
+    })
+    const harness = createMockHarness()
+    harness.sessions = { load: mockLoad } as any
+    const app = await buildApp({ harness })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/sess-history/messages',
     })
     expect(res.statusCode).toBe(200)
-    expect(res.body).toContain('data:')
+    expect(res.json()).toEqual({ messages })
     expect(mockLoad).toHaveBeenCalledWith(
       { workspaceId: 'default' },
-      'sess-fallback',
+      'sess-history',
     )
 
     await app.close()
   })
 
-  test('session replay emits chunks valid against uiMessageChunkSchema', async () => {
+  test('returns empty message array when persisted session has no messages', async () => {
     const mockLoad = vi.fn().mockResolvedValue({
-      id: 'sess-contract',
-      title: 'contract',
+      id: 'sess-empty',
+      title: 'empty',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      turnCount: 1,
-      messages: [
-        {
-          id: 'msg-contract',
-          role: 'assistant',
-          parts: [
-            { type: 'text', text: 'hello from replay' },
-            {
-              type: 'tool-invocation',
-              toolCallId: 'tool-call-contract',
-              toolName: 'bash',
-              state: 'output-available',
-              input: { cmd: 'ls' },
-              output: { content: [{ type: 'text', text: 'ok' }] },
-            },
-          ],
-        },
-      ],
+      turnCount: 0,
+      messages: undefined,
     })
     const harness = createMockHarness()
     harness.sessions = { load: mockLoad } as any
@@ -539,19 +555,26 @@ describe('GET /api/v1/agent/chat/:sessionId/stream (resume)', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/chat/sess-contract/stream',
+      url: '/api/v1/agent/chat/sess-empty/messages',
     })
     expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ messages: [] })
 
-    const chunks = res.body
-      .split('\n')
-      .filter((line) => line.startsWith('data: '))
-      .map((line) => line.slice('data: '.length).trim())
-      .filter((line) => line.length > 0 && line !== '[DONE]')
-      .map((line) => JSON.parse(line))
+    await app.close()
+  })
 
-    expect(chunks.length).toBeGreaterThan(0)
-    await expectChunksMatchAiSchema(chunks)
+  test('returns 404 with empty history payload when session lookup fails', async () => {
+    const mockLoad = vi.fn().mockRejectedValue(new Error('not found'))
+    const harness = createMockHarness()
+    harness.sessions = { load: mockLoad } as any
+    const app = await buildApp({ harness })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/chat/sess-missing/messages',
+    })
+    expect(res.statusCode).toBe(404)
+    expect(res.json()).toEqual({ messages: [] })
 
     await app.close()
   })

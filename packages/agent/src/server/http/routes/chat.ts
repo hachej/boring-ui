@@ -143,45 +143,10 @@ export function chatRoutes(
       const active = buffers.getActive(sessionId)
 
       if (!active) {
-        try {
-          const detail = await (harness.sessions as any).load(
-            { workspaceId: 'default' },
-            sessionId,
-          )
-          const stream = createUIMessageStream({
-            async execute({ writer }: { writer: { write(chunk: UIMessageChunk): void } }) {
-              for (const msg of detail.messages) {
-                if (msg.role !== 'assistant') continue
-                const messageId = (msg as any).id
-                writer.write(c(messageId ? { type: 'start', messageId } : { type: 'start' }))
-                let ci = 0
-                for (const part of (msg as any).parts) {
-                  if (part.type === 'text') {
-                    const id = `${messageId ?? 'replay'}:${ci}`
-                    writer.write(c({ type: 'text-start', id }))
-                    writer.write(c({ type: 'text-delta', id, delta: part.text }))
-                    writer.write(c({ type: 'text-end', id }))
-                    ci++
-                  }
-                  if (part.type === 'tool-invocation') {
-                    writer.write(c({ type: 'tool-input-available', toolCallId: part.toolCallId, toolName: part.toolName, input: part.input }))
-                    if (part.state === 'output-available')
-                      writer.write(c({ type: 'tool-output-available', toolCallId: part.toolCallId, output: part.output }))
-                    ci++
-                  }
-                }
-                writer.write(c({ type: 'finish' }))
-              }
-            },
-          })
-          reply.hijack()
-          return pipeUIMessageStreamToResponse({
-            response: reply.raw,
-            stream,
-          })
-        } catch {
-          return reply.code(204).send()
-        }
+        // No active streaming turn to resume. History hydration goes through
+        // the /messages JSON endpoint below, not this stream. Return 204 so
+        // useChat({ resume: true }) knows there's nothing live to resume.
+        return reply.code(204).send()
       }
 
       const { buffer: buf } = active
@@ -230,6 +195,28 @@ export function chatRoutes(
           'Cache-Control': 'no-cache, no-transform',
         },
       })
+    },
+  )
+
+  // History hydration: returns the full UIMessage[] for a session, including
+  // both user and assistant turns. The client hydrates useChat state via
+  // setMessages() on mount instead of relying on stream-based replay (which
+  // AI SDK v6's UIMessageChunk protocol can't express cross-role). Missing
+  // sessions return 404 so the client can start fresh.
+  app.get(
+    '/api/v1/agent/chat/:sessionId/messages',
+    async (request, reply) => {
+      const { sessionId } = request.params as { sessionId: string }
+      try {
+        const detail = await (harness.sessions as any).load(
+          { workspaceId: 'default' },
+          sessionId,
+        )
+        const messages = Array.isArray(detail?.messages) ? detail.messages : []
+        return reply.code(200).send({ messages })
+      } catch {
+        return reply.code(404).send({ messages: [] })
+      }
     },
   )
 
