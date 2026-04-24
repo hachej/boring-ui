@@ -134,12 +134,19 @@ Core ships `<SignInPage>` and `<SignUpPage>` styled with `@boring/workspace/ui-s
 
 Your page components receive `{ onSubmit, oauthProviders, error }` props and can render whatever UI they want.
 
+## In v1
+
+- Email + password.
+- GitHub OAuth.
+- **Email verification** (better-auth `emailVerification: { sendOnSignUp: true }`).
+- **Password reset** (better-auth `emailAndPassword: { sendResetPassword }`).
+- **Magic links** (better-auth `magicLink` plugin).
+
+All three email flows require a mail transport. Core accepts a `mail` field in `CoreConfig.auth.mail` with a nodemailer-compatible sender. See CONFIG.md for env vars. Without mail config, the three flows are disabled with a warning at boot.
+
 ## Not in v1
 
 - Google / Apple / Discord / other OAuth providers (one-line adds in `createAuth`, but unshipped).
-- Magic links (turn on `emailAndPassword: { magicLink: true }` + configure mail transport).
-- Email verification (turn on + configure mail).
-- Password reset (same).
 - 2FA / TOTP (better-auth plugin; deferred).
 - Session revocation UI (`DELETE /api/v1/me/sessions/:id`).
 - API keys (per-workspace tokens for headless access) — target v1.x.
