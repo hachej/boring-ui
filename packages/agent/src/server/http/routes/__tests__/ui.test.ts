@@ -124,7 +124,38 @@ describe("UI bridge routes", () => {
       url: "/api/v1/ui/commands/next?poll=true",
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ commands: [] });
+    expect(res.json()).toEqual([]);
+  });
+
+  test("poll=true returns queued command envelope and drains it", async () => {
+    const { app } = await buildApp();
+
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/ui/commands",
+      payload: { kind: "openFile", params: { path: "/a.ts" } },
+    });
+
+    const firstPoll = await app.inject({
+      method: "GET",
+      url: "/api/v1/ui/commands/next?poll=true",
+    });
+    expect(firstPoll.statusCode).toBe(200);
+    expect(firstPoll.json()).toEqual([
+      {
+        v: 1,
+        seq: 1,
+        kind: "openFile",
+        params: { path: "/a.ts" },
+      },
+    ]);
+
+    const secondPoll = await app.inject({
+      method: "GET",
+      url: "/api/v1/ui/commands/next?poll=true",
+    });
+    expect(secondPoll.statusCode).toBe(200);
+    expect(secondPoll.json()).toEqual([]);
   });
 
   test("POST command → bridge subscriber receives it", async () => {

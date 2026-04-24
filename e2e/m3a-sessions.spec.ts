@@ -203,8 +203,8 @@ test.describe('M3a: UI bridge — command dispatch', () => {
       `${backend.apiUrl}/api/v1/ui/commands/next?poll=true`,
     )
     expect(r.ok()).toBe(true)
-    const body = (await r.json()) as { commands: unknown[] }
-    expect(body.commands).toEqual([])
+    const body = (await r.json()) as unknown[]
+    expect(body).toEqual([])
   })
 })
 

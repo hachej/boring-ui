@@ -3,6 +3,7 @@ export interface UiBridge {
   setState(state: UiState): Promise<void>
   postCommand(cmd: UiCommand): Promise<CommandResult>
   subscribeCommands(handler: (cmd: UiCommand & { seq: number }) => void): () => void
+  drainCommands?(): Promise<Array<UiCommand & { seq: number }>>
 }
 
 export type UiState = Record<string, unknown>

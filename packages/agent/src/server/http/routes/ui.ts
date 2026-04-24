@@ -3,6 +3,9 @@ import { z } from "zod";
 import type { UiBridge, UiCommand } from "../../../shared/ui-bridge.js";
 import { createBodyValidator } from "../middleware.js";
 
+const UI_BRIDGE_PROTOCOL_VERSION = 1;
+const HEARTBEAT_MS = 15_000;
+
 const setStateBodySchema = z.object({
   state: z.record(z.unknown()),
   causedBy: z.enum(["user", "agent", "restore"]).optional(),
@@ -25,6 +28,12 @@ export function uiRoutes(
   const { bridge } = opts;
   const validateSetState = createBodyValidator(setStateBodySchema);
   const validatePostCommand = createBodyValidator(postCommandBodySchema);
+  const encodeCommand = (cmd: UiCommand & { seq: number }) => ({
+    v: UI_BRIDGE_PROTOCOL_VERSION,
+    seq: cmd.seq,
+    kind: cmd.kind,
+    params: cmd.params,
+  });
 
   app.get("/api/v1/ui/state", async () => {
     return (await bridge.getState()) ?? {};
@@ -54,10 +63,10 @@ export function uiRoutes(
     const query = request.query as Record<string, string>;
 
     if (query.poll === "true") {
-      const batch: Array<UiCommand & { seq: number }> = [];
-      const unsub = bridge.subscribeCommands((cmd) => batch.push(cmd));
-      unsub();
-      return { commands: batch };
+      const batch = bridge.drainCommands
+        ? await bridge.drainCommands()
+        : [];
+      return batch.map(encodeCommand);
     }
 
     reply.raw.writeHead(200, {
@@ -65,13 +74,22 @@ export function uiRoutes(
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    reply.raw.write(":\n\n");
+    reply.raw.write(
+      `event: init\ndata: ${JSON.stringify({ v: UI_BRIDGE_PROTOCOL_VERSION })}\n\n`,
+    );
 
     const unsub = bridge.subscribeCommands((cmd) => {
-      reply.raw.write(`event: command\ndata: ${JSON.stringify(cmd)}\n\n`);
+      reply.raw.write(`event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`);
     });
+    const heartbeat = setInterval(() => {
+      if (reply.raw.writableEnded) return;
+      reply.raw.write(
+        `event: heartbeat\ndata: ${JSON.stringify({ v: UI_BRIDGE_PROTOCOL_VERSION })}\n\n`,
+      );
+    }, HEARTBEAT_MS);
 
     request.raw.on("close", () => {
+      clearInterval(heartbeat);
       unsub();
     });
 

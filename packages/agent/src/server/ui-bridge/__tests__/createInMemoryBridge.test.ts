@@ -95,6 +95,47 @@ describe("createInMemoryBridge", () => {
     expect(received).toEqual([2]);
   });
 
+  it("drainCommands returns queued commands in order", async () => {
+    const bridge = createInMemoryBridge();
+    await bridge.postCommand({ kind: "openFile", params: { path: "/a.ts" } });
+    await bridge.postCommand({
+      kind: "showNotification",
+      params: { msg: "hello" },
+    });
+
+    const drained = await bridge.drainCommands?.();
+    expect(drained).toEqual([
+      { kind: "openFile", params: { path: "/a.ts" }, seq: 1 },
+      { kind: "showNotification", params: { msg: "hello" }, seq: 2 },
+    ]);
+  });
+
+  it("drainCommands empties queue after read", async () => {
+    const bridge = createInMemoryBridge();
+    await bridge.postCommand({ kind: "openFile", params: { path: "/a.ts" } });
+
+    const firstDrain = await bridge.drainCommands?.();
+    const secondDrain = await bridge.drainCommands?.();
+
+    expect(firstDrain).toHaveLength(1);
+    expect(secondDrain).toEqual([]);
+  });
+
+  it("drain queue is bounded to the most recent 1000 commands", async () => {
+    const bridge = createInMemoryBridge();
+    for (let i = 0; i < 1_005; i++) {
+      await bridge.postCommand({
+        kind: "openFile",
+        params: { path: `/f-${i}.ts` },
+      });
+    }
+
+    const drained = await bridge.drainCommands?.();
+    expect(drained).toHaveLength(1_000);
+    expect(drained?.[0].seq).toBe(6);
+    expect(drained?.at(-1)?.seq).toBe(1_005);
+  });
+
   it("independent bridges have separate seq counters", async () => {
     const b1 = createInMemoryBridge();
     const b2 = createInMemoryBridge();
