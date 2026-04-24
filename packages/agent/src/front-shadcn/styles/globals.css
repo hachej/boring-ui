@@ -1,71 +1,150 @@
 /*
  * @boring/agent/ui-shadcn base styles.
  *
- * This file provides CSS custom properties that map Tailwind's theme system
- * to shadcn/ui's expected token names. Import this alongside your Tailwind setup:
+ * Import this alongside your Tailwind setup:
  *
  *   @import 'tailwindcss';
  *   @import '@boring/agent/ui-shadcn/styles.css';
  *
- * Or use it standalone for consumers who want the dark theme without Tailwind config.
+ * Token system is deliberately aligned with @boring/workspace so the agent
+ * pane and the shell it embeds into share one visual language — same warm
+ * near-neutral surface ramp, same amber accent, same radius scale.
+ * (See .impeccable.md in the repo root for design context and principles.)
  */
 
+@custom-variant dark (&:is(.dark *));
+
+/* Bind CSS custom properties below to Tailwind v4 theme tokens so
+ * `bg-background`, `text-foreground`, `rounded-lg`, etc. resolve to the
+ * actual values. Consumers do NOT need to redeclare this mapping — the
+ * tokens are now fully oklch()-valued, so there's no hsl() wrapping. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: var(--radius-sm);
+  --radius: var(--radius);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
 :root {
-  --background: 0 0% 100%;
-  --foreground: 0 0% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 3.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 3.9%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 96.1%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 96.1%;
-  --muted-foreground: 0 0% 45.1%;
-  --accent: 0 0% 96.1%;
-  --accent-foreground: 0 0% 9%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 89.8%;
-  --input: 0 0% 89.8%;
-  --ring: 0 0% 3.9%;
-  /*
-   * Radius scale — ONE source of truth, consumed everywhere.
-   *   radius-sm  6  — inline chips, code tokens
-   *   radius    10  — buttons, badges, small controls
-   *   radius-md 14  — tool cards, artifact header
-   *   radius-lg 18  — message bubbles, attachment chips
-   *   radius-xl 24  — composer surface
-   */
-  --radius-sm: 0.375rem;
-  --radius: 0.625rem;
-  --radius-md: 0.875rem;
-  --radius-lg: 1.125rem;
-  --radius-xl: 1.5rem;
+  /* Neutrals — warmly tinted toward the brand hue (72) at very low chroma.
+   * The near-imperceptible tint creates subconscious cohesion between
+   * surfaces and the amber accent below. */
+  --background: oklch(0.995 0.0015 72);
+  --foreground: oklch(0.18 0.004 72);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.004 72);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.004 72);
+  --primary: oklch(0.22 0.006 72);
+  --primary-foreground: oklch(0.985 0.002 72);
+  --secondary: oklch(0.965 0.003 72);
+  --secondary-foreground: oklch(0.22 0.006 72);
+  --muted: oklch(0.965 0.003 72);
+  --muted-foreground: oklch(0.52 0.008 72);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0.002 72);
+  --border: oklch(0.915 0.004 72);
+  --input: oklch(0.915 0.004 72);
+
+  /* Brand accent — warm amber/ochre. Used sparingly: send button, focus
+   * ring, tool-success state. Kept rare by design (≤10% visual weight). */
+  --accent: oklch(0.62 0.14 65);
+  --accent-foreground: oklch(0.995 0 0);
+  --accent-soft: oklch(0.96 0.03 65);
+  --ring: oklch(0.62 0.14 65);
+
+  /* Surface ramp. `canvas` = outermost (matches workspace shell).
+   * `surface-chat` = the inner card the chat panel draws itself into. */
+  --canvas: oklch(0.928 0.006 72);
+  --surface-chat: oklch(1 0 0);
+
+  /* Radius scale — ONE source of truth. Workspace mirrors these names
+   * (calc'd from the same `--radius`) so a component moved between
+   * packages lands on identical geometry. */
+  --radius: 0.625rem;           /* 10px — default surfaces */
+  --radius-sm: calc(var(--radius) - 4px);  /*  6px — inline chips, code tokens */
+  --radius-md: calc(var(--radius) - 2px);  /*  8px — small buttons */
+  --radius-lg: var(--radius);              /* 10px — bubbles, tool cards */
+  --radius-xl: calc(var(--radius) + 4px);  /* 14px — composer surface */
+
+  --font-sans:
+    "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "Geist Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 }
 
 .dark {
-  --background: 220 20% 7%;
-  --foreground: 210 20% 90%;
-  --card: 220 18% 10%;
-  --card-foreground: 210 20% 90%;
-  --popover: 220 18% 10%;
-  --popover-foreground: 210 20% 90%;
-  --primary: 210 20% 90%;
-  --primary-foreground: 220 20% 7%;
-  --secondary: 217 15% 16%;
-  --secondary-foreground: 210 20% 90%;
-  --muted: 217 15% 16%;
-  --muted-foreground: 215 14% 55%;
-  --accent: 217 15% 16%;
-  --accent-foreground: 210 20% 90%;
-  --destructive: 0 62.8% 50.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 217 12% 20%;
-  --input: 217 12% 20%;
-  --ring: 212 60% 55%;
-  --radius: 0.5rem;
+  /* Dark is the primary theme (developer-tool context, long focused
+   * sessions). The surface ramp uses a very tight lightness spread so
+   * separation reads from borders + opacity, not from bright elevation. */
+  --background: oklch(0.145 0.004 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0.004 285.823);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.165 0.004 285.823);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0.006 285.885);
+  --secondary: oklch(0.269 0.006 285.885);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0.006 285.885);
+  --muted-foreground: oklch(0.708 0.01 286.073);
+  --accent: oklch(0.62 0.14 65);
+  --accent-foreground: oklch(0.12 0.004 285.823);
+  --accent-soft: oklch(0.28 0.04 65);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.269 0.006 285.885);
+  --input: oklch(0.269 0.006 285.885);
+  --ring: oklch(0.62 0.14 65);
+
+  --canvas: oklch(0.12 0.004 285.823);
+  --surface-chat: oklch(0.165 0.004 285.823);
+}
+
+/* Base typography cohesion for the chat panel root. Consumers embedding
+ * the panel inherit these — independent of their own Tailwind base. */
+[data-boring-chat] {
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "ss03", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.005em;
+}
+[data-boring-chat] code,
+[data-boring-chat] kbd,
+[data-boring-chat] pre,
+[data-boring-chat] samp {
+  font-family: var(--font-mono);
+  font-feature-settings: "ss02", "ss03", "zero";
 }
 
 /*

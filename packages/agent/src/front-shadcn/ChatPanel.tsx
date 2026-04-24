@@ -375,13 +375,23 @@ export function ChatPanel(props: ChatPanelProps) {
     <div
       data-boring-chat=""
       className={cn(
-        "flex h-full flex-col bg-background text-[15px] text-foreground antialiased",
-        "[font-feature-settings:'ss01','cv11']",
+        // Outer canvas — matches workspace shell so the chat pane feels
+        // of-a-piece when embedded. Inner surface is a single card with
+        // inset border + micro-shadow (the workspace visual language).
+        "flex h-full min-h-0 flex-col overflow-hidden bg-[color:var(--canvas)]",
+        "text-[15px] text-foreground antialiased",
         className,
       )}
       role="region"
       aria-label="Agent assistant"
     >
+      <div
+        className={cn(
+          "flex h-full min-h-0 flex-col overflow-hidden",
+          "mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)]",
+          "shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]",
+        )}
+      >
       <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">
         <ConversationContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
           {messages.length === 0 && (
@@ -403,19 +413,26 @@ export function ChatPanel(props: ChatPanelProps) {
               <Message
                 key={message.id}
                 from={role}
-                // Reset primitive defaults so our deliberate sizing sticks.
-                className="!max-w-full !gap-3"
+                // Reset primitive defaults. `gap-1.5` keeps the per-message
+                // action bar close but not touching; the bar itself only
+                // renders on hover so idle messages stay tight.
+                className="!max-w-full !gap-1.5"
               >
                 <MessageContent
                   className={cn(
-                    // Symmetric bubbles on both sides for visual parity —
-                    // user is tinted primary/12, assistant is a quieter
-                    // card/40 surface. Same radius, same padding, same
-                    // typography — only the tint differs.
-                    "!rounded-lg !px-4 !py-3 text-[15px] leading-relaxed text-foreground",
+                    // Layout: flat container, no bubble chrome for the
+                    // assistant — per .impeccable.md "the conversation is
+                    // the interface": bot replies read as editorial prose
+                    // on the page, not as chat-bubble UI. User messages
+                    // still get a right-aligned pill so the turn
+                    // structure is legible at a glance.
+                    "!overflow-visible text-[15px] leading-relaxed text-foreground",
                     role === 'user'
-                      ? '!bg-primary/12 max-w-[80%]'
-                      : '!bg-card/40 !border !border-input/40',
+                      ? cn(
+                          "!ml-auto !max-w-[80%] !rounded-[var(--radius-lg)]",
+                          "!bg-secondary !text-secondary-foreground !px-4 !py-2.5",
+                        )
+                      : "!w-full !bg-transparent !p-0",
                   )}
                 >
                   {fileParts.length > 0 && (
@@ -434,7 +451,7 @@ export function ChatPanel(props: ChatPanelProps) {
                     >
                       {fileParts.map((file, idx) => (
                         <Attachment key={`file-${message.id}-${idx}`} data={{ ...file, id: `file-${message.id}-${idx}` }}>
-                          <AttachmentPreview className="size-10 shrink-0 rounded-md" />
+                          <AttachmentPreview className="size-10 shrink-0 rounded-[var(--radius-md)]" />
                           <AttachmentInfo className="min-w-0 flex-1" />
                         </Attachment>
                       ))}
@@ -457,18 +474,20 @@ export function ChatPanel(props: ChatPanelProps) {
                       key={`text-${message.id}-${index}`}
                       className={cn(
                         "max-w-none",
-                        // Typography (size + spacing).
+                        // Editorial prose rhythm — a magazine column on
+                        // the page, not a log dump. Fewer type sizes,
+                        // more leading; headings earn weight, not size.
                         "prose prose-invert prose-neutral",
-                        "prose-p:my-3 prose-p:leading-[1.65] prose-p:text-[15px]",
-                        "prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-tight",
+                        "prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[15px]",
+                        "prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]",
                         "prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6",
                         "prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70",
                         "prose-strong:font-semibold prose-strong:text-foreground",
                         "prose-em:text-foreground/90",
-                        "prose-a:text-primary prose-a:underline-offset-4 hover:prose-a:underline",
-                        // Inline code chips.
+                        "prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline",
+                        // Inline code chips — sit on the prose baseline.
                         "prose-code:font-mono prose-code:text-[13px] prose-code:font-medium",
-                        "prose-code:rounded-md prose-code:border prose-code:border-input/70 prose-code:bg-muted/50",
+                        "prose-code:rounded-[var(--radius-sm)] prose-code:border prose-code:border-border/60 prose-code:bg-muted/60",
                         "prose-code:px-1.5 prose-code:py-0.5",
                         "prose-code:before:content-none prose-code:after:content-none",
                         // Multi-line code blocks — the CodeBlock primitive owns
@@ -489,17 +508,21 @@ export function ChatPanel(props: ChatPanelProps) {
                       mergedToolRenderers={mergedToolRenderers}
                     />
                   ))}
-
-                  {role === 'assistant' && !isStreaming && textParts.length > 0 && (
-                    <MessageActionsBar
-                      text={textParts.map((p) => p.text).join('\n\n')}
-                      canRegenerate={Boolean(regenerate)}
-                      onRegenerate={() => {
-                        void regenerate?.()
-                      }}
-                    />
-                  )}
                 </MessageContent>
+
+                {/* Per-message action bar. Lives OUTSIDE MessageContent so
+                 * it doesn't reserve layout space in idle reads. `hidden`
+                 * → zero height when not hovered; `group-hover:flex` +
+                 * `group-focus-within:flex` reveal on interaction. */}
+                {role === 'assistant' && !isStreaming && textParts.length > 0 && (
+                  <MessageActionsBar
+                    text={textParts.map((p) => p.text).join('\n\n')}
+                    canRegenerate={Boolean(regenerate)}
+                    onRegenerate={() => {
+                      void regenerate?.()
+                    }}
+                  />
+                )}
               </Message>
             )
           })}
@@ -543,14 +566,14 @@ export function ChatPanel(props: ChatPanelProps) {
         <ConversationScrollButton />
       </Conversation>
 
-      <div className="bg-gradient-to-b from-transparent via-background/70 to-background px-6 pb-8 pt-4">
+      <div className="px-4 pb-4 pt-2 sm:px-6 sm:pb-5">
         {attachmentNotice && (
           <div
             role="status"
             aria-live="polite"
             className={cn(
-              "mx-auto mb-2 w-full max-w-3xl rounded-md border border-amber-500/40 bg-amber-500/10",
-              "px-3 py-2 text-xs text-amber-200",
+              "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-amber-500/40 bg-amber-500/10",
+              "px-3 py-2 text-xs text-amber-600 dark:text-amber-200",
             )}
           >
             {attachmentNotice}
@@ -558,18 +581,22 @@ export function ChatPanel(props: ChatPanelProps) {
         )}
         <div
           className={cn(
-            "mx-auto w-full max-w-3xl",
-            // Opaque single-layer shell with a clear border so the input has
-            // obvious affordance even at rest.
-            "rounded-xl border border-input bg-card",
-            "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_10px_24px_-14px_rgba(0,0,0,0.55),0_24px_48px_-28px_rgba(0,0,0,0.45)]",
-            "transition-colors focus-within:border-foreground/30",
-            // Neutralize the inner InputGroup's default border/rounded/shadow.
+            "relative mx-auto w-full max-w-3xl overflow-hidden",
+            // Workspace-aligned composer surface: a flat card with an
+            // inset 1px border at rest, then a focus-within swap that
+            // pulls in the accent hue. No heavy drop-shadow — the pane
+            // itself already has elevation, so the composer just gets a
+            // subtle tonal lift.
+            "rounded-[var(--radius-xl)] bg-[color:var(--card)]",
+            "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.06),0_6px_18px_-12px_oklch(0_0_0/0.12),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]",
+            "focus-within:shadow-[0_1px_3px_-1px_oklch(0_0_0/0.08),0_10px_28px_-14px_oklch(0_0_0/0.16),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)]",
+            "transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            // Neutralize the inner InputGroup's default border/rounded/shadow
+            // so the outer surface is the only bounded container.
             "[&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none",
             "[&_[data-slot=input-group]]:shadow-none [&_[data-slot=input-group]]:bg-transparent",
             "[&_[data-slot=input-group]]:dark:bg-transparent [&_[data-slot=input-group]]:ring-0",
             "[&_[data-slot=input-group]]:has-[:focus]:ring-0",
-            "overflow-hidden",
           )}
         >
           <PromptInput
@@ -597,8 +624,8 @@ export function ChatPanel(props: ChatPanelProps) {
             <PromptInputTextarea
               placeholder="Ask anything…"
               className={cn(
-                "min-h-[48px] resize-none border-0 bg-transparent shadow-none",
-                "px-5 pt-3 pb-2 text-[15px] leading-[1.5] placeholder:text-muted-foreground/60",
+                "min-h-[52px] resize-none border-0 bg-transparent shadow-none",
+                "px-5 pt-3.5 pb-1 text-[15px] leading-[1.55] placeholder:text-muted-foreground/60",
                 "focus-visible:ring-0 focus-visible:ring-offset-0",
               )}
             />
@@ -619,23 +646,65 @@ export function ChatPanel(props: ChatPanelProps) {
                   disabled={isStreaming}
                 />
               </div>
-              <PromptInputSubmit
-                status={status}
-                onStop={stop}
-                className={cn(
-                  // Primary action pinned far-right; becomes a Stop affordance
-                  // (square icon + aria-label="Stop") while the turn streams.
-                  "ml-auto h-8 w-8 rounded-md bg-primary text-primary-foreground shadow-sm transition",
-                  "hover:bg-primary/90 hover:shadow",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                  "disabled:pointer-events-none disabled:opacity-50",
-                  "[&>svg]:size-4",
-                )}
-              />
+              {/* Spacer pushes kbd hints + submit to the right. Hints
+               * sit immediately before the send button so the user
+               * reads them as part of the submit affordance, not
+               * orphaned text floating in the middle of the row. */}
+              <div className="ml-auto flex items-center gap-2">
+                <KbdHints />
+                  <PromptInputSubmit
+                  status={status}
+                  onStop={stop}
+                  className={cn(
+                    // Primary action. Uses the warm accent (not `primary`,
+                    // which is a neutral foreground tone) — this is the one
+                    // place the brand hue appears in the panel, so it has
+                    // to earn the real estate. Becomes a Stop affordance
+                    // (square icon + aria-label="Stop") while the turn
+                    // streams.
+                    "h-8 w-8 shrink-0 rounded-[var(--radius-md)]",
+                    "bg-[color:var(--accent)] text-[color:var(--accent-foreground)]",
+                    "shadow-[0_1px_0_oklch(0_0_0/0.04),0_2px_6px_-2px_oklch(from_var(--accent)_l_c_h/0.45)]",
+                    "transition-[transform,box-shadow,background-color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                    "hover:brightness-[1.05] active:scale-[0.97]",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/45",
+                    "disabled:pointer-events-none disabled:opacity-40",
+                    "[&>svg]:size-4",
+                  )}
+                />
+              </div>
             </PromptInputFooter>
           </PromptInput>
         </div>
       </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Keyboard hint chips rendered between the left-side actions and the
+ * send button. Small, muted, ornamental — pure discoverability aid.
+ * Hidden on narrow widths so the composer doesn't feel crowded.
+ */
+function KbdHints() {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "hidden items-center gap-1.5 text-[11px] text-muted-foreground/70",
+        "sm:flex",
+      )}
+    >
+      <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[var(--radius-sm)] border border-border/60 bg-background/60 px-1 font-mono text-[10px]">
+        ↵
+      </kbd>
+      <span>send</span>
+      <span className="text-muted-foreground/30">·</span>
+      <kbd className="inline-flex h-[18px] items-center rounded-[var(--radius-sm)] border border-border/60 bg-background/60 px-1 font-mono text-[10px]">
+        ⇧↵
+      </kbd>
+      <span>new line</span>
     </div>
   )
 }
@@ -784,9 +853,14 @@ function AttachmentsList() {
 
 /**
  * Per-message action bar. Appears on assistant messages once the turn
- * has finished streaming, giving the user a quick copy and regenerate
- * pair — standard ChatGPT/Claude affordances. Stays invisible until the
- * user hovers the message so it doesn't clutter the idle reading state.
+ * has finished streaming — Copy + Regenerate, standard chat affordances.
+ *
+ * Rendered via `hidden` / `group-hover:flex` / `group-focus-within:flex`
+ * so at rest the bar takes ZERO layout height. The old `opacity-0`
+ * approach reserved space even when invisible, which made idle
+ * assistant messages look like they had mysterious trailing padding
+ * below the text. This pattern is called out in .impeccable.md rule #4
+ * ("Reveal reserves nothing").
  */
 function MessageActionsBar({
   text,
@@ -809,15 +883,23 @@ function MessageActionsBar({
     )
   }
   const actionBtnClass = cn(
-    "inline-flex h-7 items-center gap-1.5 rounded-md px-2",
-    "text-[12px] font-medium text-muted-foreground transition",
-    "hover:bg-accent hover:text-foreground",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+    "inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-sm)] px-2",
+    "text-[12px] font-medium text-muted-foreground transition-colors",
+    "hover:bg-muted hover:text-foreground",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40",
   )
   return (
-    <div className="mt-1 flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+    <div
+      className={cn(
+        // Zero-layout when idle. Takes space only when the parent
+        // Message is hovered or has focus-within.
+        "hidden items-center gap-0.5",
+        "-mt-0.5",
+        "group-hover:flex group-focus-within:flex",
+      )}
+    >
       <button type="button" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>
-        {copied ? <CheckIcon className="h-3.5 w-3.5 text-emerald-400" /> : <CopyIcon className="h-3.5 w-3.5" />}
+        {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
         <span>{copied ? 'Copied' : 'Copy'}</span>
       </button>
       {canRegenerate && (

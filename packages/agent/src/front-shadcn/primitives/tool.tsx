@@ -32,7 +32,16 @@ export type ToolProps = ComponentProps<typeof Collapsible>;
 
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
-    className={cn("group not-prose mb-4 w-full rounded-lg border", className)}
+    className={cn(
+      // Inset-border + micro-shadow surface, matching the chat panel's
+      // own card and the workspace shell. No `border` utility — the
+      // 1px hairline lives inside `shadow` so the element's box metrics
+      // don't shift between :hover and :focus states.
+      "group not-prose my-3 w-full rounded-[var(--radius-lg)] bg-card/60",
+      "shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.55)]",
+      "overflow-hidden",
+      className,
+    )}
     {...props}
   />
 );
