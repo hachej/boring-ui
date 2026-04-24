@@ -152,6 +152,24 @@ describe("useKeyboardShortcuts", () => {
     expect(handler).toHaveBeenCalledOnce()
     input.remove()
   })
+
+  it("treats descendants inside role=textbox as editable", () => {
+    const handler = vi.fn()
+    const host = document.createElement("div")
+    host.setAttribute("role", "textbox")
+    const child = document.createElement("span")
+    child.textContent = "inside"
+    host.appendChild(child)
+    document.body.appendChild(host)
+
+    renderHook(() =>
+      useKeyboardShortcuts({ shortcuts: [{ key: "p", mod: true, handler }] }),
+    )
+
+    fireKeyFrom(child, "p", { metaKey: true })
+    expect(handler).not.toHaveBeenCalled()
+    host.remove()
+  })
 })
 
 describe("formatShortcut", () => {

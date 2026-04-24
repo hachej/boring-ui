@@ -27,8 +27,12 @@ function matchesShortcut(e: KeyboardEvent, binding: ShortcutBinding): boolean {
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
-  if (target.closest("[contenteditable='true']")) return true
-  if (target.getAttribute("role") === "textbox") return true
+  if (target.closest("[contenteditable='true'], [contenteditable=''], [contenteditable='plaintext-only']")) {
+    return true
+  }
+  if (target.closest("[role='textbox'], [role='searchbox'], [role='combobox']")) {
+    return true
+  }
   return Boolean(target.closest("input, textarea, select"))
 }
 

@@ -34,6 +34,16 @@ function fireKeydown(key: string, opts: Partial<KeyboardEventInit> = {}) {
   document.dispatchEvent(event)
 }
 
+function fireKeydownFrom(element: HTMLElement, key: string, opts: Partial<KeyboardEventInit> = {}) {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...opts,
+  })
+  element.dispatchEvent(event)
+}
+
 beforeEach(() => {
   localStorage.clear()
 })
@@ -128,7 +138,7 @@ describe("CommandPalette", () => {
       )
       const input = screen.getByRole("textbox", { name: "scratch" })
       input.focus()
-      fireKeydown("k", { metaKey: true })
+      fireKeydownFrom(input, "k", { metaKey: true })
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
