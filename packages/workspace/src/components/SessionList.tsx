@@ -58,6 +58,8 @@ export function SessionList({
 
   const handleSessionKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, id: string) => {
+      if (event.target !== event.currentTarget) return
+
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault()
         onSwitch?.(id)

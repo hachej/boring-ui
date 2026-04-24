@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { SessionList, type SessionItem } from "../SessionList"
 
 const sessions: SessionItem[] = [
@@ -62,6 +63,25 @@ describe("SessionList", () => {
       />,
     )
     fireEvent.click(screen.getByLabelText("Delete First session"))
+    expect(onDelete).toHaveBeenCalledWith("s1")
+    expect(onSwitch).not.toHaveBeenCalled()
+  })
+
+  it("delete keyboard activation does not trigger onSwitch", async () => {
+    const user = userEvent.setup()
+    const onSwitch = vi.fn()
+    const onDelete = vi.fn()
+    render(
+      <SessionList
+        sessions={sessions}
+        activeId="s1"
+        onSwitch={onSwitch}
+        onDelete={onDelete}
+      />,
+    )
+    const deleteButton = screen.getByLabelText("Delete First session")
+    deleteButton.focus()
+    await user.keyboard("{Enter}")
     expect(onDelete).toHaveBeenCalledWith("s1")
     expect(onSwitch).not.toHaveBeenCalled()
   })
