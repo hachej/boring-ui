@@ -31,6 +31,22 @@ vi.mock('../primitives/reasoning', () => ({
   ReasoningContent: ({ children }: any) => <div data-testid="reasoning-content">{children}</div>,
 }))
 
+vi.mock('../primitives/attachments', () => ({
+  Attachments: ({ children }: any) => <div data-testid="attachments">{children}</div>,
+  Attachment: ({ children }: any) => <div>{children}</div>,
+  AttachmentPreview: () => <div />,
+  AttachmentInfo: () => <div />,
+  AttachmentRemove: () => <div />,
+}))
+
+vi.mock('../ui/select', () => ({
+  Select: ({ children }: any) => <div>{children}</div>,
+  SelectContent: ({ children }: any) => <div>{children}</div>,
+  SelectItem: ({ children, value }: any) => <div data-value={value}>{children}</div>,
+  SelectTrigger: ({ children }: any) => <div>{children}</div>,
+  SelectValue: () => <div />,
+}))
+
 let capturedOnSubmit: ((input: { text: string; files: unknown[] }) => void) | undefined
 
 vi.mock('../primitives/prompt-input', () => ({
@@ -41,6 +57,11 @@ vi.mock('../primitives/prompt-input', () => ({
   PromptInputTextarea: () => <div data-testid="prompt-textarea" />,
   PromptInputFooter: ({ children }: any) => <div data-testid="prompt-footer">{children}</div>,
   PromptInputSubmit: ({ status }: any) => <div data-testid="prompt-submit" data-status={status} />,
+  usePromptInputAttachments: () => ({
+    files: [],
+    openFileDialog: vi.fn(),
+    remove: vi.fn(),
+  }),
 }))
 
 import { ChatPanel } from '../ChatPanel'
@@ -144,8 +165,7 @@ describe('ChatPanel (shadcn)', () => {
 
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-tool" />)
 
-    expect(html).toContain('rounded-lg border bg-card')
-    expect(html).toContain('bash')
+    expect(html).toContain('bash · ls')
   })
 
   test('custom toolRenderers override default renderer', () => {
@@ -203,11 +223,13 @@ describe('ChatPanel (shadcn)', () => {
     await capturedOnSubmit!({ text: 'Run tests', files: [] })
 
     expect(mockSendMessage).toHaveBeenCalledWith(
-      { text: 'Run tests' },
+      { text: 'Run tests', files: [] },
       {
         body: {
           sessionId: 'sess-send',
           message: 'Run tests',
+          model: { provider: 'anthropic', id: 'sonnet' },
+          attachments: [],
         },
       },
     )
@@ -258,11 +280,13 @@ describe('ChatPanel (shadcn)', () => {
     await capturedOnSubmit!({ text: '/unknown hello', files: [] })
 
     expect(mockSendMessage).toHaveBeenCalledWith(
-      { text: '/unknown hello' },
+      { text: '/unknown hello', files: [] },
       {
         body: {
           sessionId: 'sess-unk',
           message: '/unknown hello',
+          model: { provider: 'anthropic', id: 'sonnet' },
+          attachments: [],
         },
       },
     )

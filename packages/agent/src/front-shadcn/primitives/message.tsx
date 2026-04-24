@@ -18,7 +18,7 @@ import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
+import type { ComponentProps, HTMLAttributes, ReactElement, ReactNode } from "react";
 import {
   createContext,
   memo,
@@ -29,6 +29,13 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import {
+  CodeBlock,
+  CodeBlockCopyButton,
+  CodeBlockFilename,
+  CodeBlockHeader,
+  CodeBlockTitle,
+} from "./code-block";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -323,14 +330,112 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+// Default Shiki theme pair — [light, dark]. Streamdown auto-selects based on
+// prefers-color-scheme. Consumers can override via the shikiTheme prop.
+const DEFAULT_SHIKI_THEME = ["github-light", "github-dark-dimmed"] as unknown as [
+  Parameters<typeof Streamdown>[0]["shikiTheme"] extends [infer A, infer _B] | undefined ? A : never,
+  Parameters<typeof Streamdown>[0]["shikiTheme"] extends [infer _A, infer B] | undefined ? B : never,
+];
+
+// Route all fenced code blocks that appear inside assistant markdown messages
+// through the canonical ai-elements <CodeBlock> primitive — so tool outputs
+// and in-message code blocks share one implementation instead of looking
+// subtly different.
+function extractCodeBlockLanguage(children: unknown): string | undefined {
+  if (!children) return undefined;
+  const kids = Array.isArray(children) ? children : [children];
+  for (const c of kids) {
+    if (!c || typeof c !== "object") continue;
+    const props = (c as { props?: Record<string, unknown> }).props;
+    if (!props) continue;
+    const cls = props.className;
+    if (typeof cls !== "string") continue;
+    const match = cls.match(/language-([\w-]+)/);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+function extractCodeBlockText(children: unknown): string {
+  const walk = (node: unknown): string => {
+    if (node == null || node === false) return "";
+    if (typeof node === "string") return node;
+    if (typeof node === "number") return String(node);
+    if (Array.isArray(node)) return node.map(walk).join("");
+    if (typeof node === "object") {
+      const props = (node as { props?: { children?: unknown } }).props;
+      if (props && "children" in props) return walk(props.children);
+    }
+    return "";
+  };
+  return walk(children);
+}
+
+const MarkdownPre = ({ children }: { children?: unknown }) => {
+  const code = extractCodeBlockText(children).replace(/\n$/, "");
+  const language = extractCodeBlockLanguage(children);
+  return (
+    <CodeBlock code={code} language={language ?? "text"} className="my-3">
+      <CodeBlockHeader>
+        <CodeBlockTitle>
+          <CodeBlockFilename>{language ?? "text"}</CodeBlockFilename>
+        </CodeBlockTitle>
+        <CodeBlockCopyButton />
+      </CodeBlockHeader>
+    </CodeBlock>
+  );
+};
+
+// Inline code (not inside a fenced block) should stay inline-chip styled.
+// Streamdown passes {inline} to `code` when it's inline; we forward fenced
+// code rendering to MarkdownPre (above) and only skin inline code here.
+const MarkdownCode = ({
+  inline,
+  className,
+  children,
+  ...props
+}: {
+  inline?: boolean;
+  className?: string;
+  children?: unknown;
+} & Record<string, unknown>) => {
+  if (inline === false) {
+    // Fenced code block — let <pre> handle rendering via MarkdownPre.
+    return (
+      <code className={className} {...(props as Record<string, unknown>)}>
+        {children as ReactNode}
+      </code>
+    );
+  }
+  return (
+    <code
+      className={cn(
+        "rounded-sm border border-input bg-muted/80 px-1.5 py-[0.1em]",
+        "font-mono text-[0.92em] font-medium text-foreground",
+        className,
+      )}
+      {...(props as Record<string, unknown>)}
+    >
+      {children as ReactNode}
+    </code>
+  );
+};
+
+const markdownComponents = {
+  pre: MarkdownPre,
+  code: MarkdownCode,
+} as unknown as ComponentProps<typeof Streamdown>["components"];
+
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
+  ({ className, shikiTheme, components, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
       plugins={streamdownPlugins}
+      shikiTheme={shikiTheme ?? DEFAULT_SHIKI_THEME}
+      components={{ ...markdownComponents, ...(components ?? {}) }}
       {...props}
     />
   ),

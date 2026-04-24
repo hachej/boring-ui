@@ -46,7 +46,7 @@ function deepMergeRecords(
   return merged
 }
 
-function langFromPath(path: string): string | undefined {
+export function langFromPath(path: string): string | undefined {
   const ext = path.split('.').pop()?.toLowerCase()
   const map: Record<string, string> = {
     ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',

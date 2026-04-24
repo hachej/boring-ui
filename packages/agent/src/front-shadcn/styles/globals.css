@@ -30,7 +30,19 @@
   --border: 0 0% 89.8%;
   --input: 0 0% 89.8%;
   --ring: 0 0% 3.9%;
-  --radius: 0.5rem;
+  /*
+   * Radius scale — ONE source of truth, consumed everywhere.
+   *   radius-sm  6  — inline chips, code tokens
+   *   radius    10  — buttons, badges, small controls
+   *   radius-md 14  — tool cards, artifact header
+   *   radius-lg 18  — message bubbles, attachment chips
+   *   radius-xl 24  — composer surface
+   */
+  --radius-sm: 0.375rem;
+  --radius: 0.625rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.125rem;
+  --radius-xl: 1.5rem;
 }
 
 .dark {
@@ -54,4 +66,22 @@
   --input: 217 12% 20%;
   --ring: 212 60% 55%;
   --radius: 0.5rem;
+}
+
+/*
+ * Streamdown's Shiki highlighting sets per-token CSS custom properties
+ * (--sdm-c, --sdm-bg, --shiki-dark, --shiki-dark-bg) and relies on
+ * utility classes like dark:text-[var(--shiki-dark,…)] to consume them.
+ * Those classes are generated at runtime in assistant messages, so
+ * Tailwind's JIT never scans them and never emits the CSS. Bridging
+ * directly here guarantees code blocks render with the configured
+ * theme colors no matter the consumer's Tailwind config.
+ */
+pre code span[style*="--sdm-c"] {
+  color: var(--sdm-c, inherit);
+  background-color: var(--sdm-bg, transparent);
+}
+.dark pre code span[style*="--shiki-dark"] {
+  color: var(--shiki-dark, var(--sdm-c, inherit));
+  background-color: var(--shiki-dark-bg, var(--sdm-bg, transparent));
 }

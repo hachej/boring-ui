@@ -1,6 +1,7 @@
 export { DiffView, type DiffViewProps } from './DiffView'
 export {
   defaultToolRenderers,
+  langFromPath,
   mergeToolRenderers,
   resolveToolRenderer,
   type ToolPart,
