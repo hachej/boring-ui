@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { createUIMessageStream, pipeUIMessageStreamToResponse } from '../sse'
 import type { UIMessageChunk } from '../sse'
 import type { AgentHarness, RunContext } from '../../../shared/harness'
+import type { SessionCtx } from '../../../shared/session'
 import {
   createBodyValidator,
   ERROR_CODE_INTERNAL,
@@ -22,7 +23,7 @@ function c(data: Record<string, unknown>): UIMessageChunk {
 
 const chatBodySchema = z.object({
   sessionId: z.string().min(1).max(128),
-  message: z.string().min(1).max(100_000),
+  message: z.string().min(1).max(1_000_000),
   model: z
     .object({
       provider: z.string().min(1),
@@ -30,6 +31,20 @@ const chatBodySchema = z.object({
     })
     .optional(),
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
+  // Attachments metadata (data URLs or remote URLs). The client already
+  // inlines text attachments into `message`; this field keeps the structured
+  // list around so vision-capable models can later be fed image parts
+  // directly without losing provenance.
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string().optional(),
+        mediaType: z.string().optional(),
+        url: z.string(),
+      }),
+    )
+    .max(20)
+    .optional(),
 })
 
 type ChatBody = z.infer<typeof chatBodySchema>
@@ -198,20 +213,15 @@ export function chatRoutes(
     },
   )
 
-  // History hydration: returns the full UIMessage[] for a session, including
-  // both user and assistant turns. The client hydrates useChat state via
-  // setMessages() on mount instead of relying on stream-based replay (which
-  // AI SDK v6's UIMessageChunk protocol can't express cross-role). Missing
-  // sessions return 404 so the client can start fresh.
   app.get(
     '/api/v1/agent/chat/:sessionId/messages',
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
+      const ctx: SessionCtx = {
+        workspaceId: request.workspaceContext?.workspaceId ?? 'default',
+      }
       try {
-        const detail = await (harness.sessions as any).load(
-          { workspaceId: 'default' },
-          sessionId,
-        )
+        const detail = await harness.sessions.load(ctx, sessionId)
         const messages = Array.isArray(detail?.messages) ? detail.messages : []
         return reply.code(200).send({ messages })
       } catch {
