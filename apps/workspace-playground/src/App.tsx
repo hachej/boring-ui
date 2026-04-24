@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react"
 import {
   WorkspaceProvider,
   ChatCenteredShell,
+  ChatTopBar,
   SessionBrowser,
   ChatStagePlaceholder,
   SurfaceShell,
@@ -9,6 +10,7 @@ import {
   CodeEditorPane,
   MarkdownEditorPane,
   EmptyPane,
+  CommandPalette,
   type ChatStageHandle,
 } from "@boring/workspace"
 import type { PanelConfig } from "@boring/workspace"
@@ -44,6 +46,13 @@ const panels: PanelConfig[] = [
     source: "app",
   },
   {
+    id: "csv-viewer",
+    title: "CSV",
+    component: CodeEditorWrapper as React.ComponentType<unknown>,
+    placement: "center",
+    source: "app",
+  },
+  {
     id: "empty",
     title: "Welcome",
     component: EmptyPane as React.ComponentType<unknown>,
@@ -68,15 +77,29 @@ function SessionBrowserPanel() {
 }
 
 function ChatStagePanel({ stageRef }: { stageRef: React.MutableRefObject<ChatStageHandle | null> }) {
-  const { sessions, activeId } = useMockSessions()
-  const active = sessions.find((s) => s.id === activeId)
   return (
     <ChatStagePlaceholder
       ref={(h) => {
         stageRef.current = h
       }}
+    />
+  )
+}
+
+function TopBarPanel() {
+  const { sessions, activeId } = useMockSessions()
+  const active = sessions.find((s) => s.id === activeId)
+  const openPalette = useCallback(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }),
+    )
+  }, [])
+  return (
+    <ChatTopBar
       sessionTitle={active?.title}
-      sessionId={active?.id}
+      appTitle="Boring"
+      userInitial="J"
+      onCommandPalette={openPalette}
     />
   )
 }
@@ -99,13 +122,17 @@ function Shell() {
   }, [])
 
   return (
-    <ChatCenteredShell
-      drawer={<SessionBrowserPanel />}
-      stage={<ChatStagePanel stageRef={stageRef} />}
-      surface={<SurfacePanel />}
-      onNewChat={mockSessions.create}
-      focusComposer={focusComposer}
-    />
+    <>
+      <ChatCenteredShell
+        topBar={<TopBarPanel />}
+        drawer={<SessionBrowserPanel />}
+        stage={<ChatStagePanel stageRef={stageRef} />}
+        surface={<SurfacePanel />}
+        onNewChat={mockSessions.create}
+        focusComposer={focusComposer}
+      />
+      <CommandPalette />
+    </>
   )
 }
 

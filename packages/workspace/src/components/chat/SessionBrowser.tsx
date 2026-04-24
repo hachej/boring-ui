@@ -1,7 +1,7 @@
 "use client"
 
 import { useContext, useMemo } from "react"
-import { PanelLeftClose, Plus } from "lucide-react"
+import { ChevronLeft, Plus } from "lucide-react"
 import { cn } from "../../lib/utils"
 import type { SessionItem } from "../SessionList"
 import { ChatShellContext } from "./context"
@@ -108,10 +108,10 @@ export function SessionBrowser({
       aria-label="Session history"
     >
       <div
-        className="flex items-center justify-between border-b border-border/60 px-3"
-        style={{ height: 52 }}
+        className="flex items-center justify-between border-b border-[color:oklch(from_var(--border)_l_c_h/0.25)] px-3"
+        style={{ height: 44 }}
       >
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+        <span className="text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/70">
           Sessions
         </span>
         <div className="flex items-center gap-0.5">
@@ -119,22 +119,22 @@ export function SessionBrowser({
             <button
               type="button"
               onClick={onCreate}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
               aria-label="New session"
               title="New chat"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
           )}
           {shell && (
             <button
               type="button"
               onClick={() => shell.setDrawerOpen(false)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
               aria-label="Close sessions"
               title="Close sessions (⌘1)"
             >
-              <PanelLeftClose className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
             </button>
           )}
         </div>
@@ -151,7 +151,7 @@ export function SessionBrowser({
 
         {groups.map((group, i) => (
           <section key={group.key} className={cn(i > 0 && "mt-2")}>
-            <div className="px-4 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/60">
+            <div className="px-4 pb-1 pt-2 text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
               {group.label}
             </div>
             <ul role="list" className="flex flex-col">
@@ -188,9 +188,9 @@ function SessionRow({
     <li
       role="listitem"
       className={cn(
-        "group relative mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors",
-        "cursor-pointer hover:bg-muted/80",
-        active && "bg-muted text-foreground",
+        "group relative mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "cursor-pointer hover:bg-foreground/[0.04]",
+        active && "bg-foreground/[0.06] text-foreground",
       )}
       onClick={() => onSwitch?.(session.id)}
     >
@@ -202,12 +202,6 @@ function SessionRow({
           <span className="ml-1.5 text-muted-foreground/70 tabular-nums">· {time}</span>
         )}
       </span>
-      {active && (
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-foreground"
-        />
-      )}
       {onDelete && (
         <button
           type="button"

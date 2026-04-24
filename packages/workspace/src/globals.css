@@ -60,9 +60,10 @@
   --radius: 0.625rem;
 
   /* Workspace surface tints (light): subtle 3-step hierarchy, warmly tinted */
+  --canvas: oklch(0.928 0.006 72);
   --surface-chat: oklch(1 0 0);
-  --surface-workbench: oklch(0.988 0.002 72);
-  --surface-workbench-left: oklch(0.972 0.003 72);
+  --surface-workbench: oklch(1 0 0);
+  --surface-workbench-left: oklch(0.976 0.003 72);
 }
 
 .dark {
@@ -86,9 +87,10 @@
   --ring: oklch(0.439 0.01 286.029);
 
   /* Workspace surface tints (dark): subtle step-up from background */
-  --surface-chat: oklch(0.145 0.004 285.823);
-  --surface-workbench: oklch(0.175 0.004 285.823);
-  --surface-workbench-left: oklch(0.205 0.004 285.823);
+  --canvas: oklch(0.12 0.004 285.823);
+  --surface-chat: oklch(0.165 0.004 285.823);
+  --surface-workbench: oklch(0.165 0.004 285.823);
+  --surface-workbench-left: oklch(0.195 0.004 285.823);
 }
 
 @layer base {
@@ -116,3 +118,71 @@
 .surface-chat-root { background-color: var(--surface-chat); }
 .workbench-surface-root { background-color: var(--surface-workbench); }
 .workbench-left-root { background-color: var(--surface-workbench-left); }
+
+/* TipTap markdown editor prose styling */
+.tiptap-prose {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--foreground);
+  letter-spacing: -0.005em;
+}
+.tiptap-prose > * + * { margin-top: 0.875rem; }
+.tiptap-prose p { margin: 0.75rem 0; }
+.tiptap-prose h1, .tiptap-prose h2, .tiptap-prose h3, .tiptap-prose h4 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+  line-height: 1.2;
+}
+.tiptap-prose h1 { font-size: 1.875rem; margin: 1.5rem 0 0.75rem; }
+.tiptap-prose h1:first-child { margin-top: 0; }
+.tiptap-prose h2 { font-size: 1.375rem; margin: 1.5rem 0 0.6rem; font-weight: 600; }
+.tiptap-prose h3 { font-size: 1.125rem; margin: 1.25rem 0 0.5rem; }
+.tiptap-prose h4 { font-size: 1rem; margin: 1rem 0 0.4rem; }
+.tiptap-prose ul, .tiptap-prose ol { margin: 0.75rem 0; padding-left: 1.5rem; }
+.tiptap-prose li { margin: 0.3rem 0; }
+.tiptap-prose li > p { margin: 0; }
+.tiptap-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background-color: oklch(from var(--foreground) l c h / 0.05);
+  color: var(--foreground);
+  font-feature-settings: "ss02", "zero";
+}
+.tiptap-prose pre {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: 1.55;
+  background-color: oklch(from var(--foreground) l c h / 0.04);
+  border: 1px solid oklch(from var(--border) l c h / 0.6);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+.tiptap-prose pre code { background: transparent; padding: 0; font-size: inherit; }
+.tiptap-prose blockquote {
+  background: oklch(from var(--accent) l c h / 0.05);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin: 1rem 0;
+  color: oklch(from var(--foreground) l c h / 0.85);
+  font-style: normal;
+}
+.tiptap-prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.tiptap-prose hr {
+  border: none;
+  border-top: 1px solid oklch(from var(--border) l c h / 0.7);
+  margin: 1.5rem 0;
+}
+.tiptap-prose strong { font-weight: 600; }
+.tiptap-prose mark { background-color: oklch(from var(--accent) l c h / 0.2); color: inherit; padding: 0 2px; border-radius: 2px; }

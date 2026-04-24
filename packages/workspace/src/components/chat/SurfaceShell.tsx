@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import type { DockviewApi } from "dockview-react"
-import { FileText, Layers3, PanelLeftOpen } from "lucide-react"
+import { ChevronRight, FolderTree } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "../../panes/ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
@@ -219,40 +219,39 @@ export function SurfaceShell({
       ) : null}
 
       <div className="relative min-w-0 flex-1">
-        <div className="workbench-dockview h-full">
+        <div
+          className="workbench-dockview h-full"
+          data-collapsed-files={collapsed ? "true" : undefined}
+        >
           <ArtifactSurfacePane
             onReady={handleReady}
-            prefixHeaderActions={
-              collapsed
-                ? () => <FilesToggleAction collapsed={collapsed} onToggle={() => setCollapsed(false)} />
-                : undefined
-            }
-            /* When open, the close button lives inside WorkbenchLeftPane header — no prefix needed */
             rightHeaderActions={() => <WorkbenchCloseAction />}
           />
         </div>
+        {/* Show-files button — overlaid into the tab strip so it is always reachable,
+            even for existing groups created before collapse (dockview only wires
+            prefixHeaderActions on group creation). */}
+        {collapsed && (
+          <div className="pointer-events-none absolute left-0 top-0 z-20 flex items-center" style={{ height: 44 }}>
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              className={cn(
+                "pointer-events-auto ml-2 flex h-7 w-7 items-center justify-center rounded-md",
+                "text-muted-foreground transition-colors",
+                "hover:bg-foreground/5 hover:text-foreground",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              )}
+              aria-label="Show files"
+              title="Show files"
+            >
+              <FolderTree className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+          </div>
+        )}
         <EmptyWorkbenchOverlay api={api} collapsed={collapsed} onExpandFiles={() => setCollapsed(false)} />
       </div>
     </div>
-  )
-}
-
-function FilesToggleAction({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={cn(
-        "mx-1 flex h-7 w-7 items-center justify-center rounded",
-        "text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      )}
-      aria-label={collapsed ? "Show files" : "Hide files"}
-      aria-pressed={!collapsed}
-      title={collapsed ? "Show files" : "Hide files"}
-    >
-      <PanelLeftOpen className={cn("h-4 w-4 transition-transform", !collapsed && "rotate-180")} />
-    </button>
   )
 }
 
@@ -264,14 +263,14 @@ function WorkbenchCloseAction() {
       type="button"
       onClick={() => shell.setSurfaceOpen(false)}
       className={cn(
-        "mx-1 flex h-7 w-7 items-center justify-center rounded",
-        "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "mx-1 flex h-7 w-7 items-center justify-center rounded-md",
+        "text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       )}
       aria-label="Close workbench"
       title="Close workbench (⌘2)"
     >
-      <Layers3 className="h-4 w-4" />
+      <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
     </button>
   )
 }
@@ -302,20 +301,21 @@ function EmptyWorkbenchOverlay({
   return (
     <>
       {/* Fallback top bar so icons are always visible even with no tabs */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-border/60 bg-background px-1" style={{ height: 52 }}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)] bg-background px-1" style={{ height: 44 }}>
         {collapsed && (
           <button
             type="button"
             onClick={onExpandFiles}
             className={cn(
-              "pointer-events-auto mx-1 flex h-7 w-7 items-center justify-center rounded",
-              "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "pointer-events-auto mx-1 flex h-7 w-7 items-center justify-center rounded-md",
+              "text-muted-foreground transition-colors",
+              "hover:bg-foreground/5 hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
             aria-label="Show files"
             title="Show files"
           >
-            <PanelLeftOpen className="h-4 w-4" />
+            <FolderTree className="h-4 w-4" strokeWidth={1.75} />
           </button>
         )}
         <div className="flex-1" />
@@ -324,40 +324,40 @@ function EmptyWorkbenchOverlay({
             type="button"
             onClick={() => shell.setSurfaceOpen(false)}
             className={cn(
-              "pointer-events-auto mx-1 flex h-7 w-7 items-center justify-center rounded",
-              "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "pointer-events-auto mx-1 flex h-7 w-7 items-center justify-center rounded-md",
+              "text-muted-foreground transition-colors",
+              "hover:bg-foreground/5 hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
             aria-label="Close workbench"
             title="Close workbench (⌘2)"
           >
-            <Layers3 className="h-4 w-4" />
+            <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
           </button>
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 pt-12 text-center text-muted-foreground">
-        <div
-          aria-hidden="true"
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground"
-        >
-          <FileText className="h-4 w-4" strokeWidth={1.75} />
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 pt-12 pb-10 text-center">
+        <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+          <span className="inline-block h-px w-4 bg-[color:var(--accent)]" aria-hidden="true" />
+          Workbench
         </div>
-        <div className="text-[13px] font-medium text-foreground">No file open</div>
-        <p className="max-w-[260px] text-[12px] leading-relaxed text-muted-foreground">
-          Open a file from the files pane, or wait for the agent to produce an artifact.
+        <div className="text-[15px] font-medium tracking-tight text-foreground">Nothing open yet</div>
+        <p className="max-w-[280px] text-[12.5px] leading-relaxed text-muted-foreground">
+          Open a file from the tree, or let the agent produce an artifact here.
         </p>
         {collapsed && (
           <button
             type="button"
             onClick={onExpandFiles}
             className={cn(
-              "pointer-events-auto mt-1 flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12px] font-medium text-background shadow-sm",
-              "transition-opacity hover:opacity-90",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "pointer-events-auto mt-2 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-[12px] font-medium text-foreground",
+              "shadow-[0_1px_0_oklch(0_0_0/0.02),0_2px_6px_-2px_oklch(0_0_0/0.06)]",
+              "transition-colors hover:border-[color:var(--accent)]/40 hover:text-[color:var(--accent)]",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
           >
-            <PanelLeftOpen className="h-3.5 w-3.5" />
+            <FolderTree className="h-3.5 w-3.5" strokeWidth={1.75} />
             Show files
           </button>
         )}

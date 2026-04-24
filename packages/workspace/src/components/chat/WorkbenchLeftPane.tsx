@@ -1,7 +1,7 @@
 "use client"
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Database, FolderTree, PanelLeftClose, Search, X } from "lucide-react"
+import { ChevronLeft, Database, FolderTree, Search, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
 import { useFileList, useDataClient } from "../../data"
@@ -112,11 +112,11 @@ export function WorkbenchLeftPane({
 
   return (
     <div className={cn("workbench-left-root flex h-full min-h-0 flex-col", className)}>
-      <div className="flex items-center gap-1 border-b border-border/60 px-2" style={{ height: 52 }}>
+      <div className="flex items-center gap-1 border-b border-[color:oklch(from_var(--border)_l_c_h/0.25)] px-2" style={{ height: 44 }}>
         <div
           role="tablist"
           aria-label="Workbench sources"
-          className="flex items-center gap-0.5 rounded-md bg-background/80 p-0.5 ring-1 ring-border/60"
+          className="flex items-center gap-0.5"
         >
           <SegmentedTab
             active={tab === "files"}
@@ -140,23 +140,31 @@ export function WorkbenchLeftPane({
           type="button"
           onClick={toggleSearch}
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-            searchOpen && "bg-accent text-foreground",
+            "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground",
+            "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "hover:bg-foreground/5 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            searchOpen && "bg-foreground/5 text-foreground",
           )}
           aria-label="Search"
           title="Search"
         >
-          <Search className="h-4 w-4" />
+          <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
         </button>
         {onCollapse && (
           <button
             type="button"
             onClick={onCollapse}
-            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground",
+              "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "hover:bg-foreground/5 hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            )}
             aria-label="Hide files"
             title="Hide files"
           >
-            <PanelLeftClose className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
           </button>
         )}
       </div>
@@ -223,14 +231,22 @@ function SegmentedTab({
       role="tab"
       aria-selected={active}
       className={cn(
-        "flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-all",
+        "relative flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium",
+        "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         active
-          ? "bg-background text-foreground shadow-sm"
+          ? "text-foreground"
           : "text-muted-foreground hover:text-foreground",
       )}
     >
-      {icon}
-      {children}
+      <span className={cn("transition-colors", active ? "text-[color:var(--accent)]" : "")}>{icon}</span>
+      <span className="tracking-tight">{children}</span>
+      {active && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-x-1 -bottom-[9px] h-[2px] rounded-t-[2px] bg-[color:var(--accent)]"
+        />
+      )}
     </button>
   )
 }

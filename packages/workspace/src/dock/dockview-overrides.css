@@ -33,9 +33,9 @@
 .dv-shell .dv-tabs-and-actions-container,
 .dv-shell .tabs-and-actions-container {
   background-color: var(--background) !important;
-  border-bottom: 1px solid oklch(from var(--border) l c h / 0.6);
+  border-bottom: 1px solid oklch(from var(--border) l c h / 0.4);
   padding: 8px 6px 0 6px;
-  gap: 4px;
+  gap: 2px;
   align-items: flex-end;
 }
 
@@ -45,12 +45,19 @@
   gap: 4px;
 }
 
-/* Workbench-specific tab strip height */
+/* Workbench-specific tab strip height — matches WorkbenchLeftPane header for consistency */
 .workbench-dockview .dv-shell .dv-tabs-and-actions-container,
 .workbench-dockview .dv-shell .tabs-and-actions-container,
 .workbench-dockview .dv-tabs-and-actions-container,
 .workbench-dockview .tabs-and-actions-container {
-  height: 52px !important;
+  height: 44px !important;
+}
+
+/* When the left file tree is collapsed, reserve room at the left of the tab strip
+   for the overlaid "Show files" button (44px wide). */
+.workbench-dockview[data-collapsed-files="true"] .dv-tabs-and-actions-container,
+.workbench-dockview[data-collapsed-files="true"] .tabs-and-actions-container {
+  padding-left: 44px !important;
 }
 
 /* Tab base — pill-style, rounded top */
@@ -59,21 +66,24 @@
   color: var(--muted-foreground) !important;
   background-color: transparent !important;
   border: 1px solid transparent;
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
-  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
-  min-width: 110px;
-  max-width: 200px;
+  border-top-left-radius: 7px;
+  border-top-right-radius: 7px;
+  transition: color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  min-width: 120px;
+  max-width: 220px;
   padding: 0;
-  height: 36px;
+  height: 32px;
   align-self: end;
-  font-size: 13px;
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
 }
 
 .dv-shell .dv-tab:hover,
 .dv-shell .tab:hover {
   color: var(--foreground) !important;
-  background-color: oklch(from var(--muted) l c h / 0.6) !important;
+  background-color: oklch(from var(--foreground) l c h / 0.04) !important;
 }
 
 /* Let our custom tab fill the slot */
@@ -88,12 +98,32 @@
 .dv-shell .tab.active-tab {
   color: var(--foreground) !important;
   background-color: var(--background) !important;
-  border-color: oklch(from var(--border) l c h / 0.6);
+  border-color: oklch(from var(--border) l c h / 0.5);
   border-bottom-color: var(--background);
   margin-bottom: -1px;
   position: relative;
   z-index: 1;
   font-weight: 500;
+}
+
+/* Active tab — subtle amber top accent */
+.dv-shell .dv-tab.dv-active-tab::before,
+.dv-shell .tab.active-tab::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: -1px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dv-shell .dv-tab.dv-active-tab:hover::before,
+.dv-shell .tab.active-tab:hover::before {
+  opacity: 0.7;
 }
 
 /* Sash (resize handle) */

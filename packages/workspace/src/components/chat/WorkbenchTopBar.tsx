@@ -2,7 +2,7 @@
 
 import { useContext, useEffect, useRef, useState } from "react"
 import type { DockviewApi } from "dockview-react"
-import { PanelLeftOpen, PanelRightClose, X } from "lucide-react"
+import { ChevronRight, FolderTree, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { ChatShellContext } from "./context"
 
@@ -77,7 +77,7 @@ export function WorkbenchTopBar({ api, collapsed, onExpandFiles, className }: Wo
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center gap-0.5 border-b border-border bg-background px-1",
+        "flex shrink-0 items-center gap-0.5 border-b border-border/40 bg-background px-1",
         className,
       )}
       style={{ height: 44 }}
@@ -87,14 +87,14 @@ export function WorkbenchTopBar({ api, collapsed, onExpandFiles, className }: Wo
           type="button"
           onClick={onExpandFiles}
           className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded",
-            "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+            "text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
           aria-label="Show files"
           title="Show files"
         >
-          <PanelLeftOpen className="h-4 w-4" />
+          <FolderTree className="h-4 w-4" strokeWidth={1.75} />
         </button>
       )}
 
@@ -133,14 +133,14 @@ export function WorkbenchTopBar({ api, collapsed, onExpandFiles, className }: Wo
           type="button"
           onClick={() => shell.setSurfaceOpen(false)}
           className={cn(
-            "ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded",
-            "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+            "text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
           aria-label="Close workbench"
           title="Close workbench (⌘2)"
         >
-          <PanelRightClose className="h-4 w-4" />
+          <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
         </button>
       )}
     </div>

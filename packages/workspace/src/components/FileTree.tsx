@@ -47,10 +47,11 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
       ref={dragHandle}
       style={style}
       className={cn(
-        "group flex items-center gap-2 px-2 py-0.5 cursor-pointer text-[13px] select-none rounded-md",
-        "hover:bg-muted/70",
-        node.isSelected && "bg-muted text-foreground",
-        node.willReceiveDrop && "bg-muted outline outline-1 outline-border",
+        "group relative mx-1 flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] leading-[1.4] cursor-pointer select-none text-foreground",
+        "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "hover:bg-foreground/[0.04]",
+        node.isSelected && "bg-[oklch(from_var(--accent)_l_c_h/0.10)] text-foreground font-medium",
+        node.willReceiveDrop && "bg-foreground/5 outline outline-1 outline-border",
       )}
       onClick={(e) => {
         e.stopPropagation()
@@ -67,16 +68,24 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
         onContextMenu?.(e, data)
       }}
     >
-      {isDir && (
+      {isDir ? (
         <ChevronRightIcon
           className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            "h-3 w-3 shrink-0 text-muted-foreground/70 transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
             node.isOpen && "rotate-90",
           )}
+          strokeWidth={2}
         />
+      ) : (
+        <span className="w-3 shrink-0" />
       )}
-      {!isDir && <span className="w-3.5 shrink-0" />}
-      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <Icon
+        className={cn(
+          "h-4 w-4 shrink-0",
+          node.isSelected ? "text-[color:var(--accent)]" : "text-muted-foreground/80",
+        )}
+        strokeWidth={1.5}
+      />
       <span className="truncate">{data.name}</span>
     </div>
   )
@@ -196,7 +205,7 @@ export function FileTree({
           width="100%"
           height={height}
           rowHeight={26}
-          indent={18}
+          indent={14}
           selection={selection}
           searchTerm={searchQuery ?? ""}
           searchMatch={searchMatch}

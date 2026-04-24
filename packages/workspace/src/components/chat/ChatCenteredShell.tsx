@@ -8,13 +8,13 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { Layers3 } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts"
 import { ChatShellContext, type ChatShellContextValue } from "./context"
 
 export interface ChatCenteredShellProps {
   nav?: ReactNode
+  topBar?: ReactNode
   drawer: ReactNode
   stage: ReactNode
   surface?: ReactNode
@@ -147,6 +147,7 @@ function ResizeHandle({ onChange, label, disabled, prominent }: ResizeHandleProp
 
 export function ChatCenteredShell({
   nav,
+  topBar,
   drawer,
   stage,
   surface,
@@ -202,7 +203,6 @@ export function ChatCenteredShell({
     shortcuts: [
       { key: "1", mod: true, handler: toggleDrawer },
       { key: "2", mod: true, handler: toggleSurface },
-      { key: "k", mod: true, allowInEditable: true, handler: () => focusComposerRef.current?.() },
       { key: "Escape", allowInEditable: true, handler: () => focusComposerRef.current?.() },
     ],
   })
@@ -246,69 +246,157 @@ export function ChatCenteredShell({
 
   return (
     <ChatShellContext.Provider value={ctx}>
-      <div className={cn("flex h-full min-h-0 w-full overflow-hidden bg-background", className)}>
-        {nav && (
-          <aside
-            className="shrink-0"
-            style={{ width: 60, minWidth: 60, maxWidth: 60 }}
-            aria-label="Chat navigation"
-          >
-            {nav}
-          </aside>
+      <div
+        className={cn(
+          "flex h-full min-h-0 w-full flex-col overflow-hidden",
+          "bg-[color:var(--canvas)]",
+          className,
+        )}
+      >
+        {topBar && (
+          <div className="shrink-0" aria-label="App top bar">
+            {topBar}
+          </div>
         )}
 
-        {drawerOpen && (
-          <>
-            <aside
-              className="shrink-0 bg-background"
-              style={{ width: drawerWidth, minWidth: drawerWidth, maxWidth: drawerWidth }}
-              aria-label="Session browser"
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* Sessions drawer — flush, full-height, no shadow */}
+          <aside
+            aria-label="Session browser"
+            aria-hidden={!drawerOpen}
+            className={cn(
+              "relative shrink-0 overflow-hidden bg-background",
+              "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              drawerOpen &&
+                "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+            )}
+            style={{
+              width: drawerOpen ? drawerWidth : 0,
+              minWidth: drawerOpen ? drawerWidth : 0,
+              maxWidth: drawerOpen ? drawerWidth : 0,
+              willChange: "width",
+            }}
+          >
+            <div
+              className={cn(
+                "flex h-full min-h-0 flex-col overflow-hidden",
+                "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                drawerOpen ? "opacity-100" : "opacity-0",
+              )}
             >
               {drawer}
-            </aside>
-            <ResizeHandle label="Resize session drawer" onChange={onDrawerDrag} />
-          </>
-        )}
+            </div>
+          </aside>
 
-        <main className="surface-chat-root relative min-w-0 flex-1" aria-label="Chat stage">
-          {stage}
-        </main>
+          {/* Chat stage — floating card */}
+          <main
+            className="surface-chat-root relative flex min-w-0 flex-1 overflow-hidden p-3"
+            aria-label="Chat stage"
+          >
+            {/* Accent divider — sits only above the chat card, leaving drawer + workbench borderless */}
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-3 top-0 h-px bg-[color:oklch(from_var(--accent)_l_c_h/0.45)]"
+            />
+            <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl bg-background shadow-[0_1px_2px_-1px_oklch(0_0_0/0.04),0_8px_32px_-8px_oklch(0_0_0/0.06),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]">
+              {stage}
 
-        {showSurface ? (
-          <>
-            <ResizeHandle label="Resize surface" onChange={onSurfaceDrag} />
+              <FloatingEdgeButton
+                side="left"
+                open={drawerOpen}
+                icon="sessions"
+                onClick={toggleDrawer}
+                label="Sessions"
+                hint="⌘1"
+              />
+              {Boolean(surface) && (
+                <FloatingEdgeButton
+                  side="right"
+                  open={showSurface}
+                  icon="workbench"
+                  onClick={toggleSurface}
+                  label="Workbench"
+                  hint="⌘2"
+                />
+              )}
+            </div>
+          </main>
+
+          {/* Workbench — flush, full-height, no shadow */}
+          {Boolean(surface) && (
             <aside
-              className="workbench-surface-root shrink-0"
-              style={{ width: effectiveSurfaceWidth, minWidth: effectiveSurfaceWidth, maxWidth: effectiveSurfaceWidth }}
               aria-label="Surface"
+              aria-hidden={!showSurface}
+              className={cn(
+                "relative shrink-0 overflow-hidden bg-background",
+                "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                showSurface &&
+                  "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+              )}
+              style={{
+                width: showSurface ? effectiveSurfaceWidth : 0,
+                minWidth: showSurface ? effectiveSurfaceWidth : 0,
+                maxWidth: showSurface ? effectiveSurfaceWidth : 0,
+                willChange: "width",
+              }}
             >
-              {surface}
-            </aside>
-          </>
-        ) : (
-          Boolean(surface) && (
-            <aside
-              className="flex shrink-0 flex-col items-center gap-2 bg-muted/40 py-2"
-              style={{ width: 36, minWidth: 36, maxWidth: 36 }}
-              aria-label="Workbench (collapsed)"
-            >
-              <button
-                type="button"
-                onClick={() => setSurfaceOpen(true)}
+              <div
                 className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-md",
-                  "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex h-full min-h-0 flex-col overflow-hidden",
+                  "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  showSurface ? "opacity-100" : "opacity-0",
                 )}
-                aria-label="Open workbench"
-                title="Open workbench (⌘2)"
               >
-                <Layers3 className="h-4 w-4" />
-              </button>
+                {surface}
+              </div>
             </aside>
-          )
-        )}
+          )}
+        </div>
       </div>
     </ChatShellContext.Provider>
+  )
+}
+
+interface FloatingEdgeButtonProps {
+  side: "left" | "right"
+  open: boolean
+  icon: "sessions" | "workbench"
+  onClick: () => void
+  label: string
+  hint?: string
+}
+
+function FloatingEdgeButton({ side, open, icon, onClick, label, hint }: FloatingEdgeButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={open}
+      title={hint ? `${label} (${hint})` : label}
+      className={cn(
+        "absolute top-1/2 z-30 -translate-y-1/2",
+        side === "left" ? "left-2" : "right-2",
+        "flex h-9 w-9 flex-col items-center justify-center gap-0.5 rounded-lg",
+        "bg-background text-muted-foreground",
+        "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.08),0_2px_8px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]",
+        "transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "hover:text-[color:var(--accent)] hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(0.62_0.14_65/0.25),inset_0_0_0_1px_oklch(0.62_0.14_65/0.35)]",
+        "hover:-translate-y-[calc(50%+1px)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40",
+        open && "pointer-events-none opacity-0 scale-90",
+      )}
+    >
+      {icon === "sessions" ? (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M12 7v5l3.2 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      ) : (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M3 7.5 A1.5 1.5 0 0 1 4.5 6 h4 l2 2 h9 A1.5 1.5 0 0 1 21 9.5 V17.5 A1.5 1.5 0 0 1 19.5 19 H4.5 A1.5 1.5 0 0 1 3 17.5 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
   )
 }
