@@ -68,6 +68,11 @@ export type SessionState = {
   error: { status: number; code: ErrorCode; message: string } | null
 }
 
+export type RateLimitEndpointOverride = {
+  max: number
+  window: string
+}
+
 export interface CoreConfig {
   appId: string
   appName: string
@@ -87,6 +92,7 @@ export interface CoreConfig {
 
   bodyLimit: number
   logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
+  rateLimit?: Record<string, RateLimitEndpointOverride>
 
   encryption: {
     workspaceSettingsKey: string

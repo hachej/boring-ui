@@ -29,6 +29,24 @@ interface TomlAppConfig {
   features?: { github_oauth?: boolean; invites_enabled?: boolean }
 }
 
+function parseRateLimitOverrides(
+  raw: string | undefined,
+): Record<string, { max: number; window: string }> | undefined {
+  if (!raw) return undefined
+
+  try {
+    return JSON.parse(raw) as Record<string, { max: number; window: string }>
+  } catch {
+    throw new ConfigValidationError([
+      {
+        message:
+          'RATE_LIMIT_OVERRIDES_JSON must be valid JSON object: {"<endpoint>":{"max":number,"window":"<duration>"}}',
+        path: ['rateLimit'],
+      },
+    ])
+  }
+}
+
 export async function loadConfig(
   options?: LoadConfigOptions,
 ): Promise<CoreConfig> {
@@ -134,6 +152,7 @@ export async function loadConfig(
 
     bodyLimit: parseInt(env.BODY_LIMIT_BYTES ?? String(SIXTEEN_MB), 10),
     logLevel: env.LOG_LEVEL ?? 'info',
+    rateLimit: parseRateLimitOverrides(env.RATE_LIMIT_OVERRIDES_JSON),
 
     encryption: {
       workspaceSettingsKey: encryptionKey,

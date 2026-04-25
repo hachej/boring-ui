@@ -11,6 +11,11 @@ const logLevelSchema = z.enum([
   'trace',
 ])
 
+const rateLimitEndpointOverrideSchema = z.object({
+  max: z.number().int().positive(),
+  window: z.string().min(1),
+})
+
 const mailTransportUrlSchema = z.string().refine(
   (url) => VALID_MAIL_SCHEMES.some((s) => url.startsWith(s)),
   {
@@ -37,6 +42,7 @@ export const coreConfigSchema = z.object({
 
   bodyLimit: z.number().int().positive(),
   logLevel: logLevelSchema,
+  rateLimit: z.record(rateLimitEndpointOverrideSchema).optional(),
 
   encryption: z.object({
     workspaceSettingsKey: z.string().min(1),
