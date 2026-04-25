@@ -243,7 +243,7 @@ export function ChatCenteredShell({
     }
     if (stage) return stage
     if (activeSessionId) {
-      return <ChatPanel sessionId={activeSessionId} className="h-full min-h-0" />
+      return <ChatPanel sessionId={activeSessionId} chrome={false} className="h-full min-h-0" />
     }
     return <ChatStagePlaceholder ref={stageRef} />
   }, [stage, activeSessionId])

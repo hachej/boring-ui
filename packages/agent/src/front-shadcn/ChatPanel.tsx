@@ -166,6 +166,13 @@ export interface ChatPanelProps {
   toolRenderers?: ToolRendererOverrides
   extraCommands?: SlashCommand[]
   onSessionReset?: () => void | Promise<void>
+  /**
+   * Render flush, without the outer canvas tint or the inner mx/my rounded
+   * card chrome. Use when embedding ChatPanel inside a parent that already
+   * provides its own card surface (e.g. workspace's ChatCenteredShell).
+   * Defaults to `true` (standalone chrome on).
+   */
+  chrome?: boolean
   className?: string
 }
 
@@ -214,7 +221,7 @@ function ToolCard({ toolPart, mergedToolRenderers }: { toolPart: UIMessage['part
 }
 
 export function ChatPanel(props: ChatPanelProps) {
-  const { sessionId, toolRenderers, extraCommands, onSessionReset, className } = props
+  const { sessionId, toolRenderers, extraCommands, onSessionReset, className, chrome = true } = props
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
   } = useAgentChat({ sessionId })
@@ -375,11 +382,10 @@ export function ChatPanel(props: ChatPanelProps) {
     <div
       data-boring-chat=""
       className={cn(
-        // Outer canvas — matches workspace shell so the chat pane feels
-        // of-a-piece when embedded. Inner surface is a single card with
-        // inset border + micro-shadow (the workspace visual language).
-        "flex h-full min-h-0 flex-col overflow-hidden bg-[color:var(--canvas)]",
-        "text-[15px] text-foreground antialiased",
+        "flex h-full min-h-0 flex-col overflow-hidden text-foreground antialiased",
+        chrome
+          ? "bg-[color:var(--canvas)] text-[15px]"
+          : "bg-transparent text-[15px]",
         className,
       )}
       role="region"
@@ -388,8 +394,8 @@ export function ChatPanel(props: ChatPanelProps) {
       <div
         className={cn(
           "flex h-full min-h-0 flex-col overflow-hidden",
-          "mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)]",
-          "shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]",
+          chrome &&
+            "mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]",
         )}
       >
       <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">

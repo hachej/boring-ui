@@ -124,6 +124,9 @@ importers:
 
   apps/workspace-playground:
     dependencies:
+      '@boring/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@boring/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
