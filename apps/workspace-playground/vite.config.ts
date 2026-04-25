@@ -43,6 +43,10 @@ export default defineConfig({
   },
   server: {
     port: 5200,
+    // Bind to all interfaces so the dev server is reachable from outside
+    // the VM (the OVH coding box is accessed by external IP). The previous
+    // localhost-only bind broke remote access.
+    host: true,
     proxy: {
       "/api/v1/agent": `http://127.0.0.1:${AGENT_API_PORT}`,
     },
