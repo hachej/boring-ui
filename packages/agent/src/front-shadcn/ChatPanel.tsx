@@ -968,15 +968,41 @@ function MessageActionsBar({
   onRegenerate: () => void
 }) {
   const [copied, setCopied] = useState(false)
-  const handleCopy = () => {
-    if (typeof navigator === 'undefined' || !navigator.clipboard) return
-    navigator.clipboard.writeText(text).then(
-      () => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      },
-      () => { /* permission denied — silently ignore */ },
-    )
+  const markCopied = () => {
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  const handleCopy = async () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text)
+        markCopied()
+        return
+      } catch {
+        /* fall through to legacy fallback */
+      }
+    }
+    // Fallback for non-secure contexts (HTTP dev URLs etc.) where the
+    // async Clipboard API is unavailable. document.execCommand('copy') is
+    // deprecated but still supported by every shipping browser and works
+    // off a temporary textarea + selection.
+    if (typeof document === 'undefined') return
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    ta.style.pointerEvents = 'none'
+    document.body.appendChild(ta)
+    ta.select()
+    try {
+      const ok = document.execCommand('copy')
+      if (ok) markCopied()
+    } catch {
+      /* nothing more we can do */
+    } finally {
+      document.body.removeChild(ta)
+    }
   }
   const actionBtnClass = cn(
     "inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] px-1.5",
