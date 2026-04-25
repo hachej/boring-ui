@@ -1,4 +1,3 @@
-export { ChatNavRail } from "./ChatNavRail"
 export { SessionBrowser } from "./SessionBrowser"
 export type { SessionBrowserProps } from "./SessionBrowser"
 export { ChatStagePlaceholder } from "./ChatStagePlaceholder"

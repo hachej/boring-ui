@@ -147,12 +147,12 @@ export type { SessionListProps, SessionItem } from "./components/SessionList"
 
 // Chat-centered layout
 export {
-  ChatNavRail,
   SessionBrowser,
   ChatStagePlaceholder,
   SurfaceShell,
   WorkbenchLeftPane,
   ChatCenteredShell,
+  ChatTopBar,
   useChatShell,
 } from "./components/chat"
 export type {
@@ -163,6 +163,7 @@ export type {
   WorkbenchLeftPaneProps,
   WorkbenchLeftTab,
   ChatCenteredShellProps,
+  ChatTopBarProps,
   ChatShellContextValue,
 } from "./components/chat"
 

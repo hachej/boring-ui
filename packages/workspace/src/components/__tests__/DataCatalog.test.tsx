@@ -19,10 +19,10 @@ describe("DataCatalog", () => {
     expect(screen.getByText("Sales Data")).toBeInTheDocument()
   })
 
-  it("shows source name and type badge on each card", () => {
+  it("shows source name and abbreviated type chip on each row", () => {
     render(<DataCatalog sources={sampleSources} />)
-    expect(screen.getByText("postgres")).toBeInTheDocument()
-    expect(screen.getByText("csv")).toBeInTheDocument()
+    expect(screen.getByText("POS")).toBeInTheDocument()
+    expect(screen.getByText("CSV")).toBeInTheDocument()
   })
 
   it("shows description when provided", () => {
@@ -59,9 +59,8 @@ describe("DataCatalog", () => {
     expect(container.querySelectorAll("[tabindex]")).toHaveLength(0)
   })
 
-  it("uses shadcn Card components", () => {
+  it("renders one row per source", () => {
     const { container } = render(<DataCatalog sources={sampleSources} />)
-    expect(container.querySelectorAll("[data-slot=card]")).toHaveLength(2)
-    expect(container.querySelectorAll("[data-slot=card-header]")).toHaveLength(2)
+    expect(container.querySelectorAll("li")).toHaveLength(2)
   })
 })
