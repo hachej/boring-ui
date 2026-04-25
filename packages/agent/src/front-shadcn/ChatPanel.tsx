@@ -618,11 +618,14 @@ export function ChatPanel(props: ChatPanelProps) {
                 // focus state is signalled only by an accent ring on focus.
                 "bg-transparent shadow-none focus-within:shadow-[inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)] focus-within:rounded-[var(--radius-xl)] transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
             // Neutralize the inner InputGroup's default border/rounded/shadow
-            // so the outer surface is the only bounded container.
-            "[&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none",
-            "[&_[data-slot=input-group]]:shadow-none [&_[data-slot=input-group]]:bg-transparent",
-            "[&_[data-slot=input-group]]:dark:bg-transparent [&_[data-slot=input-group]]:ring-0",
-            "[&_[data-slot=input-group]]:has-[:focus]:ring-0",
+            // so the outer surface is the only bounded container. The `!`
+            // bumps these past InputGroup's own `border-input border` and
+            // `shadow-xs` declarations, which otherwise win the cascade race
+            // when both rules have equal class-selector specificity.
+            "[&_[data-slot=input-group]]:!border-0 [&_[data-slot=input-group]]:!rounded-none",
+            "[&_[data-slot=input-group]]:!shadow-none [&_[data-slot=input-group]]:!bg-transparent",
+            "[&_[data-slot=input-group]]:dark:!bg-transparent [&_[data-slot=input-group]]:!ring-0",
+            "[&_[data-slot=input-group]]:has-[:focus]:!ring-0",
           )}
         >
           <PromptInput
