@@ -1,0 +1,55 @@
+# ── Stage 1: base ────────────────────────────────────────────────
+# Shared base with Node 20 slim + pnpm via corepack.
+# Pin the digest so builds are reproducible across machines.
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS base
+WORKDIR /app
+RUN corepack enable
+
+# ── Stage 2: deps ────────────────────────────────────────────────
+# Install dependencies in a cached layer. Only re-runs when lockfile
+# or workspace topology changes.
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/core/package.json packages/core/package.json
+COPY packages/workspace/package.json packages/workspace/package.json
+COPY packages/agent/package.json packages/agent/package.json
+# Child apps add their own COPY here:
+# COPY apps/<name>/package.json apps/<name>/package.json
+RUN pnpm install --frozen-lockfile
+
+# ── Stage 3: build ───────────────────────────────────────────────
+# Copy source and build all packages in dependency order.
+FROM deps AS build
+COPY packages/ packages/
+# Child apps add their own COPY here:
+# COPY apps/<name>/ apps/<name>/
+RUN pnpm -r build
+
+# ── Stage 4: runtime ────────────────────────────────────────────
+# Minimal production image — no devDependencies, no source.
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runtime
+WORKDIR /app
+RUN corepack enable
+
+COPY --from=build /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=build /app/node_modules/ node_modules/
+COPY --from=build /app/packages/core/dist/ packages/core/dist/
+COPY --from=build /app/packages/core/package.json packages/core/package.json
+COPY --from=build /app/packages/core/drizzle/ packages/core/drizzle/
+COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
+COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
+COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
+COPY --from=build /app/packages/agent/package.json packages/agent/package.json
+# Child apps add their own COPY here:
+# COPY --from=build /app/apps/<name>/dist/ apps/<name>/dist/
+# COPY --from=build /app/apps/<name>/package.json apps/<name>/package.json
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"
+
+# Child apps override this CMD with their entry point:
+# CMD ["node", "apps/<name>/dist/server/main.js"]
+CMD ["node", "packages/core/dist/server/index.js"]
