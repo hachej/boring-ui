@@ -60,7 +60,7 @@ import { Route } from 'react-router-dom'
 |---|---|
 | Package shape | **One combined package** (`@boring/core`) — no separate `@boring/cloud`. Local and real providers coexist behind interfaces. |
 | DB stack | **Drizzle + Postgres (Neon)**. SQLite fallback is a v1.x concern. |
-| Auth | **better-auth** with email/password + GitHub OAuth + email verification + password reset + magic links. Drizzle adapter against the same Postgres. `AuthProvider` interface kept as a partial swap seam. |
+| Auth | **better-auth** with email/password + email verification + password reset + magic links. Drizzle adapter against the same Postgres. `AuthProvider` interface kept as a partial swap seam. **GitHub OAuth deferred to v1.x** (bundled with agent's GitHub App install — both ship together so users do "Connect GitHub" once, not twice). |
 | Tenancy | Port v1: **workspaces + members + invites** with owner/editor/viewer roles. Matches agent's `workspaceId` per instance. |
 | Frontend shell | `<BoringApp>` mounts **react-router v6** with a route slot. Default routes: `/auth/signin`, `/auth/signup`, `/auth/callback/github`, `/auth/verify-email`, `/auth/forgot-password`, `/auth/reset-password`, `/me`. |
 | UI primitives | Stay in **`@boring/workspace/ui-shadcn`**. Core depends on workspace for UI. |
@@ -109,7 +109,7 @@ v1 had `core ← workspace ← agent`. v2 fully inverts the chain:
 
 ### What you get
 
-A new app depending on `@boring/core` boots with Postgres + Drizzle, better-auth (email/pw + GitHub OAuth + verification + reset + magic links), session cookies, sign-in/up pages, user + workspace CRUD, `/api/v1/me`, `/api/v1/workspaces`, `/api/v1/capabilities`.
+A new app depending on `@boring/core` boots with Postgres + Drizzle, better-auth (email/pw + verification + reset + magic links), session cookies, sign-in/up pages, user + workspace CRUD, `/api/v1/me`, `/api/v1/workspaces`, `/api/v1/capabilities`. (GitHub OAuth deferred to v1.x.)
 
 ### 1. Install
 
@@ -293,7 +293,7 @@ favicon = "/favicon.ico"
 default = "system"          # "light" | "dark" | "system"
 
 [features]
-github_oauth = true
+github_oauth = false   # v1: deferred to v1.x
 invites_enabled = true
 ```
 
@@ -307,8 +307,8 @@ invites_enabled = true
 | `WORKSPACE_SETTINGS_ENCRYPTION_KEY` | yes (prod) | 32-byte hex. pgcrypto key for `workspace_settings.value`. Rotating invalidates existing encrypted values. |
 | `MAIL_FROM` | yes (prod) | Sender address for verification / reset / magic-link emails. Without it those flows are disabled. |
 | `MAIL_TRANSPORT_URL` | yes (prod) | URL scheme dispatched by core's transport parser. **Recommended default: `resend://<api-key>`** (Resend REST — no dependency on the resend npm package; core just hits `https://api.resend.com/emails`). Also supported: `smtp://user:pass@host:port`, `smtps://user:pass@host:port`, `console://` (dev-only — logs to stdout). Unknown scheme = boot-time `ConfigValidationError`. |
-| `GITHUB_CLIENT_ID` | if github_oauth | From your GitHub OAuth app. |
-| `GITHUB_CLIENT_SECRET` | if github_oauth | From your GitHub OAuth app. |
+| `GITHUB_CLIENT_ID` | **v1.x — not used in v1** | Reserved for when GitHub OAuth ships in v1.x alongside GitHub App install. Set if `features.github_oauth = true`. |
+| `GITHUB_CLIENT_SECRET` | **v1.x — not used in v1** | Same. |
 | `PORT` | no | Fastify port (default 3000). |
 | `HOST` | no | Fastify host (default 0.0.0.0). |
 | `STATIC_DIR` | no | Directory served at `/`. |
@@ -746,7 +746,7 @@ Every `/api/v1/workspaces/:id/**` handler wears `requireWorkspaceMember(role?)`.
 
 ### v1 shape
 
-- **[better-auth](https://www.better-auth.com)** — email/password + GitHub OAuth + email verification + password reset + magic links.
+- **[better-auth](https://www.better-auth.com)** — email/password + email verification + password reset + magic links. (GitHub OAuth deferred to v1.x.)
 - **Drizzle adapter** against the same Postgres instance core uses.
 - Tables owned by better-auth: `users`, `sessions`, `accounts`, `verification_tokens`.
 - Session = signed cookie with explicit flags (match v1 contract): `HttpOnly; SameSite=Lax; Path=/; Max-Age=<SESSION_TTL_SECONDS>; Secure` (when `BETTER_AUTH_URL` is https). Auto-rotated by better-auth.
@@ -994,7 +994,7 @@ Override via:
 ### In v1
 
 - Email + password.
-- GitHub OAuth.
+- ~~GitHub OAuth.~~ Deferred to v1.x (bundled with agent's GitHub App install — see §Open questions deferred).
 - Email verification (better-auth `emailVerification: { sendOnSignUp: true }`).
 - Password reset (better-auth `emailAndPassword: { sendResetPassword }`).
 - Magic links (better-auth `magicLink` plugin).
@@ -1575,7 +1575,7 @@ Total: **~16 working days to v1** (up from 14 due to email flows + hardening mil
 ## Acceptance criteria
 
 - `pnpm --dir packages/core typecheck && test && lint` all green.
-- Fresh clone → `pnpm install` → `pnpm --dir apps/full-app dev` boots a working app with sign-in, GitHub OAuth, email verification, and a live workspace.
+- Fresh clone → `pnpm install` → `pnpm --dir apps/full-app dev` boots a working app with email/password sign-in, email verification, magic links, and a live workspace. (GitHub OAuth in v1.x.)
 - No v2 app directly depends on `postgres`, `drizzle-orm`, or `better-auth` — everything goes through `@boring/core`.
 - `@boring/agent` and `@boring/workspace` public APIs unchanged except for the (optional) core integration points (`registerAgentRoutes`, workspace's new `ChatPanel` import from agent).
 - Integration test asserts 403 for non-members on every `/api/v1/workspaces/:id/**` route.
@@ -1594,7 +1594,7 @@ Total: **~16 working days to v1** (up from 14 due to email flows + hardening mil
 | **Postgres** | Reachable via `DATABASE_URL`. For horizontally-scaled deployments, use a connection pooler (Neon pooler, pgbouncer, Supavisor) — core does not ship its own. Pool size defaults to 10; override via `PGPOOL_MAX` if needed (v1.x). |
 | **Env vars** | Every required var from §Config. Platform secret stores work fine. |
 | **Inbound** | Port `$PORT` accepting HTTPS. PaaS handles TLS termination; core speaks HTTP to its edge proxy. |
-| **Outbound** | GitHub OAuth (`api.github.com`) + mail API (`api.resend.com` or SMTP host). |
+| **Outbound** | mail API (`api.resend.com` or SMTP host). v1.x adds `api.github.com` for OAuth. |
 | **Filesystem** | Stateless by default. Only needed if `STATIC_DIR` points at a volume. |
 | **Signals** | PaaS sends SIGTERM on deploy; core drains for 30s then exits cleanly. |
 
@@ -1658,7 +1658,8 @@ CMD ["node", "apps/full-app/dist/server/main.js"]
 ## Open questions deferred to v1.x
 
 - SQLite/libsql support for agent CLI zero-setup (currently handled via `LocalUserStore`).
-- Additional OAuth providers (Google, Apple, Discord).
+- **GitHub OAuth login** (`<SignInPage>` "Sign in with GitHub" button) — deferred to v1.x to ship together with agent's GitHub App install flow. Users do "Connect GitHub" once instead of twice. Adds ~1 day when it lands (better-auth `socialProviders: { github: { ... } }` is one config block + one button).
+- Additional OAuth providers (Google, Apple, Discord) — beyond GitHub, all v1.x+.
 - GitHub App install flow (owned by `@boring/agent` when it grows git ops).
 - Stripe / billing.
 - Audit log table.
