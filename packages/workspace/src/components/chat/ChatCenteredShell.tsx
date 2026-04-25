@@ -11,17 +11,42 @@ import {
 import { cn } from "../../lib/utils"
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts"
 import { ChatShellContext, type ChatShellContextValue } from "./context"
+import { ChatTopBar } from "./ChatTopBar"
+import { SessionBrowser } from "./SessionBrowser"
+import { SurfaceShell } from "./SurfaceShell"
+import { ChatStagePlaceholder, type ChatStageHandle } from "./ChatStagePlaceholder"
+import { CommandPalette } from "../CommandPalette"
+import type { SessionItem } from "../SessionList"
+import type { DataSource } from "../DataCatalog"
 
 export interface ChatCenteredShellProps {
-  nav?: ReactNode
-  topBar?: ReactNode
-  drawer: ReactNode
-  stage: ReactNode
-  surface?: ReactNode
+  /** Branding shown in the top bar. */
+  appTitle?: string
+  /** User initial shown in the avatar bubble. */
+  userInitial?: string
+  /** Click handler for the avatar bubble. */
+  onAvatarClick?: () => void
 
-  /** Whether the sessions drawer is open by default on first load. Defaults to false. */
+  /** Session list rendered in the left drawer. */
+  sessions?: SessionItem[]
+  activeSessionId?: string | null
+  onSwitchSession?: (id: string) => void
+  onCreateSession?: () => void
+  onDeleteSession?: (id: string) => void
+
+  /** Workbench (right surface) configuration. */
+  rootDir?: string
+  dataSources?: DataSource[]
+  surfaceStorageKey?: string
+
+  /**
+   * Custom chat stage. Receives a handle so the layout can focus the composer
+   * on Escape. Defaults to ChatStagePlaceholder.
+   */
+  stage?: ReactNode | ((api: { ref: React.Ref<ChatStageHandle> }) => ReactNode)
+
+  /** Initial pane state. */
   drawerDefaultOpen?: boolean
-  /** Whether the surface (workbench) is open by default on first load. Defaults to false. */
   surfaceDefaultOpen?: boolean
 
   drawerDefaultWidth?: number
@@ -32,9 +57,19 @@ export interface ChatCenteredShellProps {
   surfaceMinWidth?: number
   surfaceMaxWidthViewportRatio?: number
 
+  /** Persist drawer/surface open state + widths under this prefix. */
   storageKey?: string
-  onNewChat?: () => void
-  focusComposer?: () => void
+
+  /**
+   * Override the accent CSS variable for the entire shell (button highlights,
+   * the divider above the chat card, etc.). Any valid CSS color works; OKLCH
+   * is preferred for consistency with the rest of the design tokens.
+   */
+  accentColor?: string
+
+  /** Mount the global command palette (⌘K / ⌘P). Defaults to true. */
+  withCommandPalette?: boolean
+
   className?: string
 }
 
@@ -93,64 +128,23 @@ function useViewportWidth(): number {
   return w
 }
 
-interface ResizeHandleProps {
-  onChange: (delta: number) => void
-  label: string
-  disabled?: boolean
-  prominent?: boolean
-}
-
-function ResizeHandle({ onChange, label, disabled, prominent }: ResizeHandleProps) {
-  const startRef = useRef<number | null>(null)
-
-  const startDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (disabled) return
-    e.preventDefault()
-    e.currentTarget.setPointerCapture(e.pointerId)
-    startRef.current = e.clientX
-  }, [disabled])
-
-  const onDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (startRef.current === null) return
-    const delta = e.clientX - startRef.current
-    startRef.current = e.clientX
-    onChange(delta)
-  }, [onChange])
-
-  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (startRef.current === null) return
-    startRef.current = null
-    e.currentTarget.releasePointerCapture(e.pointerId)
-  }, [])
-
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={label}
-      tabIndex={disabled ? -1 : 0}
-      onPointerDown={startDrag}
-      onPointerMove={onDrag}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      className={cn(
-        "relative z-[1] shrink-0 cursor-col-resize bg-border/60 transition-colors hover:bg-primary/50",
-        "focus-visible:outline-none focus-visible:bg-primary/70",
-        prominent ? "w-px" : "w-px",
-        disabled && "pointer-events-none",
-      )}
-    >
-      <span aria-hidden="true" className="absolute inset-y-0 -left-1.5 -right-1.5" />
-    </div>
-  )
-}
-
 export function ChatCenteredShell({
-  nav,
-  topBar,
-  drawer,
+  appTitle = "Boring",
+  userInitial = "J",
+  onAvatarClick,
+
+  sessions = [],
+  activeSessionId,
+  onSwitchSession,
+  onCreateSession,
+  onDeleteSession,
+
+  rootDir = "",
+  dataSources = [],
+  surfaceStorageKey,
+
   stage,
-  surface,
+
   drawerDefaultOpen = false,
   surfaceDefaultOpen = false,
   drawerDefaultWidth = DEFAULTS.drawerWidth,
@@ -159,21 +153,22 @@ export function ChatCenteredShell({
   surfaceDefaultWidth = DEFAULTS.surfaceWidth,
   surfaceMinWidth = DEFAULTS.surfaceMin,
   surfaceMaxWidthViewportRatio = DEFAULTS.surfaceMaxRatio,
+
   storageKey = "boring-ui-v2:chat-centered-shell:v2",
-  onNewChat,
-  focusComposer,
+  accentColor,
+  withCommandPalette = true,
   className,
 }: ChatCenteredShellProps) {
   const [drawerOpen, setDrawerOpenRaw] = useState(() =>
     readBool(`${storageKey}:drawer`, drawerDefaultOpen),
   )
   const [surfaceOpen, setSurfaceOpenRaw] = useState(() =>
-    readBool(`${storageKey}:surface`, surfaceDefaultOpen && Boolean(surface)),
+    readBool(`${storageKey}:surface`, surfaceDefaultOpen),
   )
-  const [drawerWidth, setDrawerWidth] = useState(() =>
+  const [drawerWidth] = useState(() =>
     clamp(readNumber(`${storageKey}:drawerWidth`, drawerDefaultWidth), drawerMinWidth, drawerMaxWidth),
   )
-  const [surfaceWidth, setSurfaceWidth] = useState(() =>
+  const [surfaceWidth] = useState(() =>
     readNumber(`${storageKey}:surfaceWidth`, surfaceDefaultWidth),
   )
 
@@ -196,36 +191,34 @@ export function ChatCenteredShell({
   useEffect(() => writeNumber(`${storageKey}:drawerWidth`, drawerWidth), [storageKey, drawerWidth])
   useEffect(() => writeNumber(`${storageKey}:surfaceWidth`, surfaceWidth), [storageKey, surfaceWidth])
 
-  const focusComposerRef = useRef(focusComposer)
-  focusComposerRef.current = focusComposer
+  const stageRef = useRef<ChatStageHandle | null>(null)
+  const focusComposer = useCallback(() => {
+    stageRef.current?.focusComposer()
+  }, [])
 
   useKeyboardShortcuts({
     shortcuts: [
       { key: "1", mod: true, handler: toggleDrawer },
       { key: "2", mod: true, handler: toggleSurface },
-      { key: "Escape", allowInEditable: true, handler: () => focusComposerRef.current?.() },
+      { key: "Escape", allowInEditable: true, handler: focusComposer },
     ],
   })
 
-  const onDrawerDrag = useCallback(
-    (delta: number) => setDrawerWidth((w) => clamp(w + delta, drawerMinWidth, drawerMaxWidth)),
-    [drawerMinWidth, drawerMaxWidth],
-  )
-  const onSurfaceDrag = useCallback(
-    // surface sits on the right, so dragging its left handle to the LEFT should INCREASE width
-    (delta: number) => setSurfaceWidth((w) => clamp(w - delta, surfaceMinWidth, surfaceMax)),
-    [surfaceMinWidth, surfaceMax],
-  )
+  const openCommandPalette = useCallback(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }),
+    )
+  }, [])
 
   const ctx = useMemo<ChatShellContextValue>(
     () => ({
       drawerOpen,
       setDrawerOpen,
       toggleDrawer,
-      surfaceOpen: surfaceOpen && Boolean(surface),
+      surfaceOpen,
       setSurfaceOpen,
       toggleSurface,
-      onNewChat,
+      onNewChat: onCreateSession,
       focusComposer,
     }),
     [
@@ -233,16 +226,27 @@ export function ChatCenteredShell({
       setDrawerOpen,
       toggleDrawer,
       surfaceOpen,
-      surface,
       setSurfaceOpen,
       toggleSurface,
-      onNewChat,
+      onCreateSession,
       focusComposer,
     ],
   )
 
-  const showSurface = Boolean(surface) && surfaceOpen
   const effectiveSurfaceWidth = clamp(surfaceWidth, surfaceMinWidth, surfaceMax)
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+
+  const stageNode = useMemo<ReactNode>(() => {
+    if (typeof stage === "function") {
+      return stage({ ref: stageRef })
+    }
+    if (stage) return stage
+    return <ChatStagePlaceholder ref={stageRef} />
+  }, [stage])
+
+  const rootStyle = accentColor
+    ? ({ "--accent": accentColor } as React.CSSProperties)
+    : undefined
 
   return (
     <ChatShellContext.Provider value={ctx}>
@@ -252,12 +256,17 @@ export function ChatCenteredShell({
           "bg-[color:var(--canvas)]",
           className,
         )}
+        style={rootStyle}
       >
-        {topBar && (
-          <div className="shrink-0" aria-label="App top bar">
-            {topBar}
-          </div>
-        )}
+        <div className="shrink-0" aria-label="App top bar">
+          <ChatTopBar
+            appTitle={appTitle}
+            sessionTitle={activeSession?.title}
+            userInitial={userInitial}
+            onAvatarClick={onAvatarClick}
+            onCommandPalette={openCommandPalette}
+          />
+        </div>
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Sessions drawer — flush, full-height, no shadow */}
@@ -284,7 +293,13 @@ export function ChatCenteredShell({
                 drawerOpen ? "opacity-100" : "opacity-0",
               )}
             >
-              {drawer}
+              <SessionBrowser
+                sessions={sessions}
+                activeId={activeSessionId}
+                onSwitch={onSwitchSession}
+                onCreate={onCreateSession}
+                onDelete={onDeleteSession}
+              />
             </div>
           </aside>
 
@@ -293,13 +308,12 @@ export function ChatCenteredShell({
             className="surface-chat-root relative flex min-w-0 flex-1 overflow-hidden p-3"
             aria-label="Chat stage"
           >
-            {/* Accent divider — sits only above the chat card, leaving drawer + workbench borderless */}
             <span
               aria-hidden="true"
               className="pointer-events-none absolute inset-x-3 top-0 h-px bg-[color:oklch(from_var(--accent)_l_c_h/0.45)]"
             />
             <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl bg-background shadow-[0_1px_2px_-1px_oklch(0_0_0/0.04),0_8px_32px_-8px_oklch(0_0_0/0.06),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]">
-              {stage}
+              {stageNode}
 
               <FloatingEdgeButton
                 side="left"
@@ -309,49 +323,51 @@ export function ChatCenteredShell({
                 label="Sessions"
                 hint="⌘1"
               />
-              {Boolean(surface) && (
-                <FloatingEdgeButton
-                  side="right"
-                  open={showSurface}
-                  icon="workbench"
-                  onClick={toggleSurface}
-                  label="Workbench"
-                  hint="⌘2"
-                />
-              )}
+              <FloatingEdgeButton
+                side="right"
+                open={surfaceOpen}
+                icon="workbench"
+                onClick={toggleSurface}
+                label="Workbench"
+                hint="⌘2"
+              />
             </div>
           </main>
 
           {/* Workbench — flush, full-height, no shadow */}
-          {Boolean(surface) && (
-            <aside
-              aria-label="Surface"
-              aria-hidden={!showSurface}
+          <aside
+            aria-label="Surface"
+            aria-hidden={!surfaceOpen}
+            className={cn(
+              "relative shrink-0 overflow-hidden bg-background",
+              "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+              surfaceOpen &&
+                "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+            )}
+            style={{
+              width: surfaceOpen ? effectiveSurfaceWidth : 0,
+              minWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
+              maxWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
+              willChange: "width",
+            }}
+          >
+            <div
               className={cn(
-                "relative shrink-0 overflow-hidden bg-background",
-                "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-                showSurface &&
-                  "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+                "flex h-full min-h-0 flex-col overflow-hidden",
+                "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                surfaceOpen ? "opacity-100" : "opacity-0",
               )}
-              style={{
-                width: showSurface ? effectiveSurfaceWidth : 0,
-                minWidth: showSurface ? effectiveSurfaceWidth : 0,
-                maxWidth: showSurface ? effectiveSurfaceWidth : 0,
-                willChange: "width",
-              }}
             >
-              <div
-                className={cn(
-                  "flex h-full min-h-0 flex-col overflow-hidden",
-                  "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-                  showSurface ? "opacity-100" : "opacity-0",
-                )}
-              >
-                {surface}
-              </div>
-            </aside>
-          )}
+              <SurfaceShell
+                rootDir={rootDir}
+                dataSources={dataSources}
+                storageKey={surfaceStorageKey}
+              />
+            </div>
+          </aside>
         </div>
+
+        {withCommandPalette && <CommandPalette />}
       </div>
     </ChatShellContext.Provider>
   )

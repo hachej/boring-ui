@@ -1,22 +1,15 @@
-import { useCallback, useRef } from "react"
 import {
   WorkspaceProvider,
   ChatCenteredShell,
-  ChatTopBar,
-  SessionBrowser,
-  ChatStagePlaceholder,
-  SurfaceShell,
   DataProvider,
   CodeEditorPane,
   MarkdownEditorPane,
   EmptyPane,
-  CommandPalette,
-  type ChatStageHandle,
+  type PanelConfig,
 } from "@boring/workspace"
-import type { PanelConfig } from "@boring/workspace"
 import { mockSessions, useMockSessions } from "./mockSessions"
 
-// ----- Panel registry (used only by SurfaceShell's internal Dockview) -----
+// ----- Panel registry -----
 
 function CodeEditorWrapper(props: Record<string, unknown>) {
   const p = props as { params?: { path?: string }; api?: unknown; panelApi?: unknown }
@@ -31,108 +24,32 @@ function MarkdownEditorWrapper(props: Record<string, unknown>) {
 }
 
 const panels: PanelConfig[] = [
-  {
-    id: "code-editor",
-    title: "Editor",
-    component: CodeEditorWrapper as React.ComponentType<unknown>,
-    placement: "center",
-    source: "app",
-  },
-  {
-    id: "markdown-editor",
-    title: "Markdown",
-    component: MarkdownEditorWrapper as React.ComponentType<unknown>,
-    placement: "center",
-    source: "app",
-  },
-  {
-    id: "csv-viewer",
-    title: "CSV",
-    component: CodeEditorWrapper as React.ComponentType<unknown>,
-    placement: "center",
-    source: "app",
-  },
-  {
-    id: "empty",
-    title: "Welcome",
-    component: EmptyPane as React.ComponentType<unknown>,
-    placement: "center",
-    source: "app",
-  },
+  { id: "code-editor", title: "Editor", component: CodeEditorWrapper as React.ComponentType<unknown>, placement: "center", source: "app" },
+  { id: "markdown-editor", title: "Markdown", component: MarkdownEditorWrapper as React.ComponentType<unknown>, placement: "center", source: "app" },
+  { id: "csv-viewer", title: "CSV", component: CodeEditorWrapper as React.ComponentType<unknown>, placement: "center", source: "app" },
+  { id: "empty", title: "Welcome", component: EmptyPane as React.ComponentType<unknown>, placement: "center", source: "app" },
 ]
 
-// ----- Composition -----
-
-function SessionBrowserPanel() {
-  const { sessions, activeId } = useMockSessions()
-  return (
-    <SessionBrowser
-      sessions={sessions}
-      activeId={activeId}
-      onSwitch={mockSessions.switchTo}
-      onCreate={mockSessions.create}
-      onDelete={mockSessions.remove}
-    />
-  )
-}
-
-function ChatStagePanel({ stageRef }: { stageRef: React.MutableRefObject<ChatStageHandle | null> }) {
-  return (
-    <ChatStagePlaceholder
-      ref={(h) => {
-        stageRef.current = h
-      }}
-    />
-  )
-}
-
-function TopBarPanel() {
-  const { sessions, activeId } = useMockSessions()
-  const active = sessions.find((s) => s.id === activeId)
-  const openPalette = useCallback(() => {
-    document.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }),
-    )
-  }, [])
-  return (
-    <ChatTopBar
-      sessionTitle={active?.title}
-      appTitle="Boring"
-      userInitial="J"
-      onCommandPalette={openPalette}
-    />
-  )
-}
-
-const mockDataSources = [
+const dataSources = [
   { id: "users", name: "users", type: "table", description: "Account + profile rows" },
   { id: "events", name: "events", type: "stream", description: "Raw event firehose" },
   { id: "sessions", name: "sessions_daily", type: "view", description: "Rolled-up session metrics" },
   { id: "logs", name: "app_logs", type: "index", description: "Structured application logs" },
 ]
 
-function SurfacePanel() {
-  return <SurfaceShell rootDir="" storageKey="boring-ui-v2:chat-shell:surface" dataSources={mockDataSources} />
-}
-
 function Shell() {
-  const stageRef = useRef<ChatStageHandle | null>(null)
-  const focusComposer = useCallback(() => {
-    stageRef.current?.focusComposer()
-  }, [])
-
+  const { sessions, activeId } = useMockSessions()
   return (
-    <>
-      <ChatCenteredShell
-        topBar={<TopBarPanel />}
-        drawer={<SessionBrowserPanel />}
-        stage={<ChatStagePanel stageRef={stageRef} />}
-        surface={<SurfacePanel />}
-        onNewChat={mockSessions.create}
-        focusComposer={focusComposer}
-      />
-      <CommandPalette />
-    </>
+    <ChatCenteredShell
+      appTitle="Boring"
+      userInitial="J"
+      sessions={sessions}
+      activeSessionId={activeId}
+      onSwitchSession={mockSessions.switchTo}
+      onCreateSession={mockSessions.create}
+      onDeleteSession={mockSessions.remove}
+      dataSources={dataSources}
+    />
   )
 }
 
