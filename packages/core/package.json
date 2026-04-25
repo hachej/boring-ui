@@ -37,7 +37,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo",
-    "auth:generate-schema": "npx @better-auth/cli generate --config src/server/auth/schema-config.ts --output drizzle/ --yes || npx @better-auth/cli generate --config src/server/auth/schema-config.ts --output drizzle/schema.ts --yes",
+    "auth:generate-schema": "BETTER_AUTH_SCHEMA_GEN=1 npx @better-auth/cli generate --config src/server/auth/schema-config.ts --output drizzle/ --yes || BETTER_AUTH_SCHEMA_GEN=1 npx @better-auth/cli generate --config src/server/auth/schema-config.ts --output drizzle/schema.ts --yes",
     "drizzle:generate": "drizzle-kit generate --config drizzle.config.ts",
     "drizzle:migrate": "drizzle-kit migrate --config drizzle.config.ts"
   },
