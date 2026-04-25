@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type {
   CoreConfig,
+  CapabilitiesResponse,
   User,
   Workspace,
   WorkspaceMember,
@@ -54,6 +55,10 @@ export interface AuthProvider {
   cookieName(): string
 }
 
+export type CapabilitiesContributor = (ctx: {
+  config: CoreConfig
+}) => Partial<CapabilitiesResponse> | Promise<Partial<CapabilitiesResponse>>
+
 export interface CreateCoreAppOptions {
   authProvider?: AuthProvider
   userStore?: UserStore
@@ -65,6 +70,11 @@ declare module 'fastify' {
   interface FastifyInstance {
     config: CoreConfig
     addRedactionPaths(paths: string[]): void
+    registerCapabilitiesContributor(
+      name: string,
+      fn: CapabilitiesContributor,
+    ): void
+    capabilitiesCache: CapabilitiesResponse | null
   }
   interface FastifyRequest {
     user?: { id: string; email: string; name: string | null } | null

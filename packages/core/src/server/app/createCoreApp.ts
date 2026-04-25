@@ -1,11 +1,13 @@
 import Fastify from 'fastify'
+import type { FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
-import closeWithGrace from 'close-with-grace'
 import { randomUUID } from 'node:crypto'
 import type { CoreConfig } from '../../shared/types.js'
 import type { CreateCoreAppOptions } from './types.js'
 import { registerErrorHandler } from './errorHandler.js'
+import { registerCapabilities } from './capabilities.js'
+import { registerRateLimits } from '../security/rateLimit.js'
 
 const DEFAULT_REDACTION_KEYWORDS = [
   'secret',
@@ -15,6 +17,12 @@ const DEFAULT_REDACTION_KEYWORDS = [
   'authorization',
   'cookie',
 ]
+const SHUTDOWN_GRACE_MS = 30_000
+
+type Closable = {
+  close?: () => Promise<unknown> | unknown
+  end?: () => Promise<unknown> | unknown
+}
 
 function redactObject(
   obj: Record<string, unknown>,
@@ -35,6 +43,97 @@ function redactObject(
     }
   }
   return result
+}
+
+async function closeDbPoolIfPresent(app: FastifyInstance): Promise<void> {
+  const maybeDb = (app as FastifyInstance & { db?: unknown }).db
+  if (!maybeDb || typeof maybeDb !== 'object') return
+
+  const db = maybeDb as Closable
+  const closeFn =
+    typeof db.end === 'function'
+      ? db.end.bind(db)
+      : typeof db.close === 'function'
+        ? db.close.bind(db)
+        : null
+
+  if (!closeFn) return
+  await closeFn()
+}
+
+function installShutdownHandlers(app: FastifyInstance): void {
+  let shuttingDown = false
+
+  const onSignal = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return
+    shuttingDown = true
+
+    app.log.info({ signal }, 'shutdown:start')
+
+    try {
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+      const result = await Promise.race([
+        app.close(),
+        new Promise<'timeout'>((resolve) => {
+          timeoutHandle = setTimeout(() => {
+            resolve('timeout')
+          }, SHUTDOWN_GRACE_MS)
+        }),
+      ])
+      if (timeoutHandle) clearTimeout(timeoutHandle)
+
+      if (result === 'timeout') {
+        app.log.warn(
+          { signal, timeoutMs: SHUTDOWN_GRACE_MS },
+          'shutdown:grace-exceeded',
+        )
+        try {
+          await closeDbPoolIfPresent(app)
+        } catch (error) {
+          app.log.error(
+            { err: error, signal },
+            'shutdown:db-close-failed',
+          )
+        }
+        process.exit(1)
+        return
+      }
+
+      try {
+        await closeDbPoolIfPresent(app)
+      } catch (error) {
+        app.log.error({ err: error, signal }, 'shutdown:db-close-failed')
+        process.exit(1)
+        return
+      }
+
+      app.log.info({ signal }, 'shutdown:complete')
+      process.exit(0)
+    } catch (error) {
+      app.log.error({ err: error, signal }, 'shutdown:error')
+      try {
+        await closeDbPoolIfPresent(app)
+      } catch (dbError) {
+        app.log.error({ err: dbError, signal }, 'shutdown:db-close-failed')
+      }
+      process.exit(1)
+    }
+  }
+
+  const sigtermHandler = () => {
+    void onSignal('SIGTERM')
+  }
+  const sigintHandler = () => {
+    void onSignal('SIGINT')
+  }
+
+  process.once('SIGTERM', sigtermHandler)
+  process.once('SIGINT', sigintHandler)
+
+  app.addHook('onClose', async () => {
+    process.removeListener('SIGTERM', sigtermHandler)
+    process.removeListener('SIGINT', sigintHandler)
+  })
 }
 
 export async function createCoreApp(
@@ -110,15 +209,12 @@ export async function createCoreApp(
   })
 
   registerErrorHandler(app)
+  registerCapabilities(app)
+  await registerRateLimits(app)
 
   const manageShutdown = options?.manageShutdown ?? true
   if (manageShutdown) {
-    closeWithGrace({ delay: 30_000 }, async ({ signal, err }) => {
-      if (err) {
-        app.log.error({ err, signal }, 'shutdown:error')
-      }
-      await app.close()
-    })
+    installShutdownHandlers(app)
   }
 
   return app
