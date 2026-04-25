@@ -110,11 +110,12 @@ function ToolbarButton({ onClick, active, disabled, title, children }: ToolbarBu
       title={title}
       aria-pressed={active}
       className={cn(
-        "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors",
-        "hover:bg-muted hover:text-foreground",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/70",
+        "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "hover:bg-foreground/5 hover:text-foreground",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-50",
-        active && "bg-muted text-foreground",
+        active && "bg-[color:var(--accent-soft)] text-[color:var(--accent)]",
       )}
     >
       {children}
@@ -123,7 +124,7 @@ function ToolbarButton({ onClick, active, disabled, title, children }: ToolbarBu
 }
 
 function ToolbarSeparator() {
-  return <div aria-hidden="true" className="mx-1 h-4 w-px bg-border/60" />
+  return <div aria-hidden="true" className="mx-2 h-3.5 w-px bg-border/50" />
 }
 
 export function isSafeUrl(url: string): boolean {
@@ -233,7 +234,7 @@ export function MarkdownEditor({
     editable: !readOnly,
     editorProps: {
       attributes: {
-        class: "prose prose-sm dark:prose-invert max-w-none px-6 py-5 focus:outline-none min-h-[200px]",
+        class: "tiptap-prose max-w-[68ch] px-8 py-6 focus:outline-none min-h-[200px]",
       },
       transformPastedHTML: sanitizeHtml,
     },

@@ -34,21 +34,28 @@ export function createShadcnTheme(options?: { dark?: boolean }) {
         fontFamily: "var(--font-mono, ui-monospace, monospace)",
       },
       ".cm-gutters": {
-        backgroundColor: "var(--muted)",
-        color: "var(--muted-foreground)",
-        borderRight: "1px solid var(--border)",
+        backgroundColor: "transparent",
+        color: "oklch(from var(--muted-foreground) l c h / 0.55)",
+        borderRight: "none",
+        paddingRight: "12px",
+      },
+      ".cm-lineNumbers .cm-gutterElement": {
+        padding: "0 6px 0 12px",
+        fontVariantNumeric: "tabular-nums",
+        fontSize: "12px",
       },
       ".cm-activeLineGutter": {
-        backgroundColor: "var(--accent)",
+        backgroundColor: "oklch(0.62 0.14 65 / 0.05)",
+        color: "var(--foreground)",
       },
       ".cm-activeLine": {
-        backgroundColor: "var(--accent)",
+        backgroundColor: "oklch(0.62 0.14 65 / 0.04)",
       },
       "&.cm-focused .cm-cursor": {
-        borderLeftColor: "var(--foreground)",
+        borderLeftColor: "oklch(0.62 0.14 65)",
       },
       ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-        backgroundColor: "var(--accent)",
+        backgroundColor: "oklch(0.62 0.14 65 / 0.16)",
       },
       ".cm-panels": {
         backgroundColor: "var(--muted)",
