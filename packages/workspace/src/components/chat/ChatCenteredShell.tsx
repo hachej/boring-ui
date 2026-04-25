@@ -17,7 +17,7 @@ import { SurfaceShell } from "./SurfaceShell"
 import { ChatStagePlaceholder, type ChatStageHandle } from "./ChatStagePlaceholder"
 import { CommandPalette } from "../CommandPalette"
 import type { SessionItem } from "../SessionList"
-import type { DataSource } from "../DataCatalog"
+import type { DataSource } from "./WorkbenchLeftPane"
 import { ChatPanel } from "@boring/agent/ui-shadcn"
 
 export interface ChatCenteredShellProps {
@@ -243,7 +243,19 @@ export function ChatCenteredShell({
     }
     if (stage) return stage
     if (activeSessionId) {
-      return <ChatPanel sessionId={activeSessionId} chrome={false} className="h-full min-h-0" />
+      // key={activeSessionId} forces a full remount on session change so
+      // useAgentChat re-hydrates from localStorage + server cleanly. Without
+      // the key, the same hook instance survives the prop swap and the
+      // session change reads as "click did nothing visible" until messages
+      // happen to differ.
+      return (
+        <ChatPanel
+          key={activeSessionId}
+          sessionId={activeSessionId}
+          chrome={false}
+          className="h-full min-h-0"
+        />
+      )
     }
     return <ChatStagePlaceholder ref={stageRef} />
   }, [stage, activeSessionId])
@@ -307,16 +319,12 @@ export function ChatCenteredShell({
             </div>
           </aside>
 
-          {/* Chat stage — floating card */}
+          {/* Chat stage — full-bleed, no card chrome */}
           <main
-            className="surface-chat-root relative flex min-w-0 flex-1 overflow-hidden p-3"
+            className="surface-chat-root relative flex min-w-0 flex-1 overflow-hidden bg-background"
             aria-label="Chat stage"
           >
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-3 top-0 h-px bg-[color:oklch(from_var(--accent)_l_c_h/0.45)]"
-            />
-            <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl bg-background shadow-[0_1px_2px_-1px_oklch(0_0_0/0.04),0_8px_32px_-8px_oklch(0_0_0/0.06),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]">
+            <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
               {stageNode}
 
               <FloatingEdgeButton

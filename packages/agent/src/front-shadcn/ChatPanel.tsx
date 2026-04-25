@@ -613,10 +613,10 @@ export function ChatPanel(props: ChatPanelProps) {
             // subtle tonal lift.
             chrome
               ? "rounded-[var(--radius-xl)] bg-[color:var(--card)] shadow-[0_1px_2px_-1px_oklch(0_0_0/0.06),0_6px_18px_-12px_oklch(0_0_0/0.12),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)] focus-within:shadow-[0_1px_3px_-1px_oklch(0_0_0/0.08),0_10px_28px_-14px_oklch(0_0_0/0.16),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)] transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
-              : // Embedded composer: borderless at rest, accent ring only on focus.
-                // The parent chat card already provides the surface; doubling up
-                // produces the "card in a card" look the user flagged.
-                "rounded-[var(--radius-xl)] bg-[color:oklch(from_var(--muted)_l_c_h/0.4)] shadow-none focus-within:shadow-[inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)] transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+              : // Embedded composer: completely flush — no card, no border, no
+                // shadow, no tinted bg. The parent surface owns all chrome;
+                // focus state is signalled only by an accent ring on focus.
+                "bg-transparent shadow-none focus-within:shadow-[inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)] focus-within:rounded-[var(--radius-xl)] transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
             // Neutralize the inner InputGroup's default border/rounded/shadow
             // so the outer surface is the only bounded container.
             "[&_[data-slot=input-group]]:border-0 [&_[data-slot=input-group]]:rounded-none",
