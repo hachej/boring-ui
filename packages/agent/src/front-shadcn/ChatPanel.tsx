@@ -623,14 +623,16 @@ export function ChatPanel(props: ChatPanelProps) {
             maxFiles={20}
             maxFileSize={5 * 1024 * 1024}
             onError={(err) => {
-              if (err.code === 'max_files') {
-                setAttachmentNotice(`Up to ${err.max} attachments per message.`)
-              } else if (err.code === 'max_file_size') {
-                setAttachmentNotice(`Files must be under ${Math.round(err.max / 1024 / 1024)} MB each.`)
-              } else if (err.code === 'accept') {
+              const e = err as { code: string; message?: string; max?: number }
+              if (e.code === 'max_files') {
+                setAttachmentNotice(`Up to ${e.max ?? 20} attachments per message.`)
+              } else if (e.code === 'max_file_size') {
+                const mb = e.max ? Math.round(e.max / 1024 / 1024) : 5
+                setAttachmentNotice(`Files must be under ${mb} MB each.`)
+              } else if (e.code === 'accept') {
                 setAttachmentNotice(`That file type isn't supported here.`)
               } else {
-                setAttachmentNotice(err.message || 'Attachment rejected.')
+                setAttachmentNotice(e.message || 'Attachment rejected.')
               }
             }}
           >
