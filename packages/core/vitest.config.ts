@@ -5,5 +5,10 @@ export default defineConfig({
     globals: true,
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
+    setupFiles: [
+      './src/server/__tests__/_setup.ts',
+      './src/front/__tests__/_setup.ts',
+    ],
+    reporters: ['default'],
   },
 })
