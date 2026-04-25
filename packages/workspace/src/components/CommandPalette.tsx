@@ -136,7 +136,12 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="overflow-hidden p-0" showCloseButton={false}>
+      <DialogContent
+        className="overflow-hidden p-0"
+        showCloseButton={false}
+        onPointerDownOutside={() => setOpen(false)}
+        onEscapeKeyDown={() => setOpen(false)}
+      >
         <DialogHeader className="sr-only">
           <DialogTitle>Command Palette</DialogTitle>
           <DialogDescription>Search files or type &gt; for commands</DialogDescription>

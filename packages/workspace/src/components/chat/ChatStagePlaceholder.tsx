@@ -114,9 +114,6 @@ export const ChatStagePlaceholder = forwardRef<ChatStageHandle, ChatStagePlaceho
                   <kbd className="inline-flex h-[17px] items-center rounded border border-border/40 bg-background px-1 font-mono text-[9.5px] text-muted-foreground/70">⇧↵</kbd>
                   <span>for new line</span>
                 </span>
-                <kbd className="inline-flex h-[17px] items-center rounded border border-border/40 bg-background px-1.5 font-mono text-[9.5px] text-muted-foreground/70">
-                  ⌘K
-                </kbd>
               </div>
               <button
                 type="button"

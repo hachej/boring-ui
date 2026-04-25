@@ -28,7 +28,7 @@ export function ChatTopBar({
     <header
       className={cn(
         "relative flex items-center justify-between gap-3 px-4",
-        "bg-background",
+        "bg-background border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)]",
         className,
       )}
       style={{ height: 52 }}
