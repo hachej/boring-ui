@@ -1,0 +1,64 @@
+export const ERROR_CODES = {
+  // Auth + session
+  UNAUTHORIZED: 'unauthorized',
+  FORBIDDEN: 'forbidden',
+  WEAK_PASSWORD: 'weak_password',
+  EMAIL_IN_USE: 'email_in_use',
+
+  // Workspace membership
+  NOT_MEMBER: 'not_member',
+  LAST_OWNER: 'last_owner',
+  WORKSPACE_PROVISIONING: 'workspace_provisioning',
+
+  // Invites
+  INVITE_NOT_FOUND: 'invite_not_found',
+  INVITE_EXPIRED: 'invite_expired',
+  INVITE_ALREADY_ACCEPTED: 'invite_already_accepted',
+  INVITE_EMAIL_MISMATCH: 'invite_email_mismatch',
+
+  // Validation + infra
+  NOT_FOUND: 'not_found',
+  VALIDATION_FAILED: 'validation_failed',
+  CONFIG_VALIDATION_FAILED: 'config_validation_failed',
+  CONFIG_FETCH_FAILED: 'config_fetch_failed',
+  RATE_LIMITED: 'rate_limited',
+  MAIL_DISABLED: 'mail_disabled',
+  DB_UNAVAILABLE: 'db_unavailable',
+  INTERNAL_ERROR: 'internal_error',
+} as const
+
+export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
+
+export class HttpError extends Error {
+  readonly status: number
+  readonly code: ErrorCode
+  readonly requestId?: string
+
+  constructor(init: {
+    status: number
+    code: ErrorCode
+    message: string
+    requestId?: string
+  }) {
+    super(init.message)
+    this.name = 'HttpError'
+    this.status = init.status
+    this.code = init.code
+    this.requestId = init.requestId
+  }
+}
+
+export class ConfigValidationError extends Error {
+  readonly issues: Array<{ message: string; path: Array<string | number> }>
+
+  constructor(
+    issues: Array<{ message: string; path: Array<string | number> }>,
+  ) {
+    const summary = issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n')
+    super(`Config validation failed:\n${summary}`)
+    this.name = 'ConfigValidationError'
+    this.issues = issues
+  }
+}
