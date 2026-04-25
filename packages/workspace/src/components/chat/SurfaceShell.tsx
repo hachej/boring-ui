@@ -8,7 +8,12 @@ import { ArtifactSurfacePane } from "../../panes/ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
 import { WorkbenchLeftPane } from "./WorkbenchLeftPane"
 import { ChatShellContext } from "./context"
-import type { DataSource } from "../DataCatalog"
+import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
+
+export interface SurfaceShellApi {
+  /** Open a file in the workbench. Idempotent — re-activates an existing pane for the same path. */
+  openFile: (path: string) => void
+}
 
 export interface SurfaceShellProps {
   rootDir?: string
@@ -17,6 +22,10 @@ export interface SurfaceShellProps {
   sidebarMaxWidth?: number
   storageKey?: string
   dataSources?: DataSource[]
+  /** Plug-in data pane config — takes precedence over dataSources when set. */
+  data?: DataPaneConfig
+  /** Called once when the surface dockview becomes ready, with an imperative handle. */
+  onReady?: (api: SurfaceShellApi) => void
   className?: string
 }
 
@@ -44,6 +53,8 @@ export function SurfaceShell({
   sidebarMaxWidth = 480,
   storageKey,
   dataSources = [],
+  data,
+  onReady,
   className,
 }: SurfaceShellProps) {
   const [collapsed, setCollapsed] = useState(false)
@@ -52,11 +63,31 @@ export function SurfaceShell({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [api, setApi] = useState<DockviewApi | null>(null)
+  const onReadyRef = useRef(onReady)
+  onReadyRef.current = onReady
+
+  const openFileSync = useCallback((path: string) => {
+    const api = apiRef.current
+    if (!api) return
+    const panelId = `file:${path}`
+    const existing = api.getPanel(panelId)
+    if (existing) {
+      existing.api.setActive()
+      return
+    }
+    api.addPanel({
+      id: panelId,
+      component: componentForPath(path),
+      title: path.split("/").pop() ?? path,
+      params: { path },
+    })
+  }, [])
 
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
-  }, [])
+    onReadyRef.current?.({ openFile: openFileSync })
+  }, [openFileSync])
 
   const openFile = useCallback(
     async (path: string): Promise<CommandResult> => {
@@ -194,6 +225,7 @@ export function SurfaceShell({
               rootDir={rootDir}
               bridge={bridge}
               dataSources={dataSources}
+              data={data}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>

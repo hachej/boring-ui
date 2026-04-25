@@ -17,8 +17,10 @@ import { SurfaceShell } from "./SurfaceShell"
 import { ChatStagePlaceholder, type ChatStageHandle } from "./ChatStagePlaceholder"
 import { CommandPalette } from "../CommandPalette"
 import type { SessionItem } from "../SessionList"
-import type { DataSource } from "./WorkbenchLeftPane"
+import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
 import { ChatPanel } from "@boring/agent/ui-shadcn"
+import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
+import type { SurfaceShellApi } from "./SurfaceShell"
 
 export interface ChatCenteredShellProps {
   /** Branding shown in the top bar. */
@@ -38,6 +40,8 @@ export interface ChatCenteredShellProps {
   /** Workbench (right surface) configuration. */
   rootDir?: string
   dataSources?: DataSource[]
+  /** Plug-in data pane config — takes precedence over dataSources when set. */
+  data?: DataPaneConfig
   surfaceStorageKey?: string
 
   /**
@@ -142,6 +146,7 @@ export function ChatCenteredShell({
 
   rootDir = "",
   dataSources = [],
+  data,
   surfaceStorageKey,
 
   stage,
@@ -196,6 +201,32 @@ export function ChatCenteredShell({
   const focusComposer = useCallback(() => {
     stageRef.current?.focusComposer()
   }, [])
+
+  // Imperative handle to the workbench surface — set by SurfaceShell on mount
+  // via its onReady callback. Used to open files clicked from chat tool
+  // outputs (read/write/edit) directly into the workbench.
+  const surfaceRef = useRef<SurfaceShellApi | null>(null)
+  const handleSurfaceReady = useCallback((api: SurfaceShellApi) => {
+    surfaceRef.current = api
+  }, [])
+
+  const openArtifact = useCallback(
+    (path: string) => {
+      // Auto-open the workbench so the file appears even if it was collapsed.
+      if (!surfaceOpen) setSurfaceOpen(true)
+      // Defer if the surface isn't mounted yet — dockview's onReady fires
+      // after layout, so a previously-closed workbench needs two frames.
+      const open = () => surfaceRef.current?.openFile(path)
+      if (surfaceRef.current) open()
+      else requestAnimationFrame(() => requestAnimationFrame(open))
+    },
+    [surfaceOpen, setSurfaceOpen],
+  )
+
+  const toolRenderers = useMemo(
+    () => createWorkspaceToolRenderers({ onOpenArtifact: openArtifact }),
+    [openArtifact],
+  )
 
   useKeyboardShortcuts({
     shortcuts: [
@@ -253,12 +284,13 @@ export function ChatCenteredShell({
           key={activeSessionId}
           sessionId={activeSessionId}
           chrome={false}
+          toolRenderers={toolRenderers}
           className="h-full min-h-0"
         />
       )
     }
     return <ChatStagePlaceholder ref={stageRef} />
-  }, [stage, activeSessionId])
+  }, [stage, activeSessionId, toolRenderers])
 
   const rootStyle = accentColor
     ? ({ "--accent": accentColor } as React.CSSProperties)
@@ -373,7 +405,9 @@ export function ChatCenteredShell({
               <SurfaceShell
                 rootDir={rootDir}
                 dataSources={dataSources}
+                data={data}
                 storageKey={surfaceStorageKey}
+                onReady={handleSurfaceReady}
               />
             </div>
           </aside>

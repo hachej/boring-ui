@@ -195,7 +195,7 @@ export const showcaseMessages = [
         toolName: "read",
         toolCallId: "tc-read-1",
         state: "output-available" as const,
-        input: { path: "src/server/greeter.ts" },
+        input: { path: "greeter.ts" },
         output: { text: "export function greet(name: string): string {\n  return `Hello, ${name}!`\n}\n" },
       } as any,
       {
@@ -203,7 +203,7 @@ export const showcaseMessages = [
         toolName: "write",
         toolCallId: "tc-write-1",
         state: "output-available" as const,
-        input: { path: "src/server/greeter.ts", content: "export function greet(name: string): string {\n  return `Hi, ${name}.`\n}\n" },
+        input: { path: "greeter.ts", content: "export function greet(name: string): string {\n  return `Hi, ${name}.`\n}\n" },
         output: { written: 74 },
       } as any,
       {
@@ -212,7 +212,7 @@ export const showcaseMessages = [
         toolCallId: "tc-edit-1",
         state: "output-available" as const,
         input: {
-          path: "src/server/greeter.ts",
+          path: "greeter.ts",
           oldString: "return `Hi, ${name}.`",
           newString: "return `Hi, ${name}! Welcome aboard.`",
         },
