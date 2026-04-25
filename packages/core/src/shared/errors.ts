@@ -48,6 +48,16 @@ export class HttpError extends Error {
   }
 }
 
+export class ConfigFetchError extends Error {
+  readonly requestId?: string
+
+  constructor(message: string, requestId?: string) {
+    super(message)
+    this.name = 'ConfigFetchError'
+    this.requestId = requestId
+  }
+}
+
 export class ConfigValidationError extends Error {
   readonly issues: Array<{ message: string; path: Array<string | number> }>
 

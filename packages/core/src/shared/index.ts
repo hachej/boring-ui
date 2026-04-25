@@ -9,6 +9,7 @@ export type {
   WorkspaceRuntime,
   SessionPayload,
   SessionState,
+  RateLimitEndpointOverride,
   JsonValue,
   CoreCapabilities,
   CapabilitiesResponse,
@@ -17,6 +18,7 @@ export type {
 export {
   ERROR_CODES,
   HttpError,
+  ConfigFetchError,
   ConfigValidationError,
 } from './errors.js'
 export type { ErrorCode } from './errors.js'

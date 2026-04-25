@@ -1,1 +1,1 @@
-export {}
+export { AppErrorBoundary } from './AppErrorBoundary.js'
