@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsup'
 
-const EXTERNALS = ['react', 'react-dom']
+const EXTERNALS = ['react', 'react-dom', '@boring/workspace']
 
 export default defineConfig([
   {

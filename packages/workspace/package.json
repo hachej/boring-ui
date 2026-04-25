@@ -16,6 +16,10 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     },
+    "./ui-shadcn": {
+      "types": "./dist/ui-shadcn.d.ts",
+      "import": "./dist/ui-shadcn.js"
+    },
     "./globals.css": "./src/globals.css"
   },
   "scripts": {

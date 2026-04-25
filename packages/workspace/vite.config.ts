@@ -16,6 +16,7 @@ export default defineConfig({
       entry: {
         workspace: resolve(__dirname, "src/index.ts"),
         testing: resolve(__dirname, "src/testing/index.ts"),
+        "ui-shadcn": resolve(__dirname, "src/components/ui/index.ts"),
       },
       formats: ["es"],
     },

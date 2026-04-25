@@ -37,15 +37,18 @@
     "typecheck": "tsc --noEmit",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo",
+    "auth:generate-schema": "npx @better-auth/cli generate --config src/server/auth/schema-config.ts --output drizzle/ --yes || npx @better-auth/cli generate --config src/server/auth/schema-config.ts --output drizzle/schema.ts --yes",
     "drizzle:generate": "drizzle-kit generate --config drizzle.config.ts",
     "drizzle:migrate": "drizzle-kit migrate --config drizzle.config.ts"
   },
   "dependencies": {
+    "@boring/workspace": "workspace:*",
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.1",
     "@fastify/rate-limit": "^10.3.0",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.0.7",
+    "better-auth": "^1.6.9",
     "close-with-grace": "^2.2.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.3.3",
