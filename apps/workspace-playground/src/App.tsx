@@ -48,34 +48,33 @@ function Shell() {
   const { sessions, activeId } = useMockSessions()
   const showcase = useMemo(isShowcaseRoute, [])
 
+  // Showcase = a one-shot seed: hydrate the fixture into localStorage and
+  // pin the showcase session as the initial active row. Subsequent clicks
+  // in the session drawer flow through mockSessions.switchTo as normal,
+  // so the user can navigate away from the showcase to other sessions
+  // (and back) without losing the gallery.
   useEffect(() => {
-    if (showcase) seedShowcase()
+    if (!showcase) return
+    seedShowcase()
+    if (mockSessions.getState().activeId !== SHOWCASE_SESSION_ID) {
+      mockSessions.switchTo(SHOWCASE_SESSION_ID)
+    }
   }, [showcase])
 
-  if (showcase) {
-    const showcaseSessions = [
+  const sessionList = useMemo(() => {
+    if (!showcase) return sessions
+    if (sessions.some((s) => s.id === SHOWCASE_SESSION_ID)) return sessions
+    return [
       { id: SHOWCASE_SESSION_ID, title: "Showcase conversation", updatedAt: Date.now() },
-      ...sessions.filter((s) => s.id !== SHOWCASE_SESSION_ID),
+      ...sessions,
     ]
-    return (
-      <ChatCenteredShell
-        appTitle="Boring"
-        userInitial="J"
-        sessions={showcaseSessions}
-        activeSessionId={SHOWCASE_SESSION_ID}
-        onSwitchSession={mockSessions.switchTo}
-        onCreateSession={mockSessions.create}
-        onDeleteSession={mockSessions.remove}
-        dataSources={dataSources}
-      />
-    )
-  }
+  }, [showcase, sessions])
 
   return (
     <ChatCenteredShell
       appTitle="Boring"
       userInitial="J"
-      sessions={sessions}
+      sessions={sessionList}
       activeSessionId={activeId}
       onSwitchSession={mockSessions.switchTo}
       onCreateSession={mockSessions.create}
