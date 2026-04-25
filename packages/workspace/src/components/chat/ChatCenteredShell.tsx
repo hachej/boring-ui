@@ -18,6 +18,7 @@ import { ChatStagePlaceholder, type ChatStageHandle } from "./ChatStagePlacehold
 import { CommandPalette } from "../CommandPalette"
 import type { SessionItem } from "../SessionList"
 import type { DataSource } from "../DataCatalog"
+import { ChatPanel } from "@boring/agent/ui-shadcn"
 
 export interface ChatCenteredShellProps {
   /** Branding shown in the top bar. */
@@ -241,8 +242,11 @@ export function ChatCenteredShell({
       return stage({ ref: stageRef })
     }
     if (stage) return stage
+    if (activeSessionId) {
+      return <ChatPanel sessionId={activeSessionId} className="h-full min-h-0" />
+    }
     return <ChatStagePlaceholder ref={stageRef} />
-  }, [stage])
+  }, [stage, activeSessionId])
 
   const rootStyle = accentColor
     ? ({ "--accent": accentColor } as React.CSSProperties)

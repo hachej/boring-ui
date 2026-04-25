@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Tell Tailwind to scan @boring/agent's source files so classes used inside
+ * agent's ChatPanel + primitives end up in the final CSS. The packages share
+ * the same token system (see @theme inline below), so co-loading the agent
+ * primitives here is safe — no duplicate token declarations. */
+@source "../../../node_modules/@boring/agent/dist/**/*.{js,d.ts}";
+@source "../../agent/src/**/*.{ts,tsx}";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
