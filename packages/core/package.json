@@ -26,7 +26,8 @@
     "**/*.css"
   ],
   "files": [
-    "dist"
+    "dist",
+    "drizzle"
   ],
   "scripts": {
     "build": "tsup && cp src/front/theme.css dist/front/theme.css",
