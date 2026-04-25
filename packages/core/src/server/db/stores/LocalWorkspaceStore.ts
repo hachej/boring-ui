@@ -64,6 +64,10 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       const memberKey = `${ws.id}:${userId}`
       if (this.members.has(memberKey)) result.push(ws)
     }
+    result.sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1
+      return b.createdAt.localeCompare(a.createdAt)
+    })
     return result
   }
 
@@ -230,12 +234,15 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     if (inv.acceptedAt) {
       throw new HttpError({ status: 409, code: ERROR_CODES.INVITE_ALREADY_ACCEPTED, message: 'Invite already accepted' })
     }
+    const now = new Date().toISOString()
+    inv.acceptedAt = now
+    this.invites.set(inviteId, inv)
     const user = await this.userStore.getById(userId)
     if (user && inv.email.toLowerCase() !== user.email.toLowerCase()) {
+      inv.acceptedAt = null
+      this.invites.set(inviteId, inv)
       throw new HttpError({ status: 403, code: ERROR_CODES.INVITE_EMAIL_MISMATCH, message: 'Invite email does not match your account' })
     }
-    inv.acceptedAt = new Date().toISOString()
-    this.invites.set(inviteId, inv)
     const member = await this.upsertMember(workspaceId, userId, inv.role)
     return { invite: inv, member }
   }

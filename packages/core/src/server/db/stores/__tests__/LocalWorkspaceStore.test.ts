@@ -34,6 +34,21 @@ describe('LocalWorkspaceStore', () => {
       expect(list[0].name).toBe('WS1')
     })
 
+    it('list returns isDefault first, then createdAt DESC', async () => {
+      const ws1 = await store.create('u1', 'Oldest', 'app1')
+      const ws2 = await store.create('u1', 'Middle', 'app1')
+      const ws3 = await store.create('u1', 'Newest', 'app1')
+      const wsMap = (store as any).workspaces as Map<string, any>
+      wsMap.set(ws1.id, { ...wsMap.get(ws1.id), createdAt: '2026-01-01T00:00:00.000Z', isDefault: true })
+      wsMap.set(ws2.id, { ...wsMap.get(ws2.id), createdAt: '2026-01-02T00:00:00.000Z' })
+      wsMap.set(ws3.id, { ...wsMap.get(ws3.id), createdAt: '2026-01-03T00:00:00.000Z' })
+      const list = await store.list('u1', 'app1')
+      expect(list[0].name).toBe('Oldest')
+      expect(list[0].isDefault).toBe(true)
+      expect(list[1].name).toBe('Newest')
+      expect(list[2].name).toBe('Middle')
+    })
+
     it('get returns null for non-existent workspace', async () => {
       expect(await store.get('nonexistent')).toBeNull()
     })
@@ -168,26 +183,46 @@ describe('LocalWorkspaceStore', () => {
       expect(result.invite.acceptedAt).toBeDefined()
     })
 
-    it('acceptInvite throws on expired invite', async () => {
+    it('acceptInvite throws INVITE_EXPIRED (410) on expired invite', async () => {
       const ws = await store.create('u1', 'WS', 'app1')
       const { invite } = await store.createInvite(ws.id, 'bob@test.com', 'editor', null)
-      // Manually expire the invite
       const expired = { ...invite, expiresAt: new Date(Date.now() - 1000).toISOString() }
       ;(store as any).invites.set(invite.id, expired)
-      await expect(store.acceptInvite(ws.id, invite.id, 'u2')).rejects.toThrow(HttpError)
+      try {
+        await store.acceptInvite(ws.id, invite.id, 'u2')
+        expect.unreachable('should have thrown')
+      } catch (e) {
+        expect(e).toBeInstanceOf(HttpError)
+        expect((e as HttpError).status).toBe(410)
+        expect((e as HttpError).code).toBe(ERROR_CODES.INVITE_EXPIRED)
+      }
     })
 
-    it('acceptInvite throws on email mismatch', async () => {
+    it('acceptInvite throws INVITE_EMAIL_MISMATCH (403) on email mismatch', async () => {
       const ws = await store.create('u1', 'WS', 'app1')
       const { invite } = await store.createInvite(ws.id, 'other@test.com', 'editor', null)
-      await expect(store.acceptInvite(ws.id, invite.id, 'u2')).rejects.toThrow(HttpError)
+      try {
+        await store.acceptInvite(ws.id, invite.id, 'u2')
+        expect.unreachable('should have thrown')
+      } catch (e) {
+        expect(e).toBeInstanceOf(HttpError)
+        expect((e as HttpError).status).toBe(403)
+        expect((e as HttpError).code).toBe(ERROR_CODES.INVITE_EMAIL_MISMATCH)
+      }
     })
 
-    it('acceptInvite throws on already accepted', async () => {
+    it('acceptInvite throws INVITE_ALREADY_ACCEPTED (409) on already accepted', async () => {
       const ws = await store.create('u1', 'WS', 'app1')
       const { invite } = await store.createInvite(ws.id, 'bob@test.com', 'editor', null)
       await store.acceptInvite(ws.id, invite.id, 'u2')
-      await expect(store.acceptInvite(ws.id, invite.id, 'u2')).rejects.toThrow(HttpError)
+      try {
+        await store.acceptInvite(ws.id, invite.id, 'u2')
+        expect.unreachable('should have thrown')
+      } catch (e) {
+        expect(e).toBeInstanceOf(HttpError)
+        expect((e as HttpError).status).toBe(409)
+        expect((e as HttpError).code).toBe(ERROR_CODES.INVITE_ALREADY_ACCEPTED)
+      }
     })
   })
 
