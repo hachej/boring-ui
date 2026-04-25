@@ -1543,7 +1543,7 @@ Agent sees 2 bridge tools: `get_ui_state` and `exec_ui({ kind, params })`. Works
 
 ### Component exports — app-shell composition surface
 
-**Integration pattern (matches workspace plan Risk 2 mitigation):** the workspace package **does NOT import** from `@boring/agent`. Instead the app shell (the final application) imports components from BOTH packages and wires them together via `WorkspaceProvider`'s `panels` prop. This keeps workspace tree-shakable, avoids circular-dep risk, and lets apps mix/match chat surfaces.
+**Integration pattern (updated 2026-04-24 to match new dep graph):** workspace **imports `ChatPanel` directly** from `@boring/agent` as a built-in pane. Agent stays the leaf — it has no knowledge of workspace, core, or any React layout engine. App shells can still inject an alternate `ChatPanel` via `WorkspaceProvider`'s `panels` prop to mix/match chat surfaces; the built-in is just the default. Earlier drafts said "workspace does NOT import agent" — that was v1 thinking and is superseded.
 
 | Export | From agent | Consumed by | Purpose |
 |---|---|---|---|
@@ -1562,7 +1562,7 @@ import { ChatPanel } from '@boring/agent'
 </WorkspaceProvider>
 ```
 
-**Why not direct import:** If workspace imported ChatPanel, every workspace consumer would pull the entire agent bundle even when they don't want chat. The panels-prop pattern makes chat opt-in + keeps package boundaries clean (agent consumes workspace's bridge types from `@boring/core`, not from workspace directly).
+**Updated 2026-04-24:** the "workspace does not import agent directly" rule was superseded by the new dep chain (`agent (leaf) ← workspace ← core`). Workspace now imports `ChatPanel` directly as a built-in pane; the `panels` prop is kept as an override mechanism, not the primary wiring. Bundle-size concern is addressed by lazy-loading ChatPanel inside the workspace pane registry (dynamic import, only loaded when the agent pane is actually mounted). Agent remains the leaf — it imports nothing from workspace or core. Canonical graph: `packages/core/docs/CORE.md` §Dependency position.
 
 ### Session CRUD contract
 

@@ -41,14 +41,15 @@ Current contract files:
 These files are the source of truth for TypeScript interfaces while higher-level
 helpers are still being implemented.
 
+## Shipped High-Level API
+
+- `createAgentApp(config)` — standalone Fastify factory. Zero dependency on `@boring/core`. Powers `npx @boring/agent`. See `packages/agent/src/server/createAgentApp.ts`.
+- `ChatPanel` — React component exported from `@boring/agent/front` (and top-level barrel). See `packages/agent/src/front/index.ts:2`.
+- `useAgentChat(...)` — React hook, same export surface.
+
 ## Planned High-Level API (Not Implemented Yet)
 
-The following names appear in the spec and upcoming beads but are not shipped as
-public runtime exports yet:
-
-- `createAgentApp(...)`
-- `ChatPanel`
-- `useAgentChat(...)`
+- `registerAgentRoutes(app, opts)` — new Fastify plugin export for embedding into a core-built server. Lands in agent M4 alongside core's integration milestone. Paths are absolute (`/api/v1/agent/*`); no `prefix` option.
 
 Track implementation progress in `docs/plans/agent-package-spec.md` and beads.
 

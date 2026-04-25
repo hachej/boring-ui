@@ -129,7 +129,7 @@ v2/packages/workspace/          # This package
 
 ### Dependency graph
 
-**Updated 2026-04-24 — fully inverted from v1.** Agent is the leaf. Workspace depends on agent (consumes `<ChatPanel />` as a pane). Core depends on workspace. Canonical graph lives in `packages/core/docs/plans/core-package-spec.md` §Dependency position.
+**Updated 2026-04-24 — fully inverted from v1.** Agent is the leaf. Workspace depends on agent (consumes `<ChatPanel />` as a pane). Core depends on workspace. Canonical graph lives in `packages/core/docs/CORE.md` §Dependency position (single fused doc replacing the old plans/ subfolder).
 
 ```
 @boring/agent                (leaf — ZERO internal deps; ships standalone CLI)
@@ -674,7 +674,7 @@ The agent should feel like a co-user — seeing the same files, same open panels
 **Tasks:**
 
 3a.1. **Agent pane slot**
-   - App shell imports `ChatPanel` from `@boring/agent` and passes it via `WorkspaceProvider`'s `panels` prop. **Workspace package does NOT import from `@boring/agent`** (see Risk 2 mitigation — avoids circular deps).
+   - **Updated 2026-04-24 — supersedes earlier "workspace does NOT import agent" line.** Workspace now imports `ChatPanel` from `@boring/agent` directly and registers it as a built-in pane. Matches the new dep chain `agent (leaf) ← workspace ← core`. App shells can still override by passing their own `ChatPanel` via `WorkspaceProvider`'s `panels` prop.
    - Registered in panel registry with `placement: 'right'` (IDE) or `slot: 'chat'` (Chat layout)
    - Lazy-loaded with Suspense wrapper
 
@@ -1162,26 +1162,25 @@ v1 solved this with:
 
 ### Risk 2: Circular dependency (workspace ↔ agent)
 
-**Risk**: Workspace imports `ChatPanel` from agent. Agent calls `WorkspaceBridge` from workspace.
+**Updated 2026-04-24 — superseded by the inverted dep chain.** This section's original "workspace never imports agent" rule is no longer the contract. Read the current rule in §Dependency graph (top of this file) and `packages/core/docs/CORE.md` §Dependency position.
 
-**Mitigation**: Both — types in core + component via props. Zero direct cross-imports.
+Current rule:
 
-- `WorkspaceBridge` interface + command types live in `@boring/core`. Workspace implements it, agent consumes the type from core.
-- `ChatPanel` is NOT imported by workspace. Instead, workspace accepts a `panels` config prop. The app shell passes the agent component in:
+- **Workspace imports `ChatPanel` directly from `@boring/agent`** as a built-in pane. Agent stays the leaf with zero knowledge of workspace or core. The `panels` prop override still works for apps that want to inject a custom chat panel.
+- **Agent never imports from workspace.** Agent does not depend on `WorkspaceBridge` as a workspace import; the bridge types live in core, and agent consumes them only when embedded via `registerAgentRoutes` (not in its standalone CLI build).
 
 ```tsx
-// In the app shell (NOT in workspace or agent package):
+// Default (workspace uses agent's ChatPanel as a built-in pane — no app-shell wiring needed):
 import { IdeLayout } from '@boring/workspace'
-import { ChatPanel } from '@boring/agent'
 
-<IdeLayout
-  panels={[
-    { id: 'agent', component: ChatPanel, placement: 'right' }
-  ]}
-/>
+<IdeLayout />  // ChatPanel is included automatically
+
+// Override (apps can inject a different chat panel):
+import { IdeLayout } from '@boring/workspace'
+import { MyCustomChat } from './my-chat'
+
+<IdeLayout panels={[{ id: 'agent', component: MyCustomChat, placement: 'right' }]} />
 ```
-
-Workspace never `import`s from agent. Agent never `import`s from workspace. Both import types from core.
 
 ### Risk 3: Third-party CSS overrides
 
@@ -1586,7 +1585,13 @@ function App() {
 // Standalone components accept all data via props.
 ```
 
-### C. @boring/core dependency contract
+### C. @boring/core dependency contract — ARCHIVED 2026-04-24
+
+**This section is archival.** It was written when the planned v2 dep graph was `workspace → core`. The actual v2 dep graph is inverted: `agent (leaf) ← workspace ← core`. Workspace does NOT import from core; core imports from workspace (specifically `@boring/workspace/ui-shadcn`). Canonical graph: `packages/core/docs/CORE.md` §Dependency position.
+
+The list below was intended to constrain what workspace could pull from core. It's preserved only so that if we ever invert the graph again, we have a record of what v1 workspace actually used. Any mention of `@boring/core` as a workspace dep below is historical, not a contract.
+
+---
 
 Every import workspace v2 makes from `@boring/core`. No new dependencies added beyond v1's.
 
