@@ -5,6 +5,7 @@ import closeWithGrace from 'close-with-grace'
 import { randomUUID } from 'node:crypto'
 import type { CoreConfig } from '../../shared/types.js'
 import type { CreateCoreAppOptions } from './types.js'
+import { registerErrorHandler } from './errorHandler.js'
 
 const DEFAULT_REDACTION_KEYWORDS = [
   'secret',
@@ -107,6 +108,8 @@ export async function createCoreApp(
       },
     },
   })
+
+  registerErrorHandler(app)
 
   const manageShutdown = options?.manageShutdown ?? true
   if (manageShutdown) {
