@@ -399,7 +399,10 @@ export function ChatPanel(props: ChatPanelProps) {
         )}
       >
       <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">
-        <ConversationContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
+        <ConversationContent className={cn(
+          "mx-auto flex w-full flex-col gap-6",
+          chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
+        )}>
           {messages.length === 0 && (
             <ConversationEmptyState
               title="How can I help?"
@@ -586,7 +589,7 @@ export function ChatPanel(props: ChatPanelProps) {
         <ConversationScrollButton />
       </Conversation>
 
-      <div className="px-4 pb-4 pt-2 sm:px-6 sm:pb-5">
+      <div className={cn(chrome ? "px-4 pb-4 pt-2 sm:px-6 sm:pb-5" : "px-3 pb-3 pt-1")}>
         {attachmentNotice && (
           <div
             role="status"
@@ -601,7 +604,8 @@ export function ChatPanel(props: ChatPanelProps) {
         )}
         <div
           className={cn(
-            "relative mx-auto w-full max-w-3xl overflow-hidden",
+            "relative mx-auto w-full overflow-hidden",
+            chrome ? "max-w-3xl" : "max-w-[680px]",
             // Workspace-aligned composer surface: a flat card with an
             // inset 1px border at rest, then a focus-within swap that
             // pulls in the accent hue. No heavy drop-shadow — the pane

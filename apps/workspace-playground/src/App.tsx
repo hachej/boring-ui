@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from "react"
 import {
   WorkspaceProvider,
   ChatCenteredShell,
@@ -8,6 +9,7 @@ import {
   type PanelConfig,
 } from "@boring/workspace"
 import { mockSessions, useMockSessions } from "./mockSessions"
+import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
 // ----- Panel registry -----
 
@@ -37,8 +39,38 @@ const dataSources = [
   { id: "logs", name: "app_logs", type: "index", description: "Structured application logs" },
 ]
 
+function isShowcaseRoute(): boolean {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("showcase") === "1"
+}
+
 function Shell() {
   const { sessions, activeId } = useMockSessions()
+  const showcase = useMemo(isShowcaseRoute, [])
+
+  useEffect(() => {
+    if (showcase) seedShowcase()
+  }, [showcase])
+
+  if (showcase) {
+    const showcaseSessions = [
+      { id: SHOWCASE_SESSION_ID, title: "Showcase conversation", updatedAt: Date.now() },
+      ...sessions.filter((s) => s.id !== SHOWCASE_SESSION_ID),
+    ]
+    return (
+      <ChatCenteredShell
+        appTitle="Boring"
+        userInitial="J"
+        sessions={showcaseSessions}
+        activeSessionId={SHOWCASE_SESSION_ID}
+        onSwitchSession={mockSessions.switchTo}
+        onCreateSession={mockSessions.create}
+        onDeleteSession={mockSessions.remove}
+        dataSources={dataSources}
+      />
+    )
+  }
+
   return (
     <ChatCenteredShell
       appTitle="Boring"
