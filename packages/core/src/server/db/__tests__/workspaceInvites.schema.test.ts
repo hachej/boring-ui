@@ -39,7 +39,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await sql`DELETE FROM workspace_invites`
+  await sql`DELETE FROM workspace_invites WHERE workspace_id = ${WS_ID}`
 })
 
 async function ensureUser(id: string, email: string) {
