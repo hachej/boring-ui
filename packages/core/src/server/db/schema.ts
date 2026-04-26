@@ -121,3 +121,48 @@ export const workspaceSettingsRelations = relations(workspaceSettings, ({ one })
     references: [workspaces.id],
   }),
 }))
+
+export const workspaceInvites = pgTable(
+  'workspace_invites',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    email: text('email').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    role: text('role').notNull(),
+    expiresAt: timestamp('expires_at')
+      .notNull()
+      .default(sql`now() + interval '7 days'`),
+    acceptedAt: timestamp('accepted_at'),
+    createdBy: uuid('created_by').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('workspace_invites_token_hash_idx').on(table.tokenHash),
+    index('workspace_invites_workspace_id_idx').on(table.workspaceId),
+    check(
+      'workspace_invites_role_check',
+      sql`${table.role} IN ('owner', 'editor', 'viewer')`,
+    ),
+  ],
+)
+
+export const workspaceInvitesRelations = relations(
+  workspaceInvites,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceInvites.workspaceId],
+      references: [workspaces.id],
+    }),
+    creator: one(users, {
+      fields: [workspaceInvites.createdBy],
+      references: [users.id],
+    }),
+  }),
+)

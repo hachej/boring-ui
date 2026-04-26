@@ -1,0 +1,141 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import postgres from 'postgres'
+import { runMigrations } from '../migrate'
+import type { CoreConfig } from '../../../shared/types'
+
+const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+
+const BASE_CONFIG: CoreConfig = {
+  appId: 'test-app',
+  appName: 'Test App',
+  appLogo: null,
+  port: 0,
+  host: '127.0.0.1',
+  staticDir: null,
+  databaseUrl: TEST_DB_URL,
+  stores: 'postgres',
+  cors: { origins: ['http://localhost:3000'], credentials: true },
+  bodyLimit: 16 * 1024 * 1024,
+  logLevel: 'silent' as CoreConfig['logLevel'],
+  encryption: { workspaceSettingsKey: 'a'.repeat(64) },
+  auth: {
+    secret: 's'.repeat(64),
+    url: 'http://localhost:3000',
+    sessionTtlSeconds: 3600,
+    sessionCookieSecure: false,
+  },
+  features: { githubOauth: false, invitesEnabled: true },
+}
+
+let sql: postgres.Sql
+
+beforeAll(async () => {
+  await runMigrations(BASE_CONFIG)
+  sql = postgres(TEST_DB_URL, { max: 5 })
+})
+
+afterAll(async () => {
+  await sql.end()
+})
+
+beforeEach(async () => {
+  await sql`DELETE FROM workspace_invites`
+})
+
+async function ensureUser(id: string, email: string) {
+  await sql`
+    INSERT INTO users (id, email, name, email_verified, created_at, updated_at)
+    VALUES (${id}, ${email}, 'Test', false, now(), now())
+    ON CONFLICT (id) DO NOTHING
+  `
+}
+
+async function ensureWorkspace(id: string, createdBy: string) {
+  await sql`
+    INSERT INTO workspaces (id, app_id, name, created_by, is_default)
+    VALUES (${id}, 'test-app', 'Test WS', ${createdBy}, false)
+    ON CONFLICT (id) DO NOTHING
+  `
+}
+
+const USER_ID = '20000000-0000-0000-0000-000000000001'
+const WS_ID = '30000000-0000-0000-0000-000000000001'
+
+describe('workspace_invites schema', () => {
+  beforeAll(async () => {
+    await ensureUser(USER_ID, 'inviter@test.com')
+    await ensureWorkspace(WS_ID, USER_ID)
+  })
+
+  it('expiresAt defaults to ~now() + 7 days when omitted', async () => {
+    const before = new Date()
+    const [row] = await sql`
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
+      VALUES (${WS_ID}, 'invitee@test.com', 'hash_default_expiry', 'editor', ${USER_ID})
+      RETURNING expires_at
+    `
+    const after = new Date()
+
+    const expiresAt = new Date(row.expires_at)
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
+    const toleranceMs = 60_000
+
+    expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before.getTime() + sevenDaysMs - toleranceMs)
+    expect(expiresAt.getTime()).toBeLessThanOrEqual(after.getTime() + sevenDaysMs + toleranceMs)
+  })
+
+  it('unique violation on duplicate tokenHash', async () => {
+    await sql`
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
+      VALUES (${WS_ID}, 'a@test.com', 'hash_unique_test', 'viewer', ${USER_ID})
+    `
+    await expect(
+      sql`
+        INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
+        VALUES (${WS_ID}, 'b@test.com', 'hash_unique_test', 'editor', ${USER_ID})
+      `,
+    ).rejects.toThrow(/unique/i)
+  })
+
+  it('role check constraint rejects invalid roles', async () => {
+    await expect(
+      sql`
+        INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
+        VALUES (${WS_ID}, 'c@test.com', 'hash_bad_role', 'admin', ${USER_ID})
+      `,
+    ).rejects.toThrow(/check/i)
+  })
+
+  it('createdBy ON DELETE RESTRICT prevents user deletion', async () => {
+    const tempUserId = '20000000-0000-0000-0000-000000000099'
+    await ensureUser(tempUserId, 'restrict@test.com')
+    await sql`
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
+      VALUES (${WS_ID}, 'd@test.com', 'hash_restrict_test', 'viewer', ${tempUserId})
+    `
+    await expect(
+      sql`DELETE FROM users WHERE id = ${tempUserId}`,
+    ).rejects.toThrow(/restrict/i)
+
+    await sql`DELETE FROM workspace_invites WHERE token_hash = 'hash_restrict_test'`
+    await sql`DELETE FROM users WHERE id = ${tempUserId}`
+  })
+
+  it('acceptedAt is nullable', async () => {
+    const [row] = await sql`
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role)
+      VALUES (${WS_ID}, 'e@test.com', 'hash_null_accepted', 'editor')
+      RETURNING accepted_at
+    `
+    expect(row.accepted_at).toBeNull()
+  })
+
+  it('createdBy is nullable (system-generated invites)', async () => {
+    const [row] = await sql`
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role)
+      VALUES (${WS_ID}, 'f@test.com', 'hash_null_creator', 'viewer')
+      RETURNING created_by
+    `
+    expect(row.created_by).toBeNull()
+  })
+})
