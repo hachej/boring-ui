@@ -1,6 +1,6 @@
 # full-app
 
-Reference app wiring for `@boring/core` + `@boring/agent` + `@boring/workspace`.
+Reference app wiring for `@boring/core` + `@boring/agent` + `@boring/workspace`. This is the production-ready template — see [`packages/core/docs/CORE.md`](../../packages/core/docs/CORE.md) for the full spec ([Quickstart](../../packages/core/docs/CORE.md#quickstart), [Deployment](../../packages/core/docs/CORE.md#deployment)).
 
 ## Run Locally
 
@@ -52,6 +52,23 @@ pnpm --filter full-app e2e:smoke
 ```
 
 The smoke test validates app boot, sign-in flow (`dev@local`), and `/workspace/:id` route load.
+
+## Post-Deploy Smoke
+
+Run against a deployed URL:
+
+```bash
+DEPLOY_URL=https://<your-app>.fly.dev \
+pnpm --filter full-app smoke:post-deploy
+```
+
+Checks:
+- `GET /health` returns `200` + `{ ok: true }` within 10s
+- signup endpoint succeeds (`/api/auth/sign-up/email` or `/auth/sign-up/email`)
+- verification link is found (signup response payload or Resend inbox polling when `RESEND_API_KEY` is set)
+- `GET /api/v1/capabilities` returns `200` and includes `agent` key
+
+This is also wired into GitHub Actions via `.github/workflows/post-deploy-smoke.yml` (workflow_dispatch or repository_dispatch).
 
 ## Docker
 

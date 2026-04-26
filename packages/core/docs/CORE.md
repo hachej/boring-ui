@@ -1,9 +1,13 @@
 # @boring/core — canonical spec
 
-**Status:** draft, pre-implementation. All sections are planned v1 contracts unless marked otherwise.
+**Status: Shipped 2026-04-26 at ef6dad0.** Milestones M0–M7 complete.
 **Path:** `boring-ui-v2/packages/core/`
-**Interview-driven, last updated 2026-04-24.**
+**Interview-driven, last updated 2026-04-26.**
 **This file fuses the previous 8 docs (README / QUICKSTART / API / CONFIG / AUTH / DB / MIGRATION / TRAPS-V1 / plans/core-package-spec) into one.** No cross-file navigation required.
+
+**Reference apps:**
+- [`apps/full-app`](../../../apps/full-app/) — production deploy template (Fly.io, Postgres, Resend). See its [README](../../../apps/full-app/README.md) for run/deploy instructions.
+- [`apps/workspace-playground`](../../../apps/workspace-playground/) — dev exploration sandbox with mock data.
 
 ## Table of contents
 
@@ -1595,6 +1599,8 @@ Total: **~16 working days to v1** (up from 14 due to email flows + hardening mil
 | **Env vars** | Every required var from §Config. Platform secret stores work fine. |
 | **Inbound** | Port `$PORT` accepting HTTPS. PaaS handles TLS termination; core speaks HTTP to its edge proxy. |
 | **Outbound** | mail API (`api.resend.com` or SMTP host). v1.x adds `api.github.com` for OAuth. |
+| **Reverse-proxy** | Fastify configured with `trustProxy: true` for `X-Forwarded-For` parsing through Fly/Render/Railway edge. M2_FACTORY enforces this. |
+| **pgcrypto extension** | Enabled by the first migration via `CREATE EXTENSION IF NOT EXISTS pgcrypto`. Required for `workspace_settings` encryption. M1_DRIZZLE_CONFIG enforces this. |
 | **Filesystem** | Stateless by default. Only needed if `STATIC_DIR` points at a volume. |
 | **Signals** | PaaS sends SIGTERM on deploy; core drains for 30s then exits cleanly. |
 
@@ -1645,7 +1651,7 @@ CMD ["node", "apps/full-app/dist/server/main.js"]
 
 ### Health checks
 
-- **Liveness**: `GET /health` with DB ping. Returns 200 `{ ok: true }` if DB reachable; 503 `{ error: 'db_unavailable', code: 'db_unavailable' }` otherwise. Hook into the platform's liveness probe with a 5s interval, 3 retries, 30s initial delay.
+- **Liveness**: `GET /health` with DB ping (`SELECT 1`) and a 2s timeout. Returns 200 `{ ok: true }` if DB reachable; 503 `{ error: 'db_unavailable', code: 'db_unavailable', message, requestId }` on DB unreachable/timeout. Hook into the platform's liveness probe with a 5s interval, 3 retries, 30s initial delay.
 - **Readiness**: same endpoint. Core is ready once migrations complete and DB pool is warm. If `runMigrations` is in-process, readiness blocks on it.
 
 ### Not in v1
