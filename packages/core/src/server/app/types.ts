@@ -69,6 +69,7 @@ export interface CreateCoreAppOptions {
 declare module 'fastify' {
   interface FastifyInstance {
     config: CoreConfig
+    workspaceStore: WorkspaceStore
     addRedactionPaths(paths: string[]): void
     registerCapabilitiesContributor(
       name: string,

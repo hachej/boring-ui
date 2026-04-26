@@ -25,5 +25,5 @@ export {
 export { createDatabase, runMigrations } from './db/index.js'
 export type { Database } from './db/index.js'
 
-export { createAuth, validatePasswordStrength, authHook } from './auth/index.js'
+export { createAuth, validatePasswordStrength, authHook, requireWorkspaceMember } from './auth/index.js'
 export type { BetterAuthInstance, AuthHookOptions } from './auth/index.js'
