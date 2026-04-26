@@ -2,9 +2,15 @@
 // Keep this as the single import point for drizzle.config.ts and migration tooling.
 export * from '../../../drizzle/schema.js'
 
-import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, boolean, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, boolean, uniqueIndex, check, customType } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import { users } from '../../../drizzle/schema.js'
+
+const bytea = customType<{ data: Uint8Array; driverData: string }>({
+  dataType() {
+    return 'bytea'
+  },
+})
 
 export const userSettings = pgTable(
   'user_settings',
@@ -91,5 +97,27 @@ export const workspaceMembersRelations = relations(workspaceMembers, ({ one }) =
   user: one(users, {
     fields: [workspaceMembers.userId],
     references: [users.id],
+  }),
+}))
+
+export const workspaceSettings = pgTable(
+  'workspace_settings',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'no action' }),
+    key: text('key').notNull(),
+    value: bytea('value').notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.key] }),
+  ],
+)
+
+export const workspaceSettingsRelations = relations(workspaceSettings, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [workspaceSettings.workspaceId],
+    references: [workspaces.id],
   }),
 }))
