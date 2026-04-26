@@ -24,7 +24,7 @@ export interface UserStore {
 }
 
 export interface WorkspaceStore {
-  create(userId: string, name: string, appId: string): Promise<Workspace>
+  create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean }): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
   get(id: string): Promise<Workspace | null>
   update(id: string, updates: Partial<Pick<Workspace, 'name'>>): Promise<Workspace | null>

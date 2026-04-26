@@ -111,11 +111,11 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   // Workspace CRUD (Sub-PR 1)
   // ---------------------------------------------------------------------------
 
-  async create(userId: string, name: string, appId: string): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean }): Promise<Workspace> {
     return this.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(workspaces)
-        .values({ appId, name, createdBy: userId })
+        .values({ appId, name, createdBy: userId, isDefault: opts?.isDefault ?? false })
         .returning()
 
       await tx.insert(workspaceMembers).values({

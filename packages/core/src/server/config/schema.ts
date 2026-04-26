@@ -70,6 +70,7 @@ export const coreConfigSchema = z.object({
   features: z.object({
     githubOauth: z.boolean(),
     invitesEnabled: z.boolean(),
+    sendWelcomeEmail: z.boolean(),
   }),
 })
 

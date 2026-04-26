@@ -35,7 +35,7 @@ function makeConfig(overrides?: Partial<CoreConfig>): CoreConfig {
         transportUrl: `console-capture://${MAIL_CAPTURE_PATH}`,
       },
     },
-    features: { githubOauth: false, invitesEnabled: true },
+    features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
     ...overrides,
   }
 }

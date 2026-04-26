@@ -274,7 +274,7 @@ describe('validateConfig', () => {
           sessionTtlSeconds: 3600,
           sessionCookieSecure: false,
         },
-        features: { githubOauth: false, invitesEnabled: true },
+        features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
       }),
     ).toThrow(ConfigValidationError)
   })
@@ -301,7 +301,7 @@ describe('validateConfig', () => {
           sessionTtlSeconds: 3600,
           sessionCookieSecure: false,
         },
-        features: { githubOauth: false, invitesEnabled: true },
+        features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
       }),
     ).toThrow(ConfigValidationError)
   })
@@ -330,6 +330,7 @@ describe('buildRuntimeConfigPayload', () => {
         features: {
           githubOauth: false,
           invitesEnabled: true,
+          sendWelcomeEmail: true,
         },
       })
 

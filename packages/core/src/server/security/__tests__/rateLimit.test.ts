@@ -26,7 +26,7 @@ const BASE_CONFIG: CoreConfig = {
     sessionTtlSeconds: 3600,
     sessionCookieSecure: false,
   },
-  features: { githubOauth: false, invitesEnabled: true },
+  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
 }
 
 const RATE_LIMITED_ENDPOINTS = DEFAULT_RATE_LIMIT_RULES.map((rule) => ({

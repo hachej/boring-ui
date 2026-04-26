@@ -173,6 +173,7 @@ export async function loadConfig(
     features: {
       githubOauth: githubOauth && github !== undefined,
       invitesEnabled: toml.features?.invites_enabled ?? true,
+      sendWelcomeEmail: env.SEND_WELCOME_EMAIL !== 'false',
     },
   }
 
@@ -201,6 +202,7 @@ export function buildRuntimeConfigPayload(config: CoreConfig): RuntimeConfig {
     features: {
       githubOauth: config.features.githubOauth,
       invitesEnabled: config.features.invitesEnabled,
+      sendWelcomeEmail: config.features.sendWelcomeEmail,
     },
   }
 }

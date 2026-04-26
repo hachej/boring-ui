@@ -110,6 +110,7 @@ export interface CoreConfig {
   features: {
     githubOauth: boolean
     invitesEnabled: boolean
+    sendWelcomeEmail: boolean
   }
 }
 
@@ -118,7 +119,7 @@ export interface RuntimeConfig {
   appName: string
   appLogo: string | null
   apiBase: string
-  features: { githubOauth: boolean; invitesEnabled: boolean }
+  features: { githubOauth: boolean; invitesEnabled: boolean; sendWelcomeEmail: boolean }
 }
 
 export type JsonValue =

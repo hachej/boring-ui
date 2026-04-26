@@ -39,7 +39,7 @@ function makeConfig(): CoreConfig {
         transportUrl: `console-capture://${MAIL_CAPTURE_PATH}`,
       },
     },
-    features: { githubOauth: false, invitesEnabled: true },
+    features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
   }
 }
 
@@ -191,7 +191,7 @@ describe('GET /api/v1/config', () => {
       appName: 'Test App',
       appLogo: null,
       apiBase: 'http://localhost:3000',
-      features: { githubOauth: false, invitesEnabled: true },
+      features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
     })
     expect(body.auth).toBeUndefined()
     expect(body.databaseUrl).toBeUndefined()

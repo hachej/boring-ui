@@ -1,5 +1,7 @@
 export { createAuth, validatePasswordStrength } from './createAuth.js'
-export type { BetterAuthInstance } from './createAuth.js'
+export type { BetterAuthInstance, CreateAuthOptions } from './createAuth.js'
+export { createPostSignupHook } from './postSignupHook.js'
+export type { PostSignupHookDeps } from './postSignupHook.js'
 export { authHook } from './authHook.js'
 export type { AuthHookOptions } from './authHook.js'
 export { requireWorkspaceMember } from './requireWorkspaceMember.js'

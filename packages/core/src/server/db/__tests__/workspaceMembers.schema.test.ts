@@ -25,7 +25,7 @@ const BASE_CONFIG: CoreConfig = {
     sessionTtlSeconds: 3600,
     sessionCookieSecure: false,
   },
-  features: { githubOauth: false, invitesEnabled: true },
+  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
 }
 
 let sql: postgres.Sql

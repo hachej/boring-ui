@@ -6,6 +6,7 @@ import * as zxcvbnCommon from '@zxcvbn-ts/language-common'
 import * as zxcvbnEn from '@zxcvbn-ts/language-en'
 import type { CoreConfig } from '../../shared/types.js'
 import type { Database } from '../db/connection.js'
+import type { WorkspaceStore } from '../app/types.js'
 import * as schema from '../db/schema.js'
 import { createMailTransport } from '../mail/transport.js'
 import type { MailTransport } from '../mail/transport.js'
@@ -14,6 +15,7 @@ import {
   renderResetPassword,
   renderMagicLink,
 } from '../mail/templates/index.js'
+import { createPostSignupHook } from './postSignupHook.js'
 
 const MIN_ZXCVBN_SCORE = 2
 
@@ -53,7 +55,12 @@ function buildMailTransport(config: CoreConfig): MailTransport | null {
   return createMailTransport(config.auth.mail.transportUrl, config.auth.mail.from, env)
 }
 
-export function createAuth(config: CoreConfig, db: Database) {
+export interface CreateAuthOptions {
+  workspaceStore?: WorkspaceStore
+  logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
+}
+
+export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions) {
   const transport = buildMailTransport(config)
 
   const emailVerificationConfig = transport
@@ -99,12 +106,30 @@ export function createAuth(config: CoreConfig, db: Database) {
       ]
     : []
 
+  const postSignupHook = opts?.workspaceStore
+    ? createPostSignupHook({
+        config,
+        workspaceStore: opts.workspaceStore,
+        transport,
+        logger: opts.logger,
+      })
+    : undefined
+
   return betterAuth({
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     secret: config.auth.secret,
     baseURL: config.auth.url,
     basePath: '/auth',
     trustedOrigins: config.cors.origins,
+    databaseHooks: postSignupHook
+      ? {
+          user: {
+            create: {
+              after: postSignupHook,
+            },
+          },
+        }
+      : undefined,
     advanced: {
       database: {
         generateId: 'uuid',

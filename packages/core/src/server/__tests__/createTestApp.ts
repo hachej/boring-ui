@@ -52,6 +52,7 @@ export function createTestCoreConfig(
     features: {
       githubOauth: false,
       invitesEnabled: true,
+      sendWelcomeEmail: true,
     },
     ...overrides,
   }
