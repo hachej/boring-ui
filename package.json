@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "lint:invariants": "pnpm --dir packages/agent run lint:invariants",
+    "check:agent-isolation": "pnpm tsx scripts/check-agent-isolation.ts",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "ci:bundle-size": "pnpm --filter @boring/workspace run build && pnpm check:bundle-size",
     "test": "pnpm -r run test",

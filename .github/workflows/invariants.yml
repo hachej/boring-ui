@@ -32,3 +32,6 @@ jobs:
 
       - name: Build agent package and assert dist artifacts
         run: pnpm --dir packages/agent build
+
+      - name: Assert agent has zero runtime imports from core
+        run: pnpm check:agent-isolation
