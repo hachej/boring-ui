@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import { runMigrations } from '../../migrate'
 import { PostgresUserStore } from '../PostgresUserStore'
 import type { CoreConfig } from '../../../../shared/types'
+import { describeUserStoreConformance } from '../../__tests__/storeConformance'
 
 const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
 
@@ -26,7 +27,7 @@ const BASE_CONFIG: CoreConfig = {
     sessionTtlSeconds: 3600,
     sessionCookieSecure: false,
   },
-  features: { githubOauth: false, invitesEnabled: true },
+  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
 }
 
 let sqlClient: postgres.Sql
@@ -201,4 +202,8 @@ describe('PostgresUserStore', () => {
       expect(updated.settings).toEqual({ a: 1, b: 2 })
     })
   })
+})
+
+describeUserStoreConformance(async () => store, {
+  emailDomain: 'pgtest.com',
 })

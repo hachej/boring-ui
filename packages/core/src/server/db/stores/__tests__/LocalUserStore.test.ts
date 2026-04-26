@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { LocalUserStore } from '../LocalUserStore'
+import { describeUserStoreConformance } from '../../__tests__/storeConformance'
 
 let store: LocalUserStore
 
@@ -84,3 +85,5 @@ describe('LocalUserStore', () => {
     expect((await store.getByEmail('new@test.com'))?.id).toBe('u1')
   })
 })
+
+describeUserStoreConformance(async () => new LocalUserStore())

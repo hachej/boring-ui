@@ -5,8 +5,10 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 
 import { runMigrations } from '../../migrate'
 import { PostgresWorkspaceStore } from '../PostgresWorkspaceStore'
+import { PostgresUserStore } from '../PostgresUserStore'
 import { ERROR_CODES } from '../../../../shared/errors'
 import type { CoreConfig } from '../../../../shared/types'
+import { describeWorkspaceStoreConformance } from '../../__tests__/storeConformance'
 
 const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
 const ENCRYPTION_KEY_A = 'a'.repeat(64)
@@ -31,12 +33,13 @@ const BASE_CONFIG: CoreConfig = {
     sessionTtlSeconds: 3600,
     sessionCookieSecure: false,
   },
-  features: { githubOauth: false, invitesEnabled: true },
+  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
 }
 
 let sqlClient: postgres.Sql
 let store: PostgresWorkspaceStore
 let wrongKeyStore: PostgresWorkspaceStore
+let userStore: PostgresUserStore
 
 async function seedWorkspace(appId = 'orm1-app') {
   const emailTag = randomUUID().slice(0, 8)
@@ -65,6 +68,7 @@ beforeAll(async () => {
   const db = drizzle(sqlClient)
   store = new PostgresWorkspaceStore(db, ENCRYPTION_KEY_A)
   wrongKeyStore = new PostgresWorkspaceStore(db, ENCRYPTION_KEY_B)
+  userStore = new PostgresUserStore(db)
 })
 
 afterAll(async () => {
@@ -585,3 +589,22 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
     })
   })
 })
+
+describeWorkspaceStoreConformance(
+  async () => store,
+  {
+    makeUserStore: async () => userStore,
+    deleteRuntime: async (workspaceId: string) => {
+      await sqlClient`DELETE FROM workspace_runtimes WHERE workspace_id = ${workspaceId}`
+    },
+    expireInvite: async (workspaceId: string, inviteId: string) => {
+      await sqlClient`
+        UPDATE workspace_invites
+        SET expires_at = NOW() - interval '1 minute'
+        WHERE workspace_id = ${workspaceId} AND id = ${inviteId}
+      `
+    },
+    makeAppIds: () => ({ appId: APP_ID, otherAppId: APP_ID_2 }),
+    emailDomain: 'orm1-test.dev',
+  },
+)

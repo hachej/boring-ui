@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { LocalUserStore } from '../LocalUserStore'
 import { LocalWorkspaceStore } from '../LocalWorkspaceStore'
 import { ERROR_CODES, HttpError } from '../../../../shared/errors'
+import { describeWorkspaceStoreConformance } from '../../__tests__/storeConformance'
 
 let userStore: LocalUserStore
 let store: LocalWorkspaceStore
@@ -302,3 +303,26 @@ describe('LocalWorkspaceStore', () => {
     })
   })
 })
+
+describeWorkspaceStoreConformance(
+  async () => store,
+  {
+    makeUserStore: async () => userStore,
+    deleteRuntime: async (workspaceId: string) => {
+      ;(store as unknown as { runtimes: Map<string, unknown> }).runtimes.delete(workspaceId)
+    },
+    expireInvite: async (_workspaceId: string, inviteId: string) => {
+      const invites = (store as unknown as { invites: Map<string, { expiresAt: string }> }).invites
+      const invite = invites.get(inviteId)
+      if (!invite) {
+        throw new Error(`invite ${inviteId} not found`)
+      }
+      invites.set(inviteId, {
+        ...invite,
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      })
+    },
+    makeAppIds: () => ({ appId: 'app1', otherAppId: 'app2' }),
+    emailDomain: 'local.storetest.dev',
+  },
+)
