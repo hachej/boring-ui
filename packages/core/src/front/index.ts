@@ -1,6 +1,17 @@
 export { AppErrorBoundary } from './AppErrorBoundary.js'
-export { ThemeProvider, useTheme } from './ThemeProvider.js'
+export { ConfigProvider, useConfig, useConfigLoaded } from './ConfigProvider.js'
+export type { ConfigProviderProps } from './ConfigProvider.js'
+export { ThemeProvider } from './ThemeProvider.js'
 export type { ThemeApi, ThemeProviderProps } from './ThemeProvider.js'
+export {
+  useTheme,
+  useKeyboardShortcuts,
+  useViewportBreakpoint,
+  useReducedMotion,
+  useBlobUrl,
+  useCapabilities,
+} from './hooks/index.js'
+export type { Binding, Breakpoint } from './hooks/index.js'
 
 export {
   AuthProvider,
