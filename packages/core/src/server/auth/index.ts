@@ -1,2 +1,4 @@
 export { createAuth, validatePasswordStrength } from './createAuth.js'
 export type { BetterAuthInstance } from './createAuth.js'
+export { authHook } from './authHook.js'
+export type { AuthHookOptions } from './authHook.js'

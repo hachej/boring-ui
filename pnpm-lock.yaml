@@ -394,6 +394,9 @@ importers:
       fastify:
         specifier: ^5.3.3
         version: 5.8.5
+      fastify-plugin:
+        specifier: ^5.1.0
+        version: 5.1.0
       isomorphic-dompurify:
         specifier: ^3.10.0
         version: 3.10.0(@noble/hashes@2.2.0)

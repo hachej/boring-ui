@@ -115,4 +115,29 @@ describe('workspace_runtimes schema', () => {
       `,
     ).rejects.toThrow(/check|violates/)
   })
+
+  it('enforces one runtime row per workspace via primary key', async () => {
+    await sql`
+      INSERT INTO workspace_runtimes (workspace_id, state)
+      VALUES (${WORKSPACE_ID}, 'pending')
+    `
+
+    await expect(
+      sql`
+        INSERT INTO workspace_runtimes (workspace_id, state)
+        VALUES (${WORKSPACE_ID}, 'ready')
+      `,
+    ).rejects.toThrow(/duplicate key|unique|primary key/)
+  })
+
+  it('enforces workspace FK for runtime rows', async () => {
+    const missingWorkspaceId = '32000000-0000-0000-0000-000000000099'
+
+    await expect(
+      sql`
+        INSERT INTO workspace_runtimes (workspace_id, state)
+        VALUES (${missingWorkspaceId}, 'pending')
+      `,
+    ).rejects.toThrow(/foreign key|violates/)
+  })
 })
