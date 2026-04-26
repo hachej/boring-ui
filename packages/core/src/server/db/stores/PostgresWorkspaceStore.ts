@@ -1,10 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql, desc } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
 import type { WorkspaceStore } from '../../app/types.js'
 import type {
   MemberRole,
+  User,
+  Workspace,
   WorkspaceInvite,
   WorkspaceMember,
   WorkspaceRuntime,
@@ -19,17 +21,6 @@ import {
   workspaceRuntimes,
   workspaceSettings,
 } from '../schema.js'
-
-type WorkspaceStoreSubPr3 = Pick<
-  WorkspaceStore,
-  | 'getWorkspaceSettings'
-  | 'putWorkspaceSettings'
-  | 'getWorkspaceRuntime'
-  | 'putWorkspaceRuntime'
-  | 'retryWorkspaceRuntime'
-  | 'getUiState'
-  | 'putUiState'
->
 
 type DbLike = Pick<PostgresJsDatabase, 'select' | 'insert' | 'update' | 'execute'>
 
@@ -81,7 +72,22 @@ function toWorkspaceMember(row: typeof workspaceMembers.$inferSelect): Workspace
   }
 }
 
-export class PostgresWorkspaceStore implements WorkspaceStoreSubPr3 {
+function toWorkspace(row: typeof workspaces.$inferSelect): Workspace {
+  return {
+    id: row.id,
+    appId: row.appId,
+    name: row.name,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt.toISOString(),
+    deletedAt: row.deletedAt?.toISOString() ?? null,
+    isDefault: row.isDefault,
+    machineId: row.machineId,
+    volumeId: row.volumeId,
+    flyRegion: row.flyRegion,
+  }
+}
+
+export class PostgresWorkspaceStore implements WorkspaceStore {
   constructor(
     private readonly db: PostgresJsDatabase,
     private readonly workspaceSettingsKey: string = process.env.WORKSPACE_SETTINGS_ENCRYPTION_KEY ?? '',
@@ -100,6 +106,253 @@ export class PostgresWorkspaceStore implements WorkspaceStoreSubPr3 {
 
     return rows[0]?.appId ?? null
   }
+
+  // ---------------------------------------------------------------------------
+  // Workspace CRUD (Sub-PR 1)
+  // ---------------------------------------------------------------------------
+
+  async create(userId: string, name: string, appId: string): Promise<Workspace> {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(workspaces)
+        .values({ appId, name, createdBy: userId })
+        .returning()
+
+      await tx.insert(workspaceMembers).values({
+        workspaceId: row.id,
+        userId,
+        role: 'owner',
+      })
+
+      return toWorkspace(row)
+    })
+  }
+
+  async list(userId: string, appId: string): Promise<Workspace[]> {
+    const rows = await this.db
+      .select({ ws: workspaces })
+      .from(workspaces)
+      .innerJoin(
+        workspaceMembers,
+        and(
+          eq(workspaceMembers.workspaceId, workspaces.id),
+          eq(workspaceMembers.userId, userId),
+        ),
+      )
+      .where(and(eq(workspaces.appId, appId), isNull(workspaces.deletedAt)))
+      .orderBy(desc(workspaces.isDefault), desc(workspaces.createdAt))
+
+    return rows.map((r) => toWorkspace(r.ws))
+  }
+
+  async get(id: string): Promise<Workspace | null> {
+    const rows = await this.db
+      .select()
+      .from(workspaces)
+      .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+      .limit(1)
+    return rows.length > 0 ? toWorkspace(rows[0]) : null
+  }
+
+  async update(
+    id: string,
+    updates: Partial<Pick<Workspace, 'name'>>,
+  ): Promise<Workspace | null> {
+    const rows = await this.db
+      .update(workspaces)
+      .set(updates)
+      .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+      .returning()
+    return rows.length > 0 ? toWorkspace(rows[0]) : null
+  }
+
+  async delete(
+    id: string,
+  ): Promise<{
+    removed: boolean
+    code?:
+      | typeof ERROR_CODES.WORKSPACE_PROVISIONING
+      | typeof ERROR_CODES.NOT_FOUND
+  }> {
+    const ws = await this.get(id)
+    if (!ws) return { removed: false, code: ERROR_CODES.NOT_FOUND }
+
+    const [runtime] = await this.db
+      .select()
+      .from(workspaceRuntimes)
+      .where(eq(workspaceRuntimes.workspaceId, id))
+      .limit(1)
+    if (runtime?.state === 'provisioning')
+      return { removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING }
+
+    await this.db
+      .update(workspaces)
+      .set({ deletedAt: new Date() })
+      .where(eq(workspaces.id, id))
+
+    return { removed: true }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sole-owner query (Sub-PR 1)
+  // ---------------------------------------------------------------------------
+
+  async getWorkspacesWhereSoleOwner(userId: string): Promise<Workspace[]> {
+    const rows = await this.db
+      .select({ ws: workspaces })
+      .from(workspaces)
+      .innerJoin(
+        workspaceMembers,
+        and(
+          eq(workspaceMembers.workspaceId, workspaces.id),
+          eq(workspaceMembers.userId, userId),
+          eq(workspaceMembers.role, sql`'owner'`),
+        ),
+      )
+      .where(
+        and(
+          isNull(workspaces.deletedAt),
+          sql`(SELECT count(*) FROM workspace_members WHERE workspace_id = ${workspaces.id} AND role = 'owner') = 1`,
+        ),
+      )
+
+    return rows.map((r) => toWorkspace(r.ws))
+  }
+
+  // ---------------------------------------------------------------------------
+  // Member methods (Sub-PR 1)
+  // ---------------------------------------------------------------------------
+
+  async isMember(workspaceId: string, userId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ n: sql<number>`1` })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, workspaceId),
+          eq(workspaceMembers.userId, userId),
+        ),
+      )
+      .limit(1)
+    return rows.length > 0
+  }
+
+  async getMemberRole(
+    workspaceId: string,
+    userId: string,
+  ): Promise<MemberRole | null> {
+    const rows = await this.db
+      .select({ role: workspaceMembers.role })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, workspaceId),
+          eq(workspaceMembers.userId, userId),
+        ),
+      )
+      .limit(1)
+    return rows.length > 0 ? (rows[0].role as MemberRole) : null
+  }
+
+  async listMembers(
+    workspaceId: string,
+  ): Promise<
+    Array<
+      WorkspaceMember & {
+        user: Pick<User, 'id' | 'email' | 'name' | 'image'>
+      }
+    >
+  > {
+    const rows = await this.db
+      .select({
+        member: workspaceMembers,
+        user: {
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          image: users.image,
+        },
+      })
+      .from(workspaceMembers)
+      .innerJoin(users, eq(users.id, workspaceMembers.userId))
+      .where(eq(workspaceMembers.workspaceId, workspaceId))
+
+    return rows.map((r) => ({
+      ...toWorkspaceMember(r.member),
+      user: {
+        id: r.user.id,
+        email: r.user.email,
+        name: r.user.name,
+        image: r.user.image,
+      },
+    }))
+  }
+
+  async upsertMember(
+    workspaceId: string,
+    userId: string,
+    role: MemberRole,
+  ): Promise<WorkspaceMember> {
+    const [row] = await this.db
+      .insert(workspaceMembers)
+      .values({ workspaceId, userId, role })
+      .onConflictDoUpdate({
+        target: [workspaceMembers.workspaceId, workspaceMembers.userId],
+        set: { role },
+      })
+      .returning()
+    return toWorkspaceMember(row)
+  }
+
+  async removeMember(
+    workspaceId: string,
+    userId: string,
+  ): Promise<{
+    removed: boolean
+    code?:
+      | typeof ERROR_CODES.LAST_OWNER
+      | typeof ERROR_CODES.NOT_MEMBER
+      | typeof ERROR_CODES.WORKSPACE_PROVISIONING
+  }> {
+    const role = await this.getMemberRole(workspaceId, userId)
+    if (!role) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
+
+    const [runtime] = await this.db
+      .select()
+      .from(workspaceRuntimes)
+      .where(eq(workspaceRuntimes.workspaceId, workspaceId))
+      .limit(1)
+    if (runtime?.state === 'provisioning')
+      return { removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING }
+
+    if (role === 'owner') {
+      const [{ count }] = await this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.role, sql`'owner'`),
+          ),
+        )
+      if (Number(count) <= 1)
+        return { removed: false, code: ERROR_CODES.LAST_OWNER }
+    }
+
+    await this.db
+      .delete(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, workspaceId),
+          eq(workspaceMembers.userId, userId),
+        ),
+      )
+    return { removed: true }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Invite methods (Sub-PR 2)
+  // ---------------------------------------------------------------------------
 
   async createInvite(
     workspaceId: string,

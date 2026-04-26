@@ -5,6 +5,7 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 
 import { runMigrations } from '../../migrate'
 import { PostgresWorkspaceStore } from '../PostgresWorkspaceStore'
+import { ERROR_CODES } from '../../../../shared/errors'
 import type { CoreConfig } from '../../../../shared/types'
 
 const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
@@ -74,29 +75,29 @@ beforeEach(async () => {
   await sqlClient`
     DELETE FROM workspace_invites
     WHERE workspace_id IN (
-      SELECT id FROM workspaces WHERE app_id IN ('orm1-app', 'ui-app')
+      SELECT id FROM workspaces WHERE app_id IN ('orm1-app', 'orm1-app-2', 'ui-app')
     )
   `
   await sqlClient`
     DELETE FROM workspace_members
     WHERE workspace_id IN (
-      SELECT id FROM workspaces WHERE app_id IN ('orm1-app', 'ui-app')
+      SELECT id FROM workspaces WHERE app_id IN ('orm1-app', 'orm1-app-2', 'ui-app')
     )
   `
   await sqlClient`
     DELETE FROM workspace_runtimes
     WHERE workspace_id IN (
-      SELECT id FROM workspaces WHERE app_id IN ('orm1-app', 'ui-app')
+      SELECT id FROM workspaces WHERE app_id IN ('orm1-app', 'orm1-app-2', 'ui-app')
     )
   `
   await sqlClient`
     DELETE FROM workspace_settings
     WHERE workspace_id IN (
-      SELECT id FROM workspaces WHERE app_id IN ('orm1-app', 'ui-app')
+      SELECT id FROM workspaces WHERE app_id IN ('orm1-app', 'orm1-app-2', 'ui-app')
     )
   `
-  await sqlClient`DELETE FROM user_settings WHERE app_id IN ('orm1-app', 'ui-app')`
-  await sqlClient`DELETE FROM workspaces WHERE app_id IN ('orm1-app', 'ui-app')`
+  await sqlClient`DELETE FROM user_settings WHERE app_id IN ('orm1-app', 'orm1-app-2', 'ui-app')`
+  await sqlClient`DELETE FROM workspaces WHERE app_id IN ('orm1-app', 'orm1-app-2', 'ui-app')`
   await sqlClient`DELETE FROM users WHERE email LIKE '%@orm1-test.dev'`
 })
 
@@ -228,6 +229,323 @@ describe('PostgresWorkspaceStore Sub-PR3', () => {
       `
 
       expect(row.settings.theme).toBe('dark')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sub-PR 1: Workspace CRUD + Members + Sole-owner
+// ---------------------------------------------------------------------------
+
+const APP_ID = 'orm1-app'
+const APP_ID_2 = 'orm1-app-2'
+
+async function seedUser(tag?: string): Promise<string> {
+  const emailTag = tag ?? randomUUID().slice(0, 8)
+  const [row] = await sqlClient`
+    INSERT INTO users (name, email, email_verified)
+    VALUES ('Test User', ${`pr1-${emailTag}@orm1-test.dev`}, true)
+    RETURNING id
+  `
+  return row.id as string
+}
+
+describe('PostgresWorkspaceStore Sub-PR1', () => {
+  describe('create', () => {
+    it('returns a Workspace and auto-inserts the creator as owner member', async () => {
+      const userId = await seedUser()
+      const ws = await store.create(userId, 'My WS', APP_ID)
+
+      expect(ws.id).toBeDefined()
+      expect(ws.appId).toBe(APP_ID)
+      expect(ws.name).toBe('My WS')
+      expect(ws.createdBy).toBe(userId)
+      expect(ws.deletedAt).toBeNull()
+      expect(ws.isDefault).toBe(false)
+
+      const role = await store.getMemberRole(ws.id, userId)
+      expect(role).toBe('owner')
+    })
+
+    it('is transactional — no orphan workspace on member insert failure', async () => {
+      const fakeUser = '00000000-0000-0000-0000-ffffffffffff'
+      await expect(store.create(fakeUser, 'Bad', APP_ID)).rejects.toThrow()
+
+      const [row] = await sqlClient`
+        SELECT count(*)::int AS count FROM workspaces
+        WHERE created_by = ${fakeUser}
+      `
+      expect(row.count).toBe(0)
+    })
+  })
+
+  describe('list', () => {
+    it('returns only workspaces where user is a member', async () => {
+      const userA = await seedUser('list-a')
+      const userB = await seedUser('list-b')
+
+      await store.create(userA, 'WS-A', APP_ID)
+      await store.create(userB, 'WS-B', APP_ID)
+
+      const listA = await store.list(userA, APP_ID)
+      expect(listA).toHaveLength(1)
+      expect(listA[0].name).toBe('WS-A')
+    })
+
+    it('filters by appId', async () => {
+      const userId = await seedUser('list-app')
+      await store.create(userId, 'WS-App1', APP_ID)
+      await store.create(userId, 'WS-App2', APP_ID_2)
+
+      const list1 = await store.list(userId, APP_ID)
+      expect(list1).toHaveLength(1)
+      expect(list1[0].name).toBe('WS-App1')
+
+      const list2 = await store.list(userId, APP_ID_2)
+      expect(list2).toHaveLength(1)
+      expect(list2[0].name).toBe('WS-App2')
+    })
+
+    it('excludes soft-deleted workspaces', async () => {
+      const userId = await seedUser('list-del')
+      const ws = await store.create(userId, 'Gone', APP_ID)
+      await store.delete(ws.id)
+
+      const list = await store.list(userId, APP_ID)
+      expect(list).toHaveLength(0)
+    })
+
+    it('orders isDefault DESC, then createdAt DESC', async () => {
+      const userId = await seedUser('list-ord')
+      const ws1 = await store.create(userId, 'First', APP_ID)
+      const ws2 = await store.create(userId, 'Second', APP_ID)
+
+      await sqlClient`UPDATE workspaces SET is_default = true WHERE id = ${ws1.id}`
+
+      const list = await store.list(userId, APP_ID)
+      expect(list[0].name).toBe('First')
+      expect(list[1].name).toBe('Second')
+    })
+  })
+
+  describe('get', () => {
+    it('returns workspace by id', async () => {
+      const userId = await seedUser()
+      const ws = await store.create(userId, 'GetMe', APP_ID)
+      const got = await store.get(ws.id)
+      expect(got).not.toBeNull()
+      expect(got!.name).toBe('GetMe')
+    })
+
+    it('returns null for unknown id', async () => {
+      const got = await store.get('00000000-0000-0000-0000-000000000000')
+      expect(got).toBeNull()
+    })
+
+    it('returns null for soft-deleted workspace', async () => {
+      const userId = await seedUser()
+      const ws = await store.create(userId, 'SoftDel', APP_ID)
+      await store.delete(ws.id)
+      expect(await store.get(ws.id)).toBeNull()
+    })
+  })
+
+  describe('update', () => {
+    it('updates name and returns updated workspace', async () => {
+      const userId = await seedUser()
+      const ws = await store.create(userId, 'Old', APP_ID)
+      const updated = await store.update(ws.id, { name: 'New' })
+      expect(updated).not.toBeNull()
+      expect(updated!.name).toBe('New')
+    })
+
+    it('returns null for soft-deleted workspace', async () => {
+      const userId = await seedUser()
+      const ws = await store.create(userId, 'Del', APP_ID)
+      await store.delete(ws.id)
+      expect(await store.update(ws.id, { name: 'Nope' })).toBeNull()
+    })
+  })
+
+  describe('delete', () => {
+    it('soft-deletes and sets deletedAt', async () => {
+      const userId = await seedUser()
+      const ws = await store.create(userId, 'ToDelete', APP_ID)
+      const result = await store.delete(ws.id)
+      expect(result).toEqual({ removed: true })
+
+      const [row] = await sqlClient`
+        SELECT deleted_at FROM workspaces WHERE id = ${ws.id}
+      `
+      expect(row.deleted_at).not.toBeNull()
+    })
+
+    it('returns NOT_FOUND for unknown id', async () => {
+      const result = await store.delete('00000000-0000-0000-0000-000000000000')
+      expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_FOUND })
+    })
+
+    it('returns WORKSPACE_PROVISIONING if runtime is provisioning', async () => {
+      const userId = await seedUser()
+      const ws = await store.create(userId, 'Provisioning', APP_ID)
+      await store.putWorkspaceRuntime(ws.id, { state: 'provisioning' })
+
+      const result = await store.delete(ws.id)
+      expect(result).toEqual({ removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING })
+    })
+  })
+
+  describe('isMember / getMemberRole', () => {
+    it('isMember returns true/false correctly', async () => {
+      const userA = await seedUser('mem-a')
+      const userB = await seedUser('mem-b')
+      const ws = await store.create(userA, 'MemberTest', APP_ID)
+
+      expect(await store.isMember(ws.id, userA)).toBe(true)
+      expect(await store.isMember(ws.id, userB)).toBe(false)
+    })
+
+    it('getMemberRole returns role or null', async () => {
+      const userId = await seedUser()
+      const ws = await store.create(userId, 'RoleTest', APP_ID)
+
+      expect(await store.getMemberRole(ws.id, userId)).toBe('owner')
+      expect(await store.getMemberRole(ws.id, '00000000-0000-0000-0000-000000000000')).toBeNull()
+    })
+  })
+
+  describe('listMembers', () => {
+    it('returns members enriched with user info', async () => {
+      const userId = await seedUser('lm')
+      const ws = await store.create(userId, 'ListM', APP_ID)
+
+      const members = await store.listMembers(ws.id)
+      expect(members).toHaveLength(1)
+      expect(members[0].role).toBe('owner')
+      expect(members[0].user.id).toBe(userId)
+      expect(members[0].user.email).toContain('@orm1-test.dev')
+      expect(members[0].user).toHaveProperty('name')
+      expect(members[0].user).toHaveProperty('image')
+    })
+  })
+
+  describe('upsertMember', () => {
+    it('inserts a new member', async () => {
+      const owner = await seedUser('ups-own')
+      const editor = await seedUser('ups-ed')
+      const ws = await store.create(owner, 'Upsert', APP_ID)
+
+      const member = await store.upsertMember(ws.id, editor, 'editor')
+      expect(member.role).toBe('editor')
+      expect(member.userId).toBe(editor)
+      expect(await store.isMember(ws.id, editor)).toBe(true)
+    })
+
+    it('updates role on conflict', async () => {
+      const owner = await seedUser('ups-upd')
+      const ws = await store.create(owner, 'Upsert2', APP_ID)
+
+      await store.upsertMember(ws.id, owner, 'editor')
+      const role = await store.getMemberRole(ws.id, owner)
+      expect(role).toBe('editor')
+    })
+  })
+
+  describe('removeMember', () => {
+    it('removes an existing member', async () => {
+      const owner = await seedUser('rm-own')
+      const editor = await seedUser('rm-ed')
+      const ws = await store.create(owner, 'Remove', APP_ID)
+      await store.upsertMember(ws.id, editor, 'editor')
+
+      const result = await store.removeMember(ws.id, editor)
+      expect(result).toEqual({ removed: true })
+      expect(await store.isMember(ws.id, editor)).toBe(false)
+    })
+
+    it('returns NOT_MEMBER for non-member', async () => {
+      const owner = await seedUser('rm-nm')
+      const ws = await store.create(owner, 'RemoveNM', APP_ID)
+
+      const result = await store.removeMember(ws.id, '00000000-0000-0000-0000-000000000000')
+      expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_MEMBER })
+    })
+
+    it('returns LAST_OWNER when removing the sole owner', async () => {
+      const owner = await seedUser('rm-lo')
+      const ws = await store.create(owner, 'LastOwner', APP_ID)
+
+      const result = await store.removeMember(ws.id, owner)
+      expect(result).toEqual({ removed: false, code: ERROR_CODES.LAST_OWNER })
+    })
+
+    it('allows removing an owner when another co-owner exists', async () => {
+      const ownerA = await seedUser('rm-coa')
+      const ownerB = await seedUser('rm-cob')
+      const ws = await store.create(ownerA, 'CoOwner', APP_ID)
+      await store.upsertMember(ws.id, ownerB, 'owner')
+
+      const result = await store.removeMember(ws.id, ownerA)
+      expect(result).toEqual({ removed: true })
+    })
+
+    it('returns WORKSPACE_PROVISIONING if runtime is provisioning', async () => {
+      const owner = await seedUser('rm-prov')
+      const editor = await seedUser('rm-prov-ed')
+      const ws = await store.create(owner, 'ProvRM', APP_ID)
+      await store.upsertMember(ws.id, editor, 'editor')
+      await store.putWorkspaceRuntime(ws.id, { state: 'provisioning' })
+
+      const result = await store.removeMember(ws.id, editor)
+      expect(result).toEqual({ removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING })
+    })
+  })
+
+  describe('getWorkspacesWhereSoleOwner', () => {
+    it('returns empty when user owns nothing', async () => {
+      const userId = await seedUser('sole-none')
+      const result = await store.getWorkspacesWhereSoleOwner(userId)
+      expect(result).toHaveLength(0)
+    })
+
+    it('returns workspace where user is the sole owner', async () => {
+      const userId = await seedUser('sole-one')
+      const ws = await store.create(userId, 'SoleWS', APP_ID)
+
+      const result = await store.getWorkspacesWhereSoleOwner(userId)
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe(ws.id)
+    })
+
+    it('excludes workspace with a co-owner', async () => {
+      const userA = await seedUser('sole-co-a')
+      const userB = await seedUser('sole-co-b')
+      const ws = await store.create(userA, 'CoOwnedWS', APP_ID)
+      await store.upsertMember(ws.id, userB, 'owner')
+
+      const result = await store.getWorkspacesWhereSoleOwner(userA)
+      expect(result).toHaveLength(0)
+    })
+
+    it('excludes soft-deleted workspaces', async () => {
+      const userId = await seedUser('sole-del')
+      const ws = await store.create(userId, 'DeletedSole', APP_ID)
+      await store.delete(ws.id)
+
+      const result = await store.getWorkspacesWhereSoleOwner(userId)
+      expect(result).toHaveLength(0)
+    })
+
+    it('mixed: returns sole-owned but not co-owned', async () => {
+      const userA = await seedUser('sole-mix-a')
+      const userB = await seedUser('sole-mix-b')
+      const wsSole = await store.create(userA, 'Sole', APP_ID)
+      const wsShared = await store.create(userA, 'Shared', APP_ID)
+      await store.upsertMember(wsShared.id, userB, 'owner')
+
+      const result = await store.getWorkspacesWhereSoleOwner(userA)
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe(wsSole.id)
     })
   })
 })
