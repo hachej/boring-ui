@@ -39,4 +39,4 @@ export type {
   PostSignupHookDeps,
 } from './auth/index.js'
 
-export { registerWorkspaceRoutes } from './routes/index.js'
+export { registerWorkspaceRoutes, registerMemberRoutes } from './routes/index.js'
