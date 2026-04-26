@@ -50,6 +50,32 @@ let sessionCookie: string
 let sessionUserId: string
 let sessionUserEmail: string
 
+async function createSessionUser(prefix: string): Promise<{
+  id: string
+  email: string
+  cookie: string
+}> {
+  const email = `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}@routes-test.dev`
+  const signupRes = await app.inject({
+    method: 'POST',
+    url: '/auth/sign-up/email',
+    payload: {
+      name: `Routes ${prefix}`,
+      email,
+      password: 'Zk8$mN!qR2xFgWpJ',
+    },
+  })
+
+  expect(signupRes.statusCode).toBe(200)
+  const setCookie = signupRes.headers['set-cookie']
+  expect(setCookie).toBeDefined()
+  const cookies = Array.isArray(setCookie) ? setCookie : [setCookie as string]
+  const cookie = cookies.map((c) => c.split(';')[0]).join('; ')
+
+  const body = signupRes.json() as { user: { id: string; email: string } }
+  return { id: body.user.id, email: body.user.email, cookie }
+}
+
 beforeAll(async () => {
   const config = makeConfig()
   await runMigrations(config)
@@ -429,62 +455,76 @@ describe('DELETE /api/v1/me', () => {
     expect(res.json().code).toBe('validation_failed')
   })
 
-  it('returns 409 last_owner with soleOwnerWorkspaceCount when user still owns workspaces', async () => {
+  it('deletes sole-owner user by deleting no-editor workspaces', async () => {
+    const user = await createSessionUser('sole-owner-delete')
+
     const [soleOwnerWs] = await rawSql`
       INSERT INTO workspaces (app_id, name, created_by, is_default)
-      VALUES ('test-app', 'Routes Sole Owner', ${sessionUserId}, false)
+      VALUES ('test-app', 'Routes Sole Owner', ${user.id}, false)
       RETURNING id
     `
     await rawSql`
       INSERT INTO workspace_members (workspace_id, user_id, role)
-      VALUES (${soleOwnerWs.id as string}, ${sessionUserId}, 'owner')
+      VALUES (${soleOwnerWs.id as string}, ${user.id}, 'owner')
     `
 
     const res = await app.inject({
       method: 'DELETE',
       url: '/api/v1/me',
-      headers: { cookie: sessionCookie },
-      payload: { confirm: sessionUserEmail },
+      headers: { cookie: user.cookie },
+      payload: { confirm: user.email },
     })
 
-    expect(res.statusCode).toBe(409)
-    const body = res.json()
-    expect(body.code).toBe('last_owner')
-    expect(typeof body.soleOwnerWorkspaceCount).toBe('number')
-    expect(body.soleOwnerWorkspaceCount).toBeGreaterThanOrEqual(1)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ deleted: true })
+
+    const [workspaceCount] = await rawSql`
+      SELECT COUNT(*)::int AS count
+      FROM workspaces
+      WHERE id = ${soleOwnerWs.id as string}
+    `
+    expect(workspaceCount.count).toBe(0)
   })
 
   it('deletes user, clears cookie, and invalidates old session when confirm matches', async () => {
-    const peerEmail = `routes-peer-${Date.now()}@routes-peer.dev`
-    const [peer] = await rawSql`
-      INSERT INTO users (name, email, email_verified)
-      VALUES ('Routes Peer', ${peerEmail}, true)
+    const user = await createSessionUser('delete-me')
+    const peer = await createSessionUser('delete-me-peer')
+
+    const [sharedWorkspace] = await rawSql`
+      INSERT INTO workspaces (app_id, name, created_by, is_default)
+      VALUES ('test-app', 'Delete Transfer Workspace', ${user.id}, false)
       RETURNING id
     `
-
     await rawSql`
       INSERT INTO workspace_members (workspace_id, user_id, role)
-      SELECT workspace_id, ${peer.id as string}, 'owner'
-      FROM workspace_members
-      WHERE user_id = ${sessionUserId}
+      VALUES
+        (${sharedWorkspace.id as string}, ${user.id}, 'owner'),
+        (${sharedWorkspace.id as string}, ${peer.id}, 'owner')
       ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = 'owner'
     `
 
     const deleteRes = await app.inject({
       method: 'DELETE',
       url: '/api/v1/me',
-      headers: { cookie: sessionCookie },
-      payload: { confirm: sessionUserEmail },
+      headers: { cookie: user.cookie },
+      payload: { confirm: user.email },
     })
 
     expect(deleteRes.statusCode).toBe(200)
     expect(deleteRes.json()).toEqual({ deleted: true })
     expect(deleteRes.headers['set-cookie']).toBeDefined()
 
+    const [workspaceAfterDelete] = await rawSql`
+      SELECT created_by
+      FROM workspaces
+      WHERE id = ${sharedWorkspace.id as string}
+    `
+    expect(workspaceAfterDelete.created_by).toBe(peer.id)
+
     const meRes = await app.inject({
       method: 'GET',
       url: '/api/v1/me',
-      headers: { cookie: sessionCookie },
+      headers: { cookie: user.cookie },
     })
     expect(meRes.statusCode).toBe(401)
     expect(meRes.json().code).toBe('unauthorized')

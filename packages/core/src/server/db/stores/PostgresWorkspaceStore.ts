@@ -314,40 +314,68 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       | typeof ERROR_CODES.NOT_MEMBER
       | typeof ERROR_CODES.WORKSPACE_PROVISIONING
   }> {
-    const role = await this.getMemberRole(workspaceId, userId)
-    if (!role) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
+    return this.db.transaction(async (tx) => {
+      // Lock current owners in this workspace so concurrent owner removals serialize.
+      await tx.execute(sql`
+        SELECT user_id
+        FROM workspace_members
+        WHERE workspace_id = ${workspaceId}
+          AND role = 'owner'
+        FOR UPDATE
+      `)
 
-    const [runtime] = await this.db
-      .select()
-      .from(workspaceRuntimes)
-      .where(eq(workspaceRuntimes.workspaceId, workspaceId))
-      .limit(1)
-    if (runtime?.state === 'provisioning')
-      return { removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING }
-
-    if (role === 'owner') {
-      const [{ count }] = await this.db
-        .select({ count: sql<number>`count(*)::int` })
+      const memberRows = await tx
+        .select({ role: workspaceMembers.role })
         .from(workspaceMembers)
         .where(
           and(
             eq(workspaceMembers.workspaceId, workspaceId),
-            eq(workspaceMembers.role, sql`'owner'`),
+            eq(workspaceMembers.userId, userId),
           ),
         )
-      if (Number(count) <= 1)
-        return { removed: false, code: ERROR_CODES.LAST_OWNER }
-    }
+        .limit(1)
+      const role = memberRows[0]?.role as MemberRole | undefined
+      if (!role) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
 
-    await this.db
-      .delete(workspaceMembers)
-      .where(
-        and(
-          eq(workspaceMembers.workspaceId, workspaceId),
-          eq(workspaceMembers.userId, userId),
-        ),
-      )
-    return { removed: true }
+      const [runtime] = await tx
+        .select()
+        .from(workspaceRuntimes)
+        .where(eq(workspaceRuntimes.workspaceId, workspaceId))
+        .limit(1)
+      if (runtime?.state === 'provisioning') {
+        return { removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING }
+      }
+
+      if (role === 'owner') {
+        const [{ count }] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(workspaceMembers)
+          .where(
+            and(
+              eq(workspaceMembers.workspaceId, workspaceId),
+              eq(workspaceMembers.role, sql`'owner'`),
+            ),
+          )
+        if (Number(count) <= 1) {
+          return { removed: false, code: ERROR_CODES.LAST_OWNER }
+        }
+      }
+
+      const deletedRows = await tx
+        .delete(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.userId, userId),
+          ),
+        )
+        .returning({ userId: workspaceMembers.userId })
+      if (deletedRows.length === 0) {
+        return { removed: false, code: ERROR_CODES.NOT_MEMBER }
+      }
+
+      return { removed: true }
+    })
   }
 
   // ---------------------------------------------------------------------------

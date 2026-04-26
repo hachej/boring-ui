@@ -138,8 +138,7 @@ const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
       })
     }
 
-    const workspaceStore = opts.workspaceStore ?? app.workspaceStore
-    if (!db || !workspaceStore) {
+    if (!db) {
       throw new HttpError({
         status: 500,
         code: ERROR_CODES.INTERNAL_ERROR,
@@ -154,39 +153,7 @@ const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
       'user.delete.start',
     )
 
-    try {
-      await deleteUserCompletely(user.id, {
-        db,
-        userStore,
-        workspaceStore,
-      })
-    } catch (error) {
-      if (error instanceof HttpError && error.code === ERROR_CODES.LAST_OWNER) {
-        const soleOwnerWorkspaceCount = (
-          await workspaceStore.getWorkspacesWhereSoleOwner(user.id)
-        ).length
-
-        request.log.info(
-          {
-            event: 'user.delete.blocked',
-            userId: user.id,
-            reason: ERROR_CODES.LAST_OWNER,
-            soleOwnerWorkspaceCount,
-          },
-          'user.delete.blocked',
-        )
-
-        reply.status(409)
-        return {
-          error: error.message,
-          code: error.code,
-          message: error.message,
-          requestId: request.id,
-          soleOwnerWorkspaceCount,
-        }
-      }
-      throw error
-    }
+    await deleteUserCompletely(user.id, { db })
 
     const signOutResponse = await (app.auth.api.signOut as (input: {
       headers: Headers

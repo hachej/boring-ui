@@ -4,7 +4,7 @@ import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
 
 import type { CoreConfig } from '../../../shared/types'
-import { ERROR_CODES, HttpError } from '../../../shared/errors'
+import { ERROR_CODES } from '../../../shared/errors'
 import { runMigrations } from '../../db/migrate'
 import { PostgresUserStore } from '../../db/stores/PostgresUserStore'
 import { PostgresWorkspaceStore } from '../../db/stores/PostgresWorkspaceStore'
@@ -168,8 +168,6 @@ describe('deleteUserCompletely', () => {
 
     await deleteUserCompletely(user.id, {
       db: drizzle(sqlClient),
-      userStore,
-      workspaceStore,
     })
 
     expect(await userStore.getById(user.id)).toBeNull()
@@ -203,32 +201,72 @@ describe('deleteUserCompletely', () => {
     expect(tokensCount.count).toBe(0)
   })
 
-  it('throws last_owner when the user is sole owner of at least one workspace', async () => {
-    const user = await seedUser('sole-owner')
-    const workspaceId = await seedWorkspace(user.id, 'Sole Owner WS')
+  it('promotes oldest editor for sole-owner workspaces and deletes workspaces with no editors', async () => {
+    const owner = await seedUser('sole-owner')
+    const oldestEditor = await seedUser('oldest-editor')
+    const newerEditor = await seedUser('newer-editor')
+    const viewerOnly = await seedUser('viewer-only')
 
-    await expect(
-      deleteUserCompletely(user.id, {
-        db: drizzle(sqlClient),
-        userStore,
-        workspaceStore,
-      }),
-    ).rejects.toMatchObject({
-      status: 409,
-      code: ERROR_CODES.LAST_OWNER,
-      message:
-        'Transfer ownership of 1 workspace(s) before deleting your account.',
-    } satisfies Pick<HttpError, 'status' | 'code' | 'message'>)
+    const promotedWorkspaceId = await seedWorkspace(owner.id, 'Promoted WS')
+    await sqlClient`
+      INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+      VALUES
+        (${promotedWorkspaceId}, ${oldestEditor.id}, 'editor', NOW() - interval '2 minutes'),
+        (${promotedWorkspaceId}, ${newerEditor.id}, 'editor', NOW() - interval '1 minute')
+    `
 
-    expect(await userStore.getById(user.id)).not.toBeNull()
+    const deletedWorkspaceId = await seedWorkspace(owner.id, 'Deleted WS')
+    await sqlClient`
+      INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+      VALUES (${deletedWorkspaceId}, ${viewerOnly.id}, 'viewer', NOW() - interval '1 minute')
+    `
 
-    const [membershipCount] = await sqlClient`
+    await deleteUserCompletely(owner.id, {
+      db: drizzle(sqlClient),
+    })
+
+    expect(await userStore.getById(owner.id)).toBeNull()
+
+    const [createdByRow] = await sqlClient`
+      SELECT created_by
+      FROM workspaces
+      WHERE id = ${promotedWorkspaceId}
+    `
+    expect(createdByRow.created_by).toBe(oldestEditor.id)
+
+    const promotedRole = await workspaceStore.getMemberRole(
+      promotedWorkspaceId,
+      oldestEditor.id,
+    )
+    expect(promotedRole).toBe('owner')
+    expect(
+      await workspaceStore.getMemberRole(promotedWorkspaceId, owner.id),
+    ).toBeNull()
+
+    const [newerRoleRow] = await sqlClient`
+      SELECT role
+      FROM workspace_members
+      WHERE workspace_id = ${promotedWorkspaceId}
+        AND user_id = ${newerEditor.id}
+    `
+    expect(newerRoleRow.role).toBe('editor')
+
+    const [deletedWorkspaceCount] = await sqlClient`
+      SELECT COUNT(*)::int AS count
+      FROM workspaces
+      WHERE id = ${deletedWorkspaceId}
+    `
+    expect(deletedWorkspaceCount.count).toBe(0)
+
+    const [deletedMembersCount] = await sqlClient`
       SELECT COUNT(*)::int AS count
       FROM workspace_members
-      WHERE workspace_id = ${workspaceId}
-      AND user_id = ${user.id}
+      WHERE workspace_id = ${deletedWorkspaceId}
     `
-    expect(membershipCount.count).toBe(1)
+    expect(deletedMembersCount.count).toBe(0)
+    expect(
+      await workspaceStore.getMemberRole(deletedWorkspaceId, viewerOnly.id),
+    ).toBeNull()
   })
 
   it('deletes co-owner memberships, revokes pending invites, and keeps co-owners', async () => {
@@ -307,8 +345,6 @@ describe('deleteUserCompletely', () => {
 
     await deleteUserCompletely(departingOwner.id, {
       db: drizzle(sqlClient),
-      userStore,
-      workspaceStore,
     })
 
     expect(await userStore.getById(departingOwner.id)).toBeNull()
