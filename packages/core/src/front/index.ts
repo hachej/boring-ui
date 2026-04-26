@@ -1,4 +1,6 @@
 export { AppErrorBoundary } from './AppErrorBoundary.js'
+export { ThemeProvider, useTheme } from './ThemeProvider.js'
+export type { ThemeApi, ThemeProviderProps } from './ThemeProvider.js'
 
 export {
   apiFetch,

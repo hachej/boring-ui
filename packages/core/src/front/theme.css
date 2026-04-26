@@ -1,1 +1,46 @@
-/* @boring/core theme token bridge — populated in M3 */
+/* @boring/core theme token bridge
+   Provides shadcn token values keyed by [data-theme] attribute.
+   ThemeProvider sets data-theme on <html>; these selectors respond. */
+
+:root {
+  --background: oklch(0.995 0.0015 72);
+  --foreground: oklch(0.18 0.004 72);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.004 72);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.004 72);
+  --primary: oklch(0.22 0.006 72);
+  --primary-foreground: oklch(0.985 0.002 72);
+  --secondary: oklch(0.965 0.003 72);
+  --secondary-foreground: oklch(0.22 0.006 72);
+  --muted: oklch(0.965 0.003 72);
+  --muted-foreground: oklch(0.52 0.008 72);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.915 0.004 72);
+  --input: oklch(0.915 0.004 72);
+  --accent: oklch(0.62 0.14 65);
+  --accent-foreground: oklch(0.995 0 0);
+  --ring: oklch(0.62 0.14 65);
+  --radius: 0.625rem;
+}
+
+[data-theme="dark"] {
+  --background: oklch(0.145 0.004 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0.004 285.823);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0.004 285.823);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0.006 285.885);
+  --secondary: oklch(0.269 0.006 285.885);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0.006 285.885);
+  --muted-foreground: oklch(0.708 0.01 286.073);
+  --accent: oklch(0.269 0.006 285.885);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.768);
+  --border: oklch(0.269 0.006 285.885);
+  --input: oklch(0.269 0.006 285.885);
+  --ring: oklch(0.439 0.01 286.029);
+}
