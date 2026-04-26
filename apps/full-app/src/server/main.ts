@@ -238,10 +238,27 @@ async function startViteDevServer(
     server: {
       port: DEFAULT_FRONTEND_PORT,
       strictPort: false,
+      host: true,
       proxy: {
         '/api': apiTarget,
-        '/auth': apiTarget,
         '/health': apiTarget,
+        '/auth': {
+          target: apiTarget,
+          changeOrigin: true,
+          // /auth/* is shared between better-auth API paths (POST sign-in/email,
+          // GET get-session, etc.) and frontend React Router pages (/auth/signin,
+          // /auth/reset-password?token=…). Differentiate by request shape: a GET
+          // for text/html is an SPA navigation — let Vite serve index.html so
+          // React Router can render the page. Anything else (XHR / fetch / POST)
+          // is an API call — proxy to the backend.
+          bypass(req) {
+            const accept = req.headers.accept ?? ''
+            if (req.method === 'GET' && accept.includes('text/html')) {
+              return req.url
+            }
+            return undefined
+          },
+        },
       },
     },
   })
@@ -270,7 +287,7 @@ async function main() {
 
   const { db, sql } = createDatabase(config)
   const userStore = new PostgresUserStore(db)
-  const workspaceStore = new PostgresWorkspaceStore(db)
+  const workspaceStore = new PostgresWorkspaceStore(db, config.encryption.workspaceSettingsKey)
 
   const app = await createCoreApp(config)
   const auth = createAuth(config, db, {
