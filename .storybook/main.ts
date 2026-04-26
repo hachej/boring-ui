@@ -10,6 +10,7 @@ const config: StorybookConfig = {
   stories: [
     "../packages/workspace/stories/**/*.stories.@(ts|tsx)",
     "../packages/agent/stories/**/*.stories.@(ts|tsx)",
+    "../packages/core/stories/**/*.stories.@(ts|tsx)",
   ],
   addons: [
     "@storybook/addon-essentials",
@@ -40,12 +41,24 @@ const config: StorybookConfig = {
             replacement: `${path.resolve(rootDir, "packages/workspace/src")}/`,
           },
           {
+            find: "@boring/workspace/ui-shadcn",
+            replacement: path.resolve(rootDir, "packages/workspace/src/components/ui/index.ts"),
+          },
+          {
             find: "@boring/workspace",
             replacement: path.resolve(rootDir, "packages/workspace/src/index.ts"),
           },
           {
             find: "@boring/agent",
             replacement: path.resolve(rootDir, "packages/agent/src/index.ts"),
+          },
+          {
+            find: "@boring/core/front",
+            replacement: path.resolve(rootDir, "packages/core/src/front/index.ts"),
+          },
+          {
+            find: "@boring/core/shared",
+            replacement: path.resolve(rootDir, "packages/core/src/shared/index.ts"),
           },
         ],
       },
