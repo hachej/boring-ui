@@ -104,8 +104,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close()
-  await rawSql`DELETE FROM sessions WHERE 1=1`
-  await rawSql`DELETE FROM accounts WHERE 1=1`
+  await rawSql`DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@auth-test.dev')`
+  await rawSql`DELETE FROM accounts WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@auth-test.dev')`
   await rawSql`DELETE FROM verification_tokens WHERE 1=1`
   await rawSql`DELETE FROM users WHERE email LIKE '%@auth-test.dev'`
   await rawSql.end()
