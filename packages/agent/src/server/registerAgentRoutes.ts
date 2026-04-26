@@ -64,6 +64,7 @@ export interface RegisterAgentRoutesOptions {
   mode?: RuntimeModeId
   version?: string
   extraTools?: AgentTool[]
+  registerHealthRoute?: boolean
 }
 
 /**
@@ -153,10 +154,13 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
   })
 
-  await app.register(healthRoutes, {
-    version: opts.version ?? DEFAULT_VERSION,
-    getReadiness: () => readyTracker.getReadiness(),
-  })
+  const registerHealthRoute = opts.registerHealthRoute ?? true
+  if (registerHealthRoute) {
+    await app.register(healthRoutes, {
+      version: opts.version ?? DEFAULT_VERSION,
+      getReadiness: () => readyTracker.getReadiness(),
+    })
+  }
 
   await app.register(fileRoutes, { workspace: runtimeBundle.workspace })
   await app.register(treeRoutes, { workspace: runtimeBundle.workspace })
