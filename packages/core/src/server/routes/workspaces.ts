@@ -68,6 +68,15 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
         })
       }
 
+      if (Object.keys(parsed.data).length === 0) {
+        throw new HttpError({
+          status: 400,
+          code: ERROR_CODES.VALIDATION_FAILED,
+          message: 'At least one field must be provided',
+          requestId: request.id,
+        })
+      }
+
       const workspace = await store.update(id, parsed.data)
       if (!workspace) {
         throw new HttpError({

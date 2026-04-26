@@ -247,6 +247,14 @@ describe('PUT /api/v1/workspaces/:id', () => {
     expect(res.json().code).toBe('forbidden')
   })
 
+  it('rejects empty update body with 400', async () => {
+    const ws = seedWorkspaceWithMembers('NoOp', OWNER_ID)
+
+    const res = await inject('PUT', `/api/v1/workspaces/${ws.id}`, OWNER_ID, {})
+    expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe('validation_failed')
+  })
+
   it('rejects invalid body', async () => {
     const ws = seedWorkspaceWithMembers('Valid', OWNER_ID)
 
