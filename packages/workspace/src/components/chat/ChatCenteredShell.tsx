@@ -21,6 +21,7 @@ import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
 import { ChatPanel } from "@boring/agent/ui-shadcn"
 import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
+import { startUiCommandPoller } from "./uiCommandPoller"
 
 export interface ChatCenteredShellProps {
   /** Branding shown in the top bar. */
@@ -84,6 +85,14 @@ export interface ChatCenteredShellProps {
    * `surface.openPanel({...})` from a parent-level `data` prop.
    */
   onSurfaceReady?: (surface: SurfaceShellApi) => void
+
+  /**
+   * Additional panel ids (registered via WorkspaceProvider's `panels` prop)
+   * that the workbench is allowed to render. By default only the built-in
+   * editor/viewer panels are allowed; pass app-specific pane ids here so
+   * `surface.openPanel({ component: "..." })` can instantiate them.
+   */
+  extraPanels?: string[]
 
   className?: string
 }
@@ -174,6 +183,7 @@ export function ChatCenteredShell({
   accentColor,
   withCommandPalette = true,
   onSurfaceReady,
+  extraPanels,
   className,
 }: ChatCenteredShellProps) {
   const [drawerOpen, setDrawerOpenRaw] = useState(() =>
@@ -277,6 +287,21 @@ export function ChatCenteredShell({
   useEffect(() => {
     pushUiState()
   }, [drawerOpen, surfaceOpen, pushUiState])
+
+  // Drain agent → frontend UI commands posted via /api/v1/ui/commands and
+  // apply them to the workbench surface. Started on mount, stopped on
+  // unmount. The dispatch context reads from refs on every fire so a
+  // late SurfaceShell mount, or any open/close toggle, is picked up
+  // without restarting the poller.
+  useEffect(() => {
+    return startUiCommandPoller({
+      ctx: {
+        surface: () => surfaceRef.current,
+        isWorkbenchOpen: () => surfaceOpenRef.current,
+        openWorkbench: () => setSurfaceOpen(true),
+      },
+    })
+  }, [setSurfaceOpen])
 
   const openArtifact = useCallback(
     (path: string) => {
@@ -479,6 +504,7 @@ export function ChatCenteredShell({
                 storageKey={surfaceStorageKey}
                 onReady={handleSurfaceReady}
                 onChange={handleSurfaceChange}
+                extraPanels={extraPanels}
               />
             </div>
           </aside>
