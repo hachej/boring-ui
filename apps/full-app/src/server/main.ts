@@ -9,6 +9,7 @@ import {
   createAuth,
   createCoreApp,
   loadConfig,
+  registerInviteRoutes,
   registerMemberRoutes,
   registerRoutes,
   registerSettingsRoutes,
