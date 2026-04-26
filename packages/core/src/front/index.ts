@@ -52,5 +52,11 @@ export {
 } from './utils.js'
 export type { RouteMap } from './utils.js'
 
+export { AuthGate } from './AuthGate.js'
+export type { AuthGateProps } from './AuthGate.js'
+
+export { BoringApp } from './BoringApp.js'
+export type { BoringAppProps, BoringAppAuthPagesOverride } from './BoringApp.js'
+
 export { sanitizeMarkdown, sanitizeToolOutput } from './sanitize.js'
 export { debounce } from './debounce.js'
