@@ -21,7 +21,7 @@ import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
 import { ChatPanel } from "@boring/agent/ui-shadcn"
 import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
-import { startUiCommandPoller } from "./uiCommandPoller"
+import { startUiCommandStream } from "./uiCommandStream"
 
 export interface ChatCenteredShellProps {
   /** Branding shown in the top bar. */
@@ -235,6 +235,15 @@ export function ChatCenteredShell({
   // (PUT /api/v1/ui/state). The LLM's get_ui_state tool returns whatever was
   // last PUT here, so this is what makes the agent aware of which tabs are
   // open / active and whether the workbench pane is visible.
+  //
+  // Per-push AbortController + last-call-wins: rapid toggles (drawer open
+  // → close → open) are common, and without this an older PUT could land
+  // at the server AFTER a newer one (network jitter, kept-alive
+  // connection reorder). That would permanently poison get_ui_state until
+  // the next event. The abort is best-effort — even if the server has
+  // already accepted the older request, the newer one will overwrite it
+  // because we always re-send full state, never deltas.
+  const pushAbortRef = useRef<AbortController | null>(null)
   const pushUiState = useCallback(() => {
     const snapshot = surfaceSnapshotRef.current
     const body = {
@@ -249,10 +258,14 @@ export function ChatCenteredShell({
       },
       causedBy: "user" as const,
     }
+    pushAbortRef.current?.abort()
+    const ac = new AbortController()
+    pushAbortRef.current = ac
     void fetch("/api/v1/ui/state", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: ac.signal,
     }).catch(() => {
       /* Best-effort — UI state push is non-critical and should not break the UI. */
     })
@@ -288,13 +301,15 @@ export function ChatCenteredShell({
     pushUiState()
   }, [drawerOpen, surfaceOpen, pushUiState])
 
-  // Drain agent → frontend UI commands posted via /api/v1/ui/commands and
-  // apply them to the workbench surface. Started on mount, stopped on
-  // unmount. The dispatch context reads from refs on every fire so a
-  // late SurfaceShell mount, or any open/close toggle, is picked up
-  // without restarting the poller.
+  // Subscribe to agent → frontend UI commands posted via /api/v1/ui/commands
+  // and apply them to the workbench surface. Default transport is SSE
+  // (instant, no polling), with an automatic poll fallback if EventSource
+  // is unavailable or the stream errors past its reconnect budget. The
+  // dispatch context reads from refs on every command, so a late
+  // SurfaceShell mount or any open/close toggle is picked up without
+  // resubscribing.
   useEffect(() => {
-    return startUiCommandPoller({
+    return startUiCommandStream({
       ctx: {
         surface: () => surfaceRef.current,
         isWorkbenchOpen: () => surfaceOpenRef.current,
