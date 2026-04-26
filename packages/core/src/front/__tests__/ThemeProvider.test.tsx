@@ -130,6 +130,8 @@ describe('ThemeProvider', () => {
     })
 
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    expect(result.current.theme).toBe('dark')
+    expect(result.current.preference).toBe('system')
   })
 
   it('toggleTheme switches light → dark → light', () => {

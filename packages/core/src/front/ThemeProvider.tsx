@@ -51,7 +51,9 @@ export function ThemeProvider({ children, defaultTheme = 'system' }: ThemeProvid
     return defaultTheme
   })
 
-  const resolved = resolveTheme(preference)
+  const [systemTheme, setSystemTheme] = useState<Theme>(getSystemTheme)
+
+  const resolved: Theme = preference === 'system' ? systemTheme : preference
 
   useEffect(() => {
     applyTheme(resolved)
@@ -62,12 +64,11 @@ export function ThemeProvider({ children, defaultTheme = 'system' }: ThemeProvid
   }, [resolved])
 
   useEffect(() => {
-    if (preference !== 'system') return
     const mql = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = () => applyTheme(getSystemTheme())
+    const handler = () => setSystemTheme(getSystemTheme())
     mql.addEventListener('change', handler)
     return () => mql.removeEventListener('change', handler)
-  }, [preference])
+  }, [])
 
   useEffect(() => {
     const handler = (e: StorageEvent) => {
