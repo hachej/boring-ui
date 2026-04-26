@@ -2,8 +2,8 @@
 // Keep this as the single import point for drizzle.config.ts and migration tooling.
 export * from '../../../drizzle/schema.js'
 
-import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index } from 'drizzle-orm/pg-core'
-import { relations } from 'drizzle-orm'
+import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, boolean, uniqueIndex } from 'drizzle-orm/pg-core'
+import { relations, sql } from 'drizzle-orm'
 import { users } from '../../../drizzle/schema.js'
 
 export const userSettings = pgTable(
@@ -27,6 +27,39 @@ export const userSettings = pgTable(
 export const userSettingsRelations = relations(userSettings, ({ one }) => ({
   user: one(users, {
     fields: [userSettings.userId],
+    references: [users.id],
+  }),
+}))
+
+export const workspaces = pgTable(
+  'workspaces',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    appId: text('app_id').notNull(),
+    name: text('name').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at'),
+    isDefault: boolean('is_default').notNull().default(false),
+    machineId: text('machine_id'),
+    volumeId: text('volume_id'),
+    flyRegion: text('fly_region'),
+  },
+  (table) => [
+    index('workspaces_created_by_idx').on(table.createdBy),
+    uniqueIndex('idx_workspaces_default_per_user_app')
+      .on(table.createdBy, table.appId)
+      .where(sql`${table.isDefault} = true`),
+  ],
+)
+
+export const workspacesRelations = relations(workspaces, ({ one }) => ({
+  creator: one(users, {
+    fields: [workspaces.createdBy],
     references: [users.id],
   }),
 }))
