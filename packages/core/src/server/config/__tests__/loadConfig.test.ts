@@ -63,7 +63,20 @@ describe('loadConfig', () => {
     expect(config.features.invitesEnabled).toBe(true)
     expect(config.bodyLimit).toBe(16 * 1024 * 1024)
     expect(config.cors.credentials).toBe(true)
+    expect(config.security?.csp.enabled).toBe(true)
     expect(config.encryption.workspaceSettingsKey).toBe('b'.repeat(64))
+  })
+
+  it('allows disabling CSP with CSP_ENABLED=false', async () => {
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        CSP_ENABLED: 'false',
+      },
+    })
+
+    expect(config.security?.csp.enabled).toBe(false)
   })
 
   it('derives sessionCookieSecure=true from https URL', async () => {

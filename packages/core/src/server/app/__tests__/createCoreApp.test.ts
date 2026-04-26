@@ -17,6 +17,11 @@ const TEST_CONFIG: CoreConfig = {
   },
   bodyLimit: 16 * 1024 * 1024,
   logLevel: 'silent' as CoreConfig['logLevel'],
+  security: {
+    csp: {
+      enabled: true,
+    },
+  },
   encryption: { workspaceSettingsKey: 'a'.repeat(64) },
   auth: {
     secret: 's'.repeat(64),
@@ -120,7 +125,11 @@ describe('createCoreApp', () => {
     const res = await app.inject({ method: 'GET', url: '/test' })
 
     expect(res.headers['x-content-type-options']).toBe('nosniff')
-    expect(res.headers['x-frame-options']).toBe('SAMEORIGIN')
+    expect(res.headers['x-frame-options']).toBe('DENY')
+    expect(res.headers['strict-transport-security']).toContain('max-age=31536000')
+    expect(res.headers['strict-transport-security']).toContain('includeSubDomains')
+    expect(res.headers['strict-transport-security']).toContain('preload')
+    expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin')
   })
 
   it('applies body limit from config', async () => {
@@ -146,7 +155,7 @@ describe('createCoreApp', () => {
     app.addRedactionPaths(['myCustomSecret'])
   })
 
-  it('includes CSP with unsafe-inline for style-src', async () => {
+  it('includes CSP nonce directives and blocks unsafe-inline defaults', async () => {
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
     app.get('/test', async () => ({ ok: true }))
     await app.ready()
@@ -154,8 +163,30 @@ describe('createCoreApp', () => {
     const res = await app.inject({ method: 'GET', url: '/test' })
     const csp = res.headers['content-security-policy'] as string
 
-    expect(csp).toContain("style-src 'self' 'unsafe-inline'")
-    expect(csp).toContain("script-src 'self'")
+    expect(csp).toContain("default-src 'self'")
+    expect(csp).toMatch(/script-src 'self' 'nonce-[^']+'/)
+    expect(csp).toMatch(/style-src 'self' 'nonce-[^']+'/)
+    expect(csp).toContain("connect-src 'self'")
     expect(csp).toContain("frame-ancestors 'none'")
+    expect(csp).not.toContain("'unsafe-inline'")
+  })
+
+  it('allows disabling CSP via config security flag', async () => {
+    app = await createCoreApp(
+      {
+        ...TEST_CONFIG,
+        security: {
+          csp: {
+            enabled: false,
+          },
+        },
+      },
+      { manageShutdown: false },
+    )
+    app.get('/test', async () => ({ ok: true }))
+    await app.ready()
+
+    const res = await app.inject({ method: 'GET', url: '/test' })
+    expect(res.headers['content-security-policy']).toBeUndefined()
   })
 })

@@ -2,7 +2,8 @@ import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
-import { randomUUID } from 'node:crypto'
+import type { IncomingMessage } from 'node:http'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type { CoreConfig } from '../../shared/types.js'
 import type { CreateCoreAppOptions } from './types.js'
 import { registerErrorHandler } from './errorHandler.js'
@@ -18,10 +19,15 @@ const DEFAULT_REDACTION_KEYWORDS = [
   'cookie',
 ]
 const SHUTDOWN_GRACE_MS = 30_000
+const CSP_NONCE_SIZE_BYTES = 16
 
 type Closable = {
   close?: () => Promise<unknown> | unknown
   end?: () => Promise<unknown> | unknown
+}
+
+type IncomingMessageWithNonce = IncomingMessage & {
+  cspNonce?: string
 }
 
 function redactObject(
@@ -186,26 +192,54 @@ export async function createCoreApp(
     reply.header('x-request-id', request.id)
   })
 
+  app.addHook('onRequest', async (request) => {
+    const nonce = randomBytes(CSP_NONCE_SIZE_BYTES).toString('base64')
+    request.cspNonce = nonce
+    ;(request.raw as IncomingMessageWithNonce).cspNonce = nonce
+  })
+
   await app.register(cors, {
     origin: config.cors.origins.length > 0 ? config.cors.origins : true,
     credentials: config.cors.credentials,
   })
 
+  const cspEnabled = config.security?.csp?.enabled ?? true
+
   await app.register(helmet, {
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'blob:'],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-        baseUri: ["'self'"],
-        formAction: ["'self'"],
-      },
+    hsts: {
+      maxAge: 31_536_000,
+      includeSubDomains: true,
+      preload: true,
     },
+    frameguard: {
+      action: 'deny',
+    },
+    noSniff: true,
+    referrerPolicy: {
+      policy: 'strict-origin-when-cross-origin',
+    },
+    contentSecurityPolicy: cspEnabled
+      ? {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: [
+              "'self'",
+              (request) => `'nonce-${(request as IncomingMessageWithNonce).cspNonce ?? ''}'`,
+            ],
+            styleSrc: [
+              "'self'",
+              (request) => `'nonce-${(request as IncomingMessageWithNonce).cspNonce ?? ''}'`,
+            ],
+            imgSrc: ["'self'", 'data:', 'blob:'],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
+          },
+        }
+      : false,
   })
 
   registerErrorHandler(app)

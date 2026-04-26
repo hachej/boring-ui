@@ -1,4 +1,4 @@
-import { access, stat } from 'node:fs/promises'
+import { access, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -50,6 +50,19 @@ type AppWithAuth = CoreAppInstance & { auth: BetterAuthInstance }
 function contentType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase()
   return MIME_TYPES[ext] ?? 'application/octet-stream'
+}
+
+function injectCspNonceIntoHtml(html: string, nonce: string | undefined): string {
+  if (!nonce) return html
+
+  const metaTag = `<meta name="boring-csp-nonce" content="${nonce}" />`
+  const withMeta = html.includes('</head>')
+    ? html.replace('</head>', `  ${metaTag}\n</head>`)
+    : `${metaTag}\n${html}`
+
+  return withMeta
+    .replace(/<script(?![^>]*\bnonce=)/g, `<script nonce="${nonce}"`)
+    .replace(/<style(?![^>]*\bnonce=)/g, `<style nonce="${nonce}"`)
 }
 
 async function pathExists(filePath: string): Promise<boolean> {
@@ -175,8 +188,9 @@ async function registerFrontendFallback(
       }
     }
 
+    const html = await readFile(indexPath, 'utf-8')
     reply.type('text/html; charset=utf-8')
-    return reply.send(createReadStream(indexPath))
+    return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
   })
 
   app.get('/*', async (request: any, reply: any) => {
@@ -205,8 +219,9 @@ async function registerFrontendFallback(
       }
     }
 
+    const html = await readFile(indexPath, 'utf-8')
     reply.type('text/html; charset=utf-8')
-    return reply.send(createReadStream(indexPath))
+    return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
   })
 }
 

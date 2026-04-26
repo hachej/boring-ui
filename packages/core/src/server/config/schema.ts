@@ -43,6 +43,13 @@ export const coreConfigSchema = z.object({
   bodyLimit: z.number().int().positive(),
   logLevel: logLevelSchema,
   rateLimit: z.record(rateLimitEndpointOverrideSchema).optional(),
+  security: z
+    .object({
+      csp: z.object({
+        enabled: z.boolean(),
+      }),
+    })
+    .optional(),
 
   encryption: z.object({
     workspaceSettingsKey: z.string().min(1),

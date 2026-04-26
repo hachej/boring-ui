@@ -221,4 +221,22 @@ describe('BoringApp', () => {
       assertionPassed('all-default-routes')
     }),
   )
+
+  it(
+    'threads csp nonce into Helmet script tags',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      setupAll()
+      render(<BoringApp cspNonce="test-nonce-123" />)
+
+      await waitFor(() => {
+        const script = document.head.querySelector(
+          'script[data-boring-csp-nonce="true"]',
+        )
+        expect(script).toBeTruthy()
+        expect(script?.getAttribute('nonce')).toBe('test-nonce-123')
+      })
+
+      assertionPassed('csp-nonce-threaded')
+    }),
+  )
 })

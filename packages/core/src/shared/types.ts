@@ -93,6 +93,11 @@ export interface CoreConfig {
   bodyLimit: number
   logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
   rateLimit?: Record<string, RateLimitEndpointOverride>
+  security?: {
+    csp: {
+      enabled: boolean
+    }
+  }
 
   encryption: {
     workspaceSettingsKey: string

@@ -109,6 +109,7 @@ export async function loadConfig(
   const corsOrigins = corsOriginsRaw
     ? corsOriginsRaw.split(',').map((s) => s.trim()).filter(Boolean)
     : ['http://localhost:3000', 'http://localhost:5173']
+  const cspEnabled = env.CSP_ENABLED !== 'false'
 
   const sessionCookieSecureOverride = env.SESSION_COOKIE_SECURE
   const sessionCookieSecure =
@@ -153,6 +154,11 @@ export async function loadConfig(
     bodyLimit: parseInt(env.BODY_LIMIT_BYTES ?? String(SIXTEEN_MB), 10),
     logLevel: env.LOG_LEVEL ?? 'info',
     rateLimit: parseRateLimitOverrides(env.RATE_LIMIT_OVERRIDES_JSON),
+    security: {
+      csp: {
+        enabled: cspEnabled,
+      },
+    },
 
     encryption: {
       workspaceSettingsKey: encryptionKey,

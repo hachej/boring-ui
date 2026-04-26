@@ -2,6 +2,7 @@ import { Suspense, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Helmet, HelmetProvider } from 'react-helmet-async'
 
 import { AppErrorBoundary } from './AppErrorBoundary.js'
 import { ConfigProvider } from './ConfigProvider.js'
@@ -30,10 +31,20 @@ export interface BoringAppAuthPagesOverride {
 export interface BoringAppProps {
   children?: ReactNode
   authPages?: BoringAppAuthPagesOverride
+  cspNonce?: string
 }
+
+const CSP_NONCE_META_NAME = 'boring-csp-nonce'
 
 function PlaceholderPage({ name }: { name: string }) {
   return <div data-testid={`placeholder-${name}`}>{name} (not yet implemented)</div>
+}
+
+function readCspNonceFromDom(): string | undefined {
+  if (typeof document === 'undefined') return undefined
+  const meta = document.querySelector(`meta[name="${CSP_NONCE_META_NAME}"]`)
+  const value = meta?.getAttribute('content')?.trim()
+  return value ? value : undefined
 }
 
 function createDefaultQueryClient(): QueryClient {
@@ -47,8 +58,12 @@ function createDefaultQueryClient(): QueryClient {
   })
 }
 
-export function BoringApp({ children, authPages }: BoringAppProps) {
+export function BoringApp({ children, authPages, cspNonce }: BoringAppProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
+  const resolvedCspNonce = useMemo(
+    () => cspNonce ?? readCspNonceFromDom(),
+    [cspNonce],
+  )
 
   const SignInPage = authPages?.signIn ?? DefaultSignInPage
   const SignUpPage = authPages?.signUp ?? DefaultSignUpPage
@@ -58,35 +73,51 @@ export function BoringApp({ children, authPages }: BoringAppProps) {
   const UserSettingsPage = authPages?.userSettings ?? DefaultUserSettingsPage
 
   return (
-    <AppErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <ConfigProvider>
-          <ThemeProvider>
-            <AuthProvider queryClient={queryClient}>
-              <UserIdentityProvider>
-                <BrowserRouter>
-                  <WorkspaceAuthProvider>
-                    <AuthGate>
-                      <Suspense fallback={null}>
-                        <Routes>
-                          <Route path={routes.signin} element={<SignInPage />} />
-                          <Route path={routes.signup} element={<SignUpPage />} />
-                          <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
-                          <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
-                          <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
-                          <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
-                          <Route path={routes.me} element={<UserSettingsPage />} />
-                          {children}
-                        </Routes>
-                      </Suspense>
-                    </AuthGate>
-                  </WorkspaceAuthProvider>
-                </BrowserRouter>
-              </UserIdentityProvider>
-            </AuthProvider>
-          </ThemeProvider>
-        </ConfigProvider>
-      </QueryClientProvider>
-    </AppErrorBoundary>
+    <HelmetProvider>
+      <AppErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <ConfigProvider>
+            <ThemeProvider>
+              <AuthProvider queryClient={queryClient}>
+                <UserIdentityProvider>
+                  <BrowserRouter>
+                    <WorkspaceAuthProvider>
+                      <Helmet nonce={resolvedCspNonce}>
+                        {resolvedCspNonce ? (
+                          <>
+                            <meta name={CSP_NONCE_META_NAME} content={resolvedCspNonce} />
+                            <script
+                              type="application/json"
+                              nonce={resolvedCspNonce}
+                              data-boring-csp-nonce="true"
+                            >
+                              {JSON.stringify({ nonce: resolvedCspNonce })}
+                            </script>
+                          </>
+                        ) : null}
+                      </Helmet>
+                      <AuthGate>
+                        <Suspense fallback={null}>
+                          <Routes>
+                            <Route path={routes.signin} element={<SignInPage />} />
+                            <Route path={routes.signup} element={<SignUpPage />} />
+                            <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
+                            <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
+                            <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
+                            <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
+                            <Route path={routes.me} element={<UserSettingsPage />} />
+                            {children}
+                          </Routes>
+                        </Suspense>
+                      </AuthGate>
+                    </WorkspaceAuthProvider>
+                  </BrowserRouter>
+                </UserIdentityProvider>
+              </AuthProvider>
+            </ThemeProvider>
+          </ConfigProvider>
+        </QueryClientProvider>
+      </AppErrorBoundary>
+    </HelmetProvider>
   )
 }
