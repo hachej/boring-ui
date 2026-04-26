@@ -25,10 +25,13 @@ export {
   AuthProvider,
   useSession,
   useSignIn,
+  useSignUp,
   useSignOut,
   UserIdentityProvider,
   useUser,
   getAuthClient,
+  SignInPage,
+  SignUpPage,
 } from './auth/index.js'
 export type {
   AuthProviderProps,
@@ -57,6 +60,12 @@ export type { AuthGateProps } from './AuthGate.js'
 
 export { BoringApp } from './BoringApp.js'
 export type { BoringAppProps, BoringAppAuthPagesOverride } from './BoringApp.js'
+
+export {
+  UserMenu,
+  WorkspaceSwitcher,
+  ThemeToggle,
+} from './components/index.js'
 
 export { sanitizeMarkdown, sanitizeToolOutput } from './sanitize.js'
 export { debounce } from './debounce.js'

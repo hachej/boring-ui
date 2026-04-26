@@ -115,13 +115,13 @@ afterEach(() => {
 
 describe('BoringApp', () => {
   it(
-    'renders default sign-in placeholder at /auth/signin',
+    'renders real SignInPage at /auth/signin',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       setupAll()
       render(<BoringApp />)
 
       await waitFor(() =>
-        expect(screen.getByTestId('placeholder-sign-in')).toBeTruthy(),
+        expect(screen.getByRole('button', { name: /sign in/i })).toBeTruthy(),
       )
       assertionPassed('renders-default-signin')
     }),
@@ -194,24 +194,28 @@ describe('BoringApp', () => {
   )
 
   it(
-    'all default auth routes are mounted',
+    'all default routes are mounted',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       setupAll()
-      const paths = [
-        '/auth/signin',
-        '/auth/signup',
-        '/auth/forgot-password',
-        '/auth/reset-password',
-        '/auth/verify-email',
+      const routes: Array<{ path: string; marker: string }> = [
+        { path: '/auth/signin', marker: 'Sign in' },
+        { path: '/auth/signup', marker: 'Create an account' },
+        { path: '/auth/forgot-password', marker: 'placeholder-forgot-password' },
+        { path: '/auth/reset-password', marker: 'placeholder-reset-password' },
+        { path: '/auth/verify-email', marker: 'placeholder-verify-email' },
+        { path: '/auth/callback/github', marker: 'placeholder-github-callback' },
+        { path: '/me', marker: 'placeholder-user-settings' },
       ]
 
-      for (const path of paths) {
+      for (const { path, marker } of routes) {
         window.history.pushState({}, '', path)
         const { unmount } = render(<BoringApp />)
 
-        await waitFor(() =>
-          expect(document.querySelector('[data-testid^="placeholder-"]')).toBeTruthy(),
-        )
+        await waitFor(() => {
+          const byText = document.body.textContent?.includes(marker)
+          const byTestId = document.querySelector(`[data-testid="${marker}"]`)
+          expect(byText || byTestId).toBeTruthy()
+        })
         unmount()
       }
       assertionPassed('all-default-routes')

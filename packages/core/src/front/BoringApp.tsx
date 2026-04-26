@@ -10,6 +10,8 @@ import { AuthProvider } from './auth/AuthProvider.js'
 import { UserIdentityProvider } from './auth/UserIdentityProvider.js'
 import { WorkspaceAuthProvider } from './WorkspaceAuthProvider.js'
 import { AuthGate } from './AuthGate.js'
+import { SignInPage as DefaultSignInPage } from './auth/SignInPage.js'
+import { SignUpPage as DefaultSignUpPage } from './auth/SignUpPage.js'
 import { routes } from './utils.js'
 
 export interface BoringAppAuthPagesOverride {
@@ -43,8 +45,8 @@ function createDefaultQueryClient(): QueryClient {
 export function BoringApp({ children, authPages }: BoringAppProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
 
-  const SignInPage = authPages?.signIn ?? (() => <PlaceholderPage name="sign-in" />)
-  const SignUpPage = authPages?.signUp ?? (() => <PlaceholderPage name="sign-up" />)
+  const SignInPage = authPages?.signIn ?? DefaultSignInPage
+  const SignUpPage = authPages?.signUp ?? DefaultSignUpPage
   const ForgotPasswordPage = authPages?.forgotPassword ?? (() => <PlaceholderPage name="forgot-password" />)
   const ResetPasswordPage = authPages?.resetPassword ?? (() => <PlaceholderPage name="reset-password" />)
   const VerifyEmailPage = authPages?.verifyEmail ?? (() => <PlaceholderPage name="verify-email" />)

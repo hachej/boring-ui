@@ -46,6 +46,7 @@
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.1",
     "@fastify/rate-limit": "^10.3.0",
+    "@hookform/resolvers": "^5.2.2",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.0.7",
     "@tanstack/react-query": "^5.0.0",
@@ -61,12 +62,15 @@
     "nodemailer": "^8.0.6",
     "pino": "^10.3.1",
     "postgres": "^3.4.9",
+    "react-hook-form": "^7.74.0",
+    "react-router-dom": "^7.14.2",
     "smol-toml": "^1.6.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.15.3",
     "@types/nodemailer": "^8.0.0",
     "@types/react": "^19.1.2",

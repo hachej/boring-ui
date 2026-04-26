@@ -91,6 +91,11 @@ export function useSignIn() {
   return client.signIn
 }
 
+export function useSignUp() {
+  const { client } = useAuthContext()
+  return client.signUp
+}
+
 export function useSignOut(): () => Promise<void> {
   const { signOut } = useAuthContext()
   return signOut
