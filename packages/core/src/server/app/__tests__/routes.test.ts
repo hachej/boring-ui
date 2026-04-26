@@ -134,10 +134,50 @@ describe('GET /health (db unreachable)', () => {
     const res = await badApp.inject({ method: 'GET', url: '/health' })
     expect(res.statusCode).toBe(503)
     const body = res.json()
+    expect(body.error).toBe('db_unavailable')
     expect(body.code).toBe('db_unavailable')
+    expect(typeof body.message).toBe('string')
+    expect(body.message.length).toBeGreaterThan(0)
+    expect(typeof body.requestId).toBe('string')
 
     await badApp.close()
     await badSql.end()
+  })
+
+  it('returns 503 within ~3s when DB ping times out', async () => {
+    const config = makeConfig()
+
+    const slowSql = (async (
+      _strings: TemplateStringsArray,
+      ..._params: unknown[]
+    ) => {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 10_000)
+        timer.unref?.()
+      })
+      return []
+    }) as unknown as postgres.Sql
+
+    const timeoutApp = Fastify({ logger: false })
+    timeoutApp.decorate('config', config)
+    registerErrorHandler(timeoutApp)
+
+    const { LocalUserStore } = await import('../../db/stores/LocalUserStore')
+    await timeoutApp.register(registerRoutes, { sql: slowSql, userStore: new LocalUserStore() })
+    await timeoutApp.ready()
+
+    const startedAt = Date.now()
+    const res = await timeoutApp.inject({ method: 'GET', url: '/health' })
+    const elapsedMs = Date.now() - startedAt
+
+    expect(res.statusCode).toBe(503)
+    const body = res.json()
+    expect(body.code).toBe('db_unavailable')
+    expect(body.message).toContain('timed out')
+    expect(typeof body.requestId).toBe('string')
+    expect(elapsedMs).toBeLessThan(3_100)
+
+    await timeoutApp.close()
   })
 })
 

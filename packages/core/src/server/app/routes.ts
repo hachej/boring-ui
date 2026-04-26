@@ -11,6 +11,35 @@ export interface RoutesOptions {
   userStore: UserStore
 }
 
+const HEALTH_DB_TIMEOUT_MS = 2_000
+
+async function pingDatabase(
+  sqlClient: postgres.Sql,
+  timeoutMs: number,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const timeoutMessage = `Database ping timed out after ${timeoutMs}ms`
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  try {
+    await Promise.race([
+      sqlClient`SELECT 1`,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(timeoutMessage))
+        }, timeoutMs)
+      }),
+    ])
+    return { ok: true }
+  } catch (error) {
+    if (error instanceof Error && error.message.length > 0) {
+      return { ok: false, message: error.message }
+    }
+    return { ok: false, message: 'Database ping failed' }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
 const updateSettingsBody = z
   .object({
     displayName: z.string().optional(),
@@ -21,13 +50,17 @@ const updateSettingsBody = z
 const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
   const { sql, userStore } = opts
 
-  app.get('/health', async (_request, reply) => {
+  app.get('/health', async (request, reply) => {
     if (sql) {
-      try {
-        await sql`SELECT 1`
-      } catch {
+      const result = await pingDatabase(sql, HEALTH_DB_TIMEOUT_MS)
+      if (!result.ok) {
         reply.status(503)
-        return { error: 'Database unreachable', code: ERROR_CODES.DB_UNAVAILABLE }
+        return {
+          error: 'db_unavailable',
+          code: ERROR_CODES.DB_UNAVAILABLE,
+          message: result.message,
+          requestId: request.id,
+        }
       }
     }
     return { ok: true }
