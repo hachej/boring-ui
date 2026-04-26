@@ -125,6 +125,12 @@ describe('requireWorkspaceMember', () => {
       const res = await inject(`/api/v1/workspaces/${WS_ID}/viewer-route`, OWNER_ID)
       expect(res.statusCode).toBe(200)
     })
+
+    it('non-member → 403 not_member', async () => {
+      const res = await inject(`/api/v1/workspaces/${WS_ID}/viewer-route`, NON_MEMBER_ID)
+      expect(res.statusCode).toBe(403)
+      expect(res.json().code).toBe('not_member')
+    })
   })
 
   describe('minimum role = editor', () => {
@@ -168,12 +174,20 @@ describe('requireWorkspaceMember', () => {
       expect(res.statusCode).toBe(403)
       expect(res.json().code).toBe('forbidden')
     })
+
+    it('non-member → 403 not_member', async () => {
+      const res = await inject(`/api/v1/workspaces/${WS_ID}/owner-route`, NON_MEMBER_ID)
+      expect(res.statusCode).toBe(403)
+      expect(res.json().code).toBe('not_member')
+    })
   })
 
   describe('unauthenticated', () => {
-    it('throws Error (not HttpError) when request.user is null', async () => {
+    it('throws Error (not HttpError) when request.user is null — 500, not 403', async () => {
       const res = await inject(`/api/v1/workspaces/${WS_ID}`)
       expect(res.statusCode).toBe(500)
+      expect(res.json().code).not.toBe('not_member')
+      expect(res.json().code).not.toBe('forbidden')
     })
   })
 })
