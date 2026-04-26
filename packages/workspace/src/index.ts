@@ -142,6 +142,22 @@ export { MarkdownEditor } from "./components/MarkdownEditor"
 export type { MarkdownEditorProps } from "./components/MarkdownEditor"
 export { DataCatalog } from "./components/DataCatalog"
 export type { DataCatalogProps, DataSource } from "./components/DataCatalog"
+export { DataExplorer, useExplorerState } from "./components/DataExplorer"
+export type {
+  DataExplorerProps,
+  UseExplorerStateOptions,
+  UseExplorerStateReturn,
+  ExplorerRow,
+  ExplorerAdapter,
+  Badge,
+  FacetConfig,
+  FacetValue,
+  Facets,
+  SearchArgs,
+  SearchResult,
+  FacetsArgs,
+  DragPayload,
+} from "./components/DataExplorer"
 export { SessionList } from "./components/SessionList"
 export type { SessionListProps, SessionItem } from "./components/SessionList"
 
@@ -154,14 +170,20 @@ export {
   ChatCenteredShell,
   ChatTopBar,
   useChatShell,
+  useChatSurface,
 } from "./components/chat"
 export type {
   SessionBrowserProps,
   ChatStagePlaceholderProps,
   ChatStageHandle,
   SurfaceShellProps,
+  SurfaceShellApi,
+  SurfaceShellSnapshot,
+  SurfaceShellTab,
+  OpenPanelConfig,
   WorkbenchLeftPaneProps,
   WorkbenchLeftTab,
+  DataPaneConfig,
   ChatCenteredShellProps,
   ChatTopBarProps,
   ChatShellContextValue,
