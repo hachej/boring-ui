@@ -137,6 +137,54 @@ test('registerAgentRoutes bridges request.user to workspaceContext', async () =>
   await app.close()
 })
 
+test('registerAgentRoutes registers agent capabilities contributor when host supports it', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-capabilities-')
+  const app = Fastify({ logger: false })
+
+  const contributors = new Map<
+    string,
+    (ctx: { config: unknown }) => Record<string, unknown> | Promise<Record<string, unknown>>
+  >()
+
+  app.decorate(
+    'registerCapabilitiesContributor',
+    function (
+      this: unknown,
+      name: string,
+      fn: (ctx: { config: unknown }) => Record<string, unknown> | Promise<Record<string, unknown>>,
+    ) {
+      contributors.set(name, fn)
+    },
+  )
+
+  app.get('/api/v1/capabilities', async () => {
+    const merged: Record<string, unknown> = {}
+    for (const fn of contributors.values()) {
+      Object.assign(merged, await fn({ config: {} }))
+    }
+    return merged
+  })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+  })
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/capabilities' })
+  expect(res.statusCode).toBe(200)
+
+  const body = res.json() as {
+    agent?: { runtimeMode: string; tools: string[]; modelProviders: string[] }
+  }
+  expect(body.agent).toBeDefined()
+  expect(body.agent?.runtimeMode).toBe('direct')
+  expect(body.agent?.tools).toContain('bash')
+  expect(Array.isArray(body.agent?.modelProviders)).toBe(true)
+
+  await app.close()
+})
+
 test('createAgentApp has zero runtime imports from @boring/core', async () => {
   // Read the built output or source to verify no runtime imports from core.
   // We check the source file directly — type-only imports are erased by tsc,

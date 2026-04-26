@@ -1,7 +1,8 @@
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { basename } from 'node:path'
 import type { AgentTool } from '../shared/tool'
 import type { SessionStore } from '../shared/session'
+import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
@@ -26,11 +27,34 @@ import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
 
+type AgentCapabilities = {
+  agent: {
+    runtimeMode: RuntimeModeId
+    tools: string[]
+    modelProviders: string[]
+  }
+}
+
+type HostWithCapabilitiesContributor = FastifyInstance & {
+  registerCapabilitiesContributor?: (
+    name: string,
+    fn: (ctx: { config: unknown }) => AgentCapabilities | Promise<AgentCapabilities>,
+  ) => void
+}
+
 function pluginNameFromPath(path: string): string {
   const fileName = basename(path)
   if (fileName.endsWith('.mjs')) return fileName.slice(0, -4)
   if (fileName.endsWith('.js')) return fileName.slice(0, -3)
   return fileName
+}
+
+function getAvailableModelProviders(): string[] {
+  const authStorage = AuthStorage.create()
+  const registry = ModelRegistry.create(authStorage)
+  return Array.from(
+    new Set(registry.getAvailable().map((model) => model.provider)),
+  ).sort((a, b) => a.localeCompare(b))
 }
 
 export interface RegisterAgentRoutesOptions {
@@ -87,6 +111,24 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     pluginTools,
     logger: app.log,
   })
+  const agentToolNames = tools.map((tool) => tool.name)
+
+  const hostWithCapabilitiesContributor = app as HostWithCapabilitiesContributor
+  if (
+    typeof hostWithCapabilitiesContributor.registerCapabilitiesContributor ===
+    'function'
+  ) {
+    hostWithCapabilitiesContributor.registerCapabilitiesContributor(
+      'agent',
+      () => ({
+        agent: {
+          runtimeMode: resolvedMode,
+          tools: agentToolNames,
+          modelProviders: getAvailableModelProviders(),
+        },
+      }),
+    )
+  }
 
   const harness = createPiCodingAgentHarness({ tools, cwd: workspaceRoot })
   const sessionChangesTracker = new InMemorySessionChangesTracker()

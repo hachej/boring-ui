@@ -181,6 +181,36 @@ test('extraTools are appended after standardCatalog', async () => {
   await app.close()
 })
 
+test('standalone createAgentApp keeps agent catalog and has no /api/v1/capabilities route', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-standalone-capabilities-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+  })
+
+  try {
+    const catalogRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/catalog',
+    })
+    expect(catalogRes.statusCode).toBe(200)
+    expect(
+      catalogRes
+        .json()
+        .tools.map((tool: { name: string }) => tool.name),
+    ).toContain('bash')
+
+    const capabilitiesRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/capabilities',
+    })
+    expect(capabilitiesRes.statusCode).toBe(404)
+  } finally {
+    await app.close()
+  }
+})
+
 test('createAgentApp throws clearly when templatePath is missing', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')
