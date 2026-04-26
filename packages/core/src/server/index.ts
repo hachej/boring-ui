@@ -24,3 +24,6 @@ export {
 
 export { createDatabase, runMigrations } from './db/index.js'
 export type { Database } from './db/index.js'
+
+export { createAuth, validatePasswordStrength } from './auth/index.js'
+export type { BetterAuthInstance } from './auth/index.js'
