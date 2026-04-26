@@ -207,7 +207,7 @@ async function trySignup(
       target,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', origin: baseUrl },
         body: JSON.stringify(payload),
       },
       step,
@@ -322,10 +322,19 @@ async function stepSignup(baseUrl: string): Promise<{ email: string; cookie: str
   }
 
   if (!verifyLink) {
-    fail(
-      step,
-      'signup succeeded but no verify-email link was found in response or resend inbox (set RESEND_API_KEY for email polling)',
-    )
+    if (process.env.SMOKE_SKIP_VERIFY_EMAIL === '1') {
+      log('warn', 'smoke.signup.verify_email_skipped', {
+        step,
+        detail:
+          'no verify link captured but SMOKE_SKIP_VERIFY_EMAIL=1 — proceeding without verifying email (suitable for dev / console:// transports)',
+      })
+      verifyLink = ''
+    } else {
+      fail(
+        step,
+        'signup succeeded but no verify-email link was found in response or resend inbox (set RESEND_API_KEY for email polling, or SMOKE_SKIP_VERIFY_EMAIL=1 to skip)',
+      )
+    }
   }
 
   log('info', 'smoke.step.ok', {
@@ -333,7 +342,7 @@ async function stepSignup(baseUrl: string): Promise<{ email: string; cookie: str
     email,
     usedPath,
     hasCookie: Boolean(cookie),
-    verifyLinkHost: new URL(verifyLink).host,
+    verifyLinkHost: verifyLink ? new URL(verifyLink).host : null,
   })
 
   return { email, cookie, verifyLink }
@@ -364,6 +373,138 @@ async function stepCapabilities(baseUrl: string, cookie: string | null): Promise
   return { ok: true, step }
 }
 
+async function stepSignin(
+  baseUrl: string,
+  email: string,
+  password: string,
+): Promise<{ cookie: string }> {
+  const step = 'signin'
+  log('info', 'smoke.step.start', { step, email })
+
+  const paths = (process.env.SMOKE_SIGNIN_PATHS ?? '/auth/sign-in/email,/api/auth/sign-in/email')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+
+  const attempts: Array<{ path: string; status: number; body: unknown }> = []
+  for (const path of paths) {
+    const url = `${baseUrl}${path}`
+    log('info', 'smoke.signin.attempt', { step, path })
+    const { status, json, headers } = await requestJson(
+      url,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: baseUrl },
+        body: JSON.stringify({ email, password }),
+      },
+      step,
+    )
+    attempts.push({ path, status, body: json })
+    if (status >= 200 && status < 300) {
+      const cookie = parseSetCookie(headers)
+      if (!cookie) {
+        fail(step, `signin succeeded (${status} on ${path}) but no Set-Cookie returned`)
+      }
+      log('info', 'smoke.signin.success', { step, path, status })
+      return { cookie }
+    }
+  }
+
+  const summary = attempts.map((a) => `${a.path}=${a.status}`).join(', ')
+  fail('signin', `all signin paths failed (${summary}); payload=${JSON.stringify(attempts)}`)
+}
+
+async function stepCreateWorkspace(
+  baseUrl: string,
+  cookie: string,
+): Promise<{ id: string; name: string }> {
+  const step = 'workspace.create'
+  const name = `Smoke Workspace ${Date.now()}`
+  log('info', 'smoke.step.start', { step, name })
+
+  const { status, json } = await requestJson(
+    `${baseUrl}/api/v1/workspaces`,
+    {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ name }),
+    },
+    step,
+  )
+
+  if (status < 200 || status >= 300) {
+    fail(step, `expected 2xx creating workspace, got ${status} (${JSON.stringify(json)})`)
+  }
+
+  // The API returns either `{ id, name, … }` (legacy shape) or
+  // `{ workspace: { id, name, … }, role }` (current shape) — normalize.
+  const body = (json ?? {}) as {
+    id?: string
+    name?: string
+    workspace?: { id?: string; name?: string }
+  }
+  const id = body.id ?? body.workspace?.id
+  const responseName = body.name ?? body.workspace?.name
+  if (!id) {
+    fail(step, `workspace create response missing id: ${JSON.stringify(json)}`)
+  }
+
+  log('info', 'smoke.step.ok', { step, status, workspaceId: id })
+  return { id, name: responseName ?? name }
+}
+
+async function stepListWorkspaces(
+  baseUrl: string,
+  cookie: string,
+  expectedId: string,
+): Promise<void> {
+  const step = 'workspace.list'
+  log('info', 'smoke.step.start', { step, expectedId })
+
+  const { status, json } = await requestJson(
+    `${baseUrl}/api/v1/workspaces`,
+    { method: 'GET', headers: { cookie } },
+    step,
+  )
+
+  if (status !== 200) {
+    fail(step, `expected HTTP 200 listing workspaces, got ${status}`)
+  }
+
+  const body = (json ?? {}) as { workspaces?: Array<{ id: string }> }
+  const list = Array.isArray(body.workspaces) ? body.workspaces : []
+  const found = list.some((w) => w.id === expectedId)
+  if (!found) {
+    fail(
+      step,
+      `workspace ${expectedId} not present in list (got ${list.length} workspaces): ${JSON.stringify(list)}`,
+    )
+  }
+
+  log('info', 'smoke.step.ok', { step, status, count: list.length })
+}
+
+async function stepSignout(baseUrl: string, cookie: string): Promise<void> {
+  const step = 'signout'
+  log('info', 'smoke.step.start', { step })
+
+  const { status } = await requestJson(
+    `${baseUrl}/auth/sign-out`,
+    {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json', origin: baseUrl },
+      body: '{}',
+    },
+    step,
+  )
+
+  if (status < 200 || status >= 300) {
+    fail(step, `expected 2xx on sign-out, got ${status}`)
+  }
+
+  log('info', 'smoke.step.ok', { step, status })
+}
+
 async function main(): Promise<void> {
   const baseUrl = normalizeBaseUrl(process.env.DEPLOY_URL ?? '')
 
@@ -377,9 +518,39 @@ async function main(): Promise<void> {
   const signup = await stepSignup(baseUrl)
   await stepCapabilities(baseUrl, signup.cookie)
 
+  // Auth flow continuation: signup already authenticates the user (signup
+  // returns a session cookie when email-verification is not strict). When the
+  // signup cookie is present we exercise the workspace surface end-to-end with
+  // it, then explicitly re-authenticate via /auth/sign-in/email to validate
+  // the second auth path. SMOKE_PASSWORD is shared with the signup step so
+  // the passwords stay in sync (default value mirrors the signup default).
+  const password = process.env.SMOKE_PASSWORD ?? 'Zk8$mN!qR2xFgWpJ'
+
+  let workspaceCookie = signup.cookie
+  if (!workspaceCookie) {
+    log('info', 'smoke.signin.required', { reason: 'signup returned no session cookie' })
+    const signedIn = await stepSignin(baseUrl, signup.email, password)
+    workspaceCookie = signedIn.cookie
+  }
+
+  const workspace = await stepCreateWorkspace(baseUrl, workspaceCookie)
+  await stepListWorkspaces(baseUrl, workspaceCookie, workspace.id)
+
+  if (signup.cookie) {
+    // We had an authenticated session from signup — double-check the
+    // /auth/sign-in/email path also works, since deployments often disable
+    // signup-auto-login but keep signin enabled.
+    const signedIn = await stepSignin(baseUrl, signup.email, password)
+    await stepListWorkspaces(baseUrl, signedIn.cookie, workspace.id)
+    await stepSignout(baseUrl, signedIn.cookie)
+  } else {
+    await stepSignout(baseUrl, workspaceCookie)
+  }
+
   log('info', 'smoke.complete', {
     deployUrl: baseUrl,
     signupEmail: signup.email,
+    workspaceId: workspace.id,
   })
 }
 
