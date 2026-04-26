@@ -4,4 +4,4 @@ Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, an
 
 See [`docs/CORE.md`](docs/CORE.md) for the full spec (quickstart, API reference, config, deployment).
 
-Reference apps: [`apps/full-app`](../../apps/full-app/) (production deploy) · [`apps/workspace-playground`](../../apps/workspace-playground/) (dev sandbox).
+Reference app: [`apps/full-app`](../../apps/full-app/) — the canonical production-ready example, also serves as the dev surface.

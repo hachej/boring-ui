@@ -5,9 +5,8 @@
 **Interview-driven, last updated 2026-04-26.**
 **This file fuses the previous 8 docs (README / QUICKSTART / API / CONFIG / AUTH / DB / MIGRATION / TRAPS-V1 / plans/core-package-spec) into one.** No cross-file navigation required.
 
-**Reference apps:**
-- [`apps/full-app`](../../../apps/full-app/) — production deploy template (Fly.io, Postgres, Resend). See its [README](../../../apps/full-app/README.md) for run/deploy instructions.
-- [`apps/workspace-playground`](../../../apps/workspace-playground/) — dev exploration sandbox with mock data.
+**Reference app:**
+- [`apps/full-app`](../../../apps/full-app/) — the canonical production-ready example (Fly.io, Postgres, Resend) and dev surface. See its [README](../../../apps/full-app/README.md) for run/deploy instructions.
 
 ## Table of contents
 
@@ -1536,12 +1535,10 @@ Done when:
 **M5 — apps migration (day 12).**
 
 Work:
-- `apps/workspace-playground` wrapped in `<BoringApp>`.
-- `apps/full-app` new example boots end-to-end.
-- Remove ad-hoc auth/config from existing apps.
+- `apps/full-app` is the single reference example, boots end-to-end with `pnpm --filter full-app dev`.
+- All ad-hoc auth/config has been pulled out of side examples; only `apps/full-app` survives.
 
 Done when:
-- `pnpm --filter workspace-playground dev` boots and loads without console errors.
 - `pnpm --filter full-app dev` boots; manual smoke + Playwright headless: sign in as `dev@local`, land on `/workspace/:id`, create a second workspace, switch between them.
 - grep of the monorepo shows zero direct imports of `better-auth`, `drizzle-orm`, or `postgres` outside `packages/core`.
 
