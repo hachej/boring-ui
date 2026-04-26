@@ -373,6 +373,9 @@ importers:
       '@react-email/render':
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@tanstack/react-query':
+        specifier: ^5.0.0
+        version: 5.99.2(react@19.2.5)
       '@zxcvbn-ts/core':
         specifier: ^3.0.4
         version: 3.0.4
