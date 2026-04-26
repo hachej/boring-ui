@@ -75,7 +75,9 @@ export async function startCoreServer(port = 5220) {
     return match?.split('=')[1]
   }
 
-  app.addHook('onRequest', async (request: FastifyRequest, _reply: FastifyReply) => {
+  const PUBLIC_ROUTES = [/^\/auth\//, /^\/health$/, /^\/api\/v1\/config$/]
+
+  app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     request.user = null
     const token = readToken(request)
     const session = getSession(token)
@@ -84,6 +86,12 @@ export async function startCoreServer(port = 5220) {
       if (user) {
         request.user = { id: user.id, email: user.email, name: user.name }
       }
+    }
+
+    const path = request.url.split('?')[0]
+    if (path.startsWith('/api/v1/') && !PUBLIC_ROUTES.some(re => re.test(path)) && !request.user) {
+      reply.status(401)
+      reply.send({ error: 'unauthorized', message: 'Authentication required' })
     }
   })
 
