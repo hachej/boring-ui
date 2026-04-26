@@ -79,12 +79,13 @@ async function fetchWithRetry(
   const delays = [500, 1000, 2000]
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const delay = delays[Math.min(attempt, delays.length - 1)]
     let response: Response
     try {
       response = await fetch(url, init)
     } catch (err) {
       if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, delays[attempt]))
+        await new Promise((r) => setTimeout(r, delay))
         continue
       }
       throw new MailDeliveryError(
@@ -103,7 +104,7 @@ async function fetchWithRetry(
     }
 
     if (attempt < maxRetries) {
-      await new Promise((r) => setTimeout(r, delays[attempt]))
+      await new Promise((r) => setTimeout(r, delay))
       continue
     }
 
