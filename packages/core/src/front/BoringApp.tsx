@@ -12,6 +12,8 @@ import { WorkspaceAuthProvider } from './WorkspaceAuthProvider.js'
 import { AuthGate } from './AuthGate.js'
 import { SignInPage as DefaultSignInPage } from './auth/SignInPage.js'
 import { SignUpPage as DefaultSignUpPage } from './auth/SignUpPage.js'
+import { ForgotPasswordPage as DefaultForgotPasswordPage } from './auth/ForgotPasswordPage.js'
+import { ResetPasswordPage as DefaultResetPasswordPage } from './auth/ResetPasswordPage.js'
 import { routes } from './utils.js'
 
 export interface BoringAppAuthPagesOverride {
@@ -47,8 +49,8 @@ export function BoringApp({ children, authPages }: BoringAppProps) {
 
   const SignInPage = authPages?.signIn ?? DefaultSignInPage
   const SignUpPage = authPages?.signUp ?? DefaultSignUpPage
-  const ForgotPasswordPage = authPages?.forgotPassword ?? (() => <PlaceholderPage name="forgot-password" />)
-  const ResetPasswordPage = authPages?.resetPassword ?? (() => <PlaceholderPage name="reset-password" />)
+  const ForgotPasswordPage = authPages?.forgotPassword ?? DefaultForgotPasswordPage
+  const ResetPasswordPage = authPages?.resetPassword ?? DefaultResetPasswordPage
   const VerifyEmailPage = authPages?.verifyEmail ?? (() => <PlaceholderPage name="verify-email" />)
 
   return (

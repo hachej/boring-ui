@@ -9,3 +9,5 @@ export type { AuthClient } from './authClient.js'
 
 export { SignInPage } from './SignInPage.js'
 export { SignUpPage } from './SignUpPage.js'
+export { ForgotPasswordPage } from './ForgotPasswordPage.js'
+export { ResetPasswordPage } from './ResetPasswordPage.js'

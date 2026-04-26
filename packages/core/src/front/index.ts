@@ -32,6 +32,8 @@ export {
   getAuthClient,
   SignInPage,
   SignUpPage,
+  ForgotPasswordPage,
+  ResetPasswordPage,
 } from './auth/index.js'
 export type {
   AuthProviderProps,

@@ -96,6 +96,20 @@ export function useSignUp() {
   return client.signUp
 }
 
+export function useForgetPassword() {
+  const { client } = useAuthContext()
+  // better-auth maps /request-password-reset → forgetPassword via path-to-object proxy
+  return (client as any).forgetPassword as (opts: {
+    email: string
+    redirectTo: string
+  }) => Promise<{ data: unknown; error: unknown }>
+}
+
+export function useResetPassword() {
+  const { client } = useAuthContext()
+  return client.resetPassword
+}
+
 export function useSignOut(): () => Promise<void> {
   const { signOut } = useAuthContext()
   return signOut

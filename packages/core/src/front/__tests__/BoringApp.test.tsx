@@ -200,8 +200,8 @@ describe('BoringApp', () => {
       const routes: Array<{ path: string; marker: string }> = [
         { path: '/auth/signin', marker: 'Sign in' },
         { path: '/auth/signup', marker: 'Create an account' },
-        { path: '/auth/forgot-password', marker: 'placeholder-forgot-password' },
-        { path: '/auth/reset-password', marker: 'placeholder-reset-password' },
+        { path: '/auth/forgot-password', marker: 'Forgot password' },
+        { path: '/auth/reset-password', marker: 'Link expired' },
         { path: '/auth/verify-email', marker: 'placeholder-verify-email' },
         { path: '/auth/callback/github', marker: 'placeholder-github-callback' },
         { path: '/me', marker: 'placeholder-user-settings' },
