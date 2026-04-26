@@ -1,0 +1,26 @@
+name: data-pipeline
+version: "1.0"
+
+sources:
+  - name: raw-events
+    type: kafka
+    topic: events.raw
+    format: json
+
+transforms:
+  - name: parse-events
+    input: raw-events
+    sql: |
+      SELECT
+        event_id,
+        event_type,
+        payload->>'user_id' AS user_id,
+        created_at
+      FROM raw_events
+      WHERE event_type IN ('click', 'view', 'purchase')
+
+sinks:
+  - name: analytics-db
+    type: postgres
+    table: events_parsed
+    input: parse-events
