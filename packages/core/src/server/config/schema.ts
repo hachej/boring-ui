@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-const VALID_MAIL_SCHEMES = ['resend://', 'smtp://', 'smtps://', 'console://']
+const VALID_MAIL_SCHEMES = ['resend://', 'smtp://', 'smtps://', 'console://', 'console-capture://']
 
 const logLevelSchema = z.enum([
   'fatal',
