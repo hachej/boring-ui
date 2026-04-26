@@ -62,6 +62,13 @@ DEPLOY_URL=https://<your-app>.fly.dev \
 pnpm --filter full-app smoke:post-deploy
 ```
 
+Recommended env for reliable email verification polling:
+
+```bash
+SMOKE_EMAIL_DOMAIN=<resend-verified-domain>   # or set SMOKE_EMAIL explicitly
+RESEND_API_KEY=<resend-api-key>
+```
+
 Checks:
 - `GET /health` returns `200` + `{ ok: true }` within 10s
 - signup endpoint succeeds (`/api/auth/sign-up/email` or `/auth/sign-up/email`)

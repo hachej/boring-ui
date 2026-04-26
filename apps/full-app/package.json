@@ -9,7 +9,8 @@
     "start": "NODE_ENV=production node dist/server/main.js",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm run typecheck",
-    "e2e:smoke": "playwright test --config e2e/playwright.config.ts"
+    "e2e:smoke": "playwright test --config e2e/playwright.config.ts",
+    "smoke:post-deploy": "tsx scripts/post-deploy-smoke.ts"
   },
   "dependencies": {
     "@boring/agent": "workspace:*",
