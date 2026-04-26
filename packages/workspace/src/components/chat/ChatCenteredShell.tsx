@@ -20,7 +20,7 @@ import type { SessionItem } from "../SessionList"
 import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
 import { ChatPanel } from "@boring/agent/ui-shadcn"
 import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
-import type { SurfaceShellApi } from "./SurfaceShell"
+import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
 
 export interface ChatCenteredShellProps {
   /** Branding shown in the top bar. */
@@ -206,9 +206,56 @@ export function ChatCenteredShell({
   // via its onReady callback. Used to open files clicked from chat tool
   // outputs (read/write/edit) directly into the workbench.
   const surfaceRef = useRef<SurfaceShellApi | null>(null)
+  const surfaceSnapshotRef = useRef<SurfaceShellSnapshot>({ openTabs: [], activeTab: null })
+  const surfaceOpenRef = useRef(surfaceOpen)
+  surfaceOpenRef.current = surfaceOpen
+
+  // Push a snapshot of the workbench's current state to the agent's UI bridge
+  // (PUT /api/v1/ui/state). The LLM's get_ui_state tool returns whatever was
+  // last PUT here, so this is what makes the agent aware of which tabs are
+  // open / active and whether the workbench pane is visible.
+  const pushUiState = useCallback(() => {
+    const snapshot = surfaceSnapshotRef.current
+    const body = {
+      state: {
+        v: 1,
+        workbenchOpen: surfaceOpenRef.current,
+        drawerOpen: drawerOpen,
+        openTabs: snapshot.openTabs,
+        activeTab: snapshot.activeTab,
+        activeFile:
+          snapshot.openTabs.find((t) => t.id === snapshot.activeTab)?.params?.path ?? null,
+      },
+      causedBy: "user" as const,
+    }
+    void fetch("/api/v1/ui/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => {
+      /* Best-effort — UI state push is non-critical and should not break the UI. */
+    })
+  }, [drawerOpen])
+
   const handleSurfaceReady = useCallback((api: SurfaceShellApi) => {
     surfaceRef.current = api
-  }, [])
+    surfaceSnapshotRef.current = api.getSnapshot()
+    pushUiState()
+  }, [pushUiState])
+
+  const handleSurfaceChange = useCallback(
+    (snapshot: SurfaceShellSnapshot) => {
+      surfaceSnapshotRef.current = snapshot
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  // Re-push when drawer or workbench open state flips so the agent sees it
+  // even when the dockview panel set hasn't changed.
+  useEffect(() => {
+    pushUiState()
+  }, [drawerOpen, surfaceOpen, pushUiState])
 
   const openArtifact = useCallback(
     (path: string) => {
@@ -408,6 +455,7 @@ export function ChatCenteredShell({
                 data={data}
                 storageKey={surfaceStorageKey}
                 onReady={handleSurfaceReady}
+                onChange={handleSurfaceChange}
               />
             </div>
           </aside>

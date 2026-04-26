@@ -60,7 +60,13 @@ export async function createAgentApp(
     templatePath,
   })
 
-  const standardTools = standardCatalog(runtimeBundle)
+  // The same in-memory bridge is shared between the LLM tool catalog
+  // (so get_ui_state / exec_ui can read + dispatch) and the HTTP routes
+  // (so the frontend can PUT state and drain commands). Without this
+  // shared instance the tools see one bridge and the routes see another.
+  const uiBridge = createInMemoryBridge()
+
+  const standardTools = standardCatalog({ ...runtimeBundle, uiBridge })
   const pluginTools: PluginToolRegistration[] = []
 
   if (resolvedMode !== 'vercel-sandbox') {
@@ -122,7 +128,7 @@ export async function createAgentApp(
   await app.register(modelsRoutes)
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
-  await app.register(uiRoutes, { bridge: createInMemoryBridge() })
+  await app.register(uiRoutes, { bridge: uiBridge })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app

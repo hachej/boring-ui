@@ -89,8 +89,10 @@ export function mockApiPlugin(): Plugin {
         const url = new URL(req.url!, `http://${req.headers.host}`)
         if (!url.pathname.startsWith("/api/v1/")) return next()
         // Agent routes are owned by the inline @boring/agent Fastify app started
-        // by vite.config.ts. Pass through so the vite proxy can forward.
+        // by vite.config.ts. Pass through so the vite proxy can forward. Same
+        // for the UI bridge endpoints (/api/v1/ui/*) which the agent serves.
         if (url.pathname.startsWith("/api/v1/agent")) return next()
+        if (url.pathname.startsWith("/api/v1/ui")) return next()
 
         const path = url.pathname
 

@@ -49,6 +49,7 @@ export default defineConfig({
     host: true,
     proxy: {
       "/api/v1/agent": `http://127.0.0.1:${AGENT_API_PORT}`,
+      "/api/v1/ui": `http://127.0.0.1:${AGENT_API_PORT}`,
     },
   },
 })
