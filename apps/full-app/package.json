@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "NODE_ENV=production node dist/server/main.js",
     "typecheck": "tsc --noEmit",
-    "lint": "pnpm run typecheck"
+    "lint": "pnpm run typecheck",
+    "e2e:smoke": "playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
     "@boring/agent": "workspace:*",
@@ -19,6 +20,7 @@
     "react-router-dom": "^7.14.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.15.3",
     "@types/react": "^19.0.0",

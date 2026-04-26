@@ -215,14 +215,10 @@ async function startViteDevServer(
   apiTarget: string,
   app: CoreAppInstance,
 ): Promise<void> {
-  const [{ default: react }, { createServer: createViteServer }] = await Promise.all([
-    import('@vitejs/plugin-react'),
-    import('vite'),
-  ])
+  const { createServer: createViteServer } = await import('vite')
 
   const vite = await createViteServer({
     root: appRoot,
-    plugins: [react()],
     server: {
       port: DEFAULT_FRONTEND_PORT,
       strictPort: false,
