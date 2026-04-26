@@ -35,3 +35,6 @@ jobs:
 
       - name: Assert agent has zero runtime imports from core
         run: pnpm check:agent-isolation
+
+      - name: Audit app imports for forbidden patterns
+        run: pnpm audit:imports
