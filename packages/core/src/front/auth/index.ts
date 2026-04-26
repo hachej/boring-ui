@@ -1,4 +1,4 @@
-export { AuthProvider, useSession, useSignIn, useSignUp, useSignOut } from './AuthProvider.js'
+export { AuthProvider, useSession, useSignIn, useSignUp, useSignOut, useVerifyEmail, useSendVerificationEmail } from './AuthProvider.js'
 export type { AuthProviderProps } from './AuthProvider.js'
 
 export { UserIdentityProvider, useUser } from './UserIdentityProvider.js'
@@ -11,3 +11,4 @@ export { SignInPage } from './SignInPage.js'
 export { SignUpPage } from './SignUpPage.js'
 export { ForgotPasswordPage } from './ForgotPasswordPage.js'
 export { ResetPasswordPage } from './ResetPasswordPage.js'
+export { VerifyEmailPage } from './VerifyEmailPage.js'

@@ -14,6 +14,7 @@ import { SignInPage as DefaultSignInPage } from './auth/SignInPage.js'
 import { SignUpPage as DefaultSignUpPage } from './auth/SignUpPage.js'
 import { ForgotPasswordPage as DefaultForgotPasswordPage } from './auth/ForgotPasswordPage.js'
 import { ResetPasswordPage as DefaultResetPasswordPage } from './auth/ResetPasswordPage.js'
+import { VerifyEmailPage as DefaultVerifyEmailPage } from './auth/VerifyEmailPage.js'
 import { routes } from './utils.js'
 
 export interface BoringAppAuthPagesOverride {
@@ -51,7 +52,7 @@ export function BoringApp({ children, authPages }: BoringAppProps) {
   const SignUpPage = authPages?.signUp ?? DefaultSignUpPage
   const ForgotPasswordPage = authPages?.forgotPassword ?? DefaultForgotPasswordPage
   const ResetPasswordPage = authPages?.resetPassword ?? DefaultResetPasswordPage
-  const VerifyEmailPage = authPages?.verifyEmail ?? (() => <PlaceholderPage name="verify-email" />)
+  const VerifyEmailPage = authPages?.verifyEmail ?? DefaultVerifyEmailPage
 
   return (
     <AppErrorBoundary>

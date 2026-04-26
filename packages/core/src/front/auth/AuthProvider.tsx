@@ -110,6 +110,21 @@ export function useResetPassword() {
   return client.resetPassword
 }
 
+export function useVerifyEmail() {
+  const { client } = useAuthContext()
+  return (client as any).verifyEmail as (opts: {
+    query: { token: string }
+  }) => Promise<{ data: unknown; error: { status: number; message: string } | null }>
+}
+
+export function useSendVerificationEmail() {
+  const { client } = useAuthContext()
+  return (client as any).sendVerificationEmail as (opts: {
+    email: string
+    callbackURL?: string
+  }) => Promise<{ data: unknown; error: unknown }>
+}
+
 export function useSignOut(): () => Promise<void> {
   const { signOut } = useAuthContext()
   return signOut

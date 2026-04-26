@@ -202,7 +202,7 @@ describe('BoringApp', () => {
         { path: '/auth/signup', marker: 'Create an account' },
         { path: '/auth/forgot-password', marker: 'Forgot password' },
         { path: '/auth/reset-password', marker: 'Link expired' },
-        { path: '/auth/verify-email', marker: 'placeholder-verify-email' },
+        { path: '/auth/verify-email', marker: 'Invalid verification link' },
         { path: '/auth/callback/github', marker: 'placeholder-github-callback' },
         { path: '/me', marker: 'placeholder-user-settings' },
       ]
