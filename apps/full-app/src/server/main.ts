@@ -297,6 +297,7 @@ async function main() {
   await app.register(registerWorkspaceRoutes)
   await app.register(registerMemberRoutes)
   await app.register(registerSettingsRoutes)
+  await app.register(registerInviteRoutes)
   await registerAuthProxy(app as AppWithAuth)
 
   await app.register(registerAgentRoutes, { registerHealthRoute: false })
