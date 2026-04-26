@@ -21,9 +21,27 @@ export interface SurfaceShellSnapshot {
   activeTab: string | null
 }
 
+export interface OpenPanelConfig {
+  /** Panel instance id. If a panel with this id is already open, it's re-activated instead of duplicated. */
+  id: string
+  /** Registered component id (must match a `PanelConfig.id` in WorkspaceProvider's panel registry). */
+  component: string
+  /** Tab title. Defaults to `id`. */
+  title?: string
+  /** Arbitrary params passed to the pane component. */
+  params?: Record<string, unknown>
+}
+
 export interface SurfaceShellApi {
   /** Open a file in the workbench. Idempotent — re-activates an existing pane for the same path. */
   openFile: (path: string) => void
+  /**
+   * Open a non-file pane in the workbench. Idempotent on `id` —
+   * re-activates an existing panel with the same id rather than duplicating.
+   * Use this for app-specific panes (charts, dashboards, log viewers, …) that
+   * aren't anchored to a filesystem path.
+   */
+  openPanel: (config: OpenPanelConfig) => void
   /** Current snapshot of open tabs + active tab. */
   getSnapshot: () => SurfaceShellSnapshot
 }
@@ -101,6 +119,28 @@ export function SurfaceShell({
     })
   }, [])
 
+  const openPanelSync = useCallback((config: OpenPanelConfig) => {
+    const api = apiRef.current
+    if (!api) return
+    const existing = api.getPanel(config.id)
+    if (existing) {
+      // Re-activate, and update params if they changed (so callers can drive
+      // pane state by re-issuing openPanel with new params — same panel, new
+      // input).
+      if (config.params) {
+        existing.api.updateParameters(config.params)
+      }
+      existing.api.setActive()
+      return
+    }
+    api.addPanel({
+      id: config.id,
+      component: config.component,
+      title: config.title ?? config.id,
+      params: config.params,
+    })
+  }, [])
+
   const getSnapshot = useCallback((): SurfaceShellSnapshot => {
     const api = apiRef.current
     if (!api) return { openTabs: [], activeTab: null }
@@ -115,7 +155,7 @@ export function SurfaceShell({
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
-    onReadyRef.current?.({ openFile: openFileSync, getSnapshot })
+    onReadyRef.current?.({ openFile: openFileSync, openPanel: openPanelSync, getSnapshot })
     // Subscribe to dockview events so the parent gets a snapshot push on
     // every panel mutation. Disposers are intentionally not stored — the
     // dockview instance lives for the SurfaceShell's entire lifetime, and
@@ -126,7 +166,7 @@ export function SurfaceShell({
     ready.onDidActivePanelChange(emit)
     // Initial snapshot once everyone's wired up.
     emit()
-  }, [openFileSync, getSnapshot])
+  }, [openFileSync, openPanelSync, getSnapshot])
 
   const openFile = useCallback(
     async (path: string): Promise<CommandResult> => {

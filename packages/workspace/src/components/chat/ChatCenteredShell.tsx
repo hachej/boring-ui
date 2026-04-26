@@ -75,6 +75,16 @@ export interface ChatCenteredShellProps {
   /** Mount the global command palette (⌘K / ⌘P). Defaults to true. */
   withCommandPalette?: boolean
 
+  /**
+   * Fires once the workbench surface dockview is ready. Receives the same
+   * imperative handle that `useChatSurface()` exposes inside the tree —
+   * use this when the parent renders ChatCenteredShell at its root and
+   * therefore can't call `useChatSurface()` (which requires being inside
+   * the shell). Typical use: wire `DataPaneConfig.onActivate` to
+   * `surface.openPanel({...})` from a parent-level `data` prop.
+   */
+  onSurfaceReady?: (surface: SurfaceShellApi) => void
+
   className?: string
 }
 
@@ -163,6 +173,7 @@ export function ChatCenteredShell({
   storageKey = "boring-ui-v2:chat-centered-shell:v2",
   accentColor,
   withCommandPalette = true,
+  onSurfaceReady,
   className,
 }: ChatCenteredShellProps) {
   const [drawerOpen, setDrawerOpenRaw] = useState(() =>
@@ -237,9 +248,19 @@ export function ChatCenteredShell({
     })
   }, [drawerOpen])
 
+  // Mirror the surface ref in state so context consumers re-render when the
+  // workbench becomes ready. The ref stays for hot-path callbacks
+  // (handleSurfaceReady, openArtifact); the state is for context exposure.
+  const [surface, setSurface] = useState<SurfaceShellApi | null>(null)
+
+  const onSurfaceReadyRef = useRef(onSurfaceReady)
+  onSurfaceReadyRef.current = onSurfaceReady
+
   const handleSurfaceReady = useCallback((api: SurfaceShellApi) => {
     surfaceRef.current = api
     surfaceSnapshotRef.current = api.getSnapshot()
+    setSurface(api)
+    onSurfaceReadyRef.current?.(api)
     pushUiState()
   }, [pushUiState])
 
@@ -299,6 +320,7 @@ export function ChatCenteredShell({
       toggleSurface,
       onNewChat: onCreateSession,
       focusComposer,
+      surface,
     }),
     [
       drawerOpen,
@@ -309,6 +331,7 @@ export function ChatCenteredShell({
       toggleSurface,
       onCreateSession,
       focusComposer,
+      surface,
     ],
   )
 
