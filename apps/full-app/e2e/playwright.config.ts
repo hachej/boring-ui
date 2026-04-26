@@ -7,7 +7,7 @@ const isCI = process.env.CI === 'true' || process.env.CI === '1'
 
 export default defineConfig({
   testDir: '.',
-  testMatch: 'smoke.spec.ts',
+  testMatch: ['smoke.spec.ts', 'collaboration.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: isCI ? 1 : 0,
