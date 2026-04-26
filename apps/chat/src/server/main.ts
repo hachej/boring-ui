@@ -92,6 +92,7 @@ export async function startCoreServer(port = 5320) {
     if (path.startsWith('/api/v1/') && !PUBLIC_ROUTES.some(re => re.test(path)) && !request.user) {
       reply.status(401)
       reply.send({ error: 'unauthorized', message: 'Authentication required' })
+      return
     }
   })
 
