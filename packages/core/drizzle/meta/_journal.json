@@ -43,6 +43,13 @@
       "when": 1777206872080,
       "tag": "0005_flimsy_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777207441386,
+      "tag": "0006_happy_callisto",
+      "breakpoints": true
     }
   ]
 }

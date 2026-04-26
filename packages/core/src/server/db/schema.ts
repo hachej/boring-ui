@@ -122,6 +122,38 @@ export const workspaceSettingsRelations = relations(workspaceSettings, ({ one })
   }),
 }))
 
+export const workspaceRuntimes = pgTable(
+  'workspace_runtimes',
+  {
+    workspaceId: uuid('workspace_id')
+      .primaryKey()
+      .references(() => workspaces.id),
+    spriteUrl: text('sprite_url'),
+    spriteName: text('sprite_name'),
+    state: text('state').notNull().default('pending'),
+    lastError: text('last_error'),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    provisioningStep: text('provisioning_step'),
+    stepStartedAt: timestamp('step_started_at'),
+  },
+  (table) => [
+    check(
+      'workspace_runtimes_state_check',
+      sql`${table.state} IN ('pending', 'provisioning', 'ready', 'error')`,
+    ),
+  ],
+)
+
+export const workspaceRuntimesRelations = relations(
+  workspaceRuntimes,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceRuntimes.workspaceId],
+      references: [workspaces.id],
+    }),
+  }),
+)
+
 export const workspaceInvites = pgTable(
   'workspace_invites',
   {
