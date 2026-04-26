@@ -204,7 +204,7 @@ describe('BoringApp', () => {
         { path: '/auth/reset-password', marker: 'Link expired' },
         { path: '/auth/verify-email', marker: 'Invalid verification link' },
         { path: '/auth/callback/github', marker: 'placeholder-github-callback' },
-        { path: '/me', marker: 'placeholder-user-settings' },
+        { path: '/me', marker: 'Account settings' },
       ]
 
       for (const { path, marker } of routes) {

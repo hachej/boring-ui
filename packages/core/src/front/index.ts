@@ -29,6 +29,7 @@ export {
   useSignOut,
   useVerifyEmail,
   useSendVerificationEmail,
+  useChangePassword,
   UserIdentityProvider,
   useUser,
   getAuthClient,
@@ -37,6 +38,7 @@ export {
   ForgotPasswordPage,
   ResetPasswordPage,
   VerifyEmailPage,
+  UserSettingsPage,
 } from './auth/index.js'
 export type {
   AuthProviderProps,

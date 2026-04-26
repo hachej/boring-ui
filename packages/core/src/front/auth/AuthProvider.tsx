@@ -125,6 +125,15 @@ export function useSendVerificationEmail() {
   }) => Promise<{ data: unknown; error: unknown }>
 }
 
+export function useChangePassword() {
+  const { client } = useAuthContext()
+  return (client as any).changePassword as (opts: {
+    currentPassword: string
+    newPassword: string
+    revokeOtherSessions?: boolean
+  }) => Promise<{ data: unknown; error: { status: number; message: string } | null }>
+}
+
 export function useSignOut(): () => Promise<void> {
   const { signOut } = useAuthContext()
   return signOut

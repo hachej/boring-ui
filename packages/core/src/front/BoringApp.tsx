@@ -15,6 +15,7 @@ import { SignUpPage as DefaultSignUpPage } from './auth/SignUpPage.js'
 import { ForgotPasswordPage as DefaultForgotPasswordPage } from './auth/ForgotPasswordPage.js'
 import { ResetPasswordPage as DefaultResetPasswordPage } from './auth/ResetPasswordPage.js'
 import { VerifyEmailPage as DefaultVerifyEmailPage } from './auth/VerifyEmailPage.js'
+import { UserSettingsPage as DefaultUserSettingsPage } from './auth/UserSettingsPage.js'
 import { routes } from './utils.js'
 
 export interface BoringAppAuthPagesOverride {
@@ -23,6 +24,7 @@ export interface BoringAppAuthPagesOverride {
   forgotPassword?: React.FC
   resetPassword?: React.FC
   verifyEmail?: React.FC
+  userSettings?: React.FC
 }
 
 export interface BoringAppProps {
@@ -53,6 +55,7 @@ export function BoringApp({ children, authPages }: BoringAppProps) {
   const ForgotPasswordPage = authPages?.forgotPassword ?? DefaultForgotPasswordPage
   const ResetPasswordPage = authPages?.resetPassword ?? DefaultResetPasswordPage
   const VerifyEmailPage = authPages?.verifyEmail ?? DefaultVerifyEmailPage
+  const UserSettingsPage = authPages?.userSettings ?? DefaultUserSettingsPage
 
   return (
     <AppErrorBoundary>
@@ -72,7 +75,7 @@ export function BoringApp({ children, authPages }: BoringAppProps) {
                           <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
                           <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
                           <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
-                          <Route path={routes.me} element={<PlaceholderPage name="user-settings" />} />
+                          <Route path={routes.me} element={<UserSettingsPage />} />
                           {children}
                         </Routes>
                       </Suspense>
