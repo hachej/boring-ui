@@ -2,7 +2,7 @@
 // Keep this as the single import point for drizzle.config.ts and migration tooling.
 export * from '../../../drizzle/schema.js'
 
-import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, boolean, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, boolean, uniqueIndex, check } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import { users } from '../../../drizzle/schema.js'
 
@@ -60,6 +60,36 @@ export const workspaces = pgTable(
 export const workspacesRelations = relations(workspaces, ({ one }) => ({
   creator: one(users, {
     fields: [workspaces.createdBy],
+    references: [users.id],
+  }),
+}))
+
+export const workspaceMembers = pgTable(
+  'workspace_members',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'no action' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    role: text('role').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.userId] }),
+    index('workspace_members_user_id_idx').on(table.userId),
+    check('workspace_members_role_check', sql`${table.role} IN ('owner', 'editor', 'viewer')`),
+  ],
+)
+
+export const workspaceMembersRelations = relations(workspaceMembers, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [workspaceMembers.workspaceId],
+    references: [workspaces.id],
+  }),
+  user: one(users, {
+    fields: [workspaceMembers.userId],
     references: [users.id],
   }),
 }))
