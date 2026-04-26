@@ -7,7 +7,31 @@ import type { WorkspaceBridge } from "../../bridge/types"
 import { useFileList, useDataClient } from "../../data"
 import type { FileEntry } from "../../data/types"
 import type { FileTreeNode } from "../FileTree"
-import { DataCatalog, type DataSource } from "../DataCatalog"
+import { DataExplorer } from "../DataExplorer/DataExplorer"
+import { createSourcesAdapter, type SourceEntry } from "../DataExplorer/adapters"
+import type {
+  DragPayload,
+  ExplorerAdapter,
+  ExplorerRow,
+  FacetConfig,
+} from "../DataExplorer/types"
+
+export type DataSource = SourceEntry
+
+/**
+ * Plug-in config for the chat shell's data tab. When provided, the shell
+ * routes the data pane through DataExplorer with the host-supplied adapter
+ * — supports macro-style catalogs (thousands of records, async search,
+ * facets, drag-to-overlay) without exposing DataExplorer details.
+ */
+export type DataPaneConfig = {
+  adapter: ExplorerAdapter
+  groupBy?: string
+  facets?: FacetConfig[]
+  onActivate?: (row: ExplorerRow) => void
+  getDragPayload?: (row: ExplorerRow) => DragPayload | null | undefined
+  emptyState?: React.ReactNode
+}
 
 const FileTree = lazy(() =>
   import("../FileTree").then((m) => ({ default: m.FileTree })),
@@ -18,7 +42,10 @@ export type WorkbenchLeftTab = "files" | "data"
 export interface WorkbenchLeftPaneProps {
   rootDir?: string
   bridge?: WorkspaceBridge
+  /** Legacy: small static catalog. Built into a sync adapter internally. */
   dataSources?: DataSource[]
+  /** Plug-in: takes precedence over dataSources when provided. */
+  data?: DataPaneConfig
   defaultTab?: WorkbenchLeftTab
   onCollapse?: () => void
   className?: string
@@ -50,6 +77,7 @@ export function WorkbenchLeftPane({
   rootDir = "",
   bridge,
   dataSources = [],
+  data,
   defaultTab = "files",
   onCollapse,
   className,
@@ -205,8 +233,10 @@ export function WorkbenchLeftPane({
               className="px-1 pt-1 [&_[role=treeitem]]:!indent-0"
             />
           </Suspense>
+        ) : data ? (
+          <DataExplorerWithConfig config={data} query={debouncedQuery} />
         ) : (
-          <FilteredDataCatalog sources={dataSources} query={debouncedQuery} />
+          <DataExplorerForSources sources={dataSources} query={debouncedQuery} />
         )}
       </div>
     </div>
@@ -251,18 +281,46 @@ function SegmentedTab({
   )
 }
 
-function FilteredDataCatalog({ sources, query }: { sources: DataSource[]; query: string }) {
-  const filtered = useMemo(() => {
-    if (!query) return sources
-    const q = query.toLowerCase()
-    return sources.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.type.toLowerCase().includes(q) ||
-        s.description?.toLowerCase().includes(q),
-    )
-  }, [sources, query])
-  return <DataCatalog sources={filtered} />
+function DataExplorerWithConfig({
+  config,
+  query,
+}: {
+  config: DataPaneConfig
+  query: string
+}) {
+  return (
+    <DataExplorer
+      adapter={config.adapter}
+      query={query}
+      searchable={false}
+      groupBy={config.groupBy}
+      facets={config.facets}
+      onActivate={config.onActivate}
+      getDragPayload={config.getDragPayload}
+      emptyState={config.emptyState ?? "No data sources"}
+      className="h-full"
+    />
+  )
+}
+
+function DataExplorerForSources({ sources, query }: { sources: DataSource[]; query: string }) {
+  // Build the adapter once per `sources` reference. The chat shell already
+  // provides the search input and debounced query, so we drive DataExplorer
+  // in controlled mode and hide its internal toolbar.
+  const adapter = useMemo(() => createSourcesAdapter(sources), [sources])
+  // If any source declares a schema, group rows by it (toggleable sections).
+  const grouped = useMemo(() => sources.some((s) => !!s.schema), [sources])
+  return (
+    <DataExplorer
+      adapter={adapter}
+      query={query}
+      searchable={false}
+      groupBy={grouped ? "schema" : undefined}
+      facets={grouped ? [{ key: "schema", label: "Schema" }] : undefined}
+      emptyState="No data sources"
+      className="h-full"
+    />
+  )
 }
 
 function LoadingFallback() {
