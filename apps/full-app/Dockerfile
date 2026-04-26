@@ -18,7 +18,7 @@ COPY apps/full-app/ apps/full-app/
 
 # Core dts generation is currently unstable under workspace zod peer resolution.
 # Build runtime JS output directly for container usage.
-RUN pnpm --filter @boring/core exec tsup --dts false \
+RUN pnpm --filter @boring/core exec tsup --no-dts \
   && cp packages/core/src/front/theme.css packages/core/dist/front/theme.css
 
 RUN pnpm --filter @boring/agent run build
@@ -29,17 +29,28 @@ WORKDIR /app
 RUN corepack enable
 
 COPY --from=build /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
-COPY --from=deps /app/node_modules/ node_modules/
+
+# pnpm uses relative symlinks under node_modules to point at workspace
+# packages, so we need both the link tree and the link targets in the runtime
+# image. Copying node_modules from `build` (rather than `deps`) preserves the
+# version of the link tree that points at the built workspace packages.
+COPY --from=build /app/node_modules/ node_modules/
 
 COPY --from=build /app/packages/core/dist/ packages/core/dist/
 COPY --from=build /app/packages/core/package.json packages/core/package.json
 COPY --from=build /app/packages/core/drizzle/ packages/core/drizzle/
+COPY --from=build /app/packages/core/node_modules/ packages/core/node_modules/
 
 COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
 COPY --from=build /app/packages/agent/package.json packages/agent/package.json
+COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
+
+COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
+COPY --from=build /app/packages/workspace/node_modules/ packages/workspace/node_modules/
 
 COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
 COPY --from=build /app/apps/full-app/package.json apps/full-app/package.json
+COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
 
 ENV NODE_ENV=production
 EXPOSE 3000

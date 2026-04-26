@@ -130,9 +130,23 @@ function encodeAuthRequestBody(request: any): string | Uint8Array | URLSearchPar
   return JSON.stringify(bodyValue)
 }
 
+// Frontend React Router routes that live under /auth/*. Requests to these
+// paths must be served as the SPA shell so React Router can render the
+// matching page. Everything else under /auth/* is a better-auth API
+// endpoint and is owned by registerAuthProxy.
+const FRONTEND_AUTH_PAGES = new Set([
+  '/auth/signin',
+  '/auth/signup',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/verify-email',
+  '/auth/callback/github',
+])
+
 function shouldServeFrontend(pathname: string): boolean {
   if (pathname === '/health') return false
   if (pathname.startsWith('/api/')) return false
+  if (FRONTEND_AUTH_PAGES.has(pathname)) return true
   if (pathname === '/auth') return false
   if (pathname.startsWith('/auth/')) return false
   return true
@@ -140,6 +154,17 @@ function shouldServeFrontend(pathname: string): boolean {
 
 async function registerAuthProxy(app: AppWithAuth) {
   app.all('/auth/*', async (request: any, reply: any) => {
+    // /auth/* covers both better-auth API endpoints (POST sign-in/email,
+    // GET get-session, …) and frontend React Router pages (/auth/signin,
+    // /auth/reset-password?token=…). For HTML page navigations we let the
+    // request fall through to the static frontend fallback so React Router
+    // can render the page; everything else (XHR / fetch / POST → API) goes
+    // to the better-auth handler.
+    const accept = String(request.headers?.accept ?? '')
+    if (request.method === 'GET' && accept.includes('text/html')) {
+      return reply.callNotFound()
+    }
+
     const body = encodeAuthRequestBody(request)
     const targetUrl = new URL(request.url, app.config.auth.url).toString()
 
@@ -167,6 +192,33 @@ async function registerAuthProxy(app: AppWithAuth) {
     const responseBody = Buffer.from(await response.arrayBuffer())
     reply.send(responseBody)
   })
+}
+
+async function registerFrontendAuthPages(
+  app: CoreAppInstance,
+  appRoot: string,
+) {
+  const frontDistDir = path.resolve(appRoot, 'dist/front')
+  const indexPath = path.resolve(frontDistDir, 'index.html')
+
+  // Static GET routes for the React Router auth pages must be registered
+  // BEFORE the /auth/* better-auth proxy so Fastify's radix-tree router
+  // dispatches the exact-match GET to the SPA shell instead of forwarding to
+  // the API handler (which has no matching endpoint and would 404).
+  for (const pagePath of FRONTEND_AUTH_PAGES) {
+    app.get(pagePath, async (request: any, reply: any) => {
+      if (!(await pathExists(indexPath))) {
+        reply.status(503)
+        return {
+          error: 'frontend_not_built',
+          message: 'Run `pnpm --filter full-app build` before starting in production mode.',
+        }
+      }
+      const html = await readFile(indexPath, 'utf-8')
+      reply.type('text/html; charset=utf-8')
+      return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
+    })
+  }
 }
 
 async function registerFrontendFallback(
@@ -315,14 +367,21 @@ async function main() {
   await app.register(registerMemberRoutes)
   await app.register(registerSettingsRoutes)
   await app.register(registerInviteRoutes)
-  await registerAuthProxy(app as AppWithAuth)
-
-  await app.register(registerAgentRoutes, { registerHealthRoute: false })
 
   const thisDir = path.dirname(fileURLToPath(import.meta.url))
   const appRoot = path.resolve(thisDir, '../..')
 
+  // Frontend auth pages must register before the better-auth proxy so the
+  // exact-match GET routes win against the proxy's /auth/* wildcard.
   const production = process.env.NODE_ENV !== 'development'
+  if (production) {
+    await registerFrontendAuthPages(app, appRoot)
+  }
+
+  await registerAuthProxy(app as AppWithAuth)
+
+  await app.register(registerAgentRoutes, { registerHealthRoute: false })
+
   if (production) {
     await registerFrontendFallback(app, appRoot)
   }

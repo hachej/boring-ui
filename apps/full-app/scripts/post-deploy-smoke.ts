@@ -1,5 +1,5 @@
 const BEAD_ID = 'boring-ui-v2-6u3z'
-const REQUEST_TIMEOUT_MS = 10_000
+const REQUEST_TIMEOUT_MS = Number(process.env.SMOKE_REQUEST_TIMEOUT_MS ?? 10_000)
 const RESEND_POLL_TIMEOUT_MS = 60_000
 const RESEND_POLL_INTERVAL_MS = 5_000
 
