@@ -6,10 +6,12 @@ import {
   CodeEditorPane,
   MarkdownEditorPane,
   EmptyPane,
+  type DataPaneConfig,
   type PanelConfig,
 } from "@boring/workspace"
 import { mockSessions, useMockSessions } from "./mockSessions"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
+import { createPlaygroundSeriesAdapter } from "./mockSeriesAdapter"
 
 // ----- Panel registry -----
 
@@ -32,12 +34,36 @@ const panels: PanelConfig[] = [
   { id: "empty", title: "Welcome", component: EmptyPane as React.ComponentType<unknown>, placement: "center", source: "app" },
 ]
 
-const dataSources = [
-  { id: "users", name: "users", type: "table", description: "Account + profile rows" },
-  { id: "events", name: "events", type: "stream", description: "Raw event firehose" },
-  { id: "sessions", name: "sessions_daily", type: "view", description: "Rolled-up session metrics" },
-  { id: "logs", name: "app_logs", type: "index", description: "Structured application logs" },
-]
+const FREQ_LABELS: Record<string, string> = {
+  D: "Daily",
+  W: "Weekly",
+  M: "Monthly",
+  Q: "Quarterly",
+  SA: "Semiannual",
+  A: "Annual",
+}
+
+const dataPaneConfig: DataPaneConfig = {
+  adapter: createPlaygroundSeriesAdapter(),
+  groupBy: "frequency",
+  facets: [
+    {
+      key: "frequency",
+      label: "Frequency",
+      order: ["D", "W", "M", "Q", "SA", "A"],
+      formatValue: (v) => FREQ_LABELS[v] ?? v,
+    },
+    {
+      key: "source",
+      label: "Source",
+      formatValue: (v) => (v === "fred" ? "FRED" : v === "derived" ? "Derived" : v),
+    },
+  ],
+  // eslint-disable-next-line no-console
+  onActivate: (row) => console.log("open series", row.id),
+  getDragPayload: (row) => ({ mimeType: "text/series-id", value: row.id }),
+  emptyState: "No series match",
+}
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -48,11 +74,6 @@ function Shell() {
   const { sessions, activeId } = useMockSessions()
   const showcase = useMemo(isShowcaseRoute, [])
 
-  // Showcase = a one-shot seed: hydrate the fixture into localStorage and
-  // pin the showcase session as the initial active row. Subsequent clicks
-  // in the session drawer flow through mockSessions.switchTo as normal,
-  // so the user can navigate away from the showcase to other sessions
-  // (and back) without losing the gallery.
   useEffect(() => {
     if (!showcase) return
     seedShowcase()
@@ -79,12 +100,12 @@ function Shell() {
       onSwitchSession={mockSessions.switchTo}
       onCreateSession={mockSessions.create}
       onDeleteSession={mockSessions.remove}
-      dataSources={dataSources}
+      data={dataPaneConfig}
     />
   )
 }
 
-export function App() {
+export function WorkspaceShell() {
   return (
     <div className="h-full bg-background text-foreground">
       <WorkspaceProvider

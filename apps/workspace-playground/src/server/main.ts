@@ -1,0 +1,165 @@
+import { randomUUID } from 'node:crypto'
+import {
+  createCoreApp,
+  loadConfig,
+  registerRoutes,
+  registerWorkspaceRoutes,
+  registerMemberRoutes,
+} from '@boring/core/server'
+import { LocalUserStore, LocalWorkspaceStore } from '@boring/core/server/db'
+import type { FastifyRequest, FastifyReply } from 'fastify'
+
+const DEV_USER_ID = 'dev-user-0001'
+const DEV_USER_EMAIL = 'dev@local'
+const DEV_USER_NAME = 'Dev User'
+const DEV_PASSWORD = 'dev'
+const APP_ID = 'workspace-playground'
+
+const sessions = new Map<string, { userId: string; expiresAt: number }>()
+
+function createSession(userId: string): string {
+  const token = randomUUID()
+  sessions.set(token, { userId, expiresAt: Date.now() + 86_400_000 })
+  return token
+}
+
+function getSession(token: string | undefined) {
+  if (!token) return null
+  const session = sessions.get(token)
+  if (!session || session.expiresAt < Date.now()) {
+    if (session) sessions.delete(token)
+    return null
+  }
+  return session
+}
+
+export async function startCoreServer(port = 5220) {
+  const config = await loadConfig({
+    env: {
+      CORE_STORES: 'local',
+      MAIL_TRANSPORT_URL: 'console://',
+      MAIL_FROM: 'playground@local',
+      PORT: String(port),
+      BETTER_AUTH_URL: `http://localhost:${port}`,
+      LOG_LEVEL: 'info',
+      APP_ID,
+      APP_NAME: 'Boring Playground',
+    },
+    allowMissingSecrets: true,
+  })
+
+  const userStore = new LocalUserStore()
+  const workspaceStore = new LocalWorkspaceStore(userStore)
+
+  userStore.seed({
+    id: DEV_USER_ID,
+    email: DEV_USER_EMAIL,
+    name: DEV_USER_NAME,
+    emailVerified: true,
+    image: null,
+  })
+
+  const ws = await workspaceStore.create(DEV_USER_ID, 'Default workspace', APP_ID, {
+    isDefault: true,
+  })
+
+  const app = await createCoreApp(config, { manageShutdown: true })
+
+  app.decorate('workspaceStore', workspaceStore)
+
+  const COOKIE_NAME = `${APP_ID}.session_token`
+
+  function readToken(request: FastifyRequest): string | undefined {
+    const raw = request.headers.cookie ?? ''
+    const match = raw.split(';').map(s => s.trim()).find(s => s.startsWith(`${COOKIE_NAME}=`))
+    return match?.split('=')[1]
+  }
+
+  app.addHook('onRequest', async (request: FastifyRequest, _reply: FastifyReply) => {
+    request.user = null
+    const token = readToken(request)
+    const session = getSession(token)
+    if (session) {
+      const user = await userStore.getById(session.userId)
+      if (user) {
+        request.user = { id: user.id, email: user.email, name: user.name }
+      }
+    }
+  })
+
+  app.post('/auth/sign-in/email', async (request, reply) => {
+    const body = request.body as { email?: string; password?: string } | null
+    if (!body?.email || !body?.password) {
+      reply.status(400)
+      return { error: { message: 'Email and password required' } }
+    }
+    const user = await userStore.getByEmail(body.email)
+    if (!user || body.password !== DEV_PASSWORD) {
+      reply.status(401)
+      return { error: { status: 401, message: 'Invalid email or password' } }
+    }
+    const token = createSession(user.id)
+    reply.header(
+      'set-cookie',
+      `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`,
+    )
+    return {
+      data: {
+        user: { id: user.id, email: user.email, name: user.name, image: user.image },
+        session: { id: token, userId: user.id, expiresAt: new Date(Date.now() + 86_400_000).toISOString() },
+      },
+      error: null,
+    }
+  })
+
+  app.get('/auth/get-session', async (request, reply) => {
+    const token = readToken(request)
+    const session = getSession(token)
+    if (!session) {
+      return { data: null, error: null }
+    }
+    const user = await userStore.getById(session.userId)
+    if (!user) {
+      return { data: null, error: null }
+    }
+    return {
+      data: {
+        user: { id: user.id, email: user.email, name: user.name, image: user.image, emailVerified: user.emailVerified },
+        session: { id: token, userId: user.id, expiresAt: new Date(session.expiresAt).toISOString() },
+      },
+      error: null,
+    }
+  })
+
+  app.post('/auth/sign-out', async (request, reply) => {
+    const token = readToken(request)
+    if (token) sessions.delete(token)
+    reply.header(
+      'set-cookie',
+      `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+    )
+    return { data: null, error: null }
+  })
+
+  app.post('/auth/sign-up/email', async (_request, reply) => {
+    reply.status(403)
+    return { error: { message: 'Sign-up disabled in playground mode' } }
+  })
+
+  await app.register(registerRoutes, { userStore })
+  await app.register(registerWorkspaceRoutes)
+  await app.register(registerMemberRoutes)
+
+  await app.listen({ port, host: '127.0.0.1' })
+  app.log.info({ port, defaultWorkspaceId: ws.id, devUser: DEV_USER_EMAIL }, 'playground core server ready')
+
+  return { app, defaultWorkspaceId: ws.id }
+}
+
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))) {
+  const port = Number(process.env.CORE_PORT) || 5220
+  startCoreServer(port).catch((err) => {
+    console.error('Failed to start core server:', err)
+    process.exit(1)
+  })
+}

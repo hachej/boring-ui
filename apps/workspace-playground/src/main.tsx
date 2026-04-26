@@ -1,11 +1,16 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import { App } from "./App"
+import { Route } from "react-router-dom"
+import { BoringApp } from "@boring/core/front"
+import { WorkspaceShell } from "./App"
 import "@boring/workspace/globals.css"
 import "./app.css"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <BoringApp>
+      <Route path="/workspace/:id" element={<WorkspaceShell />} />
+      <Route path="/*" element={<WorkspaceShell />} />
+    </BoringApp>
   </StrictMode>,
 )

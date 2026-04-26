@@ -4,8 +4,10 @@ import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
 import { createAgentApp } from "@boring/agent/server"
 import { mockApiPlugin } from "./src/mockApi"
+import { startCoreServer } from "./src/server/main"
 
 const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
+const CORE_API_PORT = Number(process.env.CORE_PORT) || 5220
 
 let agentBoot: Promise<void> | null = null
 async function startAgentApp() {
@@ -21,6 +23,15 @@ async function startAgentApp() {
   return agentBoot
 }
 
+let coreBoot: Promise<void> | null = null
+async function startCoreApp() {
+  if (coreBoot) return coreBoot
+  coreBoot = (async () => {
+    await startCoreServer(CORE_API_PORT)
+  })()
+  return coreBoot
+}
+
 export default defineConfig({
   plugins: [
     react(),
@@ -32,11 +43,19 @@ export default defineConfig({
         await startAgentApp()
       },
     },
+    {
+      name: "boring-core-backend",
+      async configureServer() {
+        await startCoreApp()
+      },
+    },
   ],
   resolve: {
     alias: {
       "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
+      "@boring/workspace/ui-shadcn": resolve(__dirname, "../../packages/workspace/src/components/ui/index.ts"),
       "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
+      "@boring/core/front": resolve(__dirname, "../../packages/core/src/front/index.ts"),
       "@/": resolve(__dirname, "../../packages/workspace/src") + "/",
       "@": resolve(__dirname, "../../packages/workspace/src"),
     },
@@ -50,6 +69,12 @@ export default defineConfig({
     proxy: {
       "/api/v1/agent": `http://127.0.0.1:${AGENT_API_PORT}`,
       "/api/v1/ui": `http://127.0.0.1:${AGENT_API_PORT}`,
+      "/auth": `http://127.0.0.1:${CORE_API_PORT}`,
+      "/health": `http://127.0.0.1:${CORE_API_PORT}`,
+      "/api/v1/config": `http://127.0.0.1:${CORE_API_PORT}`,
+      "/api/v1/me": `http://127.0.0.1:${CORE_API_PORT}`,
+      "/api/v1/workspaces": `http://127.0.0.1:${CORE_API_PORT}`,
+      "/api/v1/capabilities": `http://127.0.0.1:${CORE_API_PORT}`,
     },
   },
 })
