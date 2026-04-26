@@ -267,15 +267,41 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       expect(role).toBe('owner')
     })
 
-    it('is transactional — no orphan workspace on member insert failure', async () => {
+    it('is transactional — no orphan workspace when create fails', async () => {
       const fakeUser = '00000000-0000-0000-0000-ffffffffffff'
       await expect(store.create(fakeUser, 'Bad', APP_ID)).rejects.toThrow()
 
       const [row] = await sqlClient`
         SELECT count(*)::int AS count FROM workspaces
-        WHERE created_by = ${fakeUser}
+        WHERE name = 'Bad' AND app_id = ${APP_ID}
       `
       expect(row.count).toBe(0)
+    })
+
+    it('rolls back workspace if member insert fails (invalid role)', async () => {
+      const userId = await seedUser('tx-role')
+      const beforeCount = await sqlClient`
+        SELECT count(*)::int AS count FROM workspaces WHERE app_id = ${APP_ID}
+      `
+
+      await expect(
+        store['db'].transaction(async (tx) => {
+          const [row] = await tx
+            .insert(
+              (await import('../../schema.js')).workspaces,
+            )
+            .values({ appId: APP_ID, name: 'TxTest', createdBy: userId })
+            .returning()
+          await tx.insert(
+            (await import('../../schema.js')).workspaceMembers,
+          ).values({ workspaceId: row.id, userId, role: 'superadmin' as any })
+        }),
+      ).rejects.toThrow()
+
+      const afterCount = await sqlClient`
+        SELECT count(*)::int AS count FROM workspaces WHERE app_id = ${APP_ID}
+      `
+      expect(Number(afterCount[0].count)).toBe(Number(beforeCount[0].count))
     })
   })
 
@@ -533,6 +559,16 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       await store.delete(ws.id)
 
       const result = await store.getWorkspacesWhereSoleOwner(userId)
+      expect(result).toHaveLength(0)
+    })
+
+    it('excludes workspace where user is editor (not owner)', async () => {
+      const owner = await seedUser('sole-ed-own')
+      const editor = await seedUser('sole-ed-ed')
+      const ws = await store.create(owner, 'EditorWS', APP_ID)
+      await store.upsertMember(ws.id, editor, 'editor')
+
+      const result = await store.getWorkspacesWhereSoleOwner(editor)
       expect(result).toHaveLength(0)
     })
 
