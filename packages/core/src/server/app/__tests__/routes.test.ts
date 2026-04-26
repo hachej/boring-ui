@@ -9,6 +9,7 @@ import { registerCapabilities } from '../capabilities'
 import { registerRoutes } from '../routes'
 import { runMigrations } from '../../db/migrate'
 import { PostgresUserStore } from '../../db/stores/PostgresUserStore'
+import { PostgresWorkspaceStore } from '../../db/stores/PostgresWorkspaceStore'
 import type { CoreConfig } from '../../../shared/types'
 import postgres from 'postgres'
 
@@ -46,6 +47,8 @@ function makeConfig(): CoreConfig {
 let app: FastifyInstance
 let rawSql: postgres.Sql
 let sessionCookie: string
+let sessionUserId: string
+let sessionUserEmail: string
 
 beforeAll(async () => {
   const config = makeConfig()
@@ -55,6 +58,7 @@ beforeAll(async () => {
 
   const auth = createAuth(config, db)
   const userStore = new PostgresUserStore(db)
+  const workspaceStore = new PostgresWorkspaceStore(db)
 
   app = Fastify({ logger: false })
   app.decorate('config', config)
@@ -63,7 +67,12 @@ beforeAll(async () => {
   registerErrorHandler(app)
   registerCapabilities(app)
   await app.register(authHook)
-  await app.register(registerRoutes, { sql: rawSql, userStore })
+  await app.register(registerRoutes, {
+    sql: rawSql,
+    db,
+    userStore,
+    workspaceStore,
+  })
 
   app.all('/auth/*', async (request, reply) => {
     const url = `http://localhost:3000${request.url}`
@@ -96,15 +105,76 @@ beforeAll(async () => {
     const cookies = Array.isArray(setCookie) ? setCookie : [setCookie]
     sessionCookie = cookies.map((c) => c.split(';')[0]).join('; ')
   }
+
+  const signupBody = signupRes.json() as { user: { id: string; email: string } }
+  sessionUserId = signupBody.user.id
+  sessionUserEmail = signupBody.user.email
 })
 
 afterAll(async () => {
   await app.close()
-  await rawSql`DELETE FROM user_settings WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@routes-test.dev')`
-  await rawSql`DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@routes-test.dev')`
-  await rawSql`DELETE FROM accounts WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@routes-test.dev')`
+  await rawSql`
+    DELETE FROM user_settings
+    WHERE user_id IN (
+      SELECT id FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'
+    )
+  `
+  await rawSql`
+    DELETE FROM sessions
+    WHERE user_id IN (
+      SELECT id FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'
+    )
+  `
+  await rawSql`
+    DELETE FROM accounts
+    WHERE user_id IN (
+      SELECT id FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'
+    )
+  `
+  await rawSql`
+    DELETE FROM workspace_invites
+    WHERE workspace_id IN (
+      SELECT id FROM workspaces
+      WHERE created_by IN (
+        SELECT id FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'
+      )
+    )
+  `
+  await rawSql`
+    DELETE FROM workspace_members
+    WHERE workspace_id IN (
+      SELECT id FROM workspaces
+      WHERE created_by IN (
+        SELECT id FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'
+      )
+    )
+  `
+  await rawSql`
+    DELETE FROM workspace_runtimes
+    WHERE workspace_id IN (
+      SELECT id FROM workspaces
+      WHERE created_by IN (
+        SELECT id FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'
+      )
+    )
+  `
+  await rawSql`
+    DELETE FROM workspace_settings
+    WHERE workspace_id IN (
+      SELECT id FROM workspaces
+      WHERE created_by IN (
+        SELECT id FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'
+      )
+    )
+  `
+  await rawSql`
+    DELETE FROM workspaces
+    WHERE created_by IN (
+      SELECT id FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'
+    )
+  `
   await rawSql`DELETE FROM verification_tokens WHERE 1=1`
-  await rawSql`DELETE FROM users WHERE email LIKE '%@routes-test.dev'`
+  await rawSql`DELETE FROM users WHERE email LIKE '%@routes-test.dev' OR email LIKE '%@routes-peer.dev'`
   await rawSql.end()
 })
 
@@ -216,8 +286,8 @@ describe('GET /api/v1/me', () => {
     expect(res.statusCode).toBe(200)
     const body = res.json()
     expect(body.user).toBeDefined()
-    expect(body.user.email).toBe('routes-test@routes-test.dev')
-    expect(body.user.id).toBeDefined()
+    expect(body.user.email).toBe(sessionUserEmail)
+    expect(body.user.id).toBe(sessionUserId)
     expect(body.settings).toBeDefined()
     expect(body.settings).toHaveProperty('displayName')
     expect(body.settings).toHaveProperty('email')
@@ -323,5 +393,100 @@ describe('GET /api/v1/capabilities', () => {
       url: '/api/v1/capabilities',
     })
     expect(res.statusCode).toBe(401)
+  })
+})
+
+describe('DELETE /api/v1/me', () => {
+  it('returns 401 without session', async () => {
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/me',
+      payload: { confirm: sessionUserEmail },
+    })
+    expect(res.statusCode).toBe(401)
+    expect(res.json().code).toBe('unauthorized')
+  })
+
+  it('returns 400 when confirm is missing', async () => {
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/me',
+      headers: { cookie: sessionCookie },
+      payload: {},
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe('validation_failed')
+  })
+
+  it('returns 400 when confirm does not match signed-in email', async () => {
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/me',
+      headers: { cookie: sessionCookie },
+      payload: { confirm: 'mismatch@routes-test.dev' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe('validation_failed')
+  })
+
+  it('returns 409 last_owner with soleOwnerWorkspaceCount when user still owns workspaces', async () => {
+    const [soleOwnerWs] = await rawSql`
+      INSERT INTO workspaces (app_id, name, created_by, is_default)
+      VALUES ('test-app', 'Routes Sole Owner', ${sessionUserId}, false)
+      RETURNING id
+    `
+    await rawSql`
+      INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${soleOwnerWs.id as string}, ${sessionUserId}, 'owner')
+    `
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/me',
+      headers: { cookie: sessionCookie },
+      payload: { confirm: sessionUserEmail },
+    })
+
+    expect(res.statusCode).toBe(409)
+    const body = res.json()
+    expect(body.code).toBe('last_owner')
+    expect(typeof body.soleOwnerWorkspaceCount).toBe('number')
+    expect(body.soleOwnerWorkspaceCount).toBeGreaterThanOrEqual(1)
+  })
+
+  it('deletes user, clears cookie, and invalidates old session when confirm matches', async () => {
+    const peerEmail = `routes-peer-${Date.now()}@routes-peer.dev`
+    const [peer] = await rawSql`
+      INSERT INTO users (name, email, email_verified)
+      VALUES ('Routes Peer', ${peerEmail}, true)
+      RETURNING id
+    `
+
+    await rawSql`
+      INSERT INTO workspace_members (workspace_id, user_id, role)
+      SELECT workspace_id, ${peer.id as string}, 'owner'
+      FROM workspace_members
+      WHERE user_id = ${sessionUserId}
+      ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = 'owner'
+    `
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/me',
+      headers: { cookie: sessionCookie },
+      payload: { confirm: sessionUserEmail },
+    })
+
+    expect(deleteRes.statusCode).toBe(200)
+    expect(deleteRes.json()).toEqual({ deleted: true })
+    expect(deleteRes.headers['set-cookie']).toBeDefined()
+
+    const meRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      headers: { cookie: sessionCookie },
+    })
+    expect(meRes.statusCode).toBe(401)
+    expect(meRes.json().code).toBe('unauthorized')
   })
 })

@@ -4,11 +4,15 @@ import { z } from 'zod'
 import type postgres from 'postgres'
 import { buildRuntimeConfigPayload } from '../config/loadConfig.js'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
-import type { UserStore } from './types.js'
+import { deleteUserCompletely } from '../auth/deleteUserCompletely.js'
+import type { Database } from '../db/connection.js'
+import type { UserStore, WorkspaceStore } from './types.js'
 
 export interface RoutesOptions {
   sql?: postgres.Sql
+  db?: Database
   userStore: UserStore
+  workspaceStore?: WorkspaceStore
 }
 
 const HEALTH_DB_TIMEOUT_MS = 2_000
@@ -47,8 +51,25 @@ const updateSettingsBody = z
   })
   .strict()
 
+const deleteMeBody = z
+  .object({
+    confirm: z.string().optional(),
+  })
+  .optional()
+
+function toHeaders(
+  source: Record<string, string | string[] | undefined>,
+): Headers {
+  const headers = new Headers()
+  for (const [key, value] of Object.entries(source)) {
+    if (!value) continue
+    headers.set(key, Array.isArray(value) ? value[0] : value)
+  }
+  return headers
+}
+
 const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
-  const { sql, userStore } = opts
+  const { sql, db, userStore } = opts
 
   app.get('/health', async (request, reply) => {
     if (sql) {
@@ -94,6 +115,110 @@ const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
     )
     reply.status(200)
     return result
+  })
+
+  app.delete('/api/v1/me', async (request, reply) => {
+    const parsed = deleteMeBody.safeParse(request.body)
+    if (!parsed.success) {
+      throw new HttpError({
+        status: 400,
+        code: ERROR_CODES.VALIDATION_FAILED,
+        message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+        requestId: request.id,
+      })
+    }
+
+    const user = request.user!
+    if (!user.email || parsed.data?.confirm !== user.email) {
+      throw new HttpError({
+        status: 400,
+        code: ERROR_CODES.VALIDATION_FAILED,
+        message: 'confirm must match the signed-in email',
+        requestId: request.id,
+      })
+    }
+
+    const workspaceStore = opts.workspaceStore ?? app.workspaceStore
+    if (!db || !workspaceStore) {
+      throw new HttpError({
+        status: 500,
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'DELETE /api/v1/me is not configured',
+        requestId: request.id,
+      })
+    }
+
+    const startedAt = Date.now()
+    request.log.info(
+      { event: 'user.delete.start', userId: user.id },
+      'user.delete.start',
+    )
+
+    try {
+      await deleteUserCompletely(user.id, {
+        db,
+        userStore,
+        workspaceStore,
+      })
+    } catch (error) {
+      if (error instanceof HttpError && error.code === ERROR_CODES.LAST_OWNER) {
+        const soleOwnerWorkspaceCount = (
+          await workspaceStore.getWorkspacesWhereSoleOwner(user.id)
+        ).length
+
+        request.log.info(
+          {
+            event: 'user.delete.blocked',
+            userId: user.id,
+            reason: ERROR_CODES.LAST_OWNER,
+            soleOwnerWorkspaceCount,
+          },
+          'user.delete.blocked',
+        )
+
+        reply.status(409)
+        return {
+          error: error.message,
+          code: error.code,
+          message: error.message,
+          requestId: request.id,
+          soleOwnerWorkspaceCount,
+        }
+      }
+      throw error
+    }
+
+    const signOutResponse = await (app.auth.api.signOut as (input: {
+      headers: Headers
+      asResponse: true
+    }) => Promise<Response>)({
+      headers: toHeaders(request.headers),
+      asResponse: true,
+    })
+
+    const responseHeaders = signOutResponse.headers as Headers & {
+      getSetCookie?: () => string[]
+    }
+    const setCookies = typeof responseHeaders.getSetCookie === 'function'
+      ? responseHeaders.getSetCookie()
+      : responseHeaders.get('set-cookie')
+        ? [responseHeaders.get('set-cookie') as string]
+        : []
+    if (setCookies.length > 0) {
+      reply.header('set-cookie', setCookies.length === 1 ? setCookies[0] : setCookies)
+    }
+
+    request.log.info(
+      {
+        event: 'user.delete.complete',
+        userId: user.id,
+        durationMs: Date.now() - startedAt,
+      },
+      'user.delete.complete',
+    )
+
+    reply.status(200)
+    return { deleted: true }
   })
 }
 
