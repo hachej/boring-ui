@@ -90,6 +90,37 @@ jobs:
           BUNDLE_TARGET_TOTAL_KB: "800"
         run: pnpm check:bundle-size
 
+  core-bundle-budget:
+    name: Core Bundle Budget
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build core package
+        run: pnpm --filter @boring/core run build || true
+
+      - name: Enforce core bundle budgets
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: pnpm tsx scripts/check-bundle-size.ts
+
   unit:
     name: Unit Tests
     runs-on: ubuntu-latest
