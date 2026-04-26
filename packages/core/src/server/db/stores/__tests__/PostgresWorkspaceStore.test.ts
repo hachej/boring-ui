@@ -234,6 +234,26 @@ describe('PostgresWorkspaceStore Sub-PR3', () => {
 
       expect(row.settings.theme).toBe('dark')
     })
+
+    it('putUiState bootstrap preserves profile display_name/email on first row', async () => {
+      const { ownerId, workspaceId, appId } = await seedWorkspace('ui-app')
+
+      await store.putUiState(ownerId, workspaceId, {
+        panel: 'files',
+      })
+
+      const [row] = await sqlClient`
+        SELECT display_name, email, settings
+        FROM user_settings
+        WHERE user_id = ${ownerId} AND app_id = ${appId}
+      `
+
+      expect(row.display_name).toBe('ORM1 Owner')
+      expect(row.email).toMatch(/@orm1-test\.dev$/)
+      expect(row.settings[`workspace_ui_state:${workspaceId}`]).toEqual({
+        panel: 'files',
+      })
+    })
   })
 })
 

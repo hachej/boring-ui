@@ -167,6 +167,21 @@ describe('PostgresUserStore', () => {
       expect(result.settings).toEqual({ lang: 'en' })
     })
 
+    it('first write preserves profile defaults when only settings are provided', async () => {
+      const user = await store.upsert('10000000-0000-0000-0000-00000000000a', {
+        email: 'kate@pgtest.com',
+        name: 'Kate',
+      })
+
+      const result = await store.putUserSettings(user.id, 'app1', {
+        settings: { density: 'compact' },
+      })
+
+      expect(result.displayName).toBe('Kate')
+      expect(result.email).toBe('kate@pgtest.com')
+      expect(result.settings).toEqual({ density: 'compact' })
+    })
+
     it('updates on second call (row exists) — real upsert, not no-op', async () => {
       const user = await store.upsert('10000000-0000-0000-0000-000000000009', {
         email: 'iris@pgtest.com',

@@ -803,7 +803,25 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
 
     await this.db.execute(sql`
       INSERT INTO user_settings (user_id, app_id, display_name, email, settings, updated_at)
-      VALUES (${userId}::uuid, ${appId}, '', '', ${patch}::jsonb, NOW())
+      VALUES (
+        ${userId}::uuid,
+        ${appId},
+        COALESCE(
+          (SELECT us.display_name FROM user_settings us WHERE us.user_id = ${userId}::uuid AND us.app_id = ${appId}),
+          (SELECT COALESCE(u.name, '') FROM users u WHERE u.id = ${userId}::uuid),
+          ''
+        ),
+        COALESCE(
+          (SELECT us.email FROM user_settings us WHERE us.user_id = ${userId}::uuid AND us.app_id = ${appId}),
+          (SELECT u.email FROM users u WHERE u.id = ${userId}::uuid),
+          ''
+        ),
+        COALESCE(
+          (SELECT us.settings FROM user_settings us WHERE us.user_id = ${userId}::uuid AND us.app_id = ${appId}),
+          '{}'::jsonb
+        ) || ${patch}::jsonb,
+        NOW()
+      )
       ON CONFLICT (user_id, app_id)
       DO UPDATE SET
         settings = COALESCE(user_settings.settings, '{}'::jsonb) || ${patch}::jsonb,

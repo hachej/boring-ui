@@ -94,21 +94,26 @@ export class PostgresUserStore implements UserStore {
     appId: string,
     updates: { displayName?: string; email?: string; settings?: Record<string, unknown> },
   ): Promise<{ displayName: string; email: string; settings: Record<string, unknown> }> {
+    const current = await this.getUserSettings(userId, appId)
+    const nextDisplayName = updates.displayName ?? current.displayName
+    const nextEmail = updates.email ?? current.email
+    const nextSettings = updates.settings ?? current.settings
+
     const rows = await this.db
       .insert(userSettings)
       .values({
         userId,
         appId,
-        displayName: updates.displayName ?? '',
-        email: updates.email ?? '',
-        settings: updates.settings ?? {},
+        displayName: nextDisplayName,
+        email: nextEmail,
+        settings: nextSettings,
       })
       .onConflictDoUpdate({
         target: [userSettings.userId, userSettings.appId],
         set: {
-          ...(updates.displayName !== undefined ? { displayName: updates.displayName } : {}),
-          ...(updates.email !== undefined ? { email: updates.email } : {}),
-          ...(updates.settings !== undefined ? { settings: updates.settings } : {}),
+          displayName: nextDisplayName,
+          email: nextEmail,
+          settings: nextSettings,
           updatedAt: new Date(),
         },
       })
