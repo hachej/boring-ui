@@ -186,7 +186,7 @@ describe('PUT /api/v1/workspaces/:id/settings', () => {
 })
 
 describe('GET /api/v1/workspaces/:id/runtime', () => {
-  it('returns auto-created ready runtime', async () => {
+  it('returns existing runtime', async () => {
     const res = await inject('GET', `/api/v1/workspaces/${WS_ID}/runtime`, OWNER_ID)
     expect(res.statusCode).toBe(200)
     const body = res.json()

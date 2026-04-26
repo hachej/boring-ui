@@ -10,8 +10,16 @@ export {
   useReducedMotion,
   useBlobUrl,
   useCapabilities,
+  useWorkspaceMembers,
 } from './hooks/index.js'
-export type { Binding, Breakpoint } from './hooks/index.js'
+export type { Binding, Breakpoint, EnrichedMember } from './hooks/index.js'
+
+export {
+  WorkspaceAuthProvider,
+  useCurrentWorkspace,
+  useWorkspaceRole,
+} from './WorkspaceAuthProvider.js'
+export type { WorkspaceAuthProviderProps } from './WorkspaceAuthProvider.js'
 
 export {
   AuthProvider,
