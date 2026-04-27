@@ -1,7 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { FileIcon } from "lucide-react"
+import {
+  ArrowDown,
+  ArrowUp,
+  ClockIcon,
+  CornerDownLeft,
+  FileIcon,
+  TerminalIcon,
+} from "lucide-react"
 import {
   Command,
   CommandEmpty,
@@ -113,10 +120,7 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
 
   useKeyboardShortcuts({
     shortcuts: useMemo(
-      () => [
-        { key: "p", mod: true, allowInEditable: true, handler: openPalette },
-        { key: "k", mod: true, allowInEditable: true, handler: openPalette },
-      ],
+      () => [{ key: "k", mod: true, allowInEditable: true, handler: openPalette }],
       [openPalette],
     ),
   })
@@ -176,7 +180,7 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="overflow-hidden p-0"
+        className="cmdk-shell overflow-hidden border-border/60 p-0 shadow-2xl backdrop-blur-md sm:max-w-[640px] [&>button.dialog-close]:hidden"
         showCloseButton={false}
         onPointerDownOutside={() => setOpen(false)}
         onEscapeKeyDown={() => setOpen(false)}
@@ -185,24 +189,43 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
           <DialogTitle>Command Palette</DialogTitle>
           <DialogDescription>Search files or type &gt; for commands</DialogDescription>
         </DialogHeader>
-        <Command shouldFilter={false}>
-          <CommandInput
-            ref={inputRef}
-            placeholder={isCommandMode ? "Type a command..." : "Search files... (type > for commands)"}
-            value={query}
-            onValueChange={setQuery}
-          />
-          <CommandList>
-            <CommandEmpty>
+        <Command shouldFilter={false} className="bg-transparent">
+          <div className="flex items-center gap-2 border-b border-border/50 px-3">
+            {isCommandMode ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] px-2 py-0.5 text-xs font-medium text-[color:var(--accent)]">
+                <TerminalIcon className="size-3" />
+                Command
+              </span>
+            ) : null}
+            <CommandInput
+              ref={inputRef}
+              placeholder={
+                isCommandMode
+                  ? "Run a command..."
+                  : "Search files or type > to run a command"
+              }
+              value={query}
+              onValueChange={setQuery}
+              className="h-12 border-0 bg-transparent text-base focus-visible:ring-0"
+            />
+          </div>
+
+          <CommandList className="max-h-[440px] overflow-y-auto py-1">
+            <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
               {isCommandMode ? "No matching commands" : "No files found"}
             </CommandEmpty>
 
             {!isCommandMode && recentFiles.length > 0 && !searchQuery && (
               <CommandGroup heading="Recent">
                 {recentFiles.map((path) => (
-                  <CommandItem key={path} value={path} onSelect={() => handleFileSelect(path)}>
-                    <FileIcon className="mr-2 size-4" />
-                    {path}
+                  <CommandItem
+                    key={path}
+                    value={path}
+                    onSelect={() => handleFileSelect(path)}
+                    className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+                  >
+                    <ClockIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
+                    <FilePathLabel path={path} />
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -211,9 +234,14 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
             {!isCommandMode && fileResults.length > 0 && (
               <CommandGroup heading="Files">
                 {fileResults.map((path) => (
-                  <CommandItem key={path} value={path} onSelect={() => handleFileSelect(path)}>
-                    <FileIcon className="mr-2 size-4" />
-                    {path}
+                  <CommandItem
+                    key={path}
+                    value={path}
+                    onSelect={() => handleFileSelect(path)}
+                    className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+                  >
+                    <FileIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
+                    <FilePathLabel path={path} />
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -222,17 +250,72 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
             {isCommandMode && commandResults.length > 0 && (
               <CommandGroup heading="Commands">
                 {commandResults.map((cmd) => (
-                  <CommandItem key={cmd.id} value={cmd.title} onSelect={() => handleCommandSelect(cmd)}>
-                    {cmd.title}
+                  <CommandItem
+                    key={cmd.id}
+                    value={cmd.title}
+                    onSelect={() => handleCommandSelect(cmd)}
+                    className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+                  >
+                    <TerminalIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
+                    <span className="flex-1 truncate">{cmd.title}</span>
                     {cmd.shortcut && <CommandShortcut>{cmd.shortcut}</CommandShortcut>}
                   </CommandItem>
                 ))}
               </CommandGroup>
             )}
           </CommandList>
+
+          <div className="flex items-center justify-between border-t border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+            <span className="font-medium tracking-wide uppercase">
+              {isCommandMode ? "Commands" : "Files"}
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1">
+                <Kbd>
+                  <ArrowUp className="size-3" />
+                </Kbd>
+                <Kbd>
+                  <ArrowDown className="size-3" />
+                </Kbd>
+                <span>navigate</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <Kbd>
+                  <CornerDownLeft className="size-3" />
+                </Kbd>
+                <span>open</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <Kbd>esc</Kbd>
+                <span>close</span>
+              </span>
+            </div>
+          </div>
         </Command>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function FilePathLabel({ path }: { path: string }) {
+  const lastSlash = path.lastIndexOf("/")
+  const dir = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : ""
+  const name = lastSlash >= 0 ? path.slice(lastSlash + 1) : path
+  return (
+    <span className="flex min-w-0 flex-1 items-baseline gap-2 truncate">
+      <span className="truncate font-medium text-foreground">{name}</span>
+      {dir ? (
+        <span className="truncate text-xs text-muted-foreground/70">{dir}</span>
+      ) : null}
+    </span>
+  )
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/60 bg-background px-1 font-mono text-[10px] text-muted-foreground">
+      {children}
+    </kbd>
   )
 }
 

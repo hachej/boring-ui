@@ -16,7 +16,7 @@ test.describe("command palette", () => {
 
     // Open the palette via the keyboard shortcut. The shell binds Cmd+P
     // / Ctrl+P globally.
-    await page.keyboard.press("ControlOrMeta+KeyP")
+    await page.keyboard.press("ControlOrMeta+KeyK")
     await expect(
       page.getByRole("dialog", { name: /command palette/i }),
     ).toBeVisible({ timeout: 5_000 })
@@ -38,7 +38,7 @@ test.describe("command palette", () => {
     await page.goto("/")
     await page.waitForLoadState("networkidle")
 
-    await page.keyboard.press("ControlOrMeta+KeyP")
+    await page.keyboard.press("ControlOrMeta+KeyK")
     await expect(
       page.getByRole("dialog", { name: /command palette/i }),
     ).toBeVisible({ timeout: 5_000 })

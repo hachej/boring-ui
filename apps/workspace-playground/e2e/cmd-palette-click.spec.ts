@@ -12,7 +12,7 @@ test.describe("command palette click-outside", () => {
     await page.goto("/")
     await page.waitForLoadState("networkidle")
 
-    await page.keyboard.press("ControlOrMeta+KeyP")
+    await page.keyboard.press("ControlOrMeta+KeyK")
     const dialog = page.getByRole("dialog", { name: /command palette/i })
     await expect(dialog).toBeVisible({ timeout: 5_000 })
 
@@ -28,7 +28,7 @@ test.describe("command palette click-outside", () => {
     await page.goto("/")
     await page.waitForLoadState("networkidle")
 
-    await page.keyboard.press("ControlOrMeta+KeyP")
+    await page.keyboard.press("ControlOrMeta+KeyK")
     const dialog = page.getByRole("dialog", { name: /command palette/i })
     await expect(dialog).toBeVisible({ timeout: 5_000 })
 
