@@ -4,10 +4,14 @@ import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
 import { createAgentApp } from "@boring/agent/server"
 import { mockApiPlugin } from "./src/mockApi"
-import { startCoreServer } from "./src/server/main"
+
+// The playground is the standalone dev surface for @boring/workspace and
+// deliberately runs WITHOUT @boring/core: no auth, no DB, no users. The
+// only inline backend is the agent (so the chat surface has something to
+// talk to during UI development); everything else is mock data served by
+// mockApiPlugin (file tree, files, etc.).
 
 const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
-const CORE_API_PORT = Number(process.env.CORE_PORT) || 5220
 const VITE_PORT = Number(process.env.PORT) || 5200
 
 let agentBoot: Promise<void> | null = null
@@ -24,15 +28,6 @@ async function startAgentApp() {
   return agentBoot
 }
 
-let coreBoot: Promise<void> | null = null
-async function startCoreApp() {
-  if (coreBoot) return coreBoot
-  coreBoot = (async () => {
-    await startCoreServer(CORE_API_PORT)
-  })()
-  return coreBoot
-}
-
 export default defineConfig({
   plugins: [
     react(),
@@ -44,53 +39,22 @@ export default defineConfig({
         await startAgentApp()
       },
     },
-    {
-      name: "boring-core-backend",
-      async configureServer() {
-        await startCoreApp()
-      },
-    },
   ],
   resolve: {
     alias: {
       "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
       "@boring/workspace/ui-shadcn": resolve(__dirname, "../../packages/workspace/src/components/ui/index.ts"),
       "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
-      "@boring/core/front": resolve(__dirname, "../../packages/core/src/front/index.ts"),
       "@/": resolve(__dirname, "../../packages/workspace/src") + "/",
       "@": resolve(__dirname, "../../packages/workspace/src"),
     },
   },
   server: {
     port: VITE_PORT,
-    // Bind to all interfaces so the dev server is reachable from outside
-    // the VM (the OVH coding box is accessed by external IP). The previous
-    // localhost-only bind broke remote access.
     host: true,
     proxy: {
       "/api/v1/agent": `http://127.0.0.1:${AGENT_API_PORT}`,
       "/api/v1/ui": `http://127.0.0.1:${AGENT_API_PORT}`,
-      "/health": `http://127.0.0.1:${CORE_API_PORT}`,
-      "/api/v1/config": `http://127.0.0.1:${CORE_API_PORT}`,
-      "/api/v1/me": `http://127.0.0.1:${CORE_API_PORT}`,
-      "/api/v1/workspaces": `http://127.0.0.1:${CORE_API_PORT}`,
-      "/api/v1/capabilities": `http://127.0.0.1:${CORE_API_PORT}`,
-      "/auth": {
-        target: `http://127.0.0.1:${CORE_API_PORT}`,
-        changeOrigin: true,
-        // /auth/* shadows both better-auth API endpoints and frontend
-        // React Router pages (/auth/signin, /auth/reset-password, …).
-        // Skip the proxy for HTML page navigations so Vite serves the SPA
-        // shell and React Router renders the page; everything else
-        // (XHR / fetch / POST → API) goes to the inline core server.
-        bypass(req) {
-          const accept = req.headers.accept ?? ""
-          if (req.method === "GET" && accept.includes("text/html")) {
-            return req.url
-          }
-          return undefined
-        },
-      },
     },
   },
 })
