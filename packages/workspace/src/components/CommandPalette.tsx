@@ -70,6 +70,14 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
   // first Escape press feels like a no-op and users have to press twice.
   // Attach a window-level keydown at capture phase while the palette is
   // open so we always win the race and close on the first press.
+  //
+  // Same pattern for pointerdown: clicking the dialog overlay should close
+  // the palette on the first click. Radix has onPointerDownOutside +
+  // onOpenChange wired but in combination with cmdk's Command primitive
+  // those callbacks don't fire reliably (the overlay click reaches Radix
+  // but Radix decides not to dismiss). A window-level pointerdown that
+  // checks "is the click inside dialog-content?" lets us close on the
+  // first click outside, regardless of which primitive intercepts what.
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -78,8 +86,22 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
       event.stopPropagation()
       setOpen(false)
     }
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      const content = document.querySelector('[data-slot="dialog-content"]')
+      if (content && !content.contains(target)) {
+        event.preventDefault()
+        event.stopPropagation()
+        setOpen(false)
+      }
+    }
     window.addEventListener("keydown", onKeyDown, { capture: true })
-    return () => window.removeEventListener("keydown", onKeyDown, { capture: true })
+    window.addEventListener("pointerdown", onPointerDown, { capture: true })
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true })
+      window.removeEventListener("pointerdown", onPointerDown, { capture: true })
+    }
   }, [open])
 
   const openPalette = useCallback(() => {
