@@ -65,6 +65,23 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
   const isCommandMode = query.startsWith(">")
   const searchQuery = isCommandMode ? query.slice(1).trim() : query.trim()
 
+  // cmdk's CommandInput captures Escape and preventDefaults to clear its
+  // own value before the event can reach Radix's onEscapeKeyDown — so the
+  // first Escape press feels like a no-op and users have to press twice.
+  // Attach a window-level keydown at capture phase while the palette is
+  // open so we always win the race and close on the first press.
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+    }
+    window.addEventListener("keydown", onKeyDown, { capture: true })
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true })
+  }, [open])
+
   const openPalette = useCallback(() => {
     if (!open && document.activeElement instanceof HTMLElement) {
       priorFocusRef.current = document.activeElement
