@@ -70,12 +70,27 @@ export default defineConfig({
     proxy: {
       "/api/v1/agent": `http://127.0.0.1:${AGENT_API_PORT}`,
       "/api/v1/ui": `http://127.0.0.1:${AGENT_API_PORT}`,
-      "/auth": `http://127.0.0.1:${CORE_API_PORT}`,
       "/health": `http://127.0.0.1:${CORE_API_PORT}`,
       "/api/v1/config": `http://127.0.0.1:${CORE_API_PORT}`,
       "/api/v1/me": `http://127.0.0.1:${CORE_API_PORT}`,
       "/api/v1/workspaces": `http://127.0.0.1:${CORE_API_PORT}`,
       "/api/v1/capabilities": `http://127.0.0.1:${CORE_API_PORT}`,
+      "/auth": {
+        target: `http://127.0.0.1:${CORE_API_PORT}`,
+        changeOrigin: true,
+        // /auth/* shadows both better-auth API endpoints and frontend
+        // React Router pages (/auth/signin, /auth/reset-password, …).
+        // Skip the proxy for HTML page navigations so Vite serves the SPA
+        // shell and React Router renders the page; everything else
+        // (XHR / fetch / POST → API) goes to the inline core server.
+        bypass(req) {
+          const accept = req.headers.accept ?? ""
+          if (req.method === "GET" && accept.includes("text/html")) {
+            return req.url
+          }
+          return undefined
+        },
+      },
     },
   },
 })

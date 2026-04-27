@@ -70,12 +70,18 @@ export function useSession(): SessionState {
   const session = client.useSession()
 
   const raw = session.data as Record<string, unknown> | null
+  const rawUser = raw?.user as Record<string, unknown> | undefined
   const rawSession = raw?.session as Record<string, unknown> | undefined
 
+  // better-auth's useSession returns `data: { user, session }` for an
+  // active session, `data: null` for unauthenticated, but some transport
+  // shapes return `data: { data: null, error: null }` (an envelope) which
+  // is truthy without a `.user` field. Treat any data without a user as
+  // "unauthenticated" rather than crashing on normalizeUser(undefined).
   return {
-    data: raw
+    data: rawUser
       ? {
-          user: normalizeUser(raw.user as Record<string, unknown>),
+          user: normalizeUser(rawUser),
           expiresAt: toISOString(rawSession?.expiresAt as string | Date),
         }
       : null,

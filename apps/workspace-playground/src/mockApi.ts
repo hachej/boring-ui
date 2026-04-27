@@ -221,7 +221,10 @@ export function mockApiPlugin(): Plugin {
           return
         }
 
-        return json(res, { error: "not found" }, 404)
+        // Not a path we mock — let the request fall through to the Vite
+        // proxy / next middleware so the inline core server (config, auth,
+        // workspaces, capabilities, …) can handle it.
+        return next()
       })
     },
   }
