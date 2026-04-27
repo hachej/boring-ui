@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { createInMemoryBridge } from "../createInMemoryBridge.js";
-import type { UiCommand } from "../../../shared/ui-bridge.js";
+import { createInMemoryBridge } from "../createInMemoryBridge";
+import type { UiCommand } from "../../../shared/ui-bridge";
 
 describe("createInMemoryBridge", () => {
   it("getState returns null initially", async () => {

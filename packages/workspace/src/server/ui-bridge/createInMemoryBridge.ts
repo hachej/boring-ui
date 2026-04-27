@@ -3,7 +3,7 @@ import type {
   UiState,
   UiCommand,
   CommandResult,
-} from "../../shared/ui-bridge.js";
+} from "../../shared/ui-bridge";
 
 type AnnotatedCommand = UiCommand & { seq: number };
 type CommandHandler = (cmd: AnnotatedCommand) => void;

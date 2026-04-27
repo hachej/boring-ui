@@ -286,97 +286,52 @@ test('real local plugin file remains callable and appears in app catalog', async
 })
 
 // ----------------------------------------------------------------------
-// UI bridge wiring — regression tests for shared-bridge-instance fix.
+// UI bridge regression tests — pin the contract that standalone agent
+// ships ZERO UI bridge surface.
 //
-// Before c96583b, createAgentApp built standardCatalog without a
-// uiBridge, so get_ui_state + exec_ui were never registered, AND the
-// uiRoutes used a SEPARATE in-memory bridge — the LLM and the frontend
-// could never see each other's writes. These tests pin both halves of
-// the contract.
+// Background: the UI bridge (interface, in-memory impl, /api/v1/ui/* routes,
+// get_ui_state + exec_ui tool factories) used to live here. As of
+// UI_BRIDGE_OWNERSHIP_REFACTOR they moved to @boring/workspace. Standalone
+// CLI agent and any non-workspace embedder must not see them.
 // ----------------------------------------------------------------------
 
-test('createAgentApp registers get_ui_state and exec_ui in the catalog', async () => {
-  const workspaceRoot = await makeTempDir('boring-ui-uibridge-catalog-')
+test('standalone catalog does NOT include get_ui_state or exec_ui', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-no-uitools-')
   const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
   try {
     const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
     expect(res.statusCode).toBe(200)
     const names = res.json().tools.map((t: { name: string }) => t.name)
-    expect(names).toContain('get_ui_state')
-    expect(names).toContain('exec_ui')
+    expect(names).not.toContain('get_ui_state')
+    expect(names).not.toContain('exec_ui')
+    // Sanity: the standalone catalog still has its core tools.
+    expect(names).toContain('bash')
+    expect(names).toContain('read')
+    expect(names).toContain('write')
+    expect(names).toContain('edit')
   } finally {
     await app.close()
   }
 })
 
-test('PUT /api/v1/ui/state is round-tripped by GET', async () => {
-  const workspaceRoot = await makeTempDir('boring-ui-uibridge-roundtrip-')
+test('standalone /api/v1/ui/state does NOT exist (404)', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-no-uiroutes-')
   const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
   try {
-    const initial = await app.inject({ method: 'GET', url: '/api/v1/ui/state' })
-    expect(initial.statusCode).toBe(200)
-    expect(initial.json()).toEqual({})
-
-    const payload = {
-      v: 1,
-      workbenchOpen: true,
-      drawerOpen: false,
-      openTabs: [{ id: 'file:greeter.ts', title: 'greeter.ts', params: { path: 'greeter.ts' } }],
-      activeTab: 'file:greeter.ts',
-      activeFile: 'greeter.ts',
-    }
+    const get = await app.inject({ method: 'GET', url: '/api/v1/ui/state' })
+    expect(get.statusCode).toBe(404)
     const put = await app.inject({
       method: 'PUT',
       url: '/api/v1/ui/state',
-      payload: { state: payload, causedBy: 'user' },
+      payload: { state: {}, causedBy: 'user' },
     })
-    expect(put.statusCode).toBe(204)
-
-    const after = await app.inject({ method: 'GET', url: '/api/v1/ui/state' })
-    expect(after.statusCode).toBe(200)
-    expect(after.json()).toEqual(payload)
-  } finally {
-    await app.close()
-  }
-})
-
-test('exec_ui-style POST /api/v1/ui/commands enqueues for drain', async () => {
-  // Mirrors the agent → frontend flow: the LLM's exec_ui tool calls
-  // postCommand which writes into the bridge's pending queue; the
-  // frontend's bridge client drains via /api/v1/ui/commands/next. If
-  // the catalog's bridge and the route's bridge weren't the same
-  // instance, the drain would always be empty.
-  const workspaceRoot = await makeTempDir('boring-ui-uibridge-cmds-')
-  const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
-  try {
+    expect(put.statusCode).toBe(404)
     const post = await app.inject({
       method: 'POST',
       url: '/api/v1/ui/commands',
-      payload: { kind: 'openFile', params: { path: 'greeter.ts' } },
+      payload: { kind: 'openFile', params: { path: 'x.ts' } },
     })
-    expect(post.statusCode).toBe(200)
-    const postBody = post.json()
-    expect(postBody.status).toBe('ok')
-    expect(typeof postBody.seq).toBe('number')
-
-    const drain = await app.inject({
-      method: 'GET',
-      url: '/api/v1/ui/commands/next?poll=true',
-    })
-    expect(drain.statusCode).toBe(200)
-    const drainBody = drain.json()
-    expect(Array.isArray(drainBody)).toBe(true)
-    expect(drainBody).toHaveLength(1)
-    expect(drainBody[0].kind).toBe('openFile')
-    expect(drainBody[0].params).toEqual({ path: 'greeter.ts' })
-    expect(drainBody[0].seq).toBe(postBody.seq)
-
-    // Subsequent drain returns empty — the previous one consumed the queue.
-    const drainAgain = await app.inject({
-      method: 'GET',
-      url: '/api/v1/ui/commands/next?poll=true',
-    })
-    expect(drainAgain.json()).toEqual([])
+    expect(post.statusCode).toBe(404)
   } finally {
     await app.close()
   }

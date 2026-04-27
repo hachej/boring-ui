@@ -1,7 +1,6 @@
 import type { UIMessage } from 'ai'
 import { isToolUIPart, getToolName } from 'ai'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
-import type { UiBridge } from '../shared/ui-bridge'
 import './styles/theme.css'
 import { Composer, type ComposerHandle, type ComposerSendInput } from './components/Composer'
 import { isModelId } from './components/ModelPicker'
@@ -21,7 +20,6 @@ import {
 
 export interface ChatPanelProps {
   sessionId: string
-  bridge?: UiBridge
   toolRenderers?: ToolRendererOverrides
   extraCommands?: SlashCommand[]
   onSessionReset?: () => void | Promise<void>

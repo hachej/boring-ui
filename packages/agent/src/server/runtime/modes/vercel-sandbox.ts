@@ -137,7 +137,6 @@ export function createVercelSandboxModeAdapter(
         workspace,
         sandbox,
         fileSearch: createServerFileSearch(workspace, sandbox),
-        uiBridge: ctx.uiBridge,
       }
     },
   }

@@ -250,8 +250,8 @@ test('extraTools appear in catalog when using registerAgentRoutes', async () => 
   await app.close()
 })
 
-test('UI bridge routes work through registerAgentRoutes', async () => {
-  const workspaceRoot = await makeTempDir('boring-agent-embed-ui-')
+test('registerAgentRoutes does NOT expose /api/v1/ui/* (moved to @boring/workspace)', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-no-ui-')
   const app = Fastify({ logger: false })
 
   await app.register(registerAgentRoutes, {
@@ -260,19 +260,14 @@ test('UI bridge routes work through registerAgentRoutes', async () => {
   })
   await app.ready()
 
-  const getRes = await app.inject({ method: 'GET', url: '/api/v1/ui/state' })
-  expect(getRes.statusCode).toBe(200)
-  expect(getRes.json()).toEqual({})
-
-  const putRes = await app.inject({
+  const get = await app.inject({ method: 'GET', url: '/api/v1/ui/state' })
+  expect(get.statusCode).toBe(404)
+  const put = await app.inject({
     method: 'PUT',
     url: '/api/v1/ui/state',
-    payload: { state: { foo: 'bar' }, causedBy: 'user' },
+    payload: { state: {}, causedBy: 'user' },
   })
-  expect(putRes.statusCode).toBe(204)
-
-  const getAfter = await app.inject({ method: 'GET', url: '/api/v1/ui/state' })
-  expect(getAfter.json()).toEqual({ foo: 'bar' })
+  expect(put.statusCode).toBe(404)
 
   await app.close()
 })

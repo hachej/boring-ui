@@ -18,10 +18,8 @@ import { modelsRoutes } from './http/routes/models'
 import { sessionRoutes } from './http/routes/sessions'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
-import { uiRoutes } from './http/routes/ui'
 import { readyStatusRoutes } from './http/routes/readyStatus'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
-import { createInMemoryBridge } from './ui-bridge/createInMemoryBridge'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 
 const DEFAULT_VERSION = '0.1.0-dev'
@@ -60,13 +58,12 @@ export async function createAgentApp(
     templatePath,
   })
 
-  // The same in-memory bridge is shared between the LLM tool catalog
-  // (so get_ui_state / exec_ui can read + dispatch) and the HTTP routes
-  // (so the frontend can PUT state and drain commands). Without this
-  // shared instance the tools see one bridge and the routes see another.
-  const uiBridge = createInMemoryBridge()
-
-  const standardTools = standardCatalog({ ...runtimeBundle, uiBridge })
+  // UI-aware tools (get_ui_state, exec_ui) and the /api/v1/ui/* routes
+  // are now owned by @boring/workspace. Hosts that want them call
+  // @boring/workspace/server's createWorkspaceAgentApp() instead of
+  // createAgentApp() directly. Standalone agent (CLI, no workspace)
+  // ships zero UI surface — smaller bundle, honest contract.
+  const standardTools = standardCatalog(runtimeBundle)
   const pluginTools: PluginToolRegistration[] = []
 
   if (resolvedMode !== 'vercel-sandbox') {
@@ -128,7 +125,6 @@ export async function createAgentApp(
   await app.register(modelsRoutes)
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
-  await app.register(uiRoutes, { bridge: uiBridge })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app

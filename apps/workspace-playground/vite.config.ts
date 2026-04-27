@@ -2,7 +2,7 @@ import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
-import { createAgentApp } from "@boring/agent/server"
+import { createWorkspaceAgentApp } from "../../packages/workspace/src/server/index"
 import { mockApiPlugin } from "./src/mockApi"
 
 // The playground is the standalone dev surface for @boring/workspace and
@@ -18,7 +18,11 @@ let agentBoot: Promise<void> | null = null
 async function startAgentApp() {
   if (agentBoot) return agentBoot
   agentBoot = (async () => {
-    const app = await createAgentApp({
+    // createWorkspaceAgentApp wraps @boring/agent's createAgentApp and
+    // additionally registers the UI bridge surface (get_ui_state /
+    // exec_ui tools + /api/v1/ui/* routes) — agent stays a pure tool
+    // harness, workspace owns its own concerns end-to-end.
+    const app = await createWorkspaceAgentApp({
       workspaceRoot: process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd(),
       mode: "local",
       logger: false,
@@ -44,6 +48,8 @@ export default defineConfig({
     alias: {
       "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
       "@boring/workspace/ui-shadcn": resolve(__dirname, "../../packages/workspace/src/components/ui/index.ts"),
+      "@boring/workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
+      "@boring/workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
       "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
       "@/": resolve(__dirname, "../../packages/workspace/src") + "/",
       "@": resolve(__dirname, "../../packages/workspace/src"),

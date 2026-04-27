@@ -1,7 +1,6 @@
 import type { ToolCatalog } from '../../shared/catalog'
 import type { Sandbox } from '../../shared/sandbox'
 import type { AgentTool, ToolResult } from '../../shared/tool'
-import type { UiBridge, UiCommand } from '../../shared/ui-bridge'
 import { createBashTool } from './tools/bashTool'
 import { createEditTool } from './tools/editTool'
 import { createFindFilesTool } from './tools/findFilesTool'
@@ -13,80 +12,6 @@ function makeError(message: string): ToolResult {
   return {
     content: [{ type: 'text', text: message }],
     isError: true,
-  }
-}
-
-function createGetUiStateTool(uiBridge: UiBridge): AgentTool {
-  return {
-    name: 'get_ui_state',
-    description:
-      'Get the current UI state, including open panels and focused resources.',
-    parameters: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
-    async execute(): Promise<ToolResult> {
-      try {
-        const state = await uiBridge.getState()
-        return {
-          content: [{ type: 'text', text: JSON.stringify(state ?? {}) }],
-          details: state,
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'get_ui_state failed'
-        return makeError(message)
-      }
-    },
-  }
-}
-
-function createExecUiTool(uiBridge: UiBridge): AgentTool {
-  return {
-    name: 'exec_ui',
-    description:
-      'Execute a UI command by command kind and params via the UI bridge.',
-    parameters: {
-      type: 'object',
-      properties: {
-        kind: { type: 'string' },
-        params: { type: 'object' },
-      },
-      required: ['kind'],
-      additionalProperties: false,
-    },
-    async execute(input): Promise<ToolResult> {
-      const kind = input.kind
-      if (typeof kind !== 'string' || kind.length === 0) {
-        return makeError('kind is required')
-      }
-
-      const params = input.params
-      if (
-        params !== undefined &&
-        (typeof params !== 'object' || params === null || Array.isArray(params))
-      ) {
-        return makeError('params must be an object when provided')
-      }
-
-      try {
-        const command: UiCommand = {
-          kind,
-          params: (params as Record<string, unknown> | undefined) ?? {},
-        }
-        const result = await uiBridge.postCommand(command)
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result) }],
-          isError: result.status === 'error',
-          details: result,
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'exec_ui failed'
-        return makeError(message)
-      }
-    },
   }
 }
 
@@ -159,7 +84,6 @@ function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
 export const standardCatalog: ToolCatalog = ({
   workspace,
   sandbox,
-  uiBridge,
   fileSearch,
 }) => {
   const tools: AgentTool[] = [createBashTool(sandbox)]
@@ -175,10 +99,6 @@ export const standardCatalog: ToolCatalog = ({
     createWriteTool(workspace),
     createEditTool(workspace),
   )
-
-  if (uiBridge) {
-    tools.push(createGetUiStateTool(uiBridge), createExecUiTool(uiBridge))
-  }
 
   if (sandbox.capabilities.includes('isolated-code')) {
     tools.push(createExecuteIsolatedCodeTool(sandbox))

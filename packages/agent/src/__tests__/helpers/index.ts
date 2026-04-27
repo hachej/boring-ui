@@ -1,11 +1,9 @@
 export { createTempWorkspace } from './createTempWorkspace'
 export { mockSandbox } from './mockSandbox'
-export { mockUiBridge } from './mockUiBridge'
 export { mockWorkspace } from './mockWorkspace'
 export { spawnBackend } from './spawnBackend'
 
 export type { TempWorkspaceHandle } from './createTempWorkspace'
 export type { MockSandbox } from './mockSandbox'
-export type { MockUiBridge } from './mockUiBridge'
 export type { MockWorkspace } from './mockWorkspace'
 export type { SpawnBackendOptions, SpawnedBackend } from './spawnBackend'

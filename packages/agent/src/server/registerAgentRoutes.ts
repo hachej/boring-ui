@@ -18,10 +18,8 @@ import { modelsRoutes } from './http/routes/models'
 import { sessionRoutes } from './http/routes/sessions'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
-import { uiRoutes } from './http/routes/ui'
 import { readyStatusRoutes } from './http/routes/readyStatus'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
-import { createInMemoryBridge } from './ui-bridge/createInMemoryBridge'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 
 const DEFAULT_VERSION = '0.1.0-dev'
@@ -86,9 +84,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     templatePath,
   })
 
-  const uiBridge = createInMemoryBridge()
-
-  const standardTools = standardCatalog({ ...runtimeBundle, uiBridge })
+  // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
+  // to @boring/workspace. Hosts that want them register
+  // workspaceUiPlugin alongside this plugin.
+  const standardTools = standardCatalog(runtimeBundle)
   const pluginTools: PluginToolRegistration[] = []
 
   if (resolvedMode !== 'vercel-sandbox') {
@@ -175,6 +174,5 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(modelsRoutes)
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
-  await app.register(uiRoutes, { bridge: uiBridge })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 }

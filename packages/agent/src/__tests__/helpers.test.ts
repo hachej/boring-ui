@@ -2,12 +2,10 @@ import { stat } from 'node:fs/promises'
 import { describe, expect, expectTypeOf, test } from 'vitest'
 
 import type { Sandbox } from '../shared/sandbox'
-import type { UiBridge } from '../shared/ui-bridge'
 import type { Workspace } from '../shared/workspace'
 import {
   createTempWorkspace,
   mockSandbox,
-  mockUiBridge,
   mockWorkspace,
   spawnBackend,
 } from './helpers'
@@ -70,31 +68,9 @@ describe('test helpers', () => {
     expect(sandbox.history).toEqual([{ cmd: 'echo hello', opts: { timeoutMs: 500 } }])
   })
 
-  test('mockUiBridge exposes command queue + subscribers', async () => {
-    const bridge = mockUiBridge({ tab: 'readme' })
-    expectTypeOf(bridge).toMatchTypeOf<UiBridge>()
-
-    const seenSeq: number[] = []
-    const unsubscribe = bridge.subscribeCommands((cmd) => {
-      seenSeq.push(cmd.seq)
-    })
-
-    const first = await bridge.postCommand({
-      kind: 'openFile',
-      params: { path: 'README.md' },
-    })
-    expect(first.status).toBe('ok')
-    expect(seenSeq).toEqual([first.seq])
-    expect(bridge.commands).toHaveLength(1)
-
-    unsubscribe()
-    const second = await bridge.postCommand({
-      kind: 'expandToFile',
-      params: { path: 'src/index.ts' },
-    })
-    expect(second.seq).toBeGreaterThan(first.seq)
-    expect(seenSeq).toEqual([first.seq])
-  })
+  // mockUiBridge moved to @boring/workspace alongside the UiBridge type
+  // (UI_BRIDGE_OWNERSHIP_REFACTOR). Tests that need a UI bridge in agent
+  // are gone; workspace owns the bridge contract end-to-end.
 
   test('createTempWorkspace returns real NodeWorkspace + cleanup', async () => {
     const temp = await createTempWorkspace()

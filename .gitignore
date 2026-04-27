@@ -25,3 +25,4 @@ storybook-static/
 .ui-review/
 *_review.patch
 packages/agent/bench-results/
+.tsbuildinfo.*

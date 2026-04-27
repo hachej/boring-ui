@@ -24,7 +24,6 @@ export const localModeAdapter: RuntimeModeAdapter = {
       workspace,
       sandbox,
       fileSearch: createServerFileSearch(workspace, sandbox),
-      uiBridge: ctx.uiBridge,
     }
   },
 }

@@ -1,7 +1,6 @@
-import type { FastifyInstance } from "fastify";
-import { z } from "zod";
-import type { UiBridge, UiCommand } from "../../../shared/ui-bridge.js";
-import { createBodyValidator } from "../middleware.js";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { z, type ZodSchema } from "zod";
+import type { UiBridge, UiCommand } from "../../shared/ui-bridge";
 
 const UI_BRIDGE_PROTOCOL_VERSION = 1;
 const HEARTBEAT_MS = 15_000;
@@ -15,6 +14,29 @@ const postCommandBodySchema = z.object({
   kind: z.string().min(1),
   params: z.record(z.unknown()).default({}),
 });
+
+// Inlined to avoid pulling on @boring/agent's internal http/middleware module.
+function createBodyValidator<T>(schema: ZodSchema<T>) {
+  return async function validateBody(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<void> {
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      const fieldName = firstIssue?.path
+        ?.map((segment: string | number) => String(segment))
+        .join(".");
+      reply.code(400).send({
+        error: "validation_error",
+        message: firstIssue?.message ?? "Invalid request body",
+        field: fieldName || undefined,
+      });
+      return;
+    }
+    request.body = parsed.data;
+  };
+}
 
 export interface UiRoutesOptions {
   bridge: UiBridge;

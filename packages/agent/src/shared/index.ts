@@ -19,12 +19,6 @@ export type {
   SessionDetail,
 } from './session'
 export type { UIMessage, UIMessageChunk } from './message'
-export type {
-  UiBridge,
-  UiState,
-  UiCommand,
-  CommandResult,
-} from './ui-bridge'
 export type { FileSearch } from './file-search'
 export type {
   SandboxHandleRecord,

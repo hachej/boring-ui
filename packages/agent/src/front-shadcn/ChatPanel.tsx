@@ -18,7 +18,6 @@ async function readFileAsText(file: FileUIPart): Promise<string | null> {
   }
 }
 import { useEffect, useMemo, useState } from 'react'
-import type { UiBridge } from '../shared/ui-bridge'
 import { useAgentChat } from '../front/hooks/useAgentChat'
 import { builtinCommands } from '../front/slashCommands/builtins'
 import { parseSlashCommand } from '../front/slashCommands/parser'
@@ -162,7 +161,6 @@ function displayModelLabel(id: string): string {
 
 export interface ChatPanelProps {
   sessionId: string
-  bridge?: UiBridge
   toolRenderers?: ToolRendererOverrides
   extraCommands?: SlashCommand[]
   onSessionReset?: () => void | Promise<void>

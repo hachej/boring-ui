@@ -38,6 +38,6 @@ test('checking ToolCatalog is a function', () => {
 test('checking CatalogDeps contract', () => {
   expectTypeOf<CatalogDeps>().toHaveProperty('workspace')
   expectTypeOf<CatalogDeps>().toHaveProperty('sandbox')
-  expectTypeOf<CatalogDeps>().toHaveProperty('uiBridge')
   expectTypeOf<CatalogDeps>().toHaveProperty('fileSearch')
+  // uiBridge moved to @boring/workspace as of UI_BRIDGE_OWNERSHIP_REFACTOR.
 })

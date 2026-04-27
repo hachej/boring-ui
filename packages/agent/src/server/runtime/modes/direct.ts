@@ -20,7 +20,6 @@ export const directModeAdapter: RuntimeModeAdapter = {
       workspace,
       sandbox,
       fileSearch: createServerFileSearch(workspace, sandbox),
-      uiBridge: ctx.uiBridge,
     }
   },
 }
