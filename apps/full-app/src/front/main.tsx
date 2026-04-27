@@ -1,8 +1,14 @@
 import { useMemo } from 'react'
 import type { ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Route, useParams } from 'react-router-dom'
-import { BoringApp, ThemeToggle, UserMenu, WorkspaceSwitcher } from '@boring/core/front'
+import { Navigate, Route, useParams } from 'react-router-dom'
+import {
+  BoringApp,
+  ThemeToggle,
+  UserMenu,
+  WorkspaceSwitcher,
+  useCurrentWorkspace,
+} from '@boring/core/front'
 import {
   WorkspaceProvider,
   DataProvider,
@@ -143,8 +149,23 @@ function WorkspaceRoute() {
   )
 }
 
+function HomeRedirect() {
+  const workspace = useCurrentWorkspace()
+  if (!workspace) {
+    // WorkspaceAuthProvider is still resolving the user's default workspace.
+    // Show a tiny loading sliver — replaced when the redirect fires below.
+    return (
+      <div className="flex h-screen items-center justify-center text-muted-foreground">
+        Loading workspace…
+      </div>
+    )
+  }
+  return <Navigate to={`/workspace/${workspace.id}`} replace />
+}
+
 createRoot(document.getElementById('root')!).render(
   <BoringApp>
+    <Route path="/" element={<HomeRedirect />} />
     <Route path="/workspace/:id" element={<WorkspaceRoute />} />
   </BoringApp>,
 )

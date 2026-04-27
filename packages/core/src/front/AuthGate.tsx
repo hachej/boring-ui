@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { useSession } from './auth/AuthProvider.js'
 import { routes } from './utils.js'
 
-const DEFAULT_GRACE_MS = 30_000
+const DEFAULT_GRACE_MS = 2_000
 const UNSAFE_REDIRECT_RE = /[\0\r\n<>"'`]/
 
 export interface AuthGateLocation {
