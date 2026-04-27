@@ -605,13 +605,17 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
     [],
   )
 
-  // Mirrors the dockview sash UX (see dock/dockview-overrides.css §Sash):
-  //   - 4px wide vertical strip
-  //   - transparent at rest, fills with var(--primary) on hover/active
-  //   - 200ms transition + 150ms hover delay so brief mouse passes don't flash
-  // We position the handle INSIDE the pane (left-0 / right-0) rather than
-  // straddling the edge — the parent <aside> uses overflow-hidden, so any
-  // negative offset would be clipped and the handle would be invisible.
+  // Mirrors the dockview sash UX (see dock/dockview-overrides.css §Sash)
+  // for cadence — 200ms transition, 150ms hover delay — but uses the brand
+  // accent (orange) instead of --primary (gray). The drawer / workbench
+  // outer edges are app-level chrome and have always used the accent
+  // alongside the floating-edge buttons; the dockview internal sashes are
+  // a different surface (intra-workbench splits) and intentionally don't
+  // match.
+  //
+  // Positioned INSIDE the pane (left-0 / right-0) rather than straddling
+  // the edge — the parent <aside> uses overflow-hidden so any negative
+  // offset would be clipped and the handle would be invisible.
   return (
     <div
       role="separator"
@@ -624,8 +628,8 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
       className={cn(
         "absolute top-0 bottom-0 z-20 w-1 cursor-col-resize bg-transparent",
         "transition-colors duration-200",
-        "hover:bg-[var(--primary)] hover:[transition-delay:150ms]",
-        "active:bg-[var(--primary)]",
+        "hover:bg-[var(--accent)] hover:[transition-delay:150ms]",
+        "active:bg-[var(--accent)]",
         side === "drawer-right" ? "right-0" : "left-0",
       )}
       style={{ touchAction: "none" }}
