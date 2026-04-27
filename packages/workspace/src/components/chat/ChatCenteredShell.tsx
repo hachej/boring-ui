@@ -605,6 +605,13 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
     [],
   )
 
+  // Mirrors the dockview sash UX (see dock/dockview-overrides.css §Sash):
+  //   - 4px wide vertical strip
+  //   - transparent at rest, fills with var(--primary) on hover/active
+  //   - 200ms transition + 150ms hover delay so brief mouse passes don't flash
+  // We position the handle INSIDE the pane (left-0 / right-0) rather than
+  // straddling the edge — the parent <aside> uses overflow-hidden, so any
+  // negative offset would be clipped and the handle would be invisible.
   return (
     <div
       role="separator"
@@ -615,10 +622,11 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       className={cn(
-        "absolute top-0 bottom-0 z-20 w-1 cursor-col-resize",
-        "hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.4)]",
-        "transition-colors duration-150",
-        side === "drawer-right" ? "-right-0.5" : "-left-0.5",
+        "absolute top-0 bottom-0 z-20 w-1 cursor-col-resize bg-transparent",
+        "transition-colors duration-200",
+        "hover:bg-[var(--primary)] hover:[transition-delay:150ms]",
+        "active:bg-[var(--primary)]",
+        side === "drawer-right" ? "right-0" : "left-0",
       )}
       style={{ touchAction: "none" }}
     />
