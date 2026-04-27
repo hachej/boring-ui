@@ -192,10 +192,10 @@ export function ChatCenteredShell({
   const [surfaceOpen, setSurfaceOpenRaw] = useState(() =>
     readBool(`${storageKey}:surface`, surfaceDefaultOpen),
   )
-  const [drawerWidth] = useState(() =>
+  const [drawerWidth, setDrawerWidth] = useState(() =>
     clamp(readNumber(`${storageKey}:drawerWidth`, drawerDefaultWidth), drawerMinWidth, drawerMaxWidth),
   )
-  const [surfaceWidth] = useState(() =>
+  const [surfaceWidth, setSurfaceWidth] = useState(() =>
     readNumber(`${storageKey}:surfaceWidth`, surfaceDefaultWidth),
   )
 
@@ -459,6 +459,15 @@ export function ChatCenteredShell({
                 onDelete={onDeleteSession}
               />
             </div>
+            {drawerOpen && (
+              <ResizeHandle
+                side="drawer-right"
+                ariaLabel="Resize sessions drawer"
+                onResize={(delta) =>
+                  setDrawerWidth((w) => clamp(w + delta, drawerMinWidth, drawerMaxWidth))
+                }
+              />
+            )}
           </aside>
 
           {/* Chat stage — full-bleed, no card chrome */}
@@ -522,6 +531,17 @@ export function ChatCenteredShell({
                 extraPanels={extraPanels}
               />
             </div>
+            {surfaceOpen && (
+              <ResizeHandle
+                side="surface-left"
+                ariaLabel="Resize workbench"
+                onResize={(delta) =>
+                  // Dragging the left edge of the workbench right (positive
+                  // delta) shrinks it; left grows it. Invert the sign.
+                  setSurfaceWidth((w) => clamp(w - delta, surfaceMinWidth, surfaceMax))
+                }
+              />
+            )}
           </aside>
         </div>
 
@@ -538,6 +558,71 @@ interface FloatingEdgeButtonProps {
   onClick: () => void
   label: string
   hint?: string
+}
+
+interface ResizeHandleProps {
+  /** Where the handle lives relative to the pane it resizes. `inner-end`
+   *  is the side of the pane closest to the chat stage — i.e. the right
+   *  edge of the left drawer / the left edge of the right workbench.
+   */
+  side: "drawer-right" | "surface-left"
+  ariaLabel: string
+  onResize: (delta: number) => void
+}
+
+function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
+  const startXRef = useRef<number | null>(null)
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      startXRef.current = e.clientX
+      e.currentTarget.setPointerCapture(e.pointerId)
+      document.body.style.cursor = "col-resize"
+      document.body.style.userSelect = "none"
+    },
+    [],
+  )
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (startXRef.current === null) return
+      const delta = e.clientX - startXRef.current
+      startXRef.current = e.clientX
+      onResize(delta)
+    },
+    [onResize],
+  )
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (startXRef.current === null) return
+      startXRef.current = null
+      e.currentTarget.releasePointerCapture(e.pointerId)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+    },
+    [],
+  )
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={ariaLabel}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      className={cn(
+        "absolute top-0 bottom-0 z-20 w-1 cursor-col-resize",
+        "hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.4)]",
+        "transition-colors duration-150",
+        side === "drawer-right" ? "-right-0.5" : "-left-0.5",
+      )}
+      style={{ touchAction: "none" }}
+    />
+  )
 }
 
 function FloatingEdgeButton({ side, open, icon, onClick, label, hint }: FloatingEdgeButtonProps) {
