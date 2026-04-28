@@ -303,6 +303,29 @@ function renderEdit(part: ToolPart): ReactNode {
   )
 }
 
+// ---- find / grep / ls ----
+
+function renderSearchLike(toolName: 'find' | 'grep' | 'ls', part: ToolPart): ReactNode {
+  const input = asRecord(part.input)
+  const pattern = typeof input.pattern === 'string' ? input.pattern : ''
+  const path = typeof input.path === 'string' ? input.path : ''
+  const glob = typeof input.glob === 'string' ? input.glob : ''
+  const summary = [pattern, path, glob].filter(Boolean).join(' · ')
+
+  return (
+    <Tool>
+      <ToolHeader
+        title={summary ? `${toolName} · ${summary}` : toolName}
+        {...toHeaderProps(part)}
+      />
+      <ToolContent>
+        <ToolInput input={input} />
+        <ToolOutput output={part.output} errorText={part.errorText} />
+      </ToolContent>
+    </Tool>
+  )
+}
+
 // ---- exec_ui / get_ui_state ----
 //
 // Custom header (not ToolHeader): the wrench icon + "exec_ui · …" prefix
@@ -413,6 +436,9 @@ export const shadcnDefaultToolRenderers: Record<string, ToolRenderer> = {
   read: renderRead,
   write: renderWrite,
   edit: renderEdit,
+  find: (part) => renderSearchLike('find', part),
+  grep: (part) => renderSearchLike('grep', part),
+  ls: (part) => renderSearchLike('ls', part),
   exec_ui: renderExecUi,
   __fallback: renderFallback,
 }

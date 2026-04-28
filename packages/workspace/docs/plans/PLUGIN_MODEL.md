@@ -1,6 +1,12 @@
 # Workspace plugin model
 
 **Status:** v7.0 — separation of concerns: file tools are harness substrate, filesystemPlugin is UI-only. Drops dual-registration. Substrate bundle accepts custom non-pi additions.
+
+> **Factory note:** Default plugin wiring may be exposed as a factory when it
+> needs runtime substrate, e.g. `makeFilesystemPlugin(deps)` can construct a
+> `Plugin` after the host has a `RuntimeBundle`. The `Plugin` contract does
+> not change: `agentTools` remains a plain `AgentTool[]`; the array is just
+> constructed at plugin instantiation instead of at static module import time.
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
@@ -518,7 +524,7 @@ tie-breaker.
 
 `filesCatalog` (in `filesystemCatalog.ts`) wires
 `/api/v1/files/search` to the catalog adapter — the same backend
-the LLM's `find_files` tool uses, so the cmd palette and the LLM
+the LLM's `find` tool uses, so the cmd palette and the LLM
 share one search engine.
 
 ### Where do routes go?
@@ -1166,8 +1172,8 @@ model**.
                 filesystemAgentTools  (shared bundle, in @boring/agent)
                    ┌────────────────────┐
                    │ read, write, edit, │
-                   │ find_files,        │
-                   │ grep_files         │
+                   │ find,              │
+                   │ grep               │
                    └─────────┬──────────┘
                              │
               ┌──────────────┴───────────────┐
@@ -1207,7 +1213,7 @@ packages/agent/
 │   │   │   │                                         conditionally re-adds them
 │   │   │   │                                         from the shared bundle]
 │   │   │   └── tools/                               [EXISTS — read/write/edit/
-│   │   │       │                                     find_files/grep_files
+│   │   │       │                                     find/grep
 │   │   │       │                                     individual implementations
 │   │   │       │                                     stay here]
 │   │   │       └── (read|write|edit|findFiles|grepFiles)Tool.ts
@@ -1327,7 +1333,7 @@ Markers: **[NEW]** **[MOVED]** **[EXISTS]** (modified) **[DELETED]**.
 
 | From | To | Lands as |
 |---|---|---|
-| `@boring/agent`: `src/server/catalog/standardCatalog.ts` — file ops (`find_files`, `grep_files`, `read`, `write`, `edit`) | **Stays in `@boring/agent`** as `src/server/tools/filesystem/index.ts` (extracted into a shared bundle) | Imported by both `createAgentApp` (default-on, opt-out via `disableDefaultFileTools`) AND `filesystemPlugin.agentTools` (workspace path) |
+| `@boring/agent`: file ops (`find`, `grep`, `read`, `write`, `edit`) | **Stays in `@boring/agent`** as `src/server/tools/filesystem/index.ts` (extracted into a shared bundle) | Imported by both `createAgentApp` (default-on, opt-out via `disableDefaultFileTools`) AND `filesystemPlugin.agentTools` (workspace path) |
 | `@boring/agent`: `validateTool` (in pluginLoader.ts) | `@boring/agent/shared/validateTool.ts` (extracted; node-clean) | Imported by pluginLoader; re-exported by `@boring/workspace`'s `validateAgentTool` |
 | `@boring/agent`: UI bridge tools (`get_ui_state`, `exec_ui`) | `@boring/workspace/server/uiTools.ts` | Core (registered directly by `createWorkspaceAgentApp`) |
 | `@boring/agent`: file/tree/search HTTP routes | `@boring/workspace/server/routes/files.ts` | Substrate (registered directly) |
@@ -1360,7 +1366,7 @@ Six sequenced commits.
 │      copy.                                                       │
 │                                                                  │
 │  1b. File ops bundle extraction                                  │
-│      Extract find_files/grep_files/read/write/edit into          │
+│      Extract find/grep/read/write/edit into                      │
 │      @boring/agent/server/tools/filesystem (a shared bundle).    │
 │      standardCatalog imports the bundle by default; expose       │
 │      `disableDefaultFileTools` on createAgentApp. Move file/     │
@@ -1782,7 +1788,7 @@ None of these block the boring-macro acceptance test.
   `packages/workspace/src/components/CommandPalette.tsx`
   (Recent bug at lines 34, 59-60, 157, 230-232)
 - Existing tool implementations (verified names: `read`, `write`,
-  `edit`, `find_files`, `grep_files`):
+  `edit`, `find`, `grep`):
   `packages/agent/src/server/catalog/tools/{readTool,writeTool,editTool,findFilesTool,grepFilesTool}.ts`
 - Workspace tool renderers (keyed to current names):
   `packages/agent/src/ui-shadcn/workspaceToolRenderers.tsx:30`

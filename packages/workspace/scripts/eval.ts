@@ -35,7 +35,7 @@ function seedWorkspace(): string {
   writeFileSync(join(root, "greeter.ts"), 'export function greet() { return "Hello" }\n')
   writeFileSync(join(root, "package.json"), '{"name":"eval-fixture"}\n')
   // Nested fixture for the file-not-found recovery prompt: the agent's
-  // first openFile attempt at "notes.md" must fail, then find_files
+  // first openFile attempt at "notes.md" must fail, then find
   // discovers it under docs/, then openFile retries with that path.
   mkdirSync(join(root, "docs"), { recursive: true })
   writeFileSync(join(root, "docs", "notes.md"), "# nested notes\n")

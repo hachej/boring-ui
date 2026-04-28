@@ -2,7 +2,7 @@
 #
 # Catches regressions in the open-vs-read boundary and the exec_ui
 # command-kind dispatch. The bare agent suite (packages/agent/eval/
-# standard-tools.yaml) covers read/write/edit/bash/find_files; this
+# standard-tools.yaml) covers read/write/edit/bash/find; this
 # suite covers what workspace adds on top.
 #
 # Run:  ANTHROPIC_API_KEY=… pnpm --filter @boring/workspace eval
@@ -140,10 +140,10 @@ prompts:
       params:
         path: TODO.md
 
-  # ---- recovery chain: bare path → find_files → openFile-with-real-path --
+  # ---- recovery chain: bare path -> find -> openFile-with-real-path --
   # User asks "open notes.md" but the actual file lives at docs/notes.md.
   # The bare openFile fails with file_not_found, agent must locate via
-  # find_files (or grep_files), then RETRY openFile with the discovered
+  # find (or grep), then RETRY openFile with the discovered
   # path — not give up, not switch to read.
   # Note: workspace seed (scripts/eval.ts) only ships flat fixtures, so
   # this prompt's nested file is added by the eval driver itself before

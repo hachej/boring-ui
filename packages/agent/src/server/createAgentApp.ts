@@ -128,7 +128,7 @@ export async function createAgentApp(
   await app.register(treeRoutes, { workspace: runtimeBundle.workspace })
   // /api/v1/files/search powers BOTH the cmd-palette / file-tree
   // search (browser → fetchClient.search) AND shares the same
-  // FileSearch instance the LLM's `find_files` tool already uses
+  // FileSearch instance the LLM's `find` tool already uses
   // (runtimeBundle.fileSearch). One impl, one set of glob semantics,
   // one bound-to-workspace-root guarantee.
   await app.register(searchRoutes, { fileSearch: runtimeBundle.fileSearch })

@@ -27,11 +27,11 @@ prompts:
         path: README.md
 
   - prompt: list all .ts files in the src directory
-    # Either find_files or grep_files works for "list all .ts files"
+    # Either find or grep works for "list all .ts files"
     # depending on how the LLM frames the request. The default
     # someCallMatches mode lets either one satisfy.
     expect:
-      tool: find_files
+      tool: find
 
   - prompt: write a one-line README.md that says "hello world"
     expect:

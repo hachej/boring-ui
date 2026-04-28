@@ -135,7 +135,7 @@ route against `claude-haiku-4-5-20251001`.
 Quickstart:
 
 ```bash
-# Run the agent's own catalog suite (read / write / edit / bash / find_files).
+# Run the agent's own catalog suite (read / write / edit / bash / find).
 ANTHROPIC_API_KEY=… pnpm --filter @boring/agent eval
 
 # Run a custom suite.

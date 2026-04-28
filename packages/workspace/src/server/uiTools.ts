@@ -67,7 +67,7 @@ async function validatePath(
   } catch {
     return {
       ok: false,
-      reason: `file not found at "${relPath}" (relative to workspace root ${workspaceRoot}). Try find_files or grep to locate the file before retrying openFile.`,
+      reason: `file not found at "${relPath}" (relative to workspace root ${workspaceRoot}). Try find or grep to locate the file before retrying openFile.`,
     }
   }
 }
@@ -145,8 +145,8 @@ export function createExecUiTool(
       "                 lives under src/).",
       "                 Recovery on file-not-found: this tool stat-checks the",
       "                 path server-side and returns an error if it doesn't",
-      "                 exist. On that error, immediately call find_files (or",
-      "                 grep_files) to locate the file, then call exec_ui",
+      "                 exist. On that error, immediately call find (or",
+      "                 grep) to locate the file, then call exec_ui",
       "                 openFile AGAIN using the EXACT path returned — don't",
       "                 give up and don't switch to the read tool. Repeat",
       "                 until openFile succeeds or no candidate is found.",

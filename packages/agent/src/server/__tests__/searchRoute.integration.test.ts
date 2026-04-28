@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 
 /**
  * Integration test that asserts the /api/v1/files/search HTTP route
- * (consumed by the file tree + cmd palette) and the LLM's `find_files`
+ * (consumed by the file tree + cmd palette) and the LLM's `find`
  * tool BOTH use the same FileSearch instance — i.e. there is exactly
  * one search code path, with one set of glob semantics, one shared
  * boundedness guarantee.

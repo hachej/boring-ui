@@ -15,6 +15,8 @@ import { describe, test, expect } from "vitest"
 import { renderToStaticMarkup } from "react-dom/server"
 import { shadcnDefaultToolRenderers } from "../toolRenderers"
 import type { ToolPart } from "../../front/toolRenderers"
+import { buildFilesystemAgentTools } from "../../server/tools/filesystem"
+import type { RuntimeBundle } from "../../server/runtime/mode"
 
 function makePart(overrides: Partial<ToolPart> & { toolName: string }): ToolPart {
   return {
@@ -24,6 +26,49 @@ function makePart(overrides: Partial<ToolPart> & { toolName: string }): ToolPart
     ...overrides,
   }
 }
+
+function mockBundle(provider: string): RuntimeBundle {
+  return {
+    workspace: {
+      root: "/workspace",
+      readFile: async () => "",
+      writeFile: async () => {},
+      unlink: async () => {},
+      readdir: async () => [],
+      stat: async () => ({ size: 0, mtimeMs: 0, kind: "file" as const }),
+      mkdir: async () => {},
+      rename: async () => {},
+    },
+    sandbox: {
+      id: `renderer-${provider}`,
+      placement: provider === "vercel-sandbox" ? "remote" : "server",
+      provider,
+      capabilities: ["exec"],
+      exec: async () => ({
+        stdout: new Uint8Array(),
+        stderr: new Uint8Array(),
+        exitCode: 0,
+        durationMs: 0,
+        truncated: false,
+      }),
+    },
+    fileSearch: { search: async () => [] },
+  }
+}
+
+function filesystemToolNames(provider: string): string[] {
+  return buildFilesystemAgentTools(mockBundle(provider)).map((tool) => tool.name)
+}
+
+describe("shadcn filesystem renderer coverage", () => {
+  test.each(["direct", "bwrap", "vercel-sandbox"])(
+    "default renderers cover every %s filesystem tool",
+    (provider) => {
+      const missing = filesystemToolNames(provider).filter((name) => !shadcnDefaultToolRenderers[name])
+      expect(missing).toEqual([])
+    },
+  )
+})
 
 describe("shadcn exec_ui renderer", () => {
   test("renders kind as the action label and params as mono tokens", () => {
@@ -85,7 +130,7 @@ describe("shadcn exec_ui renderer", () => {
       toolName: "exec_ui",
       state: "output-error",
       input: { kind: "openFile", params: { path: "missing.md" } },
-      errorText: 'file not found at "missing.md" — try find_files',
+      errorText: 'file not found at "missing.md" — try find',
     })
     const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
     expect(html).toContain("Error")

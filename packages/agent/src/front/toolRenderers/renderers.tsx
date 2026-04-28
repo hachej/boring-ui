@@ -120,6 +120,35 @@ function renderEdit(part: ToolPart): ReactNode {
   )
 }
 
+function renderSearchLike(toolName: 'find' | 'grep' | 'ls', part: ToolPart): ReactNode {
+  const input = asRecord(part.input)
+  const output = asRecord(part.output)
+  const content = Array.isArray(output.content)
+    ? (output.content as Array<{ text?: string }>).map((c) => c.text ?? '').join('')
+    : typeof output.content === 'string'
+      ? output.content
+      : typeof output.text === 'string'
+        ? output.text
+        : typeof part.output === 'string'
+          ? part.output
+          : ''
+  const path = typeof input.path === 'string' ? input.path : ''
+  const pattern = typeof input.pattern === 'string' ? input.pattern : ''
+  const title = [toolName, pattern || path].filter(Boolean).join(' ')
+
+  return (
+    <Tool toolName={toolName} toolCallId={part.toolCallId} state={part.state} errorText={part.errorText}>
+      {content ? (
+        <CodeBlock code={content} language="text" filename={title} />
+      ) : (
+        <span style={{ opacity: 0.6 }}>
+          {toolName === 'ls' ? `Listing ${path || '.'}...` : `Searching ${pattern || path || '.'}...`}
+        </span>
+      )}
+    </Tool>
+  )
+}
+
 function renderGetUiState(part: ToolPart): ReactNode {
   return (
     <Tool toolName="get_ui_state" toolCallId={part.toolCallId} state={part.state} errorText={part.errorText}
@@ -218,6 +247,9 @@ export const defaultToolRenderers: Record<string, ToolRenderer> = {
   read: renderRead,
   write: renderWrite,
   edit: renderEdit,
+  find: (part) => renderSearchLike('find', part),
+  grep: (part) => renderSearchLike('grep', part),
+  ls: (part) => renderSearchLike('ls', part),
   get_ui_state: renderGetUiState,
   exec_ui: renderExecUi,
 }

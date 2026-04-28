@@ -14,7 +14,10 @@ import { createExecUiTool, createWorkspaceUiTools } from "../uiTools"
 import { createInMemoryBridge } from "../ui-bridge/createInMemoryBridge"
 import type { UiBridge } from "../../shared/ui-bridge"
 
-const FAKE_CTX = { abortSignal: new AbortController().signal, workdir: "" }
+const FAKE_CTX = {
+  abortSignal: new AbortController().signal,
+  toolCallId: "ui-tools-test",
+}
 
 describe("createExecUiTool — path validation", () => {
   let workspaceRoot: string
@@ -52,7 +55,7 @@ describe("createExecUiTool — path validation", () => {
     expect(text?.type).toBe("text")
     if (text?.type === "text") {
       expect(text.text).toMatch(/file not found/i)
-      expect(text.text).toMatch(/find_files|grep/)
+      expect(text.text).toContain("Try find or grep")
     }
   })
 

@@ -25,7 +25,7 @@ Symptoms:
 `@boring/agent` becomes a pure tool harness. It knows nothing about UI bridges, UI state shapes, or workspace-specific commands. It exposes:
 
 - A generic `AgentTool` interface
-- `createAgentApp(opts)` — boots Fastify with the LLM loop, chat persistence, file/bash/edit/read/write/find_files/grep_files tools, and `/api/v1/agent/*` routes
+- `createAgentApp(opts)` — boots Fastify with the LLM loop, chat persistence, file/bash/edit/read/write/find/grep tools, and `/api/v1/agent/*` routes
 - An `extraTools?: AgentTool[]` option as the only seam for hosts to add tools
 - Returns the `FastifyInstance` so the host can register additional plugins
 

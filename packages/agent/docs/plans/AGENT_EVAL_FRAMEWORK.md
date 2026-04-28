@@ -417,7 +417,7 @@ A failing nightly doesn't block merging; it surfaces a regression for triage. A 
 
 ## Migration / authoring path
 
-1. Land the framework in `@boring/agent/testing` with one fixture file (`packages/agent/eval/standard-tools.yaml`) covering bash / read / write / edit / find_files. Validates the framework on agent's own catalog.
+1. Land the framework in `@boring/agent/testing` with one fixture file (`packages/agent/eval/standard-tools.yaml`) covering bash / read / write / edit / find. Validates the framework on agent's own catalog.
 2. Workspace adds `packages/workspace/eval/ui-bridge.yaml` covering `exec_ui openFile / openPanel`, `get_ui_state` discovery, plus the parallel-call case ("open README and tell me about it"). Wires `createWorkspaceAgentApp` as the app under test.
 3. Documentation pass — agent README + workspace plan reference the suite locations and the `pnpm agent:eval` cli.
 4. CI — add the nightly workflow + the per-PR canary step + the fork-PR `/eval` trigger.
@@ -457,7 +457,7 @@ A failing nightly doesn't block merging; it surfaces a regression for triage. A 
 ## Done definition
 
 - [ ] `@boring/agent/testing` exports `evalAgentPrompt`, `runEvalSuite`, `EvalAny`, `EvalRegex`, plus the result + options + matcher types.
-- [ ] One fixture file (`packages/agent/eval/standard-tools.yaml`) with ≥ 5 prompts covering bash / read / write / edit / find_files. Suite runs against `createAgentApp` and passes against the pinned model on a clean run.
+- [ ] One fixture file (`packages/agent/eval/standard-tools.yaml`) with ≥ 5 prompts covering bash / read / write / edit / find. Suite runs against `createAgentApp` and passes against the pinned model on a clean run.
 - [ ] CLI: `pnpm --filter @boring/agent eval [path]` runs a suite and exits non-zero on any failure (or on suite-level timeout).
 - [ ] Vitest unit tests for the matcher (partial-match, EvalAny, EvalRegex, strict mode, missing key, type mismatch, parallel-call existence check, expectFirst ordering, expectNoToolCall negative). NO real LLM in unit tests — the matcher is exercised against fixed `ToolCall[]` inputs.
 - [ ] One canary vitest suite using a real LLM, gated on `ANTHROPIC_API_KEY` being present (skip-with-warning otherwise), runs ≤ 3 prompts to validate the framework end-to-end without burning tokens on every PR.

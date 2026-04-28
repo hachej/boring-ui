@@ -6,8 +6,8 @@
 
 ## TL;DR
 
-We currently hand-roll six tool implementations under pi's standard names
-(`bash`, `read`, `write`, `edit`, `find_files`, `grep_files`) and shadow pi's
+We currently hand-roll six tool implementations under pi-adjacent names
+(`bash`, `read`, `write`, `edit`, `find`, `grep`) and shadow pi's
 defaults via `customTools`. **Pi was designed to support exactly our use
 case** — issue [#564](https://github.com/badlogic/pi-mono/issues/564)
 explicitly added the `XxxOperations` seam "for remote delegation" with an
@@ -106,7 +106,7 @@ adapter waiting to happen.
 skip pi's defaults." No further justification. Decision #6 budgeted ~200 LOC
 for tool factories and explicitly said **"Grep/find/ls done via bash;
 dedicated tools deferred."** We've drifted: 1100+ LOC across 6 tools, 5×
-budget, with `find_files`/`grep_files` shipped off-spec.
+budget, with search tool names shipped off-spec before the rename to `find`/`grep`.
 
 ### Pi has the Operations seam expressly for this
 
@@ -310,7 +310,7 @@ cleanly via two adjustments:
    default plugins can be factories (not just static module exports). The
    `Plugin` interface itself is unchanged — `agentTools: AgentTool[]` stays
    a plain array.
-2. **Tool name update.** `find_files`/`grep_files` references in
+2. **Tool name update.** Search tool references in
    PLUGIN_MODEL.md (lines 1145, 1550-1554) become `find`/`grep`. Doc-only
    change; can co-land or follow up.
 
@@ -470,7 +470,7 @@ const DEFAULT_LIMIT = 200
 
 export function vercelGrepTool(sandbox: Sandbox): AgentTool {
   return {
-    name: 'grep',                                          // ← match pi's name, NOT 'grep_files'
+    name: 'grep',                                          // match pi's name
     description:
       'Search file contents by pattern across the workspace. Returns ' +
       'file paths, line numbers, and matching text. Prefer this over ' +
@@ -580,7 +580,7 @@ runs `fd` inside the VM via `sandbox.exec` and parses stdout.
 `tool-adapter.ts` stays for genuinely-custom tools: `vercelGrepTool`,
 `executeIsolatedCodeTool`, plugin tools, host-supplied `extraTools`.
 
-### Tool name change: `find_files`/`grep_files` → `find`/`grep`
+### Tool name change: search tools → `find`/`grep`
 
 Pi's tool names are `find` and `grep`. Drop the `_files` suffix to align.
 Callsites to update:
@@ -713,7 +713,7 @@ After all three modes have been flipped and burned in for a few days:
 
 #### Step 6 — Tool-name renames downstream
 
-- Rename `find_files`→`find` and `grep_files`→`grep` in:
+- Rename legacy search-tool references to `find` and `grep` in:
   - `packages/agent/src/ui-shadcn/workspaceToolRenderers.tsx:30` (renderer
     map keyed by name).
   - `packages/workspace/src/components/chat/workspaceToolRenderers.tsx`
@@ -744,8 +744,8 @@ turns out to touch many files.
 | `write` | `{ path, content, createDirs? }` | `{ path, content }` (mkdir-recursive always) | **Breaking simplification.** Pi always creates parent dirs; we have a flag. Drop the flag in favor of pi's behavior — matches user expectation. |
 | `edit` | `{ path, oldString, newString, replaceAll? }` | `{ path, edits: [{ oldText, newText }] }` | **Breaking restructure.** Pi's shape is strictly more powerful (multi-edit per call, atomic). Drop ours, gain batch-edit for free. Update tool renderers for the new render shape. |
 | `bash` | `{ command }` | `{ command, timeout? }` | **Pure superset.** Add timeout support. |
-| `find`/`find_files` | `{ glob, limit? }` | `{ pattern, path?, limit? }` | **Breaking field rename + new field.** `glob → pattern`, plus optional `path` arg for sub-tree search. Better. |
-| `grep`/`grep_files` | `{ pattern, glob?, limit? }` | `{ pattern, path?, glob?, ignoreCase?, literal?, context?, limit? }` | **Pure superset.** Pi gains literal/case/context flags. **`vercelGrepTool` MUST mirror pi's full schema** so model behavior is consistent across modes. |
+| `find` | `{ glob, limit? }` before migration | `{ pattern, path?, limit? }` | **Breaking field rename + new field.** `glob -> pattern`, plus optional `path` arg for sub-tree search. Better. |
+| `grep` | `{ pattern, glob?, limit? }` before migration | `{ pattern, path?, glob?, ignoreCase?, literal?, context?, limit? }` | **Pure superset.** Pi gains literal/case/context flags. **`vercelGrepTool` MUST mirror pi's full schema** so model behavior is consistent across modes. |
 | `ls` (new) | (none) | `{ path?, limit? }` | New affordance, no migration. |
 
 All schema breaks are model-facing — the AI SDK sends whatever JSON the
@@ -758,7 +758,7 @@ step's PR description; tool renderers update co-landed (they're keyed by
 tool name + render the input schema). One round of e2e tests per mode
 confirms the model emits correct shapes against the new schemas.
 
-### R2 — Pi's tool names are `find`/`grep`, not `find_files`/`grep_files`
+### R2 — Pi's tool names are `find`/`grep`
 
 Already addressed above. Smoothest place to do the rename is Step 4 (the
 delete-hand-rolled-files step) where every other tool-name reference is
@@ -945,7 +945,7 @@ For each of direct/local/vercel-sandbox after its flip step:
 - Tool-renderer test: every tool name present in the bundle factories
   has a renderer entry in
   `packages/agent/src/ui-shadcn/workspaceToolRenderers.tsx`.
-- A grep over `packages/` for `find_files\|grep_files` returns zero
+- A grep over `packages/` for legacy search-tool names returns zero
   hits after step 6.
 
 ## Verification checklist
@@ -974,7 +974,7 @@ For each of direct/local/vercel-sandbox after its flip step:
 - [ ] System prompt size for the playground baseline drops by at least
       ~700 chars (per-tool guideline lines + double-dash slack).
 - [ ] No source file under `src/server/catalog/tools/` defines `bash`,
-      `read`, `write`, `edit`, `find_files`, or `grep_files`. Only
+      `read`, `write`, `edit`, `find`, or `grep`. Only
       `vercelGrepTool`, `executeIsolatedCodeTool`, and `_shared.ts` should
       remain.
 
