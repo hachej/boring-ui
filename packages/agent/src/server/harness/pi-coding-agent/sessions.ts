@@ -314,8 +314,15 @@ function piMessagesToUIMessages(messages: unknown[]): UIMessage[] {
                 });
                 break;
               case "toolCall":
+                // AI SDK convention: static tool parts use `type: "tool-${toolName}"`.
+                // The frontend's `getToolName()` reads the suffix after the
+                // first hyphen, so "tool-invocation" yields the tool name
+                // "invocation" — which doesn't match any registered renderer
+                // and falls back to the generic fallback. Use the actual tool
+                // name in the type discriminator so renderers (exec_ui, read,
+                // bash, etc.) match.
                 parts.push({
-                  type: "tool-invocation",
+                  type: `tool-${item.name}`,
                   toolCallId: item.id,
                   toolName: item.name,
                   state: "input-available",
@@ -339,7 +346,7 @@ function piMessagesToUIMessages(messages: unknown[]): UIMessage[] {
         if (!currentAssistant) break;
         const toolPart = (currentAssistant.parts as any[]).find(
           (p) =>
-            p.type === "tool-invocation" && p.toolCallId === msg.toolCallId,
+            typeof p.type === "string" && p.type.startsWith("tool-") && p.toolCallId === msg.toolCallId,
         );
         if (toolPart) {
           if (msg.isError) {

@@ -103,14 +103,37 @@ describe('get_ui_state renderer', () => {
 })
 
 describe('exec_ui renderer', () => {
-  test('renders compact command summary', () => {
+  test('renders kind + params as one-line summary', () => {
     const part = makePart({
       toolName: 'exec_ui',
-      input: { command: 'openFile', args: 'readme.md' },
+      input: { kind: 'openFile', params: { path: 'src/README.md', mode: 'edit' } },
     })
     const html = renderToStaticMarkup(<>{defaultToolRenderers.exec_ui(part)}</>)
-    expect(html).toContain('→ openFile')
-    expect(html).toContain('readme.md')
+    expect(html).toContain('openFile')
+    expect(html).toContain('src/README.md')
+    expect(html).toContain('edit')
+  })
+
+  test('renders an unknown kind generically (no per-kind switch)', () => {
+    const part = makePart({
+      toolName: 'exec_ui',
+      input: { kind: 'futureKind', params: { foo: 'bar' } },
+    })
+    const html = renderToStaticMarkup(<>{defaultToolRenderers.exec_ui(part)}</>)
+    expect(html).toContain('futureKind')
+    expect(html).toContain('foo')
+    expect(html).toContain('bar')
+  })
+
+  test('renders error text (e.g. file_not_found from path validation)', () => {
+    const part = makePart({
+      toolName: 'exec_ui',
+      state: 'output-error',
+      input: { kind: 'openFile', params: { path: 'README.md' } },
+      errorText: 'file not found at "README.md" — try find_files',
+    })
+    const html = renderToStaticMarkup(<>{defaultToolRenderers.exec_ui(part)}</>)
+    expect(html).toContain('file not found')
   })
 })
 

@@ -5,6 +5,7 @@ import {
   SessionManager,
   AuthStorage,
   ModelRegistry,
+  DefaultResourceLoader,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, SendMessageInput, RunContext } from "../../../shared/harness.js";
 import type { AgentTool } from "../../../shared/tool.js";
@@ -22,6 +23,8 @@ interface PiSessionHandle {
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
   cwd: string;
+  /** Append-only addendum to pi's base system prompt. */
+  systemPromptAppend?: string;
 }): AgentHarness {
   const sessionStore = new PiSessionStore(opts.cwd);
   const piSessions = new Map<string, PiSessionHandle>();
@@ -66,6 +69,17 @@ export function createPiCodingAgentHarness(opts: {
     const model = resolvedModel
       ?? modelRegistry.find("anthropic", ALIAS_TO_PI_ID.sonnet);
 
+    // When the host supplies a systemPromptAppend, build a resource loader
+    // that hands it to pi as `appendSystemPrompt`. Pi appends each entry
+    // (separated by blank lines) AFTER its base system prompt — host apps
+    // EXTEND, never replace.
+    const resourceLoader = opts.systemPromptAppend
+      ? new DefaultResourceLoader({
+          cwd: ctx.workdir,
+          appendSystemPrompt: [opts.systemPromptAppend],
+        })
+      : undefined;
+
     const { session: piSession } = await createAgentSession({
       cwd: ctx.workdir,
       tools: [],
@@ -75,6 +89,7 @@ export function createPiCodingAgentHarness(opts: {
       sessionManager: SessionManager.inMemory(),
       authStorage,
       modelRegistry,
+      ...(resourceLoader ? { resourceLoader } : {}),
     });
 
     const handle: PiSessionHandle = { piSession, modelRegistry };
@@ -99,6 +114,16 @@ export function createPiCodingAgentHarness(opts: {
     id: "pi-coding-agent",
     placement: "server",
     sessions: sessionStore,
+
+    /**
+     * Pi exposes the resolved system prompt as a getter on AgentSession.
+     * Sessions are created lazily on first sendMessage, so callers may see
+     * `undefined` for a session that hasn't been written to yet — that's
+     * the expected pre-first-turn state, not an error.
+     */
+    getSystemPrompt(sessionId: string): string | undefined {
+      return piSessions.get(sessionId)?.piSession.systemPrompt;
+    },
 
     async *sendMessage(
       input: SendMessageInput,
@@ -141,6 +166,35 @@ export function createPiCodingAgentHarness(opts: {
         }, 2000);
       }
 
+      // pi sometimes emits multiple `message_start` events for the same
+      // logical assistant message (e.g. when a turn includes a tool call
+      // followed by a final text response — pi treats those as separate
+      // sub-messages but reuses the same id). The AI SDK on the client
+      // keys messages by id; duplicate `start` chunks with the same id
+      // confuse `replaceMessage` and produce React duplicate-key warnings
+      // + `activeResponse undefined` errors that break tool-part rendering.
+      // Dedupe at the chunk-emission seam: emit each `start` messageId
+      // at most once per turn.
+      const startedMessageIds = new Set<string>()
+      function dedupStartChunks(input: UIMessageChunk[]): UIMessageChunk[] {
+        const out: UIMessageChunk[] = []
+        for (const c of input) {
+          const rec = c as unknown as { type?: string; messageId?: string }
+          if (rec.type === "start") {
+            const id = rec.messageId
+            if (!id) {
+              if (startedMessageIds.has("__anonymous__")) continue
+              startedMessageIds.add("__anonymous__")
+            } else {
+              if (startedMessageIds.has(id)) continue
+              startedMessageIds.add(id)
+            }
+          }
+          out.push(c)
+        }
+        return out
+      }
+
       const unsubscribe = piSession.subscribe((event: AgentSessionEvent) => {
         if (event.type === "message_update") {
           const ame = event.assistantMessageEvent;
@@ -166,7 +220,7 @@ export function createPiCodingAgentHarness(opts: {
           if (activeTools.size === 0) stopHeartbeat();
         }
 
-        const converted = piEventToChunks(event);
+        const converted = dedupStartChunks(piEventToChunks(event));
         chunks.push(...converted);
         if (event.type === "agent_end") {
           done = true;
@@ -175,8 +229,32 @@ export function createPiCodingAgentHarness(opts: {
         if (wake) wake();
       });
 
+      // pi's prompt() resolves only at agent_end. Awaiting it here would
+      // block this generator from yielding until the entire turn completes,
+      // collapsing the response into a single end-of-turn flush. Kick it
+      // off concurrently and drain `chunks` as the subscriber fills it.
+      let promptSettled = false;
+      const promptPromise = piSession
+        .prompt(input.message)
+        .then(() => {
+          promptSettled = true;
+        })
+        .catch((err) => {
+          promptSettled = true;
+          streamError = err;
+          done = true;
+          stopHeartbeat();
+          if (wake) wake();
+        });
+
       const onAbort = () => {
-        streamError = new Error("Aborted");
+        // While prompt() is still running, treat abort as a graceful stop:
+        // we'll signal pi via piSession.abort(), let the child exit, and
+        // exit the generator cleanly. Only surface "Aborted" as an error
+        // when the turn already completed — that's an unexpected late abort.
+        if (promptSettled) {
+          streamError = new Error("Aborted");
+        }
         done = true;
         stopHeartbeat();
         piSession.abort().catch(() => {});
@@ -185,8 +263,6 @@ export function createPiCodingAgentHarness(opts: {
       ctx.abortSignal.addEventListener("abort", onAbort, { once: true });
 
       try {
-        await piSession.prompt(input.message);
-
         while (!done) {
           if (chunks.length === 0) {
             await new Promise<void>((r) => {
@@ -203,6 +279,9 @@ export function createPiCodingAgentHarness(opts: {
           yield chunks.shift()!;
         }
       } finally {
+        // Surface any pending rejection from prompt() and ensure the
+        // promise settles so unhandled-rejection warnings don't leak.
+        await promptPromise;
         stopHeartbeat();
         ctx.abortSignal.removeEventListener("abort", onAbort);
         unsubscribe();

@@ -15,7 +15,9 @@ import {
   type ToolRendererOverrides,
 } from '../front/toolRenderers'
 import type { defaultToolRenderers as bareDefaults } from '../front/toolRenderers/renderers'
-import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from './primitives/tool'
+import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
+import { CollapsibleTrigger } from './ui/collapsible'
+import { ChevronDownIcon, ZapIcon } from 'lucide-react'
 import { CodeBlock } from './primitives/code-block'
 import {
   Artifact,
@@ -239,6 +241,93 @@ function renderEdit(part: ToolPart): ReactNode {
   )
 }
 
+// ---- exec_ui / get_ui_state ----
+//
+// Custom header (not ToolHeader): the wrench icon + "exec_ui · …" prefix
+// from the default header is redundant for high-frequency UI commands.
+// We replace it with a tighter layout — a lightning glyph hints at the
+// "fire-and-forget UI command" semantics, the kind name reads as the
+// verb, and primitive param values render as mono tokens (no JSON
+// braces). Generic across all kinds; no per-kind branching.
+//
+// Body collapsed by default, stays consistent with bash/read/edit. On
+// error, errorText surfaces in the body via ToolOutput.
+
+function extractParamTokens(value: unknown, depth = 0): string[] {
+  if (value === null || value === undefined) return []
+  if (typeof value === 'string') return [value]
+  if (typeof value === 'number' || typeof value === 'boolean') return [String(value)]
+  if (Array.isArray(value)) {
+    return depth >= 2
+      ? [JSON.stringify(value)]
+      : value.flatMap((v) => extractParamTokens(v, depth + 1))
+  }
+  if (typeof value === 'object') {
+    return depth >= 2
+      ? [JSON.stringify(value)]
+      : Object.values(value as Record<string, unknown>).flatMap((v) =>
+          extractParamTokens(v, depth + 1),
+        )
+  }
+  return [String(value)]
+}
+
+function renderExecUi(part: ToolPart): ReactNode {
+  const input = asRecord(part.input)
+  const kind = typeof input.kind === 'string' ? input.kind : '(empty)'
+  const tokens = extractParamTokens(input.params)
+  const headerProps = toHeaderProps(part)
+
+  return (
+    <Tool>
+      <CollapsibleTrigger
+        className={cn(
+          'group/exec-ui flex w-full items-center gap-3 px-3 py-2.5 text-left',
+          'hover:bg-muted/40 transition-colors',
+        )}
+      >
+        <ZapIcon
+          className="size-3.5 shrink-0 text-muted-foreground/70"
+          aria-hidden="true"
+        />
+        <span className="font-medium text-sm">{kind}</span>
+        {tokens.length > 0 && (
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+            <span className="text-muted-foreground/40" aria-hidden="true">
+              ·
+            </span>
+            {tokens.map((tok, i) => (
+              <span
+                key={i}
+                className={cn(
+                  'truncate rounded-sm bg-muted/60 px-1.5 py-0.5',
+                  'font-mono text-[11px] text-muted-foreground',
+                )}
+                title={tok}
+              >
+                {tok}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {getStatusBadge(headerProps.state)}
+          <ChevronDownIcon
+            className="size-4 text-muted-foreground/60 transition-transform group-data-[state=open]/exec-ui:rotate-180"
+            aria-hidden="true"
+          />
+        </div>
+      </CollapsibleTrigger>
+      <ToolContent>
+        {part.input !== undefined && part.input !== null && (
+          <ToolInput input={part.input} />
+        )}
+        <ToolOutput output={part.output} errorText={part.errorText} />
+      </ToolContent>
+    </Tool>
+  )
+}
+
 // ---- fallback ----
 
 function renderFallback(part: ToolPart): ReactNode {
@@ -262,6 +351,7 @@ export const shadcnDefaultToolRenderers: Record<string, ToolRenderer> = {
   read: renderRead,
   write: renderWrite,
   edit: renderEdit,
+  exec_ui: renderExecUi,
   __fallback: renderFallback,
 }
 

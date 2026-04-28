@@ -205,7 +205,7 @@ function replayChunks(
         chunks.push({ type: "text-end", id });
         ci++;
       }
-      if (part.type === "tool-invocation") {
+      if (typeof part.type === "string" && part.type.startsWith("tool-") && "toolCallId" in part) {
         chunks.push({
           type: "tool-input-available",
           toolCallId: part.toolCallId,
@@ -240,14 +240,14 @@ describe("chat.ts history-replay AI SDK contract", () => {
     await expectChunksMatchAiSchema(chunks);
   });
 
-  it("tool-invocation replay validates", async () => {
+  it("static-tool replay validates", async () => {
     const chunks = replayChunks([
       {
         role: "assistant",
         id: "msg-2",
         parts: [
           {
-            type: "tool-invocation",
+            type: "tool-bash",
             toolCallId: "tc-1",
             toolName: "bash",
             input: { cmd: "ls" },
@@ -269,7 +269,7 @@ describe("chat.ts history-replay AI SDK contract", () => {
         parts: [
           { type: "text", text: "Let me check" },
           {
-            type: "tool-invocation",
+            type: "tool-read",
             toolCallId: "tc-2",
             toolName: "read",
             input: { path: "a.ts" },

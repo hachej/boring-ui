@@ -13,8 +13,7 @@
     "@boring/agent": "workspace:*",
     "@boring/workspace": "workspace:*",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-router-dom": "^7.14.2"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

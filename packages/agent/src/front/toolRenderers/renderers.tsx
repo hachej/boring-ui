@@ -136,14 +136,50 @@ function renderGetUiState(part: ToolPart): ReactNode {
 
 function renderExecUi(part: ToolPart): ReactNode {
   const input = asRecord(part.input)
-  const command = String(input.command ?? input.action ?? '')
-  const args = input.args ?? input.payload
+  const kind = typeof input.kind === 'string' ? input.kind : ''
+  const params = input.params
+
+  // Generic format: `kind(<params as compact JSON>)`. Works for any
+  // command kind the workspace adds later — no per-kind switch.
+  const paramsText =
+    params !== undefined && params !== null
+      ? typeof params === 'string'
+        ? params
+        : JSON.stringify(params)
+      : ''
+  const summary = kind ? `${kind}${paramsText ? `(${paramsText})` : ''}` : '(empty)'
 
   return (
-    <Tool toolName="exec_ui" toolCallId={part.toolCallId} state={part.state} errorText={part.errorText} defaultExpanded>
-      <span style={{ fontFamily: 'var(--boring-chat-font-mono, monospace)', fontSize: '0.8125rem' }}>
-        → {command}{args ? `(${typeof args === 'string' ? args : JSON.stringify(args)})` : ''}
-      </span>
+    <Tool
+      toolName="exec_ui"
+      toolCallId={part.toolCallId}
+      state={part.state}
+      errorText={part.errorText}
+      defaultExpanded
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <span
+          style={{
+            fontFamily: 'var(--boring-chat-font-mono, monospace)',
+            fontSize: '0.8125rem',
+            wordBreak: 'break-all',
+          }}
+        >
+          → {summary}
+        </span>
+        {part.errorText && (
+          <span
+            data-testid="tool-error"
+            style={{
+              color: 'var(--boring-chat-tool-error, #ef4444)',
+              fontFamily: 'var(--boring-chat-font-mono, monospace)',
+              fontSize: '0.8125rem',
+            }}
+          >
+            {part.errorText}
+          </span>
+        )}
+      </div>
     </Tool>
   )
 }

@@ -1,0 +1,123 @@
+/**
+ * Unit tests for the shadcn-styled tool renderers — pinning the rendered
+ * shape of the high-frequency tools (exec_ui in particular) so a future
+ * primitive change can't silently produce an empty Tool card.
+ *
+ * Why this exists: the renderer relies on `<ToolInput input={part.input} />`
+ * and `<ToolOutput output={part.output} />` to visualize the tool call.
+ * If `part.input` is undefined, ToolInput is suppressed; if `part.output`
+ * is also undefined, ToolOutput returns null — and the user sees only
+ * the header. We pin the assertion that for a realistic exec_ui openFile
+ * call the body shows both the input JSON (kind + params) and the
+ * output JSON (seq, status).
+ */
+import { describe, test, expect } from "vitest"
+import { renderToStaticMarkup } from "react-dom/server"
+import { shadcnDefaultToolRenderers } from "../toolRenderers"
+import type { ToolPart } from "../../front/toolRenderers"
+
+function makePart(overrides: Partial<ToolPart> & { toolName: string }): ToolPart {
+  return {
+    type: `tool-${overrides.toolName}`,
+    toolCallId: "call-1",
+    state: "output-available",
+    ...overrides,
+  }
+}
+
+describe("shadcn exec_ui renderer", () => {
+  test("renders kind as the action label and params as mono tokens", () => {
+    const part = makePart({
+      toolName: "exec_ui",
+      input: { kind: "openFile", params: { path: "src/README.md" } },
+      output: { seq: 1, status: "ok" },
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
+    // Kind reads as the action verb (no "exec_ui ·" prefix — wrench/zap
+    // icon already signals tool nature).
+    expect(html).toContain("openFile")
+    // Param value renders inside a mono pill.
+    expect(html).toContain("src/README.md")
+    expect(html).toContain("font-mono")
+  })
+
+  test("header summary surfaces the params (kind + path) without expanding", () => {
+    // Tool body is collapsed by default (Radix omits children at SSR
+    // when collapsed), so the title carries everything the user needs
+    // at a glance: kind + params as compact JSON.
+    const part = makePart({
+      toolName: "exec_ui",
+      input: { kind: "openFile", params: { path: "src/README.md" } },
+      output: { seq: 1, status: "ok" },
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
+    expect(html).toContain("openFile")
+    expect(html).toContain("path")
+    expect(html).toContain("src/README.md")
+  })
+
+  test("header carries 'Completed' status badge when output is available", () => {
+    const part = makePart({
+      toolName: "exec_ui",
+      input: { kind: "openFile", params: { path: "src/README.md" } },
+      output: { seq: 1, status: "ok" },
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
+    expect(html).toContain("Completed")
+  })
+
+  test("body is collapsed by default (matches other tool renderers)", () => {
+    const part = makePart({
+      toolName: "exec_ui",
+      input: { kind: "openFile", params: { path: "src/README.md" } },
+      output: { seq: 1, status: "ok" },
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
+    expect(html).toContain('data-state="closed"')
+  })
+
+  test("error state shows 'Error' badge in the header (collapsed)", () => {
+    // The detailed error text lives inside the collapsed body via
+    // ToolOutput; only the badge is visible when collapsed. The badge
+    // is enough to flag the failed call at a glance — the user expands
+    // for the full message.
+    const part = makePart({
+      toolName: "exec_ui",
+      state: "output-error",
+      input: { kind: "openFile", params: { path: "missing.md" } },
+      errorText: 'file not found at "missing.md" — try find_files',
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
+    expect(html).toContain("Error")
+    // Path the agent tried still surfaces in the header summary.
+    expect(html).toContain("missing.md")
+  })
+
+  test("works for an unknown future kind without per-kind branching", () => {
+    const part = makePart({
+      toolName: "exec_ui",
+      input: { kind: "openSplit", params: { path: "foo.ts", orientation: "horizontal" } },
+      output: { seq: 2, status: "ok" },
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
+    // Kind shows as the action label.
+    expect(html).toContain("openSplit")
+    // We surface VALUES (not keys), each in its own mono pill — keeps
+    // the header tight and is generic across any params shape.
+    expect(html).toContain("foo.ts")
+    expect(html).toContain("horizontal")
+  })
+
+  test("input-streaming state (partial input, no output yet) still renders header", () => {
+    const part = makePart({
+      toolName: "exec_ui",
+      state: "input-streaming",
+      // During streaming the input may be partially populated or undefined.
+      // We must not crash — the header should still render with a
+      // placeholder kind and a "Pending" status badge.
+    })
+    const html = renderToStaticMarkup(<>{shadcnDefaultToolRenderers.exec_ui!(part)}</>)
+    expect(html).toContain("(empty)")
+    expect(html).toContain("Pending")
+  })
+})

@@ -63,7 +63,7 @@ describe("Pi SessionEntry → UIMessage conformance", () => {
     expect(textPart).toBeDefined();
     expect(textPart.text).toContain("list the files");
 
-    const toolPart = parts.find((p) => p.type === "tool-invocation");
+    const toolPart = parts.find((p) => p.type === "tool-bash");
     expect(toolPart).toBeDefined();
     expect(toolPart.toolName).toBe("bash");
     expect(toolPart.toolCallId).toBe("tc-1");
@@ -90,13 +90,13 @@ describe("Pi SessionEntry → UIMessage conformance", () => {
     );
     const writeAssistant = assistantMsgs.find((m) =>
       (m.parts as any[]).some(
-        (p) => p.type === "tool-invocation" && p.toolName === "write",
+        (p) => p.type === "tool-write" && p.toolName === "write",
       ),
     );
     expect(writeAssistant).toBeDefined();
 
     const writeTool = (writeAssistant!.parts as any[]).find(
-      (p) => p.type === "tool-invocation" && p.toolName === "write",
+      (p) => p.type === "tool-write" && p.toolName === "write",
     );
     expect(writeTool.state).toBe("output-error");
     expect(writeTool.errorText).toContain("permission denied");
@@ -297,7 +297,7 @@ describe("Pi SessionEntry → UIMessage conformance", () => {
       .filter((m) => m.role === "assistant")
       .flatMap((m) =>
         (m.parts as any[])
-          .filter((p) => p.type === "tool-invocation")
+          .filter((p) => typeof p.type === "string" && p.type.startsWith("tool-"))
           .map((p) => p.toolName),
       );
 
