@@ -25,3 +25,7 @@ export {
   type ShortcutBinding,
   type UseKeyboardShortcutsOptions,
 } from "./useKeyboardShortcuts"
+export {
+  useAutoOpenAgentFiles,
+  type UseAutoOpenAgentFilesOptions,
+} from "./useAutoOpenAgentFiles"

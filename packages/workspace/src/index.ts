@@ -82,6 +82,10 @@ export {
   type ShortcutBinding,
   type UseKeyboardShortcutsOptions,
 } from "./hooks"
+export {
+  useAutoOpenAgentFiles,
+  type UseAutoOpenAgentFilesOptions,
+} from "./hooks"
 
 // Command Palette
 export { CommandPalette } from "./components/CommandPalette"

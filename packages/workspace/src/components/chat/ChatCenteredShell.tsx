@@ -10,6 +10,7 @@ import {
 } from "react"
 import { cn } from "../../lib/utils"
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts"
+import { useAutoOpenAgentFiles } from "../../hooks/useAutoOpenAgentFiles"
 import { ChatShellContext, type ChatShellContextValue } from "./context"
 import { ChatTopBar } from "./ChatTopBar"
 import { SessionBrowser } from "./SessionBrowser"
@@ -396,6 +397,10 @@ export function ChatCenteredShell({
       { key: "Escape", allowInEditable: true, handler: focusComposer },
     ],
   })
+
+  // Auto-open files the agent creates. Reuses openArtifact because it
+  // already handles the deferred-mount + workbench-toggle dance.
+  useAutoOpenAgentFiles(openArtifact)
 
   // Surface chat-shell actions in the ⌘K palette so they're discoverable
   // alongside the IDE-flavored commands the WorkspaceProvider registers

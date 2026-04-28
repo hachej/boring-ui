@@ -125,3 +125,36 @@ prompts:
   # ---- pure knowledge: no tool call --------------------------------------
   - prompt: what is 7 times 6?
     expectNoToolCall: true
+
+  # ---- agent file creation → auto-open chain ----------------------------
+  # When the user asks the agent to CREATE a file, the agent should call
+  # `write` (not exec_ui openFile — that's for already-existing files).
+  # The workspace's `useAutoOpenAgentFiles` hook then surfaces the new
+  # file in the workbench by subscribing to `file:created` events on the
+  # bus. The eval can only assert the agent half of the chain (the
+  # `write` call); the UI auto-open is pinned by the dedicated vitest
+  # in src/hooks/__tests__/useAutoOpenAgentFiles.test.tsx.
+  - prompt: create a TODO.md with three checklist items
+    expect:
+      tool: write
+      params:
+        path: TODO.md
+
+  # ---- recovery chain: bare path → find_files → openFile-with-real-path --
+  # User asks "open notes.md" but the actual file lives at docs/notes.md.
+  # The bare openFile fails with file_not_found, agent must locate via
+  # find_files (or grep_files), then RETRY openFile with the discovered
+  # path — not give up, not switch to read.
+  # Note: workspace seed (scripts/eval.ts) only ships flat fixtures, so
+  # this prompt's nested file is added by the eval driver itself before
+  # boot — see scripts/eval.ts.
+  - prompt: open notes.md
+    expectFirst:
+      tool: exec_ui
+      params:
+        kind: openFile
+        params:
+          path: notes.md
+    # `expectFirst` only asserts the first call. The retry behaviour after
+    # the file_not_found error is exercised by the dedicated multi-turn
+    # vitest in src/server/__tests__/openFileMultiTurn.test.ts.
