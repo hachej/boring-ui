@@ -7,6 +7,9 @@ import { createMailTransport } from '../mail/transport.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWorkspaceInvite } from '../mail/templates/index.js'
 import { createInviteBody, acceptInviteQuery } from './__schemas__/invites.js'
+import type { Database } from '../db/connection.js'
+import { createIdempotencyMiddleware, createDrizzleIdempotencyStore } from '../middleware/idempotency.js'
+import type { IdempotencyKeyStore } from '../middleware/idempotency.js'
 
 function buildTransport(config: { auth: { mail?: { transportUrl: string; from: string } | null } }): MailTransport | null {
   if (!config.auth.mail) return null
@@ -18,9 +21,25 @@ function buildTransport(config: { auth: { mail?: { transportUrl: string; from: s
   return createMailTransport(config.auth.mail.transportUrl, config.auth.mail.from, env)
 }
 
-const inviteRoutesPlugin: FastifyPluginAsync = async (app) => {
+interface InviteRoutesOptions {
+  idempotencyStore?: IdempotencyKeyStore
+}
+
+const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, opts) => {
   const store = app.workspaceStore
   const transport = buildTransport(app.config)
+
+  const idempotencyStore =
+    opts.idempotencyStore ??
+    (() => {
+      const db = (app as unknown as { db?: Database }).db
+      return db ? createDrizzleIdempotencyStore(db) : null
+    })()
+
+  const idem = idempotencyStore ? createIdempotencyMiddleware(idempotencyStore) : null
+  if (idem) {
+    app.addHook('onSend', idem.onSendCapture)
+  }
 
   app.get(
     '/api/v1/workspaces/:id/invites',
@@ -34,7 +53,11 @@ const inviteRoutesPlugin: FastifyPluginAsync = async (app) => {
 
   app.post(
     '/api/v1/workspaces/:id/invites',
-    { preHandler: requireWorkspaceMember('owner') },
+    {
+      preHandler: idem
+        ? [requireWorkspaceMember('owner'), idem.guard('invites')]
+        : requireWorkspaceMember('owner'),
+    },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const parsed = createInviteBody.safeParse(request.body)
