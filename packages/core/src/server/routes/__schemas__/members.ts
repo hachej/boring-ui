@@ -6,3 +6,9 @@ export const addMemberBody = z
     role: z.enum(['owner', 'editor', 'viewer']),
   })
   .strict()
+
+export const updateRoleBody = z
+  .object({
+    role: z.enum(['owner', 'editor', 'viewer']),
+  })
+  .strict()

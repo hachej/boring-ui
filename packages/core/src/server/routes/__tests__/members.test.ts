@@ -52,6 +52,24 @@ function mockWorkspaceStore(): WorkspaceStore {
       memberDb.set(wsId, wsMembers)
       return { workspaceId: wsId, userId, role, createdAt: new Date().toISOString() }
     },
+    updateMemberRole: async (wsId: string, userId: string, role: MemberRole) => {
+      const wsMembers = memberDb.get(wsId)
+      if (!wsMembers?.has(userId)) return { code: 'not_member' as const }
+      const currentRole = wsMembers.get(userId)!
+      if (currentRole === 'owner' && role !== 'owner') {
+        const ownerCount = [...wsMembers.values()].filter((r) => r === 'owner').length
+        if (ownerCount <= 1) return { code: 'last_owner' as const }
+      }
+      wsMembers.set(userId, role)
+      return {
+        member: {
+          workspaceId: wsId,
+          userId,
+          role,
+          createdAt: new Date().toISOString(),
+        },
+      }
+    },
     removeMember: async (wsId: string, userId: string) => {
       const wsMembers = memberDb.get(wsId)
       if (!wsMembers?.has(userId)) return { removed: false, code: 'not_member' as const }
@@ -199,6 +217,78 @@ describe('POST /api/v1/workspaces/:id/members', () => {
   })
 })
 
+describe('PATCH /api/v1/workspaces/:id/members/:userId/role', () => {
+  it('promote viewer → owner as owner: success', async () => {
+    const ws = seedWorkspace(OWNER_ID, { [VIEWER_ID]: 'viewer' })
+
+    const res = await inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${VIEWER_ID}/role`, OWNER_ID, {
+      role: 'owner',
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().member.role).toBe('owner')
+    expect(res.json().member.userId).toBe(VIEWER_ID)
+  })
+
+  it('demote last owner → 409 last_owner', async () => {
+    const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'editor' })
+
+    const res = await inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${OWNER_ID}/role`, OWNER_ID, {
+      role: 'editor',
+    })
+    expect(res.statusCode).toBe(409)
+    expect(res.json().code).toBe('last_owner')
+  })
+
+  it('demote one of two owners: success', async () => {
+    const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'owner' })
+
+    const res = await inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${EDITOR_ID}/role`, OWNER_ID, {
+      role: 'editor',
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().member.role).toBe('editor')
+  })
+
+  it('non-owner attempts PATCH → 403 forbidden', async () => {
+    const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'editor', [VIEWER_ID]: 'viewer' })
+
+    const res = await inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${VIEWER_ID}/role`, EDITOR_ID, {
+      role: 'owner',
+    })
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe('forbidden')
+  })
+
+  it('role change on non-member → 404 not_member', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+
+    const res = await inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${NON_MEMBER_ID}/role`, OWNER_ID, {
+      role: 'editor',
+    })
+    expect(res.statusCode).toBe(404)
+    expect(res.json().code).toBe('not_member')
+  })
+
+  it('concurrent demote race: at most one succeeds', async () => {
+    const OWNER_B = '00000000-0000-0000-0000-000000000006'
+    const ws = seedWorkspace(OWNER_ID, { [OWNER_B]: 'owner' })
+
+    const [r1, r2] = await Promise.all([
+      inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${OWNER_B}/role`, OWNER_ID, { role: 'editor' }),
+      inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${OWNER_ID}/role`, OWNER_B, { role: 'editor' }),
+    ])
+
+    const successes = [r1.statusCode, r2.statusCode].filter((s) => s === 200)
+    expect(successes).toHaveLength(1)
+
+    // In-memory mock: second request gets 403 (auth guard sees demoted role)
+    // Real Postgres: second request gets 409 (FOR UPDATE serialization, LAST_OWNER)
+    const failures = [r1.statusCode, r2.statusCode].filter((s) => s !== 200)
+    expect(failures).toHaveLength(1)
+    expect([403, 409]).toContain(failures[0])
+  })
+})
+
 describe('DELETE /api/v1/workspaces/:id/members/:userId', () => {
   it('owner can remove a member → 200', async () => {
     const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'editor' })
@@ -224,11 +314,19 @@ describe('DELETE /api/v1/workspaces/:id/members/:userId', () => {
     expect(res.json().code).toBe('not_member')
   })
 
-  it('editor → 403 forbidden', async () => {
+  it('editor removing another member → 403 forbidden', async () => {
     const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'editor', [VIEWER_ID]: 'viewer' })
 
     const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}/members/${VIEWER_ID}`, EDITOR_ID)
     expect(res.statusCode).toBe(403)
     expect(res.json().code).toBe('forbidden')
+  })
+
+  it('self-removal as non-owner: editor can leave → 200', async () => {
+    const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'editor' })
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}/members/${EDITOR_ID}`, EDITOR_ID)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ removed: true })
   })
 })

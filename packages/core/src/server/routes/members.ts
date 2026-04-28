@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import fp from 'fastify-plugin'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
-import { addMemberBody } from './__schemas__/members.js'
+import { addMemberBody, updateRoleBody } from './__schemas__/members.js'
 
 const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
   const store = app.workspaceStore
@@ -48,11 +48,73 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
     },
   )
 
-  app.delete(
-    '/api/v1/workspaces/:id/members/:userId',
+  app.patch(
+    '/api/v1/workspaces/:id/members/:userId/role',
     { preHandler: requireWorkspaceMember('owner') },
     async (request) => {
       const { id, userId } = request.params as { id: string; userId: string }
+      const parsed = updateRoleBody.safeParse(request.body)
+      if (!parsed.success) {
+        throw new HttpError({
+          status: 400,
+          code: ERROR_CODES.VALIDATION_FAILED,
+          message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+          requestId: request.id,
+        })
+      }
+
+      const result = await store.updateMemberRole(id, userId, parsed.data.role)
+
+      if (result.member) {
+        return { member: result.member }
+      }
+
+      if (result.code === ERROR_CODES.LAST_OWNER) {
+        throw new HttpError({
+          status: 409,
+          code: ERROR_CODES.LAST_OWNER,
+          message: 'Cannot demote the last owner',
+          requestId: request.id,
+        })
+      }
+
+      if (result.code === ERROR_CODES.NOT_MEMBER) {
+        throw new HttpError({
+          status: 404,
+          code: ERROR_CODES.NOT_MEMBER,
+          message: 'User is not a member of this workspace',
+          requestId: request.id,
+        })
+      }
+
+      throw new HttpError({
+        status: 500,
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Unexpected error updating role',
+        requestId: request.id,
+      })
+    },
+  )
+
+  app.delete(
+    '/api/v1/workspaces/:id/members/:userId',
+    { preHandler: requireWorkspaceMember() },
+    async (request) => {
+      const { id, userId } = request.params as { id: string; userId: string }
+      const isSelfRemoval = request.user?.id === userId
+
+      if (!isSelfRemoval) {
+        const callerRole = await store.getMemberRole(id, request.user!.id)
+        if (callerRole !== 'owner') {
+          throw new HttpError({
+            status: 403,
+            code: ERROR_CODES.FORBIDDEN,
+            message: 'Only owners can remove other members',
+            requestId: request.id,
+          })
+        }
+      }
+
       const result = await store.removeMember(id, userId)
 
       if (result.removed) {

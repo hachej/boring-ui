@@ -295,6 +295,66 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     return toWorkspaceMember(row)
   }
 
+  async updateMemberRole(
+    workspaceId: string,
+    userId: string,
+    role: MemberRole,
+  ): Promise<{
+    member?: WorkspaceMember
+    code?:
+      | typeof ERROR_CODES.LAST_OWNER
+      | typeof ERROR_CODES.NOT_MEMBER
+  }> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`
+        SELECT user_id
+        FROM workspace_members
+        WHERE workspace_id = ${workspaceId}
+        FOR UPDATE
+      `)
+
+      const memberRows = await tx
+        .select({ role: workspaceMembers.role })
+        .from(workspaceMembers)
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.userId, userId),
+          ),
+        )
+        .limit(1)
+      const currentRole = memberRows[0]?.role as MemberRole | undefined
+      if (!currentRole) return { code: ERROR_CODES.NOT_MEMBER }
+
+      if (currentRole === 'owner' && role !== 'owner') {
+        const [{ count }] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(workspaceMembers)
+          .where(
+            and(
+              eq(workspaceMembers.workspaceId, workspaceId),
+              eq(workspaceMembers.role, sql`'owner'`),
+            ),
+          )
+        if (Number(count) <= 1) {
+          return { code: ERROR_CODES.LAST_OWNER }
+        }
+      }
+
+      const [updated] = await tx
+        .update(workspaceMembers)
+        .set({ role })
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.userId, userId),
+          ),
+        )
+        .returning()
+      return { member: toWorkspaceMember(updated) }
+    })
+  }
+
   async removeMember(
     workspaceId: string,
     userId: string,

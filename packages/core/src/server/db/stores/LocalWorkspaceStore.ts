@@ -152,6 +152,25 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return member
   }
 
+  async updateMemberRole(workspaceId: string, userId: string, role: MemberRole): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }> {
+    const key = `${workspaceId}:${userId}`
+    const membership = this.members.get(key)
+    if (!membership) return { code: ERROR_CODES.NOT_MEMBER }
+    if (membership.role === 'owner' && role !== 'owner') {
+      let otherOwnerExists = false
+      for (const m of this.members.values()) {
+        if (m.workspaceId === workspaceId && m.userId !== userId && m.role === 'owner') {
+          otherOwnerExists = true
+          break
+        }
+      }
+      if (!otherOwnerExists) return { code: ERROR_CODES.LAST_OWNER }
+    }
+    const updated: WorkspaceMember = { ...membership, role }
+    this.members.set(key, updated)
+    return { member: updated }
+  }
+
   async removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }> {
     const key = `${workspaceId}:${userId}`
     const membership = this.members.get(key)

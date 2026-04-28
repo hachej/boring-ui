@@ -35,6 +35,7 @@ export interface WorkspaceStore {
   getMemberRole(workspaceId: string, userId: string): Promise<MemberRole | null>
   listMembers(workspaceId: string): Promise<Array<WorkspaceMember & { user: Pick<User, 'id' | 'email' | 'name' | 'image'> }>>
   upsertMember(workspaceId: string, userId: string, role: MemberRole): Promise<WorkspaceMember>
+  updateMemberRole(workspaceId: string, userId: string, role: MemberRole): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
   removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
   listInvites(workspaceId: string): Promise<WorkspaceInvite[]>
   createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null): Promise<{ invite: WorkspaceInvite; rawToken: string }>
