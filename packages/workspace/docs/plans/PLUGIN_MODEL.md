@@ -1,658 +1,173 @@
 # Workspace plugin model
 
-**Status:** review v3 — Phase 1 scoped to inline plugins; npm + pi-loader + agent-authored deferred to Phase 2/3
+**Status:** v4 — clean spec
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
-> Supersedes `COMMAND_PALETTE_REGISTRY.md` v3 — the palette becomes one
-> consumer of this model, not a top-level concern.
+## TL;DR
 
-## What this plan is
-
-A single, expandable contract — `Plugin` — that lets a child app (or any
-package) contribute panels, commands, catalogs, agent tools, server
-routes, and chat suggestions in one place. `@boring/workspace`
-orchestrates registration, lifecycle, and discovery; the existing
-pi-coding-agent plugin loader extends naturally to the wider shape.
-
-This isn't speculation. Boring-macro-v2 already contributes all six
-contribution types — they're just registered through four different
-APIs today. The plan consolidates them.
-
-## Phase 1 scope — INLINE PLUGINS ONLY
-
-Phase 1 ships **only the inline plugin path**: hosts define `Plugin`
-objects in their own source tree, import them, and pass to
-`<WorkspaceProvider plugins={[…]}>` /
-`createWorkspaceAgentApp({ plugins: [...] })`. No npm publication
-support beyond what already works (a Plugin object can be exported
-from any package; nothing requires it). No pi-loader extension to read
-the wider Plugin shape. No discovery endpoint. No agent-generated
+`@boring/workspace` becomes the orchestrator of a single, expandable
+contribution model. A `Plugin` is a TypeScript shape — not an
+installation channel — that bundles panels, commands, catalogs,
+agent tools, server routes, and chat suggestions. Hosts compose
+plugins; the workspace coordinates registration, lifecycle, and
+file-pattern-driven panel resolution. Phase 1 ships **inline plugins
+only** (host imports + passes to provider). Phase 2 adds npm
+distribution + pi loader extension. Phase 3 adds agent-authored
 plugins.
 
-The reason: the inline path covers every host app on the roadmap
-(boring-macro, full-app, etc.). It's the smallest reviewable PR that
-delivers the consolidation. Distribution channels are real future
-work — pinned in this doc so we know where they land — but they don't
-ship in Phase 1.
+The model replaces five fragmented registration APIs with one. The
+boring-macro-v2 migration is the acceptance test — ~80 lines of glue
++ ~150 lines of inlined UI bridge collapse to ~40 lines of plugin
+definition.
 
-The plan keeps the npm / pi-loader / agent-generated / discovery
-sections intact under "Phase 2+ — distributable plugins" so the design
-stays coherent, but those sections describe future work, not work in
-flight.
+## Scope of this plan
+
+**Phase 1 (this PR's scope):**
+
+- The `Plugin` contract + `definePlugin` factory
+- Subscribe-aware registries (Plugin / Catalog / ChatSuggestion;
+  retrofit Command + Panel)
+- Two default plugins: `filesystemPlugin`, `dataCatalogPlugin`
+- `<WorkspaceProvider plugins={…}>` and
+  `createWorkspaceAgentApp({ plugins })` entry points
+- Inline plugin path only (host's source tree, explicit imports)
+- Move file ops + UI bridge from `@boring/agent` to `@boring/workspace`
+- `<CommandPalette />` consumes catalogs via the registry
+- `<ChatCenteredShell />` migrated off imperative `useEffect`
+  registrations
+- boring-macro-v2 migrated to a single inline plugin
+
+**Phase 2 (sketched, separate PR):** npm-installable plugins, pi
+loader extension to read the wider `Plugin` shape, `/api/v1/plugins`
+discovery endpoint, generic `search_catalog(id, q)` agent tool,
+workbench data-tab catalog selector.
+
+**Phase 3 (longer-term):** agent-authored plugins (`create_plugin` /
+`update_plugin` agent tools), hot-reload, sandboxing.
 
 ## Problem
 
-A real "child app" (e.g.
-[`/home/ubuntu/projects/boring-macro-v2`](../../../../boring-macro-v2/))
-contributes:
+Boring-macro-v2 — the realest "child app" we have — contributes six
+distinct kinds of things and wires them through five different APIs:
 
-| Contribution | Macro's instance | Wired today via |
+| Contribution | Macro's instance | Today's wiring |
 |---|---|---|
 | Panels | `chart-canvas`, `deck` | `<WorkspaceProvider panels={…}>` |
 | Catalogs | Macro series catalog (87k FRED series) | `<ChatCenteredShell data={DataPaneConfig}>` |
 | Agent tools | `execute_sql`, `macro_search`, `get_series_data`, `persist_derived_series` | `createAgentApp({ extraTools })` |
-| Server routes | `registerMacroRoutes` (REST) | `app.register(registerMacroRoutes)` |
+| Server routes | `registerMacroRoutes` | `app.register(registerMacroRoutes)` |
 | Chat suggestions | "Find a series", "Plot Real GDP", … | `<ChatCenteredShell chatSuggestions={…}>` |
-| Commands | (none today, but trivial to want) | (would be) `useCommandRegistry().registerCommand` |
+| Commands | (none today) | (would be) `useCommandRegistry().registerCommand` |
 
-Six contribution types. **Five different registration APIs.** Plus
-~150 LOC of `@boring/workspace`'s UI bridge code that boring-macro
-inlined into `src/server/uiBridge.ts` because the workspace package's
-server-side bundle isn't built. The host code today is fragmented; the
-boundary between "workspace's responsibility" and "host's
-responsibility" is blurry.
+Plus ~150 LOC of `@boring/workspace`'s UI bridge code inlined into
+`apps/boring-macro-v2/src/server/uiBridge.ts` because the workspace
+package's server export isn't built. Inline is acceptable as a
+workaround; it's also evidence that the workspace/agent boundary is
+mis-drawn.
 
-There IS already an extensibility primitive that almost fits — the
-pi-coding-agent's plugin loader
-(`packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`) —
-but it only loads `AgentTool[]`. Other contribution types live
-elsewhere. Hosts that need both write registration code in two places.
+The pi-coding-agent already has a plugin loader
+(`packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`)
+that handles **agent tools only** — `default: AgentTool[]` /
+`tools: AgentTool[]` exports from `.pi/extensions/`,
+`~/.pi/agent/extensions/`, and `node_modules/pi-plugin-*`. The
+discovery infrastructure exists; the plugin shape is too narrow.
 
 ## Goal
 
-One `Plugin` shape. Six contribution slots. One registration API per
-environment (`<WorkspaceProvider plugins={…}>` on the client,
-`createWorkspaceAgentApp({ plugins: [...] })` on the server). The
-existing pi loader extends to handle the wider shape. `@boring/workspace`
-ships its own plugin (UI bridge tools + default panels + default
-commands + uiRoutes) so hosts stop inlining glue. Boring-macro becomes
-the first migration.
+1. **One Plugin contract.** Every contribution type a host produces
+   fits into one declarative object.
+2. **Workspace orchestrates.** Registration, lifecycle, file-pattern
+   resolution, dependency validation all live in `@boring/workspace`.
+3. **Composable.** File-pattern-driven panel resolution lets domain
+   plugins bind their panes to their domain paths;
+   late-wins-on-id lets hosts override anything at the abstraction
+   level above.
+4. **Honest boundaries.** Substrate is core, capabilities are
+   plugins. Defaults auto-mount; opt-outs are explicit.
+5. **Forward-compatible.** Phase 1's inline path doesn't paint the
+   model into a corner — Phase 2's npm + pi-loader extensions slot
+   in additively.
 
 ## Non-goals
 
-- Replacing the pi loader's discovery infra. We extend its parser
-  (`extractTools` → `extractPlugin`); we don't change the discovery
-  sources (`~/.pi/agent/extensions/`, `./.pi/extensions/`,
-  `pi-plugin-*` npm, `.pi/extensions.json`).
-- Sandboxing or capability isolation between plugins. All plugins run
-  in the same process / origin as the host. (Future work — out of
-  scope.)
-- A plugin marketplace, signing, or trust model. Plugins are loaded
-  from filesystem / npm; trust the source.
-- Replacing the agent's standard catalog of runtime tools (read_file,
-  write_file, find_files, bash, …). Those stay in
-  `@boring/agent/server/catalog`. Plugins ADD on top — they don't
-  redefine the runtime base.
-- Cross-plugin dependency resolution beyond a flat dependsOn list with
-  late-wins-on-id collision rules.
-- Hot-reload of plugins at runtime. Server boot loads, client boot
-  loads. Restart to add or remove a plugin. (HMR for client-side
-  contributions Just Works through Vite's normal mechanism.)
+- A plugin marketplace, signing, trust model, or capability
+  sandbox.
+- Hot-reload of plugins at runtime (Phase 1 — server boot loads,
+  client boot loads; restart to add/remove).
+- Cross-plugin dependency resolution beyond `dependsOn` /
+  `optionalDeps` flat lists with late-wins-on-id collisions.
+- Replacing the agent's runtime tools (`bash`, `read_directory`).
+  Those are harness-level, not workspace-level. Stay in
+  `@boring/agent`.
+- Per-contribution dependency declarations
+  (`PanelConfig.requiresPlugin`). Plugin-level dependencies cover
+  Phase 1; per-contribution if surgical cases appear later.
+- Cross-environment dynamic discovery in Phase 1 (the discovery
+  endpoint is Phase 2).
 
 ## Design
 
 ### The Plugin contract
 
-Lives in `@boring/workspace/shared` (so both client and server can
-import the type).
-
 ```ts
+// @boring/workspace/shared/plugin.ts
+import type { ReactNode } from "react"
+import type { FastifyPluginCallback } from "fastify"
+import type { AgentTool } from "@boring/agent/shared"
+import type { ExplorerAdapter, ExplorerRow } from "@boring/workspace"
+
 export interface Plugin {
-  /** Stable id — used for late-wins-on-id collision + dependency refs.
-   *  Convention: package or app name ("@boring/workspace",
-   *  "boring-macro", "acme-billing"). */
+  /** Stable id. Convention: package or app name. Used for
+   *  dependsOn refs, late-wins-on-id, debug provenance. */
   id: string
 
-  /** Optional human-readable label for discovery UIs. */
+  /** Human-readable, surfaced in discovery UIs. */
   label?: string
 
-  /** Optional version, useful for plugin marketplaces / debugging. */
+  /** Optional version, useful for diagnostics. */
   version?: string
 
-  /** Plugins this one depends on. The provider refuses to register
-   *  if any are missing. Late-wins-on-id rules still apply WITHIN
-   *  a registered plugin set. */
+  /** Hard dependencies — registry refuses to register if missing. */
   dependsOn?: string[]
 
-  /** Soft dependencies — registers but warns if missing. */
+  /** Soft dependencies — register but warn if missing. */
   optionalDeps?: string[]
 
-  /** Mount priority. Lower = earlier; same id = late wins. Default 100.
-   *  workspacePlugin is order:0 so its contributions are overridable. */
+  /** Mount priority. Lower = earlier. Default 100. Defaults are 0. */
   order?: number
 
-  // ── Client-side contributions ──────────────────────────────────────
+  // ── Client-side contributions ──────────────────────────────────
   panels?: PanelConfig[]
   commands?: CommandConfig[]
   catalogs?: CatalogConfig[]
   chatSuggestions?: ChatSuggestion[]
 
-  // ── Server-side contributions ──────────────────────────────────────
+  // ── Server-side contributions ──────────────────────────────────
   agentTools?: AgentTool[]
   routes?: FastifyPluginCallback[]
 
-  // ── Lifecycle hooks (optional) ─────────────────────────────────────
-  /** Called once on register, after all contributions are placed in
-   *  registries. Use for setup that requires the registry to exist
-   *  (e.g. registering hot-keys against the command registry). */
+  /** Optional setup hook. Returns optional cleanup function. */
   onMount?: (ctx: PluginMountCtx) => void | (() => void)
 }
-```
 
-`onMount` returns an optional cleanup function that runs on unregister
-(useful for dynamic plugins; static plugins typically return nothing).
-
-`PluginMountCtx` exposes the registries the plugin can interact with
-beyond its declared contributions:
-
-```ts
-type PluginMountCtx = {
+export interface PluginMountCtx {
+  bus: EventBus<WorkspaceEvents>
+  bridge: UiBridge
   catalogs: CatalogRegistry
   commands: CommandRegistry
-  panels:   PanelRegistry
+  panels: PanelRegistry
   chatSuggestions: ChatSuggestionRegistry
-  // Server-only — undefined on client:
+  /** Server-only — undefined on client. */
   agentTools?: AgentToolRegistry
   app?: FastifyInstance
 }
 ```
 
-### `definePlugin(spec)` factory
-
-Validates the shape at definition time, fills in defaults, and brands
-the result so type errors are clear:
-
-```ts
-import { definePlugin } from "@boring/workspace"
-
-export const macroPlugin = definePlugin({
-  id: "boring-macro",
-  panels:        [chartCanvasPanel, deckPanel],
-  catalogs:      [macroSeriesCatalog],
-  agentTools:    macroAgentTools,
-  routes:        [registerMacroRoutes],
-  chatSuggestions: macroChatSuggestions,
-})
-```
-
-Validation runs `validatePanel`, `validateCommand`, etc. — equivalents
-to the existing `validateTool` in `pluginLoader.ts:60`. Failures throw
-at `definePlugin` time, not at mount time, so consumers fail fast.
-
-### Workspace orchestration — registries + lifecycle
-
-`@boring/workspace` exports a `PluginRegistry` and four
-contribution-type registries. The plugin registry is the only one host
-code interacts with directly; the others are derived.
-
-```
-PluginRegistry          (id → Plugin)
-  ├── on register(p):
-  │     - check dependsOn; abort if missing
-  │     - warn on optionalDeps missing
-  │     - fan plugin.panels into PanelRegistry
-  │     - fan plugin.commands into CommandRegistry
-  │     - fan plugin.catalogs into CatalogRegistry
-  │     - fan plugin.chatSuggestions into ChatSuggestionRegistry
-  │     - on server: fan plugin.agentTools, plugin.routes
-  │     - call plugin.onMount(ctx) if present, store cleanup
-  │     - emit subscriber notifications
-  └── on unregister(id):
-        - call stored cleanup
-        - remove fanned-in items by sourcePlugin id
-        - emit
-```
-
-All registries use `useSyncExternalStore` so React re-renders track
-register/unregister cycles. (This also retrofits the existing
-`CommandRegistry`, which today has no subscribe API — fixes a latent
-bug where late `registerCommand` calls don't reach an open palette.)
-
-Late-wins-on-id collision rule: when two plugins contribute a panel
-with the same id (e.g. host overrides workspacePlugin's `code-editor`),
-the later registration wins. Dev-mode console.warn flags it; production
-silent. Same rule per contribution type.
-
-### `<WorkspaceProvider plugins={…}>` — client mount
-
-```tsx
-import { WorkspaceProvider, workspacePlugin } from "@boring/workspace"
-import { macroPlugin } from "./plugin"
-
-<WorkspaceProvider plugins={[macroPlugin]}>
-  <App />
-</WorkspaceProvider>
-```
-
-Provider auto-includes `workspacePlugin` first (order:0); host plugins
-register after. Hosts that need to disable parts of workspacePlugin
-override by id (e.g. register a Panel with id `code-editor` to replace
-the default). Escape hatch: `includeWorkspacePlugin={false}` —
-discouraged, rarely needed.
-
-### `createWorkspaceAgentApp({ plugins })` — server mount
-
-Replaces today's `createAgentApp` for hosts that want the workspace
-surface (which is most of them). Inside:
-
-```ts
-export async function createWorkspaceAgentApp(opts: {
-  plugins: Plugin[]
-  pluginDirs?: string[]   // beyond ~/.pi/agent/extensions + ./.pi/extensions
-  // ...passes through createAgentApp opts
-}): Promise<FastifyInstance> {
-  // 1. Discover plugins from pi loader
-  const fromLoader = await loadPlugins({ cwd: workspaceRoot, extraDirs: opts.pluginDirs })
-  // 2. Combine with explicitly-passed plugins, workspacePlugin first
-  const plugins = [workspacePlugin, ...opts.plugins, ...fromLoader]
-  // 3. Validate dependsOn/optionalDeps; sort by order
-  // 4. Register: extraTools = flatMap(p => p.agentTools), routes via app.register
-  const app = await createAgentApp({
-    extraTools: plugins.flatMap(p => p.agentTools ?? []),
-    // ...
-  })
-  for (const p of plugins) {
-    for (const route of p.routes ?? []) await app.register(route)
-  }
-  // 5. Expose discovery endpoint
-  await app.register(pluginsDiscoveryRoute, { plugins })
-  return app
-}
-```
-
-Existing pi-style plugin files (exporting `default: Tool[]` or
-`tools: Tool[]`) are auto-wrapped into a Plugin: `{ id: <derived from
-filename>, agentTools: extractedTools }`. **Backward-compatible: every
-pi plugin in the wild today keeps working.**
-
-### Pi loader integration
-
-The existing `extractTools(mod)` becomes `extractPlugin(mod)`:
-
-```ts
-// packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts
-export function extractPlugin(mod: Record<string, unknown>): Plugin | null {
-  // 1. New shape: default: Plugin (validated)
-  if (mod.default && isPluginShape(mod.default)) {
-    return validatePlugin(mod.default)
-  }
-  // 2. Legacy shape: default: Tool | Tool[] OR tools: Tool[]
-  const legacyTools = extractTools(mod)
-  if (legacyTools.length > 0) {
-    return {
-      id: `pi-legacy:${derivedFromFilename}`,
-      agentTools: legacyTools,
-    }
-  }
-  return null
-}
-```
-
-Discovery sources stay identical. The result type expands.
-
-### Layout convention for host apps
-
-```
-apps/<some-app>/
-├── package.json
-├── src/
-│   ├── plugin/
-│   │   ├── index.ts           ← env-aware barrel; re-exports from .client/.server
-│   │   ├── plugin.shared.ts   ← id, version, dependsOn, types, fixed config
-│   │   ├── plugin.client.ts   ← panels, catalogs, commands, chatSuggestions
-│   │   └── plugin.server.ts   ← agentTools, routes
-│   ├── server/index.ts        ← createWorkspaceAgentApp({ plugins: [appPlugin] })
-│   └── web/App.tsx            ← <WorkspaceProvider plugins={[appPlugin]}>
-└── .pi/                        ← optional: drop external pi-style plugins
-    ├── extensions/
-    └── extensions.json
-```
-
-The split keeps server-only deps (e.g. ClickHouse client, Postgres
-driver) out of the Vite bundle. `index.ts` uses environment guards:
-
-```ts
-// src/plugin/index.ts
-import { sharedConfig } from "./plugin.shared"
-import { clientPart } from "./plugin.client"
-// SERVER-only (esbuild/Vite resolve.conditions or process.env guard):
-import { serverPart } from "./plugin.server"
-
-export const plugin = definePlugin({ ...sharedConfig, ...clientPart, ...serverPart })
-```
-
-Or via package.json `exports` if the plugin is published as its own
-package (npm-distributed plugins use this shape, e.g.
-`pi-plugin-acme-billing`):
-
-```json
-{
-  "exports": {
-    "./client": "./client.js",
-    "./server": "./server.js"
-  }
-}
-```
-
-For multi-plugin apps, `src/plugins/<id>/...` mirrors the same shape
-per plugin; `src/plugins/index.ts` exports an array.
-
-### Cross-environment coordination
-
-A plugin's client and server fields are independent. Three paths the
-plan supports:
-
-1. **Full-stack plugin** (most common) — declares both halves; lives
-   in the host's source tree. Imports from `./plugin/index.ts`.
-2. **Server-only plugin** — only `agentTools` / `routes`. Loaded via
-   pi loader from `.pi/extensions` or npm. Client never sees it
-   directly; learns about it from the discovery endpoint.
-3. **Client-only plugin** — only `panels` / `catalogs` / `commands`.
-   Bundled into the client; server never sees it.
-
-The discovery endpoint `GET /api/v1/plugins` (Phase 2 — sketch) returns
-a server-authoritative manifest:
-
-```json
-{
-  "plugins": [
-    {
-      "id": "boring-macro",
-      "version": "0.1.0",
-      "contributions": {
-        "agentTools": ["execute_sql", "macro_search", ...],
-        "routes": ["/api/v1/macro/series", ...],
-        "catalogs": ["macro-series"]
-      }
-    }
-  ]
-}
-```
-
-Client uses this to: (a) know what catalogs the server has registered
-even if the client didn't bundle them (so it can route a row select
-through the bridge for a server-only catalog); (b) augment the LLM
-system prompt with the union of contributions. Phase 1 ships without
-the discovery endpoint; phase 2 adds it once a real cross-env case
-appears.
-
-### Default plugins (built-in)
-
-`@boring/workspace` ships a SET of default plugins, not a single
-monolith. Each is small, focused, and individually overridable.
-`createWorkspaceAgentApp` and `<WorkspaceProvider>` auto-include them;
-hosts can suppress any subset via id-based override or the
-`includeDefaults?: string[]` array (allowlist) / `excludeDefaults?:
-string[]` (denylist).
-
-| Default plugin | Contributes | Why default |
-|---|---|---|
-| `workspacePlugin` | Default panels (codeEditor, markdownEditor, fileTree, dataCatalog, chatPanel, empty), default commands (toggleSidebar, toggleAgentPanel, closeTab) | Every workspace shell needs them; baseline UI |
-| `filesystemPlugin` | Agent tools (`find_files`, `read_file`, `write_file`, `edit_file`, `read_directory`); HTTP routes (`fileRoutes`, `treeRoutes`, `searchRoutes`); a Files catalog (search rows) | File access is universal; today's `standardCatalog` already ships these — wrapping them as a plugin makes them overridable + extensible |
-| `uiBridgePlugin` | UI bridge agent tools (`get_ui_state`, `exec_ui`); `uiRoutes` (`/api/v1/ui/*`) | Lets the LLM dispatch into the host's UI; today inlined by every host that uses `@boring/workspace`'s server |
-
-(Future defaults likely: `searchPlugin` if there's a meaningful
-cross-catalog search story; `terminalPlugin` if `bash`/`exec` migrates
-out of the agent's runtime.)
-
-This split contradicts the earlier non-goal that said "file system
-tools stay in `@boring/agent`'s `standardCatalog`." Updated stance:
-**runtime-level tools that are package-agnostic** (the LLM loop, model
-selection, session storage) stay in `@boring/agent`. **Workspace-level
-contributions** — including file ops, file tree, UI bridge — move into
-`@boring/workspace`'s default plugin set. The boundary is now: agent
-package = "the harness"; workspace package = "the workspace's
-default capability bundle."
-
-Migration: `standardCatalog`'s `find_files`/`read_file`/`write_file`/
-`edit_file`/`read_directory` move into `filesystemPlugin`. Agent's
-`createAgentApp` no longer auto-includes them; hosts that want them
-get them via `createWorkspaceAgentApp` (which includes
-`filesystemPlugin` by default). Hosts that want a UI-less agent stay
-on `createAgentApp` directly and ship without file tools — already
-the design intent of commit `4968e7d`.
-
-## Phase 2+ — distributable plugins (NOT in Phase 1)
-
-The following sections describe distribution channels that build on
-the Phase 1 inline-plugin foundation. They're pinned here so the
-Phase 1 design doesn't paint itself into a corner — but each is
-EXPLICITLY out of Phase 1 scope. Phase 1 ships, validates the inline
-contract on real apps, then we expand.
-
-### npm-installable plugins (Phase 2)
-
-Plugins published to npm follow the `pi-plugin-*` naming convention
-already used by the pi loader. The package's `package.json` declares
-the plugin's distribution channel:
-
-```json
-{
-  "name": "pi-plugin-acme-billing",
-  "version": "0.3.0",
-  "type": "module",
-  "exports": {
-    ".":        { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./client": "./dist/client.js",
-    "./server": "./dist/server.js"
-  },
-  "peerDependencies": {
-    "@boring/workspace": ">=0.1.0"
-  },
-  "boring": {
-    "plugin": {
-      "id":      "acme-billing",
-      "client":  "./dist/client.js",   // bundled into host Vite build
-      "server":  "./dist/server.js",   // imported by createWorkspaceAgentApp
-      "panels":  ["acme-invoice", "acme-subscription"],
-      "needs":   ["@boring/workspace"]
-    }
-  }
-}
-```
-
-The `boring.plugin` manifest entry (extension to package.json — pure
-metadata, ignored by tools that don't read it) lets the loader and
-build tools know what's in the package without parsing JS at install
-time.
-
-Discovery + loading:
-
-1. **Server side** — `createWorkspaceAgentApp` walks
-   `node_modules/pi-plugin-*` (existing pi loader behavior), reads
-   each package's `boring.plugin.server`, dynamically imports it,
-   passes through `extractPlugin`. Result: the plugin's
-   `agentTools` + `routes` register automatically.
-2. **Client side** — host's bundler resolves
-   `pi-plugin-*/client.js` from `node_modules`. Host adds the
-   plugin to `<WorkspaceProvider plugins={[…]}>` explicitly:
-
-   ```ts
-   import billingPlugin from "pi-plugin-acme-billing/client"
-   <WorkspaceProvider plugins={[billingPlugin]}>
-   ```
-
-   The client side stays explicit (not auto-imported) because Vite/
-   webpack don't have a stable equivalent of "scan node_modules for
-   plugins" — explicit imports also help tree-shaking. A tiny
-   helper, `loadNpmPlugins()` (sync, returns the list of plugins
-   from package.json metadata), can do the resolution at host
-   build time as a convenience.
-
-3. **Manifest-discovered (via `.pi/extensions.json`)** — already
-   supported by the pi loader; the manifest can reference npm,
-   git, or local paths. Plugin shape is the new wider one;
-   resolution is unchanged.
-
-Version compatibility: plugins declare a peer-dep range on
-`@boring/workspace`. Loader emits a console.warn (dev) /
-`/api/v1/plugins` manifest error (production) when the installed
-version doesn't satisfy the range. Doesn't refuse to load — letting
-plugins fail loudly is better than silent absence.
-
-### Agent-generated plugins (Phase 3)
-
-The pi loader already supports user-installed extensions in
-`./.pi/extensions/`. The wider Plugin shape extends this naturally
-to plugins the LLM itself authors:
-
-```
-LLM uses tool: create_plugin({
-  id: "my-data-shaper",
-  agentTools: [{ name: "shape_csv", parameters: {...}, ... }],
-  routes: [...],
-  panels: [...],
-})
-  ↓
-Server writes ./.pi/extensions/my-data-shaper.js
-(plain JS, validates against Plugin shape at write time)
-  ↓
-On next createWorkspaceAgentApp boot, pi loader picks it up.
-The LLM has self-extended.
-```
-
-Required pieces:
-
-- A new `create_plugin` agent tool in `workspacePlugin` (or a
-  sibling `pluginAuthorPlugin`) that takes a Plugin shape, validates,
-  serializes, writes to `.pi/extensions/<id>.{mjs,js}`. The tool
-  refuses to overwrite an existing plugin file unless `replace:
-  true` is passed (avoids accidental clobbering).
-- An `update_plugin` tool that edits an existing one in-place
-  (atomic write to a temp file then rename — no partial writes).
-- A `remove_plugin` tool that deletes the file. (Or marks it
-  disabled in `.pi/extensions.json` — soft-disable.)
-- A `list_plugins` tool that returns the registered set + their
-  source ("user", "npm", "git", "agent"). Lets the LLM know what's
-  already installed before authoring.
-- **Restart semantics** — Phase 1: tool writes the file but the
-  plugin only takes effect after the user restarts the server.
-  Status returned: "wrote: needs server restart to take effect."
-  Phase 3 (hot-reload) makes this seamless; Phase 1 keeps it
-  explicit.
-
-Safety:
-
-- Plugins generated by the agent live in
-  `.pi/extensions/.agent-authored/` (a sub-dir) for visibility —
-  user can audit/diff/git-ignore as needed.
-- The `create_plugin` tool requires confirmation by default
-  (existing pi tool-approval pattern); deployments that trust the
-  LLM (autonomous agents) can opt-in to skip via env var
-  `PI_AGENT_AUTHOR_AUTO_APPROVE=true`.
-- Generated plugins go through the same `validatePlugin` as all
-  other plugins; bad shapes throw at write time, not at boot.
-
-This unlocks "the agent extends its own capabilities" — the user
-asks for a domain-specific tool, the LLM authors a plugin, future
-sessions have it. Same model pi has today for tools, now for the
-full Plugin surface.
-
-### `workspacePlugin` — what the package contributes
-
-```ts
-// @boring/workspace
-export const workspacePlugin = definePlugin({
-  id: "@boring/workspace",
-  order: 0,                                  // first; everything overrides
-  panels: [
-    codeEditorPanel, markdownEditorPanel,
-    fileTreePanel, dataCatalogPanel,
-    chatPanel, emptyPanel,
-  ],
-  commands: [
-    /* the 3 currently registered imperatively in WorkspaceProvider:
-       toggleSidebar, toggleAgentPanel, closeTab */
-  ],
-  agentTools: [
-    /* UI bridge tools currently inlined by boring-macro:
-       get_ui_state, exec_ui */
-  ],
-  routes: [uiRoutes /* /api/v1/ui/* */],
-  // No catalogs — domain-specific.
-  // No chatSuggestions — domain-specific.
-})
-```
-
-Hosts that import `@boring/workspace` get this plugin auto-registered.
-Boring-macro stops needing `src/server/uiBridge.ts` (the 150-LOC inline
-copy) — `createWorkspaceAgentApp` registers `uiRoutes` and the UI tools
-via workspacePlugin.
-
-### A "plugin" is a shape, not a delivery mechanism
-
-Important framing: **`Plugin` is a TypeScript shape, not an
-installation channel.** Anything that produces a `Plugin` object is a
-plugin, regardless of where it lives or how it gets loaded. Three
-delivery shapes the model supports, in order from simplest to most
-elaborate:
-
-1. **Inline plugin** — defined in the host's own source tree,
-   imported normally, passed explicitly to
-   `<WorkspaceProvider plugins={[…]}>` /
-   `createWorkspaceAgentApp({ plugins: [...] })`. **This is the
-   default and most common shape.** Most host apps will define
-   exactly one inline plugin alongside their `App.tsx`.
-
-   ```ts
-   // apps/boring-macro-v2/src/plugin/index.ts
-   export const macroPlugin = definePlugin({ id: "boring-macro", … })
-
-   // apps/boring-macro-v2/src/web/App.tsx
-   <WorkspaceProvider plugins={[macroPlugin]}>
-   ```
-
-   No npm publication, no pi loader, no discovery. Just a
-   well-organized way to bundle the host's contributions into one
-   declarative object instead of scattering them across four
-   registration APIs.
-
-2. **NPM-installable plugin** — same shape, published as
-   `pi-plugin-acme-billing`, installed via `npm install`,
-   imported explicitly by the host (or auto-discovered server-side
-   by pi loader). Useful when third parties want to ship reusable
-   contributions; useful when an internal team wants to share a
-   plugin across multiple apps in a monorepo.
-
-3. **Pi-extension plugin** — a `.js` file dropped in
-   `.pi/extensions/` (or `~/.pi/agent/extensions/` for global, or
-   `node_modules/pi-plugin-*`). Picked up by the pi loader at
-   server boot. Useful for: agent-authored plugins (the LLM writes
-   one), end-user customizations (drop-in tools/panels without
-   touching app source), or shipping a tools-only extension that
-   doesn't need an npm package.
-
-**Use the simplest shape that fits.** Boring-macro's migration is
-an inline plugin — the host owns the code, no reason to npm-publish
-or use pi loader. Pi-extensions earn their keep when the plugin's
-provenance is "external to the host source tree." Don't conflate
-"plugin" with "pluggable": a plugin can be a host's own static
-declaration, just structured to fit the contract.
-
-The plan's npm + pi-loader sections detail those paths because they're
-where real coordination work lives. The inline path doesn't need a
-section — it's just `definePlugin({...}); <WorkspaceProvider
-plugins={[plugin]}>`.
-
 ### Concrete contribution types
 
-Each contribution slot has a precise shape. Source of truth is in
-`@boring/workspace/shared`; every plugin imports from there.
-
 ```ts
-// PanelConfig — already exists in workspace today
-import type { PanelConfig } from "@boring/workspace"
+// PanelConfig — extension of the existing type, adds source-of-truth provenance
 type PanelConfig = {
   id: string
   title: string
@@ -660,31 +175,31 @@ type PanelConfig = {
   placement: "left" | "center" | "right"
   source?: "app" | "agent" | "user"
   icon?: ReactNode
-  filePatterns?: string[]
+  filePatterns?: string[]   // micromatch — drives openFile resolution
+  pluginId?: string         // set automatically by registry; do not set manually
 }
 
-// CommandConfig — already exists, adds `pluginId` provenance
+// CommandConfig — already exists, add pluginId provenance
 type CommandConfig = {
   id: string
   title: string
   shortcut?: string
   when?: () => boolean
   run: () => void
-  /** Set automatically by PluginRegistry on register; do NOT set in plugin code. */
   pluginId?: string
 }
 
-// CatalogConfig — new (was being designed in COMMAND_PALETTE_REGISTRY.md v3)
+// CatalogConfig — new
 type CatalogConfig = {
   id: string
   label: string
   recentKind: string                       // routes Recent entries back
-  adapter: ExplorerAdapter                 // already exists in DataExplorer
+  adapter: ExplorerAdapter                 // existing DataExplorer type
   onSelect: (row: ExplorerRow) => void
-  paletteIcon?: ReactNode
+  paletteIcon?: ReactNode                  // distinct from ExplorerRow.leading Badge
   paletteLimit?: number                    // default 5
   order?: number                           // default 100
-  pluginId?: string                        // set automatically
+  pluginId?: string
 }
 
 // ChatSuggestion — already exists in @boring/agent/ui-shadcn
@@ -696,585 +211,540 @@ type ChatSuggestion = {
 }
 
 // AgentTool — already exists in @boring/agent/shared
-type AgentTool = {
-  name: string
-  description: string
-  parameters: JSONSchema
-  execute: (params: Record<string, unknown>, ctx: ToolExecContext)
-    => Promise<ToolResult> | ToolResult
-}
-
-// FastifyPluginCallback — Fastify's standard plugin shape
-import type { FastifyPluginCallback } from "fastify"
+// FastifyPluginCallback — Fastify standard
 ```
 
-Provenance (`pluginId`) is set by `PluginRegistry` when fanning out
-contributions; plugin code never sets it. This lets dev tools / debug
-panes / late-wins-on-id resolution show "the catalog with id `files`
-was contributed by plugin `@boring/workspace` and overridden by
-plugin `boring-macro`."
+`pluginId` is set automatically by `PluginRegistry` on register;
+plugin code never assigns it. Late-wins-on-id collisions log a
+dev-mode warning identifying both contributors.
 
-### Validation contract
-
-Every contribution type has a `validate*(value): value | never`
-function colocated with its type:
+### `definePlugin(spec)`
 
 ```ts
-// packages/workspace/src/plugin/validators.ts
-export function validatePanel(p: unknown): PanelConfig {
-  if (!isObject(p)) throw new ValidationError("panel must be an object")
-  if (typeof (p as any).id !== "string") throw new ValidationError("panel.id required")
-  if (typeof (p as any).component !== "function")
-    throw new ValidationError(`panel ${(p as any).id}: .component must be a React component`)
-  // ... etc
-  return p as PanelConfig
-}
+import { definePlugin } from "@boring/workspace"
 
-export function validateCatalog(c: unknown): CatalogConfig { /* … */ }
-export function validateCommand(c: unknown): CommandConfig { /* … */ }
-export function validateChatSuggestion(s: unknown): ChatSuggestion { /* … */ }
-export function validateAgentTool(t: unknown): AgentTool { /* — alias for the
-  existing validateTool in pluginLoader.ts:60, moved into this file */ }
+export const macroPlugin = definePlugin({
+  id: "boring-macro",
+  dependsOn: ["filesystem"],            // deck panel reads files
+  panels: [chartCanvasPanel, deckPanel],
+  catalogs: [seriesCatalog],
+  agentTools: macroAgentTools,
+  routes: [registerMacroRoutes],
+  chatSuggestions: macroChatSuggestions,
+})
 ```
 
-`definePlugin(spec)` runs each validator on every contribution before
-the plugin is considered well-formed. Errors include the plugin id +
-contribution kind + which field was bad:
+Validation runs at definition time, not mount time. Errors include
+plugin id + contribution kind + bad field:
 
 ```
 PluginValidationError: plugin "boring-macro": catalogs[0].adapter.search
 must be a function (got: undefined)
 ```
 
-Failures throw at `definePlugin`-call time, not at mount time. Hosts
-fail fast; a typo can't crash the runtime.
+Per-type validators (`validatePanel`, `validateCommand`,
+`validateCatalog`, `validateChatSuggestion`, `validateAgentTool`) live
+in `@boring/workspace/src/plugin/validators.ts`. `validateAgentTool`
+is the existing `validateTool` from `pluginLoader.ts:60`, moved into
+the workspace package.
 
 ### Error model
 
-Five distinct failure modes, each handled differently:
-
 | Failure | When | Response |
 |---|---|---|
-| `PluginValidationError` | At `definePlugin` (typo, missing field) | Throw immediately. Host build/dev fails to start. |
+| `PluginValidationError` | At `definePlugin` call (typo, missing field) | Throw immediately. Host build/dev fails to start. |
 | `PluginRegistrationError: missing dep` | At `register` if `dependsOn` lists an unknown plugin | Throw at registration. Provider mount fails with a useful error. |
-| `PluginRegistrationError: id collision` | At `register` if a plugin with same id already registered | Late wins on id (replace); dev-mode `console.warn` lists what was replaced; production silent. |
-| `PluginMountError` | If `onMount` throws | Catch, log via `request.log.error` (server) or `console.error` (client), emit `plugin:error` on the bus, the plugin's contributions stay registered (other plugins not affected), but its onMount cleanup is NOT stored (nothing to clean up). |
-| `PluginContributionError` | If a single contribution at runtime fails (e.g. a catalog adapter throws on `.search`) | Per-contribution try/catch isolates the failure to its own group/panel. Other plugins keep working. The `<CatalogGroup>` renders an inline error chip (per cmd-palette plan v3 §"Per-group error isolation"). |
+| `PluginRegistrationError: id collision` | At `register` with same id as already-registered | Late wins on id (replace). Dev-mode `console.warn` lists what was replaced. |
+| `PluginMountError` | If `onMount` throws | Catch, log, emit `plugin:error` on the bus. Plugin's contributions stay registered; cleanup not stored. Other plugins unaffected. |
+| `PluginContributionError` | If a single contribution fails at runtime (e.g. catalog adapter throws on `.search`) | Per-contribution try/catch isolates. Other plugins unaffected. UI shows inline error chip. |
 
-A misbehaving plugin can never crash the entire workspace, but it CAN
-produce bad UX (an empty group, a missing tool, a noop command). The
-provider exposes an `errors: PluginError[]` field on its context so
-debug panes / health pages can surface them.
+A misbehaving plugin can never crash the workspace, but it can
+produce degraded UX. The provider exposes an `errors: PluginError[]`
+field for debug surfaces.
 
-### `/api/v1/plugins` discovery contract (Phase 2)
+### Default plugins — TWO, finalized
 
-Phase 2 endpoint, but the shape is fixed now so client + server can
-implement against it independently.
-
-```
-GET /api/v1/plugins
-Authorization: <session cookie> (same as other agent routes)
-
-200 OK:
-{
-  "schemaVersion": "1",
-  "plugins": [
-    {
-      "id": "@boring/workspace",
-      "label": "Workspace",
-      "version": "0.1.0",
-      "source": "default",                       // default | local | npm | git | agent
-      "contributions": {
-        "panels": ["code-editor", "markdown-editor", "file-tree", "data-catalog", "chat", "empty"],
-        "commands": ["workspace.toggleSidebar", "workspace.toggleAgentPanel", "workspace.closeTab"],
-        "agentTools": ["get_ui_state", "exec_ui"],
-        "routes": ["/api/v1/ui"]
-      }
-    },
-    {
-      "id": "filesystem",
-      "label": "Filesystem",
-      "version": "0.1.0",
-      "source": "default",
-      "contributions": {
-        "agentTools": ["find_files", "read_file", "write_file", "edit_file", "read_directory"],
-        "routes": ["/api/v1/files", "/api/v1/tree", "/api/v1/files/search"],
-        "catalogs": [{ "id": "files", "label": "Files", "recentKind": "file" }]
-      }
-    },
-    {
-      "id": "boring-macro",
-      "version": "0.3.1",
-      "source": "local",
-      "contributions": { /* … */ },
-      "errors": []
-    },
-    {
-      "id": "broken-plugin",
-      "version": "0.1.0",
-      "source": "npm",
-      "contributions": {},
-      "errors": [
-        { "phase": "mount", "message": "ClickHouse connection refused" }
-      ]
-    }
-  ]
-}
-
-400 / 500: { error: { code, message } }
-```
-
-`schemaVersion` is bumped when the response shape evolves; clients
-that don't recognize the version log a warning and degrade
-gracefully (use the union of catalog IDs they understand).
-
-`errors[]` lets clients show which plugins failed at boot without
-fetching server logs. Used by a future "Plugins" admin pane.
-
-The endpoint is read-only (GET). A plugin's data — what its
-catalogs return, what its routes do — flows through plugin-specific
-endpoints, not this manifest. Discovery is metadata only.
-
-### Cross-environment coordination — pinned
-
-Two independent registrations that converge at runtime:
-
-1. **Server-side registration** is authoritative for what's
-   *loaded*. `createWorkspaceAgentApp` walks defaults +
-   `opts.plugins` + pi loader output; the discovery endpoint
-   reflects that set.
-2. **Client-side registration** is authoritative for what's
-   *rendered*. `<WorkspaceProvider plugins={...}>` registers
-   plugins for the React tree.
-
-For a plugin to work fully (UI + agent tools), both halves must
-register. The two registrations are coupled by **id**, not by
-shared state. The client doesn't introspect the server's
-registry on mount — it just registers what it knows about; if the
-server didn't load the matching server-side plugin, the
-client-side contributions still render (catalog rows show, etc.)
-but server-side actions (route calls, agent tool calls) fail with
-404. Hosts get the matched-pair situation right by importing the
-same plugin module on both sides (the layout convention's
-`./plugin/index.ts` does this).
-
-For diagnostics, the discovery endpoint's manifest lets the
-client know which plugins the server is missing or has failed —
-client-side dev mode logs a warning per missing/failed pair.
-Production: silent. (No "auto-disable client-side contributions
-when server's missing the plugin" — that's a class of
-hard-to-debug behaviors users want to AVOID.)
-
-### Backwards compatibility
-
-| Breaking change | What | Migration |
+| Plugin | Contributes | Why a plugin (not core) |
 |---|---|---|
-| `CommandPaletteProps` removed | The `fileSearchFn`/`onOpenFile` props on `<CommandPalette />` were already dead (provider mounts the palette with no props). | Hosts that imported the type: remove the import. The component is now prop-less. |
-| `ChatCenteredShellProps.withCommandPalette` removed | No-op runtime today; the actual palette mount is on `WorkspaceProvider`. | Hosts that disabled the palette via this prop: pass `excludeDefaults={["@boring/workspace"]}` (or use the registry's late-wins-on-id with a stub plugin) on `<WorkspaceProvider>` instead. |
-| `<ChatCenteredShell data={DataPaneConfig}>` removed | Replaced by registering a catalog. | Hosts that used `data`: convert to `<WorkspaceProvider plugins={[{ id, catalogs: [yourCatalog] }]}>`. Boring-macro migration is the reference example. |
-| `createAgentApp({ extraTools })` for workspace surfaces | Replaced by `createWorkspaceAgentApp({ plugins })`. | Hosts that wanted UI bridge tools: switch the import + wrap their tools in a Plugin. Standalone agents (no UI) keep using `createAgentApp` directly. |
+| **`filesystemPlugin`** | Agent tools (`find_files`, `read_file`, `write_file`, `edit_file`); routes (`/api/v1/files`, `/tree`, `/files/search`); a Files catalog; FileTree panel registration; CodeEditor + MarkdownEditor panel registrations (with `filePatterns`) | Domain capability hosts can omit (UI-only apps, sandboxed deployments). When excluded: file routes 404, FileTree disappears, code/markdown editors stop auto-routing. |
+| **`dataCatalogPlugin`** | DataExplorer panel registration (workbench data tab); Phase 2: `search_catalog(id, q)` generic agent tool | Apps without catalog browsing don't need the data tab. Real opt-out. |
 
-Deprecation policy: one minor-version window where the old shape
-emits a console.warn, then removed. Codemod (jscodeshift) provided
-for the `data?: DataPaneConfig` → catalog migration in a separate
-follow-up.
+Both auto-mount. Hosts opt out via:
 
-### Plugin authoring guide for npm publishers (Phase 2)
-
-A minimal published plugin's structure:
-
-```
-pi-plugin-acme-billing/
-├── package.json                    # see "boring.plugin" manifest above
-├── README.md                       # what it does, install instructions
-├── src/
-│   ├── shared.ts                   # PLUGIN_ID, types, fixed config
-│   ├── client.ts                   # exports a Plugin (client-side fields only)
-│   ├── server.ts                   # exports a Plugin (server-side fields only)
-│   └── index.ts                    # full plugin (used by hosts that bundle both)
-├── tsconfig.json
-└── tsup.config.ts                  # builds dist/{client,server,index}.js
+```tsx
+<WorkspaceProvider
+  plugins={[macroPlugin]}
+  excludeDefaults={["filesystem"]}    // or ["dataCatalog"], or []
+>
 ```
 
-The `index.ts` re-exports from both halves for simple consumers; sophisticated
-hosts import `./client` and `./server` separately to get bundling control:
+### Core — substrate, not plugins
+
+Always present. Not pluggable. Replacing core by accident shouldn't be possible.
+
+- Registries (Plugin / Catalog / Command / Panel / ChatSuggestion)
+- EventBus (per `UNIFIED_EVENT_BUS.md`)
+- UiBridge (in-memory message queue; lives in `@boring/workspace/src/bridge/`)
+- React component primitives: `CodeEditor`, `MarkdownEditor`, `FileTree`,
+  `DataExplorer`, `EmptyPane` (the components themselves are core
+  exports; their **panel registrations** with `filePatterns` belong to
+  the relevant default plugin)
+- Default agent tools that expose the substrate: `get_ui_state`,
+  `exec_ui` (registered directly by `createWorkspaceAgentApp`, not
+  via a plugin)
+- Default routes: `/api/v1/ui/*` (uiRoutes — registered directly)
+- Default commands: `toggleSidebar`, `toggleAgentPanel`, `closeTab`
+  (registered directly by `WorkspaceProvider`)
+- Chat shell + palette + workbench themselves
+- ChatPanel mount point (chat is foundational to the boring shell)
+
+**The general rule: substrate is core, capabilities are plugins.**
+
+### Plugin composability — dependencies + file-pattern resolution
+
+Two mechanisms compose to give plugins their power.
+
+**Dependency declarations.** Plugin-level only in Phase 1.
 
 ```ts
-// pi-plugin-acme-billing/src/index.ts
-import { definePlugin } from "@boring/workspace"
-import { clientPart } from "./client"
-import { serverPart } from "./server"
-
-export default definePlugin({
-  ...sharedConfig,
-  ...clientPart,
-  ...serverPart,
-})
+// hard — registry refuses to load if missing
+dependsOn?: string[]
+// soft — registers; dev-mode warn if missing
+optionalDeps?: string[]
 ```
 
-Authoring checklist:
+Convention (rules of thumb for code review):
 
-- [ ] `package.json` `boring.plugin` manifest set (id, client/server entry,
-      contribution summary, peer-dep range)
-- [ ] `peerDependencies: { "@boring/workspace": ">=X.Y.Z" }`
-- [ ] `definePlugin` called at module top (validation runs at import time)
-- [ ] Server-only deps are NOT imported from `client.ts` (keep Vite bundle
-      small)
-- [ ] Tests against `definePlugin`'s validators + a stub registry
-- [ ] CHANGELOG documenting any breaking shape changes
+1. Domain plugins depend on **defaults** (`filesystem` /
+   `dataCatalog`), not on other domain plugins.
+2. Most hosts won't notice dependencies because defaults auto-mount.
+3. Inter-domain dependencies are a refactoring smell — extract the
+   shared piece into core or a shared plugin.
+4. Refusing to register beats silent broken UI. `dependsOn` errors
+   point at the offending plugin at boot.
 
-### Rejected alternatives
+**File-pattern panel resolution.** When `openFile(path)` runs:
 
-Documenting choices that ended up not in the plan, and why, so future
-readers don't relitigate.
+1. Filter panels whose `filePatterns` include `path` (micromatch).
+2. Sort by **specificity** — longer/more-anchored patterns win
+   (`deck/*.md` > `*.md`; `**/*.deck.md` > `*.md`).
+3. Within same specificity: registration order, late wins.
+4. Hosts can bypass pattern matching at the call site:
+   `surface.openPanel({ component: "<id>", … })`.
 
-| Considered | Why rejected |
-|---|---|
-| Separate "extension"/"contribution"/"capability" terminology | "Plugin" is the term the existing pi loader uses; introducing a sibling concept would fragment vocabulary. The wider Plugin shape is a strict superset of pi's existing shape — same word, broader contents. |
-| Multiple contribution-type registries with NO umbrella `Plugin` (just register catalogs/commands/etc directly) | Loses the bundling benefit. Boring-macro's six contribution types would need six registration sites. The umbrella IS the value. |
-| Per-contribution-type override flags (`overridePanels: false`, etc.) | Late-wins-on-id covers this. Adding flags would create two override mechanisms and constant questions about which wins. |
-| Plugin sandboxing (separate React roots, isolated contexts) | Too heavy for v1; plugins live in the same tree as the host today via existing prop-drilled patterns. Sandboxing introduces a hard performance + DX cost. Revisit if a real "untrusted plugin" use case shows up. |
-| Synchronous, in-process plugin discovery on the client (scan `node_modules` from the browser) | Browsers don't have filesystem access. Client always has explicit imports for npm plugins; server is the discovery side. |
-| Hot-reload of plugins at runtime (Phase 1) | Phase 3. The pi loader runs once at boot today; making it reactive requires file watchers + re-validation + listener cleanup. Not worth blocking Phase 1. |
-| `agentTools` and `routes` always required for a plugin | Allows pure UI plugins (e.g. a custom theme) and pure tool plugins (e.g. legacy pi tool extensions). All contribution types stay optional. |
-| Runtime-typed event payloads for plugin lifecycle events (no compile-time typing) | The bus's typed event map (`UNIFIED_EVENT_BUS.md`) extends naturally to include plugin events; runtime-typed alone would lose the type safety the rest of the bus offers. |
-| `definePlugin` returning a class instead of a plain object | Plain object plays nicer with serialization, manifest generation, and the `boring.plugin` package.json metadata convention. Class adds no value. |
+Three composition shapes this enables (canonical examples):
+
+```
+1. ADD a domain pane for a domain path
+   filesystem: { id: "markdown-editor", patterns: ["*.md"] }
+   macro:      { id: "deck",            patterns: ["deck/**/*.md"] }
+   notes.md       → MarkdownEditor (default)
+   deck/labor.md  → DeckPane         (specificity wins)
+
+2. REPLACE a default pane (late-wins-on-id)
+   filesystem:  { id: "code-editor", component: CodeEditor,    patterns: ["*.ts"] }
+   superCoder:  { id: "code-editor", component: SuperCoder,    patterns: ["*.ts"] }
+   any *.ts → SuperCoder (same id ⇒ replaces)
+
+3. ADD a SECOND pane available for the same file
+   filesystem:    { id: "code-editor", patterns: ["*.json"] }
+   schemaViewer:  { id: "schema-view", patterns: ["*.json"] }
+   user picks via panel-switcher; opening code chooses one explicitly
+```
+
+Each plugin owns its file-type ↔ pane binding. Hosts compose plugins
+to compose extensions.
+
+### Workspace orchestration — registries + lifecycle
+
+`PluginRegistry` is the umbrella. Per-contribution registries
+(`CatalogRegistry`, `CommandRegistry`, `PanelRegistry`,
+`ChatSuggestionRegistry`) are the consumers. All registries use
+`useSyncExternalStore` so React subscribers track register/unregister
+cycles.
+
+```
+PluginRegistry.register(p):
+  1. Validate dependsOn (throw on missing)
+  2. Warn on optionalDeps missing
+  3. Fan plugin.panels → PanelRegistry (set pluginId provenance)
+  4. Fan plugin.commands → CommandRegistry
+  5. Fan plugin.catalogs → CatalogRegistry
+  6. Fan plugin.chatSuggestions → ChatSuggestionRegistry
+  7. (server) Fan plugin.agentTools → AgentToolRegistry
+  8. (server) Register plugin.routes via app.register(...)
+  9. Call plugin.onMount(ctx) if present; store cleanup
+  10. Emit plugin:registered on EventBus
+  11. Notify subscribers
+
+PluginRegistry.unregister(id):
+  1. Call stored cleanup
+  2. Remove fanned-in items by sourcePluginId
+  3. Emit plugin:unregistered
+  4. Notify
+```
+
+The retrofit applies to existing `CommandRegistry` and
+`PanelRegistry` — they get `subscribe()` semantics so late
+`registerCommand` calls reach an open palette.
+
+### Inline plugin layout (Phase 1)
+
+```
+apps/<some-app>/
+├── package.json
+├── src/
+│   ├── plugin/
+│   │   ├── index.ts            ← env-aware barrel
+│   │   ├── plugin.shared.ts    ← id, dependsOn, types, fixed config
+│   │   ├── plugin.client.ts    ← panels, catalogs, commands, suggestions
+│   │   └── plugin.server.ts    ← agentTools, routes
+│   ├── server/index.ts         ← createWorkspaceAgentApp({ plugins: [appPlugin] })
+│   └── web/App.tsx             ← <WorkspaceProvider plugins={[appPlugin]}>
+```
+
+`index.ts` uses environment guards or per-environment package.json
+exports so Vite picks `client.ts` and Node picks `server.ts`. Same
+pattern as Next.js / Remix / SvelteKit.
+
+For multi-plugin apps: `src/plugins/<id>/...` mirrors per plugin;
+`src/plugins/index.ts` exports an array.
+
+### Entry points
+
+```ts
+// CLIENT
+import { WorkspaceProvider } from "@boring/workspace"
+import { macroPlugin } from "./plugin"
+
+<WorkspaceProvider plugins={[macroPlugin]}>
+  <App />
+</WorkspaceProvider>
+
+// SERVER
+import { createWorkspaceAgentApp } from "@boring/workspace/server"
+import { macroPlugin } from "./plugin"
+
+const app = await createWorkspaceAgentApp({
+  workspaceRoot,
+  plugins: [macroPlugin],
+  // includeDefaults: ["filesystem", "dataCatalog"]   // default
+  // excludeDefaults: ["dataCatalog"]                  // optional opt-out
+})
+await app.listen({ port })
+```
+
+Both entry points auto-mount default plugins (filesystem +
+dataCatalog) unless excluded. Both call into the same `PluginRegistry`
+underneath; client and server tracks are independent (coupled by
+plugin id, not by shared state).
 
 ### Event bus integration
 
-Plugins are about **registration** (what the system knows exists);
-the event bus (see
-[`UNIFIED_EVENT_BUS.md`](./UNIFIED_EVENT_BUS.md)) is about
-**communication** (what changed, when, and why). They're complementary
-contracts that meet at three points.
+Plugins are about **registration**; the bus is about
+**communication**. They meet at three points (see
+`UNIFIED_EVENT_BUS.md` for bus details):
 
-#### 1. Plugins get bus access via `PluginMountCtx`
+1. **`PluginMountCtx.bus`** lets `onMount` subscribe + emit.
+2. **Lifecycle events on the bus** —
+   `plugin:registered`/`plugin:unregistered`/`plugin:error` plus
+   per-contribution-type events (`catalog:registered`, etc.).
+3. **Discovery endpoint emits one-shot `plugins:discovered`** event
+   when fetched (Phase 2).
 
-`PluginMountCtx` (passed to `onMount`) exposes the workspace's
-EventBus alongside the registries:
+Bus is client-only. Server-side plugin contributions communicate via
+Fastify hooks or HTTP routes — not a workspace-wide primitive.
 
-```ts
-type PluginMountCtx = {
-  bus: EventBus<WorkspaceEvents>   // ← new — typed against the canonical event map
-  catalogs: CatalogRegistry
-  commands: CommandRegistry
-  panels:   PanelRegistry
-  chatSuggestions: ChatSuggestionRegistry
-  agentTools?: AgentToolRegistry
-  app?: FastifyInstance
-}
+## Reorganization (file moves)
+
+Things move from `@boring/agent` to `@boring/workspace` to draw an
+honest boundary. Each move is a self-contained refactor; the plugin
+model rides on top.
+
+| From `@boring/agent` | To `@boring/workspace` | Lands as |
+|---|---|---|
+| `src/server/catalog/standardCatalog.ts` — file ops (`find_files`, `read_file`, `write_file`, `edit_file`) | `@boring/workspace/server/...` | `filesystemPlugin.agentTools` |
+| `src/server/catalog/standardCatalog.ts` — UI bridge tools (`get_ui_state`, `exec_ui`) | `@boring/workspace/server/uiTools.ts` | Core (registered directly by `createWorkspaceAgentApp`) |
+| `src/server/http/routes/{file,tree,search}.ts` | `@boring/workspace/server/routes/files.ts` | `filesystemPlugin.routes` |
+| `src/server/http/routes/ui.ts` | `@boring/workspace/server/routes/ui.ts` | Core (registered directly) |
+| `src/shared/ui-bridge.ts` (`UiState`, `UiCommand` types) | `@boring/workspace/src/shared/ui-bridge.ts` | Core types |
+| `src/server/ui-bridge/createInMemoryBridge.ts` | `@boring/workspace/src/bridge/createInMemoryBridge.ts` | Core |
+
+`@boring/agent` keeps:
+
+- `pi-coding-agent` harness (LLM loop, sessions, models)
+- `AgentTool` type (shared contract)
+- Pi loader (legacy tools-only behavior; Phase 2 extends it)
+- `bash`, `read_directory` tools (truly harness-level)
+- Chat / session / model HTTP routes
+- `createAgentApp` (no UI surface — UI-less hosts use this directly)
+
+Boundary after the moves: `@boring/agent` = "harness";
+`@boring/workspace` = "workspace surface + plugin model."
+
+## Exact path: now → Phase 1 done
+
+Five sequenced commits. Each is independently reviewable; only step 0
+is a hard blocker.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 0 — BLOCKER                                                │
+│  fix(workspace): tsup-build the @boring/workspace/server export  │
+│  ─────────────────────────────────────────────────────────────── │
+│  Resolve zod peer + vite-plugin-dts crash. Workspace's /server   │
+│  becomes import-able; boring-macro's inline uiBridge.ts becomes  │
+│  redundant immediately. ETA: 0.5–1 day.                          │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 1 — REORG (no plugin model yet, pure refactor)             │
+│  ─────────────────────────────────────────────────────────────── │
+│  1a. UI bridge ownership refactor (per existing plan doc)        │
+│      Move ui-bridge types/tools/routes from @boring/agent →      │
+│      @boring/workspace. boring-macro deletes its 150-LOC inline  │
+│      copy. Independently valuable; lands as one PR.              │
+│                                                                  │
+│  1b. File ops migration                                          │
+│      Move find_files/read_file/write_file/edit_file from         │
+│      standardCatalog → @boring/workspace/server. Move file/tree/ │
+│      search routes similarly. Hosts that wanted them via         │
+│      createAgentApp now get them via createWorkspaceAgentApp     │
+│      (added in step 4). standardCatalog keeps bash, read_dir.    │
+│                                                                  │
+│  Deliverable: @boring/agent's surface is "harness only";         │
+│  @boring/workspace owns workspace-flavored code, but neither     │
+│  bundles into Plugins yet — they're standalone modules.          │
+│  ETA: 1–2 days.                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 2 — PLUGIN PRIMITIVES                                      │
+│  ─────────────────────────────────────────────────────────────── │
+│  2a. Plugin type + definePlugin + validators                     │
+│      packages/workspace/src/plugin/{types,definePlugin,          │
+│      validators}.ts                                              │
+│                                                                  │
+│  2b. PluginRegistry + CatalogRegistry +                          │
+│      ChatSuggestionRegistry (subscribe-aware)                    │
+│      packages/workspace/src/plugin/{Plugin,Catalog,              │
+│      ChatSuggestion}Registry.ts                                  │
+│                                                                  │
+│  2c. Subscribe retrofit for existing CommandRegistry +           │
+│      PanelRegistry                                               │
+│                                                                  │
+│  Deliverable: types compile; registries pass unit tests;         │
+│  no consumer wired yet. ETA: 1–1.5 days.                         │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 3 — DEFAULT PLUGINS                                        │
+│  ─────────────────────────────────────────────────────────────── │
+│  3a. filesystemPlugin (wraps step-1b code)                       │
+│      packages/workspace/src/plugin/defaults/filesystemPlugin.ts  │
+│      contributes: file ops + routes + Files catalog +            │
+│      FileTree/CodeEditor/MarkdownEditor panel registrations      │
+│                                                                  │
+│  3b. dataCatalogPlugin                                           │
+│      packages/workspace/src/plugin/defaults/dataCatalogPlugin.ts │
+│      contributes: DataExplorer panel registration                │
+│                                                                  │
+│  Deliverable: definePlugin({...}) calls work; plugins import     │
+│  cleanly. ETA: 0.5 day.                                          │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 4 — ENTRY POINTS                                           │
+│  ─────────────────────────────────────────────────────────────── │
+│  4a. <WorkspaceProvider plugins={…}>                             │
+│      Adds plugins prop + excludeDefaults prop. Auto-registers    │
+│      defaults; fans contributions into registries. Mounts        │
+│      <CommandPalette /> as before.                               │
+│                                                                  │
+│  4b. createWorkspaceAgentApp({ plugins })                        │
+│      Wraps createAgentApp. Auto-registers defaults (server-side  │
+│      contributions). Fans agentTools into createAgentApp's       │
+│      extraTools; registers routes via app.register.              │
+│                                                                  │
+│  Deliverable: a host can pass plugins and watch them register.   │
+│  ETA: 1 day.                                                     │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 5 — CONSUMER REFACTORS                                     │
+│  ─────────────────────────────────────────────────────────────── │
+│  5a. <CommandPalette /> consumes useCatalogs()                   │
+│      Drop dead fileSearchFn / onOpenFile props. Drop             │
+│      type-mismatched Recent path. Files becomes the first        │
+│      catalog (provided by filesystemPlugin).                     │
+│                                                                  │
+│  5b. ChatCenteredShell migration                                 │
+│      Drop imperative useEffect command registration. Internal    │
+│      "chat-shell" plugin defined inline registers toggleDrawer   │
+│      / toggleSurface / newChat as commands. Sessions become a    │
+│      SessionsCatalog when shell receives sessions +              │
+│      onSwitchSession.                                            │
+│                                                                  │
+│  Deliverable: cmd palette + chat shell entirely on the new      │
+│  registry. Two breaking changes (CommandPaletteProps export,    │
+│  withCommandPalette shell prop) shipped; release notes drafted. │
+│  ETA: 1 day.                                                     │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 6 — ACCEPTANCE: BORING-MACRO MIGRATION                     │
+│  ─────────────────────────────────────────────────────────────── │
+│  apps/boring-macro-v2/src/plugin/                                │
+│  ├── plugin.shared.ts                                            │
+│  ├── plugin.client.ts (panels, catalog, suggestions)             │
+│  ├── plugin.server.ts (agentTools, routes)                       │
+│  └── index.ts                                                    │
+│                                                                  │
+│  apps/boring-macro-v2/src/server/index.ts uses                   │
+│    createWorkspaceAgentApp({ plugins: [macroPlugin] })           │
+│  apps/boring-macro-v2/src/web/App.tsx uses                       │
+│    <WorkspaceProvider plugins={[macroPlugin]}>                   │
+│  Delete src/server/uiBridge.ts (now in core).                    │
+│  Delete the inline DataPaneConfig / panel / chatSuggestions      │
+│  config from App.tsx (now in macroPlugin).                       │
+│                                                                  │
+│  Deliverable: ~80 + ~150 LOC of glue and inlined bridge → ~40    │
+│  LOC of plugin file. boring-macro behaves exactly the same.      │
+│  Acceptance test for the model: if this migration isn't a clean  │
+│  reduction, the design is wrong. ETA: 0.5–1 day.                 │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 7 — TESTS + RELEASE NOTES                                  │
+│  ─────────────────────────────────────────────────────────────── │
+│  Tests per §Test plan. Release notes documenting the two         │
+│  breaking changes. ETA: 1–2 days.                                │
+└──────────────────────────────────────────────────────────────────┘
+
+TOTAL: ~6–9 days of focused work, sequenced after the event bus
+       implementation lands.
 ```
 
-A plugin's `onMount` can subscribe to and emit events:
+## Phase 2/3 (sketched, deferred)
 
-```ts
-definePlugin({
-  id: "boring-macro",
-  onMount(ctx) {
-    // React to file changes elsewhere in the system:
-    const off = ctx.bus.on("file:changed", (e) => {
-      if (e.path.endsWith(".csv")) refreshSeriesCache(e.path)
-    })
-    // Emit a domain event when this plugin's data updates:
-    macroAdapter.onSeriesPersisted = (id) =>
-      ctx.bus.emit("macro:series:persisted", { id, source: "agent" })
-    return off  // cleanup on unregister
-  },
-})
-```
-
-This makes the bus the canonical channel for cross-plugin
-communication. Plugins don't import each other; they emit/subscribe on
-named events. Late-mounted plugins query state via the registries
-(plugins don't replay bus events on subscribe — same invariant the
-bus doc fixes for `WorkspaceEvents`).
-
-#### 2. Registry events flow on the bus
-
-Plugin lifecycle is itself a stream of events. Adding to the canonical
-event map:
-
-```ts
-"plugin:registered":   { id: string }
-"plugin:unregistered": { id: string }
-"plugin:error":        { id: string; phase: "validate" | "mount" | "unmount"; error: Error }
-"catalog:registered":   { id: string; pluginId: string }
-"catalog:unregistered": { id: string; pluginId: string }
-"command:registered":   { id: string; pluginId: string }
-"command:unregistered": { id: string; pluginId: string }
-"panel:registered":     { id: string; pluginId: string }
-"panel:unregistered":   { id: string; pluginId: string }
-```
-
-Use cases:
-- A debug pane that lists currently-registered plugins (subscribes to
-  `plugin:registered` / `plugin:unregistered`).
-- Telemetry on plugin load failures (`plugin:error`).
-- An "agent learned a new tool" toast (subscribe to
-  `plugin:registered` from the chat shell — fires when the LLM
-  authors and registers a new plugin via Phase 3 hot-reload).
-
-These additions to `WorkspaceEvents` follow the bus's existing
-invariants: edge-triggered transitions, sync emit, no replay,
-discriminated `cause` union (`'host' | 'plugin' | 'agent'`).
-
-#### 3. Bus is client-only; cross-environment events flow through existing rails
-
-The bus today (per `UNIFIED_EVENT_BUS.md`) is scoped to the client.
-The plugin model doesn't change that. Plugin contributions that need
-to communicate across the client/server boundary use the existing
-infrastructure:
-
-- **Server → client:** the agent's SSE channel
-  (`/api/v1/agent/chat/.../stream`) for tool-call events; the UI
-  bridge's command stream (`/api/v1/ui/commands`) for explicit
-  dispatches. Both already exist; both fire bus events on the client
-  when received.
-- **Client → server:** standard HTTP routes contributed by the plugin
-  (e.g. `registerMacroRoutes`).
-- **Server-side plugins** that want a "bus-like" interface can use
-  Fastify's own event hooks (`onRequest`, `onResponse`, etc.) or
-  expose their own EventEmitter — but this is per-plugin, not a
-  workspace-wide primitive. (If a real cross-plugin server-side bus
-  becomes valuable, that's a separate plan.)
-
-#### 4. Discovery endpoint emits a `plugins:discovered` event
-
-When `<WorkspaceProvider>` fetches the
-`/api/v1/plugins` discovery manifest (Phase 2), it emits a one-shot
-`plugins:discovered` event with the server's plugin list. UI surfaces
-that depend on the union (e.g. "show Sessions tab if SessionsCatalog
-is registered server-side") subscribe to this; until it fires, they
-render conservatively.
-
-This lets the client's plugin set + the server's plugin set stay
-synced without tight coupling.
-
-### Phase 1 (this PR) — INLINE PLUGINS, what actually ships
-
-Bounded scope: just enough to consolidate today's fragmented
-contribution APIs into one inline-plugin shape, and migrate
-boring-macro as the first proof.
-
-**No npm distribution. No pi-loader extension. No discovery
-endpoint. No agent-authored plugins.**  Those are Phase 2/3.
-
-1. **Define the Plugin contract** + `definePlugin` + per-contribution
-   validators. Lives in `@boring/workspace/shared`. (See §Concrete
-   contribution types + §Validation contract.)
-2. **Implement registries** (`PluginRegistry`, `CatalogRegistry`,
-   `ChatSuggestionRegistry`), subscribable via
-   `useSyncExternalStore`. Retrofit `CommandRegistry` + `PanelRegistry`
-   for subscribe.
-3. **Implement default plugins**: `workspacePlugin` (UI bridge tools,
-   default commands, default panels, uiRoutes), `filesystemPlugin`
-   (file ops + routes + Files catalog), `uiBridgePlugin` (UI bridge
-   primitives). Fix `@boring/workspace/server`'s tsup build so they
-   can ship — see open question §4.
-4. **`<WorkspaceProvider plugins={…}>`** — auto-mounts default
-   plugins, registers host-passed plugins, fans contributions into
-   the right registries.
-5. **`createWorkspaceAgentApp({ plugins })`** — server-side mount,
-   auto-mounts default plugins, accepts host plugins explicitly. The
-   pi loader's existing tools-only behavior stays UNCHANGED in
-   Phase 1 — legacy `default: Tool[]` / `tools: Tool[]` plugin files
-   keep working as today; we don't extend the loader to read the
-   wider Plugin shape until Phase 2.
-6. **`<CommandPalette />` consumes `useCatalogs()`** — kills the
-   broken `fileSearchFn`/`onOpenFile` props + the type-mismatched
-   Recent path. Files becomes the first catalog (provided by
-   `filesystemPlugin`).
-7. **Migrate `ChatCenteredShell`** off its imperative `useEffect`
-   command registration. Toggles + new-chat become commands inside a
-   private internal "chat-shell" plugin (defined inside the workspace
-   package, registered when the shell mounts). The
-   session-as-commands loop becomes a SessionsCatalog when the shell
-   receives `sessions` + `onSwitchSession`.
-8. **Migrate boring-macro-v2** to the inline-plugin layout:
-   - `apps/boring-macro-v2/src/plugin/{shared,client,server,index}.ts`
-     defines `macroPlugin = definePlugin({...})`.
-   - `apps/boring-macro-v2/src/server/index.ts` calls
-     `createWorkspaceAgentApp({ plugins: [macroPlugin] })`; deletes
-     `src/server/uiBridge.ts` (covered by `uiBridgePlugin`).
-   - `apps/boring-macro-v2/src/web/App.tsx` calls
-     `<WorkspaceProvider plugins={[macroPlugin]}>`; removes inline
-     panels/data/suggestions config.
-   - Acceptance test for the design: if it can't migrate boring-macro
-     to a single ~40-line plugin file, Phase 1 is wrong.
-9. **Tests** (see §Test plan).
-
-Two breaking changes (in release notes):
-
-- `CommandPaletteProps` export removed (already effectively dead —
-  provider mounts the palette with no props).
-- `ChatCenteredShellProps.withCommandPalette` removed; flag moves to
-  `<WorkspaceProvider excludeDefaults={["@boring/workspace"]}>` (or
-  similar — see §Default plugins for the override mechanism).
-
-**What Phase 1 does NOT change:**
-
-- The pi loader's behavior for tools-only legacy plugin files.
-- npm-installable distribution. (Plugin objects can be exported from
-  any package — that's just an npm import — but the wider package.json
-  manifest convention + auto-discovery don't ship.)
-- `~/.pi/agent/extensions/` and `./.pi/extensions/` keep working as
-  tools-only directories. The wider Plugin shape isn't read from
-  these dirs until Phase 2.
-- Agent has no `create_plugin` tool yet.
-- No `/api/v1/plugins` discovery endpoint.
-
-### Phase 2 (separate PR — distributable plugins)
-
-Once Phase 1 ships and the inline contract is validated on real apps:
-
-- **Extend pi loader: `extractTools` → `extractPlugin`**. Files in
+**Phase 2 — distributable plugins:**
+- Extend pi loader: `extractTools` → `extractPlugin`. Files in
   `.pi/extensions/` and `node_modules/pi-plugin-*` can export the
-  full `Plugin` shape (default: Plugin) in addition to the
-  legacy tools-only shape. Legacy plugins keep working unchanged.
-- **`GET /api/v1/plugins`** discovery endpoint + system-prompt
-  augmentation from registered catalog metadata.
-- **Workbench data tab gains catalog selector** — picks any
-  registered catalog instead of taking a per-shell `DataPaneConfig`.
-- **Agent gets generic `search_catalog(id, query)` tool**
-  auto-generated from registered catalogs (server-side and
-  bridge-routed for client-only).
-- **npm authoring guide + reference plugin** — a published
-  `pi-plugin-example` package demonstrating the
-  package.json `boring.plugin` manifest convention.
+  full `Plugin` shape. Legacy plugins keep working unchanged.
+- `GET /api/v1/plugins` discovery endpoint. Server-authoritative
+  manifest exposing the registered plugin set + their contributions.
+  System-prompt augmentation derives from this.
+- Workbench data tab gains catalog selector — picks any registered
+  catalog instead of taking a per-shell `DataPaneConfig`.
+- Generic `search_catalog(id, query)` agent tool, auto-generated
+  from registered catalogs (server-side; bridge-routed for
+  client-only).
+- npm authoring guide + reference plugin (`pi-plugin-example`).
 
-### Phase 3 (longer-term)
-
-- **Agent-generated plugins** — `create_plugin` / `update_plugin` /
-  `remove_plugin` / `list_plugins` agent tools. Generated files in
+**Phase 3 — agent-authored + dynamic:**
+- `create_plugin` / `update_plugin` / `remove_plugin` /
+  `list_plugins` agent tools. Generated files in
   `.pi/extensions/.agent-authored/`. Restart-required initially.
-- **Plugin hot-reload** for development.
-- **Per-plugin sandboxing / capability flags** (`agentExposed:
-  false`, `requiresConfirmation: true` per contribution).
+- Plugin hot-reload for development.
+- Per-contribution dependency declarations
+  (`PanelConfig.requiresPlugin`).
+- Per-plugin sandboxing / capability flags.
 
 ## Test plan
 
-Phase 1 ships with:
+- **Unit**
+  - `definePlugin` validation: well-formed plugin passes; malformed
+    contributions throw with field-level errors.
+  - Registry lifecycle: register/unregister/list ordering;
+    subscribe fires; cleanup runs; `dependsOn` rejects missing
+    deps; late-wins-on-id replaces.
+  - Subscribable retrofit: late `register` after consumer subscribed
+    triggers re-render.
+  - File-pattern resolution: specificity ordering correct;
+    same-specificity → late-wins; explicit `surface.openPanel`
+    bypasses.
 
-- **Unit: `definePlugin` validation** — well-formed plugin passes;
-  malformed catalog/panel/command throws with a clear error pointing
-  to the bad field.
-- **Unit: `PluginRegistry` lifecycle** — register/unregister fans
-  contributions correctly; cleanup runs on unregister; `dependsOn`
-  rejects missing deps; late-wins-on-id replaces.
-- **Unit: subscribable registries** — late `register` after a
-  consumer subscribes triggers a re-render via
-  `useSyncExternalStore`. Same retrofit applied to `CommandRegistry`
-  + `PanelRegistry`.
-- **Unit: pi loader `extractPlugin`** — legacy `tools: Tool[]` shape
-  still works; new `default: Plugin` shape works; mixed/invalid
-  shapes return `null` with logged errors.
-- **Unit: typed Recent migration** — old localStorage `string[]`
-  shape → typed `RecentEntry[]`; `"cmd:foo"` legacy entries dropped.
-- **Integration: `<WorkspaceProvider plugins={[testPlugin]}>` →
-  catalog/command/panel/chatSuggestion all reachable via their
-  hooks** (`useCatalogs`, `useCommands`, `usePanels`,
-  `useChatSuggestions`).
-- **Integration: `createWorkspaceAgentApp({ plugins: [testPlugin] })`
-  exposes test plugin's agentTools** in the catalog endpoint and
-  registers routes correctly.
-- **Integration: cmd palette renders catalogs from registered
-  plugins** — top-N rows debounced, AbortSignal-aware,
-  error-isolated per group.
-- **E2E: boring-macro-v2 migrated** — open the playground (or
-  full-app), search a series, verify the catalog renders + clicking
-  opens the chart. Same surface area as today, achieved through the
-  new model.
-- **Regression: existing pi plugins keep working** — drop a sample
-  `default: [tool1]` plugin file in `.pi/extensions/`,
-  `createWorkspaceAgentApp` registers the tool, agent finds it via
-  `/api/v1/agent/catalog`.
+- **Integration**
+  - `<WorkspaceProvider plugins={[testPlugin]}>` →
+    catalog/command/panel/chatSuggestion all reachable via
+    their hooks.
+  - `createWorkspaceAgentApp({ plugins: [testPlugin] })` exposes
+    `agentTools` in agent catalog endpoint; registers routes.
+  - Cmd palette renders catalogs from registered plugins;
+    error-isolated per group.
+  - `excludeDefaults` actually excludes; `dependsOn` errors at
+    boot when an excluded default is required.
 
-## Open questions
-
-1. **Plugin client/server file split — env guard, package.json
-   exports, or both?**
-   The plan documents both; needs a final pick. Recommend env-guard
-   (`process.env.SSR` or a build-tool conditional) for in-app
-   plugins; package.json `exports` for npm-distributed plugins.
-
-2. **What's the type of `onMount`'s cleanup return?**
-   Option (a) `void | (() => void)` (sync). Option (b) `void |
-   Promise<void> | (() => void | Promise<void>)`. (a) is simpler;
-   (b) handles plugins that need async teardown but adds complexity.
-   Recommend (a) for Phase 1; revisit if a plugin needs async
-   cleanup.
-
-3. **Does workspacePlugin's `agentTools` (UI bridge) belong here, or
-   stay in @boring/agent's standardCatalog?**
-   Today `get_ui_state`/`exec_ui` live in
-   `packages/agent/src/server/catalog/standardCatalog.ts:92` (gated
-   on a `uiBridge?` parameter). Migrating them into workspacePlugin
-   reduces the agent package's surface area but adds a workspace
-   dependency where boring-cli might want UI-less agents. Recommend:
-   move them into workspacePlugin; standalone `createAgentApp` (no
-   workspace) ships zero UI surface — already the goal of commit
-   `4968e7d` from the recent UI bridge ownership refactor.
-
-4. **`@boring/workspace/server`'s build situation.**
-   Boring-macro currently inlines 150 LOC because the workspace
-   package's `/server` export "isn't built (vite-plugin-dts crash +
-   no tsup config)" (their comment). Phase 1 NEEDS a buildable
-   workspace/server entry to ship workspacePlugin. Either fix the
-   tsup config or accept temporary inlining in workspacePlugin
-   itself. Recommend: fix the tsup config now; can't ship Phase 1
-   without it.
-
-5. **Do plugins get a sandboxed dependency injection, or share the
-   parent's React tree directly?**
-   Plugins live in the same React tree as the host. They can call
-   any context (DataProvider, etc.) the host provides. This is
-   simpler than sandboxing but means a misbehaving plugin can crash
-   the whole tree. Phase 1: shared tree. Acceptable for v1.
-
-6. **Should `createWorkspaceAgentApp` accept `plugins?` or require
-   it?**
-   Required. `[]` is valid (workspacePlugin still auto-mounts).
-   Forces hosts to make a deliberate choice; prevents footguns.
-
-7. **Discovery endpoint authentication?**
-   The same auth as other agent routes. `/api/v1/plugins` requires
-   a valid session cookie, like `/api/v1/agent/catalog` already
-   does. Phase 2 concern, but worth flagging.
+- **E2E**
+  - boring-macro-v2 migrated: open the deployed app, search a
+    series, click → chart panel opens. Same surface area as
+    today.
 
 ## Acceptance
 
 - `Plugin` contract + `definePlugin` exported from
   `@boring/workspace`.
-- `PluginRegistry` + `CatalogRegistry` subscribable; existing
-  `CommandRegistry` + `PanelRegistry` retrofitted.
+- `PluginRegistry`, `CatalogRegistry`, `ChatSuggestionRegistry`
+  subscribable; existing `CommandRegistry` + `PanelRegistry`
+  retrofitted.
 - `<WorkspaceProvider plugins={[…]}>` and
   `createWorkspaceAgentApp({ plugins: [...] })` are the only
   registration APIs hosts use.
-- Pi loader extended to handle the wider Plugin shape; legacy pi
-  plugins keep working.
-- `workspacePlugin` ships with the package; UI bridge tools + uiRoutes
-  + default panels + default commands move into it.
-- `<CommandPalette />` renders catalogs from registered plugins; old
-  `fileSearchFn`/`onOpenFile` props deleted; Recent type-mix bug
+- Two default plugins: `filesystemPlugin`, `dataCatalogPlugin`. Both
+  auto-mount; both individually opt-out-able.
+- `<CommandPalette />` renders catalogs from plugins; old
+  `fileSearchFn`/`onOpenFile` props removed; Recent type-mix bug
   fixed.
-- Boring-macro-v2 migrated: ~40-line `macroPlugin.ts` replaces
-  ~80 lines of glue + ~150 LOC of inlined UI bridge. Same
+- `<ChatCenteredShell />` registers its commands declaratively via
+  an internal plugin; imperative useEffect block deleted.
+- `boring-macro-v2` migrated: ~40-line plugin file replaces ~80
+  lines of glue + ~150 lines of inlined UI bridge. Same
   user-visible behavior.
-- Two breaking changes documented in release notes.
-- Tests in §Test plan all pass.
+- Two breaking changes (`CommandPaletteProps`,
+  `ChatCenteredShellProps.withCommandPalette`) documented.
+- Phase 1 test plan all green.
+
+## Open questions
+
+1. **Plugin client/server file split — env guard or package.json
+   exports?** Both work. Inline plugins use env guard; npm-published
+   plugins (Phase 2) use package.json `exports`. Documented both.
+2. **`onMount` cleanup return: sync or async?** Phase 1 = sync only
+   (`void | (() => void)`). Async deferred unless a real plugin
+   needs it.
+3. **Discovery endpoint authentication?** Same as other agent routes
+   (session cookie). Phase 2 concern; flagged.
+4. **`includeDefaults`/`excludeDefaults` — both, or one or the
+   other?** Recommend `excludeDefaults` (denylist) only. Allowlist
+   would force every host to opt in to defaults explicitly —
+   defeats the point. Both fields → confusing precedence.
+5. **What does `createWorkspaceAgentApp` do when running in a
+   monorepo with multiple workspaces and pi loader sees plugins
+   from a sibling app?** Phase 1: pi loader's existing behavior
+   unchanged (only reads tools-only legacy shape). Phase 2:
+   address when extending the loader.
 
 ## Reference
 
 - Existing pi plugin loader:
   `packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`
-- Existing workspace `WorkspaceProvider`:
+- Existing `WorkspaceProvider`:
   `packages/workspace/src/WorkspaceProvider.tsx`
 - Existing `<CommandPalette />`:
   `packages/workspace/src/components/CommandPalette.tsx`
-- ExplorerAdapter shape (already used by DataExplorer):
+- ExplorerAdapter (catalog adapter contract):
   `packages/workspace/src/components/DataExplorer/types.ts`
-- Boring-macro-v2 host:
+- Boring-macro-v2 host (the migration target):
   `/home/ubuntu/projects/boring-macro-v2/src/{server/index.ts,
   web/App.tsx, server/macroTools.ts, server/uiBridge.ts}`
-- Superseded plan:
-  `packages/workspace/docs/plans/COMMAND_PALETTE_REGISTRY.md`
+- Sibling plans:
+  - `UNIFIED_EVENT_BUS.md` — bus model; required by Phase 1
+  - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
+- Superseded plan: `COMMAND_PALETTE_REGISTRY.md`
