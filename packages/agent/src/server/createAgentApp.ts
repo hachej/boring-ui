@@ -19,6 +19,7 @@ import { sessionRoutes } from './http/routes/sessions'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
+import { searchRoutes } from './http/routes/search'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 
@@ -41,6 +42,13 @@ export interface CreateAgentAppOptions {
   version?: string
   logger?: boolean
   extraTools?: AgentTool[]
+  /**
+   * Append-only addendum to the underlying agent's system prompt. Cannot
+   * replace the base prompt — host apps EXTEND it (e.g. document app-
+   * specific tools, panes, data conventions). Plumbed to pi-coding-agent
+   * via DefaultResourceLoader's `appendSystemPromptSource`.
+   */
+  systemPromptAppend?: string
 }
 
 export async function createAgentApp(
@@ -88,7 +96,11 @@ export async function createAgentApp(
     logger: app.log,
   })
 
-  const harness = createPiCodingAgentHarness({ tools, cwd: workspaceRoot })
+  const harness = createPiCodingAgentHarness({
+    tools,
+    cwd: workspaceRoot,
+    systemPromptAppend: opts.systemPromptAppend,
+  })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
   const readyTracker = new ReadyStatusTracker({
@@ -114,6 +126,12 @@ export async function createAgentApp(
 
   await app.register(fileRoutes, { workspace: runtimeBundle.workspace })
   await app.register(treeRoutes, { workspace: runtimeBundle.workspace })
+  // /api/v1/files/search powers BOTH the cmd-palette / file-tree
+  // search (browser → fetchClient.search) AND shares the same
+  // FileSearch instance the LLM's `find_files` tool already uses
+  // (runtimeBundle.fileSearch). One impl, one set of glob semantics,
+  // one bound-to-workspace-root guarantee.
+  await app.register(searchRoutes, { fileSearch: runtimeBundle.fileSearch })
   await app.register(chatRoutes, {
     harness,
     workdir: runtimeBundle.workspace.root,

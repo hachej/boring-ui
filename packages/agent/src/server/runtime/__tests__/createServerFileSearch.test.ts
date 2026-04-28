@@ -196,6 +196,44 @@ test('translates path-shaped globs (**/*.ts, src/foo) to -path', async () => {
   expect(cmd).toContain("-path '*apps/full-app/package.json'")
 })
 
+test('search command is bounded to the workspace root', async () => {
+  // Three properties together keep the search inside the workspace:
+  //   1. cwd: workspace.root → find starts there, never ascends
+  //   2. `find . ...` → relative cwd, no traversal upward
+  //   3. -maxdepth 10 → bounded recursion
+  // Plus find does NOT follow symlinks unless -L is passed (it isn't),
+  // so symlinks pointing outside the workspace are listed but not
+  // dereferenced.
+  let capturedCmd = ''
+  let capturedCwd: string | undefined
+  const sandbox = createSandbox(async (cmd, opts) => {
+    capturedCmd = cmd
+    capturedCwd = opts?.cwd
+    return {
+      stdout: encoder.encode(''),
+      stderr: new Uint8Array(),
+      exitCode: 0,
+      durationMs: 1,
+      truncated: false,
+      stdoutEncoding: 'utf-8',
+      stderrEncoding: 'utf-8',
+    }
+  })
+
+  const workspace = createWorkspace('/sandboxed/workspace')
+  const fileSearch = createServerFileSearch(workspace, sandbox)
+
+  // Even an LLM-crafted escape attempt — `..`-relative glob — can't
+  // walk outside the cwd because find . never traverses upward.
+  await fileSearch.search('../../etc/passwd')
+
+  expect(capturedCwd).toBe('/sandboxed/workspace')
+  expect(capturedCmd).toMatch(/^find \./)
+  expect(capturedCmd).toContain('-maxdepth 10')
+  // No -L (follow-symlinks) flag.
+  expect(capturedCmd).not.toMatch(/find\s+-L\s/)
+})
+
 test('throws when sandbox.exec returns non-zero exit code', async () => {
   const sandbox = createSandbox(async () => ({
     stdout: new Uint8Array(),
