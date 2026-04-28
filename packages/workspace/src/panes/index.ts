@@ -6,7 +6,12 @@ export { DataCatalogPane } from "./DataCatalogPane"
 export type { DataCatalogPaneProps } from "./DataCatalogPane"
 export { CodeEditorPane } from "./CodeEditorPane"
 export type { CodeEditorPaneProps } from "./CodeEditorPane"
-export { FileTreePane } from "./FileTreePane"
-export type { FileTreePaneProps } from "./FileTreePane"
+export { FileTreePane, FileTreeView } from "../components/FileTreeView"
+export type { FileTreePaneProps, FileTreeViewProps } from "../components/FileTreeView"
 export { MarkdownEditorPane } from "./MarkdownEditorPane"
 export type { MarkdownEditorPaneProps } from "./MarkdownEditorPane"
+export {
+  CodeEditorPaneAdapter,
+  MarkdownEditorPaneAdapter,
+  defaultEditorPanels,
+} from "./dockviewWrappers"

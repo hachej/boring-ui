@@ -2,10 +2,8 @@ import { useMemo, useRef } from "react"
 import {
   WorkspaceProvider,
   ChatCenteredShell,
-  CodeEditorPane,
-  DataProvider,
   EmptyPane,
-  MarkdownEditorPane,
+  defaultEditorPanels,
   type ChatSuggestion,
 } from "@boring/workspace"
 import {
@@ -33,44 +31,11 @@ const FREQ_LABELS: Record<string, string> = {
   A: "Annual",
 }
 
-// Wrappers that translate dockview's `{params, api/panelApi}` envelope into
-// the flat `{path, panelApi}` shape CodeEditorPane and MarkdownEditorPane
-// expect. Same pattern as workspace-playground's App.tsx — eventually
-// these wrappers should disappear once the workspace built-in panes
-// accept the dockview envelope directly.
-function CodeEditorWrapper(props: Record<string, unknown>) {
-  const p = props as { params?: { path?: string }; api?: unknown; panelApi?: unknown }
-  const path = p.params?.path ?? ""
-  return <CodeEditorPane path={path} panelApi={(p.api ?? p.panelApi) as never} chromeless />
-}
-
-function MarkdownEditorWrapper(props: Record<string, unknown>) {
-  const p = props as { params?: { path?: string }; api?: unknown; panelApi?: unknown }
-  const path = p.params?.path ?? ""
-  return <MarkdownEditorPane path={path} panelApi={(p.api ?? p.panelApi) as never} chromeless />
-}
-
 const panels: PanelConfig[] = [
-  // Built-in editors. The workspace package exports the components but
-  // doesn't auto-register them — every consumer app picks which built-ins
-  // it wants. Registering here lets file-tree clicks (and exec_ui from the
-  // agent) open files in the workbench.
-  {
-    id: "code-editor",
-    title: "Editor",
-    component: CodeEditorWrapper as React.ComponentType<unknown>,
-    placement: "center",
-    source: "app",
-    filePatterns: ["*"],
-  },
-  {
-    id: "markdown-editor",
-    title: "Markdown",
-    component: MarkdownEditorWrapper as React.ComponentType<unknown>,
-    placement: "center",
-    source: "app",
-    filePatterns: ["*.md", "*.markdown"],
-  },
+  // Built-in editors (code-editor, markdown-editor) — registered via the
+  // workspace's defaultEditorPanels helper so every app doesn't have to
+  // hand-write the dockview envelope adapters.
+  ...defaultEditorPanels,
   // Macro-specific panes.
   {
     id: "chart-canvas",
@@ -127,7 +92,6 @@ const macroChatSuggestions: ChatSuggestion[] = [
 
 function Shell() {
   const { items, activeId } = useSessions()
-  const sessionList = useMemo(() => items, [items])
 
   // The catalog onActivate runs after dockview is ready, so a ref captured
   // via onSurfaceReady is sufficient — no React state needed.
@@ -169,7 +133,7 @@ function Shell() {
     <ChatCenteredShell
       appTitle="boring.macro"
       userInitial="J"
-      sessions={sessionList}
+      sessions={items}
       activeSessionId={activeId}
       onSwitchSession={sessions.switchTo}
       onCreateSession={sessions.create}
@@ -195,12 +159,11 @@ export function App() {
       <WorkspaceProvider
         panels={panels}
         apiBaseUrl=""
+        apiTimeout={10000}
         persistenceEnabled
-        storageKey="boring-macro-v2:layout"
+        storageKey="boring-macro:layout"
       >
-        <DataProvider apiBaseUrl="" authHeaders={{}} timeout={10000}>
-          <Shell />
-        </DataProvider>
+        <Shell />
       </WorkspaceProvider>
     </div>
   )

@@ -6,7 +6,7 @@ interface State {
   activeId: string
 }
 
-const KEY = "boring-macro-v2:sessions"
+const KEY = "boring-macro:sessions"
 
 function load(): State {
   if (typeof localStorage === "undefined") {

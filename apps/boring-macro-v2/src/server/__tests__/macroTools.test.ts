@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { AgentTool, ToolResult } from '@boring/agent/shared'
-import { createMacroTools, MACRO_SYSTEM_PROMPT } from '../tools/macroTools'
+import { createMacroTools } from '../tools/macroTools'
 
 function findTool(tools: AgentTool[], name: string): AgentTool {
   const tool = tools.find((t) => t.name === name)
@@ -16,8 +16,8 @@ const DUMMY_CTX = {
 describe('createMacroTools', () => {
   const tools = createMacroTools(null)
 
-  it('returns 5 tools', () => {
-    expect(tools).toHaveLength(5)
+  it('returns 4 tools', () => {
+    expect(tools).toHaveLength(4)
   })
 
   it('has correct tool names', () => {
@@ -26,7 +26,6 @@ describe('createMacroTools', () => {
       'execute_sql',
       'get_series_data',
       'macro_search',
-      'open_series',
       'persist_derived_series',
     ])
   })
@@ -151,64 +150,3 @@ describe('persist_derived_series', () => {
   })
 })
 
-describe('open_series', () => {
-  const tools = createMacroTools(null)
-  const tool = findTool(tools, 'open_series')
-
-  it('rejects empty series_id', async () => {
-    const result = await tool.execute({ series_id: '' }, DUMMY_CTX)
-    expect(result.content[0].text).toContain('required')
-    expect(result.isError).toBe(true)
-  })
-
-  it('pushes to tabBus on valid input', async () => {
-    const { tabBus } = await import('../services/tabBus')
-    const before = tabBus.listPending().length
-    await tool.execute({ series_id: 'CPIAUCSL' }, DUMMY_CTX)
-    expect(tabBus.listPending().length).toBe(before + 1)
-  })
-
-  it('defaults to chart mode', async () => {
-    const { tabBus } = await import('../services/tabBus')
-    await tool.execute({ series_id: 'TEST_DEFAULT' }, DUMMY_CTX)
-    const pending = tabBus.listPending()
-    const last = pending[pending.length - 1]
-    expect(last.mode).toBe('chart')
-  })
-
-  it('accepts table mode', async () => {
-    const { tabBus } = await import('../services/tabBus')
-    await tool.execute({ series_id: 'TEST_TABLE', mode: 'table' }, DUMMY_CTX)
-    const pending = tabBus.listPending()
-    const last = pending[pending.length - 1]
-    expect(last.mode).toBe('table')
-  })
-
-  it('has required series_id parameter', () => {
-    expect(tool.parameters.required).toContain('series_id')
-  })
-})
-
-describe('MACRO_SYSTEM_PROMPT', () => {
-  it('is a non-empty string', () => {
-    expect(typeof MACRO_SYSTEM_PROMPT).toBe('string')
-    expect(MACRO_SYSTEM_PROMPT.length).toBeGreaterThan(100)
-  })
-
-  it('mentions all 5 macro tools', () => {
-    expect(MACRO_SYSTEM_PROMPT).toContain('execute_sql')
-    expect(MACRO_SYSTEM_PROMPT).toContain('macro_search')
-    expect(MACRO_SYSTEM_PROMPT).toContain('get_series_data')
-    expect(MACRO_SYSTEM_PROMPT).toContain('persist_derived_series')
-    expect(MACRO_SYSTEM_PROMPT).toContain('open_series')
-  })
-
-  it('mentions bash tool (available via standard catalog)', () => {
-    expect(MACRO_SYSTEM_PROMPT).toContain('bash')
-  })
-
-  it('mentions ClickHouse and FRED', () => {
-    expect(MACRO_SYSTEM_PROMPT).toContain('ClickHouse')
-    expect(MACRO_SYSTEM_PROMPT).toContain('FRED')
-  })
-})

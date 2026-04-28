@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -35,6 +36,7 @@ import {
 } from "./ui"
 import { cn } from "../lib/utils"
 import { toast } from "../toast"
+import { events, userMeta } from "../events"
 
 const FileTree = lazy(() =>
   import("./FileTree").then((m) => ({ default: m.FileTree })),
@@ -150,11 +152,44 @@ interface ContextMenuState {
   isBackground?: boolean
 }
 
+/**
+ * Names that almost no app wants visible in the workbench tree. These are
+ * folders that bloat the tree (node_modules), tooling artifacts the user
+ * shouldn't be reading (test-results, dist, .tsbuildinfo*), or VCS
+ * machinery (.git). Apps can override via `ignoreNames` if they want
+ * them visible.
+ */
+export const DEFAULT_TREE_IGNORE: ReadonlyArray<string | RegExp> = [
+  "node_modules",
+  ".git",
+  "dist",
+  "test-results",
+  /^\.tsbuildinfo/,
+  ".vite",
+  ".turbo",
+  ".next",
+  ".cache",
+]
+
+function matchesAny(name: string, patterns: ReadonlyArray<string | RegExp>): boolean {
+  for (const p of patterns) {
+    if (typeof p === "string" ? p === name : p.test(name)) return true
+  }
+  return false
+}
+
 export interface FileTreeViewProps {
   rootDir?: string
   /** Already-debounced query. Empty/undefined means no filter. */
   searchQuery?: string
   bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select">
+  /**
+   * Names (or regex patterns) to hide from the tree. Defaults to
+   * `DEFAULT_TREE_IGNORE` (node_modules, .git, dist, …). Pass `[]` to
+   * show everything; pass your own array to override entirely. Patterns
+   * match on file/folder NAME, not the full path.
+   */
+  ignoreNames?: ReadonlyArray<string | RegExp>
   /** Forwarded to the inner <FileTree>. */
   className?: string
 }
@@ -174,10 +209,22 @@ export function FileTreeView({
   rootDir = ".",
   searchQuery,
   bridge,
+  ignoreNames = DEFAULT_TREE_IGNORE,
   className,
 }: FileTreeViewProps) {
   const dataClient = useDataClient()
-  const { data: fileList, error, isLoading } = useFileList(rootDir)
+  const { data: rawFileList, error, isLoading } = useFileList(rootDir)
+  // Filter out junk folders (node_modules, dist, …) before they hit
+  // buildTree. Cheap O(n) at the top level; nested children are already
+  // filtered by the agent backend or by their own buildTree recursion
+  // since the same `ignoreNames` is applied via the closure below.
+  const fileList = useMemo(
+    () =>
+      ignoreNames.length === 0
+        ? rawFileList
+        : rawFileList?.filter((e) => !matchesAny(e.name, ignoreNames)),
+    [rawFileList, ignoreNames],
+  )
   const { mutateAsync: writeFile } = useFileWrite()
   const { mutateAsync: createDir } = useCreateDir()
   const { mutateAsync: moveFile } = useMoveFile()
@@ -276,12 +323,16 @@ export function FileTreeView({
     async (dirPath: string) => {
       try {
         const children = await dataClient.getTree(dirPath)
-        setExpandedChildren((prev) => new Map(prev).set(dirPath, children))
+        const filtered =
+          ignoreNames.length === 0
+            ? children
+            : children.filter((c) => !matchesAny(c.name, ignoreNames))
+        setExpandedChildren((prev) => new Map(prev).set(dirPath, filtered))
       } catch {
         // Network error — directory stays empty, user can retry
       }
     },
-    [dataClient],
+    [dataClient, ignoreNames],
   )
 
   /**
@@ -451,6 +502,14 @@ export function FileTreeView({
           const newPath = dir === "." || dir === "" ? trimmed : `${dir}/${trimmed}`
           if (current.kind === "create-file") {
             await writeFile({ path: newPath, content: "" })
+            // useFileWrite stays silent (it can't tell create from edit);
+            // the call site knows this was a creation, so emit here.
+            // useCreateDir already emits its own file:created event.
+            events.emit("file:created", {
+              ...userMeta(),
+              path: newPath,
+              kind: "file",
+            })
             toast.success({ title: "File created", description: newPath })
           } else {
             await createDir({ path: newPath })

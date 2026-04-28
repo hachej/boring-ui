@@ -17,7 +17,6 @@
     "@boring/agent": "workspace:*",
     "@boring/workspace": "workspace:*",
     "@clickhouse/client": "^1.18.2",
-    "@fastify/websocket": "^11.2.0",
     "fastify": "^5.8.4",
     "fastify-raw-body": "^5.0.0",
     "lucide-react": "^0.460.0",

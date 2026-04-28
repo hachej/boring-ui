@@ -3,7 +3,6 @@ import { dirname, resolve } from 'node:path'
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { DataService } from '../services/clickhouse'
 import { FredRefreshService } from '../services/fredRefresh'
-import { tabBus } from '../services/tabBus'
 import { loadMacroConfig } from '../config'
 
 // ---------------------------------------------------------------------------
@@ -37,10 +36,6 @@ function optionalInt(val: unknown, min?: number, max?: number): number | null {
 // ---------------------------------------------------------------------------
 
 export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
-  // Register @fastify/websocket plugin for /ws/tabs
-  const websocketPlugin = await import('@fastify/websocket')
-  await app.register(websocketPlugin.default || websocketPlugin)
-
   const macroConfig = await loadMacroConfig()
   const svc = macroConfig.clickhouse ? new DataService(macroConfig.clickhouse) : null
 
@@ -308,27 +303,6 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
       }
     })
 
-    // ---- Tab command queue -----------------------------------------------
-
-    scoped.post('/tabs', async (req: FastifyRequest, _reply: FastifyReply) => {
-      const body = req.body as { seriesId?: string; mode?: string }
-      return tabBus.push(body.seriesId || '', body.mode || 'chart')
-    })
-
-    scoped.get('/tabs', async (_req: FastifyRequest, _reply: FastifyReply) => {
-      return tabBus.listPending()
-    })
-
-    scoped.delete('/tabs/:cmdId', async (req: FastifyRequest, reply: FastifyReply) => {
-      const { cmdId } = req.params as { cmdId: string }
-      const id = parseInt(cmdId, 10)
-      if (!tabBus.markProcessed(id)) {
-        reply.code(404).send({ error: `Tab command ${id} not found` })
-        return
-      }
-      return { ok: true, deleted: id }
-    })
-
     // ---- CH query proxy --------------------------------------------------
 
     scoped.post('/ch-query', async (req: FastifyRequest, reply: FastifyReply) => {
@@ -443,9 +417,4 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
     })
 
   }, { prefix: '/api/macro' })
-
-  // -----------------------------------------------------------------------
-  // WebSocket endpoint — registered at root level (NOT under prefix)
-  // -----------------------------------------------------------------------
-  tabBus.registerWebSocket(app)
 }

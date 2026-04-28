@@ -96,13 +96,47 @@ export { DataCatalogPane } from "./panes"
 export type { DataCatalogPaneProps } from "./panes"
 export { CodeEditorPane } from "./panes"
 export type { CodeEditorPaneProps } from "./panes"
-export { FileTreePane } from "./panes"
-export type { FileTreePaneProps } from "./panes"
+export { FileTreePane, FileTreeView } from "./components/FileTreeView"
+export type { FileTreePaneProps, FileTreeViewProps } from "./components/FileTreeView"
 export { MarkdownEditorPane } from "./panes"
 export type { MarkdownEditorPaneProps } from "./panes"
+export {
+  CodeEditorPaneAdapter,
+  MarkdownEditorPaneAdapter,
+  defaultEditorPanels,
+} from "./panes"
+export { definePanel } from "./registry/types"
+export type { PaneProps } from "./registry/types"
 
 // Theme
 export { createShadcnTheme, useShadcnTheme } from "./theme"
+
+// Unified event bus — typed pubsub for cross-cutting signals
+// (filesystem mutations, panel/editor/query lifecycle). See
+// docs/plans/UNIFIED_EVENT_BUS.md.
+export {
+  events,
+  useEvent,
+  userMeta,
+  agentMeta,
+  emitAgentFileChange,
+} from "./events"
+export type {
+  Origin,
+  EventMeta,
+  WorkspaceEventMap,
+  WorkspaceEventName,
+} from "./events"
+
+// Toast notifications (app-global; mounted automatically by WorkspaceProvider)
+export { toast, Toaster, dismissToast } from "./toast"
+export type {
+  ToastApi,
+  ToastInput,
+  ToastRecord,
+  ToastVariant,
+  ToasterProps,
+} from "./toast"
 
 // Bridge
 export { createBridge } from "./bridge"
@@ -188,6 +222,7 @@ export type {
   ChatTopBarProps,
   ChatShellContextValue,
 } from "./components/chat"
+export type { ChatSuggestion } from "@boring/agent/ui-shadcn"
 
 // Provider
 export {
@@ -195,13 +230,11 @@ export {
   ThemeProvider,
   useTheme,
   useWorkspaceBridge,
-  useDataProvider,
 } from "./WorkspaceProvider"
 export type {
   WorkspaceProviderProps,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
-  DataProviderContextValue,
 } from "./WorkspaceProvider"
 
 // Store (selectors only — store itself is NOT exported)
