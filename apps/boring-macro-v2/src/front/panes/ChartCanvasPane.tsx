@@ -17,6 +17,7 @@ import type {
   SeriesPayload,
 } from "../macroSeriesTypes"
 import { fetchMacroSeries } from "../macroSeriesData"
+import { SERIES_COLORS, formatSeriesValue, openSeriesPane } from "../macroSeriesUi"
 
 interface ChartParams {
   seriesId?: string
@@ -27,19 +28,12 @@ interface ChartCanvasPaneProps {
   panelApi?: DockviewPanelApi
 }
 
-const COLORS = [
-  "#ff6600", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444",
-  "#f59e0b", "#06b6d4", "#ec4899", "#84cc16", "#6366f1",
-]
+const COLORS = SERIES_COLORS
 
 type TabId = "chart" | "table" | "metadata" | "lineage"
 
-function formatValue(v: number | null | undefined): string {
-  if (v == null) return "N/A"
-  if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(1) + "M"
-  if (Math.abs(v) >= 1e3) return (v / 1e3).toFixed(1) + "K"
-  return v.toFixed(2)
-}
+const formatValue = (v: number | null | undefined): string =>
+  formatSeriesValue(v, { scaledPrecision: 1 })
 
 interface MergedRow {
   date: string
@@ -558,23 +552,9 @@ function LineageTab({ seriesId }: { seriesId: string }) {
     }
   }, [seriesId])
 
-  const openSeriesPane = useCallback((targetId: string) => {
+  const openTarget = useCallback((targetId: string) => {
     if (!targetId || targetId === seriesId) return
-    // Same bridge route the agent's open_series tool uses — works for any
-    // child of ChatCenteredShell because the workspace SSE poller picks
-    // it up and dispatches surface.openPanel.
-    void fetch("/api/v1/ui/commands", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        kind: "openPanel",
-        params: {
-          id: `chart:${targetId}`,
-          component: "chart-canvas",
-          params: { seriesId: targetId },
-        },
-      }),
-    })
+    openSeriesPane(targetId)
   }, [seriesId])
 
   if (data === undefined) {
@@ -593,7 +573,7 @@ function LineageTab({ seriesId }: { seriesId: string }) {
     return (
       <button
         type="button"
-        onClick={() => openSeriesPane(id)}
+        onClick={() => openTarget(id)}
         className="inline-flex max-w-full items-center gap-1.5 rounded border border-border px-2 py-1 text-xs hover:bg-muted/50"
       >
         <span className="font-mono">{id}</span>

@@ -38,5 +38,20 @@ export default defineConfig({
       "/health": `http://127.0.0.1:${API_PORT}`,
       "/ready": `http://127.0.0.1:${API_PORT}`,
     },
+    // Workspace root (= cwd in dev) holds user-editable files: deck/*.md,
+    // tt.md, anything the agent writes. Without these ignores Vite triggers
+    // a full page reload on every save, dropping the UI bridge SSE and
+    // bouncing chat sessions. Watch only the app's own source.
+    watch: {
+      ignored: [
+        "**/deck/**",
+        "**/*.md",
+        "**/test-results/**",
+        "**/.tsbuildinfo*",
+        "**/.vite/**",
+        "**/.turbo/**",
+        "**/dist/**",
+      ],
+    },
   },
 })

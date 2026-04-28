@@ -2,6 +2,7 @@
 // (records-one-by-one, ~87k series, paginated, faceted by frequency + source).
 
 import type { ExplorerAdapter, ExplorerRow, Facets } from "@boring/workspace"
+import { FREQ_LABELS } from "./macroSeriesUi"
 
 interface CatalogResponse {
   items: Array<{
@@ -19,15 +20,6 @@ interface CatalogResponse {
 interface FacetsResponse {
   frequency: Array<{ value: string; count: number }>
   source: Array<{ value: string; count: number }>
-}
-
-const FREQ_LABELS: Record<string, string> = {
-  D: "Daily",
-  W: "Weekly",
-  M: "Monthly",
-  Q: "Quarterly",
-  SA: "Semiannual",
-  A: "Annual",
 }
 
 function toRow(item: CatalogResponse["items"][number]): ExplorerRow {

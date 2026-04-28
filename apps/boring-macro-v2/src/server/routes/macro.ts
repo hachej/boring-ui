@@ -48,20 +48,25 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
     )
   }
 
-  // Auth is handled by the host app's global middleware. Macro routes only
-  // need the localhost-skip so the agent's bash tool can call these endpoints.
-  const localhostBypass = async (request: FastifyRequest, _reply: FastifyReply) => {
-    const remoteAddr = request.ip || request.raw.socket?.remoteAddress || ''
-    if (remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1') {
-      ;(request as any).user = (request as any).user ?? { id: 'pi-agent', email: 'pi-agent@boring-macro.local', name: 'PI Agent' }
-    }
-  }
+  // Auth is handled by the host app's global middleware. In dev, allow
+  // loopback requests through with a synthetic pi-agent user so the local
+  // agent's bash tool can call these endpoints without a real session.
+  // Gated on BM_DEV_AUTO_SESSION so prod can't accidentally accept anything
+  // routed via 127.0.0.1 (reverse proxy, sidecar, etc.).
+  const localhostBypass = macroConfig.devAutoSession
+    ? async (request: FastifyRequest, _reply: FastifyReply) => {
+        const remoteAddr = request.ip || request.raw.socket?.remoteAddress || ''
+        if (remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1') {
+          ;(request as any).user = (request as any).user ?? { id: 'pi-agent', email: 'pi-agent@boring-macro.local', name: 'PI Agent' }
+        }
+      }
+    : null
 
   // -----------------------------------------------------------------------
   // Scoped plugin with auth + /api/v1/macro prefix
   // -----------------------------------------------------------------------
   app.register(async (scoped: FastifyInstance) => {
-    scoped.addHook('onRequest', localhostBypass)
+    if (localhostBypass) scoped.addHook('onRequest', localhostBypass)
 
     // Helper for endpoints that need ClickHouse
     function requireCH(_req: FastifyRequest, reply: FastifyReply): boolean {
@@ -350,8 +355,14 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
     // Path-traversal guard: `requested` must resolve INSIDE deckRoot, not
     // anywhere else (e.g. ../../etc/passwd). `safeDeckPath` returns null on
     // traversal attempts so each handler can 400-out with a clear message.
+    const normalizeDeckRequestPath = (requested: string): string => {
+      const trimmed = requested.trim().replace(/^\.\//, '')
+      return trimmed.startsWith('deck/') ? trimmed.slice('deck/'.length) : trimmed
+    }
+
     const safeDeckPath = (requested: string): string | null => {
-      const resolved = resolve(macroConfig.deckRoot, requested)
+      const normalized = normalizeDeckRequestPath(requested)
+      const resolved = resolve(macroConfig.deckRoot, normalized)
       return resolved.startsWith(resolve(macroConfig.deckRoot) + '/') ? resolved : null
     }
 

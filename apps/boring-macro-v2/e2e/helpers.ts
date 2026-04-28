@@ -31,20 +31,39 @@ export async function openWorkbench(page: Page): Promise<void> {
   await openWorkbenchGeneric(page, { shellKey: SHELL_KEY })
 }
 
-/** Click the Data tab inside the workbench's left pane. */
+/**
+ * Click the Data tab inside the workbench's left pane, then wait for the
+ * catalog to actually paint a row group header. Replaces a 1.5s sleep
+ * that flaked when ClickHouse was warming up.
+ */
 export async function clickDataTab(page: Page): Promise<void> {
   await page
     .locator('button, [role="tab"]')
     .filter({ hasText: /^Data$/ })
     .first()
     .click()
-  await page.waitForTimeout(1500)
+  // Catalog renders frequency-group headers (Daily/Weekly/Monthly/...) once
+  // the first /catalog response lands. Any one of them is sufficient.
+  await page
+    .locator("text=/^(Daily|Weekly|Monthly|Quarterly|Semiannual|Annual)$/")
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 })
 }
 
-/** Expand the Monthly frequency group inside the catalog. */
+/**
+ * Expand the Monthly frequency group inside the catalog and wait for at
+ * least one series row to appear under it.
+ */
 export async function expandMonthlyGroup(page: Page): Promise<void> {
   await page.locator("text=Monthly").first().click()
-  await page.waitForTimeout(1500)
+  // Series IDs are uppercase letters/digits, ≥3 chars (CPIAUCSL, UNRATE, …).
+  // Wait until at least one such row is rendered — proves the group is
+  // expanded AND the rows finished hydrating.
+  await page
+    .locator('[data-explorer-row], [role="row"], li, button')
+    .filter({ hasText: /^[A-Z][A-Z0-9_]{2,}$/ })
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 })
 }
 
 export async function openChartViaBridge(page: Page, seriesId: string): Promise<void> {

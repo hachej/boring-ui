@@ -16,19 +16,11 @@ import {
 } from "@boring/workspace/testing"
 import { LineChart, Search, TrendingUp, Presentation } from "lucide-react"
 import { createMacroSeriesAdapter } from "./macroSeriesAdapter"
+import { FREQ_LABELS } from "./macroSeriesUi"
 import { ChartCanvasPane } from "./panes/ChartCanvasPane"
 import { DeckPane } from "./panes/DeckPane"
 
 const sessionsStore = createLocalStorageSessions({ storageKey: "boring-macro:sessions" })
-
-const FREQ_LABELS: Record<string, string> = {
-  D: "Daily",
-  W: "Weekly",
-  M: "Monthly",
-  Q: "Quarterly",
-  SA: "Semiannual",
-  A: "Annual",
-}
 
 const panels: PanelConfig[] = [
   ...defaultEditorPanels,
@@ -45,6 +37,9 @@ const panels: PanelConfig[] = [
     component: DeckPane,
     placement: "center",
     source: "app",
+    // Files under deck/ open as the slide viewer; other .md files still
+    // route to the default markdown editor (suffixLen 9 > 3 wins).
+    filePatterns: ["deck/*.md"],
   }),
   definePanel({
     id: "empty",
