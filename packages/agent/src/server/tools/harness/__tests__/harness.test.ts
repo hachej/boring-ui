@@ -122,7 +122,7 @@ describe('buildHarnessAgentTools', () => {
     const tool = tools.find((t) => t.name === 'execute_isolated_code')!
 
     const result = await tool.execute(
-      { code: 'x', language: 'python' },
+      { code: 'print("x")', language: 'python' },
       { abortSignal: new AbortController().signal, toolCallId: 'test-3' },
     )
 
@@ -143,7 +143,7 @@ describe('buildHarnessAgentTools', () => {
     expect(emptyCode.isError).toBe(true)
 
     const badLang = await tool.execute(
-      { code: 'x', language: 'rust' },
+      { code: 'fn main() {}', language: 'rust' },
       { abortSignal: new AbortController().signal, toolCallId: 'test-5' },
     )
     expect(badLang.isError).toBe(true)

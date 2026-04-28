@@ -9,6 +9,8 @@ import { standardCatalog } from './catalog/standardCatalog'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
+import { buildFilesystemAgentTools } from './tools/filesystem'
+import { buildHarnessAgentTools } from './tools/harness'
 import { createAuthMiddleware } from './http/middleware'
 import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
@@ -44,6 +46,8 @@ export interface CreateAgentAppOptions {
   version?: string
   logger?: boolean
   extraTools?: AgentTool[]
+  /** When true, omit the six filesystem tools (read/write/edit/find/grep/ls). */
+  disableDefaultFileTools?: boolean
   /**
    * Append-only addendum to the underlying agent's system prompt. Cannot
    * replace the base prompt — host apps EXTEND it (e.g. document app-
@@ -73,30 +77,52 @@ export async function createAgentApp(
   // @boring/workspace/server's createWorkspaceAgentApp() instead of
   // createAgentApp() directly. Standalone agent (CLI, no workspace)
   // ships zero UI surface — smaller bundle, honest contract.
-  const standardTools = standardCatalog(runtimeBundle)
-  const pluginTools: PluginToolRegistration[] = []
+  let tools: AgentTool[]
 
-  if (resolvedMode !== 'vercel-sandbox') {
+  if (resolvedMode === 'direct') {
+    const pluginTools: AgentTool[] = []
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
     if (pluginResult.errors.length > 0) {
       for (const e of pluginResult.errors) {
         app.log.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
       }
     }
-    pluginTools.push(
-      ...pluginResult.plugins.map((plugin) => ({
-        pluginName: pluginNameFromPath(plugin.path),
-        tools: plugin.tools,
-      })),
-    )
-  }
+    for (const plugin of pluginResult.plugins) {
+      pluginTools.push(...plugin.tools)
+    }
 
-  const tools = mergeTools({
-    standardTools,
-    extraTools: opts.extraTools,
-    pluginTools,
-    logger: app.log,
-  })
+    tools = [
+      ...buildHarnessAgentTools(runtimeBundle),
+      ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
+      ...(opts.extraTools ?? []),
+      ...pluginTools,
+    ]
+  } else {
+    const standardTools = standardCatalog(runtimeBundle)
+    const pluginTools: PluginToolRegistration[] = []
+
+    if (resolvedMode !== 'vercel-sandbox') {
+      const pluginResult = await loadPlugins({ cwd: workspaceRoot })
+      if (pluginResult.errors.length > 0) {
+        for (const e of pluginResult.errors) {
+          app.log.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
+        }
+      }
+      pluginTools.push(
+        ...pluginResult.plugins.map((plugin) => ({
+          pluginName: pluginNameFromPath(plugin.path),
+          tools: plugin.tools,
+        })),
+      )
+    }
+
+    tools = mergeTools({
+      standardTools,
+      extraTools: opts.extraTools,
+      pluginTools,
+      logger: app.log,
+    })
+  }
 
   const harness = createPiCodingAgentHarness({
     tools,

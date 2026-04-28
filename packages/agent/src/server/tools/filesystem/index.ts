@@ -19,7 +19,32 @@ import {
 } from '../operations/vercel'
 import { vercelGrepTool } from '../vercelGrepTool'
 
-function adaptPiTool(piTool: { name: string; description: string; parameters: unknown; execute: Function }): AgentTool {
+interface PiToolResultLike {
+  content?: Array<{ type: string; text?: string }>
+  details?: unknown
+}
+
+interface PiToolLike<TParams extends Record<string, unknown>> {
+  name: string
+  description: string
+  parameters: unknown
+  execute(
+    toolCallId: string,
+    params: TParams,
+    signal?: AbortSignal,
+    onUpdate?: (update: PiToolResultLike) => void,
+  ): Promise<PiToolResultLike>
+}
+
+function isTextContent(
+  content: { type: string; text?: string },
+): content is { type: 'text'; text: string } {
+  return content.type === 'text' && typeof content.text === 'string'
+}
+
+function adaptPiTool<TParams extends Record<string, unknown>>(
+  piTool: PiToolLike<TParams>,
+): AgentTool {
   return {
     name: piTool.name,
     description: piTool.description,
@@ -27,21 +52,21 @@ function adaptPiTool(piTool: { name: string; description: string; parameters: un
     async execute(params, ctx) {
       const result = await piTool.execute(
         ctx.toolCallId,
-        params,
+        params as TParams,
         ctx.abortSignal,
         ctx.onUpdate
-          ? (update: { content: Array<{ type: string; text: string }>; details: unknown }) => {
+          ? (update) => {
               const text = update.content
-                .filter((c: { type: string }) => c.type === 'text')
-                .map((c: { type: string; text: string }) => c.text)
+                ?.filter(isTextContent)
+                .map((c) => c.text)
                 .join('')
-              ctx.onUpdate!(text)
+              if (text) ctx.onUpdate?.(text)
             }
           : undefined,
       )
       const textContent = (result.content ?? [])
-        .filter((c: { type: string }) => c.type === 'text')
-        .map((c: { type: string; text: string }) => ({ type: 'text' as const, text: c.text }))
+        .filter(isTextContent)
+        .map((c) => ({ type: 'text' as const, text: c.text }))
       return {
         content: textContent.length > 0 ? textContent : [{ type: 'text', text: '' }],
         isError: false,
