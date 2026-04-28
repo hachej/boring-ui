@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v6.1 — ultrathink self-audit (cut dead recentKind; add validation enumeration, id collision policy, build invariants, testability section, concrete filesystemPlugin source, known-gaps register)
+**Status:** v6.2 — round-3 codex review patches (filesystemAgentTools factory P0; drop dataCatalogPlugin from defaults P1; client/server split in macro example P2; ChatCenteredShell session commands stay imperative P2)
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
@@ -523,12 +523,25 @@ import { makeMacroPlugin, macroChatSuggestions } from "../plugin"
 type changes. The plan does NOT delete `chatSuggestions` from
 `<ChatCenteredShell>`'s props (reverses an earlier draft).
 
-### Default plugins — TWO, finalized
+### Default plugins — ONE, finalized
 
 | Plugin | Contributes | Why a plugin (not core) |
 |---|---|---|
-| **`filesystemPlugin`** | Agent tools (`find_files`, `grep_files`, `read`, `write`, `edit`); a Files catalog; FileTree panel registration as `placement: 'left-tab'`; CodeEditor + MarkdownEditor panel registrations (with `filePatterns`) | Domain capability hosts can omit (UI-only apps, sandboxed deployments). When excluded: file tools removed from LLM catalog, Files left-tab disappears, code/markdown editors stop auto-routing. |
-| **`dataCatalogPlugin`** | DataExplorer panel registration as `placement: 'left-tab'` (workbench data tab); Phase 2: `search_catalog(id, q)` generic agent tool | Apps without catalog browsing don't need the data tab. |
+| **`filesystemPlugin`** | Agent tools (`find_files`, `grep_files`, `read`, `write`, `edit`) via the runtime-deps factory; a Files catalog; FileTree panel registration as `placement: 'left-tab'`; CodeEditor + MarkdownEditor panel registrations (with `filePatterns`) | Domain capability hosts can omit (UI-only apps, sandboxed deployments). When excluded: file tools removed from LLM catalog, Files left-tab disappears, code/markdown editors stop auto-routing. |
+
+**v6 had a `dataCatalogPlugin` second default; v6.2 cuts it.**
+Reason (codex round-3 P1): with `recentKind` cut and no other
+filter, a generic "Data" tab couldn't unambiguously pick *which*
+catalog to display when multiple plugins contribute catalogs (e.g.,
+filesystem's Files catalog + macro's Series catalog). Rather than
+re-add a `defaultForDataTab` flag or invent precedence, **plugins
+that want a workbench data tab register their own `placement:
+'left-tab'` panel** that internally renders DataExplorer with their
+adapter. macro's plugin gets a "Macro Series" tab; filesystem
+already has the Files tab; no generic placeholder.
+
+If a host wants a vanilla "pick any catalog" data tab, they can
+register one — it's not a hard substrate concern.
 
 **Note on filesystem ROUTES:** `/api/v1/files`, `/tree`,
 `/files/search` are **substrate**, not part of `filesystemPlugin`.
@@ -537,12 +550,12 @@ UI's HTTP plumbing works; `excludeDefaults: ['filesystem']` removes
 the filesystem **capability** (tools + tabs + editors) but leaves
 the HTTP plumbing available for any host or other plugin.
 
-Both default plugins auto-mount. Hosts opt out via:
+The single default plugin auto-mounts. Hosts opt out via:
 
 ```tsx
 <WorkspaceProvider
   plugins={[macroPlugin]}
-  excludeDefaults={["filesystem"]}    // or ["dataCatalog"], or []
+  excludeDefaults={["filesystem"]}    // or [] (only filesystem is a default)
 >
 ```
 
@@ -555,20 +568,78 @@ A subtle but important arrangement (because the standalone agent
 CLI must remain a real coding agent — file ops are core to the
 identity of "coding agent"):
 
-- **The tool implementations** (`find_files`, `grep_files`, `read`,
-  `write`, `edit`) live as a bundle in `@boring/agent`:
-  `packages/agent/src/server/tools/filesystem/index.ts` exports
-  `filesystemAgentTools: AgentTool[]`.
-- **Standalone `createAgentApp`** registers the bundle by default.
-  Opt out via `createAgentApp({ disableDefaultFileTools: true })`.
-- **`filesystemPlugin`** (in `@boring/workspace`) imports the same
-  bundle and wraps it as `agentTools: filesystemAgentTools`.
+- **The tool implementations are factories** that take runtime
+  deps (`workspace`, `sandbox`, `fileSearch`) and return tools.
+  This matches the existing `standardCatalog.ts:84` shape — the
+  current code already factors tools per-app at boot
+  (`createReadTool(workspace)`, `createFindFilesTool(fileSearch)`,
+  etc.). Step 1b extracts this clustering into a single factory:
+
+  ```ts
+  // packages/agent/src/server/tools/filesystem/index.ts
+  import type { Workspace, Sandbox, FileSearch } from "../../runtime/types"
+  import type { AgentTool } from "../../../shared/tool"
+  import { createFindFilesTool } from "../../catalog/tools/findFilesTool"
+  import { createGrepFilesTool } from "../../catalog/tools/grepFilesTool"
+  import { createReadTool } from "../../catalog/tools/readTool"
+  import { createWriteTool } from "../../catalog/tools/writeTool"
+  import { createEditTool } from "../../catalog/tools/editTool"
+
+  export interface FilesystemAgentToolsDeps {
+    workspace: Workspace
+    sandbox: Sandbox
+    fileSearch?: FileSearch    // optional in some runtime modes
+  }
+
+  export function createFilesystemAgentTools(
+    deps: FilesystemAgentToolsDeps,
+  ): AgentTool[] {
+    const tools: AgentTool[] = [createGrepFilesTool(deps.sandbox)]
+    if (deps.fileSearch) tools.push(createFindFilesTool(deps.fileSearch))
+    tools.push(
+      createReadTool(deps.workspace),
+      createWriteTool(deps.workspace),
+      createEditTool(deps.workspace),
+    )
+    return tools
+  }
+  ```
+
+- **Standalone `createAgentApp`** calls `createFilesystemAgentTools`
+  with its already-constructed runtime bundle, by default. Opt out
+  via `createAgentApp({ disableDefaultFileTools: true })`.
+- **`filesystemPlugin`** (in `@boring/workspace`) DOESN'T eagerly
+  evaluate the factory at module load — that would fail because
+  workspace doesn't have a runtime bundle. Instead, the plugin
+  shape becomes a small adapter: `filesystemPlugin` is constructed
+  from runtime deps inside `createWorkspaceAgentApp`, where the
+  workspace runtime bundle exists. So:
+
+  ```ts
+  // packages/workspace/src/plugin/defaults/filesystemPlugin.ts
+  import { definePlugin } from "../definePlugin"
+  import { createFilesystemAgentTools, type FilesystemAgentToolsDeps } from "@boring/agent/server/tools/filesystem"
+  import { FileTreePanel, CodeEditorPanel, MarkdownEditorPanel } from "../../panels"
+  import { filesCatalog } from "./filesystemCatalog"
+
+  export function makeFilesystemPlugin(deps: FilesystemAgentToolsDeps) {
+    return definePlugin({
+      id: "filesystem",
+      label: "Filesystem",
+      panels: [/* FileTree, CodeEditor, MarkdownEditor */],
+      catalogs: [filesCatalog],
+      agentTools: createFilesystemAgentTools(deps),
+    })
+  }
+  ```
+
+  `createWorkspaceAgentApp` calls `makeFilesystemPlugin(deps)`
+  internally with its runtime bundle and prepends the result to
+  `opts.plugins` (unless `excludeDefaults` says otherwise).
 - **`createWorkspaceAgentApp`** passes `disableDefaultFileTools:
   true` to the underlying `createAgentApp`, so file tools come
   through the plugin path only — no double registration.
-  `filesystemPlugin` is the canonical registration site for
-  workspace hosts; `excludeDefaults: ['filesystem']` truly removes
-  file tools.
+  `excludeDefaults: ['filesystem']` truly removes file tools.
 
 ONE source of truth for tool implementations, TWO registration
 pathways for two different hosts.
@@ -1216,13 +1287,16 @@ Six sequenced commits.
 ┌──────────────────────────────────────────────────────────────────┐
 │  STEP 3 — DEFAULT PLUGINS                                        │
 │  ─────────────────────────────────────────────────────────────── │
-│  3a. filesystemPlugin                                            │
-│      Contributes: agentTools (filesystemAgentTools); Files       │
-│      catalog; FileTree (placement: 'left-tab'); CodeEditor +     │
-│      MarkdownEditor (with filePatterns).                         │
+│  3a. filesystemPlugin (sole default)                             │
+│      Constructed from runtime deps via                           │
+│      `makeFilesystemPlugin(deps)`. Contributes: agentTools (via  │
+│      createFilesystemAgentTools(deps)); Files catalog; FileTree  │
+│      (placement: 'left-tab'); CodeEditor + MarkdownEditor (with  │
+│      filePatterns).                                              │
 │                                                                  │
-│  3b. dataCatalogPlugin                                           │
-│      Contributes: DataExplorer panel (placement: 'left-tab').    │
+│      (v6 had dataCatalogPlugin as a second default; v6.2 cuts    │
+│      it — plugins that want a workbench data tab contribute      │
+│      their own left-tab panel.)                                  │
 │                                                                  │
 │  ETA: 0.5 day.                                                   │
 └──────────────────────────────────────────────────────────────────┘
@@ -1254,11 +1328,21 @@ Six sequenced commits.
 │      Recent. Drop dead fileSearchFn / onOpenFile props.          │
 │      Migrate existing localStorage Recent entries.               │
 │                                                                  │
-│  5b. <ChatCenteredShell /> migration                             │
-│      - Drop imperative useEffect command registration. Internal  │
-│        "chat-shell" plugin (defined inline) takes over.          │
-│      - Drop `data: DataPaneConfig` prop. Workbench data tab      │
-│        reads CatalogRegistry.                                    │
+│  5b. <ChatCenteredShell /> migration (NUANCED — codex P2)        │
+│      - STATIC commands (toggleSessions / toggleWorkbench /       │
+│        newChat) → moved to an internal "chat-shell" plugin       │
+│        defined inline in workspace; registered once at boot.     │
+│      - DYNAMIC commands (per-session quick-switch — depends on   │
+│        runtime `sessions` prop) STAY as imperative               │
+│        useEffect+registerCommand calls. The plugin model is      │
+│        for static contributions; dynamic command registration    │
+│        is a lifecycle concern out of scope for v6 (would         │
+│        require onMount + bus subscription, both deliberately     │
+│        cut). Coexistence is fine: registry already supports      │
+│        late registration via the subscribe retrofit.             │
+│      - Drop `data: DataPaneConfig` prop. Hosts that want a       │
+│        workbench data tab register their own left-tab panel      │
+│        (see macro's macroSeriesPanel example).                   │
 │      - Drop `extraPanels` prop. Panels come from PanelRegistry;  │
 │        new optional `allowedPanels?: string[]` for gating.       │
 │      - KEEP `chatSuggestions: ChatSuggestion[]` prop.            │
@@ -1337,50 +1421,78 @@ await app.listen({ port })
 
 ### AFTER (Phase 1 done)
 
+**Two plugin objects, same id, split by environment** (this honors
+the build invariant — never cross-import `node:*` symbols into
+client code; codex round-3 P2 caught the v6 example violating its
+own rule):
+
 ```ts
-// apps/boring-macro-v2/src/plugin/index.ts — ~20 LOC
-import { definePlugin, type Plugin, type ChatSuggestion } from "@boring/workspace"
-import { chartCanvasPanel, deckPanel } from "./panels"
+// apps/boring-macro-v2/src/plugin/index.ts — CLIENT entry, ~18 LOC
+"use client"
+import { definePlugin, type Plugin } from "@boring/workspace"
+import type { ChatSuggestion } from "@boring/agent/front-shadcn"
+import { chartCanvasPanel, deckPanel, macroSeriesPanel } from "./panels"
 import { seriesCatalog } from "./catalogs"
-import { macroAgentTools } from "../server/macroTools"
 
 export const macroChatSuggestions: ChatSuggestion[] = [
   { label: "Find a series", prompt: "Help me find a macro series." },
   // …
 ]
 
-export const makeMacroPlugin = (): Plugin =>
+export const makeMacroClientPlugin = (): Plugin =>
   definePlugin({
     id: "boring-macro",
     label: "Macro",
-    panels: [chartCanvasPanel, deckPanel],
+    panels: [chartCanvasPanel, deckPanel, macroSeriesPanel],
     catalogs: [seriesCatalog],
+  })
+```
+
+```ts
+// apps/boring-macro-v2/src/plugin/server.ts — SERVER entry, ~10 LOC
+"use server"
+import { definePlugin, type Plugin } from "@boring/workspace"
+import { macroAgentTools } from "../server/macroTools"
+
+export const makeMacroServerPlugin = (): Plugin =>
+  definePlugin({
+    id: "boring-macro",          // same id as client; bootstrap dedupes
+    label: "Macro",
     agentTools: macroAgentTools,
   })
 ```
 
+`macroSeriesPanel` is the workbench-data-tab equivalent of the v5
+`data: DataPaneConfig`: a panel with `placement: 'left-tab'` whose
+component is `DataExplorer` configured with macro's adapter and
+`onActivate` that calls `surface.openPanel({ component:
+"chart-canvas", … })`. This replaces the v5 dataPaneConfig wiring
+without needing a default `dataCatalogPlugin`. The catalog
+(`seriesCatalog`) stays separate — it's what powers the cmd palette
+search; the panel is what shows the workbench browser.
+
 ```tsx
-// apps/boring-macro-v2/src/web/App.tsx — ~6 LOC
+// apps/boring-macro-v2/src/web/App.tsx — ~7 LOC
 import { WorkspaceProvider, ChatCenteredShell } from "@boring/workspace"
-import { makeMacroPlugin, macroChatSuggestions } from "../plugin"
+import { makeMacroClientPlugin, macroChatSuggestions } from "../plugin"
 
 export const App = () => (
-  <WorkspaceProvider plugins={[makeMacroPlugin()]}>
+  <WorkspaceProvider plugins={[makeMacroClientPlugin()]}>
     <ChatCenteredShell chatSuggestions={macroChatSuggestions} />
   </WorkspaceProvider>
 )
 ```
 
 ```ts
-// apps/boring-macro-v2/src/server/index.ts — ~10 LOC
+// apps/boring-macro-v2/src/server/index.ts — ~11 LOC
 import { createWorkspaceAgentApp } from "@boring/workspace/server"
-import { makeMacroPlugin } from "../plugin"
+import { makeMacroServerPlugin } from "../plugin/server"
 import { registerMacroRoutes } from "./macroRoutes"
 
 const clickhouse = await createClickHouseClient(env)
 const app = await createWorkspaceAgentApp({
   workspaceRoot,
-  plugins: [makeMacroPlugin()],
+  plugins: [makeMacroServerPlugin()],
 })
 await app.register(registerMacroRoutes, { clickhouse, deckRoot })
 await app.listen({ port })
@@ -1393,10 +1505,11 @@ await app.listen({ port })
 | File | Before | After | Δ |
 |---|--:|--:|--:|
 | `src/web/App.tsx` | 80 | 6 | -74 |
-| `src/server/index.ts` | 30 | 10 | -20 |
+| `src/server/index.ts` | 30 | 11 | -19 |
 | `src/server/uiBridge.ts` | 150 | 0 | -150 |
-| `src/plugin/index.ts` | 0 | 20 | +20 |
-| **Total** | **260** | **36** | **-224 (-86%)** |
+| `src/plugin/index.ts` (client) | 0 | 18 | +18 |
+| `src/plugin/server.ts` | 0 | 10 | +10 |
+| **Total** | **260** | **46** | **-214 (-82%)** |
 
 ## Known gaps — deferred to Phase 2+
 
@@ -1574,6 +1687,83 @@ None of these block the boring-macro acceptance test.
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v6.1 → v6.2 (round-3 codex review patches)
+
+Round-3 codex review against v6.1 surfaced 1 P0 + 1 P1 + 2 P2 — all
+real, all verified against the live codebase. The cuts from v6 (no
+dependsOn, no onMount, no routes, no chatSuggestions on contract)
+verdict: defensible. Patches focus on Phase 1 semantics that were
+underspecified.
+
+**P0 — `filesystemAgentTools: AgentTool[]` static shape doesn't
+match runtime reality.** The current `standardCatalog.ts:84`
+constructs file tools from runtime deps (`workspace`, `sandbox`,
+`fileSearch`); each `createXxxTool(deps)` returns an `AgentTool`.
+The plan's claim that `filesystemAgentTools` is a static array
+can't be wired. **Fix:** the bundle is now a factory:
+`createFilesystemAgentTools(deps): AgentTool[]`. Both
+`createAgentApp` (default-on) and `filesystemPlugin` call it with
+their respective runtime bundles. `filesystemPlugin` itself
+becomes `makeFilesystemPlugin(deps)` (factory shape, like
+`makeMacroPlugin`) so it can be constructed with the runtime deps
+by `createWorkspaceAgentApp` rather than evaluated at module load.
+
+**P1 — Workbench data tab semantics ambiguous after dropping
+`data` prop.** With `recentKind` cut and multiple registered
+catalogs (filesystem's Files + macro's Series), nothing in the
+spec said which one fills the generic Data tab. **Fix:** drop
+`dataCatalogPlugin` from defaults entirely. There is no generic
+Data tab; plugins that want a workbench data tab register their
+own `placement: 'left-tab'` panel (e.g., macro's `macroSeriesPanel`
+which internally renders DataExplorer with the macro adapter +
+`onActivate` → `surface.openPanel({ component: "chart-canvas",
+... })`). Cleaner, no precedence rule needed.
+
+**P2 #1 — Macro example violated its own client/server build
+invariant.** v6.1's `apps/boring-macro-v2/src/plugin/index.ts`
+imported `macroAgentTools` from `../server/macroTools` — server
+code in client-facing index.ts. **Fix:** macro plugin splits into
+`makeMacroClientPlugin()` (panels/catalogs) in `plugin/index.ts`
++ `makeMacroServerPlugin()` (agentTools) in `plugin/server.ts`,
+both `definePlugin({ id: "boring-macro", ... })` with the same id.
+`<WorkspaceProvider>` gets the client one; `createWorkspaceAgentApp`
+gets the server one. Same pattern as Phase 2 npm distribution
+(client/server sub-path exports).
+
+**P2 #2 — ChatCenteredShell migration didn't address dynamic
+command registration.** The current code registers per-session
+quick-switch commands inside a `useEffect` that depends on
+`sessions` prop changing at runtime. A static plugin contribution
+can't represent that. **Fix:** spec now says ONLY the static
+commands (toggleSessions/toggleWorkbench/newChat) move to the
+internal chat-shell plugin; per-session commands STAY as
+imperative `useCommandRegistry().registerCommand` calls inside
+ChatCenteredShell. Coexistence works because the registry's
+subscribe retrofit (Step 2c) handles late registrations.
+
+### Verdict on the v6 simplification cuts
+
+Codex round-3 explicitly: *"`order/dependsOn/optionalDeps/version/
+routes/chatSuggestions/onMount` are mostly defensible for macro.
+The simplification breaks only where Phase 1 semantics are
+underspecified (catalog selection) or where the spec's tool-bundle
+shape is incompatible with current runtime dependency injection."*
+
+Both blockers are now patched in v6.2. None of the v6 cuts get
+rolled back.
+
+### Net impact (v6.1 → v6.2)
+
+- One default plugin removed (`dataCatalogPlugin`).
+- Two factory shapes formalized (`createFilesystemAgentTools(deps)`
+  and `makeFilesystemPlugin(deps)`).
+- Macro example honors client/server split.
+- ChatCenteredShell migration spec acknowledges static-vs-dynamic
+  command lifetime.
+- LOC accounting updates: 260 → 46 (-82%); slightly less reduction
+  than v6.1's claimed 36 because the macro plugin is split into
+  two files now.
 
 ## Changelog v6 → v6.1 (ultrathink self-audit)
 
