@@ -16,7 +16,12 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
+      // Order matters — most-specific subpaths first so `@boring/workspace`
+      // doesn't shadow `@boring/workspace/testing` etc.
       "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
+      "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/testing/index.ts"),
+      "@boring/workspace/ui-shadcn": resolve(PACKAGES, "workspace/src/components/ui/index.ts"),
+      "@boring/workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
       "@boring/workspace": resolve(PACKAGES, "workspace/src/index.ts"),
       // Workspace's own source uses `@/lib/utils` etc. (its private alias).
       // When we consume workspace via src, those imports need to resolve

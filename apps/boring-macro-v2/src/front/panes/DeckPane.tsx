@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { DockviewPanelApi } from "dockview-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import {
@@ -9,12 +10,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-
-interface PanelApi {
-  onDidParametersChange(
-    cb: (e: { params?: Record<string, unknown> }) => void,
-  ): { dispose(): void }
-}
+import type { Observation, SeriesPayload } from "../macroSeriesTypes"
+import { fetchMacroSeries } from "../macroSeriesData"
 
 interface DeckParams {
   path?: string
@@ -22,41 +19,9 @@ interface DeckParams {
 
 interface DeckPaneProps {
   params?: DeckParams
-  panelApi?: PanelApi
+  panelApi?: DockviewPanelApi
 }
 
-interface Observation {
-  date: string
-  value: number | null
-}
-
-interface SeriesPayload {
-  observations: Observation[]
-  metadata: { id: string; title: string; units?: string | null } | null
-}
-
-const SERIES_CACHE = new Map<string, SeriesPayload>()
-const SERIES_REQUESTS = new Map<string, Promise<SeriesPayload>>()
-
-async function loadSeries(seriesId: string): Promise<SeriesPayload> {
-  const cached = SERIES_CACHE.get(seriesId)
-  if (cached) return cached
-  let pending = SERIES_REQUESTS.get(seriesId)
-  if (!pending) {
-    pending = fetch(`/api/macro/series/${encodeURIComponent(seriesId)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`series ${seriesId}: ${r.status}`)
-        return r.json() as Promise<SeriesPayload>
-      })
-      .then((payload) => {
-        SERIES_CACHE.set(seriesId, payload)
-        return payload
-      })
-      .finally(() => SERIES_REQUESTS.delete(seriesId))
-    SERIES_REQUESTS.set(seriesId, pending)
-  }
-  return pending
-}
 
 function openSeriesPane(seriesId: string): void {
   void fetch("/api/v1/ui/commands", {
@@ -97,7 +62,7 @@ function MiniTimeSeries({ ids, title }: { ids: string[]; title?: string }) {
   const [series, setSeries] = useState<SeriesPayload[]>([])
   useEffect(() => {
     let cancelled = false
-    Promise.all(ids.map(loadSeries)).then((all) => {
+    Promise.all(ids.map(fetchMacroSeries)).then((all) => {
       if (!cancelled) setSeries(all)
     })
     return () => {

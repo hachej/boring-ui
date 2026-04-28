@@ -4,23 +4,22 @@ import {
   ChatCenteredShell,
   EmptyPane,
   defaultEditorPanels,
+  definePanel,
   type ChatSuggestion,
+  type DataPaneConfig,
+  type PanelConfig,
+  type SurfaceShellApi,
 } from "@boring/workspace"
 import {
-  LineChart,
-  Search,
-  TrendingUp,
-  Presentation,
-} from "lucide-react"
-import type {
-  DataPaneConfig,
-  PanelConfig,
-  SurfaceShellApi,
-} from "@boring/workspace"
-import { useSessions, sessions } from "./sessions"
+  createLocalStorageSessions,
+  useLocalStorageSessions,
+} from "@boring/workspace/testing"
+import { LineChart, Search, TrendingUp, Presentation } from "lucide-react"
 import { createMacroSeriesAdapter } from "./macroSeriesAdapter"
 import { ChartCanvasPane } from "./panes/ChartCanvasPane"
 import { DeckPane } from "./panes/DeckPane"
+
+const sessionsStore = createLocalStorageSessions({ storageKey: "boring-macro:sessions" })
 
 const FREQ_LABELS: Record<string, string> = {
   D: "Daily",
@@ -32,32 +31,28 @@ const FREQ_LABELS: Record<string, string> = {
 }
 
 const panels: PanelConfig[] = [
-  // Built-in editors (code-editor, markdown-editor) — registered via the
-  // workspace's defaultEditorPanels helper so every app doesn't have to
-  // hand-write the dockview envelope adapters.
   ...defaultEditorPanels,
-  // Macro-specific panes.
-  {
+  definePanel({
     id: "chart-canvas",
     title: "Chart",
-    component: ChartCanvasPane as React.ComponentType<unknown>,
+    component: ChartCanvasPane,
     placement: "center",
     source: "app",
-  },
-  {
+  }),
+  definePanel({
     id: "deck",
     title: "Deck",
-    component: DeckPane as React.ComponentType<unknown>,
+    component: DeckPane,
     placement: "center",
     source: "app",
-  },
-  {
+  }),
+  definePanel({
     id: "empty",
     title: "Welcome",
-    component: EmptyPane as React.ComponentType<unknown>,
+    component: EmptyPane,
     placement: "center",
     source: "app",
-  },
+  }),
 ]
 
 // Hoisted so its in-flight requests survive parent re-renders.
@@ -91,7 +86,7 @@ const macroChatSuggestions: ChatSuggestion[] = [
 ]
 
 function Shell() {
-  const { items, activeId } = useSessions()
+  const { sessions, activeId } = useLocalStorageSessions(sessionsStore)
 
   // The catalog onActivate runs after dockview is ready, so a ref captured
   // via onSurfaceReady is sufficient — no React state needed.
@@ -132,14 +127,15 @@ function Shell() {
   return (
     <ChatCenteredShell
       appTitle="boring.macro"
-      userInitial="J"
-      sessions={items}
+      sessions={sessions}
       activeSessionId={activeId}
-      onSwitchSession={sessions.switchTo}
-      onCreateSession={sessions.create}
-      onDeleteSession={sessions.remove}
+      onSwitchSession={sessionsStore.switchTo}
+      onCreateSession={sessionsStore.create}
+      onDeleteSession={sessionsStore.remove}
       data={dataPaneConfig}
-      extraPanels={["chart-canvas", "deck", "code-editor", "markdown-editor"]}
+      // code-editor + markdown-editor are in defaultAllowedPanels; only
+      // list panels NOT covered by the default workbench allowlist.
+      extraPanels={["chart-canvas", "deck"]}
       chatSuggestions={macroChatSuggestions}
       emptyTitle="What macro question are we tackling?"
       emptyDescription="Search FRED, plot a series, derive a transform, or draft a briefing deck."

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { DockviewPanelApi } from "dockview-react"
 import {
   CartesianGrid,
   Legend,
@@ -10,37 +11,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-
-interface PanelApi {
-  onDidParametersChange(
-    cb: (e: { params?: Record<string, unknown> }) => void,
-  ): { dispose(): void }
-}
-
-interface Observation {
-  date: string
-  value: number | null
-}
-
-interface SeriesMetadata {
-  id: string
-  title: string
-  units?: string | null
-  frequency?: string | null
-  source?: string | null
-  seasonal_adjustment?: string | null
-  observation_start?: string | null
-  observation_end?: string | null
-  observation_count?: number | null
-  transform_name?: string | null
-  transform_file?: string | null
-  notes?: string | null
-}
-
-interface SeriesPayload {
-  observations: Observation[]
-  metadata: SeriesMetadata | null
-}
+import type {
+  Observation,
+  SeriesMetadata,
+  SeriesPayload,
+} from "../macroSeriesTypes"
+import { fetchMacroSeries } from "../macroSeriesData"
 
 interface ChartParams {
   seriesId?: string
@@ -48,11 +24,8 @@ interface ChartParams {
 
 interface ChartCanvasPaneProps {
   params?: ChartParams
-  panelApi?: PanelApi
+  panelApi?: DockviewPanelApi
 }
-
-const SERIES_CACHE = new Map<string, SeriesPayload>()
-const SERIES_REQUESTS = new Map<string, Promise<SeriesPayload>>()
 
 const COLORS = [
   "#ff6600", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444",
@@ -60,26 +33,6 @@ const COLORS = [
 ]
 
 type TabId = "chart" | "table" | "metadata" | "lineage"
-
-async function loadSeries(seriesId: string): Promise<SeriesPayload> {
-  const cached = SERIES_CACHE.get(seriesId)
-  if (cached) return cached
-  let pending = SERIES_REQUESTS.get(seriesId)
-  if (!pending) {
-    pending = (async () => {
-      const res = await fetch(`/api/macro/series/${encodeURIComponent(seriesId)}`)
-      if (!res.ok) throw new Error(`series ${seriesId}: ${res.status}`)
-      const data = (await res.json()) as SeriesPayload
-      SERIES_CACHE.set(seriesId, data)
-      return data
-    })()
-      .finally(() => {
-        SERIES_REQUESTS.delete(seriesId)
-      })
-    SERIES_REQUESTS.set(seriesId, pending)
-  }
-  return pending
-}
 
 function formatValue(v: number | null | undefined): string {
   if (v == null) return "N/A"
@@ -218,7 +171,7 @@ export function ChartCanvasPane({ params: initial, panelApi }: ChartCanvasPanePr
     }
     let cancelled = false
     setLoading(true)
-    loadSeries(seriesId)
+    fetchMacroSeries(seriesId)
       .then((p) => {
         if (!cancelled) setPrimary(p)
       })
@@ -239,7 +192,7 @@ export function ChartCanvasPane({ params: initial, panelApi }: ChartCanvasPanePr
   const addOverlay = useCallback(
     (overlayId: string) => {
       if (!overlayId || overlayId === seriesId) return
-      loadSeries(overlayId)
+      fetchMacroSeries(overlayId)
         .then((p) => {
           setOverlays((prev) =>
             prev.some((o) => o.id === overlayId) ? prev : [...prev, { id: overlayId, payload: p }],
