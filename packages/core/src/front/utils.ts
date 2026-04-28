@@ -120,6 +120,7 @@ export type RouteMap = {
   verifyEmail: '/auth/verify-email'
   callbackGithub: '/auth/callback/github'
   me: '/me'
+  workspaceMembers: '/w/:id/members'
   workspaceInvites: '/w/:id/invites'
   inviteAccept: '/invites/:token'
 }
@@ -132,6 +133,7 @@ export const routes: RouteMap = {
   verifyEmail: '/auth/verify-email',
   callbackGithub: '/auth/callback/github',
   me: '/me',
+  workspaceMembers: '/w/:id/members',
   workspaceInvites: '/w/:id/invites',
   inviteAccept: '/invites/:token',
 }
