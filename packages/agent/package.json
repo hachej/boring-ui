@@ -28,7 +28,11 @@
       "types": "./dist/front-shadcn/index.d.ts",
       "import": "./dist/front-shadcn/index.js"
     },
-    "./ui-shadcn/styles.css": "./dist/front-shadcn/styles.css"
+    "./ui-shadcn/styles.css": "./dist/front-shadcn/styles.css",
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    }
   },
   "sideEffects": [
     "**/*.css"
@@ -43,6 +47,7 @@
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval": "tsx ./scripts/eval.ts",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm run typecheck && pnpm run lint:invariants",
     "lint:invariants": "bash ../../scripts/check-invariants.sh .",
@@ -80,6 +85,7 @@
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.5.0",
     "use-stick-to-bottom": "^1.1.3",
+    "yaml": "^2.8.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {

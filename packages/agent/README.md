@@ -100,6 +100,7 @@ Both are permanent. See [docs/UI-SHADCN.md](./docs/UI-SHADCN.md) for the full gu
 - `@boring/agent/server` for Node/server-only entry points.
 - `@boring/agent/front` for frontend-only entry points.
 - `@boring/agent/ui-shadcn` for Tailwind + shadcn styled ChatPanel.
+- `@boring/agent/testing` for the eval framework (LLM tool-selection regression tests).
 
 ## Examples
 
@@ -121,6 +122,61 @@ Both are permanent. See [docs/UI-SHADCN.md](./docs/UI-SHADCN.md) for the full gu
 - [UI-SHADCN](./docs/UI-SHADCN.md)
 - [PLUGINS](./docs/PLUGINS.md)
 - [MIGRATION](./docs/MIGRATION.md)
+- [Eval framework plan](./docs/plans/AGENT_EVAL_FRAMEWORK.md)
+
+## Eval Framework
+
+`@boring/agent/testing` is a YAML-driven harness for catching regressions in
+LLM tool selection. Hosts (workspace, boring-macro, etc.) write fixtures
+that say *"for this prompt, the agent must call this tool with these
+params"* and the runner replays them through the real `app.inject` chat
+route against `claude-haiku-4-5-20251001`.
+
+Quickstart:
+
+```bash
+# Run the agent's own catalog suite (read / write / edit / bash / find_files).
+ANTHROPIC_API_KEY=… pnpm --filter @boring/agent eval
+
+# Run a custom suite.
+pnpm --filter @boring/agent eval path/to/suite.yaml
+```
+
+Fixture format (excerpt):
+
+```yaml
+model: claude-haiku-4-5-20251001
+defaults:
+  retries: 1
+  timeoutMs: 45000
+prompts:
+  - prompt: read the file README.md and tell me what it says
+    expect:
+      tool: read
+      params:
+        path: README.md
+
+  - prompt: open the chart panel
+    expect:
+      tool: exec_ui
+      params:
+        kind: openPanel
+        params:
+          id: !EvalAny           # wildcard — any value satisfies
+          component: !EvalRegex "^chart:"
+
+  - prompt: what is 2 + 2?
+    expectNoToolCall: true        # negative assertion
+```
+
+Hosts that wire their own tool catalog (e.g. workspace adds
+`exec_ui`/`get_ui_state`, boring-macro adds `open_series`) write their own
+driver script that boots `createWorkspaceAgentApp` (or equivalent) and
+calls `runEvalSuite({ app, fixturesPath })`. The agent CLI runs the bare
+`createAgentApp` baseline.
+
+See [docs/plans/AGENT_EVAL_FRAMEWORK.md](./docs/plans/AGENT_EVAL_FRAMEWORK.md)
+for the full design (pinned model, retry policy, fork-PR trust gate).
 
 ## Development
 

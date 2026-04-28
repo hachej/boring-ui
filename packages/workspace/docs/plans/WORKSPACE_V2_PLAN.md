@@ -87,6 +87,7 @@ A clean-slate workspace package that provides **layout composition with persiste
 | CSP | Target policy + test (eighth pass) | `style-src 'unsafe-inline'` for CM6 style-mod, tiptap HTML sanitizer configured, Playwright CSP test. |
 | definePanel() | Dropped (ninth pass) | Unnecessary — a typed object literal (`const myPanel: PanelConfig = { ... }`) gives the same autocomplete. Less API surface. |
 | Test harness | @boring/workspace/testing (eighth pass) | TestWorkspaceProvider, createMockBridge(), renderPane(). Child apps run full test suite themselves. |
+| Agent tool-selection regressions | `@boring/agent/testing` eval framework | YAML fixtures + matcher pipeline + live-LLM canary. Workspace and child apps write their own driver scripts that boot `createWorkspaceAgentApp` and call `runEvalSuite({ app, fixturesPath })`. See `packages/agent/docs/plans/AGENT_EVAL_FRAMEWORK.md`. |
 | Crash recovery | Accepted risk (eighth pass) | 1s auto-save debounce gap on crash accepted. No sessionStorage journal — complexity not worth it. |
 | Command palette | Static + file quick-open, separate CommandRegistry (eighth pass, tenth) | `registry/CommandRegistry.ts` with `CommandConfig { id, title, run, shortcut?, when? }`. Exported via `useCommandRegistry()`. Separate from PanelRegistry. Dynamic command providers deferred to post-launch. |
 | i18n | Dropped (ninth pass) | No `t()` wrapper, no `yarn extract-messages`. Plain strings. When i18n is needed, run a codemod (ast-grep/jscodeshift) to extract. |

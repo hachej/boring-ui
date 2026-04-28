@@ -1,0 +1,55 @@
+# Eval suite for @boring/agent's standardCatalog tools.
+#
+# Validates the framework against the agent's own tool catalog
+# (no workspace UI surface). Workspace, boring-macro, etc. own their
+# own suites in their respective packages.
+#
+# Run:  pnpm --filter @boring/agent eval eval/standard-tools.yaml
+# Reqs: ANTHROPIC_API_KEY in env.
+
+model: claude-haiku-4-5-20251001
+systemPrompt: |
+  You are a coding assistant working in the user's project directory.
+  You have access to tools for reading, writing, editing files, running
+  shell commands, and searching the filesystem. Use the appropriate tool
+  to complete each user request directly — do not ask for clarification
+  on simple, unambiguous prompts.
+
+defaults:
+  retries: 1
+  timeoutMs: 45000
+
+prompts:
+  - prompt: read the file README.md and tell me what it says
+    expect:
+      tool: read
+      params:
+        path: README.md
+
+  - prompt: list all .ts files in the src directory
+    # Either find_files or grep_files works for "list all .ts files"
+    # depending on how the LLM frames the request. The default
+    # someCallMatches mode lets either one satisfy.
+    expect:
+      tool: find_files
+
+  - prompt: write a one-line README.md that says "hello world"
+    expect:
+      tool: write
+      params:
+        path: README.md
+        content: !EvalRegex "hello world"
+
+  - prompt: run `ls -la` to see the directory contents
+    expect:
+      tool: bash
+      params:
+        command: !EvalRegex "ls"
+
+  - prompt: in greeter.ts, change "Hello" to "Hi"
+    expect:
+      tool: edit
+      params:
+        path: greeter.ts
+        oldString: !EvalRegex "Hello"
+        newString: !EvalRegex "Hi"
