@@ -39,7 +39,7 @@ function mockBundle(provider: string, capabilities?: string[]): RuntimeBundle {
   return {
     workspace: mockWorkspace(),
     sandbox: mockSandbox(provider, capabilities),
-    fileSearch: { find: vi.fn(async () => []) },
+    fileSearch: { search: vi.fn(async () => []) },
   }
 }
 
