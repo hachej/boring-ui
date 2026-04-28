@@ -230,8 +230,11 @@ made to work first.
    This is the ground-truth verification that the build works.
 
 Phase 0 is a prerequisite for Phase 1 (the fixture would otherwise have
-to inline the same code) and for Phase 4 (extractions that target
-package surfaces require the targets to actually be buildable).
+to inline the same code), Phase 4 (extractions that target package
+surfaces require the targets to actually be buildable), and the macro
+consolidation work in
+[`apps/boring-macro-v2/docs/CONSOLIDATE_AND_STANDALONIZE.md`](../../../apps/boring-macro-v2/docs/CONSOLIDATE_AND_STANDALONIZE.md)
+(its Phase C drops the inlined `uiBridge.ts` workaround).
 
 Estimated cost: half a day. Adds zero behavioural change — just makes
 the package's declared API match what's shipped.
