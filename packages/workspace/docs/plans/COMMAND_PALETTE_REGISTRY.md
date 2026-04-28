@@ -1,6 +1,13 @@
 # Command palette: generic command + search registry
 
-**Status:** review v3 (factory pattern + shell auto-registration locked in)
+> **⚠️ SUPERSEDED by [`PLUGIN_MODEL.md`](./PLUGIN_MODEL.md) (2026-04-28).**
+> The palette becomes ONE consumer of the wider plugin model, not a
+> top-level concern. The catalog/command/panel/agent-tool/etc.
+> abstractions all live as contributions inside a `Plugin`. Read
+> `PLUGIN_MODEL.md` for the canonical design; this doc is kept for
+> historical reference of the palette-first iterations.
+
+**Status:** SUPERSEDED — review v3 (factory pattern + shell auto-registration locked in)
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
