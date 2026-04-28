@@ -20,6 +20,7 @@ import { VerifyEmailPage as DefaultVerifyEmailPage } from './auth/VerifyEmailPag
 import { UserSettingsPage as DefaultUserSettingsPage } from './auth/UserSettingsPage.js'
 import { InvitesPage } from './workspace/InvitesPage.js'
 import { MembersPage } from './workspace/MembersPage.js'
+import { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
 import { InviteAcceptPage } from './auth/InviteAcceptPage.js'
 import { routes } from './utils.js'
 
@@ -113,6 +114,7 @@ export function BoringApp({ children, authPages, cspNonce }: BoringAppProps) {
                               <Route path={routes.me} element={<UserSettingsPage />} />
                               <Route path={routes.workspaceMembers} element={<MembersPage />} />
                               <Route path={routes.workspaceInvites} element={<InvitesPage />} />
+                              <Route path={routes.workspaceSettings} element={<WorkspaceSettingsPage />} />
                               <Route path={routes.inviteAccept} element={<InviteAcceptPage />} />
                               {children}
                             </Routes>

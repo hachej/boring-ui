@@ -122,6 +122,7 @@ export type RouteMap = {
   me: '/me'
   workspaceMembers: '/w/:id/members'
   workspaceInvites: '/w/:id/invites'
+  workspaceSettings: '/w/:id/settings'
   inviteAccept: '/invites/:token'
 }
 
@@ -135,6 +136,7 @@ export const routes: RouteMap = {
   me: '/me',
   workspaceMembers: '/w/:id/members',
   workspaceInvites: '/w/:id/invites',
+  workspaceSettings: '/w/:id/settings',
   inviteAccept: '/invites/:token',
 }
 

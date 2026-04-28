@@ -71,6 +71,7 @@ export type { BoringAppProps, BoringAppAuthPagesOverride } from './BoringApp.js'
 
 export { InvitesPage } from './workspace/InvitesPage.js'
 export { MembersPage } from './workspace/MembersPage.js'
+export { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
 
 export {
   UserMenu,
