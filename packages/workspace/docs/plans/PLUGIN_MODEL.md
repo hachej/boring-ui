@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v6.2 — round-3 codex review patches (filesystemAgentTools factory P0; drop dataCatalogPlugin from defaults P1; client/server split in macro example P2; ChatCenteredShell session commands stay imperative P2)
+**Status:** v6.3 — gemini fresh-eyes review patches (drop "internal chat-shell plugin" P0; polymorphic Recent now covers commands too P1; ExplorerRow JSON-serializable invariant P1; non-React adapter lifecycle limitation documented P1; makeStaticDataPlugin convenience factory P2)
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
@@ -399,6 +399,70 @@ await app.close()
 
 Use Fastify's `inject()` for in-process testing; no port binding.
 
+### Convenience: `makeStaticDataPlugin(opts)`
+
+Dropping `data: DataPaneConfig` from `<ChatCenteredShell>` removed
+the one-liner ergonomics for hosts that just want a simple data
+tab with their adapter (gemini P2). Restore them via a convenience
+factory exported from `@boring/workspace`:
+
+```ts
+// packages/workspace/src/plugin/factories/makeStaticDataPlugin.ts
+import { definePlugin, type Plugin } from "../definePlugin"
+import { DataExplorer } from "../../components/DataExplorer"
+import type { ExplorerAdapter, ExplorerRow } from "../../components/DataExplorer/types"
+
+export interface StaticDataPluginOpts {
+  /** Plugin id; defaults to "static-data". Must be unique if a host
+   *  uses more than one. */
+  id?: string
+  label?: string
+  adapter: ExplorerAdapter
+  /** Optional onActivate — fires when a row is double-clicked /
+   *  primary-activated. If omitted, only the catalog onSelect runs
+   *  (cmd palette pick). */
+  onActivate?: (row: ExplorerRow) => void
+}
+
+export function makeStaticDataPlugin(opts: StaticDataPluginOpts): Plugin {
+  const id = opts.id ?? "static-data"
+  return definePlugin({
+    id,
+    label: opts.label ?? "Data",
+    panels: [{
+      id: `${id}-tab`,
+      title: opts.label ?? "Data",
+      placement: "left-tab",
+      component: () => <DataExplorer adapter={opts.adapter} onActivate={opts.onActivate} />,
+      source: "app",
+    }],
+    catalogs: [{
+      id,
+      label: opts.label ?? "Data",
+      adapter: opts.adapter,
+      onSelect: opts.onActivate ?? (() => {}),
+    }],
+  })
+}
+```
+
+Host with simple needs (single adapter, no custom panel):
+
+```tsx
+import { makeStaticDataPlugin } from "@boring/workspace"
+import { myAdapter } from "./adapter"
+
+<WorkspaceProvider plugins={[makeStaticDataPlugin({ adapter: myAdapter })]}>
+  <ChatCenteredShell />
+</WorkspaceProvider>
+```
+
+Macro doesn't use this factory — it has custom row-activation
+behavior (open chart-canvas panel) that needs `surfaceRef` access,
+so its `macroSeriesPanel` is hand-authored. The factory serves the
+~80% case where the host just wants "a data tab with this
+adapter."
+
 ### Concrete filesystemPlugin source
 
 ```ts
@@ -744,29 +808,76 @@ The plugin model fixes this by tagging each Recent entry with the
 catalog it came from. RecentStore entries:
 
 ```ts
-interface RecentEntry {
-  catalogId: string         // ↔ CatalogConfig.id
-  rowId: string             // ↔ ExplorerRow.id within that catalog
-  /** Snapshot of the row at time of selection. Guards against
-   *  catalog data changing under our feet (file renamed, series
-   *  re-tagged, …). Cheap (~200 bytes); essential because adapters
-   *  don't have a `getById(rowId)` method. */
-  rowSnapshot: ExplorerRow
-  selectedAt: number        // unix ms
-}
+type RecentEntry =
+  | {
+      type: "catalog"
+      catalogId: string             // ↔ CatalogConfig.id
+      rowId: string                 // ↔ ExplorerRow.id within that catalog
+      /** Snapshot of the row at time of selection. Guards against
+       *  catalog data changing under our feet (file renamed, series
+       *  re-tagged, …). Cheap (~200 bytes); essential because
+       *  adapters don't have a `getById(rowId)` method.
+       *  IMPORTANT: ExplorerRow participating in Recent MUST be
+       *  100% JSON-serializable — see §"Recent serialization
+       *  invariant" (gemini P1). */
+      rowSnapshot: ExplorerRow
+      selectedAt: number            // unix ms
+    }
+  | {
+      type: "command"
+      commandId: string             // ↔ CommandConfig.id
+      /** Snapshot of the command's title at time of selection,
+       *  in case the command is later unregistered. */
+      titleSnapshot: string
+      selectedAt: number
+    }
 ```
 
 Render flow:
 
-1. For each entry, look up catalog by `catalogId`. If absent
-   (plugin uninstalled), drop the entry (don't render orphans).
-2. Render the row using the catalog's adapter row renderer.
-3. On click → `catalog.onSelect(rowSnapshot)`.
+1. For each entry, look up the source by id (catalog by
+   `catalogId`, command by `commandId`). If absent (plugin
+   uninstalled, command unregistered), drop the entry — don't
+   render orphans. Show `titleSnapshot` text only if the user
+   needs to see what they recently used (we drop on click since
+   we can't run a missing command).
+2. For `type: "catalog"`: render via the catalog's adapter row
+   renderer; on click → `catalog.onSelect(rowSnapshot)`.
+3. For `type: "command"`: render the title with a small "command"
+   chip; on click → `command.run()`.
 
-Recent is **catalog-only** — commands don't appear in Recent.
+**Recent covers BOTH catalog rows AND commands** (gemini P1
+correction — earlier drafts said "catalog-only," but every mature
+palette UX — VS Code, Raycast, Linear — keeps recent commands.
+Re-running frequent actions like "Toggle Theme" / "Format JSON"
+is the primary use case for many users).
+
 Existing localStorage entries (`boring-ui-v2:command-palette:recent`)
-are read once on first load, mapped to file-catalog entries
-best-effort, dropped if unmappable.
+are read once on first load. Strings prefixed `cmd:` (today's
+broken command path) become `{type: "command", commandId: ...}`;
+plain path strings become `{type: "catalog", catalogId: "files",
+rowId: path, rowSnapshot: {...minimal row…}}`. Unrecognizable
+entries dropped.
+
+#### Recent serialization invariant (gemini P1)
+
+`rowSnapshot: ExplorerRow` is round-tripped through
+`JSON.stringify`/`JSON.parse` in localStorage. ExplorerRow values
+that contain `Date`, `Map`, `Set`, functions, React nodes, or
+class instances will be silently corrupted on save and crash on
+restore.
+
+**Invariant:** any `ExplorerRow` shape that can appear in a
+catalog's selected items MUST be JSON-serializable. Adapters that
+naturally hold non-serializable values (e.g., a Date object for
+"last modified") should serialize at row construction time
+(ISO string) and re-hydrate in the renderer.
+
+**No `deserializeRecent` hook in Phase 1.** If a real adapter has
+a need that the JSON-serializable invariant can't express, the
+hook can be added as a non-breaking optional field on
+`CatalogConfig`. Phase 1 doesn't need it; documenting the
+constraint is sufficient.
 
 ### Registry-driven workbench tabs
 
@@ -1328,21 +1439,26 @@ Six sequenced commits.
 │      Recent. Drop dead fileSearchFn / onOpenFile props.          │
 │      Migrate existing localStorage Recent entries.               │
 │                                                                  │
-│  5b. <ChatCenteredShell /> migration (NUANCED — codex P2)        │
-│      - STATIC commands (toggleSessions / toggleWorkbench /       │
-│        newChat) → moved to an internal "chat-shell" plugin       │
-│        defined inline in workspace; registered once at boot.     │
-│      - DYNAMIC commands (per-session quick-switch — depends on   │
-│        runtime `sessions` prop) STAY as imperative               │
-│        useEffect+registerCommand calls. The plugin model is      │
-│        for static contributions; dynamic command registration    │
-│        is a lifecycle concern out of scope for v6 (would         │
-│        require onMount + bus subscription, both deliberately     │
-│        cut). Coexistence is fine: registry already supports      │
-│        late registration via the subscribe retrofit.             │
+│  5b. <ChatCenteredShell /> migration (REVISED — gemini P0)       │
+│      - ALL ChatCenteredShell-internal commands STAY as           │
+│        imperative useEffect+registerCommand calls (toggleDrawer/ │
+│        toggleSurface/newChat AND per-session quick-switch).      │
+│        Reason (gemini): toggleDrawer/toggleSurface close over    │
+│        local useState — a module-scope "internal chat-shell      │
+│        plugin" can't reach component instance state, and         │
+│        bridging via events would just shift the same closure     │
+│        problem to the event handler. Keeping these imperative    │
+│        is honest: the plugin model is for module-stable          │
+│        contributions; component-instance commands belong inside  │
+│        the component.                                            │
+│      - Registry's subscribe retrofit (Step 2c) ensures these     │
+│        late registrations propagate to an open palette — that    │
+│        was the original justification for the retrofit.          │
 │      - Drop `data: DataPaneConfig` prop. Hosts that want a       │
 │        workbench data tab register their own left-tab panel      │
-│        (see macro's macroSeriesPanel example).                   │
+│        (see macro's macroSeriesPanel example), or use the        │
+│        `makeStaticDataPlugin(opts)` convenience factory          │
+│        (see §"Convenience: makeStaticDataPlugin").               │
 │      - Drop `extraPanels` prop. Panels come from PanelRegistry;  │
 │        new optional `allowedPanels?: string[]` for gating.       │
 │      - KEEP `chatSuggestions: ChatSuggestion[]` prop.            │
@@ -1521,6 +1637,7 @@ reviewers don't think they were missed.
 | **Hot-reload / unregister cleanup** | Fastify routes can't unregister; React subscriptions clean themselves; catalog adapters with their own state would leak. No Phase 1 plugin uses this. | Phase 3 hot-reload story. |
 | **Plugin-vs-substrate tool name collision** | A plugin shipping a tool called `read` replaces substrate's. Late-wins logged. Could confuse the LLM if names diverge mid-session. | When agent-authored plugins (Phase 3) make accidental collision likely. |
 | **Catalog adapter memory** | If an adapter holds a long-running subscription (e.g., websocket to a remote search service), there's no place to clean up because there's no `onUnmount`. | When a real adapter needs it. Adding a teardown hook on `CatalogConfig` is non-breaking. |
+| **Non-React stateful adapters need lifecycle** | Gemini P1: an adapter that wants to subscribe to `events.on('file:moved', …)` to invalidate its cache has nowhere to do it. Module-scope `events.on(...)` fires globally for all hosts. Lazy on-first-call leaks (no unsubscribe). | First plugin that needs it. Re-introduce `Plugin.onMount(ctx) → cleanup` (we cut it in v6 because Phase 1 plugins are all React-component-based or factory-injected; that assumption breaks for stateful adapters). |
 | **Build-time enforcement of client/server split** | Documented invariant; not a custom lint rule. | If accidental cross-imports become common. |
 | **Plugin versioning / compat** | `Plugin.version` field cut. No compat negotiation. | Phase 2 npm distribution. |
 | **Layout migrations** | Renaming a panel id breaks cached dockview layouts. Same problem as today; not made worse by plugin model. | When layouts become stable enough to merit migration tooling. |
@@ -1687,6 +1804,99 @@ None of these block the boring-macro acceptance test.
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v6.2 → v6.3 (gemini fresh-eyes review patches)
+
+Gemini did a fresh-eyes review (Gemini hadn't reviewed v6.x; codex
+ran rounds 2 and 3). Surfaced 1 P0 + 4 P1 + 1 P2 — all real, none
+duplicating codex. Quality of the catch on the P0 was particularly
+good: it noticed an actual closure-over-React-state bug in v6.2's
+`ChatCenteredShell` migration that codex round-3 missed.
+
+**P0 — Static "internal chat-shell plugin" can't access
+`ChatCenteredShell` local state.** v6.2 said static commands
+(`toggleSessions`/`toggleWorkbench`/`newChat`) move into a
+module-scope plugin while only per-session commands stay
+imperative. But `toggleDrawer` and `toggleSurface` are closures
+over `useState` *inside* the React component
+(`ChatCenteredShell.tsx:222-226`). A module-scope plugin can't
+reach that state, and bridging via events would just shift the
+closure problem to the event handler.
+
+**Fix:** drop the "internal chat-shell plugin" idea entirely. ALL
+ChatCenteredShell-internal commands stay as imperative
+`useEffect`+`registerCommand` calls. The registry's subscribe
+retrofit (Step 2c) propagates them to an open palette. The plugin
+model is for module-stable contributions; component-instance
+commands belong inside the component. Honest.
+
+**P1.1 — Removing commands from Recent is a UX regression.** v6.2
+said "Recent is catalog-only — commands don't appear in Recent."
+Every mature command palette (VS Code, Raycast, Linear) shows
+recent commands; users rely on them for quick re-runs of frequent
+actions ("Toggle Theme," "Format JSON"). **Fix:** `RecentEntry`
+becomes a discriminated union — `{type: 'catalog', ...} | {type:
+'command', ...}`. Render both, drop orphans of either. Existing
+localStorage `cmd:foo` entries map to the command branch on
+migration; plain paths to the catalog branch.
+
+**P1.2 — `rowSnapshot` localStorage round-trip can corrupt
+non-serializable values.** `JSON.stringify` silently strips
+`Date` / `Map` / functions / React nodes; restore would crash.
+**Fix:** added §"Recent serialization invariant" — `ExplorerRow`
+participating in Recent MUST be 100% JSON-serializable; adapters
+naturally holding non-serializable values (e.g., Dates) serialize
+at row construction time and re-hydrate in the renderer. No
+deserialize hook in Phase 1 (add as non-breaking optional if a
+real case appears).
+
+**P1.3 — Cutting `onMount` strands non-React stateful adapters.**
+A catalog adapter that wants `events.on('file:moved')` for cache
+invalidation has nowhere to do it: module-scope subscription fires
+globally for all hosts; lazy-on-first-call leaks.
+**Fix:** documented the limitation in §"Known gaps — deferred to
+Phase 2+". `onMount` is the trigger condition for re-introduction.
+Phase 1 plugins are all React-component-based or factory-injected,
+so the assumption holds for now; honest about when it breaks.
+
+**P2 — Dropping `dataSources`/`data` props forces boilerplate for
+simple hosts.** A host that just wants "a data tab with my
+adapter" had a one-liner; v6.2's "register your own left-tab
+panel" makes it ~10 lines. **Fix:** added §"Convenience:
+`makeStaticDataPlugin`" — a workspace-exported factory that
+constructs a Plugin wrapping a `DataExplorer` panel + catalog
+from a single `{adapter, onActivate?}` opts argument. Restores
+1-liner ergonomics for the common case; macro keeps its
+hand-authored `macroSeriesPanel` because it needs surface access
+for chart-opening.
+
+### Verdict on the simplification cuts (gemini)
+
+> *"Cutting `routes`, `dependsOn`, `order`, and `chatSuggestions`
+> is highly defensible and correctly shifts HTTP infrastructure
+> and declarative configuration out of the pure-data plugin
+> envelope. The only cut that went too far is `onMount`."*
+
+Codex (round-3): *"order/dependsOn/optionalDeps/version/routes/
+chatSuggestions/onMount are mostly defensible for macro."*
+
+Both reviewers converge on `onMount` being the riskiest cut, and
+both agree it's defensible for Phase 1 specifically (no Phase 1
+plugin needs it). v6.3 documents the limitation with an explicit
+re-introduction trigger; if/when a stateful adapter appears,
+adding `onMount` is a non-breaking optional contract field. The
+cut holds for Phase 1; the sensitivity is acknowledged.
+
+### Net impact (v6.2 → v6.3)
+
+- ChatCenteredShell migration honest: ALL its commands stay
+  imperative; no fictional "internal plugin" indirection.
+- `RecentEntry` discriminated union: catalogs + commands.
+- JSON-serializable invariant on `ExplorerRow` documented.
+- Known-gaps register adds the non-React-adapter lifecycle item
+  with `onMount` re-introduction trigger.
+- New `makeStaticDataPlugin` convenience export.
+- Same boring-macro acceptance test; LOC accounting unchanged.
 
 ## Changelog v6.1 → v6.2 (round-3 codex review patches)
 
