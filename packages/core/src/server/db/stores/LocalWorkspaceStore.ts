@@ -193,6 +193,8 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       acceptedAt: null,
       createdBy: invitedBy,
       createdAt: now,
+      failedAttempts: 0,
+      lockedUntil: null,
     }
     this.invites.set(invite.id, invite)
     return { invite, rawToken }
@@ -240,6 +242,25 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     }
     const member = await this.upsertMember(workspaceId, userId, inv.role)
     return { invite: inv, member }
+  }
+
+  async incrementInviteFailedAttempts(inviteId: string): Promise<{ failedAttempts: number; lockedUntil: string | null }> {
+    const inv = this.invites.get(inviteId)
+    if (!inv) return { failedAttempts: 0, lockedUntil: null }
+    inv.failedAttempts = (inv.failedAttempts ?? 0) + 1
+    if (inv.failedAttempts >= 50) {
+      inv.lockedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    }
+    this.invites.set(inviteId, inv)
+    return { failedAttempts: inv.failedAttempts, lockedUntil: inv.lockedUntil }
+  }
+
+  async resetInviteFailedAttempts(inviteId: string): Promise<void> {
+    const inv = this.invites.get(inviteId)
+    if (!inv) return
+    inv.failedAttempts = 0
+    inv.lockedUntil = null
+    this.invites.set(inviteId, inv)
   }
 
   async getWorkspaceSettings(workspaceId: string): Promise<Array<{ key: string; configured: boolean; updated_at: string }>> {

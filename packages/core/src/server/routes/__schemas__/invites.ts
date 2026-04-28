@@ -12,3 +12,9 @@ export const acceptInviteQuery = z
     invite_token: z.string().min(1, 'invite_token is required'),
   })
   .strict()
+
+export const tokenBody = z
+  .object({
+    token: z.string().min(1, 'token is required'),
+  })
+  .strict()

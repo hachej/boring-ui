@@ -61,6 +61,8 @@ function mockWorkspaceStore(): WorkspaceStore {
         acceptedAt: null,
         createdBy: invitedBy,
         createdAt: new Date().toISOString(),
+        failedAttempts: 0,
+        lockedUntil: null,
       }
       inviteDb.set(id, invite)
       inviteTokens.set(id, rawToken)
@@ -107,6 +109,23 @@ function mockWorkspaceStore(): WorkspaceStore {
       }
       return { invite: inv, member }
     },
+    incrementInviteFailedAttempts: async (inviteId: string) => {
+      const inv = inviteDb.get(inviteId)
+      if (!inv) return { failedAttempts: 0, lockedUntil: null }
+      inv.failedAttempts = (inv.failedAttempts ?? 0) + 1
+      if (inv.failedAttempts >= 50) {
+        inv.lockedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      }
+      inviteDb.set(inviteId, inv)
+      return { failedAttempts: inv.failedAttempts, lockedUntil: inv.lockedUntil }
+    },
+    resetInviteFailedAttempts: async (inviteId: string) => {
+      const inv = inviteDb.get(inviteId)
+      if (!inv) return
+      inv.failedAttempts = 0
+      inv.lockedUntil = null
+      inviteDb.set(inviteId, inv)
+    },
   } as unknown as WorkspaceStore
 }
 
@@ -133,7 +152,7 @@ function seedWorkspace(ownerUserId: string, extraMembers?: Record<string, Member
   return ws
 }
 
-function seedInvite(wsId: string, email: string, role: MemberRole, opts?: { expired?: boolean; accepted?: boolean }) {
+function seedInvite(wsId: string, email: string, role: MemberRole, opts?: { expired?: boolean; accepted?: boolean; locked?: boolean }) {
   const id = `inv-${nextInviteId++}`
   const rawToken = `raw-token-${id}`
   const tokenHash = createHash('sha256').update(rawToken).digest('hex')
@@ -149,6 +168,8 @@ function seedInvite(wsId: string, email: string, role: MemberRole, opts?: { expi
     acceptedAt: opts?.accepted ? new Date().toISOString() : null,
     createdBy: OWNER_ID,
     createdAt: new Date().toISOString(),
+    failedAttempts: opts?.locked ? 50 : 0,
+    lockedUntil: opts?.locked ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null,
   }
   inviteDb.set(id, invite)
   inviteTokens.set(id, rawToken)
@@ -423,5 +444,154 @@ describe('DELETE /api/v1/workspaces/:id/invites/:inviteId', () => {
     const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}/invites/${invite.id}`, NON_MEMBER_ID)
     expect(res.statusCode).toBe(403)
     expect(res.json().code).toBe('not_member')
+  })
+})
+
+describe('POST /api/v1/invites/resolve', () => {
+  it('returns workspace info for valid token', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor')
+
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, { token: rawToken })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.workspaceName).toBe('Test WS')
+    expect(body.role).toBe('editor')
+    expect(body.expiresAt).toBeDefined()
+  })
+
+  it('404 on invalid token', async () => {
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, { token: 'bogus-token' })
+    expect(res.statusCode).toBe(404)
+    expect(res.json().code).toBe('invite_not_found')
+  })
+
+  it('404 on expired invite (increments failed_attempts)', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { expired: true })
+
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, { token: rawToken })
+    expect(res.statusCode).toBe(404)
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(1)
+  })
+
+  it('404 on already-accepted invite (increments failed_attempts)', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { accepted: true })
+
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, { token: rawToken })
+    expect(res.statusCode).toBe(404)
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(1)
+  })
+
+  it('423 on locked token', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { locked: true })
+
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, { token: rawToken })
+    expect(res.statusCode).toBe(423)
+    expect(res.json().code).toBe('invite_locked')
+  })
+
+  it('400 on missing token', async () => {
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, {})
+    expect(res.statusCode).toBe(400)
+  })
+})
+
+describe('POST /api/v1/invites/accept', () => {
+  it('accept happy path: member created, invite accepted', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor')
+
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.member.userId).toBe(INVITEE_ID)
+    expect(body.member.role).toBe('editor')
+    expect(body.workspace.id).toBe(ws.id)
+  })
+
+  it('401 when not authenticated', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor')
+
+    const res = await inject('POST', '/api/v1/invites/accept', undefined, { token: rawToken })
+    expect(res.statusCode).toBe(401)
+    expect(res.json().code).toBe('unauthorized')
+  })
+
+  it('404 on invalid token', async () => {
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: 'bogus' })
+    expect(res.statusCode).toBe(404)
+    expect(res.json().code).toBe('invite_not_found')
+  })
+
+  it('410 on already-accepted invite (increments failed_attempts)', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { accepted: true })
+
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+    expect(res.statusCode).toBe(410)
+    expect(res.json().code).toBe('invite_already_accepted')
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(1)
+  })
+
+  it('410 on expired invite (increments failed_attempts)', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { expired: true })
+
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+    expect(res.statusCode).toBe(410)
+    expect(res.json().code).toBe('invite_expired')
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(1)
+  })
+
+  it('403 on email mismatch (increments failed_attempts)', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(ws.id, 'wrong@test.dev', 'editor')
+
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe('invite_email_mismatch')
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(1)
+  })
+
+  it('423 on locked token', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { locked: true })
+
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+    expect(res.statusCode).toBe(423)
+    expect(res.json().code).toBe('invite_locked')
+  })
+
+  it('lockout at 50 failed attempts', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(ws.id, 'wrong@test.dev', 'editor')
+
+    for (let i = 0; i < 49; i++) {
+      inviteDb.get(invite.id)!.failedAttempts = i
+      await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+    }
+    inviteDb.get(invite.id)!.failedAttempts = 49
+    await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(50)
+    expect(inviteDb.get(invite.id)?.lockedUntil).toBeTruthy()
+
+    const lockedRes = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+    expect(lockedRes.statusCode).toBe(423)
+    expect(lockedRes.json().code).toBe('invite_locked')
+  })
+
+  it('successful accept resets failed_attempts', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor')
+    inviteDb.get(invite.id)!.failedAttempts = 10
+
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
+    expect(res.statusCode).toBe(200)
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(0)
   })
 })

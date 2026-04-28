@@ -112,6 +112,8 @@ export async function seedInvite(
     acceptedAt: null,
     createdBy: null,
     createdAt: nowIso(),
+    failedAttempts: 0,
+    lockedUntil: null,
   }
   const result = { invite, rawToken }
   state.invites.push(result)

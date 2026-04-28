@@ -39,6 +39,8 @@ export type WorkspaceInvite = {
   acceptedAt: string | null
   createdBy: string | null
   createdAt: string
+  failedAttempts: number
+  lockedUntil: string | null
 }
 
 export type WorkspaceRuntime = {

@@ -42,6 +42,8 @@ export interface WorkspaceStore {
   getInviteByTokenHash(tokenHash: string): Promise<WorkspaceInvite | null>
   revokeInvite(workspaceId: string, inviteId: string): Promise<boolean>
   acceptInvite(workspaceId: string, inviteId: string, userId: string): Promise<{ invite: WorkspaceInvite; member: WorkspaceMember }>
+  incrementInviteFailedAttempts(inviteId: string): Promise<{ failedAttempts: number; lockedUntil: string | null }>
+  resetInviteFailedAttempts(inviteId: string): Promise<void>
   getWorkspaceSettings(workspaceId: string): Promise<Array<{ key: string; configured: boolean; updated_at: string }>>
   putWorkspaceSettings(workspaceId: string, settings: Record<string, string>): Promise<Array<{ key: string; configured: boolean; updated_at: string }>>
   getWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null>

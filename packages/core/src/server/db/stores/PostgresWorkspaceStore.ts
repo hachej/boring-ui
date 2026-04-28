@@ -62,6 +62,8 @@ function toWorkspaceInvite(row: typeof workspaceInvites.$inferSelect): Workspace
     acceptedAt: toIso(row.acceptedAt),
     createdBy: row.createdBy,
     createdAt: toIso(row.createdAt)!,
+    failedAttempts: row.failedAttempts,
+    lockedUntil: toIso(row.lockedUntil),
   }
 }
 
@@ -567,6 +569,33 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         member: toWorkspaceMember(member),
       }
     })
+  }
+
+  async incrementInviteFailedAttempts(inviteId: string): Promise<{ failedAttempts: number; lockedUntil: string | null }> {
+    const rows = await this.db
+      .update(workspaceInvites)
+      .set({
+        failedAttempts: sql`${workspaceInvites.failedAttempts} + 1`,
+        lockedUntil: sql`CASE WHEN ${workspaceInvites.failedAttempts} + 1 >= 50 THEN now() + interval '1 hour' ELSE ${workspaceInvites.lockedUntil} END`,
+      })
+      .where(eq(workspaceInvites.id, inviteId))
+      .returning({
+        failedAttempts: workspaceInvites.failedAttempts,
+        lockedUntil: workspaceInvites.lockedUntil,
+      })
+
+    if (rows.length === 0) return { failedAttempts: 0, lockedUntil: null }
+    return {
+      failedAttempts: rows[0].failedAttempts,
+      lockedUntil: toIso(rows[0].lockedUntil),
+    }
+  }
+
+  async resetInviteFailedAttempts(inviteId: string): Promise<void> {
+    await this.db
+      .update(workspaceInvites)
+      .set({ failedAttempts: 0, lockedUntil: null })
+      .where(eq(workspaceInvites.id, inviteId))
   }
 
   async decryptSetting(

@@ -6,7 +6,7 @@ import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
 import { createMailTransport } from '../mail/transport.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWorkspaceInvite } from '../mail/templates/index.js'
-import { createInviteBody, acceptInviteQuery } from './__schemas__/invites.js'
+import { createInviteBody, acceptInviteQuery, tokenBody } from './__schemas__/invites.js'
 import type { Database } from '../db/connection.js'
 import { createIdempotencyMiddleware, createDrizzleIdempotencyStore } from '../middleware/idempotency.js'
 import type { IdempotencyKeyStore } from '../middleware/idempotency.js'
@@ -168,6 +168,134 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
       return { revoked: true }
     },
   )
+
+  app.post('/api/v1/invites/resolve', async (request) => {
+    const parsed = tokenBody.safeParse(request.body)
+    if (!parsed.success) {
+      throw new HttpError({
+        status: 400,
+        code: ERROR_CODES.VALIDATION_FAILED,
+        message: 'token is required',
+        requestId: request.id,
+      })
+    }
+
+    const tokenHash = createHash('sha256').update(parsed.data.token).digest('hex')
+    const invite = await store.getInviteByTokenHash(tokenHash)
+
+    if (!invite) {
+      throw new HttpError({
+        status: 404,
+        code: ERROR_CODES.INVITE_NOT_FOUND,
+        message: 'Invite not found',
+        requestId: request.id,
+      })
+    }
+
+    if (invite.lockedUntil && new Date(invite.lockedUntil) > new Date()) {
+      throw new HttpError({
+        status: 423,
+        code: ERROR_CODES.INVITE_LOCKED,
+        message: 'Invite token is locked',
+        requestId: request.id,
+      })
+    }
+
+    if (invite.acceptedAt || new Date(invite.expiresAt) <= new Date()) {
+      await store.incrementInviteFailedAttempts(invite.id)
+      throw new HttpError({
+        status: 404,
+        code: ERROR_CODES.INVITE_NOT_FOUND,
+        message: 'Invite not found',
+        requestId: request.id,
+      })
+    }
+
+    const workspace = await store.get(invite.workspaceId)
+    return {
+      workspaceName: workspace?.name ?? 'Workspace',
+      role: invite.role,
+      expiresAt: invite.expiresAt,
+    }
+  })
+
+  app.post('/api/v1/invites/accept', async (request) => {
+    const user = request.user
+    if (!user) {
+      throw new HttpError({
+        status: 401,
+        code: ERROR_CODES.UNAUTHORIZED,
+        message: 'Authentication required',
+        requestId: request.id,
+      })
+    }
+
+    const parsed = tokenBody.safeParse(request.body)
+    if (!parsed.success) {
+      throw new HttpError({
+        status: 400,
+        code: ERROR_CODES.VALIDATION_FAILED,
+        message: 'token is required',
+        requestId: request.id,
+      })
+    }
+
+    const tokenHash = createHash('sha256').update(parsed.data.token).digest('hex')
+    const invite = await store.getInviteByTokenHash(tokenHash)
+
+    if (!invite) {
+      throw new HttpError({
+        status: 404,
+        code: ERROR_CODES.INVITE_NOT_FOUND,
+        message: 'Invite not found',
+        requestId: request.id,
+      })
+    }
+
+    if (invite.lockedUntil && new Date(invite.lockedUntil) > new Date()) {
+      throw new HttpError({
+        status: 423,
+        code: ERROR_CODES.INVITE_LOCKED,
+        message: 'Invite token is locked',
+        requestId: request.id,
+      })
+    }
+
+    if (invite.acceptedAt) {
+      await store.incrementInviteFailedAttempts(invite.id)
+      throw new HttpError({
+        status: 410,
+        code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
+        message: 'Invite already accepted',
+        requestId: request.id,
+      })
+    }
+
+    if (new Date(invite.expiresAt) <= new Date()) {
+      await store.incrementInviteFailedAttempts(invite.id)
+      throw new HttpError({
+        status: 410,
+        code: ERROR_CODES.INVITE_EXPIRED,
+        message: 'Invite expired',
+        requestId: request.id,
+      })
+    }
+
+    try {
+      const result = await store.acceptInvite(invite.workspaceId, invite.id, user.id)
+      await store.resetInviteFailedAttempts(invite.id)
+      request.log.info({ inviteId: invite.id, userId: user.id }, 'invite.token.accept')
+      return { workspace: await store.get(invite.workspaceId), member: result.member }
+    } catch (err) {
+      if (err instanceof HttpError) {
+        if (err.code === ERROR_CODES.INVITE_EMAIL_MISMATCH) {
+          await store.incrementInviteFailedAttempts(invite.id)
+        }
+        throw err
+      }
+      throw err
+    }
+  })
 }
 
 export const registerInviteRoutes = fp(inviteRoutesPlugin, { name: 'invite-routes' })

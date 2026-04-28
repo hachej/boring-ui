@@ -14,6 +14,7 @@ export const ERROR_CODES = {
   INVITE_EXPIRED: 'invite_expired',
   INVITE_ALREADY_ACCEPTED: 'invite_already_accepted',
   INVITE_EMAIL_MISMATCH: 'invite_email_mismatch',
+  INVITE_LOCKED: 'invite_locked',
 
   // Provisioning
   PROVISION_FAILED: 'provision_failed',

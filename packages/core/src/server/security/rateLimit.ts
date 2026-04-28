@@ -51,6 +51,24 @@ export const DEFAULT_RATE_LIMIT_RULES: readonly RateLimitRule[] = [
       return workspaceId
     },
   },
+  {
+    endpoint: '/api/v1/invites/resolve',
+    url: '/api/v1/invites/resolve',
+    method: 'POST',
+    max: 60,
+    timeWindow: '1 minute',
+  },
+  {
+    endpoint: '/api/v1/invites/accept',
+    url: '/api/v1/invites/accept',
+    method: 'POST',
+    max: 10,
+    timeWindow: '1 minute',
+    keyGenerator: (req) => {
+      const userId = req.user?.id ?? 'anon'
+      return `${req.ip}:${userId}`
+    },
+  },
 ]
 
 function matchesRule(
