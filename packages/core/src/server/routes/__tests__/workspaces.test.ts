@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { registerWorkspaceRoutes } from '../workspaces'
 import { registerErrorHandler } from '../../app/errorHandler'
 import type { WorkspaceStore } from '../../app/types'
-import type { MemberRole, Workspace, WorkspaceMember } from '../../../shared/types'
+import type { MemberRole, Workspace, WorkspaceMember, WorkspaceRuntime } from '../../../shared/types'
+import type { WorkspaceProvisioner } from '../../provisioner/types'
 import { ERROR_CODES } from '../../../shared/errors'
 
 const OWNER_ID = 'u-owner-000'
@@ -79,6 +80,7 @@ beforeAll(async () => {
 
   app.decorate('config', { appId: APP_ID } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
+  app.decorate('provisioner', null)
   registerErrorHandler(app)
 
   app.addHook('onRequest', async (request) => {
@@ -289,5 +291,232 @@ describe('DELETE /api/v1/workspaces/:id', () => {
     const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
     expect(res.statusCode).toBe(404)
     expect(res.json().code).toBe('not_found')
+  })
+})
+
+describe('Provisioner integration', () => {
+  let provApp: FastifyInstance
+  let provisionFn: ReturnType<typeof vi.fn>
+  let destroyFn: ReturnType<typeof vi.fn>
+  let runtimes: Map<string, Partial<WorkspaceRuntime>>
+  let pNextWsId: number
+  const pWorkspaces = new Map<string, Workspace>()
+  const pMembers = new Map<string, Map<string, MemberRole>>()
+
+  function provResetState() {
+    pNextWsId = 1
+    pWorkspaces.clear()
+    pMembers.clear()
+    runtimes.clear()
+    provisionFn.mockReset()
+    destroyFn.mockReset()
+    provisionFn.mockResolvedValue({ volumePath: '/volumes/ws-test' })
+    destroyFn.mockResolvedValue(undefined)
+  }
+
+  function provMockWorkspaceStore(): WorkspaceStore {
+    return {
+      create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean }) => {
+        const id = `ws-${pNextWsId++}`
+        const ws: Workspace = {
+          id, appId, name, createdBy: userId,
+          createdAt: new Date().toISOString(), deletedAt: null,
+          isDefault: opts?.isDefault ?? false,
+        }
+        pWorkspaces.set(id, ws)
+        const wsMembers = pMembers.get(id) ?? new Map()
+        wsMembers.set(userId, 'owner')
+        pMembers.set(id, wsMembers)
+        return ws
+      },
+      list: async (userId: string, appId: string) => {
+        return [...pWorkspaces.values()].filter(
+          (ws) => ws.appId === appId && !ws.deletedAt && pMembers.get(ws.id)?.has(userId),
+        )
+      },
+      get: async (id: string) => {
+        const ws = pWorkspaces.get(id)
+        return ws && !ws.deletedAt ? ws : null
+      },
+      update: async (id: string, updates: Partial<Pick<Workspace, 'name'>>) => {
+        const ws = pWorkspaces.get(id)
+        if (!ws || ws.deletedAt) return null
+        if (updates.name) ws.name = updates.name
+        return ws
+      },
+      delete: async (id: string) => {
+        const ws = pWorkspaces.get(id)
+        if (!ws || ws.deletedAt) return { removed: false, code: 'not_found' as const }
+        ws.deletedAt = new Date().toISOString()
+        return { removed: true }
+      },
+      getMemberRole: async (wsId: string, userId: string) => {
+        return pMembers.get(wsId)?.get(userId) ?? null
+      },
+      isMember: async (wsId: string, userId: string) => {
+        return pMembers.get(wsId)?.has(userId) ?? false
+      },
+      putWorkspaceRuntime: async (wsId: string, state: Partial<WorkspaceRuntime>) => {
+        const existing = runtimes.get(wsId) ?? { workspaceId: wsId }
+        const merged = { ...existing, ...state, workspaceId: wsId, updatedAt: new Date().toISOString() }
+        runtimes.set(wsId, merged)
+        return merged as WorkspaceRuntime
+      },
+      getWorkspaceRuntime: async (wsId: string) => {
+        return (runtimes.get(wsId) as WorkspaceRuntime) ?? null
+      },
+    } as unknown as WorkspaceStore
+  }
+
+  function provSeedWorkspace(name: string, ownerUserId: string) {
+    const id = `ws-${pNextWsId++}`
+    const ws: Workspace = {
+      id, appId: APP_ID, name, createdBy: ownerUserId,
+      createdAt: new Date().toISOString(), deletedAt: null, isDefault: false,
+    }
+    pWorkspaces.set(id, ws)
+    const wsMembers = new Map<string, MemberRole>()
+    wsMembers.set(ownerUserId, 'owner')
+    pMembers.set(id, wsMembers)
+    return ws
+  }
+
+  function provInject(method: string, url: string, userId?: string, payload?: unknown) {
+    const req: { method: string; url: string; headers?: Record<string, string>; payload?: unknown } = { method, url }
+    if (userId) req.headers = { 'x-test-user': userId }
+    if (payload !== undefined) req.payload = payload
+    return provApp.inject(req as any)
+  }
+
+  beforeAll(async () => {
+    runtimes = new Map()
+    provisionFn = vi.fn().mockResolvedValue({ volumePath: '/volumes/ws-test' })
+    destroyFn = vi.fn().mockResolvedValue(undefined)
+    pNextWsId = 1
+
+    const mockProvisioner: WorkspaceProvisioner = {
+      provision: provisionFn,
+      destroy: destroyFn,
+    }
+
+    provApp = Fastify({ logger: false })
+    provApp.decorate('config', { appId: APP_ID } as any)
+    provApp.decorate('workspaceStore', provMockWorkspaceStore())
+    provApp.decorate('provisioner', mockProvisioner)
+    registerErrorHandler(provApp)
+
+    provApp.addHook('onRequest', async (request) => {
+      const userId = request.headers['x-test-user'] as string | undefined
+      if (userId) {
+        request.user = { id: userId, email: `${userId}@test.dev`, name: null }
+      } else {
+        request.user = null
+      }
+    })
+
+    await provApp.register(registerWorkspaceRoutes)
+    await provApp.ready()
+  })
+
+  afterAll(async () => {
+    await provApp.close()
+  })
+
+  beforeEach(() => {
+    provResetState()
+  })
+
+  describe('POST /api/v1/workspaces (with provisioner)', () => {
+    it('creates workspace + runtime ready + volumePath set', async () => {
+      provisionFn.mockResolvedValue({ volumePath: '/volumes/ws-1' })
+
+      const res = await provInject('POST', '/api/v1/workspaces', OWNER_ID, { name: 'Provisioned' })
+      expect(res.statusCode).toBe(201)
+
+      const wsId = res.json().workspace.id
+      expect(provisionFn).toHaveBeenCalledOnce()
+      expect(provisionFn).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: wsId,
+        workspaceName: 'Provisioned',
+        ownerId: OWNER_ID,
+        appId: APP_ID,
+      }))
+
+      const runtime = runtimes.get(wsId)
+      expect(runtime?.state).toBe('ready')
+      expect(runtime?.volumePath).toBe('/volumes/ws-1')
+    })
+
+    it('provision failure → workspace stored, runtime error, HTTP 500', async () => {
+      provisionFn.mockRejectedValue(new Error('disk full'))
+
+      const res = await provInject('POST', '/api/v1/workspaces', OWNER_ID, { name: 'FailProv' })
+      expect(res.statusCode).toBe(500)
+      expect(res.json().code).toBe('provision_failed')
+
+      const wsId = 'ws-1'
+      expect(pWorkspaces.has(wsId)).toBe(true)
+
+      const runtime = runtimes.get(wsId)
+      expect(runtime?.state).toBe('error')
+      expect(runtime?.lastError).toBe('disk full')
+      expect(runtime?.lastErrorOp).toBe('provision')
+    })
+  })
+
+  describe('DELETE /api/v1/workspaces/:id (with provisioner)', () => {
+    it('destroy success → dir gone, workspace deleted, 200', async () => {
+      const ws = provSeedWorkspace('DestroyMe', OWNER_ID)
+
+      const res = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ deleted: true })
+      expect(destroyFn).toHaveBeenCalledWith(ws.id)
+      expect(pWorkspaces.get(ws.id)?.deletedAt).toBeTruthy()
+    })
+
+    it('destroy failure → workspace NOT removed, runtime error, HTTP 500', async () => {
+      destroyFn.mockRejectedValue(new Error('EBUSY'))
+      const ws = provSeedWorkspace('BusyWS', OWNER_ID)
+
+      const res = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+      expect(res.statusCode).toBe(500)
+      expect(res.json().code).toBe('destroy_failed')
+
+      expect(pWorkspaces.get(ws.id)?.deletedAt).toBeNull()
+
+      const runtime = runtimes.get(ws.id)
+      expect(runtime?.state).toBe('error')
+      expect(runtime?.lastError).toBe('EBUSY')
+      expect(runtime?.lastErrorOp).toBe('destroy')
+    })
+
+    it('re-issue DELETE after destroy failure succeeds', async () => {
+      destroyFn.mockRejectedValueOnce(new Error('EBUSY'))
+      const ws = provSeedWorkspace('RetryWS', OWNER_ID)
+
+      const first = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+      expect(first.statusCode).toBe(500)
+
+      destroyFn.mockResolvedValue(undefined)
+      const second = await provInject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+      expect(second.statusCode).toBe(200)
+      expect(second.json()).toEqual({ deleted: true })
+      expect(pWorkspaces.get(ws.id)?.deletedAt).toBeTruthy()
+    })
+  })
+
+  describe('No-provisioner mode', () => {
+    it('POST creates workspace with no runtime row', async () => {
+      const res = await inject('POST', '/api/v1/workspaces', OWNER_ID, { name: 'No Prov' })
+      expect(res.statusCode).toBe(201)
+    })
+
+    it('DELETE removes workspace without errors', async () => {
+      const ws = seedWorkspaceWithMembers('NoProv', OWNER_ID)
+      const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ deleted: true })
+    })
   })
 })

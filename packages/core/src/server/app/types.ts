@@ -10,6 +10,7 @@ import type {
   MemberRole,
 } from '../../shared/types.js'
 import type { ERROR_CODES } from '../../shared/errors.js'
+import type { WorkspaceProvisioner } from '../provisioner/types.js'
 
 export interface UserStore {
   getById(id: string): Promise<User | null>
@@ -63,6 +64,7 @@ export interface CreateCoreAppOptions {
   authProvider?: AuthProvider
   userStore?: UserStore
   workspaceStore?: WorkspaceStore
+  provisioner?: WorkspaceProvisioner
   manageShutdown?: boolean
 }
 
@@ -70,6 +72,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     config: CoreConfig
     workspaceStore: WorkspaceStore
+    provisioner: WorkspaceProvisioner | null
     addRedactionPaths(paths: string[]): void
     registerCapabilitiesContributor(
       name: string,

@@ -15,6 +15,10 @@ export const ERROR_CODES = {
   INVITE_ALREADY_ACCEPTED: 'invite_already_accepted',
   INVITE_EMAIL_MISMATCH: 'invite_email_mismatch',
 
+  // Provisioning
+  PROVISION_FAILED: 'provision_failed',
+  DESTROY_FAILED: 'destroy_failed',
+
   // Validation + infra
   NOT_FOUND: 'not_found',
   VALIDATION_FAILED: 'validation_failed',

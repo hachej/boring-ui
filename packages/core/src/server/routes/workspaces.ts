@@ -6,6 +6,7 @@ import { createWorkspaceBody, updateWorkspaceBody } from './__schemas__/workspac
 
 const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   const store = app.workspaceStore
+  const provisioner = app.provisioner
 
   app.post('/api/v1/workspaces', async (request, reply) => {
     const parsed = createWorkspaceBody.safeParse(request.body)
@@ -23,6 +24,36 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
     const isDefault = existing.length === 0
 
     const workspace = await store.create(user.id, parsed.data.name, app.config.appId, { isDefault })
+
+    if (provisioner) {
+      await store.putWorkspaceRuntime(workspace.id, { state: 'pending' })
+      try {
+        const result = await provisioner.provision({
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+          ownerId: user.id,
+          appId: app.config.appId,
+        })
+        await store.putWorkspaceRuntime(workspace.id, {
+          state: 'ready',
+          volumePath: result.volumePath,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        await store.putWorkspaceRuntime(workspace.id, {
+          state: 'error',
+          lastError: message,
+          lastErrorOp: 'provision',
+        })
+        request.log.error({ workspaceId: workspace.id, err }, 'workspace.provision.failed')
+        throw new HttpError({
+          status: 500,
+          code: ERROR_CODES.PROVISION_FAILED,
+          message: 'Workspace provisioning failed',
+          requestId: request.id,
+        })
+      }
+    }
 
     request.log.info({ workspaceId: workspace.id, userId: user.id }, 'workspace.create')
     reply.status(201)
@@ -99,6 +130,27 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
       const { id } = request.params as { id: string }
 
       request.log.info({ workspaceId: id }, 'workspace.delete.start')
+
+      if (provisioner) {
+        try {
+          await provisioner.destroy(id)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          await store.putWorkspaceRuntime(id, {
+            state: 'error',
+            lastError: message,
+            lastErrorOp: 'destroy',
+          })
+          request.log.error({ workspaceId: id, err }, 'workspace.destroy.failed')
+          throw new HttpError({
+            status: 500,
+            code: ERROR_CODES.DESTROY_FAILED,
+            message: 'Workspace destruction failed',
+            requestId: request.id,
+          })
+        }
+      }
+
       const result = await store.delete(id)
 
       if (result.removed) {
