@@ -135,6 +135,31 @@ if [[ -d "$ROOT_DIR/src" ]]; then
     "$stable_error_codes_output"
 fi
 
+run_check_with_glob \
+  "No hand-rolled pi tool factories" \
+  "function[[:space:]]+create(Bash|Read|Write|Edit|Find|FindFiles|Grep|GrepFiles|Ls)Tool([^A-Za-z0-9_]|$)" \
+  "Pi-tools migration locked in: use pi factories plus Operations adapters." \
+  "!**/operations/**" \
+  "src"
+
+run_check \
+  "No legacy find_files / grep_files tool names in source" \
+  "find_files|grep_files" \
+  "Use pi tool names: find and grep." \
+  "src"
+
+run_check \
+  "No per-tool guideline bullets in pi harness" \
+  "Prefer the .* tool when" \
+  "Pi-built tools self-advertise. Do not add per-tool guideline bullets." \
+  "src/server/harness"
+
+run_check \
+  "No decorated promptSnippet entries in pi harness" \
+  "promptSnippet:.*- .*\\$\\{tool\\.name\\}" \
+  "Preserve promptSnippet verbatim; do not prepend dash/backtick wrappers." \
+  "src/server/harness"
+
 # pi-coding-agent must use an exact version pin (no ^, ~, >=, etc.)
 # Rationale: single-maintainer v0.x with no semver guarantee.
 if [[ -f "$ROOT_DIR/package.json" ]]; then

@@ -95,6 +95,7 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 6. **`UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
 7. **Workspace package has ZERO imports from `@boring/agent`** — app shell wires `ChatPanel` via `WorkspaceProvider panels` prop.
 8. **Every error has a stable code** from the canonical error-codes enum (one import site, no raw string codes).
+9. **Pi-tools migration stays locked** — `bash`/`read`/`write`/`edit`/`find`/`grep`/`ls` flow through pi factories plus Operations adapters. Custom AgentTools require Principle 3 justification from epic `boring-ui-v2-uhwx`.
 
 ---
 
