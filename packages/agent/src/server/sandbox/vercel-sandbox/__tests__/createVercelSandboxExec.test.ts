@@ -1,3 +1,4 @@
+import type { Writable } from 'node:stream'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 import { expect, test, vi } from 'vitest'
 
@@ -7,14 +8,22 @@ import { createVercelSandboxExec } from '../createVercelSandboxExec'
 
 const decoder = new TextDecoder()
 
-test('exec echo returns hi newline', async () => {
-  const runCommand = vi.fn(async () => {
-    return {
-      exitCode: 0,
-      stdout: async () => 'hi\n',
-      stderr: async () => '',
+function mockRunCommand(stdoutData: string, stderrData: string, exitCode = 0) {
+  return vi.fn(async (params: { stdout?: Writable; stderr?: Writable }) => {
+    if (params.stdout) {
+      params.stdout.write(Buffer.from(stdoutData, 'utf-8'))
+      params.stdout.end()
     }
+    if (params.stderr) {
+      params.stderr.write(Buffer.from(stderrData, 'utf-8'))
+      params.stderr.end()
+    }
+    return { exitCode }
   })
+}
+
+test('exec echo returns hi newline', async () => {
+  const runCommand = mockRunCommand('hi\n', '')
 
   const sandbox = { runCommand } as unknown as VercelSandbox
   const adapter = createVercelSandboxExec(sandbox)
@@ -76,13 +85,17 @@ test('timeout is respected', async () => {
   expect(result.stderr.length).toBe(0)
 })
 
-test('maxOutputBytes truncates output post-hoc', async () => {
-  const runCommand = vi.fn(async () => {
-    return {
-      exitCode: 0,
-      stdout: async () => 'abcde',
-      stderr: async () => 'vwxyz',
+test('maxOutputBytes truncates via streaming cap', async () => {
+  const runCommand = vi.fn(async (params: { stdout?: Writable; stderr?: Writable }) => {
+    if (params.stdout) {
+      params.stdout.write(Buffer.from('abcde', 'utf-8'))
+      params.stdout.end()
     }
+    if (params.stderr) {
+      params.stderr.write(Buffer.from('vwxyz', 'utf-8'))
+      params.stderr.end()
+    }
+    return { exitCode: 0 }
   })
 
   const sandbox = { runCommand } as unknown as VercelSandbox
@@ -94,4 +107,29 @@ test('maxOutputBytes truncates output post-hoc', async () => {
   expect(result.stdout.length + result.stderr.length).toBe(6)
   expect(decoder.decode(result.stdout)).toBe('abcde')
   expect(decoder.decode(result.stderr)).toBe('v')
+})
+
+test('onStdout callback receives streamed chunks', async () => {
+  const runCommand = vi.fn(async (params: { stdout?: Writable; stderr?: Writable }) => {
+    if (params.stdout) {
+      params.stdout.write(Buffer.from('chunk1'))
+      params.stdout.write(Buffer.from('chunk2'))
+      params.stdout.end()
+    }
+    if (params.stderr) params.stderr.end()
+    return { exitCode: 0 }
+  })
+
+  const sandbox = { runCommand } as unknown as VercelSandbox
+  const adapter = createVercelSandboxExec(sandbox)
+  const chunks: Uint8Array[] = []
+
+  const result = await adapter.exec('echo test', {
+    onStdout: (chunk) => chunks.push(chunk),
+  })
+
+  expect(chunks.length).toBe(2)
+  expect(Buffer.from(chunks[0]).toString()).toBe('chunk1')
+  expect(Buffer.from(chunks[1]).toString()).toBe('chunk2')
+  expect(decoder.decode(result.stdout)).toBe('chunk1chunk2')
 })

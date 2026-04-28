@@ -1,3 +1,4 @@
+import { Writable } from 'node:stream'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import type { ExecResult, Sandbox } from '../../../shared/sandbox'
@@ -6,21 +7,46 @@ import { invalidateVercelSandboxWorkspaceMetadataCache } from '../../workspace/c
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
 
-function truncateOutput(
-  stdout: Uint8Array,
-  stderr: Uint8Array,
-  maxOutputBytes: number,
-): { stdout: Uint8Array; stderr: Uint8Array; truncated: boolean } {
-  if (stdout.length + stderr.length <= maxOutputBytes) {
-    return { stdout, stderr, truncated: false }
-  }
+interface CaptureState {
+  totalBytes: number
+  maxBytes: number
+  truncated: boolean
+}
 
-  let remaining = maxOutputBytes
-  const stdoutSlice = stdout.subarray(0, Math.max(0, Math.min(stdout.length, remaining)))
-  remaining -= stdoutSlice.length
+interface StreamCollector {
+  chunks: Buffer[]
+}
 
-  const stderrSlice = stderr.subarray(0, Math.max(0, Math.min(stderr.length, remaining)))
-  return { stdout: stdoutSlice, stderr: stderrSlice, truncated: true }
+function createStreamWritable(
+  collector: StreamCollector,
+  shared: CaptureState,
+  onChunk?: (chunk: Uint8Array) => void,
+): Writable {
+  return new Writable({
+    write(chunk: Buffer, _enc, cb) {
+      const remaining = shared.maxBytes - shared.totalBytes
+      if (remaining <= 0) {
+        shared.truncated = true
+        cb()
+        return
+      }
+
+      if (chunk.length > remaining) {
+        const partial = chunk.subarray(0, remaining)
+        collector.chunks.push(partial)
+        shared.totalBytes += remaining
+        shared.truncated = true
+        onChunk?.(new Uint8Array(partial))
+        cb()
+        return
+      }
+
+      collector.chunks.push(chunk)
+      shared.totalBytes += chunk.length
+      onChunk?.(new Uint8Array(chunk))
+      cb()
+    },
+  })
 }
 
 function timeoutResult(durationMs: number): ExecResult {
@@ -59,6 +85,10 @@ export function createVercelSandboxExec(sandbox: VercelSandbox): Sandbox {
         controller.abort(externalSignal?.reason)
       }
 
+      const captureState: CaptureState = { totalBytes: 0, maxBytes: maxOutputBytes, truncated: false }
+      const stdoutCollector: StreamCollector = { chunks: [] }
+      const stderrCollector: StreamCollector = { chunks: [] }
+
       try {
         if (externalSignal) {
           if (externalSignal.aborted) {
@@ -81,29 +111,22 @@ export function createVercelSandboxExec(sandbox: VercelSandbox): Sandbox {
           }, 1_000)
         }
 
-        const command = await sandbox.runCommand({
+        const result = await sandbox.runCommand({
           cmd: 'sh',
           args: ['-c', cmd],
           cwd: opts?.cwd,
           env: opts?.env,
           signal: controller.signal,
+          stdout: createStreamWritable(stdoutCollector, captureState, opts?.onStdout),
+          stderr: createStreamWritable(stderrCollector, captureState, opts?.onStderr),
         })
 
-        const [stdoutText, stderrText] = await Promise.all([
-          command.stdout(),
-          command.stderr(),
-        ])
-
-        const stdout = new Uint8Array(Buffer.from(stdoutText, 'utf-8'))
-        const stderr = new Uint8Array(Buffer.from(stderrText, 'utf-8'))
-        const truncated = truncateOutput(stdout, stderr, maxOutputBytes)
-
         return {
-          stdout: truncated.stdout,
-          stderr: truncated.stderr,
-          exitCode: command.exitCode ?? 1,
+          stdout: new Uint8Array(Buffer.concat(stdoutCollector.chunks)),
+          stderr: new Uint8Array(Buffer.concat(stderrCollector.chunks)),
+          exitCode: result.exitCode ?? 1,
           durationMs: Date.now() - start,
-          truncated: truncated.truncated,
+          truncated: captureState.truncated,
           stdoutEncoding: 'utf-8',
           stderrEncoding: 'utf-8',
         }

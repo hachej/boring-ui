@@ -93,6 +93,8 @@ export interface ExecOptions {
   timeoutMs?: number
   maxOutputBytes?: number
   onHeartbeat?: (elapsedMs: number) => void
+  onStdout?: (chunk: Uint8Array) => void
+  onStderr?: (chunk: Uint8Array) => void
 }
 
 export interface ExecResult {

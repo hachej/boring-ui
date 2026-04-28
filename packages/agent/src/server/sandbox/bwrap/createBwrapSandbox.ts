@@ -19,7 +19,12 @@ interface CaptureState {
   truncated: boolean
 }
 
-function appendOutput(chunks: Buffer[], chunk: Buffer, state: CaptureState): void {
+function appendOutput(
+  chunks: Buffer[],
+  chunk: Buffer,
+  state: CaptureState,
+  onChunk?: (chunk: Uint8Array) => void,
+): void {
   const remaining = state.maxBytes - state.capturedBytes
   if (remaining <= 0) {
     state.truncated = true
@@ -27,14 +32,17 @@ function appendOutput(chunks: Buffer[], chunk: Buffer, state: CaptureState): voi
   }
 
   if (chunk.length > remaining) {
-    chunks.push(chunk.subarray(0, remaining))
+    const partial = chunk.subarray(0, remaining)
+    chunks.push(partial)
     state.capturedBytes += remaining
     state.truncated = true
+    onChunk?.(new Uint8Array(partial))
     return
   }
 
   chunks.push(chunk)
   state.capturedBytes += chunk.length
+  onChunk?.(new Uint8Array(chunk))
 }
 
 function terminateProcess(
@@ -196,10 +204,10 @@ export function createBwrapSandbox(): Sandbox {
         }
 
         child.stdout?.on('data', (chunk: Buffer) => {
-          appendOutput(stdoutChunks, chunk, captureState)
+          appendOutput(stdoutChunks, chunk, captureState, opts?.onStdout)
         })
         child.stderr?.on('data', (chunk: Buffer) => {
-          appendOutput(stderrChunks, chunk, captureState)
+          appendOutput(stderrChunks, chunk, captureState, opts?.onStderr)
         })
 
         child.on('error', (error) => {

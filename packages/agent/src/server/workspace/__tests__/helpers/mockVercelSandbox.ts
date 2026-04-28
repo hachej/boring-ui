@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
+import type { Writable } from 'node:stream'
 
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
@@ -88,7 +89,7 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
       }
     },
     async runCommand(
-      commandOrParams: string | { cmd: string; args?: string[]; signal?: AbortSignal },
+      commandOrParams: string | { cmd: string; args?: string[]; signal?: AbortSignal; stdout?: Writable; stderr?: Writable },
       args: string[] = [],
       opts?: { signal?: AbortSignal },
     ) {
@@ -101,6 +102,8 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
       const signal = typeof commandOrParams === 'string'
         ? opts?.signal
         : commandOrParams.signal
+      const stdoutWritable = typeof commandOrParams === 'object' ? commandOrParams.stdout : undefined
+      const stderrWritable = typeof commandOrParams === 'object' ? commandOrParams.stderr : undefined
 
       if (signal?.aborted) {
         throw new Error('mock command aborted')
@@ -110,38 +113,38 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         ? (commandArgs[1] ?? '')
         : [command, ...commandArgs].join(' ').trim()
 
+      function emitResult(exitCode: number, stdoutText: string, stderrText: string) {
+        if (stdoutWritable) {
+          if (stdoutText) stdoutWritable.write(Buffer.from(stdoutText, 'utf-8'))
+          stdoutWritable.end()
+        }
+        if (stderrWritable) {
+          if (stderrText) stderrWritable.write(Buffer.from(stderrText, 'utf-8'))
+          stderrWritable.end()
+        }
+        return {
+          exitCode,
+          stdout: async () => stdoutText,
+          stderr: async () => stderrText,
+        }
+      }
+
       if (script.startsWith('cat ')) {
         const targetPath = script.slice(4).trim()
         try {
           const stdout = await readFile(toHostPath(hostRoot, targetPath), 'utf-8')
-          return {
-            exitCode: 0,
-            stdout: async () => stdout,
-            stderr: async () => '',
-          }
+          return emitResult(0, stdout, '')
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error)
-          return {
-            exitCode: 1,
-            stdout: async () => '',
-            stderr: async () => message,
-          }
+          return emitResult(1, '', message)
         }
       }
 
       if (script.startsWith('echo ')) {
-        return {
-          exitCode: 0,
-          stdout: async () => `${script.slice(5)}\n`,
-          stderr: async () => '',
-        }
+        return emitResult(0, `${script.slice(5)}\n`, '')
       }
 
-      return {
-        exitCode: 127,
-        stdout: async () => '',
-        stderr: async () => `unsupported mock command: ${script}`,
-      }
+      return emitResult(127, '', `unsupported mock command: ${script}`)
     },
   } as unknown as VercelSandbox
 
