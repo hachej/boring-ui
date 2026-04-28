@@ -1,0 +1,12 @@
+@import "tailwindcss";
+/* Workspace's own globals.css declares @source for its components, so we
+ * don't need to repeat that here — `import "@boring/workspace/globals.css"`
+ * in main.tsx pulls them in via Tailwind's @import resolution. */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}

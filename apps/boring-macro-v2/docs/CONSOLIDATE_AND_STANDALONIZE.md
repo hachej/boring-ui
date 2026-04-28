@@ -224,14 +224,17 @@ package versions). Concretely:
       `@boring/workspace` use `workspace:*` (mono); a portable
       template (`file:../boring-ui-v2/packages/...` or pinned
       versions) is documented in `README.md` for extraction.
-- [ ] `vite.config.ts` resolves `@boring/workspace` (and friends)
-      through standard Node resolution — *not* through hardcoded
-      `resolve(__dirname, "../../packages/workspace/src/index.ts")`
-      aliases. **Decided 2026-04-28: built `dist/` only, no path
-      aliases.** Today's standalone uses src-aliases for HMR; the
-      consolidated app drops them, accepting the trade-off (workspace
-      package edits require a rebuild instead of HMR — same DX as
-      `apps/full-app/`). Portability beats HMR for this app.
+- [ ] `vite.config.ts` aliases `@boring/workspace` → `packages/workspace/src/index.ts`
+      for HMR, and re-points the alias when the app moves to its own
+      repo. **Re-decided 2026-04-28 (revising the earlier "built dist
+      only" call):** during the consolidation phase the team is
+      iterating on workspace and macro at the same time; rebuilding
+      workspace's dist after every edit was the dominant cost in the
+      Phase B inner loop. Aliases bring HMR back. The portability
+      cost is one config-line update at extraction time (alias path
+      changes from `../../packages/workspace/src/index.ts` to
+      `../node_modules/@boring/workspace/src/index.ts` or similar) —
+      cheap relative to the daily DX win.
 - [ ] No imports from sibling apps (`apps/full-app/...`,
       `apps/workspace-playground/...`).
 - [ ] Tests (`e2e/`, `__tests__/`) don't reference monorepo-root

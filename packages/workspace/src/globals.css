@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Workspace's own components — every consumer that imports this CSS file
+ * gets the utility classes used by ChatCenteredShell, panes, ui-shadcn
+ * primitives, etc. Without this, consumers had to add their own
+ * @source pointing back at workspace's src; that broke whenever the
+ * consumer moved between repos. */
+@source "./**/*.{ts,tsx}";
+
 /* Tell Tailwind to scan @boring/agent's source files so classes used inside
  * agent's ChatPanel + primitives end up in the final CSS. The packages share
  * the same token system (see @theme inline below), so co-loading the agent

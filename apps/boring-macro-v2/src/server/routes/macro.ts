@@ -77,31 +77,65 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
 
     // ---- Catalog ---------------------------------------------------------
 
-    scoped.get('/catalog', async (req: FastifyRequest, reply: FastifyReply) => {
+    // Frontend contract: returns { items, total, hasMore } where each item is
+    // { id, title, frequency, source, units, derived } (renamed from the
+    // ClickHouse column shape — the DB has `series_id`, `frequency_short`,
+    // `source_type`, etc.). Honors `q` (full-text search) by routing to
+    // svc.search() instead of svc.catalog() when provided. The DataCatalog
+    // adapter in src/front/macroSeriesAdapter.ts depends on this shape.
+    scoped.get('/catalog', async (req: FastifyRequest, _reply: FastifyReply) => {
       const q = req.query as Record<string, string | undefined>
-      if (svc === null) return { results: [], total: 0 }
+      if (svc === null) return { items: [], total: 0, hasMore: false }
+
+      const limit = clampInt(q.limit, 1, 1000, 100)
+      const offset = clampInt(q.offset, 0, Number.MAX_SAFE_INTEGER, 0)
+      const frequency = parseCommaSep(q.frequency)
+      const source = parseCommaSep(q.source)
+      const queryStr = typeof q.q === 'string' ? q.q.trim() : ''
+
       try {
-        return await svc.catalog({
-          limit: clampInt(q.limit, 1, 1000, 100),
-          offset: clampInt(q.offset, 0, Infinity, 0),
-          sourceType: parseCommaSep(q.source_type),
-          frequency: parseCommaSep(q.frequency),
-          includeTotal: q.include_total !== 'false',
-        })
+        const result = queryStr
+          ? await svc.search(queryStr, { limit, offset, frequency, sourceType: source })
+          : await svc.catalog({
+              limit,
+              offset,
+              frequency,
+              sourceType: source,
+              includeTotal: true,
+            })
+        const items = result.results.map((r) => ({
+          id: r.series_id,
+          title: r.title,
+          frequency: r.frequency_short || r.frequency,
+          source: r.source_type,
+          units: r.units_short || r.units,
+          derived: r.source_type === 'derived',
+        }))
+        return {
+          items,
+          total: result.total,
+          hasMore: offset + items.length < result.total,
+        }
       } catch {
-        return { results: [], total: 0 }
+        return { items: [], total: 0, hasMore: false }
       }
     })
 
+    // Frontend contract: { frequency, source } — `source` (not `source_type`)
+    // matches the catalog adapter's filter UI.
     scoped.get('/facets', async (req: FastifyRequest, _reply: FastifyReply) => {
       const q = req.query as Record<string, string | undefined>
-      if (svc === null) return { frequency: [], source_type: [] }
+      if (svc === null) return { frequency: [], source: [] }
       try {
-        return await svc.catalogFacets({
-          sourceType: parseCommaSep(q.source_type),
+        const facets = await svc.catalogFacets({
+          sourceType: parseCommaSep(q.source),
         })
+        return {
+          frequency: facets.frequency,
+          source: facets.source_type,
+        }
       } catch {
-        return { frequency: [], source_type: [] }
+        return { frequency: [], source: [] }
       }
     })
 
