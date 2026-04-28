@@ -9,6 +9,7 @@ import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
 import { WorkbenchLeftPane } from "./WorkbenchLeftPane"
 import { ChatShellContext } from "./context"
 import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
+import { useRegistry } from "../../registry"
 
 export interface SurfaceShellTab {
   id: string
@@ -102,6 +103,15 @@ export function SurfaceShell({
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
 
+  // Read of the panel registry — used to validate `openPanel({component})`
+  // against what's actually registered. Without this check, dockview's
+  // addPanel silently creates an empty tab when given an unknown component
+  // name (real bug we hit when the agent dispatched openPanel for a panel
+  // the host hadn't registered).
+  const panelRegistry = useRegistry()
+  const panelRegistryRef = useRef(panelRegistry)
+  panelRegistryRef.current = panelRegistry
+
   const openFileSync = useCallback((path: string) => {
     const api = apiRef.current
     if (!api) return
@@ -132,6 +142,21 @@ export function SurfaceShell({
       }
       existing.api.setActive()
       return
+    }
+    // Validate the component is actually registered. Without this check,
+    // dockview happily creates an empty tab when handed an unknown
+    // component name (it falls back to a no-op renderer). That's how the
+    // agent's "openPanel({component:'chart'})" produced a blank workbench
+    // with no error signal in either direction. Refuse loudly here so the
+    // failure is visible at the call site and (when called via exec_ui)
+    // surfaces back to the LLM through bridge.postCommand error.
+    const registry = panelRegistryRef.current
+    if (!registry.has(config.component)) {
+      const known = registry.list().map((p) => p.id).join(", ")
+      throw new Error(
+        `openPanel: unknown component "${config.component}". Registered panels: [${known}]. ` +
+          `Add the component to WorkspaceProvider's "panels" prop, or pick one of the registered ids.`,
+      )
     }
     api.addPanel({
       id: config.id,

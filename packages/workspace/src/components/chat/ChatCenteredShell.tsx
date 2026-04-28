@@ -21,6 +21,7 @@ import { ChatPanel, type ChatSuggestion } from "@boring/agent/ui-shadcn"
 import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
 import { startUiCommandStream } from "./uiCommandStream"
+import { useRegistry } from "../../registry"
 
 export interface ChatCenteredShellProps {
   /** Branding shown in the top bar. */
@@ -248,6 +249,19 @@ export function ChatCenteredShell({
   const surfaceOpenRef = useRef(surfaceOpen)
   surfaceOpenRef.current = surfaceOpen
 
+  // Snapshot of the WorkspaceProvider's panel registry — included in the UI
+  // state push so the LLM can answer "what panels can I open with
+  // exec_ui({kind:'openPanel', component:'...'})?" without being told via
+  // system prompt. Read once at render; the registry is treated as
+  // mount-stable (apps register panels at app boot, not during a session).
+  // If a host adds dynamic panel registration later, push from a useEffect
+  // listening on the registry's change events.
+  const panelRegistry = useRegistry()
+  const availablePanelIds = useMemo(
+    () => panelRegistry.list().map((p) => p.id),
+    [panelRegistry],
+  )
+
   // Push a snapshot of the workbench's current state to the agent's UI bridge
   // (PUT /api/v1/ui/state). The LLM's get_ui_state tool returns whatever was
   // last PUT here, so this is what makes the agent aware of which tabs are
@@ -272,6 +286,13 @@ export function ChatCenteredShell({
         activeTab: snapshot.activeTab,
         activeFile:
           snapshot.openTabs.find((t) => t.id === snapshot.activeTab)?.params?.path ?? null,
+        // Discoverable component names the LLM can pass to
+        // exec_ui({kind:'openPanel', params:{component:'...'}}). Includes
+        // both built-ins (code-editor, markdown-editor, csv-viewer, ...)
+        // and any app-registered panels (e.g. boring-macro's
+        // 'series-viewer'). The agent doesn't need a system prompt
+        // enumerating these — get_ui_state surfaces them.
+        availablePanels: availablePanelIds,
       },
       causedBy: "user" as const,
     }
@@ -286,7 +307,7 @@ export function ChatCenteredShell({
     }).catch(() => {
       /* Best-effort — UI state push is non-critical and should not break the UI. */
     })
-  }, [drawerOpen])
+  }, [drawerOpen, availablePanelIds])
 
   // Mirror the surface ref in state so context consumers re-render when the
   // workbench becomes ready. The ref stays for hot-path callbacks
@@ -564,7 +585,11 @@ export function ChatCenteredShell({
                 rootDir={rootDir}
                 dataSources={dataSources}
                 data={data}
-                storageKey={surfaceStorageKey}
+                // Auto-derive a SurfaceShell storage key from this shell's
+                // storageKey so file-tree sidebar collapsed/width persist
+                // alongside drawer/surface state. Hosts can still override
+                // with an explicit `surfaceStorageKey` prop.
+                storageKey={surfaceStorageKey ?? `${storageKey}:surface`}
                 onReady={handleSurfaceReady}
                 onChange={handleSurfaceChange}
                 extraPanels={extraPanels}

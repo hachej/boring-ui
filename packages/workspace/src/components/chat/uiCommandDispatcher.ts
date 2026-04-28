@@ -93,7 +93,26 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       }
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
-      const run = () => surface.openPanel(cfg)
+      // Wrap in try/catch so an unknown-component throw from
+      // SurfaceShell.openPanel doesn't kill the SSE stream. The error is
+      // logged with enough context for devs to see it; the LLM still
+      // receives `ok` from its preceding exec_ui call (dispatch is async
+      // and unidirectional today — making it bidirectional is a separate
+      // refactor). Workbench will still auto-open, just without the new
+      // panel — visibly broken from the user's POV, which is the right
+      // signal that the agent asked for a panel the host hasn't
+      // registered.
+      const run = () => {
+        try {
+          surface.openPanel(cfg)
+        } catch (err) {
+          // eslint-disable-next-line no-console -- intentional dev signal
+          console.warn(
+            `[uiCommandDispatcher] openPanel dispatch failed:`,
+            err instanceof Error ? err.message : err,
+          )
+        }
+      }
       if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(run))
       else run()
       return
