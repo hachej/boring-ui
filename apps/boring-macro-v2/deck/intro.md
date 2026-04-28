@@ -16,10 +16,6 @@ Unemployment ticked up modestly while payrolls remain robust.
 
 {{TimeSeries ids="UNRATE" title="Unemployment rate"}}
 
-# Smoke marker — appended by test
-
-# Smoke marker — appended by test
-
 ---
 
 # Rates and curves
