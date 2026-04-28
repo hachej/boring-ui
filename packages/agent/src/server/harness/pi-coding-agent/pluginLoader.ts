@@ -3,6 +3,7 @@ import { join, extname, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import type { AgentTool } from "../../../shared/tool.js";
+import { validateTool } from "../../../shared/validateTool.js";
 
 const VALID_EXTENSIONS = new Set([".js", ".mjs"]);
 const GLOBAL_DIR = join(homedir(), ".pi", "agent", "extensions");

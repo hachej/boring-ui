@@ -1,5 +1,6 @@
 import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart, getToolName } from 'ai'
+import { motion } from 'motion/react'
 
 const INLINE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml', 'application/yaml']
 
@@ -29,12 +30,13 @@ import {
   type ToolRendererOverrides,
 } from '../front/toolRenderers'
 import { mergeShadcnToolRenderers } from './toolRenderers'
+import { ArtifactOpenProvider, type OpenArtifactHandler } from './ArtifactOpenContext'
 import {
   Conversation,
   ConversationContent,
-  ConversationEmptyState,
   ConversationScrollButton,
 } from './primitives/conversation'
+import { ChatEmptyState, defaultChatSuggestions, type ChatSuggestion } from './ChatEmptyState'
 import { Message, MessageContent, MessageResponse } from './primitives/message'
 import { Reasoning, ReasoningTrigger, ReasoningContent } from './primitives/reasoning'
 import {
@@ -51,7 +53,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -62,6 +64,29 @@ import {
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
+const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
+
+/**
+ * Extended-thinking budget. Sent through to pi-coding-agent which forwards
+ * it to providers that support it (Anthropic Claude 4.x). 'off' means no
+ * reasoning chunks; the higher tiers progressively allow more think-time.
+ */
+export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
+
+const DEFAULT_THINKING: ThinkingLevel = 'off'
+const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high']
+
+function isThinkingLevel(value: unknown): value is ThinkingLevel {
+  return typeof value === 'string' && (THINKING_LEVELS as readonly string[]).includes(value)
+}
+
+function readStoredThinking(): ThinkingLevel {
+  try {
+    const raw = globalThis.localStorage?.getItem(STORAGE_THINKING_KEY)
+    if (isThinkingLevel(raw)) return raw
+  } catch { /* storage unavailable */ }
+  return DEFAULT_THINKING
+}
 
 /**
  * Selected model, stored as { provider, id } so the composer can speak
@@ -172,12 +197,42 @@ export interface ChatPanelProps {
    */
   chrome?: boolean
   /**
+   * Cards shown when the conversation is empty. Click → sendMessage with the
+   * suggestion's `prompt` (or `label` as fallback). Pass `[]` to hide the
+   * grid; omit to inherit `defaultChatSuggestions`. Customizable per child
+   * app — e.g. a data-app might offer "Build a chart from a CSV" instead.
+   */
+  suggestions?: ChatSuggestion[]
+  /** Eyebrow above the empty-state headline. */
+  emptyEyebrow?: string
+  /** Empty-state headline. */
+  emptyTitle?: string
+  /** Empty-state description below the headline. */
+  emptyDescription?: string
+  /**
+   * Render the extended-thinking selector in the composer footer (off / low
+   * / medium / high). When enabled, the selected level is persisted in
+   * localStorage and sent through to the agent on every turn. Default off
+   * — opt-in because not every host wants users tweaking model knobs, and
+   * thinking budget consumes more tokens.
+   */
+  thinkingControl?: boolean
+  /**
    * Tap into the SSE data stream. Called for every `onData` part the
    * agent emits — host apps use this to bridge agent-driven file
-   * changes into their own UI plumbing (see `emitAgentFileChange` in
-   * `@boring/workspace` for the canonical wire-up).
+   * changes into their own UI plumbing (see
+   * `useAgentFileChangeBridge` in `@boring/workspace` for the
+   * canonical wire-up).
    */
   onData?: (part: unknown) => void
+  /**
+   * Called with a file path when the user clicks the path label inside
+   * a read / write / edit tool card. Hosts (e.g. @boring/workspace)
+   * supply this to open the file in the surrounding workbench. Without
+   * it the path renders as plain text. Mounted via context so any
+   * future renderer can consume it without a prop drill.
+   */
+  onOpenArtifact?: OpenArtifactHandler
   className?: string
 }
 
@@ -211,10 +266,6 @@ function getReasoningPart(part: UIMessage['parts'][number]): ReasoningPartView |
   }
 }
 
-function getToolParts(message: UIMessage): Array<UIMessage['parts'][number]> {
-  return message.parts.filter(isToolUIPart)
-}
-
 function ToolCard({ toolPart, mergedToolRenderers }: { toolPart: UIMessage['parts'][number]; mergedToolRenderers: ToolRendererOverrides }) {
   const tp = toolPart as unknown as ToolPart
   const name = getToolName(toolPart as any)
@@ -226,7 +277,21 @@ function ToolCard({ toolPart, mergedToolRenderers }: { toolPart: UIMessage['part
 }
 
 export function ChatPanel(props: ChatPanelProps) {
-  const { sessionId, toolRenderers, extraCommands, onSessionReset, className, chrome = true, onData } = props
+  const {
+    sessionId,
+    toolRenderers,
+    extraCommands,
+    onSessionReset,
+    className,
+    chrome = true,
+    suggestions = defaultChatSuggestions,
+    emptyEyebrow,
+    emptyTitle,
+    emptyDescription,
+    thinkingControl = false,
+    onData,
+    onOpenArtifact,
+  } = props
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
   } = useAgentChat({ sessionId, onData })
@@ -238,6 +303,15 @@ export function ChatPanel(props: ChatPanelProps) {
   )
 
   const [model, setModel] = useState<ModelSelection>(() => readStoredModel())
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
+    thinkingControl ? readStoredThinking() : DEFAULT_THINKING,
+  )
+  useEffect(() => {
+    if (!thinkingControl) return
+    try {
+      globalThis.localStorage?.setItem(STORAGE_THINKING_KEY, thinkingLevel)
+    } catch { /* noop */ }
+  }, [thinkingControl, thinkingLevel])
   /**
    * Client-side transient notice for attachment validation (too many files,
    * single file too large, …). PromptInput's onError fires synchronously on
@@ -371,6 +445,10 @@ export function ChatPanel(props: ChatPanelProps) {
           // Payload actually sent to the agent (inlined text attachments).
           message: serverMessage,
           model,
+          // Only forward thinkingLevel when the host opted in. The server
+          // schema treats it as optional; omitting it keeps the existing
+          // 'off' default behaviour for hosts that don't expose the toggle.
+          ...(thinkingControl ? { thinkingLevel } : {}),
           attachments: files?.map((f) => ({
             filename: f.filename,
             mediaType: f.mediaType,
@@ -384,13 +462,14 @@ export function ChatPanel(props: ChatPanelProps) {
   }
 
   return (
+    <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
     <div
       data-boring-chat=""
       className={cn(
         "flex h-full min-h-0 flex-col overflow-hidden text-foreground antialiased",
         chrome
-          ? "bg-[color:var(--canvas)] text-[15px]"
-          : "bg-transparent text-[15px]",
+          ? "bg-[color:var(--canvas)] text-[13px]"
+          : "bg-transparent text-[13px]",
         className,
       )}
       role="region"
@@ -403,15 +482,52 @@ export function ChatPanel(props: ChatPanelProps) {
             "mx-3 my-3 rounded-xl bg-[color:var(--surface-chat)] shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.6)]",
         )}
       >
+      {/* Indeterminate progress strip — visible whenever the agent is in
+          flight (waiting for first byte, streaming text, running a tool).
+          Top of the chat surface so it's the first thing the eye registers.
+          Self-contained via motion/react so consumers don't need to import
+          a separate stylesheet for the keyframes. */}
+      {isStreaming && (
+        <div
+          className="relative h-[2px] w-full shrink-0 overflow-hidden bg-[oklch(from_var(--accent)_l_c_h/0.08)]"
+          role="progressbar"
+          aria-busy="true"
+          aria-label="Agent working"
+        >
+          <motion.div
+            className="absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-[color:var(--accent)] to-transparent"
+            initial={{ x: '-100%' }}
+            animate={{ x: '400%' }}
+            transition={{ duration: 1.4, ease: [0.65, 0, 0.35, 1], repeat: Infinity }}
+          />
+        </div>
+      )}
       <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">
         <ConversationContent className={cn(
           "mx-auto flex w-full flex-col gap-6",
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
         )}>
           {messages.length === 0 && (
-            <ConversationEmptyState
-              title="How can I help?"
-              description="Ask anything. I can reverse strings, explain code, and walk through ideas."
+            <ChatEmptyState
+              eyebrow={emptyEyebrow}
+              title={emptyTitle}
+              description={emptyDescription}
+              suggestions={suggestions}
+              onSelect={(s) => {
+                const text = s.prompt ?? s.label
+                if (!text.trim()) return
+                void sendMessage(
+                  { text, files: [] },
+                  {
+                    body: {
+                      sessionId,
+                      message: text,
+                      model,
+                      attachments: [],
+                    },
+                  },
+                )
+              }}
             />
           )}
           {messages.map((message, messageIndex) => {
@@ -421,7 +537,6 @@ export function ChatPanel(props: ChatPanelProps) {
             const reasoningParts = message.parts
               .map(getReasoningPart)
               .filter((part): part is ReasoningPartView => part !== null)
-            const toolParts = getToolParts(message)
             // Regenerate is only meaningful for the most recent assistant
             // reply — regenerating an older turn would fork history in
             // ways we don't support. Restricting visibility to the tail
@@ -445,7 +560,7 @@ export function ChatPanel(props: ChatPanelProps) {
                     // on the page, not as chat-bubble UI. User messages
                     // still get a right-aligned pill so the turn
                     // structure is legible at a glance.
-                    "!overflow-visible text-[15px] leading-relaxed text-foreground",
+                    "!overflow-visible text-[13px] leading-relaxed text-foreground",
                     role === 'user'
                       ? cn(
                           "!ml-auto !max-w-[80%] !rounded-[var(--radius-lg)]",
@@ -488,45 +603,55 @@ export function ChatPanel(props: ChatPanelProps) {
                     </Reasoning>
                   ))}
 
-                  {textParts.map((part, index) => (
-                    <MessageResponse
-                      key={`text-${message.id}-${index}`}
-                      className={cn(
-                        "max-w-none",
-                        // Editorial prose rhythm — a magazine column on
-                        // the page, not a log dump. Fewer type sizes,
-                        // more leading; headings earn weight, not size.
-                        "prose prose-invert prose-neutral",
-                        "prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[15px]",
-                        "prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]",
-                        "prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6",
-                        "prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70",
-                        "prose-strong:font-semibold prose-strong:text-foreground",
-                        "prose-em:text-foreground/90",
-                        "prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline",
-                        // Inline code chips — sit on the prose baseline.
-                        "prose-code:font-mono prose-code:text-[13px] prose-code:font-medium",
-                        "prose-code:rounded-[var(--radius-sm)] prose-code:border prose-code:border-border/60 prose-code:bg-muted/60",
-                        "prose-code:px-1.5 prose-code:py-0.5",
-                        "prose-code:before:content-none prose-code:after:content-none",
-                        // Multi-line code blocks — the CodeBlock primitive owns
-                        // its own container styling; strip prose defaults so
-                        // we don't double-wrap with another border + bg.
-                        "prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0",
-                        "prose-pre:bg-transparent prose-pre:p-0",
-                      )}
-                    >
-                      {part.text}
-                    </MessageResponse>
-                  ))}
-
-                  {toolParts.map((toolPart) => (
-                    <ToolCard
-                      key={(toolPart as unknown as ToolPart).toolCallId}
-                      toolPart={toolPart}
-                      mergedToolRenderers={mergedToolRenderers}
-                    />
-                  ))}
+                  {/* Render text + tool parts in the order the model emitted
+                      them. Grouping by type would put every tool at the bottom
+                      of the message, hiding which sentence triggered which
+                      tool. AI SDK guarantees `message.parts` is chronological. */}
+                  {message.parts.map((part, index) => {
+                    if (isTextPart(part)) {
+                      return (
+                        <MessageResponse
+                          key={`text-${message.id}-${index}`}
+                          className={cn(
+                            "max-w-none",
+                            // Editorial prose rhythm — a magazine column on
+                            // the page, not a log dump. Fewer type sizes,
+                            // more leading; headings earn weight, not size.
+                            "prose prose-invert prose-neutral",
+                            "prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[13px]",
+                            "prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]",
+                            "prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6",
+                            "prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70",
+                            "prose-strong:font-semibold prose-strong:text-foreground",
+                            "prose-em:text-foreground/90",
+                            "prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline",
+                            // Inline code chips — sit on the prose baseline.
+                            "prose-code:font-mono prose-code:text-[13px] prose-code:font-medium",
+                            "prose-code:rounded-[var(--radius-sm)] prose-code:border prose-code:border-border/60 prose-code:bg-muted/60",
+                            "prose-code:px-1.5 prose-code:py-0.5",
+                            "prose-code:before:content-none prose-code:after:content-none",
+                            // Multi-line code blocks — the CodeBlock primitive owns
+                            // its own container styling; strip prose defaults so
+                            // we don't double-wrap with another border + bg.
+                            "prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0",
+                            "prose-pre:bg-transparent prose-pre:p-0",
+                          )}
+                        >
+                          {part.text}
+                        </MessageResponse>
+                      )
+                    }
+                    if (isToolUIPart(part)) {
+                      return (
+                        <ToolCard
+                          key={(part as unknown as ToolPart).toolCallId}
+                          toolPart={part}
+                          mergedToolRenderers={mergedToolRenderers}
+                        />
+                      )
+                    }
+                    return null
+                  })}
                 </MessageContent>
 
                 {/* Per-message action bar. Lives OUTSIDE MessageContent so
@@ -554,6 +679,26 @@ export function ChatPanel(props: ChatPanelProps) {
               </Message>
             )
           })}
+          {/* Thinking caption — fills the gap between user submit and the
+              first assistant chunk. Hides as soon as the AI SDK appends an
+              assistant message (i.e. the model has started replying). The
+              top progress bar continues from there. */}
+          {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === 'user' && (
+            <div
+              data-testid="chat-thinking"
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-2 text-[12px] text-muted-foreground/70"
+            >
+              <motion.span
+                aria-hidden="true"
+                className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
+                animate={{ opacity: [0.35, 1, 0.35] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <span>Thinking…</span>
+            </div>
+          )}
           {(() => {
             if (!error) return null
             const friendly = friendlyError(error)
@@ -618,10 +763,11 @@ export function ChatPanel(props: ChatPanelProps) {
             // subtle tonal lift.
             chrome
               ? "rounded-[var(--radius-xl)] bg-[color:var(--card)] shadow-[0_1px_2px_-1px_oklch(0_0_0/0.06),0_6px_18px_-12px_oklch(0_0_0/0.12),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)] focus-within:shadow-[0_1px_3px_-1px_oklch(0_0_0/0.08),0_10px_28px_-14px_oklch(0_0_0/0.16),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)] transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
-              : // Embedded composer: completely flush — no card, no border, no
-                // shadow, no tinted bg. The parent surface owns all chrome;
-                // focus state is signalled only by an accent ring on focus.
-                "bg-transparent shadow-none focus-within:shadow-[inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)] focus-within:rounded-[var(--radius-xl)] transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+              : // Embedded composer: visible at-rest border so the input
+                // surface is identifiable when nothing has focus, then swap
+                // to an accent-tinted border on focus. No card / shadow —
+                // the parent surface still owns the elevation.
+                "rounded-[var(--radius-xl)] bg-transparent shadow-[inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)] focus-within:shadow-[inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.45)] transition-shadow duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
             // Neutralize the inner InputGroup's default border/rounded/shadow
             // so the outer surface is the only bounded container. The `!`
             // bumps these past InputGroup's own `border-input border` and
@@ -661,7 +807,7 @@ export function ChatPanel(props: ChatPanelProps) {
               placeholder="Ask anything…"
               className={cn(
                 "min-h-[52px] resize-none border-0 bg-transparent shadow-none",
-                "px-5 pt-3.5 pb-1 text-[15px] leading-[1.55] placeholder:text-muted-foreground/60",
+                "px-5 pt-3.5 pb-1 text-[13px] leading-[1.55] placeholder:text-muted-foreground/60",
                 "focus-visible:ring-0 focus-visible:ring-offset-0",
               )}
             />
@@ -681,6 +827,13 @@ export function ChatPanel(props: ChatPanelProps) {
                   options={availableModels}
                   disabled={isStreaming}
                 />
+                {thinkingControl && (
+                  <ThinkingSelect
+                    value={thinkingLevel}
+                    onChange={setThinkingLevel}
+                    disabled={isStreaming}
+                  />
+                )}
               </div>
               {/* Spacer pushes kbd hints + submit to the right. Hints
                * sit immediately before the send button so the user
@@ -715,6 +868,7 @@ export function ChatPanel(props: ChatPanelProps) {
       </div>
       </div>
     </div>
+    </ArtifactOpenProvider>
   )
 }
 
@@ -828,6 +982,56 @@ const composerActionClass = cn(
   "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
   "disabled:pointer-events-none disabled:opacity-50",
 )
+
+const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
+  off: 'No thinking',
+  low: 'Think a little',
+  medium: 'Think',
+  high: 'Think hard',
+}
+
+const THINKING_LEVEL_TRIGGER_LABELS: Record<ThinkingLevel, string> = {
+  off: 'Off',
+  low: 'Low',
+  medium: 'Med',
+  high: 'High',
+}
+
+function ThinkingSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ThinkingLevel
+  onChange: (next: ThinkingLevel) => void
+  disabled?: boolean
+}) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        if (isThinkingLevel(next)) onChange(next)
+      }}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        className={cn(composerActionClass, "px-2.5 text-xs font-medium")}
+        aria-label="Thinking level"
+        data-testid="thinking-select"
+      >
+        <BrainIcon className={cn("h-3.5 w-3.5", value === 'off' ? "opacity-60" : "text-[color:var(--accent)]")} />
+        <SelectValue>{THINKING_LEVEL_TRIGGER_LABELS[value]}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {THINKING_LEVELS.map((level) => (
+          <SelectItem key={level} value={level} className="text-xs font-medium">
+            {THINKING_LEVEL_LABELS[level]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
 
 function AttachmentButton() {
   const attachments = usePromptInputAttachments()

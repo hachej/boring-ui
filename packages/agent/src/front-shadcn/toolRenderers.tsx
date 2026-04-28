@@ -7,7 +7,7 @@
  * treatment on top. Consumers can override any tool name via the
  * `toolRenderers` prop on <ChatPanel />.
  */
-import type { ReactNode } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import {
   langFromPath,
   type ToolPart,
@@ -17,8 +17,9 @@ import {
 import type { defaultToolRenderers as bareDefaults } from '../front/toolRenderers/renderers'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
 import { CollapsibleTrigger } from './ui/collapsible'
-import { ChevronDownIcon, ZapIcon } from 'lucide-react'
+import { ChevronDownIcon, ExternalLinkIcon, ZapIcon } from 'lucide-react'
 import { CodeBlock } from './primitives/code-block'
+import { useOpenArtifact } from './ArtifactOpenContext'
 import {
   Artifact,
   ArtifactAction,
@@ -65,6 +66,67 @@ function toHeaderProps(part: ToolPart) {
     state: part.state,
     toolName: part.toolName,
   }
+}
+
+/**
+ * Path label for the read/edit/write tool headers. When an
+ * ArtifactOpenContext provider is mounted (i.e. a workbench host like
+ * @boring/workspace is around), the path becomes clickable and opens
+ * the file in the host. Without a host, it falls back to plain text.
+ *
+ * Implementation note: the surrounding Tool header is itself a Radix
+ * `CollapsibleTrigger` rendered as a `<button>`, and HTML forbids a
+ * nested `<button>`. We therefore render this as a `<span>` with
+ * `role="button"` + `tabIndex={0}` + keyboard handling — same a11y
+ * affordance, valid HTML. Click + Enter/Space stop propagation and
+ * prevent default so they don't also toggle the collapsible.
+ */
+function PathLabel({ path }: { path: string }) {
+  const onOpen = useOpenArtifact()
+  if (!onOpen) {
+    return <span className="font-mono text-[12.5px] text-foreground/85">{path}</span>
+  }
+  const open = (e: ReactMouseEvent<HTMLSpanElement> | ReactKeyboardEvent<HTMLSpanElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onOpen(path)
+  }
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLSpanElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') open(e)
+  }
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={handleKeyDown}
+      title={`Open ${path} in workbench`}
+      className={cn(
+        'group/path inline-flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5',
+        'cursor-pointer font-mono text-[12.5px] text-foreground/85',
+        'transition-colors duration-150',
+        'hover:bg-foreground/[0.05] hover:text-[color:var(--accent)]',
+        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40',
+      )}
+    >
+      <span className="truncate">{path}</span>
+      <ExternalLinkIcon
+        className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/path:opacity-100"
+        strokeWidth={1.75}
+        aria-hidden="true"
+      />
+    </span>
+  )
+}
+
+function pathTitle(prefix: string, path: string): ReactNode {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="text-muted-foreground">{prefix}</span>
+      <span className="text-muted-foreground/40" aria-hidden="true">·</span>
+      <PathLabel path={path} />
+    </span>
+  )
 }
 
 // ---- bash ----
@@ -117,7 +179,7 @@ function renderRead(part: ToolPart): ReactNode {
 
   return (
     <Tool>
-      <ToolHeader title={`read · ${path}`} {...toHeaderProps(part)} />
+      <ToolHeader title={pathTitle('read', path)} {...toHeaderProps(part)} />
       <ToolContent>
         <ToolInput input={input} />
         {content && (
@@ -148,7 +210,7 @@ function renderWrite(part: ToolPart): ReactNode {
 
   return (
     <Tool>
-      <ToolHeader title={`write · ${path}`} {...toHeaderProps(part)} />
+      <ToolHeader title={pathTitle('write', path)} {...toHeaderProps(part)} />
       <ToolContent>
         {/* Flat surface: the outer <Tool> already owns a bordered card, so
          * the nested <Artifact> drops its own border/shadow to keep stacked
@@ -214,7 +276,7 @@ function renderEdit(part: ToolPart): ReactNode {
 
   return (
     <Tool>
-      <ToolHeader title={`edit · ${path}`} {...toHeaderProps(part)} />
+      <ToolHeader title={pathTitle('edit', path)} {...toHeaderProps(part)} />
       <ToolContent>
         <section className="space-y-2">
           <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">

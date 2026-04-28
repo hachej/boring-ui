@@ -12,10 +12,12 @@ import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
 import { createAuthMiddleware } from './http/middleware'
 import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
+import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { chatRoutes } from './http/routes/chat'
 import { modelsRoutes } from './http/routes/models'
 import { sessionRoutes } from './http/routes/sessions'
+import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
@@ -125,6 +127,7 @@ export async function createAgentApp(
   })
 
   await app.register(fileRoutes, { workspace: runtimeBundle.workspace })
+  await app.register(fsEventsRoutes, { workspace: runtimeBundle.workspace })
   await app.register(treeRoutes, { workspace: runtimeBundle.workspace })
   // /api/v1/files/search powers BOTH the cmd-palette / file-tree
   // search (browser → fetchClient.search) AND shares the same
@@ -140,6 +143,7 @@ export async function createAgentApp(
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,
   })
+  await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })

@@ -13,6 +13,12 @@ interface FileChangeData {
   oldPath?: string;
   size?: number;
   timestamp: string;
+  /**
+   * `false` for fresh-create writes, `true` for overwrites. Forwarded
+   * verbatim from the tool's fileChanges metadata. Workspace bridge
+   * uses this to distinguish file:created from file:changed events.
+   */
+  existsBefore?: boolean;
 }
 
 const FILE_CHANGE_OPS: ReadonlySet<FileChangeOp> = new Set([
@@ -56,6 +62,10 @@ function normalizeFileChangeEntry(value: unknown): FileChangeData | null {
 
   if (typeof value.size === "number" && Number.isFinite(value.size) && value.size >= 0) {
     normalized.size = value.size;
+  }
+
+  if (typeof value.existsBefore === "boolean") {
+    normalized.existsBefore = value.existsBefore;
   }
 
   return normalized;

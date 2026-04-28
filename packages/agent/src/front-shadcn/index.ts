@@ -3,6 +3,13 @@
 
 export { ChatPanel } from './ChatPanel'
 export type { ChatPanelProps } from './ChatPanel'
+export {
+  ArtifactOpenProvider,
+  useOpenArtifact,
+  type OpenArtifactHandler,
+} from './ArtifactOpenContext'
+export { ChatEmptyState, defaultChatSuggestions } from './ChatEmptyState'
+export type { ChatEmptyStateProps, ChatSuggestion } from './ChatEmptyState'
 
 // Re-export hooks and slash commands from the base package (shared between both APIs)
 export { useAgentChat } from '../front/hooks/useAgentChat'

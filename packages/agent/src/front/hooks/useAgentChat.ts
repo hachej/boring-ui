@@ -2,7 +2,6 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SendMessageInput } from '../../shared/harness'
-import { useFileChangeStream } from './useFileChangeStream'
 
 export type UseAgentChatOptions = Pick<
   SendMessageInput,
@@ -13,7 +12,6 @@ export type UseAgentChatOptions = Pick<
 
 export function useAgentChat(opts: UseAgentChatOptions) {
   const { sessionId } = opts
-  const { onData: onFileChangeData } = useFileChangeStream()
   const optsRef = useRef(opts)
   optsRef.current = opts
 
@@ -35,7 +33,11 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     transport,
     resume: true,
     onData: (part) => {
-      onFileChangeData(part)
+      // File-change invalidation is no longer done here. The host
+      // (e.g. @boring/workspace's ChatCenteredShell) wires onData to
+      // its workspace event bus via `emitAgentFileChange`, and a
+      // single subscriber handles React Query invalidation. See
+      // `useFileEventInvalidation` in @boring/workspace/data.
       optsRef.current.onData?.(part)
     },
   })

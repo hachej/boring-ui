@@ -31,7 +31,7 @@ This document tracks accessibility status for `@boring/agent` UI surfaces.
   - `src/front/__tests__/ChatPanel.test.tsx`
   - `src/front-shadcn/__tests__/ChatPanel.test.tsx`
 - Browser axe check:
-  - `e2e/a11y.spec.ts`
+  - `packages/agent/e2e/a11y.spec.ts`
   - Fails on any **serious** or **critical** violation inside
     `[data-boring-chat]`.
 

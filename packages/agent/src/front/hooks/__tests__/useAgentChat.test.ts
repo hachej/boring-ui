@@ -2,7 +2,6 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 
 let capturedTransportOpts: Record<string, unknown> | undefined
 const refStore = { current: undefined as unknown }
-const mockOnFileChangeData = vi.fn()
 const mockSetMessages = vi.fn()
 const mockUseStateSetter = vi.fn()
 const mockFetch = vi.fn()
@@ -25,10 +24,6 @@ vi.mock('ai', () => ({
     capturedTransportOpts = opts as Record<string, unknown>
     return { __mockTransport: true }
   }),
-}))
-
-vi.mock('../useFileChangeStream', () => ({
-  useFileChangeStream: () => ({ onData: mockOnFileChangeData }),
 }))
 
 vi.mock('react', async () => {
@@ -185,7 +180,9 @@ describe('useAgentChat', () => {
     const dataPart = { type: 'data-file-changed', data: { path: 'x.ts' } }
     lastCall.onData?.(dataPart)
 
-    expect(mockOnFileChangeData).toHaveBeenCalledWith(dataPart)
+    // useAgentChat no longer invalidates queries directly — that work
+    // moved to the workspace bus subscriber. It only forwards onData
+    // through to the host (which may bridge it onto its bus).
     expect(onData).toHaveBeenCalledWith(dataPart)
   })
 

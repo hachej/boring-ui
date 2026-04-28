@@ -1,7 +1,12 @@
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
-import type { Entry, Stat } from '../../shared/workspace'
-import type { Workspace } from '../../shared/workspace'
+import type {
+  Entry,
+  Stat,
+  Workspace,
+  WorkspaceChangeEvent,
+  WorkspaceWatcher,
+} from '../../shared/workspace'
 import { validatePath } from './paths'
 
 const VERCEL_SANDBOX_ROOT = '/vercel/sandbox'
@@ -87,6 +92,47 @@ export interface VercelSandboxWorkspace extends Workspace {
   invalidateMetadataCache(): void
 }
 
+/**
+ * Internal change-event broadcaster. The sandbox runtime can't run
+ * chokidar against the remote container, so we surface "events" from
+ * the only thing the server can observe: its own write paths
+ * (writeFile / unlink / rename / mkdir below). External mutations
+ * inside the sandbox aren't visible — sandbox is single-tenant by
+ * design, so this is acceptable.
+ *
+ * From the client's POV the SSE channel looks identical to the Node
+ * impl: it emits `WorkspaceChangeEvent`s, the client doesn't care
+ * which production source generated them.
+ */
+function createSandboxBroadcaster(): {
+  emit: (e: WorkspaceChangeEvent) => void
+  watcher: WorkspaceWatcher
+} {
+  const listeners = new Set<(e: WorkspaceChangeEvent) => void>()
+  let closed = false
+
+  const emit = (event: WorkspaceChangeEvent) => {
+    if (closed) return
+    for (const l of [...listeners]) {
+      try { l(event) } catch { /* swallow */ }
+    }
+  }
+
+  const watcher: WorkspaceWatcher = {
+    subscribe(listener) {
+      if (closed) return () => {}
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    close() {
+      closed = true
+      listeners.clear()
+    },
+  }
+
+  return { emit, watcher }
+}
+
 export function createVercelSandboxWorkspace(
   sandbox: VercelSandbox,
 ): VercelSandboxWorkspace {
@@ -103,8 +149,14 @@ export function createVercelSandboxWorkspace(
 
   registerMetadataInvalidator(sandbox, invalidateMetadataCache)
 
+  const { emit: emitChange, watcher } = createSandboxBroadcaster()
+
   return {
     root: VERCEL_SANDBOX_ROOT,
+    fsCapability: 'best-effort',
+    watch() {
+      return watcher
+    },
     invalidateMetadataCache,
     async readFile(relPath) {
       const sandboxPath = toSandboxPath(relPath)
@@ -123,11 +175,13 @@ export function createVercelSandboxWorkspace(
         },
       ])
       invalidateMetadataCache()
+      emitChange({ op: 'write', path: relPath })
     },
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)
       await sandbox.fs.rm(sandboxPath, { recursive: false, force: false })
       invalidateMetadataCache()
+      emitChange({ op: 'unlink', path: relPath })
     },
     async readdir(relPath) {
       const sandboxPath = toSandboxPath(relPath)
@@ -162,12 +216,14 @@ export function createVercelSandboxWorkspace(
       const sandboxPath = toSandboxPath(relPath)
       await sandbox.fs.mkdir(sandboxPath, { recursive: opts?.recursive ?? false })
       invalidateMetadataCache()
+      emitChange({ op: 'mkdir', path: relPath })
     },
     async rename(fromRelPath, toRelPath) {
       const fromSandboxPath = toSandboxPath(fromRelPath)
       const toSandboxAbsolutePath = toSandboxPath(toRelPath)
       await sandbox.fs.rename(fromSandboxPath, toSandboxAbsolutePath)
       invalidateMetadataCache()
+      emitChange({ op: 'rename', path: toRelPath, oldPath: fromRelPath })
     },
   }
 }

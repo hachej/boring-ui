@@ -5,6 +5,7 @@ import {
   ERROR_CODE_PATH_REJECTED,
   ERROR_CODE_NOT_FOUND,
   ERROR_CODE_ALREADY_EXISTS,
+  ERROR_CODE_CONFLICT,
   ERROR_CODE_INTERNAL,
   ERROR_CODE_VALIDATION_ERROR,
 } from '../middleware'
@@ -92,7 +93,18 @@ export function fileRoutes(
 
     try {
       const content = await workspace.readFile(path)
-      return { content }
+      // Best-effort stat. If the file disappears between read and stat
+      // (rare race), we still return the content with mtimeMs omitted —
+      // the OCC check on a subsequent write will run only when the
+      // client actually has a baseline mtime.
+      let mtimeMs: number | undefined
+      try {
+        const s = await workspace.stat(path)
+        mtimeMs = s.mtimeMs
+      } catch {
+        /* swallow — content is the load-bearing field */
+      }
+      return { content, mtimeMs }
     } catch (err) {
       return classifyError(err, reply, 'file')
     }
@@ -109,13 +121,58 @@ export function fileRoutes(
       })
     }
 
+    // Optimistic concurrency: if the client supplied the mtime they
+    // read, verify the file hasn't moved underneath them. Mismatch →
+    // 409 with the current mtime so the client can decide whether to
+    // reload or force-overwrite.
+    const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
+      ? body.expectedMtimeMs
+      : null
+
     try {
+      if (expectedMtimeMs !== null) {
+        try {
+          const current = await workspace.stat(path)
+          if (current.kind === 'file' && current.mtimeMs !== expectedMtimeMs) {
+            return reply.code(409).send({
+              error: {
+                code: ERROR_CODE_CONFLICT,
+                message: 'file has been modified since last read',
+                currentMtimeMs: current.mtimeMs,
+                expectedMtimeMs,
+              },
+            })
+          }
+        } catch (statErr) {
+          // ENOENT is the common case — file was deleted. Treat as a
+          // conflict too: client expected an mtime, we have none.
+          const code = (statErr as NodeJS.ErrnoException)?.code
+          if (code === 'ENOENT') {
+            return reply.code(409).send({
+              error: {
+                code: ERROR_CODE_CONFLICT,
+                message: 'file no longer exists',
+                expectedMtimeMs,
+              },
+            })
+          }
+          // Any other stat failure: surface through the regular path.
+          throw statErr
+        }
+      }
+
       if (body.createDirs) {
         const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : undefined
         if (dir) await workspace.mkdir(dir, { recursive: true })
       }
       await workspace.writeFile(path, body.content)
-      return { ok: true }
+      // Stat after write so the client can update its OCC baseline.
+      let mtimeMs: number | undefined
+      try {
+        const s = await workspace.stat(path)
+        mtimeMs = s.mtimeMs
+      } catch { /* swallow */ }
+      return { ok: true, mtimeMs }
     } catch (err) {
       return classifyError(err, reply, 'file')
     }

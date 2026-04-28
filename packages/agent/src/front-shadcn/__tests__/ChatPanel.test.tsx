@@ -13,9 +13,6 @@ vi.mock('../../front/hooks/useAgentChat', () => ({
 vi.mock('../primitives/conversation', () => ({
   Conversation: ({ children, ...rest }: any) => <div data-testid="conversation" role="log" {...rest}>{children}</div>,
   ConversationContent: ({ children }: any) => <div data-testid="conversation-content">{children}</div>,
-  ConversationEmptyState: ({ title, description }: any) => (
-    <div data-testid="empty-state" data-title={title}>{description}</div>
-  ),
   ConversationScrollButton: () => <div data-testid="scroll-button" />,
 }))
 
@@ -92,10 +89,40 @@ describe('ChatPanel (shadcn)', () => {
     expect(html).toContain('aria-live="polite"')
   })
 
-  test('renders empty state when no messages', () => {
+  test('renders empty state with default suggestion grid when no messages', () => {
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-empty" />)
-    expect(html).toContain('data-testid="empty-state"')
-    expect(html).toContain('How can I help?')
+    // Default headline + at least one default suggestion card.
+    expect(html).toContain('What are we building?')
+    expect(html).toContain('Summarize the README')
+    expect(html).toContain('Explain this codebase')
+  })
+
+  test('custom suggestions override defaults and prompt label fallback works', () => {
+    const html = renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-custom-empty"
+        emptyTitle="Plan a release"
+        emptyDescription="Start from a recipe."
+        suggestions={[
+          { label: 'Cut a release branch', hint: 'From main', prompt: 'Cut release/' },
+          { label: 'Triage open PRs' },
+        ]}
+      />,
+    )
+    expect(html).toContain('Plan a release')
+    expect(html).toContain('Start from a recipe.')
+    expect(html).toContain('Cut a release branch')
+    expect(html).toContain('Triage open PRs')
+    // Defaults should not leak through when overridden.
+    expect(html).not.toContain('Summarize the README')
+  })
+
+  test('hides suggestion grid when suggestions=[]', () => {
+    const html = renderToStaticMarkup(
+      <ChatPanel sessionId="sess-no-suggestions" suggestions={[]} />,
+    )
+    expect(html).toContain('What are we building?')
+    expect(html).not.toContain('Summarize the README')
   })
 
   test('renders user and assistant messages', () => {
@@ -330,5 +357,247 @@ describe('ChatPanel (shadcn)', () => {
 
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-stream" />)
     expect(html).toContain('data-status="streaming"')
+  })
+
+  describe('busy indicators', () => {
+    test('progress bar visible while streaming', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).toContain('aria-label="Agent working"')
+      expect(html).toContain('role="progressbar"')
+    })
+
+    test('progress bar visible during submitted (waiting for first byte)', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'submitted',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).toContain('aria-label="Agent working"')
+    })
+
+    test('progress bar hidden when ready', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).not.toContain('aria-label="Agent working"')
+    })
+
+    test('thinking caption shows when last message is user and streaming', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'submitted',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).toContain('data-testid="chat-thinking"')
+      expect(html).toContain('Thinking…')
+    })
+
+    test('thinking caption hides once assistant message exists (model replying)', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+          { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: '...' }] },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      // Bar still shown (still streaming), but caption gone.
+      expect(html).toContain('aria-label="Agent working"')
+      expect(html).not.toContain('data-testid="chat-thinking"')
+    })
+
+    test('thinking caption hides when ready', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).not.toContain('data-testid="chat-thinking"')
+    })
+  })
+
+  describe('part ordering', () => {
+    test('text and tool parts render in chronological message.parts order', () => {
+      // Model emits: text → tool → text → tool. Renderer must preserve that
+      // order so the user sees which sentence triggered which tool, instead
+      // of all tools dumped at the bottom of the message.
+      const customRenderer = vi.fn((part: ToolPart) => (
+        <div data-testid={`tool-${part.toolCallId}`}>TOOL_{part.toolCallId}</div>
+      ))
+
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            parts: [
+              { type: 'text', text: 'FIRST_TEXT' },
+              {
+                type: 'tool-bash',
+                toolCallId: 'CALLA',
+                state: 'output-available',
+                input: { command: 'ls' },
+                output: { text: 'a' },
+              },
+              { type: 'text', text: 'SECOND_TEXT' },
+              {
+                type: 'tool-bash',
+                toolCallId: 'CALLB',
+                state: 'output-available',
+                input: { command: 'pwd' },
+                output: { text: 'b' },
+              },
+              { type: 'text', text: 'THIRD_TEXT' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(
+        <ChatPanel sessionId="s-order" toolRenderers={{ bash: customRenderer }} />,
+      )
+      const idxFirstText = html.indexOf('FIRST_TEXT')
+      const idxToolA = html.indexOf('TOOL_CALLA')
+      const idxSecondText = html.indexOf('SECOND_TEXT')
+      const idxToolB = html.indexOf('TOOL_CALLB')
+      const idxThirdText = html.indexOf('THIRD_TEXT')
+      expect(idxFirstText).toBeGreaterThan(-1)
+      expect(idxToolA).toBeGreaterThan(idxFirstText)
+      expect(idxSecondText).toBeGreaterThan(idxToolA)
+      expect(idxToolB).toBeGreaterThan(idxSecondText)
+      expect(idxThirdText).toBeGreaterThan(idxToolB)
+    })
+
+    test('thinking control hidden by default (opt-in)', () => {
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-think" />)
+      // None of the four level labels should appear when the control is off.
+      expect(html).not.toContain('No thinking')
+      expect(html).not.toContain('Think a little')
+      expect(html).not.toContain('Think hard')
+    })
+
+    test('thinking control rendered when thinkingControl=true', () => {
+      const html = renderToStaticMarkup(
+        <ChatPanel sessionId="s-think" thinkingControl />,
+      )
+      // The select renders all four level options as children.
+      expect(html).toContain('No thinking')
+      expect(html).toContain('Think a little')
+      expect(html).toContain('Think hard')
+      // BrainIcon rendered alongside the trigger.
+      expect(html).toContain('lucide-brain')
+    })
+
+    test('thinkingLevel is sent in body when thinkingControl is enabled', async () => {
+      // Default level is 'off' — assert it's still forwarded so the server
+      // gets a deterministic value rather than relying on the schema default.
+      renderToStaticMarkup(
+        <ChatPanel sessionId="s-think-body" thinkingControl />,
+      )
+      await capturedOnSubmit!({ text: 'reason about it', files: [] })
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'reason about it', files: [] },
+        {
+          body: expect.objectContaining({
+            sessionId: 's-think-body',
+            thinkingLevel: 'off',
+          }),
+        },
+      )
+    })
+
+    test('thinkingLevel is NOT sent in body when thinkingControl is disabled', async () => {
+      renderToStaticMarkup(<ChatPanel sessionId="s-no-think-body" />)
+      await capturedOnSubmit!({ text: 'plain', files: [] })
+      const call = mockSendMessage.mock.calls[0]?.[1]?.body as Record<string, unknown>
+      expect(call).toBeDefined()
+      expect(Object.prototype.hasOwnProperty.call(call, 'thinkingLevel')).toBe(false)
+    })
+
+    test('thinkingLevel reads from localStorage when control enabled', async () => {
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) =>
+          key === 'boring-agent:composer:thinking' ? 'medium' : null,
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      })
+      renderToStaticMarkup(
+        <ChatPanel sessionId="s-think-stored" thinkingControl />,
+      )
+      await capturedOnSubmit!({ text: 'go', files: [] })
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        { body: expect.objectContaining({ thinkingLevel: 'medium' }) },
+      )
+      vi.unstubAllGlobals()
+    })
+
+    test('tools are NOT pushed to the end when they appear before text in parts', () => {
+      // Regression guard: the previous renderer grouped by type and rendered
+      // all texts first then all tools. With that bug, a tool-then-text
+      // sequence in `parts` would render text first.
+      const customRenderer = vi.fn((part: ToolPart) => (
+        <div data-testid={`tool-${part.toolCallId}`}>TOOL_{part.toolCallId}</div>
+      ))
+
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            parts: [
+              {
+                type: 'tool-bash',
+                toolCallId: 'EARLY',
+                state: 'output-available',
+                input: { command: 'ls' },
+                output: { text: 'a' },
+              },
+              { type: 'text', text: 'AFTER_TOOL' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(
+        <ChatPanel sessionId="s-tool-first" toolRenderers={{ bash: customRenderer }} />,
+      )
+      const idxTool = html.indexOf('TOOL_EARLY')
+      const idxText = html.indexOf('AFTER_TOOL')
+      expect(idxTool).toBeGreaterThan(-1)
+      expect(idxText).toBeGreaterThan(idxTool)
+    })
   })
 })

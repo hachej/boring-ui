@@ -13,6 +13,14 @@ export interface AgentHarness {
 
   /** Session lifecycle; may delegate to an underlying runtime (e.g. pi's JSONL). */
   sessions: SessionStore
+
+  /**
+   * Resolved system prompt currently in effect for `sessionId`. Returns
+   * `undefined` when the underlying runtime hasn't yet instantiated a
+   * session (typical pre-first-turn state — pi creates lazily on first
+   * `sendMessage`). Optional so non-pi harnesses can opt out cleanly.
+   */
+  getSystemPrompt?: (sessionId: string) => string | undefined
 }
 
 /* Resume is NOT a harness concern — see Stream resumption section.

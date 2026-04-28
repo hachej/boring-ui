@@ -42,14 +42,18 @@ describe('file routes (NodeWorkspace integration)', () => {
       payload: { path: 'hello.txt', content: 'world' },
     })
     expect(writeRes.statusCode).toBe(200)
-    expect(writeRes.json()).toEqual({ ok: true })
+    expect(writeRes.json().ok).toBe(true)
 
     const readRes = await app.inject({
       method: 'GET',
       url: '/api/v1/files?path=hello.txt',
     })
     expect(readRes.statusCode).toBe(200)
-    expect(readRes.json()).toEqual({ content: 'world' })
+    // Body now also carries mtimeMs (OCC baseline). Assert just the
+    // content so the test isn't pinned to the exact server stat
+    // shape.
+    expect(readRes.json().content).toBe('world')
+    expect(typeof readRes.json().mtimeMs).toBe('number')
 
     const deleteRes = await app.inject({
       method: 'DELETE',
@@ -99,23 +103,98 @@ describe('file routes (NodeWorkspace integration)', () => {
       payload: { path: 'shared.txt', content: 'tab-b-newer' },
     })
     expect(tabBWrite.statusCode).toBe(200)
-    expect(tabBWrite.json()).toEqual({ ok: true })
+    expect(tabBWrite.json().ok).toBe(true)
 
-    // Tab A writes using stale state; no optimistic version check rejects it.
+    // Tab A writes using stale state. Without expectedMtimeMs in the
+    // request, OCC is not enforced — preserves the legacy "force
+    // overwrite" path that ships from FileTreeView etc.
     const tabAWrite = await app.inject({
       method: 'POST',
       url: '/api/v1/files',
       payload: { path: 'shared.txt', content: 'tab-a-stale' },
     })
     expect(tabAWrite.statusCode).toBe(200)
-    expect(tabAWrite.json()).toEqual({ ok: true })
+    expect(tabAWrite.json().ok).toBe(true)
 
     const finalRead = await app.inject({
       method: 'GET',
       url: '/api/v1/files?path=shared.txt',
     })
     expect(finalRead.statusCode).toBe(200)
-    expect(finalRead.json()).toEqual({ content: 'tab-a-stale' })
+    expect(finalRead.json().content).toBe('tab-a-stale')
+  })
+
+  test('POST /api/v1/files with stale expectedMtimeMs returns 409', async () => {
+    const { app } = await createTestApp()
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: 'shared.txt', content: 'base' },
+    })
+
+    const tabARead = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?path=shared.txt',
+    })
+    const tabAMtime = tabARead.json().mtimeMs as number
+    expect(typeof tabAMtime).toBe('number')
+
+    // Tab B writes through (force) — bumps disk mtime.
+    await new Promise((r) => setTimeout(r, 5)) // ensure mtime tick on fast FS
+    const tabBWrite = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: 'shared.txt', content: 'tab-b-newer' },
+    })
+    expect(tabBWrite.statusCode).toBe(200)
+
+    // Tab A's OCC-aware save now 409s.
+    const tabAWrite = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: {
+        path: 'shared.txt',
+        content: 'tab-a-stale',
+        expectedMtimeMs: tabAMtime,
+      },
+    })
+    expect(tabAWrite.statusCode).toBe(409)
+    const body = tabAWrite.json()
+    expect(body.error.code).toBe('conflict')
+    expect(typeof body.error.currentMtimeMs).toBe('number')
+    expect(body.error.expectedMtimeMs).toBe(tabAMtime)
+
+    // Disk content is still tab B's — OCC blocked the stale clobber.
+    const finalRead = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?path=shared.txt',
+    })
+    expect(finalRead.json().content).toBe('tab-b-newer')
+  })
+
+  test('POST /api/v1/files with current expectedMtimeMs succeeds', async () => {
+    const { app } = await createTestApp()
+
+    const writeA = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: 'shared.txt', content: 'base' },
+    })
+    const baselineMtime = writeA.json().mtimeMs as number
+
+    const writeB = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: {
+        path: 'shared.txt',
+        content: 'next',
+        expectedMtimeMs: baselineMtime,
+      },
+    })
+    expect(writeB.statusCode).toBe(200)
+    expect(writeB.json().ok).toBe(true)
+    expect(typeof writeB.json().mtimeMs).toBe('number')
   })
 
   test('POST /api/v1/files/move renames files', async () => {

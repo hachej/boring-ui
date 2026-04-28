@@ -1,7 +1,12 @@
 import { lstat, mkdir, readdir, readFile, rename, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, relative, sep } from 'node:path'
+import chokidar, { type FSWatcher } from 'chokidar'
 
-import type { Workspace } from '../../shared/workspace'
+import type {
+  Workspace,
+  WorkspaceChangeEvent,
+  WorkspaceWatcher,
+} from '../../shared/workspace'
 import {
   assertRealPathWithinWorkspace,
   ensureExistingWorkspacePath,
@@ -9,9 +14,96 @@ import {
   validatePath,
 } from './paths'
 
+const DEFAULT_WATCH_IGNORES = [
+  '**/node_modules/**',
+  '**/.git/**',
+  '**/.DS_Store',
+  '**/dist/**',
+  '**/.next/**',
+  '**/.turbo/**',
+  '**/.tsbuildinfo*',
+]
+
+/**
+ * One chokidar instance per workspace root, fanned out to N
+ * subscribers. Created lazily on first `watch()` call so unit tests
+ * and watch-free hosts pay nothing.
+ */
+function createNodeWatcher(root: string): WorkspaceWatcher {
+  const listeners = new Set<(e: WorkspaceChangeEvent) => void>()
+  let fsw: FSWatcher | null = null
+  let closed = false
+
+  const ensureFsw = (): FSWatcher => {
+    if (fsw) return fsw
+    fsw = chokidar.watch(root, {
+      ignored: DEFAULT_WATCH_IGNORES,
+      ignoreInitial: true,
+      persistent: true,
+      // Disable polling by default — chokidar already debounces events
+      // via `awaitWriteFinish`, which prevents firing in the middle of
+      // a multi-step write (compiler emits, `cp` over a large file).
+      awaitWriteFinish: { stabilityThreshold: 50, pollInterval: 25 },
+      // No native renames from chokidar — `unlinkDir`/`addDir`/
+      // `unlink`/`add` are the primitives we get. We surface them as
+      // separate `unlink` + `write`/`mkdir` events; renames are best
+      // recovered at the consumer level if needed.
+    })
+    fsw.on('add', (p, s) => emit({ op: 'write', path: rel(p), mtimeMs: s?.mtimeMs }))
+    fsw.on('change', (p, s) => emit({ op: 'write', path: rel(p), mtimeMs: s?.mtimeMs }))
+    fsw.on('addDir', (p) => emit({ op: 'mkdir', path: rel(p) }))
+    fsw.on('unlink', (p) => emit({ op: 'unlink', path: rel(p) }))
+    fsw.on('unlinkDir', (p) => emit({ op: 'unlink', path: rel(p) }))
+    fsw.on('error', () => { /* swallowed: errors are best-effort */ })
+    return fsw
+  }
+
+  const rel = (abs: string): string => {
+    const r = relative(root, abs)
+    // Normalize Windows separators so the wire format stays POSIX.
+    return r.split(sep).join('/')
+  }
+
+  const emit = (event: WorkspaceChangeEvent) => {
+    if (closed) return
+    if (event.path === '' || event.path.startsWith('..')) return
+    for (const l of [...listeners]) {
+      try { l(event) } catch { /* one bad listener doesn't kill the chain */ }
+    }
+  }
+
+  return {
+    subscribe(listener) {
+      if (closed) return () => {}
+      listeners.add(listener)
+      ensureFsw()
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    close() {
+      if (closed) return
+      closed = true
+      listeners.clear()
+      fsw?.close().catch(() => {})
+      fsw = null
+    },
+  }
+}
+
 export function createNodeWorkspace(root: string): Workspace {
+  // Lazy singleton: a single chokidar instance shared by every caller
+  // of `watch()` on this workspace. Codex flagged "one watcher per
+  // SSE client" as a fd leak — this avoids it.
+  let cachedWatcher: WorkspaceWatcher | null = null
+
   return {
     root,
+    fsCapability: 'strong',
+    watch() {
+      if (!cachedWatcher) cachedWatcher = createNodeWatcher(root)
+      return cachedWatcher
+    },
     async readFile(relPath) {
       const absPath = await ensureExistingWorkspacePath(root, relPath)
       return await readFile(absPath, 'utf-8')

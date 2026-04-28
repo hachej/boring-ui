@@ -15,6 +15,14 @@ interface FileChangeMetadata {
   oldPath?: string
   timestamp: string
   size?: number
+  /**
+   * `false` when the write created a brand-new file; `true` when it
+   * overwrote an existing one. Lets the workspace bridge distinguish
+   * `file:created` from `file:changed` events — without this, every
+   * write becomes a "changed" event and consumers that only care
+   * about creates (e.g. auto-open new files) never fire.
+   */
+  existsBefore?: boolean
 }
 
 interface WriteParams {
@@ -122,6 +130,20 @@ export function createWriteTool(workspace: Workspace): AgentTool {
       const createDirs = params.createDirs === true
       const tmpPath = makeTmpPath(path, ctx.toolCallId)
 
+      // Stat before writing so the file-change chunk can carry an
+      // accurate `existsBefore`. Frontend uses this to distinguish
+      // file:created (new file → auto-open candidate) from
+      // file:changed (overwrite → don't re-open). Stat is cheap and
+      // racing with the write is acceptable: worst case is one
+      // misclassified event after a concurrent rm, which is fine.
+      let existsBefore = false
+      try {
+        await workspace.stat(path)
+        existsBefore = true
+      } catch (error) {
+        if (!isNotFoundError(error)) throw error
+      }
+
       let tmpWritten = false
       let renamed = false
       try {
@@ -143,6 +165,7 @@ export function createWriteTool(workspace: Workspace): AgentTool {
               path,
               size: writtenBytes,
               timestamp: nowIso(),
+              existsBefore,
             },
           ],
         })
