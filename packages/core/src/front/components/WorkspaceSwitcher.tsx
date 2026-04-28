@@ -22,10 +22,12 @@ import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 
 import { type Workspace } from '../../shared/types.js'
-import { useCurrentWorkspace } from '../WorkspaceAuthProvider.js'
+import {
+  WORKSPACES_QUERY_KEY,
+  useCurrentWorkspace,
+  workspaceQueryKey,
+} from '../WorkspaceAuthProvider.js'
 import { apiFetchJson, getHttpErrorDetail } from '../utils.js'
-
-const WORKSPACES_QUERY_KEY = ['workspaces'] as const
 
 const workspaceNameSchema = z.object({
   name: z
@@ -138,7 +140,10 @@ export function WorkspaceSwitcher() {
         body: JSON.stringify({ name: parsed.data.name }),
       })
 
-      await queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: workspaceQueryKey(data.workspace.id) }),
+      ])
       onModalChange(false)
       navigate(`/workspace/${data.workspace.id}`)
     } catch (error) {

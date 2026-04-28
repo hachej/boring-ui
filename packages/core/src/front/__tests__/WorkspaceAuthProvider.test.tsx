@@ -8,13 +8,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { withBeadId } from '../../server/__tests__/_setup'
 import type { MemberRole, Workspace } from '../../shared/types'
 import {
+  WORKSPACES_QUERY_KEY,
   WorkspaceAuthProvider,
   useCurrentWorkspace,
   useWorkspaceRole,
+  workspaceQueryKey,
 } from '../WorkspaceAuthProvider'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-0o1k'
+const BEAD_ID = 'boring-ui-v2-un4j'
 
 const WS_1: Workspace = {
   id: 'ws-001',
@@ -44,7 +46,7 @@ const WS_2: Workspace = {
 
 function createQueryClient(): QueryClient {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
   })
 }
 
@@ -121,6 +123,22 @@ function mockWorkspacesList(workspaces: Workspace[]) {
   })
 }
 
+function mockDeferredWorkspaceDetail(
+  workspaceId: string,
+  responsePromise: Promise<Response>,
+) {
+  useMswHandler(async (input) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+    if (!url.endsWith(`/api/v1/workspaces/${workspaceId}`)) return undefined
+    return await responsePromise
+  })
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -130,6 +148,7 @@ describe('WorkspaceAuthProvider', () => {
     'resolves workspace by route param :id',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
+      mockWorkspacesList([WS_1])
       mockWorkspaceDetail(WS_1, 'owner')
 
       renderWithRouter(`/workspace/${WS_1.id}`, qc)
@@ -202,6 +221,7 @@ describe('WorkspaceAuthProvider', () => {
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockWorkspacesList([WS_1])
 
       useMswHandler(async (input) => {
         const url =
@@ -226,6 +246,84 @@ describe('WorkspaceAuthProvider', () => {
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('none')
       assertionPassed('workspace-fetch-error')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'returns cached workspace detail before refetching',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      const renamed = { ...WS_1, name: 'Renamed Workspace' }
+      let detailFetches = 0
+
+      qc.setQueryData(WORKSPACES_QUERY_KEY, [WS_1])
+      qc.setQueryData(workspaceQueryKey(WS_1.id), {
+        workspace: WS_1,
+        role: 'owner' satisfies MemberRole,
+      })
+
+      useMswHandler(async (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url
+        if (!url.endsWith(`/api/v1/workspaces/${WS_1.id}`)) return undefined
+        detailFetches += 1
+        return new Response(JSON.stringify({ workspace: renamed, role: 'editor' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      })
+
+      renderWithRouter(`/workspace/${WS_1.id}`, qc)
+
+      expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace')
+      expect(screen.getByTestId('ws-role').textContent).toBe('owner')
+      assertionPassed('workspace-cache-hit')
+
+      await qc.invalidateQueries({ queryKey: workspaceQueryKey(WS_1.id) })
+
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('Renamed Workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('editor')
+      expect(detailFetches).toBeGreaterThan(0)
+      assertionPassed('workspace-invalidation-refetch')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'surfaces null while workspace detail is loading',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      let resolveResponse: (response: Response) => void = () => {}
+      const responsePromise = new Promise<Response>((resolve) => {
+        resolveResponse = resolve
+      })
+
+      mockWorkspacesList([WS_1])
+      mockDeferredWorkspaceDetail(WS_1.id, responsePromise)
+
+      renderWithRouter(`/workspace/${WS_1.id}`, qc)
+
+      expect(screen.getByTestId('ws-name').textContent).toBe('none')
+      expect(screen.getByTestId('ws-role').textContent).toBe('none')
+      assertionPassed('workspace-loading-null')
+
+      resolveResponse(new Response(JSON.stringify({ workspace: WS_1, role: 'owner' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+      )
+      expect(screen.getByTestId('ws-role').textContent).toBe('owner')
+      assertionPassed('workspace-loading-resolves')
       qc.clear()
     }),
   )

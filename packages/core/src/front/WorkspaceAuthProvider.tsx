@@ -1,8 +1,14 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { apiFetchJson } from './utils.js'
 import type { MemberRole, Workspace } from '../shared/types.js'
+
+type WorkspaceDetail = {
+  workspace: Workspace
+  role: MemberRole
+}
 
 interface WorkspaceContextValue {
   workspace: Workspace | null
@@ -18,56 +24,56 @@ export interface WorkspaceAuthProviderProps {
   children: ReactNode
 }
 
+export const WORKSPACES_QUERY_KEY = ['workspaces'] as const
+
+export function workspaceQueryKey(workspaceId: string | null | undefined) {
+  return ['workspace', workspaceId ?? null] as const
+}
+
+async function fetchWorkspaces(): Promise<Workspace[]> {
+  const data = await apiFetchJson<{ workspaces: Workspace[] }>('/api/v1/workspaces')
+  return data.workspaces
+}
+
+async function fetchWorkspace(workspaceId: string): Promise<WorkspaceDetail> {
+  return await apiFetchJson<WorkspaceDetail>(`/api/v1/workspaces/${workspaceId}`)
+}
+
 export function WorkspaceAuthProvider({ children }: WorkspaceAuthProviderProps) {
   const { id } = useParams<{ id: string }>()
-  const [workspace, setWorkspace] = useState<Workspace | null>(null)
-  const [role, setRole] = useState<MemberRole | null>(null)
+  const queryClient = useQueryClient()
+  const routeWorkspaceId = id?.trim() ? id : null
 
-  useEffect(() => {
-    let cancelled = false
+  const workspacesQuery = useQuery({
+    queryKey: WORKSPACES_QUERY_KEY,
+    queryFn: fetchWorkspaces,
+  })
 
-    async function resolve() {
-      try {
-        if (id) {
-          const data = await apiFetchJson<{ workspace: Workspace; role: MemberRole }>(
-            `/api/v1/workspaces/${id}`,
-          )
-          if (!cancelled) {
-            setWorkspace(data.workspace)
-            setRole(data.role)
-          }
-        } else {
-          const data = await apiFetchJson<{ workspaces: Workspace[] }>(
-            '/api/v1/workspaces',
-          )
-          if (cancelled) return
-          const defaultWs = data.workspaces.find((w) => w.isDefault) ?? data.workspaces[0] ?? null
-          if (defaultWs) {
-            const detail = await apiFetchJson<{ workspace: Workspace; role: MemberRole }>(
-              `/api/v1/workspaces/${defaultWs.id}`,
-            )
-            if (!cancelled) {
-              setWorkspace(detail.workspace)
-              setRole(detail.role)
-            }
-          } else {
-            if (!cancelled) {
-              setWorkspace(null)
-              setRole(null)
-            }
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setWorkspace(null)
-          setRole(null)
-        }
+  const defaultWorkspace =
+    routeWorkspaceId === null
+      ? (workspacesQuery.data?.find((workspace) => workspace.isDefault)
+        ?? workspacesQuery.data?.[0]
+        ?? null)
+      : null
+  const resolvedId = routeWorkspaceId ?? defaultWorkspace?.id ?? null
+  const cachedDetail = resolvedId
+    ? queryClient.getQueryData<WorkspaceDetail>(workspaceQueryKey(resolvedId))
+    : undefined
+
+  const detailQuery = useQuery({
+    queryKey: workspaceQueryKey(resolvedId),
+    queryFn: () => {
+      if (!resolvedId) {
+        throw new Error('Workspace id is required')
       }
-    }
+      return fetchWorkspace(resolvedId)
+    },
+    enabled: resolvedId !== null,
+  })
 
-    void resolve()
-    return () => { cancelled = true }
-  }, [id])
+  const detail = detailQuery.data ?? cachedDetail ?? null
+  const workspace = detailQuery.isError ? null : detail?.workspace ?? null
+  const role = detailQuery.isError ? null : detail?.role ?? null
 
   return (
     <WorkspaceContext.Provider value={{ workspace, role }}>

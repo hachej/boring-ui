@@ -290,6 +290,7 @@ describe('WorkspaceSwitcher', () => {
         expect(mockNavigate).toHaveBeenCalledWith('/workspace/ws-new')
       })
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['workspaces'] })
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['workspace', 'ws-new'] })
       await waitFor(() => {
         expect(screen.queryByRole('heading', { name: 'Create workspace' })).toBeNull()
       })
