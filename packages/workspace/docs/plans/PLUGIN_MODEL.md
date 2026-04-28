@@ -1,8 +1,8 @@
 # Workspace plugin model
 
-**Status:** v5 — full multi-stream review integrated (codex P0/P1/P2 + gemini-validated + ultrathink analysis pass)
+**Status:** v5.1 — codebase-reality-check sweep (event bus actual API, PanelConfig discriminated union, registry API harmonization, agent tool roster verified, macro test gate)
 **Owners:** workspace
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-28
 
 ## TL;DR
 
@@ -112,9 +112,11 @@ discovery infrastructure exists; the plugin shape is too narrow.
 - Cross-plugin dependency resolution beyond `dependsOn` /
   `optionalDeps` flat lists with late-wins-on-id collisions; no
   semver ranges in Phase 1 (string id match only).
-- Replacing the agent's runtime tools (`bash`, `read_directory`,
+- Replacing the agent's runtime tools (`bash`,
   `execute_isolated_code`). Those are harness-level, not
-  workspace-level. Stay in `@boring/agent`.
+  workspace-level. Stay in `@boring/agent`. (No `read_directory`
+  tool exists — directory listing is covered by `find_files` and
+  the workspace's `/api/v1/tree` route.)
 - Per-contribution dependency declarations
   (`PanelConfig.requiresPlugin`). Plugin-level dependencies cover
   Phase 1; per-contribution if surgical cases appear later.
@@ -187,7 +189,11 @@ export interface RouteRegistration<TOpts = unknown> {
 }
 
 export interface PluginMountCtx {
-  bus: EventBus<WorkspaceEvents>
+  /** Module-singleton bus (same instance as
+   *  `import { events } from "@boring/workspace/events"`). Injected
+   *  for testability and discoverability — plugins MAY also import it
+   *  directly. Type is `EventBus<WorkspaceEventMap>`. */
+  bus: EventBus<WorkspaceEventMap>
   bridge: UiBridge
   catalogs: CatalogRegistry
   commands: CommandRegistry
@@ -202,26 +208,42 @@ export interface PluginMountCtx {
 ### Concrete contribution types
 
 ```ts
-// PanelConfig — extension of the existing type. Adds source-of-truth
-// provenance, file pattern routing, and tab placements so
-// WorkbenchLeftPane / WorkbenchRightPane can be registry-driven.
-type PanelConfig = {
+// PanelConfig — already a discriminated union in
+// packages/workspace/src/registry/types.ts. v5.1 PRESERVES the
+// existing shape; the plugin model only ADDS fields:
+//   - 'left-tab' | 'right-tab' to placement (for registry-driven tabs)
+//   - tabOrder?: number (tab strip ordering)
+//   - pluginId?: string (auto-set provenance)
+// Existing fields kept verbatim: SyncPanelConfig vs LazyPanelConfig
+// discriminated by `lazy: true | false`, requiresCapabilities,
+// essential, chromeless, source: 'builtin' | 'app', definePanel<T> factory.
+
+interface PanelConfigBase {
   id: string
   title: string
-  /** May be a lazy import — preserves the current code splitting
-   *  behavior. */
-  component: ComponentType<unknown> | (() => Promise<{ default: ComponentType<unknown> }>)
-  /** "bottom" preserved for terminal/console panes that already use it. */
-  placement: "left" | "center" | "right" | "bottom" | "left-tab" | "right-tab"
-  source?: "app" | "agent" | "user"
-  icon?: ReactNode
-  /** Path-aware micromatch globs (NOT basename-only). */
-  filePatterns?: string[]
-  /** Tab ordering within left-tab/right-tab. Default 100. */
+  icon?: ComponentType<{ className?: string }>
+  placement?: "left" | "center" | "right" | "bottom" | "left-tab" | "right-tab"
+  filePatterns?: string[]                  // Step 2d: path-aware micromatch
+  requiresCapabilities?: string[]
+  essential?: boolean
+  source?: "builtin" | "app"
+  chromeless?: boolean
+  /** Tab ordering within left-tab/right-tab. Default 100. NEW. */
   tabOrder?: number
-  /** Set automatically by registry; do not set manually. */
+  /** Set automatically by registry; do not set manually. NEW. */
   pluginId?: string
 }
+interface SyncPanelConfig<T = unknown> extends PanelConfigBase {
+  component: ComponentType<PaneProps<T>>
+  lazy?: false
+}
+interface LazyPanelConfig<T = unknown> extends PanelConfigBase {
+  component: () => Promise<{ default: ComponentType<PaneProps<T>> }>
+  lazy: true
+}
+type PanelConfig<T = unknown> = SyncPanelConfig<T> | LazyPanelConfig<T>
+// `definePanel<T>(config)` — existing identity-helper factory stays the
+// canonical authoring API; plugin model wraps it (no replacement).
 
 // CommandConfig — already exists, add pluginId provenance
 type CommandConfig = {
@@ -237,7 +259,14 @@ type CommandConfig = {
 type CatalogConfig = {
   id: string
   label: string
-  /** Stable string used to tag Recent entries — see §Polymorphic Recent. */
+  /** Stable string used to tag Recent entries — see §Polymorphic Recent.
+   *  Multiple catalogs MAY share the same recentKind on purpose
+   *  (e.g., two filesystem-flavored catalogs both rendering Recent
+   *  entries as file paths). When two catalogs share recentKind:
+   *  Recent entries store both `catalogId` AND `recentKind`, so the
+   *  exact source catalog wins on render; if the source catalog is
+   *  unregistered, fall back to ANY currently-registered catalog with
+   *  the same recentKind for rendering (graceful degradation). */
   recentKind: string
   adapter: ExplorerAdapter                 // existing DataExplorer type
   onSelect: (row: ExplorerRow) => void
@@ -462,16 +491,20 @@ Convention (rules of thumb for code review):
 
 **File-pattern panel resolution.** The current resolver
 (`PanelRegistry.ts:91`, `SurfaceShell.tsx:98`) matches **basename
-only**. Phase 1 step 2 upgrades it to **path-aware micromatch** so
-patterns like `deck/**/*.md` actually work. When `openFile(path)`
-runs:
+only** via a hand-rolled `*suffix`/exact matcher. It also has a
+working source-priority tie-breaker (`app` beats `builtin` on equal
+specificity) which we PRESERVE. Phase 1 step 2 upgrades the matcher
+itself to **path-aware micromatch** so patterns like `deck/**/*.md`
+actually work. When `openFile(path)` runs:
 
 1. Filter panels whose `filePatterns` include the full `path` under
    path-aware micromatch (`{ matchBase: false, dot: true }`).
 2. Sort by **specificity** — concrete formula:
    `score = (segment_count * 10) + non_wildcard_chars`. Higher wins.
-   Ties broken by registration order, late wins.
-3. Hosts can bypass pattern matching at the call site:
+3. Tie-break A: `source: 'app'` beats `source: 'builtin'` (current
+   behavior, preserved).
+4. Tie-break B: registration order, late wins.
+5. Hosts can bypass pattern matching at the call site:
    `surface.openPanel({ component: "<id>", … })`.
 
 Three composition shapes this enables (canonical examples):
@@ -556,9 +589,13 @@ PluginRegistry.bootstrap(plugins, opts):
         FINAL set (already-registered or upcoming). If missing
         → throw PluginRegistrationError at this plugin.
      b. Warn on optionalDeps missing.
-     c. Fan declarative contributions into per-type registries
-        (panels, commands, catalogs, chatSuggestions) — set
-        pluginId provenance on each.
+     c. Fan declarative contributions into per-type registries —
+        set pluginId provenance on each. The fan-in normalizes the
+        existing API inconsistency: `PanelRegistry.register(id, cfg)`
+        is id-first; `CommandRegistry.registerCommand(cfg)` is
+        config-carries-id. PluginRegistry calls each registry with
+        the shape it expects; plugin authors only deal with the
+        unified `Plugin` shape.
      d. (server) Fan agentTools → AgentToolRegistry.
      e. (server) Register routes via
         await app.register(reg.plugin, { ...reg.opts, prefix: reg.prefix })
@@ -751,16 +788,46 @@ plugin id, not by shared state).
 ### Event bus integration
 
 Plugins are about **registration**; the bus is about
-**communication**. They meet at three points (see
-`UNIFIED_EVENT_BUS.md` for bus details):
+**communication**. The bus is **already implemented** at
+`packages/workspace/src/events/{bus,index,types,useEvent}.ts` —
+this section reflects the actual API, not the original
+`UNIFIED_EVENT_BUS.md` sketch.
 
-1. **`PluginMountCtx.bus`** lets `onMount` subscribe + emit.
-2. **Lifecycle events on the bus** —
-   `plugin:registered`/`plugin:unregistered`/`plugin:error` plus
-   per-contribution-type events (`catalog:registered`, etc.) plus
-   `bootstrap:complete` once initial mount finishes.
-3. **Discovery endpoint emits one-shot `plugins:discovered`** event
-   when fetched (Phase 2).
+Actual bus surface (verified 2026-04-28):
+
+```ts
+// Module singleton — import directly anywhere
+import { events, useEvent } from "@boring/workspace/events"
+import type { WorkspaceEventMap } from "@boring/workspace/events"
+
+events.on("file:moved", ({ from, to }) => { /* … */ })  // returns unsubscribe
+events.emit("file:moved", { ...userMeta(), from, to })
+
+// React hook
+useEvent("file:moved", ({ from, to }) => { /* … */ })
+```
+
+Plugin–bus contact points:
+
+1. **`PluginMountCtx.bus`** is the same module singleton, injected
+   for testability. `onMount(({ bus }) => bus.on("file:moved", …))`
+   is functionally identical to importing `events` directly.
+2. **Lifecycle events follow the bus's "events declared on demand"
+   policy** — `WorkspaceEventMap` intentionally pre-declares
+   nothing for the future (per the comment in
+   `events/types.ts`). Phase 1 ADDS these keys to the map only
+   when emitter + consumer ship together:
+   - `plugin:registered: { id: string; pluginId: string }`
+   - `plugin:unregistered: { id: string }`
+   - `plugin:error: { pluginId: string; error: PluginError }`
+   - `bootstrap:complete: { pluginIds: string[] }`
+   Per-contribution events (`catalog:registered`, etc.) are NOT
+   added in Phase 1; we only add them when the first concrete
+   consumer needs them. Phase 2's discovery endpoint adds
+   `plugins:discovered`.
+3. **Bus invariants honored** by plugin lifecycle events: synchronous
+   emit, transitions only (no replay-on-subscribe), one bad listener
+   doesn't break the chain.
 
 Bus is client-only. Server-side plugin contributions communicate via
 Fastify hooks or HTTP routes — not a workspace-wide primitive.
@@ -786,8 +853,8 @@ refactor; the plugin model rides on top.
 - `validateTool` (re-used by workspace's `validateAgentTool`)
 - Pi loader (legacy tools-only behavior; Phase 2 extends it)
 - File ops shared bundle (`filesystemAgentTools`)
-- `bash`, `read_directory`, `execute_isolated_code` tools (truly
-  harness-level)
+- `bash`, `execute_isolated_code` tools (truly harness-level — these
+  are the only agent-only tools after step 1b)
 - Chat / session / model HTTP routes
 - `createAgentApp` (UI-less; standalone CLI; auto-includes file ops
   via the shared bundle unless `disableDefaultFileTools`)
@@ -1185,9 +1252,14 @@ files. New macro-style apps no longer pay the inlining tax.
     rendered under PROD.
 
 - **E2E**
-  - boring-macro-v2 migrated: open the deployed app, search a
-    series, click → chart panel opens. Same surface area as
-    today.
+  - **boring-macro-v2 existing e2e suite is the Step 6 acceptance
+    gate** — all 10 specs (composer-border, deck, catalog-to-chart,
+    catalog, split-no-clip, layout-persistence, chat-suggestions,
+    chart-tabs, topbar, agent) MUST pass post-migration. The specs
+    are behavior-level (they don't reference `extraPanels`/`data`
+    props by name — verified 2026-04-28: only `App.tsx` and
+    `server/index.ts` mention the deleted props), so a clean
+    migration should not require spec edits.
   - Open `deck/labor/labor.md` → DeckPane (not generic
     MarkdownEditor) — confirms path-aware resolver.
   - Recent: open file from palette → close + reopen palette →
@@ -1282,6 +1354,50 @@ files. New macro-style apps no longer pay the inlining tax.
   - `UNIFIED_EVENT_BUS.md` — bus model; required by Phase 1
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plan: `COMMAND_PALETTE_REGISTRY.md`
+
+## Changelog v5 → v5.1 (codebase-reality-check sweep)
+
+Six findings from a sweep against the live codebase before starting
+implementation. None are blockers; all are surgical clarifications
+that prevent mid-Step-1a head-scratching.
+
+1. **Event bus actual API drifts from spec.** `events.on(name, fn)`
+   not `bus.subscribe()`; `EventBus<WorkspaceEventMap>` not
+   `WorkspaceEvents`; module singleton + `useEvent` React hook;
+   policy is "events declared on demand" — `WorkspaceEventMap`
+   intentionally pre-declares no future events. §"Event bus
+   integration" rewritten against the real surface; lifecycle event
+   keys are now declared per-Phase-1 only when emitter+consumer
+   ship. `PluginMountCtx.bus` typed as
+   `EventBus<WorkspaceEventMap>`.
+2. **PanelConfig is already a discriminated union** (better than v5's
+   loose `ComponentType | (() => Promise)`). Restated the existing
+   `SyncPanelConfig | LazyPanelConfig` shape verbatim and confirmed
+   plugin model only ADDS three fields (`'left-tab' | 'right-tab'`
+   placement, `tabOrder`, `pluginId`). Existing `definePanel<T>`
+   factory stays canonical authoring API.
+3. **`source` enum is `'builtin' | 'app'`**, not the
+   `'app' | 'agent' | 'user'` v5 invented. Plan now uses the real
+   values. Source-priority tie-breaker (app beats builtin)
+   preserved in resolver upgrade.
+4. **Registry API inconsistency documented.**
+   `PanelRegistry.register(id, config)` vs
+   `CommandRegistry.registerCommand(config)`. Plugin fan-in path
+   normalizes; plugin authors don't see it.
+5. **`read_directory` doesn't exist** in the agent. Removed from
+   Non-goals + "@boring/agent keeps" lists. Directory listing is
+   covered by `find_files` + `/api/v1/tree`.
+6. **boring-macro tests are e2e-only and behavior-based.** No source
+   references to deleted props outside the two files Step 6
+   modifies. Test plan promotes the existing 10-spec suite to be
+   the Step 6 acceptance gate.
+
+Plus one design clarification:
+
+7. **CatalogConfig.recentKind collisions** — the spec is now
+   explicit: same recentKind across catalogs is intentional sharing;
+   Recent entries store both catalogId (exact source) AND recentKind
+   (graceful fallback when source is unregistered).
 
 ## Changelog vs v4
 
