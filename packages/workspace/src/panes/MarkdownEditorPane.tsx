@@ -1,23 +1,21 @@
 "use client"
 
 import { lazy, Suspense, useCallback, useRef, useState, useEffect } from "react"
-import { PanelChrome } from "../dock"
 import { useFileContent, useFileWrite } from "../data"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../hooks"
-import type { DockviewPanelApi } from "dockview-react"
+import type { PaneProps } from "../registry/types"
 
 const MarkdownEditor = lazy(() =>
   import("../components/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })),
 )
 
-export interface MarkdownEditorPaneProps {
-  path: string
-  panelApi?: DockviewPanelApi
-  chromeless?: boolean
-  className?: string
-}
+// `path` is optional: dockview can restore a panel from serialized
+// layout where params got lost. Read defensively, render a placeholder
+// rather than crash when path isn't there.
+export type MarkdownEditorPaneProps = PaneProps<{ path?: string }>
 
-export function MarkdownEditorPane({ path, panelApi, chromeless, className }: MarkdownEditorPaneProps) {
+export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPaneProps) {
+  const path = typeof params?.path === "string" ? params.path : ""
   const { data: fileData, isLoading, error, dataUpdatedAt } = useFileContent(path)
   const { mutateAsync: writeFile } = useFileWrite()
 
@@ -53,10 +51,9 @@ export function MarkdownEditorPane({ path, panelApi, chromeless, className }: Ma
           getContent: () => contentRef.current,
         }
       : null
-
   const lifecycle = useEditorLifecycle(path, {
     adapter,
-    panelId: panelApi?.id ?? path,
+    panelId: api?.id ?? path,
     serverMtime: dataUpdatedAt || null,
   })
 
@@ -79,45 +76,49 @@ export function MarkdownEditorPane({ path, panelApi, chromeless, className }: Ma
     [lifecycle],
   )
 
-  const fileName = path.split("/").pop() ?? path
-  const title = lifecycle.isDirty ? `${fileName} ●` : fileName
+  const fileName = path ? (path.split("/").pop() ?? path) : ""
+  const tabTitle = fileName ? (lifecycle.isDirty ? `${fileName} ●` : fileName) : ""
+  useEffect(() => {
+    if (tabTitle) api?.setTitle?.(tabTitle)
+  }, [api, tabTitle])
+
+  if (!path) {
+    return (
+      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+        No file selected
+      </div>
+    )
+  }
 
   if (error) {
-    const body = (
+    return (
       <div className="flex h-full items-center justify-center text-destructive text-sm">
         Failed to load file: {error.message}
       </div>
     )
-    return chromeless ? body : <PanelChrome title={fileName} panelApi={panelApi}>{body}</PanelChrome>
   }
 
-  const editor = (
-    <Suspense
-      fallback={
-        <div className="flex h-full items-center justify-center text-muted-foreground">
-          <span className="animate-pulse">Loading editor...</span>
-        </div>
-      }
-    >
-      {isLoading || localContent === null ? (
-        <div className="flex h-full items-center justify-center text-muted-foreground">
-          <span className="animate-pulse">Loading file...</span>
-        </div>
-      ) : (
-        <MarkdownEditor
-          content={localContent}
-          onChange={handleChange}
-          className={className}
-        />
-      )}
-    </Suspense>
-  )
-
-  if (chromeless) return <div className="flex h-full min-h-0 flex-col">{editor}</div>
-
   return (
-    <PanelChrome title={title} panelApi={panelApi}>
-      {editor}
-    </PanelChrome>
+    <div className="flex h-full min-h-0 flex-col">
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <span className="animate-pulse">Loading editor...</span>
+          </div>
+        }
+      >
+        {isLoading || localContent === null ? (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <span className="animate-pulse">Loading file...</span>
+          </div>
+        ) : (
+          <MarkdownEditor
+            content={localContent}
+            onChange={handleChange}
+            className={className}
+          />
+        )}
+      </Suspense>
+    </div>
   )
 }
