@@ -1194,15 +1194,32 @@ pnpm drizzle-kit migrate --config node_modules/@boring/core/drizzle.config.ts
 
 Core ships its own `drizzle.config.ts` pointing at its schema. Migration SQL lives in `packages/core/drizzle/`. Child apps with their own tables run their own `drizzle-kit` against their own config. Core never touches tables it doesn't own.
 
-### Encrypted settings
+### Workspace settings encryption
 
-`workspaceSettings.value` is stored as `bytea` and encrypted/decrypted with `pgcrypto` at query time. Key from `WORKSPACE_SETTINGS_ENCRYPTION_KEY` env var (32-byte hex).
+`workspaceSettings.value` is stored as PostgreSQL `bytea` and encrypted/decrypted in Postgres with `pgcrypto`:
 
-**Key-rotation behavior**: if `WORKSPACE_SETTINGS_ENCRYPTION_KEY` is rotated without re-encrypting existing rows, `pgp_sym_decrypt` fails for any old row. v2 contract:
+- Write path: `pgp_sym_encrypt(plaintext, WORKSPACE_SETTINGS_ENCRYPTION_KEY)`.
+- Read path: `pgp_sym_decrypt(value, WORKSPACE_SETTINGS_ENCRYPTION_KEY)::text`.
+- Algorithm/format: pgcrypto OpenPGP symmetric encryption packet stored directly in `bytea`.
+- Nonce/salt: pgcrypto embeds fresh per-encryption random data in the ciphertext packet; there is no separate nonce column. Rewriting the same plaintext with the same key produces different ciphertext bytes.
+- AAD/binding: no additional authenticated data is passed, so ciphertext is not explicitly bound to `workspace_id` or `key`.
 
-- Generic `getWorkspaceSettings(workspaceId)` returns the affected key with `configured: false` + logs a warn at pino `warn` level. No throw.
+`WORKSPACE_SETTINGS_ENCRYPTION_KEY` is the single configured symmetric passphrase for v2. The current deployment contract uses a 32-byte hex string and deliberately does not implement a keyring.
+
+**Key-rotation behavior**: if `WORKSPACE_SETTINGS_ENCRYPTION_KEY` is rotated without re-encrypting existing rows, `pgp_sym_decrypt` fails for old rows. v2 contract:
+
+- Generic `getWorkspaceSettings(workspaceId)` returns the affected key with `configured: false`. No plaintext is returned.
 - Typed accessors (e.g. `getWorkspaceGitHubInstallation`) return `null` on decrypt failure. No throw.
-- The operator is expected to re-encrypt existing rows via a one-shot script at rotation time; core does not auto-migrate.
+- Core does not auto-migrate old rows. Rotation is a planned-outage operation.
+
+**Rotation procedure**:
+
+1. Block writes to workspace settings, either by maintenance mode or a feature flag in the app shell.
+2. Take a database backup.
+3. Run a one-shot rotation script that reads each `workspace_settings` row, decrypts with the old key, re-encrypts with the new key, and updates the row in one transaction or controlled batches.
+4. Deploy the new `WORKSPACE_SETTINGS_ENCRYPTION_KEY`.
+5. Verify representative typed decrypts and generic metadata reads.
+6. Unblock writes.
 
 ```sql
 -- Insert
