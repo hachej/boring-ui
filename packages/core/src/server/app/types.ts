@@ -28,13 +28,13 @@ export interface WorkspaceStore {
   list(userId: string, appId: string): Promise<Workspace[]>
   get(id: string): Promise<Workspace | null>
   update(id: string, updates: Partial<Pick<Workspace, 'name'>>): Promise<Workspace | null>
-  delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.WORKSPACE_PROVISIONING | typeof ERROR_CODES.NOT_FOUND }>
+  delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }>
   getWorkspacesWhereSoleOwner(userId: string): Promise<Workspace[]>
   isMember(workspaceId: string, userId: string): Promise<boolean>
   getMemberRole(workspaceId: string, userId: string): Promise<MemberRole | null>
   listMembers(workspaceId: string): Promise<Array<WorkspaceMember & { user: Pick<User, 'id' | 'email' | 'name' | 'image'> }>>
   upsertMember(workspaceId: string, userId: string, role: MemberRole): Promise<WorkspaceMember>
-  removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.WORKSPACE_PROVISIONING }>
+  removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
   listInvites(workspaceId: string): Promise<WorkspaceInvite[]>
   createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null): Promise<{ invite: WorkspaceInvite; rawToken: string }>
   getInvite(workspaceId: string, inviteId: string): Promise<WorkspaceInvite | null>

@@ -31,9 +31,6 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       createdAt: now,
       deletedAt: null,
       isDefault: opts?.isDefault ?? false,
-      machineId: null,
-      volumeId: null,
-      flyRegion: null,
     }
     this.workspaces.set(ws.id, ws)
     const memberKey = `${ws.id}:${userId}`
@@ -49,6 +46,8 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       spriteName: null,
       state: 'ready',
       lastError: null,
+      volumePath: null,
+      lastErrorOp: null,
       provisioningStep: null,
       stepStartedAt: null,
       updatedAt: now,
@@ -85,11 +84,9 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return updated
   }
 
-  async delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.WORKSPACE_PROVISIONING | typeof ERROR_CODES.NOT_FOUND }> {
+  async delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }> {
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND }
-    const runtime = this.runtimes.get(id)
-    if (runtime?.state === 'provisioning') return { removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING }
     ws.deletedAt = new Date().toISOString()
     this.workspaces.set(id, ws)
     return { removed: true }
@@ -155,12 +152,10 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return member
   }
 
-  async removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.WORKSPACE_PROVISIONING }> {
+  async removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }> {
     const key = `${workspaceId}:${userId}`
     const membership = this.members.get(key)
     if (!membership) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
-    const runtime = this.runtimes.get(workspaceId)
-    if (runtime?.state === 'provisioning') return { removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING }
     if (membership.role === 'owner') {
       let otherOwnerExists = false
       for (const m of this.members.values()) {
@@ -282,6 +277,8 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       spriteName: null,
       state: 'ready',
       lastError: null,
+      volumePath: null,
+      lastErrorOp: null,
       provisioningStep: null,
       stepStartedAt: null,
       updatedAt: now,

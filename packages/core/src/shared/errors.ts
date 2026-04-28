@@ -8,7 +8,6 @@ export const ERROR_CODES = {
   // Workspace membership
   NOT_MEMBER: 'not_member',
   LAST_OWNER: 'last_owner',
-  WORKSPACE_PROVISIONING: 'workspace_provisioning',
 
   // Invites
   INVITE_NOT_FOUND: 'invite_not_found',

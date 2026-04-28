@@ -20,9 +20,6 @@ export type Workspace = {
   createdAt: string
   deletedAt: string | null
   isDefault: boolean
-  machineId: string | null
-  volumeId: string | null
-  flyRegion: string | null
 }
 
 export type WorkspaceMember = {
@@ -48,8 +45,10 @@ export type WorkspaceRuntime = {
   workspaceId: string
   spriteUrl: string | null
   spriteName: string | null
-  state: 'pending' | 'provisioning' | 'ready' | 'error'
+  state: 'pending' | 'ready' | 'error'
   lastError: string | null
+  volumePath: string | null
+  lastErrorOp: string | null
   provisioningStep: string | null
   stepStartedAt: string | null
   updatedAt: string

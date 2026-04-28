@@ -2,7 +2,7 @@
 // Keep this as the single import point for drizzle.config.ts and migration tooling.
 export * from '../../../drizzle/schema.js'
 
-import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, boolean, uniqueIndex, check, customType } from 'drizzle-orm/pg-core'
+import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, integer, boolean, uniqueIndex, check, customType } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import { users } from '../../../drizzle/schema.js'
 
@@ -51,9 +51,6 @@ export const workspaces = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),
     isDefault: boolean('is_default').notNull().default(false),
-    machineId: text('machine_id'),
-    volumeId: text('volume_id'),
-    flyRegion: text('fly_region'),
   },
   (table) => [
     index('workspaces_created_by_idx').on(table.createdBy),
@@ -132,6 +129,8 @@ export const workspaceRuntimes = pgTable(
     spriteName: text('sprite_name'),
     state: text('state').notNull().default('pending'),
     lastError: text('last_error'),
+    volumePath: text('volume_path'),
+    lastErrorOp: text('last_error_op'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     provisioningStep: text('provisioning_step'),
     stepStartedAt: timestamp('step_started_at'),
@@ -139,7 +138,7 @@ export const workspaceRuntimes = pgTable(
   (table) => [
     check(
       'workspace_runtimes_state_check',
-      sql`${table.state} IN ('pending', 'provisioning', 'ready', 'error')`,
+      sql`${table.state} IN ('pending', 'ready', 'error')`,
     ),
   ],
 )
@@ -166,10 +165,10 @@ export const workspaceInvites = pgTable(
     email: text('email').notNull(),
     tokenHash: text('token_hash').notNull(),
     role: text('role').notNull(),
-    expiresAt: timestamp('expires_at')
-      .notNull()
-      .default(sql`now() + interval '7 days'`),
+    expiresAt: timestamp('expires_at').notNull(),
     acceptedAt: timestamp('accepted_at'),
+    failedAttempts: integer('failed_attempts').notNull().default(0),
+    lockedUntil: timestamp('locked_until'),
     createdBy: uuid('created_by').references(() => users.id, {
       onDelete: 'restrict',
     }),
@@ -197,4 +196,18 @@ export const workspaceInvitesRelations = relations(
       references: [users.id],
     }),
   }),
+)
+
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    key: text('key').primaryKey(),
+    scope: text('scope').notNull(),
+    responseStatus: integer('response_status').notNull(),
+    responseBody: jsonb('response_body').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idempotency_keys_created_at_idx').on(table.createdAt),
+  ],
 )

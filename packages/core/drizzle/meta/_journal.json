@@ -50,6 +50,13 @@
       "when": 1777207441386,
       "tag": "0006_happy_callisto",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777522800000,
+      "tag": "0007_v7_substrate",
+      "breakpoints": true
     }
   ]
 }
