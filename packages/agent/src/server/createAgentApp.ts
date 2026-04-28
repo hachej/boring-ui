@@ -5,10 +5,8 @@ import type { SessionStore } from '../shared/session'
 import { getEnv } from './config/env'
 import type { RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { standardCatalog } from './catalog/standardCatalog'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
-import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
 import { createAuthMiddleware } from './http/middleware'
@@ -77,10 +75,8 @@ export async function createAgentApp(
   // @boring/workspace/server's createWorkspaceAgentApp() instead of
   // createAgentApp() directly. Standalone agent (CLI, no workspace)
   // ships zero UI surface — smaller bundle, honest contract.
-  let tools: AgentTool[]
-
-  if (resolvedMode === 'direct' || resolvedMode === 'local') {
-    const pluginTools: AgentTool[] = []
+  const pluginTools: AgentTool[] = []
+  if (resolvedMode !== 'vercel-sandbox') {
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
     if (pluginResult.errors.length > 0) {
       for (const e of pluginResult.errors) {
@@ -90,39 +86,14 @@ export async function createAgentApp(
     for (const plugin of pluginResult.plugins) {
       pluginTools.push(...plugin.tools)
     }
-
-    tools = [
-      ...buildHarnessAgentTools(runtimeBundle),
-      ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
-      ...(opts.extraTools ?? []),
-      ...pluginTools,
-    ]
-  } else {
-    const standardTools = standardCatalog(runtimeBundle)
-    const pluginTools: PluginToolRegistration[] = []
-
-    if (resolvedMode !== 'vercel-sandbox') {
-      const pluginResult = await loadPlugins({ cwd: workspaceRoot })
-      if (pluginResult.errors.length > 0) {
-        for (const e of pluginResult.errors) {
-          app.log.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
-        }
-      }
-      pluginTools.push(
-        ...pluginResult.plugins.map((plugin) => ({
-          pluginName: pluginNameFromPath(plugin.path),
-          tools: plugin.tools,
-        })),
-      )
-    }
-
-    tools = mergeTools({
-      standardTools,
-      extraTools: opts.extraTools,
-      pluginTools,
-      logger: app.log,
-    })
   }
+
+  const tools: AgentTool[] = [
+    ...buildHarnessAgentTools(runtimeBundle),
+    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
+    ...(opts.extraTools ?? []),
+    ...pluginTools,
+  ]
 
   const harness = createPiCodingAgentHarness({
     tools,
