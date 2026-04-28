@@ -1,8 +1,84 @@
 # Command palette: generic command + search registry
 
-**Status:** review v2 (folds in codex + gemini feedback + user decisions)
+**Status:** review v3 (factory pattern + shell auto-registration locked in)
 **Owners:** workspace
 **Last updated:** 2026-04-28
+
+## v3 lock-ins (supersede earlier sections where they conflict)
+
+After codex + gemini reviews and three rounds of grilling, the final
+shape is:
+
+1. **Catalogs are composed via factories, not auto-magic defaults.**
+   `@boring/workspace` exports `createFilesCatalog`,
+   `createSessionsCatalog`, etc. Hosts pass them through
+   `<WorkspaceProvider catalogs={[…]}>`. There is no `onOpenFile`
+   prop on WorkspaceProvider, no slot config, no auto-mount of
+   built-ins from a host-passed shape. Each factory takes
+   `onSelect` (the host-specific intent) plus optional overrides
+   (`paletteLimit`, `paletteIcon`, `label`, `order`).
+
+   ```tsx
+   <WorkspaceProvider catalogs={[
+     createFilesCatalog({
+       onSelect: (row) => surface.openPanel({
+         id: row.id, component: "code-editor", params: { path: row.id },
+       }),
+     }),
+     // host's own domain catalogs:
+     createReportsCatalog({ … }),
+   ]}>
+   ```
+
+2. **Components like `<ChatCenteredShell />` AUTO-REGISTER their own
+   catalogs and commands internally** (no new shell props). When the
+   shell receives `sessions` + `onSwitchSession`, it calls
+   `useCatalogRegistry().register(createSessionsCatalog({sessions,
+   onSelect: onSwitchSession}))` internally. When mounted, it
+   registers `toggleDrawer` / `toggleWorkbench` / `newChat` via
+   `useCommandRegistry()`.
+
+   Sessions "just work" from the shell; the host wires nothing
+   extra at the catalog level.
+
+3. **Late-wins-on-id is the universal override.** A host that wants
+   different palette limit / icon / behavior for ANY catalog
+   (including a shell-auto-registered one) registers a catalog with
+   the same `id` on `WorkspaceProvider`. The registry's
+   late-wins-on-id rule replaces the inner registration. Same
+   mechanism works for built-in catalogs, shell-internal catalogs,
+   and any future contribution.
+
+   ```tsx
+   <WorkspaceProvider catalogs={[
+     createSessionsCatalog({
+       sessions, onSelect: customSwitcher,
+       paletteLimit: 20,        // override default 5
+       paletteIcon: <CustomIcon />,
+     }),
+   ]}>
+     <ChatCenteredShell sessions={sessions} onSwitchSession={customSwitcher} />
+   </WorkspaceProvider>
+   // Shell tries to register id:"sessions"; host's wins.
+   ```
+
+4. **Factories ARE the public API for advanced composition.** Both
+   user decisions from grilling rounds — "auto-register" and
+   "exported factories" — are the same thing under this shape:
+   factories are exported, hosts use them, late-wins-on-id is the
+   override.
+
+5. **Recent dropped from v2 stays dropped.** Typed Recent entries
+   ({kind, id, title, lastOpenedAt}); legacy `string[]` and
+   `"cmd:foo"` entries dropped on migration; ⌘Enter / async
+   onSelect deferred; commands stay `>`-only.
+
+The detailed sections below describe the full design; where they
+mention `onOpenFile`, "auto-mount built-ins", "default Files
+catalog", or any other shape that conflicts with the lock-ins above,
+the lock-ins win.
+
+
 
 ## What changed in v2
 
