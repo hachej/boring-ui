@@ -5,6 +5,11 @@
 // Consumers should NEVER need deep imports.
 // ---------------------------------------------------------------------------
 
+// Plugin model
+export { definePlugin, PluginError } from "./plugin"
+export type { PluginErrorKind } from "./plugin"
+export type { Plugin, CatalogConfig } from "./plugin"
+
 // Utility
 export { cn } from "./lib/utils"
 

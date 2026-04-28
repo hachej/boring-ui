@@ -33,11 +33,12 @@ interface PanelConfigBase {
   id: string
   title: string
   icon?: ComponentType<{ className?: string }>
-  placement?: "left" | "center" | "right" | "bottom"
+  placement?: "left" | "center" | "right" | "bottom" | "left-tab" | "right-tab"
   filePatterns?: string[]
   requiresCapabilities?: string[]
   essential?: boolean
   source?: "builtin" | "app"
+  pluginId?: string
 }
 
 export interface SyncPanelConfig<T = unknown> extends PanelConfigBase {
@@ -88,6 +89,7 @@ export interface CommandConfig {
   run: () => void
   shortcut?: string
   when?: () => boolean
+  pluginId?: string
 }
 
 export type PanelRegistryType = import("./PanelRegistry").PanelRegistry
