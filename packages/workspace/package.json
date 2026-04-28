@@ -38,6 +38,7 @@
     "build": "tsup && vite build && node ./scripts/assert-build-artifacts.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
+    "eval": "tsx ./scripts/eval.ts",
     "lint": "pnpm run typecheck"
   },
   "peerDependencies": {

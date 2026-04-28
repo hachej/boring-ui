@@ -1,0 +1,127 @@
+# Eval suite for @boring/workspace's UI tools (exec_ui, get_ui_state).
+#
+# Catches regressions in the open-vs-read boundary and the exec_ui
+# command-kind dispatch. The bare agent suite (packages/agent/eval/
+# standard-tools.yaml) covers read/write/edit/bash/find_files; this
+# suite covers what workspace adds on top.
+#
+# Run:  ANTHROPIC_API_KEY=… pnpm --filter @boring/workspace eval
+# Reqs: ANTHROPIC_API_KEY in env.
+#
+# Why a separate suite from the agent package: workspace owns the
+# uiTools.ts surface (kinds, params, descriptions). Workspace prompt
+# regressions are workspace's bug to catch.
+
+model: claude-haiku-4-5-20251001
+systemPrompt: |
+  You are a workspace assistant. The user is interacting with an IDE-like
+  workspace that has a chat panel on the left and a tabbed editor pane on
+  the right. You can open files into the editor, navigate the file tree,
+  show notifications, read file contents, and run shell commands. Use the
+  appropriate tool for each user request directly — do not ask for
+  clarification on simple, unambiguous prompts.
+
+defaults:
+  retries: 1
+  timeoutMs: 60000
+
+prompts:
+  # ---- exec_ui openFile boundary ----------------------------------------
+  - prompt: open README.md
+    expect:
+      tool: exec_ui
+      params:
+        kind: openFile
+        params:
+          path: README.md
+
+  - prompt: open foo.ts in a new tab
+    expect:
+      tool: exec_ui
+      params:
+        kind: openFile
+        params:
+          path: foo.ts
+
+  - prompt: open greeter.ts in edit mode
+    expect:
+      tool: exec_ui
+      params:
+        kind: openFile
+        params:
+          path: greeter.ts
+          mode: edit
+
+  # ---- read vs openFile boundary ----------------------------------------
+  # "what does it say" / "show me the contents" should use the read tool,
+  # not exec_ui openFile. This is the most common regression: a prompt
+  # change that nudges the LLM toward exec_ui for everything.
+  - prompt: what does README.md say?
+    expect:
+      tool: read
+      params:
+        path: README.md
+
+  - prompt: show me the contents of greeter.ts
+    expect:
+      tool: read
+      params:
+        path: greeter.ts
+
+  # ---- navigateToLine ---------------------------------------------------
+  - prompt: navigate to line 42 of foo.ts
+    expectFirst:
+      tool: exec_ui
+      params:
+        kind: navigateToLine
+        params:
+          file: foo.ts
+          line: 42
+
+  - prompt: jump to line 7 in greeter.ts
+    expectFirst:
+      tool: exec_ui
+      params:
+        kind: navigateToLine
+        params:
+          file: greeter.ts
+          line: 7
+
+  # ---- showNotification --------------------------------------------------
+  - prompt: show a warning notification that says "unsaved changes"
+    expect:
+      tool: exec_ui
+      params:
+        kind: showNotification
+        params:
+          msg: !EvalRegex "unsaved changes"
+          level: warn
+
+  # ---- expandToFile (file tree navigation) -------------------------------
+  - prompt: expand the file tree to reveal package.json
+    expect:
+      tool: exec_ui
+      params:
+        kind: expandToFile
+        params:
+          path: package.json
+
+  # ---- multi-call: open AND describe ------------------------------------
+  # "Open the file and tell me about it" should produce both an exec_ui
+  # openFile (so the user sees it in the editor) AND a read (so the
+  # assistant can comment on its content). Order is not asserted —
+  # someCallMatches lets either one come first.
+  - prompt: open README.md and tell me what it contains
+    expect:
+      - tool: exec_ui
+        params:
+          kind: openFile
+          params:
+            path: README.md
+      - tool: read
+        params:
+          path: README.md
+
+  # ---- pure knowledge: no tool call --------------------------------------
+  - prompt: what is 7 times 6?
+    expectNoToolCall: true
