@@ -69,7 +69,14 @@ export class FetchClient {
         }
 
         if (!res.ok) {
-          throw new FetchError(res.status, `HTTP ${res.status}: ${res.statusText}`)
+          // Parse the body so structured errors (e.g. 409 OCC payloads
+          // carrying `currentMtimeMs`) can be inspected by callers.
+          const parsed = await safeJson(res)
+          throw new FetchError(
+            res.status,
+            `HTTP ${res.status}: ${res.statusText}`,
+            parsed,
+          )
         }
 
         return (await res.json()) as T
@@ -110,8 +117,35 @@ export class FetchClient {
     return this.request<FileContent>("GET", `/api/v1/files?path=${encodeURIComponent(path)}`)
   }
 
-  async writeFile(path: string, content: string): Promise<void> {
-    await this.request<void>("POST", "/api/v1/files", { path, content })
+  /**
+   * Write file content. When `expectedMtimeMs` is supplied, the server
+   * runs an optimistic-concurrency check and returns 409 if the file
+   * has been modified since that mtime — surfaced here as a typed
+   * `FileConflictError` so the editor can ask the user to reload or
+   * force-overwrite. The returned `mtimeMs` is the server's stat
+   * after the write; callers use it as the OCC baseline for the
+   * next save.
+   */
+  async writeFile(
+    path: string,
+    content: string,
+    opts?: { expectedMtimeMs?: number },
+  ): Promise<{ mtimeMs?: number }> {
+    try {
+      const res = await this.request<{ ok: boolean; mtimeMs?: number }>(
+        "POST",
+        "/api/v1/files",
+        opts?.expectedMtimeMs != null
+          ? { path, content, expectedMtimeMs: opts.expectedMtimeMs }
+          : { path, content },
+      )
+      return { mtimeMs: res.mtimeMs }
+    } catch (err) {
+      if (err instanceof FetchError && err.status === 409) {
+        throw FileConflictError.from(err, path)
+      }
+      throw err
+    }
   }
 
   async deleteFile(path: string): Promise<void> {
@@ -142,8 +176,47 @@ export class FetchError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly body?: unknown,
   ) {
     super(message)
     this.name = "FetchError"
+  }
+}
+
+/**
+ * Thrown by `writeFile` when the server returns 409 because the file
+ * has been modified since the client's last read. Carries the
+ * server's current mtime so the editor can show the user a
+ * Reload-vs-Overwrite choice with the actual conflict context.
+ */
+export class FileConflictError extends Error {
+  constructor(
+    public readonly path: string,
+    public readonly currentMtimeMs: number | null,
+    public readonly expectedMtimeMs: number | null,
+  ) {
+    super(`File modified on server: ${path}`)
+    this.name = "FileConflictError"
+  }
+
+  static from(err: FetchError, path: string): FileConflictError {
+    const body = (err.body && typeof err.body === "object" ? err.body : null) as
+      | { error?: { currentMtimeMs?: number; expectedMtimeMs?: number } }
+      | null
+    return new FileConflictError(
+      path,
+      typeof body?.error?.currentMtimeMs === "number" ? body.error.currentMtimeMs : null,
+      typeof body?.error?.expectedMtimeMs === "number" ? body.error.expectedMtimeMs : null,
+    )
+  }
+}
+
+async function safeJson(res: Response): Promise<unknown> {
+  try {
+    const text = await res.text()
+    if (!text) return null
+    return JSON.parse(text)
+  } catch {
+    return null
   }
 }

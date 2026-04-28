@@ -63,11 +63,16 @@ export function useEditorLifecycle(
         setLastSavedAt(Date.now())
         setIsDirty(false)
         onDirtyChangeRef.current?.(path, false)
+      } catch {
+        // Save failed (e.g. OCC conflict). The adapter is responsible
+        // for surfacing the failure to the user — we keep the dirty
+        // flag set so a subsequent edit / explicit save retries.
+        // Swallowing here prevents an unhandled-rejection from the
+        // setTimeout-driven scheduleSave path.
       } finally {
         // Always signal save:end so consumers (e.g. tab spinner) clear
         // their pending UI even when save throws. Error semantics live
-        // on the underlying mutation's error channel — re-add ok/error
-        // to this event when an actual consumer needs them.
+        // on the adapter's own UI surface.
         events.emit("editor:save:end", { panelId })
         setIsSaving(false)
         saveInFlightRef.current = null

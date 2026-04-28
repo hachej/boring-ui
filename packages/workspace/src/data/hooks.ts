@@ -3,7 +3,6 @@
 import {
   useQuery,
   useMutation,
-  useQueryClient,
   type UseQueryResult,
   type UseMutationResult,
 } from "@tanstack/react-query"
@@ -77,33 +76,45 @@ export function useFileSearch(
   })
 }
 
-export function useFileWrite(): UseMutationResult<void, Error, { path: string; content: string }> {
+export interface FileWriteVariables {
+  path: string
+  content: string
+  /**
+   * Read-time mtime baseline for optimistic concurrency. When
+   * supplied, the server returns 409 (surfaced as `FileConflictError`)
+   * if the file has changed since. Omit to force-overwrite.
+   */
+  expectedMtimeMs?: number
+}
+
+export interface FileWriteResult {
+  /** Server stat after the write — the next save's OCC baseline. */
+  mtimeMs?: number
+}
+
+export function useFileWrite(): UseMutationResult<FileWriteResult, Error, FileWriteVariables> {
   const client = useDataClient()
-  const base = useApiBaseUrl()
-  const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ path, content }) => client.writeFile(path, content),
+    mutationFn: ({ path, content, expectedMtimeMs }) =>
+      client.writeFile(path, content, expectedMtimeMs != null ? { expectedMtimeMs } : undefined),
     onSuccess: (_, { path }) => {
-      qc.invalidateQueries({ queryKey: [base, "files", path] })
-      qc.invalidateQueries({ queryKey: [base, "tree"] })
-      qc.invalidateQueries({ queryKey: [base, "stat", path] })
-      qc.invalidateQueries({ queryKey: [base, "search"] })
-      // We can't tell create-vs-edit from the mutation alone, so consumers
-      // wanting "created" emits do it themselves at the call site (see
-      // FileTreeView.handleSubmitEdit). Plain edits don't need an event
-      // since the file's identity didn't change.
+      // Single source of truth: emit onto the bus, the centralized
+      // invalidator (`useFileEventInvalidation`) handles cache
+      // invalidation. We can't tell create-vs-edit from the mutation
+      // alone, so consumers wanting "created" emits do it themselves
+      // at the call site (see FileTreeView.handleSubmitEdit). Plain
+      // edits emit `file:changed` — file identity didn't change.
+      events.emit("file:changed", { ...userMeta(), path })
     },
   })
 }
 
 export function useCreateDir(): UseMutationResult<void, Error, { path: string }> {
   const client = useDataClient()
-  const base = useApiBaseUrl()
-  const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ path }) => client.createDir(path),
     onSuccess: (_, { path }) => {
-      qc.invalidateQueries({ queryKey: [base, "tree"] })
+      // Bus emit only — `useFileEventInvalidation` runs the cache invalidation.
       events.emit("file:created", { ...userMeta(), path, kind: "dir" })
     },
   })
@@ -111,17 +122,9 @@ export function useCreateDir(): UseMutationResult<void, Error, { path: string }>
 
 export function useMoveFile(): UseMutationResult<void, Error, { from: string; to: string }> {
   const client = useDataClient()
-  const base = useApiBaseUrl()
-  const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ from, to }) => client.moveFile(from, to),
     onSuccess: (_, { from, to }) => {
-      qc.invalidateQueries({ queryKey: [base, "tree"] })
-      qc.invalidateQueries({ queryKey: [base, "files", from] })
-      qc.invalidateQueries({ queryKey: [base, "files", to] })
-      qc.invalidateQueries({ queryKey: [base, "stat", from] })
-      qc.invalidateQueries({ queryKey: [base, "stat", to] })
-      qc.invalidateQueries({ queryKey: [base, "search"] })
       events.emit("file:moved", { ...userMeta(), from, to })
     },
   })
@@ -129,15 +132,9 @@ export function useMoveFile(): UseMutationResult<void, Error, { from: string; to
 
 export function useDeleteFile(): UseMutationResult<void, Error, { path: string }> {
   const client = useDataClient()
-  const base = useApiBaseUrl()
-  const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ path }) => client.deleteFile(path),
     onSuccess: (_, { path }) => {
-      qc.invalidateQueries({ queryKey: [base, "tree"] })
-      qc.invalidateQueries({ queryKey: [base, "files", path] })
-      qc.invalidateQueries({ queryKey: [base, "stat", path] })
-      qc.invalidateQueries({ queryKey: [base, "search"] })
       events.emit("file:deleted", { ...userMeta(), path })
     },
   })

@@ -18,6 +18,16 @@
 export type Origin =
   | { cause: "user" }
   | { cause: "agent"; toolCallId: string }
+  /**
+   * Anything observed via the server-side fs watcher: a collaborator
+   * editing the same workspace, a git pull, an external editor, the
+   * agent in another tab. Carries the tool call id ONLY when the
+   * server can attribute the change (sandbox emits its own writes
+   * with attribution; chokidar can't). Consumers that want to
+   * suppress UX side-effects on self-echo compare `actorClientId` (a
+   * future field) against their own.
+   */
+  | { cause: "remote"; toolCallId?: string }
 
 /** Common envelope on every payload. */
 export type EventMeta = Origin & { ts: number }
@@ -31,6 +41,12 @@ export function agentMeta(
   toolCallId: string,
 ): { cause: "agent"; toolCallId: string; ts: number } {
   return { cause: "agent", toolCallId, ts: Date.now() }
+}
+
+export function remoteMeta(
+  toolCallId?: string,
+): { cause: "remote"; toolCallId?: string; ts: number } {
+  return { cause: "remote", toolCallId, ts: Date.now() }
 }
 
 /**

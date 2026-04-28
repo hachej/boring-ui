@@ -12,7 +12,7 @@ import type { WorkspaceEventMap } from "./types"
 
 export const events = createEventBus<WorkspaceEventMap>()
 
-export { userMeta, agentMeta } from "./types"
+export { userMeta, agentMeta, remoteMeta } from "./types"
 export type {
   Origin,
   EventMeta,

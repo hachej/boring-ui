@@ -95,8 +95,10 @@ function resolvePanelForPath(
   path: string,
   registry: { resolve: (p: string) => { id: string } | undefined; has: (id: string) => boolean },
 ): string {
-  const filename = path.split("/").pop() ?? path
-  const resolved = registry.resolve(filename)
+  // Try the full path first so directory-scoped patterns (e.g. `deck/*.md`)
+  // can win over a generic `*.md`. Fall back to basename for hosts whose
+  // registries only declare bare extension patterns.
+  const resolved = registry.resolve(path) ?? registry.resolve(path.split("/").pop() ?? path)
   if (resolved) return resolved.id
   const fallback = fallbackComponentForPath(path)
   if (registry.has(fallback)) return fallback

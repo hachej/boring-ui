@@ -100,6 +100,21 @@ export function uiRoutes(
       `event: init\ndata: ${JSON.stringify({ v: UI_BRIDGE_PROTOCOL_VERSION })}\n\n`,
     );
 
+    // Drain any commands queued BEFORE this subscriber connected. Without
+    // this, a command posted in the gap between page-reload and EventSource-
+    // reconnect is silently dropped: postCommand broadcasts to the (empty)
+    // subscriber set, the message lands in pendingCommands, and the next
+    // subscriber only sees future broadcasts. Tests that bootClean → POST
+    // openPanel hit this race when Vite is cold.
+    if (bridge.drainCommands) {
+      const queued = await bridge.drainCommands();
+      for (const cmd of queued) {
+        reply.raw.write(
+          `event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`,
+        );
+      }
+    }
+
     const unsub = bridge.subscribeCommands((cmd) => {
       reply.raw.write(`event: command\ndata: ${JSON.stringify(encodeCommand(cmd))}\n\n`);
     });

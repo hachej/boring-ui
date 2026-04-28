@@ -1,12 +1,10 @@
 "use client"
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronLeft, Database, FolderTree, Search, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
-import { useFileList, useDataClient } from "../../data"
-import type { FileEntry } from "../../data/types"
-import type { FileTreeNode } from "../FileTree"
+import { FileTreeView } from "../FileTreeView"
 import { DataExplorer } from "../DataExplorer/DataExplorer"
 import { createSourcesAdapter, type SourceEntry } from "../DataExplorer/adapters"
 import type {
@@ -33,10 +31,6 @@ export type DataPaneConfig = {
   emptyState?: React.ReactNode
 }
 
-const FileTree = lazy(() =>
-  import("../FileTree").then((m) => ({ default: m.FileTree })),
-)
-
 export type WorkbenchLeftTab = "files" | "data"
 
 export interface WorkbenchLeftPaneProps {
@@ -49,28 +43,6 @@ export interface WorkbenchLeftPaneProps {
   defaultTab?: WorkbenchLeftTab
   onCollapse?: () => void
   className?: string
-}
-
-function buildTree(
-  entries: FileEntry[],
-  childrenByDir: Map<string, FileEntry[]>,
-): FileTreeNode[] {
-  const dirs: FileTreeNode[] = []
-  const files: FileTreeNode[] = []
-  for (const entry of entries) {
-    if (entry.kind === "dir") {
-      const children = childrenByDir.get(entry.path)
-      dirs.push({
-        ...entry,
-        children: children ? buildTree(children, childrenByDir) : [],
-      })
-    } else {
-      files.push({ ...entry })
-    }
-  }
-  dirs.sort((a, b) => a.name.localeCompare(b.name))
-  files.sort((a, b) => a.name.localeCompare(b.name))
-  return [...dirs, ...files]
 }
 
 export function WorkbenchLeftPane({
@@ -98,30 +70,6 @@ export function WorkbenchLeftPane({
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus()
   }, [searchOpen])
-
-  const dataClient = useDataClient()
-  const { data: fileList } = useFileList(rootDir)
-  const [expandedChildren, setExpandedChildren] = useState<Map<string, FileEntry[]>>(new Map())
-
-  const handleExpand = useCallback(
-    async (dirPath: string) => {
-      try {
-        const children = await dataClient.getTree(dirPath)
-        setExpandedChildren((prev) => new Map(prev).set(dirPath, children))
-      } catch {}
-    },
-    [dataClient],
-  )
-
-  const treeData = useMemo(
-    () => buildTree(fileList ?? [], expandedChildren),
-    [fileList, expandedChildren],
-  )
-
-  const handleSelect = useCallback(
-    (path: string) => bridge?.openFile(path, { mode: "edit" }),
-    [bridge],
-  )
 
   const toggleSearch = useCallback(() => {
     setSearchOpen((s) => {
@@ -224,15 +172,12 @@ export function WorkbenchLeftPane({
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "files" ? (
-          <Suspense fallback={<LoadingFallback />}>
-            <FileTree
-              files={treeData}
-              searchQuery={debouncedQuery || undefined}
-              onSelect={handleSelect}
-              onExpand={handleExpand}
-              className="px-1 pt-1 [&_[role=treeitem]]:!indent-0"
-            />
-          </Suspense>
+          <FileTreeView
+            rootDir={rootDir}
+            searchQuery={debouncedQuery || undefined}
+            bridge={bridge}
+            className="px-1 pt-1 [&_[role=treeitem]]:!indent-0"
+          />
         ) : data ? (
           <DataExplorerWithConfig config={data} query={debouncedQuery} />
         ) : (
@@ -323,10 +268,3 @@ function DataExplorerForSources({ sources, query }: { sources: DataSource[]; que
   )
 }
 
-function LoadingFallback() {
-  return (
-    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      <span className="animate-pulse">Loading…</span>
-    </div>
-  )
-}

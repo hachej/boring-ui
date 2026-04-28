@@ -1,20 +1,29 @@
 "use client"
 
-import { forwardRef, useContext, useImperativeHandle, useRef } from "react"
-import {
-  ArrowUpRight,
-  BookOpen,
-  Code2,
-  FileSearch,
-  SendHorizontal,
-  Wand2,
-} from "lucide-react"
+import { forwardRef, useImperativeHandle, useRef } from "react"
+import { SendHorizontal } from "lucide-react"
+import { ChatEmptyState, defaultChatSuggestions, type ChatSuggestion } from "@boring/agent/ui-shadcn"
 import { cn } from "../../lib/utils"
 
 export interface ChatStagePlaceholderProps {
   sessionTitle?: string
   sessionId?: string
   appTitle?: string
+  /** Eyebrow above the headline. Defaults to "New session". */
+  eyebrow?: string
+  /** Headline. Defaults to "What are we building?". */
+  title?: string
+  /** Description under the headline. */
+  description?: string
+  /** Suggestion cards. Defaults to `defaultChatSuggestions`. Pass `[]` to hide. */
+  suggestions?: ChatSuggestion[]
+  /**
+   * Click handler for suggestion cards. The placeholder is shown when there
+   * is no active session, so the host typically wires this to "create a
+   * session, then send the prompt" — without a wired handler the cards are
+   * just visual.
+   */
+  onSelectSuggestion?: (suggestion: ChatSuggestion) => void
   className?: string
 }
 
@@ -22,15 +31,18 @@ export interface ChatStageHandle {
   focusComposer: () => void
 }
 
-const PROMPT_SUGGESTIONS = [
-  { label: "Summarize the README", hint: "Read the docs and distill.", Icon: BookOpen },
-  { label: "Explain this codebase", hint: "Walk me through the architecture.", Icon: FileSearch },
-  { label: "Write a Python script", hint: "Scaffold a new file end-to-end.", Icon: Code2 },
-  { label: "Refactor a function", hint: "Clean up, no behavior change.", Icon: Wand2 },
-]
-
 export const ChatStagePlaceholder = forwardRef<ChatStageHandle, ChatStagePlaceholderProps>(
-  function ChatStagePlaceholder({ className }, ref) {
+  function ChatStagePlaceholder(
+    {
+      className,
+      eyebrow,
+      title,
+      description,
+      suggestions = defaultChatSuggestions,
+      onSelectSuggestion,
+    },
+    ref,
+  ) {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
 
     useImperativeHandle(ref, () => ({
@@ -43,46 +55,14 @@ export const ChatStagePlaceholder = forwardRef<ChatStageHandle, ChatStagePlaceho
       <div className={cn("relative flex h-full min-h-0 flex-col bg-background", className)}>
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto flex h-full w-full max-w-[640px] flex-col justify-end px-6 pb-8 pt-16">
-            <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              <span className="inline-block h-px w-4 bg-[color:var(--accent)]" aria-hidden="true" />
-              New session
-            </div>
-            <h3 className="mt-3 text-[34px] font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
-              What are we building?
-            </h3>
-            <p className="mt-3 max-w-[440px] text-[14px] leading-relaxed text-muted-foreground">
-              Ask a question, open a file from the workbench, or start from a template.
-            </p>
-            <div className="mt-8 grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 sm:grid-cols-2">
-              {PROMPT_SUGGESTIONS.map(({ label, hint, Icon }) => (
-                <button
-                  key={label}
-                  type="button"
-                  className={cn(
-                    "group flex items-start gap-3 bg-background px-4 py-3.5 text-left",
-                    "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                    "hover:bg-[color:var(--accent-soft)]",
-                    "focus-visible:outline-none focus-visible:bg-[color:var(--accent-soft)]",
-                  )}
-                >
-                  <Icon
-                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[color:var(--accent)]"
-                    strokeWidth={1.75}
-                  />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-[13px] font-medium text-foreground">{label}</span>
-                    <span className="truncate text-[12px] text-muted-foreground">{hint}</span>
-                  </span>
-                  <ArrowUpRight
-                    className={cn(
-                      "mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                      "group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100 group-hover:text-[color:var(--accent)]",
-                    )}
-                    strokeWidth={2}
-                  />
-                </button>
-              ))}
-            </div>
+            <ChatEmptyState
+              eyebrow={eyebrow}
+              title={title}
+              description={description}
+              suggestions={suggestions}
+              onSelect={onSelectSuggestion}
+              className="px-0 pt-0 pb-0"
+            />
           </div>
         </div>
 

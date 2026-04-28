@@ -10,6 +10,8 @@
  * registers these factories), or pass the result of `createWorkspaceUiTools`
  * via `createAgentApp({ extraTools })` if they prefer hand-wiring.
  */
+import { access } from "node:fs/promises"
+import { resolve, isAbsolute, relative } from "node:path"
 import type { AgentTool, ToolResult } from "@boring/agent/shared"
 import type { UiBridge, UiCommand } from "../shared/ui-bridge"
 
@@ -17,6 +19,56 @@ function makeError(message: string): ToolResult {
   return {
     content: [{ type: "text", text: message }],
     isError: true,
+  }
+}
+
+export interface ExecUiToolOptions {
+  /**
+   * Workspace root used to validate paths in path-bearing commands
+   * (`openFile`, `expandToFile`, `navigateToLine`). When provided, the
+   * tool stat-checks the resolved path before queueing the UI command and
+   * returns an error to the agent if the file is missing or escapes the
+   * root — so the model gets immediate feedback instead of the frontend
+   * silently no-op'ing on a wrong path. When omitted, paths are passed
+   * through unvalidated (back-compat for callers without server-side
+   * filesystem access).
+   */
+  workspaceRoot?: string
+}
+
+const PATH_BEARING_KINDS = new Set(["openFile", "expandToFile", "navigateToLine"])
+
+function getPathParam(kind: string, params: Record<string, unknown>): string | undefined {
+  const raw = kind === "navigateToLine" ? params.file : params.path
+  return typeof raw === "string" && raw.length > 0 ? raw : undefined
+}
+
+async function validatePath(
+  workspaceRoot: string,
+  relPath: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (isAbsolute(relPath)) {
+    return {
+      ok: false,
+      reason: `path "${relPath}" is absolute — pass a path relative to the workspace root (${workspaceRoot}).`,
+    }
+  }
+  const resolved = resolve(workspaceRoot, relPath)
+  const rel = relative(workspaceRoot, resolved)
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    return {
+      ok: false,
+      reason: `path "${relPath}" escapes the workspace root (${workspaceRoot}).`,
+    }
+  }
+  try {
+    await access(resolved)
+    return { ok: true }
+  } catch {
+    return {
+      ok: false,
+      reason: `file not found at "${relPath}" (relative to workspace root ${workspaceRoot}). Try find_files or grep to locate the file before retrying openFile.`,
+    }
   }
 }
 
@@ -59,16 +111,45 @@ export function createGetUiStateTool(uiBridge: UiBridge): AgentTool {
   }
 }
 
-export function createExecUiTool(uiBridge: UiBridge): AgentTool {
+export function createExecUiTool(
+  uiBridge: UiBridge,
+  opts: ExecUiToolOptions = {},
+): AgentTool {
+  const { workspaceRoot } = opts
   return {
     name: "exec_ui",
     description: [
       "Execute a UI command in the workspace. Use this to open files, panels,",
-      "navigate to lines, or show notifications. Supported `kind` values:",
+      "navigate to lines, or show notifications.",
+      "",
+      "CRITICAL: When the user asks for a concrete UI action (open/show/",
+      "focus/navigate), execute it immediately via exec_ui. Do not ask a",
+      "confirmation question first unless the target is genuinely ambiguous",
+      "or unsafe.",
+      "",
+      "CRITICAL: When the user asks to open / show / display / navigate to a",
+      "file, ALWAYS call exec_ui openFile. Never skip the call based on",
+      "conversation history OR get_ui_state output — even if openTabs already",
+      "lists the file. State can drift (the user may have closed the tab,",
+      "the persisted state may be stale, the tab may not be focused). Calling",
+      "openFile when the file is already open is idempotent: it focuses the",
+      "tab. Saying \"already opened\" without calling the tool is a bug — the",
+      "user explicitly requested an action; honor it.",
+      "",
+      "Supported `kind` values:",
       "",
       "  openFile     params: { path: string, mode?: 'view'|'edit'|'diff' }",
       "               — Open a file in the workbench. The workbench pane",
-      "                 auto-opens if collapsed.",
+      "                 auto-opens if collapsed. Path must be relative to the",
+      "                 workspace root (e.g. `src/foo.ts`, not `foo.ts` if it",
+      "                 lives under src/).",
+      "                 Recovery on file-not-found: this tool stat-checks the",
+      "                 path server-side and returns an error if it doesn't",
+      "                 exist. On that error, immediately call find_files (or",
+      "                 grep_files) to locate the file, then call exec_ui",
+      "                 openFile AGAIN using the EXACT path returned — don't",
+      "                 give up and don't switch to the read tool. Repeat",
+      "                 until openFile succeeds or no candidate is found.",
       "                 Example: {kind:'openFile', params:{path:'README.md'}}",
       "",
       "  openPanel    params: { id: string, component: string,",
@@ -129,11 +210,26 @@ export function createExecUiTool(uiBridge: UiBridge): AgentTool {
         return makeError("params must be an object when provided")
       }
 
-      try {
-        const command: UiCommand = {
-          kind,
-          params: (params as Record<string, unknown> | undefined) ?? {},
+      const cmdParams = (params as Record<string, unknown> | undefined) ?? {}
+
+      // Validate path-bearing kinds against the workspace root so the agent
+      // gets immediate feedback when a path is wrong, rather than the
+      // frontend silently no-op'ing on a missing file.
+      if (workspaceRoot && PATH_BEARING_KINDS.has(kind)) {
+        const relPath = getPathParam(kind, cmdParams)
+        if (!relPath) {
+          return makeError(
+            `${kind}: ${kind === "navigateToLine" ? "file" : "path"} param is required`,
+          )
         }
+        const check = await validatePath(workspaceRoot, relPath)
+        if (!check.ok) {
+          return makeError(check.reason)
+        }
+      }
+
+      try {
+        const command: UiCommand = { kind, params: cmdParams }
         const result = await uiBridge.postCommand(command)
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
@@ -160,6 +256,9 @@ export function createExecUiTool(uiBridge: UiBridge): AgentTool {
  *   })
  *   await app.register(uiRoutes, { bridge })
  */
-export function createWorkspaceUiTools(uiBridge: UiBridge): AgentTool[] {
-  return [createGetUiStateTool(uiBridge), createExecUiTool(uiBridge)]
+export function createWorkspaceUiTools(
+  uiBridge: UiBridge,
+  opts: ExecUiToolOptions = {},
+): AgentTool[] {
+  return [createGetUiStateTool(uiBridge), createExecUiTool(uiBridge, opts)]
 }

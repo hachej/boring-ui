@@ -3,6 +3,8 @@
 import { createContext, useContext, useMemo, useRef, type ReactNode } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { FetchClient } from "./fetchClient"
+import { useFileEventInvalidation } from "./useFileEventInvalidation"
+import { useFileEventStream } from "./useFileEventStream"
 
 interface DataProviderProps {
   apiBaseUrl: string
@@ -53,9 +55,26 @@ export function DataProvider({
     <QueryClientProvider client={queryClientRef.current}>
       <ApiBaseUrlContext.Provider value={apiBaseUrl}>
         <FetchClientContext.Provider value={client}>
+          <FileEventInvalidationMount />
           {children}
         </FetchClientContext.Provider>
       </ApiBaseUrlContext.Provider>
     </QueryClientProvider>
   )
+}
+
+/**
+ * Side-effect-only child that wires the workspace's two file-event
+ * pipelines:
+ *   1. SSE stream from /api/v1/fs/events → emit onto workspace bus
+ *      with cause:"remote".
+ *   2. Bus `file:*` subscriber → React Query invalidation.
+ *
+ * Mounted as a sibling of `children` so the subscriptions run whether
+ * or not consumers render any file-aware UI.
+ */
+function FileEventInvalidationMount() {
+  useFileEventInvalidation()
+  useFileEventStream()
+  return null
 }

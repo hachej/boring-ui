@@ -6,6 +6,14 @@ export interface FileEntry {
 
 export interface FileContent {
   content: string
+  /**
+   * Server-stat'd modification time. Used as the OCC baseline for the
+   * next write — the client sends it back as `expectedMtimeMs` so the
+   * server can return 409 if the file changed underneath. Optional
+   * because not every workspace impl can stat cheaply (sandbox
+   * impl is best-effort).
+   */
+  mtimeMs?: number
 }
 
 export interface FileStat {

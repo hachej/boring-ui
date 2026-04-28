@@ -20,7 +20,6 @@ import type { SessionItem } from "../SessionList"
 import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
 import { ChatPanel, type ChatSuggestion } from "@boring/agent/ui-shadcn"
 import { emitAgentFileChange } from "../../events"
-import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
 import { startUiCommandStream } from "./uiCommandStream"
 import { useCommandRegistry, useRegistry } from "../../registry"
@@ -385,10 +384,6 @@ export function ChatCenteredShell({
     [surfaceOpen, setSurfaceOpen],
   )
 
-  const toolRenderers = useMemo(
-    () => createWorkspaceToolRenderers({ onOpenArtifact: openArtifact }),
-    [openArtifact],
-  )
 
   useKeyboardShortcuts({
     shortcuts: [
@@ -493,12 +488,16 @@ export function ChatCenteredShell({
           key={activeSessionId}
           sessionId={activeSessionId}
           chrome={false}
-          toolRenderers={toolRenderers}
           suggestions={chatSuggestions}
           emptyEyebrow={emptyEyebrow}
           emptyTitle={emptyTitle}
           emptyDescription={emptyDescription}
           thinkingControl={thinkingControl}
+          // Click on a path inside a read/edit/write tool card opens
+          // that file in the surrounding workbench. Wired via context
+          // inside the agent's canonical renderers — the workspace no
+          // longer ships a duplicate renderer set.
+          onOpenArtifact={openArtifact}
           // Bridge agent SSE file-change chunks → unified workspace
           // event bus so the agent moving/deleting/renaming a file
           // syncs open editor panes (UNIFIED_EVENT_BUS.md step 3).
@@ -520,11 +519,12 @@ export function ChatCenteredShell({
   }, [
     stage,
     activeSessionId,
-    toolRenderers,
+    openArtifact,
     chatSuggestions,
     emptyEyebrow,
     emptyTitle,
     emptyDescription,
+    thinkingControl,
     onCreateSession,
   ])
 

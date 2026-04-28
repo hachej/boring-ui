@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { FetchClient, FetchError } from "../fetchClient"
+import { FetchClient, FetchError, FileConflictError } from "../fetchClient"
 
 let mockFetch: ReturnType<typeof vi.fn>
 
@@ -73,6 +73,53 @@ describe("FetchClient", () => {
     expect(url).toBe("/api/v1/files")
     expect(opts.method).toBe("POST")
     expect(JSON.parse(opts.body)).toEqual({ path: "/a.ts", content: "code" })
+  })
+
+  it("POST /api/v1/files forwards expectedMtimeMs when supplied", async () => {
+    mockFetch.mockReturnValue(ok({ ok: true, mtimeMs: 12345 }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    const result = await client.writeFile("/a.ts", "code", { expectedMtimeMs: 1000 })
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      path: "/a.ts",
+      content: "code",
+      expectedMtimeMs: 1000,
+    })
+    expect(result).toEqual({ mtimeMs: 12345 })
+  })
+
+  it("POST /api/v1/files surfaces 409 as FileConflictError carrying server mtimes", async () => {
+    mockFetch.mockReturnValue(
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "conflict",
+              message: "stale",
+              currentMtimeMs: 99,
+              expectedMtimeMs: 1,
+            },
+          }),
+          { status: 409, statusText: "Conflict" },
+        ),
+      ),
+    )
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 0 })
+    await expect(
+      client.writeFile("/a.ts", "code", { expectedMtimeMs: 1 }),
+    ).rejects.toMatchObject({
+      name: "FileConflictError",
+      currentMtimeMs: 99,
+      expectedMtimeMs: 1,
+      path: "/a.ts",
+    })
+  })
+
+  it("FileConflictError still carries nullable fields when server omits them", async () => {
+    mockFetch.mockReturnValue(
+      Promise.resolve(new Response("not-json", { status: 409, statusText: "Conflict" })),
+    )
+    const client = new FetchClient({ apiBaseUrl: "", maxRetries: 0 })
+    await expect(client.writeFile("/x", "y")).rejects.toBeInstanceOf(FileConflictError)
   })
 
   it("DELETE /api/v1/files sends path param", async () => {

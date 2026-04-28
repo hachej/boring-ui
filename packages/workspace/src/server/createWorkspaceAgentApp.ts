@@ -43,7 +43,9 @@ export async function createWorkspaceAgentApp(
   opts: CreateWorkspaceAgentAppOptions = {},
 ): Promise<FastifyInstance> {
   const bridge = createInMemoryBridge()
-  const uiTools = createWorkspaceUiTools(bridge)
+  const uiTools = createWorkspaceUiTools(bridge, {
+    workspaceRoot: opts.workspaceRoot,
+  })
   const factoryTools = (opts.toolFactories ?? []).flatMap((f) => f({ uiBridge: bridge }))
   const app = await createAgentApp({
     ...opts,

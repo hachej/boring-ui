@@ -115,8 +115,14 @@ describe("useFileSearch", () => {
   })
 })
 
+// File-mutation hooks no longer invalidate React Query directly.
+// Invalidation is centralized in `useFileEventInvalidation`, which
+// subscribes to the workspace event bus. The hooks' only post-success
+// side effect is to emit the right `file:*` event onto the bus —
+// asserted in the "Mutation file-event emissions" suite below.
+
 describe("useFileWrite", () => {
-  it("calls writeFile and invalidates caches on success", async () => {
+  it("calls writeFile and does not directly invalidate caches", async () => {
     mockClient.writeFile.mockResolvedValue(undefined)
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
     const { result } = renderHook(() => useFileWrite(), { wrapper })
@@ -125,61 +131,28 @@ describe("useFileWrite", () => {
       await result.current.mutateAsync({ path: "/a.ts", content: "new" })
     })
 
-    expect(mockClient.writeFile).toHaveBeenCalledWith("/a.ts", "new")
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/a.ts"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "tree"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/a.ts"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "search"] })
+    // useFileWrite passes through expectedMtimeMs (third arg). When
+    // not supplied, it forwards `undefined` so callers explicitly opt
+    // into OCC.
+    expect(mockClient.writeFile).toHaveBeenCalledWith("/a.ts", "new", undefined)
+    expect(invalidateSpy).not.toHaveBeenCalled()
   })
-})
 
-describe("useCreateDir", () => {
-  it("invalidates tree cache on success", async () => {
-    mockClient.createDir.mockResolvedValue(undefined)
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
-    const { result } = renderHook(() => useCreateDir(), { wrapper })
+  it("forwards expectedMtimeMs through to the data client", async () => {
+    mockClient.writeFile.mockResolvedValue({ mtimeMs: 999 })
+    const { result } = renderHook(() => useFileWrite(), { wrapper })
 
     await act(async () => {
-      await result.current.mutateAsync({ path: "/new" })
+      await result.current.mutateAsync({
+        path: "/a.ts",
+        content: "new",
+        expectedMtimeMs: 1000,
+      })
     })
 
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "tree"] })
-  })
-})
-
-describe("useMoveFile", () => {
-  it("invalidates tree, source, and destination caches", async () => {
-    mockClient.moveFile.mockResolvedValue(undefined)
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
-    const { result } = renderHook(() => useMoveFile(), { wrapper })
-
-    await act(async () => {
-      await result.current.mutateAsync({ from: "/a.ts", to: "/b.ts" })
+    expect(mockClient.writeFile).toHaveBeenCalledWith("/a.ts", "new", {
+      expectedMtimeMs: 1000,
     })
-
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "tree"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/a.ts"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/b.ts"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/a.ts"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/b.ts"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "search"] })
-  })
-})
-
-describe("useDeleteFile", () => {
-  it("invalidates tree, file, stat, and search caches", async () => {
-    mockClient.deleteFile.mockResolvedValue(undefined)
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
-    const { result } = renderHook(() => useDeleteFile(), { wrapper })
-
-    await act(async () => {
-      await result.current.mutateAsync({ path: "/a.ts" })
-    })
-
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "tree"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/a.ts"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/a.ts"] })
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "search"] })
   })
 })
 
@@ -250,15 +223,9 @@ describe("Mutation file-event emissions", () => {
     )
   })
 
-  it("useFileWrite does NOT emit file:* events (writes don't change identity)", async () => {
+  it("useFileWrite emits file:changed with cause=user after success", async () => {
     mockClient.writeFile.mockResolvedValue(undefined)
-    const moved = vi.fn()
-    const deleted = vi.fn()
-    const created = vi.fn()
     const changed = vi.fn()
-    events.on("file:moved", moved)
-    events.on("file:deleted", deleted)
-    events.on("file:created", created)
     events.on("file:changed", changed)
 
     const { result } = renderHook(() => useFileWrite(), { wrapper })
@@ -266,9 +233,23 @@ describe("Mutation file-event emissions", () => {
       await result.current.mutateAsync({ path: "a.ts", content: "x" })
     })
 
-    expect(moved).not.toHaveBeenCalled()
-    expect(deleted).not.toHaveBeenCalled()
-    expect(created).not.toHaveBeenCalled()
+    expect(changed).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "a.ts", cause: "user" }),
+    )
+  })
+
+  it("useFileWrite does NOT emit file:changed if the underlying call rejects", async () => {
+    mockClient.writeFile.mockRejectedValue(new Error("denied"))
+    const changed = vi.fn()
+    events.on("file:changed", changed)
+
+    const { result } = renderHook(() => useFileWrite(), { wrapper })
+    await act(async () => {
+      await result.current
+        .mutateAsync({ path: "a.ts", content: "x" })
+        .catch(() => {})
+    })
+
     expect(changed).not.toHaveBeenCalled()
   })
 })

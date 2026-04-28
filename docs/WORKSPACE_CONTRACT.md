@@ -60,7 +60,7 @@ function App() {
 
 ### 1. HTTP Routes
 
-Agent hosts these endpoints. Workspace frontend calls them via `fetch` / `EventSource`.
+`@boring/agent` standalone owns agent/file/session endpoints. UI bridge endpoints are owned by the app-shell workspace server surface (typically via `createWorkspaceAgentApp`). Workspace frontend calls these via `fetch` / `EventSource`.
 
 #### Files
 
@@ -88,7 +88,7 @@ Agent hosts these endpoints. Workspace frontend calls them via `fetch` / `EventS
 | GET | `/api/v1/agent/sessions/:id/changes` | File changes for session |
 | GET | `/api/v1/agent/catalog` | List available tools |
 
-#### UI Bridge
+#### UI Bridge (workspace/app-shell hosted, not standalone agent)
 
 | Method | Path | Description |
 |---|---|---|
@@ -136,7 +136,7 @@ These are exported by `@boring/agent` for the app shell to compose into `Workspa
 
 ### 4. UiBridge Semantics
 
-- **Command dispatch**: single source via `UiBridge.postCommand()`. Agent tools call this; workspace receives via SSE.
+- **Command dispatch**: single source via `UiBridge.postCommand()`. Agent tools call this; workspace receives via SSE through the workspace/app-shell hosted `/api/v1/ui/*` bridge.
 - **State ownership**: workspace PUTs state after applying changes. Agent reads state via `get_ui_state` tool.
 - **Seq numbering**: monotonically increasing per command. Same `seq` appears in SSE event and POST response.
 - **Display parts**: `data-ui-command` message parts are display-only in the chat stream. Workspace must NOT dispatch from these; SSE is the authoritative dispatch channel.
@@ -254,18 +254,11 @@ grep -r "from.*@boring/agent" packages/workspace/src/
 
 ### E2E Integration Test
 
-A Playwright test (`e2e/workspace-integration.spec.ts`) boots both packages in an app-shell scenario:
+Current coverage lives in package-local suites:
 
-1. Agent `POST /api/v1/ui/commands` with `openFile` -> SSE delivers to workspace subscriber -> file opens in editor.
-2. Workspace `PUT /api/v1/ui/state` with `causedBy:'user'` -> Agent `GET /api/v1/ui/state` returns same state.
-3. `ChatPanel` renders inside `WorkspaceProvider` panel slot.
-
-### Cross-Plan Sync
-
-`scripts/check-plan-sync.sh` validates:
-- Every route in agent's HTTP surface appears in workspace plan's usage list.
-- Every workspace-expected route appears in agent's route table.
-- `CommandResult` shape is identical across both packages.
+1. `packages/agent/e2e/*` validates standalone agent behavior (including that standalone `/api/v1/ui/*` is not exposed).
+2. Workspace/app-shell integration coverage should validate bridge flow where the workspace server hosts `/api/v1/ui/*`.
+3. `ChatPanel` rendering in `WorkspaceProvider` remains an app-shell composition check.
 
 ---
 

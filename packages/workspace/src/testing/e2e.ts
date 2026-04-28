@@ -41,11 +41,30 @@ export interface BootCleanOptions {
  * Land on the app with a clean localStorage so persistence-sensitive tests
  * start from defaults. Pre-opens the workbench surface unless told
  * otherwise — see `openWorkbenchAtBoot`.
+ *
+ * Also drains the server-side bridge command queue. The bridge is process-
+ * global on a shared dev server (E2E_EXTERNAL_SERVER=1); without an
+ * explicit drain, a leftover command from a previous test (e.g. an
+ * openPanel posted just before that test ended) gets re-delivered to the
+ * next test's SSE subscriber and mounts an unexpected pane. The drain is
+ * a no-op when the queue is already empty.
  */
 export async function bootClean(
   page: Page,
   opts: BootCleanOptions,
 ): Promise<void> {
+  // Clear server-side bridge queue. Use Playwright's APIRequestContext so
+  // we issue the drain BEFORE any page navigation. The browser hasn't
+  // contacted the dev server yet, so this targets only the shared backend.
+  try {
+    await page.context().request.get("/api/v1/ui/commands/next?poll=true", {
+      timeout: 2000,
+    })
+  } catch {
+    // backend not yet serving (cold start) or auth — non-fatal, the
+    // SSE drain-on-connect on the workspace side covers the gap.
+  }
+
   const finalSeed: Record<string, string> = { ...(opts.seed ?? {}) }
   if (opts.openWorkbenchAtBoot !== false) {
     finalSeed[`${opts.shellKey}:surface`] = "1"
