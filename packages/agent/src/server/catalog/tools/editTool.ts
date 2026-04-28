@@ -14,13 +14,6 @@ interface EditToolDetails {
   fileChanges: FileChangeMetadata[]
 }
 
-interface EditParams {
-  path?: unknown
-  oldString?: unknown
-  newString?: unknown
-  replaceAll?: unknown
-}
-
 function countOccurrences(haystack: string, needle: string): number {
   if (needle.length === 0) return 0
   let count = 0
@@ -34,11 +27,13 @@ function countOccurrences(haystack: string, needle: string): number {
   return count
 }
 
-function replaceFirstOccurrence(
+function replaceOccurrences(
   content: string,
   oldString: string,
   newString: string,
+  all: boolean,
 ): string {
+  if (all) return content.split(oldString).join(newString)
   const index = content.indexOf(oldString)
   if (index === -1) return content
   return (
@@ -46,14 +41,6 @@ function replaceFirstOccurrence(
     newString +
     content.slice(index + oldString.length)
   )
-}
-
-function replaceAllOccurrences(
-  content: string,
-  oldString: string,
-  newString: string,
-): string {
-  return content.split(oldString).join(newString)
 }
 
 function successResult(details: EditToolDetails): ToolResult {
@@ -82,9 +69,14 @@ export function createEditTool(workspace: Workspace): AgentTool {
         replaceAll: { type: 'boolean' },
       },
       required: ['path', 'oldString', 'newString'],
+      additionalProperties: false,
     },
     async execute(input, ctx: ToolExecContext): Promise<ToolResult> {
-      const params = input as EditParams
+      const params = input as Record<string, unknown>
+      if (ctx.abortSignal.aborted) {
+        return makeError('edit aborted')
+      }
+
       if (typeof params.path !== 'string' || params.path.length === 0) {
         return makeError('path is required')
       }
@@ -100,10 +92,6 @@ export function createEditTool(workspace: Workspace): AgentTool {
       ) {
         return makeError('replaceAll must be a boolean when provided')
       }
-      if (ctx.abortSignal.aborted) {
-        return makeError('edit aborted')
-      }
-
       const path = params.path
       const oldString = params.oldString
       const newString = params.newString
@@ -120,9 +108,7 @@ export function createEditTool(workspace: Workspace): AgentTool {
           return makeError('ambiguous match; add context or set replaceAll=true')
         }
 
-        const nextContent = replaceAll
-          ? replaceAllOccurrences(originalContent, oldString, newString)
-          : replaceFirstOccurrence(originalContent, oldString, newString)
+        const nextContent = replaceOccurrences(originalContent, oldString, newString, replaceAll)
 
         await workspace.writeFile(path, nextContent)
         const writtenBytes = bytesWritten(nextContent)
@@ -137,12 +123,13 @@ export function createEditTool(workspace: Workspace): AgentTool {
               path,
               size: writtenBytes,
               timestamp: nowIso(),
+              existsBefore: true,
             },
           ],
         })
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'unknown edit failure'
+          error instanceof Error ? error.message : 'unknown error'
         return makeError(`edit failed: ${message}`)
       }
     },

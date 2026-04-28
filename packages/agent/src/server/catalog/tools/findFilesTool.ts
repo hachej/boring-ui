@@ -31,7 +31,7 @@ export function createFindFilesTool(fileSearch: FileSearch): AgentTool {
   return {
     name: 'find_files',
     description:
-      'Find workspace files by glob pattern. Prefer this over shell find loops, especially in vercel-sandbox mode.',
+      'Find workspace files by glob pattern. Prefer this over shell find loops.',
     parameters: {
       type: 'object',
       properties: {
@@ -43,6 +43,10 @@ export function createFindFilesTool(fileSearch: FileSearch): AgentTool {
     },
     async execute(input, ctx: ToolExecContext): Promise<ToolResult> {
       const params = input as Record<string, unknown>
+      if (ctx.abortSignal.aborted) {
+        return makeError('find_files aborted')
+      }
+
       const glob = params.glob
       if (typeof glob !== 'string' || glob.length === 0) {
         return makeError('glob is required')
@@ -62,10 +66,6 @@ export function createFindFilesTool(fileSearch: FileSearch): AgentTool {
         return makeError(error)
       }
 
-      if (ctx.abortSignal.aborted) {
-        return makeError('find_files aborted')
-      }
-
       try {
         const files = await fileSearch.search(glob, limit)
         return successResult({
@@ -76,7 +76,7 @@ export function createFindFilesTool(fileSearch: FileSearch): AgentTool {
         })
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'unknown find_files failure'
+          error instanceof Error ? error.message : 'unknown error'
         return makeError(`find_files failed: ${message}`)
       }
     },

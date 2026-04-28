@@ -15,12 +15,6 @@ interface WriteToolDetails {
   fileChanges: FileChangeMetadata[]
 }
 
-interface WriteParams {
-  path?: unknown
-  content?: unknown
-  createDirs?: unknown
-}
-
 function getParentDir(relPath: string): string | null {
   const parent = dirname(relPath)
   if (parent === '.' || parent === '') return null
@@ -56,6 +50,7 @@ async function ensureParentDir(
 }
 
 function makeTmpPath(targetPath: string, toolCallId: string): string {
+  // Defense-in-depth in case a host supplies a non-UUID toolCallId.
   const safeToolCallId = toolCallId.replace(/[^A-Za-z0-9_-]/g, '_') || 'tool'
   const suffix = `${Date.now().toString(36)}-${safeToolCallId}`
   return `${targetPath}.tmp-${suffix}`
@@ -81,9 +76,14 @@ export function createWriteTool(workspace: Workspace): AgentTool {
         createDirs: { type: 'boolean' },
       },
       required: ['path', 'content'],
+      additionalProperties: false,
     },
     async execute(input, ctx: ToolExecContext): Promise<ToolResult> {
-      const params = input as WriteParams
+      const params = input as Record<string, unknown>
+      if (ctx.abortSignal.aborted) {
+        return makeError('write aborted')
+      }
+
       if (typeof params.path !== 'string' || params.path.length === 0) {
         return makeError('path is required')
       }
@@ -96,10 +96,6 @@ export function createWriteTool(workspace: Workspace): AgentTool {
       ) {
         return makeError('createDirs must be a boolean when provided')
       }
-      if (ctx.abortSignal.aborted) {
-        return makeError('write aborted')
-      }
-
       const path = params.path
       const content = params.content
       const createDirs = params.createDirs === true
@@ -145,7 +141,7 @@ export function createWriteTool(workspace: Workspace): AgentTool {
         })
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'unknown write failure'
+          error instanceof Error ? error.message : 'unknown error'
         return makeError(`write failed: ${message}`)
       } finally {
         if (tmpWritten && !renamed) {

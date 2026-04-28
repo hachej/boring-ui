@@ -110,6 +110,10 @@ export function createGrepFilesTool(sandbox: Sandbox): AgentTool {
     },
     async execute(input, ctx: ToolExecContext): Promise<ToolResult> {
       const params = input as Record<string, unknown>
+      if (ctx.abortSignal.aborted) {
+        return makeError('grep_files aborted')
+      }
+
       const pattern = params.pattern
       if (typeof pattern !== 'string' || pattern.length === 0) {
         return makeError('pattern is required')
@@ -137,10 +141,6 @@ export function createGrepFilesTool(sandbox: Sandbox): AgentTool {
       })
       if (error) {
         return makeError(error)
-      }
-
-      if (ctx.abortSignal.aborted) {
-        return makeError('grep_files aborted')
       }
 
       const cmd = buildGrepCommand(pattern, glob as string | undefined, limit)
@@ -177,7 +177,7 @@ export function createGrepFilesTool(sandbox: Sandbox): AgentTool {
         }
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : 'unknown grep_files failure'
+          err instanceof Error ? err.message : 'unknown error'
         return makeError(`grep_files failed: ${message}`)
       }
     },

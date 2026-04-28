@@ -62,9 +62,14 @@ export function createReadTool(workspace: Workspace): AgentTool {
         lineCount: { type: 'integer', minimum: 1 },
       },
       required: ['path'],
+      additionalProperties: false,
     },
     async execute(input, ctx: ToolExecContext): Promise<ToolResult> {
       const params = input as Record<string, unknown>
+      if (ctx.abortSignal.aborted) {
+        return makeError('read aborted')
+      }
+
       const path = params.path
       if (typeof path !== 'string' || path.length === 0) {
         return makeError('path is required')
@@ -83,12 +88,7 @@ export function createReadTool(workspace: Workspace): AgentTool {
         return makeError(lineCountResult.error)
       }
 
-      if (ctx.abortSignal.aborted) {
-        return makeError('read aborted')
-      }
-
       try {
-        // TODO(m1): add max-bytes guard once Workspace exposes bounded reads.
         const fileContent = await workspace.readFile(path)
         const lines = splitLines(fileContent)
         const selectedLines = selectLineSlice(
@@ -105,7 +105,7 @@ export function createReadTool(workspace: Workspace): AgentTool {
         })
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'Unknown read failure'
+          error instanceof Error ? error.message : 'unknown error'
         if (message.includes('ENOENT')) {
           return makeError('file not found')
         }

@@ -84,6 +84,7 @@ describe('createEditTool', () => {
           op: 'edit',
           path: 'src/app.ts',
           size: 20,
+          existsBefore: true,
         },
       ],
     })
@@ -135,6 +136,7 @@ describe('createEditTool', () => {
           op: 'edit',
           path: 'src/app.ts',
           size: 9,
+          existsBefore: true,
         },
       ],
     })

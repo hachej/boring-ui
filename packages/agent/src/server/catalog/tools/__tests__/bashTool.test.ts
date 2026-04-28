@@ -88,6 +88,20 @@ describe('createBashTool', () => {
     expect(execSpy).toHaveBeenCalledOnce()
   })
 
+  test('already-aborted signal short-circuits before sandbox exec', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const execSpy = vi.fn(async () => makeExecResult())
+    const sandbox = createSandbox(execSpy)
+    const tool = createBashTool(sandbox)
+
+    const result = await tool.execute({ command: 'sleep 30' }, makeCtx(controller.signal))
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toBe('bash aborted')
+    expect(execSpy).not.toHaveBeenCalled()
+  })
+
   test('passes timeoutMs and maxOutputBytes to sandbox.exec', async () => {
     const execSpy = vi.fn(async (_cmd: string, opts?: ExecOptions) => {
       expect(opts?.timeoutMs).toBe(30_000)
@@ -229,7 +243,7 @@ describe('createBashTool', () => {
     const result = await tool.execute({ command: 'ls' }, makeCtx())
 
     expect(result.isError).toBe(true)
-    expect(result.content[0].text).toBe('spawn ENOENT')
+    expect(result.content[0].text).toBe('bash failed: spawn ENOENT')
   })
 
   test('abort signal rejection returns structured error', async () => {
@@ -246,7 +260,7 @@ describe('createBashTool', () => {
     const result = await tool.execute({ command: 'sleep 30' }, makeCtx(controller.signal))
 
     expect(result.isError).toBe(true)
-    expect(result.content[0].text).toBe('aborted')
+    expect(result.content[0].text).toBe('bash failed: aborted')
   })
 
   test('timeout returns non-zero exit from sandbox', async () => {

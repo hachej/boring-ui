@@ -1,6 +1,6 @@
 import type { AgentTool, ToolResult } from '../../../shared/tool'
 import type { Sandbox } from '../../../shared/sandbox'
-import { decode, type FileChangeMetadata } from './_shared'
+import { decode, type FileChangeMetadata, makeError } from './_shared'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
@@ -188,14 +188,17 @@ export function createBashTool(sandbox: Sandbox): AgentTool {
         command: { type: 'string', description: 'The shell command to run.' },
       },
       required: ['command'],
+      additionalProperties: false,
     },
-    async execute(params, ctx): Promise<ToolResult> {
+    async execute(input, ctx): Promise<ToolResult> {
+      const params = input as Record<string, unknown>
+      if (ctx.abortSignal.aborted) {
+        return makeError('bash aborted')
+      }
+
       const command = params.command
       if (typeof command !== 'string' || command.length === 0) {
-        return {
-          content: [{ type: 'text', text: 'command is required' }],
-          isError: true,
-        }
+        return makeError('command is required')
       }
 
       let result
@@ -206,11 +209,8 @@ export function createBashTool(sandbox: Sandbox): AgentTool {
           maxOutputBytes: DEFAULT_MAX_OUTPUT_BYTES,
         })
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'exec failed'
-        return {
-          content: [{ type: 'text', text: message }],
-          isError: true,
-        }
+        const message = err instanceof Error ? err.message : 'unknown error'
+        return makeError(`bash failed: ${message}`)
       }
 
       const stdout = decode(result.stdout)
@@ -225,6 +225,7 @@ export function createBashTool(sandbox: Sandbox): AgentTool {
 
       const fileChanges = inferBashFileChanges(command, result.exitCode)
 
+      // content[0].text is what the model sees; details carries structured data for the UI.
       return {
         content: [{ type: 'text', text: output }],
         isError: result.exitCode !== 0,
