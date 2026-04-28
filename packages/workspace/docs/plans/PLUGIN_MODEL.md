@@ -899,6 +899,235 @@ Plugin–bus contact points:
 Bus is client-only. Server-side plugin contributions communicate via
 Fastify hooks or HTTP routes — not a workspace-wide primitive.
 
+## Architecture diagram — post-Phase 1
+
+### Package dependency graph
+
+```
+                      ┌─────────────────────────────────────┐
+                      │  apps/                              │
+                      │  ├── boring-macro-v2                │
+                      │  ├── full-app                       │
+                      │  └── <new host>                     │
+                      └─────────────────┬───────────────────┘
+                                        │ imports
+                                        ▼
+   ┌────────────────────────────────────────────────────────────┐
+   │                @boring/workspace                            │
+   │                                                             │
+   │   • Plugin contract (definePlugin, factories)               │
+   │   • Registries (Plugin / Catalog / Command / Panel /        │
+   │                 ChatSuggestion + bootstrap)                 │
+   │   • Default plugins (filesystemPlugin, dataCatalogPlugin)   │
+   │   • UI bridge core (moved from @boring/agent)               │
+   │   • UI routes /api/v1/ui/* (moved)                          │
+   │   • File routes /api/v1/{files,tree,files/search} (moved)   │
+   │   • Event bus + WorkspaceEventMap (already existed)         │
+   │   • WorkbenchLeftPane / SurfaceShell / CommandPalette       │
+   │   • createWorkspaceAgentApp (wraps createAgentApp)          │
+   └─────────────────┬───────────────────────────────────────────┘
+                     │ imports (one direction; never the reverse)
+                     ▼
+   ┌────────────────────────────────────────────────────────────┐
+   │                @boring/agent                                │
+   │                                                             │
+   │   • pi-coding-agent harness                                 │
+   │   • AgentTool type                                          │
+   │   • validateTool       ← extracted to /shared (NEW location)│
+   │   • Pi loader (legacy tools-only; Phase 2 extends)          │
+   │   • filesystemAgentTools bundle  ← shared with workspace    │
+   │     (read, write, edit, find_files, grep_files)             │
+   │   • bash, execute_isolated_code (harness-only)              │
+   │   • Chat / session / model HTTP routes                      │
+   │   • createAgentApp (disableDefaultFileTools? new flag)      │
+   └────────────────────────────────────────────────────────────┘
+
+   Invariants:
+   ─────────────────────────────────────────────────────────────
+   • @boring/agent has NO dep on @boring/workspace (acyclic).
+   • @boring/workspace imports from @boring/agent (one way).
+   • @boring/agent/shared is browser-safe (no node:* imports);
+     this is what workspace's client bundle pulls in.
+   • createWorkspaceAgentApp(opts) ≡
+       createAgentApp({ ...opts, disableDefaultFileTools: true })
+       + register(filesystemPlugin) + register(dataCatalogPlugin)
+       + register(...opts.plugins)
+```
+
+### Tool registration flow (file ops as worked example)
+
+```
+                filesystemAgentTools  (shared bundle, in @boring/agent)
+                   ┌────────────────────┐
+                   │ read, write, edit, │
+                   │ find_files,        │
+                   │ grep_files         │
+                   └─────────┬──────────┘
+                             │
+              ┌──────────────┴───────────────┐
+              ▼                              ▼
+     STANDALONE PATH                WORKSPACE PATH
+     ────────────────               ──────────────
+     createAgentApp({})             createAgentApp({
+       └─ standardCatalog              └─ disableDefaultFileTools:
+            └─ ...includes                   true   ← skips bundle
+               filesystemAgentTools     })
+            (default ON; flip flag    └─ +filesystemPlugin.agentTools
+            with disableDefaultFile-     (plugin path is canonical
+            Tools to opt out)             for workspace hosts)
+
+     standalone CLI agent           workspace host
+     = real coding agent            = plugin model in charge;
+                                      excludeDefaults:
+                                      ['filesystem'] truly
+                                      removes file tools
+```
+
+### File tree — what changes in Phase 1
+
+```
+packages/agent/
+├── src/
+│   ├── shared/
+│   │   ├── tool.ts                                  [EXISTS]
+│   │   └── validateTool.ts                          [NEW — extracted from
+│   │                                                 pluginLoader.ts; node-clean
+│   │                                                 so workspace client can import]
+│   ├── server/
+│   │   ├── createAgentApp.ts                        [EXISTS — adds
+│   │   │                                             disableDefaultFileTools? flag]
+│   │   ├── catalog/
+│   │   │   ├── standardCatalog.ts                   [EXISTS — drops file ops,
+│   │   │   │                                         conditionally re-adds them
+│   │   │   │                                         from the shared bundle]
+│   │   │   └── tools/                               [EXISTS — read/write/edit/
+│   │   │       │                                     find_files/grep_files
+│   │   │       │                                     individual implementations
+│   │   │       │                                     stay here]
+│   │   │       └── (read|write|edit|findFiles|grepFiles)Tool.ts
+│   │   ├── tools/
+│   │   │   └── filesystem/                          [NEW]
+│   │   │       └── index.ts                         [NEW — exports
+│   │   │                                             filesystemAgentTools[]
+│   │   │                                             that re-bundles the
+│   │   │                                             individual tools above]
+│   │   ├── harness/pi-coding-agent/
+│   │   │   └── pluginLoader.ts                      [EXISTS — imports
+│   │   │                                             validateTool from
+│   │   │                                             ../../../shared/validateTool
+│   │   │                                             instead of defining it here]
+│   │   └── http/routes/
+│   │       ├── file.ts          ──────moves to───►  [packages/workspace/src/server/
+│   │       ├── tree.ts          ──────moves to───►   routes/files.ts]
+│   │       ├── search.ts        ──────moves to───►   [routes/files.ts]
+│   │       └── ui.ts            ──────moves to───►   [routes/ui.ts]
+│   └── ...
+└── package.json
+
+packages/workspace/
+├── src/
+│   ├── shared/
+│   │   ├── plugin.ts                                [NEW — Plugin,
+│   │   │                                             RouteRegistration,
+│   │   │                                             PluginMountCtx,
+│   │   │                                             WorkspaceSurface,
+│   │   │                                             Cleanup, errors]
+│   │   └── ui-bridge.ts                             [MOVED from @boring/agent]
+│   ├── events/                                      [EXISTS — bus already shipped]
+│   │   ├── bus.ts
+│   │   ├── index.ts                                 (exports `events` singleton)
+│   │   ├── types.ts                                 (WorkspaceEventMap +
+│   │   │                                             plugin:* events added in
+│   │   │                                             Step 4a)
+│   │   └── useEvent.ts
+│   ├── plugin/                                      [NEW — the plugin system]
+│   │   ├── definePlugin.ts
+│   │   ├── validators.ts                            (validateAgentTool re-exports
+│   │   │                                             @boring/agent/shared)
+│   │   ├── PluginRegistry.ts                        (with bootstrap())
+│   │   ├── CatalogRegistry.ts
+│   │   ├── ChatSuggestionRegistry.ts
+│   │   ├── PluginInspector.tsx                      (DEV-only)
+│   │   └── defaults/
+│   │       ├── filesystemPlugin.ts                  (imports filesystemAgentTools
+│   │       │                                         from @boring/agent)
+│   │       └── dataCatalogPlugin.ts
+│   ├── registry/
+│   │   ├── PanelRegistry.ts                         [EXISTS — retrofitted:
+│   │   │                                             subscribable, path-aware
+│   │   │                                             micromatch resolver,
+│   │   │                                             specificity scoring]
+│   │   ├── CommandRegistry.ts                       [EXISTS — retrofitted
+│   │   │                                             subscribable]
+│   │   └── types.ts                                 [EXISTS — adds
+│   │                                                 'left-tab'/'right-tab',
+│   │                                                 tabOrder, pluginId]
+│   ├── components/
+│   │   ├── CommandPalette.tsx                       [EXISTS — refactored to
+│   │   │                                             consume useCatalogs();
+│   │   │                                             polymorphic Recent;
+│   │   │                                             drops fileSearchFn/
+│   │   │                                             onOpenFile props]
+│   │   └── chat/
+│   │       ├── ChatCenteredShell.tsx                [EXISTS — drops `data` +
+│   │       │                                         `extraPanels` + imperative
+│   │       │                                         useEffect command reg]
+│   │       ├── WorkbenchLeftPane.tsx                [EXISTS — registry-driven
+│   │       │                                         tabs from PanelRegistry
+│   │       │                                         (placement: 'left-tab')]
+│   │       ├── SurfaceShell.tsx                     [EXISTS — fallback chain
+│   │       │                                         fixed, EmptyFilePanel
+│   │       │                                         used when registry +
+│   │       │                                         hardcoded fallback both
+│   │       │                                         miss]
+│   │       └── EmptyFilePanel.tsx                   [NEW — "No editor for X"
+│   │                                                 message panel; replaces
+│   │                                                 ghost-tab fallback]
+│   ├── bridge/
+│   │   └── createInMemoryBridge.ts                  [MOVED from @boring/agent]
+│   └── server/
+│       ├── createWorkspaceAgentApp.ts               [EXISTS — wraps createAgentApp
+│       │                                             with disableDefaultFileTools:
+│       │                                             true; runs PluginRegistry
+│       │                                             bootstrap]
+│       ├── uiTools.ts                               [MOVED from @boring/agent —
+│       │                                             get_ui_state, exec_ui]
+│       └── routes/
+│           ├── ui.ts                                [MOVED from @boring/agent]
+│           └── files.ts                             [MOVED — file/tree/search
+│                                                     consolidated]
+└── package.json                                     [EXISTS — adds:
+                                                     "./events": { ... }
+                                                     export]
+
+apps/boring-macro-v2/
+├── src/
+│   ├── plugin/                                      [NEW — Step 6]
+│   │   ├── index.ts                                 (makeMacroPlugin factory)
+│   │   ├── plugin.shared.ts
+│   │   ├── plugin.client.ts                         (panels, catalog,
+│   │   │                                             chatSuggestions)
+│   │   └── plugin.server.ts                         (agentTools, routes)
+│   ├── web/App.tsx                                  [EXISTS — shrinks to ~5 LOC]
+│   └── server/
+│       ├── index.ts                                 [EXISTS — uses
+│       │                                             createWorkspaceAgentApp;
+│       │                                             ~10 LOC]
+│       ├── macroRoutes.ts                           [EXISTS — referenced via
+│       │                                             RouteRegistration]
+│       ├── macroTools.ts                            [EXISTS — referenced as
+│       │                                             plugin.agentTools]
+│       └── uiBridge.ts                              [DELETED — 150 LOC; the
+│                                                     workspace's UI bridge core
+│                                                     replaces it]
+```
+
+Markers:
+- **[NEW]**     — file/dir is created by Phase 1
+- **[MOVED]**   — file relocates (different package or path)
+- **[EXISTS]**  — file already exists; Phase 1 modifies it
+- **[DELETED]** — Phase 1 removes the file
+
 ## Reorganization (file moves)
 
 Things move to draw an honest boundary. Each move is a self-contained
