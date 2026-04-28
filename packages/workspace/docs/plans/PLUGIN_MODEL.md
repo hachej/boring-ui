@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v6.3 — gemini fresh-eyes review patches (drop "internal chat-shell plugin" P0; polymorphic Recent now covers commands too P1; ExplorerRow JSON-serializable invariant P1; non-React adapter lifecycle limitation documented P1; makeStaticDataPlugin convenience factory P2)
+**Status:** v7.0 — separation of concerns: file tools are harness substrate, filesystemPlugin is UI-only. Drops dual-registration. Substrate bundle accepts custom non-pi additions.
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
@@ -587,11 +587,11 @@ import { makeMacroPlugin, macroChatSuggestions } from "../plugin"
 type changes. The plan does NOT delete `chatSuggestions` from
 `<ChatCenteredShell>`'s props (reverses an earlier draft).
 
-### Default plugins — ONE, finalized
+### Default plugins — ONE, finalized (UI-only)
 
 | Plugin | Contributes | Why a plugin (not core) |
 |---|---|---|
-| **`filesystemPlugin`** | Agent tools (`find_files`, `grep_files`, `read`, `write`, `edit`) via the runtime-deps factory; a Files catalog; FileTree panel registration as `placement: 'left-tab'`; CodeEditor + MarkdownEditor panel registrations (with `filePatterns`) | Domain capability hosts can omit (UI-only apps, sandboxed deployments). When excluded: file tools removed from LLM catalog, Files left-tab disappears, code/markdown editors stop auto-routing. |
+| **`filesystemPlugin`** | UI-only: a Files catalog (cmd palette); FileTree panel registration as `placement: 'left-tab'`; CodeEditor + MarkdownEditor panel registrations (with `filePatterns`). **No `agentTools` field** — file tools are harness substrate (see §"Tools belong with the harness, not the plugin"). | Hosts that want a chat-only UI (no file tree, no code editor opening on file click) can opt out. When excluded: file UI disappears; LLM file tools STAY (controlled separately by `disableDefaultFileTools` on `createAgentApp`). |
 
 **v6 had a `dataCatalogPlugin` second default; v6.2 cuts it.**
 Reason (codex round-3 P1): with `recentKind` cut and no other
@@ -626,87 +626,90 @@ The single default plugin auto-mounts. Hosts opt out via:
 `excludeDefaults` is the single switch — no `includeDefaults`
 allowlist.
 
-#### File ops: shared bundle, dual registration path
+#### Tools belong with the harness, not the plugin (v7.0)
 
-A subtle but important arrangement (because the standalone agent
-CLI must remain a real coding agent — file ops are core to the
-identity of "coding agent"):
+Earlier drafts (v5–v6.3) had `filesystemPlugin` carry `agentTools`
+via a factory + a "dual registration path" that suppressed
+duplication between standalone agent and workspace hosts. v7.0
+drops this entire arrangement. **File ops tools are harness
+substrate, not plugin contributions.** Two separate concerns,
+two separate switches:
 
-- **The tool implementations are factories** that take runtime
-  deps (`workspace`, `sandbox`, `fileSearch`) and return tools.
-  This matches the existing `standardCatalog.ts:84` shape — the
-  current code already factors tools per-app at boot
-  (`createReadTool(workspace)`, `createFindFilesTool(fileSearch)`,
-  etc.). Step 1b extracts this clustering into a single factory:
+| Concern | Real opt-out switch | Layer |
+|---|---|---|
+| Should the agent have file tools? | `disableDefaultFileTools: true` on `createAgentApp` | Harness config |
+| Should the UI have a file tree / Files tab? | `excludeDefaults: ['filesystem']` on `<WorkspaceProvider>` | Workspace config |
 
-  ```ts
-  // packages/agent/src/server/tools/filesystem/index.ts
-  import type { Workspace, Sandbox, FileSearch } from "../../runtime/types"
-  import type { AgentTool } from "../../../shared/tool"
-  import { createFindFilesTool } from "../../catalog/tools/findFilesTool"
-  import { createGrepFilesTool } from "../../catalog/tools/grepFilesTool"
-  import { createReadTool } from "../../catalog/tools/readTool"
-  import { createWriteTool } from "../../catalog/tools/writeTool"
-  import { createEditTool } from "../../catalog/tools/editTool"
+These should NOT be the same switch — they live at different
+layers. Conflating them was over-engineering.
 
-  export interface FilesystemAgentToolsDeps {
-    workspace: Workspace
-    sandbox: Sandbox
-    fileSearch?: FileSearch    // optional in some runtime modes
-  }
+#### Where file tools actually live (v7.0)
 
-  export function createFilesystemAgentTools(
-    deps: FilesystemAgentToolsDeps,
-  ): AgentTool[] {
-    const tools: AgentTool[] = [createGrepFilesTool(deps.sandbox)]
-    if (deps.fileSearch) tools.push(createFindFilesTool(deps.fileSearch))
-    tools.push(
-      createReadTool(deps.workspace),
-      createWriteTool(deps.workspace),
-      createEditTool(deps.workspace),
-    )
-    return tools
-  }
-  ```
+Per `packages/agent/docs/plans/pi-tools-migration.md` (which ships
+before this plan), `@boring/agent` exposes:
 
-- **Standalone `createAgentApp`** calls `createFilesystemAgentTools`
-  with its already-constructed runtime bundle, by default. Opt out
-  via `createAgentApp({ disableDefaultFileTools: true })`.
-- **`filesystemPlugin`** (in `@boring/workspace`) DOESN'T eagerly
-  evaluate the factory at module load — that would fail because
-  workspace doesn't have a runtime bundle. Instead, the plugin
-  shape becomes a small adapter: `filesystemPlugin` is constructed
-  from runtime deps inside `createWorkspaceAgentApp`, where the
-  workspace runtime bundle exists. So:
+- `buildHarnessAgentTools(bundle): AgentTool[]` — `[bash, executeIsolatedCode]`
+- `buildFilesystemAgentTools(bundle): AgentTool[]` — `[read, write, edit, find, grep, ls]` plus any custom non-pi additions
 
-  ```ts
-  // packages/workspace/src/plugin/defaults/filesystemPlugin.ts
-  import { definePlugin } from "../definePlugin"
-  import { createFilesystemAgentTools, type FilesystemAgentToolsDeps } from "@boring/agent/server/tools/filesystem"
-  import { FileTreePanel, CodeEditorPanel, MarkdownEditorPanel } from "../../panels"
-  import { filesCatalog } from "./filesystemCatalog"
+`createAgentApp` registers both bundles by default. Opt out of
+file ops with `disableDefaultFileTools: true`. Standalone CLI agent
+keeps file tools because it's a coding agent — that's the harness's
+job, not a plugin's.
 
-  export function makeFilesystemPlugin(deps: FilesystemAgentToolsDeps) {
-    return definePlugin({
-      id: "filesystem",
-      label: "Filesystem",
-      panels: [/* FileTree, CodeEditor, MarkdownEditor */],
-      catalogs: [filesCatalog],
-      agentTools: createFilesystemAgentTools(deps),
-    })
-  }
-  ```
+`createWorkspaceAgentApp` does **not** pass
+`disableDefaultFileTools` — it just wraps `createAgentApp`
+unchanged + runs the plugin bootstrap on top. No dual-registration.
 
-  `createWorkspaceAgentApp` calls `makeFilesystemPlugin(deps)`
-  internally with its runtime bundle and prepends the result to
-  `opts.plugins` (unless `excludeDefaults` says otherwise).
-- **`createWorkspaceAgentApp`** passes `disableDefaultFileTools:
-  true` to the underlying `createAgentApp`, so file tools come
-  through the plugin path only — no double registration.
-  `excludeDefaults: ['filesystem']` truly removes file tools.
+#### Custom (non-pi) filesystem tools
 
-ONE source of truth for tool implementations, TWO registration
-pathways for two different hosts.
+`buildFilesystemAgentTools(bundle)` is NOT restricted to pi's
+factories. It can return pi tools + project-specific filesystem
+tools that don't exist in pi's catalog. Examples that might land
+here later:
+
+- `watch_files(glob)` — long-poll for file changes (pi has no equivalent)
+- `stat(path)` — file metadata (size, mtime, perms)
+- `git_status` / `git_diff` — git-aware filesystem ops
+- `multi_edit(edits[])` — atomic batch edits across many files
+
+These would be **substrate** alongside pi's defaults — same
+registration path, same lifecycle. They live in
+`@boring/agent/server/tools/filesystem/` (not in
+`filesystemPlugin`). Author wraps them as `AgentTool`; bundle
+factory composes them into the array.
+
+The principle from pi-tools-migration's Principle 3 still applies:
+add custom tools only when pi cannot be made to work. But "can't
+be made to work" includes "pi doesn't ship this capability at all."
+
+**filesystemPlugin (v7.0) — UI-only, plain const, no factory:**
+
+```ts
+// packages/workspace/src/plugin/defaults/filesystemPlugin.ts
+import { definePlugin } from "../definePlugin"
+import { FileTreePanel, CodeEditorPanel, MarkdownEditorPanel } from "../../panels"
+import { filesCatalog } from "./filesystemCatalog"
+
+export const filesystemPlugin = definePlugin({
+  id: "filesystem",
+  label: "Filesystem",
+  panels: [
+    { id: "files", title: "Files", component: FileTreePanel, placement: "left-tab", source: "builtin" },
+    { id: "code-editor", title: "Code", component: CodeEditorPanel, placement: "center", filePatterns: [...], source: "builtin" },
+    { id: "markdown-editor", title: "Markdown", component: MarkdownEditorPanel, placement: "center", filePatterns: ["**/*.md", "**/*.mdx"], source: "builtin" },
+  ],
+  catalogs: [filesCatalog],
+  // No agentTools — file tools live with the harness in @boring/agent.
+})
+```
+
+No `(deps)` argument. No runtime bundle dependency. Plain
+module-scope const that imports cleanly. WorkspaceProvider /
+createWorkspaceAgentApp prepend it as a default unless
+`excludeDefaults: ['filesystem']` says otherwise.
+
+No "ONE source of truth, TWO registration paths" puzzle. Just:
+**harness owns tools; plugins own UI.**
 
 ### Core — substrate, not plugins
 
@@ -1423,7 +1426,8 @@ Six sequenced commits.
 │      "@boring/workspace/events"`.                                │
 │                                                                  │
 │  4b. createWorkspaceAgentApp({ plugins })                        │
-│      Wraps createAgentApp with disableDefaultFileTools: true.    │
+│      Plain wrap of createAgentApp (NO disableDefaultFileTools    │
+│      passed — v7.0 simplification: harness owns tools always).   │
 │      Runs bootstrap() for server-side fan-in. Registers          │
 │      substrate routes (/api/v1/ui/*, /files, /tree, /files/      │
 │      search) directly.                                           │
@@ -1804,6 +1808,90 @@ None of these block the boring-macro acceptance test.
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v6.3 → v7.0 (separation of concerns: harness owns tools)
+
+User insight (2026-04-28): "fs plugin should not expose tools —
+those tools belong to the harness." Sharp framing. Adopted.
+
+### What changes
+
+The dual-registration arrangement (filesystemPlugin + standalone
+agent share the same tool factory) was conflating two concerns:
+"should the agent have file tools?" (harness config) and "should
+the UI show a file tree?" (plugin config). Two separate switches,
+two separate layers. v7.0 untangles them.
+
+- **`filesystemPlugin` becomes UI-only.** No `agentTools` field.
+  Just panels (FileTree left-tab, CodeEditor center, MarkdownEditor
+  center) + a Files catalog (cmd palette). Plain module-scope
+  const — no `(deps)` factory needed.
+- **Substrate file tools live with the harness.** Per
+  pi-tools-migration: `buildFilesystemAgentTools(bundle)` returns
+  `[read, write, edit, find, grep, ls]`; `buildHarnessAgentTools`
+  returns `[bash, executeIsolatedCode]`. Both registered by
+  `createAgentApp` directly. Always-on for the harness path.
+- **`disableDefaultFileTools: true`** (on `createAgentApp`) is the
+  only switch that removes file tools entirely. Use case:
+  sandboxed deployment / no-fs agent.
+- **`excludeDefaults: ['filesystem']`** removes only the UI (Files
+  tab, code/markdown editor auto-routing). The LLM still has
+  `read`/`write`/etc. — they're substrate, not plugin
+  contributions. Honest narrower promise.
+- **`createWorkspaceAgentApp` no longer passes
+  `disableDefaultFileTools: true`** to the underlying
+  `createAgentApp`. Plain wrap. No coordination dance.
+- **`Plugin.agentTools`** survives — but only for **domain tools**
+  like macro's `execute_sql`/`macro_search`/`get_series_data`.
+  Those depend on app-specific runtime state (ClickHouse client)
+  the host owns; they belong on the plugin contract. Substrate
+  tools don't.
+
+### Custom (non-pi) filesystem tools — supported
+
+`buildFilesystemAgentTools(bundle)` is **not** restricted to pi
+factories. It can return pi tools + project-specific filesystem
+tools that pi doesn't ship (e.g., `watch_files`, `stat`,
+`git_status`, `multi_edit`). These are substrate alongside pi's
+defaults — same registration path, same lifecycle. They live in
+`@boring/agent/server/tools/filesystem/`, NOT in
+`filesystemPlugin`. Author wraps as `AgentTool`; bundle factory
+composes them into the array.
+
+This was an explicit user clarification: "we may add fs tools that
+are not the default pi ones."
+
+### What this removes from the spec
+
+- The whole §"File ops: shared bundle, dual registration path"
+  walkthrough — replaced by §"Tools belong with the harness, not
+  the plugin" + §"Custom (non-pi) filesystem tools".
+- The `(deps)` argument on `makeFilesystemPlugin` — plugin is now
+  a plain module-scope const.
+- The `disableDefaultFileTools: true` indirection from
+  `createWorkspaceAgentApp` — plain wrap.
+- ~50 lines of spec total.
+
+### Acceptance test impact
+
+boring-macro-v2 migration LOC accounting unchanged (-86%). What
+changes is that macro's agentTools come ONLY from
+`makeMacroServerPlugin` (which is right — they're domain tools).
+File tools come from the harness automatically. No plumbing
+difference for macro's host code.
+
+### Bead impact
+
+- **B2** (file ops bundle extraction) → reframed as "extract
+  pi-factory wiring per pi-tools-migration; bundle includes pi
+  tools + any custom additions." No dual-registration story.
+- **B9** (filesystemPlugin) → becomes a tiny bead: plain const
+  with panels + catalog, no agentTools. ~10 LOC of plugin code.
+- **B11** (createWorkspaceAgentApp) → no
+  `disableDefaultFileTools: true` wiring; just wraps
+  `createAgentApp` and runs bootstrap.
+
+All three bead descriptions updated to match v7.0 framing.
 
 ## Changelog v6.2 → v6.3 (gemini fresh-eyes review patches)
 
