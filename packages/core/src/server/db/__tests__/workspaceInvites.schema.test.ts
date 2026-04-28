@@ -67,51 +67,58 @@ describe('workspace_invites schema', () => {
     await ensureWorkspace(WS_ID, USER_ID)
   })
 
-  it('expiresAt defaults to ~now() + 7 days when omitted', async () => {
-    const before = new Date()
-    const [row] = await sql`
-      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
-      VALUES (${WS_ID}, 'invitee@test.com', 'hash_default_expiry', 'editor', ${USER_ID})
-      RETURNING expires_at
-    `
-    const after = new Date()
-
-    const expiresAt = new Date(row.expires_at)
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
-    const toleranceMs = 60_000
-
-    expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before.getTime() + sevenDaysMs - toleranceMs)
-    expect(expiresAt.getTime()).toBeLessThanOrEqual(after.getTime() + sevenDaysMs + toleranceMs)
-  })
-
-  it('unique violation on duplicate tokenHash', async () => {
-    await sql`
-      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
-      VALUES (${WS_ID}, 'a@test.com', 'hash_unique_test', 'viewer', ${USER_ID})
-    `
+  it('expires_at has no SQL default — insert requires explicit value', async () => {
     await expect(
       sql`
         INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
-        VALUES (${WS_ID}, 'b@test.com', 'hash_unique_test', 'editor', ${USER_ID})
+        VALUES (${WS_ID}, 'invitee@test.com', 'hash_no_default', 'editor', ${USER_ID})
+      `,
+    ).rejects.toThrow(/null value.*expires_at|not-null/i)
+  })
+
+  it('insert succeeds with explicit expires_at', async () => {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    const [row] = await sql`
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, expires_at, created_by)
+      VALUES (${WS_ID}, 'invitee@test.com', 'hash_explicit_exp', 'editor', ${expiresAt}, ${USER_ID})
+      RETURNING expires_at, failed_attempts, locked_until
+    `
+    expect(new Date(row.expires_at).getTime()).toBeGreaterThan(Date.now())
+    expect(row.failed_attempts).toBe(0)
+    expect(row.locked_until).toBeNull()
+  })
+
+  it('unique violation on duplicate tokenHash', async () => {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    await sql`
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, expires_at, created_by)
+      VALUES (${WS_ID}, 'a@test.com', 'hash_unique_test', 'viewer', ${expiresAt}, ${USER_ID})
+    `
+    await expect(
+      sql`
+        INSERT INTO workspace_invites (workspace_id, email, token_hash, role, expires_at, created_by)
+        VALUES (${WS_ID}, 'b@test.com', 'hash_unique_test', 'editor', ${expiresAt}, ${USER_ID})
       `,
     ).rejects.toThrow(/unique/i)
   })
 
   it('role check constraint rejects invalid roles', async () => {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     await expect(
       sql`
-        INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
-        VALUES (${WS_ID}, 'c@test.com', 'hash_bad_role', 'admin', ${USER_ID})
+        INSERT INTO workspace_invites (workspace_id, email, token_hash, role, expires_at, created_by)
+        VALUES (${WS_ID}, 'c@test.com', 'hash_bad_role', 'admin', ${expiresAt}, ${USER_ID})
       `,
     ).rejects.toThrow(/check/i)
   })
 
   it('createdBy ON DELETE RESTRICT prevents user deletion', async () => {
     const tempUserId = '20000000-0000-0000-0000-000000000099'
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     await ensureUser(tempUserId, 'restrict@test.com')
     await sql`
-      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, created_by)
-      VALUES (${WS_ID}, 'd@test.com', 'hash_restrict_test', 'viewer', ${tempUserId})
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, expires_at, created_by)
+      VALUES (${WS_ID}, 'd@test.com', 'hash_restrict_test', 'viewer', ${expiresAt}, ${tempUserId})
     `
     await expect(
       sql`DELETE FROM users WHERE id = ${tempUserId}`,
@@ -122,20 +129,33 @@ describe('workspace_invites schema', () => {
   })
 
   it('acceptedAt is nullable', async () => {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     const [row] = await sql`
-      INSERT INTO workspace_invites (workspace_id, email, token_hash, role)
-      VALUES (${WS_ID}, 'e@test.com', 'hash_null_accepted', 'editor')
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, expires_at)
+      VALUES (${WS_ID}, 'e@test.com', 'hash_null_accepted', 'editor', ${expiresAt})
       RETURNING accepted_at
     `
     expect(row.accepted_at).toBeNull()
   })
 
   it('createdBy is nullable (system-generated invites)', async () => {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     const [row] = await sql`
-      INSERT INTO workspace_invites (workspace_id, email, token_hash, role)
-      VALUES (${WS_ID}, 'f@test.com', 'hash_null_creator', 'viewer')
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, expires_at)
+      VALUES (${WS_ID}, 'f@test.com', 'hash_null_creator', 'viewer', ${expiresAt})
       RETURNING created_by
     `
     expect(row.created_by).toBeNull()
+  })
+
+  it('failed_attempts defaults to 0, locked_until is nullable', async () => {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    const [row] = await sql`
+      INSERT INTO workspace_invites (workspace_id, email, token_hash, role, expires_at)
+      VALUES (${WS_ID}, 'g@test.com', 'hash_rate_limit', 'editor', ${expiresAt})
+      RETURNING failed_attempts, locked_until
+    `
+    expect(row.failed_attempts).toBe(0)
+    expect(row.locked_until).toBeNull()
   })
 })

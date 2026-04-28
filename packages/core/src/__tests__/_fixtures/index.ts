@@ -67,9 +67,6 @@ export async function seedWorkspace(
     createdAt: nowIso(),
     deletedAt: null,
     isDefault: state.workspaces.length === 0,
-    machineId: null,
-    volumeId: null,
-    flyRegion: null,
   }
   state.workspaces.push(workspace)
   await seedMembership(workspace.id, ownerId, 'owner')

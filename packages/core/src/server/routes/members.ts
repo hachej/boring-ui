@@ -77,15 +77,6 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
         })
       }
 
-      if (result.code === ERROR_CODES.WORKSPACE_PROVISIONING) {
-        throw new HttpError({
-          status: 409,
-          code: ERROR_CODES.WORKSPACE_PROVISIONING,
-          message: 'Cannot modify members while workspace is provisioning',
-          requestId: request.id,
-        })
-      }
-
       throw new HttpError({
         status: 500,
         code: ERROR_CODES.INTERNAL_ERROR,

@@ -77,7 +77,6 @@ function mockWorkspaceStore(): WorkspaceStore {
         id, appId, name, createdBy: userId,
         createdAt: new Date().toISOString(), deletedAt: null,
         isDefault: opts?.isDefault ?? false,
-        machineId: null, volumeId: null, flyRegion: null,
       }
       workspaces.set(id, ws)
       const wsMembers = new Map<string, MemberRole>()
@@ -85,7 +84,8 @@ function mockWorkspaceStore(): WorkspaceStore {
       memberDb.set(id, wsMembers)
       wsRuntimes.set(id, {
         workspaceId: id, spriteUrl: null, spriteName: null,
-        state: 'ready', lastError: null, provisioningStep: null, stepStartedAt: null,
+        state: 'ready', lastError: null, volumePath: null, lastErrorOp: null,
+        provisioningStep: null, stepStartedAt: null, updatedAt: new Date().toISOString(),
       })
       return ws
     },
@@ -203,7 +203,7 @@ function seedWorkspace(ownerUserId: string, appId = APP_ID) {
   const ws: Workspace = {
     id, appId, name: 'Test WS', createdBy: ownerUserId,
     createdAt: new Date().toISOString(), deletedAt: null,
-    isDefault: false, machineId: null, volumeId: null, flyRegion: null,
+    isDefault: false,
   }
   workspaces.set(id, ws)
   const m = new Map<string, MemberRole>()

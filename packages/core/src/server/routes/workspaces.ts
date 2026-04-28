@@ -106,16 +106,6 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
         return { deleted: true }
       }
 
-      if (result.code === ERROR_CODES.WORKSPACE_PROVISIONING) {
-        request.log.info({ workspaceId: id, reason: result.code }, 'workspace.delete.blocked')
-        throw new HttpError({
-          status: 409,
-          code: ERROR_CODES.WORKSPACE_PROVISIONING,
-          message: 'Cannot delete workspace while provisioning',
-          requestId: request.id,
-        })
-      }
-
       throw new HttpError({
         status: 404,
         code: ERROR_CODES.NOT_FOUND,

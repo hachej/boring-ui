@@ -167,27 +167,29 @@ describe('PostgresWorkspaceStore Sub-PR3', () => {
       expect(result).toBeNull()
     })
 
-    it('putWorkspaceRuntime updates runtime fields', async () => {
+    it('putWorkspaceRuntime updates runtime fields including v7 columns', async () => {
       const { workspaceId } = await seedWorkspace()
-      const stepStartedAt = new Date().toISOString()
 
       const updated = await store.putWorkspaceRuntime(workspaceId, {
-        state: 'provisioning',
+        state: 'error',
         spriteUrl: 'https://cdn.example.com/sprite.png',
         spriteName: 'my-sprite',
-        provisioningStep: 'creating_machine',
-        stepStartedAt,
+        lastError: 'boot timeout',
+        lastErrorOp: 'provision',
+        volumePath: '/data/ws-123',
       })
 
-      expect(updated.state).toBe('provisioning')
+      expect(updated.state).toBe('error')
       expect(updated.spriteUrl).toBe('https://cdn.example.com/sprite.png')
       expect(updated.spriteName).toBe('my-sprite')
-      expect(updated.provisioningStep).toBe('creating_machine')
-      expect(updated.stepStartedAt).not.toBeNull()
+      expect(updated.lastError).toBe('boot timeout')
+      expect(updated.lastErrorOp).toBe('provision')
+      expect(updated.volumePath).toBe('/data/ws-123')
 
       const persisted = await store.getWorkspaceRuntime(workspaceId)
-      expect(persisted?.state).toBe('provisioning')
-      expect(persisted?.provisioningStep).toBe('creating_machine')
+      expect(persisted?.state).toBe('error')
+      expect(persisted?.lastErrorOp).toBe('provision')
+      expect(persisted?.volumePath).toBe('/data/ws-123')
     })
 
     it('retryWorkspaceRuntime transitions error -> pending and clears lastError', async () => {
@@ -435,14 +437,6 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       expect(result).toEqual({ removed: false, code: ERROR_CODES.NOT_FOUND })
     })
 
-    it('returns WORKSPACE_PROVISIONING if runtime is provisioning', async () => {
-      const userId = await seedUser()
-      const ws = await store.create(userId, 'Provisioning', APP_ID)
-      await store.putWorkspaceRuntime(ws.id, { state: 'provisioning' })
-
-      const result = await store.delete(ws.id)
-      expect(result).toEqual({ removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING })
-    })
   })
 
   describe('isMember / getMemberRole', () => {
@@ -539,16 +533,6 @@ describe('PostgresWorkspaceStore Sub-PR1', () => {
       expect(result).toEqual({ removed: true })
     })
 
-    it('returns WORKSPACE_PROVISIONING if runtime is provisioning', async () => {
-      const owner = await seedUser('rm-prov')
-      const editor = await seedUser('rm-prov-ed')
-      const ws = await store.create(owner, 'ProvRM', APP_ID)
-      await store.upsertMember(ws.id, editor, 'editor')
-      await store.putWorkspaceRuntime(ws.id, { state: 'provisioning' })
-
-      const result = await store.removeMember(ws.id, editor)
-      expect(result).toEqual({ removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING })
-    })
   })
 
   describe('getWorkspacesWhereSoleOwner', () => {

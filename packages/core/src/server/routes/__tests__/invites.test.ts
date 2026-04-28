@@ -120,9 +120,6 @@ function seedWorkspace(ownerUserId: string, extraMembers?: Record<string, Member
     createdAt: new Date().toISOString(),
     deletedAt: null,
     isDefault: false,
-    machineId: null,
-    volumeId: null,
-    flyRegion: null,
   }
   workspaces.set(id, ws)
   const wsMembers = new Map<string, MemberRole>()

@@ -35,9 +35,6 @@ function mockWorkspaceStore(): WorkspaceStore {
         createdAt: new Date().toISOString(),
         deletedAt: null,
         isDefault: opts?.isDefault ?? false,
-        machineId: null,
-        volumeId: null,
-        flyRegion: null,
       }
       workspaces.set(id, ws)
       const wsMembers = members.get(id) ?? new Map()
@@ -63,7 +60,6 @@ function mockWorkspaceStore(): WorkspaceStore {
     delete: async (id: string) => {
       const ws = workspaces.get(id)
       if (!ws || ws.deletedAt) return { removed: false, code: 'not_found' as const }
-      if (ws.name === 'PROVISIONING') return { removed: false, code: 'workspace_provisioning' as const }
       ws.deletedAt = new Date().toISOString()
       return { removed: true }
     },
@@ -126,9 +122,6 @@ function seedWorkspaceWithMembers(name: string, ownerUserId: string, extraMember
     createdAt: new Date().toISOString(),
     deletedAt: null,
     isDefault: false,
-    machineId: null,
-    volumeId: null,
-    flyRegion: null,
   }
   workspaces.set(id, ws)
   const wsMembers = new Map<string, MemberRole>()
@@ -287,14 +280,6 @@ describe('DELETE /api/v1/workspaces/:id', () => {
     const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, NON_MEMBER_ID)
     expect(res.statusCode).toBe(403)
     expect(res.json().code).toBe('not_member')
-  })
-
-  it('during provisioning → 409 workspace_provisioning', async () => {
-    const ws = seedWorkspaceWithMembers('PROVISIONING', OWNER_ID)
-
-    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
-    expect(res.statusCode).toBe(409)
-    expect(res.json().code).toBe('workspace_provisioning')
   })
 
   it('already-deleted workspace → 404 not_found', async () => {

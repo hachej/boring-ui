@@ -67,14 +67,6 @@ describe('LocalWorkspaceStore', () => {
       expect(await store.get(ws.id)).toBeNull()
     })
 
-    it('delete blocks during provisioning', async () => {
-      const ws = await store.create('u1', 'WS', 'app1')
-      await store.putWorkspaceRuntime(ws.id, { state: 'provisioning' })
-      const result = await store.delete(ws.id)
-      expect(result.removed).toBe(false)
-      expect(result.code).toBe(ERROR_CODES.WORKSPACE_PROVISIONING)
-    })
-
     it('delete returns not_found for unknown workspace', async () => {
       const result = await store.delete('nonexistent')
       expect(result.removed).toBe(false)

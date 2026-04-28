@@ -67,46 +67,51 @@ describe('workspace_runtimes schema', () => {
     const [row] = await sql`
       INSERT INTO workspace_runtimes (workspace_id)
       VALUES (${WORKSPACE_ID})
-      RETURNING state, sprite_url, sprite_name, last_error, provisioning_step, step_started_at, updated_at
+      RETURNING state, sprite_url, sprite_name, last_error, volume_path, last_error_op, provisioning_step, step_started_at, updated_at
     `
 
     expect(row.state).toBe('pending')
     expect(row.sprite_url).toBeNull()
     expect(row.sprite_name).toBeNull()
     expect(row.last_error).toBeNull()
+    expect(row.volume_path).toBeNull()
+    expect(row.last_error_op).toBeNull()
     expect(row.provisioning_step).toBeNull()
     expect(row.step_started_at).toBeNull()
     expect(row.updated_at).toBeTruthy()
   })
 
-  it('stores full runtime metadata and enforces allowed state values', async () => {
-    const [stepRow] = await sql`
+  it('stores full runtime metadata with v7 columns and enforces allowed state values', async () => {
+    const [row] = await sql`
       INSERT INTO workspace_runtimes (
-        workspace_id,
-        sprite_url,
-        sprite_name,
-        state,
-        last_error,
-        provisioning_step,
-        step_started_at
+        workspace_id, sprite_url, sprite_name, state, last_error,
+        volume_path, last_error_op
       )
       VALUES (
         ${WORKSPACE_ID},
         'https://cdn.example.com/sprite.png',
         'runtime-sprite',
-        'provisioning',
+        'error',
         'boot timeout',
-        'creating_machine',
-        now()
+        '/data/ws-123',
+        'provision'
       )
-      RETURNING state, provisioning_step, sprite_name
+      RETURNING state, sprite_name, volume_path, last_error_op
     `
 
-    expect(stepRow.state).toBe('provisioning')
-    expect(stepRow.provisioning_step).toBe('creating_machine')
-    expect(stepRow.sprite_name).toBe('runtime-sprite')
+    expect(row.state).toBe('error')
+    expect(row.sprite_name).toBe('runtime-sprite')
+    expect(row.volume_path).toBe('/data/ws-123')
+    expect(row.last_error_op).toBe('provision')
 
     await sql`DELETE FROM workspace_runtimes WHERE workspace_id = ${WORKSPACE_ID}`
+
+    await expect(
+      sql`
+        INSERT INTO workspace_runtimes (workspace_id, state)
+        VALUES (${WORKSPACE_ID}, 'provisioning')
+      `,
+    ).rejects.toThrow(/check|violates/)
 
     await expect(
       sql`

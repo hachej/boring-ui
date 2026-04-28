@@ -43,6 +43,8 @@ function toWorkspaceRuntime(row: typeof workspaceRuntimes.$inferSelect): Workspa
     spriteName: row.spriteName,
     state: row.state as WorkspaceRuntime['state'],
     lastError: row.lastError,
+    volumePath: row.volumePath,
+    lastErrorOp: row.lastErrorOp,
     provisioningStep: row.provisioningStep,
     stepStartedAt: toIso(row.stepStartedAt),
     updatedAt: toIso(row.updatedAt)!,
@@ -81,9 +83,6 @@ function toWorkspace(row: typeof workspaces.$inferSelect): Workspace {
     createdAt: row.createdAt.toISOString(),
     deletedAt: row.deletedAt?.toISOString() ?? null,
     isDefault: row.isDefault,
-    machineId: row.machineId,
-    volumeId: row.volumeId,
-    flyRegion: row.flyRegion,
   }
 }
 
@@ -170,20 +169,10 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     id: string,
   ): Promise<{
     removed: boolean
-    code?:
-      | typeof ERROR_CODES.WORKSPACE_PROVISIONING
-      | typeof ERROR_CODES.NOT_FOUND
+    code?: typeof ERROR_CODES.NOT_FOUND
   }> {
     const ws = await this.get(id)
     if (!ws) return { removed: false, code: ERROR_CODES.NOT_FOUND }
-
-    const [runtime] = await this.db
-      .select()
-      .from(workspaceRuntimes)
-      .where(eq(workspaceRuntimes.workspaceId, id))
-      .limit(1)
-    if (runtime?.state === 'provisioning')
-      return { removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING }
 
     await this.db
       .update(workspaces)
@@ -312,10 +301,8 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     code?:
       | typeof ERROR_CODES.LAST_OWNER
       | typeof ERROR_CODES.NOT_MEMBER
-      | typeof ERROR_CODES.WORKSPACE_PROVISIONING
   }> {
     return this.db.transaction(async (tx) => {
-      // Lock current owners in this workspace so concurrent owner removals serialize.
       await tx.execute(sql`
         SELECT user_id
         FROM workspace_members
@@ -336,15 +323,6 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         .limit(1)
       const role = memberRows[0]?.role as MemberRole | undefined
       if (!role) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
-
-      const [runtime] = await tx
-        .select()
-        .from(workspaceRuntimes)
-        .where(eq(workspaceRuntimes.workspaceId, workspaceId))
-        .limit(1)
-      if (runtime?.state === 'provisioning') {
-        return { removed: false, code: ERROR_CODES.WORKSPACE_PROVISIONING }
-      }
 
       if (role === 'owner') {
         const [{ count }] = await tx
@@ -391,6 +369,8 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     const rawToken = randomBytes(32).toString('base64url')
     const tokenHash = createHash('sha256').update(rawToken).digest('hex')
 
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+
     const rows = await this.db
       .insert(workspaceInvites)
       .values({
@@ -398,6 +378,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         email: normalizeEmail(email),
         tokenHash,
         role,
+        expiresAt,
         createdBy: invitedBy,
       })
       .returning()
@@ -725,6 +706,8 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         spriteName: merged.spriteName,
         state: merged.state,
         lastError: merged.lastError,
+        volumePath: merged.volumePath,
+        lastErrorOp: merged.lastErrorOp,
         provisioningStep: merged.provisioningStep,
         stepStartedAt: merged.stepStartedAt ? new Date(merged.stepStartedAt) : null,
         updatedAt: new Date(merged.updatedAt),
@@ -736,6 +719,8 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
           spriteName: merged.spriteName,
           state: merged.state,
           lastError: merged.lastError,
+          volumePath: merged.volumePath,
+          lastErrorOp: merged.lastErrorOp,
           provisioningStep: merged.provisioningStep,
           stepStartedAt: merged.stepStartedAt ? new Date(merged.stepStartedAt) : null,
           updatedAt: new Date(),

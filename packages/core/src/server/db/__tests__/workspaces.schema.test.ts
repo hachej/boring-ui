@@ -68,9 +68,6 @@ describe('workspaces schema', () => {
     expect(ws.created_at).toBeDefined()
     expect(ws.deleted_at).toBeNull()
     expect(ws.is_default).toBe(false)
-    expect(ws.machine_id).toBeNull()
-    expect(ws.volume_id).toBeNull()
-    expect(ws.fly_region).toBeNull()
 
     await sql`DELETE FROM workspaces WHERE id = ${ws.id}`
   })

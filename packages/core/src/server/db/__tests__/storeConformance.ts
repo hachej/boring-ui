@@ -295,20 +295,6 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
-      'delete returns workspace_provisioning when runtime is provisioning',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
-        const { workspaceStore, appId, users } = await setup()
-        const ws = await workspaceStore.create(users.owner.id, 'Provisioning', appId)
-        await workspaceStore.putWorkspaceRuntime(ws.id, { state: 'provisioning' })
-        expect(await workspaceStore.delete(ws.id)).toEqual({
-          removed: false,
-          code: ERROR_CODES.WORKSPACE_PROVISIONING,
-        })
-        assertionPassed('workspace-delete-blocked-by-provisioning-runtime')
-      }),
-    )
-
-    it(
       'getWorkspacesWhereSoleOwner handles none, sole-owner, and co-owned',
       withBeadId(BEAD_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
@@ -394,7 +380,7 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
-      'removeMember blocks removing last owner and during provisioning',
+      'removeMember blocks removing last owner',
       withBeadId(BEAD_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Owner Rules', appId)
@@ -402,13 +388,6 @@ export function describeWorkspaceStoreConformance(
         expect(await workspaceStore.removeMember(ws.id, users.owner.id)).toEqual({
           removed: false,
           code: ERROR_CODES.LAST_OWNER,
-        })
-
-        await workspaceStore.upsertMember(ws.id, users.member.id, 'editor')
-        await workspaceStore.putWorkspaceRuntime(ws.id, { state: 'provisioning' })
-        expect(await workspaceStore.removeMember(ws.id, users.member.id)).toEqual({
-          removed: false,
-          code: ERROR_CODES.WORKSPACE_PROVISIONING,
         })
         assertionPassed('removeMember-guards')
       }),
@@ -591,18 +570,20 @@ export function describeWorkspaceStoreConformance(
         const stepStartedAt = new Date().toISOString()
 
         const updated = await workspaceStore.putWorkspaceRuntime(ws.id, {
-          state: 'provisioning',
+          state: 'error',
           spriteUrl: 'https://cdn.example.com/sprite.png',
           spriteName: 'sprite-a',
-          provisioningStep: 'creating_machine',
-          stepStartedAt,
+          lastError: 'boot timeout',
+          lastErrorOp: 'provision',
+          volumePath: '/data/ws-123',
         })
 
-        expect(updated.state).toBe('provisioning')
+        expect(updated.state).toBe('error')
         expect(updated.spriteUrl).toBe('https://cdn.example.com/sprite.png')
         expect(updated.spriteName).toBe('sprite-a')
-        expect(updated.provisioningStep).toBe('creating_machine')
-        expect(updated.stepStartedAt).not.toBeNull()
+        expect(updated.lastError).toBe('boot timeout')
+        expect(updated.lastErrorOp).toBe('provision')
+        expect(updated.volumePath).toBe('/data/ws-123')
         assertionPassed('putWorkspaceRuntime-updates-fields')
       }),
     )
