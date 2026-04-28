@@ -1,3 +1,4 @@
 export { UserMenu } from './UserMenu.js'
+export { TopBarSlotProvider, useTopBarSlot } from './TopBarSlot.js'
 export { WorkspaceSwitcher } from './WorkspaceSwitcher.js'
 export { ThemeToggle } from './ThemeToggle.js'

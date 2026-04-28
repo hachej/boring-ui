@@ -1,6 +1,7 @@
 "use client"
 
 import { useContext, type ReactNode } from "react"
+import { useTopBarSlot } from "@boring/core/front/top-bar-slot"
 import { Plus, Search } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { ChatShellContext } from "./context"
@@ -8,8 +9,6 @@ import { ChatShellContext } from "./context"
 export interface ChatTopBarProps {
   appTitle?: string
   sessionTitle?: string
-  userInitial?: string
-  onAvatarClick?: () => void
   onCommandPalette?: () => void
   /** Override the brand/title block on the left. Hosts pass workspace
    *  switchers, breadcrumbs, etc. here. When set, the default
@@ -25,14 +24,14 @@ export interface ChatTopBarProps {
 export function ChatTopBar({
   appTitle = "Boring",
   sessionTitle,
-  userInitial = "J",
-  onAvatarClick,
   onCommandPalette,
   topBarLeft,
   topBarRight,
   className,
 }: ChatTopBarProps) {
   const shell = useContext(ChatShellContext)
+  const slot = useTopBarSlot()
+  const right = topBarRight ?? slot ?? null
 
   return (
     <header
@@ -99,27 +98,7 @@ export function ChatTopBar({
             <Plus className="h-4 w-4" />
           </button>
         )}
-        {topBarRight ?? (
-          <button
-            type="button"
-            onClick={onAvatarClick}
-            className={cn(
-              "group relative ml-1 flex h-7 w-7 items-center justify-center rounded-full",
-              "bg-gradient-to-br from-[color:var(--accent)] to-[oklch(0.52_0.16_40)] text-[11px] font-semibold text-white",
-              "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.1),inset_0_0_0_1px_oklch(1_0_0/0.12)]",
-              "transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "hover:shadow-[0_2px_6px_-2px_oklch(0.62_0.14_65/0.4),inset_0_0_0_1px_oklch(1_0_0/0.2)]",
-              "hover:-translate-y-[0.5px]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--canvas)]",
-            )}
-            aria-label="Account"
-            title="Account"
-          >
-            <span aria-hidden="true" className="pointer-events-none select-none tracking-tight">
-              {userInitial}
-            </span>
-          </button>
-        )}
+        {right}
       </div>
     </header>
   )

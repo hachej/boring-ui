@@ -1,24 +1,9 @@
 import type { AgentTool, ToolResult } from '../../../shared/tool'
 import type { Sandbox } from '../../../shared/sandbox'
+import { decode, type FileChangeMetadata } from './_shared'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
-
-const decoder = new TextDecoder('utf-8', { fatal: false })
-
-function decode(bytes: Uint8Array): string {
-  return decoder.decode(bytes)
-}
-
-type FileChangeOp = 'write' | 'edit' | 'unlink' | 'rename' | 'mkdir'
-
-interface FileChangeMetadata {
-  op: FileChangeOp
-  path: string
-  oldPath?: string
-  timestamp: string
-  size?: number
-}
 
 function extractRedirectWrites(
   segment: string,

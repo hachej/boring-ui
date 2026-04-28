@@ -8,6 +8,7 @@ export default defineConfig([
       'server/index': 'src/server/index.ts',
       'server/db/index': 'src/server/db/index.ts',
       'front/index': 'src/front/index.ts',
+      'front/top-bar-slot': 'src/front/components/TopBarSlot.tsx',
       'shared/index': 'src/shared/index.ts',
     },
     format: ['esm'],

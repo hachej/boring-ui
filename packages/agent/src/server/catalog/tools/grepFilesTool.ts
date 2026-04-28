@@ -1,9 +1,14 @@
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolExecContext, ToolResult } from '../../../shared/tool'
+import {
+  decode,
+  DEFAULT_TOOL_LIMIT,
+  makeError,
+  MAX_PATTERN_LENGTH,
+  MAX_TOOL_LIMIT,
+  normalizeLimit,
+} from './_shared'
 
-const DEFAULT_LIMIT = 200
-const MAX_LIMIT = 5_000
-const MAX_PATTERN_LENGTH = 256
 const GREP_TIMEOUT_MS = 30_000
 const GREP_MAX_OUTPUT_BYTES = 2_097_152
 
@@ -21,31 +26,6 @@ interface GrepFilesDetails {
   matches: GrepMatch[]
   truncated: boolean
 }
-
-function makeError(message: string): ToolResult {
-  return {
-    content: [{ type: 'text', text: message }],
-    isError: true,
-  }
-}
-
-function normalizeLimit(rawLimit: unknown): { limit: number; error?: string } {
-  if (rawLimit === undefined) {
-    return { limit: DEFAULT_LIMIT }
-  }
-  if (typeof rawLimit !== 'number' || !Number.isFinite(rawLimit)) {
-    return { limit: DEFAULT_LIMIT, error: 'limit must be a number when provided' }
-  }
-
-  const normalized = Math.trunc(rawLimit)
-  if (normalized <= 0) {
-    return { limit: DEFAULT_LIMIT, error: 'limit must be >= 1 when provided' }
-  }
-
-  return { limit: Math.min(normalized, MAX_LIMIT) }
-}
-
-const decoder = new TextDecoder('utf-8', { fatal: false })
 
 function parseGrepOutput(stdout: string, limit: number): { matches: GrepMatch[]; truncated: boolean } {
   const matches: GrepMatch[] = []
@@ -85,7 +65,7 @@ function escapeShellArg(arg: string): string {
 
 function buildGrepCommand(pattern: string, glob: string | undefined, limit: number): string {
   // Request extra lines so we can detect truncation
-  const grepLimit = Math.min(limit + 1, MAX_LIMIT + 1)
+  const grepLimit = Math.min(limit + 1, MAX_TOOL_LIMIT + 1)
   const escapedPattern = escapeShellArg(pattern)
 
   if (glob !== undefined) {
@@ -121,7 +101,7 @@ export function createGrepFilesTool(sandbox: Sandbox): AgentTool {
         limit: {
           type: 'integer',
           minimum: 1,
-          maximum: MAX_LIMIT,
+          maximum: MAX_TOOL_LIMIT,
           description: 'Maximum number of matching lines to return.',
         },
       },
@@ -151,7 +131,10 @@ export function createGrepFilesTool(sandbox: Sandbox): AgentTool {
         }
       }
 
-      const { limit, error } = normalizeLimit(params.limit)
+      const { limit, error } = normalizeLimit(params.limit, {
+        default: DEFAULT_TOOL_LIMIT,
+        max: MAX_TOOL_LIMIT,
+      })
       if (error) {
         return makeError(error)
       }
@@ -169,11 +152,11 @@ export function createGrepFilesTool(sandbox: Sandbox): AgentTool {
           maxOutputBytes: GREP_MAX_OUTPUT_BYTES,
         })
 
-        const stdout = decoder.decode(result.stdout)
+        const stdout = decode(result.stdout)
 
         // grep exits 1 when no matches — not an error
         if (result.exitCode !== 0 && result.exitCode !== 1) {
-          const stderr = decoder.decode(result.stderr)
+          const stderr = decode(result.stderr)
           return makeError(`grep_files failed (exit ${result.exitCode}): ${stderr}`.trim())
         }
 

@@ -27,10 +27,6 @@ import { useCommandRegistry, useRegistry } from "../../registry"
 export interface ChatCenteredShellProps {
   /** Branding shown in the top bar. Ignored when `topBarLeft` is set. */
   appTitle?: string
-  /** User initial shown in the avatar bubble. Ignored when `topBarRight` is set. */
-  userInitial?: string
-  /** Click handler for the avatar bubble. Ignored when `topBarRight` is set. */
-  onAvatarClick?: () => void
   /** Override the brand block on the left side of the top bar (e.g. workspace switcher). */
   topBarLeft?: ReactNode
   /** Override the avatar on the right side of the top bar (e.g. theme toggle + user menu). */
@@ -180,8 +176,6 @@ function useViewportWidth(): number {
 
 export function ChatCenteredShell({
   appTitle = "Boring",
-  userInitial = "J",
-  onAvatarClick,
   topBarLeft,
   topBarRight,
 
@@ -546,8 +540,6 @@ export function ChatCenteredShell({
           <ChatTopBar
             appTitle={appTitle}
             sessionTitle={activeSession?.title}
-            userInitial={userInitial}
-            onAvatarClick={onAvatarClick}
             onCommandPalette={openCommandPalette}
             topBarLeft={topBarLeft}
             topBarRight={topBarRight}

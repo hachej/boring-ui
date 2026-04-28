@@ -575,6 +575,9 @@ importers:
       '@boring/agent':
         specifier: workspace:*
         version: link:../agent
+      '@boring/core':
+        specifier: workspace:*
+        version: link:../core
       '@codemirror/commands':
         specifier: ^6.10.3
         version: 6.10.3

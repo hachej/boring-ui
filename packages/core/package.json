@@ -16,6 +16,10 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
+    "./front/top-bar-slot": {
+      "types": "./dist/front/top-bar-slot.d.ts",
+      "import": "./dist/front/top-bar-slot.js"
+    },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"

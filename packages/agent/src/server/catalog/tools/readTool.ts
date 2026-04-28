@@ -1,5 +1,6 @@
 import type { AgentTool, ToolExecContext, ToolResult } from '../../../shared/tool'
 import type { Workspace } from '../../../shared/workspace'
+import { makeError } from './_shared'
 
 interface ReadToolDetails {
   content: string
@@ -8,13 +9,6 @@ interface ReadToolDetails {
 }
 
 const DEFAULT_LINE_OFFSET = 1
-
-function makeError(message: string): ToolResult {
-  return {
-    content: [{ type: 'text', text: message }],
-    isError: true,
-  }
-}
 
 function parsePositiveInteger(
   value: unknown,

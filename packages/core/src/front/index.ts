@@ -70,6 +70,8 @@ export type { BoringAppProps, BoringAppAuthPagesOverride } from './BoringApp.js'
 
 export {
   UserMenu,
+  TopBarSlotProvider,
+  useTopBarSlot,
   WorkspaceSwitcher,
   ThemeToggle,
 } from './components/index.js'

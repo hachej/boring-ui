@@ -22,6 +22,7 @@ vi.mock('better-auth/client/plugins', () => ({
 import { withBeadId } from '../../server/__tests__/_setup'
 import type { RuntimeConfig } from '../../shared/types'
 import { BoringApp } from '../BoringApp'
+import { useTopBarSlot } from '../components/TopBarSlot'
 import { useMswHandler } from './_setup'
 
 const BEAD_ID = 'boring-ui-v2-p2at'
@@ -98,6 +99,11 @@ function mockApiEndpoints() {
 function setupAll() {
   mockConfigEndpoint()
   mockApiEndpoints()
+}
+
+function SlotProbe() {
+  const slot = useTopBarSlot()
+  return <div data-testid="topbar-slot">{slot}</div>
 }
 
 beforeEach(() => {
@@ -237,6 +243,41 @@ describe('BoringApp', () => {
       })
 
       assertionPassed('csp-nonce-threaded')
+    }),
+  )
+
+  it(
+    'provides UserMenu through the top bar slot context',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      setupAll()
+      mockUseSession.mockReturnValue({
+        data: {
+          user: {
+            id: 'user-1',
+            email: 'test@test.dev',
+            name: 'Tester',
+            image: null,
+          },
+        },
+        isPending: false,
+        error: null,
+      })
+      window.history.pushState({}, '', '/slot')
+
+      render(
+        <BoringApp>
+          <Route path="/slot" element={<SlotProbe />} />
+        </BoringApp>,
+      )
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /user menu/i }),
+        ).toBeTruthy(),
+      )
+      expect(screen.getByTestId('topbar-slot')).toBeTruthy()
+
+      assertionPassed('top-bar-slot-user-menu')
     }),
   )
 })

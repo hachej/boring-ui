@@ -1,5 +1,11 @@
 import type { AgentTool, ToolExecContext, ToolResult } from '../../../shared/tool'
 import type { Workspace } from '../../../shared/workspace'
+import {
+  bytesWritten,
+  type FileChangeMetadata,
+  makeError,
+  nowIso,
+} from './_shared'
 
 interface EditToolDetails {
   path: string
@@ -8,26 +14,11 @@ interface EditToolDetails {
   fileChanges: FileChangeMetadata[]
 }
 
-interface FileChangeMetadata {
-  op: 'write' | 'edit' | 'unlink' | 'rename' | 'mkdir'
-  path: string
-  oldPath?: string
-  timestamp: string
-  size?: number
-}
-
 interface EditParams {
   path?: unknown
   oldString?: unknown
   newString?: unknown
   replaceAll?: unknown
-}
-
-function makeError(message: string): ToolResult {
-  return {
-    content: [{ type: 'text', text: message }],
-    isError: true,
-  }
 }
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -63,14 +54,6 @@ function replaceAllOccurrences(
   newString: string,
 ): string {
   return content.split(oldString).join(newString)
-}
-
-function bytesWritten(content: string): number {
-  return new TextEncoder().encode(content).byteLength
-}
-
-function nowIso(): string {
-  return new Date().toISOString()
 }
 
 function successResult(details: EditToolDetails): ToolResult {

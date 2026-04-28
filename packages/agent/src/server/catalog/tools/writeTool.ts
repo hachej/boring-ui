@@ -2,6 +2,12 @@ import { dirname } from 'node:path'
 
 import type { AgentTool, ToolExecContext, ToolResult } from '../../../shared/tool'
 import type { Workspace } from '../../../shared/workspace'
+import {
+  bytesWritten,
+  type FileChangeMetadata,
+  makeError,
+  nowIso,
+} from './_shared'
 
 interface WriteToolDetails {
   path: string
@@ -9,33 +15,10 @@ interface WriteToolDetails {
   fileChanges: FileChangeMetadata[]
 }
 
-interface FileChangeMetadata {
-  op: 'write' | 'edit' | 'unlink' | 'rename' | 'mkdir'
-  path: string
-  oldPath?: string
-  timestamp: string
-  size?: number
-  /**
-   * `false` when the write created a brand-new file; `true` when it
-   * overwrote an existing one. Lets the workspace bridge distinguish
-   * `file:created` from `file:changed` events — without this, every
-   * write becomes a "changed" event and consumers that only care
-   * about creates (e.g. auto-open new files) never fire.
-   */
-  existsBefore?: boolean
-}
-
 interface WriteParams {
   path?: unknown
   content?: unknown
   createDirs?: unknown
-}
-
-function makeError(message: string): ToolResult {
-  return {
-    content: [{ type: 'text', text: message }],
-    isError: true,
-  }
 }
 
 function getParentDir(relPath: string): string | null {
@@ -76,14 +59,6 @@ function makeTmpPath(targetPath: string, toolCallId: string): string {
   const safeToolCallId = toolCallId.replace(/[^A-Za-z0-9_-]/g, '_') || 'tool'
   const suffix = `${Date.now().toString(36)}-${safeToolCallId}`
   return `${targetPath}.tmp-${suffix}`
-}
-
-function bytesWritten(content: string): number {
-  return new TextEncoder().encode(content).byteLength
-}
-
-function nowIso(): string {
-  return new Date().toISOString()
 }
 
 function successResult(details: WriteToolDetails): ToolResult {
@@ -137,16 +112,15 @@ export function createWriteTool(workspace: Workspace): AgentTool {
       // racing with the write is acceptable: worst case is one
       // misclassified event after a concurrent rm, which is fine.
       let existsBefore = false
-      try {
-        await workspace.stat(path)
-        existsBefore = true
-      } catch (error) {
-        if (!isNotFoundError(error)) throw error
-      }
-
       let tmpWritten = false
       let renamed = false
       try {
+        try {
+          await workspace.stat(path)
+          existsBefore = true
+        } catch (error) {
+          if (!isNotFoundError(error)) throw error
+        }
         await ensureParentDir(workspace, path, createDirs)
         await workspace.writeFile(tmpPath, content)
         tmpWritten = true

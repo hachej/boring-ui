@@ -11,6 +11,7 @@ import { AuthProvider } from './auth/AuthProvider.js'
 import { UserIdentityProvider } from './auth/UserIdentityProvider.js'
 import { WorkspaceAuthProvider } from './WorkspaceAuthProvider.js'
 import { AuthGate } from './AuthGate.js'
+import { TopBarSlotProvider, UserMenu } from './components/index.js'
 import { SignInPage as DefaultSignInPage } from './auth/SignInPage.js'
 import { SignUpPage as DefaultSignUpPage } from './auth/SignUpPage.js'
 import { ForgotPasswordPage as DefaultForgotPasswordPage } from './auth/ForgotPasswordPage.js'
@@ -82,34 +83,36 @@ export function BoringApp({ children, authPages, cspNonce }: BoringAppProps) {
                 <UserIdentityProvider>
                   <BrowserRouter>
                     <WorkspaceAuthProvider>
-                      <Helmet nonce={resolvedCspNonce}>
-                        {resolvedCspNonce ? (
-                          <>
-                            <meta name={CSP_NONCE_META_NAME} content={resolvedCspNonce} />
-                            <script
-                              type="application/json"
-                              nonce={resolvedCspNonce}
-                              data-boring-csp-nonce="true"
-                            >
-                              {JSON.stringify({ nonce: resolvedCspNonce })}
-                            </script>
-                          </>
-                        ) : null}
-                      </Helmet>
-                      <AuthGate>
-                        <Suspense fallback={null}>
-                          <Routes>
-                            <Route path={routes.signin} element={<SignInPage />} />
-                            <Route path={routes.signup} element={<SignUpPage />} />
-                            <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
-                            <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
-                            <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
-                            <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
-                            <Route path={routes.me} element={<UserSettingsPage />} />
-                            {children}
-                          </Routes>
-                        </Suspense>
-                      </AuthGate>
+                      <TopBarSlotProvider slot={<UserMenu />}>
+                        <Helmet nonce={resolvedCspNonce}>
+                          {resolvedCspNonce ? (
+                            <>
+                              <meta name={CSP_NONCE_META_NAME} content={resolvedCspNonce} />
+                              <script
+                                type="application/json"
+                                nonce={resolvedCspNonce}
+                                data-boring-csp-nonce="true"
+                              >
+                                {JSON.stringify({ nonce: resolvedCspNonce })}
+                              </script>
+                            </>
+                          ) : null}
+                        </Helmet>
+                        <AuthGate>
+                          <Suspense fallback={null}>
+                            <Routes>
+                              <Route path={routes.signin} element={<SignInPage />} />
+                              <Route path={routes.signup} element={<SignUpPage />} />
+                              <Route path={routes.forgotPassword} element={<ForgotPasswordPage />} />
+                              <Route path={routes.resetPassword} element={<ResetPasswordPage />} />
+                              <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
+                              <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
+                              <Route path={routes.me} element={<UserSettingsPage />} />
+                              {children}
+                            </Routes>
+                          </Suspense>
+                        </AuthGate>
+                      </TopBarSlotProvider>
                     </WorkspaceAuthProvider>
                   </BrowserRouter>
                 </UserIdentityProvider>
