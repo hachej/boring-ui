@@ -249,7 +249,7 @@ const capturedRoutes: Array<{ method: string; url: string; hasPreHandler: boolea
 
 beforeAll(async () => {
   app = Fastify({ logger: false })
-  app.decorate('config', { appId: APP_ID, auth: { url: 'http://localhost:3000' } } as any)
+  app.decorate('config', { appId: APP_ID, auth: { url: 'http://localhost:3000' }, features: { inviteTtlDays: 7 } } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
   registerErrorHandler(app)
 

@@ -119,6 +119,7 @@ beforeAll(async () => {
   app.decorate('config', {
     appId: APP_ID,
     auth: { url: 'http://localhost:3000' },
+    features: { inviteTtlDays: 7 },
   } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
   registerErrorHandler(app)
