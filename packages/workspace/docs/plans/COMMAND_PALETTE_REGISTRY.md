@@ -284,6 +284,123 @@ adding catalogs alongside.
   playground, ⌘K, type a query, assert two `<CommandGroup>` headings
   render with disjoint rows.
 
+## Code simplifications enabled by this pattern
+
+Once the registry is in place several adjacent things either get
+smaller, get more declarative, or just become possible without ad-hoc
+plumbing. Calling them out so they're addressed in the same PR rather
+than left as drift.
+
+1. **`<CommandPalette />` body collapses to one loop + one
+   commands group.** Today the body has three hardcoded result
+   blocks (`recentFiles`, `fileResults`, `commandResults`), each with
+   its own group rendering. After: one `catalogs.map(c =>
+   <CatalogGroup catalog={c} query={searchQuery} />)` plus a
+   single commands group when in `>` mode.
+
+   File diff for `packages/workspace/src/components/CommandPalette.tsx`
+   should net out around –40 lines for the body, –6 lines for the
+   `useMemo`'d `fileResults` block, and –5 lines for
+   `handleFileSelect` (moves into the FilesCatalog's `onSelect`).
+
+2. **`<CommandPalette />` props go from 2 to 0.** Today's
+   `CommandPaletteProps = { fileSearchFn, onOpenFile }`; both are
+   needed only because the host had to thread the file-search backend
+   AND the file-open callback in. With catalogs, both move into the
+   FilesCatalog config registered on `WorkspaceProvider`. The
+   palette becomes prop-less — it reads everything from context.
+
+3. **`ChatCenteredShell`'s imperative `useEffect` command
+   registrations become declarative.** Today the shell does:
+
+   ```tsx
+   useEffect(() => {
+     commandRegistry.registerCommand({ id: "chat-shell.toggleSessions", … })
+     commandRegistry.registerCommand({ id: "chat-shell.toggleWorkbench", … })
+     commandRegistry.registerCommand({ id: "chat-shell.newChat", … })
+     for (const s of sessions) {
+       commandRegistry.registerCommand({ id: `chat-shell.session.${s.id}`, … })
+     }
+   }, [commandRegistry, toggleDrawer, toggleSurface, onCreateSession, onSwitchSession, sessions])
+   ```
+
+   The session loop is the giveaway — those aren't really commands,
+   they're a *catalog*. After:
+
+   - The 3 toggle/new-chat actions stay as commands (one-shot, no
+     query) but move from `useEffect` into the shell's
+     `WorkspaceProvider catalogs` setup so registration is keyed by
+     identity, not effect order.
+   - The "Switch to: <session title>" loop becomes a
+     `SessionsCatalog` — the shell registers a catalog with an
+     in-memory `ExplorerAdapter` that filters `props.sessions` by
+     query. No more N command rows materialized into the registry on
+     every session-list change.
+
+   Net: –30 lines in `ChatCenteredShell.tsx`, no more "registry
+   churn" on every session change, and the same surface area now
+   responds to user typing (you can search for a session by name
+   instead of scrolling the list).
+
+4. **No more `withCommandPalette` no-op prop.** Today
+   `ChatCenteredShellProps.withCommandPalette` is preserved for
+   back-compat as a runtime no-op (`{void withCommandPalette}` in
+   the JSX) — see commit 9eebe87. Once the palette is fully driven
+   by catalog/command registries on `WorkspaceProvider`, the
+   shell-level prop has nothing to control. Drop it. (Hosts that
+   need to suppress the palette set `<WorkspaceProvider
+   withCommandPalette={false}>` — already the documented
+   override.)
+
+5. **One file-search backend, one unified UX path.** The legacy
+   `fileSearchFn?: (query: string) => string[]` prop on the palette
+   was a SYNCHRONOUS callback — it predates the async
+   `useFileSearch` hook + `/api/v1/files/search` HTTP route. After
+   the registry refactor, the FilesCatalog wraps the (async)
+   `fetchClient.search` directly via `ExplorerAdapter`, dropping the
+   sync vs async asymmetry. Same backend the LLM's `find_files`
+   tool already uses (just landed in commit 12098fd).
+
+6. **`<DataExplorer />` and `<CommandPalette />` test infrastructure
+   converges.** Catalog adapters become the unit of test for both
+   surfaces. A SessionsCatalog tested in isolation against a mock
+   adapter is automatically testing the data path for both the
+   data-pane explorer view and the cmd-palette inline view.
+
+## Dead code that comes out
+
+These are the concrete deletions enabled by Phase 1, not aspirational
+cleanup. Each is gated on the registry landing.
+
+| File | Lines | What |
+|---|---|---|
+| `packages/workspace/src/components/CommandPalette.tsx` | ~–80 | The dual `fileSearchFn` / `onOpenFile` props, the `fileResults` `useMemo`, the `handleFileSelect` callback, the standalone "Files" `<CommandGroup>` block. All consolidated into the catalog loop. |
+| `packages/workspace/src/components/CommandPalette.tsx` (`CommandPaletteProps`) | –4 | The exported type currently has both fields and is referenced by `ChatCenteredShell`'s now-unused `withCommandPalette` plumbing. Type narrows to `{}` and the `Props` export can drop entirely. |
+| `packages/workspace/src/components/chat/ChatCenteredShell.tsx` | ~–30 | The `useEffect` block that imperatively registers chat-shell commands + the per-session `commandRegistry.registerCommand` loop (lines ~390–425 in current shape). Replaced with one declarative `catalogs={[…]}` + `commands={[…]}` registration on `<WorkspaceProvider>` (or a sibling `<ChatShellWorkspace>` helper). |
+| `packages/workspace/src/components/chat/ChatCenteredShell.tsx` (`withCommandPalette` prop) | –6 | Prop, default value, type field, the `{void withCommandPalette}` JSX expression, and its doc comment. |
+| `packages/workspace/src/components/CommandPalette.tsx` (loadRecent/saveRecent) | 0 | KEEP for now — Recent stays a localStorage catalog in v1. Earmarked for removal in a future PR if/when "recent across catalogs" replaces it. |
+
+**Files only changed (not deleted):**
+
+- `packages/workspace/src/WorkspaceProvider.tsx` — gains
+  `catalogs?: CatalogConfig[]` prop + threads to `RegistryProvider`
+  (~+10 lines).
+- `packages/workspace/src/registry/RegistryProvider.tsx` — adds
+  `catalogRegistry` to the context (~+8 lines).
+- `packages/workspace/src/registry/CatalogRegistry.ts` (new, ~30
+  lines) — sibling of `CommandRegistry`, same shape (`register`,
+  `unregister`, `getCatalogs`).
+- `packages/workspace/src/registry/index.ts` — re-exports
+  `useCatalogs` + `CatalogRegistry` + types.
+- `packages/workspace/src/components/CommandPalette.tsx` — net
+  ~–40 lines after the simplifications above + new `<CatalogGroup>`
+  helper (~+30 lines for parallel-fetch + AbortSignal + render).
+
+**Net package size:** ~–50 lines of net source, fewer props on the
+public surface, and a new public type (`CatalogConfig` +
+re-exported `ExplorerAdapter`) — already exported, just newly load
+bearing.
+
 ## Migration / rollout
 
 Phase 1 (this PR):
