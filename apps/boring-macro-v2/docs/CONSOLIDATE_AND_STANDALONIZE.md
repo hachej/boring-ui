@@ -158,27 +158,58 @@ Prerequisite: CODE_OWNERSHIP_CLEANUP_PLAN Phase 0 is done
 3. Replace `tabBus` call sites (6) with `bridge.postCommand` per the
    ownership-cleanup plan.
 
-### Phase D — Wire deploy
+### Phase D — Wire deploy (swap-in-place)
 
-1. Borrow `apps/full-app/Dockerfile` + `fly.toml` shape; adapt for
-   macro (different env vars, different fly app name, different routes
-   to expose).
-2. Check `BM_CH_*` + Stripe + Anthropic secrets are read from env in
-   prod; document in `.env.example`.
-3. Move `agent-system-prompt.txt` (used today by the standalone) into
-   `.pi/APPEND_SYSTEM.md`. Pi auto-discovers it, no code change
-   needed.
-4. End-to-end smoke against the deployed instance (one session,
-   `macro_search` query, `exec_ui openPanel` chart open).
+**Decided 2026-04-28: keep `boring-macro.fly.dev`. Repoint the existing
+Fly app at the consolidated codebase. ~1 minute downtime during the
+swap is acceptable.**
 
-### Phase E — Archive the standalone
+1. Borrow `apps/full-app/Dockerfile` shape; adapt for macro (different
+   env vars, different routes to expose).
+2. Reuse the existing `fly.toml` from the standalone (it already
+   targets `boring-macro.fly.dev`). Update build context paths to the
+   consolidated app folder. Do not change the Fly app name.
+3. Check `BM_CH_*` + Stripe + Anthropic secrets are read from env in
+   prod; document in `.env.example`. Confirm Fly secrets already set
+   on the existing app cover what the consolidated app needs (likely
+   yes — same backend code).
+4. Reconcile system-prompt files: the standalone has both
+   `agent-system-prompt.txt` (legacy) and `.pi/APPEND_SYSTEM.md`. Grep
+   the standalone for any code path still reading the `.txt` (likely
+   none — pi auto-discovers `APPEND_SYSTEM.md`). Keep only the
+   `.pi/APPEND_SYSTEM.md` version in the consolidated app. Delete the
+   `.txt`.
+5. Deploy from `apps/boring-macro-v2/` (or post-rename
+   `apps/boring-macro/` — see Phase E). Smoke against the live URL:
+   one session, `macro_search` query, `exec_ui openPanel` chart open.
+   Roll back via Fly's previous-release pointer if the smoke fails.
+
+### Phase E — Archive the standalone + rename the app
+
+**Decided 2026-04-28: rename `apps/boring-macro-v2/` →
+`apps/boring-macro/` once the standalone is archived. The `-v2` suffix
+existed to disambiguate against the standalone repo; with the standalone
+gone, it's a misnomer.**
 
 1. Rename `/home/ubuntu/projects/boring-macro-v2/` →
    `/home/ubuntu/projects/.boring-macro-v2-standalone-archive-2026-04-28/`.
 2. Add a top-level README to the archive: "merged into
-   `boring-ui-v2/apps/boring-macro-v2/` on 2026-04-28; see
+   `boring-ui-v2/apps/boring-macro/` on 2026-04-28; see
    docs/CONSOLIDATE_AND_STANDALONIZE.md for the migration record."
-3. Delete after one month if nothing's been pulled out of it.
+3. Rename `apps/boring-macro-v2/` → `apps/boring-macro/`:
+   - `git mv apps/boring-macro-v2 apps/boring-macro`
+   - Update `package.json#name` from `@boring/macro` (already correct)
+     and any internal references that hardcode the path (search for
+     `boring-macro-v2`, expect hits in tsconfig, vite, Dockerfile
+     COPY paths, fly.toml, README, this file).
+   - Re-run `pnpm install` so workspace resolution updates.
+   - Verify `pnpm typecheck`, `pnpm test`, `pnpm test:e2e` from the
+     new path.
+   - The Fly app name (`boring-macro`) and URL stay the same — only
+     the local source folder renames.
+4. Delete the standalone archive after one month if nothing's been
+   pulled out of it. Move-references to it must be checked first
+   (e.g. CLAUDE.md notes about working in `/home/ubuntu/projects/boring-macro-v2/`).
 
 ## Portability checklist (so future `git mv` to a separate repo is mechanical)
 
@@ -196,9 +227,11 @@ package versions). Concretely:
 - [ ] `vite.config.ts` resolves `@boring/workspace` (and friends)
       through standard Node resolution — *not* through hardcoded
       `resolve(__dirname, "../../packages/workspace/src/index.ts")`
-      aliases. Today the standalone uses path aliases for HMR; the
-      consolidated app should rely on the package's built `dist/`
-      (like `apps/full-app/` does) so it works outside the monorepo.
+      aliases. **Decided 2026-04-28: built `dist/` only, no path
+      aliases.** Today's standalone uses src-aliases for HMR; the
+      consolidated app drops them, accepting the trade-off (workspace
+      package edits require a rebuild instead of HMR — same DX as
+      `apps/full-app/`). Portability beats HMR for this app.
 - [ ] No imports from sibling apps (`apps/full-app/...`,
       `apps/workspace-playground/...`).
 - [ ] Tests (`e2e/`, `__tests__/`) don't reference monorepo-root
@@ -237,16 +270,15 @@ this to a new repo tomorrow."
 
 ## Open questions
 
-- **Standalone's `agent-system-prompt.txt`** — is it still consumed
-  anywhere, or is everything in `.pi/APPEND_SYSTEM.md` now? Check on
-  the way through. The standalone has both files at root.
 - **The standalone has its own e2e suite (29 specs)** that already
-  hits the macro frontend + ClickHouse. After
-  `CODE_OWNERSHIP_CLEANUP_PLAN.md` Phase 2 trims it to ~14 macro-only
-  specs, those 14 land in `apps/boring-macro-v2/e2e/`. The other ~15
-  generic specs go to `packages/workspace/e2e/`. Do this trim during
-  Phase B, not later — easier to land lean than to land bloated and
-  retroactively split.
+  hits the macro frontend + ClickHouse. Sequence: this plan's Phase B
+  copies all 29 into `apps/boring-macro-v2/e2e/` as-is.
+  `CODE_OWNERSHIP_CLEANUP_PLAN.md` Phase 2 then splits them — generic
+  specs (~15) move to `packages/workspace/e2e/` against the workspace
+  fixture; macro-only specs (~14) stay. The cleanup plan owns the
+  generic-vs-macro classification; this plan just delivers the 29 to
+  the right starting point. Do not pre-trim during Phase B — that
+  would force a generic-vs-macro decision twice.
 - **`apps/boring-macro-v2`'s `__tests__/` (vitest) suite** — currently
   has 214 LOC of macroTools tests. Keep as-is; no merge needed (the
   standalone never had a vitest equivalent for tools).

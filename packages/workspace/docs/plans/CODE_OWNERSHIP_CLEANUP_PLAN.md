@@ -7,7 +7,9 @@
 ## Problem
 
 Tests for the `@boring/workspace` chat shell, dock, UI bridge, and `@boring/agent`
-plumbing currently live in **`boring-macro-v2/e2e/`** (29 specs). That happened
+plumbing currently live in the standalone macro repo's `e2e/` directory (29
+specs — see [`CONSOLIDATE_AND_STANDALONIZE.md`](../../../apps/boring-macro-v2/docs/CONSOLIDATE_AND_STANDALONIZE.md)
+for how that repo merges into `apps/boring-macro-v2/e2e/`). That happened
 because the macro app was the first non-trivial consumer and the tests caught real
 bugs there. But the contents are mixed:
 
@@ -54,7 +56,7 @@ Concretely:
 | `packages/workspace/e2e/` | chat shell layout, dock split/resize, UI bridge dispatcher, sidebar persistence, composer styling | Browser against a **fixture app** in `packages/workspace/e2e/fixture/` |
 | `packages/agent/__tests__/` (existing) | `AgentTool` schema, harness, chat route, sessions | In-process |
 | `apps/workspace-playground/` | nothing — playground stays a demo | n/a |
-| `boring-macro-v2/e2e/` | macro adapter shape, FRED catalog routes, ChartCanvasPane tabs, DeckPane edit/save, macro tool catalog | Browser against the macro dev server |
+| `apps/boring-macro-v2/e2e/` | macro adapter shape, FRED catalog routes, ChartCanvasPane tabs, DeckPane edit/save, macro tool catalog | Browser against the macro dev server |
 
 ## Why a fixture, not the playground
 
@@ -256,6 +258,13 @@ the package's declared API match what's shipped.
 
 ### Phase 2 — Move generic specs from boring-macro
 
+> **Coordination with the macro consolidation plan:** the 29 specs live in
+> the *standalone* macro today. The macro plan's Phase B copies them into
+> `apps/boring-macro-v2/e2e/`. Sequencing: do macro Phase B FIRST (move
+> 29 specs in), then this Phase 2 (split — generic ones move to
+> `packages/workspace/e2e/`, leaving ~14 macro-only). This avoids
+> retroactively touching standalone files we're about to archive.
+
 Specs that come over (one per file, lightly adapted to the fixture's storage key
 and pane registry):
 
@@ -273,7 +282,7 @@ and pane registry):
   `openPanel`, dispatcher noop's when no surface mounted, dispatch fires when it
   does.
 
-After Phase 2, `boring-macro-v2/e2e/` shrinks from 29 → ~14 specs:
+After Phase 2, `apps/boring-macro-v2/e2e/` shrinks from 29 → ~14 specs:
 - `chat-suggestions.spec.ts` (macro labels)
 - `catalog.spec.ts` (FRED catalog UI + 87k count + macro routes)
 - `catalog-to-chart.spec.ts` (macro adapter onActivate → chart-canvas)
