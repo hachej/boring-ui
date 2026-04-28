@@ -119,7 +119,7 @@ jobs:
       - name: Enforce core bundle budgets
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: pnpm tsx scripts/check-bundle-size.ts
+        run: pnpm --filter @boring/core run check:bundle-size
 
   unit:
     name: Unit Tests

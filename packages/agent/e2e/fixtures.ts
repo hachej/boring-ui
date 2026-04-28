@@ -33,7 +33,7 @@ export const test = loggingTest.extend<E2eFixtures>({
     }
   },
   backend: async ({ workspace }, use, testInfo) => {
-    const repoRoot = path.resolve(fixturesDir, '..')
+    const repoRoot = path.resolve(fixturesDir, '..', '..', '..')
     const backend = await spawnBackend({
       workspaceRoot: workspace.root,
       repoRoot,

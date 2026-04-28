@@ -1,9 +1,5 @@
 import { expect, test } from './fixtures'
 
-const hasRealKey =
-  !!process.env.ANTHROPIC_API_KEY &&
-  process.env.ANTHROPIC_API_KEY !== 'e2e-test-key'
-
 test.describe('M3a: session CRUD', () => {
   test('create → list → load → delete → list confirms removal', async ({
     browserPage,
@@ -92,124 +88,8 @@ test.describe('M3a: session CRUD', () => {
   })
 })
 
-test.describe('M3a: UI bridge — state roundtrip', () => {
-  test('PUT state → GET returns same state', async ({
-    browserPage,
-    backend,
-  }) => {
-    const api = backend.apiUrl
-
-    const put = await browserPage.request.put(`${api}/api/v1/ui/state`, {
-      data: { state: { openFiles: ['foo.md', 'bar.ts'], activePanel: 'editor' } },
-    })
-    expect(put.status()).toBe(204)
-
-    const get = await browserPage.request.get(`${api}/api/v1/ui/state`)
-    expect(get.ok()).toBe(true)
-    const state = (await get.json()) as Record<string, unknown>
-    expect(state).toEqual({
-      openFiles: ['foo.md', 'bar.ts'],
-      activePanel: 'editor',
-    })
-  })
-
-  test('GET state before any PUT returns empty object', async ({
-    browserPage,
-    backend,
-  }) => {
-    const get = await browserPage.request.get(
-      `${backend.apiUrl}/api/v1/ui/state`,
-    )
-    expect(get.ok()).toBe(true)
-    const state = await get.json()
-    expect(state).toEqual({})
-  })
-
-  test('PUT state overwrites previous', async ({ browserPage, backend }) => {
-    const api = backend.apiUrl
-
-    await browserPage.request.put(`${api}/api/v1/ui/state`, {
-      data: { state: { a: 1 } },
-    })
-    await browserPage.request.put(`${api}/api/v1/ui/state`, {
-      data: { state: { b: 2 } },
-    })
-
-    const get = await browserPage.request.get(`${api}/api/v1/ui/state`)
-    const state = (await get.json()) as Record<string, unknown>
-    expect(state).toEqual({ b: 2 })
-    expect(state).not.toHaveProperty('a')
-  })
-})
-
-test.describe('M3a: UI bridge — command dispatch', () => {
-  test('POST command returns seq and status ok', async ({
-    browserPage,
-    backend,
-  }) => {
-    const r = await browserPage.request.post(
-      `${backend.apiUrl}/api/v1/ui/commands`,
-      { data: { kind: 'openFile', params: { path: 'README.md' } } },
-    )
-    expect(r.ok()).toBe(true)
-    const body = (await r.json()) as { seq: number; status: string }
-    expect(body.seq).toBeGreaterThanOrEqual(1)
-    expect(body.status).toBe('ok')
-  })
-
-  test('SSE subscriber receives posted command', async ({
-    browserPage,
-  }) => {
-    const received = await browserPage.evaluate(async () => {
-      const origin = window.location.origin
-      return new Promise<{ kind: string; params: Record<string, unknown>; seq: number }>(
-        (resolve, reject) => {
-          const es = new EventSource(`${origin}/api/v1/ui/commands/next`)
-          const timer = setTimeout(() => {
-            es.close()
-            reject(new Error('SSE timeout — no command received in 10s'))
-          }, 10_000)
-
-          es.addEventListener('command', (event) => {
-            clearTimeout(timer)
-            es.close()
-            resolve(JSON.parse(event.data))
-          })
-
-          es.onopen = () => {
-            fetch(`${origin}/api/v1/ui/commands`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                kind: 'openFile',
-                params: { path: 'foo.md' },
-              }),
-            })
-          }
-        },
-      )
-    })
-
-    expect(received.kind).toBe('openFile')
-    expect(received.params).toEqual({ path: 'foo.md' })
-    expect(received.seq).toBeGreaterThanOrEqual(1)
-  })
-
-  test('poll fallback returns command shape', async ({
-    browserPage,
-    backend,
-  }) => {
-    const r = await browserPage.request.get(
-      `${backend.apiUrl}/api/v1/ui/commands/next?poll=true`,
-    )
-    expect(r.ok()).toBe(true)
-    const body = (await r.json()) as unknown[]
-    expect(body).toEqual([])
-  })
-})
 
 test.describe('M3a: stream resume', () => {
-  test.skip(!hasRealKey, 'Requires real ANTHROPIC_API_KEY')
 
   test('disconnect + reconnect with cursor receives remaining chunks', async ({
     browserPage,

@@ -143,7 +143,7 @@ if [[ -f "$ROOT_DIR/package.json" ]]; then
     failures=1
     echo "$PREFIX ERR package.json: @mariozechner/pi-coding-agent uses range \"$pi_version\""
     echo "  Invariant: pi-coding-agent must be pinned to an exact version (no ^/~/>=)"
-    echo "  Fix: Pin exact version, e.g. \"0.67.68\". See upgrade protocol in scripts/pi-sdk-canary.sh."
+    echo "  Fix: Pin exact version, e.g. \"0.67.68\". See upgrade protocol in packages/agent/scripts/pi-sdk-canary.sh."
   fi
 fi
 

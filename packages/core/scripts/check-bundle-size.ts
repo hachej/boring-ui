@@ -5,8 +5,8 @@ import { gzipSync } from "node:zlib"
 
 // ─── Config ──────��───────────────────────────────────────────────────
 
-const CORE_DIST = path.resolve("packages/core/dist")
-const SIZE_MD = path.resolve("packages/core/SIZE.md")
+const CORE_DIST = path.resolve("dist")
+const SIZE_MD = path.resolve("SIZE.md")
 const DRIFT_THRESHOLD = 0.10
 
 interface Entry {
@@ -207,7 +207,7 @@ async function main(): Promise<void> {
     `\nThreshold: ${(DRIFT_THRESHOLD * 100).toFixed(0)}%. To approve:`,
   )
   console.error(
-    `  1. Bump baseline: pnpm tsx scripts/check-bundle-size.ts --update-baseline`,
+    `  1. Bump baseline: pnpm --filter @boring/core run check:bundle-size -- --update-baseline`,
   )
   console.error(
     `  2. Or add "// approved-growth: <reason>" to your PR description`,

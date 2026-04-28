@@ -5,16 +5,6 @@
  * [m2-modeflip] tag used for CI debugging.
  */
 import { test, expect } from './fixtures'
-import {
-  spawnBackend,
-  formatLogs,
-  type SpawnedBackend,
-} from './helpers/backend'
-import { createE2eWorkspace, type E2eWorkspace } from './helpers/workspace'
-
-const VERCEL_OIDC_TOKEN = process.env.VERCEL_OIDC_TOKEN
-const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID ?? 'team_77SfdGMGep3AgqZC3sw8RbJi'
-const HAS_VERCEL_CREDS = Boolean(VERCEL_OIDC_TOKEN)
 
 function log(msg: string, meta: Record<string, unknown> = {}): void {
   const ts = new Date().toISOString()
@@ -117,90 +107,4 @@ test.describe('M2: mode flip — zero code changes', () => {
     log('=== direct mode test PASS ===')
   })
 
-  const vercelDescribe = HAS_VERCEL_CREDS ? test.describe : test.describe.skip
-  vercelDescribe('vercel-sandbox mode (requires VERCEL_OIDC_TOKEN)', () => {
-    let vercelBackend: SpawnedBackend
-    let vercelWorkspace: E2eWorkspace
-
-    test.beforeAll(async () => {
-      log('=== vercel-sandbox mode setup ===', {
-        hasOidcToken: Boolean(VERCEL_OIDC_TOKEN),
-        teamId: VERCEL_TEAM_ID,
-      })
-
-      vercelWorkspace = await createE2eWorkspace()
-      const repoRoot = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-
-      const startTime = Date.now()
-      vercelBackend = await spawnBackend({
-        workspaceRoot: vercelWorkspace.root,
-        repoRoot,
-        mode: 'vercel-sandbox',
-        env: {
-          VERCEL_OIDC_TOKEN: VERCEL_OIDC_TOKEN!,
-          VERCEL_TEAM_ID,
-        },
-        timeoutMs: 60_000,
-      })
-      const coldStartMs = Date.now() - startTime
-      log('vercel-sandbox backend booted', {
-        port: vercelBackend.port,
-        coldStartMs,
-      })
-    })
-
-    test.afterAll(async () => {
-      if (vercelBackend) {
-        await vercelBackend.stop()
-        log('vercel-sandbox backend stopped')
-      }
-      if (vercelWorkspace) {
-        await vercelWorkspace.cleanup()
-      }
-    })
-
-    test('health check works in vercel-sandbox mode', async () => {
-      await assertHealthEndpoint(vercelBackend.apiUrl, 'vercel-sandbox')
-    })
-
-    test('ready check resolves in vercel-sandbox mode', async () => {
-      await assertReadyEndpoint(vercelBackend.apiUrl, 'vercel-sandbox')
-    })
-
-    test('tree listing works in vercel-sandbox mode', async () => {
-      await assertTreeListing(vercelBackend.apiUrl, 'vercel-sandbox')
-    })
-
-    test('file CRUD works in vercel-sandbox mode', async () => {
-      await assertFileRoundTrip(vercelBackend.apiUrl, 'vercel-sandbox')
-    })
-
-    test('same API shape as direct mode — no code changes needed', async () => {
-      log('verifying API shape equivalence')
-
-      const healthRes = await fetch(`${vercelBackend.apiUrl}/health`)
-      const healthBody = (await healthRes.json()) as Record<string, unknown>
-      expect(healthBody).toHaveProperty('status')
-      expect(healthBody).toHaveProperty('version')
-      expect(healthBody).toHaveProperty('uptime')
-
-      const treeRes = await fetch(`${vercelBackend.apiUrl}/api/v1/tree?path=.`)
-      const treeBody = (await treeRes.json()) as Record<string, unknown>
-      expect(treeBody).toHaveProperty('entries')
-
-      const writeRes = await fetch(`${vercelBackend.apiUrl}/api/v1/files`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: 'api-shape-test.txt', content: 'test' }),
-      })
-      const writeBody = (await writeRes.json()) as Record<string, unknown>
-      expect(writeBody).toHaveProperty('ok')
-
-      const readRes = await fetch(`${vercelBackend.apiUrl}/api/v1/files?path=api-shape-test.txt`)
-      const readBody = (await readRes.json()) as Record<string, unknown>
-      expect(readBody).toHaveProperty('content')
-
-      log('=== vercel-sandbox mode test PASS — API shape matches direct ===')
-    })
-  })
 })

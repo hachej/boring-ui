@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -8,6 +8,27 @@ const HEALTH_POLL_INTERVAL_MS = 200
 const PROCESS_EXIT_TIMEOUT_MS = 5_000
 const SOURCE_BROWSER_URL_TIMEOUT_MS = 5_000
 const MAX_PORT_INCREMENT_PROBE = 10
+
+function resolveAnthropicApiKey(): string {
+  if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.length > 0) {
+    return process.env.ANTHROPIC_API_KEY
+  }
+
+  try {
+    const key = execFileSync(
+      'vault',
+      ['kv', 'get', '-field=api_key', 'secret/agent/anthropic'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    ).trim()
+    if (key.length > 0) {
+      return key
+    }
+  } catch {
+    // Vault unavailable in this environment. Fall back to test key.
+  }
+
+  return 'e2e-test-key'
+}
 
 export interface BackendLogs {
   stdout: string[]
@@ -222,7 +243,7 @@ export async function spawnBackend(
       cwd: agentPackageDir,
       env: {
         ...process.env,
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? 'e2e-test-key',
+        ANTHROPIC_API_KEY: resolveAnthropicApiKey(),
         ...options.env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],

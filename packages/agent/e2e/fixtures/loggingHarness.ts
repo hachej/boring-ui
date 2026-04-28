@@ -1,5 +1,5 @@
 import { test as base, type Page, type TestInfo } from "@playwright/test"
-import { mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -146,17 +146,13 @@ async function writeArtifacts(
   page: Page,
   failed: boolean,
 ): Promise<void> {
+  const keepArtifacts = failed || shouldKeepArtifacts()
   const testName = sanitizeTestName(testInfo.title)
   const artifactDir = path.join(ARTIFACTS_DIR, testName)
-  await mkdir(artifactDir, { recursive: true })
 
   const consoleLog = formatConsoleLog(state.console)
   const networkLog = formatNetworkLog(state.network)
   const timelineJson = JSON.stringify(state.timeline, null, 2)
-
-  await writeFile(path.join(artifactDir, "browser-console.log"), consoleLog || "(empty)\n")
-  await writeFile(path.join(artifactDir, "network.log"), networkLog || "(empty)\n")
-  await writeFile(path.join(artifactDir, "timeline.json"), timelineJson)
 
   await testInfo.attach("browser-console.log", {
     body: Buffer.from(consoleLog || "(empty)\n", "utf8"),
@@ -171,6 +167,15 @@ async function writeArtifacts(
     contentType: "application/json",
   })
 
+  if (!keepArtifacts) {
+    return
+  }
+
+  await mkdir(artifactDir, { recursive: true })
+  await writeFile(path.join(artifactDir, "browser-console.log"), consoleLog || "(empty)\n")
+  await writeFile(path.join(artifactDir, "network.log"), networkLog || "(empty)\n")
+  await writeFile(path.join(artifactDir, "timeline.json"), timelineJson)
+
   if (failed) {
     try {
       const html = await page.content()
@@ -184,10 +189,6 @@ async function writeArtifacts(
     }
 
     console.error(`[e2e-logging] Artifacts written to: ${artifactDir}`)
-  }
-
-  if (!failed && !shouldKeepArtifacts()) {
-    await rm(artifactDir, { recursive: true, force: true }).catch(() => {})
   }
 }
 

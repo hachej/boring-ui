@@ -3,11 +3,11 @@
 # exists and optionally runs the test suite against it.
 #
 # Usage:
-#   ./scripts/pi-sdk-canary.sh           # check-only (exit 0 if up-to-date, 1 if new version)
-#   ./scripts/pi-sdk-canary.sh --test    # install latest + run agent tests
+#   pnpm run pi-sdk:canary         # check-only (exit 0 if up-to-date, 1 if new version)
+#   pnpm run pi-sdk:canary --test  # install latest + run agent tests
 #
 # Upgrade protocol (manual):
-#   1. Run: ./scripts/pi-sdk-canary.sh --test
+#   1. Run: pnpm run pi-sdk:canary --test
 #   2. If tests pass: update packages/agent/package.json AND root overrides
 #   3. Open a dedicated PR with before/after test output
 #   4. If tests fail: do NOT upgrade — open an issue instead
@@ -17,7 +17,8 @@ set -euo pipefail
 
 PREFIX="[pi-canary]"
 PKG="@mariozechner/pi-coding-agent"
-AGENT_DIR="packages/agent"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 log() { echo "$PREFIX $*" >&2; }
 

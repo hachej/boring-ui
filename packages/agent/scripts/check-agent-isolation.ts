@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
-const AGENT_DIST = join(import.meta.dirname!, '..', 'packages', 'agent', 'dist')
+const AGENT_DIST = join(import.meta.dirname!, '..', 'dist')
 const FORBIDDEN_PREFIX = '@boring/core'
 
 const SPECIFIER_RE =

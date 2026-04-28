@@ -3,7 +3,7 @@ import path from "node:path"
 import process from "node:process"
 import { gzipSync } from "node:zlib"
 
-const DEFAULT_DIST = path.resolve("packages/workspace/dist")
+const DEFAULT_DIST = path.resolve("dist")
 const DEFAULT_ENTRY = "workspace.js"
 
 function parseArgs(argv) {
@@ -33,7 +33,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/check-bundle-size.mjs [--dist <path>] [--entry <file>]
+  console.log(`Usage: node ./scripts/check-bundle-size.mjs [--dist <path>] [--entry <file>]
 
 Environment variables:
   BUNDLE_INITIAL_BUDGET_KB  enforced budget for initial JS (default: 800)
