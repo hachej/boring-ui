@@ -40,3 +40,5 @@ export type {
 } from './auth/index.js'
 
 export { registerWorkspaceRoutes, registerMemberRoutes, registerSettingsRoutes, registerInviteRoutes } from './routes/index.js'
+
+export type { WorkspaceProvisioner, ProvisionContext, ProvisionResult } from './provisioner/index.js'
