@@ -2,9 +2,15 @@ import { createAuthClient } from 'better-auth/react'
 import { magicLinkClient } from 'better-auth/client/plugins'
 import { getApiBase } from '../utils.js'
 
-export type AuthClient = ReturnType<typeof createBetterAuthClient>
+type InferAuthClient = ReturnType<typeof createAuthClient<{
+  baseURL: string
+  basePath: string
+  plugins: ReturnType<typeof magicLinkClient>[]
+}>>
 
-function createBetterAuthClient(baseURL: string) {
+export interface AuthClient extends InferAuthClient {}
+
+function createBetterAuthClient(baseURL: string): AuthClient {
   return createAuthClient({
     baseURL,
     basePath: '/auth',

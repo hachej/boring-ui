@@ -26,12 +26,23 @@ declare module '@boring/workspace/ui-shadcn' {
   export const DropdownMenuLabel: (props: any) => JSX.Element
   export const DropdownMenuSeparator: (props: any) => JSX.Element
 
+  export const AlertDialog: (props: any) => JSX.Element
+  export const AlertDialogCancel: (props: any) => JSX.Element
+  export const AlertDialogContent: (props: any) => JSX.Element
+  export const AlertDialogDescription: (props: any) => JSX.Element
+  export const AlertDialogFooter: (props: any) => JSX.Element
+  export const AlertDialogHeader: (props: any) => JSX.Element
+  export const AlertDialogTitle: (props: any) => JSX.Element
+  export const AlertDialogTrigger: (props: any) => JSX.Element
+
   export const Dialog: (props: any) => JSX.Element
   export const DialogContent: (props: any) => JSX.Element
   export const DialogHeader: (props: any) => JSX.Element
   export const DialogTitle: (props: any) => JSX.Element
   export const DialogDescription: (props: any) => JSX.Element
   export const DialogFooter: (props: any) => JSX.Element
+
+  export const Separator: (props: any) => JSX.Element
 
   export const Input: ForwardRefExoticComponent<
     ComponentPropsWithoutRef<'input'> & RefAttributes<HTMLInputElement>

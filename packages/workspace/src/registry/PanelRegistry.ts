@@ -5,6 +5,8 @@ export class PanelRegistry {
   private panels = new Map<string, PanelConfig>()
   private registrationOrder: string[] = []
   private capabilities: Set<string>
+  private listeners = new Set<() => void>()
+  private snapshotCache: readonly PanelConfig[] | null = null
 
   constructor(capabilities: Record<string, boolean> = {}) {
     this.capabilities = new Set(
@@ -20,6 +22,19 @@ export class PanelRegistry {
     if (!existed) {
       this.registrationOrder.push(id)
     }
+    this.emit()
+  }
+
+  unregisterByPluginId(pluginId: string): void {
+    let changed = false
+    for (const [id, panel] of this.panels) {
+      if (panel.pluginId === pluginId) {
+        this.panels.delete(id)
+        this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)
+        changed = true
+      }
+    }
+    if (changed) this.emit()
   }
 
   get(id: string): PanelConfig | undefined {
@@ -82,6 +97,23 @@ export class PanelRegistry {
     return result
   }
 
+  subscribe = (cb: () => void): (() => void) => {
+    this.listeners.add(cb)
+    return () => { this.listeners.delete(cb) }
+  }
+
+  getSnapshot = (): readonly PanelConfig[] => {
+    if (!this.snapshotCache) {
+      this.snapshotCache = this.filteredPanels()
+    }
+    return this.snapshotCache
+  }
+
+  private emit(): void {
+    this.snapshotCache = null
+    for (const cb of [...this.listeners]) cb()
+  }
+
   private filteredPanels(): PanelConfig[] {
     return this.registrationOrder
       .map((id) => this.panels.get(id)!)
@@ -100,9 +132,6 @@ function matchGlob(pattern: string, filename: string): boolean {
   if (pattern.startsWith("*")) {
     return filename.endsWith(pattern.slice(1))
   }
-  // Support a single embedded `*`, e.g. `deck/*.md`. Matches when the
-  // path starts with the prefix and ends with the suffix. The wildcard
-  // does NOT cross `/` boundaries.
   const star = pattern.indexOf("*")
   if (star > 0) {
     const head = pattern.slice(0, star)

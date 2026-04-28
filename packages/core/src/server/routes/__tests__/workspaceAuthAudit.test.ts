@@ -140,6 +140,7 @@ function mockWorkspaceStore(): WorkspaceStore {
         id, workspaceId: wsId, email, tokenHash, role,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         acceptedAt: null, createdBy: invitedBy, createdAt: new Date().toISOString(),
+        failedAttempts: 0, lockedUntil: null,
       }
       inviteDb.set(id, invite)
       inviteTokens.set(id, rawToken)
@@ -225,6 +226,7 @@ function seedInvite(wsId: string, email: string, role: MemberRole) {
     id, workspaceId: wsId, email, tokenHash, role,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     acceptedAt: null, createdBy: OWNER_ID, createdAt: new Date().toISOString(),
+    failedAttempts: 0, lockedUntil: null,
   }
   inviteDb.set(id, invite)
   inviteTokens.set(id, rawToken)

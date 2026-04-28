@@ -1,4 +1,4 @@
-import { betterAuth, APIError } from 'better-auth'
+import { betterAuth, APIError, type Auth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { magicLink } from 'better-auth/plugins/magic-link'
 import { zxcvbn, zxcvbnOptions } from '@zxcvbn-ts/core'
@@ -60,13 +60,13 @@ export interface CreateAuthOptions {
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
 }
 
-export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions) {
+export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions): Auth<any> {
   const transport = buildMailTransport(config)
 
   const emailVerificationConfig = transport
     ? {
-        sendOnSignUp: true,
-        sendVerificationEmail: async (data: { user: { email: string }; url: string; token: string }) => {
+        sendOnSignUp: true as const,
+        sendVerificationEmail: async (data: any) => {
           const email = await renderVerifyEmail({
             to: data.user.email,
             verifyUrl: data.url,
@@ -79,7 +79,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     : undefined
 
   const sendResetPasswordFn = transport
-    ? async (data: { user: { email: string }; url: string; token: string }) => {
+    ? async (data: any) => {
         const email = await renderResetPassword({
           to: data.user.email,
           resetUrl: data.url,
@@ -125,7 +125,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       ? {
           user: {
             create: {
-              after: postSignupHook,
+              after: postSignupHook as any,
             },
           },
         }
@@ -201,4 +201,4 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
   })
 }
 
-export type BetterAuthInstance = ReturnType<typeof createAuth>
+export type BetterAuthInstance = Auth<any>

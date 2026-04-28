@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 // Plugin model
-export { definePlugin, PluginError } from "./plugin"
+export { definePlugin, PluginError, useCommands, useActivePanels } from "./plugin"
 export type { PluginErrorKind } from "./plugin"
 export type { Plugin, CatalogConfig } from "./plugin"
 

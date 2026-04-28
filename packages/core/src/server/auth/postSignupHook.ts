@@ -4,14 +4,14 @@ import type { WorkspaceStore } from '../app/types.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
 
-interface PostSignupUser {
+export interface PostSignupUser {
   id: string
   email: string
   name: string
   [key: string]: unknown
 }
 
-interface PostSignupContext {
+export interface PostSignupContext {
   getHeader?: (key: string) => string | null
   setCookie?: (key: string, value: string, options?: {
     maxAge?: number
@@ -47,9 +47,10 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
   const { config, workspaceStore, transport, logger } = deps
 
   return async function postSignupHook(
-    user: PostSignupUser,
-    ctx: PostSignupContext | null,
+    user: PostSignupUser & Record<string, unknown>,
+    rawCtx: unknown,
   ): Promise<void> {
+    const ctx = rawCtx as PostSignupContext | null
     const inviteToken = readHeader(ctx, 'x-invite-token')
     let inviteAccepted = false
 
