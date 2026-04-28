@@ -1,21 +1,23 @@
 "use client"
 
 import { lazy, Suspense, useCallback, useRef, useState, useEffect } from "react"
+import { PanelChrome } from "../dock"
 import { useFileContent, useFileWrite } from "../data"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../hooks"
-import type { PaneProps } from "../registry/types"
+import type { DockviewPanelApi } from "dockview-react"
 
 const MarkdownEditor = lazy(() =>
   import("../components/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })),
 )
 
-// `path` is optional: dockview can restore a panel from serialized
-// layout where params got lost. Read defensively, render a placeholder
-// rather than crash when path isn't there.
-export type MarkdownEditorPaneProps = PaneProps<{ path?: string }>
+export interface MarkdownEditorPaneProps {
+  path: string
+  panelApi?: DockviewPanelApi
+  chromeless?: boolean
+  className?: string
+}
 
-export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPaneProps) {
-  const path = typeof params?.path === "string" ? params.path : ""
+export function MarkdownEditorPane({ path, panelApi, chromeless, className }: MarkdownEditorPaneProps) {
   const { data: fileData, isLoading, error, dataUpdatedAt } = useFileContent(path)
   const { mutateAsync: writeFile } = useFileWrite()
 
@@ -51,9 +53,10 @@ export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPan
           getContent: () => contentRef.current,
         }
       : null
+
   const lifecycle = useEditorLifecycle(path, {
     adapter,
-    panelId: api?.id ?? path,
+    panelId: panelApi?.id ?? path,
     serverMtime: dataUpdatedAt || null,
   })
 
@@ -76,49 +79,45 @@ export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPan
     [lifecycle],
   )
 
-  const fileName = path ? (path.split("/").pop() ?? path) : ""
-  const tabTitle = fileName ? (lifecycle.isDirty ? `${fileName} ●` : fileName) : ""
-  useEffect(() => {
-    if (tabTitle) api?.setTitle?.(tabTitle)
-  }, [api, tabTitle])
-
-  if (!path) {
-    return (
-      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-        No file selected
-      </div>
-    )
-  }
+  const fileName = path.split("/").pop() ?? path
+  const title = lifecycle.isDirty ? `${fileName} ●` : fileName
 
   if (error) {
-    return (
+    const body = (
       <div className="flex h-full items-center justify-center text-destructive text-sm">
         Failed to load file: {error.message}
       </div>
     )
+    return chromeless ? body : <PanelChrome title={fileName} panelApi={panelApi}>{body}</PanelChrome>
   }
 
+  const editor = (
+    <Suspense
+      fallback={
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <span className="animate-pulse">Loading editor...</span>
+        </div>
+      }
+    >
+      {isLoading || localContent === null ? (
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <span className="animate-pulse">Loading file...</span>
+        </div>
+      ) : (
+        <MarkdownEditor
+          content={localContent}
+          onChange={handleChange}
+          className={className}
+        />
+      )}
+    </Suspense>
+  )
+
+  if (chromeless) return <div className="flex h-full min-h-0 flex-col">{editor}</div>
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <Suspense
-        fallback={
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <span className="animate-pulse">Loading editor...</span>
-          </div>
-        }
-      >
-        {isLoading || localContent === null ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <span className="animate-pulse">Loading file...</span>
-          </div>
-        ) : (
-          <MarkdownEditor
-            content={localContent}
-            onChange={handleChange}
-            className={className}
-          />
-        )}
-      </Suspense>
-    </div>
+    <PanelChrome title={title} panelApi={panelApi}>
+      {editor}
+    </PanelChrome>
   )
 }

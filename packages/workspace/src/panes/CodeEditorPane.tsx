@@ -1,9 +1,10 @@
 "use client"
 
 import { lazy, Suspense, useCallback, useRef, useState, useEffect } from "react"
+import { PanelChrome } from "../dock"
 import { useFileContent, useFileWrite } from "../data"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../hooks"
-import type { PaneProps } from "../registry/types"
+import type { DockviewPanelApi } from "dockview-react"
 
 const CodeEditor = lazy(() =>
   import("../components/CodeEditor").then((m) => ({ default: m.CodeEditor })),
@@ -35,14 +36,14 @@ function extToLanguage(path: string): string {
   }
 }
 
-// `path` is optional at the type level because dockview can restore a
-// panel from a serialized layout where params got lost (or never set —
-// e.g. a stale layout from a previous version). Read defensively and
-// render a placeholder rather than crashing.
-export type CodeEditorPaneProps = PaneProps<{ path?: string }>
+export interface CodeEditorPaneProps {
+  path: string
+  panelApi?: DockviewPanelApi
+  chromeless?: boolean
+  className?: string
+}
 
-export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) {
-  const path = typeof params?.path === "string" ? params.path : ""
+export function CodeEditorPane({ path, panelApi, chromeless, className }: CodeEditorPaneProps) {
   const { data: fileData, isLoading, error, dataUpdatedAt } = useFileContent(path)
   const { mutateAsync: writeFile } = useFileWrite()
 
@@ -78,9 +79,10 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
           getContent: () => contentRef.current,
         }
       : null
+
   const lifecycle = useEditorLifecycle(path, {
     adapter,
-    panelId: api?.id ?? path,
+    panelId: panelApi?.id ?? path,
     serverMtime: dataUpdatedAt || null,
   })
 
@@ -103,55 +105,48 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
     [lifecycle],
   )
 
-  // Reflect dirty state into the dockview tab title so users see "●"
-  // on the tab they're editing without us drawing our own header bar.
-  const fileName = path ? (path.split("/").pop() ?? path) : ""
-  const tabTitle = fileName ? (lifecycle.isDirty ? `${fileName} ●` : fileName) : ""
-  useEffect(() => {
-    if (tabTitle) api?.setTitle?.(tabTitle)
-  }, [api, tabTitle])
-
-  if (!path) {
-    return (
-      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-        No file selected
-      </div>
-    )
-  }
+  const fileName = path.split("/").pop() ?? path
+  const language = extToLanguage(path)
+  const title = lifecycle.isDirty ? `${fileName} ●` : fileName
 
   if (error) {
-    return (
+    const body = (
       <div className="flex h-full items-center justify-center text-destructive text-sm">
         Failed to load file: {error.message}
       </div>
     )
+    return chromeless ? body : <PanelChrome title={fileName} panelApi={panelApi}>{body}</PanelChrome>
   }
 
-  const language = extToLanguage(path)
+  const editor = (
+    <Suspense
+      fallback={
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <span className="animate-pulse">Loading editor...</span>
+        </div>
+      }
+    >
+      {isLoading || localContent === null ? (
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <span className="animate-pulse">Loading file...</span>
+        </div>
+      ) : (
+        <CodeEditor
+          content={localContent}
+          onChange={handleChange}
+          language={language}
+          wordWrap
+          className={className}
+        />
+      )}
+    </Suspense>
+  )
+
+  if (chromeless) return <div className="flex h-full min-h-0 flex-col">{editor}</div>
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <Suspense
-        fallback={
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <span className="animate-pulse">Loading editor...</span>
-          </div>
-        }
-      >
-        {isLoading || localContent === null ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <span className="animate-pulse">Loading file...</span>
-          </div>
-        ) : (
-          <CodeEditor
-            content={localContent}
-            onChange={handleChange}
-            language={language}
-            wordWrap
-            className={className}
-          />
-        )}
-      </Suspense>
-    </div>
+    <PanelChrome title={title} panelApi={panelApi}>
+      {editor}
+    </PanelChrome>
   )
 }
