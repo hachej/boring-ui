@@ -43,3 +43,4 @@ export type {
   ApiErrorResponse,
   ErrorLogFields,
 } from './error-codes'
+export { validateTool } from './validateTool'

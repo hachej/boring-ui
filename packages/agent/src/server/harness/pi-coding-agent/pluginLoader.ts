@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import type { AgentTool } from "../../../shared/tool.js";
 import { validateTool } from "../../../shared/validateTool.js";
+export { validateTool };
 
 const VALID_EXTENSIONS = new Set([".js", ".mjs"]);
 const GLOBAL_DIR = join(homedir(), ".pi", "agent", "extensions");
@@ -56,16 +57,6 @@ async function discoverFromDir(
   return entries
     .filter((e) => VALID_EXTENSIONS.has(extname(e)))
     .map((e) => ({ path: join(dir, e), source }));
-}
-
-export function validateTool(tool: unknown): AgentTool | null {
-  if (typeof tool !== "object" || tool === null) return null;
-  const t = tool as Record<string, unknown>;
-  if (typeof t.name !== "string" || t.name.length === 0) return null;
-  if (typeof t.description !== "string") return null;
-  if (typeof t.parameters !== "object" || t.parameters === null) return null;
-  if (typeof t.execute !== "function") return null;
-  return t as unknown as AgentTool;
 }
 
 export function extractTools(mod: Record<string, unknown>): AgentTool[] {
