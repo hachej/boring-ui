@@ -78,8 +78,7 @@ describe('system-prompt-size regression', () => {
     // Sanity: prompt must be non-trivial (> 1KB minimum)
     expect(promptLength).toBeGreaterThan(1000)
 
-    // Log actual size for CI artifact visibility
-    console.log(`[system-prompt-size] ${promptLength} chars (budget: ${MAX_PROMPT_SIZE})`)
+    // Size logged via test name for CI artifact visibility — no console.log needed
 
     await app.close()
   }, 30_000)
