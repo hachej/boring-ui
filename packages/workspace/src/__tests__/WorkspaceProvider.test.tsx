@@ -6,8 +6,8 @@ import {
   WorkspaceProvider,
   useTheme,
   useWorkspaceBridge,
-  useDataProvider,
 } from "../WorkspaceProvider"
+import { useApiBaseUrl, useDataClient } from "../data"
 import { useRegistry, useCommandRegistry } from "../registry"
 import { useThemePreference } from "../store/selectors"
 import type { PanelConfig } from "../registry/types"
@@ -131,9 +131,18 @@ describe("WorkspaceProvider — context composition", () => {
     expect(result.current.connected).toBe(false)
   })
 
-  it("provides useDataProvider", () => {
-    const { result } = renderHook(() => useDataProvider(), { wrapper })
-    expect(result.current.apiBaseUrl).toBe("")
+  it("mounts the real DataProvider — useDataClient resolves under WorkspaceProvider", () => {
+    // Tenth-pass change: WorkspaceProvider now mounts the real DataProvider
+    // internally so hosts don't have to wrap with one to use FileTreeView /
+    // useDataClient / useFileList. Pre-Phase-2 this was a stub that only
+    // carried apiBaseUrl.
+    const { result } = renderHook(() => useDataClient(), { wrapper })
+    expect(result.current).toBeDefined()
+  })
+
+  it("exposes apiBaseUrl via useApiBaseUrl", () => {
+    const { result } = renderHook(() => useApiBaseUrl(), { wrapper })
+    expect(result.current).toBe("")
   })
 })
 
@@ -423,9 +432,9 @@ describe("WorkspaceProvider — bridge", () => {
   })
 })
 
-describe("WorkspaceProvider — data stub", () => {
-  it("apiBaseUrl is passed through", () => {
-    const { result } = renderHook(() => useDataProvider(), {
+describe("WorkspaceProvider — data wiring", () => {
+  it("apiBaseUrl is passed through to DataProvider", () => {
+    const { result } = renderHook(() => useApiBaseUrl(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <WorkspaceProvider apiBaseUrl="https://api.example.com" persistenceEnabled={false}>
           {children}
@@ -433,12 +442,12 @@ describe("WorkspaceProvider — data stub", () => {
       ),
     })
 
-    expect(result.current.apiBaseUrl).toBe("https://api.example.com")
+    expect(result.current).toBe("https://api.example.com")
   })
 
   it("apiBaseUrl defaults to empty string", () => {
-    const { result } = renderHook(() => useDataProvider(), { wrapper })
-    expect(result.current.apiBaseUrl).toBe("")
+    const { result } = renderHook(() => useApiBaseUrl(), { wrapper })
+    expect(result.current).toBe("")
   })
 })
 
@@ -455,9 +464,11 @@ describe("WorkspaceProvider — hooks outside provider", () => {
     )
   })
 
-  it("useDataProvider throws outside WorkspaceProvider", () => {
-    expect(() => renderHook(() => useDataProvider())).toThrow(
-      "useDataProvider must be used within a WorkspaceProvider",
+  it("useDataClient throws outside WorkspaceProvider (no DataProvider)", () => {
+    // The real DataProvider lives inside WorkspaceProvider now — without
+    // the parent, useDataClient has no FetchClient context and throws.
+    expect(() => renderHook(() => useDataClient())).toThrow(
+      "useDataClient must be used within a DataProvider",
     )
   })
 })

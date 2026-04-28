@@ -18,6 +18,8 @@ import { bindStore, useThemePreference } from "./store/selectors"
 import { createBridge } from "./bridge/createBridge"
 import { createBridgeClient, type BridgeClient } from "./bridge/client"
 import { CommandPalette } from "./components/CommandPalette"
+import { DataProvider } from "./data"
+import { Toaster } from "./toast"
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts"
 import type { PanelConfig } from "./registry/types"
 
@@ -112,22 +114,6 @@ export function useWorkspaceBridge(): WorkspaceBridgeContextValue {
 }
 
 // ---------------------------------------------------------------------------
-// Data context (stub — implemented in Phase 2)
-// ---------------------------------------------------------------------------
-
-export interface DataProviderContextValue {
-  apiBaseUrl: string
-}
-
-const DataProviderContext = createContext<DataProviderContextValue | null>(null)
-
-export function useDataProvider(): DataProviderContextValue {
-  const ctx = useContext(DataProviderContext)
-  if (!ctx) throw new Error("useDataProvider must be used within a WorkspaceProvider")
-  return ctx
-}
-
-// ---------------------------------------------------------------------------
 // Built-in workspace shortcuts (rendered inside the provider tree)
 // ---------------------------------------------------------------------------
 
@@ -185,13 +171,14 @@ export interface WorkspaceProviderProps {
   capabilities?: Record<string, boolean>
   apiBaseUrl?: string
   authHeaders?: Record<string, string>
+  /** Per-request timeout for the data layer's FetchClient, in ms. */
+  apiTimeout?: number
   defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
   storageKey?: string
   persistenceEnabled?: boolean
   bridgeEndpoint?: string | null
-  onLayoutError?: (error: Error) => void
   onAuthError?: (statusCode: number) => void
 }
 
@@ -205,6 +192,7 @@ export function WorkspaceProvider({
   capabilities,
   apiBaseUrl = "",
   authHeaders,
+  apiTimeout,
   defaultTheme,
   onThemeChange,
   workspaceId,
@@ -362,21 +350,28 @@ export function WorkspaceProvider({
     [bridgeConnected],
   )
 
-  const dataValue = useMemo<DataProviderContextValue>(
-    () => ({ apiBaseUrl }),
-    [apiBaseUrl],
-  )
-
   return (
     <ThemeContext.Provider value={themeValue}>
       <WorkspaceBridgeContext.Provider value={bridgeValue}>
-        <DataProviderContext.Provider value={dataValue}>
+        {/*
+         * Mount the data layer here so ChatCenteredShell/FileTreeView/etc.
+         * work without hosts wrapping a second DataProvider. Hosts that DO
+         * mount their own (legacy) get nested providers — inner wins, no
+         * functional difference; just an extra wasted QueryClient.
+         */}
+        <DataProvider
+          apiBaseUrl={apiBaseUrl}
+          authHeaders={authHeaders}
+          onAuthError={onAuthError}
+          timeout={apiTimeout}
+        >
           <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
             <WorkspaceShortcuts store={store} />
             <CommandPalette />
+            <Toaster />
             {children}
           </RegistryProvider>
-        </DataProviderContext.Provider>
+        </DataProvider>
       </WorkspaceBridgeContext.Provider>
     </ThemeContext.Provider>
   )

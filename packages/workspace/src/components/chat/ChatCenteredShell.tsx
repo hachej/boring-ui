@@ -18,18 +18,23 @@ import { ChatStagePlaceholder, type ChatStageHandle } from "./ChatStagePlacehold
 import type { SessionItem } from "../SessionList"
 import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
 import { ChatPanel, type ChatSuggestion } from "@boring/agent/ui-shadcn"
+import { emitAgentFileChange } from "../../events"
 import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
 import { startUiCommandStream } from "./uiCommandStream"
 import { useCommandRegistry, useRegistry } from "../../registry"
 
 export interface ChatCenteredShellProps {
-  /** Branding shown in the top bar. */
+  /** Branding shown in the top bar. Ignored when `topBarLeft` is set. */
   appTitle?: string
-  /** User initial shown in the avatar bubble. */
+  /** User initial shown in the avatar bubble. Ignored when `topBarRight` is set. */
   userInitial?: string
-  /** Click handler for the avatar bubble. */
+  /** Click handler for the avatar bubble. Ignored when `topBarRight` is set. */
   onAvatarClick?: () => void
+  /** Override the brand block on the left side of the top bar (e.g. workspace switcher). */
+  topBarLeft?: ReactNode
+  /** Override the avatar on the right side of the top bar (e.g. theme toggle + user menu). */
+  topBarRight?: ReactNode
 
   /** Session list rendered in the left drawer. */
   sessions?: SessionItem[]
@@ -89,6 +94,13 @@ export interface ChatCenteredShellProps {
   emptyTitle?: string
   /** Empty-state description below the headline. */
   emptyDescription?: string
+  /**
+   * Forward to ChatPanel's `thinkingControl`. When true, the composer
+   * footer renders an extended-thinking selector (off / low / medium /
+   * high) and forwards the choice to the agent. Off by default.
+   */
+  thinkingControl?: boolean
+
 
   /**
    * Fires once the workbench surface dockview is ready. Receives the same
@@ -170,6 +182,8 @@ export function ChatCenteredShell({
   appTitle = "Boring",
   userInitial = "J",
   onAvatarClick,
+  topBarLeft,
+  topBarRight,
 
   sessions = [],
   activeSessionId,
@@ -200,6 +214,7 @@ export function ChatCenteredShell({
   emptyEyebrow,
   emptyTitle,
   emptyDescription,
+  thinkingControl = false,
   onSurfaceReady,
   extraPanels,
   className,
@@ -478,6 +493,11 @@ export function ChatCenteredShell({
           emptyEyebrow={emptyEyebrow}
           emptyTitle={emptyTitle}
           emptyDescription={emptyDescription}
+          thinkingControl={thinkingControl}
+          // Bridge agent SSE file-change chunks → unified workspace
+          // event bus so the agent moving/deleting/renaming a file
+          // syncs open editor panes (UNIFIED_EVENT_BUS.md step 3).
+          onData={emitAgentFileChange}
           className="h-full min-h-0"
         />
       )
@@ -524,6 +544,8 @@ export function ChatCenteredShell({
             userInitial={userInitial}
             onAvatarClick={onAvatarClick}
             onCommandPalette={openCommandPalette}
+            topBarLeft={topBarLeft}
+            topBarRight={topBarRight}
           />
         </div>
 

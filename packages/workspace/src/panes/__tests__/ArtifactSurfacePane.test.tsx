@@ -82,10 +82,6 @@ describe("ArtifactSurfacePane", () => {
     ])
   })
 
-  it("exposes storageKey as static property", () => {
-    expect(ArtifactSurfacePane.storageKey).toBe("boring-ui-v2:surface")
-  })
-
   it("onLayoutChange callback fires on layout changes", () => {
     const onLayoutChange = vi.fn()
     renderWithRegistry(

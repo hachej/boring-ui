@@ -1,6 +1,6 @@
 "use client"
 
-import { useContext } from "react"
+import { useContext, type ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { ChatShellContext } from "./context"
@@ -11,6 +11,14 @@ export interface ChatTopBarProps {
   userInitial?: string
   onAvatarClick?: () => void
   onCommandPalette?: () => void
+  /** Override the brand/title block on the left. Hosts pass workspace
+   *  switchers, breadcrumbs, etc. here. When set, the default
+   *  `[B] appTitle / sessionTitle` block is replaced entirely. */
+  topBarLeft?: ReactNode
+  /** Override the avatar on the right. The new-chat (+) button stays —
+   *  it's session-mechanic, not host chrome. Hosts pass theme toggles,
+   *  user menus, etc. here. */
+  topBarRight?: ReactNode
   className?: string
 }
 
@@ -20,6 +28,8 @@ export function ChatTopBar({
   userInitial = "J",
   onAvatarClick,
   onCommandPalette,
+  topBarLeft,
+  topBarRight,
   className,
 }: ChatTopBarProps) {
   const shell = useContext(ChatShellContext)
@@ -35,17 +45,21 @@ export function ChatTopBar({
       aria-label="App top bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <div
-          aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
-        >
-          {appTitle.charAt(0).toUpperCase()}
-        </div>
-        <span className="truncate text-[13px] font-medium tracking-tight text-foreground">{appTitle}</span>
-        {sessionTitle && (
+        {topBarLeft ?? (
           <>
-            <span aria-hidden="true" className="text-muted-foreground/30">/</span>
-            <span className="truncate text-[13px] font-normal text-muted-foreground">{sessionTitle}</span>
+            <div
+              aria-hidden="true"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+            >
+              {appTitle.charAt(0).toUpperCase()}
+            </div>
+            <span className="truncate text-[13px] font-medium tracking-tight text-foreground">{appTitle}</span>
+            {sessionTitle && (
+              <>
+                <span aria-hidden="true" className="text-muted-foreground/30">/</span>
+                <span className="truncate text-[13px] font-normal text-muted-foreground">{sessionTitle}</span>
+              </>
+            )}
           </>
         )}
       </div>
@@ -85,25 +99,27 @@ export function ChatTopBar({
             <Plus className="h-4 w-4" />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onAvatarClick}
-          className={cn(
-            "group relative ml-1 flex h-7 w-7 items-center justify-center rounded-full",
-            "bg-gradient-to-br from-[color:var(--accent)] to-[oklch(0.52_0.16_40)] text-[11px] font-semibold text-white",
-            "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.1),inset_0_0_0_1px_oklch(1_0_0/0.12)]",
-            "transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-            "hover:shadow-[0_2px_6px_-2px_oklch(0.62_0.14_65/0.4),inset_0_0_0_1px_oklch(1_0_0/0.2)]",
-            "hover:-translate-y-[0.5px]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--canvas)]",
-          )}
-          aria-label="Account"
-          title="Account"
-        >
-          <span aria-hidden="true" className="pointer-events-none select-none tracking-tight">
-            {userInitial}
-          </span>
-        </button>
+        {topBarRight ?? (
+          <button
+            type="button"
+            onClick={onAvatarClick}
+            className={cn(
+              "group relative ml-1 flex h-7 w-7 items-center justify-center rounded-full",
+              "bg-gradient-to-br from-[color:var(--accent)] to-[oklch(0.52_0.16_40)] text-[11px] font-semibold text-white",
+              "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.1),inset_0_0_0_1px_oklch(1_0_0/0.12)]",
+              "transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "hover:shadow-[0_2px_6px_-2px_oklch(0.62_0.14_65/0.4),inset_0_0_0_1px_oklch(1_0_0/0.2)]",
+              "hover:-translate-y-[0.5px]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--canvas)]",
+            )}
+            aria-label="Account"
+            title="Account"
+          >
+            <span aria-hidden="true" className="pointer-events-none select-none tracking-tight">
+              {userInitial}
+            </span>
+          </button>
+        )}
       </div>
     </header>
   )
