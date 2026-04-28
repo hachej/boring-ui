@@ -190,9 +190,21 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
           <DialogDescription>Search files or type &gt; for commands</DialogDescription>
         </DialogHeader>
         <Command shouldFilter={false} className="bg-transparent">
-          <div className="flex items-center gap-2 border-b border-border/50 px-3">
+          {/*
+           * Don't add another border-b on this outer wrapper —
+           * shadcn's <CommandInput> renders its own wrapper div
+           * (data-slot="command-input-wrapper") with `border-b`
+           * baked in. Stacking a second border-b on this parent
+           * caused the double-line under the input the user
+           * reported as a "strange border".
+           *
+           * Mode pill ("Command") sits inline AHEAD of the
+           * input wrapper, both share the cmdk-emitted single
+           * 1px divider underneath.
+           */}
+          <div className="relative flex items-stretch [&>[data-slot=command-input-wrapper]]:flex-1 [&>[data-slot=command-input-wrapper]]:h-auto">
             {isCommandMode ? (
-              <span className="inline-flex items-center gap-1 rounded-md bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] px-2 py-0.5 text-xs font-medium text-[color:var(--accent)]">
+              <span className="my-2 ml-3 inline-flex shrink-0 items-center gap-1 self-center rounded-md bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] px-2 py-0.5 text-xs font-medium text-[color:var(--accent)]">
                 <TerminalIcon className="size-3" />
                 Command
               </span>
@@ -206,7 +218,7 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
               }
               value={query}
               onValueChange={setQuery}
-              className="h-12 border-0 bg-transparent text-base focus-visible:ring-0"
+              className="h-12 bg-transparent text-base focus-visible:ring-0"
             />
           </div>
 
