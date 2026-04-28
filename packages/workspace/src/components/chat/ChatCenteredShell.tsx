@@ -21,7 +21,7 @@ import { ChatPanel, type ChatSuggestion } from "@boring/agent/ui-shadcn"
 import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
 import { startUiCommandStream } from "./uiCommandStream"
-import { useRegistry } from "../../registry"
+import { useCommandRegistry, useRegistry } from "../../registry"
 
 export interface ChatCenteredShellProps {
   /** Branding shown in the top bar. */
@@ -381,6 +381,47 @@ export function ChatCenteredShell({
       { key: "Escape", allowInEditable: true, handler: focusComposer },
     ],
   })
+
+  // Surface chat-shell actions in the ⌘K palette so they're discoverable
+  // alongside the IDE-flavored commands the WorkspaceProvider registers
+  // (Toggle Sidebar / Toggle Agent Panel / Close Tab — those target the
+  // dockview store and have no visible effect on chat-shell consumers).
+  // Re-register on every render: registerCommand is keyed by id, so the
+  // closure capturing the latest toggle*/onCreateSession is always
+  // current — we never end up running a stale handler.
+  const commandRegistry = useCommandRegistry()
+  useEffect(() => {
+    commandRegistry.registerCommand({
+      id: "chat-shell.toggleSessions",
+      title: "Toggle Sessions Drawer",
+      shortcut: "⌘1",
+      run: toggleDrawer,
+    })
+    commandRegistry.registerCommand({
+      id: "chat-shell.toggleWorkbench",
+      title: "Toggle Workbench",
+      shortcut: "⌘2",
+      run: toggleSurface,
+    })
+    if (onCreateSession) {
+      commandRegistry.registerCommand({
+        id: "chat-shell.newChat",
+        title: "New Chat",
+        run: () => onCreateSession(),
+      })
+    }
+    if (onSwitchSession && sessions.length > 0) {
+      // Surface each session as a quick-switch command so users can
+      // jump between conversations from the palette.
+      for (const s of sessions) {
+        commandRegistry.registerCommand({
+          id: `chat-shell.session.${s.id}`,
+          title: `Switch to: ${s.title}`,
+          run: () => onSwitchSession(s.id),
+        })
+      }
+    }
+  }, [commandRegistry, toggleDrawer, toggleSurface, onCreateSession, onSwitchSession, sessions])
 
   const openCommandPalette = useCallback(() => {
     document.dispatchEvent(
