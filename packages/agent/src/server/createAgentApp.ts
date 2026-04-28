@@ -79,7 +79,7 @@ export async function createAgentApp(
   // ships zero UI surface — smaller bundle, honest contract.
   let tools: AgentTool[]
 
-  if (resolvedMode === 'direct') {
+  if (resolvedMode === 'direct' || resolvedMode === 'local') {
     const pluginTools: AgentTool[] = []
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
     if (pluginResult.errors.length > 0) {
