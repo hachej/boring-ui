@@ -39,6 +39,7 @@ export {
   ResetPasswordPage,
   VerifyEmailPage,
   UserSettingsPage,
+  InviteAcceptPage,
 } from './auth/index.js'
 export type {
   AuthProviderProps,

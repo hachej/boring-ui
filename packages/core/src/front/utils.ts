@@ -121,6 +121,7 @@ export type RouteMap = {
   callbackGithub: '/auth/callback/github'
   me: '/me'
   workspaceInvites: '/w/:id/invites'
+  inviteAccept: '/invites/:token'
 }
 
 export const routes: RouteMap = {
@@ -132,6 +133,7 @@ export const routes: RouteMap = {
   callbackGithub: '/auth/callback/github',
   me: '/me',
   workspaceInvites: '/w/:id/invites',
+  inviteAccept: '/invites/:token',
 }
 
 export function routeHref(

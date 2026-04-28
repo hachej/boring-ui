@@ -19,6 +19,7 @@ import { ResetPasswordPage as DefaultResetPasswordPage } from './auth/ResetPassw
 import { VerifyEmailPage as DefaultVerifyEmailPage } from './auth/VerifyEmailPage.js'
 import { UserSettingsPage as DefaultUserSettingsPage } from './auth/UserSettingsPage.js'
 import { InvitesPage } from './workspace/InvitesPage.js'
+import { InviteAcceptPage } from './auth/InviteAcceptPage.js'
 import { routes } from './utils.js'
 
 export interface BoringAppAuthPagesOverride {
@@ -99,7 +100,7 @@ export function BoringApp({ children, authPages, cspNonce }: BoringAppProps) {
                             </>
                           ) : null}
                         </Helmet>
-                        <AuthGate>
+                        <AuthGate publicPaths={['/invites']}>
                           <Suspense fallback={null}>
                             <Routes>
                               <Route path={routes.signin} element={<SignInPage />} />
@@ -110,6 +111,7 @@ export function BoringApp({ children, authPages, cspNonce }: BoringAppProps) {
                               <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
                               <Route path={routes.me} element={<UserSettingsPage />} />
                               <Route path={routes.workspaceInvites} element={<InvitesPage />} />
+                              <Route path={routes.inviteAccept} element={<InviteAcceptPage />} />
                               {children}
                             </Routes>
                           </Suspense>
