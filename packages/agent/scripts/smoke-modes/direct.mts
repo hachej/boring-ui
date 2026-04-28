@@ -160,7 +160,7 @@ async function main() {
         payload: {
           sessionId,
           message: smoke.prompt,
-          model: { provider: 'anthropic', id: 'claude-sonnet-4-20250514' },
+          model: { provider: 'anthropic', id: 'claude-sonnet-4-6-20250514' },
         },
       })
 

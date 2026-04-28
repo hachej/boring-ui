@@ -124,7 +124,7 @@ async function main() {
       const res = await app.inject({
         method: 'POST',
         url: '/api/v1/agent/chat',
-        payload: { sessionId, message: smoke.prompt, model: { provider: 'anthropic', id: 'claude-sonnet-4-20250514' } },
+        payload: { sessionId, message: smoke.prompt, model: { provider: 'anthropic', id: 'claude-sonnet-4-6-20250514' } },
       })
 
       if (res.statusCode !== 200) {
