@@ -15,10 +15,9 @@ import { ChatTopBar } from "./ChatTopBar"
 import { SessionBrowser } from "./SessionBrowser"
 import { SurfaceShell } from "./SurfaceShell"
 import { ChatStagePlaceholder, type ChatStageHandle } from "./ChatStagePlaceholder"
-import { CommandPalette } from "../CommandPalette"
 import type { SessionItem } from "../SessionList"
 import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
-import { ChatPanel } from "@boring/agent/ui-shadcn"
+import { ChatPanel, type ChatSuggestion } from "@boring/agent/ui-shadcn"
 import { createWorkspaceToolRenderers } from "./workspaceToolRenderers"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
 import { startUiCommandStream } from "./uiCommandStream"
@@ -75,6 +74,20 @@ export interface ChatCenteredShellProps {
 
   /** Mount the global command palette (⌘K / ⌘P). Defaults to true. */
   withCommandPalette?: boolean
+
+  /**
+   * Suggested actions shown when the chat is empty (both before any session
+   * exists and inside an active session with no messages). Customize per
+   * child app — pass `[]` to hide the grid entirely. Omit to inherit
+   * `defaultChatSuggestions`.
+   */
+  chatSuggestions?: ChatSuggestion[]
+  /** Eyebrow above the empty-state headline. */
+  emptyEyebrow?: string
+  /** Empty-state headline. */
+  emptyTitle?: string
+  /** Empty-state description below the headline. */
+  emptyDescription?: string
 
   /**
    * Fires once the workbench surface dockview is ready. Receives the same
@@ -182,6 +195,10 @@ export function ChatCenteredShell({
   storageKey = "boring-ui-v2:chat-centered-shell:v2",
   accentColor,
   withCommandPalette = true,
+  chatSuggestions,
+  emptyEyebrow,
+  emptyTitle,
+  emptyDescription,
   onSurfaceReady,
   extraPanels,
   className,
@@ -395,12 +412,34 @@ export function ChatCenteredShell({
           sessionId={activeSessionId}
           chrome={false}
           toolRenderers={toolRenderers}
+          suggestions={chatSuggestions}
+          emptyEyebrow={emptyEyebrow}
+          emptyTitle={emptyTitle}
+          emptyDescription={emptyDescription}
           className="h-full min-h-0"
         />
       )
     }
-    return <ChatStagePlaceholder ref={stageRef} />
-  }, [stage, activeSessionId, toolRenderers])
+    return (
+      <ChatStagePlaceholder
+        ref={stageRef}
+        eyebrow={emptyEyebrow}
+        title={emptyTitle}
+        description={emptyDescription}
+        suggestions={chatSuggestions}
+        onSelectSuggestion={onCreateSession ? () => onCreateSession() : undefined}
+      />
+    )
+  }, [
+    stage,
+    activeSessionId,
+    toolRenderers,
+    chatSuggestions,
+    emptyEyebrow,
+    emptyTitle,
+    emptyDescription,
+    onCreateSession,
+  ])
 
   const rootStyle = accentColor
     ? ({ "--accent": accentColor } as React.CSSProperties)
@@ -545,7 +584,16 @@ export function ChatCenteredShell({
           </aside>
         </div>
 
-        {withCommandPalette && <CommandPalette />}
+        {/*
+         * The command palette is mounted by WorkspaceProvider — every chat
+         * shell already lives inside one (it owns the registry the palette
+         * reads). Mounting another one here renders a duplicate dialog +
+         * doubles the ⌘K listener, which the user reported as a "double
+         * layer" palette. The `withCommandPalette` prop is preserved for
+         * back-compat but is now a no-op; pass it to WorkspaceProvider if
+         * you need to disable.
+         */}
+        {void withCommandPalette}
       </div>
     </ChatShellContext.Provider>
   )

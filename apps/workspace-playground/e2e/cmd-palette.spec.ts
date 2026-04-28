@@ -48,4 +48,19 @@ test.describe("command palette", () => {
       page.getByRole("dialog", { name: /command palette/i }),
     ).toBeHidden({ timeout: 2_000 })
   })
+
+  test("only ONE palette dialog mounts (no double-layer)", async ({ page }) => {
+    // Regression for "double layer cmd pane" — both WorkspaceProvider
+    // and ChatCenteredShell were mounting <CommandPalette />. Apps that
+    // use the chat shell inside a workspace provider (the canonical
+    // setup, including this playground) ended up with two stacked
+    // dialogs and two ⌘K listeners.
+    await page.goto("/")
+    await page.waitForLoadState("networkidle")
+    await page.keyboard.press("ControlOrMeta+KeyK")
+
+    const dialogs = page.getByRole("dialog", { name: /command palette/i })
+    await expect(dialogs.first()).toBeVisible({ timeout: 5_000 })
+    expect(await dialogs.count()).toBe(1)
+  })
 })
