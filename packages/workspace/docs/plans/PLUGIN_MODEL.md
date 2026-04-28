@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v6 — simplified. Pure-data Plugin contract; routes/lifecycle/chatSuggestions/order/dependsOn cut as overdesign.
+**Status:** v6.1 — ultrathink self-audit (cut dead recentKind; add validation enumeration, id collision policy, build invariants, testability section, concrete filesystemPlugin source, known-gaps register)
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
@@ -214,12 +214,15 @@ type CommandConfig = {
 type CatalogConfig = {
   id: string
   label: string
-  /** Tag for Recent entries — see §Polymorphic Recent. */
-  recentKind: string
   adapter: ExplorerAdapter                 // existing DataExplorer type
   onSelect: (row: ExplorerRow) => void
   pluginId?: string                        // auto-set by registry
 }
+// NOTE: v5/v6 had a `recentKind?: string` field intended for Recent
+// fallback when the source catalog is unregistered. The spec
+// settled on "drop orphan entries" — so recentKind would be set
+// but never read. Cut from v6.1. Future Phase 2 "filter Recent by
+// kind" UX can add it back as a non-breaking optional field.
 
 // AgentTool — already exists in @boring/agent/shared
 ```
@@ -263,6 +266,196 @@ For plugins whose **server-side dependencies** (DB clients,
 filesystem roots, etc.) need to be constructed at boot, the deps
 DON'T enter the Plugin shape — they go to the route handlers the
 host wires separately. See §"Where do routes go?" below.
+
+### What `definePlugin` validates
+
+Validation runs synchronously at the `definePlugin({...})` call.
+Throwing means the plugin module fails to import — the host's build
+or dev server reports the error with a clear stack trace.
+
+Checks:
+
+1. `id` is a non-empty string. (Convention: kebab-case package or
+   app name; not enforced.)
+2. Within `panels`: each `id` is unique within this plugin; each
+   `placement` is one of the allowed values; if `lazy: true` the
+   `component` is a function returning a Promise; if `lazy:
+   false`/absent the `component` is a `ComponentType`.
+3. Within `commands`: each `id` is unique within this plugin; `run`
+   is a function.
+4. Within `catalogs`: each `id` is unique within this plugin;
+   `adapter.search` is a function; `onSelect` is a function.
+5. Within `agentTools`: delegates to `validateAgentTool` (which
+   re-exports `validateTool` from `@boring/agent/shared`). Each
+   tool has non-empty `name`, `description`, `parameters` object,
+   and `execute` function.
+
+Cross-plugin id collisions (same panel id from two different
+plugins) are NOT errors — they're handled by late-wins-on-id at
+registration time, with a dev-mode warning.
+
+```
+PluginValidationError: plugin "boring-macro": catalogs[0].adapter.search
+must be a function (got: undefined)
+```
+
+### Plugin id collision policy — plugin-level vs contribution-level
+
+Two distinct collision types with different semantics:
+
+| Collision | Example | Policy | Why |
+|---|---|---|---|
+| Two plugins share `Plugin.id` | Two npm packages both register `id: "boring-macro"` | **Throw at registration** (`PluginError { kind: 'duplicate-id' }`) | Same plugin id = same identity. Two things claiming the same identity is an authoring bug, not a composition pattern. Hosts should rename or remove one. |
+| Two plugins contribute same panel/command/catalog id | macro and superCoder both contribute `id: "code-editor"` | **Late-wins, dev-warn** | Composition pattern: a host plugin overrides a default. Working as intended; warn so the override is traceable. |
+
+The plugin-level collision throws because there's no useful
+"override the whole plugin" semantic — if you want to replace a
+plugin, exclude it via `excludeDefaults` and register a different
+one with a different id.
+
+### Build/bundle invariants
+
+A plugin module split across `plugin.client.ts` and
+`plugin.server.ts` MUST avoid cross-import. Server modules import
+`node:*`, Fastify types, DB clients; bundling them into the client
+breaks the build (or worse, ships secrets to browsers).
+
+Three enforcement strategies (any one suffices):
+
+1. **`"use server"` / `"use client"` directives** at the top of
+   each file (RSC-style). Bundlers honor them. This is the
+   recommended approach.
+2. **Per-environment package.json `exports`**: in npm-distributed
+   plugins (Phase 2), expose `./client` and `./server` sub-paths
+   that point at non-overlapping bundles.
+3. **Vite/tsup conditional imports**: `import.meta.env.SSR` guards
+   server-only requires.
+
+Inline plugins (Phase 1) typically use strategy 1 plus a barrel
+`plugin/index.ts` that re-exports only client-safe symbols by
+default; server entry imports `plugin/server.ts` directly when it
+needs the server half.
+
+The plan does NOT add static enforcement (e.g., a custom ESLint
+rule). Reviewers + CI build catches the leak. This can change if
+mistakes prove common.
+
+### Plugin testability
+
+Plugins are pure data. Testing them at three levels:
+
+**Unit — assert contract shape:**
+
+```ts
+import { describe, it, expect } from "vitest"
+import { makeMacroPlugin } from "../plugin"
+
+describe("makeMacroPlugin", () => {
+  it("registers expected contributions", () => {
+    const p = makeMacroPlugin()
+    expect(p.id).toBe("boring-macro")
+    expect(p.panels?.map((x) => x.id)).toContain("deck")
+    expect(p.catalogs?.map((x) => x.id)).toContain("macro-series")
+    expect(p.agentTools?.map((t) => t.name)).toEqual(
+      expect.arrayContaining(["execute_sql", "macro_search"]),
+    )
+  })
+})
+```
+
+No registries, no provider, no Fastify — just inspect the returned
+object. `definePlugin` validation already ran at module load.
+
+**Integration — render through `<WorkspaceProvider>`:**
+
+```ts
+import { renderHook } from "@testing-library/react"
+import { WorkspaceProvider, useCatalogs } from "@boring/workspace"
+
+const wrapper = ({ children }) => (
+  <WorkspaceProvider plugins={[makeMacroPlugin()]}>{children}</WorkspaceProvider>
+)
+const { result } = renderHook(() => useCatalogs(), { wrapper })
+expect(result.current.find((c) => c.id === "macro-series")).toBeDefined()
+```
+
+Tests the bootstrap fan-in + registry subscriptions in one shot.
+
+**Server — boot a Fastify app with the plugin:**
+
+```ts
+import { createWorkspaceAgentApp } from "@boring/workspace/server"
+
+const app = await createWorkspaceAgentApp({
+  plugins: [makeMacroPlugin()],
+  workspaceRoot: tmpDir,
+})
+const res = await app.inject({ url: "/api/v1/catalog/agent-tools" })
+expect(res.json()).toEqual(expect.arrayContaining([
+  expect.objectContaining({ name: "execute_sql" }),
+]))
+await app.close()
+```
+
+Use Fastify's `inject()` for in-process testing; no port binding.
+
+### Concrete filesystemPlugin source
+
+```ts
+// packages/workspace/src/plugin/defaults/filesystemPlugin.ts
+import { definePlugin, type Plugin } from "../definePlugin"
+import { filesystemAgentTools } from "@boring/agent/shared"
+import { FileTreePanel, CodeEditorPanel, MarkdownEditorPanel } from "../../panels"
+import { filesCatalog } from "./filesystemCatalog"
+
+export const filesystemPlugin: Plugin = definePlugin({
+  id: "filesystem",
+  label: "Filesystem",
+
+  panels: [
+    {
+      id: "files",
+      title: "Files",
+      component: FileTreePanel,
+      placement: "left-tab",
+      source: "builtin",
+    },
+    {
+      id: "code-editor",
+      title: "Code",
+      component: CodeEditorPanel,
+      placement: "center",
+      filePatterns: [
+        "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx",
+        "**/*.py", "**/*.rs", "**/*.go", "**/*.json", "**/*.yml", "**/*.yaml",
+      ],
+      source: "builtin",
+    },
+    {
+      id: "markdown-editor",
+      title: "Markdown",
+      component: MarkdownEditorPanel,
+      placement: "center",
+      filePatterns: ["**/*.md", "**/*.mdx"],
+      source: "builtin",
+    },
+  ],
+
+  catalogs: [filesCatalog],
+  agentTools: filesystemAgentTools,
+})
+```
+
+The panel ids (`code-editor`, `markdown-editor`) are the override
+seams: a host plugin can register the same id with a
+`SuperCoderPanel` and late-wins-on-id replaces. `source: "builtin"`
+means user/app-source plugins win the file-pattern resolver
+tie-breaker.
+
+`filesCatalog` (in `filesystemCatalog.ts`) wires
+`/api/v1/files/search` to the catalog adapter — the same backend
+the LLM's `find_files` tool uses, so the cmd palette and the LLM
+share one search engine.
 
 ### Where do routes go?
 
@@ -482,10 +675,11 @@ catalog it came from. RecentStore entries:
 ```ts
 interface RecentEntry {
   catalogId: string         // ↔ CatalogConfig.id
-  recentKind: string        // ↔ CatalogConfig.recentKind (denormalized for safety)
-  rowId: string
+  rowId: string             // ↔ ExplorerRow.id within that catalog
   /** Snapshot of the row at time of selection. Guards against
-   *  catalog data changing under our feet. */
+   *  catalog data changing under our feet (file renamed, series
+   *  re-tagged, …). Cheap (~200 bytes); essential because adapters
+   *  don't have a `getById(rowId)` method. */
   rowSnapshot: ExplorerRow
   selectedAt: number        // unix ms
 }
@@ -1204,6 +1398,27 @@ await app.listen({ port })
 | `src/plugin/index.ts` | 0 | 20 | +20 |
 | **Total** | **260** | **36** | **-224 (-86%)** |
 
+## Known gaps — deferred to Phase 2+
+
+Things v6.1 deliberately does NOT solve, listed explicitly so
+reviewers don't think they were missed.
+
+| Gap | Why deferred | When to revisit |
+|---|---|---|
+| **Hot-reload / unregister cleanup** | Fastify routes can't unregister; React subscriptions clean themselves; catalog adapters with their own state would leak. No Phase 1 plugin uses this. | Phase 3 hot-reload story. |
+| **Plugin-vs-substrate tool name collision** | A plugin shipping a tool called `read` replaces substrate's. Late-wins logged. Could confuse the LLM if names diverge mid-session. | When agent-authored plugins (Phase 3) make accidental collision likely. |
+| **Catalog adapter memory** | If an adapter holds a long-running subscription (e.g., websocket to a remote search service), there's no place to clean up because there's no `onUnmount`. | When a real adapter needs it. Adding a teardown hook on `CatalogConfig` is non-breaking. |
+| **Build-time enforcement of client/server split** | Documented invariant; not a custom lint rule. | If accidental cross-imports become common. |
+| **Plugin versioning / compat** | `Plugin.version` field cut. No compat negotiation. | Phase 2 npm distribution. |
+| **Layout migrations** | Renaming a panel id breaks cached dockview layouts. Same problem as today; not made worse by plugin model. | When layouts become stable enough to merit migration tooling. |
+| **System-prompt augmentation from registered plugins** | LLM doesn't currently see "these plugins are loaded; here's what they do." | Phase 2 discovery endpoint + prompt injection. |
+| **Permission / capability gating** | Inline plugins run with full host privileges. | Phase 3 sandbox / capability flags. |
+| **Per-plugin telemetry** | No per-plugin error counter / call latency telemetry. | When debug volume justifies it. |
+| **`<PluginInspector />`** | DEV-only debug overlay punted. `console.log(registries)` covers Phase 1. | When devs ask. |
+| **Plugin discovery via `/api/v1/plugins`** | Phase 1 hosts know what they imported. | Phase 2 npm + agent-authored. |
+
+None of these block the boring-macro acceptance test.
+
 ## Phase 2/3 (sketched, deferred)
 
 **Phase 2 — distributable plugins:**
@@ -1359,6 +1574,76 @@ await app.listen({ port })
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v6 → v6.1 (ultrathink self-audit)
+
+Self-applied ultrathink review against v6 — the kind of pass an
+external reviewer would make. Seven findings, all small:
+
+1. **`recentKind` on CatalogConfig was dead code.** Set but never
+   read after the spec normalized to "drop orphans." Cut from the
+   contract; cut from `RecentEntry`. Phase 2 "filter Recent by
+   kind" UX can re-add as a non-breaking optional field.
+
+2. **`definePlugin` validation was claimed but never enumerated.**
+   New §"What `definePlugin` validates" lists the five categories
+   of checks (id, panels, commands, catalogs, agentTools) so plugin
+   authors can predict what fails.
+
+3. **Plugin-level id collision policy was missing.** Contribution-
+   level (panel id, command id) is late-wins-with-warn; that's
+   composition. But two plugins sharing `Plugin.id` is identity
+   confusion, not composition — should throw. Documented in new
+   §"Plugin id collision policy."
+
+4. **Build/bundle invariants were implicit.** `plugin.client.ts`
+   and `plugin.server.ts` MUST NOT cross-import or the client
+   bundle leaks `node:*` imports. Added §"Build/bundle invariants"
+   listing three enforcement strategies (RSC directives, npm
+   sub-path exports, conditional imports) — any one suffices.
+
+5. **No testing guidance.** Plugin authors had to figure out
+   testing patterns themselves. Added §"Plugin testability" with
+   three concrete patterns: unit (assert contract shape),
+   integration (`<WorkspaceProvider plugins={[testPlugin]}>` +
+   `renderHook`), server (`createWorkspaceAgentApp` + Fastify
+   `inject()`).
+
+6. **No concrete `filesystemPlugin` source.** The plan was abstract
+   about what the canonical default plugin looks like. Added the
+   actual code so the plan is self-contained; it's the most-cited
+   exemplar in the spec.
+
+7. **Known-gaps register added.** §"Known gaps — deferred to Phase
+   2+" makes 11 things explicit (hot-reload, build-time
+   enforcement, plugin versioning, layout migrations, …) with a
+   "when to revisit" column. Reviewers who want to flag gaps can
+   check whether they're already on the deferral list before
+   adding scope.
+
+### Considered but not changed
+
+- **`Plugin.label` removal** — considered cutting (defaults to
+  `id`). Kept because `label?: string` is one optional line and
+  it'll be visible in any future inspector / discovery UI.
+- **`agentTools` field on Plugin** — considered moving server-only
+  contributions into a separate `ServerPlugin` shape. Rejected:
+  same plugin id on client and server is the design intent (see
+  §Distribution); separate shapes would bifurcate the contract
+  for no real benefit.
+- **`definePlugin` immutability via `Object.freeze`** — considered.
+  Rejected as over-engineering until accidental mutation is a
+  real problem.
+
+### Net impact (v6 → v6.1)
+
+- One field cut (`recentKind`).
+- Five sections added (~100 lines): validation enumeration, id
+  collision policy, build invariants, testability, concrete
+  filesystemPlugin source, known-gaps register.
+- Same boring-macro acceptance test.
+- Same 6-field Plugin contract (now actually 5 mandatory fields +
+  optional `label`).
 
 ## Changelog v5.2 → v6 (simplification pass)
 
