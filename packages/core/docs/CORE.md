@@ -1,8 +1,8 @@
 # @boring/core — canonical spec
 
-**Status: Shipped 2026-04-26 at ef6dad0.** Milestones M0–M7 complete.
+**Status: Shipped through v7. Original M0-M7 ship commit: `ef6dad0`.**
 **Path:** `boring-ui-v2/packages/core/`
-**Interview-driven, last updated 2026-04-26.**
+**Interview-driven, last updated 2026-04-28.**
 **This file fuses the previous 8 docs (README / QUICKSTART / API / CONFIG / AUTH / DB / MIGRATION / TRAPS-V1 / plans/core-package-spec) into one.** No cross-file navigation required.
 
 **Reference app:**
@@ -24,7 +24,8 @@
 12. [Milestones](#milestones)
 13. [Acceptance criteria](#acceptance-criteria)
 14. [Deployment](#deployment)
-15. [Open questions deferred to v1.x](#open-questions-deferred-to-v1x)
+15. [V7 surface area](#v7-surface-area)
+16. [Open questions deferred to v1.x](#open-questions-deferred-to-v1x)
 
 ---
 
@@ -298,7 +299,10 @@ default = "system"          # "light" | "dark" | "system"
 [features]
 github_oauth = false   # v1: deferred to v1.x
 invites_enabled = true
+invite_ttl_days = 7
 ```
+
+`invite_ttl_days` lives in `boring.app.toml`. `sendWelcomeEmail` is env-only (`SEND_WELCOME_EMAIL=false`) but still lands under `CoreConfig.features` after config load so feature flags stay grouped in one object.
 
 ### Environment variables
 
@@ -307,7 +311,8 @@ invites_enabled = true
 | `DATABASE_URL` | yes (prod) | Postgres connection string. |
 | `BETTER_AUTH_SECRET` | yes | 32-byte hex. Signs session cookies. |
 | `BETTER_AUTH_URL` | yes | Public URL of the deployment (used for OAuth callbacks). |
-| `WORKSPACE_SETTINGS_ENCRYPTION_KEY` | yes (prod) | 32-byte hex. pgcrypto key for `workspace_settings.value`. Rotating invalidates existing encrypted values. |
+| `WORKSPACE_SETTINGS_ENCRYPTION_KEY` | yes (prod) | 32-byte hex. pgcrypto key for `workspace_settings.value`. Rotating it without re-encrypting rows breaks typed decrypts of existing values, though metadata reads still succeed; see [V7 surface area](#v7-surface-area). |
+| `SEND_WELCOME_EMAIL` | no | Defaults to `true`. Set to `false` to suppress the post-signup welcome email for non-invite signups. |
 | `MAIL_FROM` | yes (prod) | Sender address for verification / reset / magic-link emails. Without it those flows are disabled. |
 | `MAIL_TRANSPORT_URL` | yes (prod) | URL scheme dispatched by core's transport parser. **Recommended default: `resend://<api-key>`** (Resend REST — no dependency on the resend npm package; core just hits `https://api.resend.com/emails`). Also supported: `smtp://user:pass@host:port`, `smtps://user:pass@host:port`, `console://` (dev-only — logs to stdout). Unknown scheme = boot-time `ConfigValidationError`. |
 | `GITHUB_CLIENT_ID` | **v1.x — not used in v1** | Reserved for when GitHub OAuth ships in v1.x alongside GitHub App install. Set if `features.github_oauth = true`. |
@@ -362,6 +367,8 @@ export interface CoreConfig {
   features: {
     githubOauth: boolean
     invitesEnabled: boolean
+    sendWelcomeEmail: boolean   // default true; disables the post-signup welcome email when false
+    inviteTtlDays: number       // default 7, validated to 1..30
   }
 }
 ```
@@ -376,9 +383,11 @@ export interface RuntimeConfig {
   appName: string
   appLogo: string | null
   apiBase: string
-  features: { githubOauth: boolean; invitesEnabled: boolean }
+  features: { githubOauth: boolean; invitesEnabled: boolean; sendWelcomeEmail: boolean }
 }
 ```
+
+`sendWelcomeEmail` is surfaced here because the frontend-safe config payload mirrors the server feature flags, even though the welcome-email decision itself happens in the server-side post-signup hook.
 
 `<ConfigProvider>` fetches this once on mount and blocks render until loaded. **On fetch failure**: throws to `<AppErrorBoundary>` with a `ConfigFetchError` after 3 retries (exponential backoff: 500ms, 1s, 2s). v1 failed-open to defaults; v2 fails-closed because auth + workspace hooks depend on `appId` being real. Users see a "Cannot reach server" boundary UI with a refresh button, not a hung blank page.
 
@@ -600,9 +609,6 @@ export type Workspace = {
   createdAt: string
   deletedAt: string | null    // soft-delete marker
   isDefault: boolean
-  machineId: string | null
-  volumeId: string | null
-  flyRegion: string | null
 }
 export type WorkspaceMember = {
   workspaceId: string
@@ -640,8 +646,10 @@ export type WorkspaceRuntime = {
   workspaceId: string
   spriteUrl: string | null
   spriteName: string | null
-  state: 'pending' | 'provisioning' | 'ready' | 'error'
+  state: 'pending' | 'ready' | 'error'
   lastError: string | null
+  volumePath: string | null
+  lastErrorOp: string | null
   provisioningStep: string | null
   stepStartedAt: string | null
   updatedAt: string
@@ -691,13 +699,19 @@ export const ERROR_CODES = {
   // Workspace membership
   NOT_MEMBER: 'not_member',                         // 403 — caller not in workspace
   LAST_OWNER: 'last_owner',                         // 409 — can't remove the last owner
-  WORKSPACE_PROVISIONING: 'workspace_provisioning', // 409 — can't delete during provisioning
 
   // Invites
   INVITE_NOT_FOUND: 'invite_not_found',             // 404
   INVITE_EXPIRED: 'invite_expired',                 // 410
   INVITE_ALREADY_ACCEPTED: 'invite_already_accepted', // 409
   INVITE_EMAIL_MISMATCH: 'invite_email_mismatch',   // 403 — invite's email ≠ user's email
+  INVITE_LOCKED: 'invite_locked',                   // 423 — too many failed attempts
+
+  // Provisioning
+  PROVISION_FAILED: 'provision_failed',             // 500 — create or retry provisioner threw
+  DESTROY_FAILED: 'destroy_failed',                 // 500 — destroyer threw; workspace row not deleted
+  RUNTIME_UNMANAGED: 'runtime_unmanaged',           // 409 — retry requested without a provisioner/runtime
+  INVALID_RETRY_STATE: 'invalid_retry_state',       // 409 — retry allowed only for error+provision
 
   // Validation + infra
   NOT_FOUND: 'not_found',                           // 404
@@ -727,18 +741,21 @@ Served by `createCoreApp(config)`:
 | POST | `/api/v1/workspaces` | Create workspace |
 | GET | `/api/v1/workspaces/:id` | Get workspace |
 | PUT | `/api/v1/workspaces/:id` | Update workspace |
-| DELETE | `/api/v1/workspaces/:id` | Delete (soft). **Returns 409 Conflict if `runtime.state = 'provisioning'`** — user must wait or retry after provisioning completes or errors. Prevents orphan runtime writes to a soft-deleted workspace. |
+| DELETE | `/api/v1/workspaces/:id` | Delete workspace. In managed mode, core calls `provisioner.destroy(id)` first; if that throws, response is 500 `DESTROY_FAILED` and the runtime row is left in `state='error'` with `lastErrorOp='destroy'`. |
 | GET | `/api/v1/workspaces/:id/settings` | List settings **metadata only** (see DB §Encrypted settings) |
 | PUT | `/api/v1/workspaces/:id/settings` | Write encrypted settings |
 | GET | `/api/v1/workspaces/:id/members` | List members |
 | POST | `/api/v1/workspaces/:id/members` | Add member |
+| PATCH | `/api/v1/workspaces/:id/members/:userId/role` | Update a member role. Owners only. Demoting the last owner returns 409 `LAST_OWNER`. |
 | DELETE | `/api/v1/workspaces/:id/members/:userId` | Remove member |
 | GET | `/api/v1/workspaces/:id/invites` | List invites |
 | POST | `/api/v1/workspaces/:id/invites` | Create invite |
 | POST | `/api/v1/workspaces/:id/invites/:inviteId/accept` | Accept invite (workspace-scoped) |
 | DELETE | `/api/v1/workspaces/:id/invites/:inviteId` | Revoke invite |
-| GET | `/api/v1/workspaces/:id/runtime` | Current runtime state (`pending` / `provisioning` / `ready` / `error`). **Auto-creates a `ready` row on first read** if none exists (matches v1 behavior — `workspaces.create` seeds runtime for the creator, so every valid workspace has one; if a migration gap leaves an orphan workspace without a runtime row, this endpoint heals it rather than 404ing). Written by agent when embedded. |
-| POST | `/api/v1/workspaces/:id/runtime/retry` | Re-trigger provisioning from `error` state. 409 if not in `error`. |
+| POST | `/api/v1/invites/resolve` | Resolve a raw invite token into `{ workspaceName, role, expiresAt }` for `/invites/:token`. Returns 423 `INVITE_LOCKED` when prior accept failures have already locked the token. |
+| POST | `/api/v1/invites/accept` | Accept a raw invite token. Signed-in users only. Wrong-email accept attempts surface 403 `INVITE_EMAIL_MISMATCH`. |
+| GET | `/api/v1/workspaces/:id/runtime` | Current runtime state (`pending` / `ready` / `error`). **Auto-creates a `ready` row on first read** if none exists. |
+| POST | `/api/v1/workspaces/:id/runtime/retry` | Re-trigger provisioning only when `state='error'` and `lastErrorOp='provision'`. 409 `RUNTIME_UNMANAGED` if no provisioner/runtime; 409 `INVALID_RETRY_STATE` for any other state. |
 | ANY | `/auth/*` | better-auth routes (its actual API path naming): `/auth/sign-in/email`, `/auth/sign-up/email`, `/auth/sign-out`, `/auth/callback/:provider`, `/auth/verify-email`, `/auth/send-verification-email`, `/auth/forget-password`, `/auth/reset-password`, `/auth/magic-link/send`, `/auth/magic-link/verify`. **These are the BACKEND API paths called by the React `authClient`. Frontend ROUTE slugs (where users land in the URL bar) are different and intentionally friendlier — see §Layer 2 default routes (`/auth/signin`, `/auth/signup`, `/auth/forgot-password`, etc.). The two surfaces map: SignInPage at `/auth/signin` calls `authClient.signIn.email()` which POSTs to `/auth/sign-in/email`.** |
 
 Every `/api/v1/workspaces/:id/**` handler wears `requireWorkspaceMember(role?)`. See [Auth](#auth) and [Traps from v1](#traps-from-v1--locked-decisions).
@@ -1032,13 +1049,14 @@ Tables split across two owners.
 - `accounts` — linked OAuth accounts.
 - `verification_tokens` — email-verification / magic-link tokens.
 
-**Core-owned** (ported from v1 `@boring/cloud/db/schema.ts`):
+**Core-owned** (ported from v1 `@boring/cloud/db/schema.ts`, then narrowed by v7):
 
-- `workspaces` — `id`, `appId`, `name`, `createdBy`, `createdAt`, `deletedAt`, `isDefault`, `machineId`, `volumeId`, `flyRegion`.
+- `workspaces` — `id`, `appId`, `name`, `createdBy`, `createdAt`, `deletedAt`, `isDefault`. v7 intentionally removed the deferred Fly columns `machineId`, `volumeId`, and `flyRegion`.
 - `workspaceMembers` — `(workspaceId, userId)` composite pk, `role` (`owner`|`editor`|`viewer`), `createdAt`.
-- `workspaceInvites` — `id`, `workspaceId`, `email`, `tokenHash`, `role`, `expiresAt` (default 7 days from creation), `acceptedAt`, `createdBy`. Invite emails are sent via the same `MAIL_TRANSPORT_URL` / `MAIL_FROM` transport as auth flows; no separate mailer.
+- `workspaceInvites` — `id`, `workspaceId`, `email`, `tokenHash`, `role`, `expiresAt` (computed from `features.inviteTtlDays` in the store layer), `acceptedAt`, `createdBy`, `failedAttempts`, `lockedUntil`. Invite emails are sent via the same `MAIL_TRANSPORT_URL` / `MAIL_FROM` transport as auth flows; no separate mailer.
 - `workspaceSettings` — `(workspaceId, key)` composite pk, `value` (bytea, pgcrypto-encrypted), `updatedAt`.
-- `workspaceRuntimes` — `workspaceId` pk, `spriteUrl`, `spriteName`, `state`, `lastError`, `updatedAt`, `provisioningStep`, `stepStartedAt`. Written by agent when it provisions. Full v1 column list ported.
+- `workspaceRuntimes` — `workspaceId` pk, `spriteUrl`, `spriteName`, `state`, `lastError`, `volumePath`, `lastErrorOp`, `updatedAt`, `provisioningStep`, `stepStartedAt`. Runtime state is narrowed to `pending | ready | error`.
+- `idempotencyKeys` — `key`, `scope`, `responseStatus`, `responseBody`, `createdAt`. Used by idempotent invite creation and any future retried write endpoints.
 - `userSettings` — `(userId, appId)` composite pk, `settings` jsonb, `email`, `displayName`, `updatedAt`.
 
 ### Foreign keys
@@ -1084,13 +1102,11 @@ Implementations: `PostgresUserStore` (Drizzle), `LocalUserStore` (in-memory).
 ```ts
 export interface WorkspaceStore {
   // Workspace CRUD
-  create(userId: string, name: string, appId: string): Promise<Workspace>
+  create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean }): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>  // always filtered by appId (cross-app scoping)
   get(id: string): Promise<Workspace | null>
   update(id: string, updates: Partial<Pick<Workspace, 'name'>>): Promise<Workspace | null>
-  // Returns { removed: true } on success.
-  // Narrow subset of ERROR_CODES for failure cases — implementation MUST NOT return other codes.
-  delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.WORKSPACE_PROVISIONING | typeof ERROR_CODES.NOT_FOUND }>
+  delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }>
 
   // Used by deleteUserCompletely orchestrator. Implementations compute this in SQL (Postgres)
   // or by iterating the in-memory store (Local). Returns workspaces where the user is the
@@ -1104,9 +1120,10 @@ export interface WorkspaceStore {
   // No separate GET /api/v1/users/:id endpoint — core does not expose user lookups outside membership lists.
   listMembers(workspaceId: string): Promise<Array<WorkspaceMember & { user: Pick<User, 'id' | 'email' | 'name' | 'image'> }>>
   upsertMember(workspaceId: string, userId: string, role: MemberRole): Promise<WorkspaceMember>
+  updateMemberRole(workspaceId: string, userId: string, role: MemberRole): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
   // Narrow subset of ERROR_CODES; implementation MUST NOT return a code outside this union.
   // `removed: true` + undefined code = success. `removed: false` + code = semantic failure.
-  removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.WORKSPACE_PROVISIONING }>
+  removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
 
   // Invites
   listInvites(workspaceId: string): Promise<WorkspaceInvite[]>
@@ -1114,13 +1131,15 @@ export interface WorkspaceStore {
   // (only its sha256 hash lives in `workspace_invites.tokenHash`). The HTTP handler uses the
   // raw token to build the accept URL for the email (e.g. https://app/accept?invite_token=<raw>).
   // After this method returns, the caller MUST NOT log or persist the rawToken anywhere.
-  createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null): Promise<{ invite: WorkspaceInvite; rawToken: string }>
+  createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null, opts?: { ttlDays?: number }): Promise<{ invite: WorkspaceInvite; rawToken: string }>
   getInvite(workspaceId: string, inviteId: string): Promise<WorkspaceInvite | null>
   // Used by the post-signup hook to resolve ?invite_token=<raw> from the signup URL.
   // Implementation hashes the raw token (sha256) and queries by tokenHash. Returns null if
   // no invite matches, even if the token format is valid.
   getInviteByTokenHash(tokenHash: string): Promise<WorkspaceInvite | null>
   revokeInvite(workspaceId: string, inviteId: string): Promise<boolean>
+  incrementInviteFailedAttempts(inviteId: string): Promise<{ failedAttempts: number; lockedUntil: string | null }>
+  resetInviteFailedAttempts(inviteId: string): Promise<void>
   // Throws HttpError on any failure (no silent returns):
   //   INVITE_NOT_FOUND (404), INVITE_EXPIRED (410), INVITE_ALREADY_ACCEPTED (409),
   //   INVITE_EMAIL_MISMATCH (403 — invite's email ≠ user's current email, case-insensitive).
@@ -1161,9 +1180,10 @@ Behavior of the workspace store that isn't obvious from the interface signatures
 
 - **Cross-app scoping**: `list(userId)` is ALWAYS filtered by the current session's `appId`. The store method takes `appId` at the route layer (from `request.server.config.appId`), not as a method parameter. A user signed into app X cannot see their workspaces from app Y. Matches v1 behavior.
 - **Rename uniqueness**: `workspaces.name` has no unique constraint. A user can have two workspaces named "My App." Matches v1; documented so implementers don't add surprise constraints.
+- **Default flag at create time**: `create(..., { isDefault })` lets the route layer or post-signup hook mark the initial workspace as default without a follow-up update.
 - **Default workspace after delete**: if a user soft-deletes their only `is_default=true` workspace, they have no default until they create another one. The `<WorkspaceSwitcher>` falls back to the first non-deleted workspace or prompts to create one. v1.1 will add automatic promotion of the oldest sibling (tracked in §Traps from v1).
-- **Delete during provisioning**: blocked with 409 (see route table). Implementers must check `runtime.state === 'provisioning'` inside `WorkspaceStore.delete()` and return `{ removed: false, code: 'workspace_provisioning' }`.
-- **Invite TTL**: default 7 days from creation, set at `createInvite` time via `expiresAt = now + 7*24h`.
+- **Managed vs unmanaged delete**: when a `provisioner` is present, `DELETE /api/v1/workspaces/:id` destroys filesystem state first and only then soft-deletes the workspace row. If destroy throws, the route returns 500 `destroy_failed` and the runtime is left in `error` with `lastErrorOp='destroy'`. Without a provisioner, delete is just the DB soft-delete.
+- **Invite TTL**: `createInvite` computes `expiresAt` from `CoreConfig.features.inviteTtlDays` (default 7, range 1-30). There is no SQL default anymore.
 - **Invite email transport**: same `MAIL_TRANSPORT_URL` + `MAIL_FROM` as auth flows. If mail config is missing at boot, invites can be created (token hash stored) but emails are not sent — consumers get a `mail_disabled` warning in the response.
 - **Pagination**: `list()` returns all workspaces for the user+app. Expected scale <20 per user; cursor-based pagination is deferred to v1.x.
 - **Listing order**: `list()` returns workspaces ordered by `createdAt DESC`, with `is_default=true` first if present.
@@ -1514,7 +1534,10 @@ Done when:
 - **Parameterized membership audit** test iterates every `/api/v1/workspaces/:id/**` route and asserts 403 for a non-member and 2xx for a member — fails CI if a new workspace route is added without the guard.
 - Rate-limit integration test: hammer each rate-limited endpoint from a single IP; asserts 429 + `Retry-After` header at the configured limit; asserts `/auth/signout` is NOT rate-limited.
 - Contract suite (supertest) has one happy-path test per endpoint + one representative error path per endpoint.
-- DELETE `/workspaces/:id` during `runtime.state = 'provisioning'` returns 409 `workspace_provisioning` (integration test).
+- Managed DELETE failure semantics: if `provisioner.destroy()` throws, route returns 500 `destroy_failed`, runtime is left in `error`, and the workspace row is not deleted (integration test).
+- Runtime retry guardrail semantics: `/api/v1/workspaces/:id/runtime/retry` returns 409 `runtime_unmanaged` without a provisioner/runtime and 409 `invalid_retry_state` unless the current runtime is `error` with `lastErrorOp='provision'`.
+- Invite TTL / idempotency / membership invariants: config tests reject out-of-range `features.inviteTtlDays`, invite-store tests cover applying the configured TTL, repeated invite POSTs with the same idempotency key return the cached response, and both PATCH-role + DELETE-member flows surface `LAST_OWNER` when they would strand a workspace.
+- Invite token-flow coverage: `/api/v1/invites/resolve` and `/api/v1/invites/accept` have happy-path coverage plus error-path coverage for `INVITE_NOT_FOUND`, `INVITE_LOCKED`, `INVITE_EXPIRED`, and `INVITE_EMAIL_MISMATCH`.
 - Post-signup hook test: signup with valid `invite_token` → user joins the invited workspace (no default created); signup without token → default workspace created; signup with expired/wrong-email token → default workspace created + toast flag.
 - Graceful-shutdown test: spawn the app, send SIGTERM, assert exit 0 within 30s and in-flight request completes.
 
@@ -1674,6 +1697,169 @@ CMD ["node", "apps/full-app/dist/server/main.js"]
 - Bare-metal / systemd — child apps document their own unit files.
 - Kubernetes helm chart — v1.x if demand shows.
 - Blue-green / canary orchestration — PaaS-level concern, not core's.
+
+## V7 surface area
+
+This section is the shortest path to what v7 actually shipped. Use it as the app-author view; keep the spec for design history and deferred ideas.
+
+### Workspace provisioner SPI
+
+`createCoreApp(config, { provisioner })` now accepts an optional `WorkspaceProvisioner`:
+
+```ts
+export interface WorkspaceProvisioner {
+  provision(ctx: {
+    workspaceId: string
+    workspaceName: string
+    ownerId: string
+    appId: string
+  }): Promise<{ volumePath: string }>
+  destroy(workspaceId: string): Promise<void>
+}
+```
+
+Two integration modes are supported:
+
+- **Managed**: pass a provisioner. `POST /api/v1/workspaces` provisions immediately, persists `runtime.volumePath`, and `DELETE /api/v1/workspaces/:id` calls `destroy()` before soft-delete.
+- **Managed auto-heal caveat**: `GET /api/v1/workspaces/:id/runtime` still auto-creates a missing runtime row as `ready`, even when a provisioner exists. Treat that as migration-gap recovery, not proof that provisioning finished correctly.
+- **Unmanaged**: omit the provisioner. Workspaces are just DB rows. `POST /api/v1/workspaces/:id/runtime/retry` returns 409 `runtime_unmanaged`.
+
+Filesystem driver wiring:
+
+```ts
+import { createCoreApp, createFsProvisioner, loadConfig } from '@boring/core/server'
+
+const config = await loadConfig()
+const app = await createCoreApp(config, {
+  provisioner: createFsProvisioner({
+    rootDir: '/var/lib/my-app/workspaces',
+  }),
+})
+```
+
+`createFsProvisioner({ rootDir })` is the only concrete v7 driver. It requires an absolute root, creates `rootDir/<workspaceId>` with mode `0700`, rejects path traversal, and removes the directory recursively on destroy.
+
+Future-driver guidance: if you add an async/cloud provisioner later, do not stretch the current `pending | ready | error` runtime shape. Re-introduce a richer state machine, worker handoff, and fencing so provisioning side effects stay serialized.
+
+### Workspace UI pages
+
+`<BoringApp>` now mounts these workspace-management routes by default:
+
+| Route | Auth requirement | Notes |
+|---|---|---|
+| `/w/:id/settings` | Signed-in workspace member | Anyone in the workspace can load the page. Rename/save uses editor-or-better APIs; delete and runtime retry stay owner-gated. |
+| `/w/:id/members` | Signed-in workspace member | Owners can promote/demote and remove others. Any member can leave their own membership unless they are the last owner. |
+| `/w/:id/invites` | Signed-in workspace member | Members can view outstanding invites; owner-only actions create and revoke invites. |
+| `/invites/:token` | Public route shell; accept requires sign-in | `AuthGate` treats `/invites/*` as public so signed-out users can land on the page, inspect the invite, then sign in and resume acceptance. |
+
+These routes are registered inside `BoringApp` itself; child apps do not need to add their own route definitions unless they want to override the defaults.
+
+### Command palette integration
+
+Core exports a pure builder from `@boring/core/front`:
+
+```ts
+import { useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { getWorkspaceCommands } from '@boring/core/front'
+import { useCommandRegistry } from '@boring/workspace'
+
+export function WorkspaceCommandBridge() {
+  const navigate = useNavigate()
+  const { id } = useParams<{ id: string }>()
+  const commandRegistry = useCommandRegistry()
+
+  useEffect(() => {
+    if (!id) return
+    for (const command of getWorkspaceCommands(id, navigate)) {
+      commandRegistry.registerCommand({
+        id: command.id,
+        title: command.label,
+        run: command.run,
+      })
+    }
+  }, [commandRegistry, id, navigate])
+
+  return null
+}
+```
+
+`getWorkspaceCommands(workspaceId, navigate)` returns three shipped entries today: settings, members, and invites. `@boring/workspace`'s `CommandConfig` expects `title`, so the adapter maps `WorkspaceCommand.label` into that field when registering. The core return type stays framework-light (`{ id, label, keywords?, run }`) so apps can adapt it to `@boring/workspace`, a custom palette, or any other command surface without pulling in React hooks.
+
+### Workspace settings encryption
+
+Shipped algorithm and storage contract:
+
+- Encryption happens in Postgres via `pgcrypto` `pgp_sym_encrypt(...)` / `pgp_sym_decrypt(...)::text`.
+- Ciphertext is stored directly in `workspace_settings.value bytea`.
+- `getWorkspaceSettings(workspaceId)` returns metadata only: `Array<{ key, configured, updated_at }>` and never plaintext.
+- Typed accessors are responsible for decrypting individual keys and for handling key-rotation mismatches.
+
+Rotation procedure:
+
+1. Lock workspace-settings writes behind a feature flag or maintenance gate.
+2. Take a backup.
+3. Run a one-shot rotation script that reads rows with the old key, decrypts, re-encrypts with the new key, and writes them back in batches.
+4. Deploy the new `WORKSPACE_SETTINGS_ENCRYPTION_KEY`.
+5. Verify representative typed reads and generic metadata reads.
+6. Unlock writes.
+
+Operational guidance:
+
+- Planning number: start with **~5-15 seconds of write downtime per 1000 rows** for a single-worker batch rotation on app-local Postgres. This is an estimate, not a benchmark from this repo; large ciphertext payloads or cross-region DB links will push it higher.
+- Staging test: copy a few hundred representative `workspace_settings` rows into staging, rotate with a fake old/new key pair, verify generic `/settings` still returns metadata, then run the typed accessor(s) your app actually depends on before scheduling production downtime.
+
+### Migration notes
+
+The v7 substrate migration makes four operator-visible changes:
+
+- It drops `workspaces.machine_id`, `workspaces.volume_id`, and `workspaces.fly_region`. Any leftover data in those columns is intentionally discarded.
+- It narrows `workspace_runtimes.state` to `pending | ready | error`.
+- It adds `workspace_runtimes.volume_path`, `workspace_runtimes.last_error_op`, invite breaker columns, and the `idempotency_keys` table.
+
+Preflight cleanup for old runtime rows:
+
+```sql
+SELECT workspace_id, state, updated_at
+FROM workspace_runtimes
+WHERE state IN ('provisioning', 'destroying', 'destroyed');
+
+UPDATE workspace_runtimes
+SET state = 'error',
+    last_error = COALESCE(last_error, 'v7 migration cleanup: legacy runtime state'),
+    updated_at = NOW()
+WHERE state IN ('provisioning', 'destroying', 'destroyed');
+```
+
+That cleanup query is intentionally conservative: it forces operators to inspect stuck legacy runtime rows instead of silently treating them as healthy. After the migration lands, only `error` rows whose `last_error_op='provision'` are retryable through `/api/v1/workspaces/:id/runtime/retry`; destroy-side failures are retried by issuing `DELETE` again after fixing the underlying problem. Also note that `GET /api/v1/workspaces/:id/runtime` still auto-heals a missing runtime row to `ready`, even in managed mode, so a missing row should be treated as a migration gap to investigate rather than proof that provisioning completed.
+
+### Configuration additions
+
+New load-bearing config in v7:
+
+- `features.inviteTtlDays`: global invite TTL in days, default `7`, validated to `1..30`, applied in the store layer rather than as a SQL default.
+- `encryption.workspaceSettingsKey`: still the same config key, but now explicitly documented as a rotation-sensitive operational key.
+- `provisioner`: **not** an env var. Apps wire it at the `createCoreApp(config, { provisioner })` call site so filesystem/cloud runtime ownership stays explicit in server code.
+
+### V7 error codes
+
+New runtime / invite-breaker codes added by the v7 implementation:
+
+| Code | Meaning |
+|---|---|
+| `provision_failed` | Workspace create or runtime retry failed while calling the managed provisioner. |
+| `destroy_failed` | Managed workspace delete failed while destroying backing runtime state. |
+| `runtime_unmanaged` | Runtime retry was requested for a workspace with no managed provisioner/runtime. |
+| `invalid_retry_state` | Runtime retry was requested outside the `error + lastErrorOp='provision'` precondition. |
+| `invite_locked` | Too many failed invite accept attempts temporarily locked the token. |
+
+Existing codes that became especially load-bearing in the v7 UI and multi-user flows:
+
+| Code | Meaning |
+|---|---|
+| `last_owner` | A member remove/demote action would leave the workspace with zero owners. |
+| `invite_not_found` | Token or invite id did not resolve to a live invite. |
+| `invite_email_mismatch` | The signed-in user's email does not match the invite email. This is the shipped code name for the v7 spec's earlier `WRONG_USER_EMAIL` placeholder. |
 
 ## Open questions deferred to v1.x
 
