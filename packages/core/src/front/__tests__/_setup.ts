@@ -19,12 +19,6 @@ async function ensureUiHelpersLoaded(): Promise<void> {
   if (uiHelpersLoaded) return
   uiHelpersLoaded = true
 
-  // Optional matcher setup; when dependency is not installed yet we skip quietly.
-  try {
-    const jestDomModule = '@testing-library/jest-dom/vitest'
-    await import(jestDomModule)
-  } catch {}
-
   try {
     const testingLibraryModule = '@testing-library/react'
     const testingLib = (await import(testingLibraryModule)) as {

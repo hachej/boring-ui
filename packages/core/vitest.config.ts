@@ -8,6 +8,7 @@ export default defineConfig({
     setupFiles: [
       './src/server/__tests__/_setup.ts',
       './src/front/__tests__/_setup.ts',
+      './src/front/__tests__/_setup-matchers.ts',
     ],
     reporters: ['default'],
   },
