@@ -148,9 +148,51 @@
 .tiptap-prose h2 { font-size: 1.375rem; margin: 1.5rem 0 0.6rem; font-weight: 600; }
 .tiptap-prose h3 { font-size: 1.125rem; margin: 1.25rem 0 0.5rem; }
 .tiptap-prose h4 { font-size: 1rem; margin: 1rem 0 0.4rem; }
+/* Tailwind preflight strips default list markers; restore them so bullet
+   and ordered lists actually look like lists. Task lists override below
+   with list-style: none. */
 .tiptap-prose ul, .tiptap-prose ol { margin: 0.75rem 0; padding-left: 1.5rem; }
+.tiptap-prose ul { list-style: disc; }
+.tiptap-prose ul ul { list-style: circle; }
+.tiptap-prose ul ul ul { list-style: square; }
+.tiptap-prose ol { list-style: decimal; }
+.tiptap-prose ol ol { list-style: lower-alpha; }
+.tiptap-prose ol ol ol { list-style: lower-roman; }
 .tiptap-prose li { margin: 0.3rem 0; }
+.tiptap-prose li::marker { color: var(--muted-foreground); }
 .tiptap-prose li > p { margin: 0; }
+
+/* Task lists: tiptap renders <ul data-type="taskList"><li data-type="taskItem">
+   <label><input type="checkbox" /></label><div>text</div></li>… */
+.tiptap-prose ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+.tiptap-prose ul[data-type="taskList"] li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.tiptap-prose ul[data-type="taskList"] li > label {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0;
+  line-height: 1;
+}
+.tiptap-prose ul[data-type="taskList"] li > label > input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.tiptap-prose ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+.tiptap-prose ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
 .tiptap-prose code {
   font-family: var(--font-mono);
   font-size: 0.88em;

@@ -6,6 +6,7 @@ import { ChevronRight, FolderTree } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "../../panes/ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
+import type { WorkspaceState, PanelState } from "../../store/types"
 import { WorkbenchLeftPane } from "./WorkbenchLeftPane"
 import { ChatShellContext } from "./context"
 import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
@@ -103,6 +104,12 @@ function resolvePanelForPath(
   return fallback
 }
 
+function normalizeWorkbenchPath(path: string): string {
+  const trimmed = path.trim().replace(/\\/g, "/")
+  const noLeadingDot = trimmed.replace(/^\.\//, "")
+  return noLeadingDot.replace(/\/+/g, "/")
+}
+
 let seqCounter = 0
 function ok(): CommandResult {
   return { seq: ++seqCounter, status: "ok" }
@@ -159,6 +166,7 @@ export function SurfaceShell({
   onReadyRef.current = onReady
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const bridgeSelectorsRef = useRef(new Set<(state: WorkspaceState) => void>())
 
   // Read of the panel registry — used to validate `openPanel({component})`
   // against what's actually registered. Without this check, dockview's
@@ -172,7 +180,8 @@ export function SurfaceShell({
   const openFileSync = useCallback((path: string) => {
     const api = apiRef.current
     if (!api) return
-    const panelId = `file:${path}`
+    const normalizedPath = normalizeWorkbenchPath(path)
+    const panelId = `file:${normalizedPath}`
     const existing = api.getPanel(panelId)
     if (existing) {
       existing.api.setActive()
@@ -180,9 +189,9 @@ export function SurfaceShell({
     }
     api.addPanel({
       id: panelId,
-      component: resolvePanelForPath(path, panelRegistryRef.current),
-      title: path.split("/").pop() ?? path,
-      params: { path },
+      component: resolvePanelForPath(normalizedPath, panelRegistryRef.current),
+      title: normalizedPath.split("/").pop() ?? normalizedPath,
+      params: { path: normalizedPath },
     })
   }, [])
 
@@ -234,6 +243,42 @@ export function SurfaceShell({
     return { openTabs, activeTab: api.activePanel?.id ?? null }
   }, [])
 
+  const getBridgeState = useCallback((): WorkspaceState => {
+    const api = apiRef.current
+    const panels: PanelState[] = api
+      ? api.panels.map((p) => ({
+          id: p.id,
+          component: String((p as { component?: string }).component ?? ""),
+          params: (p.params as Record<string, unknown> | undefined) ?? undefined,
+        }))
+      : []
+    const activePanel = api?.activePanel?.id ?? null
+    const activeParams = (api?.activePanel?.params as Record<string, unknown> | undefined) ?? undefined
+    const activeFile = typeof activeParams?.path === "string" ? activeParams.path : null
+    return {
+      hydrationComplete: true,
+      layout: null,
+      sidebar: { collapsed: false, width: sidebarDefaultWidth },
+      panelSizes: {},
+      preferences: { theme: "dark" },
+      panels,
+      activePanel,
+      activeFile,
+      visibleFiles: panels
+        .map((p) => p.params?.path)
+        .filter((p): p is string => typeof p === "string"),
+      dirtyFiles: {},
+      notifications: [],
+    }
+  }, [sidebarDefaultWidth])
+
+  const emitBridgeState = useCallback(() => {
+    const state = getBridgeState()
+    for (const handler of bridgeSelectorsRef.current) {
+      handler(state)
+    }
+  }, [getBridgeState])
+
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
@@ -242,20 +287,24 @@ export function SurfaceShell({
     // every panel mutation. Disposers are intentionally not stored — the
     // dockview instance lives for the SurfaceShell's entire lifetime, and
     // SurfaceShell unmounts disposes the dockview itself.
-    const emit = () => onChangeRef.current?.(getSnapshot())
+    const emit = () => {
+      onChangeRef.current?.(getSnapshot())
+      emitBridgeState()
+    }
     ready.onDidAddPanel(emit)
     ready.onDidRemovePanel(emit)
     ready.onDidActivePanelChange(emit)
     // Initial snapshot once everyone's wired up.
     emit()
-  }, [openFileSync, openPanelSync, getSnapshot])
+  }, [openFileSync, openPanelSync, getSnapshot, emitBridgeState])
 
 
   const openFile = useCallback(
     async (path: string): Promise<CommandResult> => {
       const api = apiRef.current
       if (!api) return err("not-ready", "surface not ready")
-      const panelId = `file:${path}`
+      const normalizedPath = normalizeWorkbenchPath(path)
+      const panelId = `file:${normalizedPath}`
       const existing = api.getPanel(panelId)
       if (existing) {
         existing.api.setActive()
@@ -263,9 +312,9 @@ export function SurfaceShell({
       }
       api.addPanel({
         id: panelId,
-        component: resolvePanelForPath(path, panelRegistryRef.current),
-        title: path.split("/").pop() ?? path,
-        params: { path },
+        component: resolvePanelForPath(normalizedPath, panelRegistryRef.current),
+        title: normalizedPath.split("/").pop() ?? normalizedPath,
+        params: { path: normalizedPath },
       })
       return ok()
     },
@@ -274,10 +323,10 @@ export function SurfaceShell({
 
   const bridge = useMemo<WorkspaceBridge>(() => {
     return {
-      getOpenPanels: () => [],
-      getActiveFile: () => null,
+      getOpenPanels: () => getBridgeState().panels,
+      getActiveFile: () => getBridgeState().activeFile,
       getDirtyFiles: () => [],
-      getVisibleFiles: () => [],
+      getVisibleFiles: () => getBridgeState().visibleFiles,
       openFile,
       openPanel: async () => ok(),
       closePanel: async () => ok(),
@@ -287,9 +336,16 @@ export function SurfaceShell({
       markDirty: () => {},
       markClean: () => {},
       subscribe: () => () => {},
-      select: () => () => {},
+      select: (selector, handler) => {
+        const wrapped = (state: WorkspaceState) => handler(selector(state))
+        bridgeSelectorsRef.current.add(wrapped)
+        wrapped(getBridgeState())
+        return () => {
+          bridgeSelectorsRef.current.delete(wrapped)
+        }
+      },
     }
-  }, [openFile])
+  }, [openFile, getBridgeState])
 
   const startDrag = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
