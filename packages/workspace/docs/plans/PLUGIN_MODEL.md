@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** review v2 — strengthened (concrete contribution types, error model, discovery contract, rejected alternatives, npm authoring guide)
+**Status:** review v3 — Phase 1 scoped to inline plugins; npm + pi-loader + agent-authored deferred to Phase 2/3
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
@@ -18,6 +18,28 @@ pi-coding-agent plugin loader extends naturally to the wider shape.
 This isn't speculation. Boring-macro-v2 already contributes all six
 contribution types — they're just registered through four different
 APIs today. The plan consolidates them.
+
+## Phase 1 scope — INLINE PLUGINS ONLY
+
+Phase 1 ships **only the inline plugin path**: hosts define `Plugin`
+objects in their own source tree, import them, and pass to
+`<WorkspaceProvider plugins={[…]}>` /
+`createWorkspaceAgentApp({ plugins: [...] })`. No npm publication
+support beyond what already works (a Plugin object can be exported
+from any package; nothing requires it). No pi-loader extension to read
+the wider Plugin shape. No discovery endpoint. No agent-generated
+plugins.
+
+The reason: the inline path covers every host app on the roadmap
+(boring-macro, full-app, etc.). It's the smallest reviewable PR that
+delivers the consolidation. Distribution channels are real future
+work — pinned in this doc so we know where they land — but they don't
+ship in Phase 1.
+
+The plan keeps the npm / pi-loader / agent-generated / discovery
+sections intact under "Phase 2+ — distributable plugins" so the design
+stays coherent, but those sections describe future work, not work in
+flight.
 
 ## Problem
 
@@ -401,7 +423,15 @@ get them via `createWorkspaceAgentApp` (which includes
 on `createAgentApp` directly and ship without file tools — already
 the design intent of commit `4968e7d`.
 
-### npm-installable plugins
+## Phase 2+ — distributable plugins (NOT in Phase 1)
+
+The following sections describe distribution channels that build on
+the Phase 1 inline-plugin foundation. They're pinned here so the
+Phase 1 design doesn't paint itself into a corner — but each is
+EXPLICITLY out of Phase 1 scope. Phase 1 ships, validates the inline
+contract on real apps, then we expand.
+
+### npm-installable plugins (Phase 2)
 
 Plugins published to npm follow the `pi-plugin-*` naming convention
 already used by the pi loader. The package's `package.json` declares
@@ -471,7 +501,7 @@ Version compatibility: plugins declare a peer-dep range on
 version doesn't satisfy the range. Doesn't refuse to load — letting
 plugins fail loudly is better than silent absence.
 
-### Agent-generated plugins
+### Agent-generated plugins (Phase 3)
 
 The pi loader already supports user-installed extensions in
 `./.pi/extensions/`. The wider Plugin shape extends this naturally
@@ -736,7 +766,7 @@ produce bad UX (an empty group, a missing tool, a noop command). The
 provider exposes an `errors: PluginError[]` field on its context so
 debug panes / health pages can surface them.
 
-### `/api/v1/plugins` discovery contract
+### `/api/v1/plugins` discovery contract (Phase 2)
 
 Phase 2 endpoint, but the shape is fixed now so client + server can
 implement against it independently.
@@ -849,7 +879,7 @@ emits a console.warn, then removed. Codemod (jscodeshift) provided
 for the `data?: DataPaneConfig` → catalog migration in a separate
 follow-up.
 
-### Plugin authoring guide (for npm publishers)
+### Plugin authoring guide for npm publishers (Phase 2)
 
 A minimal published plugin's structure:
 
@@ -1020,74 +1050,106 @@ render conservatively.
 This lets the client's plugin set + the server's plugin set stay
 synced without tight coupling.
 
-### Phase 1 (this PR) — what actually ships
+### Phase 1 (this PR) — INLINE PLUGINS, what actually ships
 
-Bounded scope that delivers a reviewable PR with a working migration.
+Bounded scope: just enough to consolidate today's fragmented
+contribution APIs into one inline-plugin shape, and migrate
+boring-macro as the first proof.
+
+**No npm distribution. No pi-loader extension. No discovery
+endpoint. No agent-authored plugins.**  Those are Phase 2/3.
 
 1. **Define the Plugin contract** + `definePlugin` + per-contribution
-   validators. Lives in `@boring/workspace/shared`.
-2. **Implement registries** (`PluginRegistry`, `CatalogRegistry`),
-   subscribable via `useSyncExternalStore`. Retrofit `CommandRegistry`
-   + `PanelRegistry` for subscribe.
-3. **Implement workspacePlugin** with the existing UI bridge + default
-   commands + default panels + uiRoutes.
-4. **`<WorkspaceProvider plugins={…}>`** — auto-mounts workspacePlugin,
-   registers host plugins, fan to the right registries.
+   validators. Lives in `@boring/workspace/shared`. (See §Concrete
+   contribution types + §Validation contract.)
+2. **Implement registries** (`PluginRegistry`, `CatalogRegistry`,
+   `ChatSuggestionRegistry`), subscribable via
+   `useSyncExternalStore`. Retrofit `CommandRegistry` + `PanelRegistry`
+   for subscribe.
+3. **Implement default plugins**: `workspacePlugin` (UI bridge tools,
+   default commands, default panels, uiRoutes), `filesystemPlugin`
+   (file ops + routes + Files catalog), `uiBridgePlugin` (UI bridge
+   primitives). Fix `@boring/workspace/server`'s tsup build so they
+   can ship — see open question §4.
+4. **`<WorkspaceProvider plugins={…}>`** — auto-mounts default
+   plugins, registers host-passed plugins, fans contributions into
+   the right registries.
 5. **`createWorkspaceAgentApp({ plugins })`** — server-side mount,
-   includes workspacePlugin, calls existing pi loader, fans agentTools
-   into createAgentApp's extraTools, registers routes.
-6. **Extend pi loader: `extractTools` → `extractPlugin`**. Legacy
-   `tools: AgentTool[]` plugin files keep working unchanged.
-7. **`<CommandPalette />` consumes `useCatalogs()`** — kills the
+   auto-mounts default plugins, accepts host plugins explicitly. The
+   pi loader's existing tools-only behavior stays UNCHANGED in
+   Phase 1 — legacy `default: Tool[]` / `tools: Tool[]` plugin files
+   keep working as today; we don't extend the loader to read the
+   wider Plugin shape until Phase 2.
+6. **`<CommandPalette />` consumes `useCatalogs()`** — kills the
    broken `fileSearchFn`/`onOpenFile` props + the type-mismatched
-   Recent path. Files becomes the first catalog (provided by host).
-8. **Migrate ChatCenteredShell** off its imperative `useEffect`
+   Recent path. Files becomes the first catalog (provided by
+   `filesystemPlugin`).
+7. **Migrate `ChatCenteredShell`** off its imperative `useEffect`
    command registration. Toggles + new-chat become commands inside a
-   private internal "chat-shell" plugin. The session-as-commands loop
-   becomes a SessionsCatalog when the shell receives `sessions` +
-   `onSwitchSession`.
-9. **Migrate boring-macro-v2** to the layout convention:
+   private internal "chat-shell" plugin (defined inside the workspace
+   package, registered when the shell mounts). The
+   session-as-commands loop becomes a SessionsCatalog when the shell
+   receives `sessions` + `onSwitchSession`.
+8. **Migrate boring-macro-v2** to the inline-plugin layout:
    - `apps/boring-macro-v2/src/plugin/{shared,client,server,index}.ts`
+     defines `macroPlugin = definePlugin({...})`.
    - `apps/boring-macro-v2/src/server/index.ts` calls
      `createWorkspaceAgentApp({ plugins: [macroPlugin] })`; deletes
-     `src/server/uiBridge.ts`.
+     `src/server/uiBridge.ts` (covered by `uiBridgePlugin`).
    - `apps/boring-macro-v2/src/web/App.tsx` calls
-     `<WorkspaceProvider plugins={[macroPlugin]}>`; removes
-     `<DataProvider>` if redundant, removes inline panels/data/
-     suggestions config.
-   - This is THE proof-of-concept for the model — if it can't migrate
-     boring-macro to a single ~40-line plugin file, the design is
-     wrong.
-10. **Tests** (see test plan below).
+     `<WorkspaceProvider plugins={[macroPlugin]}>`; removes inline
+     panels/data/suggestions config.
+   - Acceptance test for the design: if it can't migrate boring-macro
+     to a single ~40-line plugin file, Phase 1 is wrong.
+9. **Tests** (see §Test plan).
 
-Two breaking changes called out in the release notes:
+Two breaking changes (in release notes):
 
-- `CommandPaletteProps` export removed (the `fileSearchFn`/`onOpenFile`
-  props were already effectively dead — provider mounts the palette
-  with no props).
-- `ChatCenteredShellProps.withCommandPalette` removed; flag now lives
-  on `WorkspaceProvider` (`includeWorkspacePlugin={false}`).
+- `CommandPaletteProps` export removed (already effectively dead —
+  provider mounts the palette with no props).
+- `ChatCenteredShellProps.withCommandPalette` removed; flag moves to
+  `<WorkspaceProvider excludeDefaults={["@boring/workspace"]}>` (or
+  similar — see §Default plugins for the override mechanism).
 
-### Phase 2 (sketched, separate PR)
+**What Phase 1 does NOT change:**
 
-- `GET /api/v1/plugins` discovery endpoint + system-prompt augmentation
-  from registered catalog metadata.
-- Workbench data tab gains catalog selector — picks any registered
-  catalog instead of taking a per-shell `DataPaneConfig`.
-- Agent gets generic `search_catalog(id, query)` tool generated from
-  registered catalogs (server-side and bridge-routed for client-only).
-- npm `pi-plugin-*` discovery extends to read the wider Plugin shape
-  (already partially supported by extractPlugin in Phase 1; Phase 2
-  validates the cross-env story).
+- The pi loader's behavior for tools-only legacy plugin files.
+- npm-installable distribution. (Plugin objects can be exported from
+  any package — that's just an npm import — but the wider package.json
+  manifest convention + auto-discovery don't ship.)
+- `~/.pi/agent/extensions/` and `./.pi/extensions/` keep working as
+  tools-only directories. The wider Plugin shape isn't read from
+  these dirs until Phase 2.
+- Agent has no `create_plugin` tool yet.
+- No `/api/v1/plugins` discovery endpoint.
+
+### Phase 2 (separate PR — distributable plugins)
+
+Once Phase 1 ships and the inline contract is validated on real apps:
+
+- **Extend pi loader: `extractTools` → `extractPlugin`**. Files in
+  `.pi/extensions/` and `node_modules/pi-plugin-*` can export the
+  full `Plugin` shape (default: Plugin) in addition to the
+  legacy tools-only shape. Legacy plugins keep working unchanged.
+- **`GET /api/v1/plugins`** discovery endpoint + system-prompt
+  augmentation from registered catalog metadata.
+- **Workbench data tab gains catalog selector** — picks any
+  registered catalog instead of taking a per-shell `DataPaneConfig`.
+- **Agent gets generic `search_catalog(id, query)` tool**
+  auto-generated from registered catalogs (server-side and
+  bridge-routed for client-only).
+- **npm authoring guide + reference plugin** — a published
+  `pi-plugin-example` package demonstrating the
+  package.json `boring.plugin` manifest convention.
 
 ### Phase 3 (longer-term)
 
-- A reference plugin published as an npm package
-  (`pi-plugin-billing-example` or similar) demonstrating the
-  npm-distribution path.
-- Per-plugin sandboxing / capability flags (e.g. `agentExposed:
+- **Agent-generated plugins** — `create_plugin` / `update_plugin` /
+  `remove_plugin` / `list_plugins` agent tools. Generated files in
+  `.pi/extensions/.agent-authored/`. Restart-required initially.
+- **Plugin hot-reload** for development.
+- **Per-plugin sandboxing / capability flags** (`agentExposed:
   false`, `requiresConfirmation: true` per contribution).
-- Plugin hot-reload for development.
 
 ## Test plan
 
