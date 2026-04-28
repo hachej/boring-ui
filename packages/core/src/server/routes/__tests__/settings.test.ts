@@ -26,6 +26,8 @@ function resetState() {
     spriteName: null,
     state: 'ready',
     lastError: null,
+    volumePath: null,
+    lastErrorOp: null,
     provisioningStep: null,
     stepStartedAt: null,
     updatedAt: new Date().toISOString(),

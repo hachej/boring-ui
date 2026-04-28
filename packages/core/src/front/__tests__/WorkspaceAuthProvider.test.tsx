@@ -26,9 +26,6 @@ const WS_1: Workspace = {
   createdAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
   isDefault: true,
-  machineId: null,
-  volumeId: null,
-  flyRegion: null,
 }
 
 const WS_2: Workspace = {
@@ -39,9 +36,6 @@ const WS_2: Workspace = {
   createdAt: '2026-01-02T00:00:00.000Z',
   deletedAt: null,
   isDefault: false,
-  machineId: null,
-  volumeId: null,
-  flyRegion: null,
 }
 
 function createQueryClient(): QueryClient {

@@ -71,9 +71,6 @@ const WORKSPACES: Workspace[] = [
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
     isDefault: true,
-    machineId: null,
-    volumeId: null,
-    flyRegion: null,
   },
   {
     id: 'ws-b',
@@ -83,9 +80,6 @@ const WORKSPACES: Workspace[] = [
     createdAt: '2026-01-02T00:00:00.000Z',
     deletedAt: null,
     isDefault: false,
-    machineId: null,
-    volumeId: null,
-    flyRegion: null,
   },
   {
     id: 'ws-c',
@@ -95,9 +89,6 @@ const WORKSPACES: Workspace[] = [
     createdAt: '2026-01-03T00:00:00.000Z',
     deletedAt: null,
     isDefault: false,
-    machineId: null,
-    volumeId: null,
-    flyRegion: null,
   },
 ]
 

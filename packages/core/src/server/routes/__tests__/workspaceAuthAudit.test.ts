@@ -101,7 +101,7 @@ function mockWorkspaceStore(): WorkspaceStore {
       return ws
     },
     delete: async (id: string) => {
-      if (!workspaces.has(id)) return { removed: false, code: ERROR_CODES.NOT_FOUND as const }
+      if (!workspaces.has(id)) return { removed: false as const, code: ERROR_CODES.NOT_FOUND }
       workspaces.delete(id)
       return { removed: true }
     },
@@ -211,7 +211,8 @@ function seedWorkspace(ownerUserId: string, appId = APP_ID) {
   memberDb.set(id, m)
   wsRuntimes.set(id, {
     workspaceId: id, spriteUrl: null, spriteName: null,
-    state: 'ready', lastError: null, provisioningStep: null, stepStartedAt: null,
+    state: 'ready', lastError: null, volumePath: null, lastErrorOp: null,
+    provisioningStep: null, stepStartedAt: null, updatedAt: new Date().toISOString(),
   })
   return ws
 }
