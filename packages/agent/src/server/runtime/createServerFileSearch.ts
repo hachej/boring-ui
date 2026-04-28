@@ -21,6 +21,43 @@ function normalizeLimit(limit: number | undefined): number {
   return Math.min(normalized, MAX_LIMIT)
 }
 
+// Translate the kind of globs LLMs typically emit (globstar paths like
+// "src/<globstar>/foo.ts" or just "package.json") into a `find` invocation
+// that actually matches.
+//
+// `find -name <pat>` only matches the BASENAME — it has no concept of
+// path segments — and `find -path <pat>` doesn't understand the
+// double-asterisk globstar (find treats it as two literal asterisks,
+// which fails to match anything). LLMs default to globstar/path globs,
+// which is how the "no files found" reports kept surfacing.
+//
+// Heuristic:
+//   - bare basename ("*.ts", "package.json", "Dockerfile") → -name <pat>
+//   - path-shaped ("src/*.ts", "<globstar>/foo.ts") → -path, with the
+//     globstar collapsed to a single `*` so find recurses, prefixed
+//     with `*` so it matches anywhere under cwd unless already anchored.
+function buildFindArgs(glob: string): string {
+  const isPathShaped = glob.includes('/') || glob.includes('**')
+  if (!isPathShaped) {
+    return `-name ${shellQuote(glob)}`
+  }
+
+  // `find -path` matches the FULL path of each candidate (including
+  // leading `./`). `*` inside a `-path` arg matches across `/` so we
+  // translate `**` → `*` (idempotent: a single `*` is the recursive
+  // form). Ensure the pattern matches anywhere by prefixing `*` when
+  // the glob is not already anchored — this covers both "src/foo.ts"
+  // (becomes "*src/foo.ts" → matches "./src/foo.ts") AND files at the
+  // workspace root ("./src/foo.ts" begins with `./`, leading `*`
+  // consumes that).
+  let translated = glob.replaceAll('**', '*')
+  translated = translated.replace(/^\/+/, '')
+  if (!translated.startsWith('*')) {
+    translated = `*${translated}`
+  }
+  return `-path ${shellQuote(translated)}`
+}
+
 export function createServerFileSearch(
   workspace: Workspace,
   sandbox: Sandbox,
@@ -31,7 +68,7 @@ export function createServerFileSearch(
       const command = [
         'find .',
         '-maxdepth 10',
-        `-name ${shellQuote(glob)}`,
+        buildFindArgs(glob),
         '-type f',
         `| head -n ${safeLimit}`,
       ].join(' ')

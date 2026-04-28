@@ -105,9 +105,15 @@ test('shell-quotes glob and applies default limit/options', async () => {
   await fileSearch.search("*'; rm -rf /")
 
   expect(receivedCmd).toContain('find . -maxdepth 10')
-  expect(receivedCmd).toContain("-name '*'\\''; rm -rf /'")
+  // The injected payload contains `/` so it routes through -path
+  // (path-shaped). Either way, the glob is single-quoted with `'`
+  // → `'\''` escape so the shell can't break out of the quoted string
+  // — the `;` and `rm -rf /` payload is inside the quotes, not a
+  // separate command.
+  expect(receivedCmd).toContain("-path '*'\\''; rm -rf /'")
   expect(receivedCmd).toContain('| head -n 500')
-  expect(receivedCmd).not.toContain("-name *'; rm -rf /")
+  // Unquoted (i.e. shell-interpreted) form must NOT appear.
+  expect(receivedCmd).not.toContain("'; rm -rf /'  ")
   expect(receivedCwd).toBe('/tmp/workspace')
   expect(receivedTimeout).toBe(5_000)
   expect(receivedMaxOutput).toBe(256_000)
@@ -134,6 +140,60 @@ test('normalizes limit and preserves timeout/maxOutput bounds', async () => {
 
   await fileSearch.search('*.log', 0)
   expect(receivedCmd).toContain('head -n 500')
+})
+
+test('uses -name for bare basename globs', async () => {
+  let cmd = ''
+  const sandbox = createSandbox(async (c) => {
+    cmd = c
+    return {
+      stdout: encoder.encode(''),
+      stderr: new Uint8Array(),
+      exitCode: 0,
+      durationMs: 1,
+      truncated: false,
+      stdoutEncoding: 'utf-8',
+      stderrEncoding: 'utf-8',
+    }
+  })
+  const fileSearch = createServerFileSearch(createWorkspace(), sandbox)
+
+  await fileSearch.search('*.ts')
+  expect(cmd).toContain("-name '*.ts'")
+  expect(cmd).not.toContain('-path')
+
+  await fileSearch.search('package.json')
+  expect(cmd).toContain("-name 'package.json'")
+})
+
+test('translates path-shaped globs (**/*.ts, src/foo) to -path', async () => {
+  let cmd = ''
+  const sandbox = createSandbox(async (c) => {
+    cmd = c
+    return {
+      stdout: encoder.encode(''),
+      stderr: new Uint8Array(),
+      exitCode: 0,
+      durationMs: 1,
+      truncated: false,
+      stdoutEncoding: 'utf-8',
+      stderrEncoding: 'utf-8',
+    }
+  })
+  const fileSearch = createServerFileSearch(createWorkspace(), sandbox)
+
+  // Globstar — the LLM-default that used to silently match nothing
+  // because `find -name '**/*.ts'` only checks basenames.
+  await fileSearch.search('**/*.ts')
+  expect(cmd).toContain("-path '*/*.ts'")
+
+  // Anchored under a directory.
+  await fileSearch.search('src/**/foo.tsx')
+  expect(cmd).toContain("-path '*src/*/foo.tsx'")
+
+  // Plain subdir/file (no globstar) — still goes through -path.
+  await fileSearch.search('apps/full-app/package.json')
+  expect(cmd).toContain("-path '*apps/full-app/package.json'")
 })
 
 test('throws when sandbox.exec returns non-zero exit code', async () => {

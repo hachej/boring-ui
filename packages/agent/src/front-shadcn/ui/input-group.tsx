@@ -14,7 +14,13 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="input-group"
       role="group"
       className={cn(
-        "group/input-group border-input dark:bg-input/30 shadow-xs relative flex w-full items-center rounded-md border outline-none transition-[color,box-shadow]",
+        // The raw --input / --border tokens both resolve to a very pale
+        // gray (oklch(0.915 0.004 72)) which all but disappears against
+        // the chat surface's near-white background — users reported the
+        // composer "has no border" when not focused. Bump the rest-state
+        // border opacity to ~0.6 of the token so it actually shows;
+        // focus/active states still take over via the ring below.
+        "group/input-group border-[color:oklch(from_var(--border)_l_c_h/0.65)] dark:bg-input/30 shadow-xs relative flex w-full items-center rounded-md border outline-none transition-[color,box-shadow]",
         "h-9 has-[>textarea]:h-auto",
 
         // Variants based on alignment.

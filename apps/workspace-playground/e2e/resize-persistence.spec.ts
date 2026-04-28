@@ -100,14 +100,20 @@ test.describe("ChatCenteredShell resize", () => {
     const widthAfterDrag = await paneWidth(page, "Surface")
     expect(widthAfterDrag).not.toBeNull()
 
-    const persisted = await page.evaluate((k) => localStorage.getItem(k), SURFACE_KEY)
-    expect(Number(persisted)).toBe(Math.round(widthAfterDrag!))
+    // The persist useEffect fires asynchronously after React commits
+    // the new width, then writes to localStorage on the next frame.
+    // Poll up to 2s for the value to land — direct read after pointerup
+    // can race with the effect.
+    await expect
+      .poll(
+        () => page.evaluate((k) => Number(localStorage.getItem(k)), SURFACE_KEY),
+        { timeout: 2_000 },
+      )
+      .toBe(Math.round(widthAfterDrag!))
 
     await page.reload()
     await openBothPanes(page)
     const widthAfterReload = await paneWidth(page, "Surface")
-    // After reload, restored width should equal the persisted value
-    // (within 1px for sub-pixel rounding).
     expect(Math.abs(widthAfterReload! - widthAfterDrag!)).toBeLessThan(2)
   })
 
@@ -116,8 +122,12 @@ test.describe("ChatCenteredShell resize", () => {
     const widthAfterDrag = await paneWidth(page, "Session browser")
     expect(widthAfterDrag).not.toBeNull()
 
-    const persisted = await page.evaluate((k) => localStorage.getItem(k), DRAWER_KEY)
-    expect(Number(persisted)).toBe(Math.round(widthAfterDrag!))
+    await expect
+      .poll(
+        () => page.evaluate((k) => Number(localStorage.getItem(k)), DRAWER_KEY),
+        { timeout: 2_000 },
+      )
+      .toBe(Math.round(widthAfterDrag!))
 
     await page.reload()
     await openBothPanes(page)
