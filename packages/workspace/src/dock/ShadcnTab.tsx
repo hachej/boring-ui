@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { IDockviewPanelHeaderProps } from "dockview-react"
 import { X, Loader2 } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
@@ -7,8 +7,18 @@ import { useEvent } from "../events"
 
 export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const { api } = props
-  const title = api.title ?? api.id
-  const Icon = getFileIcon(title)
+  const [title, setTitle] = useState(api.title ?? api.id)
+
+  useEffect(() => {
+    const sync = () => setTitle(api.title ?? api.id)
+    sync()
+    const sub = api.onDidTitleChange?.(sync)
+    return () => sub?.dispose?.()
+  }, [api])
+
+  const isDirty = title.endsWith(" ●")
+  const displayTitle = isDirty ? title.slice(0, -2) : title
+  const Icon = getFileIcon(displayTitle)
 
   // Subscribe to editor save lifecycle keyed by panelId. The badge
   // flips on at save:start and off at save:end (regardless of ok).
@@ -33,7 +43,7 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
         "text-[12.5px] leading-none tracking-tight",
         "cursor-pointer transition-colors",
       )}
-      title={title}
+      title={isDirty ? `${displayTitle} (unsaved changes)` : displayTitle}
     >
       {isSaving ? (
         <Loader2
@@ -51,7 +61,16 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.5}
         />
       )}
-      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
+      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{displayTitle}</span>
+      {isDirty ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/35",
+            "[.dv-active-tab_&]:bg-foreground/45 [.active-tab_&]:bg-foreground/45",
+          )}
+        />
+      ) : null}
       <button
         type="button"
         className={cn(
@@ -64,7 +83,7 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
           "[.dv-active-tab_&]:hover:opacity-100 [.active-tab_&]:hover:opacity-100",
         )}
         onClick={handleClose}
-        aria-label={`Close ${title}`}
+        aria-label={`Close ${displayTitle}`}
       >
         <X className="h-3 w-3" strokeWidth={2.25} />
       </button>
