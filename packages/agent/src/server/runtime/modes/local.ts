@@ -18,7 +18,7 @@ export const localModeAdapter: RuntimeModeAdapter = {
 
     const workspace = createNodeWorkspace(ctx.workspaceRoot)
     const sandbox = createBwrapSandbox()
-    await sandbox.init({ workspace, sessionId: ctx.sessionId })
+    await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
 
     return {
       workspace,

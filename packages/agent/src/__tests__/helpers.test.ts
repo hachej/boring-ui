@@ -55,7 +55,7 @@ describe('test helpers', () => {
     const sandbox = mockSandbox()
     expectTypeOf(sandbox).toMatchTypeOf<Sandbox>()
 
-    await sandbox.init({ workspace, sessionId: 'session-1' })
+    await sandbox.init?.({ workspace, sessionId: 'session-1' })
     sandbox.queueResult({
       stdout: encoder.encode('queued-stdout'),
       exitCode: 17,

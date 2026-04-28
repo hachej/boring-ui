@@ -27,6 +27,7 @@ const mockWorkspace: Workspace = {
 const mockSandbox: Sandbox = {
   id: 'sandbox-1',
   placement: 'server',
+  provider: 'test',
   capabilities: ['exec'],
   async init() {},
   async exec() {

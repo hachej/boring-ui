@@ -60,6 +60,7 @@ export function createDirectSandbox(): Sandbox {
   return {
     id: 'direct',
     placement: 'server',
+    provider: 'direct',
     capabilities: ['exec'],
     async init(ctx) {
       workspace = ctx.workspace

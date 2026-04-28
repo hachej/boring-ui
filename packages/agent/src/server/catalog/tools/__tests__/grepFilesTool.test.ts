@@ -31,6 +31,7 @@ function createSandbox(result: ExecResult): Sandbox {
   return {
     id: 'test-sandbox',
     placement: 'server',
+    provider: 'test',
     capabilities: ['exec'],
     init: vi.fn(),
     exec: vi.fn().mockResolvedValue(result),
@@ -194,6 +195,7 @@ describe('createGrepFilesTool', () => {
     const sandbox: Sandbox = {
       id: 'test-sandbox',
       placement: 'server',
+      provider: 'test',
       capabilities: ['exec'],
       init: vi.fn(),
       exec: vi.fn().mockRejectedValue(new Error('timeout')),

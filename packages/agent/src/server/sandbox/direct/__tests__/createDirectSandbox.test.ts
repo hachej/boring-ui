@@ -20,7 +20,7 @@ async function initSandbox() {
   tempDirs.push(workspaceRoot)
 
   const sandbox = createDirectSandbox()
-  await sandbox.init({
+  await sandbox.init?.({
     workspace: {
       root: workspaceRoot,
       async readFile() {

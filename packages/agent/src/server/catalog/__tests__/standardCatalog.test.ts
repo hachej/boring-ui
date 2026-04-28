@@ -23,6 +23,7 @@ function mockSandbox(capabilities: string[] = ['exec']): Sandbox {
   return {
     id: 'test-sandbox',
     placement: 'server',
+    provider: 'test',
     capabilities: capabilities as Sandbox['capabilities'],
     init: async () => {},
     exec: async () => ({

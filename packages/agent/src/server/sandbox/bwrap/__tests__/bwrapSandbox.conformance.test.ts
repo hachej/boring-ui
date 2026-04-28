@@ -14,7 +14,7 @@ sandboxConformance(
   async () => {
     const temp = await createTempWorkspace('boring-ui-bwrap-conformance-')
     const sandbox = createBwrapSandbox()
-    await sandbox.init({ workspace: temp.workspace, sessionId: 'conformance-bwrap' })
+    await sandbox.init?.({ workspace: temp.workspace, sessionId: 'conformance-bwrap' })
 
     return {
       sandbox,

@@ -46,6 +46,7 @@ export function mockSandbox(
   return {
     id: 'mock',
     placement: 'server',
+    provider: 'mock',
     capabilities,
     history,
     queueResult(result) {

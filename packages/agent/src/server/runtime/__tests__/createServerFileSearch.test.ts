@@ -39,6 +39,7 @@ function createSandbox(
   return {
     id: 'direct',
     placement: 'server',
+    provider: 'direct',
     capabilities: ['exec'],
     async init() {},
     exec: execImpl,

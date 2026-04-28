@@ -28,7 +28,7 @@ async function setupSandbox() {
 
   const workspace = createNodeWorkspace(root)
   const sandbox = createBwrapSandbox()
-  await sandbox.init({ workspace, sessionId: 'session-1' })
+  await sandbox.init?.({ workspace, sessionId: 'session-1' })
 
   return { sandbox, workspace, root }
 }
@@ -42,7 +42,7 @@ test('init verifies bwrap binary exists on PATH', async () => {
 
   const originalPath = setEnvForTest('PATH', '')
   try {
-    await expect(sandbox.init({ workspace, sessionId: 'session-check' }))
+    await expect(sandbox.init?.({ workspace, sessionId: 'session-check' }))
       .rejects
       .toThrow('not found on PATH')
   } finally {

@@ -4,18 +4,22 @@ import type { Sandbox, SandboxCapability, ExecOptions, ExecResult, IsolatedCodeI
 test('checking Sandbox contract', () => {
   expectTypeOf<Sandbox>().toHaveProperty('id')
   expectTypeOf<Sandbox>().toHaveProperty('placement')
+  expectTypeOf<Sandbox>().toHaveProperty('provider')
   expectTypeOf<Sandbox>().toHaveProperty('capabilities')
   expectTypeOf<Sandbox>().toHaveProperty('init')
   expectTypeOf<Sandbox>().toHaveProperty('exec')
 
   expectTypeOf<Sandbox['id']>().toEqualTypeOf<string>()
-  expectTypeOf<Sandbox['placement']>().toEqualTypeOf<'server' | 'browser'>()
+  expectTypeOf<Sandbox['placement']>().toEqualTypeOf<'server' | 'remote' | 'browser'>()
+  expectTypeOf<Sandbox['provider']>().toEqualTypeOf<string>()
   expectTypeOf<Sandbox['capabilities']>().toEqualTypeOf<readonly SandboxCapability[]>()
   expectTypeOf<Sandbox['exec']>().toBeFunction()
 })
 
 test('checking SandboxCapability union', () => {
-  expectTypeOf<SandboxCapability>().toEqualTypeOf<'exec' | 'isolated-code'>()
+  expectTypeOf<'exec'>().toMatchTypeOf<SandboxCapability>()
+  expectTypeOf<'isolated-code'>().toMatchTypeOf<SandboxCapability>()
+  expectTypeOf<SandboxCapability>().toMatchTypeOf<string>()
 })
 
 test('checking ExecOptions contract', () => {

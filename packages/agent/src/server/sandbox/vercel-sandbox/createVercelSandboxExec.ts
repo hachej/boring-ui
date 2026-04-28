@@ -38,7 +38,8 @@ function timeoutResult(durationMs: number): ExecResult {
 export function createVercelSandboxExec(sandbox: VercelSandbox): Sandbox {
   return {
     id: 'vercel-sandbox',
-    placement: 'server',
+    placement: 'remote',
+    provider: 'vercel-sandbox',
     capabilities: ['exec'],
     async init() {
       // Vercel sandbox handle is already established by runtime adapter.

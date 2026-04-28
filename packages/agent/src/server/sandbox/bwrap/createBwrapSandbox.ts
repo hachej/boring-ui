@@ -129,6 +129,7 @@ export function createBwrapSandbox(): Sandbox {
   return {
     id: 'bwrap',
     placement: 'server',
+    provider: 'bwrap',
     capabilities: ['exec'],
     async init(ctx) {
       workspace = ctx.workspace

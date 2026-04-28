@@ -26,6 +26,7 @@ function createSandbox(
   return {
     id: 'test-sandbox',
     placement: 'server',
+    provider: 'test',
     capabilities: ['exec'],
     async init() {},
     exec: execFn,

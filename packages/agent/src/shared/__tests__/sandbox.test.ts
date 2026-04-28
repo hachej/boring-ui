@@ -10,13 +10,16 @@ import type {
 } from '../sandbox'
 
 test('SandboxCapability is a union of known strings', () => {
-  expectTypeOf<SandboxCapability>().toEqualTypeOf<'exec' | 'isolated-code'>()
+  expectTypeOf<'exec'>().toMatchTypeOf<SandboxCapability>()
+  expectTypeOf<'isolated-code'>().toMatchTypeOf<SandboxCapability>()
+  expectTypeOf<SandboxCapability>().toMatchTypeOf<string>()
 })
 
 test('Sandbox contract', () => {
   expectTypeOf<Sandbox>().toMatchTypeOf<{
     readonly id: string
-    readonly placement: 'server' | 'browser'
+    readonly placement: 'server' | 'remote' | 'browser'
+    readonly provider: string
     readonly capabilities: readonly SandboxCapability[]
   }>()
 

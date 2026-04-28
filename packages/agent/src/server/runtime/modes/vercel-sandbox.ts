@@ -131,7 +131,7 @@ export function createVercelSandboxModeAdapter(
       }
 
       const sandbox = createVercelSandboxExec(sandboxHandle)
-      await sandbox.init({ workspace, sessionId: ctx.sessionId })
+      await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
 
       return {
         workspace,
