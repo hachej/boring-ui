@@ -117,6 +117,7 @@ export interface CoreConfig {
     githubOauth: boolean
     invitesEnabled: boolean
     sendWelcomeEmail: boolean
+    inviteTtlDays: number
   }
 }
 

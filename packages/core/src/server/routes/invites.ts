@@ -75,6 +75,7 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
         parsed.data.email,
         parsed.data.role,
         request.user!.id,
+        { ttlDays: app.config.features.inviteTtlDays },
       )
 
       if (transport) {
@@ -87,7 +88,7 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
             inviterName: request.user!.name ?? request.user!.email,
             workspaceName: workspace?.name ?? 'Workspace',
             role: parsed.data.role,
-            expiresInDays: 7,
+            expiresInDays: app.config.features.inviteTtlDays,
           })
           await transport.send(email)
         } catch (err) {

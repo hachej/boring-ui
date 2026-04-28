@@ -83,7 +83,7 @@ describe('v7 platform E2E', () => {
       }
 
       app = Fastify({ logger: false })
-      app.decorate('config', { appId: 'test-app', auth: { mail: null, url: 'http://localhost:3000' } } as any)
+      app.decorate('config', { appId: 'test-app', auth: { mail: null, url: 'http://localhost:3000' }, features: { inviteTtlDays: 7 } } as any)
       app.decorate('workspaceStore', workspaceStore)
       app.decorate('provisioner', provisioner)
       registerErrorHandler(app)
@@ -325,7 +325,7 @@ describe('v7 platform E2E', () => {
       }
 
       app = Fastify({ logger: false })
-      app.decorate('config', { appId: 'test-app', auth: { mail: null, url: 'http://localhost:3000' } } as any)
+      app.decorate('config', { appId: 'test-app', auth: { mail: null, url: 'http://localhost:3000' }, features: { inviteTtlDays: 7 } } as any)
       app.decorate('workspaceStore', workspaceStore)
       app.decorate('provisioner', provisioner)
       registerErrorHandler(app)

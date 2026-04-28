@@ -427,11 +427,13 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     email: string,
     role: MemberRole,
     invitedBy: string | null,
+    opts?: { ttlDays?: number },
   ): Promise<{ invite: WorkspaceInvite; rawToken: string }> {
     const rawToken = randomBytes(32).toString('base64url')
     const tokenHash = createHash('sha256').update(rawToken).digest('hex')
 
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    const ttlDays = opts?.ttlDays ?? 7
+    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000)
 
     const rows = await this.db
       .insert(workspaceInvites)

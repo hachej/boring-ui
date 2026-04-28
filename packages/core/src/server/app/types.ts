@@ -38,7 +38,7 @@ export interface WorkspaceStore {
   updateMemberRole(workspaceId: string, userId: string, role: MemberRole): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
   removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
   listInvites(workspaceId: string): Promise<WorkspaceInvite[]>
-  createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null): Promise<{ invite: WorkspaceInvite; rawToken: string }>
+  createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null, opts?: { ttlDays?: number }): Promise<{ invite: WorkspaceInvite; rawToken: string }>
   getInvite(workspaceId: string, inviteId: string): Promise<WorkspaceInvite | null>
   getInviteByTokenHash(tokenHash: string): Promise<WorkspaceInvite | null>
   revokeInvite(workspaceId: string, inviteId: string): Promise<boolean>

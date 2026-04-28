@@ -26,7 +26,7 @@ interface TomlAppConfig {
     branding?: { name?: string; logo?: string; favicon?: string }
     theme?: { default?: string }
   }
-  features?: { github_oauth?: boolean; invites_enabled?: boolean }
+  features?: { github_oauth?: boolean; invites_enabled?: boolean; invite_ttl_days?: number }
 }
 
 function parseRateLimitOverrides(
@@ -180,6 +180,7 @@ export async function loadConfig(
       githubOauth: githubOauth && github !== undefined,
       invitesEnabled: toml.features?.invites_enabled ?? true,
       sendWelcomeEmail: env.SEND_WELCOME_EMAIL !== 'false',
+      ...(toml.features?.invite_ttl_days != null && { inviteTtlDays: toml.features.invite_ttl_days }),
     },
   }
 

@@ -37,7 +37,7 @@ function makeConfig(): CoreConfig {
         transportUrl: `console-capture://${MAIL_CAPTURE_PATH}`,
       },
     },
-    features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
+    features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
   }
 }
 

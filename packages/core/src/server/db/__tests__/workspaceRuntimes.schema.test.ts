@@ -25,7 +25,7 @@ const BASE_CONFIG: CoreConfig = {
     sessionTtlSeconds: 3600,
     sessionCookieSecure: false,
   },
-  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
+  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
 }
 
 const OWNER_ID = '22000000-0000-0000-0000-000000000001'

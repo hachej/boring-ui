@@ -78,6 +78,7 @@ export const coreConfigSchema = z.object({
     githubOauth: z.boolean(),
     invitesEnabled: z.boolean(),
     sendWelcomeEmail: z.boolean(),
+    inviteTtlDays: z.number().int().min(1).max(30).default(7),
   }),
 })
 

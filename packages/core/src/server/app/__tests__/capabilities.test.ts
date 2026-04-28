@@ -25,7 +25,7 @@ const TEST_CONFIG: CoreConfig = {
     sessionCookieSecure: false,
     mail: { from: 'noreply@test.dev', transportUrl: 'console://' },
   },
-  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true },
+  features: { githubOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
 }
 
 let app: Awaited<ReturnType<typeof createCoreApp>> | null = null

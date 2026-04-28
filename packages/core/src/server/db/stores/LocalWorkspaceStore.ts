@@ -197,11 +197,12 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return result
   }
 
-  async createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null): Promise<{ invite: WorkspaceInvite; rawToken: string }> {
+  async createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null, opts?: { ttlDays?: number }): Promise<{ invite: WorkspaceInvite; rawToken: string }> {
     const rawToken = randomUUID()
     const tokenHash = createHash('sha256').update(rawToken).digest('hex')
     const now = new Date().toISOString()
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    const ttlDays = opts?.ttlDays ?? 7
+    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000).toISOString()
     const invite: WorkspaceInvite = {
       id: randomUUID(),
       workspaceId,
