@@ -560,6 +560,61 @@ Boring-macro stops needing `src/server/uiBridge.ts` (the 150-LOC inline
 copy) — `createWorkspaceAgentApp` registers `uiRoutes` and the UI tools
 via workspacePlugin.
 
+### A "plugin" is a shape, not a delivery mechanism
+
+Important framing: **`Plugin` is a TypeScript shape, not an
+installation channel.** Anything that produces a `Plugin` object is a
+plugin, regardless of where it lives or how it gets loaded. Three
+delivery shapes the model supports, in order from simplest to most
+elaborate:
+
+1. **Inline plugin** — defined in the host's own source tree,
+   imported normally, passed explicitly to
+   `<WorkspaceProvider plugins={[…]}>` /
+   `createWorkspaceAgentApp({ plugins: [...] })`. **This is the
+   default and most common shape.** Most host apps will define
+   exactly one inline plugin alongside their `App.tsx`.
+
+   ```ts
+   // apps/boring-macro-v2/src/plugin/index.ts
+   export const macroPlugin = definePlugin({ id: "boring-macro", … })
+
+   // apps/boring-macro-v2/src/web/App.tsx
+   <WorkspaceProvider plugins={[macroPlugin]}>
+   ```
+
+   No npm publication, no pi loader, no discovery. Just a
+   well-organized way to bundle the host's contributions into one
+   declarative object instead of scattering them across four
+   registration APIs.
+
+2. **NPM-installable plugin** — same shape, published as
+   `pi-plugin-acme-billing`, installed via `npm install`,
+   imported explicitly by the host (or auto-discovered server-side
+   by pi loader). Useful when third parties want to ship reusable
+   contributions; useful when an internal team wants to share a
+   plugin across multiple apps in a monorepo.
+
+3. **Pi-extension plugin** — a `.js` file dropped in
+   `.pi/extensions/` (or `~/.pi/agent/extensions/` for global, or
+   `node_modules/pi-plugin-*`). Picked up by the pi loader at
+   server boot. Useful for: agent-authored plugins (the LLM writes
+   one), end-user customizations (drop-in tools/panels without
+   touching app source), or shipping a tools-only extension that
+   doesn't need an npm package.
+
+**Use the simplest shape that fits.** Boring-macro's migration is
+an inline plugin — the host owns the code, no reason to npm-publish
+or use pi loader. Pi-extensions earn their keep when the plugin's
+provenance is "external to the host source tree." Don't conflate
+"plugin" with "pluggable": a plugin can be a host's own static
+declaration, just structured to fit the contract.
+
+The plan's npm + pi-loader sections detail those paths because they're
+where real coordination work lives. The inline path doesn't need a
+section — it's just `definePlugin({...}); <WorkspaceProvider
+plugins={[plugin]}>`.
+
 ### Concrete contribution types
 
 Each contribution slot has a precise shape. Source of truth is in
