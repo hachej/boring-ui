@@ -1,12 +1,25 @@
+import { useState } from "react"
 import type { IDockviewPanelHeaderProps } from "dockview-react"
-import { X } from "lucide-react"
+import { X, Loader2 } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
 import { cn } from "../lib/utils"
+import { useEvent } from "../events"
 
 export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const { api } = props
   const title = api.title ?? api.id
   const Icon = getFileIcon(title)
+
+  // Subscribe to editor save lifecycle keyed by panelId. The badge
+  // flips on at save:start and off at save:end (regardless of ok).
+  // Keyed by panelId, not path, so a rename mid-save still resolves.
+  const [isSaving, setIsSaving] = useState(false)
+  useEvent("editor:save:start", (p) => {
+    if (p.panelId === api.id) setIsSaving(true)
+  })
+  useEvent("editor:save:end", (p) => {
+    if (p.panelId === api.id) setIsSaving(false)
+  })
 
   const handleClose = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -22,13 +35,22 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
       )}
       title={title}
     >
-      <Icon
-        className={cn(
-          "h-3.5 w-3.5 shrink-0 text-muted-foreground/70",
-          "[.dv-active-tab_&]:text-[color:var(--accent)] [.active-tab_&]:text-[color:var(--accent)]",
-        )}
-        strokeWidth={1.5}
-      />
+      {isSaving ? (
+        <Loader2
+          data-testid="tab-saving-spinner"
+          aria-label="Saving"
+          className="h-3.5 w-3.5 shrink-0 animate-spin text-[color:var(--accent)]"
+          strokeWidth={2}
+        />
+      ) : (
+        <Icon
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground/70",
+            "[.dv-active-tab_&]:text-[color:var(--accent)] [.active-tab_&]:text-[color:var(--accent)]",
+          )}
+          strokeWidth={1.5}
+        />
+      )}
       <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
       <button
         type="button"

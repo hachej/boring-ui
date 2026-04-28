@@ -10,6 +10,7 @@ import {
 import { useRef, useState, useEffect } from "react"
 import { useDataClient, useApiBaseUrl } from "./DataProvider"
 import { FetchError } from "./fetchClient"
+import { events, userMeta } from "../events"
 import type { FileContent, FileEntry, FileStat } from "./types"
 
 function noRetryOn404(count: number, error: Error): boolean {
@@ -87,6 +88,10 @@ export function useFileWrite(): UseMutationResult<void, Error, { path: string; c
       qc.invalidateQueries({ queryKey: [base, "tree"] })
       qc.invalidateQueries({ queryKey: [base, "stat", path] })
       qc.invalidateQueries({ queryKey: [base, "search"] })
+      // We can't tell create-vs-edit from the mutation alone, so consumers
+      // wanting "created" emits do it themselves at the call site (see
+      // FileTreeView.handleSubmitEdit). Plain edits don't need an event
+      // since the file's identity didn't change.
     },
   })
 }
@@ -97,8 +102,9 @@ export function useCreateDir(): UseMutationResult<void, Error, { path: string }>
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ path }) => client.createDir(path),
-    onSuccess: () => {
+    onSuccess: (_, { path }) => {
       qc.invalidateQueries({ queryKey: [base, "tree"] })
+      events.emit("file:created", { ...userMeta(), path, kind: "dir" })
     },
   })
 }
@@ -116,6 +122,7 @@ export function useMoveFile(): UseMutationResult<void, Error, { from: string; to
       qc.invalidateQueries({ queryKey: [base, "stat", from] })
       qc.invalidateQueries({ queryKey: [base, "stat", to] })
       qc.invalidateQueries({ queryKey: [base, "search"] })
+      events.emit("file:moved", { ...userMeta(), from, to })
     },
   })
 }
@@ -131,6 +138,7 @@ export function useDeleteFile(): UseMutationResult<void, Error, { path: string }
       qc.invalidateQueries({ queryKey: [base, "files", path] })
       qc.invalidateQueries({ queryKey: [base, "stat", path] })
       qc.invalidateQueries({ queryKey: [base, "search"] })
+      events.emit("file:deleted", { ...userMeta(), path })
     },
   })
 }

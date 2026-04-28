@@ -171,6 +171,13 @@ export interface ChatPanelProps {
    * Defaults to `true` (standalone chrome on).
    */
   chrome?: boolean
+  /**
+   * Tap into the SSE data stream. Called for every `onData` part the
+   * agent emits — host apps use this to bridge agent-driven file
+   * changes into their own UI plumbing (see `emitAgentFileChange` in
+   * `@boring/workspace` for the canonical wire-up).
+   */
+  onData?: (part: unknown) => void
   className?: string
 }
 
@@ -219,10 +226,10 @@ function ToolCard({ toolPart, mergedToolRenderers }: { toolPart: UIMessage['part
 }
 
 export function ChatPanel(props: ChatPanelProps) {
-  const { sessionId, toolRenderers, extraCommands, onSessionReset, className, chrome = true } = props
+  const { sessionId, toolRenderers, extraCommands, onSessionReset, className, chrome = true, onData } = props
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
-  } = useAgentChat({ sessionId })
+  } = useAgentChat({ sessionId, onData })
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
   const registry = useMemo(

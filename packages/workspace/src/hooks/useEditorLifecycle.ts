@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { events } from "../events"
 
 export interface EditorLifecycleAdapter {
   isDirty: () => boolean
@@ -55,6 +56,7 @@ export function useEditorLifecycle(
 
     const p = (async () => {
       setIsSaving(true)
+      events.emit("editor:save:start", { panelId })
       try {
         await a.save()
         lastSaveTimeRef.current = Date.now()
@@ -62,13 +64,18 @@ export function useEditorLifecycle(
         setIsDirty(false)
         onDirtyChangeRef.current?.(path, false)
       } finally {
+        // Always signal save:end so consumers (e.g. tab spinner) clear
+        // their pending UI even when save throws. Error semantics live
+        // on the underlying mutation's error channel — re-add ok/error
+        // to this event when an actual consumer needs them.
+        events.emit("editor:save:end", { panelId })
         setIsSaving(false)
         saveInFlightRef.current = null
       }
     })()
     saveInFlightRef.current = p
     return p
-  }, [path])
+  }, [path, panelId])
 
   const scheduleSave = useCallback(() => {
     clearTimeout(saveTimerRef.current)

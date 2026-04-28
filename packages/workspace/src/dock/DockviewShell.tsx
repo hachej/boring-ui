@@ -19,6 +19,7 @@ import "dockview-react/dist/styles/dockview.css"
 import "./dockview-overrides.css"
 import { useRegistry } from "../registry"
 import { useHydrationComplete } from "../store/selectors"
+import { events } from "../events"
 import type {
   DockviewShellApi,
   DockviewShellProps,
@@ -300,6 +301,50 @@ export function DockviewShell({
 
   useEffect(() => {
     return () => disposeRef.current?.()
+  }, [])
+
+  // Propagate filesystem mutations into open panels: a moved/renamed
+  // file updates the matching tab's params.path + title in place; a
+  // deleted file closes its tab. Matches panels by id (`file:${path}`
+  // convention) AND by `params.path` so it survives id changes from
+  // earlier moves. Iterates with filter+forEach so duplicate panels
+  // pointing at the same path all get reconciled, not just the first.
+  useEffect(() => {
+    const offMoved = events.on("file:moved", ({ from, to }) => {
+      const api = apiRef.current
+      if (!api) return
+      const newTitle = to.split("/").pop() ?? to
+      api.panels
+        .filter(
+          (p) =>
+            p.id === `file:${from}` ||
+            (p.params as { path?: string } | undefined)?.path === from,
+        )
+        .forEach((target) => {
+          target.api.updateParameters({
+            ...((target.params as Record<string, unknown> | undefined) ?? {}),
+            path: to,
+          })
+          target.api.setTitle(newTitle)
+        })
+    })
+
+    const offDeleted = events.on("file:deleted", ({ path }) => {
+      const api = apiRef.current
+      if (!api) return
+      api.panels
+        .filter(
+          (p) =>
+            p.id === `file:${path}` ||
+            (p.params as { path?: string } | undefined)?.path === path,
+        )
+        .forEach((target) => api.removePanel(target))
+    })
+
+    return () => {
+      offMoved()
+      offDeleted()
+    }
   }, [])
 
   const handleReady = useCallback(

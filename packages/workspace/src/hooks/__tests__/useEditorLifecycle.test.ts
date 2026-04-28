@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../useEditorLifecycle"
+import { events } from "../../events"
 
 function createAdapter(overrides: Partial<EditorLifecycleAdapter> = {}): EditorLifecycleAdapter {
   return {
@@ -281,5 +282,48 @@ describe("isSaving state", () => {
     })
     expect(result.current.isSaving).toBe(false)
     expect(adapter.save).toHaveBeenCalledOnce()
+  })
+})
+
+describe("bus emissions", () => {
+  beforeEach(() => events._reset())
+
+  it("emits editor:save:start then editor:save:end around a successful save", async () => {
+    const adapter = createAdapter()
+    const start = vi.fn()
+    const end = vi.fn()
+    events.on("editor:save:start", start)
+    events.on("editor:save:end", end)
+
+    const { result } = renderHook(() =>
+      useEditorLifecycle("/a.ts", { adapter, panelId: "p9" }),
+    )
+    act(() => result.current.markDirty())
+    await act(async () => {
+      await result.current.flushSave()
+    })
+
+    expect(start).toHaveBeenCalledWith({ panelId: "p9" })
+    expect(end).toHaveBeenCalledWith({ panelId: "p9" })
+  })
+
+  it("still emits editor:save:end when save throws (so spinner clears)", async () => {
+    const adapter = createAdapter({
+      save: vi.fn(async () => {
+        throw new Error("disk full")
+      }),
+    })
+    const end = vi.fn()
+    events.on("editor:save:end", end)
+
+    const { result } = renderHook(() =>
+      useEditorLifecycle("/a.ts", { adapter, panelId: "p10" }),
+    )
+    act(() => result.current.markDirty())
+    await act(async () => {
+      await result.current.flushSave().catch(() => {})
+    })
+
+    expect(end).toHaveBeenCalledWith({ panelId: "p10" })
   })
 })

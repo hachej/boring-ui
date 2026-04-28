@@ -1,0 +1,24 @@
+/**
+ * Workspace event bus — single in-process, typed pubsub for cross-cutting
+ * signals. Module-singleton: import `events` anywhere in `@boring/workspace`
+ * (and downstream packages that depend on it). React consumers should use
+ * `useEvent(name, handler)` to handle cleanup automatically.
+ *
+ * See `docs/plans/UNIFIED_EVENT_BUS.md` for design + migration plan.
+ */
+
+import { createEventBus } from "./bus"
+import type { WorkspaceEventMap } from "./types"
+
+export const events = createEventBus<WorkspaceEventMap>()
+
+export { userMeta, agentMeta } from "./types"
+export type {
+  Origin,
+  EventMeta,
+  WorkspaceEventMap,
+  WorkspaceEventName,
+} from "./types"
+
+export { useEvent } from "./useEvent"
+export { emitAgentFileChange } from "./agentBridge"

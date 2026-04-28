@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor, act } from "@testing-library/react"
 import { DockviewShell, useDockviewApi, DockviewApiContext } from "../DockviewShell"
 import { ShadcnTab } from "../ShadcnTab"
 import { PanelChrome, createLifecycleApi } from "../PanelChrome"
@@ -8,7 +8,9 @@ import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
+import { events, userMeta } from "../../events"
 import type { LayoutConfig, DockviewShellApi } from "../types"
+import type { DockviewApi } from "dockview-react"
 
 function DummyPanel() {
   return <div data-testid="dummy-panel">Panel content</div>
@@ -348,6 +350,48 @@ describe("ShadcnTab", () => {
 
     expect(screen.getByText("fallback-id")).toBeInTheDocument()
   })
+
+  it("shows a saving spinner while editor:save:start is in flight, hides on save:end", async () => {
+    events._reset()
+    const mockApi = { title: "doc.md", id: "panel-7", close: vi.fn() }
+    render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
+
+    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+
+    act(() => {
+      events.emit("editor:save:start", { panelId: "panel-7" })
+    })
+    expect(screen.getByTestId("tab-saving-spinner")).toBeInTheDocument()
+
+    act(() => {
+      events.emit("editor:save:end", { panelId: "panel-7" })
+    })
+    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+  })
+
+  it("ignores save events for OTHER panel ids", async () => {
+    events._reset()
+    const mockApi = { title: "mine.md", id: "panel-mine", close: vi.fn() }
+    render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
+    act(() => {
+      events.emit("editor:save:start", { panelId: "someone-else" })
+    })
+    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+  })
+
+  it("clears the spinner on save:end even when the save itself failed (lifecycle hook always emits)", async () => {
+    events._reset()
+    const mockApi = { title: "x.md", id: "p", close: vi.fn() }
+    render(<ShadcnTab api={mockApi as any} containerApi={{} as any} params={{}} tabLocation={"header" as any} />)
+    act(() => {
+      events.emit("editor:save:start", { panelId: "p" })
+    })
+    expect(screen.getByTestId("tab-saving-spinner")).toBeInTheDocument()
+    act(() => {
+      events.emit("editor:save:end", { panelId: "p" })
+    })
+    expect(screen.queryByTestId("tab-saving-spinner")).not.toBeInTheDocument()
+  })
 })
 
 describe("types", () => {
@@ -372,5 +416,180 @@ describe("types", () => {
     }
     expect(layout.groups).toHaveLength(2)
     expect(layout.groups[1].constraints?.minWidth).toBe(200)
+  })
+})
+
+describe("DockviewShell — file-event panel sync", () => {
+  beforeEach(() => events._reset())
+
+  function setupShell() {
+    const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
+    let captured: DockviewApi | null = null
+    render(
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        <DockviewShell
+          layout={{
+            version: "2.0",
+            groups: [{ id: "main", position: "center", dynamic: true }],
+          }}
+          onReady={(api) => {
+            captured = api
+          }}
+        />
+      </RegistryProvider>,
+    )
+    if (!captured) throw new Error("DockviewApi not captured")
+    return captured as DockviewApi
+  }
+
+  it("a `moved` event updates an open panel's params.path and tab title in place", async () => {
+    const api = setupShell()
+    act(() => {
+      api.addPanel({
+        id: "file:src/old.ts",
+        component: "editor",
+        title: "old.ts",
+        params: { path: "src/old.ts" },
+      })
+    })
+
+    act(() => {
+      events.emit("file:moved", { ...userMeta(), from: "src/old.ts", to: "src/renamed.ts" })
+    })
+
+    const panel = api.getPanel("file:src/old.ts")
+    expect(panel).toBeTruthy()
+    expect((panel!.params as { path?: string }).path).toBe("src/renamed.ts")
+    expect(panel!.title).toBe("renamed.ts")
+  })
+
+  it("matches by params.path even after the panel id stops matching the new path", async () => {
+    // After one move, the panel id stays as `file:${original}` but params.path
+    // reflects the new path. A subsequent move should still find it via
+    // params.path lookup.
+    const api = setupShell()
+    act(() => {
+      api.addPanel({
+        id: "file:a.ts",
+        component: "editor",
+        title: "a.ts",
+        params: { path: "a.ts" },
+      })
+    })
+    act(() => {
+      events.emit("file:moved", { ...userMeta(), from: "a.ts", to: "b.ts" })
+    })
+    act(() => {
+      events.emit("file:moved", { ...userMeta(), from: "b.ts", to: "c.ts" })
+    })
+
+    const panel = api.getPanel("file:a.ts")
+    expect((panel!.params as { path?: string }).path).toBe("c.ts")
+    expect(panel!.title).toBe("c.ts")
+  })
+
+  it("a `deleted` event closes the matching panel", async () => {
+    const api = setupShell()
+    act(() => {
+      api.addPanel({
+        id: "file:doomed.ts",
+        component: "editor",
+        title: "doomed.ts",
+        params: { path: "doomed.ts" },
+      })
+    })
+    expect(api.getPanel("file:doomed.ts")).toBeTruthy()
+
+    act(() => {
+      events.emit("file:deleted", { ...userMeta(), path: "doomed.ts" })
+    })
+
+    expect(api.getPanel("file:doomed.ts")).toBeUndefined()
+  })
+
+  it("ignores events that don't match any open panel (no error)", async () => {
+    const api = setupShell()
+    expect(() => {
+      act(() => {
+        events.emit("file:moved", { ...userMeta(), from: "nope.ts", to: "still-nope.ts" })
+        events.emit("file:deleted", { ...userMeta(), path: "nothing-open.ts" })
+      })
+    }).not.toThrow()
+    expect(api.panels).toHaveLength(0)
+  })
+
+  it("preserves other tabs when one is moved/deleted", async () => {
+    const api = setupShell()
+    act(() => {
+      api.addPanel({ id: "file:a.ts", component: "editor", title: "a.ts", params: { path: "a.ts" } })
+      api.addPanel({ id: "file:b.ts", component: "editor", title: "b.ts", params: { path: "b.ts" } })
+      api.addPanel({ id: "file:c.ts", component: "editor", title: "c.ts", params: { path: "c.ts" } })
+    })
+
+    act(() => {
+      events.emit("file:deleted", { ...userMeta(), path: "b.ts" })
+    })
+
+    expect(api.getPanel("file:a.ts")).toBeTruthy()
+    expect(api.getPanel("file:b.ts")).toBeUndefined()
+    expect(api.getPanel("file:c.ts")).toBeTruthy()
+    expect(api.panels.map((p) => p.id).sort()).toEqual([
+      "file:a.ts",
+      "file:c.ts",
+    ])
+  })
+})
+
+describe("DockviewShell — agent SSE → open panel sync (end-to-end smoke)", () => {
+  // Per-mapping coverage lives in events/__tests__/agentBridge.test.ts.
+  // This single test only proves the full pipeline (SSE chunk → bus
+  // → DockviewShell listener → panel update) wires end-to-end.
+  beforeEach(() => events._reset())
+
+  it("an agent rename SSE chunk renames the open panel in place", async () => {
+    const { emitAgentFileChange } = await import("../../events/agentBridge")
+    const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
+    let captured: DockviewApi | null = null
+    render(
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        <DockviewShell
+          layout={{
+            version: "2.0",
+            groups: [{ id: "main", position: "center", dynamic: true }],
+          }}
+          onReady={(a) => {
+            captured = a
+          }}
+        />
+      </RegistryProvider>,
+    )
+    if (!captured) throw new Error("DockviewApi not captured")
+    const api = captured as DockviewApi
+    act(() => {
+      api.addPanel({
+        id: "file:src/old.ts",
+        component: "editor",
+        title: "old.ts",
+        params: { path: "src/old.ts" },
+      })
+    })
+
+    act(() => {
+      emitAgentFileChange({
+        type: "data-file-changed",
+        data: {
+          op: "rename",
+          path: "src/renamed.ts",
+          oldPath: "src/old.ts",
+          toolCallId: "tc-1",
+          timestamp: "2026-04-28T10:00:00Z",
+        },
+      })
+    })
+
+    const panel = api.getPanel("file:src/old.ts")
+    expect(panel).toBeTruthy()
+    expect((panel!.params as { path?: string }).path).toBe("src/renamed.ts")
+    expect(panel!.title).toBe("renamed.ts")
   })
 })

@@ -12,6 +12,7 @@ import {
   useMoveFile,
   useDeleteFile,
 } from "../hooks"
+import { events } from "../../events"
 
 const TEST_BASE = "http://test"
 
@@ -179,5 +180,95 @@ describe("useDeleteFile", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "files", "/a.ts"] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "stat", "/a.ts"] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [TEST_BASE, "search"] })
+  })
+})
+
+describe("Mutation file-event emissions", () => {
+  beforeEach(() => events._reset())
+
+  it("useMoveFile emits file:moved with cause=user after success", async () => {
+    mockClient.moveFile.mockResolvedValue(undefined)
+    const fn = vi.fn()
+    events.on("file:moved", fn)
+
+    const { result } = renderHook(() => useMoveFile(), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync({ from: "old/a.ts", to: "new/a.ts" })
+    })
+
+    expect(fn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "old/a.ts",
+        to: "new/a.ts",
+        cause: "user",
+      }),
+    )
+  })
+
+  it("useMoveFile does NOT emit if the underlying call rejects", async () => {
+    mockClient.moveFile.mockRejectedValue(new Error("denied"))
+    const fn = vi.fn()
+    events.on("file:moved", fn)
+
+    const { result } = renderHook(() => useMoveFile(), { wrapper })
+    await act(async () => {
+      await result.current
+        .mutateAsync({ from: "a.ts", to: "b.ts" })
+        .catch(() => {})
+    })
+
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it("useDeleteFile emits file:deleted after success", async () => {
+    mockClient.deleteFile.mockResolvedValue(undefined)
+    const fn = vi.fn()
+    events.on("file:deleted", fn)
+
+    const { result } = renderHook(() => useDeleteFile(), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync({ path: "x.md" })
+    })
+
+    expect(fn).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "x.md", cause: "user" }),
+    )
+  })
+
+  it("useCreateDir emits file:created with kind=dir", async () => {
+    mockClient.createDir.mockResolvedValue(undefined)
+    const fn = vi.fn()
+    events.on("file:created", fn)
+
+    const { result } = renderHook(() => useCreateDir(), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync({ path: "scripts" })
+    })
+
+    expect(fn).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "scripts", kind: "dir", cause: "user" }),
+    )
+  })
+
+  it("useFileWrite does NOT emit file:* events (writes don't change identity)", async () => {
+    mockClient.writeFile.mockResolvedValue(undefined)
+    const moved = vi.fn()
+    const deleted = vi.fn()
+    const created = vi.fn()
+    const changed = vi.fn()
+    events.on("file:moved", moved)
+    events.on("file:deleted", deleted)
+    events.on("file:created", created)
+    events.on("file:changed", changed)
+
+    const { result } = renderHook(() => useFileWrite(), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync({ path: "a.ts", content: "x" })
+    })
+
+    expect(moved).not.toHaveBeenCalled()
+    expect(deleted).not.toHaveBeenCalled()
+    expect(created).not.toHaveBeenCalled()
+    expect(changed).not.toHaveBeenCalled()
   })
 })
