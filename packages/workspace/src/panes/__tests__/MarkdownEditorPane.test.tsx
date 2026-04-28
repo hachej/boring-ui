@@ -12,20 +12,6 @@ vi.mock("../../data", () => ({
   useApiBaseUrl: () => "/api",
 }))
 
-vi.mock("../../dock", () => ({
-  PanelChrome: ({
-    title,
-    children,
-  }: {
-    title: string
-    children: React.ReactNode
-  }) => (
-    <div data-testid="panel-chrome" data-title={title}>
-      {children}
-    </div>
-  ),
-}))
-
 const mockOnChange = vi.fn()
 vi.mock("../../components/MarkdownEditor", () => ({
   MarkdownEditor: ({
@@ -70,6 +56,9 @@ vi.mock("../../hooks", () => ({
 }))
 
 import { MarkdownEditorPane } from "../MarkdownEditorPane"
+import { createMockPaneProps } from "../../testing/createMockPaneProps"
+
+const paneProps = (path: string) => createMockPaneProps({ path })
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({
@@ -98,12 +87,12 @@ describe("MarkdownEditorPane", () => {
       error: undefined,
       dataUpdatedAt: 0,
     })
-    render(<MarkdownEditorPane path="test.md" />, { wrapper })
+    render(<MarkdownEditorPane {...paneProps("test.md")} />, { wrapper })
     expect(screen.getByText("Loading file...")).toBeInTheDocument()
   })
 
   it("renders MarkdownEditor with content when data arrives", async () => {
-    render(<MarkdownEditorPane path="test.md" />, { wrapper })
+    render(<MarkdownEditorPane {...paneProps("test.md")} />, { wrapper })
     await waitFor(() => {
       expect(screen.getByTestId("markdown-editor")).toBeInTheDocument()
     })
@@ -119,44 +108,50 @@ describe("MarkdownEditorPane", () => {
       error: new Error("File not found"),
       dataUpdatedAt: 0,
     })
-    render(<MarkdownEditorPane path="missing.md" />, { wrapper })
+    render(<MarkdownEditorPane {...paneProps("missing.md")} />, { wrapper })
     expect(screen.getByText(/Failed to load file/)).toBeInTheDocument()
   })
 
-  it("shows filename in panel chrome title", async () => {
-    render(<MarkdownEditorPane path="docs/README.md" />, { wrapper })
-    await waitFor(() => {
-      expect(screen.getByTestId("panel-chrome")).toBeInTheDocument()
+  it("sets dockview tab title to filename for nested paths", async () => {
+    const setTitle = vi.fn()
+    const props = createMockPaneProps({
+      params: { path: "docs/README.md" },
+      apiOverrides: { setTitle },
     })
-    expect(screen.getByTestId("panel-chrome").getAttribute("data-title")).toBe(
-      "README.md",
-    )
+    render(<MarkdownEditorPane {...props} />, { wrapper })
+    await waitFor(() => {
+      expect(setTitle).toHaveBeenCalledWith("README.md")
+    })
   })
 
-  it("shows dirty indicator in title when dirty", async () => {
+  it("shows dirty indicator in dockview tab title when modified", async () => {
     mockIsDirty = true
-    render(<MarkdownEditorPane path="test.md" />, { wrapper })
-    await waitFor(() => {
-      expect(screen.getByTestId("panel-chrome")).toBeInTheDocument()
+    const setTitle = vi.fn()
+    const props = createMockPaneProps({
+      params: { path: "test.md" },
+      apiOverrides: { setTitle },
     })
-    expect(screen.getByTestId("panel-chrome").getAttribute("data-title")).toBe(
-      "test.md ●",
-    )
+    render(<MarkdownEditorPane {...props} />, { wrapper })
+    await waitFor(() => {
+      expect(setTitle).toHaveBeenCalledWith("test.md ●")
+    })
   })
 
-  it("shows clean title when not dirty", async () => {
+  it("sets dockview tab title to filename when clean", async () => {
     mockIsDirty = false
-    render(<MarkdownEditorPane path="test.md" />, { wrapper })
-    await waitFor(() => {
-      expect(screen.getByTestId("panel-chrome")).toBeInTheDocument()
+    const setTitle = vi.fn()
+    const props = createMockPaneProps({
+      params: { path: "test.md" },
+      apiOverrides: { setTitle },
     })
-    expect(screen.getByTestId("panel-chrome").getAttribute("data-title")).toBe(
-      "test.md",
-    )
+    render(<MarkdownEditorPane {...props} />, { wrapper })
+    await waitFor(() => {
+      expect(setTitle).toHaveBeenCalledWith("test.md")
+    })
   })
 
   it("calls markDirty on change", async () => {
-    render(<MarkdownEditorPane path="test.md" />, { wrapper })
+    render(<MarkdownEditorPane {...paneProps("test.md")} />, { wrapper })
     await waitFor(() => {
       expect(screen.getByTestId("markdown-editor")).toBeInTheDocument()
     })
@@ -164,13 +159,27 @@ describe("MarkdownEditorPane", () => {
     expect(mockMarkDirty).toHaveBeenCalled()
   })
 
-  it("infers path correctly for nested files", async () => {
-    render(<MarkdownEditorPane path="docs/api/guide.md" />, { wrapper })
-    await waitFor(() => {
-      expect(screen.getByTestId("panel-chrome")).toBeInTheDocument()
+  it("uses just the basename for deeply nested paths", async () => {
+    const setTitle = vi.fn()
+    const props = createMockPaneProps({
+      params: { path: "docs/api/guide.md" },
+      apiOverrides: { setTitle },
     })
-    expect(screen.getByTestId("panel-chrome").getAttribute("data-title")).toBe(
-      "guide.md",
-    )
+    render(<MarkdownEditorPane {...props} />, { wrapper })
+    await waitFor(() => {
+      expect(setTitle).toHaveBeenCalledWith("guide.md")
+    })
+  })
+
+  it("renders 'No file selected' placeholder when params.path is missing", () => {
+    mockFileContent.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: undefined,
+      dataUpdatedAt: 0,
+    })
+    const props = createMockPaneProps<{ path?: string }>({ params: {} })
+    render(<MarkdownEditorPane {...props} />, { wrapper })
+    expect(screen.getByText(/no file selected/i)).toBeInTheDocument()
   })
 })

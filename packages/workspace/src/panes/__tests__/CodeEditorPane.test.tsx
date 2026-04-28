@@ -18,20 +18,6 @@ vi.mock("../../hooks", () => ({
   useEditorLifecycle: (...args: unknown[]) => mockUseEditorLifecycle(...args),
 }))
 
-vi.mock("../../dock", () => ({
-  PanelChrome: ({
-    title,
-    children,
-  }: {
-    title: string
-    children: React.ReactNode
-  }) => (
-    <div data-testid="panel-chrome" data-title={title}>
-      {children}
-    </div>
-  ),
-}))
-
 vi.mock("../../components/CodeEditor", () => ({
   CodeEditor: ({
     content,
@@ -52,6 +38,9 @@ vi.mock("../../components/CodeEditor", () => ({
 }))
 
 import { CodeEditorPane } from "../CodeEditorPane"
+import { createMockPaneProps } from "../../testing/createMockPaneProps"
+
+const paneProps = (path: string) => createMockPaneProps({ path })
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({
@@ -69,6 +58,7 @@ beforeEach(() => {
     isSaving: false,
     lastSavedAt: null,
     markDirty: vi.fn(),
+    markClean: vi.fn(),
     flushSave: vi.fn(),
     shouldSync: false,
     ackSync: vi.fn(),
@@ -83,8 +73,7 @@ describe("CodeEditorPane", () => {
       error: undefined,
       dataUpdatedAt: 0,
     })
-
-    render(<CodeEditorPane path="src/main.ts" />, { wrapper })
+    render(<CodeEditorPane {...paneProps("src/main.ts")} />, { wrapper })
     expect(screen.getByText("Loading file...")).toBeInTheDocument()
   })
 
@@ -95,8 +84,7 @@ describe("CodeEditorPane", () => {
       error: undefined,
       dataUpdatedAt: Date.now(),
     })
-
-    render(<CodeEditorPane path="src/main.ts" />, { wrapper })
+    render(<CodeEditorPane {...paneProps("src/main.ts")} />, { wrapper })
     await waitFor(() => {
       expect(screen.getByTestId("code-editor")).toBeInTheDocument()
     })
@@ -110,8 +98,7 @@ describe("CodeEditorPane", () => {
       error: new Error("Not found"),
       dataUpdatedAt: 0,
     })
-
-    render(<CodeEditorPane path="missing.ts" />, { wrapper })
+    render(<CodeEditorPane {...paneProps("missing.ts")} />, { wrapper })
     expect(screen.getByText(/Failed to load file/)).toBeInTheDocument()
     expect(screen.getByText(/Not found/)).toBeInTheDocument()
   })
@@ -123,8 +110,7 @@ describe("CodeEditorPane", () => {
       error: undefined,
       dataUpdatedAt: Date.now(),
     })
-
-    render(<CodeEditorPane path="script.py" />, { wrapper })
+    render(<CodeEditorPane {...paneProps("script.py")} />, { wrapper })
     await waitFor(() => {
       expect(screen.getByTestId("code-editor")).toHaveAttribute(
         "data-language",
@@ -133,7 +119,7 @@ describe("CodeEditorPane", () => {
     })
   })
 
-  it("shows dirty indicator in title when modified", async () => {
+  it("shows dirty indicator in dockview tab title when modified", async () => {
     mockFileContent.mockReturnValue({
       data: { content: "clean" },
       isLoading: false,
@@ -145,19 +131,24 @@ describe("CodeEditorPane", () => {
       isSaving: false,
       lastSavedAt: null,
       markDirty: vi.fn(),
+      markClean: vi.fn(),
       flushSave: vi.fn(),
       shouldSync: false,
       ackSync: vi.fn(),
     })
 
-    render(<CodeEditorPane path="src/app.ts" />, { wrapper })
+    const setTitle = vi.fn()
+    const props = createMockPaneProps({
+      params: { path: "src/app.ts" },
+      apiOverrides: { setTitle },
+    })
+    render(<CodeEditorPane {...props} />, { wrapper })
     await waitFor(() => {
-      const chrome = screen.getByTestId("panel-chrome")
-      expect(chrome.getAttribute("data-title")).toContain("●")
+      expect(setTitle).toHaveBeenCalledWith("app.ts ●")
     })
   })
 
-  it("title shows filename without dirty marker when clean", async () => {
+  it("sets dockview tab title to filename when clean", async () => {
     mockFileContent.mockReturnValue({
       data: { content: "clean" },
       isLoading: false,
@@ -165,10 +156,14 @@ describe("CodeEditorPane", () => {
       dataUpdatedAt: Date.now(),
     })
 
-    render(<CodeEditorPane path="src/utils.ts" />, { wrapper })
+    const setTitle = vi.fn()
+    const props = createMockPaneProps({
+      params: { path: "src/utils.ts" },
+      apiOverrides: { setTitle },
+    })
+    render(<CodeEditorPane {...props} />, { wrapper })
     await waitFor(() => {
-      const chrome = screen.getByTestId("panel-chrome")
-      expect(chrome.getAttribute("data-title")).toBe("utils.ts")
+      expect(setTitle).toHaveBeenCalledWith("utils.ts")
     })
   })
 
@@ -185,25 +180,23 @@ describe("CodeEditorPane", () => {
       isSaving: false,
       lastSavedAt: null,
       markDirty,
+      markClean: vi.fn(),
       flushSave: vi.fn(),
       shouldSync: false,
       ackSync: vi.fn(),
     })
-
-    render(<CodeEditorPane path="src/index.ts" />, { wrapper })
+    render(<CodeEditorPane {...paneProps("src/index.ts")} />, { wrapper })
     await waitFor(() => {
       expect(screen.getByTestId("code-editor")).toBeInTheDocument()
     })
-
     screen.getByText("edit").click()
     expect(markDirty).toHaveBeenCalled()
   })
 
   it("syncs content when shouldSync becomes true", async () => {
     const ackSync = vi.fn()
-    const newContent = "updated from server"
     mockFileContent.mockReturnValue({
-      data: { content: newContent },
+      data: { content: "updated from server" },
       isLoading: false,
       error: undefined,
       dataUpdatedAt: Date.now(),
@@ -213,18 +206,18 @@ describe("CodeEditorPane", () => {
       isSaving: false,
       lastSavedAt: null,
       markDirty: vi.fn(),
+      markClean: vi.fn(),
       flushSave: vi.fn(),
       shouldSync: true,
       ackSync,
     })
-
-    render(<CodeEditorPane path="src/sync.ts" />, { wrapper })
+    render(<CodeEditorPane {...paneProps("src/sync.ts")} />, { wrapper })
     await waitFor(() => {
       expect(ackSync).toHaveBeenCalled()
     })
   })
 
-  it("renders with PanelChrome showing filename", async () => {
+  it("uses just the basename for the dockview tab title (deep paths)", async () => {
     mockFileContent.mockReturnValue({
       data: { content: "test" },
       isLoading: false,
@@ -232,43 +225,28 @@ describe("CodeEditorPane", () => {
       dataUpdatedAt: Date.now(),
     })
 
-    render(<CodeEditorPane path="deep/nested/file.json" />, { wrapper })
+    const setTitle = vi.fn()
+    const props = createMockPaneProps({
+      params: { path: "deep/nested/file.json" },
+      apiOverrides: { setTitle },
+    })
+    render(<CodeEditorPane {...props} />, { wrapper })
     await waitFor(() => {
-      const chrome = screen.getByTestId("panel-chrome")
-      expect(chrome.getAttribute("data-title")).toBe("file.json")
+      expect(setTitle).toHaveBeenCalledWith("file.json")
     })
   })
 
-  it("resets content when path changes", async () => {
+  it("renders 'No file selected' placeholder when params.path is missing", () => {
+    // dockview can restore a panel from a serialized layout that lost
+    // its params. The pane must not crash; it shows a placeholder.
     mockFileContent.mockReturnValue({
-      data: { content: "file-a content" },
+      data: undefined,
       isLoading: false,
       error: undefined,
-      dataUpdatedAt: Date.now(),
+      dataUpdatedAt: 0,
     })
-
-    const { rerender } = render(<CodeEditorPane path="a.ts" />, { wrapper })
-    await waitFor(() => {
-      expect(screen.getByText("file-a content")).toBeInTheDocument()
-    })
-
-    mockFileContent.mockReturnValue({
-      data: { content: "file-b content" },
-      isLoading: false,
-      error: undefined,
-      dataUpdatedAt: Date.now(),
-    })
-
-    rerender(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <CodeEditorPane path="b.py" />
-      </QueryClientProvider>,
-    )
-
-    await waitFor(() => {
-      expect(screen.getByText("file-b content")).toBeInTheDocument()
-      const chrome = screen.getByTestId("panel-chrome")
-      expect(chrome.getAttribute("data-title")).toBe("b.py")
-    })
+    const props = createMockPaneProps<{ path?: string }>({ params: {} })
+    render(<CodeEditorPane {...props} />, { wrapper })
+    expect(screen.getByText(/no file selected/i)).toBeInTheDocument()
   })
 })

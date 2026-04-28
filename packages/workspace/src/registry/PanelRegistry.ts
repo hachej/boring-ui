@@ -61,15 +61,22 @@ export class PanelRegistry {
     return bestMatch
   }
 
-  getComponents(): Record<string, ComponentType<unknown>> {
-    const result: Record<string, ComponentType<unknown>> = {}
+  // Loose return type: shells render panels via different paths (dockview
+  // hands a typed envelope, sidebar layouts mount them naked). Type-safe
+  // wiring happens at registration time via `definePanel<T>` — once a
+  // panel is in the registry, the SHELL is responsible for handing it
+  // the right props for its render context.
+  // biome-ignore lint/suspicious/noExplicitAny: see comment above
+  getComponents(): Record<string, ComponentType<any>> {
+    // biome-ignore lint/suspicious/noExplicitAny: see comment above
+    const result: Record<string, ComponentType<any>> = {}
     for (const panel of this.filteredPanels()) {
       if (panel.lazy) {
         result[panel.id] = lazy(
-          panel.component as () => Promise<{ default: ComponentType<unknown> }>
+          panel.component as () => Promise<{ default: ComponentType<unknown> }>,
         )
       } else {
-        result[panel.id] = panel.component as ComponentType<unknown>
+        result[panel.id] = panel.component
       }
     }
     return result
@@ -92,6 +99,18 @@ function matchGlob(pattern: string, filename: string): boolean {
   if (pattern === "*") return true
   if (pattern.startsWith("*")) {
     return filename.endsWith(pattern.slice(1))
+  }
+  // Support a single embedded `*`, e.g. `deck/*.md`. Matches when the
+  // path starts with the prefix and ends with the suffix. The wildcard
+  // does NOT cross `/` boundaries.
+  const star = pattern.indexOf("*")
+  if (star > 0) {
+    const head = pattern.slice(0, star)
+    const tail = pattern.slice(star + 1)
+    if (!filename.startsWith(head)) return false
+    if (!filename.endsWith(tail)) return false
+    const middle = filename.slice(head.length, filename.length - tail.length)
+    return !middle.includes("/")
   }
   return filename === pattern
 }

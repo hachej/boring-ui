@@ -16,28 +16,19 @@
  */
 import { CodeEditorPane } from "./CodeEditorPane"
 import { MarkdownEditorPane } from "./MarkdownEditorPane"
-import { definePanel, type PanelConfig } from "../registry/types"
+import { definePanel } from "../registry/types"
 
-/**
- * @deprecated Panes now accept dockview's envelope natively — register
- * `CodeEditorPane` directly via `definePanel<{ path: string }>(...)`.
- * Kept as an alias so existing imports keep working.
- */
-export { CodeEditorPane as CodeEditorPaneAdapter }
-
-/**
- * @deprecated See {@link CodeEditorPaneAdapter}. Use `MarkdownEditorPane` directly.
- */
-export { MarkdownEditorPane as MarkdownEditorPaneAdapter }
-
-export const defaultEditorPanels: PanelConfig[] = [
+// Type inferred (not annotated): PanelConfig<unknown>[] would force a
+// widening cast of each entry, since SyncPanelConfig is contravariant
+// on T at the component prop. Apps spread this into a PanelConfig[]
+// array at the call site, which is the variance-safe direction.
+export const defaultEditorPanels = [
   definePanel<{ path: string }>({
     id: "code-editor",
     title: "Editor",
     component: CodeEditorPane,
     placement: "center",
     source: "app",
-    chromeless: true,
     filePatterns: ["*"],
   }),
   definePanel<{ path: string }>({
@@ -46,7 +37,6 @@ export const defaultEditorPanels: PanelConfig[] = [
     component: MarkdownEditorPane,
     placement: "center",
     source: "app",
-    chromeless: true,
     filePatterns: ["*.md", "*.markdown"],
   }),
 ]

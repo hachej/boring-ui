@@ -100,13 +100,8 @@ export { FileTreePane, FileTreeView } from "./components/FileTreeView"
 export type { FileTreePaneProps, FileTreeViewProps } from "./components/FileTreeView"
 export { MarkdownEditorPane } from "./panes"
 export type { MarkdownEditorPaneProps } from "./panes"
-export {
-  CodeEditorPaneAdapter,
-  MarkdownEditorPaneAdapter,
-  defaultEditorPanels,
-} from "./panes"
+export { defaultEditorPanels } from "./panes"
 export { definePanel } from "./registry/types"
-export type { PaneProps } from "./registry/types"
 
 // Theme
 export { createShadcnTheme, useShadcnTheme } from "./theme"

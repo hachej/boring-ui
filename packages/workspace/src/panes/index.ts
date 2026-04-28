@@ -10,8 +10,4 @@ export { FileTreePane, FileTreeView } from "../components/FileTreeView"
 export type { FileTreePaneProps, FileTreeViewProps } from "../components/FileTreeView"
 export { MarkdownEditorPane } from "./MarkdownEditorPane"
 export type { MarkdownEditorPaneProps } from "./MarkdownEditorPane"
-export {
-  CodeEditorPaneAdapter,
-  MarkdownEditorPaneAdapter,
-  defaultEditorPanels,
-} from "./dockviewWrappers"
+export { defaultEditorPanels } from "./defaultEditorPanels"

@@ -1,6 +1,6 @@
-import { createElement, type ComponentType } from "react"
+import { createElement } from "react"
 import { PanelRegistry } from "../registry/PanelRegistry"
-import type { PanelConfig } from "../registry/types"
+import { definePanel, type PanelConfig } from "../registry/types"
 
 function DefaultMockPanel() {
   return createElement(
@@ -11,13 +11,13 @@ function DefaultMockPanel() {
 }
 
 const DEFAULT_PANELS: PanelConfig[] = [
-  {
+  definePanel({
     id: "workspace-testing-default-panel",
     title: "Workspace Test Panel",
-    component: DefaultMockPanel as ComponentType<unknown>,
+    component: DefaultMockPanel,
     source: "app",
     placement: "center",
-  },
+  }),
 ]
 
 export interface CreateMockRegistryOptions {
