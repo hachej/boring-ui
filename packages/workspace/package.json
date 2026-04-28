@@ -9,7 +9,7 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/workspace.d.ts",
       "import": "./dist/workspace.js"
     },
     "./testing": {
@@ -36,7 +36,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "lint": "pnpm run typecheck"
   },

@@ -12,7 +12,11 @@
  * `scripts/assert-bundle-isolation.mjs` fails the build if browser-side
  * code reaches in here.
  */
-export { createWorkspaceAgentApp } from "./createWorkspaceAgentApp"
+export {
+  createWorkspaceAgentApp,
+  type CreateWorkspaceAgentAppOptions,
+  type WorkspaceAgentDeps,
+} from "./createWorkspaceAgentApp"
 export { createInMemoryBridge } from "./ui-bridge/createInMemoryBridge"
 export { uiRoutes } from "./http/uiRoutes"
 export type { UiRoutesOptions } from "./http/uiRoutes"

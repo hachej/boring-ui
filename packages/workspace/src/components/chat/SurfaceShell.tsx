@@ -60,16 +60,47 @@ export interface SurfaceShellProps {
   onReady?: (api: SurfaceShellApi) => void
   /** Called on every panel add/remove/active-change with the current snapshot. */
   onChange?: (snapshot: SurfaceShellSnapshot) => void
+  /**
+   * Extra panel ids (registered via WorkspaceProvider's `panels` prop) that
+   * this workbench is allowed to render. Defaults to the built-in
+   * editor/viewer panels only. Pass app-specific pane ids here so calls
+   * like `surface.openPanel({ component: "chart-canvas" })` actually
+   * instantiate — without this, dockview's components map filters them
+   * out and you get an empty tab. Two-layer defense: SurfaceShell.openPanel
+   * validates against the registry (loud throw on unknown), AND the
+   * dockview allowlist below filters which registered panels can mount
+   * inside THIS surface (so a host can gate panels per shell instance).
+   */
+  extraPanels?: string[]
   className?: string
 }
 
 const COLLAPSED_WIDTH = 40
 
-function componentForPath(path: string): string {
+function fallbackComponentForPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase()
   if (ext === "md" || ext === "markdown") return "markdown-editor"
   if (ext === "csv" || ext === "tsv") return "csv-viewer"
   return "code-editor"
+}
+
+/**
+ * Pick a registered panel for `path`. Prefers the host's filePatterns via the
+ * panel registry; falls back to a hardcoded extension map only if the
+ * registry can't resolve it (and even then only if the fallback id is
+ * actually registered).
+ */
+function resolvePanelForPath(
+  path: string,
+  registry: { resolve: (p: string) => { id: string } | undefined; has: (id: string) => boolean },
+): string {
+  const filename = path.split("/").pop() ?? path
+  const resolved = registry.resolve(filename)
+  if (resolved) return resolved.id
+  const fallback = fallbackComponentForPath(path)
+  if (registry.has(fallback)) return fallback
+  // Last-ditch: hand back the first registered panel that accepts files at all.
+  return fallback
 }
 
 let seqCounter = 0
@@ -90,10 +121,36 @@ export function SurfaceShell({
   data,
   onReady,
   onChange,
+  extraPanels,
   className,
 }: SurfaceShellProps) {
-  const [collapsed, setCollapsed] = useState(false)
-  const [sidebarWidth, setSidebarWidth] = useState(sidebarDefaultWidth)
+  // Lazy initializers read persisted state SYNCHRONOUSLY on first mount so
+  // the write effect (which depends on `sidebarWidth` / `collapsed`) doesn't
+  // fire on the next render with the unhydrated default and overwrite the
+  // saved value. Without this, `localStorage.setItem` runs once with the
+  // default, then the read effect's setState triggers a re-render, then the
+  // write effect runs again with the right value — but the brief default
+  // write leaks if any code reads localStorage in between.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (!storageKey) return false
+    try {
+      return localStorage.getItem(`${storageKey}:sidebarCollapsed`) === "1"
+    } catch {
+      return false
+    }
+  })
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    if (!storageKey) return sidebarDefaultWidth
+    try {
+      const raw = localStorage.getItem(`${storageKey}:sidebarWidth`)
+      if (!raw) return sidebarDefaultWidth
+      const n = Number(raw)
+      if (!Number.isFinite(n)) return sidebarDefaultWidth
+      return Math.max(sidebarMinWidth, Math.min(sidebarMaxWidth, n))
+    } catch {
+      return sidebarDefaultWidth
+    }
+  })
   const apiRef = useRef<DockviewApi | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
@@ -123,7 +180,7 @@ export function SurfaceShell({
     }
     api.addPanel({
       id: panelId,
-      component: componentForPath(path),
+      component: resolvePanelForPath(path, panelRegistryRef.current),
       title: path.split("/").pop() ?? path,
       params: { path },
     })
@@ -193,6 +250,7 @@ export function SurfaceShell({
     emit()
   }, [openFileSync, openPanelSync, getSnapshot])
 
+
   const openFile = useCallback(
     async (path: string): Promise<CommandResult> => {
       const api = apiRef.current
@@ -205,7 +263,7 @@ export function SurfaceShell({
       }
       api.addPanel({
         id: panelId,
-        component: componentForPath(path),
+        component: resolvePanelForPath(path, panelRegistryRef.current),
         title: path.split("/").pop() ?? path,
         params: { path },
       })
@@ -282,22 +340,10 @@ export function SurfaceShell({
     [collapsed, sidebarMinWidth, sidebarMaxWidth],
   )
 
-  // Persist sidebar width
-  useEffect(() => {
-    if (!storageKey) return
-    try {
-      const raw = localStorage.getItem(`${storageKey}:sidebarWidth`)
-      if (raw) {
-        const n = Number(raw)
-        if (Number.isFinite(n)) setSidebarWidth(Math.max(sidebarMinWidth, Math.min(sidebarMaxWidth, n)))
-      }
-      const c = localStorage.getItem(`${storageKey}:sidebarCollapsed`)
-      if (c === "1") setCollapsed(true)
-    } catch {}
-    // only on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+  // Persist sidebar width. (The on-mount READ moved into the useState lazy
+  // initializer so the first render is already hydrated — without that, the
+  // write effect fires once with the default and clobbers the persisted
+  // value before the read effect's setState rolls through.)
   useEffect(() => {
     if (!storageKey) return
     try {
@@ -361,6 +407,11 @@ export function SurfaceShell({
         >
           <ArtifactSurfacePane
             onReady={handleReady}
+            allowedPanels={
+              extraPanels && extraPanels.length > 0
+                ? [...ArtifactSurfacePane.defaultAllowedPanels, ...extraPanels]
+                : undefined
+            }
             rightHeaderActions={() => <WorkbenchCloseAction />}
           />
         </div>
