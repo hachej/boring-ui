@@ -1,10 +1,9 @@
 "use client"
 
 import { lazy, Suspense, useCallback, useRef, useState, useEffect } from "react"
-import { PanelChrome } from "../dock"
 import { useFileContent, useFileWrite } from "../data"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../hooks"
-import type { DockviewPanelApi } from "dockview-react"
+import type { PaneProps } from "../registry/types"
 
 const CodeEditor = lazy(() =>
   import("../components/CodeEditor").then((m) => ({ default: m.CodeEditor })),
@@ -36,14 +35,10 @@ function extToLanguage(path: string): string {
   }
 }
 
-export interface CodeEditorPaneProps {
-  path: string
-  panelApi?: DockviewPanelApi
-  chromeless?: boolean
-  className?: string
-}
+export type CodeEditorPaneProps = PaneProps<{ path?: string }>
 
-export function CodeEditorPane({ path, panelApi, chromeless, className }: CodeEditorPaneProps) {
+export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) {
+  const path = typeof params?.path === "string" ? params.path : ""
   const { data: fileData, isLoading, error, dataUpdatedAt } = useFileContent(path)
   const { mutateAsync: writeFile } = useFileWrite()
 
@@ -82,7 +77,7 @@ export function CodeEditorPane({ path, panelApi, chromeless, className }: CodeEd
 
   const lifecycle = useEditorLifecycle(path, {
     adapter,
-    panelId: panelApi?.id ?? path,
+    panelId: api?.id ?? path,
     serverMtime: dataUpdatedAt || null,
   })
 
@@ -105,48 +100,53 @@ export function CodeEditorPane({ path, panelApi, chromeless, className }: CodeEd
     [lifecycle],
   )
 
-  const fileName = path.split("/").pop() ?? path
-  const language = extToLanguage(path)
-  const title = lifecycle.isDirty ? `${fileName} ●` : fileName
+  const fileName = path ? (path.split("/").pop() ?? path) : ""
+  const tabTitle = fileName ? (lifecycle.isDirty ? `${fileName} ●` : fileName) : ""
+  useEffect(() => {
+    if (tabTitle) api?.setTitle?.(tabTitle)
+  }, [api, tabTitle])
+
+  if (!path) {
+    return (
+      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+        No file selected
+      </div>
+    )
+  }
 
   if (error) {
-    const body = (
+    return (
       <div className="flex h-full items-center justify-center text-destructive text-sm">
         Failed to load file: {error.message}
       </div>
     )
-    return chromeless ? body : <PanelChrome title={fileName} panelApi={panelApi}>{body}</PanelChrome>
   }
 
-  const editor = (
-    <Suspense
-      fallback={
-        <div className="flex h-full items-center justify-center text-muted-foreground">
-          <span className="animate-pulse">Loading editor...</span>
-        </div>
-      }
-    >
-      {isLoading || localContent === null ? (
-        <div className="flex h-full items-center justify-center text-muted-foreground">
-          <span className="animate-pulse">Loading file...</span>
-        </div>
-      ) : (
-        <CodeEditor
-          content={localContent}
-          onChange={handleChange}
-          language={language}
-          wordWrap
-          className={className}
-        />
-      )}
-    </Suspense>
-  )
-
-  if (chromeless) return <div className="flex h-full min-h-0 flex-col">{editor}</div>
+  const language = extToLanguage(path)
 
   return (
-    <PanelChrome title={title} panelApi={panelApi}>
-      {editor}
-    </PanelChrome>
+    <div className="flex h-full min-h-0 flex-col">
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <span className="animate-pulse">Loading editor...</span>
+          </div>
+        }
+      >
+        {isLoading || localContent === null ? (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <span className="animate-pulse">Loading file...</span>
+          </div>
+        ) : (
+          <CodeEditor
+            content={localContent}
+            onChange={handleChange}
+            language={language}
+            wordWrap
+            className={className}
+          />
+        )}
+      </Suspense>
+    </div>
   )
 }
