@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { registerSettingsRoutes } from '../settings'
 import { registerErrorHandler } from '../../app/errorHandler'
 import type { WorkspaceStore } from '../../app/types'
-import type { MemberRole, WorkspaceRuntime } from '../../../shared/types'
+import type { MemberRole, Workspace, WorkspaceRuntime } from '../../../shared/types'
+import type { WorkspaceProvisioner } from '../../provisioner/types'
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000001'
 const EDITOR_ID = '00000000-0000-0000-0000-000000000002'
@@ -46,6 +47,10 @@ function mockWorkspaceStore(): WorkspaceStore {
       memberDb.get(wsId)?.get(userId) ?? null,
     isMember: async (wsId: string, userId: string) =>
       memberDb.get(wsId)?.has(userId) ?? false,
+    get: async (_id: string): Promise<Workspace | null> => ({
+      id: WS_ID, appId: APP_ID, name: 'Test WS', createdBy: OWNER_ID,
+      createdAt: new Date().toISOString(), deletedAt: null, isDefault: false,
+    }),
     getWorkspaceSettings: async (_wsId: string) => {
       return settingsDb.map((s) => ({ key: s.key, configured: s.configured, updated_at: s.updated_at }))
     },
@@ -62,6 +67,12 @@ function mockWorkspaceStore(): WorkspaceStore {
       return settingsDb.map((s) => ({ key: s.key, configured: s.configured, updated_at: s.updated_at }))
     },
     getWorkspaceRuntime: async (_wsId: string) => runtimeDb,
+    putWorkspaceRuntime: async (_wsId: string, state: Partial<WorkspaceRuntime>) => {
+      if (runtimeDb) {
+        Object.assign(runtimeDb, state, { updatedAt: new Date().toISOString() })
+      }
+      return runtimeDb!
+    },
     retryWorkspaceRuntime: async (_wsId: string) => {
       if (!runtimeDb || runtimeDb.state !== 'error') return null
       runtimeDb.state = 'pending'
@@ -77,6 +88,7 @@ beforeAll(async () => {
   app = Fastify({ logger: false })
   app.decorate('config', { appId: APP_ID } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
+  app.decorate('provisioner', null)
   registerErrorHandler(app)
 
   app.addHook('onRequest', async (request) => {
@@ -210,19 +222,19 @@ describe('GET /api/v1/workspaces/:id/runtime', () => {
 })
 
 describe('POST /api/v1/workspaces/:id/runtime/retry', () => {
-  it('retries from error state → returns pending runtime', async () => {
+  it('409 runtime_unmanaged when no provisioner', async () => {
     runtimeDb!.state = 'error'
-    runtimeDb!.lastError = 'boot failed'
-
-    const res = await inject('POST', `/api/v1/workspaces/${WS_ID}/runtime/retry`, OWNER_ID)
-    expect(res.statusCode).toBe(200)
-    expect(res.json().runtime.state).toBe('pending')
-    expect(res.json().runtime.lastError).toBeNull()
-  })
-
-  it('409 when not in error state', async () => {
+    runtimeDb!.lastErrorOp = 'provision'
     const res = await inject('POST', `/api/v1/workspaces/${WS_ID}/runtime/retry`, OWNER_ID)
     expect(res.statusCode).toBe(409)
+    expect(res.json().code).toBe('runtime_unmanaged')
+  })
+
+  it('409 runtime_unmanaged when no runtime row', async () => {
+    runtimeDb = null
+    const res = await inject('POST', `/api/v1/workspaces/${WS_ID}/runtime/retry`, OWNER_ID)
+    expect(res.statusCode).toBe(409)
+    expect(res.json().code).toBe('runtime_unmanaged')
   })
 
   it('editor → 403 forbidden', async () => {
@@ -230,5 +242,119 @@ describe('POST /api/v1/workspaces/:id/runtime/retry', () => {
     const res = await inject('POST', `/api/v1/workspaces/${WS_ID}/runtime/retry`, EDITOR_ID)
     expect(res.statusCode).toBe(403)
     expect(res.json().code).toBe('forbidden')
+  })
+})
+
+describe('POST /api/v1/workspaces/:id/runtime/retry (with provisioner)', () => {
+  let provApp: FastifyInstance
+  let provisionFn: ReturnType<typeof vi.fn>
+  let provRuntimeDb: WorkspaceRuntime | null
+
+  function provResetState() {
+    provisionFn.mockReset()
+    provisionFn.mockResolvedValue({ volumePath: '/volumes/ws-retried' })
+    provRuntimeDb = {
+      workspaceId: WS_ID, spriteUrl: null, spriteName: null,
+      state: 'error', lastError: 'disk full', volumePath: null,
+      lastErrorOp: 'provision', provisioningStep: null,
+      stepStartedAt: null, updatedAt: new Date().toISOString(),
+    }
+  }
+
+  beforeAll(async () => {
+    provisionFn = vi.fn().mockResolvedValue({ volumePath: '/volumes/ws-retried' })
+    provRuntimeDb = null
+
+    const mockProvisioner: WorkspaceProvisioner = {
+      provision: provisionFn,
+      destroy: vi.fn(),
+    }
+
+    const provMemberDb = new Map<string, Map<string, MemberRole>>()
+    const wsMembers = new Map<string, MemberRole>()
+    wsMembers.set(OWNER_ID, 'owner')
+    wsMembers.set(EDITOR_ID, 'editor')
+    provMemberDb.set(WS_ID, wsMembers)
+
+    provApp = Fastify({ logger: false })
+    provApp.decorate('config', { appId: APP_ID } as any)
+    provApp.decorate('workspaceStore', {
+      getMemberRole: async (wsId: string, userId: string) => provMemberDb.get(wsId)?.get(userId) ?? null,
+      isMember: async (wsId: string, userId: string) => provMemberDb.get(wsId)?.has(userId) ?? false,
+      get: async (_id: string): Promise<Workspace | null> => ({
+        id: WS_ID, appId: APP_ID, name: 'Test WS', createdBy: OWNER_ID,
+        createdAt: new Date().toISOString(), deletedAt: null, isDefault: false,
+      }),
+      getWorkspaceRuntime: async () => provRuntimeDb,
+      putWorkspaceRuntime: async (_wsId: string, state: Partial<WorkspaceRuntime>) => {
+        if (provRuntimeDb) Object.assign(provRuntimeDb, state, { updatedAt: new Date().toISOString() })
+        return provRuntimeDb!
+      },
+      getWorkspaceSettings: async () => [],
+      putWorkspaceSettings: async () => [],
+    } as unknown as WorkspaceStore)
+    provApp.decorate('provisioner', mockProvisioner)
+    registerErrorHandler(provApp)
+
+    provApp.addHook('onRequest', async (request) => {
+      const userId = request.headers['x-test-user'] as string | undefined
+      if (userId) {
+        request.user = { id: userId, email: `${userId}@test.dev`, name: null }
+      } else {
+        request.user = null
+      }
+    })
+
+    await provApp.register(registerSettingsRoutes)
+    await provApp.ready()
+  })
+
+  afterAll(async () => {
+    await provApp.close()
+  })
+
+  beforeEach(() => {
+    provResetState()
+  })
+
+  function provInject(method: string, url: string, userId?: string, payload?: unknown) {
+    const req: any = { method, url }
+    if (userId) req.headers = { 'x-test-user': userId }
+    if (payload !== undefined) req.payload = payload
+    return provApp.inject(req)
+  }
+
+  it('retry on error+provision succeeds → 200, runtime ready with volumePath', async () => {
+    const res = await provInject('POST', `/api/v1/workspaces/${WS_ID}/runtime/retry`, OWNER_ID)
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.runtime.state).toBe('ready')
+    expect(body.runtime.volumePath).toBe('/volumes/ws-retried')
+    expect(provisionFn).toHaveBeenCalledOnce()
+  })
+
+  it('retry on ready → 409 invalid_retry_state', async () => {
+    provRuntimeDb!.state = 'ready'
+    provRuntimeDb!.lastErrorOp = null
+    const res = await provInject('POST', `/api/v1/workspaces/${WS_ID}/runtime/retry`, OWNER_ID)
+    expect(res.statusCode).toBe(409)
+    expect(res.json().code).toBe('invalid_retry_state')
+  })
+
+  it('retry on error+destroy → 409 invalid_retry_state', async () => {
+    provRuntimeDb!.lastErrorOp = 'destroy'
+    const res = await provInject('POST', `/api/v1/workspaces/${WS_ID}/runtime/retry`, OWNER_ID)
+    expect(res.statusCode).toBe(409)
+    expect(res.json().code).toBe('invalid_retry_state')
+  })
+
+  it('retry on error+provision, provisioner throws → 500, runtime stays error with new lastError', async () => {
+    provisionFn.mockRejectedValue(new Error('still broken'))
+    const res = await provInject('POST', `/api/v1/workspaces/${WS_ID}/runtime/retry`, OWNER_ID)
+    expect(res.statusCode).toBe(500)
+    expect(res.json().code).toBe('provision_failed')
+    expect(provRuntimeDb!.state).toBe('error')
+    expect(provRuntimeDb!.lastError).toBe('still broken')
+    expect(provRuntimeDb!.lastErrorOp).toBe('provision')
   })
 })

@@ -60,16 +60,58 @@ const settingsRoutesPlugin: FastifyPluginAsync = async (app) => {
     { preHandler: requireWorkspaceMember('owner') },
     async (request) => {
       const { id } = request.params as { id: string }
-      const runtime = await store.retryWorkspaceRuntime(id)
-      if (!runtime) {
+      const provisioner = app.provisioner
+
+      const runtime = await store.getWorkspaceRuntime(id)
+      if (!runtime || !provisioner) {
         throw new HttpError({
           status: 409,
-          code: ERROR_CODES.VALIDATION_FAILED,
-          message: 'Workspace runtime is not in error state',
+          code: ERROR_CODES.RUNTIME_UNMANAGED,
+          message: 'No managed runtime for this workspace',
           requestId: request.id,
         })
       }
-      return { runtime }
+
+      if (runtime.state !== 'error' || runtime.lastErrorOp !== 'provision') {
+        throw new HttpError({
+          status: 409,
+          code: ERROR_CODES.INVALID_RETRY_STATE,
+          message: 'Runtime must be in error state with last_error_op=provision to retry',
+          requestId: request.id,
+        })
+      }
+
+      await store.putWorkspaceRuntime(id, { state: 'pending', lastError: null, lastErrorOp: null })
+
+      try {
+        const ws = await store.get(id)
+        const result = await provisioner.provision({
+          workspaceId: id,
+          workspaceName: ws?.name ?? id,
+          ownerId: request.user!.id,
+          appId: app.config.appId,
+        })
+        const updated = await store.putWorkspaceRuntime(id, {
+          state: 'ready',
+          volumePath: result.volumePath,
+        })
+        request.log.info({ workspaceId: id }, 'workspace.provision.retry.success')
+        return { runtime: updated }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        await store.putWorkspaceRuntime(id, {
+          state: 'error',
+          lastError: message,
+          lastErrorOp: 'provision',
+        })
+        request.log.error({ workspaceId: id, err }, 'workspace.provision.retry.failed')
+        throw new HttpError({
+          status: 500,
+          code: ERROR_CODES.PROVISION_FAILED,
+          message: 'Workspace provisioning failed',
+          requestId: request.id,
+        })
+      }
     },
   )
 }

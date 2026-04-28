@@ -18,6 +18,8 @@ export const ERROR_CODES = {
   // Provisioning
   PROVISION_FAILED: 'provision_failed',
   DESTROY_FAILED: 'destroy_failed',
+  RUNTIME_UNMANAGED: 'runtime_unmanaged',
+  INVALID_RETRY_STATE: 'invalid_retry_state',
 
   // Validation + infra
   NOT_FOUND: 'not_found',
