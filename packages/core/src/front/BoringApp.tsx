@@ -18,6 +18,7 @@ import { ForgotPasswordPage as DefaultForgotPasswordPage } from './auth/ForgotPa
 import { ResetPasswordPage as DefaultResetPasswordPage } from './auth/ResetPasswordPage.js'
 import { VerifyEmailPage as DefaultVerifyEmailPage } from './auth/VerifyEmailPage.js'
 import { UserSettingsPage as DefaultUserSettingsPage } from './auth/UserSettingsPage.js'
+import { InvitesPage } from './workspace/InvitesPage.js'
 import { routes } from './utils.js'
 
 export interface BoringAppAuthPagesOverride {
@@ -84,7 +85,7 @@ export function BoringApp({ children, authPages, cspNonce }: BoringAppProps) {
                   <BrowserRouter>
                     <WorkspaceAuthProvider>
                       <TopBarSlotProvider slot={<UserMenu />}>
-                        <Helmet nonce={resolvedCspNonce}>
+                        <Helmet>
                           {resolvedCspNonce ? (
                             <>
                               <meta name={CSP_NONCE_META_NAME} content={resolvedCspNonce} />
@@ -108,6 +109,7 @@ export function BoringApp({ children, authPages, cspNonce }: BoringAppProps) {
                               <Route path={routes.verifyEmail} element={<VerifyEmailPage />} />
                               <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
                               <Route path={routes.me} element={<UserSettingsPage />} />
+                              <Route path={routes.workspaceInvites} element={<InvitesPage />} />
                               {children}
                             </Routes>
                           </Suspense>

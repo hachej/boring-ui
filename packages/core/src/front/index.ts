@@ -68,6 +68,8 @@ export type { AuthGateProps } from './AuthGate.js'
 export { BoringApp } from './BoringApp.js'
 export type { BoringAppProps, BoringAppAuthPagesOverride } from './BoringApp.js'
 
+export { InvitesPage } from './workspace/InvitesPage.js'
+
 export {
   UserMenu,
   TopBarSlotProvider,
