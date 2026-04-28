@@ -1,0 +1,16 @@
+@import 'tailwindcss';
+@import '../../src/front-shadcn/styles/globals.css';
+@plugin '@tailwindcss/typography';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v4 only scans files inside the project root by default; the
+ * shadcn primitives + chat panel live in src/ above the example, so point
+ * Tailwind at them directly. Without this the panel renders unstyled. */
+@source "../../src/front-shadcn/**/*.{ts,tsx,js,jsx}";
+@source "../../src/front/**/*.{ts,tsx,js,jsx}";
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}
