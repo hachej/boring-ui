@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v5.1 — codebase-reality-check sweep (event bus actual API, PanelConfig discriminated union, registry API harmonization, agent tool roster verified, macro test gate)
+**Status:** v5.2 — round-2 codex review patches (validateTool node-leak P0, client surface API vs server bridge P1, SurfaceShell hardcoded fallback P1, missing events subpath P1, stale text P2s)
 **Owners:** workspace
 **Last updated:** 2026-04-28
 
@@ -194,14 +194,33 @@ export interface PluginMountCtx {
    *  for testability and discoverability — plugins MAY also import it
    *  directly. Type is `EventBus<WorkspaceEventMap>`. */
   bus: EventBus<WorkspaceEventMap>
-  bridge: UiBridge
+
+  /** CLIENT action surface — how plugins open files/panels and
+   *  drive the workbench. Exposed by WorkspaceProvider; the actual
+   *  shape is supplied by the active <SurfaceShell>'s ref. Step 4a
+   *  promotes this from internal context to the plugin contract.
+   *  Server-side mount: `surface` is undefined. */
+  surface?: WorkspaceSurface
   catalogs: CatalogRegistry
   commands: CommandRegistry
   panels: PanelRegistry
   chatSuggestions: ChatSuggestionRegistry
-  /** Server-only — undefined on client. */
+  /** SERVER-only — the agent UI command queue (UiBridge in
+   *  `packages/workspace/src/shared/ui-bridge.ts`). Undefined on
+   *  client. NOT for plugin client code; client uses `surface`. */
+  bridge?: UiBridge
   agentTools?: AgentToolRegistry
   app?: FastifyInstance
+}
+
+/** Stable client action surface contributed by the active SurfaceShell.
+ *  Codifies the existing imperative methods (openFile, openPanel,
+ *  closeTab, …) so plugins don't have to reach for refs. */
+export interface WorkspaceSurface {
+  openFile(path: string, opts?: { panelId?: string }): void
+  openPanel(spec: { component: string; params?: unknown; title?: string }): void
+  closeTab(panelId: string): void
+  // …grow this conservatively; one new method per real plugin need
 }
 ```
 
@@ -338,8 +357,12 @@ export const makeMacroPlugin = (deps: MacroDeps = {}) =>
     routes: deps.clickhouse && deps.deckRoot
       ? [{ plugin: registerMacroRoutes, opts: { clickhouse: deps.clickhouse, deckRoot: deps.deckRoot } }]
       : undefined,
-    onMount: ({ bus }) => {
-      const off = bus.subscribe("workspace:open-file", handleOpenFile)
+    onMount: ({ bus, surface }) => {
+      // Use the live bus API: events.on() returns an unsubscribe.
+      const off = bus.on("file:moved", ({ from, to }) => {
+        // example: re-open the moved file in its new location
+        surface?.openFile(to)
+      })
       return () => off()
     },
   })
@@ -370,12 +393,19 @@ must be a function (got: undefined)
 Per-type validators (`validatePanel`, `validateCommand`,
 `validateCatalog`, `validateChatSuggestion`, `validateAgentTool`) live
 in `@boring/workspace/src/plugin/validators.ts`. `validateAgentTool`
-re-exports the existing `validateTool` from
-`packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`
-— it stays in `@boring/agent` (lowest layer) so the pi loader and
-the workspace plugin model share one validator implementation
-without making `@boring/workspace` a transitive dependency for the
-legacy pi-coding-agent loader.
+re-exports `validateTool` from `@boring/agent/shared`. **Important
+node-leak avoidance** (codex P0, 2026-04-28): the current
+`validateTool` lives inside
+`packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`,
+which imports `node:fs/promises`, `node:path`, `node:os`,
+`node:url` at module scope. Step 2a EXTRACTS `validateTool` into
+`packages/agent/src/shared/validateTool.ts` (no node imports —
+pure shape check on `AgentTool`); pluginLoader.ts then imports the
+extracted version, and `@boring/workspace`'s `validateAgentTool`
+re-exports from `@boring/agent/shared`. Without this extraction,
+client-side `definePlugin` would pull node-only modules into a
+browser bundle and the build would break. The extraction is a
+one-file refactor and must land as part of Step 2a, not Step 2b.
 
 ### Error model
 
@@ -677,16 +707,36 @@ Today `WorkbenchLeftPane` hardcodes its Files / Data tab list
 agent tools and catalogs but leave a dead Files tab in the UI. That
 contradicts the "real opt-out" promise.
 
-Phase 1 step 5c retrofits `WorkbenchLeftPane` (and, for symmetry,
-`WorkbenchRightPane`) to query `PanelRegistry` for placements
-`'left-tab'` / `'right-tab'`, sorting by `tabOrder` then
-registration order. `filesystemPlugin` contributes the Files tab;
-`dataCatalogPlugin` contributes the Data tab.
+Phase 1 step 5c retrofits `WorkbenchLeftPane` to query
+`PanelRegistry` for placements `'left-tab'`, sorting by `tabOrder`
+then registration order. `filesystemPlugin` contributes the Files
+tab; `dataCatalogPlugin` contributes the Data tab.
 `excludeDefaults: ['filesystem']` truly removes the tab.
+(`WorkbenchRightPane` does not exist today; `'right-tab'` placement
+is reserved in the contract for symmetry but no Phase 1 component
+consumes it — flagged for the first plugin that needs a right-side
+registry-driven tab.)
 
 A registered tab panel renders its own component when active —
 WorkbenchLeftPane is now just the chrome (tab strip + active panel
 host), not the content owner.
+
+#### Closing the SurfaceShell hardcoded-fallback hole
+
+`SurfaceShell.fallbackComponentForPath`
+(`SurfaceShell.tsx:81-91`) maps extensions to literal panel ids
+(`code-editor`, `markdown-editor`, `csv-viewer`) regardless of
+whether they're registered. `resolvePanelForPath`
+(`SurfaceShell.tsx:99-108`) checks `registry.has(fallback)` then
+returns the fallback id anyway as a "last-ditch." That's why
+`excludeDefaults: ['filesystem']` would currently leak blank tabs.
+
+Step 5c also fixes the resolver: when both registry resolution AND
+the fallback id miss, `openFile` opens an `EmptyFilePanel`
+(registered as a core panel — kicks in only when nothing else
+matches) showing "No editor for `<path>` — install or enable a
+plugin that handles `<ext>`." This makes the `excludeDefaults`
+contract honest: zero ghost tabs, clear actionable message.
 
 ### Security stance — Phase 1 trust model
 
@@ -807,6 +857,23 @@ events.emit("file:moved", { ...userMeta(), from, to })
 useEvent("file:moved", ({ from, to }) => { /* … */ })
 ```
 
+**Package-exports gap (codex P1, 2026-04-28):** the workspace
+package's `exports` map (`packages/workspace/package.json:9-30`)
+exposes `.`, `./testing`, `./ui-shadcn`, `./shared`, `./server`,
+`./globals.css` — but NOT `./events`. Step 4a adds the entry:
+
+```json
+"./events": {
+  "types": "./dist/events.d.ts",
+  "import": "./dist/events.js"
+}
+```
+
+Plus the corresponding `tsup` entry. `events` are also re-exported
+from the package barrel for convenience (so
+`import { events } from "@boring/workspace"` works), but the
+`./events` subpath is the recommended import for tree-shaking.
+
 Plugin–bus contact points:
 
 1. **`PluginMountCtx.bus`** is the same module singleton, injected
@@ -886,8 +953,8 @@ and `createWorkspaceAgentApp.ts:42` exists.)
 │      standardCatalog imports the bundle by default; expose       │
 │      `disableDefaultFileTools` on createAgentApp. Move file/     │
 │      tree/search HTTP routes to @boring/workspace/server. The    │
-│      standardCatalog tools (bash, read_directory,                │
-│      execute_isolated_code) stay where they are.                 │
+│      standardCatalog tools (bash, execute_isolated_code) stay    │
+│      where they are. (No read_directory tool exists.)            │
 │                                                                  │
 │  Deliverable: @boring/agent's surface is "harness + harness      │
 │  tools (incl. file ops bundle)"; @boring/workspace owns the      │
@@ -900,9 +967,13 @@ and `createWorkspaceAgentApp.ts:42` exists.)
 │  STEP 2 — PLUGIN PRIMITIVES                                      │
 │  ─────────────────────────────────────────────────────────────── │
 │  2a. Plugin type + definePlugin + validators                     │
-│      packages/workspace/src/plugin/{types,definePlugin,          │
-│      validators}.ts. validateAgentTool re-exports                │
-│      @boring/agent's validateTool.                               │
+│      - Extract validateTool from                                 │
+│        agent/.../pluginLoader.ts (node-leaky module) into        │
+│        @boring/agent/shared/validateTool.ts (no node imports).   │
+│        pluginLoader imports the extracted version.               │
+│      - packages/workspace/src/plugin/{types,definePlugin,        │
+│        validators}.ts. validateAgentTool re-exports from         │
+│        @boring/agent/shared. Client bundle stays node-clean.     │
 │                                                                  │
 │  2b. PluginRegistry + CatalogRegistry +                          │
 │      ChatSuggestionRegistry (subscribe-aware) +                  │
@@ -957,8 +1028,14 @@ and `createWorkspaceAgentApp.ts:42` exists.)
 │  4a. <WorkspaceProvider plugins={…}>                             │
 │      Adds plugins prop + excludeDefaults prop. Auto-registers    │
 │      defaults (running through bootstrap()); fans contributions  │
-│      into registries. Mounts <CommandPalette /> as before.       │
-│      Mounts <PluginInspector /> when import.meta.env.DEV.        │
+│      into registries. Mounts <CommandPalette /> as before, now   │
+│      consuming useCatalogs() instead of the old onOpenFile prop. │
+│      Promotes WorkspaceSurface (openFile/openPanel/closeTab)     │
+│      from internal context to the plugin contract — exposed in   │
+│      PluginMountCtx.surface. Adds package.json "./events" export │
+│      so plugins can import { events } from                       │
+│      "@boring/workspace/events". Mounts <PluginInspector /> when │
+│      import.meta.env.DEV.                                        │
 │                                                                  │
 │  4b. createWorkspaceAgentApp({ plugins })                        │
 │      Wraps createAgentApp with disableDefaultFileTools: true.    │
@@ -999,12 +1076,20 @@ and `createWorkspaceAgentApp.ts:42` exists.)
 │        gate which registered panels appear in this shell         │
 │        (default: all).                                           │
 │                                                                  │
-│  5c. WorkbenchLeftPane (and -RightPane) registry-driven          │
-│      Read 'left-tab' / 'right-tab' panels from PanelRegistry,    │
-│      sorted by tabOrder then registration order.                 │
-│      filesystemPlugin and dataCatalogPlugin contribute their     │
-│      respective tabs. excludeDefaults: ['filesystem'] truly      │
-│      removes the Files tab.                                      │
+│  5c. WorkbenchLeftPane registry-driven + SurfaceShell fallback   │
+│      fix                                                         │
+│      - Read 'left-tab' panels from PanelRegistry, sorted by      │
+│        tabOrder then registration order. filesystemPlugin and    │
+│        dataCatalogPlugin contribute their respective tabs.       │
+│        excludeDefaults: ['filesystem'] truly removes the tab.    │
+│      - Replace the hardcoded fallback chain in                   │
+│        SurfaceShell.tsx:81-108 with: registry resolve →          │
+│        registered fallback (only if has()) → EmptyFilePanel      │
+│        with explicit "No editor for <path>" message. No more     │
+│        ghost tabs when defaults are excluded.                    │
+│      - 'right-tab' placement reserved in the contract; no        │
+│        Phase 1 component consumes it (no WorkbenchRightPane      │
+│        exists today).                                            │
 │                                                                  │
 │  Deliverable: cmd palette + chat shell + workbench tabs          │
 │  entirely on the new registry. THREE breaking changes            │
@@ -1354,6 +1439,53 @@ files. New macro-style apps no longer pay the inlining tax.
   - `UNIFIED_EVENT_BUS.md` — bus model; required by Phase 1
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plan: `COMMAND_PALETTE_REGISTRY.md`
+
+## Changelog v5.1 → v5.2 (round-2 codex review patches)
+
+Round-2 codex review against v5.1 surfaced one P0, three P1s, three
+P2s. All real (verified against the live codebase). All patched.
+
+**P0** — `validateTool` lives in
+`packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`,
+which imports `node:fs/promises` / `node:path` / `node:os` /
+`node:url` at module scope. Any client-side import of the validator
+(via `definePlugin`) would pull node-only modules into a browser
+bundle. **Fix:** Step 2a now extracts `validateTool` into
+`@boring/agent/shared/validateTool.ts` (pure shape check, no node);
+pluginLoader imports the extracted version; workspace's
+`validateAgentTool` re-exports from `@boring/agent/shared`.
+
+**P1.1** — `PluginMountCtx.bridge: UiBridge` was wrong: `UiBridge`
+is the **server-side** agent UI command queue. Plugins running in
+the browser need a different action surface. **Fix:** added
+`WorkspaceSurface` interface to the contract
+(`openFile`/`openPanel`/`closeTab`); `PluginMountCtx.surface?:
+WorkspaceSurface` (client-only); `bridge?: UiBridge` (server-only,
+explicitly NOT for plugin client code). Step 4a promotes the
+existing internal surface API to the plugin contract.
+
+**P1.2** — `excludeDefaults: ['filesystem']` promise leaks ghost
+tabs because `SurfaceShell.tsx:81-108` falls back to
+literal `code-editor`/`markdown-editor`/`csv-viewer` ids regardless
+of registration. **Fix:** Step 5c fixes the resolver chain:
+registry → registered fallback (with `has()` guard) →
+`EmptyFilePanel` with an actionable "No editor for <path>" message.
+Honest contract.
+
+**P1.3** — `@boring/workspace/events` subpath isn't in the package's
+`exports` map (`packages/workspace/package.json:9-30`). **Fix:** Step
+4a adds `./events` to exports + corresponding tsup entry; events
+also re-exported from the barrel; subpath import recommended for
+tree-shaking.
+
+**P2.1** — Stale `read_directory` mention in Step 1b text. Removed.
+**P2.2** — Stale `bus.subscribe("workspace:open-file", …)` in
+factory example. Replaced with live API: `bus.on("file:moved", …)`
+plus `surface.openFile(...)` action.
+**P2.3** — Plan referenced `WorkbenchRightPane`; no such component
+exists. `'right-tab'` placement reserved in the contract but
+acknowledged as "no Phase 1 consumer" until the first plugin needs
+it.
 
 ## Changelog v5 → v5.1 (codebase-reality-check sweep)
 
