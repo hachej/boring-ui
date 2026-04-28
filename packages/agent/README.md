@@ -37,11 +37,11 @@ npx @boring/agent
 | `local` | Host machine | `bwrap` sandbox | Host-level process isolation | Safer local/server Linux deployments |
 | `vercel-sandbox` | Remote VM | Vercel Sandbox | Firecracker microVM boundary | Multi-tenant or remote isolated execution |
 
-Status: only `direct` runtime is implemented in the current scaffold. `local` and `vercel-sandbox` are planned and tracked by later beads.
+Status: all three runtimes share one tool surface. `direct` and `local` run against the host workspace; `vercel-sandbox` runs file operations and bash in the same remote sandbox.
 
 ### Mode Selection
 
-Planned auto-detect defaults:
+Default auto-detect behavior:
 
 - If Linux + `bwrap` is available: prefer `local`.
 - Otherwise: use `direct`.
@@ -52,9 +52,14 @@ Planned auto-detect defaults:
 Core runtime is split into four abstractions:
 
 - `Harness`: LLM conversation loop and streaming.
-- `Catalog`: tool registry exposed to the model.
+- `Catalog`: pi factory tools exposed to the model.
 - `Workspace`: filesystem operations (`readFile`, `writeFile`, etc).
 - `Sandbox`: command execution (`exec` and optional isolated code execution).
+
+Baseline agent tools follow pi's names, schemas, and prompt snippets:
+`bash`, `read`, `write`, `edit`, `find`, `grep`, and `ls`. Custom behavior
+is routed through pi Operations adapters or spawn hooks; custom AgentTools are
+reserved for gaps such as `execute_isolated_code` and Vercel-only grep execution.
 
 High-level wiring:
 
@@ -122,6 +127,7 @@ Both are permanent. See [docs/UI-SHADCN.md](./docs/UI-SHADCN.md) for the full gu
 - [UI-SHADCN](./docs/UI-SHADCN.md)
 - [PLUGINS](./docs/PLUGINS.md)
 - [MIGRATION](./docs/MIGRATION.md)
+- [CHANGELOG](./CHANGELOG.md)
 - [Eval framework plan](./docs/plans/AGENT_EVAL_FRAMEWORK.md)
 
 ## Eval Framework

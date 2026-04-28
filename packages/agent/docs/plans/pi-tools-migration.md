@@ -102,10 +102,10 @@ adapter waiting to happen.
 
 ### Original spec rationale was thin
 
-`agent-package-spec.md` decision #4 says: "we pass our own `tools: [...]` to
-skip pi's defaults." No further justification. Decision #6 budgeted ~200 LOC
-for tool factories and explicitly said **"Grep/find/ls done via bash;
-dedicated tools deferred."** We've drifted: 1100+ LOC across 6 tools, 5×
+`agent-package-spec.md` decision #4 originally said Boring would supply its
+own `tools: [...]` instead of pi's defaults, with no further justification.
+Decision #6 budgeted ~200 LOC for tool factories and deferred dedicated
+search/list tools to shell usage. We've drifted: 1100+ LOC across 6 tools, 5×
 budget, with search tool names shipped off-spec before the rename to `find`/`grep`.
 
 ### Pi has the Operations seam expressly for this

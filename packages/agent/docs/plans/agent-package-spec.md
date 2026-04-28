@@ -3,6 +3,13 @@
 **Status:** draft — interview-driven, architecture locked 2026-04-22
 **Path:** `boring-ui-v2/packages/agent/`
 
+> **Note (2026-Q2):** The pi-tools migration
+> (`docs/plans/pi-tools-migration.md`, epic `boring-ui-v2-uhwx`)
+> supersedes the original hand-rolled catalog design. Decisions #4 and #6
+> below are updated in place: standard tools now come from pi factories plus
+> Operations adapters, and dedicated `find`/`grep`/`ls` tools are part of the
+> baseline surface.
+
 ## Execution Tracker (2026-04-24)
 
 Use this section as the handoff ledger for ongoing plan execution.
@@ -91,7 +98,7 @@ The four Layer-1 abstractions are independent (Harness + Catalog swap freely; Wo
          ▼
   ┌──────────────┐
   │   Catalog    │  named, typed tool set visible to the LLM:
-  │   (Tools)    │  bash, read, write, edit        (4 tools, locked)
+  │   (Tools)    │  bash, read, write, edit, find, grep, ls
   └──────┬───────┘
          │ each tool binds to EITHER Workspace or Sandbox
          ▼
@@ -126,7 +133,8 @@ Two implementation layers sit side by side under the catalog because they have d
 ```ts
 const workspace = createNodeWorkspace({ root: resolveWorkspacePath(cfg.root, sessionWorkspaceId) })
 const sandbox   = createBwrapSandbox({ workspace })
-const tools     = standardCatalog({ workspace, sandbox })
+const bundle    = { workspace, sandbox }
+const tools     = [...buildHarnessAgentTools(bundle), ...buildFilesystemAgentTools(bundle)]
 const harness   = createPiCodingAgentHarness({ tools })
 ```
 
@@ -136,7 +144,8 @@ const harness   = createPiCodingAgentHarness({ tools })
 const vmHandle  = await resolveSandboxHandle(sessionWorkspaceId)    // Sandbox.get() or Sandbox.create()
 const workspace = createVercelSandboxWorkspace(vmHandle)
 const sandbox   = createVercelSandboxExec(vmHandle)                 // same handle — pairing rule
-const tools     = standardCatalog({ workspace, sandbox })
+const bundle    = { workspace, sandbox }
+const tools     = [...buildHarnessAgentTools(bundle), ...buildFilesystemAgentTools(bundle)]
 const harness   = createPiCodingAgentHarness({ tools })
 ```
 
@@ -328,37 +337,23 @@ export interface CatalogDeps {
 export type ToolCatalog = (deps: CatalogDeps) => AgentTool[]
 ```
 
-Shipped catalog (4 fs/exec + 2 UI bridge + 1 conditional isolated-code):
+Shipped runtime tool bundle (pi factories + Operations adapters + capability-gated custom tools):
 
 ```ts
-export const standardCatalog: ToolCatalog = ({ workspace, sandbox, uiBridge }) => {
-  const tools: AgentTool[] = [
-    bashTool(sandbox),                    // sandbox.exec
-    readTool(workspace),                  // workspace.readFile
-    writeTool(workspace),                 // workspace.writeFile
-    editTool(workspace),                  // workspace.readFile + writeFile
-  ]
-  if (uiBridge) {
-    tools.push(
-      getUiStateTool(uiBridge),           // uiBridge.getState
-      uiActionTool(uiBridge),             // uiBridge.postCommand({ kind, params })
-    )
-  }
-  if (sandbox.capabilities.includes('isolated-code')) {
-    tools.push(executeIsolatedCodeTool(sandbox))
-  }
-  return tools
-}
+const tools: AgentTool[] = [
+  ...buildHarnessAgentTools(bundle),      // bash, plus execute_isolated_code when supported
+  ...buildFilesystemAgentTools(bundle),   // read, write, edit, find, grep, ls
+]
 ```
 
-- **4 fs/exec tools always:** bash, read, write, edit.
+- **7 standard pi tools always:** `bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`.
+- **Operations adapters own backend behavior:** local/direct use `boundFs` and local bash ops; Vercel mode swaps in Vercel-backed Operations.
+- **Custom AgentTools stay exceptional:** `execute_isolated_code` is capability-gated; `vercelGrepTool` exists only because pi's grep Operations seam cannot redirect its `rg` spawn into the remote VM while keeping pi's name, description, and schema.
 - **2 UI bridge tools when `uiBridge` is wired** (default in v1):
   - `get_ui_state()` → returns current UI state blob
   - `exec_ui({ kind, params })` → generic dispatcher; kinds enumerated in tool description (`openFile`, `openPanel`, `showNotification`, extensible)
-- **Conditional (sandbox-capability-gated):** `execute_isolated_code` — only if sandbox declares `'isolated-code'` capability.
-- Grep/find/ls done via bash; dedicated tools deferred.
 
-**Why `exec_ui` instead of one tool per command:** smaller LLM context (6 tools vs 8), extensible without new tools (new kind values = schema enum addition), matches how the underlying bridge `POST /api/v1/ui/commands` already works. The kind enum is published on the tool's `parameters` so the LLM knows valid commands.
+**Why `exec_ui` instead of one tool per command:** one UI dispatcher keeps host integration extensible without adding a new tool for every UI action (new kind values = schema enum addition), and it matches how the underlying bridge `POST /api/v1/ui/commands` already works. The kind enum is published on the tool's `parameters` so the LLM knows valid commands.
 
 ### 3. Workspace (`src/shared/workspace.ts`)
 
@@ -463,7 +458,7 @@ Sandbox takes a `Workspace` in `init()` so exec `cwd` defaults to the workspace 
 | Abstraction | v1 ships | Reserved for future | Code we author |
 |---|---|---|---|
 | **Harness** | `PiCodingAgentHarness` (server) | `PiAgentCoreHarness` (browser), `ToolLoopAgentHarness` | Interface + 1 adapter (pi events → UIMessage stream) |
-| **Catalog** | `standardCatalog` (4 tools: bash, read, write, edit) | App-registered extras via `extraTools` / pi extensions | 4 factory fns + 4 tool renderers + 1 fallback |
+| **Catalog** | Pi factory bundle: `bash`, `read`, `write`, `edit`, `find`, `grep`, `ls` | App-registered extras via pi extensions; custom AgentTools only when pi has no equivalent or cannot accommodate the backend | Operations adapters + harness/filesystem bundle factories + renderers + fallback |
 | **Workspace** | **2 adapters: `NodeWorkspace` (local host fs) + `VercelSandboxWorkspace` (remote VM)** — single workspace per instance. `NodeWorkspace` is shared by `direct` and `local` modes. | `OpfsWorkspace`/`LightningFsWorkspace` (browser), `CloudflareSandboxWorkspace` | Interface + 2 adapters + path helpers |
 | **Sandbox** | **3 adapters: `DirectSandbox` (no isolation) + `BwrapSandbox` (Linux process isolation) + `VercelSandboxExec` (Firecracker VM)** — all declare `capabilities: ['exec']` | `VercelIsolatedCode` / `BoxliteSandbox` (add `'isolated-code'` capability), `JustBashSandbox` (browser) | Interface + capabilities + 3 adapters |
 | **Mode** | `direct` / `local` / `vercel-sandbox` — each a self-contained `RuntimeModeAdapter` under `src/server/runtime/modes/`. `resolveMode(mode)` produces a `RuntimeBundle` ({ workspace, sandbox, fileSearch }). Pairing invariant enforced by construction. | Multi-workspace provisioning owned by future `@boring/cloud` | `[runtime].mode` config + factory |
@@ -487,7 +482,8 @@ Sandbox takes a `Workspace` in `init()` so exec `cwd` defaults to the workspace 
 | **CLI entrypoint** (`bin/boring-agent` — flag parser, API-key prompt, port picker, browser-open, server boot) | ~200 |
 | `AgentHarness`, `Workspace`, `Sandbox`, `AgentTool`, `ToolCatalog` interfaces | ~150 |
 | Pi → UIMessage stream adapter | ~150 |
-| 4 tool factories (bash → sandbox; read/write/edit → workspace) | ~200 |
+| Operations adapters (bash + 6 file ops, mode-specific) + bundle factories | ~250 |
+| Custom tools (`vercelGrepTool`, `executeIsolatedCodeTool`) | ~250 |
 | Tool rendering — ai-elements `Tool` + `Terminal` + `CodeBlock` by default (no DiffView in v1) | ~60 |
 | `NodeWorkspace` + ported path helpers | ~200 |
 | `DirectSandbox` adapter | ~40 |
@@ -512,7 +508,7 @@ Sandbox takes a `Workspace` in `init()` so exec `cwd` defaults to the workspace 
 | `/api/v1/agent/sessions/:id/changes` + tracker | ~80 |
 | Snapshot retention (keep-last-2 policy) | ~15 |
 | CLI SSH detection + auto-gitignore + logout flags | ~30 |
-| **Total** | **≈ 3,070 LOC** |
+| **Total** | **≈ 3,370 LOC** |
 
 ---
 
@@ -538,7 +534,7 @@ packages/agent/
     │   ├── workspace.ts              (Workspace interface — platform-agnostic)
     │   ├── sandbox.ts                (Sandbox interface — exec only)
     │   ├── tool.ts                   (AgentTool interface)
-    │   ├── catalog.ts                (ToolCatalog, standardCatalog)
+    │   ├── catalog.ts                (ToolCatalog type + deps only)
     │   ├── session.ts                (SessionStore interface + types)
     │   ├── sandbox-handle-store.ts   (SandboxHandleStore interface — file default, swappable for DB)
     │   ├── ui-bridge.ts              (UiBridge interface: state KV + command queue)
@@ -578,26 +574,38 @@ packages/agent/
     │   │   └── vercel-sandbox/            (pairs with VercelSandboxWorkspace)
     │   │       └── createVercelSandboxExec.ts
     │   ├── catalog/
-    │   │   ├── bashTool.ts                (calls sandbox.exec)
-    │   │   ├── readTool.ts                (calls workspace.readFile)
-    │   │   ├── writeTool.ts               (calls workspace.writeFile)
-    │   │   ├── editTool.ts                (workspace.readFile + writeFile)
-    │   │   ├── getUiStateTool.ts          (reads from UiBridge.getState)
-    │   │   └── uiActionTool.ts            (generic dispatcher → UiBridge.postCommand)
+    │   │   ├── mergeTools.ts              (host/custom tool merge + name collision guard)
+    │   │   └── tools/_shared.ts           (shared helpers retained for migration/test coverage)
+    │   ├── tools/
+    │   │   ├── harness/index.ts           (buildHarnessAgentTools: pi bash + isolated-code)
+    │   │   ├── filesystem/index.ts        (buildFilesystemAgentTools: pi read/write/edit/find/grep/ls)
+    │   │   ├── operations/
+    │   │   │   ├── bound.ts               (path-bounded local/direct fs Operations)
+    │   │   │   └── vercel.ts              (Vercel Sandbox-backed fs/bash Operations)
+    │   │   └── vercelGrepTool.ts          (custom AgentTool preserving pi grep schema)
     │   ├── ui-bridge/
     │   │   ├── createInMemoryBridge.ts    (in-memory UiBridge impl)
     │   │   └── sseCommandStream.ts        (SSE fan-out helper)
-    │   ├── routes/
-    │   │   ├── file.ts                    (GET/POST/DELETE /api/v1/files, /api/v1/stat, POST /api/v1/files/move, POST /api/v1/dirs)
-    │   │   ├── tree.ts                    (GET /api/v1/tree — lazy recursive listing)
-    │   │   ├── search.ts                  (GET /api/v1/files/search — filename glob)
-    │   │   ├── ui.ts                      (GET/PUT /api/v1/ui/state, POST /api/v1/ui/commands, SSE /api/v1/ui/commands/next)
-    │   │   /* NOTE: no /api/v1/git/* in v1 — no UI consumer yet; agent runs git via bash */
-    │   │   ├── chat.ts                    (POST /api/v1/agent/chat)
-    │   │   ├── sessions.ts                (GET/POST /api/v1/agent/sessions — within the single configured workspace)
-    │   │   └── index.ts                   (registerAgentRoutes)
-    │   │   /* NOTE: no /api/v1/workspaces — multi-workspace is cloud-package territory */
-    │   └── config.ts                      (env parse + mode selector)
+    │   ├── http/
+    │   │   └── routes/
+    │   │       ├── file.ts                (GET/POST/DELETE /api/v1/files, /api/v1/stat, POST /api/v1/files/move, POST /api/v1/dirs)
+    │   │       ├── tree.ts                (GET /api/v1/tree — lazy recursive listing)
+    │   │       ├── search.ts              (GET /api/v1/files/search — filename glob)
+    │   │       ├── chat.ts                (POST /api/v1/agent/chat)
+    │   │       ├── sessions.ts            (GET/POST /api/v1/agent/sessions — within the single configured workspace)
+    │   │       ├── sessionChanges.ts      (GET /api/v1/agent/sessions/:id/changes)
+    │   │       ├── catalog.ts             (registered tool metadata)
+    │   │       ├── fsEvents.ts
+    │   │       ├── health.ts
+    │   │       ├── models.ts
+    │   │       ├── readyStatus.ts
+    │   │       └── systemPrompt.ts
+    │   │       /* NOTE: no /api/v1/git/* in v1 — no UI consumer yet; agent runs git via bash */
+    │   │       /* NOTE: no /api/v1/workspaces — multi-workspace is cloud-package territory */
+    │   └── config/
+    │       ├── env.ts
+    │       ├── loadEnv.ts
+    │       └── workspaceRoot.ts
     └── front/
         ├── index.ts
         ├── ChatPanel.tsx                  (default chat — ready to mount; full-height, includes session toolbar + composer)
@@ -628,9 +636,9 @@ packages/agent/
 | 1 | Standalone shape | **CLI — ships as `bin` entry (`npx @boring/agent`)**. Local backend + browser, zero setup, default `direct` mode, workspace = cwd. | Primary product deliverable, same shape as Claude Code. Directly runnable by end users. |
 | 2 | Chat UI | Vercel `ai-elements` + `@ai-sdk/react useChat` | Prebuilt, shadcn-style (we own the copies), restylable via CSS vars. |
 | 3 | Wire protocol | AI SDK UIMessage stream end-to-end | One format on the wire; harness adapts on the server. |
-| 4 | v1 harness | `@mariozechner/pi-coding-agent` | Ships loop + plugin API; we pass our own `tools: [...]` to skip pi's defaults. |
+| 4 | v1 harness | `@mariozechner/pi-coding-agent` | Pi's factory tools + `XxxOperations` adapters per mode. Our backends plug in via Operations; pi owns tool definitions, schemas, and prompt snippets. See `pi-tools-migration.md` (epic uhwx). |
 | 5 | Harness interface | Generic, `placement: server \| browser` | Browser-agent future is a sibling harness, not a migration. |
-| 6 | Catalog | 4 base tools: `bash, read, write, edit`. +1 conditional `execute_isolated_code` if sandbox declares `'isolated-code'` capability. | Minimal baseline; richer sandboxes automatically get nao-style per-call packages without code changes elsewhere. |
+| 6 | Catalog | Standard tools via pi factories: `bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`. Custom tools: `execute_isolated_code` (capability-gated) and `vercelGrepTool` (Vercel-only grep execution while preserving pi schema). | Principle 1 keeps pi names/schemas/prompt snippets intact; Principle 2 routes backend behavior through Operations or spawn hooks; Principle 3 keeps custom AgentTools exceptional. |
 | 7a | Workspace (local) | `NodeWorkspace` (Node fs + path-boundary enforcement) | Port `validatePath` / `assertRealPathWithinWorkspace` from existing boring-ui. |
 | 7b | Workspace (remote) | `VercelSandboxWorkspace` — delegates fs ops to `sandbox.fs.*` / `sandbox.writeFiles` | Runs backend on any PaaS; files live in Firecracker VM; multi-tenant-safe. |
 | 7c | Sandbox (local) | `BwrapSandbox` (`capabilities: ['exec']`) pairs with `NodeWorkspace` | Matches current boring-ui. Bash runs in bwrap, sees host workspace dir. |
@@ -1284,7 +1292,7 @@ Agent internals call `store.get/set/delete` — the adapter is the swap point. A
 
 ### What's shared across modes
 
-- All 4 tools in `standardCatalog` (bash, read, write, edit) — bound to the right adapter pair
+- All 7 standard pi tools (`bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`) — bound to the right adapter pair through Operations/spawn hooks
 - All HTTP endpoints (`/api/v1/files`, `/api/v1/tree`, `/api/v1/stat`, `/api/v1/agent/chat`, ...)
 - Chat UI, session handling, theme, primitives — totally mode-unaware
 - Plugin ecosystem (pi-coding-agent's extension system)
@@ -1324,7 +1332,7 @@ Smallest end-to-end thing where you type a message in the standalone app, agent 
 - [x] `createDirectSandbox()` — `child_process.spawn` wrapper with `cwd = workspace.root`. ~175 LOC with process management.
 - [x] `createBwrapSandbox()` — `exec` wraps `bwrap --bind ${workspace.root} /workspace --chdir /workspace bash -c …`.
 - [x] `resolveMode(mode)` factory: auto-detect Linux+bwrap → `local`, else → `direct`. `vercel-sandbox` opt-in. Each mode module in `src/server/runtime/modes/*.ts` is self-contained.
-- [x] Catalog (4+2 tools): `bashTool(sandbox)`, `readTool(workspace)`, `writeTool(workspace)`, `editTool(workspace)` + `findFilesTool`, `grepFilesTool`.
+- [x] Catalog: pi factory tools `bash`, `read`, `write`, `edit`, `find`, `grep`, `ls` via `buildHarnessAgentTools()` and `buildFilesystemAgentTools()`, plus host/UI tools where provided.
 - [x] `createPiCodingAgentHarness()` — wraps `createAgentSession({ tools })`, in-memory session manager.
 - [x] Pi → UIMessage stream adapter (text-delta, tool-input-*, tool-output-available, finish).
 - [x] Fastify routes (versioned, `/api/v1/*`):
@@ -1370,7 +1378,7 @@ Load-bearing contracts that must be reliable before polish. If these aren't soli
   - `GET/PUT /api/v1/ui/state` — opaque state KV keyed by workspaceId
   - `POST /api/v1/ui/commands` — agent posts UI command with seq numbering
   - `GET /api/v1/ui/commands/next` (SSE) — workspace subscribes to command stream (poll=true variant also supported)
-  - Agent tools `get_ui_state` + `exec_ui` wired into `standardCatalog` when `uiBridge` is provided
+  - Agent tools `get_ui_state` + `exec_ui` wired as host-provided tools when `uiBridge` is provided
 - [x] `copyTemplate()` — sync template copy on workspace create. `createAgentApp({ templatePath })` + `BORING_AGENT_TEMPLATE_PATH` env fallback. Idempotency via `.boring-agent/provisioned` marker.
 
 **Gate:** session CRUD + resume + UI bridge are reliable in both modes. Reliability bar > polish bar for this milestone.
