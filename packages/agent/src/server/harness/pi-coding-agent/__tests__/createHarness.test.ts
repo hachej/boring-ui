@@ -36,11 +36,26 @@ describe("adaptToolsForPi", () => {
     expect(adapted[0].name).toBe("noop");
     expect(adapted[0].label).toBe("noop");
     expect(adapted[0].description).toBe("Does nothing, returns ok");
+    expect(adapted[0].promptSnippet).toBe("Does nothing, returns ok");
+    expect(adapted[0].promptGuidelines).toBeUndefined();
 
     const piBuiltIns = ["bash", "read", "write", "edit", "find", "grep", "ls"];
     for (const name of piBuiltIns) {
       expect(adapted.find((t) => t.name === name)).toBeUndefined();
     }
+  });
+
+  it("preserves explicit prompt snippets without decorating them", () => {
+    const [adapted] = adaptToolsForPi([
+      {
+        ...noopTool,
+        promptSnippet: "No-op custom tool",
+      },
+    ]);
+
+    expect(adapted.promptSnippet).toBe("No-op custom tool");
+    expect(adapted.promptSnippet).not.toMatch(/^- `noop`/);
+    expect(adapted.promptGuidelines).toBeUndefined();
   });
 
   it("execute adapter bridges correctly", async () => {

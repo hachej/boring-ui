@@ -1,5 +1,5 @@
 import {
-  createGrepTool,
+  createGrepToolDefinition,
   formatSize,
   truncateHead,
   truncateLine,
@@ -11,7 +11,7 @@ import type { Sandbox } from '../../shared/sandbox'
 import type { AgentTool, ToolExecContext, ToolResult } from '../../shared/tool'
 import { bytesWritten, decode, makeError } from '../catalog/tools/_shared'
 
-const PI_GREP_TOOL = createGrepTool('/')
+const PI_GREP_TOOL = createGrepToolDefinition('/')
 const DEFAULT_LIMIT = 100
 const GREP_MAX_LINE_LENGTH = 500
 const GREP_TIMEOUT_MS = 30_000
@@ -179,6 +179,7 @@ export function vercelGrepTool(sandbox: Sandbox): AgentTool {
   return {
     name: PI_GREP_TOOL.name,
     description: PI_GREP_TOOL.description,
+    promptSnippet: PI_GREP_TOOL.promptSnippet,
     parameters: PI_GREP_TOOL.parameters as Record<string, unknown>,
     async execute(input, ctx: ToolExecContext): Promise<ToolResult> {
       const params = input as Record<string, unknown>

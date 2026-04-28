@@ -7,17 +7,7 @@ export function adaptToolForPi(tool: AgentTool): ToolDefinition {
     label: tool.name,
     description: tool.description,
     parameters: tool.parameters as any,
-    // promptSnippet + promptGuidelines are what make custom tools visible
-    // in pi's default system prompt. Without at least one of these, pi
-    // skips the tool in the "Available tools" section and the model has
-    // no idea the tool exists — it answers as if it can't call anything
-    // and suggests running commands manually. We surface a minimal
-    // snippet derived from the description so any consumer-supplied
-    // AgentTool is announced to the model automatically.
-    promptSnippet: `- \`${tool.name}\` — ${tool.description}`,
-    promptGuidelines: [
-      `Prefer the \`${tool.name}\` tool when the user asks for something it can do instead of writing instructions.`,
-    ],
+    promptSnippet: tool.promptSnippet ?? tool.description,
     async execute(toolCallId, params, signal, onUpdate, _ctx) {
       const result = await tool.execute(params as Record<string, unknown>, {
         toolCallId,

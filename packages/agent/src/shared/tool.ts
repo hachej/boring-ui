@@ -3,6 +3,8 @@ export type JSONSchema = Record<string, unknown>
 export interface AgentTool {
   name: string
   description: string
+  /** Optional one-line prompt entry. Pi-built tools should preserve pi's snippet verbatim. */
+  promptSnippet?: string
   parameters: JSONSchema
   execute(
     params: Record<string, unknown>,

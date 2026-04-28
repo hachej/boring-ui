@@ -1,10 +1,10 @@
 import {
-  createEditTool,
-  createFindTool,
-  createGrepTool,
-  createLsTool,
-  createReadTool,
-  createWriteTool,
+  createEditToolDefinition,
+  createFindToolDefinition,
+  createGrepToolDefinition,
+  createLsToolDefinition,
+  createReadToolDefinition,
+  createWriteToolDefinition,
 } from '@mariozechner/pi-coding-agent'
 
 import type { AgentTool } from '../../../shared/tool'
@@ -27,12 +27,14 @@ interface PiToolResultLike {
 interface PiToolLike<TParams extends Record<string, unknown>> {
   name: string
   description: string
+  promptSnippet?: string
   parameters: unknown
   execute(
     toolCallId: string,
     params: TParams,
-    signal?: AbortSignal,
-    onUpdate?: (update: PiToolResultLike) => void,
+    signal: AbortSignal | undefined,
+    onUpdate: ((update: PiToolResultLike) => void) | undefined,
+    ctx: unknown,
   ): Promise<PiToolResultLike>
 }
 
@@ -48,6 +50,7 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
   return {
     name: piTool.name,
     description: piTool.description,
+    promptSnippet: piTool.promptSnippet,
     parameters: piTool.parameters as Record<string, unknown>,
     async execute(params, ctx) {
       const result = await piTool.execute(
@@ -63,6 +66,7 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
               if (text) ctx.onUpdate?.(text)
             }
           : undefined,
+        {},
       )
       const textContent = (result.content ?? [])
         .filter(isTextContent)
@@ -81,22 +85,22 @@ export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
 
   if (bundle.sandbox.provider === 'vercel-sandbox') {
     return [
-      adaptPiTool(createReadTool(cwd, { operations: vercelReadOps(bundle.workspace) })),
-      adaptPiTool(createWriteTool(cwd, { operations: vercelWriteOps(bundle.workspace) })),
-      adaptPiTool(createEditTool(cwd, { operations: vercelEditOps(bundle.workspace) })),
-      adaptPiTool(createFindTool(cwd, { operations: vercelFindOps(bundle.sandbox) })),
+      adaptPiTool(createReadToolDefinition(cwd, { operations: vercelReadOps(bundle.workspace) })),
+      adaptPiTool(createWriteToolDefinition(cwd, { operations: vercelWriteOps(bundle.workspace) })),
+      adaptPiTool(createEditToolDefinition(cwd, { operations: vercelEditOps(bundle.workspace) })),
+      adaptPiTool(createFindToolDefinition(cwd, { operations: vercelFindOps(bundle.sandbox) })),
       vercelGrepTool(bundle.sandbox),
-      adaptPiTool(createLsTool(cwd, { operations: vercelLsOps(bundle.workspace) })),
+      adaptPiTool(createLsToolDefinition(cwd, { operations: vercelLsOps(bundle.workspace) })),
     ]
   }
 
   const ops = boundFs(cwd)
   return [
-    adaptPiTool(createReadTool(cwd, { operations: ops.read })),
-    adaptPiTool(createWriteTool(cwd, { operations: ops.write })),
-    adaptPiTool(createEditTool(cwd, { operations: ops.edit })),
-    adaptPiTool(createFindTool(cwd)),
-    adaptPiTool(createGrepTool(cwd)),
-    adaptPiTool(createLsTool(cwd, { operations: ops.ls })),
+    adaptPiTool(createReadToolDefinition(cwd, { operations: ops.read })),
+    adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),
+    adaptPiTool(createEditToolDefinition(cwd, { operations: ops.edit })),
+    adaptPiTool(createFindToolDefinition(cwd)),
+    adaptPiTool(createGrepToolDefinition(cwd)),
+    adaptPiTool(createLsToolDefinition(cwd, { operations: ops.ls })),
   ]
 }

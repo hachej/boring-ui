@@ -15,16 +15,27 @@ const MODE = 'vercel-sandbox' as const
 
 function getSecret(field: string, path: string): string | undefined {
   try {
-    return execSync(`vault kv get -field=${field} ${path}`, { encoding: 'utf8', timeout: 5000 }).trim() || undefined
+    const value = execSync(`vault kv get -field=${field} ${path}`, {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    if (!value || value.includes('not present in secret')) return undefined
+    return value
   } catch { return undefined }
+}
+
+function isJwt(value: string | undefined): value is string {
+  return typeof value === 'string' && value.split('.').length === 3
 }
 
 function ensureEnv() {
   if (!process.env.ANTHROPIC_API_KEY) {
     process.env.ANTHROPIC_API_KEY = getSecret('api_key', 'secret/agent/anthropic')
   }
-  if (!process.env.VERCEL_TOKEN) {
-    process.env.VERCEL_TOKEN = getSecret('token', 'secret/agent/vercel')
+  if (!process.env.VERCEL_OIDC_TOKEN) {
+    const oidcToken = getSecret('oidc_token', 'secret/agent/vercel')
+    if (isJwt(oidcToken)) process.env.VERCEL_OIDC_TOKEN = oidcToken
   }
   if (!process.env.VERCEL_TEAM_ID) {
     process.env.VERCEL_TEAM_ID = getSecret('team_id', 'secret/agent/vercel')
@@ -99,8 +110,8 @@ function parseSseStream(body: string): ParsedStream {
 async function main() {
   ensureEnv()
 
-  if (!process.env.ANTHROPIC_API_KEY || !process.env.VERCEL_TOKEN) {
-    console.log('[smoke-vercel-sandbox] Missing credentials — skipping')
+  if (!process.env.ANTHROPIC_API_KEY || !isJwt(process.env.VERCEL_OIDC_TOKEN) || !process.env.VERCEL_TEAM_ID) {
+    console.log('[smoke-vercel-sandbox] Missing ANTHROPIC_API_KEY / VERCEL_OIDC_TOKEN / VERCEL_TEAM_ID — skipping')
     process.exit(0)
   }
 

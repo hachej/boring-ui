@@ -6,6 +6,7 @@ test('AgentTool contract', () => {
   expectTypeOf<AgentTool>().toEqualTypeOf<{
     name: string
     description: string
+    promptSnippet?: string
     parameters: JSONSchema
     execute: (
       params: Record<string, unknown>,

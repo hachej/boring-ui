@@ -6,10 +6,11 @@ import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { standardCatalog } from './catalog/standardCatalog'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
+import { buildFilesystemAgentTools } from './tools/filesystem'
+import { buildHarnessAgentTools } from './tools/harness'
 import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
@@ -89,7 +90,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
   // to @boring/workspace. Hosts that want them register
   // workspaceUiPlugin alongside this plugin.
-  const standardTools = standardCatalog(runtimeBundle)
+  const standardTools = [
+    ...buildHarnessAgentTools(runtimeBundle),
+    ...buildFilesystemAgentTools(runtimeBundle),
+  ]
   const pluginTools: PluginToolRegistration[] = []
 
   if (resolvedMode !== 'vercel-sandbox') {

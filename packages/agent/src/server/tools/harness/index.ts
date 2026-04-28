@@ -1,7 +1,7 @@
 import {
   type BashSpawnHook,
   type BashToolOptions,
-  createBashTool,
+  createBashToolDefinition,
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
 
@@ -38,10 +38,11 @@ function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
   }
 }
 
-function adaptPiTool(piTool: ReturnType<typeof createBashTool>): AgentTool {
+function adaptPiTool(piTool: ReturnType<typeof createBashToolDefinition>): AgentTool {
   return {
     name: piTool.name,
     description: piTool.description,
+    promptSnippet: piTool.promptSnippet,
     parameters: piTool.parameters as Record<string, unknown>,
     async execute(params, ctx) {
       const result = await piTool.execute(
@@ -57,6 +58,7 @@ function adaptPiTool(piTool: ReturnType<typeof createBashTool>): AgentTool {
               ctx.onUpdate!(text)
             }
           : undefined,
+        {} as never,
       )
       const textContent = (result.content ?? [])
         .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
@@ -136,7 +138,7 @@ function createExecuteIsolatedCodeTool(sandbox: Sandbox): AgentTool {
 
 export function buildHarnessAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const tools: AgentTool[] = [
-    adaptPiTool(createBashTool(bundle.workspace.root, bashOptionsForMode(bundle))),
+    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle))),
   ]
 
   if (bundle.sandbox.capabilities.includes('isolated-code')) {

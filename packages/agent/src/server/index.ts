@@ -6,7 +6,6 @@ export { resolveSandboxHandle } from './sandbox/vercel-sandbox/resolveSandboxHan
 export { createNodeWorkspace } from './workspace/createNodeWorkspace'
 export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
-export { standardCatalog } from './catalog/standardCatalog'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
 export { registerAgentRoutes } from './registerAgentRoutes'

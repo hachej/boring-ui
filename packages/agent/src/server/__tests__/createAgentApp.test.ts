@@ -149,7 +149,7 @@ test('extraTools appear in catalog endpoint', async () => {
   await app.close()
 })
 
-test('extraTools are appended after standardCatalog', async () => {
+test('extraTools are appended after bundle tools', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-extra-tools-order-')
 
   const customTool = {
