@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsup && vite build && node ./scripts/assert-build-artifacts.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "lint": "pnpm run typecheck"
@@ -98,7 +98,6 @@
     "react-arborist": "^3.4.0",
     "tailwind-merge": "^2.0.0",
     "tiptap-markdown": "^0.9.0",
-    "zod": "^3.23.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -117,6 +116,7 @@
     "react-dom": "^19.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.4.0",
+    "tsup": "^8.0.0",
     "vite": "^6.0.0",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^2.0.0"
