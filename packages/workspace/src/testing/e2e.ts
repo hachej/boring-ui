@@ -19,7 +19,7 @@ import type { Page } from "@playwright/test"
 
 export interface BootCleanOptions {
   /**
-   * Storage prefix used by `<ChatCenteredShell storageKey={...}>`. The
+   * Storage prefix used by declarative chat shells. The
    * bootClean default is to pre-seed `${shellKey}:surface=1` so the
    * workbench mounts at boot — required for any test that posts an
    * openPanel via the bridge (the dispatcher early-returns when no

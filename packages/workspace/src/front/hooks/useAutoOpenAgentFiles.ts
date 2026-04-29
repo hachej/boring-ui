@@ -9,7 +9,7 @@
  *
  * The full pipeline:
  *   agent SSE `data-file-changed` chunks
- *     → ChatCenteredShell forwards to emitAgentFileChange
+ *     → ChatPanelHost forwards to emitAgentFileChange
  *     → workspace event bus emits `file:created` (origin:"agent")
  *     → THIS hook calls onOpen(path)
  *     → host opens the file (typically via SurfaceShellApi.openFile)

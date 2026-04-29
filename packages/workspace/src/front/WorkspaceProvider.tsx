@@ -513,7 +513,7 @@ export function WorkspaceProvider({
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
           {/*
-           * Mount the data layer here so ChatCenteredShell/FileTreeView/etc.
+           * Mount the data layer here so chat/workbench chrome, FileTreeView, etc.
            * work without hosts wrapping a second DataProvider. Hosts that DO
            * mount their own (legacy) get nested providers — inner wins, no
            * functional difference; just an extra wasted QueryClient.

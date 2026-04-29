@@ -8,10 +8,10 @@ import { bootClean, openWorkbench } from "./helpers"
  * `storageKey="boring-macro:shell"` so the keys are
  * `boring-macro:shell:surface:sidebarCollapsed` etc.
  *
- * Pre-fix: ChatCenteredShell only forwarded `storageKey` for its OWN
+ * Pre-fix: legacy shell only forwarded `storageKey` for its OWN
  * drawer/surface widths and never passed a key down to SurfaceShell, so
- * SurfaceShell's persistence code was a no-op. Now ChatCenteredShell
- * auto-derives `surfaceStorageKey` as `${storageKey}:surface`.
+ * SurfaceShell's persistence code was a no-op. Declarative apps now pass
+ * `SurfaceShell.storageKey` as `${storageKey}:surface`.
  */
 
 const SHELL_KEY = "boring-macro:shell"

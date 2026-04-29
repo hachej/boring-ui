@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import { ChatPanel } from "@boring/agent"
 import {
   WorkspaceProvider,
   ChatLayout,
-  ChatShellContext,
   CodeEditorPane,
   EmptyPane,
   TopBar,
   definePanel,
   useCommandRegistry,
   useRegistry,
-  type ChatShellContextValue,
   type PanelConfig,
   type SurfaceShellApi,
   type SurfaceShellSnapshot,
@@ -54,10 +52,8 @@ function Shell() {
   const surfaceSnapshotRef = useRef<SurfaceShellSnapshot>({ openTabs: [], activeTab: null })
   const drawerOpenRef = useRef(true)
   const surfaceOpenRef = useRef(true)
+  const surfaceRef = useRef<SurfaceShellApi | null>(null)
   const pushAbortRef = useRef<AbortController | null>(null)
-  const [drawerOpen, setDrawerOpenState] = useState(true)
-  const [surfaceOpen, setSurfaceOpenState] = useState(true)
-  const [surface, setSurface] = useState<SurfaceShellApi | null>(null)
 
   useEffect(() => {
     if (!showcase) return
@@ -115,7 +111,7 @@ function Shell() {
   const handleSurfaceReady = useCallback(
     (api: SurfaceShellApi) => {
       surfaceSnapshotRef.current = api.getSnapshot()
-      setSurface(api)
+      surfaceRef.current = api
       pushUiState()
     },
     [pushUiState],
@@ -132,7 +128,6 @@ function Shell() {
   const setDrawerOpen = useCallback(
     (open: boolean) => {
       drawerOpenRef.current = open
-      setDrawerOpenState(open)
       pushUiState()
     },
     [pushUiState],
@@ -141,19 +136,14 @@ function Shell() {
   const setSurfaceOpen = useCallback(
     (open: boolean) => {
       surfaceOpenRef.current = open
-      setSurfaceOpenState(open)
       pushUiState()
     },
     [pushUiState],
   )
 
-  const toggleDrawer = useCallback(() => {
-    setDrawerOpen(!drawerOpenRef.current)
-  }, [setDrawerOpen])
-
-  const toggleSurface = useCallback(() => {
-    setSurfaceOpen(!surfaceOpenRef.current)
-  }, [setSurfaceOpen])
+  const getSurface = useCallback(() => surfaceRef.current, [])
+  const isWorkbenchOpen = useCallback(() => surfaceOpenRef.current, [])
+  const openWorkbench = useCallback(() => setSurfaceOpen(true), [setSurfaceOpen])
 
   useEffect(() => {
     commandRegistry.unregisterByPluginId(playgroundCommandScope)
@@ -191,69 +181,51 @@ function Shell() {
     )
   }, [])
 
-  const chatShell = useMemo<ChatShellContextValue>(
-    () => ({
-      drawerOpen,
-      setDrawerOpen,
-      toggleDrawer,
-      surfaceOpen,
-      setSurfaceOpen,
-      toggleSurface,
-      onNewChat: sessionsStore.create,
-      surface,
-    }),
-    [
-      drawerOpen,
-      setDrawerOpen,
-      toggleDrawer,
-      surfaceOpen,
-      setSurfaceOpen,
-      toggleSurface,
-      surface,
-    ],
-  )
-
   return (
-    <ChatShellContext.Provider value={chatShell}>
-      <div className="flex h-full min-h-0 flex-col">
-        <TopBar
-          appTitle="Boring"
-          sessionTitle={activeSession?.title}
-          onCommandPalette={openCommandPalette}
+    <div className="flex h-full min-h-0 flex-col">
+      <TopBar
+        appTitle="Boring"
+        sessionTitle={activeSession?.title}
+        onCommandPalette={openCommandPalette}
+        onNewChat={sessionsStore.create}
+      />
+      <div className="min-h-0 flex-1">
+        <ChatLayout
+          nav="session-list"
+          navParams={{
+            sessions: sessionList,
+            activeId,
+            onSwitch: sessionsStore.switchTo,
+            onCreate: sessionsStore.create,
+            onDelete: sessionsStore.remove,
+            onClose: () => setDrawerOpen(false),
+          }}
+          center={activeId ? "chat" : "empty"}
+          centerParams={
+            activeId
+              ? {
+                  sessionId: activeId,
+                  chrome: false,
+                  className: "h-full min-h-0",
+                  getSurface,
+                  isWorkbenchOpen,
+                  openWorkbench,
+                }
+              : undefined
+          }
+          sidebar="workbench-left"
+          surface="artifact-surface"
+          surfaceParams={{
+            storageKey: `${layoutStorageKey}:surface`,
+            extraPanels: ["csv-viewer"],
+            onReady: handleSurfaceReady,
+            onChange: handleSurfaceChange,
+            onClose: () => setSurfaceOpen(false),
+          }}
+          className="h-full"
         />
-        <div className="min-h-0 flex-1">
-          <ChatLayout
-            nav="session-list"
-            navParams={{
-              sessions: sessionList,
-              activeId,
-              onSwitch: sessionsStore.switchTo,
-              onCreate: sessionsStore.create,
-              onDelete: sessionsStore.remove,
-            }}
-            center={activeId ? "chat" : "empty"}
-            centerParams={
-              activeId
-                ? {
-                    sessionId: activeId,
-                    chrome: false,
-                    className: "h-full min-h-0",
-                  }
-                : undefined
-            }
-            sidebar="workbench-left"
-            surface="artifact-surface"
-            surfaceParams={{
-              storageKey: `${layoutStorageKey}:surface`,
-              extraPanels: ["csv-viewer"],
-              onReady: handleSurfaceReady,
-              onChange: handleSurfaceChange,
-            }}
-            className="h-full"
-          />
-        </div>
       </div>
-    </ChatShellContext.Provider>
+    </div>
   )
 }
 

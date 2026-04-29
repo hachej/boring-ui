@@ -1,45 +1,55 @@
 "use client"
 
-import { useCallback, useContext, useEffect, useRef } from "react"
+import { useCallback, useEffect } from "react"
 import type { ChatPanelProps } from "@boring/agent"
 import { useWorkspaceChatPanel } from "../../WorkspaceProvider"
-import { ChatShellContext } from "../../components/chat/context"
 import { emitAgentFileChange } from "../../events"
 import { useAutoOpenAgentFiles } from "../../hooks/useAutoOpenAgentFiles"
 import { startUiCommandStream } from "../../bridge/uiCommandStream"
+import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
 
-export function ChatPanelHost(props: ChatPanelProps) {
+export interface ChatPanelHostShellProps {
+  getSurface?: () => SurfaceShellApi | null
+  isWorkbenchOpen?: () => boolean
+  openWorkbench?: () => void
+}
+
+export type ChatPanelHostProps = ChatPanelProps & ChatPanelHostShellProps
+
+export function ChatPanelHost(props: ChatPanelHostProps) {
   const ChatPanelImpl = useWorkspaceChatPanel()
-  const shell = useContext(ChatShellContext)
-  const shellRef = useRef(shell)
-  shellRef.current = shell
+  const {
+    getSurface,
+    isWorkbenchOpen,
+    openWorkbench,
+    ...chatPanelProps
+  } = props
 
   const openArtifact = useCallback(
     (path: string) => {
-      const current = shellRef.current
-      if (current) {
-        if (!current.surfaceOpen) current.setSurfaceOpen(true)
-        const open = () => shellRef.current?.surface?.openFile(path)
-        if (current.surface) open()
+      if (getSurface && openWorkbench) {
+        if (!isWorkbenchOpen?.()) openWorkbench()
+        const open = () => getSurface()?.openFile(path)
+        if (getSurface()) open()
         else requestAnimationFrame(() => requestAnimationFrame(open))
       }
       props.onOpenArtifact?.(path)
     },
-    [props.onOpenArtifact],
+    [getSurface, isWorkbenchOpen, openWorkbench, props.onOpenArtifact],
   )
 
   useAutoOpenAgentFiles(openArtifact)
 
   useEffect(() => {
-    if (!shellRef.current) return
+    if (!getSurface || !isWorkbenchOpen || !openWorkbench) return
     return startUiCommandStream({
       ctx: {
-        surface: () => shellRef.current?.surface ?? null,
-        isWorkbenchOpen: () => shellRef.current?.surfaceOpen ?? false,
-        openWorkbench: () => shellRef.current?.setSurfaceOpen(true),
+        surface: getSurface,
+        isWorkbenchOpen,
+        openWorkbench,
       },
     })
-  }, [])
+  }, [getSurface, isWorkbenchOpen, openWorkbench])
 
   const handleData = useCallback(
     (part: unknown) => {
@@ -51,7 +61,7 @@ export function ChatPanelHost(props: ChatPanelProps) {
 
   return (
     <ChatPanelImpl
-      {...props}
+      {...chatPanelProps}
       onOpenArtifact={openArtifact}
       onData={handleData}
     />

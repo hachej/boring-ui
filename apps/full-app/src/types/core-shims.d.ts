@@ -3,6 +3,7 @@ declare module '@boring/core/front' {
   export const ThemeToggle: any
   export const UserMenu: any
   export const WorkspaceSwitcher: any
+  export const useCurrentWorkspace: any
 }
 
 declare module '@boring/core/server' {
@@ -11,6 +12,7 @@ declare module '@boring/core/server' {
   export const createAuth: any
   export const createCoreApp: any
   export const loadConfig: any
+  export const registerInviteRoutes: any
   export const registerMemberRoutes: any
   export const registerRoutes: any
   export const registerSettingsRoutes: any
@@ -23,6 +25,6 @@ declare module '@boring/core/server/db' {
     constructor(db: any)
   }
   export class PostgresWorkspaceStore {
-    constructor(db: any)
+    constructor(db: any, workspaceSettingsKey?: string)
   }
 }

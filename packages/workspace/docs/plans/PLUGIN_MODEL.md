@@ -2635,15 +2635,15 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
                              │
                              ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  Phase G — Delete ChatCenteredShell + ChatShellContext +         │
-│            finalize                                              │
+│  Phase G — Delete legacy chat shell + context + finalize         │
+│            (SHIPPED by j9p7.29)                                  │
 │  ─────────────────────────────────────────────────────────────── │
 │  Once D + E + F merged:                                          │
-│  - Delete components/chat/ChatCenteredShell.tsx                  │
-│  - Delete components/chat/context.ts                             │
-│  - Drop related exports from src/index.ts                        │
-│  - Remove now-empty components/chat/ folder                      │
-│  - Update WORKSPACE_V2_PLAN.md and any other docs                │
+│  - Deleted components/chat/ChatCenteredShell.tsx                 │
+│  - Deleted components/chat/context.ts                            │
+│  - Dropped related exports from src/index.ts                     │
+│  - Removed now-empty components/chat/ folder                     │
+│  - Updated WORKSPACE_V2_PLAN.md and active package docs          │
 │  Bead: j9p7.29                                                   │
 └──────────────────────────────────────────────────────────────────┘
 ```

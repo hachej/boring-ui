@@ -233,33 +233,23 @@ export type {
 export { SessionList } from "./front/components/SessionList"
 export type { SessionListProps, SessionItem } from "./front/components/SessionList"
 
-// Chat-centered layout
-export {
-  ChatShellContext,
-  SessionBrowser,
-  ChatStagePlaceholder,
-  SurfaceShell,
-  WorkbenchLeftPane,
-  ChatCenteredShell,
-  useChatShell,
-  useChatSurface,
-} from "./front/components/chat"
+// Declarative chat/workbench chrome
+export { SessionBrowser } from "./front/chrome/session-list/SessionBrowser"
+export { SurfaceShell } from "./front/chrome/artifact-surface/SurfaceShell"
+export { WorkbenchLeftPane } from "./front/chrome/workbench-left/WorkbenchLeftPane"
+export type { SessionBrowserProps } from "./front/chrome/session-list/SessionBrowser"
 export type {
-  SessionBrowserProps,
-  ChatStagePlaceholderProps,
-  ChatStageHandle,
   SurfaceShellProps,
   SurfaceShellApi,
   SurfaceShellSnapshot,
   SurfaceShellTab,
   OpenPanelConfig,
+} from "./front/chrome/artifact-surface/SurfaceShell"
+export type {
   WorkbenchLeftPaneProps,
   WorkbenchLeftTab,
   DataPaneConfig,
-  ChatCenteredShellProps,
-  ChatShellContextValue,
-} from "./front/components/chat"
-export type { ChatSuggestion } from "./front/chrome/chat-stage-placeholder/ChatStagePlaceholder"
+} from "./front/chrome/workbench-left/WorkbenchLeftPane"
 
 // Provider
 export {

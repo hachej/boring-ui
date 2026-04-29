@@ -2,7 +2,6 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ChatPanelProps } from "@boring/agent"
 import { WorkspaceProvider } from "../../../WorkspaceProvider"
-import { ChatShellContext, type ChatShellContextValue } from "../../../components/chat/context"
 import { events } from "../../../events"
 import type { SurfaceShellApi } from "../../artifact-surface/SurfaceShell"
 import { ChatPanelHost } from "../ChatPanelHost"
@@ -30,22 +29,6 @@ function FakeChatPanel({ onData, onOpenArtifact }: ChatPanelProps) {
       </button>
     </div>
   )
-}
-
-function makeShellContext(
-  surface: SurfaceShellApi,
-  setSurfaceOpen = vi.fn(),
-): ChatShellContextValue {
-  return {
-    drawerOpen: false,
-    setDrawerOpen: vi.fn(),
-    toggleDrawer: vi.fn(),
-    surfaceOpen: false,
-    setSurfaceOpen,
-    toggleSurface: vi.fn(),
-    focusComposer: vi.fn(),
-    surface,
-  }
 }
 
 describe("ChatPanelHost", () => {
@@ -94,9 +77,13 @@ describe("ChatPanelHost", () => {
 
     render(
       <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
-        <ChatShellContext.Provider value={makeShellContext(surface, setSurfaceOpen)}>
-          <ChatPanelHost sessionId="s1" onOpenArtifact={onOpenArtifact} />
-        </ChatShellContext.Provider>
+        <ChatPanelHost
+          sessionId="s1"
+          onOpenArtifact={onOpenArtifact}
+          getSurface={() => surface}
+          isWorkbenchOpen={() => false}
+          openWorkbench={() => setSurfaceOpen(true)}
+        />
       </WorkspaceProvider>,
     )
 

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Workspace's own components — every consumer that imports this CSS file
- * gets the utility classes used by ChatCenteredShell, panes, ui-shadcn
+ * gets the utility classes used by workspace chrome, panes, ui-shadcn
  * primitives, etc. Without this, consumers had to add their own
  * @source pointing back at workspace's src; that broke whenever the
  * consumer moved between repos. */
@@ -128,7 +128,7 @@
   }
 }
 
-/* Workspace surface tints (applied via className hooks in ChatCenteredShell, SurfaceShell, WorkbenchLeftPane) */
+/* Workspace surface tints (applied via className hooks in SurfaceShell and WorkbenchLeftPane) */
 .surface-chat-root { background-color: var(--surface-chat); }
 .workbench-surface-root { background-color: var(--surface-workbench); }
 .workbench-left-root { background-color: var(--surface-workbench-left); }

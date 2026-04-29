@@ -1,10 +1,9 @@
 "use client"
 
-import { useContext, useMemo } from "react"
+import { useMemo } from "react"
 import { ChevronLeft, Plus } from "lucide-react"
 import { cn } from "../../../lib/utils"
 import type { SessionItem } from "../../components/SessionList"
-import { ChatShellContext } from "../../components/chat/context"
 
 export interface SessionBrowserProps {
   sessions: SessionItem[]
@@ -12,6 +11,7 @@ export interface SessionBrowserProps {
   onSwitch?: (id: string) => void
   onCreate?: () => void
   onDelete?: (id: string) => void
+  onClose?: () => void
   className?: string
 }
 
@@ -96,10 +96,10 @@ export function SessionBrowser({
   onSwitch,
   onCreate,
   onDelete,
+  onClose,
   className,
 }: SessionBrowserProps) {
   const groups = useMemo(() => groupSessions(sessions), [sessions])
-  const shell = useContext(ChatShellContext)
 
   return (
     <div
@@ -126,10 +126,10 @@ export function SessionBrowser({
               <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
           )}
-          {shell && (
+          {onClose && (
             <button
               type="button"
-              onClick={() => shell.setDrawerOpen(false)}
+              onClick={onClose}
               className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
               aria-label="Close sessions"
               title="Close sessions (⌘1)"

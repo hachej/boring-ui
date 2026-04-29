@@ -14,7 +14,7 @@ import { useApiBaseUrl } from "./DataProvider"
  *     its own invalidation with the wrong key shape (`['file', path]`
  *     vs the workspace's `[base, "files", path]`). Editor never
  *     refreshed on agent edits.
- *   - Now: agent SSE chunks → ChatCenteredShell forwards via
+ *   - Now: agent SSE chunks → ChatPanelHost forwards via
  *     `emitAgentFileChange` → bus → THIS hook → invalidate.
  *     User actions (`useFileWrite`, etc.) emit onto the same bus →
  *     same invalidator. One path, one bug surface.
