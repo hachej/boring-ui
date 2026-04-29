@@ -62,8 +62,20 @@ export type {
 } from "./front/dock"
 
 // Layout presets
-export { IdeLayout, buildIdeLayout, ChatLayout, buildChatLayout } from "./front/layout"
-export type { IdeLayoutProps, ChatLayoutProps } from "./front/layout"
+export {
+  IdeLayout,
+  buildIdeLayout,
+  ChatLayout,
+  buildChatLayout,
+  TopBar,
+  ResponsiveDockviewShell,
+} from "./front/layout"
+export type {
+  IdeLayoutProps,
+  ChatLayoutProps,
+  TopBarProps,
+  ResponsiveDockviewShellProps,
+} from "./front/layout"
 
 // Data layer
 export { DataProvider, useDataClient, useApiBaseUrl } from "./data"
@@ -228,7 +240,6 @@ export {
   SurfaceShell,
   WorkbenchLeftPane,
   ChatCenteredShell,
-  ChatTopBar,
   useChatShell,
   useChatSurface,
 } from "./front/components/chat"
@@ -245,10 +256,9 @@ export type {
   WorkbenchLeftTab,
   DataPaneConfig,
   ChatCenteredShellProps,
-  ChatTopBarProps,
   ChatShellContextValue,
 } from "./front/components/chat"
-export type { ChatSuggestion } from "@boring/agent"
+export type { ChatSuggestion } from "./front/chrome/chat-stage-placeholder/ChatStagePlaceholder"
 
 // Provider
 export {

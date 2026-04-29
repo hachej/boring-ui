@@ -13,6 +13,8 @@ import { createWorkspaceStore } from "../../../store"
 import {
   IdeLayout,
   ChatLayout,
+  TopBar,
+  ResponsiveDockviewShell,
   buildIdeLayout as barrelBuildIde,
   buildChatLayout as barrelBuildChat,
 } from "../index"
@@ -58,6 +60,8 @@ describe("barrel exports", () => {
   it("re-exports all layout symbols", () => {
     expect(IdeLayout).toBeDefined()
     expect(ChatLayout).toBeDefined()
+    expect(TopBar).toBeDefined()
+    expect(ResponsiveDockviewShell).toBeDefined()
     expect(barrelBuildIde).toBe(buildIdeLayout)
     expect(barrelBuildChat).toBe(buildChatLayout)
   })

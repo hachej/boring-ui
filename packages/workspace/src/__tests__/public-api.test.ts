@@ -3,9 +3,11 @@ import * as api from "../index"
 
 describe("@boring/workspace public API", () => {
   describe("layout shells", () => {
-    it("exports IdeLayout, ChatLayout, DockviewShell", () => {
+    it("exports Tier 1, Tier 2, and Tier 3 layout entries", () => {
       expect(api.IdeLayout).toBeDefined()
       expect(api.ChatLayout).toBeDefined()
+      expect(api.TopBar).toBeDefined()
+      expect(api.ResponsiveDockviewShell).toBeDefined()
       expect(api.DockviewShell).toBeDefined()
     })
 

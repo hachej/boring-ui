@@ -1,9 +1,16 @@
 "use client"
 
-import { forwardRef, useImperativeHandle, useRef } from "react"
+import { forwardRef, useImperativeHandle, useRef, type ComponentType } from "react"
 import { ArrowUpRight, BookOpen, Code2, FileSearch, SendHorizontal, Wand2 } from "lucide-react"
-import type { ChatSuggestion } from "@boring/agent"
 import { cn } from "../../../lib/utils"
+
+export interface ChatSuggestion {
+  label: string
+  hint?: string
+  icon?: ComponentType<{ className?: string; strokeWidth?: number }>
+  prompt?: string
+  onSelect?: () => void
+}
 
 export interface ChatStagePlaceholderProps {
   sessionTitle?: string
