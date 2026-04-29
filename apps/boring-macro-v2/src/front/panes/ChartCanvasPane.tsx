@@ -28,6 +28,17 @@ interface ChartCanvasPaneProps {
   api?: PaneProps<ChartParams | undefined>["api"]
 }
 
+function normalizeChartParams(value: unknown): ChartParams {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const candidate = value as { seriesId?: unknown; params?: unknown }
+  if (typeof candidate.seriesId === "string") return { seriesId: candidate.seriesId }
+  if (candidate.params && typeof candidate.params === "object" && !Array.isArray(candidate.params)) {
+    const nested = candidate.params as { seriesId?: unknown }
+    if (typeof nested.seriesId === "string") return { seriesId: nested.seriesId }
+  }
+  return {}
+}
+
 const COLORS = SERIES_COLORS
 
 type TabId = "chart" | "table" | "metadata" | "lineage"
@@ -136,7 +147,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
 ]
 
 export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) {
-  const [params, setParams] = useState<ChartParams>(initial ?? {})
+  const [params, setParams] = useState<ChartParams>(() => normalizeChartParams(initial))
   const seriesId = params.seriesId
 
   const [primary, setPrimary] = useState<SeriesPayload | null>(null)
@@ -152,8 +163,8 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
   useEffect(() => {
     if (!api) return
     const sub = api.onDidParametersChange((e) => {
-      const next = (e.params ?? {}) as ChartParams
-      setParams({ ...next })
+      const next = normalizeChartParams(e.params)
+      setParams((current) => (next.seriesId ? next : current))
     })
     return () => sub.dispose()
   }, [api])

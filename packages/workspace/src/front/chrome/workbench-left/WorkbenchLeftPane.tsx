@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronLeft, Database, FolderTree, Search, X } from "lucide-react"
 import { cn } from "../../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
@@ -13,6 +13,8 @@ import type {
   ExplorerRow,
   FacetConfig,
 } from "../../components/DataExplorer/types"
+import { useRegistry } from "../../registry"
+import type { PaneProps, PanelConfig } from "../../registry/types"
 
 export type DataSource = SourceEntry
 
@@ -31,7 +33,7 @@ export type DataPaneConfig = {
   emptyState?: React.ReactNode
 }
 
-export type WorkbenchLeftTab = "files" | "data"
+export type WorkbenchLeftTab = "files" | "data" | string
 
 export interface WorkbenchLeftPaneProps {
   rootDir?: string
@@ -54,7 +56,42 @@ export function WorkbenchLeftPane({
   onCollapse,
   className,
 }: WorkbenchLeftPaneProps) {
+  const panelRegistry = useRegistry()
+  const leftTabPanels = useMemo(
+    () => panelRegistry.list().filter((panel) => panel.placement === "left-tab"),
+    [panelRegistry],
+  )
+  const hasFilesTab = leftTabPanels.some((panel) => panel.id === "files")
+  const pluginTabs = leftTabPanels.filter((panel) => panel.id !== "files")
+  const tabs = useMemo(() => {
+    const next: Array<{ id: string; title: string; icon: React.ReactNode; panel?: PanelConfig }> = []
+    if (hasFilesTab) {
+      next.push({
+        id: "files",
+        title: "Files",
+        icon: <FolderTree className="h-3.5 w-3.5" />,
+      })
+    }
+    if (data || dataSources.length > 0) {
+      next.push({
+        id: "data",
+        title: "Data",
+        icon: <Database className="h-3.5 w-3.5" />,
+      })
+    }
+    for (const panel of pluginTabs) {
+      const Icon = panel.icon
+      next.push({
+        id: panel.id,
+        title: panel.title,
+        icon: Icon ? <Icon className="h-3.5 w-3.5" /> : <Database className="h-3.5 w-3.5" />,
+        panel,
+      })
+    }
+    return next
+  }, [data, dataSources.length, hasFilesTab, pluginTabs])
   const [tab, setTab] = useState<WorkbenchLeftTab>(defaultTab)
+  const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "files")
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -70,6 +107,12 @@ export function WorkbenchLeftPane({
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus()
   }, [searchOpen])
+
+  useEffect(() => {
+    if (tabs.length > 0 && !tabs.some((entry) => entry.id === tab)) {
+      setTab(tabs[0]!.id)
+    }
+  }, [tab, tabs])
 
   const toggleSearch = useCallback(() => {
     setSearchOpen((s) => {
@@ -94,20 +137,16 @@ export function WorkbenchLeftPane({
           aria-label="Workbench sources"
           className="flex items-center gap-0.5"
         >
-          <SegmentedTab
-            active={tab === "files"}
-            onClick={() => setTab("files")}
-            icon={<FolderTree className="h-3.5 w-3.5" />}
-          >
-            Files
-          </SegmentedTab>
-          <SegmentedTab
-            active={tab === "data"}
-            onClick={() => setTab("data")}
-            icon={<Database className="h-3.5 w-3.5" />}
-          >
-            Data
-          </SegmentedTab>
+          {tabs.map((entry) => (
+            <SegmentedTab
+              key={entry.id}
+              active={activeTab === entry.id}
+              onClick={() => setTab(entry.id)}
+              icon={entry.icon}
+            >
+              {entry.title}
+            </SegmentedTab>
+          ))}
         </div>
 
         <div className="flex-1" />
@@ -154,7 +193,7 @@ export function WorkbenchLeftPane({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onSearchKeyDown}
-            placeholder={tab === "files" ? "Search files..." : "Search data..."}
+            placeholder={activeTab === "files" ? "Search files..." : "Search data..."}
             className="h-6 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           {query && (
@@ -171,21 +210,60 @@ export function WorkbenchLeftPane({
       )}
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === "files" ? (
+        {activeTab === "files" ? (
           <FileTreeView
             rootDir={rootDir}
             searchQuery={debouncedQuery || undefined}
             bridge={bridge}
             className="px-1 pt-1 [&_[role=treeitem]]:!indent-0"
           />
-        ) : data ? (
+        ) : activeTab === "data" && data ? (
           <DataExplorerWithConfig config={data} query={debouncedQuery} />
-        ) : (
+        ) : activeTab === "data" ? (
           <DataExplorerForSources sources={dataSources} query={debouncedQuery} />
+        ) : (
+          <LeftTabPanelHost panel={tabs.find((entry) => entry.id === activeTab)?.panel} />
         )}
       </div>
     </div>
   )
+}
+
+const noopDisposable = { dispose() {} }
+const noopPaneApi = new Proxy(
+  {},
+  {
+    get: () => () => noopDisposable,
+  },
+) as PaneProps["api"]
+const noopContainerApi = new Proxy(
+  {},
+  {
+    get: () => () => undefined,
+  },
+) as PaneProps["containerApi"]
+
+function LeftTabPanelHost({ panel }: { panel?: PanelConfig }) {
+  if (!panel) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
+        No workbench source registered.
+      </div>
+    )
+  }
+  if (panel.lazy) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
+        Loading source…
+      </div>
+    )
+  }
+  return createElement(panel.component, {
+    params: undefined,
+    api: noopPaneApi,
+    containerApi: noopContainerApi,
+    className: "h-full",
+  })
 }
 
 function SegmentedTab({

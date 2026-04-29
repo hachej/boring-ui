@@ -15,14 +15,22 @@ import {
 } from './paths'
 
 const DEFAULT_WATCH_IGNORES = [
-  '**/node_modules/**',
-  '**/.git/**',
-  '**/.DS_Store',
-  '**/dist/**',
-  '**/.next/**',
-  '**/.turbo/**',
-  '**/.tsbuildinfo*',
-]
+  'node_modules',
+  '.git',
+  '.DS_Store',
+  'dist',
+  '.next',
+  '.turbo',
+  'test-results',
+] as const
+
+function shouldIgnoreWatchPath(path: string): boolean {
+  const parts = path.split(sep)
+  return parts.some((part) =>
+    DEFAULT_WATCH_IGNORES.includes(part as (typeof DEFAULT_WATCH_IGNORES)[number]) ||
+    part.endsWith('.tsbuildinfo'),
+  )
+}
 
 /**
  * One chokidar instance per workspace root, fanned out to N
@@ -37,13 +45,12 @@ function createNodeWatcher(root: string): WorkspaceWatcher {
   const ensureFsw = (): FSWatcher => {
     if (fsw) return fsw
     fsw = chokidar.watch(root, {
-      ignored: DEFAULT_WATCH_IGNORES,
+      ignored: shouldIgnoreWatchPath,
       ignoreInitial: true,
       persistent: true,
-      // Disable polling by default — chokidar already debounces events
-      // via `awaitWriteFinish`, which prevents firing in the middle of
-      // a multi-step write (compiler emits, `cp` over a large file).
-      awaitWriteFinish: { stabilityThreshold: 50, pollInterval: 25 },
+      followSymlinks: false,
+      // Avoid chokidar's awaitWriteFinish polling loop in long-lived app
+      // servers. Consumers already reconcile by mtime after invalidation.
       // No native renames from chokidar — `unlinkDir`/`addDir`/
       // `unlink`/`add` are the primitives we get. We surface them as
       // separate `unlink` + `write`/`mkdir` events; renames are best

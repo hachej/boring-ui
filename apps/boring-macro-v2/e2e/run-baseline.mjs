@@ -40,6 +40,8 @@ const prepCommand =
   "pnpm --filter @boring/agent --filter @boring/workspace --filter @boring/core run build"
 const baselineTimeoutMs = Number(process.env.BASELINE_TIMEOUT_MS ?? 900_000)
 const keepWorktree = process.env.BASELINE_KEEP_WORKTREE === "1"
+const e2ePort = process.env.E2E_PORT ?? String(15_000 + (process.pid % 10_000))
+const e2eApiPort = process.env.E2E_API_PORT ?? String(25_000 + (process.pid % 10_000))
 
 if (!Number.isInteger(baselineTimeoutMs) || baselineTimeoutMs <= 0) {
   throw new Error("BASELINE_TIMEOUT_MS must be a positive integer")
@@ -157,6 +159,11 @@ try {
     ["exec", "playwright", "test", "-c", "e2e/playwright.config.ts", "--reporter=json"],
     {
       cwd: macroDir,
+      env: {
+        ...process.env,
+        E2E_PORT: e2ePort,
+        E2E_API_PORT: e2eApiPort,
+      },
       encoding: "utf8",
       maxBuffer: 128 * 1024 * 1024,
       timeout: baselineTimeoutMs,
