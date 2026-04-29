@@ -56,7 +56,7 @@ vi.mock("../../../front/hooks", () => ({
 }))
 
 import { MarkdownEditorPane } from "../MarkdownEditorPane"
-import { createMockPaneProps } from "../../../testing/createMockPaneProps"
+import { createMockPaneProps } from "../../../front/testing/createMockPaneProps"
 
 const paneProps = (path: string) => createMockPaneProps({ path })
 

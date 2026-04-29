@@ -5,9 +5,9 @@ import {
   useMemo,
   type ReactNode,
 } from "react"
-import { DataProvider } from "../front/data/DataProvider"
-import type { PanelRegistry } from "../front/registry/PanelRegistry"
-import { WorkspaceProvider } from "../front/WorkspaceProvider"
+import { DataProvider } from "../data/DataProvider"
+import type { PanelRegistry } from "../registry/PanelRegistry"
+import { WorkspaceProvider } from "../WorkspaceProvider"
 import { createMockRegistry } from "./createMockRegistry"
 import { createMockApiFetch, type MockDataFixtures } from "./mockApi"
 

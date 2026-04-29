@@ -34,6 +34,6 @@ export type {
 export {
   createMockSeriesAdapter,
   createMockTablesAdapter,
-} from "../front/components/DataExplorer/storybookAdapters"
+} from "../components/DataExplorer/storybookAdapters"
 export { createMockPaneProps } from "./createMockPaneProps"
 export type { CreateMockPaneOptions } from "./createMockPaneProps"

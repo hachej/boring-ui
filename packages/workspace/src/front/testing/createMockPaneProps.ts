@@ -11,7 +11,7 @@
  * render(<CodeEditorPane {...createMockPaneProps({ path: "src/main.ts" })} />)
  * ```
  */
-import type { PaneProps } from "../front/registry/types"
+import type { PaneProps } from "../registry/types"
 
 const NOOP = () => {
   /* noop */

@@ -9,7 +9,7 @@
  * always boot from a known seed.
  */
 import { useSyncExternalStore } from "react"
-import type { SessionItem } from "../front/components/SessionList"
+import type { SessionItem } from "../components/SessionList"
 import type {
   MockSessionsState as State,
   MockSessionsStore as Store,

@@ -38,7 +38,7 @@ vi.mock("../CodeEditor", () => ({
 }))
 
 import { CodeEditorPane } from "../CodeEditorPane"
-import { createMockPaneProps } from "../../../testing/createMockPaneProps"
+import { createMockPaneProps } from "../../../front/testing/createMockPaneProps"
 
 const paneProps = (path: string) => createMockPaneProps({ path })
 

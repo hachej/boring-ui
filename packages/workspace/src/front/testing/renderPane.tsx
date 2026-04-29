@@ -1,6 +1,6 @@
 import { cloneElement, isValidElement, type ReactElement } from "react"
 import { render, type RenderOptions, type RenderResult } from "@testing-library/react"
-import type { PanelRegistry } from "../front/registry/PanelRegistry"
+import type { PanelRegistry } from "../registry/PanelRegistry"
 import { TestWorkspaceProvider } from "./TestWorkspaceProvider"
 import { createMockBridge, type MockWorkspaceBridge } from "./createMockBridge"
 import { createMockRegistry } from "./createMockRegistry"
