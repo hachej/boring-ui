@@ -245,21 +245,19 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     if (!inv || inv.workspaceId !== workspaceId) {
       throw new HttpError({ status: 404, code: ERROR_CODES.INVITE_NOT_FOUND, message: 'Invite not found' })
     }
-    if (new Date(inv.expiresAt) < new Date()) {
+    if (new Date(inv.expiresAt) <= new Date()) {
       throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_EXPIRED, message: 'Invite has expired' })
     }
     if (inv.acceptedAt) {
-      throw new HttpError({ status: 409, code: ERROR_CODES.INVITE_ALREADY_ACCEPTED, message: 'Invite already accepted' })
+      throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_ALREADY_ACCEPTED, message: 'Invite already accepted' })
+    }
+    const user = await this.userStore.getById(userId)
+    if (!user || inv.email.toLowerCase() !== user.email.toLowerCase()) {
+      throw new HttpError({ status: 403, code: ERROR_CODES.INVITE_EMAIL_MISMATCH, message: 'Invite email does not match your account' })
     }
     const now = new Date().toISOString()
     inv.acceptedAt = now
     this.invites.set(inviteId, inv)
-    const user = await this.userStore.getById(userId)
-    if (user && inv.email.toLowerCase() !== user.email.toLowerCase()) {
-      inv.acceptedAt = null
-      this.invites.set(inviteId, inv)
-      throw new HttpError({ status: 403, code: ERROR_CODES.INVITE_EMAIL_MISMATCH, message: 'Invite email does not match your account' })
-    }
     const member = await this.upsertMember(workspaceId, userId, inv.role)
     return { invite: inv, member }
   }

@@ -533,7 +533,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
 
       if (invite.acceptedAt) {
         throw new HttpError({
-          status: 409,
+          status: 410,
           code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
           message: 'Invite already accepted',
         })
@@ -597,7 +597,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         }
 
         throw new HttpError({
-          status: 409,
+          status: 410,
           code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
           message: 'Invite already accepted',
         })
@@ -680,7 +680,9 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         .limit(1)
 
       return rows[0]?.plaintext ?? null
-    } catch {
+    } catch (err) {
+      const code = err instanceof Error ? err.constructor.name : 'unknown'
+      console.error(`[workspace-store] decryptSetting failed for key="${key}" workspace="${workspaceId}": ${code}`)
       return null
     }
   }
@@ -691,6 +693,9 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     value: string,
     db: DbLike = this.db,
   ): Promise<void> {
+    if (!this.workspaceSettingsKey) {
+      throw new Error('WORKSPACE_SETTINGS_ENCRYPTION_KEY is not configured — cannot store encrypted settings')
+    }
     await db.execute(sql`
       INSERT INTO workspace_settings (workspace_id, key, value, updated_at)
       VALUES (${workspaceId}::uuid, ${key}, pgp_sym_encrypt(${value}, ${this.workspaceSettingsKey}), NOW())
