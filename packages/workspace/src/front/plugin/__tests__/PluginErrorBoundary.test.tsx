@@ -4,7 +4,7 @@ import { PluginErrorBoundary } from "../PluginErrorBoundary"
 import { PluginErrorProvider, usePluginErrors } from "../PluginErrorContext"
 import { useEffect } from "react"
 
-function BrokenPanel(): JSX.Element {
+function BrokenPanel(): never {
   throw new Error("boom")
 }
 

@@ -80,7 +80,7 @@ describe("useEvent", () => {
         // Cast keeps the test ergonomic — production callers would
         // pass a literal name. We're only exercising the prop change.
         useEvent(name as "file:moved", fn as (p: unknown) => void),
-      { initialProps: { name: "file:moved" as const } },
+      { initialProps: { name: "file:moved" as "file:moved" | "file:deleted" } },
     )
     act(() => {
       events.emit("file:moved", { ...userMeta(), from: "a", to: "b" })

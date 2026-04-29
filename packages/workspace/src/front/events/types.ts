@@ -64,7 +64,7 @@ export interface WorkspaceEventMap {
   // mid-save would orphan a path-keyed badge. Subscribers map
   // panelId→path on their own when they need the path.
   "editor:save:start": { panelId: string }
-  "editor:save:end": { panelId: string }
+  "editor:save:end": { panelId: string; ok?: boolean; error?: string }
 }
 
 /** Names that share a prefix can be filtered with `startsWith`. */
