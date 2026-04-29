@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
 import type { ReactNode } from "react"
-import { PanelRegistry } from "../PanelRegistry"
+import { PanelRegistry, specificity } from "../PanelRegistry"
 import { CommandRegistry } from "../CommandRegistry"
 import { RegistryProvider, useRegistry, useCommandRegistry } from "../RegistryProvider"
 import { getFileIcon } from "../getFileIcon"
@@ -142,7 +142,7 @@ describe("PanelRegistry.resolve", () => {
     expect(reg.resolve("utils.ts")!.id).toBe("code-editor")
   })
 
-  it("tied suffix length: first registered wins", () => {
+  it("tied specificity: later registration wins", () => {
     const reg = new PanelRegistry()
     reg.register("first", {
       title: "First",
@@ -154,12 +154,79 @@ describe("PanelRegistry.resolve", () => {
       component: DummyPanel,
       filePatterns: ["*.ts"],
     })
-    expect(reg.resolve("a.ts")!.id).toBe("first")
+    expect(reg.resolve("a.ts")!.id).toBe("second")
   })
 
   it("resolve returns undefined when no match", () => {
     const reg = new PanelRegistry()
     expect(reg.resolve("file.txt")).toBeUndefined()
+  })
+
+  it("path-aware: deck/**/*.md beats **/*.md for deep path", () => {
+    const reg = new PanelRegistry()
+    reg.register("markdown", {
+      title: "Markdown",
+      component: DummyPanel,
+      filePatterns: ["**/*.md"],
+    })
+    reg.register("deck", {
+      title: "Deck",
+      component: DummyPanel,
+      filePatterns: ["deck/**/*.md"],
+    })
+    expect(reg.resolve("deck/labor/labor.md")!.id).toBe("deck")
+    expect(reg.resolve("notes.md")!.id).toBe("markdown")
+  })
+
+  it("path-aware: **/*.md matches nested paths", () => {
+    const reg = new PanelRegistry()
+    reg.register("markdown", {
+      title: "Markdown",
+      component: DummyPanel,
+      filePatterns: ["**/*.md"],
+    })
+    expect(reg.resolve("src/docs/readme.md")!.id).toBe("markdown")
+  })
+
+  it("app source beats builtin on equal specificity", () => {
+    const reg = new PanelRegistry()
+    reg.register("builtin", {
+      title: "Builtin",
+      component: DummyPanel,
+      filePatterns: ["**/*.ts"],
+      source: "builtin",
+    })
+    reg.register("app", {
+      title: "App",
+      component: DummyPanel,
+      filePatterns: ["**/*.ts"],
+      source: "app",
+    })
+    expect(reg.resolve("src/foo.ts")!.id).toBe("app")
+  })
+
+  it("panel with no filePatterns never matches", () => {
+    const reg = new PanelRegistry()
+    reg.register("agent", { title: "Agent", component: DummyPanel })
+    expect(reg.resolve("anything.txt")).toBeUndefined()
+  })
+})
+
+describe("specificity", () => {
+  it("deck/**/*.md scores higher than **/*.md", () => {
+    expect(specificity("deck/**/*.md")).toBeGreaterThan(specificity("**/*.md"))
+  })
+
+  it("deck/labor/*.md scores higher than deck/**/*.md", () => {
+    expect(specificity("deck/labor/*.md")).toBeGreaterThan(specificity("deck/**/*.md"))
+  })
+
+  it("exact path scores highest", () => {
+    expect(specificity("deck/labor/labor.md")).toBeGreaterThan(specificity("deck/**/*.md"))
+  })
+
+  it("* scores 10 (1 segment, 0 non-wildcard chars)", () => {
+    expect(specificity("*")).toBe(10)
   })
 })
 
