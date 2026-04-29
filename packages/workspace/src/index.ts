@@ -6,9 +6,16 @@
 // ---------------------------------------------------------------------------
 
 // Plugin model
-export { definePlugin, PluginError, useCommands, useActivePanels } from "./plugin"
+export {
+  definePlugin,
+  PluginError,
+  CatalogRegistry,
+  useCommands,
+  useActivePanels,
+  useCatalogs,
+} from "./plugin"
 export type { PluginErrorKind } from "./plugin"
-export type { Plugin, CatalogConfig } from "./plugin"
+export type { Plugin, CatalogConfig, CatalogRegistryOptions } from "./plugin"
 
 // Utility
 export { cn } from "./lib/utils"
@@ -16,7 +23,12 @@ export { cn } from "./lib/utils"
 // Registry & panel management
 export { PanelRegistry } from "./registry/PanelRegistry"
 export { CommandRegistry } from "./registry/CommandRegistry"
-export { RegistryProvider, useRegistry, useCommandRegistry } from "./registry"
+export {
+  RegistryProvider,
+  useRegistry,
+  useCommandRegistry,
+  useCatalogRegistry,
+} from "./registry"
 export { getFileIcon } from "./registry"
 export type {
   PanelConfig,

@@ -13,6 +13,7 @@ import {
 import { PanelRegistry } from "./registry/PanelRegistry"
 import { CommandRegistry } from "./registry/CommandRegistry"
 import { RegistryProvider } from "./registry/RegistryProvider"
+import { CatalogRegistry } from "./plugin/CatalogRegistry"
 import { createWorkspaceStore } from "./store"
 import { bindStore, useThemePreference } from "./store/selectors"
 import { createBridge } from "./bridge/createBridge"
@@ -266,9 +267,10 @@ export function WorkspaceProvider({
     }
   }, [bridgeEndpoint, store])
 
-  const { panelRegistry, commandRegistry } = useMemo(() => {
+  const { panelRegistry, commandRegistry, catalogRegistry } = useMemo(() => {
     const pr = new PanelRegistry(capabilities)
     const cr = new CommandRegistry()
+    const cat = new CatalogRegistry()
 
     if (panels) {
       for (const panel of panels) {
@@ -310,7 +312,7 @@ export function WorkspaceProvider({
       },
     })
 
-    return { panelRegistry: pr, commandRegistry: cr }
+    return { panelRegistry: pr, commandRegistry: cr, catalogRegistry: cat }
   }, [capabilities, panels, store])
 
   const onThemeChangeRef = useRef(onThemeChange)
@@ -365,7 +367,11 @@ export function WorkspaceProvider({
           onAuthError={onAuthError}
           timeout={apiTimeout}
         >
-          <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+          <RegistryProvider
+            panelRegistry={panelRegistry}
+            commandRegistry={commandRegistry}
+            catalogRegistry={catalogRegistry}
+          >
             <WorkspaceShortcuts store={store} />
             <CommandPalette />
             <Toaster />

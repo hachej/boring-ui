@@ -1154,6 +1154,11 @@ function regenerateLastTurn({
         sessionId,
         message: text || '(regenerate)',
         model,
+        attachments: files?.map((f) => ({
+          filename: f.filename,
+          mediaType: f.mediaType,
+          url: f.url,
+        })) ?? [],
       },
     },
   ).then(() => undefined)

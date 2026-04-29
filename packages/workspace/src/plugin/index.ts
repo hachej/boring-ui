@@ -1,5 +1,8 @@
 export { definePlugin, PluginError } from "./definePlugin"
 export type { PluginErrorKind } from "./definePlugin"
 export type { Plugin, CatalogConfig } from "./types"
+export { CatalogRegistry } from "./CatalogRegistry"
+export type { CatalogRegistryOptions } from "./CatalogRegistry"
 export { useCommands } from "./useCommands"
 export { useActivePanels } from "./useActivePanels"
+export { useCatalogs } from "./useCatalogs"

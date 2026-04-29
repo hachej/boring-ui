@@ -40,15 +40,18 @@ describe("@boring/workspace public API", () => {
   })
 
   describe("registry", () => {
-    it("exports PanelRegistry and CommandRegistry", () => {
+    it("exports PanelRegistry, CommandRegistry, and CatalogRegistry", () => {
       expect(api.PanelRegistry).toBeDefined()
       expect(api.CommandRegistry).toBeDefined()
+      expect(api.CatalogRegistry).toBeDefined()
     })
 
     it("exports registry hooks and provider", () => {
       expect(api.RegistryProvider).toBeDefined()
       expect(api.useRegistry).toBeDefined()
       expect(api.useCommandRegistry).toBeDefined()
+      expect(api.useCatalogRegistry).toBeDefined()
+      expect(api.useCatalogs).toBeDefined()
     })
 
     it("exports getFileIcon utility", () => {
