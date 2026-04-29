@@ -26,3 +26,7 @@ storybook-static/
 *_review.patch
 packages/agent/bench-results/
 .tsbuildinfo.*
+
+# Vitest transient transpiled-config artifacts (leaked when a run is interrupted)
+**/vitest.config.ts.timestamp-*.mjs
+**/vitest.config.js.timestamp-*.mjs
