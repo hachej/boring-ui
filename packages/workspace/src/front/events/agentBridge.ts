@@ -7,7 +7,7 @@
  * SSE chunk shape here. Small dupe, clean package boundary.
  *
  * Hosts wire `emitAgentFileChange` into the agent client's `onData`
- * callback (`ChatCenteredShell` does this automatically). Once
+ * callback (`ChatPanelHost` does this automatically). Once
  * wired, an agent-driven rename updates open editor panes the same
  * way a user-driven rename does, just with `cause: 'agent'`.
  *

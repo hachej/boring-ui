@@ -1,9 +1,9 @@
 import { createElement } from "react"
 import type { ChatPanelProps } from "@boring/agent"
 import { definePanel, type PaneProps } from "../../registry/types"
-import { ChatPanelHost } from "./ChatPanelHost"
+import { ChatPanelHost, type ChatPanelHostShellProps } from "./ChatPanelHost"
 
-type ChatPaneParams = Partial<ChatPanelProps> | undefined
+type ChatPaneParams = (Partial<ChatPanelProps> & ChatPanelHostShellProps) | undefined
 
 function ChatPane({ params }: PaneProps<ChatPaneParams>) {
   if (!params || typeof params.sessionId !== "string" || params.sessionId.length === 0) {

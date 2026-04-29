@@ -9,6 +9,7 @@ interface SessionListPaneParams {
   onSwitch?: (id: string) => void
   onCreate?: () => void
   onDelete?: (id: string) => void
+  onClose?: () => void
 }
 
 function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined>) {
@@ -18,6 +19,7 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
     onSwitch: params?.onSwitch,
     onCreate: params?.onCreate,
     onDelete: params?.onDelete,
+    onClose: params?.onClose,
   })
 }
 

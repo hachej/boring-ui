@@ -4,6 +4,12 @@
 
 Use this section as the live handoff ledger while executing this plan.
 
+### Plugin-model merger finalization (2026-04-29)
+
+- j9p7 Phase 1.5 completed the migration from imperative chat shell wiring to declarative layouts.
+- Current public surface is the three-tier API in `packages/workspace/README.md`: preset layouts, declarative shell, and raw dock runtime.
+- App-level chat/workbench integration now passes callbacks through `ChatLayout` panel params; no shell context compatibility layer remains in the package source.
+
 ### Pass 2 — Full milestone verification (2026-04-24)
 
 - Methodology: Three parallel verification agents compared every Phase 1-4 task item against actual source files, reading implementations line-by-line.

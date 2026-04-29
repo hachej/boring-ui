@@ -1,15 +1,15 @@
 "use client"
 
-import { useContext, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import { useTopBarSlot } from "@boring/core/front/top-bar-slot"
 import { Plus, Search } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { ChatShellContext } from "../components/chat/context"
 
 export interface TopBarProps {
   appTitle?: string
   sessionTitle?: string
   onCommandPalette?: () => void
+  onNewChat?: () => void
   /** Override the brand/title block on the left. Hosts pass workspace
    *  switchers, breadcrumbs, etc. here. When set, the default
    *  `[B] appTitle / sessionTitle` block is replaced entirely. */
@@ -25,11 +25,11 @@ export function TopBar({
   appTitle = "Boring",
   sessionTitle,
   onCommandPalette,
+  onNewChat,
   topBarLeft,
   topBarRight,
   className,
 }: TopBarProps) {
-  const shell = useContext(ChatShellContext)
   const slot = useTopBarSlot()
   const right = topBarRight ?? slot ?? null
 
@@ -82,10 +82,10 @@ export function TopBar({
       </button>
 
       <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
-        {shell?.onNewChat && (
+        {onNewChat && (
           <button
             type="button"
-            onClick={shell.onNewChat}
+            onClick={onNewChat}
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-md",
               "text-muted-foreground transition-colors",
