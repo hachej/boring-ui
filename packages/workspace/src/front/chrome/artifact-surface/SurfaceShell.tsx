@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { DockviewApi } from "dockview-react"
 import { ChevronRight, FolderTree } from "lucide-react"
 import { cn } from "../../../lib/utils"
@@ -8,7 +8,6 @@ import { ArtifactSurfacePane } from "../../../panes/ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
 import type { WorkspaceState, PanelState } from "../../../store/types"
 import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
-import { ChatShellContext } from "../../components/chat/context"
 import type { DataSource, DataPaneConfig } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry } from "../../registry"
 
@@ -61,6 +60,8 @@ export interface SurfaceShellProps {
   onReady?: (api: SurfaceShellApi) => void
   /** Called on every panel add/remove/active-change with the current snapshot. */
   onChange?: (snapshot: SurfaceShellSnapshot) => void
+  /** Optional close action for hosts that model the workbench as collapsible. */
+  onClose?: () => void
   /**
    * Extra panel ids (registered via WorkspaceProvider's `panels` prop) that
    * this workbench is allowed to render. Defaults to the built-in
@@ -129,6 +130,7 @@ export function SurfaceShell({
   data,
   onReady,
   onChange,
+  onClose,
   extraPanels,
   className,
 }: SurfaceShellProps) {
@@ -177,6 +179,16 @@ export function SurfaceShell({
   const panelRegistry = useRegistry()
   const panelRegistryRef = useRef(panelRegistry)
   panelRegistryRef.current = panelRegistry
+  const allowedPanels = useMemo(() => {
+    const ids = new Set(ArtifactSurfacePane.defaultAllowedPanels)
+    for (const panel of panelRegistry.list()) {
+      if (panel.placement === "center") ids.add(panel.id)
+    }
+    for (const id of extraPanels ?? []) {
+      ids.add(id)
+    }
+    return [...ids]
+  }, [extraPanels, panelRegistry])
 
   const openFileSync = useCallback((path: string) => {
     const api = apiRef.current
@@ -464,12 +476,8 @@ export function SurfaceShell({
         >
           <ArtifactSurfacePane
             onReady={handleReady}
-            allowedPanels={
-              extraPanels && extraPanels.length > 0
-                ? [...ArtifactSurfacePane.defaultAllowedPanels, ...extraPanels]
-                : undefined
-            }
-            rightHeaderActions={() => <WorkbenchCloseAction />}
+            allowedPanels={allowedPanels}
+            rightHeaderActions={onClose ? () => <WorkbenchCloseAction onClose={onClose} /> : undefined}
           />
         </div>
         {/* Show-files button — overlaid into the tab strip so it is always reachable,
@@ -493,19 +501,22 @@ export function SurfaceShell({
             </button>
           </div>
         )}
-        <EmptyWorkbenchOverlay api={api} collapsed={collapsed} onExpandFiles={() => setCollapsed(false)} />
+        <EmptyWorkbenchOverlay
+          api={api}
+          collapsed={collapsed}
+          onExpandFiles={() => setCollapsed(false)}
+          onClose={onClose}
+        />
       </div>
     </div>
   )
 }
 
-function WorkbenchCloseAction() {
-  const shell = useContext(ChatShellContext)
-  if (!shell) return null
+function WorkbenchCloseAction({ onClose }: { onClose: () => void }) {
   return (
     <button
       type="button"
-      onClick={() => shell.setSurfaceOpen(false)}
+      onClick={onClose}
       className={cn(
         "mx-1 flex h-7 w-7 items-center justify-center rounded-md",
         "text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
@@ -523,13 +534,14 @@ function EmptyWorkbenchOverlay({
   api,
   collapsed,
   onExpandFiles,
+  onClose,
 }: {
   api: DockviewApi | null
   collapsed: boolean
   onExpandFiles: () => void
+  onClose?: () => void
 }) {
   const [empty, setEmpty] = useState(true)
-  const shell = useContext(ChatShellContext)
   useEffect(() => {
     if (!api) return
     const sync = () => setEmpty(api.panels.length === 0)
@@ -563,10 +575,10 @@ function EmptyWorkbenchOverlay({
           </button>
         )}
         <div className="flex-1" />
-        {shell && (
+        {onClose && (
           <button
             type="button"
-            onClick={() => shell.setSurfaceOpen(false)}
+            onClick={onClose}
             className={cn(
               "pointer-events-auto mx-1 flex h-7 w-7 items-center justify-center rounded-md",
               "text-muted-foreground transition-colors",

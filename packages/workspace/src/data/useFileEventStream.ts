@@ -36,6 +36,7 @@ export function useFileEventStream(): void {
   const qc = useQueryClient()
 
   useEffect(() => {
+    if (import.meta.env.VITE_DISABLE_FILE_EVENTS === "1") return
     if (typeof window === "undefined" || typeof EventSource === "undefined") return
 
     const url = joinUrl(base, "/api/v1/fs/events")

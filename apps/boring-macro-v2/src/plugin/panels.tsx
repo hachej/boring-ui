@@ -1,4 +1,10 @@
-import { definePanel, DataExplorer, type PanelConfig, type PaneProps, type ExplorerRow } from "@boring/workspace"
+import {
+  definePanel,
+  DataExplorer,
+  type PanelConfig,
+  type PaneProps,
+  type ExplorerRow,
+} from "@boring/workspace"
 import { ChartCanvasPane } from "../front/panes/ChartCanvasPane"
 import { DeckPane } from "../front/panes/DeckPane"
 import { createMacroSeriesAdapter } from "../front/macroSeriesAdapter"
@@ -23,25 +29,27 @@ export const deckPanel: PanelConfig = definePanel({
 
 const macroAdapter = createMacroSeriesAdapter()
 
+const macroSeriesFacets = [
+  {
+    key: "frequency",
+    label: "Frequency",
+    order: ["D", "W", "M", "Q", "SA", "A"],
+    formatValue: (v: string) => FREQ_LABELS[v] ?? v,
+  },
+  {
+    key: "source",
+    label: "Source",
+    formatValue: (v: string) =>
+      v === "fred" ? "FRED" : v === "derived" ? "Derived" : v,
+  },
+]
+
 function MacroSeriesPane(_props: PaneProps) {
   return (
     <DataExplorer
       adapter={macroAdapter}
       groupBy="frequency"
-      facets={[
-        {
-          key: "frequency",
-          label: "Frequency",
-          order: ["D", "W", "M", "Q", "SA", "A"],
-          formatValue: (v: string) => FREQ_LABELS[v] ?? v,
-        },
-        {
-          key: "source",
-          label: "Source",
-          formatValue: (v: string) =>
-            v === "fred" ? "FRED" : v === "derived" ? "Derived" : v,
-        },
-      ]}
+      facets={macroSeriesFacets}
       onActivate={(row: ExplorerRow) => openSeriesPane(row.id)}
       getDragPayload={(row: ExplorerRow) => ({ mimeType: "text/series-id", value: row.id })}
       emptyState="No series match"
@@ -51,7 +59,7 @@ function MacroSeriesPane(_props: PaneProps) {
 
 export const macroSeriesPanel: PanelConfig = definePanel({
   id: "macro-series",
-  title: "Series",
+  title: "Data",
   component: MacroSeriesPane,
   placement: "left-tab",
   source: "app",

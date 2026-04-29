@@ -1,43 +1,199 @@
+import { useCallback, useEffect, useMemo, useRef } from "react"
+import { ChatPanel } from "@boring/agent"
+import { Plus } from "lucide-react"
 import {
   WorkspaceProvider,
-  ChatCenteredShell,
-  EmptyPane,
-  definePanel,
-  type PanelConfig,
+  ChatLayout,
+  TopBar,
+  useCommandRegistry,
+  useRegistry,
+  type SurfaceShellApi,
+  type SurfaceShellSnapshot,
 } from "@boring/workspace"
 import {
   createLocalStorageSessions,
   useLocalStorageSessions,
 } from "@boring/workspace/testing"
-import { makeMacroClientPlugin, macroChatSuggestions } from "../plugin"
+import {
+  makeMacroClientPlugin,
+  macroChatSuggestions,
+} from "../plugin"
 import { openSeriesPane } from "./macroSeriesUi"
 
 const sessionsStore = createLocalStorageSessions({ storageKey: "boring-macro:sessions" })
-
-const emptyPanel = definePanel({
-  id: "empty",
-  title: "Welcome",
-  component: EmptyPane,
-  placement: "center",
-  source: "app",
-}) as PanelConfig
+const layoutStorageKey = "boring-macro:shell"
+const macroCommandScope = "boring-macro"
 
 function Shell() {
   const { sessions, activeId } = useLocalStorageSessions(sessionsStore)
+  const commandRegistry = useCommandRegistry()
+  const panelRegistry = useRegistry()
+  const surfaceSnapshotRef = useRef<SurfaceShellSnapshot>({ openTabs: [], activeTab: null })
+  const drawerOpenRef = useRef(true)
+  const surfaceOpenRef = useRef(true)
+  const surfaceRef = useRef<SurfaceShellApi | null>(null)
+  const pushAbortRef = useRef<AbortController | null>(null)
+
+  const activeSession = sessions.find((session) => session.id === activeId)
+  const availablePanelIds = useMemo(
+    () => panelRegistry.list().map((panel) => panel.id),
+    [panelRegistry],
+  )
+
+  const pushUiState = useCallback(() => {
+    const snapshot = surfaceSnapshotRef.current
+    const body = {
+      state: {
+        v: 1,
+        workbenchOpen: surfaceOpenRef.current,
+        drawerOpen: drawerOpenRef.current,
+        openTabs: snapshot.openTabs,
+        activeTab: snapshot.activeTab,
+        activeFile:
+          snapshot.openTabs.find((tab) => tab.id === snapshot.activeTab)?.params?.path ?? null,
+        availablePanels: availablePanelIds,
+      },
+      causedBy: "user" as const,
+    }
+
+    pushAbortRef.current?.abort()
+    const controller = new AbortController()
+    pushAbortRef.current = controller
+    void fetch("/api/v1/ui/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    }).catch(() => {})
+  }, [availablePanelIds])
+
+  const handleSurfaceReady = useCallback(
+    (api: SurfaceShellApi) => {
+      surfaceSnapshotRef.current = api.getSnapshot()
+      surfaceRef.current = api
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  const handleSurfaceChange = useCallback(
+    (snapshot: SurfaceShellSnapshot) => {
+      surfaceSnapshotRef.current = snapshot
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  const setDrawerOpen = useCallback(
+    (open: boolean) => {
+      drawerOpenRef.current = open
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  const setSurfaceOpen = useCallback(
+    (open: boolean) => {
+      surfaceOpenRef.current = open
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  const getSurface = useCallback(() => surfaceRef.current, [])
+  const isWorkbenchOpen = useCallback(() => surfaceOpenRef.current, [])
+  const openWorkbench = useCallback(() => setSurfaceOpen(true), [setSurfaceOpen])
+
+  const openCommandPalette = useCallback(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }),
+    )
+  }, [])
+
+  useEffect(() => {
+    commandRegistry.unregisterByPluginId(macroCommandScope)
+    commandRegistry.registerCommand({
+      id: "chat-shell.newChat",
+      title: "New Chat",
+      pluginId: macroCommandScope,
+      run: sessionsStore.create,
+    })
+
+    for (const session of sessions) {
+      commandRegistry.registerCommand({
+        id: `chat-shell.session.${session.id}`,
+        title: `Switch to: ${session.title}`,
+        pluginId: macroCommandScope,
+        run: () => sessionsStore.switchTo(session.id),
+      })
+    }
+
+    return () => {
+      commandRegistry.unregisterByPluginId(macroCommandScope)
+    }
+  }, [commandRegistry, sessions])
+
+  useEffect(() => {
+    pushUiState()
+    return () => {
+      pushAbortRef.current?.abort()
+    }
+  }, [pushUiState])
 
   return (
-    <ChatCenteredShell
-      appTitle="boring.macro"
-      sessions={sessions}
-      activeSessionId={activeId}
-      onSwitchSession={sessionsStore.switchTo}
-      onCreateSession={sessionsStore.create}
-      onDeleteSession={sessionsStore.remove}
-      chatSuggestions={macroChatSuggestions}
-      emptyTitle="What macro question are we tackling?"
-      emptyDescription="Search FRED, plot a series, derive a transform, or draft a briefing deck."
-      storageKey="boring-macro:shell"
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <TopBar
+        appTitle="boring.macro"
+        sessionTitle={activeSession?.title}
+        onCommandPalette={openCommandPalette}
+        topBarRight={
+          <button
+            type="button"
+            onClick={sessionsStore.create}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label="New chat"
+            title="New chat"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        }
+      />
+      <div className="min-h-0 flex-1">
+        <ChatLayout
+          nav="session-list"
+          navParams={{
+            sessions,
+            activeId,
+            onSwitch: sessionsStore.switchTo,
+            onCreate: sessionsStore.create,
+            onDelete: sessionsStore.remove,
+            onClose: () => setDrawerOpen(false),
+          }}
+          center="chat"
+          centerParams={{
+            sessionId: activeId,
+            chrome: false,
+            suggestions: macroChatSuggestions,
+            emptyTitle: "What macro question are we tackling?",
+            emptyDescription: "Search FRED, plot a series, derive a transform, or draft a briefing deck.",
+            className: "h-full min-h-0",
+            getSurface,
+            isWorkbenchOpen,
+            openWorkbench,
+          }}
+          sidebar="workbench-left"
+          surface="artifact-surface"
+          surfaceParams={{
+            storageKey: `${layoutStorageKey}:surface`,
+            extraPanels: ["chart-canvas", "deck"],
+            onReady: handleSurfaceReady,
+            onChange: handleSurfaceChange,
+            onClose: () => setSurfaceOpen(false),
+          }}
+          className="h-full"
+        />
+      </div>
+    </div>
   )
 }
 
@@ -47,8 +203,8 @@ export function App() {
   return (
     <div className="h-full bg-background text-foreground">
       <WorkspaceProvider
+        chatPanel={ChatPanel}
         plugins={[macroPlugin]}
-        panels={[emptyPanel]}
         apiBaseUrl=""
         apiTimeout={10000}
         persistenceEnabled

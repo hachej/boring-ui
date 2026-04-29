@@ -1,5 +1,6 @@
 "use client"
-import { definePlugin, type Plugin, type ChatSuggestion } from "@boring/workspace"
+import type { ChatSuggestion } from "@boring/agent"
+import { definePlugin, type Plugin } from "@boring/workspace"
 import { LineChart, Search, TrendingUp, Presentation } from "lucide-react"
 import { chartCanvasPanel, deckPanel, macroSeriesPanel } from "./panels"
 import { createSeriesCatalog } from "./catalogs"

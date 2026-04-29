@@ -102,7 +102,7 @@ export function fsEventsRoutes(
       sub.unsubscribe()
     })
 
-    return reply
+    reply.hijack()
   })
 
   done()
