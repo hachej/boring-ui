@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react"
-import { MarkdownEditor } from "../src/components/MarkdownEditor"
+import { MarkdownEditor } from "../src/panes/markdown-editor/MarkdownEditor"
 
 const RICH_MARKDOWN = `# Workspace Notes
 

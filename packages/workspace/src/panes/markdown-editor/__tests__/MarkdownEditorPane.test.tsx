@@ -6,14 +6,14 @@ import type React from "react"
 const mockFileContent = vi.fn()
 const mockFileWrite = vi.fn()
 
-vi.mock("../../data", () => ({
+vi.mock("../../../data", () => ({
   useFileContent: (path: string) => mockFileContent(path),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useApiBaseUrl: () => "/api",
 }))
 
 const mockOnChange = vi.fn()
-vi.mock("../../components/MarkdownEditor", () => ({
+vi.mock("../MarkdownEditor", () => ({
   MarkdownEditor: ({
     content,
     onChange,
@@ -43,7 +43,7 @@ const mockMarkDirty = vi.fn()
 const mockAckSync = vi.fn()
 let mockIsDirty = false
 let mockShouldSync = false
-vi.mock("../../hooks", () => ({
+vi.mock("../../../hooks", () => ({
   useEditorLifecycle: () => ({
     isDirty: mockIsDirty,
     isSaving: false,
@@ -56,7 +56,7 @@ vi.mock("../../hooks", () => ({
 }))
 
 import { MarkdownEditorPane } from "../MarkdownEditorPane"
-import { createMockPaneProps } from "../../testing/createMockPaneProps"
+import { createMockPaneProps } from "../../../testing/createMockPaneProps"
 
 const paneProps = (path: string) => createMockPaneProps({ path })
 

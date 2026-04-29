@@ -1,13 +1,13 @@
 "use client"
 
 import { lazy, Suspense, useCallback, useRef, useState, useEffect } from "react"
-import { useFileContent, useFileWrite } from "../data"
-import { FileConflictError } from "../data/fetchClient"
-import { useEditorLifecycle, type EditorLifecycleAdapter } from "../hooks"
-import type { PaneProps } from "../registry/types"
+import { useFileContent, useFileWrite } from "../../data"
+import { FileConflictError } from "../../data/fetchClient"
+import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../hooks"
+import type { PaneProps } from "../../registry/types"
 
 const MarkdownEditor = lazy(() =>
-  import("../components/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })),
+  import("./MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })),
 )
 
 // `path` is optional: dockview can restore a panel from serialized

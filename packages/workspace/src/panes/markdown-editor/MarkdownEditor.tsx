@@ -12,7 +12,7 @@ import TaskList from "@tiptap/extension-task-list"
 import TaskItem from "@tiptap/extension-task-item"
 import TextAlign from "@tiptap/extension-text-align"
 import Highlight from "@tiptap/extension-highlight"
-import { ResizableImage } from "./markdown/ResizableImage"
+import { ResizableImage } from "../../components/markdown/ResizableImage"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
 import { common, createLowlight } from "lowlight"
 import { Markdown } from "tiptap-markdown"
@@ -37,7 +37,7 @@ import {
   AlignCenterIcon,
   AlignRightIcon,
 } from "lucide-react"
-import { cn } from "../lib/utils"
+import { cn } from "../../lib/utils"
 
 const lowlight = createLowlight(common)
 
