@@ -91,7 +91,7 @@ function fallbackComponentForPath(path: string): string {
  * registry can't resolve it (and even then only if the fallback id is
  * actually registered).
  */
-function resolvePanelForPath(
+export function resolvePanelForPath(
   path: string,
   registry: { resolve: (p: string) => { id: string } | undefined; has: (id: string) => boolean },
 ): string {
@@ -102,8 +102,7 @@ function resolvePanelForPath(
   if (resolved) return resolved.id
   const fallback = fallbackComponentForPath(path)
   if (registry.has(fallback)) return fallback
-  // Last-ditch: hand back the first registered panel that accepts files at all.
-  return fallback
+  return "empty-file-panel"
 }
 
 function normalizeWorkbenchPath(path: string): string {

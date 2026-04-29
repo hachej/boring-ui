@@ -198,14 +198,15 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     const ids = screen.getByTestId("ids").textContent!.split(",")
-    // 4 core panels (chat overwritten by prop's chat) + 3 filesystem + testPanel
+    // 5 core panels (chat overwritten by prop's chat) + 3 filesystem + testPanel
     expect(ids).toContain("chat")
     expect(ids).toContain("session-list")
     expect(ids).toContain("workbench-left")
     expect(ids).toContain("artifact-surface")
+    expect(ids).toContain("empty-file-panel")
     expect(ids).toContain("files")
     expect(ids).toContain("test-panel")
-    expect(ids).toHaveLength(8)
+    expect(ids).toHaveLength(9)
   })
 
   it("excludeDefaults removes default plugin panels but not core panels", () => {
@@ -330,10 +331,10 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    // 4 core + 3 filesystem + testPanel = 8 (prop's chat filtered by capabilities,
+    // 5 core + 3 filesystem + testPanel = 9 (prop's chat filtered by capabilities,
     // but core's chat has no requiresCapabilities so stays — prop's chat overwrites
-    // core's, so chat is filtered). Result: 4-1 core + 3 filesystem + testPanel = 7
-    expect(screen.getByTestId("count").textContent).toBe("7")
+    // core's, so chat is filtered). Result: 5-1 core + 3 filesystem + testPanel = 8
+    expect(screen.getByTestId("count").textContent).toBe("8")
   })
 
   it("custom panel with same ID as another overrides it", () => {
@@ -454,8 +455,8 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    // 4 core + 3 filesystem default panels = 7
-    expect(screen.getByTestId("count").textContent).toBe("7")
+    // 5 core + 3 filesystem default panels = 8
+    expect(screen.getByTestId("count").textContent).toBe("8")
 
     render(
       <WorkspaceProvider
@@ -465,7 +466,7 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("7")
+    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("8")
   })
 })
 
