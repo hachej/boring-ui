@@ -31,10 +31,14 @@ import { useCommands } from "../plugin/useCommands"
 import type { CommandConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugin/types"
 import type { ExplorerRow } from "./DataExplorer/types"
+import {
+  loadRecent,
+  addCatalogToRecent,
+  addCommandToRecent,
+} from "./recent"
+import type { RecentEntry } from "./recent"
 
 const MAX_RESULTS = 50
-const MAX_RECENT = 10
-const RECENT_STORAGE_KEY = "boring-ui-v2:command-palette:recent"
 
 export type CommandPaletteProps = Record<string, never>
 
@@ -56,35 +60,6 @@ function isActiveCommand(cmd: CommandConfig): boolean {
   } catch {
     return false
   }
-}
-
-function loadRecent(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string").slice(0, MAX_RECENT)
-      : []
-  } catch {
-    return []
-  }
-}
-
-function saveRecent(items: string[]): void {
-  try {
-    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(items.slice(0, MAX_RECENT)))
-  } catch { /* quota */ }
-}
-
-function addToRecent(key: string): void {
-  const recent = loadRecent().filter((r) => r !== key)
-  recent.unshift(key)
-  saveRecent(recent)
-}
-
-function isRecentFile(path: string): boolean {
-  return !path.startsWith("cmd:")
 }
 
 export function CommandPalette(_props?: CommandPaletteProps) {
@@ -249,30 +224,48 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     }).slice(0, MAX_RESULTS)
   }, [commands, isCommandMode, searchQuery])
 
-  const recentFiles = useMemo(() => {
+  const recentEntries = useMemo((): RecentEntry[] => {
     if (isCommandMode || searchQuery) return []
-    return loadRecent().filter(isRecentFile)
-  }, [isCommandMode, searchQuery])
-
-  const handleRecentFileSelect = useCallback((path: string) => {
-    addToRecent(path)
-    setOpen(false)
-  }, [])
+    const entries = loadRecent()
+    return entries.filter((entry) => {
+      if (entry.type === "catalog") {
+        return catalogs.some((c) => c.id === entry.catalogId)
+      }
+      return commands.some((c) => c.id === entry.commandId)
+    })
+  }, [isCommandMode, searchQuery, catalogs, commands])
 
   const handleCatalogSelect = useCallback((catalog: CatalogConfig, row: ExplorerRow) => {
-    addToRecent(row.id)
+    addCatalogToRecent(catalog.id, row)
     catalog.onSelect(row)
     setOpen(false)
   }, [])
 
   const handleCommandSelect = useCallback(
     (cmd: CommandConfig) => {
-      addToRecent(`cmd:${cmd.id}`)
+      addCommandToRecent(cmd.id, cmd.title)
       cmd.run()
       setOpen(false)
     },
     [],
   )
+
+  const handleRecentSelect = useCallback((entry: RecentEntry) => {
+    if (entry.type === "catalog") {
+      const catalog = catalogs.find((c) => c.id === entry.catalogId)
+      if (catalog) {
+        addCatalogToRecent(catalog.id, entry.rowSnapshot)
+        catalog.onSelect(entry.rowSnapshot)
+      }
+    } else {
+      const cmd = commands.find((c) => c.id === entry.commandId)
+      if (cmd) {
+        addCommandToRecent(cmd.id, cmd.title)
+        cmd.run()
+      }
+    }
+    setOpen(false)
+  }, [catalogs, commands])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -324,19 +317,37 @@ export function CommandPalette(_props?: CommandPaletteProps) {
               {isCommandMode ? "No matching commands" : "No catalog results"}
             </CommandEmpty>
 
-            {!isCommandMode && recentFiles.length > 0 && !searchQuery && (
+            {!isCommandMode && recentEntries.length > 0 && !searchQuery && (
               <CommandGroup heading="Recent">
-                {recentFiles.map((path) => (
-                  <CommandItem
-                    key={path}
-                    value={path}
-                    onSelect={() => handleRecentFileSelect(path)}
-                    className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
-                  >
-                    <ClockIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
-                    <FilePathLabel path={path} />
-                  </CommandItem>
-                ))}
+                {recentEntries.map((entry) => {
+                  const key =
+                    entry.type === "catalog"
+                      ? `recent:catalog:${entry.catalogId}:${entry.rowId}`
+                      : `recent:command:${entry.commandId}`
+                  return (
+                    <CommandItem
+                      key={key}
+                      value={key}
+                      onSelect={() => handleRecentSelect(entry)}
+                      className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+                    >
+                      {entry.type === "catalog" ? (
+                        <>
+                          <ClockIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
+                          <CatalogRowLabel row={entry.rowSnapshot} />
+                        </>
+                      ) : (
+                        <>
+                          <TerminalIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
+                          <span className="flex-1 truncate">{entry.titleSnapshot}</span>
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            command
+                          </span>
+                        </>
+                      )}
+                    </CommandItem>
+                  )
+                })}
               </CommandGroup>
             )}
 
@@ -426,20 +437,6 @@ export function CommandPalette(_props?: CommandPaletteProps) {
         </Command>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function FilePathLabel({ path }: { path: string }) {
-  const lastSlash = path.lastIndexOf("/")
-  const dir = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : ""
-  const name = lastSlash >= 0 ? path.slice(lastSlash + 1) : path
-  return (
-    <span className="flex min-w-0 flex-1 items-baseline gap-2 truncate">
-      <span className="truncate font-medium text-foreground">{name}</span>
-      {dir ? (
-        <span className="truncate text-xs text-muted-foreground/70">{dir}</span>
-      ) : null}
-    </span>
   )
 }
 

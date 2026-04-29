@@ -8,12 +8,12 @@ import { CommandRegistry } from "../../registry/CommandRegistry"
 import { CatalogRegistry } from "../../plugin/CatalogRegistry"
 import type { CatalogConfig } from "../../../shared/plugin/types"
 import type { ExplorerRow, SearchResult } from "../DataExplorer/types"
+import type { RecentEntry } from "../recent/types"
+import { STORAGE_KEY as RECENT_KEY } from "../recent/recentStore"
 
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {}
 }
-
-const RECENT_KEY = "boring-ui-v2:command-palette:recent"
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -489,7 +489,7 @@ describe("CommandPalette", () => {
   })
 
   describe("recent items", () => {
-    it("saves selected catalog rows to recent list", async () => {
+    it("saves selected catalog rows as RecentEntry with type catalog", async () => {
       const user = userEvent.setup()
       const searchFn = vi.fn().mockResolvedValue(resultFor(["/src/App.tsx"]))
       const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
@@ -505,23 +505,36 @@ describe("CommandPalette", () => {
         expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
       })
       await user.click(getFileOption("/src/App.tsx"))
-      const recent = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
-      expect(recent).toContain("/src/App.tsx")
+      const recent: RecentEntry[] = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
+      expect(recent[0]).toMatchObject({
+        type: "catalog",
+        catalogId: "files",
+        rowId: "/src/App.tsx",
+      })
+      expect(recent[0].type === "catalog" && recent[0].rowSnapshot.title).toBe("App.tsx")
     })
 
-    it("shows recent files when no query", async () => {
-      localStorage.setItem(RECENT_KEY, JSON.stringify(["/src/recent.ts"]))
-      render(<CommandPalette />, { wrapper: createWrapper() })
+    it("shows recent catalog entries when no query", async () => {
+      const catalogEntry: RecentEntry = {
+        type: "catalog",
+        catalogId: "files",
+        rowId: "/src/recent.ts",
+        rowSnapshot: { id: "/src/recent.ts", title: "recent.ts", subtitle: "/src/" },
+        selectedAt: Date.now(),
+      }
+      localStorage.setItem(RECENT_KEY, JSON.stringify([catalogEntry]))
+      const catalogRegistry = registryWithCatalog(createCatalog(vi.fn().mockResolvedValue(resultFor([]))))
+      render(<CommandPalette />, { wrapper: createWrapper(undefined, catalogRegistry) })
       fireKeydown("p", { metaKey: true })
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
       await waitFor(() => {
-        expect(getFileOption("/src/recent.ts")).toBeInTheDocument()
+        expect(screen.getByText("recent.ts")).toBeInTheDocument()
       })
     })
 
-    it("saves selected commands as transitional recent command keys", async () => {
+    it("saves selected commands as RecentEntry with type command", async () => {
       const user = userEvent.setup()
       const run = vi.fn()
       const cr = new CommandRegistry()
@@ -537,8 +550,106 @@ describe("CommandPalette", () => {
       })
       await user.click(screen.getByText("Manage Members"))
       expect(run).toHaveBeenCalledOnce()
-      const recent = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
-      expect(recent).toContain("cmd:members")
+      const recent: RecentEntry[] = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
+      expect(recent[0]).toMatchObject({
+        type: "command",
+        commandId: "members",
+        titleSnapshot: "Manage Members",
+      })
+    })
+
+    it("shows recent command entries with command chip", async () => {
+      const cr = new CommandRegistry()
+      cr.registerCommand({ id: "theme", title: "Toggle Theme", run: vi.fn() })
+      const commandEntry: RecentEntry = {
+        type: "command",
+        commandId: "theme",
+        titleSnapshot: "Toggle Theme",
+        selectedAt: Date.now(),
+      }
+      localStorage.setItem(RECENT_KEY, JSON.stringify([commandEntry]))
+      render(<CommandPalette />, { wrapper: createWrapper(cr) })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      await waitFor(() => {
+        expect(screen.getByText("Toggle Theme")).toBeInTheDocument()
+        expect(screen.getByText("command")).toBeInTheDocument()
+      })
+    })
+
+    it("drops orphan entries whose source is no longer registered", async () => {
+      const orphanCatalog: RecentEntry = {
+        type: "catalog",
+        catalogId: "uninstalled-plugin",
+        rowId: "x",
+        rowSnapshot: { id: "x", title: "orphan" },
+        selectedAt: Date.now(),
+      }
+      const orphanCommand: RecentEntry = {
+        type: "command",
+        commandId: "unregistered-cmd",
+        titleSnapshot: "Ghost Command",
+        selectedAt: Date.now(),
+      }
+      localStorage.setItem(RECENT_KEY, JSON.stringify([orphanCatalog, orphanCommand]))
+      render(<CommandPalette />, { wrapper: createWrapper() })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      expect(screen.queryByText("orphan")).not.toBeInTheDocument()
+      expect(screen.queryByText("Ghost Command")).not.toBeInTheDocument()
+    })
+
+    it("clicking recent catalog entry calls catalog.onSelect", async () => {
+      const user = userEvent.setup()
+      const onSelect = vi.fn()
+      const row = rowFromPath("/src/App.tsx")
+      const catalogEntry: RecentEntry = {
+        type: "catalog",
+        catalogId: "files",
+        rowId: "/src/App.tsx",
+        rowSnapshot: row,
+        selectedAt: Date.now(),
+      }
+      localStorage.setItem(RECENT_KEY, JSON.stringify([catalogEntry]))
+      const catalogRegistry = registryWithCatalog(createCatalog(vi.fn().mockResolvedValue(resultFor([])), onSelect))
+      render(<CommandPalette />, { wrapper: createWrapper(undefined, catalogRegistry) })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      await waitFor(() => {
+        expect(screen.getByText("App.tsx")).toBeInTheDocument()
+      })
+      await user.click(screen.getByText("App.tsx"))
+      expect(onSelect).toHaveBeenCalledWith(row)
+    })
+
+    it("clicking recent command entry calls command.run()", async () => {
+      const user = userEvent.setup()
+      const run = vi.fn()
+      const cr = new CommandRegistry()
+      cr.registerCommand({ id: "theme", title: "Toggle Theme", run })
+      const commandEntry: RecentEntry = {
+        type: "command",
+        commandId: "theme",
+        titleSnapshot: "Toggle Theme",
+        selectedAt: Date.now(),
+      }
+      localStorage.setItem(RECENT_KEY, JSON.stringify([commandEntry]))
+      render(<CommandPalette />, { wrapper: createWrapper(cr) })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      await waitFor(() => {
+        expect(screen.getByText("Toggle Theme")).toBeInTheDocument()
+      })
+      await user.click(screen.getByText("Toggle Theme"))
+      expect(run).toHaveBeenCalledOnce()
     })
   })
 })
