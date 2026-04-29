@@ -11,7 +11,7 @@ export interface PluginError {
   componentStack?: string | null
 }
 
-interface PluginErrorContextValue {
+export interface PluginErrorContextValue {
   errors: PluginError[]
   reportPluginError: (error: PluginError) => void
 }

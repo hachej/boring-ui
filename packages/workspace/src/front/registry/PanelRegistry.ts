@@ -102,8 +102,7 @@ export class PanelRegistry {
       result[panel.id] = function WrappedPanel(props: any) {
         return createElement(
           PluginErrorBoundary,
-          { pluginId, contributionKind: "panel" as const, contributionId: panelId },
-          createElement(Inner, props),
+          { pluginId, contributionKind: "panel" as const, contributionId: panelId, children: createElement(Inner, props) },
         )
       }
     }
