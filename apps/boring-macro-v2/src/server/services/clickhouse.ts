@@ -892,13 +892,13 @@ export class DataService {
   }
 
   /** Execute a raw query and return rows (for billing/metering). */
-  async rawQuery(sql: string): Promise<Record<string, unknown>[]> {
-    return this.query(sql)
+  async rawQuery(sql: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> {
+    return this.query(sql, params)
   }
 
   /** Execute a raw command (DDL/DML, no result rows). */
-  async rawCommand(sql: string): Promise<void> {
-    await this.client.command({ query: sql })
+  async rawCommand(sql: string, params?: Record<string, unknown>): Promise<void> {
+    await this.client.command({ query: sql, query_params: params })
   }
 
   /** Close the underlying client connection. */

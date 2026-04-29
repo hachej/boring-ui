@@ -99,8 +99,9 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         const rows = await svc.rawQuery(
           `SELECT tier, status, stripe_subscription_id, current_period_end
            FROM subscriptions FINAL
-           WHERE user_id = '${userId.replace(/'/g, "''")}'
-           LIMIT 1`
+           WHERE user_id = {userId:String}
+           LIMIT 1`,
+          { userId },
         )
         if (!rows.length) return { ok: true, tier: 'free', status: 'active' }
         return {
@@ -160,8 +161,9 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       try {
         const rows = await svc.rawQuery(
           `SELECT stripe_customer_id FROM subscriptions FINAL
-           WHERE user_id = '${userId.replace(/'/g, "''")}'
-           LIMIT 1`
+           WHERE user_id = {userId:String}
+           LIMIT 1`,
+          { userId },
         )
         if (!rows.length || !rows[0].stripe_customer_id) {
           return { ok: false, error: 'No active subscription found' }
@@ -211,8 +213,9 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         if (svc) {
           const rows = await svc.rawQuery(
             `SELECT user_id, tier FROM subscriptions FINAL
-             WHERE stripe_subscription_id = '${subscriptionId.replace(/'/g, "''")}'
-             LIMIT 1`
+             WHERE stripe_subscription_id = {subscriptionId:String}
+             LIMIT 1`,
+            { subscriptionId },
           )
           if (rows.length) {
             await upsertSubscription(
@@ -312,8 +315,9 @@ async function getUserTier(svc: DataService | null, userId: string): Promise<Tie
   try {
     const rows = await svc.rawQuery(
       `SELECT tier, status FROM subscriptions FINAL
-       WHERE user_id = '${userId.replace(/'/g, "''")}'
-       LIMIT 1`
+       WHERE user_id = {userId:String}
+       LIMIT 1`,
+      { userId },
     )
     if (!rows.length) return TIERS.free
     if (rows[0].status !== 'active') return TIERS.free
@@ -328,8 +332,9 @@ async function getDailyUsage(svc: DataService | null, userId: string): Promise<n
   try {
     const rows = await svc.rawQuery(
       `SELECT count() AS cnt FROM agent_usage
-       WHERE user_id = '${userId.replace(/'/g, "''")}'
-       AND created_at >= today()`
+       WHERE user_id = {userId:String}
+       AND created_at >= today()`,
+      { userId },
     )
     return rows.length ? Number(rows[0].cnt) : 0
   } catch {
@@ -342,7 +347,8 @@ export async function recordUsage(svc: DataService | null, userId: string, query
   await ensureTables(svc)
   try {
     await svc.rawCommand(
-      `INSERT INTO agent_usage (user_id, query_type) VALUES ('${userId.replace(/'/g, "''")}', '${queryType.replace(/'/g, "''")}')`
+      `INSERT INTO agent_usage (user_id, query_type) VALUES ({userId:String}, {queryType:String})`,
+      { userId, queryType },
     )
   } catch (err) {
     console.warn('Failed to record usage:', err)
@@ -361,7 +367,8 @@ async function upsertSubscription(
   try {
     await svc.rawCommand(
       `INSERT INTO subscriptions (user_id, stripe_customer_id, stripe_subscription_id, tier, status, updated_at)
-       VALUES ('${userId.replace(/'/g, "''")}', '${customerId.replace(/'/g, "''")}', '${subscriptionId.replace(/'/g, "''")}', '${tier}', '${status}', now())`
+       VALUES ({userId:String}, {customerId:String}, {subscriptionId:String}, {tier:String}, {status:String}, now())`,
+      { userId, customerId, subscriptionId, tier, status },
     )
   } catch (err) {
     console.warn('Failed to upsert subscription:', err)

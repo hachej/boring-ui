@@ -108,9 +108,9 @@ interface LineagePayload {
     transform_name?: string | null
   }>
   edges: Array<{
-    from: string
-    to: string
-    transform_name?: string | null
+    source: string
+    target: string
+    transform?: string | null
   }>
 }
 
@@ -564,8 +564,8 @@ function LineageTab({ seriesId }: { seriesId: string }) {
     return <div className="p-4 text-xs text-muted-foreground">No lineage data.</div>
   }
 
-  const upstream = data.edges.filter((e) => e.to === seriesId)
-  const downstream = data.edges.filter((e) => e.from === seriesId)
+  const upstream = data.edges.filter((e) => e.target === seriesId)
+  const downstream = data.edges.filter((e) => e.source === seriesId)
   const nodeFor = (id: string) => data.nodes.find((n) => n.series_id === id)
 
   const Pill = ({ id }: { id: string }) => {
@@ -591,10 +591,10 @@ function LineageTab({ seriesId }: { seriesId: string }) {
         ) : (
           <ul className="space-y-1">
             {upstream.map((e) => (
-              <li key={`${e.from}->${e.to}`} className="flex items-center gap-2">
-                <Pill id={e.from} />
-                {e.transform_name && (
-                  <span className="text-muted-foreground">via {e.transform_name}</span>
+              <li key={`${e.source}->${e.target}`} className="flex items-center gap-2">
+                <Pill id={e.source} />
+                {e.transform && (
+                  <span className="text-muted-foreground">via {e.transform}</span>
                 )}
               </li>
             ))}
@@ -608,10 +608,10 @@ function LineageTab({ seriesId }: { seriesId: string }) {
         ) : (
           <ul className="space-y-1">
             {downstream.map((e) => (
-              <li key={`${e.from}->${e.to}`} className="flex items-center gap-2">
-                <Pill id={e.to} />
-                {e.transform_name && (
-                  <span className="text-muted-foreground">via {e.transform_name}</span>
+              <li key={`${e.source}->${e.target}`} className="flex items-center gap-2">
+                <Pill id={e.target} />
+                {e.transform && (
+                  <span className="text-muted-foreground">via {e.transform}</span>
                 )}
               </li>
             ))}

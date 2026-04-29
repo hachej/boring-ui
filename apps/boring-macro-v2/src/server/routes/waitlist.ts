@@ -43,9 +43,10 @@ export async function registerWaitlistRoute(app: FastifyInstance): Promise<void>
         tableReady = true
       }
 
-      // Escape single quotes for ClickHouse string literal
-      const safeEmail = email.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-      await svc.rawCommand(`INSERT INTO waitlist (email) VALUES ('${safeEmail}')`)
+      await svc.rawCommand(
+        `INSERT INTO waitlist (email) VALUES ({email:String})`,
+        { email },
+      )
     } catch (err) {
       app.log.error({ err }, 'Waitlist insert failed')
       // Don't expose internal errors — still return success to user
