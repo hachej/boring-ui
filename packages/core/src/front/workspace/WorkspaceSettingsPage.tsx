@@ -49,6 +49,8 @@ export function WorkspaceSettingsPage() {
   const workspaceId = workspace?.id ?? ''
 
   const [nameValue, setNameValue] = useState<string | null>(null)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [retryError, setRetryError] = useState<string | null>(null)
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -59,9 +61,10 @@ export function WorkspaceSettingsPage() {
     queryKey: ['runtime', workspaceId],
     queryFn: async () => {
       try {
-        return await apiFetchJson<WorkspaceRuntime>(
+        const data = await apiFetchJson<{ runtime: WorkspaceRuntime }>(
           `/api/v1/workspaces/${workspaceId}/runtime`,
         )
+        return data.runtime
       } catch (err: unknown) {
         const detail = getHttpErrorDetail(err)
         if (detail.status === 404) return null
@@ -80,9 +83,14 @@ export function WorkspaceSettingsPage() {
       })
     },
     onSuccess: () => {
+      setNameError(null)
       queryClient.invalidateQueries({ queryKey: workspaceQueryKey(workspaceId) })
       queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY })
       setNameValue(null)
+    },
+    onError: (err: unknown) => {
+      const detail = getHttpErrorDetail(err)
+      setNameError(detail.message)
     },
   })
 
@@ -93,7 +101,12 @@ export function WorkspaceSettingsPage() {
       })
     },
     onSuccess: () => {
+      setRetryError(null)
       queryClient.invalidateQueries({ queryKey: ['runtime', workspaceId] })
+    },
+    onError: (err: unknown) => {
+      const detail = getHttpErrorDetail(err)
+      setRetryError(detail.message)
     },
   })
 
@@ -145,6 +158,11 @@ export function WorkspaceSettingsPage() {
             <CardDescription>Workspace settings for {workspace?.name ?? 'this workspace'}.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {nameError && (
+              <div data-testid="name-error" role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {nameError}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="workspace-name">Workspace name</Label>
               <Input
@@ -189,14 +207,21 @@ export function WorkspaceSettingsPage() {
                 </div>
               )}
               {runtime.state === 'error' && runtime.lastErrorOp === 'provision' && (
-                <Button
-                  data-testid="retry-provision"
-                  variant="outline"
-                  disabled={retryMutation.isPending}
-                  onClick={() => retryMutation.mutate()}
-                >
-                  {retryMutation.isPending ? 'Retrying…' : 'Retry'}
-                </Button>
+                <>
+                  <Button
+                    data-testid="retry-provision"
+                    variant="outline"
+                    disabled={retryMutation.isPending}
+                    onClick={() => retryMutation.mutate()}
+                  >
+                    {retryMutation.isPending ? 'Retrying…' : 'Retry'}
+                  </Button>
+                  {retryError && (
+                    <div data-testid="retry-error" role="alert" className="text-sm text-destructive">
+                      {retryError}
+                    </div>
+                  )}
+                </>
               )}
               {runtime.state === 'error' && runtime.lastErrorOp === 'destroy' && (
                 <p data-testid="destroy-guidance" className="text-sm text-muted-foreground">

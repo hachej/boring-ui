@@ -77,7 +77,7 @@ function setupRuntimeHandler(runtime: WorkspaceRuntime | null) {
           headers: { 'content-type': 'application/json' },
         })
       }
-      return new Response(JSON.stringify(runtime), {
+      return new Response(JSON.stringify({ runtime }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
