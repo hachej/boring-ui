@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v7.2 — planning-workflow review pass: per-plugin error boundaries; CatalogRegistry search debouncing + AbortSignal propagation; `Plugin.systemPrompt` for LLM context augmentation; `<PluginInspector />` promoted back to Phase 1; new §Decisions log + §Plugin patterns; pi-tools-migration.md aligned to v7.
+**Status:** v7.3 — clarify PanelConfig's three roles (sidebar tab vs workbench pane vs bottom dock) without splitting the type. Phase 2+ may go to discriminated union. Workbench `pages` reserved as future contribution type.
 
 > **Factory pattern:** Plugins may be exposed as factories when they need
 > runtime config (e.g. macro's `makeMacroServerPlugin()`). v7.0 dropped the
@@ -272,6 +272,106 @@ type CatalogConfig = {
 `pluginId` is set automatically when contributions are fanned into
 registries; plugin code never assigns it. Late-wins-on-id collisions
 log a dev-mode warning identifying both contributors.
+
+### PanelConfig roles — three uses, one type (v7.3)
+
+The `PanelConfig` type unifies three conceptually-distinct
+contributions disambiguated by `placement`. v7.x keeps them in one
+type for impl simplicity; **Phase 2 may go to a discriminated union**
+(see Phase 2 sketch). Plugin authors should treat the three roles
+as semantically separate even though they share a TypeScript type.
+
+#### 1. Sidebar tab — `placement: 'left-tab' | 'right-tab'`
+
+Persistent tab in `WorkbenchLeftPane` (and, reserved, the
+not-yet-built `WorkbenchRightPane`). Always-on; user clicks to
+activate; the tab content renders inside the sidebar pane.
+
+**Required fields:** `id`, `title`, `component`, `placement`.
+**Should NOT set:** `filePatterns` (sidebar tabs aren't file-routed —
+they're navigation surfaces).
+**Examples:**
+- `filesystemPlugin`'s `files` tab (FileTreePanel)
+- macroPlugin's `macro-series` tab (DataExplorer with macroAdapter)
+
+#### 2. Workbench pane — `placement: 'center'`
+
+Ephemeral content opened via `surface.openFile(path)` (file-pattern
+resolver picks the panel) or `surface.openPanel({component, params})`
+(host-author picks explicitly). Lives as a tab in the dockview
+center area. Closes when user closes the tab.
+
+**Required fields:** `id`, `title`, `component`, `placement: 'center'`.
+**Often set:** `filePatterns: string[]` to drive auto-routing on
+`openFile()`. Without filePatterns, the panel can ONLY be opened
+explicitly via `openPanel({component: '<id>'})`.
+**Examples:**
+- `filesystemPlugin`'s `code-editor` (`filePatterns: ["**/*.ts", ...]`)
+- `filesystemPlugin`'s `markdown-editor` (`filePatterns: ["**/*.md"]`)
+- macroPlugin's `chart-canvas` (no filePatterns — opened explicitly
+  by macroSeriesPanel's `onActivate`)
+- macroPlugin's `deck` (`filePatterns: ["deck/**/*.md"]` — beats the
+  generic markdown editor for deck files via specificity scoring)
+
+#### 3. Bottom dock — `placement: 'bottom'`
+
+Fixed-position panel below the workbench center area. Persistent
+across tab changes. Suitable for terminals, consoles, log viewers.
+
+**Required fields:** `id`, `title`, `component`, `placement: 'bottom'`.
+**Should NOT set:** `filePatterns`.
+**Examples (none ship in Phase 1):** a future `terminalPlugin`
+might contribute a bottom dock.
+
+#### Reserved / future placements
+
+- `'right-tab'` — symmetric to `'left-tab'` but no Phase 1 component
+  consumes it (no `WorkbenchRightPane` exists). Keep the union member
+  for plugin authors who anticipate the right pane shipping.
+- `'left'` / `'right'` (without `-tab` suffix) — legacy placements
+  for non-tabbed left/right docks. Existing in current `PanelConfig`
+  union; Phase 1 plugins don't use them.
+
+#### Future contribution type — `Plugin.pages?: PageConfig[]`
+
+A "page" is a **full-viewport** view that replaces the chat-centered
+shell entirely. Conceptually similar to VS Code's `viewsContainers`
+(activity-bar entries). Use cases: a "Settings" page, a "Reports"
+dashboard, a multi-step "Onboarding" flow.
+
+```ts
+interface PageConfig {
+  id: string                          // 'settings', 'reports'
+  title: string
+  icon: ComponentType<{ className?: string }>
+  route?: string                      // '/settings' — optional URL routing
+  component: ComponentType            // mounts at viewport level
+}
+```
+
+**Out of scope for Phase 1** — no boring-* host has a real page need.
+Phase 2/3 if/when the first plugin author proposes it.
+
+#### Why one type today, possibly split later
+
+The three roles share enough structure (id, title, component,
+placement, source provenance) that splitting up-front would just
+add fields without enforcing meaningful invariants — `filePatterns`
+is the only role-specific field, and runtime validation
+(`PanelRegistry.resolve` only consults `filePatterns` for `'center'`
+panels) handles it correctly even when authors set it on the wrong
+placement.
+
+The split becomes worth it when:
+- A second role-specific field appears (e.g., sidebar tabs gain
+  `tabOrder`, bottom docks gain `defaultHeight`)
+- Plugin authors hit type-confusion bugs in practice
+
+Phase 2's discriminated-union refactor (`SidebarTabPanel | WorkbenchPane
+| BottomDock`) is a 2-3 hour change once we decide to do it.
+TypeScript narrowing makes the consumer-side ergonomic
+(`registry.resolve()` filters by kind first; sidebar-tab consumers
+filter by kind too).
 
 ### `definePlugin(spec)` and the factory pattern
 
@@ -2056,6 +2156,69 @@ None of these block the boring-macro acceptance test.
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v7.2 → v7.3 (PanelConfig roles clarified)
+
+User question (2026-04-29): "should we distinguish between pane and
+component that belong to the left sidebar... + we could imagine full
+workbench pages as well?"
+
+Honest answer: yes, the three roles ARE conceptually distinct. v7.3
+chooses to clarify them in docs without splitting the type — Phase 1
+impl already works; up-front splitting adds API surface without
+catching real bugs. Discriminated-union refactor is a good Phase 2
+candidate, blocked until a second role-specific field appears.
+
+### Spec additions
+
+1. **New §"PanelConfig roles — three uses, one type"** inside
+   §"Concrete contribution types". Names the three roles
+   (sidebar tab / workbench pane / bottom dock); for each:
+   required fields, fields-not-to-set, concrete examples from
+   filesystemPlugin and macroPlugin.
+
+2. **Reserved/future placements documented:** `'right-tab'`
+   (symmetric to left-tab; no Phase 1 consumer); `'left'` /
+   `'right'` (legacy non-tabbed; Phase 1 plugins don't use).
+
+3. **`Plugin.pages?: PageConfig[]` sketched as future contribution
+   type** for full-viewport views (Settings, Reports, Onboarding
+   flow). Out of scope for Phase 1; conceptually similar to VS
+   Code's `viewsContainers`. Documented but not in the contract.
+
+### Decision: defer the discriminated-union split
+
+The split becomes worth it when:
+- A second role-specific field appears (e.g., sidebar tabs gain
+  `tabOrder`, bottom docks gain `defaultHeight`)
+- Plugin authors hit type-confusion bugs in practice
+
+Until then: one type with `placement` runtime-disambiguating is
+cheaper.
+
+### `/registry` directory clarification (also v7.3)
+
+User question: "will `packages/workspace/src/registry/` disappear
+after Phase 1?"
+
+Answer: no — it stays. It holds the BASE PanelRegistry +
+CommandRegistry + RegistryProvider that the plugin model
+(`/plugin/`) FANS INTO via `bootstrap()`. The split is logical:
+`/registry` is "primitives any host could use directly without
+plugins"; `/plugin` is "the unified contribution layer." Active
+consumers of `/registry` outside the plugin path:
+WorkspaceProvider, DockviewShell, ChatCenteredShell, layout
+presets, ArtifactSurfacePane tests. Tearing down would break them
+without payoff.
+
+### Net impact
+
+- Spec: +130 lines (new role-clarification subsection + future
+  `pages` sketch + this changelog entry).
+- Contract: unchanged — same 7 fields (id, label, systemPrompt,
+  panels, commands, catalogs, agentTools).
+- Beads: unchanged. Bead descriptions can keep using
+  `placement: 'left-tab'` / `'center'` etc. as today.
 
 ## Changelog v7.1 → v7.2 (planning-workflow review pass)
 
