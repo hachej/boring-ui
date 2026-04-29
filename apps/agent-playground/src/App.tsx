@@ -1,5 +1,5 @@
 import './app.css'
-import { ChatPanel } from '../../src/front/ChatPanel'
+import { ChatPanel } from '@boring/agent/front'
 
 export function App() {
   return (
