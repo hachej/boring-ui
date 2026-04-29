@@ -115,10 +115,15 @@ describe("WorkspaceProvider — plugin integration", () => {
       </WorkspaceProvider>,
     )
 
-    const panelIds = screen.getByTestId("panel-ids").textContent
+    const panelIds = screen.getByTestId("panel-ids").textContent!.split(",")
     expect(panelIds).not.toContain("files")
     expect(panelIds).not.toContain("code-editor")
     expect(panelIds).not.toContain("markdown-editor")
+    // core panels remain
+    expect(panelIds).toContain("chat")
+    expect(panelIds).toContain("session-list")
+    expect(panelIds).toContain("workbench-left")
+    expect(panelIds).toContain("artifact-surface")
     expect(screen.getByTestId("catalog-count").textContent).toBe("0")
   })
 
@@ -241,5 +246,91 @@ describe("makeStaticDataPlugin", () => {
 
     expect(screen.getByTestId("has-panel").textContent).toBe("true")
     expect(screen.getByTestId("has-catalog").textContent).toBe("true")
+  })
+})
+
+describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
+  it("registers the 4 core panels with no plugins", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      const ids = reg.list().map((p) => p.id)
+      return <div data-testid="ids">{ids.join(",")}</div>
+    }
+
+    render(
+      <WorkspaceProvider persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    const ids = screen.getByTestId("ids").textContent!.split(",")
+    expect(ids).toContain("chat")
+    expect(ids).toContain("session-list")
+    expect(ids).toContain("workbench-left")
+    expect(ids).toContain("artifact-surface")
+  })
+
+  it("core panels have source 'builtin'", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      const coreIds = ["chat", "session-list", "workbench-left", "artifact-surface"]
+      const sources = coreIds.map((id) => reg.get(id)?.source).join(",")
+      return <div data-testid="sources">{sources}</div>
+    }
+
+    render(
+      <WorkspaceProvider persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    expect(screen.getByTestId("sources").textContent).toBe(
+      "builtin,builtin,builtin,builtin",
+    )
+  })
+
+  it("core panels register BEFORE plugin panels (ordering)", () => {
+    const testPlugin = definePlugin({
+      id: "custom",
+      panels: [{ id: "custom-panel", title: "Custom", component: DummyPanel, source: "app" }],
+    })
+
+    function Inspector() {
+      const reg = useRegistry()
+      const ids = reg.list().map((p) => p.id)
+      return <div data-testid="ids">{ids.join(",")}</div>
+    }
+
+    render(
+      <WorkspaceProvider plugins={[testPlugin]} persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    const ids = screen.getByTestId("ids").textContent!.split(",")
+    const chatIdx = ids.indexOf("chat")
+    const customIdx = ids.indexOf("custom-panel")
+    expect(chatIdx).toBeLessThan(customIdx)
+  })
+
+  it("core panels + filesystem defaults + user plugin all coexist", () => {
+    const testPlugin = definePlugin({
+      id: "test",
+      panels: [{ id: "test-panel", title: "Test", component: DummyPanel, source: "app" }],
+    })
+
+    function Inspector() {
+      const reg = useRegistry()
+      return <div data-testid="count">{reg.list().length}</div>
+    }
+
+    render(
+      <WorkspaceProvider plugins={[testPlugin]} persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    // 4 core + 3 filesystem + 1 test = 8
+    expect(screen.getByTestId("count").textContent).toBe("8")
   })
 })

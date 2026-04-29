@@ -27,6 +27,7 @@ import { Toaster } from "../toast"
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts"
 import { bootstrap } from "../shared/plugin/bootstrap"
 import { filesystemPlugin } from "../plugins/filesystemPlugin"
+import { coreWorkspacePanels } from "./registry/coreRegistrations"
 import type { Plugin } from "../shared/plugin/types"
 import type { PanelConfig } from "./registry/types"
 import type { CatalogConfig } from "../shared/plugin/types"
@@ -389,6 +390,11 @@ export function WorkspaceProvider({
     const pr = new PanelRegistry(capabilities)
     const cr = new CommandRegistry()
     const cat = new CatalogRegistry()
+
+    for (const panel of coreWorkspacePanels) {
+      const { id, ...config } = panel
+      pr.register(id, config)
+    }
 
     bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,

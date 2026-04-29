@@ -180,7 +180,7 @@ describe("WorkspaceProvider — context composition", () => {
 })
 
 describe("WorkspaceProvider — panel registration", () => {
-  it("registers panels from props alongside defaults", () => {
+  it("registers panels from props alongside core + defaults", () => {
     function Inspector() {
       const reg = useRegistry()
       const panels = reg.list()
@@ -197,12 +197,18 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    expect(screen.getByTestId("ids").textContent).toBe(
-      "files,code-editor,markdown-editor,test-panel,chat",
-    )
+    const ids = screen.getByTestId("ids").textContent!.split(",")
+    // 4 core panels (chat overwritten by prop's chat) + 3 filesystem + testPanel
+    expect(ids).toContain("chat")
+    expect(ids).toContain("session-list")
+    expect(ids).toContain("workbench-left")
+    expect(ids).toContain("artifact-surface")
+    expect(ids).toContain("files")
+    expect(ids).toContain("test-panel")
+    expect(ids).toHaveLength(8)
   })
 
-  it("excludeDefaults removes default panels", () => {
+  it("excludeDefaults removes default plugin panels but not core panels", () => {
     function Inspector() {
       const reg = useRegistry()
       const panels = reg.list()
@@ -220,7 +226,14 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    expect(screen.getByTestId("ids").textContent).toBe("test-panel,chat")
+    const ids = screen.getByTestId("ids").textContent!.split(",")
+    // 4 core panels (chat overwritten by prop) + testPanel = 5
+    expect(ids).toContain("chat")
+    expect(ids).toContain("session-list")
+    expect(ids).toContain("test-panel")
+    expect(ids).not.toContain("files")
+    expect(ids).not.toContain("code-editor")
+    expect(ids).not.toContain("markdown-editor")
   })
 
   it("registers host catalogs from props alongside defaults", async () => {
@@ -317,8 +330,10 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    // 3 default filesystem panels + 1 testPanel (chat filtered by capabilities)
-    expect(screen.getByTestId("count").textContent).toBe("4")
+    // 4 core + 3 filesystem + testPanel = 8 (prop's chat filtered by capabilities,
+    // but core's chat has no requiresCapabilities so stays — prop's chat overwrites
+    // core's, so chat is filtered). Result: 4-1 core + 3 filesystem + testPanel = 7
+    expect(screen.getByTestId("count").textContent).toBe("7")
   })
 
   it("custom panel with same ID as another overrides it", () => {
@@ -428,7 +443,7 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(screen.getByTestId("has-chat").textContent).toBe("true")
   })
 
-  it("undefined or null panels prop does not crash provider (defaults still registered)", () => {
+  it("undefined or null panels prop does not crash provider (core + defaults registered)", () => {
     function Inspector() {
       const reg = useRegistry()
       return <div data-testid="count">{reg.list().length}</div>
@@ -439,8 +454,8 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    // 3 filesystem default panels
-    expect(screen.getByTestId("count").textContent).toBe("3")
+    // 4 core + 3 filesystem default panels = 7
+    expect(screen.getByTestId("count").textContent).toBe("7")
 
     render(
       <WorkspaceProvider
@@ -450,7 +465,7 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("3")
+    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("7")
   })
 })
 
