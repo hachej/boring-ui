@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
-import { Toaster, clearToasts } from "../../../toast"
+import { Toaster, clearToasts } from "../../../front/toast"
 
 const mockFileList = vi.fn()
 const mockFileWrite = vi.fn()

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { CheckIcon, AlertCircleIcon, InfoIcon, XIcon } from "lucide-react"
-import { cn } from "../front/lib/utils"
+import { cn } from "../lib/utils"
 
 export type ToastVariant = "info" | "success" | "error"
 

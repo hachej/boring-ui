@@ -167,14 +167,14 @@ export type {
 } from "./front/events"
 
 // Toast notifications (app-global; mounted automatically by WorkspaceProvider)
-export { toast, Toaster, dismissToast } from "./toast"
+export { toast, Toaster, dismissToast } from "./front/toast"
 export type {
   ToastApi,
   ToastInput,
   ToastRecord,
   ToastVariant,
   ToasterProps,
-} from "./toast"
+} from "./front/toast"
 
 // Bridge
 export { createBridge } from "./front/bridge"
