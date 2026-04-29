@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
-import { Toaster, clearToasts } from "../../toast"
+import { Toaster, clearToasts } from "../../../toast"
 
 const mockFileList = vi.fn()
 const mockFileWrite = vi.fn()
@@ -13,7 +13,7 @@ const mockFileSearch = vi.fn()
 
 const mockGetTree = vi.fn()
 
-vi.mock("../../data", () => ({
+vi.mock("../../../data", () => ({
   useFileList: (dir: string) => mockFileList(dir),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useCreateDir: () => ({ mutateAsync: mockCreateDir }),
@@ -24,7 +24,7 @@ vi.mock("../../data", () => ({
   useApiBaseUrl: () => "/api",
 }))
 
-vi.mock("../../dock", () => ({
+vi.mock("../../../dock", () => ({
   PanelChrome: ({
     title,
     children,
@@ -38,7 +38,7 @@ vi.mock("../../dock", () => ({
   ),
 }))
 
-vi.mock("../../components/FileTree", () => {
+vi.mock("../FileTree", () => {
   type Node = { name: string; path: string; kind: string; isDraft?: boolean; children?: Node[] }
   type EditingArg = { path: string; isDraft: boolean; initialValue?: string } | null
   type PendingArg = ReadonlySet<string> | undefined
@@ -142,7 +142,7 @@ vi.mock("../../components/FileTree", () => {
   }
 })
 
-import { FileTreePane } from "../../components/FileTreeView"
+import { FileTreePane } from "../FileTreeView"
 
 const sampleFiles = [
   { name: "src", kind: "dir" as const, path: "src" },
@@ -476,7 +476,7 @@ describe("FileTreePane", () => {
     })
 
     it("New file submit emits file:created on the bus with cause:'user'", async () => {
-      const { events } = await import("../../events")
+      const { events } = await import("../../../events")
       events._reset()
       mockFileWrite.mockResolvedValue(undefined)
       const onCreated = vi.fn()

@@ -18,11 +18,11 @@ import {
   useDeleteFile,
   useFileSearch,
   useDataClient,
-} from "../data"
-import type { FileEntry } from "../data/types"
+} from "../../data"
+import type { FileEntry } from "../../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
-import type { WorkspaceBridge } from "../bridge/types"
-import { PanelChrome } from "../dock"
+import type { WorkspaceBridge } from "../../bridge/types"
+import { PanelChrome } from "../../dock"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,10 +33,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Input,
-} from "./ui"
-import { cn } from "../lib/utils"
-import { toast } from "../toast"
-import { events, userMeta } from "../events"
+} from "../../components/ui"
+import { cn } from "../../lib/utils"
+import { toast } from "../../toast"
+import { events, userMeta } from "../../events"
 
 const FileTree = lazy(() =>
   import("./FileTree").then((m) => ({ default: m.FileTree })),
@@ -351,7 +351,11 @@ export function FileTreeView({
         unique.map(async (dir) => {
           try {
             const children = await dataClient.getTree(dir)
-            return [dir, children] as const
+            const filtered =
+              ignoreNames.length === 0
+                ? children
+                : children.filter((c) => !matchesAny(c.name, ignoreNames))
+            return [dir, filtered] as const
           } catch {
             return null
           }
@@ -369,7 +373,7 @@ export function FileTreeView({
         return next
       })
     },
-    [dataClient, rootDir],
+    [dataClient, rootDir, ignoreNames],
   )
 
   // Paths currently being mutated (move/rename/delete/create). Renders a

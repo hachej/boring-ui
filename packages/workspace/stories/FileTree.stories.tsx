@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react"
-import { FileTree } from "../src/components/FileTree"
+import { FileTree } from "../src/panes/file-tree/FileTree"
 import { generateFileTreeNodes } from "./storybook-mocks"
 
 const meta: Meta<typeof FileTree> = {
