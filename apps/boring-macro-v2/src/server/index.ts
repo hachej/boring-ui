@@ -8,10 +8,10 @@
 // — no inlining required. The macro-specific bits (catalog/series/deck
 // REST routes, billing, waitlist, agent tools) layer on top.
 
-import Fastify from 'fastify'
 import rawBody from 'fastify-raw-body'
 import { createWorkspaceAgentApp } from '@boring/workspace/server'
 import { createMacroTools } from './tools/macroTools'
+import { makeMacroServerPlugin } from '../plugin/server'
 import { registerMacroRoutes } from './routes/macro'
 import { registerBillingRoutes } from './routes/billing'
 import { registerWaitlistRoute } from './routes/waitlist'
@@ -34,14 +34,11 @@ export async function buildServer(opts: MacroAppOptions = {}) {
   const macroConfig = await loadMacroConfig()
   const macroTools = createMacroTools(macroConfig.clickhouse)
 
-  // createWorkspaceAgentApp wires the agent harness + UI bridge (state +
-  // commands + tools) in one call. extraTools are merged: macro tools land
-  // alongside exec_ui/get_ui_state on the LLM's catalog.
   const app = await createWorkspaceAgentApp({
     workspaceRoot,
     mode: 'local',
     logger: opts.logger ?? true,
-    extraTools: macroTools,
+    plugins: [makeMacroServerPlugin(macroTools)],
   })
 
   // rawBody is needed by the Stripe webhook (signature verification reads

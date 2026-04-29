@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test"
  * Regression: user reported "I have the feeling commands are not
  * working". The playground now uses WorkspaceProvider + ChatLayout, so
  * the canary checks the provider-owned palette against the declarative
- * dockview shell instead of legacy ChatCenteredShell commands.
+ * dockview shell instead of centered-shell-specific commands.
  */
 
 async function runCommandFromPalette(
@@ -26,7 +26,7 @@ async function runCommandFromPalette(
 test.describe("command palette effects", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
   })
 
   test("top-bar Search opens the provider command palette", async ({ page }) => {
@@ -36,10 +36,13 @@ test.describe("command palette effects", () => {
     ).toBeVisible({ timeout: 5_000 })
   })
 
-  test("provider command can be selected from the palette", async ({ page }) => {
-    await expect(page.getByRole("region", { name: /agent assistant/i })).toBeVisible()
-    await runCommandFromPalette(page, "Close Tab")
-    await expect(page.getByRole("region", { name: /agent assistant/i })).toBeVisible()
+  test("chat command can be selected from the palette", async ({ page }) => {
+    const sessions = page
+      .getByRole("navigation", { name: /session history/i })
+      .getByRole("listitem")
+    const before = await sessions.count()
+    await runCommandFromPalette(page, "New Chat")
+    await expect(sessions).toHaveCount(before + 1)
   })
 
   test("session selection updates the TopBar through ChatLayout params", async ({ page }) => {

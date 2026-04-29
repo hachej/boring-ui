@@ -235,6 +235,7 @@ export type { SessionListProps, SessionItem } from "./front/components/SessionLi
 
 // Chat-centered layout
 export {
+  ChatShellContext,
   SessionBrowser,
   ChatStagePlaceholder,
   SurfaceShell,

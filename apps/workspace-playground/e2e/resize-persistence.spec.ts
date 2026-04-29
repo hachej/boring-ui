@@ -1,14 +1,14 @@
 import { expect, test } from "@playwright/test"
 
 /**
- * Canary coverage for the workspace-playground migration from the legacy
- * ChatCenteredShell to the declarative TopBar + ChatLayout stack.
+ * Canary coverage for the workspace-playground migration to the declarative
+ * TopBar + ChatLayout stack.
  */
 
 test.describe("ChatLayout canary", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
   })
 
   test("renders TopBar plus all four declarative chrome panels", async ({ page }) => {

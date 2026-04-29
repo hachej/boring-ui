@@ -10,7 +10,7 @@ import { expect, test } from "@playwright/test"
 
 async function openPalette(page: import("@playwright/test").Page) {
   await page.goto("/")
-  await page.waitForLoadState("networkidle")
+  await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
   await page.keyboard.press("ControlOrMeta+KeyK")
   await expect(
     page.getByRole("dialog", { name: /command palette/i }),
@@ -81,7 +81,7 @@ test.describe("command palette visual chrome", () => {
 test.describe("ChatLayout visual chrome", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
   })
 
   test("brand accent is available to declarative chrome", async ({ page }) => {
