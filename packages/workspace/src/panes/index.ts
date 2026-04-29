@@ -8,6 +8,6 @@ export { CodeEditorPane } from "../plugins/filesystemPlugin/code-editor/CodeEdit
 export type { CodeEditorPaneProps } from "../plugins/filesystemPlugin/code-editor/CodeEditorPane"
 export { FileTreePane, FileTreeView } from "../plugins/filesystemPlugin/file-tree/FileTreeView"
 export type { FileTreePaneProps, FileTreeViewProps } from "../plugins/filesystemPlugin/file-tree/FileTreeView"
-export { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
-export type { MarkdownEditorPaneProps } from "./markdown-editor/MarkdownEditorPane"
+export { MarkdownEditorPane } from "../plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
+export type { MarkdownEditorPaneProps } from "../plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
 export { defaultEditorPanels } from "./defaultEditorPanels"
