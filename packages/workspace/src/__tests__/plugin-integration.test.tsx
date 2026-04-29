@@ -1,0 +1,245 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { render, screen } from "@testing-library/react"
+import { renderHook } from "@testing-library/react"
+import type { ReactNode } from "react"
+import { WorkspaceProvider } from "../front/WorkspaceProvider"
+import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
+import { useCatalogs } from "../front/plugin/useCatalogs"
+import { definePlugin } from "../shared/plugin/definePlugin"
+import { makeStaticDataPlugin } from "../plugins/factories/makeStaticDataPlugin"
+import type { Plugin } from "../shared/plugin/types"
+import type { ExplorerAdapter, SearchResult } from "../front/components/DataExplorer/types"
+
+const DummyPanel = () => null
+
+let originalStorage: Storage
+beforeEach(() => {
+  originalStorage = globalThis.localStorage
+  const storage = new Map<string, string>()
+  Object.defineProperty(globalThis, "localStorage", {
+    value: {
+      getItem: vi.fn((key: string) => storage.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => storage.set(key, value)),
+      removeItem: vi.fn((key: string) => storage.delete(key)),
+      clear: vi.fn(() => storage.clear()),
+      get length() { return storage.size },
+      key: vi.fn((index: number) => [...storage.keys()][index] ?? null),
+    } as unknown as Storage,
+    writable: true,
+    configurable: true,
+  })
+})
+afterEach(() => {
+  Object.defineProperty(globalThis, "localStorage", {
+    value: originalStorage,
+    writable: true,
+    configurable: true,
+  })
+  vi.unstubAllGlobals()
+})
+
+const emptyResult: SearchResult = { items: [], total: 0, hasMore: false }
+
+const stubAdapter: ExplorerAdapter = {
+  search: vi.fn(async () => emptyResult),
+}
+
+describe("WorkspaceProvider — plugin integration", () => {
+  it("bootstrap runs once on mount and registers user plugin contributions", () => {
+    const testPlugin = definePlugin({
+      id: "test-plugin",
+      label: "Test",
+      panels: [
+        { id: "test-panel", title: "Test", component: DummyPanel, source: "app" },
+      ],
+      commands: [
+        { id: "test-cmd", title: "Test Command", run: vi.fn() },
+      ],
+    })
+
+    function Inspector() {
+      const reg = useRegistry()
+      const cmds = useCommandRegistry()
+      return (
+        <div>
+          <span data-testid="has-panel">{String(reg.has("test-panel"))}</span>
+          <span data-testid="has-cmd">{String(!!cmds.getCommand("test-cmd"))}</span>
+        </div>
+      )
+    }
+
+    render(
+      <WorkspaceProvider plugins={[testPlugin]} persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    expect(screen.getByTestId("has-panel").textContent).toBe("true")
+    expect(screen.getByTestId("has-cmd").textContent).toBe("true")
+  })
+
+  it("defaults include filesystemPlugin (files, code-editor, markdown-editor panels)", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      const ids = reg.list().map((p) => p.id)
+      return <div data-testid="ids">{ids.join(",")}</div>
+    }
+
+    render(
+      <WorkspaceProvider persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    const ids = screen.getByTestId("ids").textContent!.split(",")
+    expect(ids).toContain("files")
+    expect(ids).toContain("code-editor")
+    expect(ids).toContain("markdown-editor")
+  })
+
+  it("excludeDefaults: ['filesystem'] removes all filesystem contributions", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      const catalogs = useCatalogRegistry()
+      return (
+        <div>
+          <span data-testid="panel-ids">{reg.list().map((p) => p.id).join(",")}</span>
+          <span data-testid="catalog-count">{catalogs.list().length}</span>
+        </div>
+      )
+    }
+
+    render(
+      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    const panelIds = screen.getByTestId("panel-ids").textContent
+    expect(panelIds).not.toContain("files")
+    expect(panelIds).not.toContain("code-editor")
+    expect(panelIds).not.toContain("markdown-editor")
+    expect(screen.getByTestId("catalog-count").textContent).toBe("0")
+  })
+
+  it("existing children still work (capabilities, theme, etc.)", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      return <div data-testid="count">{reg.list().length}</div>
+    }
+
+    render(
+      <WorkspaceProvider
+        capabilities={{ "agent.chat": true }}
+        defaultTheme="dark"
+        persistenceEnabled={false}
+      >
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    expect(Number(screen.getByTestId("count").textContent)).toBeGreaterThanOrEqual(3)
+  })
+
+  it("user plugin alongside defaults does not conflict", () => {
+    const customPlugin = definePlugin({
+      id: "analytics",
+      panels: [
+        { id: "analytics-dashboard", title: "Analytics", component: DummyPanel, source: "app" },
+      ],
+    })
+
+    function Inspector() {
+      const reg = useRegistry()
+      const ids = reg.list().map((p) => p.id)
+      return <div data-testid="ids">{ids.join(",")}</div>
+    }
+
+    render(
+      <WorkspaceProvider plugins={[customPlugin]} persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    const ids = screen.getByTestId("ids").textContent!.split(",")
+    expect(ids).toContain("files")
+    expect(ids).toContain("analytics-dashboard")
+  })
+})
+
+describe("makeStaticDataPlugin", () => {
+  it("returns a Plugin with one panel and one catalog", () => {
+    const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
+    expect(plugin.id).toBe("static-data")
+    expect(plugin.label).toBe("Data")
+    expect(plugin.panels).toHaveLength(1)
+    expect(plugin.catalogs).toHaveLength(1)
+  })
+
+  it("panel id is ${id}-tab", () => {
+    const plugin = makeStaticDataPlugin({ id: "metrics", adapter: stubAdapter })
+    expect(plugin.panels![0].id).toBe("metrics-tab")
+  })
+
+  it("catalog id matches plugin id", () => {
+    const plugin = makeStaticDataPlugin({ id: "metrics", adapter: stubAdapter })
+    expect(plugin.catalogs![0].id).toBe("metrics")
+  })
+
+  it("uses defaults for id and label when not provided", () => {
+    const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
+    expect(plugin.id).toBe("static-data")
+    expect(plugin.label).toBe("Data")
+    expect(plugin.panels![0].title).toBe("Data")
+  })
+
+  it("uses custom label", () => {
+    const plugin = makeStaticDataPlugin({ adapter: stubAdapter, label: "Series" })
+    expect(plugin.label).toBe("Series")
+    expect(plugin.panels![0].title).toBe("Series")
+    expect(plugin.catalogs![0].label).toBe("Series")
+  })
+
+  it("panel has placement left-tab and source app", () => {
+    const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
+    expect(plugin.panels![0].placement).toBe("left-tab")
+    expect(plugin.panels![0].source).toBe("app")
+  })
+
+  it("catalog onSelect falls back to noop when onActivate is not provided", () => {
+    const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
+    expect(() => plugin.catalogs![0].onSelect({ id: "x", title: "X" })).not.toThrow()
+  })
+
+  it("catalog wires adapter and onSelect correctly", () => {
+    const onActivate = vi.fn()
+    const plugin = makeStaticDataPlugin({ adapter: stubAdapter, onActivate })
+    plugin.catalogs![0].onSelect({ id: "x", title: "X" })
+    expect(onActivate).toHaveBeenCalledWith({ id: "x", title: "X" })
+    expect(plugin.catalogs![0].adapter).toBe(stubAdapter)
+  })
+
+  it("works when passed to WorkspaceProvider plugins", () => {
+    const plugin = makeStaticDataPlugin({ adapter: stubAdapter, id: "my-data", label: "My Data" })
+
+    function Inspector() {
+      const reg = useRegistry()
+      const catalogs = useCatalogRegistry()
+      return (
+        <div>
+          <span data-testid="has-panel">{String(reg.has("my-data-tab"))}</span>
+          <span data-testid="has-catalog">{String(!!catalogs.get("my-data"))}</span>
+        </div>
+      )
+    }
+
+    render(
+      <WorkspaceProvider plugins={[plugin]} persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    expect(screen.getByTestId("has-panel").textContent).toBe("true")
+    expect(screen.getByTestId("has-catalog").textContent).toBe("true")
+  })
+})

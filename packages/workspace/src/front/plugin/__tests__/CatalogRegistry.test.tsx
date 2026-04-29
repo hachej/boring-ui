@@ -168,7 +168,7 @@ describe("useCatalogs", () => {
       }),
       {
         wrapper: ({ children }) => (
-          <WorkspaceProvider persistenceEnabled={false}>{children}</WorkspaceProvider>
+          <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>{children}</WorkspaceProvider>
         ),
       },
     )

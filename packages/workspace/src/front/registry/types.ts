@@ -37,23 +37,24 @@ interface PanelConfigBase {
   filePatterns?: string[]
   requiresCapabilities?: string[]
   essential?: boolean
+  chromeless?: boolean
   source?: "builtin" | "app"
   pluginId?: string
 }
 
-export interface SyncPanelConfig<T = unknown> extends PanelConfigBase {
+export interface SyncPanelConfig<T = any> extends PanelConfigBase {
   component: ComponentType<PaneProps<T>>
   lazy?: false
 }
 
-export interface LazyPanelConfig<T = unknown> extends PanelConfigBase {
+export interface LazyPanelConfig<T = any> extends PanelConfigBase {
   component: () => Promise<{ default: ComponentType<PaneProps<T>> }>
   lazy: true
 }
 
-export type PanelConfig<T = unknown> = SyncPanelConfig<T> | LazyPanelConfig<T>
+export type PanelConfig<T = any> = SyncPanelConfig<T> | LazyPanelConfig<T>
 
-export type PanelRegistration<T = unknown> =
+export type PanelRegistration<T = any> =
   | Omit<SyncPanelConfig<T>, "id">
   | Omit<LazyPanelConfig<T>, "id">
 
