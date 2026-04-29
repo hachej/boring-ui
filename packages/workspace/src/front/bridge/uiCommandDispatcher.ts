@@ -5,7 +5,7 @@
  * be exercised in isolation by tests and re-used by both the SSE and
  * polling transports in `uiCommandStream.ts`.
  */
-import type { SurfaceShellApi, OpenPanelConfig } from "./SurfaceShell"
+import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surface/SurfaceShell"
 
 export interface UiCommand {
   v?: number

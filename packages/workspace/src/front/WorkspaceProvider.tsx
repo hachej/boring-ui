@@ -8,8 +8,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type ReactNode,
 } from "react"
+import type { ChatPanelProps } from "@boring/agent"
 import { PanelRegistry } from "./registry/PanelRegistry"
 import { CommandRegistry } from "./registry/CommandRegistry"
 import { RegistryProvider, useCatalogRegistry } from "./registry/RegistryProvider"
@@ -157,6 +159,30 @@ export function useWorkspaceBridge(): WorkspaceBridgeContextValue {
 }
 
 // ---------------------------------------------------------------------------
+// Workspace context
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceContextValue {
+  chatPanel: ComponentType<ChatPanelProps> | null
+}
+
+const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
+
+export function useWorkspaceContext(): WorkspaceContextValue {
+  const ctx = useContext(WorkspaceContext)
+  if (!ctx) throw new Error("useWorkspaceContext must be used within a WorkspaceProvider")
+  return ctx
+}
+
+export function useWorkspaceChatPanel(): ComponentType<ChatPanelProps> {
+  const { chatPanel } = useWorkspaceContext()
+  if (!chatPanel) {
+    throw new Error("WorkspaceProvider requires a chatPanel prop before rendering ChatPanelHost")
+  }
+  return chatPanel
+}
+
+// ---------------------------------------------------------------------------
 // Built-in workspace shortcuts (rendered inside the provider tree)
 // ---------------------------------------------------------------------------
 
@@ -243,6 +269,7 @@ function WorkspaceCatalogBindings({
 
 export interface WorkspaceProviderProps {
   children: ReactNode
+  chatPanel?: ComponentType<ChatPanelProps>
   panels?: PanelConfig[]
   catalogs?: CatalogConfig[]
   capabilities?: Record<string, boolean>
@@ -266,6 +293,7 @@ export interface WorkspaceProviderProps {
 
 export function WorkspaceProvider({
   children,
+  chatPanel,
   panels,
   catalogs,
   capabilities,
@@ -430,40 +458,46 @@ export function WorkspaceProvider({
     () => ({ connected: bridgeConnected }),
     [bridgeConnected],
   )
+  const workspaceValue = useMemo<WorkspaceContextValue>(
+    () => ({ chatPanel: chatPanel ?? null }),
+    [chatPanel],
+  )
 
   return (
-    <ThemeContext.Provider value={themeValue}>
-      <WorkspaceBridgeContext.Provider value={bridgeValue}>
-        {/*
-         * Mount the data layer here so ChatCenteredShell/FileTreeView/etc.
-         * work without hosts wrapping a second DataProvider. Hosts that DO
-         * mount their own (legacy) get nested providers — inner wins, no
-         * functional difference; just an extra wasted QueryClient.
-         */}
-        <DataProvider
-          apiBaseUrl={apiBaseUrl}
-          authHeaders={authHeaders}
-          onAuthError={onAuthError}
-          timeout={apiTimeout}
-        >
-          <PluginErrorProvider>
-            <RegistryProvider
-              panelRegistry={panelRegistry}
-              commandRegistry={commandRegistry}
-              catalogRegistry={catalogRegistry}
-            >
-              <WorkspaceCatalogBindings
-                catalogs={catalogs}
-                onOpenFile={onOpenFile}
-              />
-              <WorkspaceShortcuts store={store} />
-              <CommandPalette />
-              <Toaster />
-              {children}
-            </RegistryProvider>
-          </PluginErrorProvider>
-        </DataProvider>
-      </WorkspaceBridgeContext.Provider>
-    </ThemeContext.Provider>
+    <WorkspaceContext.Provider value={workspaceValue}>
+      <ThemeContext.Provider value={themeValue}>
+        <WorkspaceBridgeContext.Provider value={bridgeValue}>
+          {/*
+           * Mount the data layer here so ChatCenteredShell/FileTreeView/etc.
+           * work without hosts wrapping a second DataProvider. Hosts that DO
+           * mount their own (legacy) get nested providers — inner wins, no
+           * functional difference; just an extra wasted QueryClient.
+           */}
+          <DataProvider
+            apiBaseUrl={apiBaseUrl}
+            authHeaders={authHeaders}
+            onAuthError={onAuthError}
+            timeout={apiTimeout}
+          >
+            <PluginErrorProvider>
+              <RegistryProvider
+                panelRegistry={panelRegistry}
+                commandRegistry={commandRegistry}
+                catalogRegistry={catalogRegistry}
+              >
+                <WorkspaceCatalogBindings
+                  catalogs={catalogs}
+                  onOpenFile={onOpenFile}
+                />
+                <WorkspaceShortcuts store={store} />
+                <CommandPalette />
+                <Toaster />
+                {children}
+              </RegistryProvider>
+            </PluginErrorProvider>
+          </DataProvider>
+        </WorkspaceBridgeContext.Provider>
+      </ThemeContext.Provider>
+    </WorkspaceContext.Provider>
   )
 }

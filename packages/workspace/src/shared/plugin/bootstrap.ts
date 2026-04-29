@@ -1,3 +1,5 @@
+import type { ComponentType } from "react"
+import type { ChatPanelProps } from "@boring/agent"
 import type { AgentTool } from "@boring/agent/shared"
 import type { CommandRegistry } from "../../front/registry/CommandRegistry"
 import type { PanelRegistry } from "../../front/registry/PanelRegistry"
@@ -10,8 +12,9 @@ export interface AgentToolRegistry {
 }
 
 export interface BootstrapOptions {
-  plugins: Plugin[]
-  defaults: Plugin[]
+  chatPanel: ComponentType<ChatPanelProps>
+  plugins?: Plugin[]
+  defaults?: Plugin[]
   excludeDefaults?: string[]
   registries: {
     panels: PanelRegistry
@@ -27,10 +30,14 @@ export interface BootstrapResult {
 }
 
 export function bootstrap(options: BootstrapOptions): BootstrapResult {
+  if (!options.chatPanel) {
+    throw new PluginError("validation", "bootstrap requires chatPanel")
+  }
+
   const excludedDefaults = new Set(options.excludeDefaults ?? [])
   const finalPlugins = [
-    ...options.defaults.filter((plugin) => !excludedDefaults.has(plugin.id)),
-    ...options.plugins,
+    ...(options.defaults ?? []).filter((plugin) => !excludedDefaults.has(plugin.id)),
+    ...(options.plugins ?? []),
   ]
 
   const seenPluginIds = new Set<string>()

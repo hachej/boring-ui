@@ -24,6 +24,8 @@ export {
 } from "./front/plugin"
 export type { CatalogRegistryOptions, PluginError as PluginContributionError } from "./front/plugin"
 export { filesystemPlugin } from "./plugins/filesystemPlugin"
+export { makeStaticDataPlugin } from "./plugins/factories/makeStaticDataPlugin"
+export type { StaticDataPluginOpts } from "./plugins/factories/makeStaticDataPlugin"
 
 // Utility
 export { cn } from "./lib/utils"
@@ -246,7 +248,7 @@ export type {
   ChatTopBarProps,
   ChatShellContextValue,
 } from "./front/components/chat"
-export type { ChatSuggestion } from "@boring/agent/front"
+export type { ChatSuggestion } from "@boring/agent"
 
 // Provider
 export {
@@ -254,11 +256,14 @@ export {
   ThemeProvider,
   useTheme,
   useWorkspaceBridge,
+  useWorkspaceContext,
+  useWorkspaceChatPanel,
 } from "./front/WorkspaceProvider"
 export type {
   WorkspaceProviderProps,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
+  WorkspaceContextValue,
 } from "./front/WorkspaceProvider"
 
 // Store (selectors only — store itself is NOT exported)

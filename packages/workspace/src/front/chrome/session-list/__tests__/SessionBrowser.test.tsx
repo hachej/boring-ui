@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, fireEvent, screen } from "@testing-library/react"
 import { SessionBrowser } from "../SessionBrowser"
-import type { SessionItem } from "../../SessionList"
+import type { SessionItem } from "../../../components/SessionList"
 
 const now = Date.now()
 const sample: SessionItem[] = [

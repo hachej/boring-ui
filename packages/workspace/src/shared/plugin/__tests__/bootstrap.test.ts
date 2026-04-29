@@ -6,8 +6,10 @@ import { bootstrap, type AgentToolRegistry } from "../bootstrap"
 import { CatalogRegistry } from "../../../front/plugin/CatalogRegistry"
 import { PluginError } from "../definePlugin"
 import type { CatalogConfig, Plugin } from "../types"
+import type { ChatPanelProps } from "@boring/agent"
 
 const DummyPanel = () => null
+const DummyChatPanel = (_props: ChatPanelProps) => null
 
 function makeRegistries() {
   return {
@@ -55,9 +57,20 @@ function makeAgentTool(name = "tool") {
 }
 
 describe("bootstrap", () => {
+  it("requires an injected chat panel", () => {
+    expect(() =>
+      bootstrap({
+        plugins: [],
+        defaults: [],
+        registries: makeRegistries(),
+      } as Parameters<typeof bootstrap>[0]),
+    ).toThrow("bootstrap requires chatPanel")
+  })
+
   it("returns an empty registered list for no plugins or defaults", () => {
     expect(
       bootstrap({
+        chatPanel: DummyChatPanel,
         plugins: [],
         defaults: [],
         registries: makeRegistries(),
@@ -71,6 +84,7 @@ describe("bootstrap", () => {
     const tool = makeAgentTool()
 
     bootstrap({
+      chatPanel: DummyChatPanel,
       plugins: [
         {
           id: "host",
@@ -100,6 +114,7 @@ describe("bootstrap", () => {
     const registries = makeRegistries()
 
     const result = bootstrap({
+      chatPanel: DummyChatPanel,
       defaults: [
         { id: "filesystem", commands: [makeCommand({ id: "default-command" })] },
         { id: "theme", commands: [makeCommand({ id: "theme-command" })] },
@@ -120,6 +135,7 @@ describe("bootstrap", () => {
     const registries = makeRegistries()
 
     const result = bootstrap({
+      chatPanel: DummyChatPanel,
       defaults: [{ id: "filesystem", commands: [makeCommand({ id: "default" })] }],
       plugins: [{ id: "filesystem", commands: [makeCommand({ id: "host" })] }],
       excludeDefaults: ["filesystem"],
@@ -135,6 +151,7 @@ describe("bootstrap", () => {
   it("throws duplicate-id for repeated plugin ids in the final set", () => {
     expect(() =>
       bootstrap({
+        chatPanel: DummyChatPanel,
         defaults: [{ id: "filesystem" }],
         plugins: [{ id: "filesystem" }],
         registries: makeRegistries(),
@@ -143,6 +160,7 @@ describe("bootstrap", () => {
 
     try {
       bootstrap({
+        chatPanel: DummyChatPanel,
         defaults: [{ id: "filesystem" }],
         plugins: [{ id: "filesystem" }],
         registries: makeRegistries(),
@@ -157,6 +175,7 @@ describe("bootstrap", () => {
     const registries = makeRegistries()
 
     bootstrap({
+      chatPanel: DummyChatPanel,
       defaults: [
         {
           id: "builtin",
@@ -189,6 +208,7 @@ describe("bootstrap", () => {
 
   it("is synchronous", () => {
     const result = bootstrap({
+      chatPanel: DummyChatPanel,
       defaults: [],
       plugins: [{ id: "host" }],
       registries: makeRegistries(),
@@ -202,6 +222,7 @@ describe("bootstrap", () => {
 
     expect(() =>
       bootstrap({
+        chatPanel: DummyChatPanel,
         defaults: [],
         plugins: [plugin],
         registries: makeRegistries(),
@@ -212,6 +233,7 @@ describe("bootstrap", () => {
   describe("systemPromptAppend", () => {
     it("returns empty string when no plugins have systemPrompt", () => {
       const result = bootstrap({
+        chatPanel: DummyChatPanel,
         plugins: [{ id: "a" }, { id: "b" }],
         defaults: [],
         registries: makeRegistries(),
@@ -221,6 +243,7 @@ describe("bootstrap", () => {
 
     it("returns trimmed prompt from a single plugin", () => {
       const result = bootstrap({
+        chatPanel: DummyChatPanel,
         plugins: [{ id: "a", systemPrompt: "  Hello world  " }],
         defaults: [],
         registries: makeRegistries(),
@@ -230,6 +253,7 @@ describe("bootstrap", () => {
 
     it("joins multiple prompts with double-newline in registration order", () => {
       const result = bootstrap({
+        chatPanel: DummyChatPanel,
         defaults: [{ id: "default", systemPrompt: "Default context" }],
         plugins: [{ id: "host", systemPrompt: "Host context" }],
         registries: makeRegistries(),
@@ -239,6 +263,7 @@ describe("bootstrap", () => {
 
     it("skips plugins with undefined systemPrompt", () => {
       const result = bootstrap({
+        chatPanel: DummyChatPanel,
         plugins: [
           { id: "a", systemPrompt: "A" },
           { id: "b" },
@@ -252,6 +277,7 @@ describe("bootstrap", () => {
 
     it("skips plugins with whitespace-only systemPrompt", () => {
       const result = bootstrap({
+        chatPanel: DummyChatPanel,
         plugins: [
           { id: "a", systemPrompt: "A" },
           { id: "b", systemPrompt: "   " },
@@ -265,6 +291,7 @@ describe("bootstrap", () => {
 
     it("preserves defaults-first ordering for prompt concatenation", () => {
       const result = bootstrap({
+        chatPanel: DummyChatPanel,
         defaults: [
           { id: "fs", systemPrompt: "Filesystem plugin" },
           { id: "theme", systemPrompt: "Theme plugin" },

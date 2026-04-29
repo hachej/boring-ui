@@ -5,14 +5,14 @@ import { ChevronLeft, Database, FolderTree, Search, X } from "lucide-react"
 import { cn } from "../../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
 import { FileTreeView } from "../../../panes/file-tree/FileTreeView"
-import { DataExplorer } from "../DataExplorer/DataExplorer"
-import { createSourcesAdapter, type SourceEntry } from "../DataExplorer/adapters"
+import { DataExplorer } from "../../components/DataExplorer/DataExplorer"
+import { createSourcesAdapter, type SourceEntry } from "../../components/DataExplorer/adapters"
 import type {
   DragPayload,
   ExplorerAdapter,
   ExplorerRow,
   FacetConfig,
-} from "../DataExplorer/types"
+} from "../../components/DataExplorer/types"
 
 export type DataSource = SourceEntry
 
@@ -267,4 +267,3 @@ function DataExplorerForSources({ sources, query }: { sources: DataSource[]; que
     />
   )
 }
-

@@ -1,0 +1,30 @@
+import { createElement } from "react"
+import { definePanel, type PaneProps } from "../../registry/types"
+import type { SessionItem } from "../../components/SessionList"
+import { SessionBrowser } from "./SessionBrowser"
+
+interface SessionListPaneParams {
+  sessions?: SessionItem[]
+  activeId?: string | null
+  onSwitch?: (id: string) => void
+  onCreate?: () => void
+  onDelete?: (id: string) => void
+}
+
+function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined>) {
+  return createElement(SessionBrowser, {
+    sessions: params?.sessions ?? [],
+    activeId: params?.activeId,
+    onSwitch: params?.onSwitch,
+    onCreate: params?.onCreate,
+    onDelete: params?.onDelete,
+  })
+}
+
+export const sessionListPanel = definePanel<SessionListPaneParams | undefined>({
+  id: "session-list",
+  title: "Sessions",
+  component: SessionListPane,
+  placement: "left",
+  source: "builtin",
+})
