@@ -17,6 +17,7 @@ import { CommandRegistry } from "./registry/CommandRegistry"
 import { RegistryProvider, useCatalogRegistry } from "./registry/RegistryProvider"
 import { CatalogRegistry } from "./plugin/CatalogRegistry"
 import { PluginErrorProvider } from "./plugin/PluginErrorContext"
+import { PluginInspector } from "./plugin/PluginInspector"
 import { createWorkspaceStore } from "../store"
 import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "./bridge/createBridge"
@@ -170,8 +171,15 @@ export function useWorkspaceBridge(): WorkspaceBridgeContextValue {
 // Workspace context
 // ---------------------------------------------------------------------------
 
+export interface RegisteredPluginMeta {
+  id: string
+  label?: string
+  systemPrompt?: string
+}
+
 export interface WorkspaceContextValue {
   chatPanel: ComponentType<ChatPanelProps> | null
+  registeredPlugins: RegisteredPluginMeta[]
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
@@ -386,7 +394,7 @@ export function WorkspaceProvider({
     }
   }, [bridgeEndpoint, store])
 
-  const { panelRegistry, commandRegistry, catalogRegistry } = useMemo(() => {
+  const { panelRegistry, commandRegistry, catalogRegistry, pluginMetas } = useMemo(() => {
     const pr = new PanelRegistry(capabilities)
     const cr = new CommandRegistry()
     const cat = new CatalogRegistry()
@@ -396,6 +404,12 @@ export function WorkspaceProvider({
       pr.register(id, config)
     }
 
+    const excludedDefaults = new Set(excludeDefaults ?? [])
+    const allPlugins = [
+      ...[filesystemPlugin].filter((p) => !excludedDefaults.has(p.id)),
+      ...(plugins ?? []),
+    ]
+
     bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,
       plugins: plugins ?? [],
@@ -403,6 +417,12 @@ export function WorkspaceProvider({
       excludeDefaults,
       registries: { panels: pr, commands: cr, catalogs: cat },
     })
+
+    const metas: RegisteredPluginMeta[] = allPlugins.map((p) => ({
+      id: p.id,
+      label: p.label,
+      systemPrompt: p.systemPrompt,
+    }))
 
     if (panels) {
       for (const panel of panels) {
@@ -444,7 +464,7 @@ export function WorkspaceProvider({
       },
     })
 
-    return { panelRegistry: pr, commandRegistry: cr, catalogRegistry: cat }
+    return { panelRegistry: pr, commandRegistry: cr, catalogRegistry: cat, pluginMetas: metas }
   }, [capabilities, chatPanel, plugins, excludeDefaults, panels, store])
 
   const onThemeChangeRef = useRef(onThemeChange)
@@ -484,8 +504,8 @@ export function WorkspaceProvider({
     [bridgeConnected],
   )
   const workspaceValue = useMemo<WorkspaceContextValue>(
-    () => ({ chatPanel: chatPanel ?? null }),
-    [chatPanel],
+    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas }),
+    [chatPanel, pluginMetas],
   )
 
   return (
@@ -518,6 +538,7 @@ export function WorkspaceProvider({
                 <CommandPalette />
                 <Toaster />
                 {children}
+                {import.meta.env.DEV && <PluginInspector plugins={pluginMetas} />}
               </RegistryProvider>
             </PluginErrorProvider>
           </DataProvider>
