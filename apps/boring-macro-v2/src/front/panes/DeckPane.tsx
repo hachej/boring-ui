@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { DockviewPanelApi } from "dockview-react"
+import type { PaneProps } from "@boring/workspace"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import {
@@ -26,7 +26,7 @@ interface DeckParams {
 
 interface DeckPaneProps {
   params?: DeckParams
-  panelApi?: DockviewPanelApi
+  api?: PaneProps<DeckParams | undefined>["api"]
 }
 
 const COLORS = SERIES_COLORS.slice(0, 5)
@@ -296,7 +296,7 @@ function buildSlides(parsed: ParsedDeck): DeckSlide[] {
   return body
 }
 
-export function DeckPane({ params: initial, panelApi }: DeckPaneProps) {
+export function DeckPane({ params: initial, api }: DeckPaneProps) {
   const [params, setParams] = useState<DeckParams>(initial ?? {})
   const path = params.path
 
@@ -329,12 +329,12 @@ export function DeckPane({ params: initial, panelApi }: DeckPaneProps) {
   }, [])
 
   useEffect(() => {
-    if (!panelApi) return
-    const sub = panelApi.onDidParametersChange((e) => {
+    if (!api) return
+    const sub = api.onDidParametersChange((e) => {
       setParams({ ...((e.params ?? {}) as DeckParams) })
     })
     return () => sub.dispose()
-  }, [panelApi])
+  }, [api])
 
   // Load
   useEffect(() => {

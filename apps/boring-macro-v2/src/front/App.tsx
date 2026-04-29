@@ -20,9 +20,26 @@ import { FREQ_LABELS } from "./macroSeriesUi"
 import { ChartCanvasPane } from "./panes/ChartCanvasPane"
 import { DeckPane } from "./panes/DeckPane"
 
+const MODEL_STORAGE_KEY = "boring-agent:composer:model"
+const INFOMANIAK_TOOL_MODEL = {
+  provider: "infomaniak",
+  id: "Qwen/Qwen3.5-122B-A10B-FP8",
+}
+
+function preferInfomaniakDefaultModel(): void {
+  try {
+    const raw = localStorage.getItem(MODEL_STORAGE_KEY)
+    if (!raw || raw.includes("anthropic") || raw.includes("moonshotai/Kimi-K2.6")) {
+      localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify(INFOMANIAK_TOOL_MODEL))
+    }
+  } catch { /* storage unavailable */ }
+}
+
 const sessionsStore = createLocalStorageSessions({ storageKey: "boring-macro:sessions" })
 
-const panels: PanelConfig[] = [
+type MacroPanelConfig = PanelConfig<any>
+
+const panels: MacroPanelConfig[] = [
   ...defaultEditorPanels,
   definePanel({
     id: "chart-canvas",
@@ -81,6 +98,7 @@ const macroChatSuggestions: ChatSuggestion[] = [
 ]
 
 function Shell() {
+  preferInfomaniakDefaultModel()
   const { sessions, activeId } = useLocalStorageSessions(sessionsStore)
 
   // The catalog onActivate runs after dockview is ready, so a ref captured
@@ -132,11 +150,15 @@ function Shell() {
       // list panels NOT covered by the default workbench allowlist.
       extraPanels={["chart-canvas", "deck"]}
       chatSuggestions={macroChatSuggestions}
+      thinkingControl
       emptyTitle="What macro question are we tackling?"
       emptyDescription="Search FRED, plot a series, derive a transform, or draft a briefing deck."
       // App-namespaced so this app's drawer/surface widths + the file-tree
-      // sidebar collapsed/width all live under one prefix.
-      storageKey="boring-macro:shell"
+      // sidebar collapsed/width all live under one prefix. v3 resets stale
+      // local state from earlier builds, which could persist the workbench
+      // closed and make Files/Data appear empty.
+      storageKey="boring-macro:shell:v3"
+      surfaceDefaultOpen
       onSurfaceReady={(api) => {
         surfaceRef.current = api
       }}
@@ -150,7 +172,7 @@ export function App() {
       <WorkspaceProvider
         panels={panels}
         apiBaseUrl=""
-        apiTimeout={10000}
+        apiTimeout={60000}
         persistenceEnabled
         storageKey="boring-macro:layout"
       >

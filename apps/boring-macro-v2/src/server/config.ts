@@ -61,6 +61,7 @@ async function probeDatabase(
       const r = await client.query({
         query: "SELECT database FROM system.tables WHERE name = 'series_catalog' ORDER BY database LIMIT 1",
         format: 'JSONEachRow',
+        abort_signal: AbortSignal.timeout(Number(process.env.BM_CH_PROBE_TIMEOUT_MS) || 2000),
       })
       const rows = await r.json<{ database: string }>()
       const found = rows[0]?.database?.trim()
@@ -106,7 +107,9 @@ async function resolveClickHouse(env: CHEnv): Promise<ClickHouseConfig | null> {
   }
 }
 
-export async function loadMacroConfig(): Promise<MacroConfig> {
+let configPromise: Promise<MacroConfig> | null = null
+
+async function loadMacroConfigUncached(): Promise<MacroConfig> {
   const chEnv = readClickHouseEnv()
   const clickhouse = await resolveClickHouse(chEnv)
 
@@ -139,4 +142,9 @@ export async function loadMacroConfig(): Promise<MacroConfig> {
     devAutoSession: envBool(process.env.BM_DEV_AUTO_SESSION, devAutoSessionDefault),
     deckRoot: process.env.BM_DECK_ROOT?.trim() || `${process.cwd()}/deck`,
   }
+}
+
+export async function loadMacroConfig(): Promise<MacroConfig> {
+  configPromise ??= loadMacroConfigUncached()
+  return configPromise
 }
