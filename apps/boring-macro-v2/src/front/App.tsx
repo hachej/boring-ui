@@ -22,7 +22,7 @@ import { DeckPane } from "./panes/DeckPane"
 
 const sessionsStore = createLocalStorageSessions({ storageKey: "boring-macro:sessions" })
 
-const panels: PanelConfig[] = [
+const panels = [
   ...defaultEditorPanels,
   definePanel({
     id: "chart-canvas",
@@ -48,7 +48,7 @@ const panels: PanelConfig[] = [
     placement: "center",
     source: "app",
   }),
-]
+] as PanelConfig[]
 
 // Hoisted so its in-flight requests survive parent re-renders.
 const macroAdapter = createMacroSeriesAdapter()

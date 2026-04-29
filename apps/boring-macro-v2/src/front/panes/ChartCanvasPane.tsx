@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { DockviewPanelApi } from "dockview-react"
+import type { PaneProps } from "@boring/workspace"
 import {
   CartesianGrid,
   Legend,
@@ -23,10 +23,7 @@ interface ChartParams {
   seriesId?: string
 }
 
-interface ChartCanvasPaneProps {
-  params?: ChartParams
-  panelApi?: DockviewPanelApi
-}
+type ChartCanvasPaneProps = PaneProps<ChartParams | undefined>
 
 const COLORS = SERIES_COLORS
 
@@ -135,7 +132,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: "lineage", label: "Lineage" },
 ]
 
-export function ChartCanvasPane({ params: initial, panelApi }: ChartCanvasPaneProps) {
+export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) {
   const [params, setParams] = useState<ChartParams>(initial ?? {})
   const seriesId = params.seriesId
 
@@ -150,13 +147,12 @@ export function ChartCanvasPane({ params: initial, panelApi }: ChartCanvasPanePr
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!panelApi) return
-    const sub = panelApi.onDidParametersChange((e) => {
+    const sub = api.onDidParametersChange((e) => {
       const next = (e.params ?? {}) as ChartParams
       setParams({ ...next })
     })
     return () => sub.dispose()
-  }, [panelApi])
+  }, [api])
 
   useEffect(() => {
     if (!seriesId) {
