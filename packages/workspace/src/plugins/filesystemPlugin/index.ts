@@ -1,7 +1,7 @@
 import { definePlugin } from "../../shared/plugin/definePlugin"
 import { definePanel } from "../../front/registry/types"
 import { FileTreePane } from "./file-tree/FileTreeView"
-import { CodeEditorPane } from "../../panes/code-editor/CodeEditorPane"
+import { CodeEditorPane } from "./code-editor/CodeEditorPane"
 import { MarkdownEditorPane } from "../../panes/markdown-editor/MarkdownEditorPane"
 
 export const filesystemPlugin = definePlugin({

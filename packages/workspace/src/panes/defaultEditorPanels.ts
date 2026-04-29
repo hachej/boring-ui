@@ -14,7 +14,7 @@
  * ]
  * ```
  */
-import { CodeEditorPane } from "./code-editor/CodeEditorPane"
+import { CodeEditorPane } from "../plugins/filesystemPlugin/code-editor/CodeEditorPane"
 import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
 import { definePanel } from "../front/registry/types"
 
