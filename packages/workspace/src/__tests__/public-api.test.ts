@@ -40,10 +40,11 @@ describe("@boring/workspace public API", () => {
   })
 
   describe("registry", () => {
-    it("exports PanelRegistry, CommandRegistry, and CatalogRegistry", () => {
+    it("exports PanelRegistry, CommandRegistry, CatalogRegistry, and bootstrap", () => {
       expect(api.PanelRegistry).toBeDefined()
       expect(api.CommandRegistry).toBeDefined()
       expect(api.CatalogRegistry).toBeDefined()
+      expect(api.bootstrap).toBeDefined()
     })
 
     it("exports registry hooks and provider", () => {

@@ -8,13 +8,14 @@
 // Plugin model
 export {
   definePlugin,
+  bootstrap,
   PluginError,
   CatalogRegistry,
   useCommands,
   useActivePanels,
   useCatalogs,
 } from "./plugin"
-export type { PluginErrorKind } from "./plugin"
+export type { PluginErrorKind, BootstrapOptions, BootstrapResult, AgentToolRegistry } from "./plugin"
 export type { Plugin, CatalogConfig, CatalogRegistryOptions } from "./plugin"
 
 // Utility
