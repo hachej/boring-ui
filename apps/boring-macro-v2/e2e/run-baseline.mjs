@@ -13,6 +13,9 @@ Environment:
   BASELINE_LAST_RUN_JSON   Playwright last-run copy path. Defaults to /tmp/macro-e2e-baseline.last-run.json.
   BASELINE_WORKTREE_DIR    Optional worktree path. Defaults to ../baseline-<sha>-macro-e2e-<pid>.
   BASELINE_INSTALL_CMD     Install command. Defaults to pnpm install --frozen-lockfile.
+  BASELINE_INSTALL_FALLBACK_CMD
+                           Fallback when default install fails. Defaults to
+                           pnpm install --no-frozen-lockfile --lockfile=false.
   BASELINE_PREP_CMD        Dependency build command. Defaults to agent/workspace/core build.
   BASELINE_TIMEOUT_MS      Playwright timeout. Defaults to 900000.
   BASELINE_KEEP_WORKTREE=1 Keep worktree after failure for debugging.
@@ -29,6 +32,9 @@ const lastRunJson =
   process.env.BASELINE_LAST_RUN_JSON ?? "/tmp/macro-e2e-baseline.last-run.json"
 const installCommand =
   process.env.BASELINE_INSTALL_CMD ?? "pnpm install --frozen-lockfile"
+const installFallbackCommand =
+  process.env.BASELINE_INSTALL_FALLBACK_CMD ??
+  "pnpm install --no-frozen-lockfile --lockfile=false"
 const prepCommand =
   process.env.BASELINE_PREP_CMD ??
   "pnpm --filter @boring/agent --filter @boring/workspace --filter @boring/core run build"
@@ -51,16 +57,36 @@ function run(command, args, options = {}) {
   }
 }
 
-function runShell(command, cwd) {
+function runShell(command, cwd, options = {}) {
   process.stderr.write(`\n$ ${command}\n`)
   const result = spawnSync(command, {
     cwd,
     stdio: "inherit",
     shell: true,
   })
-  if (result.status !== 0) {
+  if (result.status !== 0 && options.check !== false) {
     throw new Error(`command failed (${result.status ?? "signal"}): ${command}`)
   }
+  return result
+}
+
+function installDependencies(cwd) {
+  const result = runShell(installCommand, cwd, { check: false })
+  if (result.status === 0) {
+    return
+  }
+
+  if (process.env.BASELINE_INSTALL_CMD) {
+    throw new Error(
+      `command failed (${result.status ?? "signal"}): ${installCommand}`,
+    )
+  }
+
+  process.stderr.write(
+    "\nBaseline install failed with the frozen lockfile. " +
+      "Retrying without lockfile writes for historical refs.\n",
+  )
+  runShell(installFallbackCommand, cwd)
 }
 
 function output(command, args, options = {}) {
@@ -120,7 +146,7 @@ try {
   run("git", ["worktree", "add", "--detach", worktreeDir, fullSha], { cwd: repoRoot })
   createdWorktree = true
 
-  runShell(installCommand, worktreeDir)
+  installDependencies(worktreeDir)
   runShell(prepCommand, worktreeDir)
   runShell("pnpm typecheck", macroDir)
   runShell("pnpm build:web", macroDir)
