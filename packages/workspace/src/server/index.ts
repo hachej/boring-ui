@@ -15,7 +15,6 @@
 export {
   createWorkspaceAgentApp,
   type CreateWorkspaceAgentAppOptions,
-  type WorkspaceAgentDeps,
 } from "./createWorkspaceAgentApp"
 export { createInMemoryBridge } from "./ui-bridge/createInMemoryBridge"
 export { uiRoutes } from "./http/uiRoutes"
