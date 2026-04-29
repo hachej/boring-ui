@@ -36,6 +36,7 @@ export class FetchClient {
     path: string,
     body?: unknown,
     requestTimeout?: number,
+    signal?: AbortSignal,
   ): Promise<T> {
     const effectiveTimeout = requestTimeout ?? this.timeout
     let lastError: Error | null = null
@@ -46,6 +47,8 @@ export class FetchClient {
       }
 
       const controller = new AbortController()
+      const abortFromCaller = () => controller.abort()
+      signal?.addEventListener("abort", abortFromCaller, { once: true })
       const timer = setTimeout(() => controller.abort(), effectiveTimeout)
 
       try {
@@ -57,6 +60,7 @@ export class FetchClient {
         })
 
         clearTimeout(timer)
+        signal?.removeEventListener("abort", abortFromCaller)
 
         if (res.status === 401 || res.status === 403) {
           this.onAuthError?.(res.status)
@@ -82,12 +86,16 @@ export class FetchClient {
         return (await res.json()) as T
       } catch (err) {
         clearTimeout(timer)
+        signal?.removeEventListener("abort", abortFromCaller)
 
         if (err instanceof FetchError && !isRetryable(err.status)) {
           throw err
         }
 
         if (err instanceof DOMException && err.name === "AbortError") {
+          if (signal?.aborted) {
+            throw err
+          }
           this.onTimeout?.(path)
           lastError = new FetchError(0, `Request timeout after ${effectiveTimeout}ms: ${path}`)
           continue
@@ -156,10 +164,16 @@ export class FetchClient {
     return this.request<FileStat>("GET", `/api/v1/stat?path=${encodeURIComponent(path)}`)
   }
 
-  async search(query: string, limit?: number): Promise<string[]> {
+  async search(query: string, limit?: number, signal?: AbortSignal): Promise<string[]> {
     const params = new URLSearchParams({ q: query })
     if (limit != null) params.set("limit", String(limit))
-    const res = await this.request<{ results: string[] }>("GET", `/api/v1/files/search?${params}`)
+    const res = await this.request<{ results: string[] }>(
+      "GET",
+      `/api/v1/files/search?${params}`,
+      undefined,
+      undefined,
+      signal,
+    )
     return res.results
   }
 

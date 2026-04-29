@@ -808,9 +808,9 @@ export class DataService {
       }
 
       // Delete old data for replacement
-      await this.client.command({ query: `ALTER TABLE lineage DELETE WHERE derived_series_id = '${outputId}'` })
-      await this.client.command({ query: `ALTER TABLE timeseries DELETE WHERE series_id = '${outputId}'` })
-      await this.client.command({ query: `ALTER TABLE derived_series DELETE WHERE series_id = '${outputId}'` })
+      await this.client.command({ query: `ALTER TABLE lineage DELETE WHERE derived_series_id = {sid:String}`, query_params: { sid: outputId } })
+      await this.client.command({ query: `ALTER TABLE timeseries DELETE WHERE series_id = {sid:String}`, query_params: { sid: outputId } })
+      await this.client.command({ query: `ALTER TABLE derived_series DELETE WHERE series_id = {sid:String}`, query_params: { sid: outputId } })
       action = 'replaced'
     } else {
       action = 'created'

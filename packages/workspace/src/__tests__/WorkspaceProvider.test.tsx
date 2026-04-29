@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, act } from "@testing-library/react"
+import { render, screen, act, waitFor } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
 import { Suspense, type ReactNode, useState } from "react"
 import {
@@ -8,9 +8,11 @@ import {
   useWorkspaceBridge,
 } from "../WorkspaceProvider"
 import { useApiBaseUrl, useDataClient } from "../data"
-import { useRegistry, useCommandRegistry } from "../registry"
+import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../registry"
+import { useCatalogs } from "../plugin/useCatalogs"
 import { useThemePreference } from "../store/selectors"
 import type { PanelConfig } from "../registry/types"
+import type { CatalogConfig } from "../plugin/types"
 
 function DummyPanel() {
   return <div>panel</div>
@@ -79,6 +81,7 @@ afterEach(() => {
     writable: true,
     configurable: true,
   })
+  vi.unstubAllGlobals()
 })
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -118,6 +121,21 @@ describe("WorkspaceProvider — context composition", () => {
     )
 
     expect(Number(screen.getByTestId("cmds").textContent)).toBeGreaterThanOrEqual(3)
+  })
+
+  it("provides useCatalogRegistry", () => {
+    function Inspector() {
+      const catalogs = useCatalogRegistry()
+      return <div data-testid="catalogs">{String(catalogs.list().length)}</div>
+    }
+
+    render(
+      <WorkspaceProvider persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    expect(screen.getByTestId("catalogs").textContent).toBe("0")
   })
 
   it("provides useTheme with correct initial value", () => {
@@ -165,6 +183,84 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     expect(screen.getByTestId("ids").textContent).toBe("test-panel,chat")
+  })
+
+  it("registers host catalogs from props", async () => {
+    const reportsCatalog: CatalogConfig = {
+      id: "reports",
+      label: "Reports",
+      adapter: {
+        search: vi.fn(async () => ({ items: [], total: 0, hasMore: false })),
+      },
+      onSelect: vi.fn(),
+    }
+
+    function Inspector() {
+      const catalogs = useCatalogs()
+      return <div data-testid="catalog-ids">{catalogs.map((c) => c.id).join(",")}</div>
+    }
+
+    render(
+      <WorkspaceProvider
+        catalogs={[reportsCatalog]}
+        persistenceEnabled={false}
+      >
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("catalog-ids").textContent).toBe("reports")
+    })
+  })
+
+  it("registers a default files catalog when onOpenFile is provided", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ results: ["/src/App.tsx"] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const onOpenFile = vi.fn()
+    const { result } = renderHook(() => useCatalogRegistry(), {
+      wrapper: ({ children }) => (
+        <WorkspaceProvider
+          persistenceEnabled={false}
+          onOpenFile={onOpenFile}
+        >
+          {children}
+        </WorkspaceProvider>
+      ),
+    })
+
+    await waitFor(() => {
+      expect(result.current.get("files")?.label).toBe("Files")
+    })
+
+    const searchResult = await result.current.get("files")!.adapter.search({
+      query: "app",
+      filters: {},
+      limit: 10,
+      offset: 0,
+    })
+
+    expect(searchResult).toEqual({
+      items: [{ id: "/src/App.tsx", title: "App.tsx", subtitle: "/src/" }],
+      total: 1,
+      hasMore: false,
+    })
+
+    act(() => {
+      result.current.get("files")!.onSelect(searchResult.items[0]!)
+    })
+
+    expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx")
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/files/search?q=app&limit=10",
+      expect.objectContaining({ method: "GET" }),
+    )
   })
 
   it("capabilities filter removes panels missing required capabilities", () => {

@@ -156,6 +156,26 @@ describe("FetchClient", () => {
     expect(mockFetch.mock.calls[0][0]).toContain("limit=10")
   })
 
+  it("GET /api/v1/files/search aborts when caller AbortSignal aborts", async () => {
+    let fetchSignal: AbortSignal | undefined
+    mockFetch.mockImplementation((_, opts) => {
+      fetchSignal = opts.signal as AbortSignal
+      return new Promise((_, reject) => {
+        fetchSignal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
+        )
+      })
+    })
+    const client = new FetchClient({ apiBaseUrl: "" })
+    const controller = new AbortController()
+    const promise = client.search("*.ts", 10, controller.signal)
+    controller.abort()
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" })
+    expect(fetchSignal?.aborted).toBe(true)
+  })
+
   it("GET /api/v1/stat returns { size, mtimeMs, kind }", async () => {
     mockFetch.mockReturnValue(ok({ size: 42, mtimeMs: 100, kind: "file" }))
     const client = new FetchClient({ apiBaseUrl: "" })

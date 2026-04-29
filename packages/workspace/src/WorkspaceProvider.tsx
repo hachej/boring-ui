@@ -12,17 +12,19 @@ import {
 } from "react"
 import { PanelRegistry } from "./registry/PanelRegistry"
 import { CommandRegistry } from "./registry/CommandRegistry"
-import { RegistryProvider } from "./registry/RegistryProvider"
+import { RegistryProvider, useCatalogRegistry } from "./registry/RegistryProvider"
 import { CatalogRegistry } from "./plugin/CatalogRegistry"
 import { createWorkspaceStore } from "./store"
 import { bindStore, useThemePreference } from "./store/selectors"
 import { createBridge } from "./bridge/createBridge"
 import { createBridgeClient, type BridgeClient } from "./bridge/client"
 import { CommandPalette } from "./components/CommandPalette"
-import { DataProvider } from "./data"
+import { DataProvider, useDataClient, type FetchClient } from "./data"
 import { Toaster } from "./toast"
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts"
 import type { PanelConfig } from "./registry/types"
+import type { CatalogConfig } from "./plugin/types"
+import type { ExplorerRow, SearchResult } from "./components/DataExplorer/types"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,6 +33,45 @@ import type { PanelConfig } from "./registry/types"
 function getSystemTheme(): "light" | "dark" {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light"
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+}
+
+function rowFromPath(path: string): ExplorerRow {
+  const lastSlash = path.lastIndexOf("/")
+  return {
+    id: path,
+    title: lastSlash >= 0 ? path.slice(lastSlash + 1) : path,
+    subtitle: lastSlash >= 0 ? path.slice(0, lastSlash + 1) : undefined,
+  }
+}
+
+function emptySearchResult(): SearchResult {
+  return { items: [], total: 0, hasMore: false }
+}
+
+const PROVIDER_CATALOG_SOURCE = "workspace-provider"
+
+function createFilesCatalog(
+  client: Pick<FetchClient, "search">,
+  onOpenFile: (path: string) => void,
+): CatalogConfig {
+  return {
+    id: "files",
+    label: "Files",
+    adapter: {
+      async search({ query, limit, signal }) {
+        const trimmed = query.trim()
+        if (!trimmed || signal?.aborted) return emptySearchResult()
+        const paths = await client.search(trimmed, limit, signal)
+        if (signal?.aborted) return emptySearchResult()
+        return {
+          items: paths.map(rowFromPath),
+          total: paths.length,
+          hasMore: false,
+        }
+      },
+    },
+    onSelect: (row) => onOpenFile(row.id),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +203,39 @@ function WorkspaceShortcuts({
   return null
 }
 
+function WorkspaceCatalogBindings({
+  catalogs,
+  onOpenFile,
+}: {
+  catalogs?: CatalogConfig[]
+  onOpenFile?: (path: string) => void
+}) {
+  const dataClient = useDataClient()
+  const catalogRegistry = useCatalogRegistry()
+
+  useEffect(() => {
+    const providerCatalogs: CatalogConfig[] = []
+
+    if (onOpenFile) {
+      providerCatalogs.push(createFilesCatalog(dataClient, onOpenFile))
+    }
+
+    if (catalogs?.length) {
+      providerCatalogs.push(...catalogs)
+    }
+
+    for (const catalog of providerCatalogs) {
+      catalogRegistry.register(catalog, PROVIDER_CATALOG_SOURCE)
+    }
+
+    return () => {
+      catalogRegistry.unregisterByPluginId(PROVIDER_CATALOG_SOURCE)
+    }
+  }, [catalogRegistry, catalogs, dataClient, onOpenFile])
+
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // WorkspaceProvider props
 // ---------------------------------------------------------------------------
@@ -169,6 +243,7 @@ function WorkspaceShortcuts({
 export interface WorkspaceProviderProps {
   children: ReactNode
   panels?: PanelConfig[]
+  catalogs?: CatalogConfig[]
   capabilities?: Record<string, boolean>
   apiBaseUrl?: string
   authHeaders?: Record<string, string>
@@ -181,6 +256,7 @@ export interface WorkspaceProviderProps {
   persistenceEnabled?: boolean
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
+  onOpenFile?: (path: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +266,7 @@ export interface WorkspaceProviderProps {
 export function WorkspaceProvider({
   children,
   panels,
+  catalogs,
   capabilities,
   apiBaseUrl = "",
   authHeaders,
@@ -201,6 +278,7 @@ export function WorkspaceProvider({
   persistenceEnabled = true,
   bridgeEndpoint,
   onAuthError,
+  onOpenFile,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -372,6 +450,10 @@ export function WorkspaceProvider({
             commandRegistry={commandRegistry}
             catalogRegistry={catalogRegistry}
           >
+            <WorkspaceCatalogBindings
+              catalogs={catalogs}
+              onOpenFile={onOpenFile}
+            />
             <WorkspaceShortcuts store={store} />
             <CommandPalette />
             <Toaster />
