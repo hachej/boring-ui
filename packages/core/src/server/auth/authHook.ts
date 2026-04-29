@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify'
 import fp from 'fastify-plugin'
-import { HttpError } from '../../shared/errors.js'
+import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import type { BetterAuthInstance } from './createAuth.js'
 
 export interface AuthHookOptions {
@@ -53,7 +53,7 @@ const authHookPlugin: FastifyPluginAsync<AuthHookOptions> = async (app, opts) =>
     ) {
       throw new HttpError({
         status: 401,
-        code: 'unauthorized',
+        code: ERROR_CODES.UNAUTHORIZED,
         message: 'Authentication required',
         requestId: request.id,
       })

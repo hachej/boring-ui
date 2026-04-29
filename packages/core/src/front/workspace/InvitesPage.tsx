@@ -95,6 +95,8 @@ export function InvitesPage() {
     },
   })
 
+  const [revokeError, setRevokeError] = useState<string | null>(null)
+
   const revokeMutation = useMutation({
     mutationFn: async (inviteId: string) => {
       await apiFetch(`/api/v1/workspaces/${workspaceId}/invites/${inviteId}`, {
@@ -102,7 +104,12 @@ export function InvitesPage() {
       })
     },
     onSuccess: () => {
+      setRevokeError(null)
       queryClient.invalidateQueries({ queryKey: invitesQueryKey(workspaceId) })
+    },
+    onError: (err: unknown) => {
+      const detail = getHttpErrorDetail(err)
+      setRevokeError(detail.message)
     },
   })
 
@@ -206,7 +213,15 @@ export function InvitesPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {revokeError && (
+              <div role="alert" className="mb-4 text-sm text-destructive">
+                {revokeError}
+              </div>
+            )}
             {invitesQuery.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+            {invitesQuery.isError && (
+              <p className="text-sm text-destructive">Failed to load invites.</p>
+            )}
             {invitesQuery.data && invitesQuery.data.length > 0 && (
               <div className="divide-y" data-testid="invites-list">
                 {invitesQuery.data.map((invite) => {

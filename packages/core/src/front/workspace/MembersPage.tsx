@@ -126,6 +126,9 @@ export function MembersPage() {
             {membersQuery.isLoading && (
               <p className="text-sm text-muted-foreground">Loading…</p>
             )}
+            {membersQuery.isError && (
+              <p className="text-sm text-destructive">Failed to load members.</p>
+            )}
             {membersQuery.data && membersQuery.data.length > 0 && (
               <div className="divide-y" data-testid="members-list">
                 {membersQuery.data.map((member) => {

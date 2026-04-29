@@ -132,7 +132,7 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
 
       if (result.code === ERROR_CODES.NOT_MEMBER) {
         throw new HttpError({
-          status: 409,
+          status: 404,
           code: ERROR_CODES.NOT_MEMBER,
           message: 'User is not a member of this workspace',
           requestId: request.id,

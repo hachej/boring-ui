@@ -46,7 +46,7 @@ export function InviteAcceptPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
       }),
-    enabled: Boolean(token) && !isSessionPending,
+    enabled: Boolean(token) && !isSessionPending && isSignedIn,
     retry: false,
   })
 

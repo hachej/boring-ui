@@ -345,7 +345,7 @@ const ROUTE_TABLE: RouteSpec[] = [
   {
     method: 'DELETE', path: '/api/v1/workspaces/:id/members/:userId',
     url: (wsId) => `/api/v1/workspaces/${wsId}/members/${NON_MEMBER_ID}`,
-    expectMember: (s) => s === 200 || s === 409,
+    expectMember: (s) => s === 200 || s === 404 || s === 409,
   },
   // invites.ts
   {
