@@ -43,7 +43,9 @@ function loadRecent(): string[] {
     const raw = localStorage.getItem(RECENT_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.slice(0, MAX_RECENT) : []
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string").slice(0, MAX_RECENT)
+      : []
   } catch {
     return []
   }
@@ -59,6 +61,10 @@ function addToRecent(key: string): void {
   const recent = loadRecent().filter((r) => r !== key)
   recent.unshift(key)
   saveRecent(recent)
+}
+
+function isRecentFile(path: string): boolean {
+  return !path.startsWith("cmd:")
 }
 
 export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps) {
@@ -120,7 +126,10 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
 
   useKeyboardShortcuts({
     shortcuts: useMemo(
-      () => [{ key: "k", mod: true, allowInEditable: true, handler: openPalette }],
+      () => [
+        { key: "k", mod: true, allowInEditable: true, handler: openPalette },
+        { key: "p", mod: true, allowInEditable: true, handler: openPalette },
+      ],
       [openPalette],
     ),
   })
@@ -151,12 +160,15 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
     const active = commandRegistry.getActiveCommands()
     if (!searchQuery) return active.slice(0, MAX_RESULTS)
     const lower = searchQuery.toLowerCase()
-    return active.filter((c) => c.title.toLowerCase().includes(lower)).slice(0, MAX_RESULTS)
+    return active.filter((c) => {
+      if (c.title.toLowerCase().includes(lower)) return true
+      return c.keywords?.some((keyword) => keyword.toLowerCase().includes(lower)) ?? false
+    }).slice(0, MAX_RESULTS)
   }, [isCommandMode, commandRegistry, searchQuery])
 
   const recentFiles = useMemo(() => {
     if (isCommandMode || searchQuery) return []
-    return loadRecent()
+    return loadRecent().filter(isRecentFile)
   }, [isCommandMode, searchQuery])
 
   const handleFileSelect = useCallback(
@@ -170,7 +182,6 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
 
   const handleCommandSelect = useCallback(
     (cmd: CommandConfig) => {
-      addToRecent(`cmd:${cmd.id}`)
       cmd.run()
       setOpen(false)
     },

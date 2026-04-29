@@ -87,6 +87,7 @@ export interface CommandConfig {
   id: string
   title: string
   run: () => void
+  keywords?: string[]
   shortcut?: string
   when?: () => boolean
   pluginId?: string

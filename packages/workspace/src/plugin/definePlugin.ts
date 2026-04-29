@@ -83,6 +83,19 @@ function validateCommands(pluginId: string, commands: CommandConfig[]): void {
         `commands[${i}].run must be a function (got: ${typeof c.run})`,
       )
     }
+    if (c.keywords !== undefined) {
+      if (!Array.isArray(c.keywords)) {
+        fail(pluginId, `commands[${i}].keywords must be an array when provided`)
+      }
+      for (let j = 0; j < c.keywords.length; j++) {
+        if (!c.keywords[j] || typeof c.keywords[j] !== "string") {
+          fail(
+            pluginId,
+            `commands[${i}].keywords[${j}] must be a non-empty string`,
+          )
+        }
+      }
+    }
   }
 }
 

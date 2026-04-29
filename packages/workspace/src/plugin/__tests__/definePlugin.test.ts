@@ -183,6 +183,31 @@ describe("definePlugin", () => {
         }),
       ).toThrow("commands[0].run must be a function")
     })
+
+    it("accepts keywords when they are non-empty strings", () => {
+      expect(() =>
+        definePlugin({
+          id: "test",
+          commands: [makeCommand({ keywords: ["team", "people"] })],
+        }),
+      ).not.toThrow()
+    })
+
+    it("throws on invalid keywords payloads", () => {
+      expect(() =>
+        definePlugin({
+          id: "test",
+          commands: [makeCommand({ keywords: "team" as unknown as string[] })],
+        }),
+      ).toThrow("commands[0].keywords must be an array when provided")
+
+      expect(() =>
+        definePlugin({
+          id: "test",
+          commands: [makeCommand({ keywords: ["team", ""] })],
+        }),
+      ).toThrow("commands[0].keywords[1] must be a non-empty string")
+    })
   })
 
   describe("catalogs validation", () => {

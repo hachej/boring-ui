@@ -12,6 +12,37 @@ if (!Element.prototype.scrollIntoView) {
 
 const RECENT_KEY = "boring-ui-v2:command-palette:recent"
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function fileOptionName(path: string): RegExp {
+  const lastSlash = path.lastIndexOf("/")
+  const dir = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : ""
+  const name = lastSlash >= 0 ? path.slice(lastSlash + 1) : path
+  return new RegExp(`${escapeRegExp(name)}.*${escapeRegExp(dir)}`)
+}
+
+function getFileOption(path: string): HTMLElement {
+  return screen.getByRole("option", { name: fileOptionName(path) })
+}
+
+function getPaletteInput(): HTMLInputElement {
+  return screen.getByRole("combobox") as HTMLInputElement
+}
+
+async function typePaletteQuery(
+  user: ReturnType<typeof userEvent.setup>,
+  query: string,
+): Promise<HTMLInputElement> {
+  const input = getPaletteInput()
+  await user.clear(input)
+  if (query) {
+    await user.type(input, query)
+  }
+  return input
+}
+
 function createWrapper(commandRegistry?: CommandRegistry) {
   const pr = new PanelRegistry()
   const cr = commandRegistry ?? new CommandRegistry()
@@ -92,7 +123,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
+      const input = getPaletteInput()
       await user.type(input, "hello")
       await user.keyboard("{Escape}")
       await waitFor(() => {
@@ -156,13 +187,12 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, "app")
+      await typePaletteQuery(user, "app")
       await waitFor(() => {
         expect(searchFn).toHaveBeenCalledWith("app")
       })
-      expect(screen.getByText("/src/App.tsx")).toBeInTheDocument()
-      expect(screen.getByText("/src/index.ts")).toBeInTheDocument()
+      expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
+      expect(getFileOption("/src/index.ts")).toBeInTheDocument()
     })
 
     it("calls onOpenFile when file is selected", async () => {
@@ -177,12 +207,11 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, "app")
+      await typePaletteQuery(user, "app")
       await waitFor(() => {
-        expect(screen.getByText("/src/App.tsx")).toBeInTheDocument()
+        expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
       })
-      await user.click(screen.getByText("/src/App.tsx"))
+      await user.click(getFileOption("/src/App.tsx"))
       expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx")
     })
 
@@ -196,8 +225,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, "nonexistent")
+      await typePaletteQuery(user, "nonexistent")
       await waitFor(() => {
         expect(screen.getByText("No files found")).toBeInTheDocument()
       })
@@ -213,12 +241,11 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, "app")
+      await typePaletteQuery(user, "app")
       await waitFor(() => {
-        expect(screen.getByText("/src/App.tsx")).toBeInTheDocument()
+        expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
       })
-      await user.click(screen.getByText("/src/App.tsx"))
+      await user.click(getFileOption("/src/App.tsx"))
       await waitFor(() => {
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
       })
@@ -239,11 +266,10 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, ">")
+      await typePaletteQuery(user, ">")
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText(/Type a command/),
+          screen.getByPlaceholderText(/Run a command/),
         ).toBeInTheDocument()
       })
       expect(screen.getByText("Test Command")).toBeInTheDocument()
@@ -267,10 +293,35 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, ">sidebar")
+      await typePaletteQuery(user, ">sidebar")
       await waitFor(() => {
         expect(screen.getByText("Toggle Sidebar")).toBeInTheDocument()
+      })
+      expect(screen.queryByText("Toggle Theme")).not.toBeInTheDocument()
+    })
+
+    it("filters commands by keywords too", async () => {
+      const user = userEvent.setup()
+      const cr = new CommandRegistry()
+      cr.registerCommand({
+        id: "members",
+        title: "Manage Members",
+        keywords: ["team", "people", "roles"],
+        run: vi.fn(),
+      })
+      cr.registerCommand({
+        id: "theme",
+        title: "Toggle Theme",
+        run: vi.fn(),
+      })
+      render(<CommandPalette />, { wrapper: createWrapper(cr) })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      await typePaletteQuery(user, ">team")
+      await waitFor(() => {
+        expect(screen.getByText("Manage Members")).toBeInTheDocument()
       })
       expect(screen.queryByText("Toggle Theme")).not.toBeInTheDocument()
     })
@@ -285,8 +336,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, ">")
+      await typePaletteQuery(user, ">")
       await waitFor(() => {
         expect(screen.getByText("Run Test")).toBeInTheDocument()
       })
@@ -308,8 +358,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, ">")
+      await typePaletteQuery(user, ">")
       await waitFor(() => {
         expect(screen.getByText("⌘B")).toBeInTheDocument()
       })
@@ -323,8 +372,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, ">nonexistent")
+      await typePaletteQuery(user, ">nonexistent")
       await waitFor(() => {
         expect(screen.getByText("No matching commands")).toBeInTheDocument()
       })
@@ -350,8 +398,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, ">")
+      await typePaletteQuery(user, ">")
       await waitFor(() => {
         expect(screen.getByText("Visible Command")).toBeInTheDocument()
       })
@@ -372,12 +419,11 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const input = screen.getByPlaceholderText(/Search files/)
-      await user.type(input, "app")
+      await typePaletteQuery(user, "app")
       await waitFor(() => {
-        expect(screen.getByText("/src/App.tsx")).toBeInTheDocument()
+        expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
       })
-      await user.click(screen.getByText("/src/App.tsx"))
+      await user.click(getFileOption("/src/App.tsx"))
       const recent = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
       expect(recent).toContain("/src/App.tsx")
     })
@@ -390,8 +436,28 @@ describe("CommandPalette", () => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
       await waitFor(() => {
-        expect(screen.getByText("/src/recent.ts")).toBeInTheDocument()
+        expect(getFileOption("/src/recent.ts")).toBeInTheDocument()
       })
+    })
+
+    it("does not store commands in the recent file list", async () => {
+      const user = userEvent.setup()
+      const run = vi.fn()
+      const cr = new CommandRegistry()
+      cr.registerCommand({ id: "members", title: "Manage Members", run })
+      render(<CommandPalette />, { wrapper: createWrapper(cr) })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      await typePaletteQuery(user, ">")
+      await waitFor(() => {
+        expect(screen.getByText("Manage Members")).toBeInTheDocument()
+      })
+      await user.click(screen.getByText("Manage Members"))
+      expect(run).toHaveBeenCalledOnce()
+      const recent = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
+      expect(recent).not.toContain("cmd:members")
     })
   })
 })
