@@ -21,7 +21,7 @@ import {
 const MOBILE_BREAKPOINT = 768
 const TABLET_BREAKPOINT = 1024
 
-interface ResponsiveDockviewShellProps {
+export interface ResponsiveDockviewShellProps {
   layout: LayoutConfig
   className?: string
 }

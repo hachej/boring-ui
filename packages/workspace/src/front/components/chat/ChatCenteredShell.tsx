@@ -11,14 +11,17 @@ import {
 import { cn } from "../../../lib/utils"
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts"
 import { ChatShellContext, type ChatShellContextValue } from "./context"
-import { ChatTopBar } from "./ChatTopBar"
+import { TopBar } from "../../layout/TopBar"
 import { SessionBrowser } from "../../chrome/session-list/SessionBrowser"
 import { SurfaceShell } from "../../chrome/artifact-surface/SurfaceShell"
-import { ChatStagePlaceholder, type ChatStageHandle } from "../../chrome/chat-stage-placeholder/ChatStagePlaceholder"
+import {
+  ChatStagePlaceholder,
+  type ChatStageHandle,
+  type ChatSuggestion,
+} from "../../chrome/chat-stage-placeholder/ChatStagePlaceholder"
 import { ChatPanelHost } from "../../chrome/chat/ChatPanelHost"
 import type { SessionItem } from "../SessionList"
 import type { DataSource, DataPaneConfig } from "../../chrome/workbench-left/WorkbenchLeftPane"
-import type { ChatSuggestion } from "@boring/agent"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 import { useCommandRegistry, useRegistry } from "../../registry"
 
@@ -490,7 +493,7 @@ export function ChatCenteredShell({
         style={rootStyle}
       >
         <div className="shrink-0" aria-label="App top bar">
-          <ChatTopBar
+          <TopBar
             appTitle={appTitle}
             sessionTitle={activeSession?.title}
             onCommandPalette={openCommandPalette}

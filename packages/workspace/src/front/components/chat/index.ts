@@ -13,7 +13,5 @@ export type {
 } from "../../chrome/workbench-left/WorkbenchLeftPane"
 export { ChatCenteredShell } from "./ChatCenteredShell"
 export type { ChatCenteredShellProps } from "./ChatCenteredShell"
-export { ChatTopBar } from "./ChatTopBar"
-export type { ChatTopBarProps } from "./ChatTopBar"
 export { ChatShellContext, useChatShell, useChatSurface } from "./context"
 export type { ChatShellContextValue } from "./context"

@@ -3,10 +3,10 @@
 import { useContext, type ReactNode } from "react"
 import { useTopBarSlot } from "@boring/core/front/top-bar-slot"
 import { Plus, Search } from "lucide-react"
-import { cn } from "../../../lib/utils"
-import { ChatShellContext } from "./context"
+import { cn } from "../../lib/utils"
+import { ChatShellContext } from "../components/chat/context"
 
-export interface ChatTopBarProps {
+export interface TopBarProps {
   appTitle?: string
   sessionTitle?: string
   onCommandPalette?: () => void
@@ -21,14 +21,14 @@ export interface ChatTopBarProps {
   className?: string
 }
 
-export function ChatTopBar({
+export function TopBar({
   appTitle = "Boring",
   sessionTitle,
   onCommandPalette,
   topBarLeft,
   topBarRight,
   className,
-}: ChatTopBarProps) {
+}: TopBarProps) {
   const shell = useContext(ChatShellContext)
   const slot = useTopBarSlot()
   const right = topBarRight ?? slot ?? null
