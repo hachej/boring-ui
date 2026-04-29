@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v7.4 — merge declarative-layout-migration plan in (one mega-plan, one epic, one acceptance gate). Adds Phase 1.5: Consumer migration (decompose shells, register core panels, lift TopBar, migrate 3 apps, delete ChatCenteredShell). j9p7 epic absorbs all migration beads; zrby epic closed as merged.
+**Status:** v7.5 — three-folder high-level taxonomy: **`core/` (substrate)** + **`layout/` (composition)** + **`plugins/` (plugin model + defaults)**. Plugins own their contributing components (CodeEditor, MarkdownEditor, FileTree live INSIDE `plugins/defaults/filesystemPlugin/`, not at the workspace root). Apps follow the same shape (macro panes inside `apps/boring-macro-v2/src/plugin/`). Refines Phase 1.5 file-tree end state.
 
 > **Factory pattern:** Plugins may be exposed as factories when they need
 > runtime config (e.g. macro's `makeMacroServerPlugin()`). v7.0 dropped the
@@ -2109,58 +2109,237 @@ function WorkspaceProvider({ plugins, excludeDefaults, children }) {
 }
 ```
 
-### File-tree end state
+### File-tree end state (v7.5 — final framing)
+
+Three architectural commitments locked in v7.5:
+
+1. **Top-level split: `front/` + `server/` + `shared/` + `plugins/`.**
+   Mirrors `@boring/agent`'s convention. `front/` = client-side
+   workspace code; `server/` = backend; `shared/` = cross-process
+   types (used by both halves). `plugins/` is a sibling concern
+   holding **actual plugin instances only** (no machinery —
+   machinery lives in `front/plugin/` + `server/plugin/` + `shared/plugin/`).
+
+2. **Plugins own both halves of their contributions.** A plugin in
+   `plugins/<id>/` contains internal `front/` + `server/` directories
+   for its own client-side panels/sidebar/catalogs and server-side
+   tools/routes. Apps follow the same shape via `apps/<host>/src/plugin/{front,server}/`.
+
+3. **Singular vs plural naming convention.**
+   - `plugin/` (singular) = plugin model **machinery** (definePlugin,
+     bootstrap, hooks, registries) — lives in `front/plugin/`,
+     `server/plugin/`, `shared/plugin/`.
+   - `plugins/` (plural) = a directory of plugin **instances** —
+     lives at the workspace root for defaults; apps with multiple
+     plugins use `apps/<host>/src/plugins/`.
 
 ```
 packages/workspace/src/
 
-panes/                                ← all registered panels live here
-├── chat/                             ← core (NEW location for chat panel)
-│   ├── ChatPanel.tsx                 thin wrapper around @boring/agent's ChatPanel
-│   │                                 + workspace integrations (auto-open hooks,
-│   │                                   command-stream consumption, suggestions)
-│   └── definition.ts                 `definePanel({ id: "chat", … })`
-├── session-list/                     ← core (was components/chat/SessionBrowser)
-├── workbench-left/                   ← core (was components/chat/WorkbenchLeftPane)
-├── artifact-surface/                 ← core (was components/chat/SurfaceShell)
-├── code-editor/                      existing (filesystem plugin)
-├── markdown-editor/                  existing (filesystem plugin)
-├── file-tree/                        existing (filesystem plugin)
-├── data-catalog/                     existing
-├── ArtifactSurfacePane.tsx           stays
-├── EmptyPane.tsx                     stays
-├── EmptyFilePanel.tsx                NEW (j9p7.12) — fallback for unmatched files
-└── defaultEditorPanels.ts            stays
+# ─── FRONT (workspace own client + plugin model client machinery) ──
 
-layouts/                              ← declarative composition + chrome
-├── ChatLayout.tsx                    KEEP (already exists)
-├── IdeLayout.tsx                     KEEP (already exists)
-├── ResponsiveDockviewShell.tsx       KEEP — exported as Tier 2 entry
-├── TopBar.tsx                        NEW — was components/chat/ChatTopBar
-└── index.ts
+front/
+├── chrome/                              shell parts (NOT plugin contributions)
+│   ├── chat/                            NEW (Phase A — substrate chat panel wrapper)
+│   │   ├── ChatPanel.tsx                thin wrapper around @boring/agent's ChatPanel
+│   │   │                                + workspace integrations
+│   │   └── definition.ts                definePanel({ id: "chat", … })
+│   ├── session-list/                    NEW (Phase A — was components/chat/SessionBrowser)
+│   ├── workbench-left/                  NEW (Phase A — tab-strip chrome that HOSTS
+│   │                                    sidebar tabs contributed by plugins)
+│   ├── artifact-surface/                NEW (Phase A — dockview wrapper that HOSTS
+│   │                                    workbench panes contributed by plugins)
+│   ├── chat-stage-placeholder/          NEW (Phase A)
+│   └── EmptyPane.tsx                    MOVED (was loose panes/EmptyPane.tsx)
+│
+├── components/                          cross-cutting UI primitives (NOT panels)
+│   ├── DataExplorer/                    generic data subsystem; used by plugins
+│   ├── ui/                              shadcn primitives
+│   ├── CommandPalette.tsx               substrate palette overlay
+│   ├── SessionList.tsx                  data-list helper used by chrome/session-list/
+│   └── PluginErrorBoundary.tsx          NEW (j9p7.22) — wraps plugin contributions
+│
+├── registry/                            base registries (subscribe-aware singletons)
+│   ├── PanelRegistry.ts                 retrofitted (j9p7.6 done)
+│   ├── CommandRegistry.ts               retrofitted (j9p7.6 done)
+│   ├── RegistryProvider.tsx             React context anchor
+│   ├── coreRegistrations.ts             NEW (Phase B — coreWorkspacePanels[])
+│   ├── types.ts                         PanelConfig, CommandConfig, PaneProps
+│   └── getFileIcon.ts
+│
+├── dock/                                DockviewShell + LayoutConfig types
+├── events/                              bus singleton (client side)
+├── bridge/                              UI bridge client + uiCommandStream/Dispatcher
+├── hooks/                               viewport, sidebar, etc.
+│
+├── layout/                              composition layer (Tier 1/2/3)
+│   ├── ChatLayout.tsx
+│   ├── IdeLayout.tsx
+│   ├── ResponsiveDockviewShell.tsx
+│   ├── TopBar.tsx                       NEW (Phase C — was components/chat/ChatTopBar)
+│   └── index.ts
+│
+├── panes/EmptyFilePanel/                NEW (j9p7.12 — workbench-center fallback)
+│
+├── plugin/                              ← plugin model FRONT machinery (singular)
+│   ├── CatalogRegistry.ts               (DONE — file at packages/workspace/src/plugin/
+│   │                                     today; moves under front/plugin/ in restructure)
+│   ├── PluginErrorBoundary.tsx          NEW (j9p7.22)
+│   ├── PluginInspector.tsx              NEW (j9p7.23, DEV-only)
+│   ├── usePlugins.ts                    NEW
+│   ├── useCatalogs.ts                   (DONE)
+│   ├── useCommands.ts                   (DONE)
+│   ├── useActivePanels.ts               (DONE)
+│   └── index.ts
+│
+└── WorkspaceProvider.tsx
 
-registry/coreRegistrations.ts         NEW — exports `coreWorkspacePanels: PanelConfig[]`
-                                        imported and applied by WorkspaceProvider
+# ─── SERVER (workspace own backend + plugin model server machinery) ─
 
-plugin/                               unchanged — plugin model machinery
-└── defaults/
-    └── filesystemPlugin.ts           unchanged — only default plugin
+server/
+├── createWorkspaceAgentApp.ts
+├── http/                                substrate routes (uiRoutes, fileRoutes)
+├── ui-bridge/                           createInMemoryBridge
+└── plugin/                              ← plugin model SERVER machinery (singular)
+    └── …                                (server-side registries — currently minimal;
+                                          AgentToolRegistry interface, etc.)
 
-components/                           shrinks to genuinely cross-cutting UI
-├── chat/                             GONE — contents moved to panes/, layouts/, bridge/
-├── ui/                               stays (shadcn primitives)
-├── DataExplorer/                     stays (generic data subsystem)
-├── CommandPalette.tsx                stays
-├── PluginErrorBoundary.tsx           NEW (j9p7.22)
-├── PluginInspector.tsx               NEW (j9p7.23, DEV-only)
-└── SessionList.tsx                   stays — data-list helper, distinct from
-                                        the SessionBrowser panel that wraps it
+# ─── SHARED (types + functions both halves need) ───────────────────
 
-bridge/ (or ui-bridge/)               absorbs the bridge infrastructure
-├── (existing bridge code)
-├── uiCommandStream.ts                was components/chat/uiCommandStream.ts
-└── uiCommandDispatcher.ts            was components/chat/uiCommandDispatcher.ts
+shared/
+├── ui-bridge.ts                         UiState, UiCommand types
+├── events/                              WorkspaceEventMap types
+└── plugin/                              ← plugin model SHARED (singular)
+    ├── types.ts                         Plugin, CatalogConfig (DONE — needs v7.2
+    │                                    systemPrompt addition per j9p7.4)
+    ├── definePlugin.ts                  factory + validation (DONE; both halves use)
+    ├── bootstrap.ts                     single-pass mount (DONE — needs v7.2
+    │                                    systemPromptAppend output per j9p7.7)
+    └── index.ts
+
+# ─── PLUGINS (actual plugin instances; plural) ─────────────────────
+
+plugins/                                 ← directory of plugin instances
+└── filesystemPlugin/                    ← one folder per plugin
+    ├── index.ts                         exports CLIENT + SERVER Plugins (same id)
+    ├── front/                           client-side contributions
+    │   ├── panes/
+    │   │   ├── CodeEditorPane.tsx       MOVED (was src/panes/code-editor/)
+    │   │   └── MarkdownEditorPane.tsx   MOVED (was src/panes/markdown-editor/)
+    │   ├── sidebar/
+    │   │   └── FileTreePane.tsx         MOVED (was src/panes/file-tree/)
+    │   └── catalogs/
+    │       └── filesCatalog.ts
+    └── server/                          server-side contributions
+        └── …                            (filesystemPlugin v7 has NONE — UI-only;
+                                          future plugins add agentTools, route handlers)
+
+# ─── BARREL ────────────────────────────────────────────────────────
+
+index.ts                                 package public API (re-exports from front/,
+                                         layout/, plugin model bits, plugins barrel)
 ```
+
+**Apps follow the same shape — singular `plugin/` for the host's one plugin:**
+
+```
+apps/boring-macro-v2/src/
+
+plugin/                                  ← THIS app's plugin (singular: one per host)
+├── index.ts                             exports CLIENT + SERVER Plugins (same id)
+├── front/                               client-side contributions
+│   ├── panes/
+│   │   ├── ChartCanvasPane.tsx
+│   │   └── DeckPane.tsx
+│   ├── sidebar/MacroSeriesPane.tsx
+│   └── catalogs/seriesCatalog.ts
+└── server/                              server-side contributions
+    ├── tools/                           agent tool implementations
+    │   ├── execute_sql.ts
+    │   ├── macro_search.ts
+    │   ├── get_series_data.ts
+    │   └── persist_derived_series.ts
+    └── routes/macroRoutes.ts            Fastify route plugin
+
+web/App.tsx                              app front entry (mounts WorkspaceProvider)
+server/index.ts                          app backend entry (Fastify boot)
+```
+
+**If an app grows multi-plugin** (rare): rename `plugin/` → `plugins/<id>/` mirroring workspace's convention. Phase 1 macro doesn't need this.
+
+**Apps follow the same pattern** — every plugin (default or app-contributed) owns its components inside its own directory:
+
+```
+apps/boring-macro-v2/src/plugin/     ← macroPlugin lives here
+├── index.ts                         the Plugin definition (client half)
+├── server.ts                        server-half Plugin (agentTools)
+├── panes/                           ← workbench-center contributions
+│   ├── ChartCanvasPane.tsx
+│   └── DeckPane.tsx
+├── sidebar/                         ← sidebar-tab contributions
+│   └── MacroSeriesPane.tsx
+├── catalogs/
+│   └── seriesCatalog.ts
+└── server/                          (paired with src/server/)
+    └── tools/                       agent tool implementations
+        ├── execute_sql.ts
+        ├── macro_search.ts
+        └── …
+```
+
+**What disappears:**
+
+- `src/components/chat/` (whole folder; Phase A + C + G)
+- Top-level `src/panes/{code-editor, markdown-editor, file-tree}/` — moved INTO
+  `src/plugin/defaults/filesystemPlugin/` (panes/sidebar split per role) by j9p7.9
+- `src/panes/data-catalog/` — orphaned (dataCatalogPlugin was cut in v6.2);
+  audit during j9p7.30: delete if no consumer, otherwise re-home as a primitive
+  in `components/` for plugin authors who want a generic data-tab implementation
+- `src/panes/EmptyPane.tsx` (loose) — moved to `chrome/EmptyPane.tsx`
+- `src/panes/ArtifactSurfacePane.tsx` (loose) — moved to `chrome/artifact-surface/`
+  alongside SurfaceShell (Phase A)
+
+**What stays exported (Tier 1 / Tier 2 / Tier 3 surface):**
+
+```ts
+// Tier 1
+export { ChatLayout, IdeLayout, buildChatLayout, buildIdeLayout } from "./layouts"
+export type { ChatLayoutProps, IdeLayoutProps } from "./layouts"
+export { TopBar } from "./layouts/TopBar"
+
+// Tier 2
+export { ResponsiveDockviewShell } from "./layouts/ResponsiveDockviewShell"
+
+// Tier 3 (raw primitives)
+export { DockviewShell } from "./dock"
+export type { LayoutConfig, GroupConfig } from "./dock"
+export { useViewportBreakpoint, useResponsiveSidebarCollapse } from "./hooks"
+export { useTopBarSlot } from "./components/TopBarSlot"
+
+// WorkspaceProvider + plugin model
+export { WorkspaceProvider } from "./WorkspaceProvider"
+export { definePlugin, definePanel, PluginError, … } from "./plugin"
+export { CatalogRegistry, useCommands, useActivePanels, useCatalogs, usePlugins, … } from "./plugin"
+```
+
+The default `filesystemPlugin` is exported via `plugin/defaults/`; hosts that want
+to disable it pass `excludeDefaults: ['filesystem']`. The plugin's INTERNAL
+components (CodeEditorPane etc.) are NOT exported — they're encapsulated.
+
+### Why this taxonomy (vs status quo)
+
+**`panes/` was conflating three distinct categories.** Today
+`packages/workspace/src/panes/` mixes:
+
+- Workbench center panes (`code-editor`, `markdown-editor`)
+- Sidebar tab content (`file-tree`, `data-catalog`)
+- Shell containers (`ArtifactSurfacePane.tsx`, `EmptyPane.tsx`)
+
+Each of these has different runtime semantics (centered tab vs persistent sidebar vs chrome wrapper) and different ownership (filesystem-plugin vs filesystem-plugin vs substrate). Mixing them blurred the architecture and made plugin authors uncertain where their contributions belong.
+
+**Plugin authors need a clear template.** The `panes/`-flat-at-workspace-root pattern told plugin authors "drop your panel here" — but that pattern is only correct for workspace substrate. Plugins should bundle their components, not scatter them. v7.5 makes the right path the obvious path: **everything a plugin contributes lives inside the plugin's directory**, mirroring what Phase 2's npm distribution will require anyway (a distributed plugin SHIPS its components).
+
+**Apps and defaults follow the SAME pattern.** A `pi-plugin-foo` npm package's `dist/client/` will look identical to `apps/boring-macro-v2/src/plugin/` and `packages/workspace/src/plugin/defaults/filesystemPlugin/`. Same shape; different distribution channel.
 
 **What disappears:**
 
@@ -2475,6 +2654,103 @@ Beads j9p7.16 (Step 5b) and j9p7.17 (Step 5c) close as **scope-shifted to Phase 
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v7.4 → v7.5 (final structural framing)
+
+User iterated through four refinements (2026-04-29) to lock the
+post-migration directory layout. Each round narrowed scope:
+
+1. **"`panes/` should be workbench panes only"** — panes/ was conflating
+   workbench-center (code-editor, markdown-editor) with sidebar tabs
+   (file-tree, data-catalog) and chrome (ArtifactSurfacePane,
+   EmptyPane). Strict role split.
+2. **"Plan structure to fit the plugin system; panes will belong to a plugin"** —
+   plugin-contributed components live INSIDE the contributing
+   plugin's directory, not at the workspace root. CodeEditor /
+   MarkdownEditor / FileTree all migrate into `plugins/filesystemPlugin/`.
+3. **"core/ + layout/ + plugins/ as high-level framing"** — initial
+   three-folder taxonomy.
+4. **"Should we distinguish front and back?"** — yes; matches
+   `@boring/agent`'s `front/ + server/ + shared/` convention.
+5. **"plugins/ should contain actual plugins only"** — plugin model
+   machinery moves out of `plugins/` into `front/plugin/`,
+   `server/plugin/`, `shared/plugin/`. Singular `plugin/` for
+   machinery; plural `plugins/` for instances.
+
+### Final structure (locked)
+
+```
+src/
+├── front/                       workspace front + plugin front machinery
+│   ├── chrome/                       shell parts (chat, sessions, surface, …)
+│   ├── components/                   UI primitives
+│   ├── registry/                     base registries
+│   ├── dock/, events/, bridge/, hooks/, layout/
+│   ├── panes/EmptyFilePanel/         workbench-center fallback (substrate)
+│   ├── plugin/                       ← plugin model FRONT machinery
+│   │   ├── CatalogRegistry.ts
+│   │   ├── PluginErrorBoundary.tsx
+│   │   ├── PluginInspector.tsx
+│   │   └── hooks (usePlugins, useCatalogs, useCommands, useActivePanels)
+│   └── WorkspaceProvider.tsx
+│
+├── server/                      workspace server + plugin server machinery
+│   ├── createWorkspaceAgentApp.ts, http/, ui-bridge/
+│   └── plugin/                       ← plugin model SERVER machinery
+│
+├── shared/                      types both halves need
+│   ├── ui-bridge.ts, events/
+│   └── plugin/                       ← plugin model SHARED
+│       ├── types.ts                  Plugin, CatalogConfig
+│       ├── definePlugin.ts
+│       └── bootstrap.ts
+│
+└── plugins/                     ← ACTUAL plugin instances (plural)
+    └── filesystemPlugin/
+        ├── index.ts                  client + server Plugins (same id)
+        ├── front/{panes, sidebar, catalogs}
+        └── server/                   (currently empty for filesystemPlugin)
+```
+
+### Naming convention (locked)
+
+| Folder | Meaning |
+|---|---|
+| `front/` (root) | Workspace's own client-side code |
+| `server/` (root) | Workspace's own backend code |
+| `shared/` (root) | Workspace's own cross-process types |
+| `plugins/` (root, plural) | Directory of plugin instances |
+| `plugin/` (in front/, server/, shared/) | Plugin model machinery (singular) |
+| `<plugin>/front/` (per-plugin) | The plugin's client-side contributions |
+| `<plugin>/server/` (per-plugin) | The plugin's server-side contributions |
+
+Apps mirror: each app contributes ONE plugin, lives in `apps/<host>/src/plugin/{front,server}/`. Multi-plugin apps would rename to `plugins/<id>/`.
+
+### Why this is the right framing
+
+1. **Matches `@boring/agent` convention** — `front/ + server/ + shared/` parity across packages.
+2. **Bundle boundary explicit** — tsup config can target `front/index.ts` and `server/index.ts` cleanly. Phase 2 npm sub-path exports (`./client`/`./server`) line up directly.
+3. **Plugin = self-contained unit** — a plugin owns BOTH its front and server halves in ONE directory. Distributed npm plugins ship the same shape.
+4. **No category mixing at any level** — workspace own code is in `front/server/shared`; plugins are in `plugins/`; plugin machinery is in singular `plugin/` sub-folders. Zero ambiguity for new contributors.
+5. **Plays well with build invariants** — codex round-2 caught a P0 where server-only modules were about to leak into client code. With the explicit split, the lint rule "front/ must not import from server/" is one path-prefix check.
+
+### Bead impact
+
+Mostly path-string updates; no semantic changes:
+
+- **j9p7.9** (filesystemPlugin) — paths update from
+  `packages/workspace/src/plugin/defaults/filesystemPlugin.ts` to
+  `packages/workspace/src/plugins/filesystemPlugin/{index.ts,front/...,server/...}`
+- **j9p7.24** (Phase A — decompose chat shells) — paths update from
+  `panes/<id>/` to `front/chrome/<id>/` for all chrome moves
+- **j9p7.18** (macro plugin module) — paths update from
+  `apps/boring-macro-v2/src/plugin/{index,server}.ts` to
+  `apps/boring-macro-v2/src/plugin/{index.ts,front/,server/}`
+
+A new bead **j9p7.30** could capture the workspace front/server reorg
+itself if it's substantive enough to warrant separate tracking. For
+now, fold into Phase A (j9p7.24) since they're both restructuring
+the same directory.
 
 ## Changelog v7.3 → v7.4 (merger of declarative-layout-migration plan)
 
