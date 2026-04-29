@@ -19,8 +19,11 @@ import type { FastifyInstance } from "fastify"
 import { createInMemoryBridge } from "./ui-bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "./uiTools"
 import { uiRoutes } from "./http/uiRoutes"
+import { bootstrapServer, type ServerBootstrapOptions } from "./bootstrapServer"
 
-export interface CreateWorkspaceAgentAppOptions extends CreateAgentAppOptions {}
+export interface CreateWorkspaceAgentAppOptions
+  extends CreateAgentAppOptions,
+    Pick<ServerBootstrapOptions, "plugins" | "excludeDefaults"> {}
 
 export async function createWorkspaceAgentApp(
   opts: CreateWorkspaceAgentAppOptions = {},
@@ -29,11 +32,18 @@ export async function createWorkspaceAgentApp(
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: opts.workspaceRoot,
   })
+
+  const result = bootstrapServer({
+    plugins: opts.plugins,
+    excludeDefaults: opts.excludeDefaults,
+  })
+
   const app = await createAgentApp({
     ...opts,
-    // Workspace UI tools come last so the workspace contract wins on any
-    // accidental name shadowing from host extraTools.
-    extraTools: [...(opts.extraTools ?? []), ...uiTools],
+    extraTools: [...(opts.extraTools ?? []), ...uiTools, ...result.agentTools],
+    systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
+      .filter(Boolean)
+      .join("\n\n") || undefined,
   })
   await app.register(uiRoutes, { bridge })
   return app
