@@ -23,6 +23,7 @@ export interface BootstrapOptions {
 
 export interface BootstrapResult {
   registered: string[]
+  systemPromptAppend: string
 }
 
 export function bootstrap(options: BootstrapOptions): BootstrapResult {
@@ -58,5 +59,10 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
     }
   }
 
-  return { registered: finalPlugins.map((plugin) => plugin.id) }
+  const systemPromptAppend = finalPlugins
+    .filter((p) => p.systemPrompt && p.systemPrompt.trim())
+    .map((p) => p.systemPrompt!.trim())
+    .join("\n\n")
+
+  return { registered: finalPlugins.map((plugin) => plugin.id), systemPromptAppend }
 }
