@@ -1,6 +1,8 @@
 # Workspace plugin model
 
-**Status:** v7.6 — round-5 review patches: Step 0 sequencing (move workspace into v7.5 layout BEFORE Phase 1, not after); split plugin entrypoints (index.ts client + server.ts per plugin); strict type-only imports for cross-folder Plugin refs; cleanup pack (uiBridge dedup, EmptyFilePanel relocation, A/B parallelism tightened, TL;DR scrub, tsconfig excludes, pi-tools-migration catch-up). **Meta-rule: when files move, they go DIRECTLY to final v7.6 destinations — no intermediate placements.**
+**Status:** v7.7 — round-7 governance: ChatPanel via dependency injection (NOT plugin); baseline protocol uses `git worktree` (NOT `git stash`); systemPrompt ordering reaffirmed (bootstrap first, createAgentApp second); excludeDefaults semantics corrected (UI off; tools stay); j9p7.30 sed→explicit Edits; bead-level dep + path fixes integrated.
+
+Prior status (v7.6): round-5 review patches — Step 0 sequencing (move workspace into v7.5 layout BEFORE Phase 1, not after); split plugin entrypoints (index.ts client + server.ts per plugin); strict type-only imports for cross-folder Plugin refs; cleanup pack (uiBridge dedup, EmptyFilePanel relocation, A/B parallelism tightened, TL;DR scrub, tsconfig excludes, pi-tools-migration catch-up). **Meta-rule: when files move, they go DIRECTLY to final v7.6 destinations — no intermediate placements.**
 
 > **Factory pattern:** Plugins may be exposed as factories when they need
 > runtime config (e.g. macro's `makeMacroServerPlugin()`). v7.0 dropped the
@@ -1020,8 +1022,36 @@ error.
 
 ### Workspace orchestration — bootstrap
 
+```ts
+// BootstrapOptions (v7.7 — chatPanel slot added)
+import type { ComponentType } from 'react'
+import type { ChatPanelProps } from '@boring/agent'   // TYPE-ONLY (Inv #7)
+
+export interface BootstrapOptions {
+  /** Required. The ChatPanel implementation, value-imported by the host
+   *  app from @boring/agent. Workspace stores the slot on context; the
+   *  internal `chatPanel` chrome reads + renders it with workspace
+   *  integrations (auto-open hooks, command-stream, suggestions).
+   *  v7.7 addition. */
+  chatPanel: ComponentType<ChatPanelProps>
+
+  plugins?: Plugin[]
+  excludeDefaults?: string[]
+  registries: {
+    panels: PanelRegistry
+    commands: CommandRegistry
+    catalogs: CatalogRegistry
+    agentTools?: AgentToolRegistry
+  }
+  defaults?: Plugin[]
+}
 ```
-bootstrap(plugins, opts):
+
+```
+bootstrap(opts):
+  if !opts.chatPanel: throw — workspace will not silently fallback
+  store opts.chatPanel on WorkspaceContext (read by ChatPanelHost chrome)
+
   finalSet = [...defaultPlugins.filter(d => !excludeDefaults.includes(d.id)),
               ...opts.plugins]
 
@@ -1030,16 +1060,70 @@ bootstrap(plugins, opts):
     fan plugin.commands → CommandRegistry      (pluginId provenance)
     fan plugin.catalogs → CatalogRegistry      (pluginId provenance)
     (server) fan plugin.agentTools → AgentToolRegistry
+
+  systemPromptAppend = finalSet
+    .filter(p => p.systemPrompt?.trim())
+    .map(p => p.systemPrompt!.trim())
+    .join('\n\n')
+
+  return { registered: finalSet.map(p => p.id), systemPromptAppend }
 ```
 
-That's it. Single pass. No async. No lifecycle. No ordering
-contract beyond "array order." Defaults are prepended so they
-register first; host plugins register after; late-wins-on-id gives
-hosts a clean override mechanism without explicit precedence rules.
+Single pass. No async. No lifecycle. No ordering contract beyond
+"array order." Defaults are prepended so they register first; host
+plugins register after; late-wins-on-id gives hosts a clean
+override mechanism without explicit precedence rules.
 
 The retrofit applies to existing `CommandRegistry` and
 `PanelRegistry` — they get `subscribe()` semantics so late
 `registerCommand` calls reach an open palette.
+
+#### Chat as core chrome — DI shape, not plugin (v7.7)
+
+Chat is core: workspace lays it out, sizes it, knows where it goes.
+**Only the React component is injected.** The workspace package
+holds **zero value imports** of `@boring/agent` (Inv #7); a TYPE-ONLY
+import for `ChatPanelProps` is fine and grep-enforced.
+
+Worked example:
+
+```tsx
+// CONSUMING APP — value-imports ChatPanel and passes it
+import { ChatPanel } from '@boring/agent'         // value import — host's prerogative
+import { WorkspaceProvider, type Plugin } from '@boring/workspace'
+import { myPlugin } from './plugin'
+
+export const App = () => (
+  <WorkspaceProvider chatPanel={ChatPanel} plugins={[myPlugin]}>
+    {/* layouts, etc. */}
+  </WorkspaceProvider>
+)
+```
+
+```tsx
+// WORKSPACE INTERNAL — type-only import; chrome that consumes the slot
+// packages/workspace/src/front/chrome/chat/ChatPanelHost.tsx
+import type { ChatPanelProps } from '@boring/agent'    // type-only
+import { useWorkspaceContext } from '../../WorkspaceProvider'
+
+export function ChatPanelHost(props: ChatPanelProps) {
+  const { chatPanel: ChatPanelImpl } = useWorkspaceContext()
+  // workspace integrations: auto-open agent files, suggestions wiring, etc.
+  return <ChatPanelImpl {...props} />
+}
+```
+
+The chat chrome's `definition.ts` registers `ChatPanelHost` (not the
+agent's ChatPanel) into the PanelRegistry as a CORE panel. Hosts that
+need to swap chat impls (e.g., a stripped-down terminal renderer)
+just pass a different `chatPanel` prop — they don't author a plugin
+to do it.
+
+Why this shape (vs plugin-ifying chat):
+
+- **Inv #7 stays verifiable.** `grep -RE "from ['\"]@boring/agent['\"]" packages/workspace/src` finds zero non-type-import hits.
+- **Bootstrap stays single-purpose.** Plugins describe optional contributions; chat is non-optional core. Forcing chat into the Plugin contract would mean either (a) every host registers a "chat plugin" boilerplate-style, or (b) the workspace value-imports its own chat plugin (violating Inv #7).
+- **Layout knows about chat.** `ChatLayout`, `IdeLayout` reference `'chat'` panel id directly; that's correct because chat is chrome the layouts can rely on, not a maybe-present contribution.
 
 ### Per-plugin error boundaries (v7.2)
 
@@ -2664,6 +2748,43 @@ Beads j9p7.16 (Step 5b) and j9p7.17 (Step 5c) close as **scope-shifted to Phase 
 
 ## Acceptance
 
+### Baseline protocol (v7.7 — worktree-based)
+
+Establish a pre-migration baseline of the macro e2e suite using
+**`git worktree`**, NOT `git stash`. AGENTS.md forbids destructive
+ops on user state (multi-agent awareness rule); `git stash` against
+a working tree another agent might be editing is exactly that
+hazard.
+
+```bash
+BASELINE_REF=<pre-migration-sha-or-tag>
+WORKTREE_DIR=../baseline-${BASELINE_REF:0:8}
+
+git worktree add "$WORKTREE_DIR" "$BASELINE_REF"
+trap 'git worktree remove --force "$WORKTREE_DIR" 2>/dev/null' EXIT
+
+pushd "$WORKTREE_DIR/apps/boring-macro-v2" >/dev/null
+pnpm install --frozen-lockfile
+pnpm exec playwright test --reporter=json > /tmp/macro-e2e-baseline.json
+popd >/dev/null
+```
+
+Properties:
+
+- **Idempotent.** Re-running creates a fresh worktree at the same
+  sha; no working-tree state to recover.
+- **Parallelizable.** Multiple runs use distinct worktree dirs.
+- **Failure mode is benign.** Crash mid-run leaves
+  `../baseline-<sha>/`; `git worktree list` finds it; `git worktree
+  remove --force` cleans it. Never overwrites user work.
+
+The post-migration acceptance suite then runs against `HEAD` and
+diffs results against `/tmp/macro-e2e-baseline.json`. Specs that
+were green pre-migration must stay green; specs that were red
+pre-migration are not this gate's job.
+
+### Acceptance criteria
+
 - `Plugin` contract (six fields) + `definePlugin` exported from
   `@boring/workspace`.
 - `CatalogRegistry` new; `CommandRegistry` + `PanelRegistry`
@@ -2743,6 +2864,43 @@ Beads j9p7.16 (Step 5b) and j9p7.17 (Step 5c) close as **scope-shifted to Phase 
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v7.6 → v7.7 (round-7 governance + bead-level fixes)
+
+Round-6 (codex bead-level review) returned 2 P0 governance questions, 7 P1s, 3 P2s. The user resolved both P0s; this changelog documents the integrated answers and the bead-level patches.
+
+### P0 — ChatPanel resolution: dependency injection (NOT plugin)
+
+The plan ambiguated whether chat enters the workspace as a plugin contribution, a wrapped value-import, or an injected slot. **Locked answer: injected slot.** `BootstrapOptions.chatPanel: ComponentType<ChatPanelProps>` is required; the consuming app value-imports `ChatPanel` from `@boring/agent` and passes it. The workspace holds a `import type { ChatPanelProps } from '@boring/agent'` only — Inv #7 stays grep-verifiable. Chat remains core chrome (workspace lays it out and sizes it); only the React component is injected.
+
+Spec edits: §"Workspace orchestration — bootstrap" gains the BootstrapOptions surface + a "Chat as core chrome — DI shape, not plugin" subsection with a worked example. j9p7.24 description was rewritten to describe the DI shape (no "wrap inside workspace" wording survives) and adds an explicit invariant assertion: `grep -RE "from ['\"]@boring/agent['\"]" packages/workspace/src` excluding `import type` must return 0.
+
+### P0 — Baseline protocol: worktree-based (NOT git stash)
+
+Round-5 used `git stash` to establish a pre-migration baseline. That violates AGENTS.md "no destructive ops on user state" + multi-agent awareness rule. **Locked replacement: `git worktree add ../baseline-<sha> <ref>` → run macro e2e inside the worktree → capture artifacts → `git worktree remove`.** Idempotent, parallelizable, failure mode is a leftover dir (not lost work).
+
+Spec edits: §"Acceptance" prepends a "Baseline protocol (v7.7 — worktree-based)" subsection with the canonical script. j9p7.20 (round-7 notes) replaces all `git stash` mentions with the worktree procedure. j9p7.20's dep on j9p7.19 was REMOVED via `br dep remove` — baseline runs BEFORE migration, so the graph edge that implied "baseline blocks on migration" was wrong.
+
+### P1 fixes (bead-level)
+
+1. **systemPrompt ordering circularity (j9p7.11 / j9p7.31)** — both beads now state the canonical sequence: bootstrap FIRST (computes `systemPromptAppend` + stages agentTools), then `createAgentApp({ systemPromptAppend, extraTools: [...uiTools, ...stagedAgentTools] })`. agentTools are staged into a list during bootstrap, not registered against a live registry.
+
+2. **excludeDefaults semantics correction (j9p7.10)** — the round-1 test "LLM file ops not in agentTool list" was wrong. `excludeDefaults: ['filesystem']` removes filesystemPlugin's UI contributions (panels + catalog). It does NOT remove file tools — those are HARNESS substrate, never in the plugin's `agentTools` (which is undefined). Two switches, two layers: `excludeDefaults` for UI, `disableDefaultFileTools` for tools.
+
+3. **Missing dep edges** — added `j9p7.12 → j9p7.25` (EmptyFilePanel registration), `j9p7.21 → j9p7.29` (release notes after final shell deletion), `j9p7.27 → j9p7.10` + `j9p7.27 → j9p7.9` (canary needs WorkspaceProvider+filesystemPlugin), `j9p7.19 → j9p7.27` (macro refactor canary-gated on playground migration).
+
+4. **Macro path drift (j9p7.18 / j9p7.19)** — references to `apps/boring-macro-v2/src/web/App.tsx` corrected to `src/front/App.tsx`. The `web/` directory does not exist (verified `ls`); the React app lives in `front/`.
+
+5. **j9p7.30 broad sed → explicit Edits** — round-5's `find ... -exec sed -i` cascade violated AGENTS "no broad rewrite scripts." Replaced with: pre/post-grep counts as sanity check + per-file Edit operations (READ → identify the specific vi.mock string → Edit). Deletion decisions for `src/store/`, `src/types/`, `src/panes/data-catalog/`, etc. were locked to a concrete table — no agent discretion at implementation time.
+
+### P2 fixes
+
+- **j9p7.9 / j9p7.22** — round-7 notes flag pre-Step-0 paths (`src/plugin/defaults/`, `src/plugin/PluginErrorBoundary.tsx`) and pin the post-Step-0 canonical destinations (`src/plugins/filesystemPlugin/`, `src/front/plugin/PluginErrorBoundary.tsx`).
+- **j9p7.32** — dist filename verified (`dist/workspace.d.ts`); no path correction needed; minor port note added (macro = 5174, full-app = check vite config).
+
+### Status correction
+
+- `j9p7.13` was flagged as open in round-6 notes; verified CLOSED. No action needed.
 
 ## Changelog v7.5 → v7.6 (round-5 review patches)
 
