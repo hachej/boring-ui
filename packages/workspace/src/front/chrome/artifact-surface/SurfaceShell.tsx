@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { DockviewApi } from "dockview-react"
 import { ChevronRight, FolderTree } from "lucide-react"
-import { cn } from "../../../lib/utils"
+import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "../../../panes/ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
 import type { WorkspaceState, PanelState } from "../../../store/types"

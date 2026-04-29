@@ -4,7 +4,7 @@ import { DockviewShell } from "../dock"
 import type { LayoutConfig } from "../dock"
 import { useRegistry } from "../registry"
 import { useSetSidebar, useSidebarState } from "../../store/selectors"
-import { cn } from "../../lib/utils"
+import { cn } from "../lib/utils"
 import {
   Button,
   Sheet,

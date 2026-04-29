@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { ChevronLeft, Plus } from "lucide-react"
-import { cn } from "../../../lib/utils"
+import { cn } from "../../lib/utils"
 import type { SessionItem } from "../../components/SessionList"
 
 export interface SessionBrowserProps {

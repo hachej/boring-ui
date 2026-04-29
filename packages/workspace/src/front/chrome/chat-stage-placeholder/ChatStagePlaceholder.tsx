@@ -2,7 +2,7 @@
 
 import { forwardRef, useImperativeHandle, useRef, type ComponentType } from "react"
 import { ArrowUpRight, BookOpen, Code2, FileSearch, SendHorizontal, Wand2 } from "lucide-react"
-import { cn } from "../../../lib/utils"
+import { cn } from "../../lib/utils"
 
 export interface ChatSuggestion {
   label: string

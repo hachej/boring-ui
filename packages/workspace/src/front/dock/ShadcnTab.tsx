@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import type { IDockviewPanelHeaderProps } from "dockview-react"
 import { X, Loader2 } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
-import { cn } from "../../lib/utils"
+import { cn } from "../lib/utils"
 import { useEvent } from "../events"
 
 export function ShadcnTab(props: IDockviewPanelHeaderProps) {

@@ -2,7 +2,7 @@
 
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronLeft, Database, FolderTree, Search, X } from "lucide-react"
-import { cn } from "../../../lib/utils"
+import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
 import { FileTreeView } from "../../../panes/file-tree/FileTreeView"
 import { DataExplorer } from "../../components/DataExplorer/DataExplorer"

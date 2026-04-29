@@ -28,7 +28,7 @@ export { makeStaticDataPlugin } from "./plugins/factories/makeStaticDataPlugin"
 export type { StaticDataPluginOpts } from "./plugins/factories/makeStaticDataPlugin"
 
 // Utility
-export { cn } from "./lib/utils"
+export { cn } from "./front/lib/utils"
 
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"

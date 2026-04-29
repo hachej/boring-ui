@@ -3,7 +3,7 @@
 import type { ReactNode } from "react"
 import { useTopBarSlot } from "@boring/core/front/top-bar-slot"
 import { Plus, Search } from "lucide-react"
-import { cn } from "../../lib/utils"
+import { cn } from "../lib/utils"
 
 export interface TopBarProps {
   appTitle?: string

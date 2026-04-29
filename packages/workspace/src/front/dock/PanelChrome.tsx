@@ -1,7 +1,7 @@
 import { useMemo, type ComponentType, type ReactNode } from "react"
 import type { DockviewPanelApi } from "dockview-react"
 import type { PanelLifecycleApi } from "./types"
-import { cn } from "../../lib/utils"
+import { cn } from "../lib/utils"
 
 export interface PanelChromeProps {
   title: string

@@ -14,7 +14,7 @@ import {
 import {
   validateLayoutPartition,
   validatePreferencesPartition,
-} from "../../lib/validation"
+} from "../../front/lib/validation"
 
 let originalStorage: Storage
 

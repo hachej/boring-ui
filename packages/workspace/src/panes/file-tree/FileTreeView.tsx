@@ -34,7 +34,7 @@ import {
   AlertDialogTitle,
   Input,
 } from "../../front/components/ui"
-import { cn } from "../../lib/utils"
+import { cn } from "../../front/lib/utils"
 import { toast } from "../../toast"
 import { events, userMeta } from "../../front/events"
 

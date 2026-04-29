@@ -1,6 +1,6 @@
 import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, XIcon } from "lucide-react"
-import { cn } from "../../../lib/utils"
+import { cn } from "../../lib/utils"
 import { Input } from "../ui/input"
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover"
 import { useExplorerState } from "./useExplorerState"

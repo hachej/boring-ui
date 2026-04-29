@@ -8,7 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react"
-import { cn } from "../../lib/utils"
+import { cn } from "../lib/utils"
 
 export interface SessionItem {
   id: string

@@ -7,7 +7,7 @@ import {
   type NodeViewProps,
 } from "@tiptap/react"
 import Image from "@tiptap/extension-image"
-import { cn } from "../../lib/utils"
+import { cn } from "../../front/lib/utils"
 
 const MIN_WIDTH = 64
 const MAX_WIDTH = 2000

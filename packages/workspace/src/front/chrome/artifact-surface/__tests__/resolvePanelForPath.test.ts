@@ -69,6 +69,6 @@ describe("resolvePanelForPath", () => {
     const registry = makeRegistry({
       "code-editor": ["*.ts"],
     })
-    expect(resolvePanelForPath("src/lib/utils.ts", registry)).toBe("code-editor")
+    expect(resolvePanelForPath("src/front/lib/utils.ts", registry)).toBe("code-editor")
   })
 })
