@@ -10,4 +10,4 @@ export { FileTreePane, FileTreeView } from "../plugins/filesystemPlugin/file-tre
 export type { FileTreePaneProps, FileTreeViewProps } from "../plugins/filesystemPlugin/file-tree/FileTreeView"
 export { MarkdownEditorPane } from "../plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
 export type { MarkdownEditorPaneProps } from "../plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
-export { defaultEditorPanels } from "./defaultEditorPanels"
+export { defaultEditorPanels } from "../plugins/filesystemPlugin/defaultEditorPanels"

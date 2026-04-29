@@ -14,9 +14,9 @@
  * ]
  * ```
  */
-import { CodeEditorPane } from "../plugins/filesystemPlugin/code-editor/CodeEditorPane"
-import { MarkdownEditorPane } from "../plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
-import { definePanel } from "../front/registry/types"
+import { CodeEditorPane } from "./code-editor/CodeEditorPane"
+import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
+import { definePanel } from "../../front/registry/types"
 
 // Type inferred (not annotated): PanelConfig<unknown>[] would force a
 // widening cast of each entry, since SyncPanelConfig is contravariant
