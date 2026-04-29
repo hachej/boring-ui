@@ -212,8 +212,8 @@ export { FileTree } from "./panes/file-tree/FileTree"
 export type { FileTreeProps, FileTreeNode } from "./panes/file-tree/FileTree"
 export { MarkdownEditor } from "./panes/markdown-editor/MarkdownEditor"
 export type { MarkdownEditorProps } from "./panes/markdown-editor/MarkdownEditor"
-export { DataCatalog } from "./panes/data-catalog/DataCatalog"
-export type { DataCatalogProps, DataSource } from "./panes/data-catalog/DataCatalog"
+export { DataCatalog } from "./front/components/data-catalog/DataCatalog"
+export type { DataCatalogProps, DataSource } from "./front/components/data-catalog/DataCatalog"
 export { DataExplorer, useExplorerState } from "./front/components/DataExplorer"
 export type {
   DataExplorerProps,

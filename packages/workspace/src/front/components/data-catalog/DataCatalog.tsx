@@ -1,4 +1,4 @@
-import { cn } from "../../front/lib/utils"
+import { cn } from "../../lib/utils"
 
 export interface DataSource {
   id: string
