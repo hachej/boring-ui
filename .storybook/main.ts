@@ -42,7 +42,7 @@ const config: StorybookConfig = {
           },
           {
             find: "@boring/workspace/ui-shadcn",
-            replacement: path.resolve(rootDir, "packages/workspace/src/components/ui/index.ts"),
+            replacement: path.resolve(rootDir, "packages/workspace/src/front/components/ui/index.ts"),
           },
           {
             find: "@boring/workspace",

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react"
-import { ShadcnTab } from "../src/dock/ShadcnTab"
+import { ShadcnTab } from "../src/front/dock/ShadcnTab"
 
 const meta: Meta = {
   title: "Workspace/Dock/TabBar",

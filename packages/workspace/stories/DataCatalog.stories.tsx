@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react"
-import { DataExplorer } from "../src/components/DataExplorer/DataExplorer"
+import { DataExplorer } from "../src/front/components/DataExplorer/DataExplorer"
 import {
   createMockSeriesAdapter,
   createMockTablesAdapter,
-} from "../src/components/DataExplorer/storybookAdapters"
-import type { ExplorerRow } from "../src/components/DataExplorer/types"
+} from "../src/front/components/DataExplorer/storybookAdapters"
+import type { ExplorerRow } from "../src/front/components/DataExplorer/types"
 
 const meta: Meta<typeof DataExplorer> = {
   title: "Workspace/DataExplorer",
