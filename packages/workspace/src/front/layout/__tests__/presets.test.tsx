@@ -137,6 +137,19 @@ describe("buildChatLayout", () => {
     expect(center.panel).toBe("chat")
   })
 
+  it("passes panel params through to layout groups", () => {
+    const config = buildChatLayout({
+      navParams: { activeId: "s1" },
+      centerParams: { sessionId: "s1" },
+      surface: "artifact-surface",
+      surfaceParams: { storageKey: "surface" },
+    })
+
+    expect(config.groups.find((g) => g.id === "nav")?.params).toEqual({ activeId: "s1" })
+    expect(config.groups.find((g) => g.id === "center")?.params).toEqual({ sessionId: "s1" })
+    expect(config.groups.find((g) => g.id === "surface")?.params).toEqual({ storageKey: "surface" })
+  })
+
   it("adds sidebar group when sidebar is set", () => {
     const config = buildChatLayout({ sidebar: "filetree" })
     const sidebar = config.groups.find((g) => g.id === "sidebar")

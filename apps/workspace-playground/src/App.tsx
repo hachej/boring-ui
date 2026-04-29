@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from "react"
+import { useCallback, useEffect, useMemo } from "react"
+import { ChatPanel } from "@boring/agent"
 import {
   WorkspaceProvider,
-  ChatCenteredShell,
+  ChatLayout,
   CodeEditorPane,
   EmptyPane,
-  defaultEditorPanels,
+  TopBar,
   definePanel,
   type PanelConfig,
 } from "@boring/workspace"
@@ -14,7 +15,6 @@ import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 // ----- Panel registry -----
 
 const panels: PanelConfig[] = [
-  ...defaultEditorPanels,
   definePanel<{ path: string }>({
     id: "csv-viewer",
     title: "CSV",
@@ -32,6 +32,7 @@ const panels: PanelConfig[] = [
 ]
 
 const sessionsStore = createMockSessions()
+const layoutStorageKey = "boring-ui-v2:layout:playground"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -59,15 +60,51 @@ function Shell() {
     ]
   }, [showcase, sessions])
 
+  const activeSession = sessionList.find((session) => session.id === activeId)
+
+  const openCommandPalette = useCallback(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }),
+    )
+  }, [])
+
   return (
-    <ChatCenteredShell
-      appTitle="Boring"
-      sessions={sessionList}
-      activeSessionId={activeId}
-      onSwitchSession={sessionsStore.switchTo}
-      onCreateSession={sessionsStore.create}
-      onDeleteSession={sessionsStore.remove}
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <TopBar
+        appTitle="Boring"
+        sessionTitle={activeSession?.title}
+        onCommandPalette={openCommandPalette}
+      />
+      <div className="min-h-0 flex-1">
+        <ChatLayout
+          nav="session-list"
+          navParams={{
+            sessions: sessionList,
+            activeId,
+            onSwitch: sessionsStore.switchTo,
+            onCreate: sessionsStore.create,
+            onDelete: sessionsStore.remove,
+          }}
+          center={activeId ? "chat" : "empty"}
+          centerParams={
+            activeId
+              ? {
+                  sessionId: activeId,
+                  chrome: false,
+                  className: "h-full min-h-0",
+                }
+              : undefined
+          }
+          sidebar="workbench-left"
+          surface="artifact-surface"
+          surfaceParams={{
+            storageKey: `${layoutStorageKey}:surface`,
+            extraPanels: ["csv-viewer"],
+          }}
+          className="h-full"
+        />
+      </div>
+    </div>
   )
 }
 
@@ -75,10 +112,11 @@ export function WorkspaceShell() {
   return (
     <div className="h-full bg-background text-foreground">
       <WorkspaceProvider
+        chatPanel={ChatPanel}
         panels={panels}
         apiBaseUrl=""
         persistenceEnabled
-        storageKey="boring-ui-v2:layout:playground"
+        storageKey={layoutStorageKey}
       >
         <Shell />
       </WorkspaceProvider>

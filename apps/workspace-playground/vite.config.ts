@@ -58,6 +58,9 @@ async function startAgentApp() {
 }
 
 export default defineConfig({
+  define: {
+    "process.env": {},
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -71,7 +74,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
-      "@boring/workspace/ui-shadcn": resolve(__dirname, "../../packages/workspace/src/components/ui/index.ts"),
+      "@boring/workspace/ui-shadcn": resolve(__dirname, "../../packages/workspace/src/front/components/ui/index.ts"),
       "@boring/workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
       "@boring/workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
       "@boring/workspace/testing": resolve(__dirname, "../../packages/workspace/src/testing/index.ts"),

@@ -3,17 +3,27 @@ import type { ChatLayoutProps } from "./types"
 import { ResponsiveDockviewShell } from "./ResponsiveDockviewShell"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
-  const { nav = "session-list", center = "chat", surface, sidebar } = props
+  const {
+    nav = "session-list",
+    navParams,
+    center = "chat",
+    centerParams,
+    surface,
+    surfaceParams,
+    sidebar,
+    sidebarParams,
+  } = props
   const groups: GroupConfig[] = [
     {
       id: "nav",
       position: "left",
       panel: nav,
+      params: navParams,
       locked: true,
       hideHeader: true,
       constraints: { minWidth: 60, maxWidth: 60 },
     },
-    { id: "center", position: "center", panel: center },
+    { id: "center", position: "center", panel: center, params: centerParams },
   ]
 
   if (sidebar) {
@@ -21,6 +31,7 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
       id: "sidebar",
       position: "left",
       panel: sidebar,
+      params: sidebarParams,
       collapsible: true,
       collapsedWidth: 40,
       constraints: { minWidth: 200, maxWidthViewportRatio: 0.5 },
@@ -32,6 +43,7 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
       id: "surface",
       position: "right",
       panel: surface,
+      params: surfaceParams,
       dynamic: true,
       placeholder: "empty",
     })
