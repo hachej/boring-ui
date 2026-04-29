@@ -9,7 +9,7 @@ import {
   ThemeProvider,
   useTheme,
 } from "../front/WorkspaceProvider"
-import { createShadcnTheme } from "../theme/codemirror-theme"
+import { createShadcnTheme } from "../front/theme/codemirror-theme"
 
 // ---------------------------------------------------------------------------
 // localStorage mock

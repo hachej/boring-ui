@@ -147,7 +147,7 @@ export { defaultEditorPanels } from "./panes"
 export { definePanel } from "./front/registry/types"
 
 // Theme
-export { createShadcnTheme, useShadcnTheme } from "./theme"
+export { createShadcnTheme, useShadcnTheme } from "./front/theme"
 
 // Unified event bus — typed pubsub for cross-cutting signals
 // (filesystem mutations, panel/editor/query lifecycle). See

@@ -25,7 +25,7 @@ import {
   indentOnInput,
 } from "@codemirror/language"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
-import { createShadcnTheme } from "../../theme/codemirror-theme"
+import { createShadcnTheme } from "../../front/theme/codemirror-theme"
 import { cn } from "../../front/lib/utils"
 
 const LARGE_FILE_THRESHOLD = 1_000_000
