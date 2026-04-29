@@ -1,4 +1,5 @@
 import { createElement, lazy, type ComponentType } from "react"
+import micromatch from "micromatch"
 import type { PanelConfig, PanelRegistration } from "./types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 
@@ -50,9 +51,10 @@ export class PanelRegistry {
     return this.filteredPanels()
   }
 
-  resolve(filename: string): PanelConfig | undefined {
+  resolve(path: string): PanelConfig | undefined {
     let bestMatch: PanelConfig | undefined
-    let bestLength = -1
+    let bestScore = -1
+    let bestIsApp = false
 
     for (const id of this.registrationOrder) {
       const panel = this.panels.get(id)!
@@ -60,17 +62,17 @@ export class PanelRegistry {
       if (!this.satisfiesCapabilities(panel)) continue
 
       for (const pattern of panel.filePatterns) {
-        if (matchGlob(pattern, filename)) {
-          const suffixLen = pattern === "*" ? 0 : pattern.replace(/^\*/, "").length
-          const dominated =
-            suffixLen > bestLength ||
-            (suffixLen === bestLength &&
-              panel.source === "app" &&
-              bestMatch?.source !== "app")
-          if (dominated) {
-            bestLength = suffixLen
-            bestMatch = panel
-          }
+        if (!micromatch.isMatch(path, pattern, { matchBase: false, dot: true })) continue
+        const score = specificity(pattern)
+        const isApp = panel.source === "app"
+        if (
+          score > bestScore ||
+          (score === bestScore && isApp && !bestIsApp) ||
+          (score === bestScore && isApp === bestIsApp)
+        ) {
+          bestScore = score
+          bestIsApp = isApp
+          bestMatch = panel
         }
       }
     }
@@ -139,19 +141,8 @@ export class PanelRegistry {
 }
 
 
-function matchGlob(pattern: string, filename: string): boolean {
-  if (pattern === "*") return true
-  if (pattern.startsWith("*")) {
-    return filename.endsWith(pattern.slice(1))
-  }
-  const star = pattern.indexOf("*")
-  if (star > 0) {
-    const head = pattern.slice(0, star)
-    const tail = pattern.slice(star + 1)
-    if (!filename.startsWith(head)) return false
-    if (!filename.endsWith(tail)) return false
-    const middle = filename.slice(head.length, filename.length - tail.length)
-    return !middle.includes("/")
-  }
-  return filename === pattern
+export function specificity(pattern: string): number {
+  const segmentCount = pattern.split("/").filter(Boolean).length
+  const nonWildcardChars = pattern.replace(/[*?!]/g, "").length
+  return segmentCount * 10 + nonWildcardChars
 }
