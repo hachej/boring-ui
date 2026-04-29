@@ -63,20 +63,22 @@ describe("PanelRegistry", () => {
     expect(Object.keys(comps)).toEqual(["a", "b"])
   })
 
-  it("getComponents wraps lazy importers with React.lazy", () => {
+  it("getComponents wraps lazy importers in an error boundary", () => {
     const reg = new PanelRegistry()
     const importer = () => Promise.resolve({ default: DummyPanel })
     reg.register("lazy", { title: "Lazy", component: importer, lazy: true })
     const comps = reg.getComponents()
     expect(comps.lazy).toBeDefined()
-    expect("$$typeof" in comps.lazy).toBe(true)
+    expect(comps.lazy.name).toBe("WrappedPanel")
   })
 
-  it("getComponents returns sync components directly", () => {
+  it("getComponents wraps sync components in an error boundary", () => {
     const reg = new PanelRegistry()
     reg.register("sync", { title: "Sync", component: DummyPanel })
     const comps = reg.getComponents()
-    expect(comps.sync).toBe(DummyPanel)
+    expect(comps.sync).toBeDefined()
+    expect(comps.sync).not.toBe(DummyPanel)
+    expect(comps.sync.name).toBe("WrappedPanel")
   })
 })
 

@@ -1,5 +1,6 @@
-import { lazy, type ComponentType } from "react"
+import { createElement, lazy, type ComponentType } from "react"
 import type { PanelConfig, PanelRegistration } from "./types"
+import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 
 export class PanelRegistry {
   private panels = new Map<string, PanelConfig>()
@@ -86,12 +87,24 @@ export class PanelRegistry {
     // biome-ignore lint/suspicious/noExplicitAny: see comment above
     const result: Record<string, ComponentType<any>> = {}
     for (const panel of this.filteredPanels()) {
+      // biome-ignore lint/suspicious/noExplicitAny: see comment above
+      let Inner: ComponentType<any>
       if (panel.lazy) {
-        result[panel.id] = lazy(
+        Inner = lazy(
           panel.component as () => Promise<{ default: ComponentType<unknown> }>,
         )
       } else {
-        result[panel.id] = panel.component
+        Inner = panel.component
+      }
+      const pluginId = panel.pluginId ?? panel.id
+      const panelId = panel.id
+      // biome-ignore lint/suspicious/noExplicitAny: dockview props passthrough
+      result[panel.id] = function WrappedPanel(props: any) {
+        return createElement(
+          PluginErrorBoundary,
+          { pluginId, contributionKind: "panel" as const, contributionId: panelId },
+          createElement(Inner, props),
+        )
       }
     }
     return result

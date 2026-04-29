@@ -30,6 +30,7 @@ import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
 import type { CommandConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugin/types"
+import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 import type { ExplorerRow } from "./DataExplorer/types"
 import {
   loadRecent,
@@ -383,8 +384,14 @@ export function CommandPalette(_props?: CommandPaletteProps) {
                         onSelect={() => handleCatalogSelect(group.catalog, row)}
                         className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
                       >
-                        <FileIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
-                        <CatalogRowLabel row={row} />
+                        <PluginErrorBoundary
+                          pluginId={group.catalog.pluginId ?? group.catalog.id}
+                          contributionKind="catalog-row"
+                          contributionId={row.id}
+                        >
+                          <FileIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
+                          <CatalogRowLabel row={row} />
+                        </PluginErrorBoundary>
                       </CommandItem>
                     ))}
                   </CommandGroup>
