@@ -3,8 +3,8 @@
 import { useContext, useMemo } from "react"
 import { ChevronLeft, Plus } from "lucide-react"
 import { cn } from "../../../lib/utils"
-import type { SessionItem } from "../SessionList"
-import { ChatShellContext } from "./context"
+import type { SessionItem } from "../../components/SessionList"
+import { ChatShellContext } from "../../components/chat/context"
 
 export interface SessionBrowserProps {
   sessions: SessionItem[]

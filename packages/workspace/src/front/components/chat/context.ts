@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext } from "react"
-import type { SurfaceShellApi } from "./SurfaceShell"
+import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
 
 export interface ChatShellContextValue {
   drawerOpen: boolean

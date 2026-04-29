@@ -10,18 +10,16 @@ import {
 } from "react"
 import { cn } from "../../../lib/utils"
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts"
-import { useAutoOpenAgentFiles } from "../../hooks/useAutoOpenAgentFiles"
 import { ChatShellContext, type ChatShellContextValue } from "./context"
 import { ChatTopBar } from "./ChatTopBar"
-import { SessionBrowser } from "./SessionBrowser"
-import { SurfaceShell } from "./SurfaceShell"
-import { ChatStagePlaceholder, type ChatStageHandle } from "./ChatStagePlaceholder"
+import { SessionBrowser } from "../../chrome/session-list/SessionBrowser"
+import { SurfaceShell } from "../../chrome/artifact-surface/SurfaceShell"
+import { ChatStagePlaceholder, type ChatStageHandle } from "../../chrome/chat-stage-placeholder/ChatStagePlaceholder"
+import { ChatPanelHost } from "../../chrome/chat/ChatPanelHost"
 import type { SessionItem } from "../SessionList"
-import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
-import { ChatPanel, type ChatSuggestion } from "@boring/agent/front"
-import { emitAgentFileChange } from "../../events"
-import type { SurfaceShellApi, SurfaceShellSnapshot } from "./SurfaceShell"
-import { startUiCommandStream } from "./uiCommandStream"
+import type { DataSource, DataPaneConfig } from "../../chrome/workbench-left/WorkbenchLeftPane"
+import type { ChatSuggestion } from "@boring/agent"
+import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 import { useCommandRegistry, useRegistry } from "../../registry"
 
 export interface ChatCenteredShellProps {
@@ -348,37 +346,6 @@ export function ChatCenteredShell({
     pushUiState()
   }, [drawerOpen, surfaceOpen, pushUiState])
 
-  // Subscribe to agent → frontend UI commands posted via /api/v1/ui/commands
-  // and apply them to the workbench surface. Default transport is SSE
-  // (instant, no polling), with an automatic poll fallback if EventSource
-  // is unavailable or the stream errors past its reconnect budget. The
-  // dispatch context reads from refs on every command, so a late
-  // SurfaceShell mount or any open/close toggle is picked up without
-  // resubscribing.
-  useEffect(() => {
-    return startUiCommandStream({
-      ctx: {
-        surface: () => surfaceRef.current,
-        isWorkbenchOpen: () => surfaceOpenRef.current,
-        openWorkbench: () => setSurfaceOpen(true),
-      },
-    })
-  }, [setSurfaceOpen])
-
-  const openArtifact = useCallback(
-    (path: string) => {
-      // Auto-open the workbench so the file appears even if it was collapsed.
-      if (!surfaceOpen) setSurfaceOpen(true)
-      // Defer if the surface isn't mounted yet — dockview's onReady fires
-      // after layout, so a previously-closed workbench needs two frames.
-      const open = () => surfaceRef.current?.openFile(path)
-      if (surfaceRef.current) open()
-      else requestAnimationFrame(() => requestAnimationFrame(open))
-    },
-    [surfaceOpen, setSurfaceOpen],
-  )
-
-
   useKeyboardShortcuts({
     shortcuts: [
       { key: "1", mod: true, handler: toggleDrawer },
@@ -386,10 +353,6 @@ export function ChatCenteredShell({
       { key: "Escape", allowInEditable: true, handler: focusComposer },
     ],
   })
-
-  // Auto-open files the agent creates. Reuses openArtifact because it
-  // already handles the deferred-mount + workbench-toggle dance.
-  useAutoOpenAgentFiles(openArtifact)
 
   // Surface chat-shell actions in the ⌘K palette so they're discoverable
   // alongside the IDE-flavored commands the WorkspaceProvider registers
@@ -478,7 +441,7 @@ export function ChatCenteredShell({
       // session change reads as "click did nothing visible" until messages
       // happen to differ.
       return (
-        <ChatPanel
+        <ChatPanelHost
           key={activeSessionId}
           sessionId={activeSessionId}
           chrome={false}
@@ -487,15 +450,6 @@ export function ChatCenteredShell({
           emptyTitle={emptyTitle}
           emptyDescription={emptyDescription}
           thinkingControl={thinkingControl}
-          // Click on a path inside a read/edit/write tool card opens
-          // that file in the surrounding workbench. Wired via context
-          // inside the agent's canonical renderers — the workspace no
-          // longer ships a duplicate renderer set.
-          onOpenArtifact={openArtifact}
-          // Bridge agent SSE file-change chunks → unified workspace
-          // event bus so the agent moving/deleting/renaming a file
-          // syncs open editor panes (UNIFIED_EVENT_BUS.md step 3).
-          onData={emitAgentFileChange}
           className="h-full min-h-0"
         />
       )
@@ -513,7 +467,6 @@ export function ChatCenteredShell({
   }, [
     stage,
     activeSessionId,
-    openArtifact,
     chatSuggestions,
     emptyEyebrow,
     emptyTitle,

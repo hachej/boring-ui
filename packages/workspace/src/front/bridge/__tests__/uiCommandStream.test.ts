@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { startUiCommandStream, type DispatchContext } from "../uiCommandStream"
-import type { SurfaceShellApi, SurfaceShellSnapshot } from "../SurfaceShell"
+import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 
 function fakeSurface(): SurfaceShellApi & { __opened: string[]; __panels: unknown[] } {
   const opened: string[] = []

@@ -7,9 +7,9 @@ import { cn } from "../../../lib/utils"
 import { ArtifactSurfacePane } from "../../../panes/ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
 import type { WorkspaceState, PanelState } from "../../../store/types"
-import { WorkbenchLeftPane } from "./WorkbenchLeftPane"
-import { ChatShellContext } from "./context"
-import type { DataSource, DataPaneConfig } from "./WorkbenchLeftPane"
+import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
+import { ChatShellContext } from "../../components/chat/context"
+import type { DataSource, DataPaneConfig } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry } from "../../registry"
 
 export interface SurfaceShellTab {

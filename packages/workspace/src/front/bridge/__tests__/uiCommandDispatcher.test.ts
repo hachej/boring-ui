@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { dispatchUiCommand, type DispatchContext } from "../uiCommandDispatcher"
-import type { SurfaceShellApi, SurfaceShellSnapshot } from "../SurfaceShell"
+import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 
 function fakeSurface(): SurfaceShellApi & { __opened: string[]; __panels: unknown[] } {
   const opened: string[] = []
@@ -136,4 +136,3 @@ describe("dispatchUiCommand", () => {
     expect(() => dispatchUiCommand({ kind: "openFile", params: { path: "x.ts" } }, c)).not.toThrow()
   })
 })
-
