@@ -55,20 +55,27 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     let inviteAccepted = false
 
     if (inviteToken) {
-      const failureCode = await tryAcceptInvite(user, inviteToken)
-      if (failureCode) {
+      try {
+        const failureCode = await tryAcceptInvite(user, inviteToken)
+        if (failureCode) {
+          logger?.warn(
+            { userId: user.id, email: user.email, code: failureCode },
+            'post-signup invite acceptance failed',
+          )
+          ctx?.setCookie?.('boring_invite_failed', failureCode, {
+            maxAge: 60,
+            path: '/',
+            httpOnly: false,
+            sameSite: 'lax',
+          })
+        } else {
+          inviteAccepted = true
+        }
+      } catch (err) {
         logger?.warn(
-          { userId: user.id, email: user.email, code: failureCode },
-          'post-signup invite acceptance failed',
+          { userId: user.id, email: user.email, error: err instanceof Error ? err.message : String(err) },
+          'post-signup invite acceptance threw unexpectedly',
         )
-        ctx?.setCookie?.('boring_invite_failed', failureCode, {
-          maxAge: 60,
-          path: '/',
-          httpOnly: false,
-          sameSite: 'lax',
-        })
-      } else {
-        inviteAccepted = true
       }
     }
 
@@ -106,8 +113,9 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     const invite = await workspaceStore.getInviteByTokenHash(tokenHash)
 
     if (!invite) return 'invite_not_found'
+    if (invite.lockedUntil && new Date(invite.lockedUntil) > new Date()) return 'invite_not_found'
     if (invite.acceptedAt) return 'invite_already_accepted'
-    if (new Date(invite.expiresAt) < new Date()) return 'invite_expired'
+    if (new Date(invite.expiresAt) <= new Date()) return 'invite_expired'
     if (invite.email.toLowerCase() !== user.email.toLowerCase()) return 'invite_email_mismatch'
 
     await workspaceStore.acceptInvite(invite.workspaceId, invite.id, user.id)
