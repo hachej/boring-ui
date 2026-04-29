@@ -25,6 +25,9 @@ import { CommandPalette } from "./components/CommandPalette"
 import { DataProvider, useDataClient, type FetchClient } from "../data"
 import { Toaster } from "../toast"
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts"
+import { bootstrap } from "../shared/plugin/bootstrap"
+import { filesystemPlugin } from "../plugins/filesystemPlugin"
+import type { Plugin } from "../shared/plugin/types"
 import type { PanelConfig } from "./registry/types"
 import type { CatalogConfig } from "../shared/plugin/types"
 import type { ExplorerRow, SearchResult } from "./components/DataExplorer/types"
@@ -32,6 +35,10 @@ import type { ExplorerRow, SearchResult } from "./components/DataExplorer/types"
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function NullChatPanel(_props: ChatPanelProps) {
+  return null
+}
 
 function getSystemTheme(): "light" | "dark" {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light"
@@ -270,6 +277,8 @@ function WorkspaceCatalogBindings({
 export interface WorkspaceProviderProps {
   children: ReactNode
   chatPanel?: ComponentType<ChatPanelProps>
+  plugins?: Plugin[]
+  excludeDefaults?: string[]
   panels?: PanelConfig[]
   catalogs?: CatalogConfig[]
   capabilities?: Record<string, boolean>
@@ -294,6 +303,8 @@ export interface WorkspaceProviderProps {
 export function WorkspaceProvider({
   children,
   chatPanel,
+  plugins,
+  excludeDefaults,
   panels,
   catalogs,
   capabilities,
@@ -379,6 +390,14 @@ export function WorkspaceProvider({
     const cr = new CommandRegistry()
     const cat = new CatalogRegistry()
 
+    bootstrap({
+      chatPanel: chatPanel ?? NullChatPanel,
+      plugins: plugins ?? [],
+      defaults: [filesystemPlugin],
+      excludeDefaults,
+      registries: { panels: pr, commands: cr, catalogs: cat },
+    })
+
     if (panels) {
       for (const panel of panels) {
         const { id, ...config } = panel
@@ -420,7 +439,7 @@ export function WorkspaceProvider({
     })
 
     return { panelRegistry: pr, commandRegistry: cr, catalogRegistry: cat }
-  }, [capabilities, panels, store])
+  }, [capabilities, chatPanel, plugins, excludeDefaults, panels, store])
 
   const onThemeChangeRef = useRef(onThemeChange)
   onThemeChangeRef.current = onThemeChange

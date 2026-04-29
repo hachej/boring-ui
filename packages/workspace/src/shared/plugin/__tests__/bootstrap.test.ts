@@ -63,7 +63,7 @@ describe("bootstrap", () => {
         plugins: [],
         defaults: [],
         registries: makeRegistries(),
-      } as Parameters<typeof bootstrap>[0]),
+      } as unknown as Parameters<typeof bootstrap>[0]),
     ).toThrow("bootstrap requires chatPanel")
   })
 

@@ -123,7 +123,7 @@ describe("WorkspaceProvider — context composition", () => {
     expect(Number(screen.getByTestId("cmds").textContent)).toBeGreaterThanOrEqual(3)
   })
 
-  it("provides useCatalogRegistry", () => {
+  it("provides useCatalogRegistry with default filesystem catalog", () => {
     function Inspector() {
       const catalogs = useCatalogRegistry()
       return <div data-testid="catalogs">{String(catalogs.list().length)}</div>
@@ -131,6 +131,21 @@ describe("WorkspaceProvider — context composition", () => {
 
     render(
       <WorkspaceProvider persistenceEnabled={false}>
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    expect(screen.getByTestId("catalogs").textContent).toBe("1")
+  })
+
+  it("excludeDefaults removes filesystem catalog", () => {
+    function Inspector() {
+      const catalogs = useCatalogRegistry()
+      return <div data-testid="catalogs">{String(catalogs.list().length)}</div>
+    }
+
+    render(
+      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -165,7 +180,7 @@ describe("WorkspaceProvider — context composition", () => {
 })
 
 describe("WorkspaceProvider — panel registration", () => {
-  it("registers panels from props", () => {
+  it("registers panels from props alongside defaults", () => {
     function Inspector() {
       const reg = useRegistry()
       const panels = reg.list()
@@ -182,10 +197,33 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
+    expect(screen.getByTestId("ids").textContent).toBe(
+      "files,code-editor,markdown-editor,test-panel,chat",
+    )
+  })
+
+  it("excludeDefaults removes default panels", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      const panels = reg.list()
+      return <div data-testid="ids">{panels.map((p) => p.id).join(",")}</div>
+    }
+
+    render(
+      <WorkspaceProvider
+        panels={[testPanel, { ...chatPanel }]}
+        capabilities={{ "agent.chat": true }}
+        excludeDefaults={["filesystem"]}
+        persistenceEnabled={false}
+      >
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
     expect(screen.getByTestId("ids").textContent).toBe("test-panel,chat")
   })
 
-  it("registers host catalogs from props", async () => {
+  it("registers host catalogs from props alongside defaults", async () => {
     const reportsCatalog: CatalogConfig = {
       id: "reports",
       label: "Reports",
@@ -210,7 +248,7 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId("catalog-ids").textContent).toBe("reports")
+      expect(screen.getByTestId("catalog-ids").textContent).toBe("files,reports")
     })
   })
 
@@ -279,7 +317,8 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    expect(screen.getByTestId("count").textContent).toBe("1")
+    // 3 default filesystem panels + 1 testPanel (chat filtered by capabilities)
+    expect(screen.getByTestId("count").textContent).toBe("4")
   })
 
   it("custom panel with same ID as another overrides it", () => {
@@ -389,7 +428,7 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(screen.getByTestId("has-chat").textContent).toBe("true")
   })
 
-  it("undefined or null panels prop does not crash provider", () => {
+  it("undefined or null panels prop does not crash provider (defaults still registered)", () => {
     function Inspector() {
       const reg = useRegistry()
       return <div data-testid="count">{reg.list().length}</div>
@@ -400,7 +439,8 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getByTestId("count").textContent).toBe("0")
+    // 3 filesystem default panels
+    expect(screen.getByTestId("count").textContent).toBe("3")
 
     render(
       <WorkspaceProvider
@@ -410,7 +450,7 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("0")
+    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("3")
   })
 })
 
