@@ -9,7 +9,7 @@
  * Imports `playwright/test` types only — no runtime dependency.
  *
  * ```ts
- * import { bootClean, openWorkbench, openPaneViaBridge } from "@boring/workspace/testing/e2e"
+ * import { bootClean, openWorkbench, openPaneViaBridge } from "@boring/workspace/testing"
  *
  * await bootClean(page, { shellKey: "boring-macro:shell" })
  * await openPaneViaBridge(page, { id: "chart:CPI", component: "chart-canvas", title: "CPI", params: {} })
