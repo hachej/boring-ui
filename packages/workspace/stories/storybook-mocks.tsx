@@ -7,7 +7,7 @@ import type { Decorator } from "@storybook/react"
 import { DataProvider } from "../src/front/data"
 import type { FileEntry } from "../src/front/data/types"
 import { WorkspaceProvider } from "../src/WorkspaceProvider"
-import type { FileTreeNode } from "../src/panes/file-tree/FileTree"
+import type { FileTreeNode } from "../src/plugins/filesystemPlugin/file-tree/FileTree"
 
 const ROOT_TREE: Record<string, FileEntry[]> = {
   ".": [

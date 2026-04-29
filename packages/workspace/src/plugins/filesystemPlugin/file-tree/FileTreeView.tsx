@@ -18,11 +18,11 @@ import {
   useDeleteFile,
   useFileSearch,
   useDataClient,
-} from "../../front/data"
-import type { FileEntry } from "../../front/data/types"
+} from "../../../front/data"
+import type { FileEntry } from "../../../front/data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
-import type { WorkspaceBridge } from "../../front/bridge/types"
-import { PanelChrome } from "../../front/dock"
+import type { WorkspaceBridge } from "../../../front/bridge/types"
+import { PanelChrome } from "../../../front/dock"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,10 +33,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Input,
-} from "../../front/components/ui"
-import { cn } from "../../front/lib/utils"
-import { toast } from "../../front/toast"
-import { events, userMeta } from "../../front/events"
+} from "../../../front/components/ui"
+import { cn } from "../../../front/lib/utils"
+import { toast } from "../../../front/toast"
+import { events, userMeta } from "../../../front/events"
 
 const FileTree = lazy(() =>
   import("./FileTree").then((m) => ({ default: m.FileTree })),

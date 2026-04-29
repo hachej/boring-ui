@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
-import { Toaster, clearToasts } from "../../../front/toast"
+import { Toaster, clearToasts } from "../../../../front/toast"
 
 const mockFileList = vi.fn()
 const mockFileWrite = vi.fn()
@@ -13,7 +13,7 @@ const mockFileSearch = vi.fn()
 
 const mockGetTree = vi.fn()
 
-vi.mock("../../../front/data", () => ({
+vi.mock("../../../../front/data", () => ({
   useFileList: (dir: string) => mockFileList(dir),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useCreateDir: () => ({ mutateAsync: mockCreateDir }),
@@ -24,7 +24,7 @@ vi.mock("../../../front/data", () => ({
   useApiBaseUrl: () => "/api",
 }))
 
-vi.mock("../../../front/dock", () => ({
+vi.mock("../../../../front/dock", () => ({
   PanelChrome: ({
     title,
     children,
@@ -476,7 +476,7 @@ describe("FileTreePane", () => {
     })
 
     it("New file submit emits file:created on the bus with cause:'user'", async () => {
-      const { events } = await import("../../../front/events")
+      const { events } = await import("../../../../front/events")
       events._reset()
       mockFileWrite.mockResolvedValue(undefined)
       const onCreated = vi.fn()
