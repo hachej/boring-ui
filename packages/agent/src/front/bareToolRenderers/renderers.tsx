@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { Tool, type ToolState } from '../primitives/Tool'
-import { Terminal } from '../primitives/Terminal'
-import { CodeBlock } from '../primitives/CodeBlock'
+import { Tool, type ToolState } from '../barePrimitives/Tool'
+import { Terminal } from '../barePrimitives/Terminal'
+import { CodeBlock } from '../barePrimitives/CodeBlock'
 import { DiffView } from './DiffView'
 
 const FALLBACK_RENDERER_KEY = '__fallback'

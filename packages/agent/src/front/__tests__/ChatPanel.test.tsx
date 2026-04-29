@@ -1,29 +1,70 @@
-import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import type { ComposerProps } from '../components/Composer'
-import type { ToolPart } from '../toolRenderers'
+import type { ToolPart } from '../../front/toolRenderers'
 
 const mockUseAgentChat = vi.fn()
 const mockSendMessage = vi.fn()
 const mockSetMessages = vi.fn()
-let capturedComposerProps: ComposerProps | undefined
 
-vi.mock('../hooks/useAgentChat', () => ({
+vi.mock('../../front/hooks/useAgentChat', () => ({
   useAgentChat: (opts: unknown) => mockUseAgentChat(opts),
 }))
 
-vi.mock('../components/Composer', () => ({
-  Composer: (props: ComposerProps) => {
-    capturedComposerProps = props
-    return null
+vi.mock('../primitives/conversation', () => ({
+  Conversation: ({ children, ...rest }: any) => <div data-testid="conversation" role="log" {...rest}>{children}</div>,
+  ConversationContent: ({ children }: any) => <div data-testid="conversation-content">{children}</div>,
+  ConversationScrollButton: () => <div data-testid="scroll-button" />,
+}))
+
+vi.mock('../primitives/message', () => ({
+  Message: ({ children, from }: any) => <div data-testid="message" data-from={from}>{children}</div>,
+  MessageContent: ({ children }: any) => <div data-testid="message-content">{children}</div>,
+  MessageResponse: ({ children }: any) => <div data-testid="message-response">{children}</div>,
+}))
+
+vi.mock('../primitives/reasoning', () => ({
+  Reasoning: ({ children }: any) => <div data-testid="reasoning">{children}</div>,
+  ReasoningTrigger: () => <div data-testid="reasoning-trigger" />,
+  ReasoningContent: ({ children }: any) => <div data-testid="reasoning-content">{children}</div>,
+}))
+
+vi.mock('../primitives/attachments', () => ({
+  Attachments: ({ children }: any) => <div data-testid="attachments">{children}</div>,
+  Attachment: ({ children }: any) => <div>{children}</div>,
+  AttachmentPreview: () => <div />,
+  AttachmentInfo: () => <div />,
+  AttachmentRemove: () => <div />,
+}))
+
+vi.mock('../ui/select', () => ({
+  Select: ({ children }: any) => <div>{children}</div>,
+  SelectContent: ({ children }: any) => <div>{children}</div>,
+  SelectItem: ({ children, value }: any) => <div data-value={value}>{children}</div>,
+  SelectTrigger: ({ children }: any) => <div>{children}</div>,
+  SelectValue: () => <div />,
+}))
+
+let capturedOnSubmit: ((input: { text: string; files: unknown[] }) => void) | undefined
+
+vi.mock('../primitives/prompt-input', () => ({
+  PromptInput: ({ children, onSubmit }: any) => {
+    capturedOnSubmit = onSubmit
+    return <div data-testid="prompt-input">{children}</div>
   },
+  PromptInputTextarea: () => <div data-testid="prompt-textarea" />,
+  PromptInputFooter: ({ children }: any) => <div data-testid="prompt-footer">{children}</div>,
+  PromptInputSubmit: ({ status }: any) => <div data-testid="prompt-submit" data-status={status} />,
+  usePromptInputAttachments: () => ({
+    files: [],
+    openFileDialog: vi.fn(),
+    remove: vi.fn(),
+  }),
 }))
 
 import { ChatPanel } from '../ChatPanel'
 
 beforeEach(() => {
-  capturedComposerProps = undefined
+  capturedOnSubmit = undefined
   mockSendMessage.mockReset()
   mockSetMessages.mockReset()
   mockUseAgentChat.mockReset()
@@ -36,20 +77,104 @@ beforeEach(() => {
   })
 })
 
-describe('ChatPanel', () => {
-  test('renders messages and tool calls through styled primitives', () => {
+describe('ChatPanel (shadcn)', () => {
+  test('renders data-boring-chat attribute on root', () => {
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-1" />)
+    expect(html).toMatch(/data-boring-chat(?:=| |>|\/>)/)
+    expect(html).toContain('role="region"')
+    expect(html).toContain('aria-label="Agent assistant"')
+    expect(html).toContain('data-testid="conversation"')
+    expect(html).toContain('role="log"')
+    expect(html).toContain('aria-label="Agent conversation"')
+    expect(html).toContain('aria-live="polite"')
+  })
+
+  test('renders empty state with default suggestion grid when no messages', () => {
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-empty" />)
+    // Default headline + at least one default suggestion card.
+    expect(html).toContain('What are we building?')
+    expect(html).toContain('Summarize the README')
+    expect(html).toContain('Explain this codebase')
+  })
+
+  test('custom suggestions override defaults and prompt label fallback works', () => {
+    const html = renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-custom-empty"
+        emptyTitle="Plan a release"
+        emptyDescription="Start from a recipe."
+        suggestions={[
+          { label: 'Cut a release branch', hint: 'From main', prompt: 'Cut release/' },
+          { label: 'Triage open PRs' },
+        ]}
+      />,
+    )
+    expect(html).toContain('Plan a release')
+    expect(html).toContain('Start from a recipe.')
+    expect(html).toContain('Cut a release branch')
+    expect(html).toContain('Triage open PRs')
+    // Defaults should not leak through when overridden.
+    expect(html).not.toContain('Summarize the README')
+  })
+
+  test('hides suggestion grid when suggestions=[]', () => {
+    const html = renderToStaticMarkup(
+      <ChatPanel sessionId="sess-no-suggestions" suggestions={[]} />,
+    )
+    expect(html).toContain('What are we building?')
+    expect(html).not.toContain('Summarize the README')
+  })
+
+  test('renders user and assistant messages', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Hello' }] },
+        { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'Hi there' }] },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'ready',
+      error: undefined,
+    })
+
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-msgs" />)
+
+    expect(html).toContain('data-from="user"')
+    expect(html).toContain('data-from="assistant"')
+    expect(html).toContain('Hello')
+    expect(html).toContain('Hi there')
+  })
+
+  test('renders reasoning parts', () => {
     mockUseAgentChat.mockReturnValue({
       messages: [
         {
-          id: 'm-user',
-          role: 'user',
-          parts: [{ type: 'text', text: 'Hello from user' }],
-        },
-        {
-          id: 'm-assistant',
+          id: 'a1',
           role: 'assistant',
           parts: [
-            { type: 'text', text: 'Hello from assistant' },
+            { type: 'reasoning', text: 'thinking hard', state: 'done' },
+            { type: 'text', text: 'The answer is 42' },
+          ],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'ready',
+      error: undefined,
+    })
+
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
+
+    expect(html).toContain('data-testid="reasoning"')
+    expect(html).toContain('thinking hard')
+    expect(html).toContain('The answer is 42')
+  })
+
+  test('renders tool call with default renderer', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
             {
               type: 'tool-bash',
               toolCallId: 'call-1',
@@ -65,170 +190,20 @@ describe('ChatPanel', () => {
       error: undefined,
     })
 
-    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-1" />)
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-tool" />)
 
-    expect(html).toContain('Hello from user')
-    expect(html).toContain('Hello from assistant')
-    expect(html).toContain('data-role="user"')
-    expect(html).toContain('data-role="assistant"')
-    expect(html).toContain('data-tool-state')
-    expect(html).toContain('bash')
+    expect(html).toContain('bash · ls')
   })
 
-  test('renders reasoning + fenced code text with primitives', () => {
-    mockUseAgentChat.mockReturnValue({
-      messages: [
-        {
-          id: 'm-assistant-reasoning',
-          role: 'assistant',
-          parts: [
-            { type: 'reasoning', text: 'thinking...', state: 'done' },
-            {
-              type: 'text',
-              text: 'Here is code:\n```ts\nconst x = 1\n```',
-            },
-          ],
-        },
-      ],
-      sendMessage: mockSendMessage,
-      status: 'ready',
-      error: undefined,
-    })
-
-    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
-
-    expect(html).toContain('Thought process')
-    expect(html).toContain('data-state="done"')
-    expect(html).toContain('data-language="ts"')
-    expect(html).toContain('const x = 1')
-  })
-
-  test('marks ChatPanel root with data-boring-chat attribute', () => {
-    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-theme-root" />)
-    expect(html).toMatch(/data-boring-chat(?:=| |>|\/>)/)
-    expect(html).toContain('role="region"')
-    expect(html).toContain('aria-label="Agent assistant"')
-    expect(html).toContain('role="log"')
-    expect(html).toContain('aria-label="Agent conversation"')
-    expect(html).toContain('aria-live="polite"')
-  })
-
-  test('renders two chat instances with per-panel selector hooks', () => {
-    const html = renderToStaticMarkup(
-      <div>
-        <style>
-          {`.scope-a [data-boring-chat]{--boring-chat-tool-border:#ff007a}
-            .scope-b [data-boring-chat]{--boring-chat-tool-border:#00c2ff}`}
-        </style>
-        <section className="scope-a">
-          <ChatPanel sessionId="sess-theme-a" />
-        </section>
-        <section className="scope-b">
-          <ChatPanel sessionId="sess-theme-b" />
-        </section>
-      </div>,
-    )
-
-    expect(html.match(/data-boring-chat(?:=| |>|\/>)/g)).toHaveLength(2)
-    expect(html).toContain('scope-a')
-    expect(html).toContain('scope-b')
-    expect(html).toContain('--boring-chat-tool-border:#ff007a')
-    expect(html).toContain('--boring-chat-tool-border:#00c2ff')
-  })
-
-  test('theme defaults are scoped to [data-boring-chat]', () => {
-    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8')
-    expect(css).toContain('[data-boring-chat]')
-    expect(css).toContain('--boring-chat-tool-border')
-    expect(css).toContain('--boring-chat-code-bg')
-  })
-
-  test('parent --boring-chat-accent override scopes to that parent only', () => {
-    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8')
-    expect(css).toContain('--boring-chat-accent')
-    expect(css).toContain('--boring-chat-tool-running: var(--boring-chat-accent)')
-
-    const html = renderToStaticMarkup(
-      <div>
-        <style>
-          {`.accent-red [data-boring-chat]{--boring-chat-accent:red}`}
-        </style>
-        <section className="accent-red">
-          <ChatPanel sessionId="sess-accent-a" />
-        </section>
-        <section>
-          <ChatPanel sessionId="sess-accent-b" />
-        </section>
-      </div>,
-    )
-
-    expect(html).toContain('--boring-chat-accent:red')
-    const accentMatches = html.match(/--boring-chat-accent:red/g)
-    expect(accentMatches).toHaveLength(1)
-
-    const chatPanels = html.match(/data-boring-chat=""/g)
-    expect(chatPanels).toHaveLength(2)
-  })
-
-  test('theme.css defines @keyframes boring-pulse', () => {
-    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8')
-    expect(css).toContain('@keyframes boring-pulse')
-  })
-
-  test('theme.css defines dropdown and semantic color vars', () => {
-    const css = readFileSync(new URL('../styles/theme.css', import.meta.url), 'utf8')
-    expect(css).toContain('--boring-chat-dropdown-bg')
-    expect(css).toContain('--boring-chat-dropdown-border')
-    expect(css).toContain('--boring-chat-error')
-    expect(css).toContain('--boring-chat-success')
-    expect(css).toContain('--boring-chat-surface')
-  })
-
-  test('typing in composer send path forwards user message to useAgentChat', async () => {
-    renderToStaticMarkup(<ChatPanel sessionId="sess-42" />)
-
-    expect(capturedComposerProps).toBeDefined()
-    await capturedComposerProps!.onSend({
-      message: 'Run tests',
-      model: { provider: 'anthropic', id: 'opus' },
-      thinkingLevel: 'high',
-    })
-
-    expect(mockSendMessage).toHaveBeenCalledWith(
-      { text: 'Run tests' },
-      {
-        body: {
-          sessionId: 'sess-42',
-          message: 'Run tests',
-          model: { provider: 'anthropic', id: 'opus' },
-          thinkingLevel: 'high',
-        },
-      },
-    )
-  })
-
-  test('marks composer as streaming while chat is in-flight', () => {
-    mockUseAgentChat.mockReturnValue({
-      messages: [],
-      sendMessage: mockSendMessage,
-      status: 'streaming',
-      error: undefined,
-    })
-
-    renderToStaticMarkup(<ChatPanel sessionId="sess-1" />)
-
-    expect(capturedComposerProps?.isStreaming).toBe(true)
-  })
-
-  test('toolRenderers override replaces default renderer for matching tool name', () => {
-    const customBashRenderer = vi.fn((part: ToolPart) => (
-      <div data-testid="custom-bash">custom:{part.toolCallId}</div>
+  test('custom toolRenderers override default renderer', () => {
+    const customRenderer = vi.fn((part: ToolPart) => (
+      <div data-testid="custom-tool">custom:{part.toolCallId}</div>
     ))
 
     mockUseAgentChat.mockReturnValue({
       messages: [
         {
-          id: 'm-assistant',
+          id: 'a1',
           role: 'assistant',
           parts: [
             {
@@ -247,104 +222,98 @@ describe('ChatPanel', () => {
     })
 
     const html = renderToStaticMarkup(
-      <ChatPanel
-        sessionId="sess-custom"
-        toolRenderers={{ bash: customBashRenderer }}
-      />,
+      <ChatPanel sessionId="sess-custom" toolRenderers={{ bash: customRenderer }} />,
     )
 
-    expect(customBashRenderer).toHaveBeenCalledTimes(1)
+    expect(customRenderer).toHaveBeenCalledTimes(1)
     expect(html).toContain('custom:call-custom')
   })
 
-  test('non-overridden tool still uses default/fallback renderer', () => {
-    const customBashRenderer = vi.fn((part: ToolPart) => (
-      <div data-testid="custom-bash">custom:{part.toolCallId}</div>
-    ))
-
+  test('renders error message', () => {
     mockUseAgentChat.mockReturnValue({
-      messages: [
-        {
-          id: 'm-assistant',
-          role: 'assistant',
-          parts: [
-            {
-              type: 'tool-plugin_magic',
-              toolCallId: 'call-plugin',
-              state: 'output-available',
-              input: { x: 1 },
-              output: { y: 2 },
-            },
-          ],
-        },
-      ],
+      messages: [],
       sendMessage: mockSendMessage,
-      setMessages: mockSetMessages,
-      status: 'ready',
-      error: undefined,
+      status: 'error',
+      error: new Error('Something went wrong'),
     })
 
-    const html = renderToStaticMarkup(
-      <ChatPanel
-        sessionId="sess-plugin"
-        toolRenderers={{ bash: customBashRenderer }}
-      />,
-    )
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-err" />)
 
-    expect(customBashRenderer).not.toHaveBeenCalled()
-    expect(html).toContain('plugin_magic')
-    expect(html).toContain('aria-expanded="true"')
-    expect(html).toContain('&quot;x&quot;')
-    expect(html).toContain('&quot;y&quot;')
+    expect(html).toContain('Something went wrong')
+    expect(html).toContain('role="alert"')
+  })
+
+  test('sends message through useAgentChat', async () => {
+    renderToStaticMarkup(<ChatPanel sessionId="sess-send" />)
+
+    expect(capturedOnSubmit).toBeDefined()
+    await capturedOnSubmit!({ text: 'Run tests', files: [] })
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: 'Run tests', files: [] },
+      {
+        body: {
+          sessionId: 'sess-send',
+          message: 'Run tests',
+          model: { provider: 'anthropic', id: 'sonnet' },
+          attachments: [],
+        },
+      },
+    )
   })
 
   test('slash command is intercepted and does not send to AI', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
 
-    await capturedComposerProps!.onSend({
-      message: '/cost',
-      model: { provider: 'anthropic', id: 'sonnet' },
-      thinkingLevel: 'off',
-    })
+    await capturedOnSubmit!({ text: '/cost', files: [] })
 
     expect(mockSendMessage).not.toHaveBeenCalled()
     expect(mockSetMessages).toHaveBeenCalled()
   })
 
-  test('slash command result message is appended via setMessages', async () => {
-    renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
+  test('/clear calls setMessages with empty array', async () => {
+    renderToStaticMarkup(<ChatPanel sessionId="sess-clear" />)
 
-    await capturedComposerProps!.onSend({
-      message: '/cost',
-      model: { provider: 'anthropic', id: 'sonnet' },
-      thinkingLevel: 'off',
-    })
+    await capturedOnSubmit!({ text: '/clear', files: [] })
 
-    const updater = mockSetMessages.mock.calls[0][0]
-    expect(typeof updater).toBe('function')
-    const result = updater([])
-    expect(result).toHaveLength(1)
-    expect(result[0].role).toBe('assistant')
-    expect(result[0].content).toBe('Coming soon.')
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockSetMessages).toHaveBeenCalledWith([])
+  })
+
+  test('/reset deletes server session and calls onSessionReset', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', mockFetch)
+    const onSessionReset = vi.fn()
+
+    renderToStaticMarkup(
+      <ChatPanel sessionId="sess-reset" onSessionReset={onSessionReset} />,
+    )
+
+    await capturedOnSubmit!({ text: '/reset', files: [] })
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockSetMessages).toHaveBeenCalledWith([])
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/agent/sessions/sess-reset',
+      { method: 'DELETE' },
+    )
+    expect(onSessionReset).toHaveBeenCalledOnce()
   })
 
   test('unknown slash command falls through as regular message', async () => {
-    renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
+    renderToStaticMarkup(<ChatPanel sessionId="sess-unk" />)
 
-    await capturedComposerProps!.onSend({
-      message: '/unknown hello',
-      model: { provider: 'anthropic', id: 'sonnet' },
-      thinkingLevel: 'off',
-    })
+    await capturedOnSubmit!({ text: '/unknown hello', files: [] })
 
     expect(mockSendMessage).toHaveBeenCalledWith(
-      { text: '/unknown hello' },
+      { text: '/unknown hello', files: [] },
       {
         body: {
-          sessionId: 'sess-cmd',
+          sessionId: 'sess-unk',
           message: '/unknown hello',
           model: { provider: 'anthropic', id: 'sonnet' },
-          thinkingLevel: 'off',
+          attachments: [],
         },
       },
     )
@@ -361,51 +330,274 @@ describe('ChatPanel', () => {
       />,
     )
 
-    await capturedComposerProps!.onSend({
-      message: '/greet world',
-      model: { provider: 'anthropic', id: 'sonnet' },
-      thinkingLevel: 'off',
-    })
+    await capturedOnSubmit!({ text: '/greet world', files: [] })
 
     expect(mockSendMessage).not.toHaveBeenCalled()
     expect(customHandler).toHaveBeenCalledWith('world', expect.objectContaining({ sessionId: 'sess-ext' }))
   })
 
-  test('/clear calls setMessages with empty array', async () => {
-    renderToStaticMarkup(<ChatPanel sessionId="sess-clear" />)
-
-    await capturedComposerProps!.onSend({
-      message: '/clear',
-      model: { provider: 'anthropic', id: 'sonnet' },
-      thinkingLevel: 'off',
-    })
-
-    expect(mockSendMessage).not.toHaveBeenCalled()
-    expect(mockSetMessages).toHaveBeenCalledWith([])
+  test('className prop is forwarded to root element', () => {
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-cls" className="custom-class" />)
+    expect(html).toContain('custom-class')
   })
 
-  test('/reset deletes server session and calls onSessionReset', async () => {
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
-    const mockFetch = vi.fn().mockResolvedValue({ ok: true })
-    vi.stubGlobal('fetch', mockFetch)
-    const onSessionReset = vi.fn()
+  test('passes sessionId to useAgentChat', () => {
+    renderToStaticMarkup(<ChatPanel sessionId="test-session-42" />)
+    expect(mockUseAgentChat).toHaveBeenCalledWith({ sessionId: 'test-session-42' })
+  })
 
-    renderToStaticMarkup(
-      <ChatPanel sessionId="sess-reset" onSessionReset={onSessionReset} />,
-    )
-
-    await capturedComposerProps!.onSend({
-      message: '/reset',
-      model: { provider: 'anthropic', id: 'sonnet' },
-      thinkingLevel: 'off',
+  test('prompt submit status reflects streaming state', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [],
+      sendMessage: mockSendMessage,
+      setMessages: mockSetMessages,
+      status: 'streaming',
+      error: undefined,
     })
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
-    expect(mockSetMessages).toHaveBeenCalledWith([])
-    expect(mockFetch).toHaveBeenCalledWith(
-      '/api/v1/agent/sessions/sess-reset',
-      { method: 'DELETE' },
-    )
-    expect(onSessionReset).toHaveBeenCalledOnce()
+    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-stream" />)
+    expect(html).toContain('data-status="streaming"')
+  })
+
+  describe('busy indicators', () => {
+    test('progress bar visible while streaming', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).toContain('aria-label="Agent working"')
+      expect(html).toContain('role="progressbar"')
+    })
+
+    test('progress bar visible during submitted (waiting for first byte)', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'submitted',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).toContain('aria-label="Agent working"')
+    })
+
+    test('progress bar hidden when ready', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).not.toContain('aria-label="Agent working"')
+    })
+
+    test('thinking caption shows when last message is user and streaming', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'submitted',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).toContain('data-testid="chat-thinking"')
+      expect(html).toContain('Thinking…')
+    })
+
+    test('thinking caption hides once assistant message exists (model replying)', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+          { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: '...' }] },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'streaming',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      // Bar still shown (still streaming), but caption gone.
+      expect(html).toContain('aria-label="Agent working"')
+      expect(html).not.toContain('data-testid="chat-thinking"')
+    })
+
+    test('thinking caption hides when ready', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).not.toContain('data-testid="chat-thinking"')
+    })
+  })
+
+  describe('part ordering', () => {
+    test('text and tool parts render in chronological message.parts order', () => {
+      // Model emits: text → tool → text → tool. Renderer must preserve that
+      // order so the user sees which sentence triggered which tool, instead
+      // of all tools dumped at the bottom of the message.
+      const customRenderer = vi.fn((part: ToolPart) => (
+        <div data-testid={`tool-${part.toolCallId}`}>TOOL_{part.toolCallId}</div>
+      ))
+
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            parts: [
+              { type: 'text', text: 'FIRST_TEXT' },
+              {
+                type: 'tool-bash',
+                toolCallId: 'CALLA',
+                state: 'output-available',
+                input: { command: 'ls' },
+                output: { text: 'a' },
+              },
+              { type: 'text', text: 'SECOND_TEXT' },
+              {
+                type: 'tool-bash',
+                toolCallId: 'CALLB',
+                state: 'output-available',
+                input: { command: 'pwd' },
+                output: { text: 'b' },
+              },
+              { type: 'text', text: 'THIRD_TEXT' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(
+        <ChatPanel sessionId="s-order" toolRenderers={{ bash: customRenderer }} />,
+      )
+      const idxFirstText = html.indexOf('FIRST_TEXT')
+      const idxToolA = html.indexOf('TOOL_CALLA')
+      const idxSecondText = html.indexOf('SECOND_TEXT')
+      const idxToolB = html.indexOf('TOOL_CALLB')
+      const idxThirdText = html.indexOf('THIRD_TEXT')
+      expect(idxFirstText).toBeGreaterThan(-1)
+      expect(idxToolA).toBeGreaterThan(idxFirstText)
+      expect(idxSecondText).toBeGreaterThan(idxToolA)
+      expect(idxToolB).toBeGreaterThan(idxSecondText)
+      expect(idxThirdText).toBeGreaterThan(idxToolB)
+    })
+
+    test('thinking control hidden by default (opt-in)', () => {
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-think" />)
+      // None of the four level labels should appear when the control is off.
+      expect(html).not.toContain('No thinking')
+      expect(html).not.toContain('Think a little')
+      expect(html).not.toContain('Think hard')
+    })
+
+    test('thinking control rendered when thinkingControl=true', () => {
+      const html = renderToStaticMarkup(
+        <ChatPanel sessionId="s-think" thinkingControl />,
+      )
+      // The select renders all four level options as children.
+      expect(html).toContain('No thinking')
+      expect(html).toContain('Think a little')
+      expect(html).toContain('Think hard')
+      // BrainIcon rendered alongside the trigger.
+      expect(html).toContain('lucide-brain')
+    })
+
+    test('thinkingLevel is sent in body when thinkingControl is enabled', async () => {
+      // Default level is 'off' — assert it's still forwarded so the server
+      // gets a deterministic value rather than relying on the schema default.
+      renderToStaticMarkup(
+        <ChatPanel sessionId="s-think-body" thinkingControl />,
+      )
+      await capturedOnSubmit!({ text: 'reason about it', files: [] })
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: 'reason about it', files: [] },
+        {
+          body: expect.objectContaining({
+            sessionId: 's-think-body',
+            thinkingLevel: 'off',
+          }),
+        },
+      )
+    })
+
+    test('thinkingLevel is NOT sent in body when thinkingControl is disabled', async () => {
+      renderToStaticMarkup(<ChatPanel sessionId="s-no-think-body" />)
+      await capturedOnSubmit!({ text: 'plain', files: [] })
+      const call = mockSendMessage.mock.calls[0]?.[1]?.body as Record<string, unknown>
+      expect(call).toBeDefined()
+      expect(Object.prototype.hasOwnProperty.call(call, 'thinkingLevel')).toBe(false)
+    })
+
+    test('thinkingLevel reads from localStorage when control enabled', async () => {
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) =>
+          key === 'boring-agent:composer:thinking' ? 'medium' : null,
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      })
+      renderToStaticMarkup(
+        <ChatPanel sessionId="s-think-stored" thinkingControl />,
+      )
+      await capturedOnSubmit!({ text: 'go', files: [] })
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        { body: expect.objectContaining({ thinkingLevel: 'medium' }) },
+      )
+      vi.unstubAllGlobals()
+    })
+
+    test('tools are NOT pushed to the end when they appear before text in parts', () => {
+      // Regression guard: the previous renderer grouped by type and rendered
+      // all texts first then all tools. With that bug, a tool-then-text
+      // sequence in `parts` would render text first.
+      const customRenderer = vi.fn((part: ToolPart) => (
+        <div data-testid={`tool-${part.toolCallId}`}>TOOL_{part.toolCallId}</div>
+      ))
+
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            parts: [
+              {
+                type: 'tool-bash',
+                toolCallId: 'EARLY',
+                state: 'output-available',
+                input: { command: 'ls' },
+                output: { text: 'a' },
+              },
+              { type: 'text', text: 'AFTER_TOOL' },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(
+        <ChatPanel sessionId="s-tool-first" toolRenderers={{ bash: customRenderer }} />,
+      )
+      const idxTool = html.indexOf('TOOL_EARLY')
+      const idxText = html.indexOf('AFTER_TOOL')
+      expect(idxTool).toBeGreaterThan(-1)
+      expect(idxText).toBeGreaterThan(idxTool)
+    })
   })
 })
