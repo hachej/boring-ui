@@ -62,7 +62,7 @@ describe("bootstrap", () => {
         defaults: [],
         registries: makeRegistries(),
       }),
-    ).toEqual({ registered: [] })
+    ).toEqual({ registered: [], systemPromptAppend: "" })
   })
 
   it("fans panels, commands, catalogs, and agent tools into registries", () => {
@@ -108,7 +108,7 @@ describe("bootstrap", () => {
       registries,
     })
 
-    expect(result).toEqual({ registered: ["filesystem", "theme", "host"] })
+    expect(result).toEqual({ registered: ["filesystem", "theme", "host"], systemPromptAppend: "" })
     expect(registries.commands.getCommands().map((command) => command.id)).toEqual([
       "default-command",
       "theme-command",
@@ -126,7 +126,7 @@ describe("bootstrap", () => {
       registries,
     })
 
-    expect(result).toEqual({ registered: ["filesystem"] })
+    expect(result).toEqual({ registered: ["filesystem"], systemPromptAppend: "" })
     expect(registries.commands.getCommands()).toEqual([
       expect.objectContaining({ id: "host", pluginId: "filesystem" }),
     ])
@@ -207,5 +207,74 @@ describe("bootstrap", () => {
         registries: makeRegistries(),
       }),
     ).not.toThrow()
+  })
+
+  describe("systemPromptAppend", () => {
+    it("returns empty string when no plugins have systemPrompt", () => {
+      const result = bootstrap({
+        plugins: [{ id: "a" }, { id: "b" }],
+        defaults: [],
+        registries: makeRegistries(),
+      })
+      expect(result.systemPromptAppend).toBe("")
+    })
+
+    it("returns trimmed prompt from a single plugin", () => {
+      const result = bootstrap({
+        plugins: [{ id: "a", systemPrompt: "  Hello world  " }],
+        defaults: [],
+        registries: makeRegistries(),
+      })
+      expect(result.systemPromptAppend).toBe("Hello world")
+    })
+
+    it("joins multiple prompts with double-newline in registration order", () => {
+      const result = bootstrap({
+        defaults: [{ id: "default", systemPrompt: "Default context" }],
+        plugins: [{ id: "host", systemPrompt: "Host context" }],
+        registries: makeRegistries(),
+      })
+      expect(result.systemPromptAppend).toBe("Default context\n\nHost context")
+    })
+
+    it("skips plugins with undefined systemPrompt", () => {
+      const result = bootstrap({
+        plugins: [
+          { id: "a", systemPrompt: "A" },
+          { id: "b" },
+          { id: "c", systemPrompt: "C" },
+        ],
+        defaults: [],
+        registries: makeRegistries(),
+      })
+      expect(result.systemPromptAppend).toBe("A\n\nC")
+    })
+
+    it("skips plugins with whitespace-only systemPrompt", () => {
+      const result = bootstrap({
+        plugins: [
+          { id: "a", systemPrompt: "A" },
+          { id: "b", systemPrompt: "   " },
+          { id: "c", systemPrompt: "\n\t" },
+        ],
+        defaults: [],
+        registries: makeRegistries(),
+      })
+      expect(result.systemPromptAppend).toBe("A")
+    })
+
+    it("preserves defaults-first ordering for prompt concatenation", () => {
+      const result = bootstrap({
+        defaults: [
+          { id: "fs", systemPrompt: "Filesystem plugin" },
+          { id: "theme", systemPrompt: "Theme plugin" },
+        ],
+        plugins: [{ id: "macro", systemPrompt: "Macro plugin" }],
+        registries: makeRegistries(),
+      })
+      expect(result.systemPromptAppend).toBe(
+        "Filesystem plugin\n\nTheme plugin\n\nMacro plugin",
+      )
+    })
   })
 })
