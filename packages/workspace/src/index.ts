@@ -18,8 +18,12 @@ export {
   useCommands,
   useActivePanels,
   useCatalogs,
+  PluginErrorBoundary,
+  PluginErrorProvider,
+  usePluginErrors,
 } from "./front/plugin"
-export type { CatalogRegistryOptions } from "./front/plugin"
+export type { CatalogRegistryOptions, PluginError as PluginContributionError } from "./front/plugin"
+export { filesystemPlugin } from "./plugins/filesystemPlugin"
 
 // Utility
 export { cn } from "./lib/utils"
