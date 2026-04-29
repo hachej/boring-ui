@@ -1,6 +1,6 @@
 # Plan — Lean on pi's tools; plug our backends per-mode via Operations
 
-**Status:** draft v3 — design locked 2026-04-28, not yet started.
+**Status:** draft v4 — codex r5 catch-up (2026-04-29). NOTE: the live code already moved past this plan's Phase 0/1 milestones — `standardCatalog.ts` no longer exists at `packages/agent/src/server/catalog/`; `createAgentApp.ts:91` already uses `buildHarnessAgentTools(bundle) + buildFilesystemAgentTools(bundle)` directly. Sections below describing migration FROM `standardCatalog` are historical record; READ as "this is how we got here." Phase 1.5 of PLUGIN_MODEL.md (workspace) is the consumer-side counterpart now in flight.
 **Path:** `boring-ui-v2/packages/agent/`
 **Sequencing:** ships first; PLUGIN_MODEL.md (workspace) lands after.
 

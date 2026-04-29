@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v7.5 — three-folder high-level taxonomy: **`core/` (substrate)** + **`layout/` (composition)** + **`plugins/` (plugin model + defaults)**. Plugins own their contributing components (CodeEditor, MarkdownEditor, FileTree live INSIDE `plugins/defaults/filesystemPlugin/`, not at the workspace root). Apps follow the same shape (macro panes inside `apps/boring-macro-v2/src/plugin/`). Refines Phase 1.5 file-tree end state.
+**Status:** v7.6 — round-5 review patches: Step 0 sequencing (move workspace into v7.5 layout BEFORE Phase 1, not after); split plugin entrypoints (index.ts client + server.ts per plugin); strict type-only imports for cross-folder Plugin refs; cleanup pack (uiBridge dedup, EmptyFilePanel relocation, A/B parallelism tightened, TL;DR scrub, tsconfig excludes, pi-tools-migration catch-up). **Meta-rule: when files move, they go DIRECTLY to final v7.6 destinations — no intermediate placements.**
 
 > **Factory pattern:** Plugins may be exposed as factories when they need
 > runtime config (e.g. macro's `makeMacroServerPlugin()`). v7.0 dropped the
@@ -32,7 +32,7 @@ boring-macro-v2 migration is the acceptance test — ~260 LOC of glue
 
 - The `Plugin` contract + `definePlugin` factory
 - Subscribe-aware registries (Catalog new; retrofit Command + Panel)
-- Two default plugins: `filesystemPlugin`, `dataCatalogPlugin`
+- One default plugin: `filesystemPlugin` (UI-only — panels + catalog; no agentTools per v7.0+)
 - `<WorkspaceProvider plugins={…}>` and
   `createWorkspaceAgentApp({ plugins })` entry points
 - File ops shared bundle in `@boring/agent`; filesystemPlugin
@@ -1694,9 +1694,69 @@ Markers: **[NEW]** **[MOVED]** **[EXISTS]** (modified) **[DELETED]**.
 
 ## Exact path: now → Phase 1 done
 
-Six sequenced commits.
+Six sequenced commits, plus a v7.6-mandated **Step 0** at the front
+to put files into their FINAL v7.6 destinations before Phase 1
+builds anything else. (Both reviewers in r5 flagged the alternative
+— building Phase 1 into the OLD flat layout then ripping up later —
+as wasted work; gemini called it P0.)
+
+**Meta-rule (v7.6):** when files move, they go DIRECTLY to their
+final v7.6 destinations. No "move to old path then move again
+later." Step 0 is the ONE place the existing workspace files
+restructure; subsequent phases assume the v7.6 layout exists.
 
 ```
+┌──────────────────────────────────────────────────────────────────┐
+│  STEP 0 — Workspace package reorg into v7.6 layout (NEW; gemini  │
+│  P0 + codex P1)                                                  │
+│  ─────────────────────────────────────────────────────────────── │
+│  Mechanical git mv of existing workspace src/ files into the     │
+│  v7.6 four-folder layout. NO behavior change. NO new files. One  │
+│  PR.                                                             │
+│                                                                  │
+│  Moves (existing → v7.6 destination):                            │
+│    src/components/{ui, DataExplorer, CommandPalette, SessionList,│
+│       PluginErrorBoundary?}              → src/front/components/ │
+│    src/registry/                          → src/front/registry/  │
+│    src/dock/                              → src/front/dock/      │
+│    src/events/                            → src/front/events/    │
+│    src/hooks/                             → src/front/hooks/     │
+│    src/layouts/                           → src/front/layout/    │
+│    src/panes/{ArtifactSurfacePane.tsx,   →  to be moved into     │
+│       EmptyPane.tsx}                          chrome/ in Phase A │
+│    src/panes/{code-editor, markdown-editor, file-tree}/          │
+│                                           → to be moved INTO     │
+│                                              filesystemPlugin in │
+│                                              Step 3 (NOT to      │
+│                                              front/panes/)       │
+│    src/panes/data-catalog/                → audit + delete OR    │
+│                                              move to front/      │
+│                                              components/         │
+│    src/plugin/{types, definePlugin,       → src/shared/plugin/   │
+│       bootstrap}.ts                          (the SHARED parts)  │
+│    src/plugin/{CatalogRegistry,           → src/front/plugin/    │
+│       use*.ts, index.ts}                                         │
+│    src/store/, src/testing/, src/types/   → audit; fold into     │
+│                                              shared/ if minimal  │
+│    src/server/                            (already in src/server;│
+│                                              stays; minor file   │
+│                                              renames if needed)  │
+│    src/shared/                            (already in src/shared;│
+│                                              gains plugin/ subdir│
+│                                              from above)         │
+│                                                                  │
+│  tsconfig changes:                                               │
+│    - tsconfig.front.json adds excludes for                       │
+│      src/plugins/**/server/**, src/plugin/server/** (codex P1)   │
+│    - tsconfig.shared.json (if exists) doesn't include DOM lib    │
+│                                                                  │
+│  Deliverable: src/ has front/, server/, shared/, plugins/ at top │
+│  level. ALL existing tests pass unchanged (vi.mock paths follow  │
+│  moved files). No new functionality.                             │
+│  ETA: 1-2 days.                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  STEP 1 — REORG (no plugin model yet, pure refactor)             │
 │  ─────────────────────────────────────────────────────────────── │
@@ -2179,7 +2239,10 @@ front/
 │   ├── TopBar.tsx                       NEW (Phase C — was components/chat/ChatTopBar)
 │   └── index.ts
 │
-├── panes/EmptyFilePanel/                NEW (j9p7.12 — workbench-center fallback)
+├── chrome/empty-file-panel/             NEW (j9p7.12 — fallback for unmatched
+│                                        files; relocated from panes/ in v7.6
+│                                        per gemini P2 — kills the lone-resident
+│                                        panes/ folder at workspace root)
 │
 ├── plugin/                              ← plugin model FRONT machinery (singular)
 │   ├── CatalogRegistry.ts               (DONE — file at packages/workspace/src/plugin/
@@ -2377,41 +2440,56 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Phase A — Decompose chat shells into per-pane folders + bridge/ │
+│  Phase A — Decompose chat shells into front/chrome/ + front/     │
+│  bridge/ (v7.6 paths, ONE-GO move)                               │
 │  ─────────────────────────────────────────────────────────────── │
 │  - git mv components/chat/{SessionBrowser, ChatStagePlaceholder, │
-│           SurfaceShell, WorkbenchLeftPane}.tsx → panes/<id>/     │
-│  - Each pane gains definition.ts exporting a PanelConfig         │
-│  - Create panes/chat/ChatPanel.tsx (thin wrapper around          │
+│           SurfaceShell, WorkbenchLeftPane}.tsx → front/chrome/   │
+│           {session-list, chat-stage-placeholder, artifact-       │
+│            surface, workbench-left}/                             │
+│  - Each chrome folder gains a definition.ts exporting a          │
+│    PanelConfig (used by Phase B's coreWorkspacePanels)           │
+│  - Create front/chrome/chat/ChatPanel.tsx (thin wrapper around   │
 │    @boring/agent's ChatPanel + workspace integrations) +         │
 │    definition.ts                                                 │
 │  - git mv components/chat/{uiCommandStream,                      │
-│    uiCommandDispatcher}.ts → bridge/                             │
+│    uiCommandDispatcher}.ts → front/bridge/                       │
 │  - Update internal imports                                       │
 │  - DON'T touch ChatCenteredShell.tsx or ChatTopBar.tsx yet —     │
-│    they stay until Phase G/C.                                    │
+│    they stay until Phase G/C respectively.                       │
 │  Bead: j9p7.24                                                   │
+│                                                                  │
+│  Note: Step 0 already ran the workspace reorg into v7.6 layout, │
+│  so source paths use front/ prefix. ArtifactSurfacePane.tsx and  │
+│  EmptyPane.tsx (loose under panes/ before Step 0) ALSO move to  │
+│  front/chrome/{artifact-surface, EmptyPane.tsx} in this Phase.   │
 └──────────────────────────────────────────────────────────────────┘
                              │
                              ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  Phase B — Wire core panel registrations in WorkspaceProvider    │
 │  ─────────────────────────────────────────────────────────────── │
-│  - Create registry/coreRegistrations.ts exporting                │
+│  Parallelism note (codex P2): can START in parallel with Phase A │
+│  but cannot CLOSE before Phase A's definition.ts files exist.    │
+│                                                                  │
+│  - Create front/registry/coreRegistrations.ts exporting          │
 │    coreWorkspacePanels: PanelConfig[] aggregating the 4 core     │
-│    panel defs                                                    │
-│  - WorkspaceProvider imports and registers them at mount,        │
-│    BEFORE bootstrap() runs                                       │
+│    chrome panel defs (chat, session-list, workbench-left,        │
+│    artifact-surface). Imports each pane's definition.ts.         │
+│  - front/WorkspaceProvider.tsx imports and registers them at     │
+│    mount, BEFORE bootstrap() runs                                │
 │  - Test: render WorkspaceProvider with no plugins; assert the    │
 │    panel registry has the 4 core ids                             │
-│  Bead: j9p7.25                                                   │
+│  Bead: j9p7.25 (depends on j9p7.24 closing for the actual        │
+│  definition.ts files to import)                                  │
 └──────────────────────────────────────────────────────────────────┘
                              │
                              ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  Phase C — Lift TopBar chrome + expose ResponsiveDockviewShell   │
 │  ─────────────────────────────────────────────────────────────── │
-│  - git mv components/chat/ChatTopBar.tsx → layouts/TopBar.tsx    │
+│  - git mv components/chat/ChatTopBar.tsx                         │
+│         → front/layout/TopBar.tsx                                │
 │  - Rename type ChatTopBarProps → TopBarProps                     │
 │  - Update barrel                                                 │
 │  - Export ResponsiveDockviewShell from package barrel with jsdoc │
@@ -2435,16 +2513,27 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
                              ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  Phase E — Migrate boring-macro-v2: ChatLayout + extract         │
-│            macroPlugin                                           │
+│            macroPlugin (v7.6 paths, ONE-GO move)                 │
 │  ─────────────────────────────────────────────────────────────── │
-│  - Create apps/boring-macro-v2/src/macroPlugin.ts defining       │
-│    macro-specific panels (chart canvas, slide deck, series       │
-│    explorer) + commands (open_series) + agent tools              │
-│    (execute_sql, macro_search, get_series_data,                  │
-│    persist_derived_series)                                       │
-│  - Rewrite apps/boring-macro-v2/src/web/App.tsx to use            │
-│    <ChatLayout> + <WorkspaceProvider plugins={[macroPlugin]}>    │
-│  - Delete apps/boring-macro-v2/src/server/uiBridge.ts            │
+│  - Create apps/boring-macro-v2/src/plugin/{index.ts, server.ts,  │
+│    front/, server/} per v7.6 layout. SPLIT entrypoints (codex    │
+│    P1): index.ts exports macroClientPlugin (panels, sidebar,     │
+│    catalogs); server.ts exports macroServerPlugin (agentTools,   │
+│    routes adapter).                                              │
+│  - front/: panes/ (chart-canvas, deck), sidebar/ (macro-series),│
+│    catalogs/ (seriesCatalog)                                     │
+│  - server/: tools/ (execute_sql, macro_search, get_series_data,  │
+│    persist_derived_series), routes/ (macroRoutes)                │
+│  - Rewrite apps/boring-macro-v2/src/web/App.tsx:                  │
+│    <WorkspaceProvider plugins={[macroClientPlugin]}>             │
+│      <ChatLayout nav="session-list" center="chat" sidebar=       │
+│      "macro-series" surface="artifact-surface" />                │
+│    </WorkspaceProvider>                                          │
+│  - Rewrite apps/boring-macro-v2/src/server/index.ts to use        │
+│    createWorkspaceAgentApp({ plugins: [macroServerPlugin()] })   │
+│    + app.register(registerMacroRoutes, opts)                     │
+│  - macro's uiBridge.ts is ALREADY deleted in Step 1a (NOT here   │
+│    — gemini P2 catch).                                           │
 │  - Confirm boring-macro e2e tests pass                           │
 │  Beads: j9p7.18 (plugin module), j9p7.19 (app refactor),         │
 │         j9p7.20 (e2e gate). Reframed under Phase E.              │
@@ -2582,7 +2671,7 @@ Beads j9p7.16 (Step 5b) and j9p7.17 (Step 5c) close as **scope-shifted to Phase 
 - `<WorkspaceProvider plugins={[…]}>` and
   `createWorkspaceAgentApp({ plugins: [...] })` are the only
   registration APIs hosts use.
-- Two default plugins: `filesystemPlugin`, `dataCatalogPlugin`.
+- One default plugin: `filesystemPlugin` (UI-only — panels + catalog; no agentTools per v7.0+).
   Both auto-mount; both individually opt-out-able; opt-out actually
   removes UI surface (registry-driven workbench tabs +
   EmptyFilePanel fallback).
@@ -2654,6 +2743,51 @@ Beads j9p7.16 (Step 5b) and j9p7.17 (Step 5c) close as **scope-shifted to Phase 
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v7.5 → v7.6 (round-5 review patches)
+
+Codex r5 (4 P1 + 3 P2) + gemini r2 (1 P0 + 2 P1 + 3 P2) returned with sharp findings. **Convergence**: both flagged the sequencing tension (gemini P0 / codex P1 #4) and the per-plugin halves entrypoint shape (codex P1 #3 / gemini P1 empty-server). User decided all four design questions; this changelog captures the integration.
+
+### P0 — Sequencing fixed (gemini)
+
+The plan had Phase 1.5 Phase A doing BOTH the workspace reorg AND the chat-shell decomposition. That meant Phase 1 would build into the OLD flat layout, then Phase A would rip up and re-arrange. **Fix:** new **Step 0** before Phase 1 runs the mechanical workspace-reorg into v7.6 layout (front/+server/+shared/+plugins/) one-go. Phase A then ONLY decomposes the chat shell. **Meta-rule added:** when files move, they go directly to final v7.6 destinations — no intermediate placements.
+
+### P1 — Plugin entrypoints split (codex)
+
+v7.5's spec said "plugin index.ts exports CLIENT + server Plugins (same id)." Codex flagged: this contradicts the build invariant that client barrels never re-export server-only code. **Fix:** every plugin has TWO entrypoints — `index.ts` (client side) and `server.ts` (server side). Hosts import each from the appropriate environment. Same id ties them; different files ship them. macro example updated. filesystemPlugin (UI-only) has only `index.ts` (no server.ts needed; gemini P1 — "create only halves you need").
+
+### P1 — Strict type-only imports for shared/plugin
+
+Codex flagged: `shared/plugin/types.ts` referencing `ExplorerAdapter` from `components/DataExplorer/types` would leak DOM lib into the shared bundle. **Fix:** all cross-folder type references in `shared/plugin/` use `import type` (TypeScript erases at compile time). Plus `tsconfig.shared.json` (if it exists) excludes DOM lib. Plus `tsconfig.front.json` adds excludes for `src/plugins/**/server/**` to prevent server code being typechecked as front (codex P1 #1).
+
+### P1 — Phase 1.5 step text path-updated
+
+Codex flagged that Phase A still said `panes/<id>/`, Phase C said `layouts/TopBar.tsx`, Phase E said `src/macroPlugin.ts` — all pre-v7.5. **Fix:** Phase A → `front/chrome/<id>/`; Phase C → `front/layout/TopBar.tsx`; Phase E → `apps/.../src/plugin/{front,server}/` directly. Bead descriptions to be updated post-commit.
+
+### P2 cleanup pack (applied)
+
+1. **uiBridge dedup** — drop deletion from Phase E; keep in Step 1a only (gemini P2)
+2. **EmptyFilePanel relocation** — `panes/EmptyFilePanel/` → `front/chrome/empty-file-panel/` to kill the lone-resident `panes/` folder (gemini P2)
+3. **TL;DR scrub** — "two default plugins" wording in scope text → "one default plugin: filesystemPlugin" (codex P2)
+4. **A/B parallelism tightened** — "B can start in parallel but cannot close before A's definition.ts files exist" (codex P2)
+5. **pi-tools-migration catch-up** — note that `standardCatalog.ts` no longer exists; `createAgentApp.ts:91` already uses `buildHarnessAgentTools` + `buildFilesystemAgentTools` directly
+6. **tsconfig excludes** — already noted under P1 type imports
+
+### Verdict from both reviewers
+
+- **Gemini r2:** "implementable as-is, provided the Step 0 sequencing tweak."
+- **Codex r5:** "implementable after above cleanup, not quite as-is."
+
+After v7.6 patches: both verdicts converge on **implementable as-is**. No reversals from earlier rounds. The architecture stands.
+
+### Beads needing path updates
+
+- **NEW j9p7.31** — Step 0 workspace reorg (mechanical)
+- **j9p7.9** (filesystemPlugin) — paths under `plugins/filesystemPlugin/{index.ts (no server.ts since UI-only), front/}`
+- **j9p7.18** (macro plugin module) — paths under `apps/boring-macro-v2/src/plugin/{index.ts, server.ts, front/, server/}`
+- **j9p7.24** (Phase A) — paths under `front/chrome/<id>/` and `front/bridge/`
+- **j9p7.25** (Phase B) — `front/registry/coreRegistrations.ts`
+- **j9p7.26** (Phase C) — `front/layout/TopBar.tsx`
 
 ## Changelog v7.4 → v7.5 (final structural framing)
 
