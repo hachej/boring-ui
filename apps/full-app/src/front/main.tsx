@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Navigate, Route, useParams } from 'react-router-dom'
+import { ChatPanel } from '@boring/agent'
 import {
   BoringApp,
   ThemeToggle,
@@ -10,12 +11,18 @@ import {
 } from '@boring/core/front'
 import {
   WorkspaceProvider,
-  ChatCenteredShell,
+  ChatLayout,
+  ChatShellContext,
   CodeEditorPane,
   EmptyPane,
-  defaultEditorPanels,
+  TopBar,
   definePanel,
+  useCommandRegistry,
+  useRegistry,
+  type ChatShellContextValue,
   type PanelConfig,
+  type SurfaceShellApi,
+  type SurfaceShellSnapshot,
 } from '@boring/workspace'
 import { createMockSessions, useMockSessions } from '@boring/workspace/testing'
 import { SHOWCASE_SESSION_ID, seedShowcase } from './showcaseMessages'
@@ -26,7 +33,6 @@ import '@boring/agent/front/styles.css'
 import './app.css'
 
 const panels: PanelConfig[] = [
-  ...defaultEditorPanels,
   definePanel<{ path: string }>({
     id: 'csv-viewer',
     title: 'CSV',
@@ -45,6 +51,8 @@ const panels: PanelConfig[] = [
 ]
 
 const sessionsStore = createMockSessions()
+const layoutStorageKey = 'boring-ui-v2:layout:full-app'
+const fullAppCommandScope = 'full-app'
 
 function isShowcaseRoute(): boolean {
   if (typeof window === 'undefined') return false
@@ -54,6 +62,15 @@ function isShowcaseRoute(): boolean {
 function Shell() {
   const { sessions, activeId } = useMockSessions(sessionsStore)
   const showcase = useMemo(isShowcaseRoute, [])
+  const commandRegistry = useCommandRegistry()
+  const panelRegistry = useRegistry()
+  const surfaceSnapshotRef = useRef<SurfaceShellSnapshot>({ openTabs: [], activeTab: null })
+  const drawerOpenRef = useRef(true)
+  const surfaceOpenRef = useRef(true)
+  const pushAbortRef = useRef<AbortController | null>(null)
+  const [drawerOpen, setDrawerOpenState] = useState(true)
+  const [surfaceOpen, setSurfaceOpenState] = useState(true)
+  const [surface, setSurface] = useState<SurfaceShellApi | null>(null)
 
   useEffect(() => {
     if (!showcase) return
@@ -72,22 +89,189 @@ function Shell() {
     ]
   }, [showcase, sessions])
 
+  const activeSession = sessionList.find((session) => session.id === activeId)
+
+  const availablePanelIds = useMemo(
+    () => panelRegistry.list().map((panel) => panel.id),
+    [panelRegistry],
+  )
+
+  const pushUiState = useCallback(() => {
+    const snapshot = surfaceSnapshotRef.current
+    const body = {
+      state: {
+        v: 1,
+        workbenchOpen: surfaceOpenRef.current,
+        drawerOpen: drawerOpenRef.current,
+        openTabs: snapshot.openTabs,
+        activeTab: snapshot.activeTab,
+        activeFile:
+          snapshot.openTabs.find((tab) => tab.id === snapshot.activeTab)?.params?.path ?? null,
+        availablePanels: availablePanelIds,
+      },
+      causedBy: 'user' as const,
+    }
+
+    pushAbortRef.current?.abort()
+    const controller = new AbortController()
+    pushAbortRef.current = controller
+    void fetch('/api/v1/ui/state', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    }).catch(() => {})
+  }, [availablePanelIds])
+
+  const handleSurfaceReady = useCallback(
+    (api: SurfaceShellApi) => {
+      surfaceSnapshotRef.current = api.getSnapshot()
+      setSurface(api)
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  const handleSurfaceChange = useCallback(
+    (snapshot: SurfaceShellSnapshot) => {
+      surfaceSnapshotRef.current = snapshot
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  const setDrawerOpen = useCallback(
+    (open: boolean) => {
+      drawerOpenRef.current = open
+      setDrawerOpenState(open)
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  const setSurfaceOpen = useCallback(
+    (open: boolean) => {
+      surfaceOpenRef.current = open
+      setSurfaceOpenState(open)
+      pushUiState()
+    },
+    [pushUiState],
+  )
+
+  const toggleDrawer = useCallback(() => {
+    setDrawerOpen(!drawerOpenRef.current)
+  }, [setDrawerOpen])
+
+  const toggleSurface = useCallback(() => {
+    setSurfaceOpen(!surfaceOpenRef.current)
+  }, [setSurfaceOpen])
+
+  useEffect(() => {
+    commandRegistry.unregisterByPluginId(fullAppCommandScope)
+    commandRegistry.registerCommand({
+      id: 'chat-shell.newChat',
+      title: 'New Chat',
+      pluginId: fullAppCommandScope,
+      run: sessionsStore.create,
+    })
+
+    for (const session of sessionList) {
+      commandRegistry.registerCommand({
+        id: `chat-shell.session.${session.id}`,
+        title: `Switch to: ${session.title}`,
+        pluginId: fullAppCommandScope,
+        run: () => sessionsStore.switchTo(session.id),
+      })
+    }
+
+    return () => {
+      commandRegistry.unregisterByPluginId(fullAppCommandScope)
+    }
+  }, [commandRegistry, sessionList])
+
+  useEffect(() => {
+    pushUiState()
+    return () => {
+      pushAbortRef.current?.abort()
+    }
+  }, [pushUiState])
+
+  const openCommandPalette = useCallback(() => {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true, bubbles: true }),
+    )
+  }, [])
+
+  const chatShell = useMemo<ChatShellContextValue>(
+    () => ({
+      drawerOpen,
+      setDrawerOpen,
+      toggleDrawer,
+      surfaceOpen,
+      setSurfaceOpen,
+      toggleSurface,
+      onNewChat: sessionsStore.create,
+      surface,
+    }),
+    [
+      drawerOpen,
+      setDrawerOpen,
+      toggleDrawer,
+      surfaceOpen,
+      setSurfaceOpen,
+      toggleSurface,
+      surface,
+    ],
+  )
+
   return (
-    <ChatCenteredShell
-      appTitle="Boring"
-      topBarLeft={<WorkspaceSwitcher />}
-      topBarRight={
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
-          <UserMenu />
+    <ChatShellContext.Provider value={chatShell}>
+      <div className="flex h-full min-h-0 flex-col">
+        <TopBar
+          appTitle="Boring"
+          sessionTitle={activeSession?.title}
+          onCommandPalette={openCommandPalette}
+          topBarLeft={<WorkspaceSwitcher />}
+          topBarRight={
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <UserMenu />
+            </div>
+          }
+        />
+        <div className="min-h-0 flex-1">
+          <ChatLayout
+            nav="session-list"
+            navParams={{
+              sessions: sessionList,
+              activeId,
+              onSwitch: sessionsStore.switchTo,
+              onCreate: sessionsStore.create,
+              onDelete: sessionsStore.remove,
+            }}
+            center={activeId ? 'chat' : 'empty'}
+            centerParams={
+              activeId
+                ? {
+                    sessionId: activeId,
+                    chrome: false,
+                    className: 'h-full min-h-0',
+                  }
+                : undefined
+            }
+            sidebar="workbench-left"
+            surface="artifact-surface"
+            surfaceParams={{
+              storageKey: `${layoutStorageKey}:surface`,
+              extraPanels: ['csv-viewer'],
+              onReady: handleSurfaceReady,
+              onChange: handleSurfaceChange,
+            }}
+            className="h-full"
+          />
         </div>
-      }
-      sessions={sessionList}
-      activeSessionId={activeId}
-      onSwitchSession={sessionsStore.switchTo}
-      onCreateSession={sessionsStore.create}
-      onDeleteSession={sessionsStore.remove}
-    />
+      </div>
+    </ChatShellContext.Provider>
   )
 }
 
@@ -99,11 +283,12 @@ function WorkspaceRoute() {
     <div className="h-screen bg-background text-foreground">
       <WorkspaceProvider
         workspaceId={id}
+        chatPanel={ChatPanel}
         panels={panels}
         apiBaseUrl=""
         apiTimeout={10_000}
         persistenceEnabled
-        storageKey="boring-ui-v2:layout:full-app"
+        storageKey={layoutStorageKey}
       >
         <Shell />
       </WorkspaceProvider>
