@@ -6,15 +6,17 @@ import { describe, expect, test, vi } from 'vitest'
 import { EXAMPLE_CSP_POLICY, applyCspHeaders } from '../server/http/csp'
 
 const agentRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const repoRoot = resolve(agentRoot, '..', '..')
 
 const auditedFiles = [
-  'src/front/ChatPanel.tsx',
-  'examples/with-custom-tool/client.tsx',
-  'examples/with-shadcn/client.tsx',
+  { root: agentRoot, path: 'src/front/ChatPanel.tsx' },
+  { root: agentRoot, path: 'examples/with-custom-tool/client.tsx' },
+  { root: repoRoot, path: 'apps/agent-playground/src/App.tsx' },
+  { root: repoRoot, path: 'apps/agent-playground/server.ts' },
 ]
 
-function readFile(relPath: string): string {
-  return readFileSync(resolve(agentRoot, relPath), 'utf8')
+function readFile(root: string, relPath: string): string {
+  return readFileSync(resolve(root, relPath), 'utf8')
 }
 
 describe('CSP policy', () => {
@@ -38,15 +40,15 @@ describe('CSP policy', () => {
 describe('CSP-sensitive source audit', () => {
   test('audited files do not use eval/new Function', () => {
     const evalPattern = /\beval\s*\(|\bnew Function\s*\(/
-    for (const relPath of auditedFiles) {
-      expect(readFile(relPath), relPath).not.toMatch(evalPattern)
+    for (const file of auditedFiles) {
+      expect(readFile(file.root, file.path), file.path).not.toMatch(evalPattern)
     }
   })
 
   test('audited files do not use JSX inline style attributes', () => {
     const inlineStylePattern = /\bstyle=\{\{/
-    for (const relPath of auditedFiles) {
-      expect(readFile(relPath), relPath).not.toMatch(inlineStylePattern)
+    for (const file of auditedFiles) {
+      expect(readFile(file.root, file.path), file.path).not.toMatch(inlineStylePattern)
     }
   })
 })

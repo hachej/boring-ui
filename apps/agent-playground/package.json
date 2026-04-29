@@ -3,21 +3,26 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Standalone Vite playground for @boring/agent. Used by the boring-agent CLI dev mode.",
+  "description": "Rich standalone playground for @boring/agent.",
   "scripts": {
-    "dev": "pnpm --filter @boring/agent dev",
+    "dev": "tsx server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@boring/agent": "workspace:*",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitejs/plugin-react": "^4.7.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.0",
+    "tsx": "^4.19.4",
+    "vite": "^6.3.3"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "typescript": "^5.7.2"
   }
 }

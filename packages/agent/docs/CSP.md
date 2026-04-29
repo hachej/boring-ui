@@ -26,11 +26,9 @@ Content-Security-Policy:
 
 ## Audited Scope (tv4)
 
-- `src/front-shadcn/ChatPanel.tsx`
 - `src/front/ChatPanel.tsx`
 - `examples/with-custom-tool/*`
-- `examples/with-shadcn/*`
-- `app/src/App.tsx`
+- `apps/agent-playground/*`
 
 ## Remaining Caveat
 

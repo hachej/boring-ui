@@ -4,14 +4,9 @@ import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { createServer as createViteServer } from 'vite'
 
-import { applyCspHeaders } from '../csp'
-import { createAgentApp } from '../../src/server/createAgentApp'
+import { applyCspHeaders } from '../../packages/agent/src/server/http/csp'
+import { createAgentApp } from '../../packages/agent/src/server/createAgentApp'
 
-// Minimal generic playground for @boring/agent. No demo tools, no fake
-// messages, no custom shell — just <ChatPanel> + a session picker against
-// the real agent backend so we can poke at panel props (chrome,
-// thinkingControl, suggestions, …) in isolation. Companion to with-shadcn,
-// which is a feature showcase rather than a prop sandbox.
 const app = await createAgentApp({
   mode: 'direct',
   sessionId: 'playground',
@@ -21,19 +16,26 @@ const apiAddress = await app.listen({ port: 0, host: '127.0.0.1' })
 const apiPort = Number(new URL(apiAddress).port)
 const apiTarget = `http://127.0.0.1:${apiPort}`
 
-const exampleRoot = path.dirname(fileURLToPath(import.meta.url))
-const packagesAgentSrc = path.resolve(exampleRoot, '..', '..', 'src')
+const playgroundRoot = path.dirname(fileURLToPath(import.meta.url))
+const packageRoot = path.resolve(playgroundRoot, '../../packages/agent')
+const packageSrc = path.resolve(packageRoot, 'src')
 
 const vite = await createViteServer({
-  root: exampleRoot,
-  css: { postcss: exampleRoot },
+  root: playgroundRoot,
+  css: { postcss: playgroundRoot },
   resolve: {
-    alias: { '@': packagesAgentSrc },
+    alias: {
+      '@boring/agent/front/styles.css': path.resolve(packageSrc, 'front/styles/globals.css'),
+      '@boring/agent/front': path.resolve(packageSrc, 'front/index.ts'),
+      '@boring/agent/shared': path.resolve(packageSrc, 'shared/index.ts'),
+      '@boring/agent/server': path.resolve(packageSrc, 'server/index.ts'),
+      '@': packageSrc,
+    },
   },
   plugins: [
     react(),
     {
-      name: 'playground-virtual-index',
+      name: 'agent-playground-index',
       configureServer(server) {
         server.middlewares.use((_req, res, next) => {
           applyCspHeaders(res, { dev: true })
@@ -52,7 +54,7 @@ const vite = await createViteServer({
               '  </head>',
               '  <body class="bg-background text-foreground antialiased">',
               '    <div id="root" class="h-screen"></div>',
-              '    <script type="module" src="/client.tsx"></script>',
+              '    <script type="module" src="/src/main.tsx"></script>',
               '  </body>',
               '</html>',
             ].join('\n')
@@ -73,9 +75,9 @@ const vite = await createViteServer({
     },
   ],
   server: {
-    port: 5183,
+    port: Number(process.env.FRONTEND_PORT) || 5183,
     strictPort: false,
-    host: process.env.HOST ?? 'localhost',
+    host: process.env.HOST ?? '0.0.0.0',
     allowedHosts: true,
     proxy: {
       '/api': apiTarget,

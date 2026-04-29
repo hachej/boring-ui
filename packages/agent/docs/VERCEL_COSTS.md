@@ -28,7 +28,7 @@ Snapshot defaults (official):
 ### Measured workload inputs (this repo)
 
 - Cold-start benchmark (`96h`): [PERFORMANCE.md](./PERFORMANCE.md)
-- FS + exec latency benchmark (`f4f`): [f4f-vercel-fs-latency.json](../bench-results/f4f-vercel-fs-latency.json)
+- FS + exec latency benchmark (`f4f`): historical raw JSON artifact removed; see the root `docs/PERFORMANCE.md` rollup.
 - Measured snapshot sizes from benchmark project: ~`279 MB` each (`0.2606 GB`).
 
 Observations:
@@ -57,7 +57,7 @@ Baseline assumptions used below:
 
 ## Cost per Workspace per Day
 
-Companion sheet: [vercel-cost-model-2026-04-23.csv](../bench-results/vercel-cost-model-2026-04-23.csv)
+Historical companion CSV artifacts were removed from the package tree; the table below preserves the cost model.
 
 | Idle policy | Runtime billed/day | CPU $/day | Memory $/day | Snapshot $/day | Create $/day | Total $/day |
 |---|---:|---:|---:|---:|---:|---:|

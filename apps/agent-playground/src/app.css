@@ -1,3 +1,16 @@
-.agent-app-root {
-  height: 100vh;
+@import 'tailwindcss';
+@import '../../../packages/agent/src/front/styles/globals.css';
+@plugin '@tailwindcss/typography';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v4 only scans files inside the app root by default; the
+ * shadcn primitives + chat panel live in packages/agent, so point
+ * Tailwind at them directly. */
+@source "../../../packages/agent/src/front/**/*.{ts,tsx,js,jsx}";
+@source "../../../packages/agent/dist/front/**/*.{js,d.ts}";
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
 }

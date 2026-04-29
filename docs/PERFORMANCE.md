@@ -4,7 +4,7 @@
 
 Recorded: 2026-04-23  
 Harness: `packages/agent/scripts/bench-vercel-fs-latency.ts`  
-Raw report: `packages/agent/bench-results/f4f-vercel-fs-latency.json`
+Historical raw report artifacts were removed from the package tree; the rollup below preserves the benchmark results.
 
 ### Methodology
 
@@ -24,8 +24,7 @@ Raw report: `packages/agent/bench-results/f4f-vercel-fs-latency.json`
 Command used:
 
 ```bash
-pnpm --dir packages/agent exec tsx scripts/bench-vercel-fs-latency.ts \
-  --output bench-results/f4f-vercel-fs-latency.json
+pnpm --dir packages/agent exec tsx scripts/bench-vercel-fs-latency.ts
 ```
 
 ### Results (ms)

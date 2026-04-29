@@ -7,7 +7,7 @@
  * picks it up on mount because the cache key matches the showcase
  * session id.
  *
- * Ported from packages/agent/examples/with-shadcn/client.tsx (Showcase).
+ * Ported from the original agent shadcn showcase fixture.
  */
 
 export const SHOWCASE_SESSION_ID = "__showcase__"

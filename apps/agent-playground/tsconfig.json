@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@boring/agent/front": ["../../packages/agent/src/front/index.ts"],
+      "@boring/agent/shared": ["../../packages/agent/src/shared/index.ts"],
+      "@boring/agent/server": ["../../packages/agent/src/server/index.ts"],
+      "@/*": ["../../packages/agent/src/*"]
+    }
+  },
+  "include": ["src", "server.ts", "vite.config.ts"]
+}

@@ -3,10 +3,7 @@
 ## Vercel Sandbox cold-start benchmark (2026-04-23)
 
 Benchmark harness: [scripts/bench-vercel-cold-start.ts](../scripts/bench-vercel-cold-start.ts)  
-CSV artifacts:
-- [bench-results/vercel-cold-start-2026-04-23.csv](../bench-results/vercel-cold-start-2026-04-23.csv)
-- [bench-results/vercel-cold-start-2026-04-23-snapshot.csv](../bench-results/vercel-cold-start-2026-04-23-snapshot.csv)
-- [bench-results/vercel-cold-start-2026-04-23-clean.csv](../bench-results/vercel-cold-start-2026-04-23-clean.csv)
+Historical CSV artifacts were removed from the package tree; the rollup below preserves the benchmark results.
 
 ### Method
 

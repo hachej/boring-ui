@@ -109,5 +109,5 @@ The `cn()` utility (clsx + tailwind-merge) is also exported.
 
 ## Example
 
-See [`examples/with-shadcn/`](../examples/with-shadcn/) for a complete
+See [`apps/agent-playground`](../../../apps/agent-playground/) for a complete
 working app with Vite + Tailwind v4 + dark mode.

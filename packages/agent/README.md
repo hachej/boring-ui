@@ -104,7 +104,7 @@ Both are permanent. See [docs/UI-SHADCN.md](./docs/UI-SHADCN.md) for the full gu
 ## Examples
 
 - [examples/with-custom-tool](./examples/with-custom-tool/README.md) — bare ChatPanel with a custom tool
-- [examples/with-shadcn](./examples/with-shadcn/) — Tailwind + shadcn styled ChatPanel
+- [apps/agent-playground](../../apps/agent-playground/) — rich Tailwind playground for sessions, model controls, thinking, and system prompts
 
 ## Design Notes
 
