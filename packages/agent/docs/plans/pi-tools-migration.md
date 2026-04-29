@@ -263,10 +263,12 @@ export const MAX_PATTERN_LENGTH = 256
 ## Phase 1 — Per-mode tool wiring against pi's factories
 
 The cleanest design is **bundle factories that produce mode-appropriate
-tools**, called from both the standalone agent path (`createAgentApp`) and
-the workspace plugin path (`filesystemPlugin`). Each bundle factory takes a
-`RuntimeBundle` and returns `AgentTool[]` constructed via pi's factories
-with mode-specific Operations injected.
+tools**, called only from `createAgentApp`'s `standardCatalog` path.
+Per PLUGIN_MODEL.md v7.0+: filesystemPlugin is UI-only (panels +
+catalog) and does NOT carry `agentTools` — file tools are HARNESS
+substrate. Each bundle factory takes a `RuntimeBundle` and returns
+`AgentTool[]` constructed via pi's factories with mode-specific
+Operations injected.
 
 `RuntimeModeAdapter` does NOT carry a `tools` field. Modes own *resources*
 (workspace, sandbox, fileSearch); they don't own tool registration. Tool
@@ -276,14 +278,15 @@ registration is split across two bundles, both per-mode-aware:
   executeIsolatedCode]`. Always registered by `createAgentApp` directly
   (per PLUGIN_MODEL.md line 122: bash + isolated-code stay harness-level).
 - `buildFilesystemAgentTools(bundle)` — produces `[read, write, edit,
-  find, grep, ls]`. Registered by `createAgentApp` by default with
-  `disableDefaultFileTools` opt-out, AND by the workspace's
-  `filesystemPlugin` via `agentTools: buildFilesystemAgentTools(bundle)`.
+  find, grep, ls]`. Registered by `createAgentApp`'s
+  `standardCatalog` by default; opt out via `disableDefaultFileTools:
+  true`. **NOT** registered through any plugin (PLUGIN_MODEL v7.0+:
+  filesystemPlugin is UI-only, no `agentTools` field).
 
-This preserves PLUGIN_MODEL.md's plugin contract (`Plugin.agentTools:
-AgentTool[]`) — the dynamism is hidden in the factory call at plugin
-instantiation. From the plugin pipeline's perspective the array is data;
-late-wins-on-id and `excludeDefaults` work unchanged.
+This honors PLUGIN_MODEL.md v7.0's separation of concerns: file tools
+are HARNESS substrate (controlled by `disableDefaultFileTools`); the
+filesystem plugin contributes UI only (controlled by `excludeDefaults`).
+Two switches at two layers.
 
 ### Alignment with PLUGIN_MODEL.md
 
@@ -291,25 +294,26 @@ PLUGIN_MODEL.md (workspace) defines the plugin pipeline that consumes our
 file-ops tools. Without any change to its contract, this plan slots in
 cleanly via two adjustments:
 
-1. **`filesystemPlugin` becomes a factory.** Currently described in
-   PLUGIN_MODEL.md (lines 558-575) as importing a static
-   `filesystemAgentTools` bundle. After this plan ships:
+1. **`filesystemPlugin` is UI-only** (PLUGIN_MODEL v7.0+). It does
+   NOT carry `agentTools`; it's a plain module-scope const with
+   `panels` (FileTree, CodeEditor, MarkdownEditor) + `catalogs`
+   (Files, hitting `/api/v1/files/search`). File tools live with
+   the harness:
    ```ts
-   export function filesystemPlugin(bundle: RuntimeBundle): Plugin {
-     return {
-       id: 'filesystem',
-       label: 'Filesystem',
-       agentTools: buildFilesystemAgentTools(bundle),
-       panels: [...],
-       catalogs: [...],
-     }
-   }
+   // packages/workspace/src/plugin/defaults/filesystemPlugin.ts (v7.0+)
+   export const filesystemPlugin: Plugin = definePlugin({
+     id: 'filesystem',
+     label: 'Filesystem',
+     panels: [/* FileTree, CodeEditor, MarkdownEditor */],
+     catalogs: [filesCatalog],
+     // No agentTools — file tools are harness substrate.
+   })
    ```
-   The host calls `filesystemPlugin(bundle)` at app boot with the resolved
-   `RuntimeBundle`. PLUGIN_MODEL.md needs a small note documenting that
-   default plugins can be factories (not just static module exports). The
-   `Plugin` interface itself is unchanged — `agentTools: AgentTool[]` stays
-   a plain array.
+   `createAgentApp` registers `buildFilesystemAgentTools(bundle)` +
+   `buildHarnessAgentTools(bundle)` directly via `standardCatalog`.
+   `createWorkspaceAgentApp` plain-wraps `createAgentApp` and runs
+   the plugin model bootstrap on top — no dual-registration dance,
+   no `disableDefaultFileTools: true` indirection.
 2. **Tool name update.** Search tool references in
    PLUGIN_MODEL.md (lines 1145, 1550-1554) become `find`/`grep`. Doc-only
    change; can co-land or follow up.
@@ -320,11 +324,15 @@ cleanly via two adjustments:
    constructed at plugin instantiation.
 2. Late-wins-on-id works — operates on the array; doesn't care how
    entries were constructed.
-3. `excludeDefaults: ['filesystem']` truly removes file tools — host
-   doesn't construct the plugin in the first place.
+3. `excludeDefaults: ['filesystem']` (workspace switch) removes the
+   filesystem UI (Files left-tab + code/markdown editor auto-routing).
+   It does NOT remove LLM file tools — those are harness substrate.
+   Use `disableDefaultFileTools: true` (harness switch) on
+   `createAgentApp` to remove file tools entirely. Two switches at
+   two layers, per PLUGIN_MODEL v7.0's separation of concerns.
 4. Standalone path stays default-on with `disableDefaultFileTools` opt-out
-   — `createAgentApp` calls `buildFilesystemAgentTools` directly,
-   bypassing the plugin pipeline.
+   — `createAgentApp` calls `buildFilesystemAgentTools` directly via
+   `standardCatalog`. Plugin pipeline never sees file tools.
 5. Bash + isolated-code stay harness-level — they flow through
    `buildHarnessAgentTools` which `createAgentApp` always registers
    directly, never via plugin.
@@ -393,8 +401,9 @@ function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
 
 ### `buildFilesystemAgentTools(bundle)` — read/write/edit/find/grep/ls
 
-Registered by `createAgentApp` by default (opt-out via
-`disableDefaultFileTools`) AND by `filesystemPlugin` (workspace path).
+Registered by `createAgentApp`'s `standardCatalog` by default; opt out
+via `disableDefaultFileTools: true`. NOT registered via any plugin
+(PLUGIN_MODEL v7.0+: filesystemPlugin is UI-only).
 
 ```ts
 // src/server/tools/filesystem/index.ts (sketch)
@@ -883,21 +892,30 @@ machinery via `customTools`). Pi's factory tools emit the same events.
 No translation change needed. Verify via Step 2 smoke (direct mode)
 before flipping other modes.
 
-### R10 — `excludeDefaults` interaction with `disableDefaultFileTools`
+### R10 — `excludeDefaults` vs `disableDefaultFileTools` (PLUGIN_MODEL v7.0+)
 
-PLUGIN_MODEL says `excludeDefaults: ['filesystem']` removes file tools
-on the workspace path. This plan's `disableDefaultFileTools` opt-out
-does the same on the standalone path. `createWorkspaceAgentApp` must
-pass `disableDefaultFileTools: true` to `createAgentApp` (so the harness
-path doesn't double-register the same file tools that the plugin path
-contributes), AND also honor `excludeDefaults: ['filesystem']` (so a
-host can opt out of file tools entirely even in workspace mode).
+Per PLUGIN_MODEL v7.0's separation of concerns, these are two
+**distinct** switches at two **distinct** layers:
 
-**Mitigation:** explicit test in `createWorkspaceAgentApp` that:
-- Without `excludeDefaults`: file tools register exactly once (via
-  plugin path; standalone path is suppressed).
-- With `excludeDefaults: ['filesystem']`: zero file tools register, full
-  stop.
+| Switch | What it removes | Layer |
+|---|---|---|
+| `disableDefaultFileTools: true` on `createAgentApp` | LLM file tools (read/write/edit/find/grep/ls) | Harness |
+| `excludeDefaults: ['filesystem']` on `<WorkspaceProvider>` / `createWorkspaceAgentApp` | Filesystem UI (Files left-tab + code/markdown editor auto-routing) | Workspace |
+
+`createWorkspaceAgentApp` does **NOT** pass `disableDefaultFileTools`
+to `createAgentApp` (v7.0+ simplification — no dual-registration to
+coordinate). File tools always flow through the harness; UI is
+gated separately.
+
+**Mitigation:** explicit tests in `createWorkspaceAgentApp` that:
+- Default config: file tools register once (via harness); Files
+  left-tab visible.
+- With `excludeDefaults: ['filesystem']`: file tools STILL register
+  (harness owns them); Files left-tab NOT visible.
+- With `disableDefaultFileTools: true` (forwarded option): zero file
+  tools register; Files left-tab still visible (harmless — tools are
+  separate from UI).
+- With both: zero tools, no UI.
 
 ## Test strategy
 

@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v7.1 — codex round-4 cleanup: scrub remaining v6.3 leftovers (filesystemPlugin source block, tool-flow diagram, reorg table, Step 3 ASCII), add reserved-names policy, flag registerAgentRoutes opt-out gap.
+**Status:** v7.2 — planning-workflow review pass: per-plugin error boundaries; CatalogRegistry search debouncing + AbortSignal propagation; `Plugin.systemPrompt` for LLM context augmentation; `<PluginInspector />` promoted back to Phase 1; new §Decisions log + §Plugin patterns; pi-tools-migration.md aligned to v7.
 
 > **Factory pattern:** Plugins may be exposed as factories when they need
 > runtime config (e.g. macro's `makeMacroServerPlugin()`). v7.0 dropped the
@@ -109,6 +109,32 @@ discovery infrastructure exists; the plugin shape is too narrow.
    model into a corner — Phase 2's npm + pi-loader extensions slot
    in additively.
 
+## Decisions log (locked unless explicitly revisited)
+
+The key architectural choices, summarized for fresh-eyes reviewers.
+Each links to the changelog entry that locked it.
+
+| Decision | Rationale | Locked at |
+|---|---|---|
+| **Pure-data Plugin contract (no lifecycle)** | All Phase 1 plugins are React-component-based or factory-injected. `onMount`/cleanup adds API surface that no Phase 1 plugin uses. | v6 |
+| **No `dependsOn` for plugin deps** | Phase 1 has 1 declared dep total (macro → filesystem). Topo sort + dep graph not worth the contract surface; array order suffices. | v6 |
+| **Routes off the Plugin contract** | Routes are HTTP infrastructure, not registry contributions. Mixing blurs identity AND lies about lifecycle (Fastify routes are non-unregisterable). | v6 |
+| **`chatSuggestions` stays as a `<ChatCenteredShell>` prop** | UX cap (~6 cards) forces hosts to curate. Registry aggregation adds nothing useful. | v6.3 |
+| **Filesystem tools are harness substrate, not plugin contributions** | "Should agent have file tools?" (harness) vs "Should UI have file tree?" (workspace) are distinct concerns at different layers. | v7.0 |
+| **Reserved tool names** (`read`/`write`/`edit`/`find`/`grep`/`ls`/`bash`/`executeIsolatedCode`) | Harness owns these names. Plugins use domain prefixes (`macro_*`). Dev-warn on collision; no hard reject (some override IS intended). | v7.1 |
+| **Single-pass mount; array order > topo sort** | Defaults prepended → register first; user plugins follow; late-wins-on-id handles overrides. | v6 |
+| **Path-aware micromatch resolver with `(segments × 10) + non-wildcard chars` specificity** | Domain patterns (`deck/**/*.md`) must beat generic (`**/*.md`). Concrete formula → testable. | v6 |
+| **Polymorphic Recent (catalogs + commands)** | VS Code/Raycast/Linear all show recent commands. Catalog-only would be a regression. | v6.3 |
+| **`disableDefaultFileTools` (harness) vs `excludeDefaults` (workspace)** | Two switches at two layers. Conflating them was over-engineering. | v7.0 |
+| **Per-plugin React error boundaries** | A plugin's panel can't crash the workspace shell. Failure isolation per pluginId. | v7.2 |
+| **`Plugin.systemPrompt?: string` for LLM context augmentation** | Plugins frame their own domain to the LLM. macro tells the model "FRED database, use macro_*." Reduces host-author burden. | v7.2 |
+| **`<PluginInspector />` ships in Phase 1 (DEV-only)** | Plugin authors debug "why didn't my command appear?" visually instead of via React DevTools. ~50 LOC, zero production cost. | v7.2 (un-cut from v6) |
+
+If a reviewer wants to re-litigate a locked decision, they should
+(1) read the linked changelog entry first, then (2) propose a
+revision against the rationale documented there. Don't relitigate
+from first principles — we've been there.
+
 ## Non-goals
 
 - A plugin marketplace, signing, trust model, or capability sandbox.
@@ -158,6 +184,14 @@ export interface Plugin {
 
   /** Human-readable label (defaults to id). */
   label?: string
+
+  /** Optional context prepended to the agent's system prompt at boot.
+   *  Use to tell the LLM what your plugin's domain is and when its
+   *  agent tools apply. Concatenated across all registered plugins
+   *  (in registration order) and joined with newlines. Plain Markdown.
+   *  ~200-500 chars per plugin recommended; longer eats context window.
+   *  v7.2 addition. */
+  systemPrompt?: string
 
   // Aggregating registries — every field fans into ONE registry that
   // genuinely benefits from cross-plugin merging.
@@ -814,6 +848,76 @@ mount before host plugins, this means:
 Late-wins logs a dev-mode `console.warn` so the override is
 traceable.
 
+### Plugin patterns: cross-plugin communication (v7.2)
+
+The plan deliberately omits `dependsOn` (see §Non-goals) — but
+plugins still need to coordinate. Three canonical patterns, each
+with a worked example:
+
+**1. Shared registry — read another plugin's catalog.** No dep
+edge needed; null-check + graceful degradation.
+
+```ts
+// Inside Plugin B's panel component
+const catalogs = useCatalogs()
+const filesCatalog = catalogs.find(c => c.id === "files")
+if (filesCatalog) {
+  const result = await filesCatalog.adapter.search({
+    query: "foo", filters: {}, limit: 50, offset: 0, signal,
+  })
+  // …use result.items
+}
+// If filesystemPlugin isn't loaded → filesCatalog is undefined → skip.
+```
+
+**2. Event bus — emit + subscribe.** Decoupled; transitions only.
+
+```ts
+// Plugin A: in a panel component
+const onClick = () =>
+  events.emit("plugin-a:thing-happened", { ts: Date.now(), userId })
+
+// Plugin B: in another panel component
+useEvent("plugin-a:thing-happened", (payload) => { /* react */ })
+```
+
+New event keys go in `WorkspaceEventMap` (events declared on
+demand — see §Event bus integration).
+
+**3. Late-wins override — replace another plugin's panel.**
+
+```ts
+// Plugin B (registered after Plugin A) overrides A's "code-editor"
+definePlugin({
+  id: "super-coder",
+  panels: [{
+    id: "code-editor",      // SAME id as filesystem's default
+    component: SuperCoderPanel,
+    placement: "center",
+    filePatterns: ["**/*.ts"],
+    source: "app",
+  }],
+})
+```
+
+Late-wins-on-id replaces filesystem's `CodeEditorPanel` for any
+`*.ts` file. Dev-mode `console.warn` flags the override; no hard
+error.
+
+**When to use which:**
+
+| Pattern | When |
+|---|---|
+| Shared registry | Plugin B needs Plugin A's data (catalog, panel, command) at runtime. |
+| Event bus | Plugin B reacts to something Plugin A does. No return value, no dependency. |
+| Late-wins override | Plugin B replaces a default's panel/command/catalog by id. Composition pattern. |
+
+**Anti-patterns — don't do these:**
+
+- Direct module import between plugins (couples them; defeats the registry).
+- Module-scope `events.on(...)` (fires globally; leaks subscriptions).
+- Polling for another plugin's state (use the event bus instead).
+
 ### Workspace orchestration — bootstrap
 
 ```
@@ -836,6 +940,78 @@ hosts a clean override mechanism without explicit precedence rules.
 The retrofit applies to existing `CommandRegistry` and
 `PanelRegistry` — they get `subscribe()` semantics so late
 `registerCommand` calls reach an open palette.
+
+### Per-plugin error boundaries (v7.2)
+
+A plugin's panel that throws during render must NOT crash the
+workspace shell. Every plugin contribution that renders React
+(panels; catalog adapter row renderers; `<ChatEmptyState>` cards
+sourced from chatSuggestions) is wrapped in
+`<PluginErrorBoundary pluginId={id}>`. On error:
+
+1. Boundary renders an `<ErrorChip>` showing the plugin id +
+   short error message in place of the contribution.
+2. A `PluginError { kind: 'contribution', pluginId, error }` is
+   pushed onto `WorkspaceContext.errors` (consumed by
+   `<PluginInspector />`).
+3. Other plugins continue rendering unaffected.
+
+Implementation sites:
+
+- `<PanelHost panelId>` — wraps the resolved panel component.
+- `<CatalogResults>` — wraps each row renderer (so a bad row
+  doesn't kill the palette).
+- The chat shell's empty-state card list — wraps each
+  `<ChatSuggestion>` card.
+
+No contract change for plugin authors. The boundary is a
+host-side wrapper; plugins just opt in implicitly by having their
+contribution mounted.
+
+**Server-side parallel:** per-catalog-search try/catch already
+covered in §Error model. The CommandPalette's debounced search
+loop catches per-catalog `search()` rejections and surfaces them
+as inline error chips per catalog group; one bad adapter doesn't
+fail the entire palette query.
+
+### Search semantics — debouncing + cancellation (v7.2)
+
+The CommandPalette runs catalog searches on every keystroke.
+Without coordination this would (a) race (older search resolves
+after newer; UI shows stale results) and (b) waste work (5
+catalogs × 10 keystrokes = 50 in-flight HTTP fetches).
+
+`@boring/workspace/plugin` exports `useDebouncedCatalogSearch`:
+
+```ts
+function useDebouncedCatalogSearch(
+  query: string,
+  opts?: { debounceMs?: number },
+): {
+  results: Map<string, ExplorerRow[]>     // catalogId → rows
+  loading: boolean
+  errors: Map<string, Error>              // catalogId → error (per-catalog)
+}
+```
+
+Behavior:
+- Debounces 150ms by default (override via `debounceMs`).
+- On every new query: aborts in-flight searches via
+  `AbortController.abort()`, fires fresh ones across all registered
+  catalogs in parallel.
+- Per-catalog errors (one adapter throws) isolated — surface in
+  `errors` map; other catalogs still return results.
+
+**Adapter contract:** `ExplorerAdapter.search(args: SearchArgs)`
+already accepts `args.signal?: AbortSignal` (verified live at
+`packages/workspace/src/components/DataExplorer/types.ts:46-55`).
+Adapters that honor the signal get cancellation; adapters that
+ignore it are still safe (last-write-wins via the debounce).
+
+**Plugin authors:** if your catalog hits an HTTP backend, pass
+`args.signal` to `fetch(url, { signal })`. If your catalog runs
+synchronous filtering, you can ignore the signal — debouncing
+handles the wasted-work case.
 
 ### Polymorphic Recent
 
@@ -994,6 +1170,30 @@ a plugin context — there's no plugin context to inject into.
 
 Plus the corresponding `tsup` entry. Events are also re-exported
 from the package barrel for convenience.
+
+### Phase 1 debug overlay: `<PluginInspector />` (v7.2)
+
+DEV-only React component mounted by `<WorkspaceProvider>` when
+`import.meta.env.DEV` (zero production bundle impact). Toggle via
+`Cmd+Shift+P P` (or "Show Plugin Inspector" command).
+
+Displays:
+- Registered plugins: id, label, source (default / inline / npm),
+  contribution counts (N panels, N commands, N catalogs, N agentTools)
+- Per-plugin systemPrompt preview (first 200 chars; expandable)
+- Errors keyed to plugin id (from `WorkspaceContext.errors`)
+- Late-wins-on-id replacements: when plugin B overrode plugin A's
+  contribution, both pluginIds shown
+- Reserved-name collisions (if a plugin's agentTools name collides
+  with harness substrate)
+
+Implementation: ~50 LOC reading from registries via the existing
+`useCatalogs`/`useCommands`/`useActivePanels` hooks plus a new
+`usePlugins()` returning the list of registered plugins.
+
+Why ship in Phase 1 (re-introduced from v6 cut): plugin authors
+testing locally hit "why didn't my command appear?" repeatedly.
+Inspector turns 5-minute spelunking into a 2-second visual check.
 
 ### Inline plugin layout (Phase 1)
 
@@ -1696,7 +1896,7 @@ reviewers don't think they were missed.
 | **System-prompt augmentation from registered plugins** | LLM doesn't currently see "these plugins are loaded; here's what they do." | Phase 2 discovery endpoint + prompt injection. |
 | **Permission / capability gating** | Inline plugins run with full host privileges. | Phase 3 sandbox / capability flags. |
 | **Per-plugin telemetry** | No per-plugin error counter / call latency telemetry. | When debug volume justifies it. |
-| **`<PluginInspector />`** | DEV-only debug overlay punted. `console.log(registries)` covers Phase 1. | When devs ask. |
+| ~~`<PluginInspector />`~~ | **PROMOTED to Phase 1 in v7.2** — see §"Phase 1 debug overlay". | (no longer deferred) |
 | **Plugin discovery via `/api/v1/plugins`** | Phase 1 hosts know what they imported. | Phase 2 npm + agent-authored. |
 
 None of these block the boring-macro acceptance test.
@@ -1856,6 +2056,83 @@ None of these block the boring-macro acceptance test.
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v7.1 → v7.2 (planning-workflow review pass)
+
+After 4 codex rounds + 1 gemini round + ultrathink self-audit, ran
+the GPT-Pro-style "review and propose your best revisions" pass.
+User selected the wholeheartedly-recommended subset (5 of 8
+proposals) plus the cross-plan alignment.
+
+### Robustness additions (selected)
+
+**1. Per-plugin React error boundaries.** Every plugin contribution
+that renders React (panels, catalog row renderers, chat-suggestion
+cards) is wrapped in `<PluginErrorBoundary pluginId>`. A buggy
+plugin can no longer crash the workspace shell. Dropped errors
+push into `WorkspaceContext.errors[]` for visibility via
+`<PluginInspector />`. Implementation sites: PanelHost, CatalogResults,
+chat-suggestion card list. ~50 LOC. New bead: j9p7.22.
+
+**2. CatalogRegistry search debouncing + AbortSignal propagation.**
+New hook: `useDebouncedCatalogSearch(query, opts?)` debounces 150ms,
+aborts in-flight searches per keystroke via the AbortSignal that
+ExplorerAdapter.search ALREADY accepts (verified
+`packages/workspace/src/components/DataExplorer/types.ts:46-55` —
+no contract change needed; just consumer-side wiring). Per-catalog
+errors isolated via try/catch. Updates bead j9p7.13.
+
+### Compelling-feature addition (selected)
+
+**3. `Plugin.systemPrompt?: string`.** Optional field; bootstrap
+concatenates across registered plugins (in registration order),
+prepends to the harness's base system prompt. Lets plugin authors
+own their domain framing for the LLM ("you have a FRED database;
+use macro_* tools for X"). Concrete LLM-quality improvement;
+reduces host-author burden. Updates beads j9p7.4 (contract +
+validation), j9p7.7 (bootstrap concat), j9p7.18 (macro plugin sets).
+
+### DX additions (selected)
+
+**4. `<PluginInspector />` PROMOTED to Phase 1.** Was cut in v6
+("console.log is enough"). Reversal justified: plugin authors hit
+"why didn't my command appear?" daily; visual check beats
+spelunking React DevTools. ~50 LOC, zero production cost
+(import.meta.env.DEV gated). New bead: j9p7.23.
+
+**5. New §"Decisions log".** Single-table summary of locked
+architectural decisions with one-line rationale + pointer to the
+changelog entry. Sits near the top so fresh-eyes reviewers don't
+re-litigate from first principles. ~30 lines docs.
+
+**6. New §"Plugin patterns: cross-plugin communication".** Three
+canonical patterns — shared registry / event bus / late-wins
+override — each with a worked code example + anti-patterns table.
+~60 lines docs. Plugin authors get templates instead of
+reinventing.
+
+### NOT selected from the proposal set
+
+- **`Plugin.contractVersion?: number`** (Revision 4) — defensive
+  forward-compat insurance for Phase 2 distribution. User chose to
+  skip; revisit when Phase 2 lands.
+
+### Cross-plan alignment
+
+**7. pi-tools-migration.md aligned to v7.x.** v6.3-aligned text in
+4 places (lines 265, 294, 323, 886) updated to reflect v7.0+'s
+harness-owns-tools framing. The two plans now read consistently.
+
+### Net impact
+
+- New beads: j9p7.22 (error boundaries) + j9p7.23 (PluginInspector)
+- Updated beads: j9p7.4 (systemPrompt validation), j9p7.7 (bootstrap
+  concat), j9p7.13 (debounced search), j9p7.18 (macro systemPrompt)
+- Spec additions: ~250 lines (decisions log + patterns + 3 new
+  sections + v7.2 changelog)
+- Same boring-macro acceptance test; LOC accounting unchanged
+- Plugin contract grows from 6 fields to 7 (added optional
+  systemPrompt)
 
 ## Changelog v7.0 → v7.1 (codex round-4 cleanup)
 
