@@ -76,7 +76,15 @@ export function chatRoutes(
 
       const abortController = new AbortController()
       let streamStarted = false
-      request.raw.on('close', () => abortController.abort())
+      let streamCompleted = false
+      // Abort only when the response stream connection closes while a turn is
+      // still active. Using request.raw "close" can fire right after request-body
+      // read on some clients/proxies, which prematurely aborts turns.
+      reply.raw.on('close', () => {
+        if (streamStarted && !streamCompleted && !abortController.signal.aborted) {
+          abortController.abort()
+        }
+      })
 
       const ctx: RunContext = {
         abortSignal: abortController.signal,
@@ -112,6 +120,7 @@ export function chatRoutes(
               buf.append(errChunk)
               writer.write(errChunk)
             } finally {
+              streamCompleted = true
               buf.markComplete(() => buffers.evict(sessionId, turnId))
             }
           },
@@ -128,6 +137,7 @@ export function chatRoutes(
             'Cache-Control': 'no-cache, no-transform',
           },
         })
+        return
       } catch (err) {
         request.log.error({ err, sessionId }, '[chat] error')
         buf.markComplete(() => buffers.evict(sessionId, turnId))
@@ -210,6 +220,7 @@ export function chatRoutes(
           'Cache-Control': 'no-cache, no-transform',
         },
       })
+      return
     },
   )
 

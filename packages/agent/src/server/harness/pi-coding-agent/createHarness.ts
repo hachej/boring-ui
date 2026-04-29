@@ -56,6 +56,8 @@ export function createPiCodingAgentHarness(opts: {
       sonnet: "claude-sonnet-4.6",
       haiku: "claude-haiku-4.5",
       opus: "claude-opus-4.7",
+      // Anthropic deprecated this legacy ID; map to current haiku family.
+      "claude-3-5-haiku-20241022": "claude-haiku-4.5",
     };
     const requestedId = input.model?.id;
     const piId = requestedId
@@ -195,6 +197,7 @@ export function createPiCodingAgentHarness(opts: {
         return out
       }
 
+      let sawTextChunk = false;
       const unsubscribe = piSession.subscribe((event: AgentSessionEvent) => {
         if (event.type === "message_update") {
           const ame = event.assistantMessageEvent;
@@ -221,7 +224,42 @@ export function createPiCodingAgentHarness(opts: {
         }
 
         const converted = dedupStartChunks(piEventToChunks(event));
+        for (const chunk of converted) {
+          const t = (chunk as { type?: string }).type;
+          if (t === "text-start" || t === "text-delta" || t === "text-end") {
+            sawTextChunk = true;
+          }
+        }
         chunks.push(...converted);
+
+        // Some model/provider paths emit only message_end (no message_update deltas).
+        // Synthesize text chunks so SSE consumers still receive assistant text.
+        if (event.type === "message_end" && !sawTextChunk) {
+          const message = (event as unknown as { message?: { role?: string; content?: unknown[]; errorMessage?: string } }).message;
+          const role = message?.role;
+          const errorText = typeof message?.errorMessage === "string" ? message.errorMessage : "";
+          const text = Array.isArray(message?.content)
+            ? message!.content
+                .map((part) => {
+                  const rec = part as { type?: string; text?: string };
+                  return rec?.type === "text" && typeof rec.text === "string" ? rec.text : "";
+                })
+                .join("")
+            : "";
+          if (role === "assistant" && errorText.length > 0) {
+            chunks.push({ type: "error", errorText } as UIMessageChunk);
+            sawTextChunk = true;
+          } else if (role === "assistant" && text.length > 0) {
+            chunks.push(
+              { type: "text-start", id: "0" } as UIMessageChunk,
+              { type: "text-delta", id: "0", delta: text } as UIMessageChunk,
+              { type: "text-end", id: "0" } as UIMessageChunk,
+            );
+            sawTextChunk = true;
+            assistantText += text;
+          }
+        }
+
         if (event.type === "agent_end") {
           done = true;
           stopHeartbeat();

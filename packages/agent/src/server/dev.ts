@@ -27,6 +27,7 @@ async function startViteDevServer(apiPort: number) {
     plugins: [react()],
     server: {
       port: DEFAULT_FRONTEND_PORT,
+      host: true,
       strictPort: false,
       proxy: {
         '/api': apiTarget,
