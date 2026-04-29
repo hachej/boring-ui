@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { ArtifactSurfacePane } from "../ArtifactSurfacePane"
-import { RegistryProvider } from "../../registry"
-import { PanelRegistry } from "../../registry/PanelRegistry"
-import { CommandRegistry } from "../../registry/CommandRegistry"
+import { RegistryProvider } from "../../front/registry"
+import { PanelRegistry } from "../../front/registry/PanelRegistry"
+import { CommandRegistry } from "../../front/registry/CommandRegistry"
 import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
 

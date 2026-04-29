@@ -2,8 +2,8 @@
 
 import { useCallback, useMemo } from "react"
 import type { DockviewApi } from "dockview-react"
-import { DockviewShell } from "../dock"
-import type { LayoutConfig, SerializedLayout } from "../dock"
+import { DockviewShell } from "../front/dock"
+import type { LayoutConfig, SerializedLayout } from "../front/dock"
 import { cn } from "../lib/utils"
 
 const SURFACE_STORAGE_KEY = "boring-ui-v2:surface"

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { DataCatalogPane } from "../DataCatalogPane"
 
-vi.mock("../../../dock", () => ({
+vi.mock("../../../front/dock", () => ({
   PanelChrome: ({ title, children }: { title: string; children: React.ReactNode }) => (
     <div data-testid="panel-chrome" data-title={title}>{children}</div>
   ),

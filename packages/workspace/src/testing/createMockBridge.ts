@@ -1,4 +1,4 @@
-import type { BridgeEventMap, CommandResult, WorkspaceBridge } from "../bridge/types"
+import type { BridgeEventMap, CommandResult, WorkspaceBridge } from "../front/bridge/types"
 import type { WorkspaceState, PanelState } from "../store/types"
 
 type SpyFactory = <T extends (...args: any[]) => any>(implementation?: T) => any

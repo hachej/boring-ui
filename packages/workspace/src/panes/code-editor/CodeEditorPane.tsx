@@ -3,8 +3,8 @@
 import { lazy, Suspense, useCallback, useRef, useState, useEffect } from "react"
 import { useFileContent, useFileWrite } from "../../data"
 import { FileConflictError } from "../../data/fetchClient"
-import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../hooks"
-import type { PaneProps } from "../../registry/types"
+import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../front/hooks"
+import type { PaneProps } from "../../front/registry/types"
 
 const CodeEditor = lazy(() =>
   import("./CodeEditor").then((m) => ({ default: m.CodeEditor })),

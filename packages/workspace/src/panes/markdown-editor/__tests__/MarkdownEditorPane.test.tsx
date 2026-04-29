@@ -43,7 +43,7 @@ const mockMarkDirty = vi.fn()
 const mockAckSync = vi.fn()
 let mockIsDirty = false
 let mockShouldSync = false
-vi.mock("../../../hooks", () => ({
+vi.mock("../../../front/hooks", () => ({
   useEditorLifecycle: () => ({
     isDirty: mockIsDirty,
     isSaving: false,

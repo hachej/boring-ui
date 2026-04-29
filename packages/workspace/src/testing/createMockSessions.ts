@@ -8,7 +8,7 @@
  * components without prop-drilling.
  */
 import { useSyncExternalStore } from "react"
-import type { SessionItem } from "../components/SessionList"
+import type { SessionItem } from "../front/components/SessionList"
 
 export interface MockSessionsState {
   sessions: SessionItem[]

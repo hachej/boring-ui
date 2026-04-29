@@ -9,7 +9,7 @@ import {
 import { useRef, useState, useEffect } from "react"
 import { useDataClient, useApiBaseUrl } from "./DataProvider"
 import { FetchError } from "./fetchClient"
-import { events, userMeta } from "../events"
+import { events, userMeta } from "../front/events"
 import type { FileContent, FileEntry, FileStat } from "./types"
 
 function noRetryOn404(count: number, error: Error): boolean {

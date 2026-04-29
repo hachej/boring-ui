@@ -12,7 +12,7 @@ import {
   useMoveFile,
   useDeleteFile,
 } from "../hooks"
-import { events } from "../../events"
+import { events } from "../../front/events"
 
 const TEST_BASE = "http://test"
 

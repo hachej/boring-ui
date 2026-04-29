@@ -14,7 +14,7 @@ vi.mock("../../../data", () => ({
   useApiBaseUrl: () => "/api",
 }))
 
-vi.mock("../../../hooks", () => ({
+vi.mock("../../../front/hooks", () => ({
   useEditorLifecycle: (...args: unknown[]) => mockUseEditorLifecycle(...args),
 }))
 
