@@ -5,7 +5,7 @@ import {
   EmptyPane,
   FileTreePane as FileTreePaneComponent,
   MarkdownEditorPane as MarkdownEditorPaneComponent,
-} from "../src/panes"
+} from "../src"
 import {
   withMockWorkspaceApi,
   withWorkspaceProviders,
