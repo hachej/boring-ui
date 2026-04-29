@@ -135,6 +135,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
         generateId: 'uuid',
       },
       cookiePrefix: config.appId,
+      useSecureCookies: config.auth.sessionCookieSecure,
     },
     user: {
       modelName: 'users',
