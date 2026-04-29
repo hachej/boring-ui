@@ -207,6 +207,7 @@ export type {
   FacetConfig,
   FacetValue,
   Facets,
+  FacetsArgs,
   SearchArgs,
   SearchResult,
   DragPayload,
