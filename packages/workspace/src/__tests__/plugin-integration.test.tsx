@@ -250,7 +250,7 @@ describe("makeStaticDataPlugin", () => {
 })
 
 describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
-  it("registers the 4 core panels with no plugins", () => {
+  it("registers the 5 core panels with no plugins", () => {
     function Inspector() {
       const reg = useRegistry()
       const ids = reg.list().map((p) => p.id)
@@ -268,12 +268,13 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
     expect(ids).toContain("session-list")
     expect(ids).toContain("workbench-left")
     expect(ids).toContain("artifact-surface")
+    expect(ids).toContain("empty-file-panel")
   })
 
   it("core panels have source 'builtin'", () => {
     function Inspector() {
       const reg = useRegistry()
-      const coreIds = ["chat", "session-list", "workbench-left", "artifact-surface"]
+      const coreIds = ["chat", "session-list", "workbench-left", "artifact-surface", "empty-file-panel"]
       const sources = coreIds.map((id) => reg.get(id)?.source).join(",")
       return <div data-testid="sources">{sources}</div>
     }
@@ -285,7 +286,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
     )
 
     expect(screen.getByTestId("sources").textContent).toBe(
-      "builtin,builtin,builtin,builtin",
+      "builtin,builtin,builtin,builtin,builtin",
     )
   })
 
@@ -330,7 +331,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
       </WorkspaceProvider>,
     )
 
-    // 4 core + 3 filesystem + 1 test = 8
-    expect(screen.getByTestId("count").textContent).toBe("8")
+    // 5 core + 3 filesystem + 1 test = 9
+    expect(screen.getByTestId("count").textContent).toBe("9")
   })
 })
