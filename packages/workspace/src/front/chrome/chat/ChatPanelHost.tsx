@@ -16,16 +16,14 @@ export function ChatPanelHost(props: ChatPanelProps) {
 
   const openArtifact = useCallback(
     (path: string) => {
-      if (props.onOpenArtifact) {
-        props.onOpenArtifact(path)
-        return
-      }
       const current = shellRef.current
-      if (!current) return
-      if (!current.surfaceOpen) current.setSurfaceOpen(true)
-      const open = () => shellRef.current?.surface?.openFile(path)
-      if (current.surface) open()
-      else requestAnimationFrame(() => requestAnimationFrame(open))
+      if (current) {
+        if (!current.surfaceOpen) current.setSurfaceOpen(true)
+        const open = () => shellRef.current?.surface?.openFile(path)
+        if (current.surface) open()
+        else requestAnimationFrame(() => requestAnimationFrame(open))
+      }
+      props.onOpenArtifact?.(path)
     },
     [props.onOpenArtifact],
   )
@@ -43,11 +41,19 @@ export function ChatPanelHost(props: ChatPanelProps) {
     })
   }, [])
 
+  const handleData = useCallback(
+    (part: unknown) => {
+      emitAgentFileChange(part)
+      props.onData?.(part)
+    },
+    [props.onData],
+  )
+
   return (
     <ChatPanelImpl
       {...props}
       onOpenArtifact={openArtifact}
-      onData={props.onData ?? emitAgentFileChange}
+      onData={handleData}
     />
   )
 }

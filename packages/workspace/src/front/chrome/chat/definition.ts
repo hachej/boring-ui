@@ -9,7 +9,7 @@ function ChatPane({ params }: PaneProps<ChatPaneParams>) {
   if (!params || typeof params.sessionId !== "string" || params.sessionId.length === 0) {
     throw new Error("chat panel requires params.sessionId")
   }
-  return createElement(ChatPanelHost, params as ChatPanelProps)
+  return createElement(ChatPanelHost, { ...params, sessionId: params.sessionId })
 }
 
 export const chatPanel = definePanel<ChatPaneParams>({
