@@ -25,17 +25,37 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog"
-import { useCommandRegistry } from "../registry"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
+import { useCatalogs } from "../plugin/useCatalogs"
+import { useCommands } from "../plugin/useCommands"
 import type { CommandConfig } from "../registry/types"
+import type { CatalogConfig } from "../plugin/types"
+import type { ExplorerRow } from "./DataExplorer/types"
 
 const MAX_RESULTS = 50
 const MAX_RECENT = 10
 const RECENT_STORAGE_KEY = "boring-ui-v2:command-palette:recent"
 
-export interface CommandPaletteProps {
-  fileSearchFn?: (query: string) => string[]
-  onOpenFile?: (path: string) => void
+export type CommandPaletteProps = Record<string, never>
+
+interface CatalogSearchGroup {
+  catalog: CatalogConfig
+  rows: ExplorerRow[]
+  loading: boolean
+  error?: string
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Search failed"
+}
+
+function isActiveCommand(cmd: CommandConfig): boolean {
+  if (!cmd.when) return true
+  try {
+    return cmd.when()
+  } catch {
+    return false
+  }
 }
 
 function loadRecent(): string[] {
@@ -67,10 +87,12 @@ function isRecentFile(path: string): boolean {
   return !path.startsWith("cmd:")
 }
 
-export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps) {
+export function CommandPalette(_props?: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const commandRegistry = useCommandRegistry()
+  const [catalogGroups, setCatalogGroups] = useState<CatalogSearchGroup[]>([])
+  const catalogs = useCatalogs()
+  const commands = useCommands()
   const inputRef = useRef<HTMLInputElement>(null)
   const priorFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(false)
@@ -150,38 +172,102 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
     wasOpenRef.current = open
   }, [open])
 
-  const fileResults = useMemo(() => {
-    if (isCommandMode || !searchQuery || !fileSearchFn) return []
-    return fileSearchFn(searchQuery).slice(0, MAX_RESULTS)
-  }, [isCommandMode, searchQuery, fileSearchFn])
+  useEffect(() => {
+    if (isCommandMode || !searchQuery) {
+      setCatalogGroups([])
+      return
+    }
+
+    const controller = new AbortController()
+    const activeCatalogs = [...catalogs]
+    setCatalogGroups(
+      activeCatalogs.map((catalog) => ({
+        catalog,
+        rows: [],
+        loading: true,
+      })),
+    )
+
+    const updateCatalog = (
+      catalog: CatalogConfig,
+      next: Omit<CatalogSearchGroup, "catalog">,
+    ) => {
+      if (controller.signal.aborted) return
+      setCatalogGroups((groups) =>
+        groups.map((group) =>
+          group.catalog.id === catalog.id ? { catalog, ...next } : group,
+        ),
+      )
+    }
+
+    for (const catalog of activeCatalogs) {
+      try {
+        const result = catalog.adapter.search({
+          query: searchQuery,
+          filters: {},
+          limit: MAX_RESULTS,
+          offset: 0,
+          signal: controller.signal,
+        })
+        void Promise.resolve(result).then(
+          (result) => {
+            updateCatalog(catalog, {
+              rows: result.items.slice(0, MAX_RESULTS),
+              loading: false,
+            })
+          },
+          (error) => {
+            updateCatalog(catalog, {
+              rows: [],
+              loading: false,
+              error: errorMessage(error),
+            })
+          },
+        )
+      } catch (error) {
+        updateCatalog(catalog, {
+          rows: [],
+          loading: false,
+          error: errorMessage(error),
+        })
+      }
+    }
+
+    return () => {
+      controller.abort()
+    }
+  }, [catalogs, isCommandMode, searchQuery])
 
   const commandResults = useMemo(() => {
     if (!isCommandMode) return []
-    const active = commandRegistry.getActiveCommands()
+    const active = commands.filter(isActiveCommand)
     if (!searchQuery) return active.slice(0, MAX_RESULTS)
     const lower = searchQuery.toLowerCase()
     return active.filter((c) => {
       if (c.title.toLowerCase().includes(lower)) return true
       return c.keywords?.some((keyword) => keyword.toLowerCase().includes(lower)) ?? false
     }).slice(0, MAX_RESULTS)
-  }, [isCommandMode, commandRegistry, searchQuery])
+  }, [commands, isCommandMode, searchQuery])
 
   const recentFiles = useMemo(() => {
     if (isCommandMode || searchQuery) return []
     return loadRecent().filter(isRecentFile)
   }, [isCommandMode, searchQuery])
 
-  const handleFileSelect = useCallback(
-    (path: string) => {
-      addToRecent(path)
-      onOpenFile?.(path)
-      setOpen(false)
-    },
-    [onOpenFile],
-  )
+  const handleRecentFileSelect = useCallback((path: string) => {
+    addToRecent(path)
+    setOpen(false)
+  }, [])
+
+  const handleCatalogSelect = useCallback((catalog: CatalogConfig, row: ExplorerRow) => {
+    addToRecent(row.id)
+    catalog.onSelect(row)
+    setOpen(false)
+  }, [])
 
   const handleCommandSelect = useCallback(
     (cmd: CommandConfig) => {
+      addToRecent(`cmd:${cmd.id}`)
       cmd.run()
       setOpen(false)
     },
@@ -198,7 +284,7 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Command Palette</DialogTitle>
-          <DialogDescription>Search files or type &gt; for commands</DialogDescription>
+          <DialogDescription>Search catalogs or type &gt; for commands</DialogDescription>
         </DialogHeader>
         <Command shouldFilter={false} className="bg-transparent">
           {/*
@@ -225,7 +311,7 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
               placeholder={
                 isCommandMode
                   ? "Run a command..."
-                  : "Search files or type > to run a command"
+                  : "Search catalogs or type > to run a command"
               }
               value={query}
               onValueChange={setQuery}
@@ -235,7 +321,7 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
 
           <CommandList className="max-h-[440px] overflow-y-auto py-1">
             <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
-              {isCommandMode ? "No matching commands" : "No files found"}
+              {isCommandMode ? "No matching commands" : "No catalog results"}
             </CommandEmpty>
 
             {!isCommandMode && recentFiles.length > 0 && !searchQuery && (
@@ -244,7 +330,7 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
                   <CommandItem
                     key={path}
                     value={path}
-                    onSelect={() => handleFileSelect(path)}
+                    onSelect={() => handleRecentFileSelect(path)}
                     className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
                   >
                     <ClockIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
@@ -254,21 +340,44 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
               </CommandGroup>
             )}
 
-            {!isCommandMode && fileResults.length > 0 && (
-              <CommandGroup heading="Files">
-                {fileResults.map((path) => (
-                  <CommandItem
-                    key={path}
-                    value={path}
-                    onSelect={() => handleFileSelect(path)}
-                    className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
-                  >
-                    <FileIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
-                    <FilePathLabel path={path} />
-                  </CommandItem>
+            {!isCommandMode &&
+              catalogGroups
+                .filter((group) => group.loading || group.error || group.rows.length > 0)
+                .map((group) => (
+                  <CommandGroup key={group.catalog.id} heading={group.catalog.label}>
+                    {group.loading ? (
+                      <CommandItem
+                        value={`${group.catalog.id}:loading`}
+                        disabled
+                        className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm"
+                      >
+                        <FileIcon className="size-4 shrink-0 text-muted-foreground/70" />
+                        <span className="text-muted-foreground">Searching...</span>
+                      </CommandItem>
+                    ) : null}
+                    {group.error ? (
+                      <CommandItem
+                        value={`${group.catalog.id}:error`}
+                        disabled
+                        className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm"
+                      >
+                        <FileIcon className="size-4 shrink-0 text-destructive/70" />
+                        <span className="text-destructive">{group.error}</span>
+                      </CommandItem>
+                    ) : null}
+                    {group.rows.map((row) => (
+                      <CommandItem
+                        key={`${group.catalog.id}:${row.id}`}
+                        value={`${group.catalog.id}:${row.id}:${row.title}:${row.subtitle ?? ""}`}
+                        onSelect={() => handleCatalogSelect(group.catalog, row)}
+                        className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
+                      >
+                        <FileIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
+                        <CatalogRowLabel row={row} />
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
                 ))}
-              </CommandGroup>
-            )}
 
             {isCommandMode && commandResults.length > 0 && (
               <CommandGroup heading="Commands">
@@ -290,7 +399,7 @@ export function CommandPalette({ fileSearchFn, onOpenFile }: CommandPaletteProps
 
           <div className="flex items-center justify-between border-t border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
             <span className="font-medium tracking-wide uppercase">
-              {isCommandMode ? "Commands" : "Files"}
+              {isCommandMode ? "Commands" : "Catalogs"}
             </span>
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1">
@@ -329,6 +438,20 @@ function FilePathLabel({ path }: { path: string }) {
       <span className="truncate font-medium text-foreground">{name}</span>
       {dir ? (
         <span className="truncate text-xs text-muted-foreground/70">{dir}</span>
+      ) : null}
+    </span>
+  )
+}
+
+function CatalogRowLabel({ row }: { row: ExplorerRow }) {
+  return (
+    <span className="flex min-w-0 flex-1 items-baseline gap-2 truncate">
+      <span className="truncate font-medium text-foreground">{row.title}</span>
+      {row.subtitle ? (
+        <span className="truncate text-xs text-muted-foreground/70">{row.subtitle}</span>
+      ) : null}
+      {row.meta ? (
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground/70">{row.meta}</span>
       ) : null}
     </span>
   )

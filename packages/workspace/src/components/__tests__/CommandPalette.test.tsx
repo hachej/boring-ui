@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { CommandPalette } from "../CommandPalette"
 import { RegistryProvider } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
+import { CatalogRegistry } from "../../plugin/CatalogRegistry"
+import type { CatalogConfig } from "../../plugin/types"
+import type { ExplorerRow, SearchResult } from "../DataExplorer/types"
 
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {}
@@ -43,16 +46,52 @@ async function typePaletteQuery(
   return input
 }
 
-function createWrapper(commandRegistry?: CommandRegistry) {
+function createWrapper(commandRegistry?: CommandRegistry, catalogRegistry?: CatalogRegistry) {
   const pr = new PanelRegistry()
   const cr = commandRegistry ?? new CommandRegistry()
+  const cat = catalogRegistry ?? new CatalogRegistry({ warnOnDuplicate: false })
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
-      <RegistryProvider panelRegistry={pr} commandRegistry={cr}>
+      <RegistryProvider panelRegistry={pr} commandRegistry={cr} catalogRegistry={cat}>
         {children}
       </RegistryProvider>
     )
   }
+}
+
+function rowFromPath(path: string): ExplorerRow {
+  const lastSlash = path.lastIndexOf("/")
+  return {
+    id: path,
+    title: lastSlash >= 0 ? path.slice(lastSlash + 1) : path,
+    subtitle: lastSlash >= 0 ? path.slice(0, lastSlash + 1) : undefined,
+  }
+}
+
+function resultFor(paths: string[]): SearchResult {
+  return {
+    items: paths.map(rowFromPath),
+    total: paths.length,
+    hasMore: false,
+  }
+}
+
+function createCatalog(
+  search: CatalogConfig["adapter"]["search"],
+  onSelect = vi.fn(),
+): CatalogConfig {
+  return {
+    id: "files",
+    label: "Files",
+    adapter: { search },
+    onSelect,
+  }
+}
+
+function registryWithCatalog(catalog: CatalogConfig): CatalogRegistry {
+  const registry = new CatalogRegistry({ warnOnDuplicate: false })
+  registry.register(catalog, "test-plugin")
+  return registry
 }
 
 function fireKeydown(key: string, opts: Partial<KeyboardEventInit> = {}) {
@@ -133,7 +172,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const newInput = screen.getByPlaceholderText(/Search files/)
+      const newInput = screen.getByPlaceholderText(/Search catalogs/)
       expect(newInput).toHaveValue("")
     })
 
@@ -176,12 +215,13 @@ describe("CommandPalette", () => {
     })
   })
 
-  describe("file quick-open", () => {
-    it("shows file results from fileSearchFn", async () => {
+  describe("catalog quick-open", () => {
+    it("shows catalog results from registered catalogs", async () => {
       const user = userEvent.setup()
-      const searchFn = vi.fn().mockReturnValue(["/src/App.tsx", "/src/index.ts"])
-      render(<CommandPalette fileSearchFn={searchFn} />, {
-        wrapper: createWrapper(),
+      const searchFn = vi.fn().mockResolvedValue(resultFor(["/src/App.tsx", "/src/index.ts"]))
+      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      render(<CommandPalette />, {
+        wrapper: createWrapper(undefined, catalogRegistry),
       })
       fireKeydown("p", { metaKey: true })
       await waitFor(() => {
@@ -189,20 +229,21 @@ describe("CommandPalette", () => {
       })
       await typePaletteQuery(user, "app")
       await waitFor(() => {
-        expect(searchFn).toHaveBeenCalledWith("app")
+        expect(searchFn).toHaveBeenCalledWith(expect.objectContaining({ query: "app" }))
       })
       expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
       expect(getFileOption("/src/index.ts")).toBeInTheDocument()
     })
 
-    it("calls onOpenFile when file is selected", async () => {
+    it("calls catalog onSelect when row is selected", async () => {
       const user = userEvent.setup()
-      const searchFn = vi.fn().mockReturnValue(["/src/App.tsx"])
-      const onOpenFile = vi.fn()
-      render(
-        <CommandPalette fileSearchFn={searchFn} onOpenFile={onOpenFile} />,
-        { wrapper: createWrapper() },
-      )
+      const row = rowFromPath("/src/App.tsx")
+      const searchFn = vi.fn().mockResolvedValue({ items: [row], total: 1, hasMore: false })
+      const onSelect = vi.fn()
+      const catalogRegistry = registryWithCatalog(createCatalog(searchFn, onSelect))
+      render(<CommandPalette />, {
+        wrapper: createWrapper(undefined, catalogRegistry),
+      })
       fireKeydown("p", { metaKey: true })
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
@@ -212,14 +253,15 @@ describe("CommandPalette", () => {
         expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
       })
       await user.click(getFileOption("/src/App.tsx"))
-      expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx")
+      expect(onSelect).toHaveBeenCalledWith(row)
     })
 
-    it("shows empty state when no files match", async () => {
+    it("shows empty state when no catalog rows match", async () => {
       const user = userEvent.setup()
-      const searchFn = vi.fn().mockReturnValue([])
-      render(<CommandPalette fileSearchFn={searchFn} />, {
-        wrapper: createWrapper(),
+      const searchFn = vi.fn().mockResolvedValue(resultFor([]))
+      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      render(<CommandPalette />, {
+        wrapper: createWrapper(undefined, catalogRegistry),
       })
       fireKeydown("p", { metaKey: true })
       await waitFor(() => {
@@ -227,15 +269,35 @@ describe("CommandPalette", () => {
       })
       await typePaletteQuery(user, "nonexistent")
       await waitFor(() => {
-        expect(screen.getByText("No files found")).toBeInTheDocument()
+        expect(screen.getByText("No catalog results")).toBeInTheDocument()
       })
     })
 
-    it("closes palette after file selection", async () => {
+    it("renders an inline catalog error when search throws", async () => {
       const user = userEvent.setup()
-      const searchFn = vi.fn().mockReturnValue(["/src/App.tsx"])
-      render(<CommandPalette fileSearchFn={searchFn} onOpenFile={vi.fn()} />, {
-        wrapper: createWrapper(),
+      const searchFn = vi.fn(() => {
+        throw new Error("Catalog unavailable")
+      })
+      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      render(<CommandPalette />, {
+        wrapper: createWrapper(undefined, catalogRegistry),
+      })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      await typePaletteQuery(user, "app")
+      await waitFor(() => {
+        expect(screen.getByText("Catalog unavailable")).toBeInTheDocument()
+      })
+    })
+
+    it("closes palette after catalog row selection", async () => {
+      const user = userEvent.setup()
+      const searchFn = vi.fn().mockResolvedValue(resultFor(["/src/App.tsx"]))
+      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      render(<CommandPalette />, {
+        wrapper: createWrapper(undefined, catalogRegistry),
       })
       fireKeydown("p", { metaKey: true })
       await waitFor(() => {
@@ -404,17 +466,36 @@ describe("CommandPalette", () => {
       })
       expect(screen.queryByText("Hidden Command")).not.toBeInTheDocument()
     })
+
+    it("updates while open when a command registers late", async () => {
+      const user = userEvent.setup()
+      const cr = new CommandRegistry()
+      render(<CommandPalette />, { wrapper: createWrapper(cr) })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+      await typePaletteQuery(user, ">")
+      expect(screen.queryByText("Late Command")).not.toBeInTheDocument()
+
+      act(() => {
+        cr.registerCommand({ id: "late", title: "Late Command", run: vi.fn() })
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText("Late Command")).toBeInTheDocument()
+      })
+    })
   })
 
   describe("recent items", () => {
-    it("saves selected files to recent list", async () => {
+    it("saves selected catalog rows to recent list", async () => {
       const user = userEvent.setup()
-      const searchFn = vi.fn().mockReturnValue(["/src/App.tsx"])
-      const onOpenFile = vi.fn()
-      render(
-        <CommandPalette fileSearchFn={searchFn} onOpenFile={onOpenFile} />,
-        { wrapper: createWrapper() },
-      )
+      const searchFn = vi.fn().mockResolvedValue(resultFor(["/src/App.tsx"]))
+      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      render(<CommandPalette />, {
+        wrapper: createWrapper(undefined, catalogRegistry),
+      })
       fireKeydown("p", { metaKey: true })
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
@@ -440,7 +521,7 @@ describe("CommandPalette", () => {
       })
     })
 
-    it("does not store commands in the recent file list", async () => {
+    it("saves selected commands as transitional recent command keys", async () => {
       const user = userEvent.setup()
       const run = vi.fn()
       const cr = new CommandRegistry()
@@ -457,7 +538,7 @@ describe("CommandPalette", () => {
       await user.click(screen.getByText("Manage Members"))
       expect(run).toHaveBeenCalledOnce()
       const recent = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
-      expect(recent).not.toContain("cmd:members")
+      expect(recent).toContain("cmd:members")
     })
   })
 })
