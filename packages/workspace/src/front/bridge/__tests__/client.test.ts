@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createBridgeClient, type BridgeClientOptions } from "../client"
 import type { WorkspaceBridge, CommandResult } from "../types"
-import type { WorkspaceStore } from "../../../store/types"
+import type { WorkspaceStore } from "../../store/types"
 
 function ok(seq = 1): CommandResult {
   return { seq, status: "ok" }

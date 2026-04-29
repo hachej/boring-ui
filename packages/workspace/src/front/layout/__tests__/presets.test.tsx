@@ -6,8 +6,8 @@ import { buildChatLayout } from "../ChatLayout"
 import { RegistryProvider } from "../../registry"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
-import { bindStore } from "../../../store/selectors"
-import { createWorkspaceStore } from "../../../store"
+import { bindStore } from "../../store/selectors"
+import { createWorkspaceStore } from "../../store"
 
 // Verify barrel exports work
 import {

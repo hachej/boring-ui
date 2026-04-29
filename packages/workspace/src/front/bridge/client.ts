@@ -1,5 +1,5 @@
 import type { WorkspaceBridge, CausedBy } from "./types"
-import type { WorkspaceStore, PanelState } from "../../store/types"
+import type { WorkspaceStore, PanelState } from "../store/types"
 
 export interface UIStatePut {
   v: 1

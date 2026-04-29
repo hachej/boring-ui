@@ -10,7 +10,7 @@ import {
 import { useApiBaseUrl, useDataClient } from "../data"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
-import { useThemePreference } from "../store/selectors"
+import { useThemePreference } from "../front/store/selectors"
 import type { PanelConfig } from "../front/registry/types"
 import type { CatalogConfig } from "../shared/plugin/types"
 

@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react"
 import { Compartment, type Extension } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import { createShadcnTheme } from "./codemirror-theme"
-import { useThemePreference } from "../store/selectors"
+import { useThemePreference } from "../front/store/selectors"
 
 export function useShadcnTheme(
   viewRef: React.RefObject<EditorView | null>,

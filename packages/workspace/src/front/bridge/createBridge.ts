@@ -1,4 +1,4 @@
-import type { WorkspaceStore } from "../../store/types"
+import type { WorkspaceStore } from "../store/types"
 import type {
   WorkspaceBridge,
   BridgeEventMap,

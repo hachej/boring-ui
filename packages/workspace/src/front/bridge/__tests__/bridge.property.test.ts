@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import * as fc from "fast-check"
 import { createBridge } from "../createBridge"
-import { createWorkspaceStore } from "../../../store"
+import { createWorkspaceStore } from "../../store"
 import type { WorkspaceBridge } from "../types"
-import type { PanelState } from "../../../store/types"
+import type { PanelState } from "../../store/types"
 
 function setup() {
   const store = createWorkspaceStore({ persistenceEnabled: false })

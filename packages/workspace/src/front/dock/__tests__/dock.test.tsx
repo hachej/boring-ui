@@ -6,8 +6,8 @@ import { PanelChrome, createLifecycleApi } from "../PanelChrome"
 import { RegistryProvider } from "../../registry"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
-import { bindStore } from "../../../store/selectors"
-import { createWorkspaceStore } from "../../../store"
+import { bindStore } from "../../store/selectors"
+import { createWorkspaceStore } from "../../store"
 import { events, userMeta } from "../../events"
 import type { LayoutConfig, DockviewShellApi } from "../types"
 import type { DockviewApi } from "dockview-react"
@@ -45,7 +45,7 @@ describe("DockviewShell", () => {
     const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
 
     // Mock useHydrationComplete to return false to simulate pre-hydration state
-    const selectorsModule = await import("../../../store/selectors")
+    const selectorsModule = await import("../../store/selectors")
     const spy = vi.spyOn(selectorsModule, "useHydrationComplete").mockReturnValue(false)
 
     render(

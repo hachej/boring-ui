@@ -268,8 +268,8 @@ export type {
 } from "./front/WorkspaceProvider"
 
 // Store (selectors only — store itself is NOT exported)
-export { createWorkspaceStore } from "./store"
-export type { CreateWorkspaceStoreOptions } from "./store"
+export { createWorkspaceStore } from "./front/store"
+export type { CreateWorkspaceStoreOptions } from "./front/store"
 export {
   bindStore,
   useActiveFile,
@@ -281,7 +281,7 @@ export {
   useThemePreference,
   useHydrationComplete,
   useResetLayout,
-} from "./store/selectors"
+} from "./front/store/selectors"
 export type {
   WorkspaceState,
   WorkspaceActions,
@@ -289,4 +289,4 @@ export type {
   PanelState,
   Notification,
   SidebarState,
-} from "./store/types"
+} from "./front/store/types"

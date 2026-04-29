@@ -4,7 +4,7 @@ import type { WorkspaceStore } from "./types"
 import {
   validateLayoutPartition,
   validatePreferencesPartition,
-} from "../front/lib/validation"
+} from "../lib/validation"
 
 const SIZE_WARN_THRESHOLD = 100_000
 const LAYOUT_VERSION = "2.0"

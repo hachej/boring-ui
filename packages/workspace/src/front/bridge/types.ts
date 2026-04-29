@@ -1,4 +1,4 @@
-import type { WorkspaceState, PanelState } from "../../store/types"
+import type { WorkspaceState, PanelState } from "../store/types"
 
 export interface CommandResult {
   seq: number

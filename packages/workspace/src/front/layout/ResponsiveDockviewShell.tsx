@@ -3,7 +3,7 @@ import { MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PinIcon } from "lucide
 import { DockviewShell } from "../dock"
 import type { LayoutConfig } from "../dock"
 import { useRegistry } from "../registry"
-import { useSetSidebar, useSidebarState } from "../../store/selectors"
+import { useSetSidebar, useSidebarState } from "../store/selectors"
 import { cn } from "../lib/utils"
 import {
   Button,

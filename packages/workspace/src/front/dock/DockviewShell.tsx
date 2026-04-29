@@ -18,7 +18,7 @@ import {
 import "dockview-react/dist/styles/dockview.css"
 import "./dockview-overrides.css"
 import { useRegistry } from "../registry"
-import { useHydrationComplete } from "../../store/selectors"
+import { useHydrationComplete } from "../store/selectors"
 import { events } from "../events"
 import type {
   DockviewShellApi,

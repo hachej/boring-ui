@@ -4,8 +4,8 @@ import { ArtifactSurfacePane } from "../ArtifactSurfacePane"
 import { RegistryProvider } from "../../front/registry"
 import { PanelRegistry } from "../../front/registry/PanelRegistry"
 import { CommandRegistry } from "../../front/registry/CommandRegistry"
-import { bindStore } from "../../store/selectors"
-import { createWorkspaceStore } from "../../store"
+import { bindStore } from "../../front/store/selectors"
+import { createWorkspaceStore } from "../../front/store"
 
 function DummyPanel() {
   return <div>panel</div>

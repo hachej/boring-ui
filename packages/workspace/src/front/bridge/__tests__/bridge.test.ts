@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { createBridge } from "../createBridge"
-import type { WorkspaceStore } from "../../../store/types"
+import type { WorkspaceStore } from "../../store/types"
 
 function createMockStore() {
   const state: WorkspaceStore = {

@@ -4,7 +4,7 @@ import { createWorkspaceStore } from "../index"
 import {
   validateLayoutPartition,
   validatePreferencesPartition,
-} from "../../front/lib/validation"
+} from "../../lib/validation"
 import type { WorkspaceStore } from "../types"
 
 function makeStore() {
