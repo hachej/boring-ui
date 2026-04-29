@@ -74,7 +74,17 @@ export function ResponsiveDockviewShell({
   )
   const shellKey = useMemo(() => {
     const composition = showInlineSidebar ? "inline-sidebar" : "overlay-sidebar"
-    const groupsKey = effectiveLayout.groups.map((group) => group.id).join(",")
+    const groupsKey = effectiveLayout.groups
+      .map((group) => {
+        let paramsKey = ""
+        try {
+          paramsKey = JSON.stringify(group.params ?? null)
+        } catch {
+          paramsKey = "unserializable"
+        }
+        return `${group.id}:${group.panel ?? ""}:${paramsKey}`
+      })
+      .join(",")
     return `${effectiveLayout.version}:${composition}:${groupsKey}`
   }, [effectiveLayout, showInlineSidebar])
 

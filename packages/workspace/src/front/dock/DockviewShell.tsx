@@ -195,6 +195,7 @@ function initializeDockview(
       api.addPanel({
         id: group.panel,
         component: group.panel,
+        params: group.params,
         position: firstPanelAdded
           ? { direction: positionToDirection(group.position) }
           : undefined,

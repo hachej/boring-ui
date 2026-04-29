@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from "react"
+import { useCallback, useEffect, useMemo } from "react"
+import { ChatPanel } from "@boring/agent"
 import {
   WorkspaceProvider,
-  ChatCenteredShell,
+  ChatLayout,
   CodeEditorPane,
   EmptyPane,
-  defaultEditorPanels,
+  TopBar,
   definePanel,
   type PanelConfig,
 } from "@boring/workspace"
@@ -13,10 +14,7 @@ import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
 // ----- Panel registry -----
 
-type PlaygroundPanelConfig = PanelConfig<any>
-
-const panels: PlaygroundPanelConfig[] = [
-  ...defaultEditorPanels,
+const panels: PanelConfig[] = [
   definePanel<{ path: string }>({
     id: "csv-viewer",
     title: "CSV",
@@ -33,22 +31,8 @@ const panels: PlaygroundPanelConfig[] = [
   }),
 ]
 
-const MODEL_STORAGE_KEY = "boring-agent:composer:model"
-const INFOMANIAK_TOOL_MODEL = {
-  provider: "infomaniak",
-  id: "Qwen/Qwen3.5-122B-A10B-FP8",
-}
-
-function preferInfomaniakDefaultModel(): void {
-  try {
-    const raw = localStorage.getItem(MODEL_STORAGE_KEY)
-    if (!raw || raw.includes("anthropic") || raw.includes("moonshotai/Kimi-K2.6")) {
-      localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify(INFOMANIAK_TOOL_MODEL))
-    }
-  } catch { /* storage unavailable */ }
-}
-
 const sessionsStore = createMockSessions()
+const layoutStorageKey = "boring-ui-v2:layout:playground"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -56,7 +40,6 @@ function isShowcaseRoute(): boolean {
 }
 
 function Shell() {
-  preferInfomaniakDefaultModel()
   const { sessions, activeId } = useMockSessions(sessionsStore)
   const showcase = useMemo(isShowcaseRoute, [])
 
@@ -77,16 +60,51 @@ function Shell() {
     ]
   }, [showcase, sessions])
 
+  const activeSession = sessionList.find((session) => session.id === activeId)
+
+  const openCommandPalette = useCallback(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }),
+    )
+  }, [])
+
   return (
-    <ChatCenteredShell
-      appTitle="Boring"
-      sessions={sessionList}
-      activeSessionId={activeId}
-      onSwitchSession={sessionsStore.switchTo}
-      onCreateSession={sessionsStore.create}
-      onDeleteSession={sessionsStore.remove}
-      thinkingControl
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <TopBar
+        appTitle="Boring"
+        sessionTitle={activeSession?.title}
+        onCommandPalette={openCommandPalette}
+      />
+      <div className="min-h-0 flex-1">
+        <ChatLayout
+          nav="session-list"
+          navParams={{
+            sessions: sessionList,
+            activeId,
+            onSwitch: sessionsStore.switchTo,
+            onCreate: sessionsStore.create,
+            onDelete: sessionsStore.remove,
+          }}
+          center={activeId ? "chat" : "empty"}
+          centerParams={
+            activeId
+              ? {
+                  sessionId: activeId,
+                  chrome: false,
+                  className: "h-full min-h-0",
+                }
+              : undefined
+          }
+          sidebar="workbench-left"
+          surface="artifact-surface"
+          surfaceParams={{
+            storageKey: `${layoutStorageKey}:surface`,
+            extraPanels: ["csv-viewer"],
+          }}
+          className="h-full"
+        />
+      </div>
+    </div>
   )
 }
 
@@ -94,10 +112,11 @@ export function WorkspaceShell() {
   return (
     <div className="h-full bg-background text-foreground">
       <WorkspaceProvider
+        chatPanel={ChatPanel}
         panels={panels}
         apiBaseUrl=""
         persistenceEnabled
-        storageKey="boring-ui-v2:layout:playground"
+        storageKey={layoutStorageKey}
       >
         <Shell />
       </WorkspaceProvider>

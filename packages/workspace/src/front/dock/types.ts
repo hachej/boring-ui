@@ -9,6 +9,7 @@ export interface GroupConfig {
   id: string
   position: "left" | "center" | "right" | "bottom"
   panel?: string
+  params?: Record<string, unknown>
   locked?: boolean
   hideHeader?: boolean
   dynamic?: boolean
