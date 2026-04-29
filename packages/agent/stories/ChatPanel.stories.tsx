@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from "react"
 import type { Meta, StoryObj } from "@storybook/react"
 import { ChatPanel as ClassicChatPanelComponent } from "../src/front/ChatPanel"
-import { ChatPanel as ShadcnChatPanelComponent } from "../src/front-shadcn/ChatPanel"
+import { ChatPanel as ShadcnChatPanelComponent } from "../src/front/ChatPanel"
 
 const frameClass =
   "h-[680px] w-full max-w-[720px] overflow-hidden rounded-md border border-border bg-background"

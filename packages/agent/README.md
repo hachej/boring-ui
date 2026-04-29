@@ -8,10 +8,10 @@ Pane-embeddable chat agent with pluggable sandboxing.
 - `local`: bubblewrap (`bwrap`) isolation on Linux.
 - `vercel-sandbox`: remote Firecracker microVM execution.
 
-It works as:
-
-- A standalone CLI (`npx @boring/agent`).
-- A package you embed into your own app shell.
+It works as a package you embed into your own app shell. The standalone CLI
+(`boring-agent`) currently runs against the in-repo `apps/agent-playground/`
+Vite dev server only — there is no published `npx @boring/agent` mode at this
+time.
 
 ## Quickstart
 
@@ -22,12 +22,6 @@ pnpm --dir packages/agent dev
 ```
 
 This starts the Fastify + Vite dev setup added in M0.
-
-Planned package quickstart (after CLI beads land):
-
-```bash
-npx @boring/agent
-```
 
 ## Runtime Modes
 

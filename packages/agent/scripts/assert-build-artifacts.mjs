@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { access, readdir } from 'node:fs/promises'
+import { access } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -18,10 +18,8 @@ const requiredFiles = [
   'dist/server/index.d.ts',
   'dist/front/index.js',
   'dist/front/index.d.ts',
-  'dist/front/index.css',
-  'dist/frontend/index.html',
   'dist/bin/boring-agent.js',
-  'dist/front-shadcn/styles.css',
+  'dist/front/styles.css',
 ]
 
 function resolveFromPackage(relPath) {
@@ -62,30 +60,6 @@ function assertTsParsable(relPath) {
   }
 }
 
-function assertThemeCss(relPath) {
-  const absolutePath = resolveFromPackage(relPath)
-  const sourceText = readFileSync(absolutePath, 'utf8')
-  if (!sourceText.includes('[data-boring-chat]')) {
-    throw new Error(`${relPath} is missing [data-boring-chat] selector`)
-  }
-}
-
-async function assertFrontendBundle() {
-  const assetsDir = resolveFromPackage('dist/frontend/assets')
-  const entries = await readdir(assetsDir, { withFileTypes: true })
-  const jsAssets = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
-    .map((entry) => `dist/frontend/assets/${entry.name}`)
-
-  if (jsAssets.length === 0) {
-    throw new Error('Expected at least one JS asset in dist/frontend/assets')
-  }
-
-  for (const jsAsset of jsAssets) {
-    assertNodeParsable(jsAsset)
-  }
-}
-
 function assertCliShebang() {
   const cliPath = resolveFromPackage('dist/bin/boring-agent.js')
   const sourceText = readFileSync(cliPath, 'utf8')
@@ -107,9 +81,7 @@ async function main() {
   assertTsParsable('dist/shared/index.d.ts')
   assertTsParsable('dist/server/index.d.ts')
   assertTsParsable('dist/front/index.d.ts')
-  assertThemeCss('dist/front/index.css')
 
-  await assertFrontendBundle()
   assertCliShebang()
 
   process.stdout.write('build-artifacts: OK\n')

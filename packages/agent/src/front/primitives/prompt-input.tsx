@@ -8,38 +8,38 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from "@/front-shadcn/ui/command";
+} from "@/front/ui/command";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/front-shadcn/ui/dropdown-menu";
+} from "@/front/ui/dropdown-menu";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@/front-shadcn/ui/hover-card";
+} from "@/front/ui/hover-card";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
-} from "@/front-shadcn/ui/input-group";
+} from "@/front/ui/input-group";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/front-shadcn/ui/select";
-import { Spinner } from "@/front-shadcn/ui/spinner";
+} from "@/front/ui/select";
+import { Spinner } from "@/front/ui/spinner";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/front-shadcn/ui/tooltip";
-import { cn } from "@/front-shadcn/lib";
+} from "@/front/ui/tooltip";
+import { cn } from "@/front/lib";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,

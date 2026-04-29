@@ -1,14 +1,14 @@
 "use client";
 
-import { Button } from "@/front-shadcn/ui/button";
+import { Button } from "@/front/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/front-shadcn/ui/select";
-import { cn } from "@/front-shadcn/lib";
+} from "@/front/ui/select";
+import { cn } from "@/front/lib";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 import {

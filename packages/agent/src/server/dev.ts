@@ -2,24 +2,24 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { createServer as createViteServer } from 'vite'
-import { startStandaloneServer } from '../../app/server'
+import { createAgentApp } from './createAgentApp'
 import { resolveWorkspaceRoot } from './config/workspaceRoot'
 
 const DEFAULT_FRONTEND_PORT = 5180
 
 export async function startDevServer(port = 0) {
-  return startStandaloneServer({
-    port,
-    host: '0.0.0.0',
+  const app = await createAgentApp({
     workspaceRoot: resolveWorkspaceRoot(),
     sessionId: 'default',
     logger: true,
   })
+  const address = await app.listen({ port, host: '0.0.0.0' })
+  return { app, address }
 }
 
 async function startViteDevServer(apiPort: number) {
   const thisDir = path.dirname(fileURLToPath(import.meta.url))
-  const appRoot = path.resolve(thisDir, '..', '..', 'app')
+  const appRoot = path.resolve(thisDir, '..', '..', '..', '..', 'apps', 'agent-playground')
   const apiTarget = `http://127.0.0.1:${apiPort}`
 
   const vite = await createViteServer({

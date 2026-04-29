@@ -2,7 +2,7 @@
 
 import { forwardRef, useImperativeHandle, useRef } from "react"
 import { SendHorizontal } from "lucide-react"
-import { ChatEmptyState, defaultChatSuggestions, type ChatSuggestion } from "@boring/agent/ui-shadcn"
+import { ChatEmptyState, defaultChatSuggestions, type ChatSuggestion } from "@boring/agent/front"
 import { cn } from "../../lib/utils"
 
 export interface ChatStagePlaceholderProps {

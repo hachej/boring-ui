@@ -11,7 +11,7 @@
  *      the agent does check, it sees the tab is gone.
  *
  * Gated on ANTHROPIC_API_KEY: skipped silently in dev / CI without secrets.
- * Mirrors the canary suite pattern in @boring/agent/testing.
+ * Mirrors the canary suite pattern in @boring/agent/eval.
  */
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"

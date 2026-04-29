@@ -2,7 +2,7 @@
 /**
  * Workspace eval CLI — boots `createWorkspaceAgentApp` (which adds the
  * exec_ui / get_ui_state tools on top of the bare agent catalog) and
- * replays a YAML fixture suite through @boring/agent/testing.
+ * replays a YAML fixture suite through @boring/agent/eval.
  *
  * Usage:
  *   pnpm --filter @boring/workspace eval [path/to/suite.yaml]
@@ -22,7 +22,7 @@ import { resolve, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { runEvalSuite } from "@boring/agent/testing"
+import { runEvalSuite } from "@boring/agent/eval"
 import { createWorkspaceAgentApp } from "../src/server/createWorkspaceAgentApp"
 
 const __filename = fileURLToPath(import.meta.url)

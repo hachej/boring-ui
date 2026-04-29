@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/front-shadcn/lib"
+import { cn } from "@/front/lib"
 
 const Textarea = React.forwardRef<
   HTMLTextAreaElement,

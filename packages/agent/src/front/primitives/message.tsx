@@ -1,17 +1,17 @@
 "use client";
 
-import { Button } from "@/front-shadcn/ui/button";
+import { Button } from "@/front/ui/button";
 import {
   ButtonGroup,
   ButtonGroupText,
-} from "@/front-shadcn/ui/button-group";
+} from "@/front/ui/button-group";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/front-shadcn/ui/tooltip";
-import { cn } from "@/front-shadcn/lib";
+} from "@/front/ui/tooltip";
+import { cn } from "@/front/lib";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";

@@ -7,13 +7,13 @@
  * Keeping it 1:1 with upstream so the "Vercel template" look/feel lands
  * without local invention.
  */
-import { Badge } from "@/front-shadcn/ui/badge";
+import { Badge } from "@/front/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/front-shadcn/ui/collapsible";
-import { cn } from "@/front-shadcn/lib";
+} from "@/front/ui/collapsible";
+import { cn } from "@/front/lib";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
   CheckCircleIcon,

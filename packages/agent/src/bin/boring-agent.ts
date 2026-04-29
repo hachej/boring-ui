@@ -1,8 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { constants as fsConstants } from 'node:fs'
 import {
-  access,
   chmod,
   mkdir,
   readFile,
@@ -111,7 +109,6 @@ function usageText(): string {
     `  --config <file>    Config file (default: ${DEFAULT_CONFIG_PATH})`,
     '  --logout           Remove persisted API key and exit',
     '  --reset-key        Delete persisted key and re-prompt',
-    '  --dev              Start API + Vite HMR frontend',
     '  --verbose, -v      Verbose startup logs',
     '  --help, -h         Show this help',
     '  --version          Print version',
@@ -204,7 +201,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue
     }
     if (token === '--dev') {
-      parsed.dev = true
+      // No-op: dev mode is always on. Kept for backward compatibility with e2e harness.
       continue
     }
     if (token === '--verbose' || token === '-v') {
@@ -652,94 +649,6 @@ function openBrowser(url: string): boolean {
   return false
 }
 
-function mimeTypeFor(filePath: string): string {
-  switch (path.extname(filePath).toLowerCase()) {
-    case '.html':
-      return 'text/html; charset=utf-8'
-    case '.js':
-      return 'text/javascript; charset=utf-8'
-    case '.css':
-      return 'text/css; charset=utf-8'
-    case '.json':
-      return 'application/json; charset=utf-8'
-    case '.svg':
-      return 'image/svg+xml'
-    case '.png':
-      return 'image/png'
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg'
-    case '.woff':
-      return 'font/woff'
-    case '.woff2':
-      return 'font/woff2'
-    default:
-      return 'application/octet-stream'
-  }
-}
-
-async function fileExists(targetPath: string): Promise<boolean> {
-  try {
-    await access(targetPath, fsConstants.F_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function resolveFrontendRoot(): Promise<string> {
-  const currentFile = fileURLToPath(import.meta.url)
-  const currentDir = path.dirname(currentFile)
-  const distRoot = path.resolve(currentDir, '..', 'frontend')
-  const distIndex = path.join(distRoot, 'index.html')
-  if (await fileExists(distIndex)) {
-    return distRoot
-  }
-  throw new Error(
-    `Frontend bundle not found at ${distRoot}. Run "pnpm --filter @boring/agent build" or use --dev.`,
-  )
-}
-
-async function registerFrontendSpa(
-  app: FastifyInstance,
-  frontendRoot: string,
-): Promise<void> {
-  const indexPath = path.join(frontendRoot, 'index.html')
-
-  async function sendFileOrIndex(routePath: string, reply: { type: (value: string) => void; send: (body: Buffer) => void }) {
-    const requested = routePath === '/' ? 'index.html' : routePath.slice(1)
-    const candidate = path.resolve(frontendRoot, requested)
-    const inRoot =
-      candidate === frontendRoot ||
-      candidate.startsWith(`${frontendRoot}${path.sep}`)
-    const target = inRoot && (await fileExists(candidate)) ? candidate : indexPath
-    const file = await readFile(target)
-    reply.type(mimeTypeFor(target))
-    reply.send(file)
-  }
-
-  app.get('/', async (_request, reply) => {
-    await sendFileOrIndex('/', reply)
-  })
-
-  app.get('/*', async (request, reply) => {
-    const wildcard = (
-      request.params as {
-        '*': string
-      }
-    )['*'] ?? ''
-    const routePath = `/${wildcard}`
-    if (
-      routePath === '/health' ||
-      routePath === '/ready' ||
-      routePath.startsWith('/api/')
-    ) {
-      return reply.callNotFound()
-    }
-    await sendFileOrIndex(routePath, reply)
-  })
-}
-
 export async function probeHealth(
   port: number,
   expectedVersion: string,
@@ -813,7 +722,7 @@ async function startDevFrontend(apiPort: number): Promise<{
 
   const currentFile = fileURLToPath(import.meta.url)
   const currentDir = path.dirname(currentFile)
-  const appRoot = path.resolve(currentDir, '..', '..', 'app')
+  const appRoot = path.resolve(currentDir, '..', '..', '..', '..', 'apps', 'agent-playground')
   const apiTarget = `http://127.0.0.1:${apiPort}`
   const vite = await createServer({
     root: appRoot,
@@ -943,23 +852,16 @@ async function startApp(
       logger: config.verbose,
     })
 
-    if (!config.dev) {
-      const frontendRoot = await resolveFrontendRoot()
-      await registerFrontendSpa(app, frontendRoot)
-    }
-
     await app.listen({
       host: '127.0.0.1',
       port: portSelection.port,
     })
   }
 
-  if (config.dev) {
-    const devServer = await startDevFrontend(portSelection.port)
-    vite = devServer.vite
-    browserUrl = devServer.url
-    logVerbose(config.verbose, `vite dev server: ${browserUrl}`)
-  }
+  const devServer = await startDevFrontend(portSelection.port)
+  vite = devServer.vite
+  browserUrl = devServer.url
+  logVerbose(config.verbose, `vite dev server: ${browserUrl}`)
 
   if (portSelection.reuseExisting && !vite) {
     process.stdout.write(

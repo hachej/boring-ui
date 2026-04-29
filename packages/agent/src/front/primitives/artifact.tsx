@@ -1,13 +1,13 @@
 "use client";
 
-import { Button } from "@/front-shadcn/ui/button";
+import { Button } from "@/front/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/front-shadcn/ui/tooltip";
-import { cn } from "@/front-shadcn/lib";
+} from "@/front/ui/tooltip";
+import { cn } from "@/front/lib";
 import type { LucideIcon } from "lucide-react";
 import { XIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";

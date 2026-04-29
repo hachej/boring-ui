@@ -9,7 +9,7 @@ import {
   ChatPanel,
   type ToolPart,
   type ToolRenderer,
-} from '../../src/front-shadcn'
+} from '../../src/front'
 
 interface SessionSummary {
   id: string

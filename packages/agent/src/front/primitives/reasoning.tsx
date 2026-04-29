@@ -5,8 +5,8 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/front-shadcn/ui/collapsible";
-import { cn } from "@/front-shadcn/lib";
+} from "@/front/ui/collapsible";
+import { cn } from "@/front/lib";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";

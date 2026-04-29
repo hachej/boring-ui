@@ -1,11 +1,11 @@
 /**
- * @boring/agent/testing — eval framework for LLM tool-selection behavior.
+ * @boring/agent/eval — eval framework for LLM tool-selection behavior.
  *
  * See packages/agent/docs/plans/AGENT_EVAL_FRAMEWORK.md for the design.
  *
  * Single-prompt usage (in a vitest test):
  *
- *   import { evalAgentPrompt } from '@boring/agent/testing'
+ *   import { evalAgentPrompt } from '@boring/agent/eval'
  *
  *   const result = await evalAgentPrompt({
  *     app,
@@ -19,7 +19,7 @@
  *
  * Suite usage (CLI or script):
  *
- *   import { runEvalSuite } from '@boring/agent/testing'
+ *   import { runEvalSuite } from '@boring/agent/eval'
  *
  *   const report = await runEvalSuite({
  *     app,

@@ -119,16 +119,16 @@ if [[ -d "$ROOT_DIR/src/server" ]]; then
     "$process_env_output"
 fi
 
-if [[ -d "$ROOT_DIR/src/front/primitives" ]]; then
-  hardcoded_colors_output="$(rg -n --no-heading --color never -e "\\b(bg|text|border|ring|from|to|via)-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-[0-9]{2,3}\\b" "$ROOT_DIR/src/front/primitives" || true)"
+if [[ -d "$ROOT_DIR/src/front/barePrimitives" ]]; then
+  hardcoded_colors_output="$(rg -n --no-heading --color never -e "\\b(bg|text|border|ring|from|to|via)-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-[0-9]{2,3}\\b" "$ROOT_DIR/src/front/barePrimitives" || true)"
   print_matches \
-    "No hard-coded Tailwind colors in src/front/primitives/**" \
+    "No hard-coded Tailwind colors in src/front/barePrimitives/**" \
     "Use CSS variable bridge classes, e.g. bg-[var(--boring-chat-bg)]." \
     "$hardcoded_colors_output"
 fi
 
 if [[ -d "$ROOT_DIR/src" ]]; then
-  stable_error_codes_output="$(rg -n --no-heading --color never -e "code\\s*:\\s*['\"][A-Za-z0-9_-]+['\"]" "$ROOT_DIR/src" -g '!**/error-codes.ts' -g '!**/front-shadcn/primitives/**' || true)"
+  stable_error_codes_output="$(rg -n --no-heading --color never -e "code\\s*:\\s*['\"][A-Za-z0-9_-]+['\"]" "$ROOT_DIR/src" -g '!**/error-codes.ts' -g '!**/front/primitives/**' || true)"
   print_matches \
     "Use stable error-code enum imports (no raw string codes)" \
     "Import canonical constants from shared error-codes." \

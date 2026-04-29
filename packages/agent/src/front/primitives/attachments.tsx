@@ -1,12 +1,12 @@
 "use client";
 
-import { Button } from "@/front-shadcn/ui/button";
+import { Button } from "@/front/ui/button";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@/front-shadcn/ui/hover-card";
-import { cn } from "@/front-shadcn/lib";
+} from "@/front/ui/hover-card";
+import { cn } from "@/front/lib";
 import type { FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   FileTextIcon,

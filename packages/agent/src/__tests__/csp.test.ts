@@ -9,10 +9,8 @@ const agentRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 const auditedFiles = [
   'src/front/ChatPanel.tsx',
-  'src/front-shadcn/ChatPanel.tsx',
   'examples/with-custom-tool/client.tsx',
   'examples/with-shadcn/client.tsx',
-  'app/src/App.tsx',
 ]
 
 function readFile(relPath: string): string {

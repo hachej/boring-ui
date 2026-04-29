@@ -1,5 +1,5 @@
 @import 'tailwindcss';
-@import '../../src/front-shadcn/styles/globals.css';
+@import '../../src/front/styles/globals.css';
 @plugin '@tailwindcss/typography';
 
 /* Tailwind v4 defaults dark: to prefers-color-scheme. We want the .dark
@@ -13,7 +13,7 @@
  * this example (client.tsx) end up in the compiled CSS, which is why the
  * vendored shadcn primitives (prompt-input, message, button, etc.) rendered
  * unstyled. */
-@source "../../src/front-shadcn/**/*.{ts,tsx,js,jsx}";
+@source "../../src/front/**/*.{ts,tsx,js,jsx}";
 @source "../../src/front/**/*.{ts,tsx,js,jsx}";
 
 @layer base {

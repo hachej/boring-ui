@@ -8,9 +8,9 @@
     "cssVariables": true
   },
   "aliases": {
-    "components": "../../src/front-shadcn",
-    "utils": "../../src/front-shadcn/lib",
-    "ui": "../../src/front-shadcn/ui"
+    "components": "../../src/front",
+    "utils": "../../src/front/lib",
+    "ui": "../../src/front/ui"
   },
   "rsc": false,
   "tsx": true

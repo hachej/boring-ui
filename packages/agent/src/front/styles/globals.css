@@ -1,10 +1,10 @@
 /*
- * @boring/agent/ui-shadcn base styles.
+ * @boring/agent/front base styles.
  *
  * Import this alongside your Tailwind setup:
  *
  *   @import 'tailwindcss';
- *   @import '@boring/agent/ui-shadcn/styles.css';
+ *   @import '@boring/agent/front/styles.css';
  *
  * Token system is deliberately aligned with @boring/workspace so the agent
  * pane and the shell it embeds into share one visual language — same warm

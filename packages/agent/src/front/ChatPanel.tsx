@@ -19,16 +19,16 @@ async function readFileAsText(file: FileUIPart): Promise<string | null> {
   }
 }
 import { useEffect, useMemo, useState } from 'react'
-import { useAgentChat } from '../front/hooks/useAgentChat'
-import { builtinCommands } from '../front/slashCommands/builtins'
-import { parseSlashCommand } from '../front/slashCommands/parser'
-import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from '../front/slashCommands/registry'
-import { isModelId, type ModelId } from '../front/components/ModelPicker'
+import { useAgentChat } from './hooks/useAgentChat'
+import { builtinCommands } from './slashCommands/builtins'
+import { parseSlashCommand } from './slashCommands/parser'
+import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
+import { isModelId, type ModelId } from './components/ModelPicker'
 import {
   resolveToolRenderer,
   type ToolPart,
   type ToolRendererOverrides,
-} from '../front/toolRenderers'
+} from './bareToolRenderers'
 import { mergeShadcnToolRenderers } from './toolRenderers'
 import { ArtifactOpenProvider, type OpenArtifactHandler } from './ArtifactOpenContext'
 import {

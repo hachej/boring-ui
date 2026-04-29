@@ -79,7 +79,7 @@ export default defineConfig({
       // Agent: consumed via package exports (dist). Live edits to agent
       // require `pnpm --filter @boring/agent build` + restart. Tried
       // aliasing to src here, but agent's source uses its OWN `@/` alias
-      // for internal imports (~23 files like `@/front-shadcn/lib`) that
+      // for internal imports (~23 files like `@/front/lib`) that
       // conflicts with workspace's `@/` alias — vite has one global `@`,
       // so they can't coexist. Stay on dist for now.
       "@/": resolve(__dirname, "../../packages/workspace/src") + "/",

@@ -1,5 +1,5 @@
 /**
- * Default shadcn-styled tool renderers for @boring/agent/ui-shadcn.
+ * Default shadcn-styled tool renderers for @boring/agent/front.
  *
  * These now build on the canonical ai-elements <Tool> primitive
  * (Collapsible + ToolHeader + ToolInput + ToolOutput) — same components
@@ -13,8 +13,8 @@ import {
   type ToolPart,
   type ToolRenderer,
   type ToolRendererOverrides,
-} from '../front/toolRenderers'
-import type { defaultToolRenderers as bareDefaults } from '../front/toolRenderers/renderers'
+} from './bareToolRenderers'
+import type { defaultToolRenderers as bareDefaults } from './bareToolRenderers/renderers'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
 import { CollapsibleTrigger } from './ui/collapsible'
 import { ChevronDownIcon, ExternalLinkIcon, ZapIcon } from 'lucide-react'

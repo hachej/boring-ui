@@ -1,7 +1,7 @@
 "use client";
 
-import { Button } from "@/front-shadcn/ui/button";
-import { cn } from "@/front-shadcn/lib";
+import { Button } from "@/front/ui/button";
+import { cn } from "@/front/lib";
 import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";
 import type { ComponentProps } from "react";

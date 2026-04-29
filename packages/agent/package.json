@@ -24,15 +24,10 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
-    "./theme.css": "./dist/front/index.css",
-    "./ui-shadcn": {
-      "types": "./dist/front-shadcn/index.d.ts",
-      "import": "./dist/front-shadcn/index.js"
-    },
-    "./ui-shadcn/styles.css": "./dist/front-shadcn/styles.css",
-    "./testing": {
-      "types": "./dist/testing/index.d.ts",
-      "import": "./dist/testing/index.js"
+    "./front/styles.css": "./dist/front/styles.css",
+    "./eval": {
+      "types": "./dist/eval/index.d.ts",
+      "import": "./dist/eval/index.js"
     }
   },
   "sideEffects": [
@@ -42,7 +37,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup && cp src/front-shadcn/styles/globals.css dist/front-shadcn/styles.css && vite build && pnpm run build:assert",
+    "build": "tsup && cp src/front/styles/globals.css dist/front/styles.css && pnpm run build:assert",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "bench:vercel-cold-start": "tsx ./scripts/bench-vercel-cold-start.ts",
     "dev": "tsx src/server/dev.ts",

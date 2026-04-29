@@ -1,7 +1,7 @@
 import './app.css'
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ChatPanel, useSessions } from '../../src/front-shadcn'
+import { ChatPanel, useSessions } from '../../src/front'
 import type { SessionSummary } from '../../src/shared/session'
 
 type Theme = 'light' | 'dark'
