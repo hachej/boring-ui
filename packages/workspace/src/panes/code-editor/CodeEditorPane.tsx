@@ -1,8 +1,8 @@
 "use client"
 
 import { lazy, Suspense, useCallback, useRef, useState, useEffect } from "react"
-import { useFileContent, useFileWrite } from "../../data"
-import { FileConflictError } from "../../data/fetchClient"
+import { useFileContent, useFileWrite } from "../../front/data"
+import { FileConflictError } from "../../front/data/fetchClient"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../front/hooks"
 import type { PaneProps } from "../../front/registry/types"
 

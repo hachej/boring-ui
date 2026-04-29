@@ -1,4 +1,4 @@
-import type { FileContent, FileEntry, FileStat } from "../data/types"
+import type { FileContent, FileEntry, FileStat } from "../front/data/types"
 
 export interface MockFileFixture {
   path: string

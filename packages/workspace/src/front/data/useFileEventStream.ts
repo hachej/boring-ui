@@ -2,7 +2,7 @@
 
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { events, remoteMeta } from "../front/events"
+import { events, remoteMeta } from "../events"
 import { useApiBaseUrl } from "./DataProvider"
 
 /**

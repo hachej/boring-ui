@@ -78,8 +78,8 @@ export type {
 } from "./front/layout"
 
 // Data layer
-export { DataProvider, useDataClient, useApiBaseUrl } from "./data"
-export { FetchClient, FetchError } from "./data"
+export { DataProvider, useDataClient, useApiBaseUrl } from "./front/data"
+export { FetchClient, FetchError } from "./front/data"
 export {
   useFileContent,
   useFileData,
@@ -90,8 +90,8 @@ export {
   useCreateDir,
   useMoveFile,
   useDeleteFile,
-} from "./data"
-export type { FileEntry, FileContent, FileStat, FetchClientOptions } from "./data"
+} from "./front/data"
+export type { FileEntry, FileContent, FileStat, FetchClientOptions } from "./front/data"
 
 // Hooks
 export {

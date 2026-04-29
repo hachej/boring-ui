@@ -13,7 +13,7 @@ vi.mock("../DataProvider", () => ({
 }))
 
 import { useFileEventInvalidation } from "../useFileEventInvalidation"
-import { events, agentMeta, userMeta } from "../../front/events"
+import { events, agentMeta, userMeta } from "../../events"
 
 function makeWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {

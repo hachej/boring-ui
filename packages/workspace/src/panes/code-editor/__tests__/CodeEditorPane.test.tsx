@@ -7,7 +7,7 @@ const mockFileContent = vi.fn()
 const mockFileWrite = vi.fn()
 const mockUseEditorLifecycle = vi.fn()
 
-vi.mock("../../../data", () => ({
+vi.mock("../../../front/data", () => ({
   useFileContent: (path: string) => mockFileContent(path),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useDataClient: () => ({}),

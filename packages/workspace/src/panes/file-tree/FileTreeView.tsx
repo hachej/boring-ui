@@ -18,8 +18,8 @@ import {
   useDeleteFile,
   useFileSearch,
   useDataClient,
-} from "../../data"
-import type { FileEntry } from "../../data/types"
+} from "../../front/data"
+import type { FileEntry } from "../../front/data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
 import type { WorkspaceBridge } from "../../front/bridge/types"
 import { PanelChrome } from "../../front/dock"

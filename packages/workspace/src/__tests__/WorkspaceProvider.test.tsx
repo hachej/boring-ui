@@ -7,7 +7,7 @@ import {
   useTheme,
   useWorkspaceBridge,
 } from "../front/WorkspaceProvider"
-import { useApiBaseUrl, useDataClient } from "../data"
+import { useApiBaseUrl, useDataClient } from "../front/data"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
 import { useThemePreference } from "../front/store/selectors"

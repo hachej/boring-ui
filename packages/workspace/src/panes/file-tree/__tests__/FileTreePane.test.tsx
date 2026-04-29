@@ -13,7 +13,7 @@ const mockFileSearch = vi.fn()
 
 const mockGetTree = vi.fn()
 
-vi.mock("../../../data", () => ({
+vi.mock("../../../front/data", () => ({
   useFileList: (dir: string) => mockFileList(dir),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useCreateDir: () => ({ mutateAsync: mockCreateDir }),

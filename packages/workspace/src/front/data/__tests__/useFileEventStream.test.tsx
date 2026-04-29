@@ -11,7 +11,7 @@ vi.mock("../DataProvider", () => ({
 }))
 
 import { useFileEventStream } from "../useFileEventStream"
-import { events } from "../../front/events"
+import { events } from "../../events"
 
 let nextSeq = 1
 function envelope(change: {
