@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, act } from "@testing-library/react"
 import { ArtifactSurfacePane } from "../ArtifactSurfacePane"
-import { RegistryProvider } from "../../front/registry"
-import { PanelRegistry } from "../../front/registry/PanelRegistry"
-import { CommandRegistry } from "../../front/registry/CommandRegistry"
-import { bindStore } from "../../front/store/selectors"
-import { createWorkspaceStore } from "../../front/store"
-import type { SerializedLayout } from "../../front/dock"
+import { RegistryProvider } from "../../../registry"
+import { PanelRegistry } from "../../../registry/PanelRegistry"
+import { CommandRegistry } from "../../../registry/CommandRegistry"
+import { bindStore } from "../../../store/selectors"
+import { createWorkspaceStore } from "../../../store"
+import type { SerializedLayout } from "../../../dock"
 
 // DockviewShell mock — capture the props ArtifactSurfacePane passes through
 // so we can assert what was hydrated from localStorage and synthesize layout
@@ -18,8 +18,8 @@ let capturedProps: {
 } = {}
 let mountCount = 0
 
-vi.mock("../../front/dock", async () => {
-  const actual = await vi.importActual<typeof import("../../front/dock")>("../../front/dock")
+vi.mock("../../../dock", async () => {
+  const actual = await vi.importActual<typeof import("../../../dock")>("../../../dock")
   return {
     ...actual,
     DockviewShell: (props: {

@@ -1,5 +1,5 @@
-export { ArtifactSurfacePane } from "./ArtifactSurfacePane"
-export type { ArtifactSurfacePaneProps } from "./ArtifactSurfacePane"
+export { ArtifactSurfacePane } from "../front/chrome/artifact-surface/ArtifactSurfacePane"
+export type { ArtifactSurfacePaneProps } from "../front/chrome/artifact-surface/ArtifactSurfacePane"
 export { EmptyPane } from "./EmptyPane"
 export type { EmptyPaneProps } from "./EmptyPane"
 export { DataCatalogPane } from "./data-catalog/DataCatalogPane"
