@@ -15,7 +15,7 @@ import {
   ChevronRightIcon,
   Loader2Icon,
 } from "lucide-react"
-import { getFileIcon } from "../../registry/getFileIcon"
+import { getFileIcon } from "../../front/registry/getFileIcon"
 import { cn } from "../../lib/utils"
 
 export interface FileTreeNode {

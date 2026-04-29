@@ -6,13 +6,13 @@ import {
   WorkspaceProvider,
   useTheme,
   useWorkspaceBridge,
-} from "../WorkspaceProvider"
+} from "../front/WorkspaceProvider"
 import { useApiBaseUrl, useDataClient } from "../data"
-import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../registry"
-import { useCatalogs } from "../plugin/useCatalogs"
+import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
+import { useCatalogs } from "../front/plugin/useCatalogs"
 import { useThemePreference } from "../store/selectors"
-import type { PanelConfig } from "../registry/types"
-import type { CatalogConfig } from "../plugin/types"
+import type { PanelConfig } from "../front/registry/types"
+import type { CatalogConfig } from "../shared/plugin/types"
 
 function DummyPanel() {
   return <div>panel</div>

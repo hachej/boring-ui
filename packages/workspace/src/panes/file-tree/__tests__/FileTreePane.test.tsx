@@ -24,7 +24,7 @@ vi.mock("../../../data", () => ({
   useApiBaseUrl: () => "/api",
 }))
 
-vi.mock("../../../dock", () => ({
+vi.mock("../../../front/dock", () => ({
   PanelChrome: ({
     title,
     children,
@@ -476,7 +476,7 @@ describe("FileTreePane", () => {
     })
 
     it("New file submit emits file:created on the bus with cause:'user'", async () => {
-      const { events } = await import("../../../events")
+      const { events } = await import("../../../front/events")
       events._reset()
       mockFileWrite.mockResolvedValue(undefined)
       const onCreated = vi.fn()

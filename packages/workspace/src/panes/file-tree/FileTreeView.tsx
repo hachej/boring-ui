@@ -21,8 +21,8 @@ import {
 } from "../../data"
 import type { FileEntry } from "../../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
-import type { WorkspaceBridge } from "../../bridge/types"
-import { PanelChrome } from "../../dock"
+import type { WorkspaceBridge } from "../../front/bridge/types"
+import { PanelChrome } from "../../front/dock"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,10 +33,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Input,
-} from "../../components/ui"
+} from "../../front/components/ui"
 import { cn } from "../../lib/utils"
 import { toast } from "../../toast"
-import { events, userMeta } from "../../events"
+import { events, userMeta } from "../../front/events"
 
 const FileTree = lazy(() =>
   import("./FileTree").then((m) => ({ default: m.FileTree })),

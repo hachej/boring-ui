@@ -1,0 +1,62 @@
+import type { AgentTool } from "@boring/agent/shared"
+import type { CommandRegistry } from "../../front/registry/CommandRegistry"
+import type { PanelRegistry } from "../../front/registry/PanelRegistry"
+import { PluginError } from "./definePlugin"
+import type { CatalogRegistry } from "../../front/plugin/CatalogRegistry"
+import type { Plugin } from "./types"
+
+export interface AgentToolRegistry {
+  register(tool: AgentTool, pluginId: string): void
+}
+
+export interface BootstrapOptions {
+  plugins: Plugin[]
+  defaults: Plugin[]
+  excludeDefaults?: string[]
+  registries: {
+    panels: PanelRegistry
+    commands: CommandRegistry
+    catalogs: CatalogRegistry
+    agentTools?: AgentToolRegistry
+  }
+}
+
+export interface BootstrapResult {
+  registered: string[]
+}
+
+export function bootstrap(options: BootstrapOptions): BootstrapResult {
+  const excludedDefaults = new Set(options.excludeDefaults ?? [])
+  const finalPlugins = [
+    ...options.defaults.filter((plugin) => !excludedDefaults.has(plugin.id)),
+    ...options.plugins,
+  ]
+
+  const seenPluginIds = new Set<string>()
+  for (const plugin of finalPlugins) {
+    if (seenPluginIds.has(plugin.id)) {
+      throw new PluginError("duplicate-id", `plugin "${plugin.id}" registered twice`)
+    }
+    seenPluginIds.add(plugin.id)
+  }
+
+  for (const plugin of finalPlugins) {
+    for (const panel of plugin.panels ?? []) {
+      const { id, ...registration } = panel
+      options.registries.panels.register(id, { ...registration, pluginId: plugin.id })
+    }
+    for (const command of plugin.commands ?? []) {
+      options.registries.commands.registerCommand({ ...command, pluginId: plugin.id })
+    }
+    for (const catalog of plugin.catalogs ?? []) {
+      options.registries.catalogs.register(catalog, plugin.id)
+    }
+    if (options.registries.agentTools) {
+      for (const tool of plugin.agentTools ?? []) {
+        options.registries.agentTools.register(tool, plugin.id)
+      }
+    }
+  }
+
+  return { registered: finalPlugins.map((plugin) => plugin.id) }
+}

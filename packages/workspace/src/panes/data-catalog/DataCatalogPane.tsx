@@ -1,14 +1,14 @@
 import { lazy, Suspense, useMemo } from "react"
-import { PanelChrome } from "../../dock"
-import { createSourcesAdapter, type SourceEntry } from "../../components/DataExplorer/adapters"
+import { PanelChrome } from "../../front/dock"
+import { createSourcesAdapter, type SourceEntry } from "../../front/components/DataExplorer/adapters"
 import type {
   DataExplorerProps,
   ExplorerAdapter,
   ExplorerRow,
-} from "../../components/DataExplorer"
+} from "../../front/components/DataExplorer"
 
 const DataExplorer = lazy(() =>
-  import("../../components/DataExplorer/DataExplorer").then((m) => ({
+  import("../../front/components/DataExplorer/DataExplorer").then((m) => ({
     default: m.DataExplorer,
   })),
 )

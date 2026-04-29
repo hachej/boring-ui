@@ -1,6 +1,6 @@
 import { createElement } from "react"
-import { PanelRegistry } from "../registry/PanelRegistry"
-import { definePanel, type PanelConfig } from "../registry/types"
+import { PanelRegistry } from "../front/registry/PanelRegistry"
+import { definePanel, type PanelConfig } from "../front/registry/types"
 
 function DefaultMockPanel() {
   return createElement(
