@@ -14,6 +14,7 @@ import { PanelRegistry } from "./registry/PanelRegistry"
 import { CommandRegistry } from "./registry/CommandRegistry"
 import { RegistryProvider, useCatalogRegistry } from "./registry/RegistryProvider"
 import { CatalogRegistry } from "./plugin/CatalogRegistry"
+import { PluginErrorProvider } from "./plugin/PluginErrorContext"
 import { createWorkspaceStore } from "../store"
 import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "./bridge/createBridge"
@@ -445,20 +446,22 @@ export function WorkspaceProvider({
           onAuthError={onAuthError}
           timeout={apiTimeout}
         >
-          <RegistryProvider
-            panelRegistry={panelRegistry}
-            commandRegistry={commandRegistry}
-            catalogRegistry={catalogRegistry}
-          >
-            <WorkspaceCatalogBindings
-              catalogs={catalogs}
-              onOpenFile={onOpenFile}
-            />
-            <WorkspaceShortcuts store={store} />
-            <CommandPalette />
-            <Toaster />
-            {children}
-          </RegistryProvider>
+          <PluginErrorProvider>
+            <RegistryProvider
+              panelRegistry={panelRegistry}
+              commandRegistry={commandRegistry}
+              catalogRegistry={catalogRegistry}
+            >
+              <WorkspaceCatalogBindings
+                catalogs={catalogs}
+                onOpenFile={onOpenFile}
+              />
+              <WorkspaceShortcuts store={store} />
+              <CommandPalette />
+              <Toaster />
+              {children}
+            </RegistryProvider>
+          </PluginErrorProvider>
         </DataProvider>
       </WorkspaceBridgeContext.Provider>
     </ThemeContext.Provider>
