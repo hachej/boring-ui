@@ -7,18 +7,18 @@ const mockFileContent = vi.fn()
 const mockFileWrite = vi.fn()
 const mockUseEditorLifecycle = vi.fn()
 
-vi.mock("../../data", () => ({
+vi.mock("../../../data", () => ({
   useFileContent: (path: string) => mockFileContent(path),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useDataClient: () => ({}),
   useApiBaseUrl: () => "/api",
 }))
 
-vi.mock("../../hooks", () => ({
+vi.mock("../../../hooks", () => ({
   useEditorLifecycle: (...args: unknown[]) => mockUseEditorLifecycle(...args),
 }))
 
-vi.mock("../../components/CodeEditor", () => ({
+vi.mock("../CodeEditor", () => ({
   CodeEditor: ({
     content,
     language,
@@ -38,7 +38,7 @@ vi.mock("../../components/CodeEditor", () => ({
 }))
 
 import { CodeEditorPane } from "../CodeEditorPane"
-import { createMockPaneProps } from "../../testing/createMockPaneProps"
+import { createMockPaneProps } from "../../../testing/createMockPaneProps"
 
 const paneProps = (path: string) => createMockPaneProps({ path })
 

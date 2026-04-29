@@ -1,12 +1,13 @@
 "use client"
 
 import { lazy, Suspense, useCallback, useRef, useState, useEffect } from "react"
-import { useFileContent, useFileWrite } from "../data"
-import { useEditorLifecycle, type EditorLifecycleAdapter } from "../hooks"
-import type { PaneProps } from "../registry/types"
+import { useFileContent, useFileWrite } from "../../data"
+import { FileConflictError } from "../../data/fetchClient"
+import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../hooks"
+import type { PaneProps } from "../../registry/types"
 
 const CodeEditor = lazy(() =>
-  import("../components/CodeEditor").then((m) => ({ default: m.CodeEditor })),
+  import("./CodeEditor").then((m) => ({ default: m.CodeEditor })),
 )
 
 function extToLanguage(path: string): string {
@@ -46,12 +47,16 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
   const contentRef = useRef<string>("")
   const dirtyRef = useRef(false)
   const loadedPathRef = useRef<string | null>(null)
+  const baselineMtimeRef = useRef<number | null>(null)
+  const [conflict, setConflict] = useState<FileConflictError | null>(null)
 
   useEffect(() => {
     if (loadedPathRef.current !== path) {
       setLocalContent(null)
       contentRef.current = ""
       dirtyRef.current = false
+      baselineMtimeRef.current = null
+      setConflict(null)
       loadedPathRef.current = path
     }
   }, [path])
@@ -60,6 +65,7 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
     if (fileData?.content != null && localContent === null) {
       setLocalContent(fileData.content)
       contentRef.current = fileData.content
+      baselineMtimeRef.current = fileData.mtimeMs ?? null
     }
   }, [fileData, localContent])
 
@@ -68,8 +74,24 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
       ? {
           isDirty: () => dirtyRef.current,
           save: async () => {
-            await writeFile({ path, content: contentRef.current })
-            dirtyRef.current = false
+            try {
+              const result = await writeFile({
+                path,
+                content: contentRef.current,
+                expectedMtimeMs: baselineMtimeRef.current ?? undefined,
+              })
+              if (typeof result.mtimeMs === "number") {
+                baselineMtimeRef.current = result.mtimeMs
+              }
+              dirtyRef.current = false
+              setConflict(null)
+            } catch (err) {
+              if (err instanceof FileConflictError) {
+                setConflict(err)
+                throw err
+              }
+              throw err
+            }
           },
           getContent: () => contentRef.current,
         }
@@ -81,10 +103,33 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
     serverMtime: dataUpdatedAt || null,
   })
 
+  const handleReloadFromServer = useCallback(async () => {
+    if (!fileData) return
+    setLocalContent(fileData.content)
+    contentRef.current = fileData.content
+    baselineMtimeRef.current = fileData.mtimeMs ?? null
+    dirtyRef.current = false
+    setConflict(null)
+  }, [fileData])
+
+  const handleForceOverwrite = useCallback(async () => {
+    try {
+      const result = await writeFile({ path, content: contentRef.current })
+      if (typeof result.mtimeMs === "number") {
+        baselineMtimeRef.current = result.mtimeMs
+      }
+      dirtyRef.current = false
+      setConflict(null)
+    } catch {
+      // Leave the conflict UI up so the user can retry.
+    }
+  }, [path, writeFile])
+
   useEffect(() => {
     if (lifecycle.shouldSync && fileData?.content != null) {
       setLocalContent(fileData.content)
       contentRef.current = fileData.content
+      baselineMtimeRef.current = fileData.mtimeMs ?? null
       dirtyRef.current = false
       lifecycle.ackSync()
     }
@@ -126,6 +171,13 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {conflict && (
+        <ConflictBanner
+          conflict={conflict}
+          onReload={handleReloadFromServer}
+          onOverwrite={handleForceOverwrite}
+        />
+      )}
       <Suspense
         fallback={
           <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -147,6 +199,44 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
           />
         )}
       </Suspense>
+    </div>
+  )
+}
+
+function ConflictBanner({
+  conflict,
+  onReload,
+  onOverwrite,
+}: {
+  conflict: FileConflictError
+  onReload: () => void | Promise<void>
+  onOverwrite: () => void | Promise<void>
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-200"
+    >
+      <span className="flex-1">
+        This file has been modified outside the editor. Your unsaved changes
+        will be lost if you reload, or will overwrite the latest version on
+        disk if you save.
+      </span>
+      <button
+        type="button"
+        onClick={() => void onReload()}
+        className="rounded-sm border border-amber-500/50 bg-amber-500/20 px-2 py-0.5 text-xs hover:bg-amber-500/30"
+      >
+        Reload
+      </button>
+      <button
+        type="button"
+        onClick={() => void onOverwrite()}
+        className="rounded-sm border border-destructive/50 bg-destructive/15 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/25"
+      >
+        Overwrite
+      </button>
+      <span className="sr-only">{conflict.path}</span>
     </div>
   )
 }

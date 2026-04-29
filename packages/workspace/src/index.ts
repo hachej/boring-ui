@@ -185,8 +185,8 @@ export { PanelErrorBoundary } from "./components/PanelErrorBoundary"
 export type { PanelErrorBoundaryProps } from "./components/PanelErrorBoundary"
 
 // Standalone components (usable WITHOUT WorkspaceProvider)
-export { CodeEditor } from "./components/CodeEditor"
-export type { CodeEditorProps } from "./components/CodeEditor"
+export { CodeEditor } from "./panes/code-editor/CodeEditor"
+export type { CodeEditorProps } from "./panes/code-editor/CodeEditor"
 export { FileTree } from "./components/FileTree"
 export type { FileTreeProps, FileTreeNode } from "./components/FileTree"
 export { MarkdownEditor } from "./components/MarkdownEditor"
@@ -239,7 +239,7 @@ export type {
   ChatTopBarProps,
   ChatShellContextValue,
 } from "./components/chat"
-export type { ChatSuggestion } from "@boring/agent/ui-shadcn"
+export type { ChatSuggestion } from "@boring/agent/front"
 
 // Provider
 export {
