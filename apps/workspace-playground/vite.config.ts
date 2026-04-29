@@ -77,7 +77,7 @@ export default defineConfig({
       "@boring/workspace/ui-shadcn": resolve(__dirname, "../../packages/workspace/src/front/components/ui/index.ts"),
       "@boring/workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
       "@boring/workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
-      "@boring/workspace/testing": resolve(__dirname, "../../packages/workspace/src/testing/index.ts"),
+      "@boring/workspace/testing": resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts"),
       "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
       // Agent: consumed via package exports (dist). Live edits to agent
       // require `pnpm --filter @boring/agent build` + restart. Tried
