@@ -1,6 +1,6 @@
 # Workspace plugin model
 
-**Status:** v7.3 — clarify PanelConfig's three roles (sidebar tab vs workbench pane vs bottom dock) without splitting the type. Phase 2+ may go to discriminated union. Workbench `pages` reserved as future contribution type.
+**Status:** v7.4 — merge declarative-layout-migration plan in (one mega-plan, one epic, one acceptance gate). Adds Phase 1.5: Consumer migration (decompose shells, register core panels, lift TopBar, migrate 3 apps, delete ChatCenteredShell). j9p7 epic absorbs all migration beads; zrby epic closed as merged.
 
 > **Factory pattern:** Plugins may be exposed as factories when they need
 > runtime config (e.g. macro's `makeMacroServerPlugin()`). v7.0 dropped the
@@ -2001,6 +2001,325 @@ reviewers don't think they were missed.
 
 None of these block the boring-macro acceptance test.
 
+## Phase 1.5: Consumer migration — decompose shells, declarative layouts, delete ChatCenteredShell
+
+(v7.4 merger: was tracked separately as `DECLARATIVE_LAYOUT_MIGRATION.md` + epic `boring-ui-v2-zrby`. Folded in here as Phase 1.5 because it's the natural consumer-side migration of the plugin model machinery.)
+
+### Why this phase exists
+
+`@boring/workspace` ships TWO parallel layout systems today:
+
+1. **Imperative shell** — `ChatCenteredShell` (29KB) + `SurfaceShell` (23KB) + `ChatTopBar` + `SessionBrowser` + `WorkbenchLeftPane` + `ChatStagePlaceholder`, all under `src/components/chat/`. Hardcodes the chat panel from `@boring/agent`, top-bar slots, session drawer, artifact dockview. Apps pass props in; they cannot restructure.
+
+2. **Declarative layouts** — `ChatLayout` + `IdeLayout` + `ResponsiveDockviewShell` in `src/layouts/`. Compose panels by id (e.g. `<ChatLayout nav="session-list" center="chat" surface="artifact-surface" />`). Plugins register panels into the registry; the layout config resolves ids → components via dockview.
+
+Today every consuming app (`apps/workspace-playground`, `apps/full-app`, `apps/boring-macro-v2`) uses **only the imperative shell**. The declarative layouts have **zero app consumers** — tested and exported but never reached.
+
+The plugin model machinery (Phase 1 Steps 1-5) finally makes declarative composition viable: panels register via the contract; layouts resolve ids → components. **Phase 1.5 retires the imperative shell and migrates all three apps to the declarative pattern**, closing the loop the earlier sketches opened.
+
+### Three-tier API after migration
+
+All three tiers share the SAME core panel registrations (chat, session-list, workbench-left, artifact-surface). Only the shape composition differs.
+
+#### Tier 1 — declarative pre-shaped layouts (~80% of apps)
+
+```tsx
+import { WorkspaceProvider, ChatLayout, TopBar } from "@boring/workspace"
+import { macroPlugin } from "./macro-plugin"
+
+<WorkspaceProvider plugins={[macroPlugin]}>
+  <TopBar appTitle="Macro" right={<UserMenu />} />
+  <ChatLayout
+    nav="session-list"
+    center="chat"
+    sidebar="charts"
+    surface="artifact-surface"
+  />
+</WorkspaceProvider>
+```
+
+Apps swap panels by changing `nav` / `center` / `sidebar` / `surface` ids. Plugins register the implementations.
+
+#### Tier 2 — custom LayoutConfig with stock chrome
+
+```tsx
+import { WorkspaceProvider, ResponsiveDockviewShell, TopBar, type LayoutConfig } from "@boring/workspace"
+
+const myLayout: LayoutConfig = {
+  version: "2.0",
+  groups: [
+    { id: "rail",     position: "left",   panel: "session-list", locked: true, hideHeader: true },
+    { id: "tree",     position: "left",   panel: "filetree",     collapsible: true },
+    { id: "center",   position: "center", panel: "chat" },
+    { id: "split-a",  position: "right",  panel: "code-editor" },
+    { id: "split-b",  position: "right",  panel: "live-preview" },
+  ],
+}
+
+<WorkspaceProvider plugins={[livePreviewPlugin]}>
+  <TopBar appTitle="…" />
+  <ResponsiveDockviewShell layout={myLayout} />
+</WorkspaceProvider>
+```
+
+For apps that need non-stock layout shapes (split center, multiple right surfaces, custom group constraints) but still want responsive sidebar collapse + dockview integration + same `<TopBar>` chrome.
+
+#### Tier 3 — full custom (rare)
+
+```tsx
+import {
+  WorkspaceProvider,
+  DockviewShell,
+  useViewportBreakpoint,
+  useResponsiveSidebarCollapse,
+  useTopBarSlot,
+} from "@boring/workspace"
+
+function MyShell() {
+  // App fully composes chrome + dockview structure
+}
+```
+
+Raw primitives. For apps with bespoke chrome (non-rectangular layout, multiple dockview instances, embedded workspace inside a non-workspace shell).
+
+### Substrate vs plugin (architectural commitment)
+
+The migration is a chance to clarify what's substrate vs. plugin:
+
+| Tier | What it is | Examples |
+|---|---|---|
+| **Substrate** | Constitutive workspace panels. Without them `@boring/workspace` is an empty dockview. Apps cannot opt out — these ARE what the package is. | `chat`, `session-list`, `workbench-left`, `artifact-surface` |
+| **Default plugins** | Optional capabilities apps can disable via `excludeDefaults: ['filesystem']`. | `filesystemPlugin` (file tree + code editor + markdown editor + filesCatalog) |
+| **App plugins** | Host-specific contributions registered via `<WorkspaceProvider plugins={[...]}>`. | `macroPlugin` (charts + slides + series), future `analyticsPlugin`, etc. |
+
+**There is no `chatExperiencePlugin`.** Chat is core, not a plugin. The earlier sketch of a "chat experience plugin" bundling the chat-flavored panels was wrong — it conflates substrate with extension.
+
+`WorkspaceProvider` registers core panels at mount, before running the plugin bootstrap:
+
+```ts
+function WorkspaceProvider({ plugins, excludeDefaults, children }) {
+  const panelRegistry = new PanelRegistry()
+  panelRegistry.registerAll(coreWorkspacePanels)   // ← substrate, always
+  bootstrap({
+    plugins,
+    defaults: filteredDefaults,                     // filesystemPlugin unless excluded
+    registries,
+  })
+  // …
+}
+```
+
+### File-tree end state
+
+```
+packages/workspace/src/
+
+panes/                                ← all registered panels live here
+├── chat/                             ← core (NEW location for chat panel)
+│   ├── ChatPanel.tsx                 thin wrapper around @boring/agent's ChatPanel
+│   │                                 + workspace integrations (auto-open hooks,
+│   │                                   command-stream consumption, suggestions)
+│   └── definition.ts                 `definePanel({ id: "chat", … })`
+├── session-list/                     ← core (was components/chat/SessionBrowser)
+├── workbench-left/                   ← core (was components/chat/WorkbenchLeftPane)
+├── artifact-surface/                 ← core (was components/chat/SurfaceShell)
+├── code-editor/                      existing (filesystem plugin)
+├── markdown-editor/                  existing (filesystem plugin)
+├── file-tree/                        existing (filesystem plugin)
+├── data-catalog/                     existing
+├── ArtifactSurfacePane.tsx           stays
+├── EmptyPane.tsx                     stays
+├── EmptyFilePanel.tsx                NEW (j9p7.12) — fallback for unmatched files
+└── defaultEditorPanels.ts            stays
+
+layouts/                              ← declarative composition + chrome
+├── ChatLayout.tsx                    KEEP (already exists)
+├── IdeLayout.tsx                     KEEP (already exists)
+├── ResponsiveDockviewShell.tsx       KEEP — exported as Tier 2 entry
+├── TopBar.tsx                        NEW — was components/chat/ChatTopBar
+└── index.ts
+
+registry/coreRegistrations.ts         NEW — exports `coreWorkspacePanels: PanelConfig[]`
+                                        imported and applied by WorkspaceProvider
+
+plugin/                               unchanged — plugin model machinery
+└── defaults/
+    └── filesystemPlugin.ts           unchanged — only default plugin
+
+components/                           shrinks to genuinely cross-cutting UI
+├── chat/                             GONE — contents moved to panes/, layouts/, bridge/
+├── ui/                               stays (shadcn primitives)
+├── DataExplorer/                     stays (generic data subsystem)
+├── CommandPalette.tsx                stays
+├── PluginErrorBoundary.tsx           NEW (j9p7.22)
+├── PluginInspector.tsx               NEW (j9p7.23, DEV-only)
+└── SessionList.tsx                   stays — data-list helper, distinct from
+                                        the SessionBrowser panel that wraps it
+
+bridge/ (or ui-bridge/)               absorbs the bridge infrastructure
+├── (existing bridge code)
+├── uiCommandStream.ts                was components/chat/uiCommandStream.ts
+└── uiCommandDispatcher.ts            was components/chat/uiCommandDispatcher.ts
+```
+
+**What disappears:**
+
+- `src/components/chat/` (whole folder)
+- `ChatCenteredShell.tsx` + `ChatShellContext` (`context.ts`)
+- The old `presets.test.tsx` (superseded by migrated apps' e2e + new layout tests)
+- `src/index.ts` exports for `ChatCenteredShell`, `useChatShell`, `useChatSurface`, `ChatStagePlaceholder` (imperative-shell internals)
+
+**What stays exported (Tier 1 / Tier 2 / Tier 3 surface):**
+
+```ts
+// Tier 1
+export { ChatLayout, IdeLayout, buildChatLayout, buildIdeLayout } from "./layouts"
+export type { ChatLayoutProps, IdeLayoutProps } from "./layouts"
+export { TopBar } from "./layouts/TopBar"
+
+// Tier 2
+export { ResponsiveDockviewShell } from "./layouts/ResponsiveDockviewShell"
+
+// Tier 3 (raw primitives)
+export { DockviewShell } from "./dock"
+export type { LayoutConfig, GroupConfig } from "./dock"
+export { useViewportBreakpoint, useResponsiveSidebarCollapse } from "./hooks"
+export { useTopBarSlot } from "./components/TopBarSlot"
+
+// WorkspaceProvider + plugin model (unchanged)
+export { WorkspaceProvider } from "./WorkspaceProvider"
+export { definePlugin, definePanel, PluginError, … } from "./plugin"
+export { CatalogRegistry, useCommands, useActivePanels, useCatalogs, … } from "./plugin"
+```
+
+### Phase 1.5 breakdown — 7 phase beads (A through G)
+
+A and B can run in parallel. C depends on A. D, E, F can run in parallel after A+B+C. G depends on D+E+F.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Phase A — Decompose chat shells into per-pane folders + bridge/ │
+│  ─────────────────────────────────────────────────────────────── │
+│  - git mv components/chat/{SessionBrowser, ChatStagePlaceholder, │
+│           SurfaceShell, WorkbenchLeftPane}.tsx → panes/<id>/     │
+│  - Each pane gains definition.ts exporting a PanelConfig         │
+│  - Create panes/chat/ChatPanel.tsx (thin wrapper around          │
+│    @boring/agent's ChatPanel + workspace integrations) +         │
+│    definition.ts                                                 │
+│  - git mv components/chat/{uiCommandStream,                      │
+│    uiCommandDispatcher}.ts → bridge/                             │
+│  - Update internal imports                                       │
+│  - DON'T touch ChatCenteredShell.tsx or ChatTopBar.tsx yet —     │
+│    they stay until Phase G/C.                                    │
+│  Bead: j9p7.24                                                   │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Phase B — Wire core panel registrations in WorkspaceProvider    │
+│  ─────────────────────────────────────────────────────────────── │
+│  - Create registry/coreRegistrations.ts exporting                │
+│    coreWorkspacePanels: PanelConfig[] aggregating the 4 core     │
+│    panel defs                                                    │
+│  - WorkspaceProvider imports and registers them at mount,        │
+│    BEFORE bootstrap() runs                                       │
+│  - Test: render WorkspaceProvider with no plugins; assert the    │
+│    panel registry has the 4 core ids                             │
+│  Bead: j9p7.25                                                   │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Phase C — Lift TopBar chrome + expose ResponsiveDockviewShell   │
+│  ─────────────────────────────────────────────────────────────── │
+│  - git mv components/chat/ChatTopBar.tsx → layouts/TopBar.tsx    │
+│  - Rename type ChatTopBarProps → TopBarProps                     │
+│  - Update barrel                                                 │
+│  - Export ResponsiveDockviewShell from package barrel with jsdoc │
+│    explaining Tier 2                                             │
+│  - Add §"Three-tier API" to packages/workspace/README.md         │
+│  Bead: j9p7.26                                                   │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Phase D — Migrate workspace-playground to ChatLayout (canary)   │
+│  ─────────────────────────────────────────────────────────────── │
+│  - Rewrite apps/workspace-playground/src/App.tsx to use          │
+│    <WorkspaceProvider> + <TopBar> + <ChatLayout>                 │
+│  - Confirm e2e tests (apps/workspace-playground/e2e/*.spec.ts)   │
+│    still pass                                                    │
+│  - Document any gotchas for the next two app migrations          │
+│  Bead: j9p7.27                                                   │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Phase E — Migrate boring-macro-v2: ChatLayout + extract         │
+│            macroPlugin                                           │
+│  ─────────────────────────────────────────────────────────────── │
+│  - Create apps/boring-macro-v2/src/macroPlugin.ts defining       │
+│    macro-specific panels (chart canvas, slide deck, series       │
+│    explorer) + commands (open_series) + agent tools              │
+│    (execute_sql, macro_search, get_series_data,                  │
+│    persist_derived_series)                                       │
+│  - Rewrite apps/boring-macro-v2/src/web/App.tsx to use            │
+│    <ChatLayout> + <WorkspaceProvider plugins={[macroPlugin]}>    │
+│  - Delete apps/boring-macro-v2/src/server/uiBridge.ts            │
+│  - Confirm boring-macro e2e tests pass                           │
+│  Beads: j9p7.18 (plugin module), j9p7.19 (app refactor),         │
+│         j9p7.20 (e2e gate). Reframed under Phase E.              │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Phase F — Migrate full-app to ChatLayout (or IdeLayout)         │
+│  ─────────────────────────────────────────────────────────────── │
+│  - Rewrite apps/full-app/src/front/main.tsx to use the           │
+│    appropriate declarative layout                                │
+│  - Confirm e2e tests pass                                        │
+│  Bead: j9p7.28                                                   │
+└──────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Phase G — Delete ChatCenteredShell + ChatShellContext +         │
+│            finalize                                              │
+│  ─────────────────────────────────────────────────────────────── │
+│  Once D + E + F merged:                                          │
+│  - Delete components/chat/ChatCenteredShell.tsx                  │
+│  - Delete components/chat/context.ts                             │
+│  - Drop related exports from src/index.ts                        │
+│  - Remove now-empty components/chat/ folder                      │
+│  - Update WORKSPACE_V2_PLAN.md and any other docs                │
+│  Bead: j9p7.29                                                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Phase 1.5 risks
+
+- **Pixel drift on canary migration.** Tier 1's `<ChatLayout>` may render at slightly different pixel offsets than `<ChatCenteredShell>` (different padding stack, different transition timing on the sidebar). Plan: regenerate visual snapshots when migrating workspace-playground; eyeball the diff for genuine regressions vs cosmetic shifts.
+- **Plugin id collisions.** boring-macro's existing panels might collide with workspace's core panel ids. Audit during Phase E; rename macro panels to be namespaced (`macro:charts`, `macro:slides`).
+- **boring-macro custom shell logic.** boring-macro's current App.tsx has more glue than the playground (custom session handling, custom topbar variants). Phase E may surface that some glue should live in `macroPlugin` (commands), and some should stay app-level (host wiring + auth). Will need careful split.
+- **`uiCommandStream` / `uiCommandDispatcher` re-homing.** They're called from inside `ChatCenteredShell` today. After Phase A's move + WorkspaceProvider's mount-time wiring, they should be invoked from a `useEffect` inside `WorkspaceProvider` (or a dedicated hook). Confirm the lifecycle: the stream must start before the chat panel mounts.
+
+### Phase 1.5 ship criteria
+
+- All 7 phase beads (j9p7.24-29 + j9p7.18-20) closed
+- Three apps run on declarative layouts in production
+- `ChatCenteredShell` and `ChatShellContext` deleted from the tree
+- Public API exposes Tier 1 / Tier 2 / Tier 3 entries with jsdoc
+- README section in `packages/workspace/` describing the three-tier model with one snippet per tier
+
+### Phase 1.5 supersedes / replaces
+
+The earlier Phase 1 Step 5b ("ChatCenteredShell drops `data` + `extraPanels` props") and Step 5c ("WorkbenchLeftPane registry-driven") are **subsumed by Phase 1.5**:
+
+- Step 5b's "drop legacy props" becomes "delete the whole shell" (Phase G).
+- Step 5c's "registry-driven WorkbenchLeftPane" becomes "WorkbenchLeftPane is just one of the core panels registered by WorkspaceProvider; tab strip is gone" (Phase A + B).
+
+Beads j9p7.16 (Step 5b) and j9p7.17 (Step 5c) close as **scope-shifted to Phase 1.5** — see Phase A/B beads for the new location.
+
 ## Phase 2/3 (sketched, deferred)
 
 **Phase 2 — distributable plugins:**
@@ -2156,6 +2475,53 @@ None of these block the boring-macro acceptance test.
   - `UI_BRIDGE_OWNERSHIP_REFACTOR.md` — step 1a of this plan
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
+
+## Changelog v7.3 → v7.4 (merger of declarative-layout-migration plan)
+
+User decision (2026-04-29): **merge into one mega-plan + one epic**. The earlier `DECLARATIVE_LAYOUT_MIGRATION.md` (epic boring-ui-v2-zrby, empty) is now Phase 1.5 of this plan. Single acceptance gate.
+
+### What changed
+
+1. **New §"Phase 1.5: Consumer migration — decompose shells, declarative layouts, delete ChatCenteredShell"** added between §"Concrete before/after" and §"Phase 2/3."
+   - Documents three-tier API (Tier 1 declarative pre-shaped layouts; Tier 2 custom LayoutConfig with stock chrome; Tier 3 raw primitives)
+   - Substrate vs default-plugin vs app-plugin clarification (chat is core, not a plugin)
+   - File-tree end state (panes/ as canonical home; components/chat/ disappears)
+   - 7 phase beads breakdown (Phase A → G) with parallelism map
+   - Risks + ship criteria
+
+2. **j9p7.16 (Step 5b) and j9p7.17 (Step 5c) marked obsolete** — scope-shifted to Phase 1.5. Closing them with reason "subsumed by Phase 1.5 Phase A/B." Replacement beads created for each Phase.
+
+3. **j9p7.18 / .19 / .20** (macro plugin module / app refactor / e2e gate) **reframed under Phase E**, not Step 6. Same work, different grouping.
+
+4. **6 new beads created** for Phase 1.5 phases that don't have direct j9p7 equivalents:
+   - j9p7.24 (Phase A — decompose shells)
+   - j9p7.25 (Phase B — wire core panel registrations)
+   - j9p7.26 (Phase C — lift TopBar chrome)
+   - j9p7.27 (Phase D — migrate workspace-playground canary)
+   - j9p7.28 (Phase F — migrate full-app)
+   - j9p7.29 (Phase G — delete ChatCenteredShell + finalize)
+
+5. **`DECLARATIVE_LAYOUT_MIGRATION.md` marked superseded** with a banner pointing to this plan. Content preserved in git history; the file remains as a tombstone redirect.
+
+6. **Epic boring-ui-v2-zrby closed** as merged into j9p7. Its 0 children become moot.
+
+### Why merge (vs keep two plans)
+
+The two plans had ~37 + 24 = 61 cross-references between them (`ChatCenteredShell`, `macroPlugin`, `delete uiBridge`). Macro migration was duplicated: j9p7 had it as Step 6; zrby had it as Phase E. The risk of doing j9p7's "ChatCenteredShell drops props" THEN having zrby delete the shell entirely is real wasted work — the user named it as the deciding concern.
+
+Merging gives:
+- One coherent narrative: "build plugin model machinery → migrate consumers to declarative composition"
+- One acceptance gate (boring-macro e2e suite passes after Phase E)
+- One epic to track end-to-end progress
+- ~270 lines of doc (Phase 1.5 section) vs ~270 lines duplicated across two files
+
+### Net spec impact
+
+- PLUGIN_MODEL.md grows by ~280 lines (Phase 1.5 + this changelog entry)
+- DECLARATIVE_LAYOUT_MIGRATION.md gains a SUPERSEDED banner; content preserved in history
+- j9p7 epic gains 6 new beads, closes 2 obsolete beads
+- zrby epic closes
+- Acceptance contract updated: j9p7 closes when Phase 1.5 ship criteria met (declarative apps + ChatCenteredShell deleted + Tier 1/2/3 public API)
 
 ## Changelog v7.2 → v7.3 (PanelConfig roles clarified)
 
