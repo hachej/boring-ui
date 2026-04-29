@@ -88,8 +88,8 @@ export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
       adaptPiTool(createReadToolDefinition(cwd, { operations: vercelReadOps(bundle.workspace) })),
       adaptPiTool(createWriteToolDefinition(cwd, { operations: vercelWriteOps(bundle.workspace) })),
       adaptPiTool(createEditToolDefinition(cwd, { operations: vercelEditOps(bundle.workspace) })),
-      adaptPiTool(createFindToolDefinition(cwd, { operations: vercelFindOps(bundle.sandbox) })),
-      vercelGrepTool(bundle.sandbox),
+      adaptPiTool(createFindToolDefinition(cwd, { operations: vercelFindOps(bundle.sandbox, bundle.workspace) })),
+      vercelGrepTool(bundle.sandbox, cwd),
       adaptPiTool(createLsToolDefinition(cwd, { operations: vercelLsOps(bundle.workspace) })),
     ]
   }
@@ -99,8 +99,8 @@ export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
     adaptPiTool(createReadToolDefinition(cwd, { operations: ops.read })),
     adaptPiTool(createWriteToolDefinition(cwd, { operations: ops.write })),
     adaptPiTool(createEditToolDefinition(cwd, { operations: ops.edit })),
-    adaptPiTool(createFindToolDefinition(cwd)),
-    adaptPiTool(createGrepToolDefinition(cwd)),
+    adaptPiTool(createFindToolDefinition(cwd, { operations: ops.find })),
+    adaptPiTool(createGrepToolDefinition(cwd, { operations: ops.grep })),
     adaptPiTool(createLsToolDefinition(cwd, { operations: ops.ls })),
   ]
 }

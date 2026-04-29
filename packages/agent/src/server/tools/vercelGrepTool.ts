@@ -7,6 +7,8 @@ import {
   type TruncationResult,
 } from '@mariozechner/pi-coding-agent'
 
+import { resolve, relative } from 'node:path'
+
 import type { Sandbox } from '../../shared/sandbox'
 import type { AgentTool, ToolExecContext, ToolResult } from '../../shared/tool'
 import { bytesWritten, decode, makeError } from '../catalog/tools/_shared'
@@ -175,7 +177,7 @@ function buildSuccessResult(
   }
 }
 
-export function vercelGrepTool(sandbox: Sandbox): AgentTool {
+export function vercelGrepTool(sandbox: Sandbox, workspaceRoot?: string): AgentTool {
   return {
     name: PI_GREP_TOOL.name,
     description: PI_GREP_TOOL.description,
@@ -189,6 +191,14 @@ export function vercelGrepTool(sandbox: Sandbox): AgentTool {
 
       if (typeof params.pattern !== 'string' || params.pattern.length === 0) {
         return makeError('pattern is required')
+      }
+
+      if (workspaceRoot && typeof params.path === 'string' && params.path.length > 0) {
+        const resolved = resolve(workspaceRoot, params.path)
+        const rel = relative(workspaceRoot, resolved)
+        if (rel.startsWith('..') || rel.startsWith('/')) {
+          return makeError(`path "${params.path}" is outside workspace`)
+        }
       }
 
       try {

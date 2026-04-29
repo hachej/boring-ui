@@ -83,9 +83,18 @@ export function vercelEditOps(workspace: Workspace): EditOperations {
   }
 }
 
-export function vercelFindOps(sandbox: Sandbox): FindOperations {
+export function vercelFindOps(sandbox: Sandbox, workspace?: Workspace): FindOperations {
   return {
     async exists(absolutePath: string): Promise<boolean> {
+      if (workspace) {
+        try {
+          const rel = toRelPath(workspace, absolutePath)
+          await workspace.stat(rel)
+          return true
+        } catch {
+          return false
+        }
+      }
       const result = await sandbox.exec(`test -e ${shellEscape(absolutePath)}`, {
         timeoutMs: 5_000,
       })
@@ -117,8 +126,8 @@ export function vercelFindOps(sandbox: Sandbox): FindOperations {
 export function vercelLsOps(workspace: Workspace): LsOperations {
   return {
     async exists(absolutePath: string): Promise<boolean> {
-      const rel = toRelPath(workspace, absolutePath)
       try {
+        const rel = toRelPath(workspace, absolutePath)
         await workspace.stat(rel)
         return true
       } catch {
