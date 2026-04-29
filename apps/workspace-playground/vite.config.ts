@@ -50,7 +50,7 @@ async function startAgentApp() {
     const app = await createWorkspaceAgentApp({
       workspaceRoot: process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR,
       mode: "local",
-      logger: false,
+      logger: true,
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()

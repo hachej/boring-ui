@@ -53,7 +53,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -65,6 +65,7 @@ import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
 const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
+const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
 
 /**
  * Extended-thinking budget. Sent through to pi-coding-agent which forwards
@@ -86,6 +87,13 @@ function readStoredThinking(): ThinkingLevel {
     if (isThinkingLevel(raw)) return raw
   } catch { /* storage unavailable */ }
   return DEFAULT_THINKING
+}
+
+function readStoredShowThoughts(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(STORAGE_SHOW_THOUGHTS_KEY) === '1'
+  } catch { /* storage unavailable */ }
+  return false
 }
 
 /**
@@ -240,6 +248,10 @@ function isTextPart(part: UIMessage['parts'][number]): part is Extract<UIMessage
   return part.type === 'text'
 }
 
+function isBlankTextPart(part: UIMessage['parts'][number]): boolean {
+  return isTextPart(part) && part.text.trim().length === 0
+}
+
 function isFilePart(part: UIMessage['parts'][number]): part is FileUIPart {
   return part.type === 'file'
 }
@@ -306,12 +318,18 @@ export function ChatPanel(props: ChatPanelProps) {
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
     thinkingControl ? readStoredThinking() : DEFAULT_THINKING,
   )
+  const [showThoughts, setShowThoughts] = useState<boolean>(() => readStoredShowThoughts())
   useEffect(() => {
     if (!thinkingControl) return
     try {
       globalThis.localStorage?.setItem(STORAGE_THINKING_KEY, thinkingLevel)
     } catch { /* noop */ }
   }, [thinkingControl, thinkingLevel])
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(STORAGE_SHOW_THOUGHTS_KEY, showThoughts ? '1' : '0')
+    } catch { /* noop */ }
+  }, [showThoughts])
   /**
    * Client-side transient notice for attachment validation (too many files,
    * single file too large, …). PromptInput's onError fires synchronously on
@@ -534,9 +552,31 @@ export function ChatPanel(props: ChatPanelProps) {
             const role = message.role === 'user' || message.role === 'assistant' ? message.role : 'assistant'
             const textParts = message.parts.filter(isTextPart)
             const fileParts = message.parts.filter(isFilePart)
-            const reasoningParts = message.parts
-              .map(getReasoningPart)
-              .filter((part): part is ReasoningPartView => part !== null)
+            const orderedParts = message.parts.reduce<Array<
+              | { kind: 'reasoning'; text: string; state: ReasoningPartView['state']; key: string }
+              | { kind: 'part'; part: UIMessage['parts'][number]; key: string }
+            >>((items, part, index) => {
+              const reasoningPart = getReasoningPart(part)
+              const key = `${message.id}-${index}`
+              if (!reasoningPart) {
+                // Some providers emit whitespace-only text parts between
+                // reasoning chunks. Treat those as separators, not real
+                // content, otherwise one continuous thought renders as
+                // duplicate adjacent "thoughts" widgets.
+                if (!isBlankTextPart(part)) {
+                  items.push({ kind: 'part', part, key })
+                }
+                return items
+              }
+              const previous = items[items.length - 1]
+              if (previous?.kind === 'reasoning') {
+                previous.text = `${previous.text}\n\n${reasoningPart.text}`
+                if (reasoningPart.state === 'streaming') previous.state = 'streaming'
+              } else {
+                items.push({ kind: 'reasoning', ...reasoningPart, key })
+              }
+              return items
+            }, [])
             // Regenerate is only meaningful for the most recent assistant
             // reply — regenerating an older turn would fork history in
             // ways we don't support. Restricting visibility to the tail
@@ -592,22 +632,25 @@ export function ChatPanel(props: ChatPanelProps) {
                     </Attachments>
                   )}
 
-                  {reasoningParts.map((part, index) => (
-                    <Reasoning
-                      key={`reasoning-${message.id}-${index}`}
-                      isStreaming={part.state === 'streaming'}
-                      defaultOpen={part.state === 'streaming'}
-                    >
-                      <ReasoningTrigger />
-                      <ReasoningContent>{part.text}</ReasoningContent>
-                    </Reasoning>
-                  ))}
-
-                  {/* Render text + tool parts in the order the model emitted
-                      them. Grouping by type would put every tool at the bottom
-                      of the message, hiding which sentence triggered which
-                      tool. AI SDK guarantees `message.parts` is chronological. */}
-                  {message.parts.map((part, index) => {
+                  {/* Render reasoning + text + tool parts in the order the
+                      model emitted them. Grouping by type would put thoughts
+                      before every tool, hiding which thought caused which
+                      action. AI SDK guarantees `message.parts` is chronological. */}
+                  {orderedParts.map((item, index) => {
+                    if (item.kind === 'reasoning') {
+                      if (!showThoughts) return null
+                      return (
+                        <Reasoning
+                          key={`reasoning-${item.key}`}
+                          isStreaming={item.state === 'streaming'}
+                          defaultOpen={item.state === 'streaming'}
+                        >
+                          <ReasoningTrigger />
+                          <ReasoningContent>{item.text}</ReasoningContent>
+                        </Reasoning>
+                      )
+                    }
+                    const { part } = item
                     if (isTextPart(part)) {
                       return (
                         <MessageResponse
@@ -827,22 +870,26 @@ export function ChatPanel(props: ChatPanelProps) {
                   options={availableModels}
                   disabled={isStreaming}
                 />
-                {thinkingControl && (
-                  <ThinkingSelect
-                    value={thinkingLevel}
-                    onChange={setThinkingLevel}
-                    disabled={isStreaming}
-                  />
-                )}
               </div>
-              {/* Spacer pushes kbd hints + submit to the right. Hints
-               * sit immediately before the send button so the user
-               * reads them as part of the submit affordance, not
-               * orphaned text floating in the middle of the row. */}
-              <div className="ml-auto flex items-center gap-2">
-                <KbdHints />
+              {/* Spacer pushes secondary controls + submit to the right. */}
+              <div className="ml-auto flex items-center gap-1">
+                {thinkingControl && (
+                  <>
+                    <ThinkingSelect
+                      value={thinkingLevel}
+                      onChange={setThinkingLevel}
+                      disabled={isStreaming}
+                    />
+                    <ThoughtVisibilityButton
+                      visible={showThoughts}
+                      onToggle={() => setShowThoughts((value) => !value)}
+                    />
+                  </>
+                )}
+                <div className="ml-1 flex items-center gap-2">
+                  <KbdHints />
                   <PromptInputSubmit
-                  status={status}
+                    status={status}
                   onStop={stop}
                   className={cn(
                     // Primary action. Uses the warm accent (not `primary`,
@@ -860,7 +907,8 @@ export function ChatPanel(props: ChatPanelProps) {
                     "disabled:pointer-events-none disabled:opacity-40",
                     "[&>svg]:size-4",
                   )}
-                />
+                  />
+                </div>
               </div>
             </PromptInputFooter>
           </PromptInput>
@@ -984,10 +1032,10 @@ const composerActionClass = cn(
 )
 
 const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
-  off: 'No thinking',
-  low: 'Think a little',
-  medium: 'Think',
-  high: 'Think hard',
+  off: 'Off',
+  low: 'Low',
+  medium: 'Med',
+  high: 'High',
 }
 
 const THINKING_LEVEL_TRIGGER_LABELS: Record<ThinkingLevel, string> = {
@@ -1015,21 +1063,51 @@ function ThinkingSelect({
       disabled={disabled}
     >
       <SelectTrigger
-        className={cn(composerActionClass, "px-2.5 text-xs font-medium")}
+        className={cn(composerActionClass, "w-8 px-0")}
         aria-label="Thinking level"
         data-testid="thinking-select"
       >
-        <BrainIcon className={cn("h-3.5 w-3.5", value === 'off' ? "opacity-60" : "text-[color:var(--accent)]")} />
-        <SelectValue>{THINKING_LEVEL_TRIGGER_LABELS[value]}</SelectValue>
+        <BrainIcon className="h-3.5 w-3.5" />
       </SelectTrigger>
-      <SelectContent>
-        {THINKING_LEVELS.map((level) => (
-          <SelectItem key={level} value={level} className="text-xs font-medium">
-            {THINKING_LEVEL_LABELS[level]}
-          </SelectItem>
-        ))}
+      <SelectContent className="w-auto min-w-0 p-2">
+        <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+          Think
+        </div>
+        <div className="flex items-center gap-1">
+          {THINKING_LEVELS.map((level) => (
+            <SelectItem
+              key={level}
+              value={level}
+              className="min-w-10 justify-center rounded-md px-2 py-1.5 text-center text-xs font-medium"
+            >
+              {THINKING_LEVEL_LABELS[level]}
+            </SelectItem>
+          ))}
+        </div>
       </SelectContent>
     </Select>
+  )
+}
+
+function ThoughtVisibilityButton({
+  visible,
+  onToggle,
+}: {
+  visible: boolean
+  onToggle: () => void
+}) {
+  const Icon = visible ? EyeIcon : EyeOffIcon
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(composerActionClass, "w-8")}
+      aria-pressed={visible}
+      aria-label={visible ? "Hide thoughts" : "Show thoughts"}
+      title={visible ? "Hide thoughts" : "Show thoughts"}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </button>
   )
 }
 

@@ -13,7 +13,9 @@ import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
 // ----- Panel registry -----
 
-const panels: PanelConfig[] = [
+type PlaygroundPanelConfig = PanelConfig<any>
+
+const panels: PlaygroundPanelConfig[] = [
   ...defaultEditorPanels,
   definePanel<{ path: string }>({
     id: "csv-viewer",
@@ -31,6 +33,21 @@ const panels: PanelConfig[] = [
   }),
 ]
 
+const MODEL_STORAGE_KEY = "boring-agent:composer:model"
+const INFOMANIAK_TOOL_MODEL = {
+  provider: "infomaniak",
+  id: "Qwen/Qwen3.5-122B-A10B-FP8",
+}
+
+function preferInfomaniakDefaultModel(): void {
+  try {
+    const raw = localStorage.getItem(MODEL_STORAGE_KEY)
+    if (!raw || raw.includes("anthropic") || raw.includes("moonshotai/Kimi-K2.6")) {
+      localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify(INFOMANIAK_TOOL_MODEL))
+    }
+  } catch { /* storage unavailable */ }
+}
+
 const sessionsStore = createMockSessions()
 
 function isShowcaseRoute(): boolean {
@@ -39,6 +56,7 @@ function isShowcaseRoute(): boolean {
 }
 
 function Shell() {
+  preferInfomaniakDefaultModel()
   const { sessions, activeId } = useMockSessions(sessionsStore)
   const showcase = useMemo(isShowcaseRoute, [])
 
@@ -67,6 +85,7 @@ function Shell() {
       onSwitchSession={sessionsStore.switchTo}
       onCreateSession={sessionsStore.create}
       onDeleteSession={sessionsStore.remove}
+      thinkingControl
     />
   )
 }
