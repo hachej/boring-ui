@@ -1,4 +1,4 @@
-import type { ToastInput, ToastVariant } from "../../toast"
+import { toast as workspaceToast, type ToastInput, type ToastVariant } from "../../toast"
 
 type ShadcnToastVariant = ToastVariant | "default" | "destructive"
 type ShadcnToastInput = Omit<ToastInput, "variant"> & {
@@ -11,13 +11,12 @@ function mapToastVariant(variant: ShadcnToastVariant | undefined): ToastVariant 
   return variant ?? "info"
 }
 
-async function sendToast(input: string | ShadcnToastInput) {
-  const { toast } = await import("../../toast")
+function sendToast(input: string | ShadcnToastInput) {
   if (typeof input === "string") {
-    toast(input)
+    workspaceToast(input)
     return
   }
-  toast({
+  workspaceToast({
     ...input,
     variant: mapToastVariant(input.variant),
   })
@@ -26,7 +25,7 @@ async function sendToast(input: string | ShadcnToastInput) {
 export function useToast() {
   return {
     toast(input: string | ShadcnToastInput) {
-      void sendToast(input)
+      sendToast(input)
     },
   }
 }
