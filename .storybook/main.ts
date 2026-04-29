@@ -33,8 +33,12 @@ const config: StorybookConfig = {
       resolve: {
         alias: [
           {
-            find: /^@\/front-shadcn\//,
-            replacement: `${path.resolve(rootDir, "packages/agent/src/front-shadcn")}/`,
+            find: /^@\/front\/lib\//,
+            replacement: `${path.resolve(rootDir, "packages/workspace/src/front/lib")}/`,
+          },
+          {
+            find: /^@\/front\//,
+            replacement: `${path.resolve(rootDir, "packages/agent/src/front")}/`,
           },
           {
             find: /^@\//,
@@ -49,8 +53,28 @@ const config: StorybookConfig = {
             replacement: path.resolve(rootDir, "packages/workspace/src/index.ts"),
           },
           {
+            find: "@boring/agent/front/styles.css",
+            replacement: path.resolve(rootDir, "packages/agent/src/front/styles/globals.css"),
+          },
+          {
+            find: "@boring/agent/front",
+            replacement: path.resolve(rootDir, "packages/agent/src/front/index.ts"),
+          },
+          {
+            find: "@boring/agent/shared",
+            replacement: path.resolve(rootDir, "packages/agent/src/shared/index.ts"),
+          },
+          {
             find: "@boring/agent",
-            replacement: path.resolve(rootDir, "packages/agent/src/index.ts"),
+            replacement: path.resolve(rootDir, "packages/agent/src/front/index.ts"),
+          },
+          {
+            find: "@boring/core/front/top-bar-slot",
+            replacement: path.resolve(rootDir, "packages/core/src/front/components/TopBarSlot.tsx"),
+          },
+          {
+            find: "@boring/core/theme.css",
+            replacement: path.resolve(rootDir, "packages/core/src/front/theme.css"),
           },
           {
             find: "@boring/core/front",

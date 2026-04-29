@@ -2,7 +2,7 @@ import type { Preview } from "@storybook/react"
 import { INITIAL_VIEWPORTS } from "@storybook/addon-viewport"
 import { createElement } from "react"
 import "../packages/workspace/src/globals.css"
-import "../packages/agent/src/front/styles/theme.css"
+import "../packages/agent/src/front/styles/globals.css"
 
 const preview: Preview = {
   globalTypes: {
