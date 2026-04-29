@@ -41,8 +41,13 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
 
   function emit<K extends keyof BridgeEventMap>(event: K, data: BridgeEventMap[K]) {
     const handlers = listeners.get(event)
-    if (handlers) {
-      for (const h of handlers) h(data)
+    if (!handlers) return
+    for (const h of [...handlers]) {
+      try {
+        h(data)
+      } catch (err) {
+        console.error(`[bridge] listener for "${String(event)}" threw:`, err)
+      }
     }
   }
 
@@ -133,9 +138,10 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
       const parsed = notificationSchema.safeParse({ msg, level })
       if (!parsed.success) return err("VALIDATION", parsed.error.issues[0].message)
 
-      const storeLevel = level === "warn" ? "warning" : level
+      const validLevel = parsed.data.level ?? "info"
+      const storeLevel = validLevel === "warn" ? "warning" : validLevel
       store.getState().showNotification({ message: parsed.data.msg, type: storeLevel })
-      emit("notification:shown", { message: parsed.data.msg, level })
+      emit("notification:shown", { message: parsed.data.msg, level: validLevel })
       return ok()
     },
 
