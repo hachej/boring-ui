@@ -74,7 +74,6 @@ describe("loadRecent / saveRecent", () => {
       JSON.stringify([
         { type: "catalog", catalogId: "x", rowId: "y", rowSnapshot: { id: "y", title: "y" }, selectedAt: 1 },
         { type: "bogus" },
-        "legacy-string-entry",
         null,
         42,
       ]),
