@@ -4,9 +4,11 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Tailwind v4 only scans files inside the app root by default; the
- * shadcn primitives + chat panel live in packages/agent, so point
- * Tailwind at them directly. */
+/* In this app we boot Vite manually from server.ts, so be explicit about
+ * every scan root Tailwind should watch. Otherwise the playground shell can
+ * render with raw class names while package styles still load. */
+@source "./**/*.{ts,tsx,js,jsx}";
+@source "../index.html";
 @source "../../../packages/agent/src/front/**/*.{ts,tsx,js,jsx}";
 @source "../../../packages/agent/dist/front/**/*.{js,d.ts}";
 
