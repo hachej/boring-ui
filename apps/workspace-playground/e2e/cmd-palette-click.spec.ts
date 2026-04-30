@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { waitForPlaygroundReady } from "./helpers"
 
 /**
  * Verifies the palette dismisses on a single mouse click outside the
@@ -10,7 +11,7 @@ import { expect, test } from "@playwright/test"
 test.describe("command palette click-outside", () => {
   test("clicking the overlay closes the dialog on the first click", async ({ page }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
 
     await page.keyboard.press("ControlOrMeta+KeyK")
     const dialog = page.getByRole("dialog", { name: /command palette/i })
@@ -26,7 +27,7 @@ test.describe("command palette click-outside", () => {
 
   test("clicking the overlay dismisses even with text in the input", async ({ page }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
 
     await page.keyboard.press("ControlOrMeta+KeyK")
     const dialog = page.getByRole("dialog", { name: /command palette/i })

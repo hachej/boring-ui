@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { waitForPlaygroundReady } from "./helpers"
 
 /**
  * Regression: user reported "I have the feeling commands are not
@@ -55,7 +56,7 @@ test.describe("command palette effects", () => {
       }
     }, STORAGE_KEY)
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
   })
 
   test("'Toggle Sessions Drawer' opens the closed drawer", async ({ page }) => {

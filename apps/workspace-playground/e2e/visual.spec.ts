@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { waitForPlaygroundReady } from "./helpers"
 
 /**
  * Targeted visual / DOM-shape regression tests for fixes that were
@@ -12,7 +13,7 @@ const STORAGE_KEY = "boring-ui-v2:chat-centered-shell:v2"
 
 async function openPalette(page: import("@playwright/test").Page) {
   await page.goto("/")
-  await page.waitForLoadState("networkidle")
+  await waitForPlaygroundReady(page)
   await page.keyboard.press("ControlOrMeta+KeyK")
   await expect(
     page.getByRole("dialog", { name: /command palette/i }),
@@ -90,7 +91,7 @@ test.describe("ChatCenteredShell resize chrome", () => {
       }
     }, STORAGE_KEY)
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
     // Open both panes so handles render.
     const sessions = page.getByRole("button", { name: /sessions/i })
     if (await sessions.isVisible().catch(() => false)) await sessions.click()

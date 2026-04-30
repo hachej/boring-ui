@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { waitForPlaygroundReady } from "./helpers"
 
 /**
  * Regression: the workspace-playground deliberately runs WITHOUT
@@ -35,7 +36,7 @@ test.describe("workspace-playground auth-free boot", () => {
     })
 
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
     // Idle long enough for any deferred AuthProvider / ConfigProvider
     // useEffects to fire.
     await page.waitForTimeout(1500)
@@ -50,7 +51,7 @@ test.describe("workspace-playground auth-free boot", () => {
     page,
   }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
     await page.waitForTimeout(1500)
 
     // The chat shell should be visible — appTitle "Boring" + the

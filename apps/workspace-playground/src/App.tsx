@@ -77,6 +77,8 @@ function Shell() {
     ]
   }, [showcase, sessions])
 
+  const debugMode = new URLSearchParams(globalThis.location?.search).get('debug') === '1'
+
   return (
     <ChatCenteredShell
       appTitle="Boring"
@@ -86,6 +88,7 @@ function Shell() {
       onCreateSession={sessionsStore.create}
       onDeleteSession={sessionsStore.remove}
       thinkingControl
+      debug={debugMode}
     />
   )
 }
