@@ -226,12 +226,21 @@ function validateOutputs(pluginId: string, outputs: PluginOutput[]): void {
         validateLeftTabOutput(pluginId, output, i)
         break
       case "panel":
+        if (!output.panel || typeof output.panel !== "object") {
+          fail(pluginId, `outputs[${i}].panel must be an object`)
+        }
         validatePanels(pluginId, [output.panel])
         break
       case "command":
+        if (!output.command || typeof output.command !== "object") {
+          fail(pluginId, `outputs[${i}].command must be an object`)
+        }
         validateCommands(pluginId, [output.command])
         break
       case "catalog":
+        if (!output.catalog || typeof output.catalog !== "object") {
+          fail(pluginId, `outputs[${i}].catalog must be an object`)
+        }
         validateCatalogs(pluginId, [output.catalog])
         break
       case "binding":

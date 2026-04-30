@@ -12,7 +12,20 @@ export {
   PluginError,
 } from "./shared/plugins"
 export type { PluginErrorKind, BootstrapOptions, BootstrapResult, AgentToolRegistry } from "./shared/plugins"
-export type { Plugin, PluginBinding, CatalogConfig } from "./shared/plugins"
+export type {
+  Plugin,
+  PluginBinding,
+  CatalogConfig,
+  PluginOutput,
+  LeftTabOutput,
+  LeftTabParams,
+  LeftTabComponent,
+  PanelOutput,
+  CommandOutput,
+  CatalogOutput,
+  BindingOutput,
+  AgentToolOutput,
+} from "./shared/plugins"
 export {
   CatalogRegistry,
   useCommands,
