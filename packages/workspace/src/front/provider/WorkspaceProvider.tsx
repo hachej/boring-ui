@@ -30,7 +30,7 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { bootstrap } from "../../shared/plugins/bootstrap"
 import { filesystemPlugin } from "../../plugins/filesystemPlugin"
 import { coreWorkspacePanels } from "../registry/coreRegistrations"
-import type { Plugin } from "../../shared/plugins/types"
+import type { BindingOutput, Plugin } from "../../shared/plugins/types"
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 
@@ -254,7 +254,9 @@ function WorkspacePluginBindings({ plugins }: { plugins: Plugin[] }) {
     <>
       {plugins.map((plugin) => {
         const outputBindings =
-          plugin.outputs?.filter((output) => output.type === "binding") ?? []
+          plugin.outputs?.filter(
+            (output): output is BindingOutput => output.type === "binding",
+          ) ?? []
         return [
           ...(plugin.bindings ?? []).map((Binding, index) => (
             <Binding key={`${plugin.id}:binding:${index}`} />
