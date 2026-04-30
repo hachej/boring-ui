@@ -397,7 +397,7 @@ describe('ChatPanel (shadcn)', () => {
       expect(html).not.toContain('aria-label="Agent working"')
     })
 
-    test('thinking caption shows when last message is user and streaming', () => {
+    test('working caption shows when waiting for first byte', () => {
       mockUseAgentChat.mockReturnValue({
         messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
         sendMessage: mockSendMessage,
@@ -406,11 +406,11 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      expect(html).toContain('data-testid="chat-thinking"')
-      expect(html).toContain('Thinking…')
+      expect(html).toContain('data-testid="chat-working"')
+      expect(html).toContain('Working…')
     })
 
-    test('thinking caption hides once assistant message exists (model replying)', () => {
+    test('working caption stays visible once assistant message exists', () => {
       mockUseAgentChat.mockReturnValue({
         messages: [
           { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
@@ -422,12 +422,11 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      // Bar still shown (still streaming), but caption gone.
       expect(html).toContain('aria-label="Agent working"')
-      expect(html).not.toContain('data-testid="chat-thinking"')
+      expect(html).toContain('data-testid="chat-working"')
     })
 
-    test('thinking caption hides when ready', () => {
+    test('working caption hides when ready', () => {
       mockUseAgentChat.mockReturnValue({
         messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
         sendMessage: mockSendMessage,
@@ -436,7 +435,7 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      expect(html).not.toContain('data-testid="chat-thinking"')
+      expect(html).not.toContain('data-testid="chat-working"')
     })
   })
 
