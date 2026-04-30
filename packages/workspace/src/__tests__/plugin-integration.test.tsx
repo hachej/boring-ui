@@ -258,17 +258,19 @@ describe("WorkspaceProvider — plugin integration", () => {
 })
 
 describe("makeStaticDataPlugin", () => {
-  it("returns a Plugin with one panel and one catalog", () => {
+  it("returns a Plugin with one left-tab output and one catalog", () => {
     const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
     expect(plugin.id).toBe("static-data")
     expect(plugin.label).toBe("Data")
-    expect(plugin.panels).toHaveLength(1)
+    expect(plugin.outputs).toHaveLength(1)
     expect(plugin.catalogs).toHaveLength(1)
   })
 
-  it("panel id is ${id}-tab", () => {
+  it("left-tab output id is ${id}-tab", () => {
     const plugin = makeStaticDataPlugin({ id: "metrics", adapter: stubAdapter })
-    expect(plugin.panels![0].id).toBe("metrics-tab")
+    expect(plugin.outputs![0]).toEqual(
+      expect.objectContaining({ type: "left-tab", id: "metrics-tab" }),
+    )
   })
 
   it("catalog id matches plugin id", () => {
@@ -280,20 +282,25 @@ describe("makeStaticDataPlugin", () => {
     const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
     expect(plugin.id).toBe("static-data")
     expect(plugin.label).toBe("Data")
-    expect(plugin.panels![0].title).toBe("Data")
+    expect(plugin.outputs![0]).toEqual(
+      expect.objectContaining({ type: "left-tab", title: "Data" }),
+    )
   })
 
   it("uses custom label", () => {
     const plugin = makeStaticDataPlugin({ adapter: stubAdapter, label: "Series" })
     expect(plugin.label).toBe("Series")
-    expect(plugin.panels![0].title).toBe("Series")
+    expect(plugin.outputs![0]).toEqual(
+      expect.objectContaining({ type: "left-tab", title: "Series" }),
+    )
     expect(plugin.catalogs![0].label).toBe("Series")
   })
 
-  it("panel has placement left-tab and source app", () => {
+  it("left-tab output has type left-tab and source app", () => {
     const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
-    expect(plugin.panels![0].placement).toBe("left-tab")
-    expect(plugin.panels![0].source).toBe("app")
+    expect(plugin.outputs![0]).toEqual(
+      expect.objectContaining({ type: "left-tab", source: "app" }),
+    )
   })
 
   it("catalog onSelect falls back to noop when onActivate is not provided", () => {
