@@ -85,7 +85,7 @@ export function WorkbenchLeftPane({
     }
     return next
   }, [leftTabPanels])
-  const [tab, setTab] = useState<WorkbenchLeftTab>(defaultTab)
+  const [tab, setTab] = useState<WorkbenchLeftTab>(defaultTab ?? "")
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "files")
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")

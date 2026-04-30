@@ -785,7 +785,7 @@ export interface FileTreePaneParams extends LeftTabParams {
   rootDir?: string
   searchQuery?: string
   query?: string
-  bridge?: WorkspaceBridge
+  bridge?: unknown
   chromeless?: boolean
 }
 
@@ -814,7 +814,7 @@ export function FileTreePane({
   className,
 }: FileTreePaneProps) {
   const effectiveRootDir = params?.rootDir ?? rootDir
-  const effectiveBridge = params?.bridge ?? bridge
+  const effectiveBridge = (params?.bridge as WorkspaceBridge | undefined) ?? bridge
   const effectiveChromeless = params?.chromeless ?? chromeless
   const externalSearchQuery =
     params?.searchQuery ?? params?.query ?? controlledSearchQuery
