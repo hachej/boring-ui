@@ -15,21 +15,25 @@ describe("filesystemPlugin", () => {
     expect(filesystemPlugin.agentTools).toBeUndefined()
   })
 
-  it("registers 3 panels: files, code-editor, markdown-editor", () => {
-    expect(filesystemPlugin.panels).toHaveLength(3)
+  it("registers editor panels and a files left-tab output", () => {
+    expect(filesystemPlugin.outputs).toHaveLength(1)
+    expect(filesystemPlugin.outputs![0]).toEqual(
+      expect.objectContaining({
+        type: "left-tab",
+        id: "files",
+        title: "Files",
+        source: "builtin",
+      }),
+    )
+    expect(filesystemPlugin.panels).toHaveLength(2)
     const ids = filesystemPlugin.panels!.map((p) => p.id)
-    expect(ids).toEqual(["files", "code-editor", "markdown-editor"])
+    expect(ids).toEqual(["code-editor", "markdown-editor"])
   })
 
   it("all panels have source 'builtin'", () => {
     for (const panel of filesystemPlugin.panels!) {
       expect(panel.source).toBe("builtin")
     }
-  })
-
-  it("files panel has placement 'left-tab'", () => {
-    const files = filesystemPlugin.panels!.find((p) => p.id === "files")!
-    expect(files.placement).toBe("left-tab")
   })
 
   it("code-editor panel covers common file extensions", () => {

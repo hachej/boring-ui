@@ -5,6 +5,7 @@ export const CLIENT_FILTER_THRESHOLD = 5000
 export const DEFAULT_TREE_IGNORE: ReadonlyArray<string | RegExp> = [
   "node_modules",
   ".git",
+  ".boring-agent",
   "dist",
   "test-results",
   /^\.tsbuildinfo/,
