@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { Workspace } from '../../../shared/workspace'
+import { withWorkspacePythonEnv } from '../workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
@@ -38,6 +39,7 @@ function appendOutput(
   state.capturedBytes += chunk.length
   onChunk?.(new Uint8Array(chunk))
 }
+
 
 function terminateProcess(
   child: ReturnType<typeof spawn>,
@@ -81,12 +83,13 @@ export function createDirectSandbox(): Sandbox {
       const start = Date.now()
       const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
       const maxOutputBytes = opts?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
-      const cwd = opts?.cwd ?? workspace.root
+      const workspaceRoot = workspace.root
+      const cwd = opts?.cwd ?? workspaceRoot
 
       return await new Promise((resolve, reject) => {
         const child = spawn(cmd, {
           cwd,
-          env: { ...process.env, ...opts?.env },
+          env: withWorkspacePythonEnv({ workspaceRoot, env: opts?.env }),
           shell: true,
           windowsHide: true,
           detached: process.platform !== 'win32',

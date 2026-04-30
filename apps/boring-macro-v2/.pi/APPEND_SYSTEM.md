@@ -13,8 +13,42 @@ user explore, query, transform, and visualise economic time series.
 - Use `execute_sql` for SELECT/WITH/EXPLAIN/DESCRIBE/SHOW. Read-only.
 - Use `macro_search` for catalog keyword search.
 - Use `get_series_data` for observations of a single series.
-- Use `persist_derived_series` to write a derived series — never use SQL
-  INSERT / ALTER. The tool handles lineage correctly.
+- **Never write directly to ClickHouse** — all series writes go through `bm`.
+
+## bm CLI — primary tool for series manipulation
+
+`bm` is the workspace CLI for creating, transforming, and managing derived
+series. It is the **only** correct way to write series — never compute and
+persist observations manually.
+
+Key commands:
+- `bm run <transform-file>` — execute a transform and persist the result
+- `bm list` — list derived series in the workspace
+- `bm show <series_id>` — inspect a derived series
+- `bm delete <series_id>` — remove a derived series
+
+Always run `bm` commands via `exec_bash`. The workspace shims handle env
+vars automatically — **do not** manually export `BORING_AGENT_WORKSPACE_ROOT`.
+Raw `python`, `pip`, and `bm` all target the workspace `.venv`.
+
+## Derived-series routing rule
+
+- When the user asks to create, derive, transform, smooth, normalize,
+  difference, compare, or otherwise compute a new macro series, **use `bm`**:
+  invoke the **`macro-transform` skill** to author the transform file, then
+  run it with `bm run <file>`.
+- Do **not** compute observation arrays inline in chat and do not call any
+  direct-write tool. The `bm` CLI is always the path for persisting series.
+- For a genuine one-off quick calculation the user explicitly does not want
+  saved, you may compute in-chat — but default to `bm`.
+
+## Deck-authoring routing rule
+
+- When the user asks to create, revise, expand, or polish a slide deck,
+  briefing deck, presentation, or markdown slides, use the
+  **`macro-deck` skill first**.
+- Prefer authoring a reusable file under `deck/*.md` over dumping slide
+  content directly into chat.
 
 ## SQL guardrails
 
@@ -23,7 +57,7 @@ user explore, query, transform, and visualise economic time series.
   `units`, `popularity`.
 - ClickHouse alias-before-FINAL: `FROM timeseries AS t FINAL`, not
   `FROM timeseries FINAL t`.
-- `execute_sql` is read-only. Writes go through `persist_derived_series`.
+- `execute_sql` is read-only. Writes go through `bm`.
 
 ## Workbench panes
 
@@ -77,9 +111,13 @@ viewing.
   title.
 - Slides separated by lines containing only `---`.
 - Embed live charts with `{{TimeSeries ids="GDPC1" title="Real GDP"}}` or
-  `{{TimeSeries ids="GDPC1,UNRATE" title="Growth vs Labor"}}`.
+  `{{TimeSeries ids="GDPC1,UNRATE" title="Growth vs Labor" size="lg"}}`.
+- For several separate mini-charts on one slide, use a grid:
+  `{{TimeSeriesGrid ids="UNRATE;PAYEMS;CPIAUCSL;GDPC1" titles="Unemployment;Payrolls;CPI;GDP" columns="2" size="sm"}}`.
+- `TimeSeriesGrid` uses semicolons to split cards; each card may still
+  overlay multiple series with commas.
 - NEVER use shorthand like `{{GDPC1}}` — the parser only matches the
-  `TimeSeries` tag form above.
+  `TimeSeries` / `TimeSeriesGrid` tag forms above.
 
 ## Style
 

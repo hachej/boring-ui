@@ -9,6 +9,7 @@ import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolResult } from '../../../shared/tool'
 import type { RuntimeBundle } from '../../runtime/mode'
 import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
+import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
 import { vercelBashOps } from '../operations/vercel'
 
 function shellEscape(s: string): string {
@@ -21,6 +22,18 @@ function bwrapSpawnHook(workspaceRoot: string): BashSpawnHook {
   return (context) => ({
     ...context,
     command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
+    env: withWorkspacePythonEnv({
+      workspaceRoot,
+      env: context.env,
+      sandboxRoot: '/workspace',
+    }),
+  })
+}
+
+function directSpawnHook(workspaceRoot: string): BashSpawnHook {
+  return (context) => ({
+    ...context,
+    env: withWorkspacePythonEnv({ workspaceRoot, env: context.env }),
   })
 }
 
@@ -34,7 +47,10 @@ function bashOptionsForMode(bundle: RuntimeBundle): BashToolOptions {
         spawnHook: bwrapSpawnHook(bundle.workspace.root),
       }
     default:
-      return { operations: createLocalBashOperations() }
+      return {
+        operations: createLocalBashOperations(),
+        spawnHook: directSpawnHook(bundle.workspace.root),
+      }
   }
 }
 

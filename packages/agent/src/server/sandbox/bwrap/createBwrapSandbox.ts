@@ -8,6 +8,7 @@ import {
   KILL_GRACE_SECONDS,
   buildBwrapArgs,
 } from './buildBwrapArgs'
+import { withWorkspacePythonEnv } from '../workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = BWRAP_TIMEOUT_SECONDS * 1_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
@@ -151,8 +152,9 @@ export function createBwrapSandbox(): Sandbox {
       const start = Date.now()
       const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
       const maxOutputBytes = opts?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
-      const sandboxCwd = computeSandboxCwd(workspace.root, opts?.cwd)
-      const baseArgs = buildBwrapArgs(workspace.root)
+      const workspaceRoot = workspace.root
+      const sandboxCwd = computeSandboxCwd(workspaceRoot, opts?.cwd)
+      const baseArgs = buildBwrapArgs(workspaceRoot)
       const args = [
         ...withSandboxCwd(baseArgs, sandboxCwd),
         'bash',
@@ -162,7 +164,7 @@ export function createBwrapSandbox(): Sandbox {
 
       return await new Promise((resolve, reject) => {
         const child = spawn('bwrap', args, {
-          env: { ...process.env, ...opts?.env },
+          env: withWorkspacePythonEnv({ workspaceRoot, env: opts?.env, sandboxRoot: SANDBOX_HOME }),
           stdio: ['ignore', 'pipe', 'pipe'],
           detached: process.platform !== 'win32',
         })

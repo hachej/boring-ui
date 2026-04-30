@@ -1,4 +1,8 @@
-import { describe, expect, test, vi } from 'vitest'
+import { chmod, mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { ExecResult, Sandbox } from '../../../../shared/sandbox'
 import type { Workspace } from '../../../../shared/workspace'
@@ -35,12 +39,31 @@ function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandb
   }
 }
 
-function mockBundle(provider: string, capabilities?: string[]): RuntimeBundle {
+function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '/workspace'): RuntimeBundle {
   return {
-    workspace: mockWorkspace(),
+    workspace: mockWorkspace(workspaceRoot),
     sandbox: mockSandbox(provider, capabilities),
     fileSearch: { search: vi.fn(async () => []) },
   }
+}
+
+const tempDirs: string[] = []
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+
+async function makeTempWorkspace(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'boring-agent-bash-env-'))
+  tempDirs.push(dir)
+  await mkdir(join(dir, '.boring-agent', 'bin'), { recursive: true })
+  await mkdir(join(dir, '.venv', 'bin'), { recursive: true })
+  return dir
+}
+
+async function writeExecutable(path: string, body: string): Promise<void> {
+  await writeFile(path, body, 'utf8')
+  await chmod(path, 0o755)
 }
 
 describe('buildHarnessAgentTools', () => {
@@ -77,6 +100,33 @@ describe('buildHarnessAgentTools', () => {
     const tools = buildHarnessAgentTools(bundle)
 
     expect(tools.map((t) => t.name)).toEqual(['bash'])
+  })
+
+  test('direct bash exposes workspace bm/python/pip shims and env', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'bin', 'bm'), '#!/usr/bin/env bash\necho bm-shim\n')
+    await writeExecutable(join(workspaceRoot, '.venv', 'bin', 'python'), '#!/usr/bin/env bash\necho python-shim\n')
+    await writeExecutable(join(workspaceRoot, '.venv', 'bin', 'pip'), '#!/usr/bin/env bash\necho pip-shim\n')
+
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    const tools = buildHarnessAgentTools(bundle)
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      {
+        command:
+          'bm; python; pip; printf "%s\\n%s\\n" "$BORING_AGENT_WORKSPACE_ROOT" "$VIRTUAL_ENV"',
+        timeout: 10,
+      },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-direct-env' },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.content[0].text).toContain('bm-shim')
+    expect(result.content[0].text).toContain('python-shim')
+    expect(result.content[0].text).toContain('pip-shim')
+    expect(result.content[0].text).toContain(workspaceRoot)
+    expect(result.content[0].text).toContain(join(workspaceRoot, '.venv'))
   })
 
   test('vercel-sandbox bash forwards to sandbox.exec', async () => {

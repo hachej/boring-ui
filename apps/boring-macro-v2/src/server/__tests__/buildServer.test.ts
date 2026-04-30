@@ -1,3 +1,6 @@
+import { mkdtemp, readFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { createRequire } from "node:module"
 import { describe, expect, it } from "vitest"
 import { buildServer } from "../index"
@@ -11,10 +14,25 @@ describe("buildServer", () => {
   })
 
   it("boots with workspace UI bridge routes wired", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-macro-workspace-"))
     const { app } = await buildServer({
       logger: false,
-      workspaceRoot: process.cwd(),
+      workspaceRoot,
     })
+
+    const seededSkill = await readFile(
+      join(workspaceRoot, ".agents", "skills", "macro-transform", "SKILL.md"),
+      "utf8",
+    )
+    const deckSkill = await readFile(
+      join(workspaceRoot, ".agents", "skills", "macro-deck", "SKILL.md"),
+      "utf8",
+    )
+    expect(seededSkill).toContain("name: macro-transform")
+    expect(deckSkill).toContain("name: macro-deck")
+    await expect(
+      readFile(join(workspaceRoot, ".pi", "skills", "macro-transform", "SKILL.md"), "utf8"),
+    ).rejects.toThrow()
 
     try {
       const state = await app.inject({
@@ -53,5 +71,5 @@ describe("buildServer", () => {
     } finally {
       await app.close()
     }
-  })
+  }, 60_000)
 })

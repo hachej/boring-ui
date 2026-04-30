@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { PaneProps } from "@boring/workspace"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -35,6 +35,22 @@ const fmtNumber = (v: number | null | undefined): string =>
   formatSeriesValue(v, { emptyLabel: "—" })
 
 const padIndex = (n: number): string => String(n).padStart(2, "0")
+type ChartSize = "sm" | "md" | "lg"
+
+function normalizeChartSize(value?: string): ChartSize {
+  return value === "sm" || value === "lg" ? value : "md"
+}
+
+function chartHeight(size: ChartSize, compact = false): string {
+  if (compact) {
+    if (size === "lg") return "220px"
+    if (size === "sm") return "140px"
+    return "180px"
+  }
+  if (size === "lg") return "clamp(300px, 42cqw, 460px)"
+  if (size === "sm") return "clamp(180px, 28cqw, 280px)"
+  return "clamp(240px, 34cqw, 380px)"
+}
 
 function changeBadge(obs: Observation[]): { abs: number; pct: number | null; latest: number | null } | null {
   const vals = obs.filter((o): o is Observation & { value: number } => o.value != null)
@@ -46,7 +62,17 @@ function changeBadge(obs: Observation[]): { abs: number; pct: number | null; lat
   return { abs, pct, latest: last }
 }
 
-function MiniTimeSeries({ ids, title }: { ids: string[]; title?: string }) {
+function MiniTimeSeries({
+  ids,
+  title,
+  size = "md",
+  compact = false,
+}: {
+  ids: string[]
+  title?: string
+  size?: ChartSize
+  compact?: boolean
+}) {
   const [series, setSeries] = useState<SeriesPayload[]>([])
   useEffect(() => {
     let cancelled = false
@@ -77,8 +103,13 @@ function MiniTimeSeries({ ids, title }: { ids: string[]; title?: string }) {
   }, [series, ids.join(",")])
 
   return (
-    <figure className="not-prose my-6">
-      <figcaption className="mb-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3">
+    <figure
+      className={compact
+        ? "not-prose m-0 flex h-full flex-col rounded-xl border border-border/70 bg-background/55 p-4"
+        : "not-prose my-6"
+      }
+    >
+      <figcaption className={`flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3 ${compact ? "mb-3" : "mb-5"}`}>
         <div className="flex flex-col gap-1">
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--deck-accent)]">
             Figure
@@ -131,7 +162,7 @@ function MiniTimeSeries({ ids, title }: { ids: string[]; title?: string }) {
         className="relative"
         style={{
           width: "100%",
-          height: "clamp(240px, 38cqw, 440px)",
+          height: chartHeight(size, compact),
         }}
       >
         <ResponsiveContainer>
@@ -173,7 +204,7 @@ function MiniTimeSeries({ ids, title }: { ids: string[]; title?: string }) {
   )
 }
 
-const TIMESERIES_RX = /\{\{TimeSeries\s+([^}]+?)\}\}/g
+const WIDGET_RX = /\{\{(TimeSeriesGrid|TimeSeries)\s+([^}]+?)\}\}/g
 
 function parseAttrs(raw: string): Record<string, string> {
   const out: Record<string, string> = {}
@@ -189,27 +220,77 @@ interface SegmentText {
   type: "text"
   value: string
 }
-interface SegmentWidget {
+interface SegmentTimeSeries {
   type: "timeseries"
   ids: string[]
   title?: string
+  size: ChartSize
 }
-type Segment = SegmentText | SegmentWidget
+
+interface SegmentTimeSeriesGrid {
+  type: "timeseries-grid"
+  items: Array<{ ids: string[]; title?: string }>
+  columns: number
+  size: ChartSize
+}
+
+type Segment = SegmentText | SegmentTimeSeries | SegmentTimeSeriesGrid
+
+function parseIds(raw: string | undefined, separator = ","): string[] {
+  return (raw ?? "")
+    .split(separator)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function clampColumns(raw: string | undefined): number {
+  const n = Number.parseInt(raw ?? "", 10)
+  if (!Number.isFinite(n)) return 2
+  return Math.max(1, Math.min(4, n))
+}
+
+function parseGridItems(attrs: Record<string, string>): Array<{ ids: string[]; title?: string }> {
+  const groups = parseIds(attrs.ids, ";")
+  const titles = parseIds(attrs.titles, ";")
+  return groups
+    .map((group, i) => ({
+      ids: parseIds(group, ","),
+      title: titles[i] || undefined,
+    }))
+    .filter((item) => item.ids.length > 0)
+}
 
 function tokenize(markdown: string): Segment[] {
   const segs: Segment[] = []
   let last = 0
-  for (const m of markdown.matchAll(TIMESERIES_RX)) {
+  for (const m of markdown.matchAll(WIDGET_RX)) {
     if (m.index === undefined) continue
     if (m.index > last) {
       segs.push({ type: "text", value: markdown.slice(last, m.index) })
     }
-    const attrs = parseAttrs(m[1])
-    const ids = (attrs.ids ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-    segs.push({ type: "timeseries", ids, title: attrs.title })
+    const kind = m[1]
+    const attrs = parseAttrs(m[2])
+    if (kind === "TimeSeriesGrid") {
+      const items = parseGridItems(attrs)
+      if (items.length > 0) {
+        segs.push({
+          type: "timeseries-grid",
+          items,
+          columns: clampColumns(attrs.columns),
+          size: normalizeChartSize(attrs.size),
+        })
+      }
+    } else {
+      const ids = parseIds(attrs.ids)
+      if (ids.length > 0) {
+        segs.push({
+          type: "timeseries",
+          ids,
+          title: attrs.title,
+          size: normalizeChartSize(attrs.size),
+        })
+      }
+    }
     last = m.index + m[0].length
   }
   if (last < markdown.length) {
@@ -256,6 +337,35 @@ function parseFrontmatter(markdown: string): ParsedDeck {
     }
   }
   return { title, body: lines.join("\n") }
+}
+
+function MiniTimeSeriesGrid({
+  items,
+  columns,
+  size,
+}: {
+  items: Array<{ ids: string[]; title?: string }>
+  columns: number
+  size: ChartSize
+}) {
+  return (
+    <div className="not-prose my-6">
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      >
+        {items.map((item, i) => (
+          <MiniTimeSeries
+            key={`${item.ids.join(",")}-${i}`}
+            ids={item.ids}
+            title={item.title}
+            size={size}
+            compact
+          />
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function splitSlides(markdown: string): string[] {
@@ -536,7 +646,7 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
             >
               <article
                 key={activeSlide}
-                className="slide-canvas relative w-full overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground shadow-[0_1px_0_oklch(from_var(--foreground)_l_c_h/0.04),0_24px_60px_-30px_oklch(from_var(--foreground)_l_c_h/0.45)]"
+                className="slide-canvas relative aspect-[16/9] w-full overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground shadow-[0_1px_0_oklch(from_var(--foreground)_l_c_h/0.04),0_24px_60px_-30px_oklch(from_var(--foreground)_l_c_h/0.45)]"
                 style={{ containerType: "inline-size", containerName: "deck" }}
               >
                 {current?.kind === "cover" ? (
@@ -677,6 +787,50 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
 /* Slide views                                                                */
 /* -------------------------------------------------------------------------- */
 
+function FitSlideContent({ children }: { children: React.ReactNode }) {
+  const frameRef = useRef<HTMLDivElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  const [scale, setScale] = useState(1)
+
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    const content = contentRef.current
+    if (!frame || !content) return
+
+    const measure = () => {
+      const frameWidth = frame.clientWidth
+      const frameHeight = frame.clientHeight
+      const contentWidth = content.scrollWidth
+      const contentHeight = content.scrollHeight
+      if (!frameWidth || !frameHeight || !contentWidth || !contentHeight) return
+      const next = Math.min(1, frameWidth / contentWidth, frameHeight / contentHeight)
+      setScale((prev) => (Math.abs(prev - next) < 0.01 ? prev : next))
+    }
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(frame)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [children])
+
+  return (
+    <div ref={frameRef} className="relative min-h-0 flex-1 overflow-hidden">
+      <div
+        ref={contentRef}
+        className="origin-top-left"
+        style={{
+          transform: `scale(${scale})`,
+          width: `${100 / scale}%`,
+          height: `${100 / scale}%`,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function CoverSlideView({
   title,
   fileName,
@@ -687,7 +841,7 @@ function CoverSlideView({
   total: number
 }) {
   return (
-    <div className="relative flex min-h-[min(60vh,560px)] flex-col justify-between px-6 py-7 sm:px-10 sm:py-10">
+    <div className="relative flex h-full flex-col justify-between px-6 py-7 sm:px-10 sm:py-10">
       <div className="flex items-baseline justify-between gap-4">
         <span className="font-mono text-[10px] uppercase tracking-[0.28em] text-[color:var(--deck-accent)]">
           Macro · Deck
@@ -736,7 +890,7 @@ function BodySlideView({
 }) {
   const segments = useMemo(() => tokenize(markdown), [markdown])
   return (
-    <div className="relative flex min-h-[min(60vh,560px)] flex-col gap-5 px-6 py-6 sm:px-10 sm:py-8">
+    <div className="relative flex h-full flex-col gap-5 px-6 py-6 sm:px-10 sm:py-8">
       <div className="flex items-center justify-between gap-4">
         <span className="flex items-center gap-3">
           <span
@@ -752,17 +906,26 @@ function BodySlideView({
         </span>
       </div>
 
-      <div className="deck-prose flex-1">
-        {segments.map((seg, i) =>
-          seg.type === "text" ? (
-            <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
-              {seg.value}
-            </ReactMarkdown>
-          ) : (
-            <MiniTimeSeries key={i} ids={seg.ids} title={seg.title} />
-          ),
-        )}
-      </div>
+      <FitSlideContent>
+        <div className="deck-prose pr-1">
+          {segments.map((seg, i) =>
+            seg.type === "text" ? (
+              <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
+                {seg.value}
+              </ReactMarkdown>
+            ) : seg.type === "timeseries" ? (
+              <MiniTimeSeries key={i} ids={seg.ids} title={seg.title} size={seg.size} />
+            ) : (
+              <MiniTimeSeriesGrid
+                key={i}
+                items={seg.items}
+                columns={seg.columns}
+                size={seg.size}
+              />
+            ),
+          )}
+        </div>
+      </FitSlideContent>
 
       <style>{`
         .deck-prose { color: var(--foreground); }
