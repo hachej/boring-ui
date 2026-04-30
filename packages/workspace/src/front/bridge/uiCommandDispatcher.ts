@@ -6,13 +6,7 @@
  * polling transports in `uiCommandStream.ts`.
  */
 import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surface/SurfaceShell"
-
-export interface UiCommand {
-  v?: number
-  seq?: number
-  kind: string
-  params: Record<string, unknown>
-}
+import type { UiCommand } from "./types"
 
 export interface DispatchContext {
   /**

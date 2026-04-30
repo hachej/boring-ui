@@ -17,9 +17,11 @@
  * The dispatcher is kept in a separate module (`uiCommandDispatcher.ts`)
  * so it can be exercised in isolation.
  */
-import { dispatchUiCommand, type DispatchContext, type UiCommand } from "./uiCommandDispatcher"
+import { dispatchUiCommand, type DispatchContext } from "./uiCommandDispatcher"
+import type { UiCommand } from "./types"
 
-export type { DispatchContext, UiCommand } from "./uiCommandDispatcher"
+export type { DispatchContext } from "./uiCommandDispatcher"
+export type { UiCommand } from "./types"
 export { dispatchUiCommand } from "./uiCommandDispatcher"
 
 export interface StreamOptions {

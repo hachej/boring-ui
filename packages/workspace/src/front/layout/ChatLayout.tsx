@@ -1,5 +1,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
 import { cn } from "../lib/utils"
+import { dispatchUiCommand, type DispatchContext } from "../bridge"
+import { events } from "../events"
+import type { SurfaceShellApi } from "../chrome/artifact-surface/SurfaceShell"
 import type { LayoutConfig, GroupConfig } from "../dock"
 import { useCommandRegistry, useRegistry } from "../registry"
 import type { PaneProps } from "../registry/types"
@@ -80,6 +83,9 @@ export function ChatLayout(props: ChatLayoutProps) {
   const effectiveNavWidth = clamp(navWidth, 200, 360)
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
   const effectiveSurfaceWidth = clamp(surfaceWidth, 480, surfaceMax)
+  const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
+  const uiIsWorkbenchOpen = getFunction<() => boolean>(props.centerParams, "isWorkbenchOpen")
+  const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
 
   useEffect(() => {
     const pluginId = "workspace:chat-layout"
@@ -155,6 +161,18 @@ export function ChatLayout(props: ChatLayoutProps) {
     props.onOpenNav,
     props.onOpenSurface,
   ])
+
+  useEffect(() => {
+    if (!uiSurface || !uiIsWorkbenchOpen || !uiOpenWorkbench) return
+    const ctx: DispatchContext = {
+      surface: uiSurface,
+      isWorkbenchOpen: uiIsWorkbenchOpen,
+      openWorkbench: uiOpenWorkbench,
+    }
+    return events.on("ui:command", ({ command }) => {
+      dispatchUiCommand(command, ctx)
+    })
+  }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench])
 
   return (
     <div className={cn("relative flex h-full min-h-0 w-full overflow-hidden bg-background", props.className)}>
@@ -318,9 +336,16 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
   )
 }
 
-function getCallback(params: Record<string, unknown> | undefined, key: string): (() => void) | undefined {
+function getFunction<T extends (...args: unknown[]) => unknown>(
+  params: Record<string, unknown> | undefined,
+  key: string,
+): T | undefined {
   const value = params?.[key]
-  return typeof value === "function" ? value as () => void : undefined
+  return typeof value === "function" ? value as T : undefined
+}
+
+function getCallback(params: Record<string, unknown> | undefined, key: string): (() => void) | undefined {
+  return getFunction<() => void>(params, key)
 }
 
 function focusAgentComposer(): void {

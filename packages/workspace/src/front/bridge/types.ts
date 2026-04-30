@@ -6,6 +6,13 @@ export interface CommandResult {
   error?: { code: string; message: string }
 }
 
+export interface UiCommand {
+  v?: number
+  seq?: number
+  kind: string
+  params: Record<string, unknown>
+}
+
 export interface BridgeEventMap {
   "panel:opened": { panelId: string; params: Record<string, unknown> }
   "panel:closed": { panelId: string }

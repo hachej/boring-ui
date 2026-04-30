@@ -1,13 +1,16 @@
+import { useEffect } from "react"
 import { definePlugin } from "../../shared/plugins/definePlugin"
+import { postUiCommand } from "../../front/bridge"
+import { useDataClient } from "../../front/data"
+import { useCatalogRegistry } from "../../front/registry"
 import { FileTreePane } from "./file-tree/FileTreeView"
 import { CodeEditorPane } from "./code-editor/CodeEditorPane"
 import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
-import type { ExplorerRow } from "../../front/components/DataExplorer/types"
 import type { Plugin } from "../../shared/plugins/types"
 import {
   createFilesCatalog,
+  FILES_CATALOG_ID,
   FILESYSTEM_PLUGIN_ID,
-  type FilesCatalogClient,
 } from "./catalog"
 
 // Re-export shared file pane utilities for external use
@@ -48,27 +51,39 @@ const filesystemPanels: Plugin["panels"] = [
   },
 ]
 
-export interface CreateFilesystemPluginOptions {
-  filesClient?: FilesCatalogClient
-  onOpenFile?: (path: string, row: ExplorerRow) => void
+function FilesystemCatalogBinding() {
+  const client = useDataClient()
+  const catalogRegistry = useCatalogRegistry()
+
+  useEffect(() => {
+    const existing = catalogRegistry.get(FILES_CATALOG_ID)
+    if (existing && existing.pluginId !== FILESYSTEM_PLUGIN_ID) return
+
+    const catalog = createFilesCatalog({
+      client,
+      onSelect: (path) => {
+        postUiCommand({ kind: "openFile", params: { path } })
+      },
+    })
+
+    catalogRegistry.register(catalog, FILESYSTEM_PLUGIN_ID)
+
+    return () => {
+      if (catalogRegistry.get(FILES_CATALOG_ID)?.pluginId === FILESYSTEM_PLUGIN_ID) {
+        catalogRegistry.unregister(FILES_CATALOG_ID)
+      }
+    }
+  }, [catalogRegistry, client])
+
+  return null
 }
 
-export function createFilesystemPlugin({
-  filesClient,
-  onOpenFile,
-}: CreateFilesystemPluginOptions = {}): Plugin {
+export function createFilesystemPlugin(): Plugin {
   return definePlugin({
     id: FILESYSTEM_PLUGIN_ID,
     label: "Filesystem",
     panels: filesystemPanels,
-    catalogs: filesClient
-      ? [
-          createFilesCatalog({
-            client: filesClient,
-            onSelect: onOpenFile,
-          }),
-        ]
-      : undefined,
+    bindings: [FilesystemCatalogBinding],
   })
 }
 

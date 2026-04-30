@@ -4,11 +4,13 @@ import userEvent from "@testing-library/user-event"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
 import { RegistryProvider } from "../../registry"
+import { events, userMeta } from "../../events"
 import { useCommands } from "../../plugin/useCommands"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
+import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
 
 // Verify barrel exports work
 import {
@@ -387,6 +389,36 @@ describe("ChatLayout component", () => {
       expect(screen.getByTestId("focus-agent-title").textContent).toBe("Focus Agent Composer")
       expect(screen.getByTestId("new-agent-title").textContent).toBe("New Agent Chat")
     })
+  })
+
+  it("dispatches plugin UI commands through the workbench contract", () => {
+    const openFile = vi.fn()
+    const surface: SurfaceShellApi = {
+      openFile,
+      openPanel: vi.fn(),
+      getSnapshot: () => ({ openTabs: [], activeTab: null }),
+    }
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        centerParams={{
+          getSurface: () => surface,
+          isWorkbenchOpen: () => true,
+          openWorkbench: vi.fn(),
+        }}
+      />,
+      ["chat", "session-list"],
+    )
+
+    act(() => {
+      events.emit("ui:command", {
+        ...userMeta(),
+        command: { kind: "openFile", params: { path: "src/App.tsx" } },
+      })
+    })
+
+    expect(openFile).toHaveBeenCalledWith("src/App.tsx")
   })
 
   it("passes className", () => {

@@ -12,7 +12,7 @@ export {
   PluginError,
 } from "./shared/plugins"
 export type { PluginErrorKind, BootstrapOptions, BootstrapResult, AgentToolRegistry } from "./shared/plugins"
-export type { Plugin, CatalogConfig } from "./shared/plugins"
+export type { Plugin, PluginBinding, CatalogConfig } from "./shared/plugins"
 export {
   CatalogRegistry,
   useCommands,
@@ -126,6 +126,8 @@ export {
 // Command Palette
 export { CommandPalette } from "./front/components/CommandPalette"
 export type { CommandPaletteProps } from "./front/components/CommandPalette"
+export { WorkspaceLoadingState } from "./front/components/WorkspaceLoadingState"
+export type { WorkspaceLoadingStateProps } from "./front/components/WorkspaceLoadingState"
 
 // Panes (dockview wrappers — require WorkspaceProvider)
 export { ArtifactSurfacePane } from "./front/chrome/artifact-surface/ArtifactSurfacePane"
@@ -175,8 +177,11 @@ export type {
 // Bridge
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
+export { postUiCommand } from "./front/bridge"
 export type { BridgeClient, BridgeClientOptions, UIStatePut } from "./front/bridge"
 export type {
+  DispatchContext,
+  UiCommand,
   WorkspaceBridge,
   BridgeEventMap,
   CommandResult,

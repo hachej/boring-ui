@@ -1,9 +1,11 @@
 export { createBridge } from "./createBridge"
 export { createBridgeClient } from "./client"
 export { dispatchUiCommand } from "./uiCommandDispatcher"
+export { postUiCommand } from "./uiCommandBus"
 export { startUiCommandStream } from "./uiCommandStream"
 export type { BridgeClient, BridgeClientOptions, UIStatePut } from "./client"
-export type { DispatchContext, UiCommand } from "./uiCommandDispatcher"
+export type { DispatchContext } from "./uiCommandDispatcher"
+export type { UiCommand } from "./types"
 export type {
   WorkspaceBridge,
   BridgeEventMap,

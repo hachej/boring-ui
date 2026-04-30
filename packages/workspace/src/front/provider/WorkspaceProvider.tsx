@@ -24,14 +24,11 @@ import { createBridge } from "../bridge/createBridge"
 import { createBridgeClient, type BridgeClient } from "../bridge/client"
 import { CommandPalette } from "../components/CommandPalette"
 import { DataProvider } from "../data/DataProvider"
-import { FetchClient } from "../data/fetchClient"
+import { events } from "../events"
 import { Toaster } from "../toast"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { bootstrap } from "../../shared/plugins/bootstrap"
-import {
-  createFilesystemPlugin,
-  filesystemPlugin,
-} from "../../plugins/filesystemPlugin"
+import { filesystemPlugin } from "../../plugins/filesystemPlugin"
 import { coreWorkspacePanels } from "../registry/coreRegistrations"
 import type { Plugin } from "../../shared/plugins/types"
 import type { CommandConfig, PanelConfig } from "../registry/types"
@@ -252,6 +249,31 @@ function WorkspaceCatalogBindings({
   return null
 }
 
+function WorkspacePluginBindings({ plugins }: { plugins: Plugin[] }) {
+  return (
+    <>
+      {plugins.map((plugin) =>
+        (plugin.bindings ?? []).map((Binding, index) => (
+          <Binding key={`${plugin.id}:binding:${index}`} />
+        )),
+      )}
+    </>
+  )
+}
+
+function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) => void }) {
+  useEffect(() => {
+    if (!onOpenFile) return
+    return events.on("ui:command", ({ command }) => {
+      if (command.kind !== "openFile") return
+      const path = command.params.path
+      if (typeof path === "string") onOpenFile(path)
+    })
+  }, [onOpenFile])
+
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // WorkspaceProvider props
 // ---------------------------------------------------------------------------
@@ -333,10 +355,6 @@ export function WorkspaceProvider({
   authHeadersRef.current = authHeaders
   const onAuthErrorRef = useRef(onAuthError)
   onAuthErrorRef.current = onAuthError
-  const dataClient = useMemo(
-    () => new FetchClient({ apiBaseUrl, authHeaders, onAuthError, timeout: apiTimeout }),
-    [apiBaseUrl, authHeaders, onAuthError, apiTimeout],
-  )
 
   useEffect(() => {
     return () => {
@@ -373,7 +391,7 @@ export function WorkspaceProvider({
     }
   }, [bridgeEndpoint, store])
 
-  const { panelRegistry, commandRegistry, catalogRegistry, pluginMetas } = useMemo(() => {
+  const { panelRegistry, commandRegistry, catalogRegistry, pluginMetas, pluginsWithBindings } = useMemo(() => {
     const pr = new PanelRegistry(capabilities)
     const cr = new CommandRegistry()
     const cat = new CatalogRegistry()
@@ -386,12 +404,7 @@ export function WorkspaceProvider({
     const excludedDefaults = new Set(excludeDefaults ?? [])
     const defaultPlugins: Plugin[] = excludedDefaults.has(filesystemPlugin.id)
       ? []
-      : [
-          createFilesystemPlugin({
-            filesClient: dataClient,
-            onOpenFile,
-          }),
-        ]
+      : [filesystemPlugin]
     const allPlugins = [...defaultPlugins, ...(plugins ?? [])]
 
     bootstrap({
@@ -415,8 +428,14 @@ export function WorkspaceProvider({
       }
     }
 
-    return { panelRegistry: pr, commandRegistry: cr, catalogRegistry: cat, pluginMetas: metas }
-  }, [capabilities, chatPanel, plugins, excludeDefaults, panels, dataClient, onOpenFile])
+    return {
+      panelRegistry: pr,
+      commandRegistry: cr,
+      catalogRegistry: cat,
+      pluginMetas: metas,
+      pluginsWithBindings: allPlugins,
+    }
+  }, [capabilities, chatPanel, plugins, excludeDefaults, panels])
 
   const onThemeChangeRef = useRef(onThemeChange)
   onThemeChangeRef.current = onThemeChange
@@ -474,7 +493,6 @@ export function WorkspaceProvider({
             authHeaders={authHeaders}
             onAuthError={onAuthError}
             timeout={apiTimeout}
-            client={dataClient}
           >
             <PluginErrorProvider>
               <RegistryProvider
@@ -482,6 +500,8 @@ export function WorkspaceProvider({
                 commandRegistry={commandRegistry}
                 catalogRegistry={catalogRegistry}
               >
+                <WorkspacePluginBindings plugins={pluginsWithBindings} />
+                <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings
                   catalogs={catalogs}

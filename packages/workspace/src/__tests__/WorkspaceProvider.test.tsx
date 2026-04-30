@@ -129,10 +129,10 @@ describe("WorkspaceProvider — context composition", () => {
     })
   })
 
-  it("provides useCatalogRegistry with default filesystem catalog", () => {
+  it("provides useCatalogRegistry with default filesystem catalog", async () => {
     function Inspector() {
-      const catalogs = useCatalogRegistry()
-      return <div data-testid="catalogs">{String(catalogs.list().length)}</div>
+      const catalogs = useCatalogs()
+      return <div data-testid="catalogs">{String(catalogs.length)}</div>
     }
 
     render(
@@ -141,7 +141,9 @@ describe("WorkspaceProvider — context composition", () => {
       </WorkspaceProvider>,
     )
 
-    expect(screen.getByTestId("catalogs").textContent).toBe("1")
+    await waitFor(() => {
+      expect(screen.getByTestId("catalogs").textContent).toBe("1")
+    })
   })
 
   it("excludeDefaults removes filesystem catalog", () => {
@@ -268,7 +270,7 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId("catalog-ids").textContent).toBe("files,reports")
+      expect(screen.getByTestId("catalog-ids").textContent!.split(",").sort()).toEqual(["files", "reports"])
     })
   })
 
@@ -309,7 +311,7 @@ describe("WorkspaceProvider — panel registration", () => {
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/files/search?q=*app*&limit=10",
+      "/api/v1/files/search?q=*%5BAa%5D%5BPp%5D%5BPp%5D*&limit=10",
       expect.objectContaining({ method: "GET" }),
     )
   })
@@ -335,10 +337,7 @@ describe("WorkspaceProvider — panel registration", () => {
       result.current.get("files")!.onSelect({ id: "/src/App.tsx", title: "App.tsx" })
     })
 
-    expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx", {
-      id: "/src/App.tsx",
-      title: "App.tsx",
-    })
+    expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx")
   })
 
   it("capabilities filter removes panels missing required capabilities", () => {
