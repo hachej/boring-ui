@@ -21,6 +21,10 @@ export class CommandRegistry {
     if (changed) this.emit()
   }
 
+  unregisterCommand(id: string): void {
+    if (this.commands.delete(id)) this.emit()
+  }
+
   getCommand(id: string): CommandConfig | undefined {
     return this.commands.get(id)
   }

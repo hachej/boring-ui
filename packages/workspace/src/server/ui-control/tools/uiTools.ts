@@ -13,7 +13,7 @@
 import { access } from "node:fs/promises"
 import { resolve, isAbsolute, relative } from "node:path"
 import type { AgentTool, ToolResult } from "@boring/agent/shared"
-import type { UiBridge, UiCommand } from "../shared/ui-bridge"
+import type { UiBridge, UiCommand } from "../../../shared/ui-bridge"
 
 function makeError(message: string): ToolResult {
   return {

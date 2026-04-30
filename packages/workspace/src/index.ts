@@ -10,9 +10,9 @@ export {
   definePlugin,
   bootstrap,
   PluginError,
-} from "./shared/plugin"
-export type { PluginErrorKind, BootstrapOptions, BootstrapResult, AgentToolRegistry } from "./shared/plugin"
-export type { Plugin, CatalogConfig } from "./shared/plugin"
+} from "./shared/plugins"
+export type { PluginErrorKind, BootstrapOptions, BootstrapResult, AgentToolRegistry } from "./shared/plugins"
+export type { Plugin, CatalogConfig } from "./shared/plugins"
 export {
   CatalogRegistry,
   useCommands,
@@ -43,11 +43,8 @@ export { getFileIcon } from "./front/registry"
 export type {
   PanelConfig,
   PanelRegistration,
-  SyncPanelConfig,
-  LazyPanelConfig,
   CommandConfig,
   PaneProps,
-  PanelRegistryType,
 } from "./front/registry"
 
 // Dock / layout runtime
@@ -143,11 +140,10 @@ export { FileTreePane, FileTreeView } from "./plugins/filesystemPlugin/file-tree
 export type { FileTreePaneProps, FileTreeViewProps } from "./plugins/filesystemPlugin/file-tree/FileTreeView"
 export { MarkdownEditorPane } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
 export type { MarkdownEditorPaneProps } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
-export { defaultEditorPanels } from "./plugins/filesystemPlugin/defaultEditorPanels"
 export { definePanel } from "./front/registry/types"
 
 // Theme
-export { createShadcnTheme, useShadcnTheme } from "./front/theme"
+export { createShadcnTheme } from "./front/theme"
 
 // Unified event bus — typed pubsub for cross-cutting signals
 // (filesystem mutations, panel/editor/query lifecycle). See
@@ -259,13 +255,13 @@ export {
   useWorkspaceBridge,
   useWorkspaceContext,
   useWorkspaceChatPanel,
-} from "./front/WorkspaceProvider"
+} from "./front/provider"
 export type {
   WorkspaceProviderProps,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
-} from "./front/WorkspaceProvider"
+} from "./front/provider"
 
 // Store (selectors only — store itself is NOT exported)
 export { createWorkspaceStore } from "./front/store"

@@ -79,6 +79,10 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
       if (existing) {
         const prev = state.activePanel
         state.activatePanel(panelId)
+        // Ensure visibleFiles is updated even when re-activating an existing panel
+        if (!state.visibleFiles.includes(path)) {
+          state.openFile(path, panelId)
+        }
         emit("panel:activated", { panelId, previousPanelId: prev })
         return ok()
       }

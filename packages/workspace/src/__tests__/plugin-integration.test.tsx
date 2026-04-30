@@ -1,16 +1,31 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import type { ReactNode } from "react"
-import { WorkspaceProvider } from "../front/WorkspaceProvider"
+import { WorkspaceProvider } from "../front/provider"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
-import { definePlugin } from "../shared/plugin/definePlugin"
+import { definePlugin } from "../shared/plugins/definePlugin"
 import { makeStaticDataPlugin } from "../plugins/factories/makeStaticDataPlugin"
-import type { Plugin } from "../shared/plugin/types"
+import type { Plugin } from "../shared/plugins/types"
 import type { ExplorerAdapter, SearchResult } from "../front/components/DataExplorer/types"
 
 const DummyPanel = () => null
+
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function () {}
+}
+
+function fireKeydown(key: string, opts: Partial<KeyboardEventInit> = {}) {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...opts,
+  })
+  document.dispatchEvent(event)
+}
 
 let originalStorage: Storage
 beforeEach(() => {
@@ -76,6 +91,76 @@ describe("WorkspaceProvider — plugin integration", () => {
 
     expect(screen.getByTestId("has-panel").textContent).toBe("true")
     expect(screen.getByTestId("has-cmd").textContent).toBe("true")
+  })
+
+  it("package/app-provided commands appear in CommandPalette and execute", async () => {
+    const user = userEvent.setup()
+    const run = vi.fn()
+
+    render(
+      <WorkspaceProvider
+        commands={[
+          {
+            id: "user:settings",
+            title: "Account settings",
+            keywords: ["profile"],
+            pluginId: "core",
+            run,
+          },
+        ]}
+        persistenceEnabled={false}
+      >
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    fireKeydown("k", { metaKey: true })
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+    await user.type(screen.getByRole("combobox"), ">profile")
+
+    await waitFor(() => {
+      expect(screen.getByText("Account settings")).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByText("Account settings"))
+    expect(run).toHaveBeenCalledOnce()
+  })
+
+  it("plugin-provided commands appear in CommandPalette and execute", async () => {
+    const user = userEvent.setup()
+    const run = vi.fn()
+    const plugin = definePlugin({
+      id: "plugin-commands",
+      label: "Plugin Commands",
+      commands: [
+        {
+          id: "plugin.open-dashboard",
+          title: "Open Plugin Dashboard",
+          keywords: ["plugin-dashboard"],
+          shortcut: "⌘D",
+          run,
+        },
+      ],
+    })
+
+    render(
+      <WorkspaceProvider plugins={[plugin]} persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    fireKeydown("k", { metaKey: true })
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+    await user.type(screen.getByRole("combobox"), ">plugin-dashboard")
+
+    await waitFor(() => {
+      expect(screen.getByText("Open Plugin Dashboard")).toBeInTheDocument()
+    })
+    expect(screen.getByText("⌘D")).toBeInTheDocument()
+
+    await user.click(screen.getByText("Open Plugin Dashboard"))
+    expect(run).toHaveBeenCalledOnce()
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
   })
 
   it("defaults include filesystemPlugin (files, code-editor, markdown-editor panels)", () => {

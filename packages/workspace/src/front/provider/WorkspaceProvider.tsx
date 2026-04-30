@@ -12,27 +12,27 @@ import {
   type ReactNode,
 } from "react"
 import type { ChatPanelProps } from "@boring/agent"
-import { PanelRegistry } from "./registry/PanelRegistry"
-import { CommandRegistry } from "./registry/CommandRegistry"
-import { RegistryProvider, useCatalogRegistry } from "./registry/RegistryProvider"
-import { CatalogRegistry } from "./plugin/CatalogRegistry"
-import { PluginErrorProvider } from "./plugin/PluginErrorContext"
-import { PluginInspector } from "./plugin/PluginInspector"
-import { createWorkspaceStore } from "./store"
-import { bindStore, useThemePreference } from "./store/selectors"
-import { createBridge } from "./bridge/createBridge"
-import { createBridgeClient, type BridgeClient } from "./bridge/client"
-import { CommandPalette } from "./components/CommandPalette"
-import { DataProvider, useDataClient, type FetchClient } from "./data"
-import { Toaster } from "./toast"
-import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts"
-import { bootstrap } from "../shared/plugin/bootstrap"
-import { filesystemPlugin } from "../plugins/filesystemPlugin"
-import { coreWorkspacePanels } from "./registry/coreRegistrations"
-import type { Plugin } from "../shared/plugin/types"
-import type { PanelConfig } from "./registry/types"
-import type { CatalogConfig } from "../shared/plugin/types"
-import type { ExplorerRow, SearchResult } from "./components/DataExplorer/types"
+import { PanelRegistry } from "../registry/PanelRegistry"
+import { CommandRegistry } from "../registry/CommandRegistry"
+import { RegistryProvider, useCatalogRegistry, useCommandRegistry } from "../registry/RegistryProvider"
+import { CatalogRegistry } from "../plugin/CatalogRegistry"
+import { PluginErrorProvider } from "../plugin/PluginErrorContext"
+import { PluginInspector } from "../plugin/PluginInspector"
+import { createWorkspaceStore } from "../store"
+import { bindStore, useThemePreference } from "../store/selectors"
+import { createBridge } from "../bridge/createBridge"
+import { createBridgeClient, type BridgeClient } from "../bridge/client"
+import { CommandPalette } from "../components/CommandPalette"
+import { DataProvider, useDataClient, type FetchClient } from "../data"
+import { Toaster } from "../toast"
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
+import { bootstrap } from "../../shared/plugins/bootstrap"
+import { filesystemPlugin } from "../../plugins/filesystemPlugin"
+import { coreWorkspacePanels } from "../registry/coreRegistrations"
+import type { Plugin } from "../../shared/plugins/types"
+import type { CommandConfig, PanelConfig } from "../registry/types"
+import type { CatalogConfig } from "../../shared/plugins/types"
+import type { ExplorerRow, SearchResult } from "../components/DataExplorer/types"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -61,6 +61,7 @@ function emptySearchResult(): SearchResult {
 }
 
 const PROVIDER_CATALOG_SOURCE = "workspace-provider"
+const PROVIDER_COMMAND_SOURCE = "workspace-provider"
 
 function createFilesCatalog(
   client: Pick<FetchClient, "search">,
@@ -246,6 +247,24 @@ function WorkspaceShortcuts({
   return null
 }
 
+function WorkspaceCommandBindings({ commands }: { commands?: CommandConfig[] }) {
+  const commandRegistry = useCommandRegistry()
+
+  useEffect(() => {
+    if (!commands?.length) return
+    const ids = commands.map((command) => command.id)
+    for (const id of ids) commandRegistry.unregisterCommand(id)
+    for (const command of commands) {
+      commandRegistry.registerCommand({ ...command, pluginId: command.pluginId ?? PROVIDER_COMMAND_SOURCE })
+    }
+    return () => {
+      for (const id of ids) commandRegistry.unregisterCommand(id)
+    }
+  }, [commandRegistry, commands])
+
+  return null
+}
+
 function WorkspaceCatalogBindings({
   catalogs,
   onOpenFile,
@@ -289,6 +308,7 @@ export interface WorkspaceProviderProps {
   plugins?: Plugin[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
+  commands?: CommandConfig[]
   catalogs?: CatalogConfig[]
   capabilities?: Record<string, boolean>
   apiBaseUrl?: string
@@ -315,6 +335,7 @@ export function WorkspaceProvider({
   plugins,
   excludeDefaults,
   panels,
+  commands,
   catalogs,
   capabilities,
   apiBaseUrl = "",
@@ -431,39 +452,6 @@ export function WorkspaceProvider({
       }
     }
 
-    cr.registerCommand({
-      id: "workspace.toggleSidebar",
-      title: "Toggle Sidebar",
-      shortcut: "⌘B",
-      run: () => {
-        const s = store.getState()
-        s.setSidebar({ collapsed: !s.sidebar.collapsed })
-      },
-    })
-    cr.registerCommand({
-      id: "workspace.toggleAgentPanel",
-      title: "Toggle Agent Panel",
-      shortcut: "⌘\\",
-      run: () => {
-        const s = store.getState()
-        const agentPanel = s.panels.find((p) => p.id === "agent")
-        if (agentPanel) {
-          s.closePanel("agent")
-        } else {
-          s.openPanel({ id: "agent", component: "agent" })
-        }
-      },
-    })
-    cr.registerCommand({
-      id: "workspace.closeTab",
-      title: "Close Tab",
-      shortcut: "⌘W",
-      run: () => {
-        const s = store.getState()
-        if (s.activePanel) s.closePanel(s.activePanel)
-      },
-    })
-
     return { panelRegistry: pr, commandRegistry: cr, catalogRegistry: cat, pluginMetas: metas }
   }, [capabilities, chatPanel, plugins, excludeDefaults, panels, store])
 
@@ -530,6 +518,7 @@ export function WorkspaceProvider({
                 commandRegistry={commandRegistry}
                 catalogRegistry={catalogRegistry}
               >
+                <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings
                   catalogs={catalogs}
                   onOpenFile={onOpenFile}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChatPanel } from "@boring/agent"
 import {
   WorkspaceProvider,
@@ -7,7 +7,6 @@ import {
   EmptyPane,
   TopBar,
   definePanel,
-  useCommandRegistry,
   useRegistry,
   type PanelConfig,
   type SurfaceShellApi,
@@ -37,19 +36,25 @@ const panels: PanelConfig[] = [
 
 const sessionsStore = createMockSessions()
 const layoutStorageKey = "boring-ui-v2:layout:playground"
-const playgroundCommandScope = "workspace-playground"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).get("showcase") === "1"
 }
 
+function isDebugMode(): boolean {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("debug") === "1"
+}
+
 function Shell() {
   const { sessions, activeId } = useMockSessions(sessionsStore)
   const showcase = useMemo(isShowcaseRoute, [])
-  const commandRegistry = useCommandRegistry()
+  const debugMode = useMemo(isDebugMode, [])
   const panelRegistry = useRegistry()
   const surfaceSnapshotRef = useRef<SurfaceShellSnapshot>({ openTabs: [], activeTab: null })
+  const [drawerOpen, setDrawerOpenState] = useState(true)
+  const [surfaceOpen, setSurfaceOpenState] = useState(true)
   const drawerOpenRef = useRef(true)
   const surfaceOpenRef = useRef(true)
   const surfaceRef = useRef<SurfaceShellApi | null>(null)
@@ -128,6 +133,7 @@ function Shell() {
   const setDrawerOpen = useCallback(
     (open: boolean) => {
       drawerOpenRef.current = open
+      setDrawerOpenState(open)
       pushUiState()
     },
     [pushUiState],
@@ -136,6 +142,7 @@ function Shell() {
   const setSurfaceOpen = useCallback(
     (open: boolean) => {
       surfaceOpenRef.current = open
+      setSurfaceOpenState(open)
       pushUiState()
     },
     [pushUiState],
@@ -144,29 +151,6 @@ function Shell() {
   const getSurface = useCallback(() => surfaceRef.current, [])
   const isWorkbenchOpen = useCallback(() => surfaceOpenRef.current, [])
   const openWorkbench = useCallback(() => setSurfaceOpen(true), [setSurfaceOpen])
-
-  useEffect(() => {
-    commandRegistry.unregisterByPluginId(playgroundCommandScope)
-    commandRegistry.registerCommand({
-      id: "chat-shell.newChat",
-      title: "New Chat",
-      pluginId: playgroundCommandScope,
-      run: sessionsStore.create,
-    })
-
-    for (const session of sessionList) {
-      commandRegistry.registerCommand({
-        id: `chat-shell.session.${session.id}`,
-        title: `Switch to: ${session.title}`,
-        pluginId: playgroundCommandScope,
-        run: () => sessionsStore.switchTo(session.id),
-      })
-    }
-
-    return () => {
-      commandRegistry.unregisterByPluginId(playgroundCommandScope)
-    }
-  }, [commandRegistry, sessionList])
 
   useEffect(() => {
     pushUiState()
@@ -191,7 +175,7 @@ function Shell() {
       />
       <div className="min-h-0 flex-1">
         <ChatLayout
-          nav="session-list"
+          nav={drawerOpen ? "session-list" : ""}
           navParams={{
             sessions: sessionList,
             activeId,
@@ -210,11 +194,11 @@ function Shell() {
                   getSurface,
                   isWorkbenchOpen,
                   openWorkbench,
+                  debug: debugMode,
                 }
               : undefined
           }
-          sidebar="workbench-left"
-          surface="artifact-surface"
+          surface={surfaceOpen ? "artifact-surface" : ""}
           surfaceParams={{
             storageKey: `${layoutStorageKey}:surface`,
             extraPanels: ["csv-viewer"],
@@ -222,6 +206,8 @@ function Shell() {
             onChange: handleSurfaceChange,
             onClose: () => setSurfaceOpen(false),
           }}
+          onOpenNav={() => setDrawerOpen(true)}
+          onOpenSurface={() => setSurfaceOpen(true)}
           className="h-full"
         />
       </div>

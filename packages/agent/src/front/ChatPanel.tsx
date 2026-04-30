@@ -18,7 +18,8 @@ async function readFileAsText(file: FileUIPart): Promise<string | null> {
     return null
   }
 }
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { DebugDrawer } from './DebugDrawer'
 import { useAgentChat } from './hooks/useAgentChat'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
@@ -233,6 +234,8 @@ export interface ChatPanelProps {
    * canonical wire-up).
    */
   onData?: (part: unknown) => void
+  /** Headers sent with chat and chat-history requests. */
+  requestHeaders?: Record<string, string>
   /**
    * Called with a file path when the user clicks the path label inside
    * a read / write / edit tool card. Hosts (e.g. @boring/workspace)
@@ -241,6 +244,11 @@ export interface ChatPanelProps {
    * future renderer can consume it without a prop drill.
    */
   onOpenArtifact?: OpenArtifactHandler
+  /**
+   * Enable the admin debug drawer — system prompt + raw message parts.
+   * Off by default. Wire to a URL param, env flag, or user role check.
+   */
+  debug?: boolean
   className?: string
 }
 
@@ -302,11 +310,14 @@ export function ChatPanel(props: ChatPanelProps) {
     emptyDescription,
     thinkingControl = false,
     onData,
+    requestHeaders,
     onOpenArtifact,
+    debug = false,
   } = props
+  const [debugWidth, setDebugWidth] = useState(440)
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
-  } = useAgentChat({ sessionId, onData })
+  } = useAgentChat({ sessionId, onData, requestHeaders })
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
   const registry = useMemo(
@@ -354,7 +365,7 @@ export function ChatPanel(props: ChatPanelProps) {
   // what the server actually has auth for, not a hardcoded alias set.
   useEffect(() => {
     let aborted = false
-    fetch('/api/v1/agent/models')
+    fetch('/api/v1/agent/models', { headers: requestHeaders })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { models?: AvailableModel[] } | null) => {
         if (aborted || !payload?.models) return
@@ -362,7 +373,7 @@ export function ChatPanel(props: ChatPanelProps) {
       })
       .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
     return () => { aborted = true }
-  }, [])
+  }, [requestHeaders])
 
   // Legacy single-string event payload (used by the /model slash command)
   // still works — treat it as an anthropic short alias.
@@ -398,7 +409,12 @@ export function ChatPanel(props: ChatPanelProps) {
           clearMessages: () => setMessages([]),
           resetSession: () => {
             setMessages([])
-            fetch(`/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => {})
+            fetch(
+              `/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`,
+              requestHeaders
+                ? { method: 'DELETE', headers: requestHeaders }
+                : { method: 'DELETE' },
+            ).catch(() => {})
             void onSessionReset?.()
           },
           setModel: (model) => {
@@ -484,7 +500,8 @@ export function ChatPanel(props: ChatPanelProps) {
     <div
       data-boring-chat=""
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden text-foreground antialiased",
+        "flex h-full min-h-0 overflow-hidden text-foreground antialiased",
+        debug ? "flex-row" : "flex-col",
         chrome
           ? "bg-[color:var(--canvas)] text-[13px]"
           : "bg-transparent text-[13px]",
@@ -493,6 +510,7 @@ export function ChatPanel(props: ChatPanelProps) {
       role="region"
       aria-label="Agent assistant"
     >
+      <div className={cn("flex min-h-0 min-w-0 flex-col", debug ? "flex-1" : "h-full")}>
       <div
         className={cn(
           "flex h-full min-h-0 flex-col overflow-hidden",
@@ -915,6 +933,16 @@ export function ChatPanel(props: ChatPanelProps) {
         </div>
       </div>
       </div>
+      </div>
+      {debug && (
+        <DebugDrawer
+          sessionId={sessionId}
+          messages={messages}
+          requestHeaders={requestHeaders}
+          width={debugWidth}
+          onWidthChange={setDebugWidth}
+        />
+      )}
     </div>
     </ArtifactOpenProvider>
   )

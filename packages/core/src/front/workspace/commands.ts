@@ -10,19 +10,19 @@ export interface WorkspaceCommand {
 export function getWorkspaceCommands(workspaceId: string, navigate: NavigateFunction): WorkspaceCommand[] {
   return [
     {
-      id: 'workspace.settings',
+      id: 'workspace:settings',
       label: 'Workspace settings',
       keywords: ['workspace', 'settings', 'edit', 'rename', 'delete'],
       run: () => navigate(`/w/${workspaceId}/settings`),
     },
     {
-      id: 'workspace.members',
+      id: 'workspace:members',
       label: 'Manage members',
       keywords: ['members', 'team', 'people', 'roles'],
       run: () => navigate(`/w/${workspaceId}/members`),
     },
     {
-      id: 'workspace.invites',
+      id: 'workspace:invites',
       label: 'Invite to workspace',
       keywords: ['invite', 'add', 'new member'],
       run: () => navigate(`/w/${workspaceId}/invites`),

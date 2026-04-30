@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Navigate, Route, useParams } from 'react-router-dom'
 import { ChatPanel } from '@boring/agent'
@@ -7,6 +7,7 @@ import {
   ThemeToggle,
   UserMenu,
   WorkspaceSwitcher,
+  useCoreCommands,
   useCurrentWorkspace,
 } from '@boring/core/front'
 import {
@@ -16,7 +17,6 @@ import {
   EmptyPane,
   TopBar,
   definePanel,
-  useCommandRegistry,
   useRegistry,
   type PanelConfig,
   type SurfaceShellApi,
@@ -50,19 +50,25 @@ const panels: PanelConfig[] = [
 
 const sessionsStore = createMockSessions()
 const layoutStorageKey = 'boring-ui-v2:layout:full-app'
-const fullAppCommandScope = 'full-app'
 
 function isShowcaseRoute(): boolean {
   if (typeof window === 'undefined') return false
   return new URLSearchParams(window.location.search).get('showcase') === '1'
 }
 
-function Shell() {
+function Shell({ workspaceId }: { workspaceId: string }) {
   const { sessions, activeId } = useMockSessions(sessionsStore)
   const showcase = useMemo(isShowcaseRoute, [])
-  const commandRegistry = useCommandRegistry()
+  const workspaceHeaders = useMemo(
+    () => ({ 'x-boring-workspace-id': workspaceId }),
+    [workspaceId],
+  )
+  const shellStorageKey = `boring-ui-v2:chat-layout:full-app:${workspaceId}`
+  const surfaceStorageKey = `${shellStorageKey}:surface`
   const panelRegistry = useRegistry()
   const surfaceSnapshotRef = useRef<SurfaceShellSnapshot>({ openTabs: [], activeTab: null })
+  const [drawerOpen, setDrawerOpenState] = useState(true)
+  const [surfaceOpen, setSurfaceOpenState] = useState(true)
   const drawerOpenRef = useRef(true)
   const surfaceOpenRef = useRef(true)
   const surfaceRef = useRef<SurfaceShellApi | null>(null)
@@ -113,11 +119,11 @@ function Shell() {
     pushAbortRef.current = controller
     void fetch('/api/v1/ui/state', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...workspaceHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: controller.signal,
     }).catch(() => {})
-  }, [availablePanelIds])
+  }, [availablePanelIds, workspaceHeaders])
 
   const handleSurfaceReady = useCallback(
     (api: SurfaceShellApi) => {
@@ -139,6 +145,7 @@ function Shell() {
   const setDrawerOpen = useCallback(
     (open: boolean) => {
       drawerOpenRef.current = open
+      setDrawerOpenState(open)
       pushUiState()
     },
     [pushUiState],
@@ -147,6 +154,7 @@ function Shell() {
   const setSurfaceOpen = useCallback(
     (open: boolean) => {
       surfaceOpenRef.current = open
+      setSurfaceOpenState(open)
       pushUiState()
     },
     [pushUiState],
@@ -155,29 +163,6 @@ function Shell() {
   const getSurface = useCallback(() => surfaceRef.current, [])
   const isWorkbenchOpen = useCallback(() => surfaceOpenRef.current, [])
   const openWorkbench = useCallback(() => setSurfaceOpen(true), [setSurfaceOpen])
-
-  useEffect(() => {
-    commandRegistry.unregisterByPluginId(fullAppCommandScope)
-    commandRegistry.registerCommand({
-      id: 'chat-shell.newChat',
-      title: 'New Chat',
-      pluginId: fullAppCommandScope,
-      run: sessionsStore.create,
-    })
-
-    for (const session of sessionList) {
-      commandRegistry.registerCommand({
-        id: `chat-shell.session.${session.id}`,
-        title: `Switch to: ${session.title}`,
-        pluginId: fullAppCommandScope,
-        run: () => sessionsStore.switchTo(session.id),
-      })
-    }
-
-    return () => {
-      commandRegistry.unregisterByPluginId(fullAppCommandScope)
-    }
-  }, [commandRegistry, sessionList])
 
   useEffect(() => {
     pushUiState()
@@ -209,7 +194,7 @@ function Shell() {
       />
       <div className="min-h-0 flex-1">
         <ChatLayout
-          nav="session-list"
+          nav={drawerOpen ? 'session-list' : ''}
           navParams={{
             sessions: sessionList,
             activeId,
@@ -225,21 +210,23 @@ function Shell() {
                   sessionId: activeId,
                   chrome: false,
                   className: 'h-full min-h-0',
+                  requestHeaders: workspaceHeaders,
                   getSurface,
                   isWorkbenchOpen,
                   openWorkbench,
                 }
               : undefined
           }
-          sidebar="workbench-left"
-          surface="artifact-surface"
+          surface={surfaceOpen ? 'artifact-surface' : ''}
           surfaceParams={{
-            storageKey: `${layoutStorageKey}:surface`,
+            storageKey: surfaceStorageKey,
             extraPanels: ['csv-viewer'],
             onReady: handleSurfaceReady,
             onChange: handleSurfaceChange,
             onClose: () => setSurfaceOpen(false),
           }}
+          onOpenNav={() => setDrawerOpen(true)}
+          onOpenSurface={() => setSurfaceOpen(true)}
           className="h-full"
         />
       </div>
@@ -249,6 +236,7 @@ function Shell() {
 
 function WorkspaceRoute() {
   const { id } = useParams<{ id: string }>()
+  const coreCommands = useCoreCommands()
   if (!id) return null
 
   return (
@@ -257,12 +245,14 @@ function WorkspaceRoute() {
         workspaceId={id}
         chatPanel={ChatPanel}
         panels={panels}
+        commands={coreCommands}
         apiBaseUrl=""
         apiTimeout={10_000}
         persistenceEnabled
-        storageKey={layoutStorageKey}
+        authHeaders={{ 'x-boring-workspace-id': id }}
+        storageKey={`${layoutStorageKey}:${id}`}
       >
-        <Shell />
+        <Shell workspaceId={id} />
       </WorkspaceProvider>
     </div>
   )

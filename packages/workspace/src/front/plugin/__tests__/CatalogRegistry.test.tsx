@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { RegistryProvider, useCatalogRegistry } from "../../registry/RegistryProvider"
-import { WorkspaceProvider } from "../../WorkspaceProvider"
+import { WorkspaceProvider } from "../../provider"
 import { CatalogRegistry } from "../CatalogRegistry"
-import type { CatalogConfig } from "../../../shared/plugin/types"
+import type { CatalogConfig } from "../../../shared/plugins/types"
 import { useCatalogs } from "../useCatalogs"
 
 function makeCatalog(overrides: Partial<CatalogConfig> = {}): CatalogConfig {

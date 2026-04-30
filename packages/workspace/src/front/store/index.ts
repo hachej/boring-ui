@@ -239,7 +239,7 @@ export function createWorkspaceStore(options: CreateWorkspaceStoreOptions = {}) 
   }
 
   const cleanup = () => {
-    if (storageHandler) {
+    if (storageHandler && typeof window !== "undefined") {
       window.removeEventListener("storage", storageHandler)
       storageHandler = null
     }

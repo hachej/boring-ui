@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { bootstrapServer } from "../bootstrapServer"
+import { bootstrapServer } from "../plugins/bootstrapServer"
 
 function makeAgentTool(name = "tool") {
   return {
@@ -82,6 +82,23 @@ describe("bootstrapServer", () => {
     })
 
     expect(result.systemPromptAppend).toBe("Plugin A context\n\nPlugin B context")
+  })
+
+  it("keeps skill-style plugin instructions alongside plugin tools", () => {
+    const tool = makeAgentTool("macro_search")
+    const result = bootstrapServer({
+      plugins: [
+        {
+          id: "macro",
+          systemPrompt: "## Macro skill\nUse macro_search before answering data questions.",
+          agentTools: [tool],
+        },
+      ],
+    })
+
+    expect(result.agentTools.map((t) => t.name)).toEqual(["macro_search"])
+    expect(result.systemPromptAppend).toContain("## Macro skill")
+    expect(result.systemPromptAppend).toContain("macro_search")
   })
 
   it("skips empty/whitespace systemPrompt", () => {

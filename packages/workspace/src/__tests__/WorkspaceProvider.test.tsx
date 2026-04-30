@@ -6,13 +6,14 @@ import {
   WorkspaceProvider,
   useTheme,
   useWorkspaceBridge,
-} from "../front/WorkspaceProvider"
+} from "../front/provider"
 import { useApiBaseUrl, useDataClient } from "../front/data"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
+import { useCommands } from "../front/plugin/useCommands"
 import { useThemePreference } from "../front/store/selectors"
 import type { PanelConfig } from "../front/registry/types"
-import type { CatalogConfig } from "../shared/plugin/types"
+import type { CatalogConfig } from "../shared/plugins/types"
 
 function DummyPanel() {
   return <div>panel</div>
@@ -108,19 +109,24 @@ describe("WorkspaceProvider — context composition", () => {
     expect(screen.getByTestId("has-panel").textContent).toBe("true")
   })
 
-  it("provides useCommandRegistry", () => {
+  it("provides useCommandRegistry", async () => {
     function Inspector() {
-      const cmds = useCommandRegistry()
-      return <div data-testid="cmds">{String(cmds.getCommands().length)}</div>
+      const cmds = useCommands()
+      return <div data-testid="cmds">{String(cmds.length)}</div>
     }
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider
+        commands={[{ id: "test-command", title: "Test command", run: () => {} }]}
+        persistenceEnabled={false}
+      >
         <Inspector />
       </WorkspaceProvider>,
     )
 
-    expect(Number(screen.getByTestId("cmds").textContent)).toBeGreaterThanOrEqual(3)
+    await waitFor(() => {
+      expect(Number(screen.getByTestId("cmds").textContent)).toBeGreaterThanOrEqual(1)
+    })
   })
 
   it("provides useCatalogRegistry with default filesystem catalog", () => {

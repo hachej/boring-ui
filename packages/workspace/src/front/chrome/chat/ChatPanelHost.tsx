@@ -2,19 +2,25 @@
 
 import { useCallback, useEffect } from "react"
 import type { ChatPanelProps } from "@boring/agent"
-import { useWorkspaceChatPanel } from "../../WorkspaceProvider"
+import { useWorkspaceChatPanel } from "../../provider"
 import { emitAgentFileChange } from "../../events"
 import { useAutoOpenAgentFiles } from "../../hooks/useAutoOpenAgentFiles"
 import { startUiCommandStream } from "../../bridge/uiCommandStream"
 import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
 
 export interface ChatPanelHostShellProps {
+  /** Headers forwarded to the embedded ChatPanel's agent API requests. */
+  requestHeaders?: Record<string, string>
   getSurface?: () => SurfaceShellApi | null
   isWorkbenchOpen?: () => boolean
   openWorkbench?: () => void
 }
 
 export type ChatPanelHostProps = ChatPanelProps & ChatPanelHostShellProps
+
+function workspaceIdFromHeaders(headers?: Record<string, string>): string | null {
+  return headers?.["x-boring-workspace-id"] ?? headers?.["X-Boring-Workspace-Id"] ?? null
+}
 
 export function ChatPanelHost(props: ChatPanelHostProps) {
   const ChatPanelImpl = useWorkspaceChatPanel()
@@ -40,16 +46,19 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
 
   useAutoOpenAgentFiles(openArtifact)
 
+  const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
+
   useEffect(() => {
     if (!getSurface || !isWorkbenchOpen || !openWorkbench) return
     return startUiCommandStream({
+      query: uiWorkspaceId ? { workspaceId: uiWorkspaceId } : undefined,
       ctx: {
         surface: getSurface,
         isWorkbenchOpen,
         openWorkbench,
       },
     })
-  }, [getSurface, isWorkbenchOpen, openWorkbench])
+  }, [getSurface, isWorkbenchOpen, openWorkbench, uiWorkspaceId])
 
   const handleData = useCallback(
     (part: unknown) => {

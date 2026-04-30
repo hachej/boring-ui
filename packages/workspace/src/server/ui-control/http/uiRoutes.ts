@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z, type ZodSchema } from "zod";
-import type { UiBridge, UiCommand } from "../../shared/ui-bridge";
+import type { UiBridge, UiCommand } from "../../../shared/ui-bridge";
 
 const UI_BRIDGE_PROTOCOL_VERSION = 1;
 const HEARTBEAT_MS = 15_000;

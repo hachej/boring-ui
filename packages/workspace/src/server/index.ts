@@ -15,13 +15,14 @@
 export {
   createWorkspaceAgentApp,
   type CreateWorkspaceAgentAppOptions,
-} from "./createWorkspaceAgentApp"
-export { createInMemoryBridge } from "./ui-bridge/createInMemoryBridge"
-export { uiRoutes } from "./http/uiRoutes"
-export type { UiRoutesOptions } from "./http/uiRoutes"
+} from "../app/createWorkspaceAgentApp"
+// Testing utilities (for tests that need custom bridge wiring)
+export { createInMemoryBridge } from "./bridge/createInMemoryBridge"
+export { uiRoutes } from "./ui-control/http/uiRoutes"
+export type { UiRoutesOptions } from "./ui-control/http/uiRoutes"
 export {
   createGetUiStateTool,
   createExecUiTool,
   createWorkspaceUiTools,
-} from "./uiTools"
+} from "./ui-control/tools/uiTools"
 export type { UiBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"

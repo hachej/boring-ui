@@ -96,7 +96,7 @@ export class PanelRegistry {
           panel.component as () => Promise<{ default: ComponentType<unknown> }>,
         )
       } else {
-        Inner = panel.component
+        Inner = panel.component as ComponentType<any>
       }
       const pluginId = panel.pluginId ?? panel.id
       const panelId = panel.id

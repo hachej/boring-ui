@@ -1,8 +1,6 @@
-import type { ComponentType } from "react"
 import type { AgentTool } from "@boring/agent/shared"
-import type { ExplorerAdapter, ExplorerRow } from "../../front/components/DataExplorer/types"
-import type { PanelConfig } from "../../front/registry/types"
-import type { CommandConfig } from "../../front/registry/types"
+import type { ExplorerAdapter, ExplorerRow } from "../types/explorer"
+import type { PanelConfig, CommandConfig } from "../types/panel"
 
 export interface CatalogConfig {
   id: string

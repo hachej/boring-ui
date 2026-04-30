@@ -6,13 +6,15 @@ export interface IdeLayoutProps {
 }
 
 export interface ChatLayoutProps {
-  nav?: string
+  nav?: string | null
   navParams?: Record<string, unknown>
   center?: string
   centerParams?: Record<string, unknown>
-  surface?: string
+  surface?: string | null
   surfaceParams?: Record<string, unknown>
-  sidebar?: string
+  sidebar?: string | null
   sidebarParams?: Record<string, unknown>
+  onOpenNav?: () => void
+  onOpenSurface?: () => void
   className?: string
 }

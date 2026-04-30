@@ -11,7 +11,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, describe } from "vitest"
-import { createWorkspaceAgentApp } from "../createWorkspaceAgentApp"
+import { createWorkspaceAgentApp } from "../../app/createWorkspaceAgentApp"
 
 const tempDirs: string[] = []
 
@@ -153,6 +153,33 @@ describe("createWorkspaceAgentApp — plugin model (j9p7.11)", () => {
       expect(names).toContain("get_ui_state")
       expect(names).toContain("bash")
       expect(names).toContain("read")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("plugin agentTools preserve tool metadata in the catalog", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-plugin-tool-metadata-")
+    const domainTool = {
+      name: "plugin_ping",
+      description: "A plugin-supplied executable tool.",
+      parameters: { type: "object" as const, properties: {} },
+      async execute() {
+        return { content: [{ type: "text" as const, text: "plugin-ok" }] }
+      },
+    }
+    const app = await createWorkspaceAgentApp({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      plugins: [{ id: "plugin-tools", agentTools: [domainTool] }],
+    })
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+      expect(res.statusCode).toBe(200)
+      const tool = res.json().tools.find((t: { name: string }) => t.name === "plugin_ping")
+      expect(tool).toBeDefined()
+      expect(tool.description).toBe("A plugin-supplied executable tool.")
     } finally {
       await app.close()
     }

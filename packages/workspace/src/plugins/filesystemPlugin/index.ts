@@ -1,21 +1,26 @@
-import { definePlugin } from "../../shared/plugin/definePlugin"
-import { definePanel } from "../../front/registry/types"
+import { definePlugin } from "../../shared/plugins/definePlugin"
 import { FileTreePane } from "./file-tree/FileTreeView"
 import { CodeEditorPane } from "./code-editor/CodeEditorPane"
 import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
+
+// Re-export shared file pane utilities for external use
+export { useFilePane } from "./useFilePane"
+export { FilePaneShell } from "./FilePaneShell"
+export { ConflictBanner } from "./ConflictBanner"
+export type { UseFilePaneOptions, UseFilePaneReturn } from "./useFilePane"
 
 export const filesystemPlugin = definePlugin({
   id: "filesystem",
   label: "Filesystem",
   panels: [
-    definePanel({
+    {
       id: "files",
       title: "Files",
       component: FileTreePane,
       placement: "left-tab",
       source: "builtin",
-    }),
-    definePanel<{ path: string }>({
+    },
+    {
       id: "code-editor",
       title: "Code",
       component: CodeEditorPane,
@@ -28,15 +33,15 @@ export const filesystemPlugin = definePlugin({
         "**/*.sh", "**/*.sql", "**/*.graphql",
       ],
       source: "builtin",
-    }),
-    definePanel<{ path: string }>({
+    },
+    {
       id: "markdown-editor",
       title: "Markdown",
       component: MarkdownEditorPane,
       placement: "center",
       filePatterns: ["**/*.md", "**/*.mdx"],
       source: "builtin",
-    }),
+    },
   ],
   catalogs: [
     {

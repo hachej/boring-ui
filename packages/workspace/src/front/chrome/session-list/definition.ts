@@ -1,5 +1,5 @@
 import { createElement } from "react"
-import { definePanel, type PaneProps } from "../../registry/types"
+import type { PaneProps } from "../../registry/types"
 import type { SessionItem } from "../../components/SessionList"
 import { SessionBrowser } from "./SessionBrowser"
 
@@ -23,10 +23,10 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
   })
 }
 
-export const sessionListPanel = definePanel<SessionListPaneParams | undefined>({
+export const sessionListPanel = {
   id: "session-list",
   title: "Sessions",
   component: SessionListPane,
   placement: "left",
   source: "builtin",
-})
+}

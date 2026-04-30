@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ChatPanelProps } from "@boring/agent"
-import { WorkspaceProvider } from "../../../WorkspaceProvider"
+import { WorkspaceProvider } from "../../../provider"
 import { events } from "../../../events"
 import type { SurfaceShellApi } from "../../artifact-surface/SurfaceShell"
 import { ChatPanelHost } from "../ChatPanelHost"

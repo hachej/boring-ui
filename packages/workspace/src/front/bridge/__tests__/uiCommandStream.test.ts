@@ -74,6 +74,17 @@ describe("startUiCommandStream — SSE path", () => {
     stop()
   })
 
+  it("appends query params to the EventSource URL", () => {
+    const { ctor, instances } = makeEventSourceCtor()
+    const stop = startUiCommandStream({
+      ctx: dispatchCtx(),
+      eventSourceCtor: ctor,
+      query: { workspaceId: "w1" },
+    })
+    expect(instances[0]?.__url).toBe("/api/v1/ui/commands/next?workspaceId=w1")
+    stop()
+  })
+
   it("dispatches commands received as `command` events", () => {
     const { ctor, instances } = makeEventSourceCtor()
     const ctx = dispatchCtx()
@@ -180,6 +191,21 @@ describe("startUiCommandStream — reconnect + fallback", () => {
     expect(firstCallArgs?.[0]).toBe("/api/v1/ui/commands/next?poll=true")
     await vi.advanceTimersByTimeAsync(10)
     expect(ctx.__surface.__opened).toEqual(["x.ts"])
+    stop()
+  })
+
+  it("appends query params to polling URLs", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 }))
+    const stop = startUiCommandStream({
+      ctx: dispatchCtx(),
+      eventSourceCtor: null,
+      fetcher: fetcher as unknown as typeof fetch,
+      pollIntervalMs: 100,
+      query: { workspaceId: "w1" },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    const firstCallArgs = fetcher.mock.calls[0] as unknown as [string, ...unknown[]] | undefined
+    expect(firstCallArgs?.[0]).toBe("/api/v1/ui/commands/next?poll=true&workspaceId=w1")
     stop()
   })
 

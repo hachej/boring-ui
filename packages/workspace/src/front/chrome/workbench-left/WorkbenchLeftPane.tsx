@@ -1,6 +1,6 @@
 "use client"
 
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createElement, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
 import { ChevronLeft, Database, FolderTree, Search, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
@@ -62,6 +62,9 @@ export function WorkbenchLeftPane({
     [panelRegistry],
   )
   const hasFilesTab = leftTabPanels.some((panel) => panel.id === "files")
+  const hasPluginDataTab = leftTabPanels.some(
+    (panel) => panel.id !== "files" && (panel.id === "data" || panel.title.toLowerCase() === "data"),
+  )
   const pluginTabs = leftTabPanels.filter((panel) => panel.id !== "files")
   const tabs = useMemo(() => {
     const next: Array<{ id: string; title: string; icon: React.ReactNode; panel?: PanelConfig }> = []
@@ -72,7 +75,11 @@ export function WorkbenchLeftPane({
         icon: <FolderTree className="h-3.5 w-3.5" />,
       })
     }
-    if (data || dataSources.length > 0) {
+    // Main-shell parity: the workbench left pane always has a Data tab.
+    // If an app/plugin contributes its own Data left-tab (macro does), that
+    // plugin tab owns the slot; otherwise render the built-in catalog shell
+    // even when it is currently empty.
+    if (!hasPluginDataTab) {
       next.push({
         id: "data",
         title: "Data",
@@ -89,7 +96,7 @@ export function WorkbenchLeftPane({
       })
     }
     return next
-  }, [data, dataSources.length, hasFilesTab, pluginTabs])
+  }, [hasFilesTab, hasPluginDataTab, pluginTabs])
   const [tab, setTab] = useState<WorkbenchLeftTab>(defaultTab)
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "files")
   const [searchOpen, setSearchOpen] = useState(false)
@@ -258,7 +265,7 @@ function LeftTabPanelHost({ panel }: { panel?: PanelConfig }) {
       </div>
     )
   }
-  return createElement(panel.component, {
+  return createElement(panel.component as ComponentType<any>, {
     params: undefined,
     api: noopPaneApi,
     containerApi: noopContainerApi,

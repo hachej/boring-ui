@@ -27,6 +27,8 @@ export interface StreamOptions {
   endpoint?: string
   /** Dispatch context — surface getter, workbench-open getter, opener. */
   ctx: DispatchContext
+  /** Query params appended to SSE/poll URLs, e.g. workspace scoping. */
+  query?: Record<string, string | number | boolean | null | undefined>
   /**
    * Inject EventSource for tests. Defaults to `globalThis.EventSource`.
    * Pass `null` to force the polling fallback unconditionally (useful when
@@ -47,6 +49,18 @@ const DEFAULT_POLL_INTERVAL_MS = 1500
 const DEFAULT_RECONNECT_DELAY_MS = 1000
 const DEFAULT_MAX_RECONNECTS = 5
 
+function appendQuery(url: string, query?: StreamOptions["query"]): string {
+  if (!query) return url
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (value === null || value === undefined) continue
+    params.set(key, String(value))
+  }
+  const suffix = params.toString()
+  if (!suffix) return url
+  return `${url}${url.includes("?") ? "&" : "?"}${suffix}`
+}
+
 /**
  * Open the bridge command channel. Returns a cleanup function that closes
  * any active EventSource AND stops any pending poll. Safe to call from
@@ -64,6 +78,7 @@ const DEFAULT_MAX_RECONNECTS = 5
 export function startUiCommandStream(opts: StreamOptions): () => void {
   const endpoint = opts.endpoint ?? ""
   const ctx = opts.ctx
+  const query = opts.query
   const ESCtor =
     opts.eventSourceCtor === null
       ? null
@@ -94,7 +109,7 @@ export function startUiCommandStream(opts: StreamOptions): () => void {
       if (cancelled) return
       pollAbort = new AbortController()
       try {
-        const res = await fetcher(`${endpoint}/api/v1/ui/commands/next?poll=true`, {
+        const res = await fetcher(appendQuery(`${endpoint}/api/v1/ui/commands/next?poll=true`, query), {
           signal: pollAbort.signal,
         })
         if (cancelled) return
@@ -118,7 +133,7 @@ export function startUiCommandStream(opts: StreamOptions): () => void {
       startPollingFallback()
       return
     }
-    es = new ESCtor(`${endpoint}/api/v1/ui/commands/next`)
+    es = new ESCtor(appendQuery(`${endpoint}/api/v1/ui/commands/next`, query))
     es.addEventListener("command", (ev) => {
       const data = (ev as MessageEvent).data
       if (typeof data !== "string" || data.length === 0) return

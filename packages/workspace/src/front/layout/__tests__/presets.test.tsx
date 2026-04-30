@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
 import { RegistryProvider } from "../../registry"
+import { useCommands } from "../../plugin/useCommands"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { bindStore } from "../../store/selectors"
@@ -135,6 +136,7 @@ describe("buildChatLayout", () => {
     expect(center.id).toBe("center")
     expect(center.position).toBe("center")
     expect(center.panel).toBe("chat")
+    expect(center.hideHeader).toBe(true)
   })
 
   it("passes panel params through to layout groups", () => {
@@ -150,12 +152,19 @@ describe("buildChatLayout", () => {
     expect(config.groups.find((g) => g.id === "surface")?.params).toEqual({ storageKey: "surface" })
   })
 
+  it("omits nav group when nav is null", () => {
+    const config = buildChatLayout({ nav: null })
+    expect(config.groups.find((g) => g.id === "nav")).toBeUndefined()
+    expect(config.groups.find((g) => g.id === "center")).toBeDefined()
+  })
+
   it("adds sidebar group when sidebar is set", () => {
     const config = buildChatLayout({ sidebar: "filetree" })
     const sidebar = config.groups.find((g) => g.id === "sidebar")
     expect(sidebar).toBeDefined()
     expect(sidebar!.position).toBe("left")
     expect(sidebar!.panel).toBe("filetree")
+    expect(sidebar!.hideHeader).toBe(true)
     expect(sidebar!.collapsible).toBe(true)
     expect(sidebar!.collapsedWidth).toBe(40)
     expect(sidebar!.constraints).toEqual({
@@ -170,6 +179,7 @@ describe("buildChatLayout", () => {
     expect(surface).toBeDefined()
     expect(surface!.position).toBe("right")
     expect(surface!.panel).toBe("artifacts")
+    expect(surface!.hideHeader).toBe(true)
     expect(surface!.dynamic).toBe(true)
     expect(surface!.placeholder).toBe("empty")
   })
@@ -291,12 +301,38 @@ describe("IdeLayout responsive behavior", () => {
 describe("ChatLayout component", () => {
   beforeEach(() => { vi.restoreAllMocks() })
 
-  it("renders DockviewShell", () => {
+  it("renders main-style flex chrome", () => {
     const { container } = renderWithRegistry(
-      <ChatLayout />,
-      ["session-list", "chat"],
+      <ChatLayout center="empty" />,
+      ["session-list", "empty"],
     )
-    expect(container.querySelector(".dv-shell")).toBeInTheDocument()
+    expect(container.querySelector("aside")).toBeInTheDocument()
+    expect(container.querySelector("main")).toBeInTheDocument()
+  })
+
+  it("registers workspace-owned layout commands", async () => {
+    function Inspector() {
+      const commands = useCommands()
+      return (
+        <div>
+          <span data-testid="session-command">{String(commands.some((command) => command.id === "workspace:open-session-history"))}</span>
+          <span data-testid="workbench-command">{String(commands.some((command) => command.id === "workspace:open-workbench"))}</span>
+        </div>
+      )
+    }
+
+    renderWithRegistry(
+      <>
+        <ChatLayout nav={null} surface="artifact-surface" />
+        <Inspector />
+      </>,
+      ["chat", "artifact-surface"],
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-command").textContent).toBe("true")
+      expect(screen.getByTestId("workbench-command").textContent).toBe("true")
+    })
   })
 
   it("passes className", () => {

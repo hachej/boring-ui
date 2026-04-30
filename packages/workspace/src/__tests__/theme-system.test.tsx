@@ -8,7 +8,7 @@ import {
   WorkspaceProvider,
   ThemeProvider,
   useTheme,
-} from "../front/WorkspaceProvider"
+} from "../front/provider"
 import { createShadcnTheme } from "../front/theme/codemirror-theme"
 
 // ---------------------------------------------------------------------------

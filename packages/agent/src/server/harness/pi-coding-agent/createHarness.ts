@@ -25,6 +25,12 @@ export function createPiCodingAgentHarness(opts: {
   cwd: string;
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
+  /** Optional pi resource-loader isolation knobs. */
+  resourceLoaderOptions?: {
+    noContextFiles?: boolean;
+    noSkills?: boolean;
+    additionalSkillPaths?: string[];
+  };
 }): AgentHarness {
   const sessionStore = new PiSessionStore(opts.cwd);
   const piSessions = new Map<string, PiSessionHandle>();
@@ -75,10 +81,15 @@ export function createPiCodingAgentHarness(opts: {
     // that hands it to pi as `appendSystemPrompt`. Pi appends each entry
     // (separated by blank lines) AFTER its base system prompt — host apps
     // EXTEND, never replace.
-    const resourceLoader = opts.systemPromptAppend
+    const rl = opts.resourceLoaderOptions
+    const needsLoader = opts.systemPromptAppend || rl?.noContextFiles || rl?.noSkills || (rl?.additionalSkillPaths?.length ?? 0) > 0
+    const resourceLoader = needsLoader
       ? new DefaultResourceLoader({
           cwd: ctx.workdir,
-          appendSystemPrompt: [opts.systemPromptAppend],
+          ...(opts.systemPromptAppend ? { appendSystemPrompt: [opts.systemPromptAppend] } : {}),
+          ...(rl?.noContextFiles ? { noContextFiles: true } : {}),
+          ...(rl?.noSkills ? { noSkills: true } : {}),
+          ...(rl?.additionalSkillPaths?.length ? { additionalSkillPaths: rl.additionalSkillPaths } : {}),
         })
       : undefined;
 

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChatPanel } from "@boring/agent"
 import { Plus } from "lucide-react"
 import {
   WorkspaceProvider,
   ChatLayout,
   TopBar,
-  useCommandRegistry,
   useRegistry,
   type SurfaceShellApi,
   type SurfaceShellSnapshot,
@@ -22,13 +21,13 @@ import { openSeriesPane } from "./macroSeriesUi"
 
 const sessionsStore = createLocalStorageSessions({ storageKey: "boring-macro:sessions" })
 const layoutStorageKey = "boring-macro:shell"
-const macroCommandScope = "boring-macro"
 
 function Shell() {
   const { sessions, activeId } = useLocalStorageSessions(sessionsStore)
-  const commandRegistry = useCommandRegistry()
   const panelRegistry = useRegistry()
   const surfaceSnapshotRef = useRef<SurfaceShellSnapshot>({ openTabs: [], activeTab: null })
+  const [drawerOpen, setDrawerOpenState] = useState(true)
+  const [surfaceOpen, setSurfaceOpenState] = useState(true)
   const drawerOpenRef = useRef(true)
   const surfaceOpenRef = useRef(true)
   const surfaceRef = useRef<SurfaceShellApi | null>(null)
@@ -87,6 +86,7 @@ function Shell() {
   const setDrawerOpen = useCallback(
     (open: boolean) => {
       drawerOpenRef.current = open
+      setDrawerOpenState(open)
       pushUiState()
     },
     [pushUiState],
@@ -95,6 +95,7 @@ function Shell() {
   const setSurfaceOpen = useCallback(
     (open: boolean) => {
       surfaceOpenRef.current = open
+      setSurfaceOpenState(open)
       pushUiState()
     },
     [pushUiState],
@@ -109,29 +110,6 @@ function Shell() {
       new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }),
     )
   }, [])
-
-  useEffect(() => {
-    commandRegistry.unregisterByPluginId(macroCommandScope)
-    commandRegistry.registerCommand({
-      id: "chat-shell.newChat",
-      title: "New Chat",
-      pluginId: macroCommandScope,
-      run: sessionsStore.create,
-    })
-
-    for (const session of sessions) {
-      commandRegistry.registerCommand({
-        id: `chat-shell.session.${session.id}`,
-        title: `Switch to: ${session.title}`,
-        pluginId: macroCommandScope,
-        run: () => sessionsStore.switchTo(session.id),
-      })
-    }
-
-    return () => {
-      commandRegistry.unregisterByPluginId(macroCommandScope)
-    }
-  }, [commandRegistry, sessions])
 
   useEffect(() => {
     pushUiState()
@@ -160,7 +138,7 @@ function Shell() {
       />
       <div className="min-h-0 flex-1">
         <ChatLayout
-          nav="session-list"
+          nav={drawerOpen ? "session-list" : ""}
           navParams={{
             sessions,
             activeId,
@@ -181,8 +159,7 @@ function Shell() {
             isWorkbenchOpen,
             openWorkbench,
           }}
-          sidebar="workbench-left"
-          surface="artifact-surface"
+          surface={surfaceOpen ? "artifact-surface" : ""}
           surfaceParams={{
             storageKey: `${layoutStorageKey}:surface`,
             extraPanels: ["chart-canvas", "deck"],
@@ -190,6 +167,8 @@ function Shell() {
             onChange: handleSurfaceChange,
             onClose: () => setSurfaceOpen(false),
           }}
+          onOpenNav={() => setDrawerOpen(true)}
+          onOpenSurface={() => setSurfaceOpen(true)}
           className="h-full"
         />
       </div>

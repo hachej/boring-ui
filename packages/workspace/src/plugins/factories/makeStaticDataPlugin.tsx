@@ -1,6 +1,6 @@
 import { createElement } from "react"
-import { definePlugin } from "../../shared/plugin/definePlugin"
-import type { Plugin } from "../../shared/plugin/types"
+import { definePlugin } from "../../shared/plugins/definePlugin"
+import type { Plugin } from "../../shared/plugins/types"
 import { DataExplorer } from "../../front/components/DataExplorer"
 import type { ExplorerAdapter, ExplorerRow } from "../../front/components/DataExplorer/types"
 import type { PaneProps } from "../../front/registry/types"

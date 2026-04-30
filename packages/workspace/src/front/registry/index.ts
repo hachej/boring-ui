@@ -7,4 +7,4 @@ export {
   useCatalogRegistry,
 } from "./RegistryProvider"
 export { getFileIcon } from "./getFileIcon"
-export type { PanelConfig, PanelRegistration, SyncPanelConfig, LazyPanelConfig, CommandConfig, PaneProps, PanelRegistryType } from "./types"
+export type { PanelConfig, PanelRegistration, CommandConfig, PaneProps } from "./types"

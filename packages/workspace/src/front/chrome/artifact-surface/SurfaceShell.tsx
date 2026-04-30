@@ -109,7 +109,12 @@ export function resolvePanelForPath(
 function normalizeWorkbenchPath(path: string): string {
   const trimmed = path.trim().replace(/\\/g, "/")
   const noLeadingDot = trimmed.replace(/^\.\//, "")
-  return noLeadingDot.replace(/\/+/g, "/")
+  const normalized = noLeadingDot.replace(/\/+/g, "/")
+  // Security: reject path traversal attempts
+  if (normalized.includes("..")) {
+    throw new Error(`Invalid path: path traversal not allowed`)
+  }
+  return normalized
 }
 
 let seqCounter = 0
@@ -475,6 +480,7 @@ export function SurfaceShell({
           data-collapsed-files={collapsed ? "true" : undefined}
         >
           <ArtifactSurfacePane
+            storageKey={storageKey}
             onReady={handleReady}
             allowedPanels={allowedPanels}
             rightHeaderActions={onClose ? () => <WorkbenchCloseAction onClose={onClose} /> : undefined}

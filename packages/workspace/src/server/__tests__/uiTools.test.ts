@@ -10,8 +10,8 @@ import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, expect, test, describe } from "vitest"
-import { createExecUiTool, createWorkspaceUiTools } from "../uiTools"
-import { createInMemoryBridge } from "../ui-bridge/createInMemoryBridge"
+import { createExecUiTool, createWorkspaceUiTools } from "../ui-control/tools/uiTools"
+import { createInMemoryBridge } from "../bridge/createInMemoryBridge"
 import type { UiBridge } from "../../shared/ui-bridge"
 
 const FAKE_CTX = {

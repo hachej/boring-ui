@@ -29,7 +29,7 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
 import type { CommandConfig } from "../registry/types"
-import type { CatalogConfig } from "../../shared/plugin/types"
+import type { CatalogConfig } from "../../shared/plugins/types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 import type { ExplorerRow } from "./DataExplorer/types"
 import {

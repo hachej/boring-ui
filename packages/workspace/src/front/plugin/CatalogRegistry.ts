@@ -1,4 +1,4 @@
-import type { CatalogConfig } from "../../shared/plugin/types"
+import type { CatalogConfig } from "../../shared/plugins/types"
 
 export interface CatalogRegistryOptions {
   warnOnDuplicate?: boolean

@@ -16,10 +16,11 @@
  */
 import { createAgentApp, type CreateAgentAppOptions } from "@boring/agent/server"
 import type { FastifyInstance } from "fastify"
-import { createInMemoryBridge } from "./ui-bridge/createInMemoryBridge"
-import { createWorkspaceUiTools } from "./uiTools"
-import { uiRoutes } from "./http/uiRoutes"
-import { bootstrapServer, type ServerBootstrapOptions } from "./bootstrapServer"
+import { join } from "node:path"
+import { createInMemoryBridge } from "../server/bridge/createInMemoryBridge"
+import { createWorkspaceUiTools } from "../server/ui-control/tools/uiTools"
+import { uiRoutes } from "../server/ui-control/http/uiRoutes"
+import { bootstrapServer, type ServerBootstrapOptions } from "../server/plugins/bootstrapServer"
 
 export interface CreateWorkspaceAgentAppOptions
   extends CreateAgentAppOptions,
@@ -38,12 +39,22 @@ export async function createWorkspaceAgentApp(
     excludeDefaults: opts.excludeDefaults,
   })
 
+  const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  // Workspace-scoped skills: {workspaceRoot}/.agents/skills/ is loaded via
+  // additionalSkillPaths so they work even with noSkills:true (which only
+  // blocks the global ~/.pi/skills/ and ~/.agents/skills/).
+  const workspaceSkillsDir = join(workspaceRoot, ".agents", "skills")
+  const callerAdditional = opts.resourceLoaderOptions?.additionalSkillPaths ?? []
   const app = await createAgentApp({
     ...opts,
     extraTools: [...(opts.extraTools ?? []), ...uiTools, ...result.agentTools],
     systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
       .filter(Boolean)
       .join("\n\n") || undefined,
+    resourceLoaderOptions: {
+      ...opts.resourceLoaderOptions,
+      additionalSkillPaths: [workspaceSkillsDir, ...callerAdditional],
+    },
   })
   await app.register(uiRoutes, { bridge })
   return app
