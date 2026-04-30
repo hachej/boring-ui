@@ -464,6 +464,7 @@ export function SurfaceShell({
           data-collapsed-files={collapsed ? "true" : undefined}
         >
           <ArtifactSurfacePane
+            storageKey={storageKey}
             onReady={handleReady}
             allowedPanels={
               extraPanels && extraPanels.length > 0

@@ -96,6 +96,10 @@ export interface ChatCenteredShellProps {
    * high) and forwards the choice to the agent. Off by default.
    */
   thinkingControl?: boolean
+  /** Headers forwarded to the embedded ChatPanel's agent API requests. */
+  chatRequestHeaders?: Record<string, string>
+  /** Headers/query context forwarded to workspace UI bridge requests. Defaults to `chatRequestHeaders`. */
+  uiRequestHeaders?: Record<string, string>
 
 
   /**
@@ -164,6 +168,10 @@ function writeBool(key: string, b: boolean): void {
   } catch {}
 }
 
+function workspaceIdFromHeaders(headers?: Record<string, string>): string | null {
+  return headers?.["x-boring-workspace-id"] ?? headers?.["X-Boring-Workspace-Id"] ?? null
+}
+
 function useViewportWidth(): number {
   const [w, setW] = useState<number>(() => (typeof window !== "undefined" ? window.innerWidth : 1200))
   useEffect(() => {
@@ -209,10 +217,14 @@ export function ChatCenteredShell({
   emptyTitle,
   emptyDescription,
   thinkingControl = false,
+  chatRequestHeaders,
+  uiRequestHeaders,
   onSurfaceReady,
   extraPanels,
   className,
 }: ChatCenteredShellProps) {
+  const effectiveUiRequestHeaders = uiRequestHeaders ?? chatRequestHeaders
+  const uiWorkspaceId = workspaceIdFromHeaders(effectiveUiRequestHeaders)
   const [drawerOpen, setDrawerOpenRaw] = useState(() =>
     readBool(`${storageKey}:drawer`, drawerDefaultOpen),
   )
@@ -310,13 +322,13 @@ export function ChatCenteredShell({
     pushAbortRef.current = ac
     void fetch("/api/v1/ui/state", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...effectiveUiRequestHeaders, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: ac.signal,
     }).catch(() => {
       /* Best-effort — UI state push is non-critical and should not break the UI. */
     })
-  }, [drawerOpen, availablePanelIds])
+  }, [drawerOpen, availablePanelIds, effectiveUiRequestHeaders])
 
   // Mirror the surface ref in state so context consumers re-render when the
   // workbench becomes ready. The ref stays for hot-path callbacks
@@ -357,13 +369,14 @@ export function ChatCenteredShell({
   // resubscribing.
   useEffect(() => {
     return startUiCommandStream({
+      query: uiWorkspaceId ? { workspaceId: uiWorkspaceId } : undefined,
       ctx: {
         surface: () => surfaceRef.current,
         isWorkbenchOpen: () => surfaceOpenRef.current,
         openWorkbench: () => setSurfaceOpen(true),
       },
     })
-  }, [setSurfaceOpen])
+  }, [setSurfaceOpen, uiWorkspaceId])
 
   const openArtifact = useCallback(
     (path: string) => {
@@ -465,6 +478,7 @@ export function ChatCenteredShell({
 
   const effectiveSurfaceWidth = clamp(surfaceWidth, surfaceMinWidth, surfaceMax)
   const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const effectiveSurfaceStorageKey = surfaceStorageKey ?? `${storageKey}:surface`
 
   const stageNode = useMemo<ReactNode>(() => {
     if (typeof stage === "function") {
@@ -487,6 +501,7 @@ export function ChatCenteredShell({
           emptyTitle={emptyTitle}
           emptyDescription={emptyDescription}
           thinkingControl={thinkingControl}
+          requestHeaders={chatRequestHeaders}
           // Click on a path inside a read/edit/write tool card opens
           // that file in the surrounding workbench. Wired via context
           // inside the agent's canonical renderers — the workspace no
@@ -519,6 +534,7 @@ export function ChatCenteredShell({
     emptyTitle,
     emptyDescription,
     thinkingControl,
+    chatRequestHeaders,
     onCreateSession,
   ])
 
@@ -642,6 +658,7 @@ export function ChatCenteredShell({
               )}
             >
               <SurfaceShell
+                key={effectiveSurfaceStorageKey}
                 rootDir={rootDir}
                 dataSources={dataSources}
                 data={data}
@@ -649,7 +666,7 @@ export function ChatCenteredShell({
                 // storageKey so file-tree sidebar collapsed/width persist
                 // alongside drawer/surface state. Hosts can still override
                 // with an explicit `surfaceStorageKey` prop.
-                storageKey={surfaceStorageKey ?? `${storageKey}:surface`}
+                storageKey={effectiveSurfaceStorageKey}
                 onReady={handleSurfaceReady}
                 onChange={handleSurfaceChange}
                 extraPanels={extraPanels}
