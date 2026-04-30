@@ -27,7 +27,10 @@ RUN pnpm --filter full-app run build
 
 FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runtime
 WORKDIR /app
-RUN corepack enable
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends bubblewrap ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
 
 COPY --from=build /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
 
@@ -54,7 +57,9 @@ COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
 COPY --from=build /app/apps/full-app/package.json apps/full-app/package.json
 COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+  BORING_AGENT_MODE=local \
+  FULL_APP_WORKSPACE_ROOT=/data/workspaces
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
