@@ -252,11 +252,19 @@ function WorkspaceCatalogBindings({
 function WorkspacePluginBindings({ plugins }: { plugins: Plugin[] }) {
   return (
     <>
-      {plugins.map((plugin) =>
-        (plugin.bindings ?? []).map((Binding, index) => (
-          <Binding key={`${plugin.id}:binding:${index}`} />
-        )),
-      )}
+      {plugins.map((plugin) => {
+        const outputBindings =
+          plugin.outputs?.filter((output) => output.type === "binding") ?? []
+        return [
+          ...(plugin.bindings ?? []).map((Binding, index) => (
+            <Binding key={`${plugin.id}:binding:${index}`} />
+          )),
+          ...outputBindings.map((output) => {
+            const Binding = output.component
+            return <Binding key={`${plugin.id}:output:${output.id}`} />
+          }),
+        ]
+      })}
     </>
   )
 }

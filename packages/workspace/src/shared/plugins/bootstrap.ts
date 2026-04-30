@@ -5,7 +5,7 @@ import type { CommandRegistry } from "../../front/registry/CommandRegistry"
 import type { PanelRegistry } from "../../front/registry/PanelRegistry"
 import { PluginError } from "./definePlugin"
 import type { CatalogRegistry } from "../../front/plugin/CatalogRegistry"
-import type { Plugin } from "./types"
+import type { Plugin, PluginOutput } from "./types"
 
 export interface AgentToolRegistry {
   register(tool: AgentTool, pluginId: string): void
@@ -27,6 +27,40 @@ export interface BootstrapOptions {
 export interface BootstrapResult {
   registered: string[]
   systemPromptAppend: string
+}
+
+function registerOutput(
+  output: PluginOutput,
+  plugin: Plugin,
+  registries: BootstrapOptions["registries"],
+): void {
+  switch (output.type) {
+    case "left-tab": {
+      const { type: _type, id, ...registration } = output
+      registries.panels.register(id, {
+        ...registration,
+        placement: "left-tab",
+        pluginId: plugin.id,
+      })
+      return
+    }
+    case "panel": {
+      const { id, ...registration } = output.panel
+      registries.panels.register(id, { ...registration, pluginId: plugin.id })
+      return
+    }
+    case "command":
+      registries.commands.registerCommand({ ...output.command, pluginId: plugin.id })
+      return
+    case "catalog":
+      registries.catalogs.register(output.catalog, plugin.id)
+      return
+    case "agent-tool":
+      registries.agentTools?.register(output.tool, plugin.id)
+      return
+    case "binding":
+      return
+  }
 }
 
 export function bootstrap(options: BootstrapOptions): BootstrapResult {
@@ -63,6 +97,9 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
       for (const tool of plugin.agentTools ?? []) {
         options.registries.agentTools.register(tool, plugin.id)
       }
+    }
+    for (const output of plugin.outputs ?? []) {
+      registerOutput(output, plugin, options.registries)
     }
   }
 

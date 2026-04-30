@@ -1,5 +1,5 @@
 import { validateTool } from "@boring/agent/shared"
-import type { Plugin, CatalogConfig } from "./types"
+import type { Plugin, CatalogConfig, PluginOutput, LeftTabOutput } from "./types"
 import type { PanelConfig } from "../../front/registry/types"
 import type { CommandConfig } from "../../front/registry/types"
 
@@ -25,6 +25,14 @@ const VALID_PLACEMENTS = new Set([
   "bottom",
   "left-tab",
   "right-tab",
+])
+const VALID_OUTPUT_TYPES = new Set([
+  "left-tab",
+  "panel",
+  "command",
+  "catalog",
+  "binding",
+  "agent-tool",
 ])
 
 function fail(pluginId: string, msg: string): never {
@@ -149,6 +157,99 @@ function validateBindings(pluginId: string, bindings: unknown[]): void {
   }
 }
 
+function validateLeftTabOutput(
+  pluginId: string,
+  output: LeftTabOutput,
+  index: number,
+): void {
+  if (!output.id || typeof output.id !== "string") {
+    fail(pluginId, `outputs[${index}].id must be a non-empty string`)
+  }
+  if (!output.title || typeof output.title !== "string") {
+    fail(pluginId, `outputs[${index}].title must be a non-empty string`)
+  }
+  if (output.lazy) {
+    if (typeof output.component !== "function") {
+      fail(
+        pluginId,
+        `outputs[${index}].component must be a thunk when lazy:true (got: ${typeof output.component})`,
+      )
+    }
+  } else if (typeof output.component !== "function") {
+    fail(
+      pluginId,
+      `outputs[${index}].component must be a ComponentType (got: ${typeof output.component})`,
+    )
+  }
+}
+
+function outputIdentity(output: PluginOutput, index: number): string {
+  switch (output.type) {
+    case "left-tab":
+      return `${output.type}:${output.id}`
+    case "panel":
+      return `${output.type}:${output.panel?.id ?? `<missing:${index}>`}`
+    case "command":
+      return `${output.type}:${output.command?.id ?? `<missing:${index}>`}`
+    case "catalog":
+      return `${output.type}:${output.catalog?.id ?? `<missing:${index}>`}`
+    case "binding":
+      return `${output.type}:${output.id}`
+    case "agent-tool":
+      return `${output.type}:${output.id}`
+    default:
+      return `<unknown:${index}>`
+  }
+}
+
+function validateOutputs(pluginId: string, outputs: PluginOutput[]): void {
+  const ids = new Set<string>()
+  for (let i = 0; i < outputs.length; i++) {
+    const output = outputs[i] as PluginOutput | undefined
+    if (!output || typeof output !== "object") {
+      fail(pluginId, `outputs[${i}] must be an object`)
+    }
+    if (!VALID_OUTPUT_TYPES.has(output.type)) {
+      fail(
+        pluginId,
+        `outputs[${i}].type must be one of ${[...VALID_OUTPUT_TYPES].join(", ")} (got: "${(output as { type?: unknown }).type}")`,
+      )
+    }
+    const identity = outputIdentity(output, i)
+    if (ids.has(identity)) {
+      fail(pluginId, `outputs[${i}] "${identity}" is duplicated within this plugin`)
+    }
+    ids.add(identity)
+
+    switch (output.type) {
+      case "left-tab":
+        validateLeftTabOutput(pluginId, output, i)
+        break
+      case "panel":
+        validatePanels(pluginId, [output.panel])
+        break
+      case "command":
+        validateCommands(pluginId, [output.command])
+        break
+      case "catalog":
+        validateCatalogs(pluginId, [output.catalog])
+        break
+      case "binding":
+        if (!output.id || typeof output.id !== "string") {
+          fail(pluginId, `outputs[${i}].id must be a non-empty string`)
+        }
+        validateBindings(pluginId, [output.component])
+        break
+      case "agent-tool":
+        if (!output.id || typeof output.id !== "string") {
+          fail(pluginId, `outputs[${i}].id must be a non-empty string`)
+        }
+        validateAgentTools(pluginId, [output.tool])
+        break
+    }
+  }
+}
+
 function validatePlugin(spec: Plugin): void {
   if (!spec.id || typeof spec.id !== "string") {
     fail(spec.id ?? "<unknown>", "id must be a non-empty string")
@@ -158,6 +259,7 @@ function validatePlugin(spec: Plugin): void {
   if (spec.catalogs) validateCatalogs(spec.id, spec.catalogs)
   if (spec.bindings) validateBindings(spec.id, spec.bindings)
   if (spec.agentTools) validateAgentTools(spec.id, spec.agentTools)
+  if (spec.outputs) validateOutputs(spec.id, spec.outputs)
 }
 
 export function definePlugin(spec: Plugin): Plugin {
