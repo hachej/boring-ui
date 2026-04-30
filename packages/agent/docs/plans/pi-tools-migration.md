@@ -811,9 +811,8 @@ unbounded-output commands (`find / -type f` style) — especially in
 
 **Verified resolution (smoke-tested 2026-04-28):** the `@vercel/sandbox`
 SDK supports streaming via two APIs (`Command.logs()` async-generator
-and `runCommand({ stdout, stderr: Writable })` pipe-to-stream). Smoke
-script at `packages/agent/scripts/smoke-vercel-sandbox.mts` ran a
-100-line command and observed **80 incremental `Writable.write()`
+and `runCommand({ stdout, stderr: Writable })` pipe-to-stream). A smoke
+test ran a 100-line command and observed **80 incremental `Writable.write()`
 calls** spread across the 1.3-second run — first chunk at +421ms, not
 buffered-and-dumped. Abort latency ~12ms. The streaming question is
 empirically resolved.

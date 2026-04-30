@@ -1,6 +1,9 @@
 import type { AgentTool } from "@boring/agent/shared"
+import type { ComponentType } from "react"
 import type { ExplorerAdapter, ExplorerRow } from "../types/explorer"
 import type { PanelConfig, CommandConfig } from "../types/panel"
+
+export type PluginBinding = ComponentType<Record<string, never>>
 
 export interface CatalogConfig {
   id: string
@@ -22,5 +25,6 @@ export interface Plugin {
   panels?: PanelConfig[]
   commands?: CommandConfig[]
   catalogs?: CatalogConfig[]
+  bindings?: PluginBinding[]
   agentTools?: AgentTool[]
 }

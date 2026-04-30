@@ -37,16 +37,6 @@ pnpm test:e2e -- --headed
 | `tool-rendering.spec.ts` | Tool card rendering for read/write/find/grep + state transitions |
 | `streaming-bash.spec.ts` | Bash streaming: multi-line output, error exit, heartbeat, SSE protocol |
 
-## Smoke Tests (headless, API-only)
-
-Per-mode smoke tests exercise tool execution without a browser:
-
-```bash
-pnpm smoke:direct    # direct mode — all 6 tools
-pnpm smoke:local     # bwrap sandbox — 5 tools (skip if no bwrap)
-pnpm smoke:vercel    # vercel-sandbox — 5 tools (skip if no creds)
-```
-
 ## Regression Tests
 
 ```bash
@@ -58,4 +48,3 @@ pnpm test:regression   # system-prompt-size budget check
 - Tests run `workers: 1` in CI to avoid port/resource contention.
 - `fullyParallel: false` — specs share a backend server per test file.
 - Traces and screenshots captured on failure (`e2e-artifacts/`).
-- Smoke scripts exit 0 when credentials are unavailable (graceful skip).

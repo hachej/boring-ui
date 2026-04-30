@@ -141,6 +141,14 @@ function validateAgentTools(pluginId: string, tools: unknown[]): void {
   }
 }
 
+function validateBindings(pluginId: string, bindings: unknown[]): void {
+  for (let i = 0; i < bindings.length; i++) {
+    if (typeof bindings[i] !== "function") {
+      fail(pluginId, `bindings[${i}] must be a component function (got: ${typeof bindings[i]})`)
+    }
+  }
+}
+
 function validatePlugin(spec: Plugin): void {
   if (!spec.id || typeof spec.id !== "string") {
     fail(spec.id ?? "<unknown>", "id must be a non-empty string")
@@ -148,6 +156,7 @@ function validatePlugin(spec: Plugin): void {
   if (spec.panels) validatePanels(spec.id, spec.panels)
   if (spec.commands) validateCommands(spec.id, spec.commands)
   if (spec.catalogs) validateCatalogs(spec.id, spec.catalogs)
+  if (spec.bindings) validateBindings(spec.id, spec.bindings)
   if (spec.agentTools) validateAgentTools(spec.id, spec.agentTools)
 }
 

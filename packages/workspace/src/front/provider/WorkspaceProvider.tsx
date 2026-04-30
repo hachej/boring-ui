@@ -23,16 +23,19 @@ import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "../bridge/createBridge"
 import { createBridgeClient, type BridgeClient } from "../bridge/client"
 import { CommandPalette } from "../components/CommandPalette"
-import { DataProvider, useDataClient, type FetchClient } from "../data"
+import { DataProvider } from "../data/DataProvider"
+import { FetchClient } from "../data/fetchClient"
 import { Toaster } from "../toast"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { bootstrap } from "../../shared/plugins/bootstrap"
-import { filesystemPlugin } from "../../plugins/filesystemPlugin"
+import {
+  createFilesystemPlugin,
+  filesystemPlugin,
+} from "../../plugins/filesystemPlugin"
 import { coreWorkspacePanels } from "../registry/coreRegistrations"
 import type { Plugin } from "../../shared/plugins/types"
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
-import type { ExplorerRow, SearchResult } from "../components/DataExplorer/types"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,45 +50,8 @@ function getSystemTheme(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 
-function rowFromPath(path: string): ExplorerRow {
-  const lastSlash = path.lastIndexOf("/")
-  return {
-    id: path,
-    title: lastSlash >= 0 ? path.slice(lastSlash + 1) : path,
-    subtitle: lastSlash >= 0 ? path.slice(0, lastSlash + 1) : undefined,
-  }
-}
-
-function emptySearchResult(): SearchResult {
-  return { items: [], total: 0, hasMore: false }
-}
-
 const PROVIDER_CATALOG_SOURCE = "workspace-provider"
 const PROVIDER_COMMAND_SOURCE = "workspace-provider"
-
-function createFilesCatalog(
-  client: Pick<FetchClient, "search">,
-  onOpenFile: (path: string) => void,
-): CatalogConfig {
-  return {
-    id: "files",
-    label: "Files",
-    adapter: {
-      async search({ query, limit, signal }) {
-        const trimmed = query.trim()
-        if (!trimmed || signal?.aborted) return emptySearchResult()
-        const paths = await client.search(trimmed, limit, signal)
-        if (signal?.aborted) return emptySearchResult()
-        return {
-          items: paths.map(rowFromPath),
-          total: paths.length,
-          hasMore: false,
-        }
-      },
-    },
-    onSelect: (row) => onOpenFile(row.id),
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Theme context
@@ -267,33 +233,21 @@ function WorkspaceCommandBindings({ commands }: { commands?: CommandConfig[] }) 
 
 function WorkspaceCatalogBindings({
   catalogs,
-  onOpenFile,
 }: {
   catalogs?: CatalogConfig[]
-  onOpenFile?: (path: string) => void
 }) {
-  const dataClient = useDataClient()
   const catalogRegistry = useCatalogRegistry()
 
   useEffect(() => {
-    const providerCatalogs: CatalogConfig[] = []
-
-    if (onOpenFile) {
-      providerCatalogs.push(createFilesCatalog(dataClient, onOpenFile))
-    }
-
-    if (catalogs?.length) {
-      providerCatalogs.push(...catalogs)
-    }
-
-    for (const catalog of providerCatalogs) {
+    if (!catalogs?.length) return
+    for (const catalog of catalogs) {
       catalogRegistry.register(catalog, PROVIDER_CATALOG_SOURCE)
     }
 
     return () => {
       catalogRegistry.unregisterByPluginId(PROVIDER_CATALOG_SOURCE)
     }
-  }, [catalogRegistry, catalogs, dataClient, onOpenFile])
+  }, [catalogRegistry, catalogs])
 
   return null
 }
@@ -379,6 +333,10 @@ export function WorkspaceProvider({
   authHeadersRef.current = authHeaders
   const onAuthErrorRef = useRef(onAuthError)
   onAuthErrorRef.current = onAuthError
+  const dataClient = useMemo(
+    () => new FetchClient({ apiBaseUrl, authHeaders, onAuthError, timeout: apiTimeout }),
+    [apiBaseUrl, authHeaders, onAuthError, apiTimeout],
+  )
 
   useEffect(() => {
     return () => {
@@ -426,15 +384,20 @@ export function WorkspaceProvider({
     }
 
     const excludedDefaults = new Set(excludeDefaults ?? [])
-    const allPlugins = [
-      ...[filesystemPlugin].filter((p) => !excludedDefaults.has(p.id)),
-      ...(plugins ?? []),
-    ]
+    const defaultPlugins: Plugin[] = excludedDefaults.has(filesystemPlugin.id)
+      ? []
+      : [
+          createFilesystemPlugin({
+            filesClient: dataClient,
+            onOpenFile,
+          }),
+        ]
+    const allPlugins = [...defaultPlugins, ...(plugins ?? [])]
 
     bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,
       plugins: plugins ?? [],
-      defaults: [filesystemPlugin],
+      defaults: defaultPlugins,
       excludeDefaults,
       registries: { panels: pr, commands: cr, catalogs: cat },
     })
@@ -453,7 +416,7 @@ export function WorkspaceProvider({
     }
 
     return { panelRegistry: pr, commandRegistry: cr, catalogRegistry: cat, pluginMetas: metas }
-  }, [capabilities, chatPanel, plugins, excludeDefaults, panels, store])
+  }, [capabilities, chatPanel, plugins, excludeDefaults, panels, dataClient, onOpenFile])
 
   const onThemeChangeRef = useRef(onThemeChange)
   onThemeChangeRef.current = onThemeChange
@@ -511,6 +474,7 @@ export function WorkspaceProvider({
             authHeaders={authHeaders}
             onAuthError={onAuthError}
             timeout={apiTimeout}
+            client={dataClient}
           >
             <PluginErrorProvider>
               <RegistryProvider
@@ -521,7 +485,6 @@ export function WorkspaceProvider({
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings
                   catalogs={catalogs}
-                  onOpenFile={onOpenFile}
                 />
                 <WorkspaceShortcuts store={store} />
                 <CommandPalette />

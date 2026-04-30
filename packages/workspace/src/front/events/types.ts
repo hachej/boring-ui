@@ -59,6 +59,8 @@ export interface WorkspaceEventMap {
   "file:created": EventMeta & { path: string; kind: "file" | "dir" }
   /** Content-only mutation (overwrite, edit). */
   "file:changed": EventMeta & { path: string }
+  /** Intent emitted by catalogs/tree/search surfaces; workbench/hosts decide how to open. */
+  "file:open-requested": EventMeta & { path: string }
 
   // Editor save lifecycle. Keyed by panelId, NOT path: a rename
   // mid-save would orphan a path-keyed badge. Subscribers map

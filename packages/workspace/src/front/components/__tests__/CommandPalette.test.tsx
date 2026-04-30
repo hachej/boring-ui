@@ -172,7 +172,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const newInput = screen.getByPlaceholderText(/Search catalogs/)
+      const newInput = screen.getByPlaceholderText(/Search files/)
       expect(newInput).toHaveValue("")
     })
 
@@ -315,6 +315,52 @@ describe("CommandPalette", () => {
   })
 
   describe("command mode", () => {
+    it("switches between files and commands with the mode buttons", async () => {
+      const user = userEvent.setup()
+      const cr = new CommandRegistry()
+      cr.registerCommand({
+        id: "test.cmd",
+        title: "Test Command",
+        run: vi.fn(),
+      })
+      render(<CommandPalette />, { wrapper: createWrapper(cr) })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+
+      expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute("aria-pressed", "true")
+      await user.click(screen.getByRole("button", { name: "Commands" }))
+
+      expect(screen.getByPlaceholderText(/Run a command/)).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Commands" })).toHaveAttribute("aria-pressed", "true")
+      expect(screen.getByText("Test Command")).toBeInTheDocument()
+    })
+
+    it("toggles files and commands with Tab", async () => {
+      const user = userEvent.setup()
+      const cr = new CommandRegistry()
+      cr.registerCommand({
+        id: "test.cmd",
+        title: "Test Command",
+        run: vi.fn(),
+      })
+      render(<CommandPalette />, { wrapper: createWrapper(cr) })
+      fireKeydown("p", { metaKey: true })
+      await waitFor(() => {
+        expect(screen.getByRole("dialog")).toBeInTheDocument()
+      })
+
+      const input = getPaletteInput()
+      await user.keyboard("{Tab}")
+      expect(screen.getByPlaceholderText(/Run a command/)).toBeInTheDocument()
+      expect(screen.getByText("Test Command")).toBeInTheDocument()
+
+      await user.keyboard("{Tab}")
+      expect(input.getAttribute("placeholder")).toMatch(/Search files/)
+      expect(screen.queryByText("Test Command")).not.toBeInTheDocument()
+    })
+
     it("switches to command mode with > prefix", async () => {
       const user = userEvent.setup()
       const cr = new CommandRegistry()

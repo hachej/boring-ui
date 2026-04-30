@@ -11,6 +11,7 @@ interface DataProviderProps {
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
   timeout?: number
+  client?: FetchClient
   children: ReactNode
 }
 
@@ -32,6 +33,7 @@ export function DataProvider({
   authHeaders,
   onAuthError,
   timeout,
+  client: providedClient,
   children,
 }: DataProviderProps) {
   const queryClientRef = useRef<QueryClient | null>(null)
@@ -47,8 +49,8 @@ export function DataProvider({
   }
 
   const client = useMemo(
-    () => new FetchClient({ apiBaseUrl, authHeaders, onAuthError, timeout }),
-    [apiBaseUrl, authHeaders, onAuthError, timeout],
+    () => providedClient ?? new FetchClient({ apiBaseUrl, authHeaders, onAuthError, timeout }),
+    [providedClient, apiBaseUrl, authHeaders, onAuthError, timeout],
   )
 
   return (

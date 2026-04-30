@@ -272,7 +272,7 @@ describe("WorkspaceProvider — panel registration", () => {
     })
   })
 
-  it("registers a default files catalog when onOpenFile is provided", async () => {
+  it("registers filesystem plugin file search as the default files catalog", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ results: ["/src/App.tsx"] }), {
         status: 200,
@@ -281,12 +281,10 @@ describe("WorkspaceProvider — panel registration", () => {
     )
     vi.stubGlobal("fetch", fetchMock)
 
-    const onOpenFile = vi.fn()
     const { result } = renderHook(() => useCatalogRegistry(), {
       wrapper: ({ children }) => (
         <WorkspaceProvider
           persistenceEnabled={false}
-          onOpenFile={onOpenFile}
         >
           {children}
         </WorkspaceProvider>
@@ -310,15 +308,37 @@ describe("WorkspaceProvider — panel registration", () => {
       hasMore: false,
     })
 
-    act(() => {
-      result.current.get("files")!.onSelect(searchResult.items[0]!)
-    })
-
-    expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx")
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/files/search?q=app&limit=10",
+      "/api/v1/files/search?q=*app*&limit=10",
       expect.objectContaining({ method: "GET" }),
     )
+  })
+
+  it("routes filesystem catalog selection through onOpenFile when supplied", async () => {
+    const onOpenFile = vi.fn()
+    const { result } = renderHook(() => useCatalogRegistry(), {
+      wrapper: ({ children }) => (
+        <WorkspaceProvider
+          persistenceEnabled={false}
+          onOpenFile={onOpenFile}
+        >
+          {children}
+        </WorkspaceProvider>
+      ),
+    })
+
+    await waitFor(() => {
+      expect(result.current.get("files")?.label).toBe("Files")
+    })
+
+    act(() => {
+      result.current.get("files")!.onSelect({ id: "/src/App.tsx", title: "App.tsx" })
+    })
+
+    expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx", {
+      id: "/src/App.tsx",
+      title: "App.tsx",
+    })
   })
 
   it("capabilities filter removes panels missing required capabilities", () => {

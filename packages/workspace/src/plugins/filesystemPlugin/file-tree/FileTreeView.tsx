@@ -24,6 +24,13 @@ import type { FileTreeNode, FileTreeEditState } from "./FileTree"
 import type { WorkspaceBridge } from "../../../front/bridge/types"
 import { PanelChrome } from "../../../front/dock"
 import {
+  CLIENT_FILTER_THRESHOLD,
+  DEFAULT_TREE_IGNORE,
+  filterIgnoredEntries,
+  matchesAny,
+  toFileSearchGlob,
+} from "../search"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -41,8 +48,6 @@ import { events, userMeta } from "../../../front/events"
 const FileTree = lazy(() =>
   import("./FileTree").then((m) => ({ default: m.FileTree })),
 )
-
-const CLIENT_FILTER_THRESHOLD = 5000
 
 function buildTree(
   entries: FileEntry[],
@@ -152,32 +157,6 @@ interface ContextMenuState {
   isBackground?: boolean
 }
 
-/**
- * Names that almost no app wants visible in the workbench tree. These are
- * folders that bloat the tree (node_modules), tooling artifacts the user
- * shouldn't be reading (test-results, dist, .tsbuildinfo*), or VCS
- * machinery (.git). Apps can override via `ignoreNames` if they want
- * them visible.
- */
-export const DEFAULT_TREE_IGNORE: ReadonlyArray<string | RegExp> = [
-  "node_modules",
-  ".git",
-  "dist",
-  "test-results",
-  /^\.tsbuildinfo/,
-  ".vite",
-  ".turbo",
-  ".next",
-  ".cache",
-]
-
-function matchesAny(name: string, patterns: ReadonlyArray<string | RegExp>): boolean {
-  for (const p of patterns) {
-    if (typeof p === "string" ? p === name : p.test(name)) return true
-  }
-  return false
-}
-
 export interface FileTreeViewProps {
   rootDir?: string
   /** Already-debounced query. Empty/undefined means no filter. */
@@ -219,10 +198,7 @@ export function FileTreeView({
   // filtered by the agent backend or by their own buildTree recursion
   // since the same `ignoreNames` is applied via the closure below.
   const fileList = useMemo(
-    () =>
-      ignoreNames.length === 0
-        ? rawFileList
-        : rawFileList?.filter((e) => !matchesAny(e.name, ignoreNames)),
+    () => filterIgnoredEntries(rawFileList, ignoreNames),
     [rawFileList, ignoreNames],
   )
   const { mutateAsync: writeFile } = useFileWrite()
@@ -261,7 +237,7 @@ export function FileTreeView({
   const useServerSearch =
     totalFileCount >= CLIENT_FILTER_THRESHOLD && (searchQuery?.length ?? 0) > 0
   const { data: searchResults } = useFileSearch(
-    useServerSearch ? (searchQuery ?? "") : "",
+    useServerSearch ? toFileSearchGlob(searchQuery ?? "") : "",
     50,
   )
 

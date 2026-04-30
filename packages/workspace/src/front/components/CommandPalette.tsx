@@ -42,6 +42,7 @@ import type { RecentEntry } from "./recent"
 const MAX_RESULTS = 50
 
 export type CommandPaletteProps = Record<string, never>
+type PaletteMode = "files" | "commands"
 
 interface CatalogSearchGroup {
   catalog: CatalogConfig
@@ -66,6 +67,7 @@ function isActiveCommand(cmd: CommandConfig): boolean {
 export function CommandPalette(_props?: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
+  const [mode, setMode] = useState<PaletteMode>("files")
   const [catalogGroups, setCatalogGroups] = useState<CatalogSearchGroup[]>([])
   const catalogs = useCatalogs()
   const commands = useCommands()
@@ -73,8 +75,8 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   const priorFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(false)
 
-  const isCommandMode = query.startsWith(">")
-  const searchQuery = isCommandMode ? query.slice(1).trim() : query.trim()
+  const isCommandMode = mode === "commands"
+  const searchQuery = query.trim()
 
   // cmdk's CommandInput captures Escape and preventDefaults to clear its
   // own value before the event can reach Radix's onEscapeKeyDown — so the
@@ -135,6 +137,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   useEffect(() => {
     if (open) {
       setQuery("")
+      setMode("files")
       requestAnimationFrame(() => {
         inputRef.current?.focus()
       })
@@ -147,6 +150,32 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     }
     wasOpenRef.current = open
   }, [open])
+
+  const switchMode = useCallback((nextMode: PaletteMode) => {
+    setMode(nextMode)
+    setQuery((current) => current.replace(/^>\s*/, ""))
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [])
+
+  const toggleMode = useCallback(() => {
+    switchMode(mode === "commands" ? "files" : "commands")
+  }, [mode, switchMode])
+
+  const handleQueryChange = useCallback((next: string) => {
+    if (next.startsWith(">")) {
+      setMode("commands")
+      setQuery(next.slice(1))
+      return
+    }
+    setQuery(next)
+  }, [])
+
+  const handleInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Tab") return
+    event.preventDefault()
+    event.stopPropagation()
+    toggleMode()
+  }, [toggleMode])
 
   useEffect(() => {
     if (isCommandMode || !searchQuery) {
@@ -278,7 +307,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Command Palette</DialogTitle>
-          <DialogDescription>Search catalogs or type &gt; for commands</DialogDescription>
+          <DialogDescription>Search files and catalogs or switch to commands</DialogDescription>
         </DialogHeader>
         <Command shouldFilter={false} className="bg-transparent">
           {/*
@@ -289,26 +318,38 @@ export function CommandPalette(_props?: CommandPaletteProps) {
            * caused the double-line under the input the user
            * reported as a "strange border".
            *
-           * Mode pill ("Command") sits inline AHEAD of the
-           * input wrapper, both share the cmdk-emitted single
-           * 1px divider underneath.
+           * Mode switcher sits inline AHEAD of the input wrapper, both
+           * share the cmdk-emitted single 1px divider underneath.
            */}
           <div className="relative flex items-stretch [&>[data-slot=command-input-wrapper]]:flex-1 [&>[data-slot=command-input-wrapper]]:h-auto">
-            {isCommandMode ? (
-              <span className="my-2 ml-3 inline-flex shrink-0 items-center gap-1 self-center rounded-md bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] px-2 py-0.5 text-xs font-medium text-[color:var(--accent)]">
-                <TerminalIcon className="size-3" />
-                Command
-              </span>
-            ) : null}
+            <div
+              role="group"
+              aria-label="Palette mode"
+              className="my-2 ml-3 inline-flex shrink-0 self-center rounded-md border border-border/60 bg-muted/40 p-0.5"
+            >
+              <ModeButton
+                active={!isCommandMode}
+                icon={<FileIcon className="size-3" />}
+                label="Files"
+                onClick={() => switchMode("files")}
+              />
+              <ModeButton
+                active={isCommandMode}
+                icon={<TerminalIcon className="size-3" />}
+                label="Commands"
+                onClick={() => switchMode("commands")}
+              />
+            </div>
             <CommandInput
               ref={inputRef}
               placeholder={
                 isCommandMode
                   ? "Run a command..."
-                  : "Search catalogs or type > to run a command"
+                  : "Search files or type > for commands"
               }
               value={query}
-              onValueChange={setQuery}
+              onValueChange={handleQueryChange}
+              onKeyDown={handleInputKeyDown}
               className="h-12 bg-transparent text-base focus-visible:ring-0"
             />
           </div>
@@ -417,9 +458,13 @@ export function CommandPalette(_props?: CommandPaletteProps) {
 
           <div className="flex items-center justify-between border-t border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
             <span className="font-medium tracking-wide uppercase">
-              {isCommandMode ? "Commands" : "Catalogs"}
+              {isCommandMode ? "Commands" : "Files"}
             </span>
             <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1">
+                <Kbd>tab</Kbd>
+                <span>switch</span>
+              </span>
               <span className="flex items-center gap-1">
                 <Kbd>
                   <ArrowUp className="size-3" />
@@ -444,6 +489,35 @@ export function CommandPalette(_props?: CommandPaletteProps) {
         </Command>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function ModeButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={[
+        "inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors",
+        active
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+      ].join(" ")}
+    >
+      {icon}
+      {label}
+    </button>
   )
 }
 
