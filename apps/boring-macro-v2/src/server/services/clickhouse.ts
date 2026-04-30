@@ -123,7 +123,8 @@ export interface PersistOpts {
   outputId: string
   title: string
   inputIds: string[]
-  transformName: string
+  transformName?: string | null
+  transformSpec?: Record<string, unknown> | null
   data: unknown[][]
 }
 
@@ -770,7 +771,18 @@ export class DataService {
   // ------------------------------------------------------------------
 
   async persistTransform(opts: PersistOpts): Promise<PersistResult> {
-    const { outputId, title, inputIds, transformName, data } = opts
+    const { outputId, title, inputIds, transformName, transformSpec, data } = opts
+
+    const providedSpec = transformSpec && typeof transformSpec === 'object' && !Array.isArray(transformSpec)
+      ? transformSpec
+      : null
+    const resolvedTransformName = typeof providedSpec?.name === 'string' && providedSpec.name.trim().length > 0
+      ? providedSpec.name.trim()
+      : String(transformName ?? '').trim()
+
+    if (!resolvedTransformName) {
+      return { ok: false, error: 'transform_name or transform_spec.name is required' }
+    }
 
     // Safety: reject if output_id is a FRED series
     const fredCheck = await this.query<{ 'count()': string }>(
@@ -781,10 +793,18 @@ export class DataService {
       return { ok: false, error: `Cannot overwrite FRED series '${outputId}'` }
     }
 
-    const transformSpec = JSON.stringify({
-      name: transformName,
-      input_ids: inputIds,
-    })
+    const normalizedSpec = providedSpec
+      ? {
+          ...providedSpec,
+          name: resolvedTransformName,
+          input_ids: Array.isArray(providedSpec.input_ids) ? providedSpec.input_ids : inputIds,
+        }
+      : {
+          name: resolvedTransformName,
+          input_ids: inputIds,
+        }
+
+    const transformSpecJson = JSON.stringify(normalizedSpec)
 
     // Check for collision
     const existing = await this.query<{ transform_spec: string }>(
@@ -800,7 +820,7 @@ export class DataService {
         oldName = JSON.parse(existingSpecStr)?.name || ''
       } catch { /* ignore */ }
 
-      if (oldName !== transformName) {
+      if (oldName !== resolvedTransformName) {
         return {
           ok: false,
           error: `Collision: '${outputId}' exists from transform '${oldName}'. Use a different output_id.`,
@@ -822,7 +842,7 @@ export class DataService {
       values: [{
         series_id: outputId,
         title,
-        transform_spec: transformSpec,
+        transform_spec: transformSpecJson,
         source_series_ids: inputIds,
       }],
       format: 'JSONEachRow',

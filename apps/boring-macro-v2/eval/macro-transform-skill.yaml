@@ -1,0 +1,58 @@
+# Eval suite for boring.macro's seeded macro-transform skill.
+#
+# Goal: catch regressions where the workspace no longer exposes the skill
+# file inside `.agents/skills/`, or the model stops consulting it before
+# scaffolding a reusable transform artifact.
+#
+# Run:
+#   Configure provider credentials for the model below, then:
+#   pnpm --dir apps/boring-macro-v2 eval
+
+model: Qwen/Qwen3.5-122B-A10B-FP8
+
+defaults:
+  retries: 1
+  timeoutMs: 180000
+
+prompts:
+  - prompt: create a year-over-year derived series for CPIAUCNS
+    expect:
+      - tool: read
+        params:
+          path: !EvalRegex '\.agents/skills/macro-transform/SKILL\.md$'
+      - tool: write
+        params:
+          path: transforms/custom/cpi_yoy.py
+          content: !EvalRegex 'def transform\(|INPUTS = 1|DESCRIPTION ='
+
+  - prompt: create a 12-month moving average derived series for UNRATE using the macro-transform skill
+    expect:
+      - tool: read
+        params:
+          path: !EvalRegex '\.agents/skills/macro-transform/SKILL\.md$'
+      - tool: write
+        params:
+          path: transforms/custom/unrate_ma12.py
+          content: !EvalRegex 'def transform\(|INPUTS = 1|DESCRIPTION ='
+
+  - prompt: Compute the year-over-year growth of Real GDP and persist it as a derived series, then open the chart.
+    expect:
+      - tool: read
+        params:
+          path: !EvalRegex '\.agents/skills/macro-transform/SKILL\.md$'
+      - tool: write
+        params:
+          path: !EvalRegex 'transforms/custom/(gdp|gdpc1)_yoy\.py$'
+          content: !EvalRegex 'def transform\(|INPUTS = 1|DESCRIPTION ='
+      - tool: bash
+        params:
+          command: !EvalRegex '(^|[;&[:space:]])bm run .*--input (GDPC1|GDP).*--output .*_YOY'
+
+  - prompt: Install statsmodels into the workspace environment and verify that Python can import it.
+    expect:
+      - tool: bash
+        params:
+          command: !EvalRegex '(^|[;&[:space:]])pip install statsmodels'
+      - tool: bash
+        params:
+          command: !EvalRegex '(^|[;&[:space:]])python -c .*import statsmodels'

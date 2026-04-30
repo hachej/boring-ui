@@ -5,7 +5,7 @@
  */
 
 import type { AgentTool } from '@boring/agent/shared'
-import type { MacroConfig } from './types'
+import type { MacroConfig } from '../server/config'
 import { createMacroTools } from '../server/tools/macroTools'
 
 export function makeMacroServerPlugin(macroConfig: MacroConfig): {

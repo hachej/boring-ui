@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { makeMacroClientPlugin, macroChatSuggestions } from "../index"
 import { makeMacroServerPlugin } from "../server"
-import { createMacroTools } from "../../server/tools/macroTools"
+import type { MacroConfig } from "../../server/config"
 
 describe("makeMacroClientPlugin", () => {
   const plugin = makeMacroClientPlugin(() => {})
@@ -15,7 +15,7 @@ describe("makeMacroClientPlugin", () => {
   })
 
   it("includes chart-canvas, deck, and macro-series panels", () => {
-    const ids = plugin.panels!.map((p) => p.id)
+    const ids = plugin.panels!.map((p: { id: string }) => p.id)
     expect(ids).toContain("chart-canvas")
     expect(ids).toContain("deck")
     expect(ids).toContain("macro-series")
@@ -48,8 +48,13 @@ describe("macroChatSuggestions", () => {
 })
 
 describe("makeMacroServerPlugin", () => {
-  const tools = createMacroTools(null)
-  const plugin = makeMacroServerPlugin(tools)
+  const macroConfig: MacroConfig = {
+    clickhouse: null,
+    authRedirectOnRoot: false,
+    devAutoSession: true,
+    deckRoot: "/tmp",
+  }
+  const plugin = makeMacroServerPlugin(macroConfig)
 
   it("returns a plugin with id 'boring-macro'", () => {
     expect(plugin.id).toBe("boring-macro")

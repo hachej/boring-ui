@@ -130,13 +130,13 @@ describe('persist_derived_series', () => {
     expect(result.isError).toBe(true)
   })
 
-  it('requires all five parameters', () => {
+  it('requires core persistence parameters', () => {
     const required = tool.parameters.required as string[]
     expect(required).toContain('output_id')
     expect(required).toContain('title')
     expect(required).toContain('input_ids')
-    expect(required).toContain('transform_name')
     expect(required).toContain('observations')
+    expect(required).not.toContain('transform_name')
   })
 
   it('observations schema has nested object with date + value', () => {
@@ -148,5 +148,9 @@ describe('persist_derived_series', () => {
     expect((items.required as string[])).toContain('date')
     expect((items.required as string[])).toContain('value')
   })
-})
 
+  it('supports optional transform_spec metadata', () => {
+    const props = tool.parameters.properties as Record<string, Record<string, unknown>>
+    expect(props.transform_spec.type).toBe('object')
+  })
+})
