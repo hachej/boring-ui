@@ -209,6 +209,7 @@ function Shell({ workspaceId }: { workspaceId: string }) {
               ? {
                   sessionId: activeId,
                   chrome: false,
+                  thinkingControl: true,
                   className: 'h-full min-h-0',
                   requestHeaders: workspaceHeaders,
                   getSurface,

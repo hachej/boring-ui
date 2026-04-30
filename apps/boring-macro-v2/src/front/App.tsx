@@ -151,6 +151,7 @@ function Shell() {
           centerParams={{
             sessionId: activeId,
             chrome: false,
+            thinkingControl: true,
             suggestions: macroChatSuggestions,
             emptyTitle: "What macro question are we tackling?",
             emptyDescription: "Search FRED, plot a series, derive a transform, or draft a briefing deck.",

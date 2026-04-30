@@ -190,6 +190,7 @@ function Shell() {
               ? {
                   sessionId: activeId,
                   chrome: false,
+                  thinkingControl: true,
                   className: "h-full min-h-0",
                   getSurface,
                   isWorkbenchOpen,

@@ -2,6 +2,10 @@ export function getEnv(name: string): string | undefined {
   return process.env[name]
 }
 
+export function getEnvSnapshot(): Record<string, string | undefined> {
+  return { ...process.env }
+}
+
 export function setEnvForTest(name: string, value: string | undefined): string | undefined {
   const previous = process.env[name]
   if (typeof value === 'string') {

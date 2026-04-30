@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { getEnv, getEnvSnapshot } from '../config/env'
 
 interface WorkspacePythonEnvOptions {
   workspaceRoot: string
@@ -15,11 +16,11 @@ export function withWorkspacePythonEnv(
   const venvBin = join(venvRoot, 'bin')
   const shimBin = join(runtimeRoot, '.boring-agent', 'bin')
   const pathParts = [shimBin, venvBin]
-  const existingPath = env?.PATH ?? process.env.PATH
+  const existingPath = env?.PATH ?? getEnv('PATH')
   if (existingPath) pathParts.push(existingPath)
 
   return {
-    ...process.env,
+    ...getEnvSnapshot(),
     ...env,
     PATH: pathParts.join(':'),
     VIRTUAL_ENV: env?.VIRTUAL_ENV ?? venvRoot,
