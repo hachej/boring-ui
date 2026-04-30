@@ -1,4 +1,1 @@
-# Beads Project Configuration
-# issue_prefix: boring-ui-v2
-# default_priority: 2
-# default_type: task
+issue_prefix: boring-ui-v2-reorg

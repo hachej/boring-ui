@@ -11,7 +11,9 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, describe } from "vitest"
-import { createWorkspaceAgentApp } from "../createWorkspaceAgentApp"
+import { createWorkspaceAgentApp } from "../../app/createWorkspaceAgentApp"
+import * as appApi from "../../app"
+import * as serverApi from "../index"
 
 const tempDirs: string[] = []
 
@@ -28,6 +30,11 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 describe("createWorkspaceAgentApp — UI bridge wiring", () => {
+  test("is exported from the app entry, not the server entry", () => {
+    expect(appApi.createWorkspaceAgentApp).toBe(createWorkspaceAgentApp)
+    expect("createWorkspaceAgentApp" in serverApi).toBe(false)
+  })
+
   test("registers get_ui_state and exec_ui in the catalog", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-uitools-")
     const app = await createWorkspaceAgentApp({
@@ -122,6 +129,104 @@ describe("createWorkspaceAgentApp — UI bridge wiring", () => {
         url: "/api/v1/ui/commands/next?poll=true",
       })
       expect(drainAgain.json()).toEqual([])
+    } finally {
+      await app.close()
+    }
+  })
+})
+
+describe("createWorkspaceAgentApp — plugin model (j9p7.11)", () => {
+  test("plugin agentTools appear in the tool catalog", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-plugins-")
+    const domainTool = {
+      name: "execute_sql",
+      description: "Execute SQL queries against the data warehouse.",
+      parameters: { type: "object" as const, properties: {} },
+      async execute() {
+        return { content: [{ type: "text" as const, text: "ok" }] }
+      },
+    }
+    const app = await createWorkspaceAgentApp({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      plugins: [{ id: "macro", agentTools: [domainTool] }],
+    })
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+      expect(res.statusCode).toBe(200)
+      const names = res.json().tools.map((t: { name: string }) => t.name)
+      expect(names).toContain("execute_sql")
+      expect(names).toContain("get_ui_state")
+      expect(names).toContain("bash")
+      expect(names).toContain("read")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("plugin agentTools preserve tool metadata in the catalog", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-plugin-tool-metadata-")
+    const domainTool = {
+      name: "plugin_ping",
+      description: "A plugin-supplied executable tool.",
+      parameters: { type: "object" as const, properties: {} },
+      async execute() {
+        return { content: [{ type: "text" as const, text: "plugin-ok" }] }
+      },
+    }
+    const app = await createWorkspaceAgentApp({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      plugins: [{ id: "plugin-tools", agentTools: [domainTool] }],
+    })
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+      expect(res.statusCode).toBe(200)
+      const tool = res.json().tools.find((t: { name: string }) => t.name === "plugin_ping")
+      expect(tool).toBeDefined()
+      expect(tool.description).toBe("A plugin-supplied executable tool.")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("excludeDefaults does not remove harness file tools", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-exclude-")
+    const app = await createWorkspaceAgentApp({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      excludeDefaults: ["filesystem"],
+    })
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+      expect(res.statusCode).toBe(200)
+      const names = res.json().tools.map((t: { name: string }) => t.name)
+      expect(names).toContain("read")
+      expect(names).toContain("write")
+      expect(names).toContain("edit")
+      expect(names).toContain("bash")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("/api/v1/files/search responds regardless of excludeDefaults", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-search-")
+    const app = await createWorkspaceAgentApp({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      excludeDefaults: ["filesystem"],
+    })
+    try {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/v1/files/search?q=*.ts",
+      })
+      expect(res.statusCode).toBe(200)
     } finally {
       await app.close()
     }

@@ -4,6 +4,7 @@ declare module '@boring/core/front' {
   export const UserMenu: any
   export const WorkspaceSwitcher: any
   export const WorkspaceSettingsPage: any
+  export const useCoreCommands: any
   export const useCurrentWorkspace: any
 }
 
@@ -13,8 +14,8 @@ declare module '@boring/core/server' {
   export const createAuth: any
   export const createCoreApp: any
   export const loadConfig: any
-  export const registerMemberRoutes: any
   export const registerInviteRoutes: any
+  export const registerMemberRoutes: any
   export const registerRoutes: any
   export const registerSettingsRoutes: any
   export const registerWorkspaceRoutes: any

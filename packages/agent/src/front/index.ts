@@ -10,6 +10,8 @@ export {
 } from './ArtifactOpenContext'
 export { ChatEmptyState, defaultChatSuggestions } from './ChatEmptyState'
 export type { ChatEmptyStateProps, ChatSuggestion } from './ChatEmptyState'
+export { getAgentCommands } from './commands'
+export type { AgentCommandContribution, AgentCommandOptions } from './commands'
 
 // Hooks + slash commands
 export { useAgentChat } from './hooks/useAgentChat'

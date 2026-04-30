@@ -1,6 +1,6 @@
 // boring.macro server entry — the consolidated app.
 //
-// Uses @boring/workspace/server's createWorkspaceAgentApp (Phase 0 made
+// Uses @boring/workspace/app's createWorkspaceAgentApp (Phase 0 made
 // this entry buildable) so the agent automatically gets:
 //   - exec_ui / get_ui_state tools
 //   - /api/v1/ui/* routes (PUT state, POST commands, SSE drain)
@@ -8,12 +8,11 @@
 // — no inlining required. The macro-specific bits (catalog/series/deck
 // REST routes, billing, waitlist, agent tools) layer on top.
 
-import Fastify from 'fastify'
 import rawBody from 'fastify-raw-body'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createWorkspaceAgentApp } from '@boring/workspace/server'
-import { createMacroTools } from './tools/macroTools'
+import { createWorkspaceAgentApp } from '@boring/workspace/app'
+import { makeMacroServerPlugin } from '../plugin/server'
 import { registerMacroRoutes } from './routes/macro'
 import { registerBillingRoutes } from './routes/billing'
 import { registerWaitlistRoute } from './routes/waitlist'
@@ -40,7 +39,6 @@ export async function buildServer(opts: MacroAppOptions = {}) {
 
   const macroConfig = await loadMacroConfig()
   await ensureWorkspacePythonEnv(opts.venvRoot ?? workspaceRoot, { sdkPath: resolve(APP_ROOT, 'sdk') })
-  const macroTools = createMacroTools(macroConfig.clickhouse)
   const templatePath = resolve(APP_ROOT, 'workspace-template')
   const systemPromptAppendPath = resolve(APP_ROOT, '.pi/APPEND_SYSTEM.md')
   const localSkillPaths = [
@@ -48,15 +46,12 @@ export async function buildServer(opts: MacroAppOptions = {}) {
     resolve(workspaceRoot, '.pi/skills'),
   ]
 
-  // createWorkspaceAgentApp wires the agent harness + UI bridge (state +
-  // commands + tools) in one call. extraTools are merged: macro tools land
-  // alongside exec_ui/get_ui_state on the LLM's catalog.
   const app = await createWorkspaceAgentApp({
     workspaceRoot,
     templatePath,
     mode: 'local',
     logger: opts.logger ?? true,
-    extraTools: macroTools,
+    plugins: [makeMacroServerPlugin(macroConfig)],
     systemPromptAppend: systemPromptAppendPath,
     resourceLoaderOptions: {
       noContextFiles: true,

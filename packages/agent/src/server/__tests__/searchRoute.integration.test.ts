@@ -42,7 +42,7 @@ afterAll(async () => {
 })
 
 describe('GET /api/v1/files/search', () => {
-  test('basename glob (-name) finds files at any depth', async () => {
+  test('basename glob (-iname) finds files at any depth', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/v1/files/search?q=*.ts',
@@ -52,7 +52,7 @@ describe('GET /api/v1/files/search', () => {
     expect(results.sort()).toEqual(['a.ts', 'src/b.ts'])
   })
 
-  test('path glob (-path with globstar) finds nested files', async () => {
+  test('path glob (-ipath with globstar) finds nested files', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/v1/files/search?q=**%2F*.tsx',
@@ -65,7 +65,7 @@ describe('GET /api/v1/files/search', () => {
   test('exact basename', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/files/search?q=README.md',
+      url: '/api/v1/files/search?q=readme.md',
     })
     const { results } = res.json() as { results: string[] }
     expect(results).toEqual(['README.md'])

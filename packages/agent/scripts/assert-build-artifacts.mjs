@@ -18,7 +18,6 @@ const requiredFiles = [
   'dist/server/index.d.ts',
   'dist/front/index.js',
   'dist/front/index.d.ts',
-  'dist/bin/boring-agent.js',
   'dist/front/styles.css',
 ]
 
@@ -60,14 +59,6 @@ function assertTsParsable(relPath) {
   }
 }
 
-function assertCliShebang() {
-  const cliPath = resolveFromPackage('dist/bin/boring-agent.js')
-  const sourceText = readFileSync(cliPath, 'utf8')
-  if (!sourceText.startsWith('#!/usr/bin/env node')) {
-    throw new Error('dist/bin/boring-agent.js is missing expected shebang')
-  }
-}
-
 async function main() {
   for (const relPath of requiredFiles) {
     await assertExists(relPath)
@@ -76,13 +67,10 @@ async function main() {
   assertNodeParsable('dist/shared/index.js')
   assertNodeParsable('dist/server/index.js')
   assertNodeParsable('dist/front/index.js')
-  assertNodeParsable('dist/bin/boring-agent.js')
 
   assertTsParsable('dist/shared/index.d.ts')
   assertTsParsable('dist/server/index.d.ts')
   assertTsParsable('dist/front/index.d.ts')
-
-  assertCliShebang()
 
   process.stdout.write('build-artifacts: OK\n')
 }

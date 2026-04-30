@@ -106,12 +106,12 @@ test('shell-quotes glob and applies default limit/options', async () => {
   await fileSearch.search("*'; rm -rf /")
 
   expect(receivedCmd).toContain('find . -maxdepth 10')
-  // The injected payload contains `/` so it routes through -path
+  // The injected payload contains `/` so it routes through -ipath
   // (path-shaped). Either way, the glob is single-quoted with `'`
   // → `'\''` escape so the shell can't break out of the quoted string
   // — the `;` and `rm -rf /` payload is inside the quotes, not a
   // separate command.
-  expect(receivedCmd).toContain("-path '*'\\''; rm -rf /'")
+  expect(receivedCmd).toContain("-ipath '*'\\''; rm -rf /'")
   expect(receivedCmd).toContain('| head -n 500')
   // Unquoted (i.e. shell-interpreted) form must NOT appear.
   expect(receivedCmd).not.toContain("'; rm -rf /'  ")
@@ -143,7 +143,7 @@ test('normalizes limit and preserves timeout/maxOutput bounds', async () => {
   expect(receivedCmd).toContain('head -n 500')
 })
 
-test('uses -name for bare basename globs', async () => {
+test('uses -iname for bare basename globs', async () => {
   let cmd = ''
   const sandbox = createSandbox(async (c) => {
     cmd = c
@@ -160,14 +160,14 @@ test('uses -name for bare basename globs', async () => {
   const fileSearch = createServerFileSearch(createWorkspace(), sandbox)
 
   await fileSearch.search('*.ts')
-  expect(cmd).toContain("-name '*.ts'")
-  expect(cmd).not.toContain('-path')
+  expect(cmd).toContain("-iname '*.ts'")
+  expect(cmd).not.toContain('-ipath')
 
   await fileSearch.search('package.json')
-  expect(cmd).toContain("-name 'package.json'")
+  expect(cmd).toContain("-iname 'package.json'")
 })
 
-test('translates path-shaped globs (**/*.ts, src/foo) to -path', async () => {
+test('translates path-shaped globs (**/*.ts, src/foo) to -ipath', async () => {
   let cmd = ''
   const sandbox = createSandbox(async (c) => {
     cmd = c
@@ -184,17 +184,17 @@ test('translates path-shaped globs (**/*.ts, src/foo) to -path', async () => {
   const fileSearch = createServerFileSearch(createWorkspace(), sandbox)
 
   // Globstar — the LLM-default that used to silently match nothing
-  // because `find -name '**/*.ts'` only checks basenames.
+  // because `find -iname '**/*.ts'` only checks basenames.
   await fileSearch.search('**/*.ts')
-  expect(cmd).toContain("-path '*/*.ts'")
+  expect(cmd).toContain("-ipath '*/*.ts'")
 
   // Anchored under a directory.
   await fileSearch.search('src/**/foo.tsx')
-  expect(cmd).toContain("-path '*src/*/foo.tsx'")
+  expect(cmd).toContain("-ipath '*src/*/foo.tsx'")
 
-  // Plain subdir/file (no globstar) — still goes through -path.
+  // Plain subdir/file (no globstar) — still goes through -ipath.
   await fileSearch.search('apps/full-app/package.json')
-  expect(cmd).toContain("-path '*apps/full-app/package.json'")
+  expect(cmd).toContain("-ipath '*apps/full-app/package.json'")
 })
 
 test('search command is bounded to the workspace root', async () => {

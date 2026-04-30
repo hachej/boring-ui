@@ -528,12 +528,12 @@ describe('POST /api/v1/invites/accept', () => {
     expect(res.json().code).toBe('invite_not_found')
   })
 
-  it('410 on already-accepted invite (increments failed_attempts)', async () => {
+  it('409 on already-accepted invite (increments failed_attempts)', async () => {
     const ws = seedWorkspace(OWNER_ID)
     const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { accepted: true })
 
     const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
-    expect(res.statusCode).toBe(410)
+    expect(res.statusCode).toBe(409)
     expect(res.json().code).toBe('invite_already_accepted')
     expect(inviteDb.get(invite.id)?.failedAttempts).toBe(1)
   })

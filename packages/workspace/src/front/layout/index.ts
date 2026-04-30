@@ -1,0 +1,8 @@
+export { IdeLayout, buildIdeLayout } from "./IdeLayout"
+export { ChatLayout, buildChatLayout } from "./ChatLayout"
+export { TopBar } from "./TopBar"
+/** Tier 2 entry: declarative LayoutConfig with stock responsive chrome. */
+export { ResponsiveDockviewShell } from "./ResponsiveDockviewShell"
+export type { TopBarProps } from "./TopBar"
+export type { ResponsiveDockviewShellProps } from "./ResponsiveDockviewShell"
+export type { IdeLayoutProps, ChatLayoutProps } from "./types"

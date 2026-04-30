@@ -24,10 +24,19 @@
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"
     },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js",
+      "default": "./dist/app.js"
+    },
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "default": "./dist/server.js"
+    },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.js"
     },
     "./globals.css": "./src/globals.css"
   },
@@ -101,6 +110,7 @@
     "fastify": "^5.3.3",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.8.0",
+    "micromatch": "^4.0.8",
     "radix-ui": "^1.4.3",
     "react-arborist": "^3.4.0",
     "tailwind-merge": "^2.0.0",
@@ -114,6 +124,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/micromatch": "^4.0.10",
     "@types/node": "^22.15.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

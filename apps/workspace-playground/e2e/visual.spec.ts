@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test"
-import { waitForPlaygroundReady } from "./helpers"
 
 /**
  * Targeted visual / DOM-shape regression tests for fixes that were
@@ -9,11 +8,9 @@ import { waitForPlaygroundReady } from "./helpers"
  * to the user-visible bug they catch.
  */
 
-const STORAGE_KEY = "boring-ui-v2:chat-centered-shell:v2"
-
 async function openPalette(page: import("@playwright/test").Page) {
   await page.goto("/")
-  await waitForPlaygroundReady(page)
+  await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
   await page.keyboard.press("ControlOrMeta+KeyK")
   await expect(
     page.getByRole("dialog", { name: /command palette/i }),
@@ -81,31 +78,13 @@ test.describe("command palette visual chrome", () => {
   })
 })
 
-test.describe("ChatCenteredShell resize chrome", () => {
+test.describe("ChatLayout visual chrome", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
-    await page.evaluate((prefix) => {
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i)
-        if (k?.startsWith(prefix)) localStorage.removeItem(k)
-      }
-    }, STORAGE_KEY)
-    await page.reload()
-    await waitForPlaygroundReady(page)
-    // Open both panes so handles render.
-    const sessions = page.getByRole("button", { name: /sessions/i })
-    if (await sessions.isVisible().catch(() => false)) await sessions.click()
-    const workbench = page.getByRole("button", { name: /workbench/i })
-    if (await workbench.isVisible().catch(() => false)) await workbench.click()
-    await page.waitForTimeout(400)
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
   })
 
-  test("resize handles tint with the brand accent (orange) on hover", async ({
-    page,
-  }) => {
-    const handle = page.locator('[aria-label="Resize workbench"]')
-    await expect(handle).toBeVisible()
-
+  test("brand accent is available to declarative chrome", async ({ page }) => {
     const accent = await page.evaluate(() => {
       const v = getComputedStyle(document.documentElement).getPropertyValue(
         "--accent",
@@ -113,22 +92,7 @@ test.describe("ChatCenteredShell resize chrome", () => {
       return v.trim()
     })
     expect(accent).toBeTruthy()
-
-    // Hover: the handle's background should resolve to (or be derived
-    // from) --accent. We check the className includes accent — the
-    // computed bg-color depends on hover state which Playwright's
-    // mouse.move triggers. Use evaluate after hover.
-    const box = await handle.boundingBox()
-    if (!box) throw new Error("no bounding box for handle")
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-    await page.waitForTimeout(400) // hover transition + 150ms delay
-
-    const bgColor = await handle.evaluate(
-      (el) => getComputedStyle(el).backgroundColor,
-    )
-    // After hover, background should not be transparent. (oklch values
-    // are reported as oklch(...) by getComputedStyle in modern Chromium
-    // — accept any non-zero color.)
-    expect(bgColor).not.toMatch(/(rgba\(0,\s*0,\s*0,\s*0\)|transparent)/)
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
+    await expect(page.locator(".dv-shell").first()).toBeVisible()
   })
 })

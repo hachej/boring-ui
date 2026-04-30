@@ -36,7 +36,9 @@ async function fetchWorkspaces(): Promise<Workspace[]> {
 }
 
 async function fetchWorkspace(workspaceId: string): Promise<WorkspaceDetail> {
-  return await apiFetchJson<WorkspaceDetail>(`/api/v1/workspaces/${workspaceId}`)
+  return await apiFetchJson<WorkspaceDetail>(
+    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`,
+  )
 }
 
 function workspaceIdFromPath(pathname: string): string | null {

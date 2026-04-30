@@ -1,0 +1,29 @@
+{
+  "name": "@boring/macro-sdk",
+  "version": "0.2.0",
+  "description": "Macro-economic timeseries SDK for boring.macro",
+  "type": "module",
+  "bin": {
+    "bm": "./bin/bm.js"
+  },
+  "files": [
+    "bin",
+    "sdk",
+    "transforms",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18",
+    "python": ">=3.10"
+  },
+  "scripts": {
+    "test": "pytest sdk/"
+  },
+  "keywords": [
+    "boring",
+    "macro",
+    "timeseries",
+    "fred"
+  ],
+  "license": "MIT"
+}

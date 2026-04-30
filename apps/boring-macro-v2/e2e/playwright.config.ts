@@ -42,6 +42,7 @@ export default defineConfig({
         env: {
           API_PORT: String(API_PORT),
           FRONTEND_PORT: String(PORT),
+          VITE_DISABLE_FILE_EVENTS: "1",
         },
       },
   projects: [

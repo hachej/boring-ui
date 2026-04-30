@@ -1,7 +1,7 @@
 /**
  * Macro-specific Playwright helpers. Generic primitives (`bootClean`,
  * `openWorkbench`, `openPaneViaBridge`) live in
- * `@boring/workspace/testing/e2e` — this file only carries the
+ * `@boring/workspace/testing` — this file only carries the
  * macro-flavoured wrappers (chart pane, deck pane).
  */
 import type { Page } from "@playwright/test"

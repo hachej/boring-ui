@@ -3,8 +3,7 @@
 ## Vercel Sandbox FS Latency (boring-ui-v2-f4f)
 
 Recorded: 2026-04-23  
-Harness: `packages/agent/scripts/bench-vercel-fs-latency.ts`  
-Historical raw report artifacts were removed from the package tree; the rollup below preserves the benchmark results.
+> **Note:** The benchmark harness script has been removed from the repository. The results below are preserved for historical reference.
 
 ### Methodology
 
@@ -21,11 +20,7 @@ Historical raw report artifacts were removed from the package tree; the rollup b
   - `vercel-exec`: `createVercelSandboxExec(...).exec(...)`
   - `local-bwrap exec`: `createBwrapSandbox(...).exec(...)`
 
-Command used:
 
-```bash
-pnpm --dir packages/agent exec tsx scripts/bench-vercel-fs-latency.ts
-```
 
 ### Results (ms)
 

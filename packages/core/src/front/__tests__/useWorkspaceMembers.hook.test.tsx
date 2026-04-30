@@ -136,6 +136,45 @@ describe('useWorkspaceMembers', () => {
   )
 
   it(
+    'encodes workspaceId in the members URL',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      const workspaceId = 'team/a b'
+      let requestedUrl = ''
+
+      useMswHandler(async (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url
+        requestedUrl = url
+        if (!url.endsWith(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`))
+          return undefined
+        return new Response(JSON.stringify({ members: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      })
+
+      render(
+        <QueryClientProvider client={qc}>
+          <MembersProbe workspaceId={workspaceId} />
+        </QueryClientProvider>,
+      )
+
+      await waitFor(() =>
+        expect(screen.getByTestId('members-data')).toBeTruthy(),
+      )
+
+      expect(requestedUrl).toContain('/api/v1/workspaces/team%2Fa%20b/members')
+      assertionPassed('useWorkspaceMembers-encoded-id')
+      qc.clear()
+    }),
+  )
+
+  it(
     'exposes error when API returns 500',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()

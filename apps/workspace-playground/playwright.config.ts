@@ -19,9 +19,8 @@ export default defineConfig({
   },
   webServer: {
     // Pin to a non-default port so playwright never reuses an unrelated
-    // local dev server that happens to be on :5200 (e.g. boring-macro-v2,
-    // which uses the same ChatCenteredShell — tests against it would
-    // appear to pass while actually targeting the wrong app, and
+    // local dev server that happens to be on :5200 (e.g. boring-macro-v2);
+    // tests against it would appear to pass while actually targeting the wrong app, and
     // localStorage keys would diverge from the playground's defaults).
     // AGENT_API_PORT is shifted off its default (5210) too because
     // boring-macro-v2 also binds 5210. The vite proxy reads that env

@@ -583,7 +583,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
 
       if (invite.acceptedAt) {
         throw new HttpError({
-          status: 410,
+          status: 409,
           code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
           message: 'Invite already accepted',
         })
@@ -647,7 +647,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         }
 
         throw new HttpError({
-          status: 410,
+          status: 409,
           code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
           message: 'Invite already accepted',
         })

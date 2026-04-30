@@ -6,13 +6,14 @@ import {
   WorkspaceProvider,
   useTheme,
   useWorkspaceBridge,
-} from "../WorkspaceProvider"
-import { useApiBaseUrl, useDataClient } from "../data"
-import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../registry"
-import { useCatalogs } from "../plugin/useCatalogs"
-import { useThemePreference } from "../store/selectors"
-import type { PanelConfig } from "../registry/types"
-import type { CatalogConfig } from "../plugin/types"
+} from "../front/provider"
+import { useApiBaseUrl, useDataClient } from "../front/data"
+import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
+import { useCatalogs } from "../front/plugin/useCatalogs"
+import { useCommands } from "../front/plugin/useCommands"
+import { useThemePreference } from "../front/store/selectors"
+import type { PanelConfig } from "../front/registry/types"
+import type { CatalogConfig } from "../shared/plugins/types"
 
 function DummyPanel() {
   return <div>panel</div>
@@ -108,10 +109,30 @@ describe("WorkspaceProvider — context composition", () => {
     expect(screen.getByTestId("has-panel").textContent).toBe("true")
   })
 
-  it("provides useCommandRegistry", () => {
+  it("provides useCommandRegistry", async () => {
     function Inspector() {
-      const cmds = useCommandRegistry()
-      return <div data-testid="cmds">{String(cmds.getCommands().length)}</div>
+      const cmds = useCommands()
+      return <div data-testid="cmds">{String(cmds.length)}</div>
+    }
+
+    render(
+      <WorkspaceProvider
+        commands={[{ id: "test-command", title: "Test command", run: () => {} }]}
+        persistenceEnabled={false}
+      >
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => {
+      expect(Number(screen.getByTestId("cmds").textContent)).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  it("provides useCatalogRegistry with default filesystem catalog", async () => {
+    function Inspector() {
+      const catalogs = useCatalogs()
+      return <div data-testid="catalogs">{String(catalogs.length)}</div>
     }
 
     render(
@@ -120,17 +141,19 @@ describe("WorkspaceProvider — context composition", () => {
       </WorkspaceProvider>,
     )
 
-    expect(Number(screen.getByTestId("cmds").textContent)).toBeGreaterThanOrEqual(3)
+    await waitFor(() => {
+      expect(screen.getByTestId("catalogs").textContent).toBe("1")
+    })
   })
 
-  it("provides useCatalogRegistry", () => {
+  it("excludeDefaults removes filesystem catalog", () => {
     function Inspector() {
       const catalogs = useCatalogRegistry()
       return <div data-testid="catalogs">{String(catalogs.list().length)}</div>
     }
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -165,7 +188,7 @@ describe("WorkspaceProvider — context composition", () => {
 })
 
 describe("WorkspaceProvider — panel registration", () => {
-  it("registers panels from props", () => {
+  it("registers panels from props alongside core + defaults", () => {
     function Inspector() {
       const reg = useRegistry()
       const panels = reg.list()
@@ -182,10 +205,47 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    expect(screen.getByTestId("ids").textContent).toBe("test-panel,chat")
+    const ids = screen.getByTestId("ids").textContent!.split(",")
+    // 5 core panels (chat overwritten by prop's chat) + 3 filesystem + testPanel
+    expect(ids).toContain("chat")
+    expect(ids).toContain("session-list")
+    expect(ids).toContain("workbench-left")
+    expect(ids).toContain("artifact-surface")
+    expect(ids).toContain("empty-file-panel")
+    expect(ids).toContain("files")
+    expect(ids).toContain("test-panel")
+    expect(ids).toHaveLength(9)
   })
 
-  it("registers host catalogs from props", async () => {
+  it("excludeDefaults removes default plugin panels but not core panels", () => {
+    function Inspector() {
+      const reg = useRegistry()
+      const panels = reg.list()
+      return <div data-testid="ids">{panels.map((p) => p.id).join(",")}</div>
+    }
+
+    render(
+      <WorkspaceProvider
+        panels={[testPanel, { ...chatPanel }]}
+        capabilities={{ "agent.chat": true }}
+        excludeDefaults={["filesystem"]}
+        persistenceEnabled={false}
+      >
+        <Inspector />
+      </WorkspaceProvider>,
+    )
+
+    const ids = screen.getByTestId("ids").textContent!.split(",")
+    // 4 core panels (chat overwritten by prop) + testPanel = 5
+    expect(ids).toContain("chat")
+    expect(ids).toContain("session-list")
+    expect(ids).toContain("test-panel")
+    expect(ids).not.toContain("files")
+    expect(ids).not.toContain("code-editor")
+    expect(ids).not.toContain("markdown-editor")
+  })
+
+  it("registers host catalogs from props alongside defaults", async () => {
     const reportsCatalog: CatalogConfig = {
       id: "reports",
       label: "Reports",
@@ -210,11 +270,11 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId("catalog-ids").textContent).toBe("reports")
+      expect(screen.getByTestId("catalog-ids").textContent!.split(",").sort()).toEqual(["files", "reports"])
     })
   })
 
-  it("registers a default files catalog when onOpenFile is provided", async () => {
+  it("registers filesystem plugin file search as the default files catalog", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ results: ["/src/App.tsx"] }), {
         status: 200,
@@ -223,12 +283,10 @@ describe("WorkspaceProvider — panel registration", () => {
     )
     vi.stubGlobal("fetch", fetchMock)
 
-    const onOpenFile = vi.fn()
     const { result } = renderHook(() => useCatalogRegistry(), {
       wrapper: ({ children }) => (
         <WorkspaceProvider
           persistenceEnabled={false}
-          onOpenFile={onOpenFile}
         >
           {children}
         </WorkspaceProvider>
@@ -252,15 +310,34 @@ describe("WorkspaceProvider — panel registration", () => {
       hasMore: false,
     })
 
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/files/search?q=*%5BAa%5D%5BPp%5D%5BPp%5D*&limit=10",
+      expect.objectContaining({ method: "GET" }),
+    )
+  })
+
+  it("routes filesystem catalog selection through onOpenFile when supplied", async () => {
+    const onOpenFile = vi.fn()
+    const { result } = renderHook(() => useCatalogRegistry(), {
+      wrapper: ({ children }) => (
+        <WorkspaceProvider
+          persistenceEnabled={false}
+          onOpenFile={onOpenFile}
+        >
+          {children}
+        </WorkspaceProvider>
+      ),
+    })
+
+    await waitFor(() => {
+      expect(result.current.get("files")?.label).toBe("Files")
+    })
+
     act(() => {
-      result.current.get("files")!.onSelect(searchResult.items[0]!)
+      result.current.get("files")!.onSelect({ id: "/src/App.tsx", title: "App.tsx" })
     })
 
     expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx")
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/files/search?q=app&limit=10",
-      expect.objectContaining({ method: "GET" }),
-    )
   })
 
   it("capabilities filter removes panels missing required capabilities", () => {
@@ -279,7 +356,10 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    expect(screen.getByTestId("count").textContent).toBe("1")
+    // 5 core + 3 filesystem + testPanel = 9 (prop's chat filtered by capabilities,
+    // but core's chat has no requiresCapabilities so stays — prop's chat overwrites
+    // core's, so chat is filtered). Result: 5-1 core + 3 filesystem + testPanel = 8
+    expect(screen.getByTestId("count").textContent).toBe("8")
   })
 
   it("custom panel with same ID as another overrides it", () => {
@@ -389,7 +469,7 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(screen.getByTestId("has-chat").textContent).toBe("true")
   })
 
-  it("undefined or null panels prop does not crash provider", () => {
+  it("undefined or null panels prop does not crash provider (core + defaults registered)", () => {
     function Inspector() {
       const reg = useRegistry()
       return <div data-testid="count">{reg.list().length}</div>
@@ -400,7 +480,8 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getByTestId("count").textContent).toBe("0")
+    // 5 core + 3 filesystem default panels = 8
+    expect(screen.getByTestId("count").textContent).toBe("8")
 
     render(
       <WorkspaceProvider
@@ -410,7 +491,7 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("0")
+    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("8")
   })
 })
 
