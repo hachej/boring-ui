@@ -36,7 +36,7 @@
   "scripts": {
     "build": "tsup && cp src/front/theme.css dist/front/theme.css",
     "dev": "tsup --watch",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm run typecheck",
