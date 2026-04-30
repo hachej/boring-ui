@@ -23,6 +23,7 @@ const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 const VITE_PORT = Number(process.env.PORT) || 5200
 const FIXTURES_DIR = resolve(__dirname, "src/fixtures")
 const WORKSPACE_DIR = resolve(__dirname, "workspace")
+const TEMPLATE_DIR = resolve(__dirname, "workspace-template")
 
 function seedWorkspaceIfEmpty(): void {
   if (!existsSync(WORKSPACE_DIR)) {
@@ -49,6 +50,7 @@ async function startAgentApp() {
     seedWorkspaceIfEmpty()
     const app = await createWorkspaceAgentApp({
       workspaceRoot: process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR,
+      templatePath: TEMPLATE_DIR,
       mode: "local",
       logger: true,
     })

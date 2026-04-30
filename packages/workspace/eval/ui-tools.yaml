@@ -6,7 +6,7 @@
 # suite covers what workspace adds on top.
 #
 # Run:  ANTHROPIC_API_KEY=… pnpm --filter @boring/workspace eval
-# Reqs: ANTHROPIC_API_KEY in env.
+# Or:   OPENAI_API_KEY=… EVAL_MODEL=gpt-4o-mini pnpm --filter @boring/workspace eval
 #
 # Why a separate suite from the agent package: workspace owns the
 # uiTools.ts surface (kinds, params, descriptions). Workspace prompt
@@ -86,6 +86,16 @@ prompts:
         params:
           file: greeter.ts
           line: 7
+
+  # ---- openPanel discovery ----------------------------------------------
+  - prompt: open chart panel for GDP
+    expect:
+      - tool: get_ui_state
+      - tool: exec_ui
+        params:
+          kind: openPanel
+          params:
+            component: chart-canvas
 
   # ---- showNotification --------------------------------------------------
   - prompt: show a warning notification that says "unsaved changes"

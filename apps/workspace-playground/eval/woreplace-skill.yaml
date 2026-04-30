@@ -1,0 +1,21 @@
+# Eval suite for workspace-playground's seeded woreplace-demo skill.
+#
+# Goal: catch regressions where child-app workspace templates no longer expose
+# `.agents/skills/...` to the agent, or the model stops reading the skill before
+# performing the word-replace playground task.
+
+model: gpt-4o-mini
+
+defaults:
+  retries: 1
+  timeoutMs: 120000
+
+prompts:
+  - prompt: Before doing anything else, call the read tool on .agents/skills/woreplace-demo/SKILL.md. Then use that skill and replace the word apple with pear in shopping-list.md.
+    expect:
+      - tool: read
+        params:
+          path: !EvalRegex '\.agents/skills/woreplace-demo/SKILL\.md$'
+      - tool: edit
+        params:
+          path: shopping-list.md
