@@ -1,6 +1,6 @@
 import { createElement } from "react"
 import { definePlugin } from "../../shared/plugins/definePlugin"
-import type { Plugin } from "../../shared/plugins/types"
+import type { LeftTabParams, Plugin } from "../../shared/plugins/types"
 import { DataExplorer } from "../../front/components/DataExplorer"
 import type { ExplorerAdapter, ExplorerRow } from "../../front/components/DataExplorer/types"
 import type { PaneProps } from "../../front/registry/types"
@@ -16,22 +16,24 @@ export function makeStaticDataPlugin(opts: StaticDataPluginOpts): Plugin {
   const id = opts.id ?? "static-data"
   const label = opts.label ?? "Data"
 
-  function StaticDataPane(_props: PaneProps) {
+  function StaticDataPane({ params }: PaneProps<LeftTabParams>) {
     return createElement(DataExplorer, {
       adapter: opts.adapter,
       onActivate: opts.onActivate,
+      query: params?.query ?? "",
+      searchable: false,
     })
   }
 
   return definePlugin({
     id,
     label,
-    panels: [
+    outputs: [
       {
+        type: "left-tab",
         id: `${id}-tab`,
         title: label,
         component: StaticDataPane,
-        placement: "left-tab",
         source: "app",
       },
     ],
