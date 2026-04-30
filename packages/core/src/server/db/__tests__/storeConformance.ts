@@ -478,7 +478,7 @@ export function describeWorkspaceStoreConformance(
         await workspaceStore.acceptInvite(ws.id, created.invite.id, users.member.id)
         await expectHttpErrorCode(
           workspaceStore.acceptInvite(ws.id, created.invite.id, users.member.id),
-          410,
+          409,
           ERROR_CODES.INVITE_ALREADY_ACCEPTED,
         )
         assertionPassed('acceptInvite-not-found-and-already-accepted')

@@ -180,6 +180,99 @@ describe('WorkspaceSettingsPage', () => {
   )
 
   it(
+    'encodes workspace id in settings API URLs',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      const specialWorkspaceId = 'team/a b'
+      const encodedWorkspaceId = encodeURIComponent(specialWorkspaceId)
+      let runtimeUrl = ''
+      let putUrl = ''
+      let retryUrl = ''
+      let deleteUrl = ''
+      mockWorkspace.current = {
+        ...mockWorkspace.current,
+        id: specialWorkspaceId,
+        name: WS_NAME,
+      }
+
+      useMswHandler(async (input, init) => {
+        const url = extractUrl(input)
+        if (
+          url.endsWith(`/api/v1/workspaces/${encodedWorkspaceId}/runtime`) &&
+          (!init?.method || init.method === 'GET')
+        ) {
+          runtimeUrl = url
+          return new Response(
+            JSON.stringify({
+              runtime: makeRuntime({
+                workspaceId: specialWorkspaceId,
+                state: 'error',
+                lastError: 'Provision failed',
+                lastErrorOp: 'provision',
+              }),
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )
+        }
+        if (url.endsWith(`/api/v1/workspaces/${encodedWorkspaceId}`) && init?.method === 'PUT') {
+          putUrl = url
+          return new Response(JSON.stringify({ workspace: mockWorkspace.current }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        if (
+          url.endsWith(`/api/v1/workspaces/${encodedWorkspaceId}/runtime/retry`) &&
+          init?.method === 'POST'
+        ) {
+          retryUrl = url
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        if (url.endsWith(`/api/v1/workspaces/${encodedWorkspaceId}`) && init?.method === 'DELETE') {
+          deleteUrl = url
+          return new Response(JSON.stringify({ deleted: true }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return undefined
+      })
+
+      render(
+        <Wrapper qc={qc}>
+          <WorkspaceSettingsPage />
+        </Wrapper>,
+      )
+
+      await waitFor(() => expect(screen.getByTestId('runtime-card')).toBeTruthy())
+      expect(runtimeUrl).toContain(`/api/v1/workspaces/${encodedWorkspaceId}/runtime`)
+
+      fireEvent.change(screen.getByTestId('workspace-name-input'), {
+        target: { value: 'New Name' },
+      })
+      fireEvent.click(screen.getByTestId('save-name'))
+      await waitFor(() => expect(putUrl).toContain(`/api/v1/workspaces/${encodedWorkspaceId}`))
+
+      fireEvent.click(screen.getByTestId('retry-provision'))
+      await waitFor(() =>
+        expect(retryUrl).toContain(`/api/v1/workspaces/${encodedWorkspaceId}/runtime/retry`),
+      )
+
+      fireEvent.click(screen.getByTestId('delete-workspace'))
+      await waitFor(() => expect(screen.getByTestId('confirm-delete')).toBeTruthy())
+      fireEvent.change(screen.getByTestId('delete-confirm-input'), { target: { value: WS_NAME } })
+      fireEvent.click(screen.getByTestId('confirm-delete'))
+      await waitFor(() => expect(deleteUrl).toContain(`/api/v1/workspaces/${encodedWorkspaceId}`))
+
+      assertionPassed('settings-page-encoded-id')
+      qc.clear()
+    }),
+  )
+
+  it(
     'no runtime row: runtime card NOT rendered',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()

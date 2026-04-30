@@ -286,6 +286,80 @@ describe('InvitesPage', () => {
   )
 
   it(
+    'encodes workspace and invite ids in invite API URLs',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      const specialWorkspaceId = 'team/a b'
+      const specialInviteId = 'inv/a b'
+      const encodedWorkspaceId = encodeURIComponent(specialWorkspaceId)
+      const encodedInviteId = encodeURIComponent(specialInviteId)
+      const pending = makeInvite({
+        id: specialInviteId,
+        workspaceId: specialWorkspaceId,
+        email: 'special@test.dev',
+      })
+      let listUrl = ''
+      let postUrl = ''
+      let deleteUrl = ''
+      mockWorkspace.current = { ...WORKSPACE, id: specialWorkspaceId }
+
+      useMswHandler(async (input, init) => {
+        const url = extractUrl(input)
+        if (url.endsWith(`/api/v1/workspaces/${encodedWorkspaceId}/invites`)) {
+          if (init?.method === 'POST') {
+            postUrl = url
+            return new Response(JSON.stringify({ invite: makeInvite({ email: 'new@test.dev' }) }), {
+              status: 201,
+              headers: { 'content-type': 'application/json' },
+            })
+          }
+          listUrl = url
+          return new Response(JSON.stringify({ invites: [pending] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        if (
+          url.endsWith(`/api/v1/workspaces/${encodedWorkspaceId}/invites/${encodedInviteId}`) &&
+          init?.method === 'DELETE'
+        ) {
+          deleteUrl = url
+          return new Response(JSON.stringify({ revoked: true }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return undefined
+      })
+
+      render(
+        <Wrapper qc={qc}>
+          <InvitesPage />
+        </Wrapper>,
+      )
+
+      await waitFor(() => expect(screen.getByTestId('invites-list')).toBeTruthy())
+      expect(listUrl).toContain(`/api/v1/workspaces/${encodedWorkspaceId}/invites`)
+
+      fireEvent.change(screen.getByLabelText('Email address'), {
+        target: { value: 'new@test.dev' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: /send invite/i }))
+      await waitFor(() => expect(postUrl).toContain(`/api/v1/workspaces/${encodedWorkspaceId}/invites`))
+
+      fireEvent.click(screen.getByTestId(`revoke-${specialInviteId}`))
+      await waitFor(() =>
+        expect(deleteUrl).toContain(
+          `/api/v1/workspaces/${encodedWorkspaceId}/invites/${encodedInviteId}`,
+        ),
+      )
+
+      assertionPassed('invite-page-encoded-ids')
+      qc.clear()
+    }),
+  )
+
+  it(
     'shows inline form error on duplicate email (422)',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()

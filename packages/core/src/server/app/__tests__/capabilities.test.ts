@@ -1,6 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { createCoreApp } from '../createCoreApp'
 import type { CoreConfig, CapabilitiesResponse } from '../../../shared/types'
+
+const CORE_PACKAGE_VERSION = JSON.parse(
+  readFileSync(new URL('../../../../package.json', import.meta.url), 'utf-8'),
+) as { version: string }
 
 const TEST_CONFIG: CoreConfig = {
   appId: 'test-app',
@@ -47,7 +52,7 @@ describe('capabilities contributor API', () => {
 
     expect(res.statusCode).toBe(200)
     expect(body.core).toBeDefined()
-    expect(body.core.version).toMatch(/^\d+\.\d+\.\d+/)
+    expect(body.core.version).toBe(CORE_PACKAGE_VERSION.version)
     expect(body.core.features.invitesEnabled).toBe(true)
     expect(body.core.features.githubOauth).toBe(false)
     expect(body.core.features.emailFlows).toBe(true)

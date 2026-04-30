@@ -1,20 +1,38 @@
 import type { FastifyInstance } from 'fastify'
 import type { CapabilitiesResponse, CoreCapabilities } from '../../shared/types.js'
 import type { CapabilitiesContributor } from './types.js'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 let cachedVersion: string | undefined
 
+function readCorePackageVersion(startDir: string): string | undefined {
+  let dir = startDir
+
+  while (true) {
+    const pkgPath = resolve(dir, 'package.json')
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as {
+        name?: string
+        version?: string
+      }
+      if (pkg.name === '@boring/core' && typeof pkg.version === 'string') {
+        return pkg.version
+      }
+    }
+
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
 function getCoreVersion(): string {
   if (cachedVersion) return cachedVersion
   try {
     const dir = dirname(fileURLToPath(import.meta.url))
-    const pkg = JSON.parse(
-      readFileSync(resolve(dir, '../../../../package.json'), 'utf-8'),
-    ) as { version: string }
-    cachedVersion = pkg.version
+    cachedVersion = readCorePackageVersion(dir) ?? '0.0.0'
   } catch {
     cachedVersion = '0.0.0'
   }

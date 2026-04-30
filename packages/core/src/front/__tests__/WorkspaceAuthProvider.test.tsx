@@ -157,6 +157,41 @@ describe('WorkspaceAuthProvider', () => {
   )
 
   it(
+    'encodes route workspace id before fetching detail',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      const specialWs: Workspace = { ...WS_1, id: 'team/a b' }
+      let requestedUrl = ''
+
+      mockWorkspacesList([specialWs])
+      useMswHandler(async (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url
+        requestedUrl = url
+        if (!url.endsWith(`/api/v1/workspaces/${encodeURIComponent(specialWs.id)}`))
+          return undefined
+        return new Response(JSON.stringify({ workspace: specialWs, role: 'owner' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      })
+
+      renderWithRouter(`/workspace/${encodeURIComponent(specialWs.id)}`, qc)
+
+      await waitFor(() =>
+        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+      )
+      expect(requestedUrl).toContain('/api/v1/workspaces/team%2Fa%20b')
+      assertionPassed('workspace-route-id-encoded')
+      qc.clear()
+    }),
+  )
+
+  it(
     'falls back to default workspace when no :id param',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()

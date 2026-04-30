@@ -203,7 +203,7 @@ describe('PostgresWorkspaceStore invites', () => {
     await expect(
       store.acceptInvite(WS_ID, invite.id, MEMBER_ID),
     ).rejects.toMatchObject({
-      status: 410,
+      status: 409,
       code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
     } satisfies Pick<HttpError, 'status' | 'code'>)
   })

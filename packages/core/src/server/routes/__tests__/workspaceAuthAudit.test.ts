@@ -163,7 +163,7 @@ function mockWorkspaceStore(): WorkspaceStore {
       if (!inv || inv.workspaceId !== wsId)
         throw new HttpError({ status: 404, code: ERROR_CODES.INVITE_NOT_FOUND, message: 'Not found' })
       if (inv.acceptedAt)
-        throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_ALREADY_ACCEPTED, message: 'Already accepted' })
+        throw new HttpError({ status: 409, code: ERROR_CODES.INVITE_ALREADY_ACCEPTED, message: 'Already accepted' })
       if (new Date(inv.expiresAt) < new Date())
         throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_EXPIRED, message: 'Expired' })
       inv.acceptedAt = new Date().toISOString()

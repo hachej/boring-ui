@@ -12,7 +12,7 @@ export function useWorkspaceMembers(workspaceId: string) {
     queryKey: ['members', workspaceId],
     queryFn: async () => {
       const data = await apiFetchJson<{ members: EnrichedMember[] }>(
-        `/api/v1/workspaces/${workspaceId}/members`,
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`,
       )
       return data.members
     },

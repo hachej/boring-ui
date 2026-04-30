@@ -56,13 +56,14 @@ export function WorkspaceSettingsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const displayName = nameValue ?? workspace?.name ?? ''
+  const encodedWorkspaceId = encodeURIComponent(workspaceId)
 
   const runtimeQuery = useQuery({
     queryKey: ['runtime', workspaceId],
     queryFn: async () => {
       try {
         const data = await apiFetchJson<{ runtime: WorkspaceRuntime }>(
-          `/api/v1/workspaces/${workspaceId}/runtime`,
+          `/api/v1/workspaces/${encodedWorkspaceId}/runtime`,
         )
         return data.runtime
       } catch (err: unknown) {
@@ -76,7 +77,7 @@ export function WorkspaceSettingsPage() {
 
   const renameMutation = useMutation({
     mutationFn: async (name: string) => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}`, {
+      await apiFetch(`/api/v1/workspaces/${encodedWorkspaceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -96,7 +97,7 @@ export function WorkspaceSettingsPage() {
 
   const retryMutation = useMutation({
     mutationFn: async () => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}/runtime/retry`, {
+      await apiFetch(`/api/v1/workspaces/${encodedWorkspaceId}/runtime/retry`, {
         method: 'POST',
       })
     },
@@ -112,7 +113,7 @@ export function WorkspaceSettingsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}`, {
+      await apiFetch(`/api/v1/workspaces/${encodedWorkspaceId}`, {
         method: 'DELETE',
       })
     },
