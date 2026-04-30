@@ -6,6 +6,29 @@ export interface FsProvisionerOptions {
   rootDir: string
 }
 
+function assertValidWorkspaceId(workspaceId: string): void {
+  if (
+    workspaceId.length === 0 ||
+    workspaceId === '.' ||
+    workspaceId === '..' ||
+    workspaceId.includes('\0') ||
+    workspaceId.includes('/') ||
+    workspaceId.includes('\\')
+  ) {
+    throw new Error(`Invalid workspaceId for filesystem provisioning: ${workspaceId}`)
+  }
+}
+
+function resolveWorkspaceDir(root: string, workspaceId: string): string {
+  assertValidWorkspaceId(workspaceId)
+  const resolved = path.resolve(root, workspaceId)
+  const relative = path.relative(root, resolved)
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Path traversal detected: ${workspaceId} resolves outside rootDir`)
+  }
+  return resolved
+}
+
 export function createFsProvisioner(opts: FsProvisionerOptions): WorkspaceProvisioner {
   if (!path.isAbsolute(opts.rootDir)) {
     throw new Error(`FsProvisioner rootDir must be absolute, got: ${opts.rootDir}`)
@@ -14,20 +37,12 @@ export function createFsProvisioner(opts: FsProvisionerOptions): WorkspaceProvis
 
   return {
     async provision(ctx) {
-      const dir = path.join(root, ctx.workspaceId)
-      const resolved = path.resolve(dir)
-      if (!resolved.startsWith(root + path.sep)) {
-        throw new Error(`Path traversal detected: ${ctx.workspaceId} resolves outside rootDir`)
-      }
+      const resolved = resolveWorkspaceDir(root, ctx.workspaceId)
       await fs.mkdir(resolved, { recursive: true, mode: 0o700 })
       return { volumePath: resolved }
     },
     async destroy(workspaceId) {
-      const dir = path.join(root, workspaceId)
-      const resolved = path.resolve(dir)
-      if (!resolved.startsWith(root + path.sep)) {
-        throw new Error(`Path traversal detected: ${workspaceId} resolves outside rootDir`)
-      }
+      const resolved = resolveWorkspaceDir(root, workspaceId)
       await fs.rm(resolved, { recursive: true, force: true })
     },
   }

@@ -24,9 +24,10 @@ function mockRunCommand(stdoutData: string, stderrData: string, exitCode = 0) {
 
 test('exec echo returns hi newline', async () => {
   const runCommand = mockRunCommand('hi\n', '')
+  const onMutation = vi.fn()
 
   const sandbox = { runCommand } as unknown as VercelSandbox
-  const adapter = createVercelSandboxExec(sandbox)
+  const adapter = createVercelSandboxExec(sandbox, { onMutation })
 
   const result = await adapter.exec('echo hi')
 
@@ -42,6 +43,7 @@ test('exec echo returns hi newline', async () => {
   expect(decoder.decode(result.stderr)).toBe('')
   expect(result.exitCode).toBe(0)
   expect(result.truncated).toBe(false)
+  expect(onMutation).toHaveBeenCalledTimes(1)
 })
 
 test('workspace writes are visible through exec on same sandbox handle', async () => {

@@ -19,8 +19,8 @@ async function readFileAsText(file: FileUIPart): Promise<string | null> {
   }
 }
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { DebugDrawer } from './DebugDrawer'
 import { useAgentChat } from './hooks/useAgentChat'
+import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
@@ -65,6 +65,7 @@ import {
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
+const STORAGE_MODEL_USER_KEY = 'boring-agent:composer:model:user-selected'
 const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
 const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
 
@@ -115,10 +116,10 @@ interface AvailableModel extends ModelSelection {
 
 const DEFAULT_MODEL: ModelSelection = { provider: 'anthropic', id: 'sonnet' }
 
-function readStoredModel(): ModelSelection {
+function readStoredModel(): ModelSelection | null {
   try {
     const raw = globalThis.localStorage?.getItem(STORAGE_MODEL_KEY)
-    if (!raw) return DEFAULT_MODEL
+    if (!raw) return null
     if (raw.startsWith('{')) {
       const parsed = JSON.parse(raw) as Partial<ModelSelection>
       if (typeof parsed?.provider === 'string' && typeof parsed?.id === 'string') {
@@ -127,7 +128,23 @@ function readStoredModel(): ModelSelection {
     }
     if (isModelId(raw)) return { provider: 'anthropic', id: raw }
   } catch { /* storage unavailable */ }
-  return DEFAULT_MODEL
+  return null
+}
+
+function isLegacyImplicitModel(model: ModelSelection | null): boolean {
+  return model?.provider === DEFAULT_MODEL.provider && model.id === DEFAULT_MODEL.id
+}
+
+function readStoredModelState(): { model: ModelSelection | null; userSelected: boolean } {
+  const model = readStoredModel()
+  let userSelected = false
+  try {
+    userSelected = globalThis.localStorage?.getItem(STORAGE_MODEL_USER_KEY) === '1'
+  } catch { /* storage unavailable */ }
+  return {
+    model,
+    userSelected: userSelected || (model !== null && !isLegacyImplicitModel(model)),
+  }
 }
 
 function encodeModelKey(sel: ModelSelection): string {
@@ -227,6 +244,12 @@ export interface ChatPanelProps {
    */
   thinkingControl?: boolean
   /**
+   * Model selected before any local user choice exists. Usually supplied by
+   * the host's /api/v1/agent/models payload, so deployment env can choose
+   * the default without rebuilding consumers.
+   */
+  defaultModel?: ModelSelection
+  /**
    * Tap into the SSE data stream. Called for every `onData` part the
    * agent emits — host apps use this to bridge agent-driven file
    * changes into their own UI plumbing (see
@@ -245,8 +268,9 @@ export interface ChatPanelProps {
    */
   onOpenArtifact?: OpenArtifactHandler
   /**
-   * Enable the admin debug drawer — system prompt + raw message parts.
-   * Off by default. Wire to a URL param, env flag, or user role check.
+   * Enable the admin debug drawer — system prompt, raw messages JSON, and
+   * live onData stream events. Intended for development and ops; keep off
+   * in production consumer UIs.
    */
   debug?: boolean
   className?: string
@@ -309,6 +333,7 @@ export function ChatPanel(props: ChatPanelProps) {
     emptyTitle,
     emptyDescription,
     thinkingControl = false,
+    defaultModel,
     onData,
     requestHeaders,
     onOpenArtifact,
@@ -325,7 +350,21 @@ export function ChatPanel(props: ChatPanelProps) {
     [extraCommands],
   )
 
-  const [model, setModel] = useState<ModelSelection>(() => readStoredModel())
+  const initialModelState = useMemo(readStoredModelState, [])
+  const [model, setModelState] = useState<ModelSelection>(
+    () => initialModelState.model ?? defaultModel ?? DEFAULT_MODEL,
+  )
+  const [userSelectedModel, setUserSelectedModel] = useState<boolean>(
+    () => initialModelState.userSelected,
+  )
+  const userSelectedModelRef = useRef(userSelectedModel)
+  useEffect(() => {
+    userSelectedModelRef.current = userSelectedModel
+  }, [userSelectedModel])
+  const setModel = useCallback((next: ModelSelection) => {
+    setUserSelectedModel(true)
+    setModelState(next)
+  }, [])
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
     thinkingControl ? readStoredThinking() : DEFAULT_THINKING,
   )
@@ -356,10 +395,17 @@ export function ChatPanel(props: ChatPanelProps) {
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
 
   useEffect(() => {
+    if (!userSelectedModel) return
     try {
       globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(model))
+      globalThis.localStorage?.setItem(STORAGE_MODEL_USER_KEY, '1')
     } catch { /* noop */ }
-  }, [model])
+  }, [model, userSelectedModel])
+
+  useEffect(() => {
+    if (userSelectedModelRef.current || !defaultModel) return
+    setModelState(defaultModel)
+  }, [defaultModel])
 
   // Fetch the live list from pi's ModelRegistry so the dropdown reflects
   // what the server actually has auth for, not a hardcoded alias set.
@@ -367,9 +413,12 @@ export function ChatPanel(props: ChatPanelProps) {
     let aborted = false
     fetch('/api/v1/agent/models', { headers: requestHeaders })
       .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { models?: AvailableModel[] } | null) => {
+      .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
         if (aborted || !payload?.models) return
         setAvailableModels(payload.models)
+        if (payload.defaultModel && !userSelectedModelRef.current) {
+          setModelState(payload.defaultModel)
+        }
       })
       .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
     return () => { aborted = true }

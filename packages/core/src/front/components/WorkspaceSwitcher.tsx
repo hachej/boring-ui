@@ -12,12 +12,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
   Label,
 } from '@boring/workspace/ui-shadcn'
 import * as WorkspaceUi from '@boring/workspace/ui-shadcn'
+import { Check, ChevronsUpDown, Plus, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 
@@ -45,6 +47,11 @@ type ToastArgs = {
 
 type ToastApi = {
   toast: (args: ToastArgs) => void
+}
+
+export interface WorkspaceSwitcherProps {
+  appTitle?: string
+  workspacePathPrefix?: string
 }
 
 function useToastCompat(): ToastApi {
@@ -84,7 +91,15 @@ function useWorkspaces() {
   })
 }
 
-export function WorkspaceSwitcher() {
+function hrefForWorkspace(prefix: string, workspaceId: string, suffix = ''): string {
+  const normalized = prefix.startsWith('/') ? prefix : `/${prefix}`
+  return `${normalized.replace(/\/$/, '')}/${encodeURIComponent(workspaceId)}${suffix}`
+}
+
+export function WorkspaceSwitcher({
+  appTitle = 'Boring',
+  workspacePathPrefix = '/workspace',
+}: WorkspaceSwitcherProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { toast } = useToastCompat()
@@ -145,7 +160,7 @@ export function WorkspaceSwitcher() {
         queryClient.invalidateQueries({ queryKey: workspaceQueryKey(data.workspace.id) }),
       ])
       onModalChange(false)
-      navigate(`/workspace/${data.workspace.id}`)
+      navigate(hrefForWorkspace(workspacePathPrefix, data.workspace.id))
     } catch (error) {
       const detail = getHttpErrorDetail(error)
       if (typeof detail.status === 'number' && detail.status >= 400 && detail.status < 500) {
@@ -169,32 +184,60 @@ export function WorkspaceSwitcher() {
       {workspaces.length === 0 ? (
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           onClick={openCreateWorkspace}
+          className="-ml-1 h-9 gap-2 px-1.5"
         >
-          Create your first workspace
+          <span
+            aria-hidden="true"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+          >
+            {appTitle.charAt(0).toUpperCase()}
+          </span>
+          <span className="text-[13px] font-medium tracking-tight text-foreground">
+            Create your first workspace
+          </span>
         </Button>
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
+            <button
               type="button"
-              variant="outline"
-              aria-label="Workspace switcher"
+              aria-label={`Workspace menu: ${switcherLabel}`}
+              className="-ml-1 flex min-w-0 items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
-              {switcherLabel}
-            </Button>
+              <span
+                aria-hidden="true"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+              >
+                {appTitle.charAt(0).toUpperCase()}
+              </span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
+                  {appTitle}
+                </span>
+                <span aria-hidden="true" className="text-muted-foreground/30">/</span>
+                <span className="truncate text-[13px] font-normal text-muted-foreground">
+                  {switcherLabel}
+                </span>
+              </span>
+              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+              Workspaces
+            </DropdownMenuLabel>
             {workspaces.map((workspace) => {
               const isCurrent = currentWorkspace?.id === workspace.id
               return (
                 <DropdownMenuItem
                   key={workspace.id}
                   data-current={isCurrent ? 'true' : 'false'}
-                  onSelect={() => navigate(`/workspace/${workspace.id}`)}
+                  onSelect={() => navigate(hrefForWorkspace(workspacePathPrefix, workspace.id))}
                 >
                   <span className="truncate">{workspace.name}</span>
+                  {isCurrent ? <Check className="ml-auto h-4 w-4" aria-hidden="true" /> : null}
                 </DropdownMenuItem>
               )
             })}
@@ -207,8 +250,18 @@ export function WorkspaceSwitcher() {
                 openCreateWorkspace()
               }}
             >
+              <Plus className="h-4 w-4" aria-hidden="true" />
               Create workspace
             </DropdownMenuItem>
+
+            {currentWorkspace ? (
+              <DropdownMenuItem
+                onSelect={() => navigate(hrefForWorkspace(workspacePathPrefix, currentWorkspace.id, '/settings'))}
+              >
+                <Settings className="h-4 w-4" aria-hidden="true" />
+                Workspace settings
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       )}

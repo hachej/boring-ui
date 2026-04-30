@@ -26,6 +26,16 @@ export function requireWorkspaceMember(
       )
     }
 
+    const workspace = await request.server.workspaceStore.get(workspaceId)
+    if (!workspace || workspace.appId !== request.server.config.appId) {
+      throw new HttpError({
+        status: 404,
+        code: ERROR_CODES.NOT_FOUND,
+        message: 'Workspace not found',
+        requestId: request.id,
+      })
+    }
+
     const role = await request.server.workspaceStore.getMemberRole(
       workspaceId,
       user.id,

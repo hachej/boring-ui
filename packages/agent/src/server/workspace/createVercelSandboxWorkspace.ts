@@ -92,6 +92,10 @@ export interface VercelSandboxWorkspace extends Workspace {
   invalidateMetadataCache(): void
 }
 
+export interface VercelSandboxWorkspaceOptions {
+  onMutation?: () => void
+}
+
 /**
  * Internal change-event broadcaster. The sandbox runtime can't run
  * chokidar against the remote container, so we surface "events" from
@@ -135,6 +139,7 @@ function createSandboxBroadcaster(): {
 
 export function createVercelSandboxWorkspace(
   sandbox: VercelSandbox,
+  workspaceOpts: VercelSandboxWorkspaceOptions = {},
 ): VercelSandboxWorkspace {
   const statCache = createTimedLruCache<Stat>(CACHE_TTL_MS, CACHE_MAX_ENTRIES)
   const readdirCache = createTimedLruCache<Entry[]>(
@@ -175,12 +180,14 @@ export function createVercelSandboxWorkspace(
         },
       ])
       invalidateMetadataCache()
+      workspaceOpts.onMutation?.()
       emitChange({ op: 'write', path: relPath })
     },
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)
       await sandbox.fs.rm(sandboxPath, { recursive: false, force: false })
       invalidateMetadataCache()
+      workspaceOpts.onMutation?.()
       emitChange({ op: 'unlink', path: relPath })
     },
     async readdir(relPath) {
@@ -216,6 +223,7 @@ export function createVercelSandboxWorkspace(
       const sandboxPath = toSandboxPath(relPath)
       await sandbox.fs.mkdir(sandboxPath, { recursive: opts?.recursive ?? false })
       invalidateMetadataCache()
+      workspaceOpts.onMutation?.()
       emitChange({ op: 'mkdir', path: relPath })
     },
     async rename(fromRelPath, toRelPath) {
@@ -223,6 +231,7 @@ export function createVercelSandboxWorkspace(
       const toSandboxAbsolutePath = toSandboxPath(toRelPath)
       await sandbox.fs.rename(fromSandboxPath, toSandboxAbsolutePath)
       invalidateMetadataCache()
+      workspaceOpts.onMutation?.()
       emitChange({ op: 'rename', path: toRelPath, oldPath: fromRelPath })
     },
   }

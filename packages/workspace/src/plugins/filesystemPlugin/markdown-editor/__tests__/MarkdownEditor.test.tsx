@@ -14,6 +14,17 @@ describe("MarkdownEditor", () => {
     })
   })
 
+  it("renders markdown tables", async () => {
+    render(
+      <MarkdownEditor content={`| A | B |\n| --- | --- |\n| 1 | 2 |`} readOnly />,
+    )
+    await waitFor(() => {
+      expect(document.querySelector("table")).toBeTruthy()
+    })
+    expect(screen.getByText("A")).toBeInTheDocument()
+    expect(screen.getByText("2")).toBeInTheDocument()
+  })
+
   it("renders toolbar with formatting buttons", async () => {
     render(<MarkdownEditor content="test" />)
     await waitFor(() => {

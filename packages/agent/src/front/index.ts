@@ -17,7 +17,7 @@ export type { AgentCommandContribution, AgentCommandOptions } from './commands'
 export { useAgentChat } from './hooks/useAgentChat'
 export type { UseAgentChatOptions } from './hooks/useAgentChat'
 export { useSessions } from './hooks/useSessions'
-export type { UseSessionsResult } from './hooks/useSessions'
+export type { UseSessionsOptions, UseSessionsResult } from './hooks/useSessions'
 export {
   builtinCommands,
   createCommandRegistry,

@@ -76,6 +76,21 @@ function parentDir(path: string): string {
   return i > 0 ? path.slice(0, i) : "."
 }
 
+function dirKey(dir: string): string {
+  return dir && dir !== "" ? dir : "."
+}
+
+function mergeEntries(
+  base: FileEntry[] | undefined,
+  optimistic: FileEntry[] | undefined,
+): FileEntry[] | undefined {
+  if (!optimistic?.length) return base
+  const byPath = new Map<string, FileEntry>()
+  for (const entry of base ?? []) byPath.set(entry.path, entry)
+  for (const entry of optimistic) byPath.set(entry.path, entry)
+  return Array.from(byPath.values())
+}
+
 type DraftEditing =
   | { kind: "create-file"; parentDir: string; path: string }
   | { kind: "create-folder"; parentDir: string; path: string }
@@ -193,13 +208,21 @@ export function FileTreeView({
 }: FileTreeViewProps) {
   const dataClient = useDataClient()
   const { data: rawFileList, error, isLoading } = useFileList(rootDir)
+  const [optimisticEntries, setOptimisticEntries] = useState<
+    Map<string, FileEntry[]>
+  >(new Map())
+  const rootDirKey = dirKey(rootDir)
+  const rawFileListWithOptimistic = useMemo(
+    () => mergeEntries(rawFileList, optimisticEntries.get(rootDirKey)),
+    [rawFileList, optimisticEntries, rootDirKey],
+  )
   // Filter out junk folders (node_modules, dist, …) before they hit
   // buildTree. Cheap O(n) at the top level; nested children are already
   // filtered by the agent backend or by their own buildTree recursion
   // since the same `ignoreNames` is applied via the closure below.
   const fileList = useMemo(
-    () => filterIgnoredEntries(rawFileList, ignoreNames),
-    [rawFileList, ignoreNames],
+    () => filterIgnoredEntries(rawFileListWithOptimistic, ignoreNames),
+    [rawFileListWithOptimistic, ignoreNames],
   )
   const { mutateAsync: writeFile } = useFileWrite()
   const { mutateAsync: createDir } = useCreateDir()
@@ -209,6 +232,16 @@ export function FileTreeView({
   const [expandedChildren, setExpandedChildren] = useState<
     Map<string, FileEntry[]>
   >(new Map())
+  const expandedChildrenWithOptimistic = useMemo(() => {
+    if (optimisticEntries.size === 0) return expandedChildren
+    const next = new Map(expandedChildren)
+    for (const [dir, entries] of optimisticEntries) {
+      if (dir === rootDirKey) continue
+      const merged = mergeEntries(next.get(dir), entries)
+      if (merged) next.set(dir, merged)
+    }
+    return next
+  }, [expandedChildren, optimisticEntries, rootDirKey])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [treeHeight, setTreeHeight] = useState(400)
@@ -229,11 +262,15 @@ export function FileTreeView({
     | { kind: "create-folder"; parentDir: string; path: string }
     | null
   const [editing, setEditing] = useState<EditingState>(null)
+  const [revealPath, setRevealPath] = useState<string | null>(null)
   const draftSeqRef = useRef(0)
 
   const totalFileCount =
     (fileList?.length ?? 0) +
-    Array.from(expandedChildren.values()).reduce((s, v) => s + v.length, 0)
+    Array.from(expandedChildrenWithOptimistic.values()).reduce(
+      (s, v) => s + v.length,
+      0,
+    )
   const useServerSearch =
     totalFileCount >= CLIENT_FILTER_THRESHOLD && (searchQuery?.length ?? 0) > 0
   const { data: searchResults } = useFileSearch(
@@ -280,7 +317,7 @@ export function FileTreeView({
       : undefined
 
   const baseTreeData =
-    serverSearchTree ?? buildTree(fileList ?? [], expandedChildren)
+    serverSearchTree ?? buildTree(fileList ?? [], expandedChildrenWithOptimistic)
 
   // Inject a draft row into the tree so the inline <input> renders at the
   // right depth. For server-search results we don't bother — drafts only
@@ -318,7 +355,7 @@ export function FileTreeView({
    * `useFileList`'s react-query invalidation).
    */
   const refreshDirs = useCallback(
-    async (dirs: string[]) => {
+    async (dirs: string[], options?: { force?: boolean }) => {
       const unique = Array.from(new Set(dirs)).filter(
         (d) => d && d !== rootDir && d !== ".",
       )
@@ -344,13 +381,36 @@ export function FileTreeView({
           const [dir, children] = result
           // Only update if this dir was actually expanded — re-fetching a
           // collapsed dir would silently re-add it to the cache.
-          if (next.has(dir)) next.set(dir, children)
+          if (options?.force || next.has(dir)) next.set(dir, children)
         }
         return next
       })
     },
     [dataClient, rootDir, ignoreNames],
   )
+
+  const addOptimisticEntry = useCallback((dir: string, entry: FileEntry) => {
+    setOptimisticEntries((prev) => {
+      const key = dirKey(dir)
+      const next = new Map(prev)
+      const entries = mergeEntries(next.get(key), [entry]) ?? [entry]
+      next.set(key, entries)
+      return next
+    })
+  }, [])
+
+  const removeOptimisticEntry = useCallback((dir: string, path: string) => {
+    setOptimisticEntries((prev) => {
+      const key = dirKey(dir)
+      const entries = prev.get(key)
+      if (!entries?.length) return prev
+      const remaining = entries.filter((entry) => entry.path !== path)
+      const next = new Map(prev)
+      if (remaining.length > 0) next.set(key, remaining)
+      else next.delete(key)
+      return next
+    })
+  }, [])
 
   // Paths currently being mutated (move/rename/delete/create). Renders a
   // pending spinner on the affected rows. Set during the await; cleared in
@@ -482,6 +542,11 @@ export function FileTreeView({
           const newPath = dir === "." || dir === "" ? trimmed : `${dir}/${trimmed}`
           if (current.kind === "create-file") {
             await writeFile({ path: newPath, content: "" })
+            addOptimisticEntry(dir, {
+              name: trimmed,
+              kind: "file",
+              path: newPath,
+            })
             // useFileWrite stays silent (it can't tell create from edit);
             // the call site knows this was a creation, so emit here.
             // useCreateDir already emits its own file:created event.
@@ -493,9 +558,15 @@ export function FileTreeView({
             toast.success({ title: "File created", description: newPath })
           } else {
             await createDir({ path: newPath })
+            addOptimisticEntry(dir, {
+              name: trimmed,
+              kind: "dir",
+              path: newPath,
+            })
             toast.success({ title: "Folder created", description: newPath })
           }
-          await refreshDirs([dir])
+          await refreshDirs([dir], { force: true })
+          setRevealPath(newPath)
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -512,7 +583,16 @@ export function FileTreeView({
         clearPending(trackPath)
       }
     },
-    [editing, moveFile, writeFile, createDir, refreshDirs, markPending, clearPending],
+    [
+      editing,
+      moveFile,
+      writeFile,
+      createDir,
+      refreshDirs,
+      markPending,
+      clearPending,
+      addOptimisticEntry,
+    ],
   )
 
   const handleCancelEdit = useCallback(() => {
@@ -532,6 +612,7 @@ export function FileTreeView({
     markPending(target.path)
     try {
       await deleteFile({ path: target.path })
+      removeOptimisticEntry(parentDir(target.path), target.path)
       await refreshDirs([parentDir(target.path)])
       toast.success({ title: "Deleted", description: target.path })
     } catch (err) {
@@ -542,7 +623,14 @@ export function FileTreeView({
     } finally {
       clearPending(target.path)
     }
-  }, [deleteTarget, deleteFile, refreshDirs, markPending, clearPending])
+  }, [
+    deleteTarget,
+    deleteFile,
+    refreshDirs,
+    markPending,
+    clearPending,
+    removeOptimisticEntry,
+  ])
 
   const effectiveQuery =
     !useServerSearch && (searchQuery?.length ?? 0) > 0 ? searchQuery : undefined
@@ -594,6 +682,7 @@ export function FileTreeView({
                     } satisfies FileTreeEditState)
                   : null
               }
+              revealPath={revealPath}
               pendingPaths={pendingPaths}
               onSelect={handleSelect}
               onExpand={handleExpand}

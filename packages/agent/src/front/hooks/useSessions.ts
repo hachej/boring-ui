@@ -4,6 +4,11 @@ import type { SessionSummary } from '../../shared/session'
 const API_BASE = '/api/v1/agent/sessions'
 const STORAGE_KEY = 'boring-agent:activeSessionId'
 
+export interface UseSessionsOptions {
+  requestHeaders?: Record<string, string>
+  storageKey?: string
+}
+
 export interface UseSessionsResult {
   sessions: SessionSummary[]
   activeSession: SessionSummary | undefined
@@ -15,31 +20,43 @@ export interface UseSessionsResult {
   delete: (id: string) => Promise<void>
 }
 
-function readPersistedId(): string | undefined {
+function readPersistedId(storageKey: string): string | undefined {
   try {
-    return localStorage.getItem(STORAGE_KEY) ?? undefined
+    return localStorage.getItem(storageKey) ?? undefined
   } catch {
     return undefined
   }
 }
 
-function persistId(id: string | undefined): void {
+function persistId(storageKey: string, id: string | undefined): void {
   try {
-    if (id === undefined) localStorage.removeItem(STORAGE_KEY)
-    else localStorage.setItem(STORAGE_KEY, id)
+    if (id === undefined) localStorage.removeItem(storageKey)
+    else localStorage.setItem(storageKey, id)
   } catch {}
 }
 
-async function fetchSessions(): Promise<SessionSummary[]> {
-  const res = await fetch(API_BASE)
+function requestInit(
+  headers: Record<string, string> | undefined,
+): RequestInit | undefined {
+  if (!headers || Object.keys(headers).length === 0) return undefined
+  return { headers }
+}
+
+async function fetchSessions(
+  headers: Record<string, string> | undefined,
+): Promise<SessionSummary[]> {
+  const init = requestInit(headers)
+  const res = init ? await fetch(API_BASE, init) : await fetch(API_BASE)
   if (!res.ok) throw new Error(`Failed to load sessions: ${res.status}`)
   return res.json()
 }
 
-export function useSessions(): UseSessionsResult {
+export function useSessions(opts: UseSessionsOptions = {}): UseSessionsResult {
+  const storageKey = opts.storageKey ?? STORAGE_KEY
+  const requestHeaders = opts.requestHeaders
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
-    readPersistedId,
+    () => readPersistedId(storageKey),
   )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | undefined>()
@@ -48,9 +65,15 @@ export function useSessions(): UseSessionsResult {
   const refresh = useCallback(async () => {
     const v = ++versionRef.current
     try {
-      const data = await fetchSessions()
+      const data = await fetchSessions(requestHeaders)
       if (v === versionRef.current) {
         setSessions(data)
+        setActiveSessionId((prev) => {
+          if (prev && data.some((session) => session.id === prev)) return prev
+          const next = data[0]?.id
+          persistId(storageKey, next)
+          return next
+        })
         setLoading(false)
       }
     } catch (err) {
@@ -59,7 +82,7 @@ export function useSessions(): UseSessionsResult {
         setLoading(false)
       }
     }
-  }, [])
+  }, [requestHeaders, storageKey])
 
   useEffect(() => {
     void refresh()
@@ -69,7 +92,7 @@ export function useSessions(): UseSessionsResult {
     async (init?: { title?: string }): Promise<SessionSummary> => {
       const res = await fetch(API_BASE, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...requestHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify(init ?? {}),
       })
       if (!res.ok) {
@@ -80,32 +103,35 @@ export function useSessions(): UseSessionsResult {
       const session: SessionSummary = await res.json()
       setSessions((prev) => [session, ...prev])
       setActiveSessionId(session.id)
-      persistId(session.id)
+      persistId(storageKey, session.id)
       void refresh()
       return session
     },
-    [refresh],
+    [refresh, requestHeaders, storageKey],
   )
 
   const switchSession = useCallback((id: string) => {
     setActiveSessionId(id)
-    persistId(id)
-  }, [])
+    persistId(storageKey, id)
+  }, [storageKey])
 
   const deleteSession = useCallback(
     async (id: string): Promise<void> => {
       setSessions((prev) => prev.filter((s) => s.id !== id))
       setActiveSessionId((prev) => {
         if (prev === id) {
-          persistId(undefined)
+          persistId(storageKey, undefined)
           return undefined
         }
         return prev
       })
       try {
-        const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-        })
+        const res = await fetch(
+          `${API_BASE}/${encodeURIComponent(id)}`,
+          requestHeaders
+            ? { method: 'DELETE', headers: requestHeaders }
+            : { method: 'DELETE' },
+        )
         if (!res.ok && res.status !== 404) {
           throw new Error(`Failed to delete session: ${res.status}`)
         }
@@ -116,7 +142,7 @@ export function useSessions(): UseSessionsResult {
       }
       void refresh()
     },
-    [refresh],
+    [refresh, requestHeaders, storageKey],
   )
 
   return {

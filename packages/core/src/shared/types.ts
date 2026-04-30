@@ -51,9 +51,65 @@ export type WorkspaceRuntime = {
   lastError: string | null
   volumePath: string | null
   lastErrorOp: string | null
+  sandboxProvider?: string | null
+  sandboxId?: string | null
+  sandboxStatus?: string | null
+  sandboxSnapshotId?: string | null
+  sandboxCreatedAt?: string | null
+  sandboxLastUsedAt?: string | null
+  sandboxLastSeenAt?: string | null
+  sandboxExpiresAt?: string | null
   provisioningStep: string | null
   stepStartedAt: string | null
   updatedAt: string
+}
+
+export type WorkspaceRuntimeResource = {
+  id: string
+  workspaceId: string
+  kind: string
+  purpose: string
+  provider: string
+  handleKind: string
+  stableKey: string | null
+  providerResourceId: string | null
+  parentResourceId: string | null
+  state: string
+  persistenceMode: string
+  config: Record<string, unknown>
+  providerMeta: Record<string, unknown>
+  lastError: string | null
+  lastErrorCode: string | null
+  createdAt: string
+  updatedAt: string
+  lastSeenAt: string | null
+  lastUsedAt: string | null
+  expiresAt: string | null
+  generation: number
+}
+
+export type WorkspaceRuntimeResourceSelector = {
+  kind: string
+  purpose: string
+  provider: string
+}
+
+export type WorkspaceRuntimeResourceInput = WorkspaceRuntimeResourceSelector & {
+  id?: string
+  handleKind: string
+  stableKey?: string | null
+  providerResourceId?: string | null
+  parentResourceId?: string | null
+  state: string
+  persistenceMode: string
+  config?: Record<string, unknown>
+  providerMeta?: Record<string, unknown>
+  lastError?: string | null
+  lastErrorCode?: string | null
+  lastSeenAt?: string | null
+  lastUsedAt?: string | null
+  expiresAt?: string | null
+  generation?: number
 }
 
 export type SessionPayload = {
@@ -97,6 +153,7 @@ export interface CoreConfig {
   security?: {
     csp: {
       enabled: boolean
+      upgradeInsecureRequests?: boolean
     }
   }
 

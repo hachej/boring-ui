@@ -45,9 +45,26 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await sqlClient`DELETE FROM user_settings`
-  await sqlClient`DELETE FROM sessions`
-  await sqlClient`DELETE FROM accounts`
+  // This suite shares a live Postgres with other files, so cleanup must stay
+  // scoped to its own fixture users instead of truncating global auth tables.
+  await sqlClient`
+    DELETE FROM user_settings
+    WHERE user_id IN (
+      SELECT id FROM users WHERE email LIKE '%@pgtest.com'
+    )
+  `
+  await sqlClient`
+    DELETE FROM sessions
+    WHERE user_id IN (
+      SELECT id FROM users WHERE email LIKE '%@pgtest.com'
+    )
+  `
+  await sqlClient`
+    DELETE FROM accounts
+    WHERE user_id IN (
+      SELECT id FROM users WHERE email LIKE '%@pgtest.com'
+    )
+  `
   await sqlClient`DELETE FROM users WHERE email LIKE '%@pgtest.com'`
 })
 

@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { describe, expect, test, vi } from 'vitest'
 
 import type { FileSearch } from '../../../../shared/file-search'
@@ -118,5 +122,41 @@ describe('buildFilesystemAgentTools', () => {
       false,
       false,
     ])
+  })
+
+  test('direct find rejects absolute paths outside the workspace', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'filesystem-tools-'))
+    try {
+      const tools = buildFilesystemAgentTools(mockBundle('direct', workspaceRoot))
+      const find = tools.find((tool) => tool.name === 'find')
+      expect(find).toBeDefined()
+
+      await expect(
+        find!.execute(
+          { pattern: '*', path: '/etc', limit: 1 },
+          { abortSignal: new AbortController().signal, toolCallId: 'find-escape' },
+        ),
+      ).rejects.toThrow('outside workspace')
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true })
+    }
+  })
+
+  test('direct grep rejects absolute paths outside the workspace', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'filesystem-tools-'))
+    try {
+      const tools = buildFilesystemAgentTools(mockBundle('direct', workspaceRoot))
+      const grep = tools.find((tool) => tool.name === 'grep')
+      expect(grep).toBeDefined()
+
+      await expect(
+        grep!.execute(
+          { pattern: 'root', path: '/etc/passwd', limit: 1 },
+          { abortSignal: new AbortController().signal, toolCallId: 'grep-escape' },
+        ),
+      ).rejects.toThrow('Path not found: /etc/passwd')
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true })
+    }
   })
 })

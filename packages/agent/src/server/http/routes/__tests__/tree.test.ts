@@ -251,6 +251,38 @@ describe('GET /api/v1/tree', () => {
     await app.close()
   })
 
+  test('stable status errors keep their status and code', async () => {
+    const workspace: Workspace = {
+      root: '/repo',
+      async readFile() { return '' },
+      async writeFile() {},
+      async unlink() {},
+      async readdir() {
+        const err = new Error('sandbox expired') as Error & {
+          code: string
+          statusCode: number
+        }
+        err.code = 'SANDBOX_EXPIRED'
+        err.statusCode = 409
+        throw err
+      },
+      async stat() { return { size: 0, mtimeMs: Date.now(), kind: 'file' as const } },
+      async mkdir() {},
+      async rename() {},
+    }
+    const app = await buildApp(workspace)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tree',
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error.code).toBe('SANDBOX_EXPIRED')
+
+    await app.close()
+  })
+
   test('non-recursive returns only direct children', async () => {
     const workspace = createWorkspace({
       '.': [

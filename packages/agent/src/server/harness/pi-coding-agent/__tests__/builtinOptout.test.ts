@@ -16,8 +16,8 @@ describe("pi built-in tools opt-out", () => {
     expect(harnessSource).toContain("customTools: adaptToolsForPi")
   })
 
-  it("does not pass includeDefaults or similar flags", () => {
-    expect(harnessSource).not.toContain("includeDefaults")
+  it("does not pass createAgentSession default-tool flags", () => {
+    expect(harnessSource).not.toContain("includeDefaultTools")
     expect(harnessSource).not.toContain("useBuiltinTools")
   })
 })

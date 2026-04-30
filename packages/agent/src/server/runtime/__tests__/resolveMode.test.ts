@@ -13,6 +13,8 @@ import {
 const tempDirs: string[] = []
 const ORIGINAL_MODE = getEnv('BORING_AGENT_MODE')
 const ORIGINAL_VERCEL_OIDC_TOKEN = getEnv('VERCEL_OIDC_TOKEN')
+const ORIGINAL_VERCEL_ACCESS_TOKEN = getEnv('VERCEL_ACCESS_TOKEN')
+const ORIGINAL_VERCEL_TOKEN = getEnv('VERCEL_TOKEN')
 const ORIGINAL_VERCEL_TEAM_ID = getEnv('VERCEL_TEAM_ID')
 
 afterEach(async () => {
@@ -23,6 +25,8 @@ afterEach(async () => {
   )
   restoreEnvForTest('BORING_AGENT_MODE', ORIGINAL_MODE)
   restoreEnvForTest('VERCEL_OIDC_TOKEN', ORIGINAL_VERCEL_OIDC_TOKEN)
+  restoreEnvForTest('VERCEL_ACCESS_TOKEN', ORIGINAL_VERCEL_ACCESS_TOKEN)
+  restoreEnvForTest('VERCEL_TOKEN', ORIGINAL_VERCEL_TOKEN)
   restoreEnvForTest('VERCEL_TEAM_ID', ORIGINAL_VERCEL_TEAM_ID)
 })
 
@@ -100,11 +104,15 @@ test('autoDetectMode defaults to linux+bwrap -> local, else direct', () => {
 test('vercel-sandbox mode validates required env vars', async () => {
   const ctx = await makeContext()
 
+  setEnvForTest('VERCEL_OIDC_TOKEN', undefined)
+  setEnvForTest('VERCEL_ACCESS_TOKEN', undefined)
+  setEnvForTest('VERCEL_TOKEN', undefined)
+
   await expect(resolveMode('vercel-sandbox').create(ctx)).rejects.toThrow(
-    'VERCEL_OIDC_TOKEN is required for vercel-sandbox mode',
+    'VERCEL_OIDC_TOKEN or VERCEL_ACCESS_TOKEN or VERCEL_TOKEN is required for vercel-sandbox mode',
   )
 
-  setEnvForTest('VERCEL_OIDC_TOKEN', 'token')
+  setEnvForTest('VERCEL_TOKEN', 'token')
 
   await expect(resolveMode('vercel-sandbox').create(ctx)).rejects.toThrow(
     'VERCEL_TEAM_ID is required for vercel-sandbox mode',

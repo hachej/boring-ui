@@ -4,8 +4,8 @@ import { Navigate, Route, useParams } from 'react-router-dom'
 import { ChatPanel } from '@boring/agent'
 import {
   BoringApp,
-  ThemeToggle,
   UserMenu,
+  WorkspaceSettingsPage,
   WorkspaceSwitcher,
   useCoreCommands,
   useCurrentWorkspace,
@@ -16,14 +16,15 @@ import {
   CodeEditorPane,
   EmptyPane,
   TopBar,
+  WorkspaceLoadingState,
   definePanel,
   useRegistry,
   type PanelConfig,
   type SurfaceShellApi,
   type SurfaceShellSnapshot,
 } from '@boring/workspace'
-import { createMockSessions, useMockSessions } from '@boring/workspace/testing'
-import { SHOWCASE_SESSION_ID, seedShowcase } from './showcaseMessages'
+import { useSessions } from '@boring/agent/front'
+import { seedShowcase } from './showcaseMessages'
 
 import '@boring/core/theme.css'
 import '@boring/workspace/globals.css'
@@ -48,7 +49,6 @@ const panels: PanelConfig[] = [
   }),
 ]
 
-const sessionsStore = createMockSessions()
 const layoutStorageKey = 'boring-ui-v2:layout:full-app'
 
 function isShowcaseRoute(): boolean {
@@ -57,12 +57,19 @@ function isShowcaseRoute(): boolean {
 }
 
 function Shell({ workspaceId }: { workspaceId: string }) {
-  const { sessions, activeId } = useMockSessions(sessionsStore)
   const showcase = useMemo(isShowcaseRoute, [])
   const workspaceHeaders = useMemo(
     () => ({ 'x-boring-workspace-id': workspaceId }),
     [workspaceId],
   )
+  const sessionStorageKey = useMemo(
+    () => `boring-agent:activeSessionId:${workspaceId}`,
+    [workspaceId],
+  )
+  const sessionApi = useSessions({
+    requestHeaders: workspaceHeaders,
+    storageKey: sessionStorageKey,
+  })
   const shellStorageKey = `boring-ui-v2:chat-layout:full-app:${workspaceId}`
   const surfaceStorageKey = `${shellStorageKey}:surface`
   const panelRegistry = useRegistry()
@@ -74,24 +81,31 @@ function Shell({ workspaceId }: { workspaceId: string }) {
   const surfaceRef = useRef<SurfaceShellApi | null>(null)
   const pushAbortRef = useRef<AbortController | null>(null)
 
+  const sessionCount = sessionApi.sessions.length
+
   useEffect(() => {
-    if (!showcase) return
-    seedShowcase()
-    if (sessionsStore.getState().activeId !== SHOWCASE_SESSION_ID) {
-      sessionsStore.switchTo(SHOWCASE_SESSION_ID)
+    if (sessionApi.loading || sessionCount > 0) return
+    void sessionApi.create({
+      title: showcase ? 'Showcase conversation' : 'New session',
+    })
+  }, [showcase, sessionApi.loading, sessionApi.create, sessionCount])
+
+  useEffect(() => {
+    if (showcase && sessionApi.activeSessionId) {
+      seedShowcase(sessionApi.activeSessionId)
     }
-  }, [showcase])
+  }, [showcase, sessionApi.activeSessionId])
 
-  const sessionList = useMemo(() => {
-    if (!showcase) return sessions
-    if (sessions.some((s) => s.id === SHOWCASE_SESSION_ID)) return sessions
-    return [
-      { id: SHOWCASE_SESSION_ID, title: 'Showcase conversation', updatedAt: Date.now() },
-      ...sessions,
-    ]
-  }, [showcase, sessions])
+  const handleCreateSession = useCallback(() => {
+    void sessionApi.create()
+  }, [sessionApi.create])
 
-  const activeSession = sessionList.find((session) => session.id === activeId)
+  const handleDeleteSession = useCallback((id: string) => {
+    void sessionApi.delete(id).catch(() => {})
+  }, [sessionApi.delete])
+
+  const activeId = sessionApi.activeSessionId
+  const activeSession = sessionApi.activeSession
 
   const availablePanelIds = useMemo(
     () => panelRegistry.list().map((panel) => panel.id),
@@ -183,24 +197,19 @@ function Shell({ workspaceId }: { workspaceId: string }) {
         appTitle="Boring"
         sessionTitle={activeSession?.title}
         onCommandPalette={openCommandPalette}
-        onNewChat={sessionsStore.create}
-        topBarLeft={<WorkspaceSwitcher />}
-        topBarRight={
-          <div className="flex items-center gap-1">
-            <ThemeToggle />
-            <UserMenu />
-          </div>
-        }
+        onNewChat={handleCreateSession}
+        topBarLeft={<WorkspaceSwitcher workspacePathPrefix="/workspace" />}
+        topBarRight={<UserMenu />}
       />
       <div className="min-h-0 flex-1">
         <ChatLayout
           nav={drawerOpen ? 'session-list' : ''}
           navParams={{
-            sessions: sessionList,
+            sessions: sessionApi.sessions,
             activeId,
-            onSwitch: sessionsStore.switchTo,
-            onCreate: sessionsStore.create,
-            onDelete: sessionsStore.remove,
+            onSwitch: sessionApi.switch,
+            onCreate: handleCreateSession,
+            onDelete: handleDeleteSession,
             onClose: () => setDrawerOpen(false),
           }}
           center={activeId ? 'chat' : 'empty'}
@@ -237,20 +246,32 @@ function Shell({ workspaceId }: { workspaceId: string }) {
 
 function WorkspaceRoute() {
   const { id } = useParams<{ id: string }>()
+  const currentWorkspace = useCurrentWorkspace()
   const coreCommands = useCoreCommands()
   if (!id) return null
+
+  if (currentWorkspace?.id !== id) {
+    return (
+      <WorkspaceLoadingState
+        title="Switching workspace"
+        description="Restoring files, sessions, and saved layout."
+        status="Loading workspace"
+      />
+    )
+  }
 
   return (
     <div className="h-screen bg-background text-foreground">
       <WorkspaceProvider
+        key={id}
         workspaceId={id}
         chatPanel={ChatPanel}
         panels={panels}
         commands={coreCommands}
         apiBaseUrl=""
+        authHeaders={{ 'x-boring-workspace-id': id }}
         apiTimeout={10_000}
         persistenceEnabled
-        authHeaders={{ 'x-boring-workspace-id': id }}
         storageKey={`${layoutStorageKey}:${id}`}
       >
         <Shell workspaceId={id} />
@@ -263,9 +284,11 @@ function HomeRedirect() {
   const workspace = useCurrentWorkspace()
   if (!workspace) {
     return (
-      <div className="flex h-screen items-center justify-center text-muted-foreground">
-        Loading workspace…
-      </div>
+      <WorkspaceLoadingState
+        title="Opening workspace"
+        description="Finding your default workspace."
+        status="Loading workspace"
+      />
     )
   }
   return <Navigate to={`/workspace/${workspace.id}`} replace />
@@ -275,5 +298,6 @@ createRoot(document.getElementById('root')!).render(
   <BoringApp>
     <Route path="/" element={<HomeRedirect />} />
     <Route path="/workspace/:id" element={<WorkspaceRoute />} />
+    <Route path="/workspace/:id/settings" element={<WorkspaceSettingsPage />} />
   </BoringApp>,
 )

@@ -57,6 +57,20 @@
       "when": 1777522800000,
       "tag": "0007_v7_substrate",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777526400000,
+      "tag": "0008_workspace_sandbox_handles",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777536000000,
+      "tag": "0009_workspace_runtime_resources",
+      "breakpoints": true
     }
   ]
 }

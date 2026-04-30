@@ -207,6 +207,60 @@ describe('PostgresWorkspaceStore Sub-PR3', () => {
       const secondRetry = await store.retryWorkspaceRuntime(workspaceId)
       expect(secondRetry).toBeNull()
     })
+
+    it('stores provider-agnostic runtime resources', async () => {
+      const { workspaceId } = await seedWorkspace()
+
+      const created = await store.putWorkspaceRuntimeResource(workspaceId, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+        handleKind: 'named',
+        stableKey: `boring-dev-${workspaceId}`,
+        providerResourceId: 'sbx_current',
+        state: 'ready',
+        persistenceMode: 'persistent',
+        providerMeta: { runtime: 'node24' },
+        lastUsedAt: '2026-04-29T00:00:00.000Z',
+      })
+
+      expect(created.generation).toBe(0)
+      expect(created.stableKey).toBe(`boring-dev-${workspaceId}`)
+
+      const updated = await store.putWorkspaceRuntimeResource(workspaceId, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+        handleKind: 'named',
+        stableKey: `boring-dev-${workspaceId}`,
+        providerResourceId: 'sbx_next',
+        state: 'running',
+        persistenceMode: 'persistent',
+        providerMeta: { runtime: 'node24', region: 'iad1' },
+      })
+
+      expect(updated.id).toBe(created.id)
+      expect(updated.generation).toBe(1)
+      expect(updated.providerResourceId).toBe('sbx_next')
+
+      const fetched = await store.getWorkspaceRuntimeResource(workspaceId, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+      })
+      expect(fetched?.providerMeta).toEqual({ runtime: 'node24', region: 'iad1' })
+
+      await store.deleteWorkspaceRuntimeResource(workspaceId, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+      })
+      expect(await store.getWorkspaceRuntimeResource(workspaceId, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+      })).toBeNull()
+    })
   })
 
   describe('ui state', () => {

@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { events } from "../events"
-import { useApiBaseUrl } from "./DataProvider"
+import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 
 /**
  * Single source of truth for translating workspace bus `file:*` events
@@ -30,27 +30,28 @@ import { useApiBaseUrl } from "./DataProvider"
 export function useFileEventInvalidation(): void {
   const queryClient = useQueryClient()
   const base = useApiBaseUrl()
+  const workspaceId = useWorkspaceRequestId()
 
   useEffect(() => {
     const offChanged = events.on("file:changed", (e) => {
-      invalidateFile(queryClient, base, e.path)
+      invalidateFile(queryClient, base, workspaceId, e.path)
     })
     const offCreated = events.on("file:created", (e) => {
-      invalidateTree(queryClient, base)
+      invalidateTree(queryClient, base, workspaceId)
       if (e.kind === "file") {
-        invalidateStat(queryClient, base, e.path)
+        invalidateStat(queryClient, base, workspaceId, e.path)
       }
     })
     const offMoved = events.on("file:moved", (e) => {
-      invalidateTree(queryClient, base)
-      invalidateFile(queryClient, base, e.from)
-      invalidateFile(queryClient, base, e.to)
-      invalidateSearch(queryClient, base)
+      invalidateTree(queryClient, base, workspaceId)
+      invalidateFile(queryClient, base, workspaceId, e.from)
+      invalidateFile(queryClient, base, workspaceId, e.to)
+      invalidateSearch(queryClient, base, workspaceId)
     })
     const offDeleted = events.on("file:deleted", (e) => {
-      invalidateTree(queryClient, base)
-      invalidateFile(queryClient, base, e.path)
-      invalidateSearch(queryClient, base)
+      invalidateTree(queryClient, base, workspaceId)
+      invalidateFile(queryClient, base, workspaceId, e.path)
+      invalidateSearch(queryClient, base, workspaceId)
     })
     return () => {
       offChanged()
@@ -58,22 +59,40 @@ export function useFileEventInvalidation(): void {
       offMoved()
       offDeleted()
     }
-  }, [queryClient, base])
+  }, [queryClient, base, workspaceId])
 }
 
-function invalidateFile(qc: QueryClient, base: string, path: string): void {
-  qc.invalidateQueries({ queryKey: [base, "files", path] })
-  qc.invalidateQueries({ queryKey: [base, "stat", path] })
+function invalidateFile(
+  qc: QueryClient,
+  base: string,
+  workspaceId: string | null,
+  path: string,
+): void {
+  qc.invalidateQueries({ queryKey: [base, workspaceId, "files", path] })
+  qc.invalidateQueries({ queryKey: [base, workspaceId, "stat", path] })
 }
 
-function invalidateStat(qc: QueryClient, base: string, path: string): void {
-  qc.invalidateQueries({ queryKey: [base, "stat", path] })
+function invalidateStat(
+  qc: QueryClient,
+  base: string,
+  workspaceId: string | null,
+  path: string,
+): void {
+  qc.invalidateQueries({ queryKey: [base, workspaceId, "stat", path] })
 }
 
-function invalidateTree(qc: QueryClient, base: string): void {
-  qc.invalidateQueries({ queryKey: [base, "tree"] })
+function invalidateTree(
+  qc: QueryClient,
+  base: string,
+  workspaceId: string | null,
+): void {
+  qc.invalidateQueries({ queryKey: [base, workspaceId, "tree"] })
 }
 
-function invalidateSearch(qc: QueryClient, base: string): void {
-  qc.invalidateQueries({ queryKey: [base, "search"] })
+function invalidateSearch(
+  qc: QueryClient,
+  base: string,
+  workspaceId: string | null,
+): void {
+  qc.invalidateQueries({ queryKey: [base, workspaceId, "search"] })
 }

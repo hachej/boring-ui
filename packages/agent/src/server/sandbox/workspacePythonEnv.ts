@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { getEnv, getEnvSnapshot } from '../config/env'
+import { getEnvSnapshot } from '../config/env'
 
 interface WorkspacePythonEnvOptions {
   workspaceRoot: string
@@ -15,16 +15,16 @@ export function withWorkspacePythonEnv(
   const venvRoot = join(runtimeRoot, '.venv')
   const venvBin = join(venvRoot, 'bin')
   const shimBin = join(runtimeRoot, '.boring-agent', 'bin')
+  const baseEnv = env ?? getEnvSnapshot()
   const pathParts = [shimBin, venvBin]
-  const existingPath = env?.PATH ?? getEnv('PATH')
+  const existingPath = baseEnv.PATH
   if (existingPath) pathParts.push(existingPath)
 
   return {
-    ...getEnvSnapshot(),
-    ...env,
+    ...baseEnv,
     PATH: pathParts.join(':'),
-    VIRTUAL_ENV: env?.VIRTUAL_ENV ?? venvRoot,
+    VIRTUAL_ENV: baseEnv.VIRTUAL_ENV ?? venvRoot,
     BORING_AGENT_WORKSPACE_ROOT:
-      env?.BORING_AGENT_WORKSPACE_ROOT ?? runtimeRoot,
+      baseEnv.BORING_AGENT_WORKSPACE_ROOT ?? runtimeRoot,
   }
 }

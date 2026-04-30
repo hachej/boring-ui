@@ -7,7 +7,8 @@ const DEFAULT_LIMIT = 500
 const MAX_LIMIT = 5_000
 
 export interface SearchRouteOptions {
-  fileSearch: FileSearch
+  fileSearch?: FileSearch
+  getFileSearch?: (request: import('fastify').FastifyRequest) => FileSearch | Promise<FileSearch>
 }
 
 export function searchRoutes(
@@ -15,7 +16,11 @@ export function searchRoutes(
   opts: SearchRouteOptions,
   done: (err?: Error) => void,
 ): void {
-  const { fileSearch } = opts
+  async function resolveFileSearch(request: import('fastify').FastifyRequest): Promise<FileSearch> {
+    if (opts.getFileSearch) return await opts.getFileSearch(request)
+    if (opts.fileSearch) return opts.fileSearch
+    throw new Error('search route requires fileSearch or getFileSearch')
+  }
 
   app.get('/api/v1/files/search', async (request, reply) => {
     const query = request.query as Record<string, unknown>
@@ -51,6 +56,7 @@ export function searchRoutes(
     }
 
     try {
+      const fileSearch = await resolveFileSearch(request)
       const results = await fileSearch.search(q, limit)
       return reply.send({ results })
     } catch (err) {

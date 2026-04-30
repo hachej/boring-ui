@@ -7,7 +7,7 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query"
 import { useRef, useState, useEffect } from "react"
-import { useDataClient, useApiBaseUrl } from "./DataProvider"
+import { useDataClient, useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 import { FetchError } from "./fetchClient"
 import { events, userMeta } from "../events"
 import type { FileContent, FileEntry, FileStat } from "./types"
@@ -20,8 +20,9 @@ function noRetryOn404(count: number, error: Error): boolean {
 export function useFileContent(path: string | null): UseQueryResult<FileContent> {
   const client = useDataClient()
   const base = useApiBaseUrl()
+  const workspaceId = useWorkspaceRequestId()
   return useQuery({
-    queryKey: [base, "files", path],
+    queryKey: [base, workspaceId, "files", path],
     queryFn: () => client.getFile(path!),
     enabled: path != null,
     staleTime: 0,
@@ -32,12 +33,15 @@ export function useFileContent(path: string | null): UseQueryResult<FileContent>
 export function useFileList(dir: string | null): UseQueryResult<FileEntry[]> {
   const client = useDataClient()
   const base = useApiBaseUrl()
+  const workspaceId = useWorkspaceRequestId()
   return useQuery({
-    queryKey: [base, "tree", dir],
+    queryKey: [base, workspaceId, "tree", dir],
     queryFn: () => client.getTree(dir!),
     enabled: dir != null,
     staleTime: 3_000,
-    refetchInterval: 3_000,
+    // File-event SSE invalidates this query when files change. Polling every
+    // 3s made slow/dev backends self-abort before the first tree response,
+    // leaving the workbench tree stuck on its skeleton.
     retry: noRetryOn404,
   })
 }
@@ -45,8 +49,9 @@ export function useFileList(dir: string | null): UseQueryResult<FileEntry[]> {
 export function useStat(path: string | null): UseQueryResult<FileStat> {
   const client = useDataClient()
   const base = useApiBaseUrl()
+  const workspaceId = useWorkspaceRequestId()
   return useQuery({
-    queryKey: [base, "stat", path],
+    queryKey: [base, workspaceId, "stat", path],
     queryFn: () => client.stat(path!),
     enabled: path != null,
     retry: noRetryOn404,
@@ -59,6 +64,7 @@ export function useFileSearch(
 ): UseQueryResult<string[]> {
   const client = useDataClient()
   const base = useApiBaseUrl()
+  const workspaceId = useWorkspaceRequestId()
   const [debounced, setDebounced] = useState(query)
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -69,7 +75,7 @@ export function useFileSearch(
   }, [query])
 
   return useQuery({
-    queryKey: [base, "search", debounced, limit],
+    queryKey: [base, workspaceId, "search", debounced, limit],
     queryFn: () => client.search(debounced, limit),
     enabled: debounced.length > 0,
     retry: noRetryOn404,

@@ -64,6 +64,7 @@ describe('loadConfig', () => {
     expect(config.bodyLimit).toBe(16 * 1024 * 1024)
     expect(config.cors.credentials).toBe(true)
     expect(config.security?.csp.enabled).toBe(true)
+    expect(config.security?.csp.upgradeInsecureRequests).toBe(false)
     expect(config.encryption.workspaceSettingsKey).toBe('b'.repeat(64))
   })
 
@@ -89,6 +90,7 @@ describe('loadConfig', () => {
     })
 
     expect(config.auth.sessionCookieSecure).toBe(true)
+    expect(config.security?.csp.upgradeInsecureRequests).toBe(true)
   })
 
   it('allows SESSION_COOKIE_SECURE override', async () => {

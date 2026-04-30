@@ -1,1 +1,10 @@
-/* app-level overrides */
+@import "tailwindcss";
+@source "../../../packages/workspace/src";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}

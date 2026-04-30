@@ -250,6 +250,122 @@ test('extraTools appear in catalog when using registerAgentRoutes', async () => 
   await app.close()
 })
 
+test('request-scoped catalog includes standard tools', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-dynamic-catalog-')
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: (request) => {
+      const value = request.headers['x-boring-workspace-id']
+      return typeof value === 'string' ? value : 'workspace-dynamic'
+    },
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/catalog',
+    headers: { 'x-boring-workspace-id': 'workspace-dynamic' },
+  })
+
+  expect(res.statusCode).toBe(200)
+  const names: string[] = res.json().tools.map((t: { name: string }) => t.name)
+  expect(names).toContain('bash')
+  expect(names).toContain('read')
+  expect(names).toContain('write')
+
+  await app.close()
+})
+
+test('request-scoped catalog includes getExtraTools for workspace binding', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-dynamic-extra-')
+  const app = Fastify({ logger: false })
+  const seen: string[] = []
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: (request) => {
+      const value = request.headers['x-boring-workspace-id']
+      return typeof value === 'string' ? value : 'workspace-dynamic'
+    },
+    getWorkspaceRoot: () => workspaceRoot,
+    getExtraTools: ({ workspaceId }) => {
+      seen.push(workspaceId)
+      return [
+        {
+          name: `ui_state_${workspaceId.replace(/-/g, '_')}`,
+          description: 'Workspace-scoped test tool.',
+          parameters: {
+            type: 'object' as const,
+            properties: {},
+          },
+          async execute() {
+            return { content: [{ type: 'text' as const, text: workspaceId }] }
+          },
+        },
+      ]
+    },
+  })
+  await app.ready()
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/catalog',
+    headers: { 'x-boring-workspace-id': 'workspace-dynamic' },
+  })
+
+  expect(res.statusCode).toBe(200)
+  const names: string[] = res.json().tools.map((t: { name: string }) => t.name)
+  expect(names).toContain('ui_state_workspace_dynamic')
+  expect(seen).toEqual(['workspace-dynamic'])
+
+  await app.close()
+})
+
+test('request-scoped models endpoint does not require workspace header', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-models-')
+  const app = Fastify({ logger: false })
+  let scopeChecks = 0
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: (request) => {
+      scopeChecks += 1
+      const value = request.headers['x-boring-workspace-id']
+      if (typeof value !== 'string') {
+        const error = new Error('workspace id is required') as Error & { statusCode: number }
+        error.statusCode = 400
+        throw error
+      }
+      return value
+    },
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const modelsRes = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/models',
+  })
+  expect(modelsRes.statusCode).toBe(200)
+  expect(scopeChecks).toBe(0)
+
+  const treeRes = await app.inject({
+    method: 'GET',
+    url: '/api/v1/tree?path=',
+  })
+  expect(treeRes.statusCode).toBe(400)
+  expect(treeRes.json().error.message).toBe('workspace id is required')
+  expect(scopeChecks).toBe(1)
+
+  await app.close()
+})
+
 test('registerAgentRoutes does NOT expose /api/v1/ui/* (moved to @boring/workspace)', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-no-ui-')
   const app = Fastify({ logger: false })

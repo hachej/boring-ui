@@ -181,6 +181,12 @@ beforeEach(() => {
 
   mockSignOut.mockResolvedValue(undefined)
   mockUseCurrentWorkspace.mockReturnValue(WORKSPACES[0])
+  mockUseTheme.mockReturnValue({
+    theme: 'light',
+    preference: 'light',
+    setTheme: vi.fn(),
+    toggleTheme: vi.fn(),
+  })
 })
 
 afterEach(() => {
@@ -197,6 +203,10 @@ describe('UserMenu', () => {
 
       expect(await screen.findByText('Menu User')).toBeInTheDocument()
       expect(screen.getByText('menu-user@boring.dev')).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Theme: Light' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Create workspace' })).toBeNull()
+      expect(screen.queryByRole('menuitem', { name: 'Workspace settings' })).toBeNull()
       assertionPassed('user-menu-renders-user')
 
       fireEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }))
@@ -217,13 +227,14 @@ describe('WorkspaceSwitcher', () => {
       mockWorkspacesApi({ workspaces: WORKSPACES })
       renderWithProviders(<WorkspaceSwitcher />)
 
-      const trigger = await screen.findByRole('button', { name: 'Workspace switcher' })
+      const trigger = await screen.findByRole('button', { name: 'Workspace menu: Workspace A' })
       fireEvent.pointerDown(trigger)
 
       expect(await screen.findByRole('menuitem', { name: 'Workspace A' })).toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Workspace B' })).toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Workspace C' })).toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Create workspace' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Workspace settings' })).toBeInTheDocument()
       assertionPassed('workspace-switcher-list-and-create-item')
     }),
   )
@@ -234,7 +245,7 @@ describe('WorkspaceSwitcher', () => {
       mockWorkspacesApi({ workspaces: WORKSPACES })
       renderWithProviders(<WorkspaceSwitcher />)
 
-      fireEvent.pointerDown(await screen.findByRole('button', { name: 'Workspace switcher' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'Workspace menu: Workspace A' }))
 
       const currentItem = await screen.findByRole('menuitem', { name: 'Workspace A' })
       expect(currentItem).toHaveAttribute('data-current', 'true')
@@ -269,7 +280,7 @@ describe('WorkspaceSwitcher', () => {
 
       renderWithProviders(<WorkspaceSwitcher />, queryClient)
 
-      fireEvent.pointerDown(await screen.findByRole('button', { name: 'Workspace switcher' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'Workspace menu: Workspace A' }))
       fireEvent.click(await screen.findByRole('menuitem', { name: 'Create workspace' }))
 
       expect(await screen.findByRole('heading', { name: 'Create workspace' })).toBeInTheDocument()
@@ -305,7 +316,7 @@ describe('WorkspaceSwitcher', () => {
 
       renderWithProviders(<WorkspaceSwitcher />)
 
-      fireEvent.pointerDown(await screen.findByRole('button', { name: 'Workspace switcher' }))
+      fireEvent.pointerDown(await screen.findByRole('button', { name: 'Workspace menu: Workspace A' }))
       fireEvent.click(await screen.findByRole('menuitem', { name: 'Create workspace' }))
 
       const submit = await screen.findByRole('button', { name: 'Create workspace' })

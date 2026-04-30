@@ -4,7 +4,7 @@ import { createLogger, type Logger } from "../../logging.js";
 
 const DEFAULT_SESSION_TITLE = "New session";
 const FALLBACK_PREFIX = "New chat";
-const DEFAULT_TITLE_MODEL = "claude-3-5-haiku-latest";
+const DEFAULT_TITLE_MODEL = "claude-haiku-4-5-20251001";
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_POLL_MS = 250;
 const MAX_PROMPT_CHARS = 1200;

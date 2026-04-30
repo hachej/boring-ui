@@ -32,6 +32,10 @@ const fakeUsers: Record<string, Pick<User, 'id' | 'email' | 'name' | 'image'>> =
 
 function mockWorkspaceStore(): WorkspaceStore {
   return {
+    get: async (wsId: string) => {
+      const ws = workspaces.get(wsId)
+      return ws && !ws.deletedAt ? ws : null
+    },
     getMemberRole: async (wsId: string, userId: string) =>
       memberDb.get(wsId)?.get(userId) ?? null,
     isMember: async (wsId: string, userId: string) =>
@@ -306,11 +310,11 @@ describe('DELETE /api/v1/workspaces/:id/members/:userId', () => {
     expect(res.json().code).toBe('last_owner')
   })
 
-  it('removing non-member → 409 not_member', async () => {
+  it('removing non-member → 404 not_member', async () => {
     const ws = seedWorkspace(OWNER_ID)
 
     const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}/members/${NON_MEMBER_ID}`, OWNER_ID)
-    expect(res.statusCode).toBe(409)
+    expect(res.statusCode).toBe(404)
     expect(res.json().code).toBe('not_member')
   })
 

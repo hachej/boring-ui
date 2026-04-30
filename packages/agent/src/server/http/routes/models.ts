@@ -20,12 +20,22 @@
  */
 import type { FastifyInstance } from 'fastify'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
+import {
+  readConfiguredDefaultModel,
+  registerConfiguredModelProviders,
+  type AgentModelSelection,
+} from '../../models/modelConfig.js'
 
 export interface ModelSummary {
   provider: string
   id: string
   label: string
   available: boolean
+}
+
+export interface ModelsResponse {
+  models: ModelSummary[]
+  defaultModel?: AgentModelSelection
 }
 
 export function modelsRoutes(
@@ -37,6 +47,7 @@ export function modelsRoutes(
   // Cached so repeated GETs don't re-scan auth every request.
   const authStorage = AuthStorage.create()
   const registry = ModelRegistry.create(authStorage)
+  registerConfiguredModelProviders(registry)
 
   app.get('/api/v1/agent/models', async (_request, reply) => {
     const availableSet = new Set(
@@ -54,7 +65,11 @@ export function modelsRoutes(
       if (a.provider !== b.provider) return a.provider.localeCompare(b.provider)
       return a.id.localeCompare(b.id)
     })
-    return reply.code(200).send({ models })
+    const defaultModel = readConfiguredDefaultModel()
+    const payload: ModelsResponse = defaultModel
+      ? { models, defaultModel }
+      : { models }
+    return reply.code(200).send(payload)
   })
 
   done()

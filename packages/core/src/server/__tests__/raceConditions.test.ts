@@ -258,7 +258,7 @@ describe('Race conditions integration (Postgres)', () => {
 
       const successCount = responses.filter((res) => res.statusCode === 200).length
       const alreadyAcceptedCount = responses.filter((res) => {
-        if (res.statusCode !== 409) return false
+        if (res.statusCode !== 410) return false
         const body = res.json() as { code?: string }
         return body.code === ERROR_CODES.INVITE_ALREADY_ACCEPTED
       }).length

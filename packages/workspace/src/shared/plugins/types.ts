@@ -3,7 +3,7 @@ import type { ComponentType } from "react"
 import type { ExplorerAdapter, ExplorerRow } from "../types/explorer"
 import type { PanelConfig, CommandConfig } from "../types/panel"
 
-export type PluginBinding = ComponentType<Record<string, never>>
+export type PluginBinding = ComponentType<unknown>
 
 export interface CatalogConfig {
   id: string

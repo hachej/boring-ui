@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   ERROR_CODE_NOT_FOUND,
   ERROR_CODE_NOT_IMPLEMENTED,
@@ -7,7 +7,8 @@ import {
 import type { AgentHarness } from '../../../shared/harness'
 
 export interface SystemPromptRouteOptions {
-  harness: AgentHarness
+  harness?: AgentHarness
+  getHarness?: (request: FastifyRequest) => AgentHarness | Promise<AgentHarness>
 }
 
 /**
@@ -24,7 +25,11 @@ export function systemPromptRoutes(
   opts: SystemPromptRouteOptions,
   done: (err?: Error) => void,
 ): void {
-  const { harness } = opts
+  async function resolveHarness(request: FastifyRequest): Promise<AgentHarness> {
+    if (opts.getHarness) return await opts.getHarness(request)
+    if (opts.harness) return opts.harness
+    throw new Error('system prompt route requires harness or getHarness')
+  }
 
   app.get(
     '/api/v1/agent/sessions/:id/system-prompt',
@@ -41,6 +46,7 @@ export function systemPromptRoutes(
         })
       }
 
+      const harness = await resolveHarness(request)
       if (typeof harness.getSystemPrompt !== 'function') {
         return reply.code(501).send({
           error: {

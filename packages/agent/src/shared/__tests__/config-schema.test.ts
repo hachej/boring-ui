@@ -106,11 +106,19 @@ describe("EnvSchema", () => {
   it("accepts all optional Vercel fields", () => {
     const result = EnvSchema.parse({
       ANTHROPIC_API_KEY: "sk-test",
-      VERCEL_OIDC_TOKEN: "token-123",
+      VERCEL_OIDC_TOKEN: "oidc-123",
+      VERCEL_ACCESS_TOKEN: "access-123",
+      VERCEL_TOKEN: "token-123",
       VERCEL_TEAM_ID: "team_abc",
+      VERCEL_PROJECT_ID: "prj_abc",
+      BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS: "2700000",
     })
-    expect(result.VERCEL_OIDC_TOKEN).toBe("token-123")
+    expect(result.VERCEL_OIDC_TOKEN).toBe("oidc-123")
+    expect(result.VERCEL_ACCESS_TOKEN).toBe("access-123")
+    expect(result.VERCEL_TOKEN).toBe("token-123")
     expect(result.VERCEL_TEAM_ID).toBe("team_abc")
+    expect(result.VERCEL_PROJECT_ID).toBe("prj_abc")
+    expect(result.BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS).toBe(2700000)
   })
 
   it("coerces BORING_AGENT_SNAPSHOT_KEEP to number", () => {

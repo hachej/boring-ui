@@ -7,11 +7,13 @@ export type RuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
   create(ctx: ModeContext): Promise<RuntimeBundle>
+  dispose?(): Promise<void>
 }
 
 export interface ModeContext {
   workspaceRoot: string
   sessionId: string
+  workspaceId?: string
   templatePath?: string
 }
 

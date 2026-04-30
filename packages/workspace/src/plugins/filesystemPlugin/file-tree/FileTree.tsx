@@ -47,6 +47,8 @@ export interface FileTreeProps {
   height?: number
   /** Path of the row whose name should render as an <input>. */
   editing?: FileTreeEditState | null
+  /** Path that should be scrolled into view, opening parent folders if needed. */
+  revealPath?: string | null
   /** Paths currently being mutated — render a small spinner on those rows. */
   pendingPaths?: ReadonlySet<string>
   onSelect?: (path: string) => void
@@ -247,6 +249,7 @@ export function FileTree({
   searchQuery,
   height = 400,
   editing,
+  revealPath,
   pendingPaths,
   onSelect,
   onExpand,
@@ -258,6 +261,22 @@ export function FileTree({
   className,
 }: FileTreeProps) {
   const treeRef = useRef<TreeApi<FileTreeNode> | null>(null)
+
+  useEffect(() => {
+    if (!editing?.isDraft) return
+    const frame = requestAnimationFrame(() => {
+      void treeRef.current?.scrollTo(editing.path)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [editing?.isDraft, editing?.path])
+
+  useEffect(() => {
+    if (!revealPath) return
+    const frame = requestAnimationFrame(() => {
+      void treeRef.current?.scrollTo(revealPath)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [files, revealPath])
 
   const selection = useMemo(
     () => (selectedPath ? selectedPath : undefined),

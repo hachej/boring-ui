@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { events, remoteMeta } from "../events"
-import { useApiBaseUrl } from "./DataProvider"
+import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 
 /**
  * Subscribes to the server-side `/api/v1/fs/events` SSE stream and
@@ -33,13 +33,14 @@ import { useApiBaseUrl } from "./DataProvider"
  */
 export function useFileEventStream(): void {
   const base = useApiBaseUrl()
+  const workspaceId = useWorkspaceRequestId()
   const qc = useQueryClient()
 
   useEffect(() => {
     if (import.meta.env.VITE_DISABLE_FILE_EVENTS === "1") return
     if (typeof window === "undefined" || typeof EventSource === "undefined") return
 
-    const url = joinUrl(base, "/api/v1/fs/events")
+    const url = withWorkspaceId(joinUrl(base, "/api/v1/fs/events"), workspaceId)
     let es: EventSource | null
     let unsupported = false
     const seenEventIds = new Set<string>()
@@ -109,7 +110,7 @@ export function useFileEventStream(): void {
       if (!unsupported) es.close()
       es = null
     }
-  }, [base, qc])
+  }, [base, workspaceId, qc])
 }
 
 interface ChangeEnvelope {
@@ -159,4 +160,10 @@ function joinUrl(base: string, path: string): string {
   if (base.endsWith("/") && path.startsWith("/")) return base + path.slice(1)
   if (!base.endsWith("/") && !path.startsWith("/")) return `${base}/${path}`
   return base + path
+}
+
+function withWorkspaceId(url: string, workspaceId: string | null): string {
+  if (!workspaceId) return url
+  const separator = url.includes("?") ? "&" : "?"
+  return `${url}${separator}workspaceId=${encodeURIComponent(workspaceId)}`
 }

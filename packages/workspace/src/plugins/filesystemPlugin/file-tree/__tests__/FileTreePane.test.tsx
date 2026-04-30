@@ -186,6 +186,24 @@ describe("FileTreePane", () => {
     expect(screen.getByText("index.ts")).toBeInTheDocument()
   })
 
+  it("hides .boring-agent from the default tree view", async () => {
+    mockFileList.mockReturnValue({
+      data: [
+        ...sampleFiles,
+        { name: ".boring-agent", kind: "dir" as const, path: ".boring-agent" },
+      ],
+      isLoading: false,
+      error: undefined,
+    })
+
+    render(<FileTreePane />, { wrapper })
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree")).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText(".boring-agent")).not.toBeInTheDocument()
+  })
+
   it("shows error state on load failure", () => {
     mockFileList.mockReturnValue({
       data: undefined,
@@ -579,6 +597,44 @@ describe("FileTreePane", () => {
           path: "src/child.ts",
           content: "",
         }),
+      )
+    })
+
+    it("keeps a newly-created file visible inside an initially collapsed folder", async () => {
+      mockFileWrite.mockResolvedValue(undefined)
+      mockGetTree.mockResolvedValue([
+        { name: "child.ts", kind: "file" as const, path: "src/child.ts" },
+      ])
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("src"))
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" }))
+
+      const input = await screen.findByTestId("file-tree-edit-input")
+      fireEvent.change(input, { target: { value: "child.ts" } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      await waitFor(() => expect(mockGetTree).toHaveBeenCalledWith("src"))
+      await waitFor(() => expect(screen.getByText("child.ts")).toBeInTheDocument())
+    })
+
+    it("keeps a newly-created file visible when folder refresh is stale", async () => {
+      mockFileWrite.mockResolvedValue(undefined)
+      mockGetTree.mockResolvedValue([])
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("src"))
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" }))
+
+      const input = await screen.findByTestId("file-tree-edit-input")
+      fireEvent.change(input, { target: { value: "stale-child.ts" } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      await waitFor(() => expect(mockGetTree).toHaveBeenCalledWith("src"))
+      await waitFor(() =>
+        expect(screen.getByText("stale-child.ts")).toBeInTheDocument(),
       )
     })
   })

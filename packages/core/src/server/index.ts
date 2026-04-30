@@ -47,3 +47,9 @@ export type { IdempotencyKeyStore, IdempotencyEntry } from './middleware/index.j
 export type { WorkspaceProvisioner, ProvisionContext, ProvisionResult } from './provisioner/index.js'
 export { createFsProvisioner } from './provisioner/index.js'
 export type { FsProvisionerOptions } from './provisioner/index.js'
+
+export { WorkspaceRuntimeSandboxHandleStore } from './runtime/index.js'
+export type {
+  WorkspaceRuntimeStoreLike,
+  WorkspaceSandboxHandleRecord,
+} from './runtime/index.js'

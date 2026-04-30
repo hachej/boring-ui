@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { createFilesystemPlugin, filesystemPlugin } from "../index"
+import { createFilesCatalog } from "../catalog"
 
 describe("filesystemPlugin", () => {
   it("has id 'filesystem'", () => {
@@ -44,16 +45,23 @@ describe("filesystemPlugin", () => {
     expect(md.filePatterns).toEqual(["**/*.md", "**/*.mdx"])
   })
 
-  it("adds the files catalog when a file search client is supplied", async () => {
+  it("has no catalogs (catalogs are registered at runtime via bindings)", () => {
+    expect(filesystemPlugin.catalogs).toBeUndefined()
+  })
+
+  it("ships the files catalog as a plugin binding", () => {
+    expect(filesystemPlugin.bindings).toHaveLength(1)
+    expect(createFilesystemPlugin().bindings).toHaveLength(1)
+  })
+
+  it("creates a case-insensitive files catalog adapter", async () => {
     const client = {
       search: vi.fn(async () => ["src/App.tsx"]),
     }
     const onOpenFile = vi.fn()
-    const plugin = createFilesystemPlugin({ filesClient: client, onOpenFile })
-    expect(plugin.catalogs).toHaveLength(1)
-    expect(plugin.catalogs![0].id).toBe("files")
+    const catalog = createFilesCatalog({ client, onSelect: onOpenFile })
 
-    const result = await plugin.catalogs![0].adapter.search({
+    const result = await catalog.adapter.search({
       query: "app",
       filters: {},
       limit: 10,
@@ -63,8 +71,8 @@ describe("filesystemPlugin", () => {
     expect(result.items).toEqual([
       { id: "src/App.tsx", title: "App.tsx", subtitle: "src/" },
     ])
-    expect(client.search).toHaveBeenCalledWith("*app*", 10, undefined)
-    plugin.catalogs![0].onSelect(result.items[0]!)
+    expect(client.search).toHaveBeenCalledWith("*[Aa][Pp][Pp]*", 10, undefined)
+    catalog.onSelect(result.items[0]!)
     expect(onOpenFile).toHaveBeenCalledWith("src/App.tsx", result.items[0])
   })
 

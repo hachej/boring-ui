@@ -90,7 +90,7 @@ describe('createFsProvisioner', () => {
     )
   })
 
-  it.each(['..', '.', '', '../' + path.basename('/tmp/fs-prov-test')])(
+  it.each(['..', '.', '', '../' + path.basename('/tmp/fs-prov-test'), '/tmp/ws', 'a/b', 'a\\b', 'ws\0x'])(
     'provision rejects traversal workspaceId %j',
     async (workspaceId) => {
       const provisioner = createFsProvisioner({ rootDir })
@@ -101,16 +101,16 @@ describe('createFsProvisioner', () => {
           ownerId: 'u-1',
           appId: 'app-1',
         }),
-      ).rejects.toThrow('Path traversal detected')
+      ).rejects.toThrow(/Path traversal detected|Invalid workspaceId/)
     },
   )
 
-  it.each(['..', '.', '', '../' + path.basename('/tmp/fs-prov-test')])(
+  it.each(['..', '.', '', '../' + path.basename('/tmp/fs-prov-test'), '/tmp/ws', 'a/b', 'a\\b', 'ws\0x'])(
     'destroy rejects traversal workspaceId %j',
     async (workspaceId) => {
       const provisioner = createFsProvisioner({ rootDir })
       await expect(provisioner.destroy(workspaceId)).rejects.toThrow(
-        'Path traversal detected',
+        /Path traversal detected|Invalid workspaceId/,
       )
     },
   )

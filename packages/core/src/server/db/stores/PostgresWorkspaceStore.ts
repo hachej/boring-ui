@@ -10,6 +10,9 @@ import type {
   WorkspaceInvite,
   WorkspaceMember,
   WorkspaceRuntime,
+  WorkspaceRuntimeResource,
+  WorkspaceRuntimeResourceInput,
+  WorkspaceRuntimeResourceSelector,
 } from '../../../shared/types.js'
 import { ERROR_CODES, HttpError } from '../../../shared/errors.js'
 import {
@@ -18,6 +21,7 @@ import {
   workspaces,
   workspaceInvites,
   workspaceMembers,
+  workspaceRuntimeResources,
   workspaceRuntimes,
   workspaceSettings,
 } from '../schema.js'
@@ -36,6 +40,16 @@ function toIso(value: Date | string | null): string | null {
   return value.toISOString()
 }
 
+function toDate(value: string | null | undefined): Date | null {
+  return value ? new Date(value) : null
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
 function toWorkspaceRuntime(row: typeof workspaceRuntimes.$inferSelect): WorkspaceRuntime {
   return {
     workspaceId: row.workspaceId,
@@ -45,9 +59,45 @@ function toWorkspaceRuntime(row: typeof workspaceRuntimes.$inferSelect): Workspa
     lastError: row.lastError,
     volumePath: row.volumePath,
     lastErrorOp: row.lastErrorOp,
+    sandboxProvider: row.sandboxProvider,
+    sandboxId: row.sandboxId,
+    sandboxStatus: row.sandboxStatus,
+    sandboxSnapshotId: row.sandboxSnapshotId,
+    sandboxCreatedAt: toIso(row.sandboxCreatedAt),
+    sandboxLastUsedAt: toIso(row.sandboxLastUsedAt),
+    sandboxLastSeenAt: toIso(row.sandboxLastSeenAt),
+    sandboxExpiresAt: toIso(row.sandboxExpiresAt),
     provisioningStep: row.provisioningStep,
     stepStartedAt: toIso(row.stepStartedAt),
     updatedAt: toIso(row.updatedAt)!,
+  }
+}
+
+function toWorkspaceRuntimeResource(
+  row: typeof workspaceRuntimeResources.$inferSelect,
+): WorkspaceRuntimeResource {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    kind: row.kind,
+    purpose: row.purpose,
+    provider: row.provider,
+    handleKind: row.handleKind,
+    stableKey: row.stableKey,
+    providerResourceId: row.providerResourceId,
+    parentResourceId: row.parentResourceId,
+    state: row.state,
+    persistenceMode: row.persistenceMode,
+    config: asRecord(row.config),
+    providerMeta: asRecord(row.providerMeta),
+    lastError: row.lastError,
+    lastErrorCode: row.lastErrorCode,
+    createdAt: toIso(row.createdAt)!,
+    updatedAt: toIso(row.updatedAt)!,
+    lastSeenAt: toIso(row.lastSeenAt),
+    lastUsedAt: toIso(row.lastUsedAt),
+    expiresAt: toIso(row.expiresAt),
+    generation: row.generation,
   }
 }
 
@@ -762,6 +812,14 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         spriteName: null,
         state: 'ready',
         lastError: null,
+        sandboxProvider: null,
+        sandboxId: null,
+        sandboxStatus: null,
+        sandboxSnapshotId: null,
+        sandboxCreatedAt: null,
+        sandboxLastUsedAt: null,
+        sandboxLastSeenAt: null,
+        sandboxExpiresAt: null,
         provisioningStep: null,
         stepStartedAt: null,
         updatedAt: new Date(),
@@ -804,6 +862,14 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         lastError: merged.lastError,
         volumePath: merged.volumePath,
         lastErrorOp: merged.lastErrorOp,
+        sandboxProvider: merged.sandboxProvider ?? null,
+        sandboxId: merged.sandboxId ?? null,
+        sandboxStatus: merged.sandboxStatus ?? null,
+        sandboxSnapshotId: merged.sandboxSnapshotId ?? null,
+        sandboxCreatedAt: merged.sandboxCreatedAt ? new Date(merged.sandboxCreatedAt) : null,
+        sandboxLastUsedAt: merged.sandboxLastUsedAt ? new Date(merged.sandboxLastUsedAt) : null,
+        sandboxLastSeenAt: merged.sandboxLastSeenAt ? new Date(merged.sandboxLastSeenAt) : null,
+        sandboxExpiresAt: merged.sandboxExpiresAt ? new Date(merged.sandboxExpiresAt) : null,
         provisioningStep: merged.provisioningStep,
         stepStartedAt: merged.stepStartedAt ? new Date(merged.stepStartedAt) : null,
         updatedAt: new Date(merged.updatedAt),
@@ -817,6 +883,14 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
           lastError: merged.lastError,
           volumePath: merged.volumePath,
           lastErrorOp: merged.lastErrorOp,
+          sandboxProvider: merged.sandboxProvider ?? null,
+          sandboxId: merged.sandboxId ?? null,
+          sandboxStatus: merged.sandboxStatus ?? null,
+          sandboxSnapshotId: merged.sandboxSnapshotId ?? null,
+          sandboxCreatedAt: merged.sandboxCreatedAt ? new Date(merged.sandboxCreatedAt) : null,
+          sandboxLastUsedAt: merged.sandboxLastUsedAt ? new Date(merged.sandboxLastUsedAt) : null,
+          sandboxLastSeenAt: merged.sandboxLastSeenAt ? new Date(merged.sandboxLastSeenAt) : null,
+          sandboxExpiresAt: merged.sandboxExpiresAt ? new Date(merged.sandboxExpiresAt) : null,
           provisioningStep: merged.provisioningStep,
           stepStartedAt: merged.stepStartedAt ? new Date(merged.stepStartedAt) : null,
           updatedAt: new Date(),
@@ -845,6 +919,109 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
 
     if (rows.length === 0) return null
     return toWorkspaceRuntime(rows[0])
+  }
+
+  async listWorkspaceRuntimes(): Promise<WorkspaceRuntime[]> {
+    const rows = await this.db.select().from(workspaceRuntimes)
+    return rows.map((row) => toWorkspaceRuntime(row))
+  }
+
+  async getWorkspaceRuntimeResource(
+    workspaceId: string,
+    selector: WorkspaceRuntimeResourceSelector,
+  ): Promise<WorkspaceRuntimeResource | null> {
+    const rows = await this.db
+      .select()
+      .from(workspaceRuntimeResources)
+      .where(
+        and(
+          eq(workspaceRuntimeResources.workspaceId, workspaceId),
+          eq(workspaceRuntimeResources.kind, selector.kind),
+          eq(workspaceRuntimeResources.purpose, selector.purpose),
+          eq(workspaceRuntimeResources.provider, selector.provider),
+          sql`${workspaceRuntimeResources.state} <> 'deleted'`,
+        ),
+      )
+      .limit(1)
+
+    return rows[0] ? toWorkspaceRuntimeResource(rows[0]) : null
+  }
+
+  async putWorkspaceRuntimeResource(
+    workspaceId: string,
+    resource: WorkspaceRuntimeResourceInput,
+  ): Promise<WorkspaceRuntimeResource> {
+    const workspace = await this.get(workspaceId)
+    if (!workspace) throw new Error(`Workspace ${workspaceId} not found`)
+
+    const now = new Date()
+    const existing = await this.getWorkspaceRuntimeResource(workspaceId, resource)
+    const values = {
+      workspaceId,
+      kind: resource.kind,
+      purpose: resource.purpose,
+      provider: resource.provider,
+      handleKind: resource.handleKind,
+      stableKey: resource.stableKey ?? null,
+      providerResourceId: resource.providerResourceId ?? null,
+      parentResourceId: resource.parentResourceId ?? null,
+      state: resource.state,
+      persistenceMode: resource.persistenceMode,
+      config: resource.config ?? {},
+      providerMeta: resource.providerMeta ?? {},
+      lastError: resource.lastError ?? null,
+      lastErrorCode: resource.lastErrorCode ?? null,
+      updatedAt: now,
+      lastSeenAt: toDate(resource.lastSeenAt),
+      lastUsedAt: toDate(resource.lastUsedAt),
+      expiresAt: toDate(resource.expiresAt),
+      generation: resource.generation ?? ((existing?.generation ?? -1) + 1),
+    }
+
+    if (existing) {
+      const rows = await this.db
+        .update(workspaceRuntimeResources)
+        .set(values)
+        .where(eq(workspaceRuntimeResources.id, existing.id))
+        .returning()
+      return toWorkspaceRuntimeResource(rows[0])
+    }
+
+    const rows = await this.db
+      .insert(workspaceRuntimeResources)
+      .values({
+        id: resource.id,
+        ...values,
+        createdAt: now,
+      })
+      .returning()
+    return toWorkspaceRuntimeResource(rows[0])
+  }
+
+  async deleteWorkspaceRuntimeResource(
+    workspaceId: string,
+    selector: WorkspaceRuntimeResourceSelector,
+  ): Promise<void> {
+    const existing = await this.getWorkspaceRuntimeResource(workspaceId, selector)
+    if (!existing) return
+
+    await this.db
+      .update(workspaceRuntimeResources)
+      .set({
+        state: 'deleted',
+        updatedAt: new Date(),
+      })
+      .where(eq(workspaceRuntimeResources.id, existing.id))
+  }
+
+  async listWorkspaceRuntimeResources(
+    workspaceId?: string,
+  ): Promise<WorkspaceRuntimeResource[]> {
+    const base = this.db.select().from(workspaceRuntimeResources)
+    const rows = workspaceId
+      ? await base.where(eq(workspaceRuntimeResources.workspaceId, workspaceId))
+      : await base
+    return rows.map((row) => toWorkspaceRuntimeResource(row))
   }
 
   async getUiState(

@@ -4,7 +4,7 @@ declare module '@boring/workspace/ui-shadcn' {
 
   export interface ButtonProps extends ComponentPropsWithoutRef<'button'> {
     variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
-    size?: 'default' | 'sm' | 'lg' | 'icon'
+    size?: 'default' | 'xs' | 'sm' | 'lg' | 'icon' | 'icon-xs' | 'icon-sm' | 'icon-lg'
     asChild?: boolean
   }
 
@@ -25,6 +25,9 @@ declare module '@boring/workspace/ui-shadcn' {
   export const DropdownMenuItem: (props: any) => JSX.Element
   export const DropdownMenuLabel: (props: any) => JSX.Element
   export const DropdownMenuSeparator: (props: any) => JSX.Element
+  export const DropdownMenuSub: (props: any) => JSX.Element
+  export const DropdownMenuSubTrigger: (props: any) => JSX.Element
+  export const DropdownMenuSubContent: (props: any) => JSX.Element
 
   export const AlertDialog: (props: any) => JSX.Element
   export const AlertDialogCancel: (props: any) => JSX.Element

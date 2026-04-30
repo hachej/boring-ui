@@ -1,8 +1,9 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AgentTool } from "../../../shared/tool.js";
 
 export interface CatalogRoutesOptions {
-  tools: AgentTool[];
+  tools?: AgentTool[];
+  getTools?: (request: FastifyRequest) => AgentTool[] | Promise<AgentTool[]>;
 }
 
 export function catalogRoutes(
@@ -10,9 +11,10 @@ export function catalogRoutes(
   opts: CatalogRoutesOptions,
   done: (err?: Error) => void,
 ): void {
-  app.get("/api/v1/agent/catalog", async () => {
+  app.get("/api/v1/agent/catalog", async (request) => {
+    const tools = opts.getTools ? await opts.getTools(request) : opts.tools ?? []
     return {
-      tools: opts.tools.map((t) => ({
+      tools: tools.map((t) => ({
         name: t.name,
         description: t.description,
         parameters: t.parameters,

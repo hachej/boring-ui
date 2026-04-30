@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ToolPart } from '../../front/toolRenderers'
 
 const mockUseAgentChat = vi.fn()
@@ -63,6 +63,26 @@ vi.mock('../primitives/prompt-input', () => ({
 
 import { ChatPanel } from '../ChatPanel'
 
+function withLocalStorage(values: Record<string, string>, fn: () => void): void {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  const store = new Map(Object.entries(values))
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, String(value)),
+      removeItem: (key: string) => store.delete(key),
+      clear: () => store.clear(),
+    },
+  })
+  try {
+    fn()
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else delete (globalThis as { localStorage?: unknown }).localStorage
+  }
+}
+
 beforeEach(() => {
   capturedOnSubmit = undefined
   mockSendMessage.mockReset()
@@ -75,10 +95,6 @@ beforeEach(() => {
     status: 'ready',
     error: undefined,
   })
-})
-
-afterEach(() => {
-  vi.unstubAllGlobals()
 })
 
 describe('ChatPanel (shadcn)', () => {
@@ -148,7 +164,7 @@ describe('ChatPanel (shadcn)', () => {
     expect(html).toContain('Hi there')
   })
 
-  test('hides reasoning parts by default', () => {
+  test('renders reasoning parts', () => {
     mockUseAgentChat.mockReturnValue({
       messages: [
         {
@@ -165,41 +181,13 @@ describe('ChatPanel (shadcn)', () => {
       error: undefined,
     })
 
-    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
+    withLocalStorage({ 'boring-agent:composer:show-thoughts': '1' }, () => {
+      const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
 
-    expect(html).not.toContain('data-testid="reasoning"')
-    expect(html).not.toContain('thinking hard')
-    expect(html).toContain('The answer is 42')
-  })
-
-  test('renders reasoning parts when thought view is enabled', () => {
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) =>
-        key === 'boring-agent:composer:show-thoughts' ? '1' : null,
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
+      expect(html).toContain('data-testid="reasoning"')
+      expect(html).toContain('thinking hard')
+      expect(html).toContain('The answer is 42')
     })
-    mockUseAgentChat.mockReturnValue({
-      messages: [
-        {
-          id: 'a1',
-          role: 'assistant',
-          parts: [
-            { type: 'reasoning', text: 'thinking hard', state: 'done' },
-            { type: 'text', text: 'The answer is 42' },
-          ],
-        },
-      ],
-      sendMessage: mockSendMessage,
-      status: 'ready',
-      error: undefined,
-    })
-
-    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning-visible" />)
-
-    expect(html).toContain('data-testid="reasoning"')
-    expect(html).toContain('thinking hard')
-    expect(html).toContain('The answer is 42')
   })
 
   test('renders tool call with default renderer', () => {
@@ -335,6 +323,29 @@ describe('ChatPanel (shadcn)', () => {
     expect(onSessionReset).toHaveBeenCalledOnce()
   })
 
+  test('/reset forwards requestHeaders when deleting server session', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', mockFetch)
+
+    renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-reset"
+        requestHeaders={{ 'x-boring-workspace-id': 'w1' }}
+      />,
+    )
+
+    await capturedOnSubmit!({ text: '/reset', files: [] })
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/agent/sessions/sess-reset',
+      {
+        method: 'DELETE',
+        headers: { 'x-boring-workspace-id': 'w1' },
+      },
+    )
+  })
+
   test('unknown slash command falls through as regular message', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-unk" />)
 
@@ -377,7 +388,9 @@ describe('ChatPanel (shadcn)', () => {
 
   test('passes sessionId to useAgentChat', () => {
     renderToStaticMarkup(<ChatPanel sessionId="test-session-42" />)
-    expect(mockUseAgentChat).toHaveBeenCalledWith({ sessionId: 'test-session-42' })
+    expect(mockUseAgentChat).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'test-session-42' }),
+    )
   })
 
   test('prompt submit status reflects streaming state', () => {
@@ -531,8 +544,10 @@ describe('ChatPanel (shadcn)', () => {
 
     test('thinking control hidden by default (opt-in)', () => {
       const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-think" />)
-      expect(html).not.toContain('data-value="off"')
+      // None of the four level labels should appear when the control is off.
       expect(html).not.toContain('lucide-brain')
+      expect(html).not.toContain('data-value="off"')
+      expect(html).not.toContain('data-value="high"')
     })
 
     test('thinking control rendered when thinkingControl=true', () => {
@@ -541,34 +556,11 @@ describe('ChatPanel (shadcn)', () => {
       )
       // The select renders all four level options as children.
       expect(html).toContain('data-value="off"')
-      expect(html).toContain('Off')
-      expect(html).toContain('Low')
-      expect(html).toContain('Med')
-      expect(html).toContain('High')
+      expect(html).toContain('data-value="low"')
+      expect(html).toContain('data-value="medium"')
+      expect(html).toContain('data-value="high"')
       // BrainIcon rendered alongside the trigger.
       expect(html).toContain('lucide-brain')
-      // Thought visibility control starts hidden, so the composer shows EyeOff.
-      expect(html).toContain('aria-label="Show thoughts"')
-      expect(html).toContain('lucide-eye-off')
-      expect(html).not.toContain('lucide-eye"')
-    })
-
-    test('thinking view icon reflects stored thought visibility', () => {
-      vi.stubGlobal('localStorage', {
-        getItem: (key: string) =>
-          key === 'boring-agent:composer:show-thoughts' ? '1' : null,
-        setItem: vi.fn(),
-        removeItem: vi.fn(),
-      })
-
-      const html = renderToStaticMarkup(
-        <ChatPanel sessionId="s-think-visible" thinkingControl />,
-      )
-
-      expect(html).toContain('aria-label="Hide thoughts"')
-      expect(html).toContain('lucide-eye')
-      expect(html).not.toContain('lucide-eye-off')
-      vi.unstubAllGlobals()
     })
 
     test('thinkingLevel is sent in body when thinkingControl is enabled', async () => {

@@ -3,14 +3,17 @@ import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { requireWorkspaceMember } from '../requireWorkspaceMember'
 import { registerErrorHandler } from '../../app/errorHandler'
-import type { MemberRole } from '../../../shared/types'
+import type { MemberRole, Workspace } from '../../../shared/types'
 import type { WorkspaceStore } from '../../app/types'
 
 const WS_ID = '10000000-0000-0000-0000-000000000001'
+const OTHER_APP_WS_ID = '10000000-0000-0000-0000-000000000002'
+const MISSING_WS_ID = '10000000-0000-0000-0000-000000000003'
 const OWNER_ID = 'u-owner'
 const EDITOR_ID = 'u-editor'
 const VIEWER_ID = 'u-viewer'
 const NON_MEMBER_ID = 'u-nobody'
+const APP_ID = 'test'
 
 const ROLES: Record<string, MemberRole | null> = {
   [OWNER_ID]: 'owner',
@@ -19,8 +22,26 @@ const ROLES: Record<string, MemberRole | null> = {
   [NON_MEMBER_ID]: null,
 }
 
+function workspace(id: string, appId: string): Workspace {
+  return {
+    id,
+    appId,
+    name: id,
+    createdBy: OWNER_ID,
+    createdAt: new Date(0).toISOString(),
+    deletedAt: null,
+    isDefault: false,
+  }
+}
+
 function mockWorkspaceStore(): WorkspaceStore {
   return {
+    get: async (wsId: string) => {
+      if (wsId === WS_ID) return workspace(WS_ID, APP_ID)
+      if (wsId === OTHER_APP_WS_ID) return workspace(OTHER_APP_WS_ID, 'other-app')
+      if (wsId === MISSING_WS_ID) return null
+      return null
+    },
     getMemberRole: async (_wsId: string, userId: string) =>
       ROLES[userId] ?? null,
   } as unknown as WorkspaceStore
@@ -31,7 +52,7 @@ let app: FastifyInstance
 beforeAll(async () => {
   app = Fastify({ logger: false })
 
-  app.decorate('config', { appId: 'test' } as any)
+  app.decorate('config', { appId: APP_ID } as any)
   app.decorate('workspaceStore', mockWorkspaceStore())
   registerErrorHandler(app)
 
@@ -107,6 +128,18 @@ describe('requireWorkspaceMember', () => {
       const res = await inject(`/api/v1/workspaces/${WS_ID}`, NON_MEMBER_ID)
       expect(res.statusCode).toBe(403)
       expect(res.json().code).toBe('not_member')
+    })
+
+    it('missing workspace → 404 not_found before membership check', async () => {
+      const res = await inject(`/api/v1/workspaces/${MISSING_WS_ID}`, OWNER_ID)
+      expect(res.statusCode).toBe(404)
+      expect(res.json().code).toBe('not_found')
+    })
+
+    it('workspace from another app → 404 not_found', async () => {
+      const res = await inject(`/api/v1/workspaces/${OTHER_APP_WS_ID}`, OWNER_ID)
+      expect(res.statusCode).toBe(404)
+      expect(res.json().code).toBe('not_found')
     })
   })
 

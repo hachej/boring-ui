@@ -89,6 +89,21 @@ describe('useSessions', () => {
     expect(setSessions).toHaveBeenCalled()
   })
 
+  test('refresh forwards requestHeaders', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [{ id: 's1', title: 'First' }],
+    })
+
+    useSessions({ requestHeaders: { 'x-boring-workspace-id': 'w1' } })
+    const refreshFn = callbackFns[0]
+    await refreshFn()
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/sessions', {
+      headers: { 'x-boring-workspace-id': 'w1' },
+    })
+  })
+
   test('refresh skips stale responses via version counter', async () => {
     let resolveFetch!: (v: unknown) => void
     mockFetch.mockReturnValueOnce(
@@ -122,6 +137,26 @@ describe('useSessions', () => {
     expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'New session' }),
+    })
+  })
+
+  test('create forwards requestHeaders with JSON content type', async () => {
+    const newSession = { id: 's-new', title: 'New session' }
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => newSession })
+      .mockResolvedValueOnce({ ok: true, json: async () => [newSession] })
+
+    useSessions({ requestHeaders: { 'x-boring-workspace-id': 'w1' } })
+    const createFn = callbackFns[1]
+
+    await createFn({ title: 'New session' })
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/agent/sessions', {
+      method: 'POST',
+      headers: {
+        'x-boring-workspace-id': 'w1',
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({ title: 'New session' }),
     })
   })
@@ -178,6 +213,17 @@ describe('useSessions', () => {
     )
   })
 
+  test('switch can persist under a workspace-scoped storageKey', () => {
+    useSessions({ storageKey: 'boring-agent:activeSessionId:w1' })
+    const switchFn = callbackFns[2]
+    switchFn('s-42')
+
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      'boring-agent:activeSessionId:w1',
+      's-42',
+    )
+  })
+
   test('delete sends DELETE request', async () => {
     mockFetch
       .mockResolvedValueOnce({ ok: true, status: 204 })
@@ -190,6 +236,24 @@ describe('useSessions', () => {
     expect(mockFetch).toHaveBeenCalledWith(
       '/api/v1/agent/sessions/s1',
       { method: 'DELETE' },
+    )
+  })
+
+  test('delete forwards requestHeaders', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, status: 204 })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] })
+
+    useSessions({ requestHeaders: { 'x-boring-workspace-id': 'w1' } })
+    const deleteFn = callbackFns[3]
+    await deleteFn('s1')
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/agent/sessions/s1',
+      {
+        method: 'DELETE',
+        headers: { 'x-boring-workspace-id': 'w1' },
+      },
     )
   })
 

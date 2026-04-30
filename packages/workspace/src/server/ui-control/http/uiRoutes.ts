@@ -39,7 +39,8 @@ function createBodyValidator<T>(schema: ZodSchema<T>) {
 }
 
 export interface UiRoutesOptions {
-  bridge: UiBridge;
+  bridge?: UiBridge;
+  getBridge?: (request: FastifyRequest) => UiBridge | Promise<UiBridge>;
 }
 
 export function uiRoutes(
@@ -47,9 +48,14 @@ export function uiRoutes(
   opts: UiRoutesOptions,
   done: (err?: Error) => void,
 ): void {
-  const { bridge } = opts;
+  const fallbackBridge = opts.bridge;
   const validateSetState = createBodyValidator(setStateBodySchema);
   const validatePostCommand = createBodyValidator(postCommandBodySchema);
+  const resolveBridge = async (request: FastifyRequest): Promise<UiBridge> => {
+    if (opts.getBridge) return await opts.getBridge(request);
+    if (fallbackBridge) return fallbackBridge;
+    throw new Error("uiRoutes requires bridge or getBridge");
+  };
   const encodeCommand = (cmd: UiCommand & { seq: number }) => ({
     v: UI_BRIDGE_PROTOCOL_VERSION,
     seq: cmd.seq,
@@ -57,7 +63,8 @@ export function uiRoutes(
     params: cmd.params,
   });
 
-  app.get("/api/v1/ui/state", async () => {
+  app.get("/api/v1/ui/state", async (request) => {
+    const bridge = await resolveBridge(request);
     return (await bridge.getState()) ?? {};
   });
 
@@ -66,6 +73,7 @@ export function uiRoutes(
     { preHandler: validateSetState },
     async (request, reply) => {
       const body = request.body as z.infer<typeof setStateBodySchema>;
+      const bridge = await resolveBridge(request);
       await bridge.setState(body.state);
       return reply.code(204).send();
     },
@@ -76,12 +84,14 @@ export function uiRoutes(
     { preHandler: validatePostCommand },
     async (request) => {
       const body = request.body as z.infer<typeof postCommandBodySchema>;
+      const bridge = await resolveBridge(request);
       const cmd: UiCommand = { kind: body.kind, params: body.params };
       return await bridge.postCommand(cmd);
     },
   );
 
   app.get("/api/v1/ui/commands/next", async (request, reply) => {
+    const bridge = await resolveBridge(request);
     const query = request.query as Record<string, string>;
 
     if (query.poll === "true") {

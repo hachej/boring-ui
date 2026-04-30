@@ -19,6 +19,7 @@ export default defineConfig({
       '@boring/workspace/ui-shadcn': resolve(workspaceSrc, 'front/components/ui/index.ts'),
       '@boring/workspace/globals.css': resolve(workspaceSrc, 'globals.css'),
       '@boring/workspace/shared': resolve(workspaceSrc, 'shared/index.ts'),
+      '@boring/workspace/server': resolve(workspaceSrc, 'server/index.ts'),
       '@boring/workspace/testing': resolve(workspaceSrc, 'front/testing/index.ts'),
       '@boring/workspace': resolve(workspaceSrc, 'index.ts'),
       '@/front/lib/': `${workspaceSrc}/front/lib/`,
