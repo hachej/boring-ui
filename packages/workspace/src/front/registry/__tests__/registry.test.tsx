@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
 import type { ReactNode } from "react"
-import { PanelRegistry, specificity } from "../PanelRegistry"
+import { matchesFilePattern, PanelRegistry, specificity } from "../PanelRegistry"
 import { CommandRegistry } from "../CommandRegistry"
 import { RegistryProvider, useRegistry, useCommandRegistry } from "../RegistryProvider"
 import { getFileIcon } from "../getFileIcon"
@@ -209,6 +209,17 @@ describe("PanelRegistry.resolve", () => {
     const reg = new PanelRegistry()
     reg.register("agent", { title: "Agent", component: DummyPanel })
     expect(reg.resolve("anything.txt")).toBeUndefined()
+  })
+})
+
+describe("matchesFilePattern", () => {
+  it("matches basename and globstar routes without Node globals", () => {
+    expect(matchesFilePattern("readme.md", "*.md")).toBe(true)
+    expect(matchesFilePattern("src/docs/readme.md", "*.md")).toBe(false)
+    expect(matchesFilePattern("readme.md", "**/*.md")).toBe(true)
+    expect(matchesFilePattern("src/docs/readme.md", "**/*.md")).toBe(true)
+    expect(matchesFilePattern("deck/labor/labor.md", "deck/**/*.md")).toBe(true)
+    expect(matchesFilePattern("deck/labor/labor.ts", "deck/**/*.md")).toBe(false)
   })
 })
 

@@ -1,5 +1,4 @@
 import { createElement, lazy, type ComponentType } from "react"
-import micromatch from "micromatch"
 import type { PanelConfig, PanelRegistration } from "./types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 
@@ -62,7 +61,7 @@ export class PanelRegistry {
       if (!this.satisfiesCapabilities(panel)) continue
 
       for (const pattern of panel.filePatterns) {
-        if (!micromatch.isMatch(path, pattern, { matchBase: false, dot: true })) continue
+        if (!matchesFilePattern(path, pattern)) continue
         const score = specificity(pattern)
         const isApp = panel.source === "app"
         if (
@@ -140,6 +139,48 @@ export class PanelRegistry {
   }
 }
 
+
+export function matchesFilePattern(path: string, pattern: string): boolean {
+  return globPatternToRegex(pattern).test(path)
+}
+
+function globPatternToRegex(pattern: string): RegExp {
+  let source = "^"
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i]
+    const next = pattern[i + 1]
+
+    if (char === "*" && next === "*") {
+      const afterGlobstar = pattern[i + 2]
+      if (afterGlobstar === "/") {
+        source += "(?:.*\/)?"
+        i += 2
+      } else {
+        source += ".*"
+        i += 1
+      }
+      continue
+    }
+
+    if (char === "*") {
+      source += "[^/]*"
+      continue
+    }
+
+    if (char === "?") {
+      source += "[^/]"
+      continue
+    }
+
+    source += escapeRegex(char)
+  }
+  source += "$"
+  return new RegExp(source)
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")
+}
 
 export function specificity(pattern: string): number {
   const segmentCount = pattern.split("/").filter(Boolean).length
