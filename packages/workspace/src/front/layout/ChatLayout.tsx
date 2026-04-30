@@ -130,17 +130,22 @@ export function ChatLayout(props: ChatLayoutProps) {
     })
     if (centerId === "chat") {
       commandRegistry.registerCommand({
-        id: "agent:focus-composer",
-        title: "Focus Agent Composer",
-        keywords: ["agent", "chat", "prompt", "composer", "input"],
+        id: "agent:focus-chat",
+        title: "Focus Chat",
+        keywords: ["agent", "chat", "prompt", "composer", "input", "focus"],
         pluginId: agentPluginId,
-        run: focusAgentComposer,
+        run: () => {
+          if (navOpen) closeNav?.()
+          if (surfaceOpen) closeSurface?.()
+          focusAgentComposer()
+          scheduleComposerFocus()
+        },
       })
     }
     if (createSession) {
       commandRegistry.registerCommand({
         id: "agent:new-chat",
-        title: "New Agent Chat",
+        title: "New Chat",
         keywords: ["agent", "chat", "session", "new"],
         pluginId: agentPluginId,
         run: createSession,
@@ -209,7 +214,10 @@ export function ChatLayout(props: ChatLayoutProps) {
         ) : null}
       </aside>
 
-      <main className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+      <main
+        aria-label="Chat stage"
+        className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
+      >
         <PanelSlot id={centerId} params={props.centerParams} />
         {!navOpen && props.onOpenNav ? (
           <FloatingEdgeButton
@@ -354,6 +362,14 @@ function focusAgentComposer(): void {
     '[data-boring-chat] textarea[name="message"], textarea[name="message"]',
   )
   textarea?.focus()
+}
+
+function scheduleComposerFocus(): void {
+  if (typeof window === "undefined") return
+  window.requestAnimationFrame(() => {
+    focusAgentComposer()
+    window.setTimeout(focusAgentComposer, 320)
+  })
 }
 
 function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown> }) {

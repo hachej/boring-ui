@@ -319,7 +319,7 @@ describe("ChatLayout component", () => {
         <div>
           <span data-testid="session-command">{String(commands.some((command) => command.id === "workspace:open-session-history"))}</span>
           <span data-testid="workbench-command">{String(commands.some((command) => command.id === "workspace:open-workbench"))}</span>
-          <span data-testid="focus-agent-command">{String(commands.some((command) => command.id === "agent:focus-composer"))}</span>
+          <span data-testid="focus-chat-command">{String(commands.some((command) => command.id === "agent:focus-chat"))}</span>
           <span data-testid="new-agent-command">{String(commands.some((command) => command.id === "agent:new-chat"))}</span>
         </div>
       )
@@ -337,7 +337,7 @@ describe("ChatLayout component", () => {
     await waitFor(() => {
       expect(screen.getByTestId("session-command").textContent).toBe("true")
       expect(screen.getByTestId("workbench-command").textContent).toBe("true")
-      expect(screen.getByTestId("focus-agent-command").textContent).toBe("true")
+      expect(screen.getByTestId("focus-chat-command").textContent).toBe("true")
       expect(screen.getByTestId("new-agent-command").textContent).toBe("true")
     })
   })
@@ -359,8 +359,8 @@ describe("ChatLayout component", () => {
           <span data-testid="workbench-title">
             {activeCommands.find((command) => command.id === "workspace:open-workbench")?.title}
           </span>
-          <span data-testid="focus-agent-title">
-            {activeCommands.find((command) => command.id === "agent:focus-composer")?.title}
+          <span data-testid="focus-chat-title">
+            {activeCommands.find((command) => command.id === "agent:focus-chat")?.title}
           </span>
           <span data-testid="new-agent-title">
             {activeCommands.find((command) => command.id === "agent:new-chat")?.title}
@@ -386,9 +386,43 @@ describe("ChatLayout component", () => {
       expect(screen.getByTestId("active-count").textContent).toBe("4")
       expect(screen.getByTestId("session-title").textContent).toBe("Close Session History")
       expect(screen.getByTestId("workbench-title").textContent).toBe("Close Workbench")
-      expect(screen.getByTestId("focus-agent-title").textContent).toBe("Focus Agent Composer")
-      expect(screen.getByTestId("new-agent-title").textContent).toBe("New Agent Chat")
+      expect(screen.getByTestId("focus-chat-title").textContent).toBe("Focus Chat")
+      expect(screen.getByTestId("new-agent-title").textContent).toBe("New Chat")
     })
+  })
+
+  it("Focus Chat closes session history and workbench together", async () => {
+    const user = userEvent.setup()
+    const closeNav = vi.fn()
+    const closeSurface = vi.fn()
+
+    function Runner() {
+      const commands = useCommands()
+      const focusChat = commands.find((command) => command.id === "agent:focus-chat")
+      return (
+        <button type="button" onClick={() => focusChat?.run()}>
+          Run focus
+        </button>
+      )
+    }
+
+    renderWithRegistry(
+      <>
+        <ChatLayout
+          nav="session-list"
+          navParams={{ onClose: closeNav }}
+          surface="artifact-surface"
+          surfaceParams={{ onClose: closeSurface }}
+        />
+        <Runner />
+      </>,
+      ["chat", "session-list", "artifact-surface"],
+    )
+
+    await user.click(screen.getByRole("button", { name: "Run focus" }))
+
+    expect(closeNav).toHaveBeenCalledOnce()
+    expect(closeSurface).toHaveBeenCalledOnce()
   })
 
   it("dispatches plugin UI commands through the workbench contract", () => {
