@@ -131,10 +131,6 @@ function readStoredModel(): ModelSelection | null {
   return null
 }
 
-function isLegacyImplicitModel(model: ModelSelection | null): boolean {
-  return model?.provider === DEFAULT_MODEL.provider && model.id === DEFAULT_MODEL.id
-}
-
 function readStoredModelState(): { model: ModelSelection | null; userSelected: boolean } {
   const model = readStoredModel()
   let userSelected = false
@@ -142,8 +138,12 @@ function readStoredModelState(): { model: ModelSelection | null; userSelected: b
     userSelected = globalThis.localStorage?.getItem(STORAGE_MODEL_USER_KEY) === '1'
   } catch { /* storage unavailable */ }
   return {
-    model,
-    userSelected: userSelected || (model !== null && !isLegacyImplicitModel(model)),
+    // Only an explicit user-selection marker makes a stored model authoritative.
+    // App defaults must come from props or /api/v1/agent/models.defaultModel;
+    // otherwise child apps that seed localStorage can silently override the
+    // composer after the user picks a different provider.
+    model: userSelected ? model : null,
+    userSelected,
   }
 }
 
