@@ -1,12 +1,19 @@
 "use client"
 
-import { createElement, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
-import { ChevronLeft, Database, FolderTree, Search, X } from "lucide-react"
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentType,
+} from "react"
+import { ChevronLeft, PanelLeft, Search, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
-import { FileTreeView } from "../../../plugins/filesystemPlugin/file-tree/FileTreeView"
-import { DataExplorer } from "../../components/DataExplorer/DataExplorer"
-import { createSourcesAdapter, type SourceEntry } from "../../components/DataExplorer/adapters"
+import type { SourceEntry } from "../../components/DataExplorer/adapters"
 import type {
   DragPayload,
   ExplorerAdapter,
@@ -15,6 +22,7 @@ import type {
 } from "../../components/DataExplorer/types"
 import { useRegistry } from "../../registry"
 import type { PaneProps, PanelConfig } from "../../registry/types"
+import type { LeftTabParams } from "../../../shared/plugins/types"
 
 export type DataSource = SourceEntry
 
@@ -38,9 +46,9 @@ export type WorkbenchLeftTab = "files" | "data" | string
 export interface WorkbenchLeftPaneProps {
   rootDir?: string
   bridge?: WorkspaceBridge
-  /** Legacy: small static catalog. Built into a sync adapter internally. */
+  /** @deprecated Register a plugin output with `type: "left-tab"` instead. */
   dataSources?: DataSource[]
-  /** Plug-in: takes precedence over dataSources when provided. */
+  /** @deprecated Register a plugin output with `type: "left-tab"` instead. */
   data?: DataPaneConfig
   defaultTab?: WorkbenchLeftTab
   onCollapse?: () => void
@@ -50,53 +58,33 @@ export interface WorkbenchLeftPaneProps {
 export function WorkbenchLeftPane({
   rootDir = "",
   bridge,
-  dataSources = [],
-  data,
-  defaultTab = "files",
+  defaultTab,
   onCollapse,
   className,
 }: WorkbenchLeftPaneProps) {
   const panelRegistry = useRegistry()
+  const panels = useSyncExternalStore(
+    panelRegistry.subscribe,
+    panelRegistry.getSnapshot,
+    panelRegistry.getSnapshot,
+  )
   const leftTabPanels = useMemo(
-    () => panelRegistry.list().filter((panel) => panel.placement === "left-tab"),
-    [panelRegistry],
+    () => panels.filter((panel) => panel.placement === "left-tab"),
+    [panels],
   )
-  const hasFilesTab = leftTabPanels.some((panel) => panel.id === "files")
-  const hasPluginDataTab = leftTabPanels.some(
-    (panel) => panel.id !== "files" && (panel.id === "data" || panel.title.toLowerCase() === "data"),
-  )
-  const pluginTabs = leftTabPanels.filter((panel) => panel.id !== "files")
   const tabs = useMemo(() => {
     const next: Array<{ id: string; title: string; icon: React.ReactNode; panel?: PanelConfig }> = []
-    if (hasFilesTab) {
-      next.push({
-        id: "files",
-        title: "Files",
-        icon: <FolderTree className="h-3.5 w-3.5" />,
-      })
-    }
-    // Main-shell parity: the workbench left pane always has a Data tab.
-    // If an app/plugin contributes its own Data left-tab (macro does), that
-    // plugin tab owns the slot; otherwise render the built-in catalog shell
-    // even when it is currently empty.
-    if (!hasPluginDataTab) {
-      next.push({
-        id: "data",
-        title: "Data",
-        icon: <Database className="h-3.5 w-3.5" />,
-      })
-    }
-    for (const panel of pluginTabs) {
+    for (const panel of leftTabPanels) {
       const Icon = panel.icon
       next.push({
         id: panel.id,
         title: panel.title,
-        icon: Icon ? <Icon className="h-3.5 w-3.5" /> : <Database className="h-3.5 w-3.5" />,
+        icon: Icon ? <Icon className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />,
         panel,
       })
     }
     return next
-  }, [hasFilesTab, hasPluginDataTab, pluginTabs])
+  }, [leftTabPanels])
   const [tab, setTab] = useState<WorkbenchLeftTab>(defaultTab)
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "files")
   const [searchOpen, setSearchOpen] = useState(false)
@@ -135,6 +123,18 @@ export function WorkbenchLeftPane({
       setQuery("")
     }
   }, [])
+
+  const activeEntry = tabs.find((entry) => entry.id === activeTab)
+  const leftTabParams = useMemo<LeftTabParams>(
+    () => ({
+      rootDir,
+      bridge,
+      query: debouncedQuery,
+      searchQuery: debouncedQuery || undefined,
+      chromeless: true,
+    }),
+    [bridge, debouncedQuery, rootDir],
+  )
 
   return (
     <div className={cn("workbench-left-root flex h-full min-h-0 flex-col", className)}>
@@ -183,8 +183,8 @@ export function WorkbenchLeftPane({
               "hover:bg-foreground/5 hover:text-foreground",
               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
-            aria-label="Hide files"
-            title="Hide files"
+            aria-label="Hide sources"
+            title="Hide sources"
           >
             <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
           </button>
@@ -200,7 +200,7 @@ export function WorkbenchLeftPane({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onSearchKeyDown}
-            placeholder={activeTab === "files" ? "Search files..." : "Search data..."}
+            placeholder={`Search ${(activeEntry?.title ?? "sources").toLowerCase()}...`}
             className="h-6 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           {query && (
@@ -217,20 +217,7 @@ export function WorkbenchLeftPane({
       )}
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {activeTab === "files" ? (
-          <FileTreeView
-            rootDir={rootDir}
-            searchQuery={debouncedQuery || undefined}
-            bridge={bridge}
-            className="px-1 pt-1 [&_[role=treeitem]]:!indent-0"
-          />
-        ) : activeTab === "data" && data ? (
-          <DataExplorerWithConfig config={data} query={debouncedQuery} />
-        ) : activeTab === "data" ? (
-          <DataExplorerForSources sources={dataSources} query={debouncedQuery} />
-        ) : (
-          <LeftTabPanelHost panel={tabs.find((entry) => entry.id === activeTab)?.panel} />
-        )}
+        <LeftTabPanelHost panel={activeEntry?.panel} params={leftTabParams} />
       </div>
     </div>
   )
@@ -250,7 +237,7 @@ const noopContainerApi = new Proxy(
   },
 ) as PaneProps["containerApi"]
 
-function LeftTabPanelHost({ panel }: { panel?: PanelConfig }) {
+function LeftTabPanelHost({ panel, params }: { panel?: PanelConfig; params: LeftTabParams }) {
   if (!panel) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
@@ -266,7 +253,7 @@ function LeftTabPanelHost({ panel }: { panel?: PanelConfig }) {
     )
   }
   return createElement(panel.component as ComponentType<any>, {
-    params: undefined,
+    params,
     api: noopPaneApi,
     containerApi: noopContainerApi,
     className: "h-full",
@@ -308,47 +295,5 @@ function SegmentedTab({
         />
       )}
     </button>
-  )
-}
-
-function DataExplorerWithConfig({
-  config,
-  query,
-}: {
-  config: DataPaneConfig
-  query: string
-}) {
-  return (
-    <DataExplorer
-      adapter={config.adapter}
-      query={query}
-      searchable={false}
-      groupBy={config.groupBy}
-      facets={config.facets}
-      onActivate={config.onActivate}
-      getDragPayload={config.getDragPayload}
-      emptyState={config.emptyState ?? "No data sources"}
-      className="h-full"
-    />
-  )
-}
-
-function DataExplorerForSources({ sources, query }: { sources: DataSource[]; query: string }) {
-  // Build the adapter once per `sources` reference. The chat shell already
-  // provides the search input and debounced query, so we drive DataExplorer
-  // in controlled mode and hide its internal toolbar.
-  const adapter = useMemo(() => createSourcesAdapter(sources), [sources])
-  // If any source declares a schema, group rows by it (toggleable sections).
-  const grouped = useMemo(() => sources.some((s) => !!s.schema), [sources])
-  return (
-    <DataExplorer
-      adapter={adapter}
-      query={query}
-      searchable={false}
-      groupBy={grouped ? "schema" : undefined}
-      facets={grouped ? [{ key: "schema", label: "Schema" }] : undefined}
-      emptyState="No data sources"
-      className="h-full"
-    />
   )
 }
