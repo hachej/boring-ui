@@ -29,6 +29,7 @@ async function main() {
   seedWorkspaceIfEmpty()
   process.env.BORING_AGENT_WORKSPACE_ROOT ??= WORKSPACE_ROOT
   process.env.BM_DECK_ROOT ??= WORKSPACE_DECK_ROOT
+  process.env.BM_CH_DATABASE ??= "boring_macro"
 
   const { app } = await buildServer({ port: API_PORT, host: "127.0.0.1" })
   await app.listen({ port: API_PORT, host: "127.0.0.1" })

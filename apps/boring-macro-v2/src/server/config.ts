@@ -56,17 +56,37 @@ async function probeDatabase(
   // info in the URL, so a single SELECT keeps the env minimal.
   try {
     const { createClient } = await import('@clickhouse/client')
+    const timeoutMs = Number(process.env.BM_CH_PROBE_TIMEOUT_MS) || 4000
     const client = createClient({ url: hostUrl, username, password, database: 'default' })
     try {
       const r = await client.query({
-        query: "SELECT database FROM system.tables WHERE name = 'series_catalog' ORDER BY database LIMIT 1",
+        query: "SELECT database FROM system.tables WHERE name = 'series_catalog' ORDER BY (database = 'boring_macro') DESC, database LIMIT 1",
         format: 'JSONEachRow',
-        abort_signal: AbortSignal.timeout(Number(process.env.BM_CH_PROBE_TIMEOUT_MS) || 2000),
+        abort_signal: AbortSignal.timeout(timeoutMs),
       })
       const rows = await r.json<{ database: string }>()
       const found = rows[0]?.database?.trim()
       if (found && !['system', 'information_schema'].includes(found.toLowerCase())) {
         return found
+      }
+
+      for (const candidate of ['boring_macro', 'default']) {
+        try {
+          const check = createClient({ url: hostUrl, username, password, database: candidate })
+          try {
+            const q = await check.query({
+              query: "SELECT 1 FROM series_catalog LIMIT 1",
+              format: 'JSONEachRow',
+              abort_signal: AbortSignal.timeout(timeoutMs),
+            })
+            await q.json()
+            return candidate
+          } finally {
+            await check.close().catch(() => { /* ignore */ })
+          }
+        } catch {
+          // try next candidate
+        }
       }
     } finally {
       await client.close().catch(() => { /* ignore */ })

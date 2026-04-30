@@ -290,10 +290,11 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
         title?: string
         input_ids?: string[]
         transform_name?: string
+        transform_spec?: Record<string, unknown>
         data?: unknown[][]
       }
-      if (!body.output_id || !body.title || !body.input_ids || !body.transform_name || !body.data) {
-        return { ok: false, error: 'Missing required fields: output_id, title, input_ids, transform_name, data' }
+      if (!body.output_id || !body.title || !body.input_ids || !body.data || (!body.transform_name && !body.transform_spec?.name)) {
+        return { ok: false, error: 'Missing required fields: output_id, title, input_ids, data, and transform_name or transform_spec.name' }
       }
       try {
         return await svc.persistTransform({
@@ -301,6 +302,7 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
           title: body.title,
           inputIds: body.input_ids,
           transformName: body.transform_name,
+          transformSpec: body.transform_spec,
           data: body.data,
         })
       } catch (err) {

@@ -96,7 +96,7 @@ export function createMacroTools(chConfig: ClickHouseConfig | null): AgentTool[]
 
   const getSeriesData: AgentTool = {
     name: 'get_series_data',
-    description: 'Fetch observations for a single series. Returns JSON with `date` and `value` fields.',
+    description: 'Fetch observations for a single series. Returns JSON with `date` and `value` fields. Prefer the macro-transform skill + `bm` for creating reusable derived series; use this tool mainly for inspection/debugging.',
     parameters: {
       type: 'object',
       properties: {
@@ -133,7 +133,7 @@ export function createMacroTools(chConfig: ClickHouseConfig | null): AgentTool[]
 
   const persistDerivedSeries: AgentTool = {
     name: 'persist_derived_series',
-    description: 'Persist derived timeseries output. Use this instead of SQL INSERT statements.',
+    description: 'Persist derived timeseries output. Use this instead of SQL INSERT statements. This is a fallback path; for reusable derived-series creation prefer the macro-transform skill plus `bm`.',
     parameters: {
       type: 'object',
       properties: {
@@ -141,6 +141,7 @@ export function createMacroTools(chConfig: ClickHouseConfig | null): AgentTool[]
         title: { type: 'string', description: 'Human-readable series title' },
         input_ids: { type: 'array', items: { type: 'string' }, description: 'Source series ids', minItems: 1 },
         transform_name: { type: 'string', description: 'Transform identifier (e.g. yoy, custom_transform)' },
+        transform_spec: { type: 'object', description: 'Optional richer transform metadata (tool_id, file, params, etc.)', additionalProperties: true },
         observations: {
           type: 'array',
           items: {
@@ -156,21 +157,25 @@ export function createMacroTools(chConfig: ClickHouseConfig | null): AgentTool[]
           maxItems: 50000,
         },
       },
-      required: ['output_id', 'title', 'input_ids', 'transform_name', 'observations'],
+      required: ['output_id', 'title', 'input_ids', 'observations'],
       additionalProperties: false,
     },
     async execute(params) {
       if (!svc) return errorResult('ClickHouse not configured')
       const outputId = String(params.output_id ?? '').trim()
       const title = String(params.title ?? '').trim()
-      const transformName = String(params.transform_name ?? '').trim()
       const inputIds = (Array.isArray(params.input_ids) ? params.input_ids : [])
         .map((s: unknown) => String(s).trim()).filter(Boolean)
       const observations = Array.isArray(params.observations) ? params.observations : []
+      const transformSpec = params.transform_spec && typeof params.transform_spec === 'object' && !Array.isArray(params.transform_spec)
+        ? params.transform_spec as Record<string, unknown>
+        : undefined
+      const transformSpecName = typeof transformSpec?.name === 'string' ? transformSpec.name.trim() : ''
+      const transformName = String(params.transform_name ?? transformSpecName).trim()
 
       if (!outputId) return errorResult('output_id is required')
       if (!title) return errorResult('title is required')
-      if (!transformName) return errorResult('transform_name is required')
+      if (!transformName) return errorResult('transform_name or transform_spec.name is required')
       if (inputIds.length === 0) return errorResult('input_ids required')
       if (observations.length === 0) return errorResult('observations required')
 
@@ -185,6 +190,7 @@ export function createMacroTools(chConfig: ClickHouseConfig | null): AgentTool[]
           title,
           inputIds,
           transformName,
+          transformSpec,
           data,
         })
         if (!result.ok) return errorResult(result.error!)
@@ -204,4 +210,3 @@ export function createMacroTools(chConfig: ClickHouseConfig | null): AgentTool[]
   // an SSE drain — no app-specific tool needed.
   return [executeSql, macroSearch, getSeriesData, persistDerivedSeries]
 }
-
