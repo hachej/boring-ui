@@ -317,13 +317,16 @@ describe("ChatLayout component", () => {
         <div>
           <span data-testid="session-command">{String(commands.some((command) => command.id === "workspace:open-session-history"))}</span>
           <span data-testid="workbench-command">{String(commands.some((command) => command.id === "workspace:open-workbench"))}</span>
+          <span data-testid="focus-agent-command">{String(commands.some((command) => command.id === "agent:focus-composer"))}</span>
+          <span data-testid="new-agent-command">{String(commands.some((command) => command.id === "agent:new-chat"))}</span>
         </div>
       )
     }
 
+    const createSession = vi.fn()
     renderWithRegistry(
       <>
-        <ChatLayout nav={null} surface="artifact-surface" />
+        <ChatLayout nav={null} navParams={{ onCreate: createSession }} surface="artifact-surface" />
         <Inspector />
       </>,
       ["chat", "artifact-surface"],
@@ -332,6 +335,57 @@ describe("ChatLayout component", () => {
     await waitFor(() => {
       expect(screen.getByTestId("session-command").textContent).toBe("true")
       expect(screen.getByTestId("workbench-command").textContent).toBe("true")
+      expect(screen.getByTestId("focus-agent-command").textContent).toBe("true")
+      expect(screen.getByTestId("new-agent-command").textContent).toBe("true")
+    })
+  })
+
+  it("keeps workspace layout commands active when panes are already open", async () => {
+    const closeNav = vi.fn()
+    const closeSurface = vi.fn()
+    const createSession = vi.fn()
+
+    function Inspector() {
+      const commands = useCommands()
+      const activeCommands = commands.filter((command) => command.when?.() ?? true)
+      return (
+        <div>
+          <span data-testid="active-count">{activeCommands.length}</span>
+          <span data-testid="session-title">
+            {activeCommands.find((command) => command.id === "workspace:open-session-history")?.title}
+          </span>
+          <span data-testid="workbench-title">
+            {activeCommands.find((command) => command.id === "workspace:open-workbench")?.title}
+          </span>
+          <span data-testid="focus-agent-title">
+            {activeCommands.find((command) => command.id === "agent:focus-composer")?.title}
+          </span>
+          <span data-testid="new-agent-title">
+            {activeCommands.find((command) => command.id === "agent:new-chat")?.title}
+          </span>
+        </div>
+      )
+    }
+
+    renderWithRegistry(
+      <>
+        <ChatLayout
+          nav="session-list"
+          navParams={{ onClose: closeNav, onCreate: createSession }}
+          surface="artifact-surface"
+          surfaceParams={{ onClose: closeSurface }}
+        />
+        <Inspector />
+      </>,
+      ["chat", "session-list", "artifact-surface"],
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("active-count").textContent).toBe("4")
+      expect(screen.getByTestId("session-title").textContent).toBe("Close Session History")
+      expect(screen.getByTestId("workbench-title").textContent).toBe("Close Workbench")
+      expect(screen.getByTestId("focus-agent-title").textContent).toBe("Focus Agent Composer")
+      expect(screen.getByTestId("new-agent-title").textContent).toBe("New Agent Chat")
     })
   })
 

@@ -71,6 +71,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   const surfaceConfigured = props.surface !== undefined && props.surface !== null
   const surfaceOpen = Boolean(props.surface)
   const navId = props.nav || "session-list"
+  const centerId = props.center ?? "chat"
   const surfaceId = props.surface || "artifact-surface"
   const viewport = useViewportWidth()
   const [navWidth, setNavWidth] = useState(260)
@@ -82,27 +83,78 @@ export function ChatLayout(props: ChatLayoutProps) {
 
   useEffect(() => {
     const pluginId = "workspace:chat-layout"
+    const agentPluginId = "agent:chat-layout"
+    const closeNav = getCallback(props.navParams, "onClose")
+    const closeSurface = getCallback(props.surfaceParams, "onClose")
+    const createSession = getCallback(props.navParams, "onCreate")
+    const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
+    const canControlSurface = surfaceConfigured && (surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface))
+
     commandRegistry.unregisterByPluginId(pluginId)
+    commandRegistry.unregisterByPluginId(agentPluginId)
     commandRegistry.registerCommand({
       id: "workspace:open-session-history",
-      title: "Open Session History",
-      keywords: ["sessions", "history", "drawer"],
+      title: navOpen ? "Close Session History" : "Open Session History",
+      keywords: ["sessions", "history", "drawer", navOpen ? "close" : "open"],
       shortcut: "⌘1",
       pluginId,
-      when: () => !navOpen,
-      run: () => props.onOpenNav?.(),
+      when: () => canControlNav,
+      run: () => {
+        if (navOpen) {
+          closeNav?.()
+          return
+        }
+        props.onOpenNav?.()
+      },
     })
     commandRegistry.registerCommand({
       id: "workspace:open-workbench",
-      title: "Open Workbench",
-      keywords: ["surface", "artifacts", "files"],
+      title: surfaceOpen ? "Close Workbench" : "Open Workbench",
+      keywords: ["surface", "artifacts", "files", "workbench", surfaceOpen ? "close" : "open"],
       shortcut: "⌘2",
       pluginId,
-      when: () => surfaceConfigured && !surfaceOpen,
-      run: () => props.onOpenSurface?.(),
+      when: () => canControlSurface,
+      run: () => {
+        if (surfaceOpen) {
+          closeSurface?.()
+          return
+        }
+        props.onOpenSurface?.()
+      },
     })
-    return () => commandRegistry.unregisterByPluginId(pluginId)
-  }, [commandRegistry, navOpen, surfaceConfigured, surfaceOpen, props.onOpenNav, props.onOpenSurface])
+    if (centerId === "chat") {
+      commandRegistry.registerCommand({
+        id: "agent:focus-composer",
+        title: "Focus Agent Composer",
+        keywords: ["agent", "chat", "prompt", "composer", "input"],
+        pluginId: agentPluginId,
+        run: focusAgentComposer,
+      })
+    }
+    if (createSession) {
+      commandRegistry.registerCommand({
+        id: "agent:new-chat",
+        title: "New Agent Chat",
+        keywords: ["agent", "chat", "session", "new"],
+        pluginId: agentPluginId,
+        run: createSession,
+      })
+    }
+    return () => {
+      commandRegistry.unregisterByPluginId(pluginId)
+      commandRegistry.unregisterByPluginId(agentPluginId)
+    }
+  }, [
+    commandRegistry,
+    navOpen,
+    centerId,
+    surfaceConfigured,
+    surfaceOpen,
+    props.navParams,
+    props.surfaceParams,
+    props.onOpenNav,
+    props.onOpenSurface,
+  ])
 
   return (
     <div className={cn("relative flex h-full min-h-0 w-full overflow-hidden bg-background", props.className)}>
@@ -140,7 +192,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       </aside>
 
       <main className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-        <PanelSlot id={props.center ?? "chat"} params={props.centerParams} />
+        <PanelSlot id={centerId} params={props.centerParams} />
         {!navOpen && props.onOpenNav ? (
           <FloatingEdgeButton
             side="left"
@@ -264,6 +316,19 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
       style={{ touchAction: "none" }}
     />
   )
+}
+
+function getCallback(params: Record<string, unknown> | undefined, key: string): (() => void) | undefined {
+  const value = params?.[key]
+  return typeof value === "function" ? value as () => void : undefined
+}
+
+function focusAgentComposer(): void {
+  if (typeof document === "undefined") return
+  const textarea = document.querySelector<HTMLTextAreaElement>(
+    '[data-boring-chat] textarea[name="message"], textarea[name="message"]',
+  )
+  textarea?.focus()
 }
 
 function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown> }) {
