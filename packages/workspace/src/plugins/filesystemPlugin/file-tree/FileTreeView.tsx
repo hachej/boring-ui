@@ -44,6 +44,8 @@ import {
 import { cn } from "../../../front/lib/utils"
 import { toast } from "../../../front/toast"
 import { events, userMeta } from "../../../front/events"
+import type { PaneProps } from "../../../shared/types/panel"
+import type { LeftTabParams } from "../../../shared/plugins/types"
 
 const FileTree = lazy(() =>
   import("./FileTree").then((m) => ({ default: m.FileTree })),
@@ -779,10 +781,20 @@ export function FileTreeView({
   )
 }
 
-export interface FileTreePaneProps {
+export interface FileTreePaneParams extends LeftTabParams {
   rootDir?: string
+  searchQuery?: string
+  query?: string
+  bridge?: WorkspaceBridge
+  chromeless?: boolean
+}
+
+export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>> {
+  rootDir?: string
+  searchQuery?: string
   panelApi?: DockviewPanelApi
   bridge?: WorkspaceBridge
+  chromeless?: boolean
   className?: string
 }
 
@@ -792,11 +804,21 @@ export interface FileTreePaneProps {
  * `FileTreeView` directly when you want different chrome/search UX.
  */
 export function FileTreePane({
+  params,
   rootDir = ".",
+  searchQuery: controlledSearchQuery,
   panelApi,
   bridge,
+  api,
+  chromeless = false,
   className,
 }: FileTreePaneProps) {
+  const effectiveRootDir = params?.rootDir ?? rootDir
+  const effectiveBridge = params?.bridge ?? bridge
+  const effectiveChromeless = params?.chromeless ?? chromeless
+  const externalSearchQuery =
+    params?.searchQuery ?? params?.query ?? controlledSearchQuery
+  const effectivePanelApi = panelApi ?? api
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -807,13 +829,29 @@ export function FileTreePane({
     return () => clearTimeout(debounceRef.current)
   }, [searchQuery])
 
+  const effectiveSearchQuery =
+    externalSearchQuery !== undefined
+      ? externalSearchQuery || undefined
+      : debouncedQuery || undefined
+
+  if (effectiveChromeless) {
+    return (
+      <FileTreeView
+        rootDir={effectiveRootDir}
+        searchQuery={effectiveSearchQuery}
+        bridge={effectiveBridge}
+        className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
+      />
+    )
+  }
+
   return (
-    <PanelChrome title="Files" panelApi={panelApi}>
+    <PanelChrome title="Files" panelApi={effectivePanelApi}>
       <div className="flex h-full flex-col">
         <div className="border-b border-border px-2 py-1.5">
           <Input
             placeholder="Search files..."
-            value={searchQuery}
+            value={externalSearchQuery ?? searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-7 text-xs"
             aria-label="Search files"
@@ -821,9 +859,9 @@ export function FileTreePane({
         </div>
         <div className="min-h-0 flex-1">
           <FileTreeView
-            rootDir={rootDir}
-            searchQuery={debouncedQuery || undefined}
-            bridge={bridge}
+            rootDir={effectiveRootDir}
+            searchQuery={effectiveSearchQuery}
+            bridge={effectiveBridge}
             className={className}
           />
         </div>

@@ -131,8 +131,6 @@ export function SurfaceShell({
   sidebarMinWidth = 180,
   sidebarMaxWidth = 480,
   storageKey,
-  dataSources = [],
-  data,
   onReady,
   onChange,
   onClose,
@@ -448,8 +446,6 @@ export function SurfaceShell({
             <WorkbenchLeftPane
               rootDir={rootDir}
               bridge={bridge}
-              dataSources={dataSources}
-              data={data}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>

@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { FolderTree } from "lucide-react"
 import { definePlugin } from "../../shared/plugins/definePlugin"
 import { postUiCommand } from "../../front/bridge"
 import { useDataClient } from "../../front/data"
@@ -19,14 +20,18 @@ export { FilePaneShell } from "./FilePaneShell"
 export { ConflictBanner } from "./ConflictBanner"
 export type { UseFilePaneOptions, UseFilePaneReturn } from "./useFilePane"
 
-const filesystemPanels: Plugin["panels"] = [
+const filesystemOutputs: Plugin["outputs"] = [
   {
+    type: "left-tab",
     id: "files",
     title: "Files",
     component: FileTreePane,
-    placement: "left-tab",
     source: "builtin",
+    icon: FolderTree,
   },
+]
+
+const filesystemPanels: Plugin["panels"] = [
   {
     id: "code-editor",
     title: "Code",
@@ -82,6 +87,7 @@ export function createFilesystemPlugin(): Plugin {
   return definePlugin({
     id: FILESYSTEM_PLUGIN_ID,
     label: "Filesystem",
+    outputs: filesystemOutputs,
     panels: filesystemPanels,
     bindings: [FilesystemCatalogBinding],
   })
