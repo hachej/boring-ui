@@ -27,6 +27,7 @@ interface DeckParams {
 interface DeckPaneProps {
   params?: DeckParams
   api?: PaneProps<DeckParams | undefined>["api"]
+  containerApi?: PaneProps<DeckParams | undefined>["containerApi"]
 }
 
 const COLORS = SERIES_COLORS.slice(0, 5)

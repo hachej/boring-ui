@@ -1,6 +1,6 @@
 // boring.macro server entry — the consolidated app.
 //
-// Uses @boring/workspace/server's createWorkspaceAgentApp (Phase 0 made
+// Uses @boring/workspace/app's createWorkspaceAgentApp (Phase 0 made
 // this entry buildable) so the agent automatically gets:
 //   - exec_ui / get_ui_state tools
 //   - /api/v1/ui/* routes (PUT state, POST commands, SSE drain)
@@ -11,7 +11,7 @@
 import rawBody from 'fastify-raw-body'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createWorkspaceAgentApp } from '@boring/workspace/server'
+import { createWorkspaceAgentApp } from '@boring/workspace/app'
 import { makeMacroServerPlugin } from '../plugin/server'
 import { registerMacroRoutes } from './routes/macro'
 import { registerBillingRoutes } from './routes/billing'

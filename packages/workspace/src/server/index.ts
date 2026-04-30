@@ -1,10 +1,9 @@
 /**
  * @boring/workspace/server — Node-only public API.
  *
- * Hosts call createWorkspaceAgentApp to boot a Fastify app that includes
- * both the agent's LLM harness AND the workspace UI bridge surface.
- * Direct factories (createInMemoryBridge, uiRoutes, createWorkspaceUiTools)
- * are exposed for advanced wiring — most consumers only need the wrapper.
+ * Lower-level Node factories for advanced wiring. Hosts that want the
+ * composed workspace + agent Fastify app should import
+ * `createWorkspaceAgentApp` from `@boring/workspace/app`.
  *
  * Bundling: this entry MUST NOT be imported by browser code. The workspace
  * package's exports map keeps it under `./server`, and the front bundle's
@@ -12,10 +11,6 @@
  * `scripts/assert-bundle-isolation.mjs` fails the build if browser-side
  * code reaches in here.
  */
-export {
-  createWorkspaceAgentApp,
-  type CreateWorkspaceAgentAppOptions,
-} from "../app/createWorkspaceAgentApp"
 // Testing utilities (for tests that need custom bridge wiring)
 export { createInMemoryBridge } from "./bridge/createInMemoryBridge"
 export { uiRoutes } from "./ui-control/http/uiRoutes"

@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url"
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { runEvalSuite } from "@boring/agent/eval"
-import { createWorkspaceAgentApp } from "../src/server/createWorkspaceAgentApp"
+import { createWorkspaceAgentApp } from "../src/app/createWorkspaceAgentApp"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)

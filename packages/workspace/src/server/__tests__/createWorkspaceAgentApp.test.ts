@@ -12,6 +12,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, describe } from "vitest"
 import { createWorkspaceAgentApp } from "../../app/createWorkspaceAgentApp"
+import * as appApi from "../../app"
+import * as serverApi from "../index"
 
 const tempDirs: string[] = []
 
@@ -28,6 +30,11 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 describe("createWorkspaceAgentApp — UI bridge wiring", () => {
+  test("is exported from the app entry, not the server entry", () => {
+    expect(appApi.createWorkspaceAgentApp).toBe(createWorkspaceAgentApp)
+    expect("createWorkspaceAgentApp" in serverApi).toBe(false)
+  })
+
   test("registers get_ui_state and exec_ui in the catalog", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-uitools-")
     const app = await createWorkspaceAgentApp({

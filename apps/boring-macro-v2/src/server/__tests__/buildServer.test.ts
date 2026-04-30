@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url)
 
 describe("buildServer", () => {
   it("exposes workspace + agent server entries to CJS-style resolvers", () => {
-    expect(() => require.resolve("@boring/workspace/server")).not.toThrow()
+    expect(() => require.resolve("@boring/workspace/app")).not.toThrow()
     expect(() => require.resolve("@boring/agent/server")).not.toThrow()
   })
 

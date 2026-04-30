@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { createWorkspaceAgentApp } from "../../packages/workspace/src/server/index"
+import { createWorkspaceAgentApp } from "../../packages/workspace/src/app"
 
 // The playground is the standalone dev surface for @boring/workspace.
 // Backend is the agent package's Fastify app — same one production uses —
@@ -76,7 +76,6 @@ export default defineConfig({
       "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
       "@boring/workspace/ui-shadcn": resolve(__dirname, "../../packages/workspace/src/front/components/ui/index.ts"),
       "@boring/workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
-      "@boring/workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
       "@boring/workspace/testing": resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts"),
       "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
       // Agent: consumed via package exports (dist). Live edits to agent

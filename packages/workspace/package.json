@@ -24,6 +24,11 @@
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"
     },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js",
+      "default": "./dist/app.js"
+    },
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
