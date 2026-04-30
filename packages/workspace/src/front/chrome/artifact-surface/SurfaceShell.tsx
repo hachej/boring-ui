@@ -43,6 +43,8 @@ export interface SurfaceShellApi {
    * aren't anchored to a filesystem path.
    */
   openPanel: (config: OpenPanelConfig) => void
+  /** Hide the workbench's left sources/files pane while leaving the workbench open. */
+  closeWorkbenchLeftPane: () => void
   /** Current snapshot of open tabs + active tab. */
   getSnapshot: () => SurfaceShellSnapshot
 }
@@ -298,7 +300,12 @@ export function SurfaceShell({
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
-    onReadyRef.current?.({ openFile: openFileSync, openPanel: openPanelSync, getSnapshot })
+    onReadyRef.current?.({
+      openFile: openFileSync,
+      openPanel: openPanelSync,
+      closeWorkbenchLeftPane: () => setCollapsed(true),
+      getSnapshot,
+    })
     // Subscribe to dockview events so the parent gets a snapshot push on
     // every panel mutation. Disposers are intentionally not stored — the
     // dockview instance lives for the SurfaceShell's entire lifetime, and
@@ -346,6 +353,10 @@ export function SurfaceShell({
       openFile,
       openPanel: async () => ok(),
       closePanel: async () => ok(),
+      closeWorkbenchLeftPane: async () => {
+        setCollapsed(true)
+        return ok()
+      },
       showNotification: async () => ok(),
       navigateToLine: async () => ok(),
       expandToFile: async () => ok(),

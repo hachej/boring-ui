@@ -2,16 +2,21 @@ import { describe, it, expect, vi } from "vitest"
 import { dispatchUiCommand, type DispatchContext } from "../uiCommandDispatcher"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 
-function fakeSurface(): SurfaceShellApi & { __opened: string[]; __panels: unknown[] } {
+function fakeSurface(): SurfaceShellApi & { __opened: string[]; __panels: unknown[]; __leftClosed: number } {
   const opened: string[] = []
   const panels: unknown[] = []
-  return {
+  const surface: SurfaceShellApi & { __opened: string[]; __panels: unknown[]; __leftClosed: number } = {
     openFile: (path: string) => opened.push(path),
     openPanel: (cfg: unknown) => panels.push(cfg),
+    closeWorkbenchLeftPane: () => {
+      surface.__leftClosed += 1
+    },
     getSnapshot: (): SurfaceShellSnapshot => ({ openTabs: [], activeTab: null }),
     __opened: opened,
     __panels: panels,
+    __leftClosed: 0,
   }
+  return surface
 }
 
 function ctx(over: Partial<DispatchContext> = {}, surface = fakeSurface()): DispatchContext & { __surface: ReturnType<typeof fakeSurface> } {
@@ -105,6 +110,12 @@ describe("dispatchUiCommand", () => {
     dispatchUiCommand({ kind: "openPanel", params: { id: "logs" } }, c)
     dispatchUiCommand({ kind: "openPanel", params: { component: "log-viewer" } }, c)
     expect(c.__surface.__panels).toEqual([])
+  })
+
+  it("closeWorkbenchLeftPane closes the workbench left pane", () => {
+    const c = ctx()
+    dispatchUiCommand({ kind: "closeWorkbenchLeftPane", params: {} }, c)
+    expect(c.__surface.__leftClosed).toBe(1)
   })
 
   it("unknown kinds are silently ignored — no surface call, no throw", () => {

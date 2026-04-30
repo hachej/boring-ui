@@ -2,16 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { startUiCommandStream, type DispatchContext } from "../uiCommandStream"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 
-function fakeSurface(): SurfaceShellApi & { __opened: string[]; __panels: unknown[] } {
+function fakeSurface(): SurfaceShellApi & { __opened: string[]; __panels: unknown[]; __leftClosed: number } {
   const opened: string[] = []
   const panels: unknown[] = []
-  return {
+  const surface: SurfaceShellApi & { __opened: string[]; __panels: unknown[]; __leftClosed: number } = {
     openFile: (p: string) => opened.push(p),
     openPanel: (cfg: unknown) => panels.push(cfg),
+    closeWorkbenchLeftPane: () => {
+      surface.__leftClosed += 1
+    },
     getSnapshot: (): SurfaceShellSnapshot => ({ openTabs: [], activeTab: null }),
     __opened: opened,
     __panels: panels,
+    __leftClosed: 0,
   }
+  return surface
 }
 
 function dispatchCtx(surface = fakeSurface()): DispatchContext & {
@@ -93,9 +98,11 @@ describe("startUiCommandStream — SSE path", () => {
 
     es.__emit("command", JSON.stringify({ kind: "openFile", params: { path: "greeter.ts" }, seq: 1 }))
     es.__emit("command", JSON.stringify({ kind: "openPanel", params: { id: "logs", component: "log-viewer" } }))
+    es.__emit("command", JSON.stringify({ kind: "closeWorkbenchLeftPane", params: {} }))
 
     expect(ctx.__surface.__opened).toEqual(["greeter.ts"])
     expect(ctx.__surface.__panels).toHaveLength(1)
+    expect(ctx.__surface.__leftClosed).toBe(1)
     stop()
   })
 

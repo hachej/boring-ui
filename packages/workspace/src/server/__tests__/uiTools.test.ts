@@ -127,7 +127,7 @@ describe("createExecUiTool — path validation", () => {
     expect(result.isError).toBe(true)
   })
 
-  test("non-path kinds (openPanel, showNotification) do not get path-validated", async () => {
+  test("non-path kinds (openPanel, showNotification, closeWorkbenchLeftPane) do not get path-validated", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const openPanelResult = await tool.execute(
       {
@@ -146,6 +146,15 @@ describe("createExecUiTool — path validation", () => {
       FAKE_CTX,
     )
     expect(showNotifResult.isError).toBeFalsy()
+
+    const closeLeftResult = await tool.execute(
+      {
+        kind: "closeWorkbenchLeftPane",
+        params: {},
+      },
+      FAKE_CTX,
+    )
+    expect(closeLeftResult.isError).toBeFalsy()
   })
 
   test("opts omitted: paths pass through without validation (back-compat)", async () => {

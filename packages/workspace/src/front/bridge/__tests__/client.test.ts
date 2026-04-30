@@ -16,6 +16,7 @@ function createMockBridge(): WorkspaceBridge {
     openFile: vi.fn(async () => ok()),
     openPanel: vi.fn(async () => ok()),
     closePanel: vi.fn(async () => ok()),
+    closeWorkbenchLeftPane: vi.fn(async () => ok()),
     showNotification: vi.fn(async () => ok()),
     navigateToLine: vi.fn(async () => ok()),
     expandToFile: vi.fn(async () => ok()),
@@ -227,6 +228,21 @@ describe("createBridgeClient", () => {
       await vi.advanceTimersByTimeAsync(0)
 
       expect(bridge.closePanel).toHaveBeenCalledWith("chat")
+      client.disconnect()
+    })
+
+    it("dispatches closeWorkbenchLeftPane command", async () => {
+      const { client, bridge } = createClient()
+      client.connect()
+      const es = MockEventSource.instances[0]
+
+      es.emit(
+        "command",
+        JSON.stringify({ v: 1, kind: "closeWorkbenchLeftPane", params: {} }),
+      )
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(bridge.closeWorkbenchLeftPane).toHaveBeenCalled()
       client.disconnect()
     })
 

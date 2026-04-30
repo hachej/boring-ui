@@ -47,6 +47,7 @@ export interface WorkspaceBridge {
   ): Promise<CommandResult>
   openPanel(config: DynamicPaneConfig): Promise<CommandResult>
   closePanel(id: string): Promise<CommandResult>
+  closeWorkbenchLeftPane(): Promise<CommandResult>
   showNotification(
     msg: string,
     level?: "info" | "warn" | "error",

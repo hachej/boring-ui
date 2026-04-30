@@ -138,6 +138,12 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
       return ok()
     },
 
+    async closeWorkbenchLeftPane() {
+      store.getState().setSidebar({ collapsed: true })
+      emit("sidebar:toggled", { collapsed: true })
+      return ok()
+    },
+
     async showNotification(msg, level = "info") {
       const parsed = notificationSchema.safeParse({ msg, level })
       if (!parsed.success) return err("VALIDATION", parsed.error.issues[0].message)

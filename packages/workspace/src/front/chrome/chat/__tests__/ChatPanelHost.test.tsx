@@ -72,6 +72,7 @@ describe("ChatPanelHost", () => {
     const surface: SurfaceShellApi = {
       openFile,
       openPanel: vi.fn(),
+      closeWorkbenchLeftPane: vi.fn(),
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
 

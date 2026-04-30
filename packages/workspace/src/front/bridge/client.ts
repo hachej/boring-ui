@@ -44,6 +44,7 @@ type CommandKind =
   | "openFile"
   | "openPanel"
   | "closePanel"
+  | "closeWorkbenchLeftPane"
   | "showNotification"
   | "navigateToLine"
   | "expandToFile"
@@ -94,6 +95,9 @@ async function dispatchCommand(
       break
     case "closePanel":
       await bridge.closePanel(params.id as string)
+      break
+    case "closeWorkbenchLeftPane":
+      await bridge.closeWorkbenchLeftPane()
       break
     case "showNotification":
       await bridge.showNotification(
