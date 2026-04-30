@@ -740,16 +740,17 @@ export function ChatPanel(props: ChatPanelProps) {
               </Message>
             )
           })}
-          {/* Thinking caption — fills the gap between user submit and the
-              first assistant chunk. Hides as soon as the AI SDK appends an
-              assistant message (i.e. the model has started replying). The
-              top progress bar continues from there. */}
-          {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === 'user' && (
+          {/* Persistent working caption — stays visible for the whole run:
+              waiting for first byte, streaming text, reasoning, or tool work.
+              It used to hide as soon as an assistant message appeared, which
+              made long tool turns feel idle even though the progress bar kept
+              moving. */}
+          {isStreaming && (
             <div
-              data-testid="chat-thinking"
+              data-testid="chat-working"
               role="status"
               aria-live="polite"
-              className="flex items-center gap-2 text-[12px] text-muted-foreground/70"
+              className="sticky bottom-0 z-10 flex items-center gap-2 self-start rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur"
             >
               <motion.span
                 aria-hidden="true"
@@ -757,7 +758,7 @@ export function ChatPanel(props: ChatPanelProps) {
                 animate={{ opacity: [0.35, 1, 0.35] }}
                 transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
               />
-              <span>Thinking…</span>
+              <span>Working…</span>
             </div>
           )}
           {(() => {
