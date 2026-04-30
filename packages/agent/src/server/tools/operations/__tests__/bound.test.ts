@@ -131,6 +131,93 @@ describe('edit', () => {
   })
 })
 
+describe('find', () => {
+  test('glob returns matching files within workspace', async () => {
+    const ops = boundFs(workspaceRoot)
+    const results = await ops.find.glob('*.txt', workspaceRoot, {
+      ignore: ['**/node_modules/**', '**/.git/**'],
+      limit: 10,
+    })
+
+    expect(results).toContain(join(workspaceRoot, 'hello.txt'))
+    expect(results).toContain(join(workspaceRoot, 'sub', 'nested.txt'))
+  })
+
+  test('glob supports path-containing patterns', async () => {
+    const ops = boundFs(workspaceRoot)
+    const results = await ops.find.glob('sub/*.txt', workspaceRoot, {
+      ignore: [],
+      limit: 10,
+    })
+
+    expect(results).toEqual([join(workspaceRoot, 'sub', 'nested.txt')])
+  })
+
+  test('glob ignore patterns only skip matching subtrees', async () => {
+    await mkdir(join(workspaceRoot, 'src'))
+    await mkdir(join(workspaceRoot, 'src', 'foo'))
+    await mkdir(join(workspaceRoot, 'src', 'bar'))
+    await writeFile(join(workspaceRoot, 'src', 'foo', 'ignored.txt'), 'ignored')
+    await writeFile(join(workspaceRoot, 'src', 'bar', 'kept.txt'), 'kept')
+
+    const ops = boundFs(workspaceRoot)
+    const results = await ops.find.glob('*.txt', workspaceRoot, {
+      ignore: ['src/foo/**'],
+      limit: 10,
+    })
+
+    expect(results).toContain(join(workspaceRoot, 'src', 'bar', 'kept.txt'))
+    expect(results).not.toContain(join(workspaceRoot, 'src', 'foo', 'ignored.txt'))
+  })
+
+  test('glob rejects cwd outside workspace', async () => {
+    const ops = boundFs(workspaceRoot)
+    await expect(ops.find.glob('*', '/etc', { ignore: [], limit: 10 })).rejects.toThrow(
+      'is outside workspace',
+    )
+  })
+
+  test('exists rejects path outside workspace', async () => {
+    const ops = boundFs(workspaceRoot)
+    await expect(ops.find.exists('/etc/passwd')).rejects.toThrow('is outside workspace')
+  })
+
+  test('exists rejects symlink escape', async () => {
+    const linkPath = join(workspaceRoot, 'find-link')
+    await symlink('/etc/passwd', linkPath)
+
+    const ops = boundFs(workspaceRoot)
+    await expect(ops.find.exists(linkPath)).rejects.toThrow('is outside workspace')
+  })
+})
+
+describe('grep', () => {
+  test('isDirectory checks workspace paths', async () => {
+    const ops = boundFs(workspaceRoot)
+    await expect(ops.grep.isDirectory(join(workspaceRoot, 'sub'))).resolves.toBe(true)
+    await expect(ops.grep.isDirectory(join(workspaceRoot, 'hello.txt'))).resolves.toBe(false)
+  })
+
+  test('readFile reads only within workspace', async () => {
+    const ops = boundFs(workspaceRoot)
+    await expect(ops.grep.readFile(join(workspaceRoot, 'hello.txt'))).resolves.toBe('hello world')
+  })
+
+  test('grep operations reject paths outside workspace', async () => {
+    const ops = boundFs(workspaceRoot)
+    await expect(ops.grep.isDirectory('/etc')).rejects.toThrow('is outside workspace')
+    await expect(ops.grep.readFile('/etc/passwd')).rejects.toThrow('is outside workspace')
+  })
+
+  test('grep read rejects symlink escape', async () => {
+    const linkPath = join(workspaceRoot, 'grep-link')
+    await symlink('/etc/passwd', linkPath)
+
+    const ops = boundFs(workspaceRoot)
+    await expect(ops.grep.readFile(linkPath)).rejects.toThrow('is outside workspace')
+  })
+})
+
 describe('ls', () => {
   test('exists returns true for workspace file', async () => {
     const ops = boundFs(workspaceRoot)

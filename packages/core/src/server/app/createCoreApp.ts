@@ -205,6 +205,8 @@ export async function createCoreApp(
   })
 
   const cspEnabled = config.security?.csp?.enabled ?? true
+  const cspUpgradeInsecureRequests =
+    config.security?.csp?.upgradeInsecureRequests ?? config.auth.url.startsWith('https://')
 
   await app.register(helmet, {
     hsts: {
@@ -238,6 +240,7 @@ export async function createCoreApp(
             frameAncestors: ["'none'"],
             baseUri: ["'self'"],
             formAction: ["'self'"],
+            upgradeInsecureRequests: cspUpgradeInsecureRequests ? [] : null,
           },
         }
       : false,

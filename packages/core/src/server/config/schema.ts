@@ -47,6 +47,7 @@ export const coreConfigSchema = z.object({
     .object({
       csp: z.object({
         enabled: z.boolean(),
+        upgradeInsecureRequests: z.boolean().optional(),
       }),
     })
     .optional(),

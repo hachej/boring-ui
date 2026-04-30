@@ -2,6 +2,7 @@
 
 export { ChatPanel } from './ChatPanel'
 export type { ChatPanelProps } from './ChatPanel'
+export { DebugDrawer } from './DebugDrawer'
 export {
   ArtifactOpenProvider,
   useOpenArtifact,
@@ -14,7 +15,7 @@ export type { ChatEmptyStateProps, ChatSuggestion } from './ChatEmptyState'
 export { useAgentChat } from './hooks/useAgentChat'
 export type { UseAgentChatOptions } from './hooks/useAgentChat'
 export { useSessions } from './hooks/useSessions'
-export type { UseSessionsResult } from './hooks/useSessions'
+export type { UseSessionsOptions, UseSessionsResult } from './hooks/useSessions'
 export {
   builtinCommands,
   createCommandRegistry,

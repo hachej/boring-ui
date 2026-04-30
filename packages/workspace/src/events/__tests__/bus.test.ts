@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { createEventBus } from "../bus"
 
-interface TestMap extends Record<string, unknown> {
+interface TestMap {
   "a:hello": { name: string }
   "a:bye": { name: string }
 }

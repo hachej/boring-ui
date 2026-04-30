@@ -164,11 +164,35 @@ describe('createCoreApp', () => {
     const csp = res.headers['content-security-policy'] as string
 
     expect(csp).toContain("default-src 'self'")
-    expect(csp).toMatch(/script-src 'self' 'nonce-[^']+'/)
+    expect(csp).toMatch(/script-src 'self' .*'nonce-[^']+'/)
     expect(csp).toMatch(/style-src 'self' 'nonce-[^']+'/)
     expect(csp).toContain("connect-src 'self'")
     expect(csp).toContain("frame-ancestors 'none'")
+    expect(csp).not.toContain('upgrade-insecure-requests')
     expect(csp).not.toContain("'unsafe-inline'")
+    expect(csp).not.toContain("'unsafe-eval'")
+  })
+
+  it('emits CSP upgrade-insecure-requests only when enabled', async () => {
+    app = await createCoreApp(
+      {
+        ...TEST_CONFIG,
+        security: {
+          csp: {
+            enabled: true,
+            upgradeInsecureRequests: true,
+          },
+        },
+      },
+      { manageShutdown: false },
+    )
+    app.get('/test', async () => ({ ok: true }))
+    await app.ready()
+
+    const res = await app.inject({ method: 'GET', url: '/test' })
+    const csp = res.headers['content-security-policy'] as string
+
+    expect(csp).toContain('upgrade-insecure-requests')
   })
 
   it('allows disabling CSP via config security flag', async () => {

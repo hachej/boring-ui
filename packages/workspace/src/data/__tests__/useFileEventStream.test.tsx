@@ -4,9 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 
 const TEST_BASE = ""
+const TEST_WORKSPACE_ID = "workspace-stream-test"
 
 vi.mock("../DataProvider", () => ({
   useApiBaseUrl: () => TEST_BASE,
+  useWorkspaceRequestId: () => TEST_WORKSPACE_ID,
   useDataClient: () => ({}),
 }))
 
@@ -97,7 +99,9 @@ describe("useFileEventStream", () => {
   it("opens an EventSource against /api/v1/fs/events", () => {
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
     expect(MockEventSource.instances).toHaveLength(1)
-    expect(MockEventSource.lastInstance().url).toBe("/api/v1/fs/events")
+    expect(MockEventSource.lastInstance().url).toBe(
+      `/api/v1/fs/events?workspaceId=${TEST_WORKSPACE_ID}`,
+    )
   })
 
   it("emits file:changed onto the bus with cause:remote on a write event", () => {

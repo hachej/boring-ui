@@ -15,6 +15,13 @@ export function createInMemoryBridge(): UiBridge {
   const subscribers = new Set<CommandHandler>();
   const pendingCommands: AnnotatedCommand[] = [];
 
+  function enqueuePending(command: AnnotatedCommand): void {
+    pendingCommands.push(command);
+    if (pendingCommands.length > MAX_PENDING_COMMANDS) {
+      pendingCommands.splice(0, pendingCommands.length - MAX_PENDING_COMMANDS);
+    }
+  }
+
   return {
     async getState() {
       return state;
@@ -27,10 +34,7 @@ export function createInMemoryBridge(): UiBridge {
     async postCommand(cmd: UiCommand): Promise<CommandResult> {
       const seq = nextSeq++;
       const annotated: AnnotatedCommand = { ...cmd, seq };
-      pendingCommands.push(annotated);
-      if (pendingCommands.length > MAX_PENDING_COMMANDS) {
-        pendingCommands.splice(0, pendingCommands.length - MAX_PENDING_COMMANDS);
-      }
+      if (subscribers.size === 0) enqueuePending(annotated);
       for (const handler of subscribers) {
         handler(annotated);
       }

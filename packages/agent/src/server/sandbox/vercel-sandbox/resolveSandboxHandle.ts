@@ -4,6 +4,7 @@ import type {
   SandboxHandleRecord,
   SandboxHandleStore,
 } from '../../../shared/sandbox-handle-store'
+import { ErrorCode } from '../../../shared/error-codes'
 
 type VercelSandboxStatus =
   | 'aborted'
@@ -28,6 +29,32 @@ export interface VercelSandboxClient {
 interface SandboxLifecycleLogger {
   info?(message: string, metadata: Record<string, unknown>): void
   warn?(message: string, metadata: Record<string, unknown>): void
+}
+
+export type ExpiredSandboxPolicy = 'recreate' | 'error'
+
+export class SandboxHandleUnavailableError extends Error {
+  readonly code = ErrorCode.enum.SANDBOX_EXPIRED
+  readonly statusCode = 410
+  readonly workspaceId: string
+  readonly sandboxId: string | null
+  readonly reason: string
+
+  constructor(init: {
+    workspaceId: string
+    sandboxId?: string
+    reason: string
+    cause?: unknown
+  }) {
+    super(`sandbox is unavailable for workspace ${init.workspaceId}: ${init.reason}`)
+    this.name = 'SandboxHandleUnavailableError'
+    this.workspaceId = init.workspaceId
+    this.sandboxId = init.sandboxId ?? null
+    this.reason = init.reason
+    if (init.cause !== undefined) {
+      ;(this as Error & { cause?: unknown }).cause = init.cause
+    }
+  }
 }
 
 // Process-local cache keyed by workspace id. In multi-process deployments each
@@ -83,6 +110,38 @@ function extractHttpStatus(error: unknown): number | null {
 function shouldRecreateFromSnapshot(error: unknown): boolean {
   const status = extractHttpStatus(error)
   return status === 404 || status === 410
+}
+
+function throwUnavailable(
+  workspaceId: string,
+  persisted: SandboxHandleRecord,
+  reason: string,
+  cause?: unknown,
+): never {
+  throw new SandboxHandleUnavailableError({
+    workspaceId,
+    sandboxId: persisted.sandboxId,
+    reason,
+    cause,
+  })
+}
+
+function selectSnapshotForRecreate(
+  workspaceId: string,
+  persisted: SandboxHandleRecord,
+  reason: string,
+  logger?: SandboxLifecycleLogger,
+  sandbox?: VercelSandbox,
+): string | undefined {
+  const snapshotId = persisted.snapshotId ?? sandbox?.sourceSnapshotId
+  if (!snapshotId) {
+    logger?.warn?.('[sandbox] recreating empty sandbox; no snapshot available', {
+      workspaceId,
+      sandboxId: persisted.sandboxId,
+      reason,
+    })
+  }
+  return snapshotId
 }
 
 function buildRecord(
@@ -216,6 +275,7 @@ export interface ResolveSandboxHandleOptions {
   maxIdleMs?: number
   now?: () => number
   logger?: SandboxLifecycleLogger
+  expiredSandboxPolicy?: ExpiredSandboxPolicy
 }
 
 export async function resolveSandboxHandle(
@@ -228,6 +288,7 @@ export async function resolveSandboxHandle(
   if (workspaceKey.length === 0) {
     throw new Error('workspaceId must not be empty')
   }
+  const expiredSandboxPolicy = opts?.expiredSandboxPolicy ?? 'recreate'
 
   const inProcess = sandboxesByWorkspaceId.get(workspaceKey)
   if (inProcess && !isSandboxExpired(inProcess)) {
@@ -265,6 +326,16 @@ export async function resolveSandboxHandle(
               maxIdleMs,
               lastUsedAt: persisted.lastUsedAt,
             })
+            const snapshotId = persisted.snapshotId
+            if (!snapshotId) {
+              opts?.logger?.warn?.('[sandbox] orphan-guard skipped; no snapshot available', {
+                workspaceId: workspaceKey,
+                sandboxId: sandbox.sandboxId,
+                idleMs: idle.idleMs,
+                maxIdleMs,
+              })
+              return await persistAndCache(workspaceKey, sandbox, persisted, store)
+            }
             const stopResult = await stopSandboxForOrphanGuard(sandbox)
             if (stopResult.stopped) {
               logSandboxStop(opts?.logger, {
@@ -276,7 +347,7 @@ export async function resolveSandboxHandle(
               })
               return await createFresh(
                 workspaceKey,
-                persisted.snapshotId,
+                snapshotId,
                 opts?.tarballUrl,
                 persisted,
                 store,
@@ -297,10 +368,58 @@ export async function resolveSandboxHandle(
           }
           return await persistAndCache(workspaceKey, sandbox, persisted, store)
         }
+        const reason = `sandbox status is ${getSandboxStatus(sandbox) ?? 'expired'}`
+        if (expiredSandboxPolicy === 'error') {
+          throwUnavailable(
+            workspaceKey,
+            persisted,
+            reason,
+          )
+        }
+        const snapshotId = selectSnapshotForRecreate(
+          workspaceKey,
+          persisted,
+          reason,
+          opts?.logger,
+          sandbox,
+        )
+        return await createFresh(
+          workspaceKey,
+          snapshotId,
+          opts?.tarballUrl,
+          persisted,
+          store,
+          vercel,
+          opts?.logger,
+        )
       } catch (error) {
         if (!shouldRecreateFromSnapshot(error)) {
           throw error
         }
+        const reason = `sandbox lookup returned HTTP ${extractHttpStatus(error) ?? 'unknown'}`
+        if (expiredSandboxPolicy === 'error') {
+          throwUnavailable(
+            workspaceKey,
+            persisted,
+            reason,
+            error,
+          )
+        }
+        const snapshotId = selectSnapshotForRecreate(
+          workspaceKey,
+          persisted,
+          reason,
+          opts?.logger,
+        )
+        return await createFresh(
+          workspaceKey,
+          snapshotId,
+          opts?.tarballUrl,
+          persisted,
+          store,
+          vercel,
+          opts?.logger,
+        )
       }
     }
 
@@ -330,4 +449,11 @@ export async function resolveSandboxHandle(
 export function resetSandboxHandleCacheForTests(): void {
   sandboxesByWorkspaceId.clear()
   inFlightResolutionsByWorkspaceId.clear()
+}
+
+export function evictSandboxHandleCacheForWorkspace(workspaceId: string): void {
+  const workspaceKey = workspaceId.trim()
+  if (workspaceKey.length === 0) return
+  sandboxesByWorkspaceId.delete(workspaceKey)
+  inFlightResolutionsByWorkspaceId.delete(workspaceKey)
 }

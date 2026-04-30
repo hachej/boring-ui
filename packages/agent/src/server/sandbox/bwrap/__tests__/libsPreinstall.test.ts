@@ -9,6 +9,7 @@ import {
   ensureTier1Venv,
   ensureTier2Venv,
 } from '../libsPreinstall'
+import { restoreEnvForTest, setEnvForTest } from '../../../config/env'
 
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
@@ -87,6 +88,26 @@ describe('buildVenvEnv', () => {
     const tier2Idx = parts.indexOf('/workspace/.venv/bin')
     const tier1Idx = parts.indexOf('/opt/venv/bin')
     expect(tier2Idx).toBeLessThan(tier1Idx)
+  })
+
+  test('appends host PATH through config env seam', () => {
+    const previous = setEnvForTest('PATH', '/usr/local/bin:/usr/bin')
+    try {
+      const env = buildVenvEnv(null, '/workspace')
+      expect(env.PATH).toBe('/workspace/.venv/bin:/usr/local/bin:/usr/bin')
+    } finally {
+      restoreEnvForTest('PATH', previous)
+    }
+  })
+
+  test('omits host PATH segment when PATH is unset', () => {
+    const previous = setEnvForTest('PATH', undefined)
+    try {
+      const env = buildVenvEnv('/some/path', '/workspace')
+      expect(env.PATH).toBe('/workspace/.venv/bin:/opt/venv/bin')
+    } finally {
+      restoreEnvForTest('PATH', previous)
+    }
   })
 
   test('sets VIRTUAL_ENV to workspace .venv', () => {

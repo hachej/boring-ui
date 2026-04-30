@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { matchPath, useLocation, useParams } from 'react-router-dom'
 import { apiFetchJson } from './utils.js'
 import type { MemberRole, Workspace } from '../shared/types.js'
 
@@ -39,10 +39,22 @@ async function fetchWorkspace(workspaceId: string): Promise<WorkspaceDetail> {
   return await apiFetchJson<WorkspaceDetail>(`/api/v1/workspaces/${workspaceId}`)
 }
 
+function workspaceIdFromPath(pathname: string): string | null {
+  const match =
+    matchPath('/w/:id/*', pathname) ??
+    matchPath('/w/:id', pathname) ??
+    matchPath('/workspace/:id/*', pathname) ??
+    matchPath('/workspace/:id', pathname)
+
+  const id = match?.params.id?.trim()
+  return id ? id : null
+}
+
 export function WorkspaceAuthProvider({ children }: WorkspaceAuthProviderProps) {
   const { id } = useParams<{ id: string }>()
+  const location = useLocation()
   const queryClient = useQueryClient()
-  const routeWorkspaceId = id?.trim() ? id : null
+  const routeWorkspaceId = id?.trim() ? id : workspaceIdFromPath(location.pathname)
 
   const workspacesQuery = useQuery({
     queryKey: WORKSPACES_QUERY_KEY,

@@ -24,16 +24,38 @@ const SENSITIVE_KEYS = new Set([
   "OPENAI_API_KEY",
   "VERCEL_OIDC_TOKEN",
   "VERCEL_TEAM_ID",
-])
+].map((key) => key.toLowerCase()))
+
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEYS.has(key.toLowerCase())
+}
+
+function redactValue(key: string | undefined, value: unknown, seen: WeakSet<object>): unknown {
+  if (key && isSensitiveKey(key) && value != null) return "***"
+  if (value == null || typeof value !== "object") return value
+  if (value instanceof Date) return value
+  if (seen.has(value)) return "[Circular]"
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    const out = value.map((item) => redactValue(undefined, item, seen))
+    seen.delete(value)
+    return out
+  }
+
+  const out: LogFields = {}
+  for (const [childKey, childValue] of Object.entries(value)) {
+    out[childKey] = redactValue(childKey, childValue, seen)
+  }
+  seen.delete(value)
+  return out
+}
 
 function redact(fields: LogFields): LogFields {
   const out: LogFields = {}
+  const seen = new WeakSet<object>()
   for (const [k, v] of Object.entries(fields)) {
-    if (SENSITIVE_KEYS.has(k) && typeof v === "string") {
-      out[k] = "***"
-    } else {
-      out[k] = v
-    }
+    out[k] = redactValue(k, v, seen)
   }
   return out
 }

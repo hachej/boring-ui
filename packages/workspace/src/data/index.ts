@@ -1,4 +1,9 @@
-export { DataProvider, useDataClient, useApiBaseUrl } from "./DataProvider"
+export {
+  DataProvider,
+  useDataClient,
+  useApiBaseUrl,
+  useWorkspaceRequestId,
+} from "./DataProvider"
 export { FetchClient, FetchError } from "./fetchClient"
 export {
   useFileContent,

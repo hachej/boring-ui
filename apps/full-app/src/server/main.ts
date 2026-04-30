@@ -1,5 +1,6 @@
-import { access, readFile, stat } from 'node:fs/promises'
+import { access, mkdir, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -14,6 +15,7 @@ import {
   registerRoutes,
   registerSettingsRoutes,
   registerWorkspaceRoutes,
+  WorkspaceRuntimeSandboxHandleStore,
   type BetterAuthInstance,
 } from '@boring/core/server'
 import {
@@ -21,6 +23,12 @@ import {
   PostgresUserStore,
   PostgresWorkspaceStore,
 } from '@boring/core/server/db'
+import {
+  createInMemoryBridge,
+  createWorkspaceUiTools,
+  uiRoutes,
+  type UiBridge,
+} from '@boring/workspace/server'
 
 const DEFAULT_FRONTEND_PORT = 5173
 
@@ -130,6 +138,38 @@ function encodeAuthRequestBody(request: any): string | Uint8Array | URLSearchPar
   return JSON.stringify(bodyValue)
 }
 
+function httpError(message: string, statusCode: number): Error & { statusCode: number } {
+  const error = new Error(message) as Error & { statusCode: number }
+  error.statusCode = statusCode
+  return error
+}
+
+function validateWorkspaceIdSegment(value: string): string {
+  const workspaceId = value.trim()
+  if (!workspaceId) {
+    throw httpError('workspace id is required', 400)
+  }
+  if (
+    workspaceId.includes('\0') ||
+    workspaceId.includes('/') ||
+    workspaceId.includes('\\') ||
+    workspaceId.includes('..') ||
+    path.isAbsolute(workspaceId)
+  ) {
+    throw httpError('invalid workspace id', 400)
+  }
+  return workspaceId
+}
+
+function resolveWorkspaceRoot(baseRoot: string, workspaceId: string): string {
+  const base = path.resolve(baseRoot)
+  const scopedRoot = path.resolve(base, workspaceId)
+  if (scopedRoot !== base && scopedRoot.startsWith(`${base}${path.sep}`)) {
+    return scopedRoot
+  }
+  throw httpError('invalid workspace id', 400)
+}
+
 // Frontend React Router routes that live under /auth/*. Requests to these
 // paths must be served as the SPA shell so React Router can render the
 // matching page. Everything else under /auth/* is a better-auth API
@@ -190,7 +230,7 @@ async function registerAuthProxy(app: AppWithAuth) {
 
     reply.status(response.status)
     const responseBody = Buffer.from(await response.arrayBuffer())
-    reply.send(responseBody)
+    return reply.send(responseBody)
   })
 }
 
@@ -340,6 +380,7 @@ async function main() {
   const { db, sql } = createDatabase(config)
   const userStore = new PostgresUserStore(db)
   const workspaceStore = new PostgresWorkspaceStore(db, config.encryption.workspaceSettingsKey)
+  const sandboxHandleStore = new WorkspaceRuntimeSandboxHandleStore(workspaceStore)
 
   const app = await createCoreApp(config)
   const auth = createAuth(config, db, {
@@ -380,7 +421,67 @@ async function main() {
 
   await registerAuthProxy(app as AppWithAuth)
 
-  await app.register(registerAgentRoutes, { registerHealthRoute: false })
+  const workspaceRoot =
+    process.env.FULL_APP_WORKSPACE_ROOT ??
+    path.resolve(tmpdir(), 'boring-ui-v2-full-app-workspace')
+  await mkdir(workspaceRoot, { recursive: true })
+
+  const bridges = new Map<string, UiBridge>()
+  const getUiBridge = (workspaceId: string): UiBridge => {
+    let bridge = bridges.get(workspaceId)
+    if (!bridge) {
+      bridge = createInMemoryBridge()
+      bridges.set(workspaceId, bridge)
+    }
+    return bridge
+  }
+
+  const resolveAuthorizedWorkspaceId = async (request: any): Promise<string> => {
+    const headerValue = request.headers?.['x-boring-workspace-id']
+    const queryValue = (request.query as Record<string, unknown> | undefined)?.workspaceId
+    const workspaceId = typeof headerValue === 'string'
+      ? headerValue
+      : typeof queryValue === 'string'
+        ? queryValue
+        : ''
+
+    const normalizedWorkspaceId = validateWorkspaceIdSegment(workspaceId)
+
+    const user = request.user as { id?: string } | null | undefined
+    if (!user?.id) {
+      throw httpError('authentication required', 401)
+    }
+
+    let member: boolean
+    try {
+      member = await workspaceStore.isMember(normalizedWorkspaceId, user.id)
+    } catch (error) {
+      request.log.error({ err: error, workspaceId: normalizedWorkspaceId }, 'workspace access check failed')
+      throw httpError('workspace access check failed', 500)
+    }
+    if (!member) {
+      throw httpError('workspace access denied', 403)
+    }
+
+    return normalizedWorkspaceId
+  }
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    sandboxHandleStore,
+    getWorkspaceId: resolveAuthorizedWorkspaceId,
+    getWorkspaceRoot: async (workspaceId: string) => {
+      const scopedRoot = resolveWorkspaceRoot(workspaceRoot, workspaceId)
+      await mkdir(scopedRoot, { recursive: true })
+      return scopedRoot
+    },
+    registerHealthRoute: false,
+    getExtraTools: async ({ workspaceId }: { workspaceId: string }) =>
+      createWorkspaceUiTools(getUiBridge(workspaceId)),
+  })
+  await app.register(uiRoutes, {
+    getBridge: async (request: any) => getUiBridge(await resolveAuthorizedWorkspaceId(request)),
+  })
 
   if (production) {
     await registerFrontendFallback(app, appRoot)

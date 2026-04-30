@@ -8,6 +8,7 @@ export type UseAgentChatOptions = Pick<
   'sessionId' | 'model' | 'thinkingLevel'
 > & {
   onData?: (part: unknown) => void
+  requestHeaders?: Record<string, string>
 }
 
 export function useAgentChat(opts: UseAgentChatOptions) {
@@ -19,6 +20,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     () =>
       new DefaultChatTransport({
         api: '/api/v1/agent/chat',
+        headers: () => optsRef.current.requestHeaders ?? {},
         body: () => ({
           sessionId: optsRef.current.sessionId,
           model: optsRef.current.model,
@@ -69,7 +71,12 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       } catch { /* ignore parse errors */ }
     }
 
-    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`)
+    const fetchOpts = optsRef.current.requestHeaders
+      ? { headers: optsRef.current.requestHeaders }
+      : undefined
+    const messagesUrl = `/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`
+    const request = fetchOpts ? fetch(messagesUrl, fetchOpts) : fetch(messagesUrl)
+    request
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { messages?: UIMessage[] } | null) => {
         if (aborted) return

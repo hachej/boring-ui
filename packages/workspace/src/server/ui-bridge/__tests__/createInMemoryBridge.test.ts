@@ -110,6 +110,32 @@ describe("createInMemoryBridge", () => {
     ]);
   });
 
+  it("does not replay commands already delivered to live subscribers", async () => {
+    const bridge = createInMemoryBridge();
+    const received: Array<UiCommand & { seq: number }> = [];
+    bridge.subscribeCommands((cmd) => received.push(cmd));
+
+    await bridge.postCommand({ kind: "openFile", params: { path: "/live.ts" } });
+
+    expect(received).toEqual([
+      { kind: "openFile", params: { path: "/live.ts" }, seq: 1 },
+    ]);
+    expect(await bridge.drainCommands?.()).toEqual([]);
+  });
+
+  it("queues commands again after the last live subscriber disconnects", async () => {
+    const bridge = createInMemoryBridge();
+    const unsub = bridge.subscribeCommands(() => {});
+    await bridge.postCommand({ kind: "openFile", params: { path: "/live.ts" } });
+    unsub();
+
+    await bridge.postCommand({ kind: "openFile", params: { path: "/queued.ts" } });
+
+    expect(await bridge.drainCommands?.()).toEqual([
+      { kind: "openFile", params: { path: "/queued.ts" }, seq: 2 },
+    ]);
+  });
+
   it("drainCommands empties queue after read", async () => {
     const bridge = createInMemoryBridge();
     await bridge.postCommand({ kind: "openFile", params: { path: "/a.ts" } });

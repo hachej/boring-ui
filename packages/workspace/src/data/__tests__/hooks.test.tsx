@@ -15,10 +15,12 @@ import {
 import { events } from "../../events"
 
 const TEST_BASE = "http://test"
+const TEST_WORKSPACE_ID = "workspace-hooks-test"
 
 vi.mock("../DataProvider", () => ({
   useDataClient: () => mockClient,
   useApiBaseUrl: () => TEST_BASE,
+  useWorkspaceRequestId: () => TEST_WORKSPACE_ID,
 }))
 
 let mockClient: {

@@ -7,6 +7,9 @@ import type {
   WorkspaceMember,
   WorkspaceInvite,
   WorkspaceRuntime,
+  WorkspaceRuntimeResource,
+  WorkspaceRuntimeResourceInput,
+  WorkspaceRuntimeResourceSelector,
   MemberRole,
 } from '../../shared/types.js'
 import type { ERROR_CODES } from '../../shared/errors.js'
@@ -49,6 +52,21 @@ export interface WorkspaceStore {
   putWorkspaceSettings(workspaceId: string, settings: Record<string, string>): Promise<Array<{ key: string; configured: boolean; updated_at: string }>>
   getWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null>
   putWorkspaceRuntime(workspaceId: string, state: Partial<WorkspaceRuntime>): Promise<WorkspaceRuntime>
+  getWorkspaceRuntimeResource?(
+    workspaceId: string,
+    selector: WorkspaceRuntimeResourceSelector,
+  ): Promise<WorkspaceRuntimeResource | null>
+  putWorkspaceRuntimeResource?(
+    workspaceId: string,
+    resource: WorkspaceRuntimeResourceInput,
+  ): Promise<WorkspaceRuntimeResource>
+  deleteWorkspaceRuntimeResource?(
+    workspaceId: string,
+    selector: WorkspaceRuntimeResourceSelector,
+  ): Promise<void>
+  listWorkspaceRuntimeResources?(
+    workspaceId?: string,
+  ): Promise<WorkspaceRuntimeResource[]>
   retryWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null>
   getUiState(userId: string, workspaceId: string): Promise<Record<string, unknown> | null>
   putUiState(userId: string, workspaceId: string, state: Record<string, unknown>): Promise<void>

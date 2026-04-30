@@ -4,6 +4,8 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
 import type {
   EditOperations,
+  FindOperations,
+  GrepOperations,
   LsOperations,
   ReadOperations,
   WriteOperations,
@@ -13,7 +15,105 @@ export interface BoundFs {
   read: ReadOperations
   write: WriteOperations
   edit: EditOperations
+  find: FindOperations
+  grep: GrepOperations
   ls: LsOperations
+}
+
+function toPosixPath(value: string): string {
+  return value.split('\\').join('/')
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&')
+}
+
+function globToRegex(pattern: string): RegExp {
+  const normalized = toPosixPath(pattern)
+  let source = '^'
+
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i]
+    const next = normalized[i + 1]
+
+    if (char === '*') {
+      if (next === '*') {
+        const after = normalized[i + 2]
+        if (after === '/') {
+          source += '(?:.*/)?'
+          i += 2
+        } else {
+          source += '.*'
+          i += 1
+        }
+      } else {
+        source += '[^/]*'
+      }
+      continue
+    }
+
+    if (char === '?') {
+      source += '[^/]'
+      continue
+    }
+
+    source += escapeRegex(char)
+  }
+
+  source += '$'
+  return new RegExp(source)
+}
+
+function matchesGlob(relativePath: string, pattern: string): boolean {
+  const normalizedRel = toPosixPath(relativePath)
+  const normalizedPattern = toPosixPath(pattern)
+  const target = normalizedPattern.includes('/')
+    ? normalizedRel
+    : normalizedRel.split('/').at(-1) ?? normalizedRel
+
+  return globToRegex(normalizedPattern).test(target)
+}
+
+function shouldSkipDir(relativePath: string, ignore: string[]): boolean {
+  const normalizedRel = toPosixPath(relativePath)
+  const basename = normalizedRel.split('/').at(-1) ?? normalizedRel
+  if (basename === '.git' || basename === 'node_modules') return true
+
+  return ignore.some((pattern) => {
+    return (
+      matchesGlob(normalizedRel, pattern) ||
+      matchesGlob(`${normalizedRel}/`, pattern)
+    )
+  })
+}
+
+async function walkMatches(
+  root: string,
+  current: string,
+  pattern: string,
+  ignore: string[],
+  limit: number,
+  out: string[],
+): Promise<void> {
+  if (out.length >= limit) return
+
+  const entries = await readdir(current, { withFileTypes: true })
+  for (const entry of entries) {
+    if (out.length >= limit) return
+
+    const absolutePath = resolve(current, entry.name)
+    const relativePath = toPosixPath(relative(root, absolutePath))
+
+    if (entry.isDirectory() && shouldSkipDir(relativePath, ignore)) continue
+
+    if (matchesGlob(relativePath, pattern)) {
+      out.push(absolutePath)
+    }
+
+    if (entry.isDirectory()) {
+      await walkMatches(root, absolutePath, pattern, ignore, limit, out)
+    }
+  }
 }
 
 async function findNearestExistingAncestor(absPath: string): Promise<string> {
@@ -115,6 +215,36 @@ export function boundFs(workspaceRoot: string): BoundFs {
     },
   }
 
+  const find: FindOperations = {
+    async exists(absolutePath: string): Promise<boolean> {
+      await assertWithinWorkspace(workspaceRoot, absolutePath)
+      try {
+        await stat(absolutePath)
+        return true
+      } catch (err: unknown) {
+        if ((err as { code?: string }).code === 'ENOENT') return false
+        throw err
+      }
+    },
+    async glob(pattern: string, cwd: string, options: { ignore: string[]; limit: number }): Promise<string[]> {
+      await assertWithinWorkspace(workspaceRoot, cwd)
+      const matches: string[] = []
+      await walkMatches(cwd, cwd, pattern, options.ignore, options.limit, matches)
+      return matches
+    },
+  }
+
+  const grep: GrepOperations = {
+    async isDirectory(absolutePath: string): Promise<boolean> {
+      await assertWithinWorkspace(workspaceRoot, absolutePath)
+      return (await stat(absolutePath)).isDirectory()
+    },
+    async readFile(absolutePath: string): Promise<string> {
+      await assertWithinWorkspace(workspaceRoot, absolutePath)
+      return await readFile(absolutePath, 'utf8')
+    },
+  }
+
   const ls: LsOperations = {
     async exists(absolutePath: string): Promise<boolean> {
       try {
@@ -135,5 +265,5 @@ export function boundFs(workspaceRoot: string): BoundFs {
     },
   }
 
-  return { read, write, edit, ls }
+  return { read, write, edit, find, grep, ls }
 }

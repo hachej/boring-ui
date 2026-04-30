@@ -113,4 +113,26 @@ describe("createLogger", () => {
     }
     expect(entry.normalField).toBe("visible")
   })
+
+  it("redacts nested and case-varied sensitive fields", () => {
+    const log = createLogger("[headers]")
+    log.info("request", {
+      headers: {
+        Authorization: "Bearer secret",
+        Cookie: "session=secret",
+        "x-request-id": "req-1",
+      },
+      nested: {
+        token: "nested-token",
+        safe: "visible",
+      },
+    })
+
+    const entry = JSON.parse(logSpy.mock.calls[0][0] as string)
+    expect(entry.headers.Authorization).toBe("***")
+    expect(entry.headers.Cookie).toBe("***")
+    expect(entry.headers["x-request-id"]).toBe("req-1")
+    expect(entry.nested.token).toBe("***")
+    expect(entry.nested.safe).toBe("visible")
+  })
 })

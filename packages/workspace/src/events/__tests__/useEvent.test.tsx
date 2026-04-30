@@ -3,6 +3,7 @@ import { renderHook, act } from "@testing-library/react"
 import { useEvent } from "../useEvent"
 import { events } from "../index"
 import { userMeta } from "../types"
+import type { WorkspaceEventMap } from "../types"
 
 describe("useEvent", () => {
   beforeEach(() => events._reset())
@@ -46,17 +47,9 @@ describe("useEvent", () => {
     const fn = vi.fn()
     renderHook(() => useEvent("editor:save:end", fn))
     act(() => {
-      events.emit("editor:save:end", {
-        panelId: "p1",
-        ok: false,
-        error: "disk full",
-      })
+      events.emit("editor:save:end", { panelId: "p1" })
     })
-    expect(fn).toHaveBeenCalledWith({
-      panelId: "p1",
-      ok: false,
-      error: "disk full",
-    })
+    expect(fn).toHaveBeenCalledWith({ panelId: "p1" })
   })
 
   it("decoupled subscriptions for different event names", () => {
@@ -75,12 +68,13 @@ describe("useEvent", () => {
 
   it("name-switch unsubscribes the old channel and subscribes the new", () => {
     const fn = vi.fn()
+    type TestEventName = "file:moved" | "file:deleted"
     const { rerender } = renderHook(
-      ({ name }: { name: "file:moved" | "file:deleted" }) =>
+      ({ name }: { name: TestEventName }) =>
         // Cast keeps the test ergonomic — production callers would
         // pass a literal name. We're only exercising the prop change.
-        useEvent(name as "file:moved", fn as (p: unknown) => void),
-      { initialProps: { name: "file:moved" as const } },
+        useEvent(name, fn as (p: WorkspaceEventMap[TestEventName]) => void),
+      { initialProps: { name: "file:moved" as TestEventName } },
     )
     act(() => {
       events.emit("file:moved", { ...userMeta(), from: "a", to: "b" })

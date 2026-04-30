@@ -26,6 +26,10 @@ describe("@boring/workspace public API", () => {
     it("exports SessionList", () => {
       expect(api.SessionList).toBeDefined()
     })
+
+    it("exports WorkspaceLoadingState", () => {
+      expect(api.WorkspaceLoadingState).toBeDefined()
+    })
   })
 
   describe("dockview panes", () => {

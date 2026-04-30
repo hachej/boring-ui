@@ -11,7 +11,7 @@
  * - Bus emits transitions only — no replay-on-subscribe.
  */
 
-export interface EventBus<TMap extends Record<string, unknown>> {
+export interface EventBus<TMap extends object> {
   /** Subscribe to one event name. Returns an unsubscribe function. */
   on<K extends keyof TMap>(
     name: K,
@@ -25,9 +25,7 @@ export interface EventBus<TMap extends Record<string, unknown>> {
   _reset(): void
 }
 
-export function createEventBus<
-  TMap extends Record<string, unknown>,
->(): EventBus<TMap> {
+export function createEventBus<TMap extends object>(): EventBus<TMap> {
   const named = new Map<keyof TMap, Set<(payload: unknown) => void>>()
 
   function on<K extends keyof TMap>(

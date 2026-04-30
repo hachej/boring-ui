@@ -92,6 +92,7 @@ export class InMemorySessionStore implements SessionStore {
 
 export interface SessionRoutesOptions {
   sessionStore?: SessionStore
+  getSessionStore?: (request: FastifyRequest) => SessionStore | Promise<SessionStore>
 }
 
 function toSummary(session: InMemorySession): SessionSummary {
@@ -167,9 +168,15 @@ export function sessionRoutes(
   const sessionStore = opts.sessionStore ?? new InMemorySessionStore()
   const validateCreateBody = createBodyValidator(createSessionBodySchema)
 
+  async function resolveSessionStore(request: FastifyRequest): Promise<SessionStore> {
+    if (opts.getSessionStore) return await opts.getSessionStore(request)
+    return sessionStore
+  }
+
   app.get('/api/v1/agent/sessions', async (request, reply) => {
     try {
-      return await sessionStore.list(getSessionCtx(request))
+      const store = await resolveSessionStore(request)
+      return await store.list(getSessionCtx(request))
     } catch (err) {
       return classifySessionError(err, reply)
     }
@@ -181,7 +188,8 @@ export function sessionRoutes(
     async (request, reply) => {
       const body = request.body as CreateSessionBody
       try {
-        return await sessionStore.create(getSessionCtx(request), {
+        const store = await resolveSessionStore(request)
+        return await store.create(getSessionCtx(request), {
           title: body?.title,
         })
       } catch (err) {
@@ -196,7 +204,8 @@ export function sessionRoutes(
     if (sessionId === null) return
 
     try {
-      return await sessionStore.load(getSessionCtx(request), sessionId)
+      const store = await resolveSessionStore(request)
+      return await store.load(getSessionCtx(request), sessionId)
     } catch (err) {
       return classifySessionError(err, reply)
     }
@@ -210,8 +219,9 @@ export function sessionRoutes(
     const sessionCtx = getSessionCtx(request)
 
     try {
-      await sessionStore.load(sessionCtx, sessionId)
-      await sessionStore.delete(sessionCtx, sessionId)
+      const store = await resolveSessionStore(request)
+      await store.load(sessionCtx, sessionId)
+      await store.delete(sessionCtx, sessionId)
       return reply.code(204).send()
     } catch (err) {
       return classifySessionError(err, reply)

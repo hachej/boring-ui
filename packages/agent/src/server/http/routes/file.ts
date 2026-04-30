@@ -81,10 +81,17 @@ function requireStringParam(
 
 export function fileRoutes(
   app: FastifyInstance,
-  opts: { workspace: Workspace },
+  opts: {
+    workspace?: Workspace
+    getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+  },
   done: (err?: Error) => void,
 ): void {
-  const { workspace } = opts
+  async function resolveWorkspace(request: FastifyRequest): Promise<Workspace> {
+    if (opts.getWorkspace) return await opts.getWorkspace(request)
+    if (opts.workspace) return opts.workspace
+    throw new Error('file route requires workspace or getWorkspace')
+  }
 
   app.get('/api/v1/files', async (request, reply) => {
     const query = request.query as Record<string, unknown>
@@ -92,6 +99,7 @@ export function fileRoutes(
     if (path === null) return
 
     try {
+      const workspace = await resolveWorkspace(request)
       const content = await workspace.readFile(path)
       // Best-effort stat. If the file disappears between read and stat
       // (rare race), we still return the content with mtimeMs omitted —
@@ -130,6 +138,7 @@ export function fileRoutes(
       : null
 
     try {
+      const workspace = await resolveWorkspace(request)
       if (expectedMtimeMs !== null) {
         try {
           const current = await workspace.stat(path)
@@ -184,6 +193,7 @@ export function fileRoutes(
     if (path === null) return
 
     try {
+      const workspace = await resolveWorkspace(request)
       await workspace.unlink(path)
       return { ok: true }
     } catch (err) {
@@ -199,6 +209,7 @@ export function fileRoutes(
     if (to === null) return
 
     try {
+      const workspace = await resolveWorkspace(request)
       await workspace.rename(from, to)
       return { ok: true }
     } catch (err) {
@@ -214,6 +225,7 @@ export function fileRoutes(
     const recursive = body.recursive === true
 
     try {
+      const workspace = await resolveWorkspace(request)
       await workspace.mkdir(path, { recursive })
       return { ok: true }
     } catch (err) {
@@ -227,6 +239,7 @@ export function fileRoutes(
     if (path === null) return
 
     try {
+      const workspace = await resolveWorkspace(request)
       const stat = await workspace.stat(path)
       return stat
     } catch (err) {

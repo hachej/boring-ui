@@ -29,6 +29,14 @@ function isJwt(value: string | undefined): value is string {
   return typeof value === 'string' && value.split('.').length === 3
 }
 
+function hasVercelAuthToken(): boolean {
+  return Boolean(
+    process.env.VERCEL_OIDC_TOKEN?.trim()
+    || process.env.VERCEL_ACCESS_TOKEN?.trim()
+    || process.env.VERCEL_TOKEN?.trim(),
+  )
+}
+
 function ensureEnv() {
   if (!process.env.ANTHROPIC_API_KEY) {
     process.env.ANTHROPIC_API_KEY = getSecret('api_key', 'secret/agent/anthropic')
@@ -36,6 +44,13 @@ function ensureEnv() {
   if (!process.env.VERCEL_OIDC_TOKEN) {
     const oidcToken = getSecret('oidc_token', 'secret/agent/vercel')
     if (isJwt(oidcToken)) process.env.VERCEL_OIDC_TOKEN = oidcToken
+  }
+  if (!process.env.VERCEL_ACCESS_TOKEN) {
+    process.env.VERCEL_ACCESS_TOKEN = getSecret('access_token', 'secret/agent/vercel')
+      ?? getSecret('token', 'secret/agent/vercel')
+  }
+  if (!process.env.VERCEL_TOKEN) {
+    process.env.VERCEL_TOKEN = getSecret('token', 'secret/agent/vercel')
   }
   if (!process.env.VERCEL_TEAM_ID) {
     process.env.VERCEL_TEAM_ID = getSecret('team_id', 'secret/agent/vercel')
@@ -110,8 +125,8 @@ function parseSseStream(body: string): ParsedStream {
 async function main() {
   ensureEnv()
 
-  if (!process.env.ANTHROPIC_API_KEY || !isJwt(process.env.VERCEL_OIDC_TOKEN) || !process.env.VERCEL_TEAM_ID) {
-    console.log('[smoke-vercel-sandbox] Missing ANTHROPIC_API_KEY / VERCEL_OIDC_TOKEN / VERCEL_TEAM_ID — skipping')
+  if (!process.env.ANTHROPIC_API_KEY || !hasVercelAuthToken() || !process.env.VERCEL_TEAM_ID) {
+    console.log('[smoke-vercel-sandbox] Missing ANTHROPIC_API_KEY / VERCEL_(OIDC|ACCESS)_TOKEN|VERCEL_TOKEN / VERCEL_TEAM_ID — skipping')
     process.exit(0)
   }
 

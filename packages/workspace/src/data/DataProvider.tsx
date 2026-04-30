@@ -16,6 +16,7 @@ interface DataProviderProps {
 
 const FetchClientContext = createContext<FetchClient | null>(null)
 const ApiBaseUrlContext = createContext<string>("")
+const WorkspaceRequestIdContext = createContext<string | null>(null)
 
 export function useDataClient(): FetchClient {
   const ctx = useContext(FetchClientContext)
@@ -25,6 +26,10 @@ export function useDataClient(): FetchClient {
 
 export function useApiBaseUrl(): string {
   return useContext(ApiBaseUrlContext)
+}
+
+export function useWorkspaceRequestId(): string | null {
+  return useContext(WorkspaceRequestIdContext)
 }
 
 export function DataProvider({
@@ -50,14 +55,20 @@ export function DataProvider({
     () => new FetchClient({ apiBaseUrl, authHeaders, onAuthError, timeout }),
     [apiBaseUrl, authHeaders, onAuthError, timeout],
   )
+  const workspaceRequestId =
+    authHeaders?.["x-boring-workspace-id"] ??
+    authHeaders?.["X-Boring-Workspace-Id"] ??
+    null
 
   return (
     <QueryClientProvider client={queryClientRef.current}>
       <ApiBaseUrlContext.Provider value={apiBaseUrl}>
-        <FetchClientContext.Provider value={client}>
-          <FileEventInvalidationMount />
-          {children}
-        </FetchClientContext.Provider>
+        <WorkspaceRequestIdContext.Provider value={workspaceRequestId}>
+          <FetchClientContext.Provider value={client}>
+            <FileEventInvalidationMount />
+            {children}
+          </FetchClientContext.Provider>
+        </WorkspaceRequestIdContext.Provider>
       </ApiBaseUrlContext.Provider>
     </QueryClientProvider>
   )

@@ -100,6 +100,8 @@ export interface ChatCenteredShellProps {
   chatRequestHeaders?: Record<string, string>
   /** Headers/query context forwarded to workspace UI bridge requests. Defaults to `chatRequestHeaders`. */
   uiRequestHeaders?: Record<string, string>
+  /** Enable the admin debug drawer (system prompt + raw message parts). Off by default. */
+  debug?: boolean
 
 
   /**
@@ -219,6 +221,7 @@ export function ChatCenteredShell({
   thinkingControl = false,
   chatRequestHeaders,
   uiRequestHeaders,
+  debug = false,
   onSurfaceReady,
   extraPanels,
   className,
@@ -511,6 +514,7 @@ export function ChatCenteredShell({
           // event bus so the agent moving/deleting/renaming a file
           // syncs open editor panes (UNIFIED_EVENT_BUS.md step 3).
           onData={emitAgentFileChange}
+          debug={debug}
           className="h-full min-h-0"
         />
       )

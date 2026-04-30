@@ -63,6 +63,26 @@ vi.mock('../primitives/prompt-input', () => ({
 
 import { ChatPanel } from '../ChatPanel'
 
+function withLocalStorage(values: Record<string, string>, fn: () => void): void {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  const store = new Map(Object.entries(values))
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, String(value)),
+      removeItem: (key: string) => store.delete(key),
+      clear: () => store.clear(),
+    },
+  })
+  try {
+    fn()
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else delete (globalThis as { localStorage?: unknown }).localStorage
+  }
+}
+
 beforeEach(() => {
   capturedOnSubmit = undefined
   mockSendMessage.mockReset()
@@ -161,11 +181,13 @@ describe('ChatPanel (shadcn)', () => {
       error: undefined,
     })
 
-    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
+    withLocalStorage({ 'boring-agent:composer:show-thoughts': '1' }, () => {
+      const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
 
-    expect(html).toContain('data-testid="reasoning"')
-    expect(html).toContain('thinking hard')
-    expect(html).toContain('The answer is 42')
+      expect(html).toContain('data-testid="reasoning"')
+      expect(html).toContain('thinking hard')
+      expect(html).toContain('The answer is 42')
+    })
   })
 
   test('renders tool call with default renderer', () => {
@@ -301,6 +323,29 @@ describe('ChatPanel (shadcn)', () => {
     expect(onSessionReset).toHaveBeenCalledOnce()
   })
 
+  test('/reset forwards requestHeaders when deleting server session', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', mockFetch)
+
+    renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-reset"
+        requestHeaders={{ 'x-boring-workspace-id': 'w1' }}
+      />,
+    )
+
+    await capturedOnSubmit!({ text: '/reset', files: [] })
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/agent/sessions/sess-reset',
+      {
+        method: 'DELETE',
+        headers: { 'x-boring-workspace-id': 'w1' },
+      },
+    )
+  })
+
   test('unknown slash command falls through as regular message', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-unk" />)
 
@@ -343,7 +388,9 @@ describe('ChatPanel (shadcn)', () => {
 
   test('passes sessionId to useAgentChat', () => {
     renderToStaticMarkup(<ChatPanel sessionId="test-session-42" />)
-    expect(mockUseAgentChat).toHaveBeenCalledWith({ sessionId: 'test-session-42' })
+    expect(mockUseAgentChat).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'test-session-42' }),
+    )
   })
 
   test('prompt submit status reflects streaming state', () => {
@@ -498,9 +545,9 @@ describe('ChatPanel (shadcn)', () => {
     test('thinking control hidden by default (opt-in)', () => {
       const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-think" />)
       // None of the four level labels should appear when the control is off.
-      expect(html).not.toContain('No thinking')
-      expect(html).not.toContain('Think a little')
-      expect(html).not.toContain('Think hard')
+      expect(html).not.toContain('lucide-brain')
+      expect(html).not.toContain('data-value="off"')
+      expect(html).not.toContain('data-value="high"')
     })
 
     test('thinking control rendered when thinkingControl=true', () => {
@@ -508,9 +555,10 @@ describe('ChatPanel (shadcn)', () => {
         <ChatPanel sessionId="s-think" thinkingControl />,
       )
       // The select renders all four level options as children.
-      expect(html).toContain('No thinking')
-      expect(html).toContain('Think a little')
-      expect(html).toContain('Think hard')
+      expect(html).toContain('data-value="off"')
+      expect(html).toContain('data-value="low"')
+      expect(html).toContain('data-value="medium"')
+      expect(html).toContain('data-value="high"')
       // BrainIcon rendered alongside the trigger.
       expect(html).toContain('lucide-brain')
     })

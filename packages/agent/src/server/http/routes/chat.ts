@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { createUIMessageStream, pipeUIMessageStreamToResponse } from '../sse'
 import type { UIMessageChunk } from '../sse'
@@ -50,8 +50,12 @@ const chatBodySchema = z.object({
 type ChatBody = z.infer<typeof chatBodySchema>
 
 export interface ChatRouteOptions {
-  harness: AgentHarness
-  workdir: string
+  harness?: AgentHarness
+  workdir?: string
+  getRuntime?: (request: FastifyRequest) => Promise<{
+    harness: AgentHarness
+    workdir: string
+  }>
   sessionChangesTracker?: SessionChangesTracker
 }
 
@@ -60,9 +64,20 @@ export function chatRoutes(
   opts: ChatRouteOptions,
   done: (err?: Error) => void,
 ): void {
-  const { harness, workdir, sessionChangesTracker } = opts
+  const { sessionChangesTracker } = opts
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
+
+  async function resolveRuntime(request: FastifyRequest): Promise<{
+    harness: AgentHarness
+    workdir: string
+  }> {
+    if (opts.getRuntime) return await opts.getRuntime(request)
+    if (opts.harness && opts.workdir) {
+      return { harness: opts.harness, workdir: opts.workdir }
+    }
+    throw new Error('chat route requires harness/workdir or getRuntime')
+  }
 
   app.post(
     '/api/v1/agent/chat',
@@ -73,6 +88,7 @@ export function chatRoutes(
       const turnId = randomUUID()
 
       request.log.info({ sessionId, turnId, model, thinkingLevel }, '[chat] start')
+      const runtime = await resolveRuntime(request)
 
       const abortController = new AbortController()
       let streamStarted = false
@@ -88,13 +104,13 @@ export function chatRoutes(
 
       const ctx: RunContext = {
         abortSignal: abortController.signal,
-        workdir,
+        workdir: runtime.workdir,
       }
 
       const buf = buffers.create(sessionId, turnId)
 
       try {
-        const chunks = harness.sendMessage(
+        const chunks = runtime.harness.sendMessage(
           { sessionId, message, model, thinkingLevel },
           ctx,
         )
@@ -232,7 +248,8 @@ export function chatRoutes(
         workspaceId: request.workspaceContext?.workspaceId ?? 'default',
       }
       try {
-        const detail = await harness.sessions.load(ctx, sessionId)
+        const runtime = await resolveRuntime(request)
+        const detail = await runtime.harness.sessions.load(ctx, sessionId)
         const messages = Array.isArray(detail?.messages) ? detail.messages : []
         return reply.code(200).send({ messages })
       } catch {

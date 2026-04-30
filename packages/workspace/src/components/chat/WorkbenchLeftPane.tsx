@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronLeft, Database, FolderTree, Search, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
-import { FileTreeView } from "../FileTreeView"
+import { FileTreeView } from "../../panes/file-tree/FileTreeView"
 import { DataExplorer } from "../DataExplorer/DataExplorer"
 import { createSourcesAdapter, type SourceEntry } from "../DataExplorer/adapters"
 import type {

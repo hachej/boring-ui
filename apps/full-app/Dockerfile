@@ -22,6 +22,7 @@ RUN pnpm --filter @boring/core exec tsup --no-dts \
   && cp packages/core/src/front/theme.css packages/core/dist/front/theme.css
 
 RUN pnpm --filter @boring/agent run build
+RUN pnpm --filter @boring/workspace run build
 RUN pnpm --filter full-app run build
 
 FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runtime
@@ -46,6 +47,7 @@ COPY --from=build /app/packages/agent/package.json packages/agent/package.json
 COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
 
 COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
+COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
 COPY --from=build /app/packages/workspace/node_modules/ packages/workspace/node_modules/
 
 COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/

@@ -78,10 +78,17 @@ async function listTree(
 
 export function treeRoutes(
   app: FastifyInstance,
-  opts: { workspace: Workspace },
+  opts: {
+    workspace?: Workspace
+    getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+  },
   done: (err?: Error) => void,
 ): void {
-  const { workspace } = opts
+  async function resolveWorkspace(request: FastifyRequest): Promise<Workspace> {
+    if (opts.getWorkspace) return await opts.getWorkspace(request)
+    if (opts.workspace) return opts.workspace
+    throw new Error('workspace route requires workspace or getWorkspace')
+  }
 
   app.get(
     '/api/v1/tree',
@@ -104,6 +111,7 @@ export function treeRoutes(
       const recursive = request.query.recursive === 'true'
 
       try {
+        const workspace = await resolveWorkspace(request)
         const entries = await listTree(workspace, dir, recursive)
         return { entries }
       } catch (err) {
@@ -119,6 +127,21 @@ export function treeRoutes(
         if (code === 'ENOENT' || message.includes('ENOENT')) {
           return reply.code(404).send({
             error: { code: ERROR_CODE_NOT_FOUND, message: `directory not found: ${dir}` },
+          })
+        }
+
+        const statusCode = (err as { statusCode?: unknown })?.statusCode
+        const stableCode = (err as { code?: unknown })?.code
+        if (
+          typeof statusCode === 'number' &&
+          statusCode >= 400 &&
+          statusCode < 600
+        ) {
+          return reply.code(statusCode).send({
+            error: {
+              code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
+              message,
+            },
           })
         }
 

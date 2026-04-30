@@ -22,7 +22,7 @@ const sharedEnv = [
 
 export default defineConfig({
   testDir: '.',
-  testMatch: ['smoke.spec.ts', 'csp.spec.ts'],
+  testMatch: ['smoke.spec.ts', 'csp.spec.ts', 'workspace-lifecycle.spec.ts'],
   fullyParallel: false,
   workers: 1,
   retries: isCI ? 1 : 0,

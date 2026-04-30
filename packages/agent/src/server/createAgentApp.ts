@@ -53,6 +53,12 @@ export interface CreateAgentAppOptions {
    * via DefaultResourceLoader's `appendSystemPromptSource`.
    */
   systemPromptAppend?: string
+  /** Optional pi resource-loader isolation knobs. */
+  resourceLoaderOptions?: {
+    noContextFiles?: boolean
+    noSkills?: boolean
+    additionalSkillPaths?: string[]
+  }
 }
 
 export async function createAgentApp(
@@ -99,6 +105,11 @@ export async function createAgentApp(
     tools,
     cwd: workspaceRoot,
     systemPromptAppend: opts.systemPromptAppend,
+    resourceLoaderOptions: {
+      noContextFiles: true,
+      noSkills: true,
+      ...opts.resourceLoaderOptions,
+    },
   })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 

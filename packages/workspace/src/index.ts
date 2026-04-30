@@ -108,6 +108,8 @@ export {
 // Command Palette
 export { CommandPalette } from "./components/CommandPalette"
 export type { CommandPaletteProps } from "./components/CommandPalette"
+export { WorkspaceLoadingState } from "./components/WorkspaceLoadingState"
+export type { WorkspaceLoadingStateProps } from "./components/WorkspaceLoadingState"
 
 // Panes (dockview wrappers — require WorkspaceProvider)
 export { ArtifactSurfacePane } from "./panes"

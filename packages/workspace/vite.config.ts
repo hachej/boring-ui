@@ -3,6 +3,28 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import dts from "vite-plugin-dts"
 import { resolve } from "node:path"
+import { readFileSync } from "node:fs"
+
+interface PackageManifest {
+  dependencies?: Record<string, string>
+  peerDependencies?: Record<string, string>
+}
+
+const manifest = JSON.parse(
+  readFileSync(resolve(__dirname, "package.json"), "utf8"),
+) as PackageManifest
+
+const externalPackages = new Set([
+  ...Object.keys(manifest.dependencies ?? {}),
+  ...Object.keys(manifest.peerDependencies ?? {}),
+])
+
+function isExternalPackage(id: string): boolean {
+  for (const packageName of externalPackages) {
+    if (id === packageName || id.startsWith(`${packageName}/`)) return true
+  }
+  return false
+}
 
 export default defineConfig({
   plugins: [
@@ -31,7 +53,7 @@ export default defineConfig({
       formats: ["es"],
     },
     rollupOptions: {
-      external: ["react", "react-dom", "react/jsx-runtime"],
+      external: isExternalPackage,
     },
   },
 })

@@ -136,6 +136,7 @@ function matchGlob(pattern: string, filename: string): boolean {
   if (star > 0) {
     const head = pattern.slice(0, star)
     const tail = pattern.slice(star + 1)
+    if (filename.length < head.length + tail.length) return false
     if (!filename.startsWith(head)) return false
     if (!filename.endsWith(tail)) return false
     const middle = filename.slice(head.length, filename.length - tail.length)

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen, fireEvent, within } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { FileTree, type FileTreeNode } from "../FileTree"
 
 const sampleFiles: FileTreeNode[] = [
@@ -155,5 +155,58 @@ describe("FileTree", () => {
     render(<FileTree files={sampleFiles} height={200} />)
     const items = screen.getAllByRole("treeitem")
     expect(items.length).toBeGreaterThan(0)
+  })
+
+  it("opens a collapsed parent folder when a draft row is inserted inside it", async () => {
+    const files: FileTreeNode[] = [
+      {
+        name: "src",
+        kind: "dir",
+        path: "src",
+        children: [
+          {
+            name: "",
+            kind: "file",
+            path: "__draft__:1",
+            isDraft: true,
+          },
+        ],
+      },
+    ]
+
+    render(
+      <FileTree
+        files={files}
+        height={200}
+        editing={{ path: "__draft__:1", isDraft: true }}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree-edit-input")).toBeInTheDocument()
+    })
+  })
+
+  it("reveals a created child path by opening its collapsed parent folder", async () => {
+    const files: FileTreeNode[] = [
+      {
+        name: "src",
+        kind: "dir",
+        path: "src",
+        children: [
+          {
+            name: "child.ts",
+            kind: "file",
+            path: "src/child.ts",
+          },
+        ],
+      },
+    ]
+
+    render(<FileTree files={files} height={200} revealPath="src/child.ts" />)
+
+    await waitFor(() => {
+      expect(screen.getByText("child.ts")).toBeInTheDocument()
+    })
   })
 })

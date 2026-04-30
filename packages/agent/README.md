@@ -41,6 +41,42 @@ Default auto-detect behavior:
 - Otherwise: use `direct`.
 - `vercel-sandbox` is explicit opt-in.
 
+### Model Defaults And Custom Endpoints
+
+The chat model default can be set at runtime:
+
+```bash
+BORING_AGENT_DEFAULT_MODEL_PROVIDER=anthropic
+BORING_AGENT_DEFAULT_MODEL_ID=claude-sonnet-4-6
+```
+
+For OpenAI-compatible Infomaniak AI Tools endpoints:
+
+```bash
+INFOMANIAK_API_TOKEN=...
+BORING_AGENT_INFOMANIAK_PRODUCT_ID=108321
+BORING_AGENT_INFOMANIAK_MODEL=Qwen/Qwen3.5-122B-A10B-FP8
+BORING_AGENT_DEFAULT_MODEL_PROVIDER=infomaniak
+BORING_AGENT_DEFAULT_MODEL_ID=Qwen/Qwen3.5-122B-A10B-FP8
+```
+
+`BORING_AGENT_INFOMANIAK_BASE_URL` may be set instead of product id when the
+host wants to pass the full `/2/ai/{product_id}/openai/v1` base URL directly.
+
+For `vercel-sandbox`, new sandbox lifetime can be raised with:
+
+```bash
+BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS=2700000
+```
+
+Vercel rejects values above `2700000` ms.
+
+Dirty `vercel-sandbox` workspaces are snapshotted every 10 minutes. On a
+stopped sandbox, the runtime restores from the latest stored snapshot; if no
+snapshot exists, it returns `SANDBOX_EXPIRED` instead of silently creating an
+empty sandbox. `BORING_AGENT_SNAPSHOT_KEEP` controls retained snapshots and
+defaults to `2`.
+
 ## Architecture
 
 Core runtime is split into four abstractions:

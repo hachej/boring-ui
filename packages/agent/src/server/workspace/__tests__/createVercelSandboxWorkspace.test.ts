@@ -113,6 +113,23 @@ test('invalidates metadata cache after write/unlink/mkdir/rename', async () => {
   }
 })
 
+test('calls onMutation after write/unlink/mkdir/rename', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const onMutation = vi.fn()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox, { onMutation })
+
+  try {
+    await workspace.mkdir('dirty', { recursive: true })
+    await workspace.writeFile('dirty/a.txt', 'a')
+    await workspace.rename('dirty/a.txt', 'dirty/b.txt')
+    await workspace.unlink('dirty/b.txt')
+
+    expect(onMutation).toHaveBeenCalledTimes(4)
+  } finally {
+    await harness.cleanup()
+  }
+})
+
 test('invalidates metadata cache after sandbox exec on shared handle', async () => {
   const harness = await createMockVercelSandboxHarness()
   const statSpy = vi.spyOn(harness.sandbox.fs, 'stat')

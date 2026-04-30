@@ -57,12 +57,14 @@ export function resetMswHandlers(): void {
 
 beforeEach(async () => {
   if (!isFrontTestFile()) return
+  vi.useRealTimers()
   await ensureUiHelpersLoaded()
   ensureFetchStub()
 })
 
 afterEach(() => {
   if (!isFrontTestFile()) return
+  vi.useRealTimers()
   cleanupFn?.()
   resetMswHandlers()
 })
