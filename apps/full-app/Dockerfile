@@ -58,7 +58,7 @@ COPY --from=build /app/apps/full-app/package.json apps/full-app/package.json
 COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
 
 ENV NODE_ENV=production \
-  BORING_AGENT_MODE=local \
+  BORING_AGENT_MODE=vercel-sandbox \
   FULL_APP_WORKSPACE_ROOT=/data/workspaces
 EXPOSE 3000
 
