@@ -3,7 +3,6 @@ import { ChatPanel } from "@boring/agent"
 import {
   WorkspaceProvider,
   ChatLayout,
-  CodeEditorPane,
   EmptyPane,
   TopBar,
   definePanel,
@@ -14,17 +13,11 @@ import {
 } from "@boring/workspace"
 import { createMockSessions, useMockSessions } from "@boring/workspace/testing"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
+import { playgroundDataCatalogPlugin } from "./plugins/playgroundDataCatalog"
 
 // ----- Panel registry -----
 
 const panels: PanelConfig[] = [
-  definePanel<{ path: string }>({
-    id: "csv-viewer",
-    title: "CSV",
-    component: CodeEditorPane,
-    placement: "center",
-    source: "app",
-  }),
   definePanel({
     id: "empty",
     title: "Welcome",
@@ -202,7 +195,6 @@ function Shell() {
           surface={surfaceOpen ? "artifact-surface" : ""}
           surfaceParams={{
             storageKey: `${layoutStorageKey}:surface`,
-            extraPanels: ["csv-viewer"],
             onReady: handleSurfaceReady,
             onChange: handleSurfaceChange,
             onClose: () => setSurfaceOpen(false),
@@ -221,6 +213,7 @@ export function WorkspaceShell() {
     <div className="h-full bg-background text-foreground">
       <WorkspaceProvider
         chatPanel={ChatPanel}
+        plugins={[playgroundDataCatalogPlugin]}
         panels={panels}
         apiBaseUrl=""
         persistenceEnabled

@@ -1,0 +1,4 @@
+id,name,status,owner
+1,ChatPanel,shipped,agent
+2,FileTree,in-progress,workspace
+3,DataCatalog,demo,workspace

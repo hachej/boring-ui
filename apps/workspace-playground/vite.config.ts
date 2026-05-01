@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { createWorkspaceAgentApp } from "../../packages/workspace/src/app"
+import { createPlaygroundDataServerPlugin } from "./src/plugins/playgroundDataCatalog/server"
 
 // The playground is the standalone dev surface for @boring/workspace.
 // Backend is the agent package's Fastify app — same one production uses —
@@ -14,26 +15,24 @@ import { createWorkspaceAgentApp } from "../../packages/workspace/src/app"
 //   src/fixtures/  — committed seed content (reference, read-only)
 //   workspace/     — gitignored runtime root the agent reads/writes/edits
 //
-// On dev start we seed `workspace/` from `src/fixtures/` if it's empty,
-// so a fresh clone has demo content. Agent edits land in `workspace/`
-// without dirtying the committed fixtures. Delete the directory to
-// reset; the next boot re-seeds it.
+// On dev start we seed missing fixture files into `workspace/`, so a fresh
+// clone has demo content while existing runtime edits are not overwritten.
 
 const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 const VITE_PORT = Number(process.env.PORT) || 5200
 const FIXTURES_DIR = resolve(__dirname, "src/fixtures")
 const WORKSPACE_DIR = resolve(__dirname, "workspace")
 
-function seedWorkspaceIfEmpty(): void {
+function seedWorkspaceFromFixtures(): void {
   if (!existsSync(WORKSPACE_DIR)) {
     mkdirSync(WORKSPACE_DIR, { recursive: true })
   }
-  const existing = readdirSync(WORKSPACE_DIR).filter((n) => !n.startsWith("."))
-  if (existing.length > 0) return
   for (const name of readdirSync(FIXTURES_DIR)) {
     const src = resolve(FIXTURES_DIR, name)
     if (!statSync(src).isFile()) continue
-    copyFileSync(src, resolve(WORKSPACE_DIR, name))
+    const dest = resolve(WORKSPACE_DIR, name)
+    if (existsSync(dest)) continue
+    copyFileSync(src, dest)
   }
 }
 
@@ -46,11 +45,13 @@ async function startAgentApp() {
     // exec_ui tools + /api/v1/ui/* routes) plus the file/tree/stat HTTP
     // endpoints the workspace frontend calls. One server, one filesystem,
     // one set of paths — agent and frontend can't drift apart.
-    seedWorkspaceIfEmpty()
+    seedWorkspaceFromFixtures()
+    const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR
     const app = await createWorkspaceAgentApp({
-      workspaceRoot: process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR,
+      workspaceRoot,
       mode: "local",
       logger: true,
+      plugins: [createPlaygroundDataServerPlugin({ workspaceRoot })],
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()
