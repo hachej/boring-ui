@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +17,8 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 async function main(): Promise<void> {
-  const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'boring-agent-provisioning-eval-'))
+  let workspaceRoot: string | undefined = await mkdtemp(path.join(tmpdir(), 'boring-agent-provisioning-eval-'))
+  let relocatedRoot: string | undefined
   try {
     const first = await provisionRuntimeWorkspace({
       workspaceRoot,
@@ -96,15 +97,32 @@ async function main(): Promise<void> {
     assert(second.changed === false, 'second provisioning run should hit marker and report changed=false')
     assert(second.fingerprint === first.fingerprint, 'fingerprint changed across identical runs')
 
+    relocatedRoot = await mkdtemp(path.join(tmpdir(), 'boring-agent-provisioning-relocated-'))
+    await cp(workspaceRoot, relocatedRoot, { recursive: true })
+    await rm(workspaceRoot, { recursive: true, force: true })
+    workspaceRoot = undefined
+    const { stdout: relocatedStdout } = await execFileAsync(
+      path.join(relocatedRoot, '.boring-agent', 'bin', 'boring-provision-test'),
+      ['relocated'],
+      { maxBuffer: 1024 * 1024 },
+    )
+    const relocatedPayload = JSON.parse(relocatedStdout) as { ok?: boolean; workspace?: string; args?: string[] }
+    assert(relocatedPayload.ok === true, 'relocated fixture CLI did not report ok=true')
+    assert(relocatedPayload.workspace === relocatedRoot, 'relocated fixture CLI used stale workspace root')
+    assert(JSON.stringify(relocatedPayload.args) === JSON.stringify(['relocated']), 'relocated CLI args mismatch')
+
     console.log(JSON.stringify({
       ok: true,
       workspaceRoot,
+      relocatedRoot,
       fingerprint: first.fingerprint,
       binDir: first.binDir,
       cli: payload,
+      relocatedCli: relocatedPayload,
     }, null, 2))
   } finally {
-    await rm(workspaceRoot, { recursive: true, force: true })
+    if (workspaceRoot) await rm(workspaceRoot, { recursive: true, force: true })
+    if (relocatedRoot) await rm(relocatedRoot, { recursive: true, force: true })
   }
 }
 
