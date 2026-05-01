@@ -202,7 +202,13 @@ VENV_BIN="$WORKSPACE_ROOT/.venv/bin"
       const full = join(venvBin, entry)
       const info = await stat(full).catch(() => null)
       if (!info?.isFile()) continue
-      await writeExecutable(join(shimDir, entry), `${base}exec "$VENV_BIN"/${bashSingleQuote(entry)} "$@"\n`)
+      await writeExecutable(join(shimDir, entry), `${base}TARGET="$VENV_BIN"/${bashSingleQuote(entry)}
+SHEBANG="$(head -n 1 "$TARGET" 2>/dev/null || true)"
+case "$SHEBANG" in
+  *python*) exec "$VENV_BIN/python" "$TARGET" "$@" ;;
+esac
+exec "$TARGET" "$@"
+`)
     }
   }
   return shimDir
