@@ -44,3 +44,49 @@
   --input: oklch(0.269 0.006 285.885);
   --ring: oklch(0.439 0.01 286.029);
 }
+
+.boring-settings-shell {
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--canvas, var(--background));
+  color: var(--foreground);
+}
+
+.boring-settings-layout {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 1.5rem 1rem;
+}
+
+.boring-settings-sidebar {
+  min-width: 0;
+}
+
+.boring-settings-content {
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .boring-settings-layout {
+    flex-direction: row;
+    align-items: flex-start;
+    padding: 2rem 1.5rem;
+  }
+
+  .boring-settings-sidebar {
+    position: sticky;
+    top: 5rem;
+    width: 14rem;
+    flex: 0 0 14rem;
+  }
+
+  .boring-settings-content {
+    flex: 1 1 auto;
+    max-width: 48rem;
+  }
+}

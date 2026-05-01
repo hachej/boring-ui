@@ -9,6 +9,8 @@ import {
   DropdownMenuTrigger,
 } from '@boring/workspace/ui-shadcn'
 import {
+  ChevronDown,
+  Check,
   LogOut,
   Monitor,
   Moon,
@@ -24,12 +26,6 @@ import { routes } from '../utils.js'
 type ThemePreference = 'light' | 'dark' | 'system'
 
 const THEME_ORDER: ThemePreference[] = ['light', 'dark', 'system']
-
-function nextTheme(preference: ThemePreference): ThemePreference {
-  const index = THEME_ORDER.indexOf(preference)
-  const nextIndex = index === -1 ? 0 : (index + 1) % THEME_ORDER.length
-  return THEME_ORDER[nextIndex]
-}
 
 function labelForTheme(preference: ThemePreference): string {
   if (preference === 'light') return 'Light'
@@ -68,8 +64,6 @@ export function UserMenu() {
   const userName = user?.name ?? 'Unknown user'
   const userEmail = user?.email ?? 'unknown@example.com'
   const initials = useMemo(() => initialsFor(user?.name ?? null, userEmail), [user?.name, userEmail])
-  const themeLabel = labelForTheme(preference)
-  const ThemeIcon = iconForTheme(preference)
 
   async function handleSignOut(): Promise<void> {
     if (isSigningOut) return
@@ -88,63 +82,86 @@ export function UserMenu() {
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
           aria-label="User menu"
-          className="rounded-full border border-[color:oklch(0.68_0.12_58/0.45)] bg-[oklch(0.76_0.15_58)]/10 text-foreground hover:bg-[oklch(0.76_0.15_58)]/18"
+          className="h-8 rounded-md border border-transparent bg-transparent px-1 pr-1.5 text-foreground shadow-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[oklch(0.76_0.15_58)] text-[11px] font-semibold text-[oklch(0.18_0.04_58)] shadow-[inset_0_0_0_1px_oklch(1_0_0/0.2)]">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-background">
             {initials}
           </span>
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuLabel className="space-y-1.5 px-2 py-2">
-          <p className="truncate text-sm font-medium leading-none">{userName}</p>
-          <p className="truncate text-xs text-muted-foreground">{userEmail}</p>
+      <DropdownMenuContent
+        align="end"
+        sideOffset={8}
+        className="w-80 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
+      >
+        <DropdownMenuLabel className="p-2">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background">
+              {initials}
+            </span>
+            <span className="min-w-0 space-y-1">
+              <span className="block truncate text-sm font-medium leading-none">{userName}</span>
+              <span className="block truncate text-xs font-normal text-muted-foreground">{userEmail}</span>
+            </span>
+          </div>
         </DropdownMenuLabel>
 
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator className="-mx-2" />
+
+        <DropdownMenuLabel className="px-2 pb-1 pt-2 text-[11px] font-medium text-muted-foreground">
+          Theme
+        </DropdownMenuLabel>
+        {THEME_ORDER.map((theme) => {
+          const Icon = iconForTheme(theme)
+          const selected = preference === theme
+          return (
+            <DropdownMenuItem
+              key={theme}
+              aria-label={labelForTheme(theme)}
+              data-current={selected ? 'true' : 'false'}
+              onSelect={(event: Event) => {
+                event.preventDefault()
+                setTheme(theme)
+              }}
+              className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
+            >
+              <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <span className="flex-1">{labelForTheme(theme)}</span>
+              {selected ? <Check className="h-4 w-4 text-foreground" aria-hidden="true" /> : null}
+            </DropdownMenuItem>
+          )
+        })}
+
+        <DropdownMenuSeparator className="-mx-2" />
 
         <DropdownMenuItem
-          onSelect={(event: any) => {
-            event.preventDefault()
-            setTheme(nextTheme(preference))
-          }}
-          aria-label={`Theme: ${themeLabel}`}
-          className="justify-between"
+          aria-label="User settings"
+          onSelect={() => navigate(routes.me)}
+          className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
         >
-          <span className="inline-flex items-center gap-2">
-            <ThemeIcon className="h-4 w-4" aria-hidden="true" />
-            <span>Theme: {themeLabel}</span>
-          </span>
-          <span
-            aria-hidden="true"
-            data-theme-preference={preference}
-            className="relative inline-flex h-[18px] w-[34px] items-center rounded-full border border-border bg-muted data-[theme-preference=dark]:bg-primary data-[theme-preference=light]:bg-primary/35"
-          >
-            <span className="h-3 w-3 translate-x-0.5 rounded-full bg-background shadow-sm transition-transform data-[theme-preference=dark]:translate-x-[18px]" data-theme-preference={preference} />
-          </span>
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem onSelect={() => navigate(routes.me)}>
           <Settings className="h-4 w-4" aria-hidden="true" />
-          User settings
+          <span className="flex min-w-0 flex-col">
+            <span>User settings</span>
+            <span className="text-xs text-muted-foreground">Password and account controls</span>
+          </span>
         </DropdownMenuItem>
 
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator className="-mx-2" />
 
         <DropdownMenuItem
-          onSelect={(event: any) => {
+          variant="destructive"
+          onSelect={(event: Event) => {
             event.preventDefault()
             void handleSignOut()
           }}
           disabled={isSigningOut}
+          className="gap-3 rounded-md py-2 text-[13px]"
         >
           <LogOut className="h-4 w-4" aria-hidden="true" />
-          Sign out
+          {isSigningOut ? 'Signing out...' : 'Sign out'}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
