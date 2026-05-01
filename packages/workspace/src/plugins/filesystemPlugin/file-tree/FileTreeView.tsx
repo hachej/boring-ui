@@ -48,9 +48,14 @@ import { filesystemEvents } from "../events"
 import type { PaneProps } from "../../../shared/types/panel"
 import type { LeftTabParams } from "../../../shared/plugins/types"
 
-const FileTree = lazy(() =>
-  import("./FileTree").then((m) => ({ default: m.FileTree })),
-)
+const loadFileTreeComponent = () =>
+  import("./FileTree").then((m) => ({ default: m.FileTree }))
+
+export function preloadFileTreeComponent(): void {
+  void loadFileTreeComponent()
+}
+
+const FileTree = lazy(loadFileTreeComponent)
 
 function buildTree(
   entries: FileEntry[],

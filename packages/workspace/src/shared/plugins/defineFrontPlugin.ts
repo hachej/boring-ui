@@ -1,5 +1,28 @@
-import type { Plugin, CatalogConfig, PluginOutput, LeftTabOutput, AgentTool } from "./types"
+import type {
+  AgentTool,
+  CatalogConfig,
+  LeftTabOutput,
+  PluginBinding,
+  PluginOutput,
+} from "./types"
 import type { CommandConfig, PanelConfig } from "../types/panel"
+
+export interface WorkspaceFrontPlugin {
+  id: string
+  label?: string
+  /**
+   * Context prepended to the agent's system prompt at boot. Concatenated
+   * across all registered plugins (in registration order) and joined with
+   * double-newlines. Plain Markdown. ~200-500 chars recommended.
+   */
+  systemPrompt?: string
+  panels?: PanelConfig[]
+  commands?: CommandConfig[]
+  catalogs?: CatalogConfig[]
+  bindings?: PluginBinding[]
+  agentTools?: AgentTool[]
+  outputs?: PluginOutput[]
+}
 
 export type PluginErrorKind =
   | "validation"
@@ -298,7 +321,7 @@ function validateOutputs(pluginId: string, outputs: PluginOutput[]): void {
   }
 }
 
-function validatePlugin(spec: Plugin): void {
+function validatePlugin(spec: WorkspaceFrontPlugin): void {
   if (!spec.id || typeof spec.id !== "string") {
     fail(spec.id ?? "<unknown>", "id must be a non-empty string")
   }
@@ -310,7 +333,7 @@ function validatePlugin(spec: Plugin): void {
   if (spec.outputs) validateOutputs(spec.id, spec.outputs)
 }
 
-export function definePlugin(spec: Plugin): Plugin {
+export function defineFrontPlugin(spec: WorkspaceFrontPlugin): WorkspaceFrontPlugin {
   validatePlugin(spec)
   return Object.assign({}, spec)
 }

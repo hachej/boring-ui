@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { definePlugin, PluginError } from "../definePlugin"
-import type { Plugin } from "../types"
+import {
+  defineFrontPlugin,
+  PluginError,
+  type WorkspaceFrontPlugin,
+} from "../defineFrontPlugin"
 import type { PanelConfig } from "../../../front/registry/types"
 import type { CommandConfig } from "../../../front/registry/types"
 import type { CatalogConfig } from "../types"
@@ -44,37 +47,39 @@ function makeAgentTool() {
   }
 }
 
-describe("definePlugin", () => {
+describe("defineFrontPlugin", () => {
   it("returns a shallow clone of valid input", () => {
-    const spec: Plugin = { id: "foo" }
-    const result = definePlugin(spec)
+    const spec: WorkspaceFrontPlugin = { id: "foo" }
+    const result = defineFrontPlugin(spec)
     expect(result).toEqual(spec)
     expect(result).not.toBe(spec)
   })
 
   it("accepts a minimal plugin with only id", () => {
-    expect(definePlugin({ id: "minimal" })).toHaveProperty("id", "minimal")
+    expect(defineFrontPlugin({ id: "minimal" })).toHaveProperty("id", "minimal")
   })
 
   it("preserves optional label", () => {
-    const result = definePlugin({ id: "x", label: "My Plugin" })
+    const result = defineFrontPlugin({ id: "x", label: "My Plugin" })
     expect(result.label).toBe("My Plugin")
   })
 
   describe("id validation", () => {
     it("throws on empty id", () => {
-      expect(() => definePlugin({ id: "" })).toThrow(PluginError)
-      expect(() => definePlugin({ id: "" })).toThrow("id must be a non-empty string")
+      expect(() => defineFrontPlugin({ id: "" })).toThrow(PluginError)
+      expect(() => defineFrontPlugin({ id: "" })).toThrow("id must be a non-empty string")
     })
 
     it("throws on non-string id", () => {
-      expect(() => definePlugin({ id: 42 } as unknown as Plugin)).toThrow(PluginError)
+      expect(() =>
+        defineFrontPlugin({ id: 42 } as unknown as WorkspaceFrontPlugin),
+      ).toThrow(PluginError)
     })
   })
 
   describe("panels validation", () => {
     it("accepts valid panels", () => {
-      const result = definePlugin({
+      const result = defineFrontPlugin({
         id: "test",
         panels: [makePanel({ id: "p1" }), makePanel({ id: "p2" })],
       })
@@ -83,7 +88,7 @@ describe("definePlugin", () => {
 
     it("throws on duplicate panel ids within plugin", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           panels: [makePanel({ id: "dup" }), makePanel({ id: "dup" })],
         }),
@@ -92,7 +97,7 @@ describe("definePlugin", () => {
 
     it("throws on invalid placement", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           panels: [makePanel({ id: "p1", placement: "nowhere" as any })],
         }),
@@ -110,14 +115,14 @@ describe("definePlugin", () => {
       ] as const
       for (const placement of placements) {
         expect(() =>
-          definePlugin({ id: "test", panels: [makePanel({ id: "p1", placement })] }),
+          defineFrontPlugin({ id: "test", panels: [makePanel({ id: "p1", placement })] }),
         ).not.toThrow()
       }
     })
 
     it("throws on non-function component when lazy:true", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           panels: [
             {
@@ -133,7 +138,7 @@ describe("definePlugin", () => {
 
     it("accepts lazy panel with thunk component", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           panels: [
             {
@@ -149,7 +154,7 @@ describe("definePlugin", () => {
 
     it("throws on non-function component when not lazy", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           panels: [{ id: "p1", title: "Bad", component: 42 } as any],
         }),
@@ -159,7 +164,7 @@ describe("definePlugin", () => {
 
   describe("outputs validation", () => {
     it("accepts a left-tab output", () => {
-      const result = definePlugin({
+      const result = defineFrontPlugin({
         id: "test",
         outputs: [
           {
@@ -176,7 +181,7 @@ describe("definePlugin", () => {
 
     it("throws on duplicate output identities", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           outputs: [
             { type: "left-tab", id: "files", title: "Files", component: DummyComponent },
@@ -188,7 +193,7 @@ describe("definePlugin", () => {
 
     it("throws on invalid output type", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           outputs: [{ type: "side-tab", id: "x" } as any],
         }),
@@ -197,7 +202,7 @@ describe("definePlugin", () => {
 
     it("throws on invalid left-tab component", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           outputs: [
             { type: "left-tab", id: "files", title: "Files", component: 42 as any },
@@ -207,7 +212,7 @@ describe("definePlugin", () => {
     })
 
     it("accepts a provider output", () => {
-      const result = definePlugin({
+      const result = defineFrontPlugin({
         id: "test",
         outputs: [
           {
@@ -222,7 +227,7 @@ describe("definePlugin", () => {
 
     it("throws on invalid provider output component", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           outputs: [
             {
@@ -236,7 +241,7 @@ describe("definePlugin", () => {
     })
 
     it("accepts a surface resolver output", () => {
-      const result = definePlugin({
+      const result = defineFrontPlugin({
         id: "test",
         outputs: [
           {
@@ -253,7 +258,7 @@ describe("definePlugin", () => {
 
     it("throws on invalid surface resolver output", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           outputs: [
             {
@@ -268,7 +273,7 @@ describe("definePlugin", () => {
 
   describe("commands validation", () => {
     it("accepts valid commands", () => {
-      const result = definePlugin({
+      const result = defineFrontPlugin({
         id: "test",
         commands: [makeCommand()],
       })
@@ -277,7 +282,7 @@ describe("definePlugin", () => {
 
     it("throws on duplicate command ids", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           commands: [makeCommand({ id: "c" }), makeCommand({ id: "c" })],
         }),
@@ -286,7 +291,7 @@ describe("definePlugin", () => {
 
     it("throws on non-function run", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           commands: [{ id: "c", title: "Bad", run: "string" } as any],
         }),
@@ -295,7 +300,7 @@ describe("definePlugin", () => {
 
     it("accepts keywords when they are non-empty strings", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           commands: [makeCommand({ keywords: ["team", "people"] })],
         }),
@@ -304,14 +309,14 @@ describe("definePlugin", () => {
 
     it("throws on invalid keywords payloads", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           commands: [makeCommand({ keywords: "team" as unknown as string[] })],
         }),
       ).toThrow("commands[0].keywords must be an array when provided")
 
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           commands: [makeCommand({ keywords: ["team", ""] })],
         }),
@@ -321,7 +326,7 @@ describe("definePlugin", () => {
 
   describe("catalogs validation", () => {
     it("accepts valid catalogs", () => {
-      const result = definePlugin({
+      const result = defineFrontPlugin({
         id: "test",
         catalogs: [makeCatalog()],
       })
@@ -330,7 +335,7 @@ describe("definePlugin", () => {
 
     it("throws on duplicate catalog ids", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           catalogs: [makeCatalog({ id: "x" }), makeCatalog({ id: "x" })],
         }),
@@ -339,7 +344,7 @@ describe("definePlugin", () => {
 
     it("throws when adapter.search is not a function", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           catalogs: [makeCatalog({ adapter: {} as any })],
         }),
@@ -348,7 +353,7 @@ describe("definePlugin", () => {
 
     it("throws when onSelect is not a function", () => {
       expect(() =>
-        definePlugin({
+        defineFrontPlugin({
           id: "test",
           catalogs: [makeCatalog({ onSelect: "bad" as any })],
         }),
@@ -358,7 +363,7 @@ describe("definePlugin", () => {
 
   describe("agentTools validation", () => {
     it("accepts valid agent tools", () => {
-      const result = definePlugin({
+      const result = defineFrontPlugin({
         id: "test",
         agentTools: [makeAgentTool()],
       })
@@ -368,7 +373,7 @@ describe("definePlugin", () => {
     it("throws on malformed agent tool (no execute)", () => {
       const bad = { name: "x", description: "x", parameters: {} }
       expect(() =>
-        definePlugin({ id: "test", agentTools: [bad as any] }),
+        defineFrontPlugin({ id: "test", agentTools: [bad as any] }),
       ).toThrow("agentTools[0] is not a valid AgentTool")
     })
 
@@ -376,7 +381,7 @@ describe("definePlugin", () => {
       const good = makeAgentTool()
       const bad = { name: "", description: "x", parameters: {}, execute: async () => ({}) }
       expect(() =>
-        definePlugin({ id: "test", agentTools: [good, bad as any] }),
+        defineFrontPlugin({ id: "test", agentTools: [good, bad as any] }),
       ).toThrow("agentTools[1]")
     })
   })
@@ -394,7 +399,7 @@ describe("definePlugin", () => {
 
     it("contains plugin id in message", () => {
       try {
-        definePlugin({ id: "my-plugin", panels: [{ id: "", title: "" } as any] })
+        defineFrontPlugin({ id: "my-plugin", panels: [{ id: "", title: "" } as any] })
       } catch (e) {
         expect((e as PluginError).message).toContain('plugin "my-plugin"')
         expect((e as PluginError).kind).toBe("validation")

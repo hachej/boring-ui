@@ -1,4 +1,3 @@
-import micromatch from "micromatch"
 import type {
   SurfaceOpenRequest,
   SurfacePanelResolution,
@@ -50,6 +49,50 @@ export function patternSpecificity(pattern: string): number {
   return segmentCount * 10 + nonWildcardChars
 }
 
+function globToRegExp(pattern: string): RegExp {
+  let source = "^"
+
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern[index]
+    const next = pattern[index + 1]
+
+    if (char === "*" && next === "*") {
+      const afterGlobstar = pattern[index + 2]
+      if (afterGlobstar === "/") {
+        source += "(?:.*/)?"
+        index += 2
+      } else {
+        source += ".*"
+        index += 1
+      }
+      continue
+    }
+
+    if (char === "*") {
+      source += "[^/]*"
+      continue
+    }
+
+    if (char === "?") {
+      source += "[^/]"
+      continue
+    }
+
+    if (/[$()+,.=[\]^{|}\\]/.test(char)) {
+      source += `\\${char}`
+      continue
+    }
+
+    source += char
+  }
+
+  return new RegExp(`${source}$`)
+}
+
+function matchesPattern(path: string, pattern: string): boolean {
+  return globToRegExp(pattern).test(path.replace(/\\/g, "/"))
+}
+
 function titleFromPath(path: string): string {
   return path.split("/").pop() ?? path
 }
@@ -60,7 +103,7 @@ function matchFilesystemPath(path: string): FilesystemSurfaceHandler | undefined
 
   for (const handler of handlers) {
     for (const pattern of handler.patterns ?? []) {
-      if (!micromatch.isMatch(path, pattern, { matchBase: false, dot: true })) continue
+      if (!matchesPattern(path, pattern)) continue
       const score = patternSpecificity(pattern)
       if (score >= bestScore) {
         best = handler

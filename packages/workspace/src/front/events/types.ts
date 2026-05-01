@@ -71,7 +71,7 @@ export function remoteMeta(
   return { cause: "remote", toolCallId, ts: Date.now() }
 }
 
-export interface WorkspaceCoreEventMap {
+export interface WorkspaceHostEventMap {
   /** Shared UI manipulation contract used by the agent stream and plugin bindings. */
   [WORKSPACE_UI_COMMAND_EVENT]: EventMeta & { command: UiCommand }
 
@@ -107,7 +107,7 @@ export interface WorkspaceCoreEventMap {
 export interface WorkspacePluginEventMap {}
 
 export interface WorkspaceEventMap
-  extends WorkspaceCoreEventMap,
+  extends WorkspaceHostEventMap,
     WorkspacePluginEventMap {}
 
 /** Names that share a prefix can be filtered with `startsWith`. */

@@ -1,7 +1,6 @@
-export { definePlugin, PluginError } from "./definePlugin"
-export type { PluginErrorKind } from "./definePlugin"
+export { defineFrontPlugin, PluginError } from "./defineFrontPlugin"
+export type { PluginErrorKind, WorkspaceFrontPlugin } from "./defineFrontPlugin"
 export type {
-  Plugin,
   PluginBinding,
   CatalogConfig,
   PluginOutput,

@@ -29,6 +29,7 @@ export type {
   Origin,
   EventMeta,
   WorkspacePanelMatch,
+  WorkspacePluginEventMap,
   WorkspaceEventMap,
   WorkspaceEventName,
 } from "./types"

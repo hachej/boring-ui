@@ -17,8 +17,9 @@ commands, and default workspace plugins.
   bootstrap helpers.
 - `src/shared/` hosts browser-safe contracts only. No `node:*`, no `Buffer`,
   and no agent package imports.
-- `src/app/` hosts composition helpers such as `createWorkspaceAgentApp`, where
-  workspace server code may compose with `@boring/agent/server`.
+- `src/app/` hosts front/server composition helpers such as
+  `WorkspaceAgentFront` and `createWorkspaceAgentServer`, where workspace app
+  code may compose with documented `@boring/agent/server` APIs.
 
 ## Core Contracts
 

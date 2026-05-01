@@ -16,4 +16,8 @@ export {
   useMoveFile,
   useDeleteFile,
 } from "./hooks"
+export {
+  getPreloadedTreeEntries,
+  setPreloadedTreeEntries,
+} from "./treePreloadCache"
 export type { FileEntry, FileContent, FileStat, FetchClientOptions } from "./types"

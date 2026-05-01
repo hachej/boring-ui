@@ -7,7 +7,7 @@
 
 // Plugin model
 export {
-  definePlugin,
+  defineFrontPlugin,
   bootstrap,
   PluginError,
 } from "./shared/plugins"
@@ -22,7 +22,7 @@ export type {
   SurfaceResolverRegistryLike,
 } from "./shared/plugins"
 export type {
-  Plugin,
+  WorkspaceFrontPlugin,
   PluginBinding,
   CatalogConfig,
   PluginOutput,
@@ -207,7 +207,6 @@ export {
 export type {
   Origin,
   EventMeta,
-  WorkspaceCoreEventMap,
   WorkspacePluginEventMap,
   WorkspaceEventMap,
   WorkspaceEventName,

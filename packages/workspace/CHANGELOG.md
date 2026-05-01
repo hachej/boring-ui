@@ -3,7 +3,7 @@
 ## [Unreleased] - Plugin Model + Declarative Layout merger
 
 Reference epic: `boring-ui-v2-j9p7`.
-Canonical migration example: `d26e1e7` (`refactor(macro): rewrite App.tsx + server/index.ts to use plugin model (j9p7.19)`) in `apps/boring-macro-v2/src/plugin/`, `apps/boring-macro-v2/src/front/App.tsx`, and `apps/boring-macro-v2/src/server/index.ts`.
+Canonical migration example: `d26e1e7` (`refactor(macro): rewrite App.tsx + server/index.ts to use plugin model (j9p7.19)`) in `apps/boring-macro-v2/src/plugins/macro/`, `apps/boring-macro-v2/src/front/App.tsx`, and `apps/boring-macro-v2/src/server/index.ts`.
 
 ### Breaking Changes
 
@@ -32,9 +32,9 @@ Before:
 After:
 
 ```tsx
-import { definePlugin, WorkspaceProvider } from "@boring/workspace"
+import { defineFrontPlugin, WorkspaceProvider } from "@boring/workspace"
 
-const filesPlugin = definePlugin({
+const filesPlugin = defineFrontPlugin({
   id: "my-files",
   label: "Files",
   catalogs: [
@@ -76,7 +76,7 @@ Migration recipe:
 1. Delete `fileSearchFn` and `onOpenFile` from custom `<CommandPalette>` mounts.
 2. Move the old search function into `CatalogConfig.adapter.search` and adapt its result into `SearchResult`.
 3. Move the old open-file behavior into `catalog.onSelect`.
-4. Register the catalog from a `Plugin` passed to `<WorkspaceProvider plugins={...}>`.
+4. Register the catalog from a `WorkspaceFrontPlugin` passed to `<WorkspaceProvider plugins={...}>`.
 5. Prefer the provider-mounted command palette; only custom-mount `<CommandPalette>` inside the same registry tree.
 
 #### `<ChatCenteredShell>` is replaced by declarative layouts
@@ -140,27 +140,27 @@ Before:
 After:
 
 ```tsx
-import { definePlugin, definePanel, DataExplorer } from "@boring/workspace";
+import { defineFrontPlugin, DataExplorer } from "@boring/workspace";
 
-const dataPanel = definePanel({
+const macroSeriesTab = {
+  type: "left-tab",
   id: "macro-series",
   title: "Series",
-  placement: "left-tab",
   component: () => <DataExplorer adapter={macroAdapter} groupBy="frequency" />,
-});
+} as const;
 
-export const macroPlugin = definePlugin({
+export const macroPlugin = defineFrontPlugin({
   id: "boring-macro",
   label: "Macro",
-  panels: [dataPanel],
+  outputs: [macroSeriesTab],
 });
 ```
 
 Migration recipe:
 
 1. Stop adding new tab content directly to `WorkbenchLeftPane` props.
-2. Wrap each left-pane tab as a `PanelConfig` with `placement: "left-tab"`.
-3. Register those panels from a host/plugin passed to `WorkspaceProvider`.
+2. Wrap each left-pane tab as a `left-tab` plugin output.
+3. Register those outputs from a host/plugin passed to `WorkspaceProvider`.
 4. Use `excludeDefaults: ["filesystem"]` to remove the default Files tab.
 5. Keep tab-specific state inside the panel component or its adapter, not in `WorkbenchLeftPane` props.
 
@@ -208,7 +208,7 @@ import { ChatCenteredShell } from "@boring/workspace/components/chat";
 After:
 
 ```ts
-import { ChatLayout, definePlugin, WorkspaceProvider } from "@boring/workspace";
+import { ChatLayout, defineFrontPlugin, WorkspaceProvider } from "@boring/workspace";
 import { Button } from "@boring/workspace/ui-shadcn";
 ```
 
@@ -222,34 +222,32 @@ Migration recipe:
 
 #### Plugin entrypoints are split between client and server
 
-Distributed plugins and inline app plugins now follow the same shape: client contributions in `index.ts`; server-side tool composition in `server.ts`.
+Distributed plugins and inline app plugins now follow the same shape: client
+contributions in `index.tsx`; server-side tool composition in `server/index.ts`.
 
 Before:
 
 ```ts
-export const macroPlugin = definePlugin({
+export const macroClientPlugin = defineFrontPlugin({
   id: "boring-macro",
   label: "Macro",
-  panels,
-  catalogs,
-  agentTools: macroTools,
+  outputs,
 });
 ```
 
 After:
 
 ```ts
-// src/plugin/index.ts
-export const macroClientPlugin = definePlugin({
+// src/plugins/macro/index.tsx
+export const macroClientPlugin = defineFrontPlugin({
   id: "boring-macro",
   label: "Macro",
-  panels,
-  catalogs,
+  outputs,
 });
 
-// src/plugin/server.ts
+// src/plugins/macro/server/index.ts
 export function makeMacroServerPlugin(tools: AgentTool[]) {
-  return definePlugin({
+  return defineServerPlugin({
     id: "boring-macro",
     label: "Macro",
     agentTools: tools,
@@ -263,21 +261,26 @@ Migration recipe:
 2. Keep `AgentTool[]`, credentials, route factories, and Node-only dependencies in the server entrypoint.
 3. Reuse the same plugin `id` in both halves so prompts and diagnostics line up.
 4. Pass client plugins to `<WorkspaceProvider plugins={...}>`.
-5. Pass server plugins to `createWorkspaceAgentApp({ plugins })` or the app shell's server composition point.
+5. Pass server plugins to `createWorkspaceAgentServer({ plugins })` or the app shell's server composition point.
 
 ### Additive Plugin Contract Change
 
-The Phase 1 plugin contract is a pure-data object with seven fields:
+The plugin contract is split into front and server halves:
 
 ```ts
-type Plugin = {
+type WorkspaceFrontPlugin = {
+  id: string;
+  label?: string;
+  outputs?: PluginOutput[];
+};
+
+type WorkspaceServerPlugin = {
   id: string;
   label?: string;
   systemPrompt?: string;
-  panels?: PanelConfig[];
-  commands?: CommandConfig[];
-  catalogs?: CatalogConfig[];
   agentTools?: AgentTool[];
+  provisioning?: RuntimeProvisioningContribution;
+  routes?: FastifyPluginAsync;
 };
 ```
 
@@ -285,15 +288,15 @@ type Plugin = {
 
 ### Added
 
-- `definePlugin()` and one plugin contribution contract for panels, commands, catalogs, optional prompt text, and optional agent tools.
+- `defineFrontPlugin()` and `defineServerPlugin()` for explicit front/server plugin halves.
 - `WorkspaceProvider` support for `plugins` and `excludeDefaults`.
-- `createWorkspaceAgentApp({ plugins })` for server-side tool composition.
+- `createWorkspaceAgentServer({ plugins })` for server-side tool composition.
 - Tier 1 layouts: `ChatLayout`, `IdeLayout`, `buildChatLayout`, and `buildIdeLayout`.
 - Tier 2 shell primitives: `TopBar` and `ResponsiveDockviewShell`.
 - Registry-driven workbench tabs via `placement: "left-tab"` panels.
 - `createDataCatalogPlugin()` / `appendDataCatalogOutputs()` for reusable data catalog tabs backed by an `ExplorerAdapter`.
 - Polymorphic Recent entries for catalogs and commands.
-- Path-aware file-pattern resolution for plugin panels, including directory patterns such as `deck/**/*.md`.
+- Plugin-owned surface resolvers for path and domain-target routing.
 - `@boring/workspace/events` package subpath for typed workspace UI events.
 - DEV-only plugin diagnostics through `PluginInspector` and plugin error boundaries.
 

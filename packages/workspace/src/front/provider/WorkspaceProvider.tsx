@@ -28,7 +28,11 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { bootstrap } from "../../shared/plugins/bootstrap"
 import { filesystemPlugin } from "../../plugins/filesystemPlugin"
 import { coreWorkspacePanels } from "../registry/coreRegistrations"
-import type { BindingOutput, Plugin, ProviderOutput } from "../../shared/plugins/types"
+import type {
+  BindingOutput,
+  ProviderOutput,
+} from "../../shared/plugins/types"
+import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
@@ -248,7 +252,7 @@ function WorkspaceCatalogBindings({
   return null
 }
 
-function WorkspacePluginBindings({ plugins }: { plugins: Plugin[] }) {
+function WorkspacePluginBindings({ plugins }: { plugins: WorkspaceFrontPlugin[] }) {
   return (
     <>
       {plugins.map((plugin) => {
@@ -278,7 +282,7 @@ function WorkspacePluginProviders({
   apiTimeout,
   children,
 }: {
-  plugins: Plugin[]
+  plugins: WorkspaceFrontPlugin[]
   apiBaseUrl: string
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
@@ -327,7 +331,7 @@ function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) 
 export interface WorkspaceProviderProps {
   children: ReactNode
   chatPanel?: WorkspaceChatPanelComponent
-  plugins?: Plugin[]
+  plugins?: WorkspaceFrontPlugin[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
   commands?: CommandConfig[]
@@ -449,7 +453,7 @@ export function WorkspaceProvider({
     }
 
     const excludedDefaults = new Set(excludeDefaults ?? [])
-    const defaultPlugins: Plugin[] = excludedDefaults.has(filesystemPlugin.id)
+    const defaultPlugins: WorkspaceFrontPlugin[] = excludedDefaults.has(filesystemPlugin.id)
       ? []
       : [filesystemPlugin]
     const allPlugins = [...defaultPlugins, ...(plugins ?? [])]

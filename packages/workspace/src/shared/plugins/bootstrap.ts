@@ -1,5 +1,10 @@
-import { PluginError } from "./definePlugin"
-import type { AgentTool, CatalogConfig, Plugin, PluginOutput } from "./types"
+import { PluginError } from "./defineFrontPlugin"
+import type { WorkspaceFrontPlugin } from "./defineFrontPlugin"
+import type {
+  AgentTool,
+  CatalogConfig,
+  PluginOutput,
+} from "./types"
 import type { CommandConfig, PanelRegistration } from "../types/panel"
 import type { SurfaceResolverRegistration } from "../types/surface"
 
@@ -25,8 +30,8 @@ export interface SurfaceResolverRegistryLike {
 
 export interface BootstrapOptions {
   chatPanel: unknown
-  plugins?: Plugin[]
-  defaults?: Plugin[]
+  plugins?: WorkspaceFrontPlugin[]
+  defaults?: WorkspaceFrontPlugin[]
   excludeDefaults?: string[]
   registries: {
     panels: PanelRegistryLike
@@ -44,7 +49,7 @@ export interface BootstrapResult {
 
 function registerOutput(
   output: PluginOutput,
-  plugin: Plugin,
+  plugin: WorkspaceFrontPlugin,
   registries: BootstrapOptions["registries"],
 ): void {
   switch (output.type) {

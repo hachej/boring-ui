@@ -1,8 +1,12 @@
 export {
+  collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
-  createWorkspaceAgentServerBindings,
+  defineServerPlugin,
   provisionWorkspaceAgentServer,
+  type CollectWorkspaceAgentServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
-  type WorkspaceAgentServerBindings,
+  type WorkspaceAgentServerPluginCollection,
+  type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
+  type WorkspaceRouteContribution,
 } from "./createWorkspaceAgentServer"

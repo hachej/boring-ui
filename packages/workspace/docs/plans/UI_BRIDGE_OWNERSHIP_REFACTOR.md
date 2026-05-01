@@ -4,9 +4,15 @@
 **Owners:** workspace, agent
 **Last updated:** 2026-05-01
 
+> Naming note, 2026-05-01: this ownership record predates the workspace app
+> split. Current public server composition is `createWorkspaceAgentServer` from
+> `@boring/workspace/app/server`; older `createWorkspaceAgentApp` references
+> below describe the same boundary before the front/server naming cleanup.
+>
 > Current shared contracts live in `packages/workspace/src/shared/ui-bridge.ts`.
-> Current server wiring lives in `packages/workspace/src/app/createWorkspaceAgentApp.ts`
-> and `packages/workspace/src/server/ui-control`.
+> Current server wiring lives in
+> `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` and
+> `packages/workspace/src/server/ui-control`.
 
 ## Problem
 

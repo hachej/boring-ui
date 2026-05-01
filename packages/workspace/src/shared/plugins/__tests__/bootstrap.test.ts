@@ -5,8 +5,9 @@ import { SurfaceResolverRegistry } from "../../../front/registry/SurfaceResolver
 import type { CommandConfig, PanelConfig } from "../../../front/registry/types"
 import { bootstrap, type AgentToolRegistry } from "../bootstrap"
 import { CatalogRegistry } from "../../../front/plugin/CatalogRegistry"
-import { PluginError } from "../definePlugin"
-import type { CatalogConfig, Plugin } from "../types"
+import { PluginError } from "../defineFrontPlugin"
+import type { WorkspaceFrontPlugin } from "../defineFrontPlugin"
+import type { CatalogConfig } from "../types"
 
 const DummyPanel = () => null
 const DummyChatPanel = () => null
@@ -275,7 +276,7 @@ describe("bootstrap", () => {
   })
 
   it("does not require an agent tool registry on the client", () => {
-    const plugin: Plugin = { id: "host", agentTools: [makeAgentTool()] }
+    const plugin: WorkspaceFrontPlugin = { id: "host", agentTools: [makeAgentTool()] }
 
     expect(() =>
       bootstrap({

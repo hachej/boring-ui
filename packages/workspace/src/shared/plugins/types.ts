@@ -95,20 +95,3 @@ export type PluginOutput =
   | AgentToolOutput
 
 export type LeftTabComponent = ComponentType<PaneProps<LeftTabParams>>
-
-export interface Plugin {
-  id: string
-  label?: string
-  /**
-   * Context prepended to the agent's system prompt at boot. Concatenated
-   * across all registered plugins (in registration order) and joined with
-   * double-newlines. Plain Markdown. ~200-500 chars recommended.
-   */
-  systemPrompt?: string
-  panels?: PanelConfig[]
-  commands?: CommandConfig[]
-  catalogs?: CatalogConfig[]
-  bindings?: PluginBinding[]
-  agentTools?: AgentTool[]
-  outputs?: PluginOutput[]
-}

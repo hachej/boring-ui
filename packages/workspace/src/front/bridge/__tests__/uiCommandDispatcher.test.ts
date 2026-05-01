@@ -177,6 +177,32 @@ describe("dispatchUiCommand", () => {
     expect(c.__surface.__leftClosed).toBe(1)
   })
 
+  it("closeWorkbenchLeftPane retries when the workbench is open but the surface mounts late", () => {
+    let surface: ReturnType<typeof fakeSurface> | null = null
+    const mountedSurface = fakeSurface()
+    const rafQueue: FrameRequestCallback[] = []
+    const originalRaf = global.requestAnimationFrame
+    global.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      rafQueue.push(cb)
+      return rafQueue.length
+    }) as typeof requestAnimationFrame
+    const c: DispatchContext = {
+      surface: () => surface,
+      isWorkbenchOpen: () => true,
+      openWorkbench: () => {},
+    }
+
+    try {
+      dispatchUiCommand({ kind: "closeWorkbenchLeftPane", params: {} }, c)
+      expect(mountedSurface.__leftClosed).toBe(0)
+      surface = mountedSurface
+      rafQueue.shift()?.(0)
+      expect(mountedSurface.__leftClosed).toBe(1)
+    } finally {
+      global.requestAnimationFrame = originalRaf
+    }
+  })
+
   it("unknown kinds are silently ignored — no surface call, no throw", () => {
     const c = ctx()
     expect(() =>
@@ -197,12 +223,35 @@ describe("dispatchUiCommand", () => {
     expect(c.__surface.__opened).toEqual([])
   })
 
-  it("does nothing when surface is null (frontend mounted, dockview not ready yet)", () => {
+  it("opens the workbench and retries until a late surface is ready", () => {
+    let workbenchOpen = false
+    let surface: ReturnType<typeof fakeSurface> | null = null
+    const openedSurface = fakeSurface()
+    const rafQueue: FrameRequestCallback[] = []
+    const originalRaf = global.requestAnimationFrame
+    global.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      rafQueue.push(cb)
+      return rafQueue.length
+    }) as typeof requestAnimationFrame
     const c: DispatchContext = {
-      surface: () => null,
-      isWorkbenchOpen: () => true,
-      openWorkbench: () => {},
+      surface: () => surface,
+      isWorkbenchOpen: () => workbenchOpen,
+      openWorkbench: () => {
+        workbenchOpen = true
+      },
     }
-    expect(() => dispatchUiCommand({ kind: "openFile", params: { path: "x.ts" } }, c)).not.toThrow()
+
+    try {
+      dispatchUiCommand({ kind: "openFile", params: { path: "x.ts" } }, c)
+      expect(workbenchOpen).toBe(true)
+      expect(openedSurface.__opened).toEqual([])
+      rafQueue.shift()?.(0)
+      expect(openedSurface.__opened).toEqual([])
+      surface = openedSurface
+      rafQueue.shift()?.(0)
+      expect(openedSurface.__opened).toEqual(["x.ts"])
+    } finally {
+      global.requestAnimationFrame = originalRaf
+    }
   })
 })

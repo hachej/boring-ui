@@ -59,6 +59,15 @@ function setViewport(width: number) {
   window.dispatchEvent(new Event("resize"))
 }
 
+function fireShortcut(key: string, opts: Partial<KeyboardEventInit> = {}) {
+  document.dispatchEvent(new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...opts,
+  }))
+}
+
 describe("barrel exports", () => {
   it("re-exports all layout symbols", () => {
     expect(IdeLayout).toBeDefined()
@@ -312,6 +321,17 @@ describe("ChatLayout component", () => {
     expect(container.querySelector("main")).toBeInTheDocument()
   })
 
+  it("treats nav={null} as a closed session history drawer", () => {
+    renderWithRegistry(
+      <ChatLayout center="empty" nav={null} onOpenNav={vi.fn()} />,
+      ["session-list", "empty"],
+    )
+
+    const sessionBrowser = screen.getByLabelText("Session browser")
+    expect(sessionBrowser).toHaveAttribute("aria-hidden", "true")
+    expect(sessionBrowser).toHaveStyle({ width: "0px" })
+  })
+
   it("registers workspace-owned layout commands", async () => {
     function Inspector() {
       const commands = useCommands()
@@ -423,6 +443,49 @@ describe("ChatLayout component", () => {
 
     expect(closeNav).toHaveBeenCalledOnce()
     expect(closeSurface).toHaveBeenCalledOnce()
+  })
+
+  it("keeps the shell keyboard shortcuts from the previous chat shell", () => {
+    const closeNav = vi.fn()
+    const closeSurface = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        nav="session-list"
+        navParams={{ onClose: closeNav }}
+        surface="artifact-surface"
+        surfaceParams={{ onClose: closeSurface }}
+      />,
+      ["chat", "session-list", "artifact-surface"],
+    )
+
+    fireShortcut("1", { metaKey: true })
+    fireShortcut("2", { metaKey: true })
+    fireShortcut("Escape")
+
+    expect(closeNav).toHaveBeenCalledTimes(2)
+    expect(closeSurface).toHaveBeenCalledTimes(2)
+  })
+
+  it("opens hidden shell panes with the shell keyboard shortcuts", () => {
+    const openNav = vi.fn()
+    const openSurface = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        nav={null}
+        onOpenNav={openNav}
+        surface={null}
+        onOpenSurface={openSurface}
+      />,
+      ["chat", "session-list", "artifact-surface"],
+    )
+
+    fireShortcut("1", { ctrlKey: true })
+    fireShortcut("2", { ctrlKey: true })
+
+    expect(openNav).toHaveBeenCalledOnce()
+    expect(openSurface).toHaveBeenCalledOnce()
   })
 
   it("dispatches plugin UI commands through the workbench contract", () => {

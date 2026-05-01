@@ -77,23 +77,37 @@ describe("ChatPanelHost", () => {
       closeWorkbenchLeftPane: vi.fn(),
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
+    const rafQueue: FrameRequestCallback[] = []
+    const originalRaf = global.requestAnimationFrame
+    global.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      rafQueue.push(cb)
+      return rafQueue.length
+    }) as typeof requestAnimationFrame
 
-    render(
-      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
-        <ChatPanelHost
-          sessionId="s1"
-          onOpenArtifact={onOpenArtifact}
-          getSurface={() => surface}
-          isWorkbenchOpen={() => false}
-          openWorkbench={() => setSurfaceOpen(true)}
-        />
-      </WorkspaceProvider>,
-    )
+    try {
+      render(
+        <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+          <ChatPanelHost
+            sessionId="s1"
+            onOpenArtifact={onOpenArtifact}
+            getSurface={() => surface}
+            isWorkbenchOpen={() => false}
+            openWorkbench={() => setSurfaceOpen(true)}
+          />
+        </WorkspaceProvider>,
+      )
 
-    fireEvent.click(screen.getByRole("button", { name: "open artifact" }))
+      fireEvent.click(screen.getByRole("button", { name: "open artifact" }))
 
-    expect(setSurfaceOpen).toHaveBeenCalledWith(true)
-    expect(openFile).toHaveBeenCalledWith("src/example.ts")
-    expect(onOpenArtifact).toHaveBeenCalledWith("src/example.ts")
+      expect(setSurfaceOpen).toHaveBeenCalledWith(true)
+      expect(openFile).not.toHaveBeenCalled()
+      rafQueue.shift()?.(0)
+      expect(openFile).not.toHaveBeenCalled()
+      rafQueue.shift()?.(0)
+      expect(openFile).toHaveBeenCalledWith("src/example.ts")
+      expect(onOpenArtifact).toHaveBeenCalledWith("src/example.ts")
+    } finally {
+      global.requestAnimationFrame = originalRaf
+    }
   })
 })

@@ -14,6 +14,7 @@ export interface ChatLayoutProps {
   surfaceParams?: Record<string, unknown>
   sidebar?: string | null
   sidebarParams?: Record<string, unknown>
+  storageKey?: string
   onOpenNav?: () => void
   onOpenSurface?: () => void
   className?: string

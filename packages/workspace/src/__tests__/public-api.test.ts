@@ -77,6 +77,11 @@ describe("@boring/workspace public API", () => {
       expect(api.useCatalogs).toBeDefined()
     })
 
+    it("exports the explicit front plugin factory", () => {
+      expect(api.defineFrontPlugin).toBeDefined()
+      expect("definePlugin" in api).toBe(false)
+    })
+
     it("exports getFileIcon utility", () => {
       expect(api.getFileIcon).toBeDefined()
     })

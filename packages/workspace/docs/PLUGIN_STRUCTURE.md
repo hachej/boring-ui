@@ -53,7 +53,7 @@ in subfolders such as `file-tree/`, `code-editor/`, or `empty-file-panel/`.
 
 - `packages/workspace/src/plugins/filesystemPlugin`
 - `packages/workspace/src/plugins/dataCatalogPlugin`
-- `apps/boring-macro-v2/src/plugin`
+- `apps/boring-macro-v2/src/plugins/macro`
 - `apps/workspace-playground/src/plugins/playgroundDataCatalog`
 
 ## Invariants

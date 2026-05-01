@@ -9,7 +9,7 @@
  *
  * Sub-folders:
  * - `types/` — pure type definitions, zero runtime
- * - `plugins/` — runtime plugin factories (definePlugin, bootstrap)
+ * - `plugins/` — runtime plugin factories (defineFrontPlugin, bootstrap)
  */
 export type { UiBridge, UiState, UiCommand, CommandResult } from "./ui-bridge"
 export type { PanelConfig, CommandConfig, PaneProps, PanelRegistration } from "./types/panel"

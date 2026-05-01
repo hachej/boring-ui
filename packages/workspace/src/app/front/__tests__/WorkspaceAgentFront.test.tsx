@@ -1,0 +1,183 @@
+import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
+import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
+
+function ChatPanel(props: WorkspaceChatPanelProps) {
+  return (
+    <div>
+      <div>Chat panel</div>
+      <button type="button" onClick={() => props.onOpenArtifact?.("src/example.ts")}>Open artifact</button>
+    </div>
+  )
+}
+
+describe("WorkspaceAgentFront", () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("opens session history immediately even when an onOpenNav observer is provided", async () => {
+    const user = userEvent.setup()
+    const onOpenNav = vi.fn()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="test-workspace"
+        chatPanel={ChatPanel}
+        onOpenNav={onOpenNav}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Close sessions" }))
+    expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "true")
+
+    await user.click(screen.getByRole("button", { name: "Sessions" }))
+
+    expect(onOpenNav).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "false")
+  })
+
+  it("restores session history and workbench visibility per workspace", async () => {
+    localStorage.setItem("boring-ui-v2:layout:workspace-a:drawer", "0")
+    localStorage.setItem("boring-ui-v2:layout:workspace-a:surface", "1")
+    localStorage.setItem("boring-ui-v2:layout:workspace-b:drawer", "1")
+    localStorage.setItem("boring-ui-v2:layout:workspace-b:surface", "0")
+
+    const { rerender } = render(
+      <WorkspaceAgentFront
+        workspaceId="workspace-a"
+        chatPanel={ChatPanel}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "true")
+      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+    })
+
+    rerender(
+      <WorkspaceAgentFront
+        workspaceId="workspace-b"
+        chatPanel={ChatPanel}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Session browser")).toHaveAttribute("aria-hidden", "false")
+      expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
+    })
+  })
+
+  it("opens the workbench when the embedded agent asks to open an artifact", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="artifact-workspace"
+        chatPanel={ChatPanel}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open artifact" }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+    })
+  })
+
+  it("pushes current shell state to the UI bridge state endpoint", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes("/api/v1/ui/commands/next")) {
+        return new Response(JSON.stringify([]), { status: 200 })
+      }
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="ui-state"
+        chatPanel={ChatPanel}
+        requestHeaders={{ "x-boring-workspace-id": "ui-state" }}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/v1/ui/state")),
+      ).toBe(true)
+    })
+
+    const stateCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).endsWith("/api/v1/ui/state"),
+    )
+    if (!stateCall?.[1]) {
+      throw new Error("Expected UI state PUT call to include RequestInit")
+    }
+    const init = stateCall[1]
+    const body = JSON.parse(String(init.body)) as {
+      state: {
+        drawerOpen: boolean
+        workbenchOpen: boolean
+        openTabs: unknown[]
+        activeTab: string | null
+        activeFile: string | null
+        availablePanels: string[]
+      }
+      causedBy: string
+    }
+
+    expect(init.method).toBe("PUT")
+    expect(init.headers).toMatchObject({
+      "Content-Type": "application/json",
+      "x-boring-workspace-id": "ui-state",
+    })
+    expect(body.causedBy).toBe("user")
+    expect(body.state).toMatchObject({
+      drawerOpen: true,
+      workbenchOpen: false,
+      openTabs: [],
+      activeTab: null,
+      activeFile: null,
+    })
+    expect(body.state.availablePanels).toEqual(
+      expect.arrayContaining(["chat", "artifact-surface"]),
+    )
+  })
+
+  it("creates the first remote session when a sessions hook loads empty", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const createSession = vi.fn()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-sessions"
+        chatPanel={ChatPanel}
+        defaultSessionTitle="Fresh session"
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          activeSession: null,
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
+    })
+  })
+})

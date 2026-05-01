@@ -1,16 +1,13 @@
 import type { RuntimeProvisioningContribution } from "@boring/agent/server"
+import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
-
-interface ServerPlugin {
-  id: string
-  systemPrompt?: string
-  agentTools?: AgentTool[]
-  provisioning?: RuntimeProvisioningContribution
-}
+import type { WorkspaceServerPlugin } from "./defineServerPlugin"
+export { defineServerPlugin } from "./defineServerPlugin"
+export type { WorkspaceServerPlugin } from "./defineServerPlugin"
 
 export interface ServerBootstrapOptions {
-  plugins?: ServerPlugin[]
-  defaults?: ServerPlugin[]
+  plugins?: WorkspaceServerPlugin[]
+  defaults?: WorkspaceServerPlugin[]
   excludeDefaults?: string[]
 }
 
@@ -19,11 +16,17 @@ export type WorkspaceProvisioningContribution = {
   provisioning: RuntimeProvisioningContribution
 }
 
+export type WorkspaceRouteContribution = {
+  id: string
+  routes: FastifyPluginAsync
+}
+
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
   agentTools: AgentTool[]
   provisioningContributions: WorkspaceProvisioningContribution[]
+  routeContributions: WorkspaceRouteContribution[]
 }
 
 export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstrapResult {
@@ -57,10 +60,15 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.provisioning)
     .map((p) => ({ id: p.id, provisioning: p.provisioning! }))
 
+  const routeContributions = finalPlugins
+    .filter((p) => p.routes)
+    .map((p) => ({ id: p.id, routes: p.routes! }))
+
   return {
     registered: finalPlugins.map((p) => p.id),
     systemPromptAppend,
     agentTools,
     provisioningContributions,
+    routeContributions,
   }
 }
