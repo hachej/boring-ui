@@ -12,16 +12,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@boring/core/front/top-bar-slot': resolve(coreSrc, 'front/components/TopBarSlot.tsx'),
+      '@boring/core/app/front': resolve(coreSrc, 'app/front/index.ts'),
       '@boring/core/front': resolve(coreSrc, 'front/index.ts'),
       '@boring/core/theme.css': resolve(coreSrc, 'front/theme.css'),
       '@boring/agent/front/styles.css': resolve(agentSrc, 'front/styles/globals.css'),
       '@boring/agent/front': resolve(agentSrc, 'front/index.ts'),
-      '@boring/agent/shared': resolve(agentSrc, 'shared/index.ts'),
       '@boring/agent': resolve(agentSrc, 'front/index.ts'),
       '@boring/workspace/ui-shadcn': resolve(workspaceSrc, 'front/components/ui/index.ts'),
       '@boring/workspace/globals.css': resolve(workspaceSrc, 'globals.css'),
       '@boring/workspace/shared': resolve(workspaceSrc, 'shared/index.ts'),
-      '@boring/workspace/server': resolve(workspaceSrc, 'server/index.ts'),
+      '@boring/workspace/app/front': resolve(workspaceSrc, 'app/front/index.ts'),
       '@boring/workspace/testing': resolve(workspaceSrc, 'front/testing/index.ts'),
       '@boring/workspace': resolve(workspaceSrc, 'index.ts'),
       '@/front/lib/': `${workspaceSrc}/front/lib/`,

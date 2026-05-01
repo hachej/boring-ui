@@ -1,5 +1,8 @@
+// Historical local shims kept only for editor fallback when package DTS has not
+// been built yet. Runtime code should import the real package subpaths.
+
 declare module '@boring/core/front' {
-  export const BoringApp: any
+  export const CoreFront: any
   export const ThemeToggle: any
   export const UserMenu: any
   export const UserSettingsPage: any
@@ -9,27 +12,18 @@ declare module '@boring/core/front' {
   export const useCurrentWorkspace: any
 }
 
+declare module '@boring/core/app/front' {
+  export const CoreWorkspaceAgentFront: any
+}
+
+declare module '@boring/core/app/server' {
+  export const createCoreWorkspaceAgentServer: any
+}
+
 declare module '@boring/core/server' {
-  export type BetterAuthInstance = any
-  export const authHook: any
-  export const createAuth: any
-  export const createCoreApp: any
   export const loadConfig: any
-  export const registerInviteRoutes: any
-  export const registerMemberRoutes: any
-  export const registerRoutes: any
-  export const registerSettingsRoutes: any
-  export const registerWorkspaceRoutes: any
-  export const WorkspaceRuntimeSandboxHandleStore: any
 }
 
 declare module '@boring/core/server/db' {
-  export const createDatabase: any
-  export class PostgresUserStore {
-    constructor(db: any)
-  }
-  export class PostgresWorkspaceStore {
-    constructor(db: any, encryptionKey?: any)
-    isMember(workspaceId: string, userId: string): Promise<boolean>
-  }
+  export const runMigrations: any
 }

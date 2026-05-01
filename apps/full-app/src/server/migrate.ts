@@ -1,5 +1,4 @@
 import { loadConfig } from '@boring/core/server'
-// @ts-expect-error dts build for @boring/core is disabled (zod v4 peer issue)
 import { runMigrations } from '@boring/core/server/db'
 
 async function main() {
