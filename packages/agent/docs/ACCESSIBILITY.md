@@ -33,7 +33,7 @@ This document tracks accessibility status for `@boring/agent` UI surfaces.
 - Browser axe check:
   - `packages/agent/e2e/a11y.spec.ts`
   - Fails on any **serious** or **critical** violation inside
-    `[data-boring-chat]`.
+    `[data-boring-agent]`.
 
 This runs in CI automatically through the existing `pnpm e2e` job.
 

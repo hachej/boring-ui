@@ -2,62 +2,70 @@
 
 Styling contract for `@boring/agent` frontend surfaces.
 
-## Current Status
+## Package CSS
 
-Default token values live in `src/front/styles/theme.css` and are scoped to
-`[data-boring-chat]` so each `ChatPanel` instance can be themed independently.
-Package consumers should import the bundled stylesheet once:
+Consumers import the precompiled package stylesheet once, after host/workspace
+base CSS and before app overrides:
 
 ```ts
-import '@boring/agent/theme.css'
+import "@boring/workspace/globals.css"
+import "@boring/agent/front/styles.css"
+import "./app.css"
 ```
 
-## Invariants Enforced Today
+The published `@boring/agent/front/styles.css` is consumer-safe: it contains no
+Tailwind `@source`, no Tailwind imports, and no repo-relative source paths.
 
-The invariant checker (`scripts/check-invariants.sh`) enforces:
+## Public selectors
 
-- No hard-coded Tailwind color utilities under `src/front/primitives/**`.
-- Frontend code cannot import server runtime internals.
-
-This keeps frontend primitives re-themeable and transport-agnostic.
-
-## CSS Variable Theme Contract
-
-Use CSS custom properties for semantic colors in primitives. Example pattern:
-
-```tsx
-<div className="bg-[var(--boring-chat-bg)] text-[var(--boring-chat-fg)]" />
-```
-
-Recommended variable names:
-
-- `--boring-chat-bg`
-- `--boring-chat-fg`
-- `--boring-chat-muted`
-- `--boring-chat-accent`
-- `--boring-chat-border`
-
-The complete token reference lives in `src/front/styles/theme.css`.
-
-## Scoped Theming
-
-Use parent-specific selectors that target each panel root:
+Agent surfaces expose a package namespace root and stable part attributes:
 
 ```css
-.panelA [data-boring-chat] {
-  --boring-chat-tool-border: #ff007a;
-  --boring-chat-tool-running: #ff007a;
+[data-boring-agent] {}
+[data-boring-agent-part="chat"] {}
+[data-boring-agent-part="composer"] {}
+[data-boring-agent-part="tool-card"] {}
+[data-boring-agent-message-role="assistant"] {}
+[data-boring-state="selected"] {}
+```
+
+`data-boring-agent-*` is the public selector namespace for agent UI. Workspace
+uses `data-boring-workspace-*`; do not style agent internals through workspace
+selectors.
+
+## Token contract
+
+Workspace owns the public visual tokens (`--boring-*`). Agent consumes those
+host tokens and provides standalone fallbacks under `[data-boring-agent]`.
+
+Common tokens:
+
+- `--boring-background`
+- `--boring-foreground`
+- `--boring-card`
+- `--boring-muted`
+- `--boring-muted-foreground`
+- `--boring-accent`
+- `--boring-border`
+- `--boring-radius`
+- `--boring-font-sans`
+- `--boring-font-mono`
+
+Example app override:
+
+```css
+[data-boring-agent-part="composer"] {
+  --boring-accent: oklch(0.64 0.18 250);
 }
 
-.panelB [data-boring-chat] {
-  --boring-chat-tool-border: #00c2ff;
-  --boring-chat-tool-running: #00c2ff;
+[data-boring-agent-message-role="assistant"] {
+  --boring-card: oklch(0.98 0.01 250);
 }
 ```
 
-## Guidance
+## Invariants
 
-- Keep reusable primitives driven by semantic CSS vars, not concrete palette
-  tokens.
+- Keep reusable primitives driven by semantic CSS variables and public data
+  attributes, not package-internal DOM structure.
 - Keep styling decisions out of `src/shared/**` and server runtime modules.
-- Treat this file as the normative theme contract for embedding apps.
+- Published package CSS must remain precompiled and consumer-safe.
