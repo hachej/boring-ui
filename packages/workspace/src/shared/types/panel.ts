@@ -41,7 +41,6 @@ export interface PanelConfig<T = any> {
   icon?: ComponentType<{ className?: string }>
   /** Placement hint: "left" | "center" | "right" | "bottom" | "left-tab" | "right-tab" */
   placement?: string
-  filePatterns?: string[]
   requiresCapabilities?: string[]
   essential?: boolean
   chromeless?: boolean

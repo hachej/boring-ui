@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { buildIdeLayout } from "../IdeLayout"
 import { buildChatLayout } from "../ChatLayout"
 import { RegistryProvider } from "../../registry"
-import { events, userMeta } from "../../events"
+import { events, userMeta, workspaceEvents } from "../../events"
 import { useCommands } from "../../plugin/useCommands"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
@@ -395,6 +395,7 @@ describe("ChatLayout component", () => {
     const openFile = vi.fn()
     const surface: SurfaceShellApi = {
       openFile,
+      openSurface: vi.fn(),
       openPanel: vi.fn(),
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
@@ -412,7 +413,7 @@ describe("ChatLayout component", () => {
     )
 
     act(() => {
-      events.emit("ui:command", {
+      events.emit(workspaceEvents.uiCommand, {
         ...userMeta(),
         command: { kind: "openFile", params: { path: "src/App.tsx" } },
       })

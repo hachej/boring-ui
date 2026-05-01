@@ -11,6 +11,27 @@
  */
 import type { UiCommand } from "../bridge/types"
 
+export const WORKSPACE_PLUGIN_ID = "workspace"
+export const WORKSPACE_UI_COMMAND_EVENT = "workspace:ui.command"
+export const WORKSPACE_EDITOR_SAVE_START_EVENT = "workspace:editor.save.start"
+export const WORKSPACE_EDITOR_SAVE_END_EVENT = "workspace:editor.save.end"
+export const WORKSPACE_PANEL_UPDATE_EVENT = "workspace:panel.update"
+export const WORKSPACE_PANEL_CLOSE_EVENT = "workspace:panel.close"
+export const WORKSPACE_AGENT_DATA_EVENT = "workspace:agent.data"
+
+export const workspaceEvents = {
+  uiCommand: WORKSPACE_UI_COMMAND_EVENT,
+  editorSaveStart: WORKSPACE_EDITOR_SAVE_START_EVENT,
+  editorSaveEnd: WORKSPACE_EDITOR_SAVE_END_EVENT,
+  panelUpdate: WORKSPACE_PANEL_UPDATE_EVENT,
+  panelClose: WORKSPACE_PANEL_CLOSE_EVENT,
+  agentData: WORKSPACE_AGENT_DATA_EVENT,
+} as const
+
+export type WorkspacePanelMatch =
+  | { id: string }
+  | { param: string; value: unknown }
+
 /**
  * Discriminated origin metadata. Encoded as a union (rather than a
  * flat `cause` + optional `toolCallId`) so the type system enforces
@@ -33,7 +54,7 @@ export type Origin =
 /** Common envelope on every payload. */
 export type EventMeta = Origin & { ts: number }
 
-/** Helper for emitting: `events.emit('file:moved', { ...userMeta(), from, to })`. */
+/** Helper for emitting a user-originated event payload. */
 export function userMeta(): { cause: "user"; ts: number } {
   return { cause: "user", ts: Date.now() }
 }
@@ -50,25 +71,44 @@ export function remoteMeta(
   return { cause: "remote", toolCallId, ts: Date.now() }
 }
 
-/**
- * Canonical event map. Colon-namespaced keys (`domain:verb`) so
- * consumers can prefix-filter (`file:*`) — matches cmdk + vscode.
- */
-export interface WorkspaceEventMap {
-  "file:moved": EventMeta & { from: string; to: string }
-  "file:deleted": EventMeta & { path: string }
-  "file:created": EventMeta & { path: string; kind: "file" | "dir" }
-  /** Content-only mutation (overwrite, edit). */
-  "file:changed": EventMeta & { path: string }
+export interface WorkspaceCoreEventMap {
   /** Shared UI manipulation contract used by the agent stream and plugin bindings. */
-  "ui:command": EventMeta & { command: UiCommand }
+  [WORKSPACE_UI_COMMAND_EVENT]: EventMeta & { command: UiCommand }
 
   // Editor save lifecycle. Keyed by panelId, NOT path: a rename
   // mid-save would orphan a path-keyed badge. Subscribers map
   // panelId→path on their own when they need the path.
-  "editor:save:start": { panelId: string }
-  "editor:save:end": { panelId: string; ok?: boolean; error?: string }
+  [WORKSPACE_EDITOR_SAVE_START_EVENT]: { panelId: string }
+  [WORKSPACE_EDITOR_SAVE_END_EVENT]: { panelId: string; ok?: boolean; error?: string }
+
+  [WORKSPACE_PANEL_UPDATE_EVENT]: EventMeta & {
+    match: WorkspacePanelMatch | WorkspacePanelMatch[]
+    params?: Record<string, unknown>
+    title?: string
+  }
+  [WORKSPACE_PANEL_CLOSE_EVENT]: EventMeta & {
+    match: WorkspacePanelMatch | WorkspacePanelMatch[]
+  }
+
+  /**
+   * Raw agent stream data observed by ChatPanelHost. Core treats this as an
+   * opaque packet; plugins translate packets they understand into their own
+   * plugin-keyed events.
+   */
+  [WORKSPACE_AGENT_DATA_EVENT]: { ts: number; part: unknown }
 }
+
+/**
+ * Plugins augment this interface with their public event contracts.
+ *
+ * Example:
+ * `declare module "../../front/events/types" { interface WorkspacePluginEventMap extends FilesystemEventMap {} }`
+ */
+export interface WorkspacePluginEventMap {}
+
+export interface WorkspaceEventMap
+  extends WorkspaceCoreEventMap,
+    WorkspacePluginEventMap {}
 
 /** Names that share a prefix can be filtered with `startsWith`. */
 export type WorkspaceEventName = keyof WorkspaceEventMap

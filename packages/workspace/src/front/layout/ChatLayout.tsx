@@ -1,7 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
-import { events } from "../events"
+import { events, workspaceEvents } from "../events"
 import type { SurfaceShellApi } from "../chrome/artifact-surface/SurfaceShell"
 import type { LayoutConfig, GroupConfig } from "../dock"
 import { useCommandRegistry, useRegistry } from "../registry"
@@ -116,7 +116,7 @@ export function ChatLayout(props: ChatLayoutProps) {
     commandRegistry.registerCommand({
       id: "workspace:open-workbench",
       title: surfaceOpen ? "Close Workbench" : "Open Workbench",
-      keywords: ["surface", "artifacts", "files", "workbench", surfaceOpen ? "close" : "open"],
+      keywords: ["surface", "artifacts", "sources", "workbench", surfaceOpen ? "close" : "open"],
       shortcut: "⌘2",
       pluginId,
       when: () => canControlSurface,
@@ -169,7 +169,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       isWorkbenchOpen: uiIsWorkbenchOpen,
       openWorkbench: uiOpenWorkbench,
     }
-    return events.on("ui:command", ({ command }) => {
+    return events.on(workspaceEvents.uiCommand, ({ command }) => {
       dispatchUiCommand(command, ctx)
     })
   }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench])

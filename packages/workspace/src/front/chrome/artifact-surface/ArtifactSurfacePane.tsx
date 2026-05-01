@@ -13,13 +13,6 @@ const SURFACE_STORAGE_KEY = "boring-ui-v2:surface"
 // than risking a fromJSON throw on a stale shape.
 const STORAGE_VERSION = 1
 
-const ALLOWED_PANELS = [
-  "code-editor",
-  "markdown-editor",
-  "csv-viewer",
-  "empty",
-]
-
 const SURFACE_LAYOUT: LayoutConfig = {
   version: "2.0",
   groups: [{ id: "artifacts", position: "center", dynamic: true }],
@@ -37,7 +30,7 @@ interface StoredEnvelope {
 // whole layout if any one is invalid.
 function readStoredLayout(
   key: string,
-  allowed: ReadonlySet<string>,
+  allowed?: ReadonlySet<string>,
 ): SerializedLayout | undefined {
   if (typeof window === "undefined") return undefined
   let raw: string | null
@@ -63,7 +56,8 @@ function readStoredLayout(
   for (const entry of Object.values(panels as Record<string, unknown>)) {
     if (!entry || typeof entry !== "object") return undefined
     const comp = (entry as { contentComponent?: unknown }).contentComponent
-    if (typeof comp !== "string" || !allowed.has(comp)) return undefined
+    if (typeof comp !== "string") return undefined
+    if (allowed && !allowed.has(comp)) return undefined
   }
   return layout as SerializedLayout
 }
@@ -84,7 +78,7 @@ export interface ArtifactSurfacePaneProps {
 export function ArtifactSurfacePane({
   visible = true,
   storageKey = SURFACE_STORAGE_KEY,
-  allowedPanels = ALLOWED_PANELS,
+  allowedPanels,
   persistedLayout,
   onLayoutChange,
   onReady,
@@ -102,7 +96,7 @@ export function ArtifactSurfacePane({
   // its initial onReady and ignores subsequent changes.
   const internalPersisted = useMemo(() => {
     if (callerControlled) return undefined
-    return readStoredLayout(storageKey, new Set(allowedPanels))
+    return readStoredLayout(storageKey, allowedPanels ? new Set(allowedPanels) : undefined)
   }, [callerControlled, storageKey, allowedPanels])
 
   const handleLayoutChange = useCallback(
@@ -147,4 +141,4 @@ export function ArtifactSurfacePane({
   )
 }
 
-ArtifactSurfacePane.defaultAllowedPanels = ALLOWED_PANELS
+ArtifactSurfacePane.defaultAllowedPanels = [] as string[]

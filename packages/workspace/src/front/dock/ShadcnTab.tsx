@@ -3,7 +3,7 @@ import type { IDockviewPanelHeaderProps } from "dockview-react"
 import { X, Loader2 } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
 import { cn } from "../lib/utils"
-import { useEvent } from "../events"
+import { useEvent, workspaceEvents } from "../events"
 
 export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   const { api } = props
@@ -24,10 +24,10 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
   // flips on at save:start and off at save:end (regardless of ok).
   // Keyed by panelId, not path, so a rename mid-save still resolves.
   const [isSaving, setIsSaving] = useState(false)
-  useEvent("editor:save:start", (p) => {
+  useEvent(workspaceEvents.editorSaveStart, (p) => {
     if (p.panelId === api.id) setIsSaving(true)
   })
-  useEvent("editor:save:end", (p) => {
+  useEvent(workspaceEvents.editorSaveEnd, (p) => {
     if (p.panelId === api.id) setIsSaving(false)
   })
 

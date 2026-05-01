@@ -1,9 +1,46 @@
-import type { AgentTool } from "@boring/agent/shared"
-import type { ComponentType } from "react"
+import type { ComponentType, ReactNode } from "react"
 import type { ExplorerAdapter, ExplorerRow } from "../types/explorer"
 import type { CommandConfig, PaneProps, PanelConfig } from "../types/panel"
+import type { SurfaceResolverConfig } from "../types/surface"
 
 export type PluginBinding = ComponentType<unknown>
+
+export type JSONSchema = Record<string, unknown>
+
+export interface ToolExecContext {
+  abortSignal: AbortSignal
+  toolCallId: string
+  onUpdate?: (partial: string) => void
+}
+
+export interface ToolResult {
+  content: Array<{ type: "text"; text: string }>
+  isError?: boolean
+  details?: unknown
+}
+
+/**
+ * Structural tool contract accepted from plugins. Workspace keeps this local so
+ * the shared plugin layer does not import the agent package; app shells can
+ * adapt these tools into whichever agent runtime they compose with.
+ */
+export interface AgentTool {
+  name: string
+  description: string
+  promptSnippet?: string
+  parameters: JSONSchema
+  execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult>
+}
+
+export interface PluginProviderProps {
+  apiBaseUrl: string
+  authHeaders?: Record<string, string>
+  onAuthError?: (statusCode: number) => void
+  apiTimeout?: number
+  children: ReactNode
+}
+
+export type PluginProvider = ComponentType<PluginProviderProps>
 
 export interface CatalogConfig {
   id: string
@@ -33,7 +70,7 @@ export interface LeftTabOutput<T = LeftTabParams> {
   chromeless?: PanelConfig<T>["chromeless"]
 }
 
-export interface PanelOutput<T = unknown> {
+export interface PanelOutput<T = any> {
   type: "panel"
   panel: PanelConfig<T>
 }
@@ -54,6 +91,17 @@ export interface BindingOutput {
   component: PluginBinding
 }
 
+export interface ProviderOutput {
+  type: "provider"
+  id: string
+  component: PluginProvider
+}
+
+export interface SurfaceResolverOutput {
+  type: "surface-resolver"
+  resolver: SurfaceResolverConfig
+}
+
 export interface AgentToolOutput {
   type: "agent-tool"
   id: string
@@ -66,6 +114,8 @@ export type PluginOutput =
   | CommandOutput
   | CatalogOutput
   | BindingOutput
+  | ProviderOutput
+  | SurfaceResolverOutput
   | AgentToolOutput
 
 export type LeftTabComponent = ComponentType<PaneProps<LeftTabParams>>

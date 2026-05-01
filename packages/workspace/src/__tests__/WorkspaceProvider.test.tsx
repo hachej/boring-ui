@@ -7,7 +7,7 @@ import {
   useTheme,
   useWorkspaceBridge,
 } from "../front/provider"
-import { useApiBaseUrl, useDataClient } from "../front/data"
+import { useApiBaseUrl, useDataClient } from "../plugins/filesystemPlugin/data"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
 import { useCommands } from "../front/plugin/useCommands"
@@ -172,11 +172,7 @@ describe("WorkspaceProvider — context composition", () => {
     expect(result.current.connected).toBe(false)
   })
 
-  it("mounts the real DataProvider — useDataClient resolves under WorkspaceProvider", () => {
-    // Tenth-pass change: WorkspaceProvider now mounts the real DataProvider
-    // internally so hosts don't have to wrap with one to use FileTreeView /
-    // useDataClient / useFileList. Pre-Phase-2 this was a stub that only
-    // carried apiBaseUrl.
+  it("mounts the filesystem plugin DataProvider output by default", () => {
     const { result } = renderHook(() => useDataClient(), { wrapper })
     expect(result.current).toBeDefined()
   })
@@ -206,7 +202,7 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     const ids = screen.getByTestId("ids").textContent!.split(",")
-    // 5 core panels (chat overwritten by prop's chat) + 3 filesystem + testPanel
+    // 4 core panels (chat overwritten by prop's chat) + 5 filesystem outputs/panels + testPanel
     expect(ids).toContain("chat")
     expect(ids).toContain("session-list")
     expect(ids).toContain("workbench-left")
@@ -214,7 +210,7 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(ids).toContain("empty-file-panel")
     expect(ids).toContain("files")
     expect(ids).toContain("test-panel")
-    expect(ids).toHaveLength(9)
+    expect(ids).toHaveLength(10)
   })
 
   it("excludeDefaults removes default plugin panels but not core panels", () => {
@@ -241,6 +237,7 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(ids).toContain("session-list")
     expect(ids).toContain("test-panel")
     expect(ids).not.toContain("files")
+    expect(ids).not.toContain("empty-file-panel")
     expect(ids).not.toContain("code-editor")
     expect(ids).not.toContain("markdown-editor")
   })
@@ -356,10 +353,10 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    // 5 core + 3 filesystem + testPanel = 9 (prop's chat filtered by capabilities,
+    // 4 core + 5 filesystem + testPanel = 10 (prop's chat filtered by capabilities,
     // but core's chat has no requiresCapabilities so stays — prop's chat overwrites
-    // core's, so chat is filtered). Result: 5-1 core + 3 filesystem + testPanel = 8
-    expect(screen.getByTestId("count").textContent).toBe("8")
+    // core's, so chat is filtered). Result: 4-1 core + 5 filesystem + testPanel = 9
+    expect(screen.getByTestId("count").textContent).toBe("9")
   })
 
   it("custom panel with same ID as another overrides it", () => {
@@ -480,8 +477,8 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    // 5 core + 3 filesystem default panels = 8
-    expect(screen.getByTestId("count").textContent).toBe("8")
+    // 4 core + 5 filesystem default outputs/panels = 9
+    expect(screen.getByTestId("count").textContent).toBe("9")
 
     render(
       <WorkspaceProvider
@@ -491,7 +488,7 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("8")
+    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("9")
   })
 })
 
@@ -610,7 +607,7 @@ describe("WorkspaceProvider — bridge", () => {
 })
 
 describe("WorkspaceProvider — data wiring", () => {
-  it("apiBaseUrl is passed through to DataProvider", () => {
+  it("apiBaseUrl is passed through to the filesystem plugin DataProvider output", () => {
     const { result } = renderHook(() => useApiBaseUrl(), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <WorkspaceProvider apiBaseUrl="https://api.example.com" persistenceEnabled={false}>
@@ -625,6 +622,18 @@ describe("WorkspaceProvider — data wiring", () => {
   it("apiBaseUrl defaults to empty string", () => {
     const { result } = renderHook(() => useApiBaseUrl(), { wrapper })
     expect(result.current).toBe("")
+  })
+
+  it("does not mount filesystem data wiring when the filesystem default plugin is excluded", () => {
+    expect(() =>
+      renderHook(() => useDataClient(), {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
+            {children}
+          </WorkspaceProvider>
+        ),
+      }),
+    ).toThrow("useDataClient must be used within a DataProvider")
   })
 })
 
@@ -642,8 +651,6 @@ describe("WorkspaceProvider — hooks outside provider", () => {
   })
 
   it("useDataClient throws outside WorkspaceProvider (no DataProvider)", () => {
-    // The real DataProvider lives inside WorkspaceProvider now — without
-    // the parent, useDataClient has no FetchClient context and throws.
     expect(() => renderHook(() => useDataClient())).toThrow(
       "useDataClient must be used within a DataProvider",
     )

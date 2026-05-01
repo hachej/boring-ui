@@ -1,74 +1,99 @@
 import { describe, it, expect } from "vitest"
-import { resolvePanelForPath } from "../SurfaceShell"
+import { normalizeSurfaceOpenRequest, resolvePanelForPath } from "../SurfaceShell"
+import { SurfaceResolverRegistry } from "../../../registry"
 
-function makeRegistry(
-  panels: Record<string, string[]>,
-): { resolve: (p: string) => { id: string } | undefined; has: (id: string) => boolean } {
-  const entries = Object.entries(panels)
-  return {
-    resolve(path: string) {
-      for (const [id, patterns] of entries) {
-        for (const pattern of patterns) {
-          if (pattern === "*") return { id }
-          const ext = pattern.replace("*.", ".")
-          if (path.endsWith(ext)) return { id }
-        }
-      }
-      return undefined
-    },
-    has(id: string) {
-      return id in panels
-    },
+function makeRegistry(matches: Record<string, string>) {
+  const registry = new SurfaceResolverRegistry()
+  for (const [suffix, component] of Object.entries(matches)) {
+    registry.register(component, {
+      resolve: (request) =>
+        request.kind === "workspace.open.path" && request.target.endsWith(suffix)
+          ? { component, params: { path: request.target } }
+          : undefined,
+    })
   }
+  return registry
 }
 
-describe("resolvePanelForPath", () => {
-  it("returns matched panel for registered extension", () => {
-    const registry = makeRegistry({
-      "code-editor": ["*.ts", "*.tsx", "*.js"],
-      "markdown-editor": ["*.md"],
+describe("normalizeSurfaceOpenRequest", () => {
+  it("normalizes workspace path surface targets like openFile", () => {
+    expect(normalizeSurfaceOpenRequest({
+      kind: "workspace.open.path",
+      target: "./src//index.ts",
+      meta: { source: "test" },
+    })).toEqual({
+      kind: "workspace.open.path",
+      target: "src/index.ts",
+      meta: { source: "test" },
     })
-    expect(resolvePanelForPath("src/index.ts", registry)).toBe("code-editor")
+  })
+
+  it("rejects path traversal for workspace path surface targets", () => {
+    expect(() => normalizeSurfaceOpenRequest({
+      kind: "workspace.open.path",
+      target: "../secret.txt",
+    })).toThrow("path traversal")
+  })
+
+  it("does not alter non-path surface targets", () => {
+    const request = { kind: "data-catalog.open-row", target: "../series" }
+    expect(normalizeSurfaceOpenRequest(request)).toBe(request)
+  })
+})
+
+describe("resolvePanelForPath", () => {
+  it("returns matched panel resolution for registered target", () => {
+    const registry = makeRegistry({ ".ts": "code-editor", ".md": "markdown-editor" })
+    expect(resolvePanelForPath("src/index.ts", registry)).toEqual(
+      expect.objectContaining({ component: "code-editor", params: { path: "src/index.ts" } }),
+    )
   })
 
   it("returns markdown-editor for .md files", () => {
-    const registry = makeRegistry({
-      "code-editor": ["*.ts"],
-      "markdown-editor": ["*.md"],
-    })
-    expect(resolvePanelForPath("README.md", registry)).toBe("markdown-editor")
+    const registry = makeRegistry({ ".ts": "code-editor", ".md": "markdown-editor" })
+    expect(resolvePanelForPath("README.md", registry)).toEqual(
+      expect.objectContaining({ component: "markdown-editor" }),
+    )
   })
 
-  it("falls back to extension-based id when no pattern matches", () => {
-    const registry = makeRegistry({
-      "code-editor": [],
-    })
-    // .ts falls back to 'code-editor' via fallbackComponentForPath
-    expect(resolvePanelForPath("foo.ts", registry)).toBe("code-editor")
-  })
-
-  it("returns empty-file-panel when no panel is registered for extension", () => {
+  it("does not use core extension fallbacks when no resolver matches", () => {
     const registry = makeRegistry({})
-    expect(resolvePanelForPath("foo.ts", registry)).toBe("empty-file-panel")
+    expect(resolvePanelForPath("foo.ts", registry)).toBeUndefined()
   })
 
-  it("returns empty-file-panel for unknown extension with no fallback registered", () => {
+  it("uses plugin-provided fallback resolver", () => {
     const registry = makeRegistry({})
-    expect(resolvePanelForPath("data.xyz", registry)).toBe("empty-file-panel")
+    registry.register("fallback", {
+      resolve: (request) =>
+        request.kind === "workspace.open.path"
+          ? { component: "empty-file-panel", params: { path: request.target }, score: -1 }
+          : undefined,
+    })
+    expect(resolvePanelForPath("foo.ts", registry)).toEqual(
+      expect.objectContaining({ component: "empty-file-panel" }),
+    )
   })
 
-  it("returns empty-file-panel when filesystem excluded (no code-editor)", () => {
-    const registry = makeRegistry({
-      "chat": [],
-      "session-list": [],
-    })
-    expect(resolvePanelForPath("foo.ts", registry)).toBe("empty-file-panel")
+  it("returns undefined for unknown extension with no resolver", () => {
+    const registry = makeRegistry({})
+    expect(resolvePanelForPath("data.xyz", registry)).toBeUndefined()
   })
 
-  it("prefers full path resolution over basename", () => {
-    const registry = makeRegistry({
-      "code-editor": ["*.ts"],
+  it("returns undefined when filesystem excluded and no resolver is registered", () => {
+    const registry = makeRegistry({})
+    expect(resolvePanelForPath("foo.ts", registry)).toBeUndefined()
+  })
+
+  it("passes the full path to resolvers", () => {
+    const registry = new SurfaceResolverRegistry()
+    registry.register("scoped", {
+      resolve: (request) =>
+        request.target === "src/front/lib/utils.ts"
+          ? { component: "code-editor", params: { path: request.target } }
+          : undefined,
     })
-    expect(resolvePanelForPath("src/front/lib/utils.ts", registry)).toBe("code-editor")
+    expect(resolvePanelForPath("src/front/lib/utils.ts", registry)).toEqual(
+      expect.objectContaining({ component: "code-editor" }),
+    )
   })
 })

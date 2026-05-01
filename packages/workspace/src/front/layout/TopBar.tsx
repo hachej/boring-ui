@@ -73,7 +73,7 @@ export function TopBar({
           "hover:text-foreground",
           "focus-visible:outline-none focus-visible:text-foreground",
         )}
-        aria-label="Search, commands, or files"
+        aria-label="Search catalogs and commands"
         title="Command palette (⌘K)"
       >
         <Search className="h-3.5 w-3.5 shrink-0 opacity-70" strokeWidth={1.75} />

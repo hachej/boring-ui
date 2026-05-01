@@ -74,12 +74,7 @@ describe("ArtifactSurfacePane", () => {
   })
 
   it("exposes default allowedPanels as static property", () => {
-    expect(ArtifactSurfacePane.defaultAllowedPanels).toEqual([
-      "code-editor",
-      "markdown-editor",
-      "csv-viewer",
-      "empty",
-    ])
+    expect(ArtifactSurfacePane.defaultAllowedPanels).toEqual([])
   })
 
   it("onLayoutChange callback fires on layout changes", () => {

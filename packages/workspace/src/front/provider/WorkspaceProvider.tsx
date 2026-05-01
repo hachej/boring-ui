@@ -8,12 +8,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType,
   type ReactNode,
 } from "react"
-import type { ChatPanelProps } from "@boring/agent"
 import { PanelRegistry } from "../registry/PanelRegistry"
 import { CommandRegistry } from "../registry/CommandRegistry"
+import { SurfaceResolverRegistry } from "../registry/SurfaceResolverRegistry"
 import { RegistryProvider, useCatalogRegistry, useCommandRegistry } from "../registry/RegistryProvider"
 import { CatalogRegistry } from "../plugin/CatalogRegistry"
 import { PluginErrorProvider } from "../plugin/PluginErrorContext"
@@ -23,22 +22,22 @@ import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "../bridge/createBridge"
 import { createBridgeClient, type BridgeClient } from "../bridge/client"
 import { CommandPalette } from "../components/CommandPalette"
-import { DataProvider } from "../data/DataProvider"
-import { events } from "../events"
+import { events, workspaceEvents } from "../events"
 import { Toaster } from "../toast"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { bootstrap } from "../../shared/plugins/bootstrap"
 import { filesystemPlugin } from "../../plugins/filesystemPlugin"
 import { coreWorkspacePanels } from "../registry/coreRegistrations"
-import type { BindingOutput, Plugin } from "../../shared/plugins/types"
+import type { BindingOutput, Plugin, ProviderOutput } from "../../shared/plugins/types"
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
+import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function NullChatPanel(_props: ChatPanelProps) {
+function NullChatPanel(_props: WorkspaceChatPanelProps) {
   return null
 }
 
@@ -142,7 +141,7 @@ export interface RegisteredPluginMeta {
 }
 
 export interface WorkspaceContextValue {
-  chatPanel: ComponentType<ChatPanelProps> | null
+  chatPanel: WorkspaceChatPanelComponent | null
   registeredPlugins: RegisteredPluginMeta[]
 }
 
@@ -154,7 +153,7 @@ export function useWorkspaceContext(): WorkspaceContextValue {
   return ctx
 }
 
-export function useWorkspaceChatPanel(): ComponentType<ChatPanelProps> {
+export function useWorkspaceChatPanel(): WorkspaceChatPanelComponent {
   const { chatPanel } = useWorkspaceContext()
   if (!chatPanel) {
     throw new Error("WorkspaceProvider requires a chatPanel prop before rendering ChatPanelHost")
@@ -271,10 +270,47 @@ function WorkspacePluginBindings({ plugins }: { plugins: Plugin[] }) {
   )
 }
 
+function WorkspacePluginProviders({
+  plugins,
+  apiBaseUrl,
+  authHeaders,
+  onAuthError,
+  apiTimeout,
+  children,
+}: {
+  plugins: Plugin[]
+  apiBaseUrl: string
+  authHeaders?: Record<string, string>
+  onAuthError?: (statusCode: number) => void
+  apiTimeout?: number
+  children: ReactNode
+}) {
+  const providers = plugins.flatMap((plugin) =>
+    plugin.outputs
+      ?.filter((output): output is ProviderOutput => output.type === "provider")
+      .map((output) => ({ plugin, output })) ?? [],
+  )
+
+  return providers.reduceRight<ReactNode>((acc, { plugin, output }) => {
+    const Provider = output.component
+    return (
+      <Provider
+        key={`${plugin.id}:provider:${output.id}`}
+        apiBaseUrl={apiBaseUrl}
+        authHeaders={authHeaders}
+        onAuthError={onAuthError}
+        apiTimeout={apiTimeout}
+      >
+        {acc}
+      </Provider>
+    )
+  }, children)
+}
+
 function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) => void }) {
   useEffect(() => {
     if (!onOpenFile) return
-    return events.on("ui:command", ({ command }) => {
+    return events.on(workspaceEvents.uiCommand, ({ command }) => {
       if (command.kind !== "openFile") return
       const path = command.params.path
       if (typeof path === "string") onOpenFile(path)
@@ -290,7 +326,7 @@ function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) 
 
 export interface WorkspaceProviderProps {
   children: ReactNode
-  chatPanel?: ComponentType<ChatPanelProps>
+  chatPanel?: WorkspaceChatPanelComponent
   plugins?: Plugin[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
@@ -401,10 +437,11 @@ export function WorkspaceProvider({
     }
   }, [bridgeEndpoint, store])
 
-  const { panelRegistry, commandRegistry, catalogRegistry, pluginMetas, pluginsWithBindings } = useMemo(() => {
+  const { panelRegistry, commandRegistry, catalogRegistry, surfaceResolverRegistry, pluginMetas, pluginsWithBindings } = useMemo(() => {
     const pr = new PanelRegistry(capabilities)
     const cr = new CommandRegistry()
     const cat = new CatalogRegistry()
+    const sr = new SurfaceResolverRegistry()
 
     for (const panel of coreWorkspacePanels) {
       const { id, ...config } = panel
@@ -422,7 +459,7 @@ export function WorkspaceProvider({
       plugins: plugins ?? [],
       defaults: defaultPlugins,
       excludeDefaults,
-      registries: { panels: pr, commands: cr, catalogs: cat },
+      registries: { panels: pr, commands: cr, catalogs: cat, surfaceResolvers: sr },
     })
 
     const metas: RegisteredPluginMeta[] = allPlugins.map((p) => ({
@@ -442,6 +479,7 @@ export function WorkspaceProvider({
       panelRegistry: pr,
       commandRegistry: cr,
       catalogRegistry: cat,
+      surfaceResolverRegistry: sr,
       pluginMetas: metas,
       pluginsWithBindings: allPlugins,
     }
@@ -492,23 +530,19 @@ export function WorkspaceProvider({
     <WorkspaceContext.Provider value={workspaceValue}>
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
-          {/*
-           * Mount the data layer here so chat/workbench chrome, FileTreeView, etc.
-           * work without hosts wrapping a second DataProvider. Hosts that DO
-           * mount their own (legacy) get nested providers — inner wins, no
-           * functional difference; just an extra wasted QueryClient.
-           */}
-          <DataProvider
-            apiBaseUrl={apiBaseUrl}
-            authHeaders={authHeaders}
-            onAuthError={onAuthError}
-            timeout={apiTimeout}
-          >
-            <PluginErrorProvider>
-              <RegistryProvider
-                panelRegistry={panelRegistry}
-                commandRegistry={commandRegistry}
-                catalogRegistry={catalogRegistry}
+          <PluginErrorProvider>
+            <RegistryProvider
+              panelRegistry={panelRegistry}
+              commandRegistry={commandRegistry}
+              catalogRegistry={catalogRegistry}
+              surfaceResolverRegistry={surfaceResolverRegistry}
+            >
+              <WorkspacePluginProviders
+                plugins={pluginsWithBindings}
+                apiBaseUrl={apiBaseUrl}
+                authHeaders={authHeaders}
+                onAuthError={onAuthError}
+                apiTimeout={apiTimeout}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
                 <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
@@ -521,9 +555,9 @@ export function WorkspaceProvider({
                 <Toaster />
                 {children}
                 {import.meta.env.DEV && <PluginInspector plugins={pluginMetas} />}
-              </RegistryProvider>
-            </PluginErrorProvider>
-          </DataProvider>
+              </WorkspacePluginProviders>
+            </RegistryProvider>
+          </PluginErrorProvider>
         </WorkspaceBridgeContext.Provider>
       </ThemeContext.Provider>
     </WorkspaceContext.Provider>

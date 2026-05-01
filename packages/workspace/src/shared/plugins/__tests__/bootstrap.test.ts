@@ -1,21 +1,22 @@
 import { describe, expect, it, vi } from "vitest"
 import { CommandRegistry } from "../../../front/registry/CommandRegistry"
 import { PanelRegistry } from "../../../front/registry/PanelRegistry"
+import { SurfaceResolverRegistry } from "../../../front/registry/SurfaceResolverRegistry"
 import type { CommandConfig, PanelConfig } from "../../../front/registry/types"
 import { bootstrap, type AgentToolRegistry } from "../bootstrap"
 import { CatalogRegistry } from "../../../front/plugin/CatalogRegistry"
 import { PluginError } from "../definePlugin"
 import type { CatalogConfig, Plugin } from "../types"
-import type { ChatPanelProps } from "@boring/agent"
 
 const DummyPanel = () => null
-const DummyChatPanel = (_props: ChatPanelProps) => null
+const DummyChatPanel = () => null
 
 function makeRegistries() {
   return {
     panels: new PanelRegistry(),
     commands: new CommandRegistry(),
     catalogs: new CatalogRegistry({ warnOnDuplicate: false }),
+    surfaceResolvers: new SurfaceResolverRegistry(),
   }
 }
 
@@ -106,6 +107,62 @@ describe("bootstrap", () => {
     )
     expect(registries.catalogs.get("catalog")).toEqual(
       expect.objectContaining({ id: "catalog", pluginId: "host" }),
+    )
+    expect(agentTools.register).toHaveBeenCalledWith(tool, "host")
+  })
+
+  it("normalizes plugin outputs into registries", () => {
+    const registries = makeRegistries()
+    const agentTools: AgentToolRegistry = { register: vi.fn() }
+    const tool = makeAgentTool("output-tool")
+
+    bootstrap({
+      chatPanel: DummyChatPanel,
+      plugins: [
+        {
+          id: "host",
+          outputs: [
+            {
+              type: "left-tab",
+              id: "files",
+              title: "Files",
+              component: DummyPanel,
+              source: "app",
+            },
+            { type: "command", command: makeCommand({ id: "output-command" }) },
+            { type: "catalog", catalog: makeCatalog({ id: "output-catalog" }) },
+            { type: "provider", id: "runtime", component: DummyPanel },
+            {
+              type: "surface-resolver",
+              resolver: {
+                id: "surface",
+                resolve: () => ({ component: "files" }),
+              },
+            },
+            { type: "agent-tool", id: "output-tool", tool },
+          ],
+        },
+      ],
+      defaults: [],
+      registries: { ...registries, agentTools },
+    })
+
+    expect(registries.panels.get("files")).toEqual(
+      expect.objectContaining({
+        id: "files",
+        title: "Files",
+        placement: "left-tab",
+        pluginId: "host",
+      }),
+    )
+    expect(registries.commands.getCommand("output-command")).toEqual(
+      expect.objectContaining({ id: "output-command", pluginId: "host" }),
+    )
+    expect(registries.catalogs.get("output-catalog")).toEqual(
+      expect.objectContaining({ id: "output-catalog", pluginId: "host" }),
+    )
+    expect(registries.surfaceResolvers.get("surface")).toEqual(
+      expect.objectContaining({ id: "surface", pluginId: "host" }),
     )
     expect(agentTools.register).toHaveBeenCalledWith(tool, "host")
   })

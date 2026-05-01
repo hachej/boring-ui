@@ -2,14 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { startUiCommandStream, type DispatchContext } from "../uiCommandStream"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 
-function fakeSurface(): SurfaceShellApi & { __opened: string[]; __panels: unknown[] } {
+function fakeSurface(): SurfaceShellApi & {
+  __opened: string[]
+  __surfaces: unknown[]
+  __panels: unknown[]
+} {
   const opened: string[] = []
+  const surfaces: unknown[] = []
   const panels: unknown[] = []
   return {
     openFile: (p: string) => opened.push(p),
+    openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
     getSnapshot: (): SurfaceShellSnapshot => ({ openTabs: [], activeTab: null }),
     __opened: opened,
+    __surfaces: surfaces,
     __panels: panels,
   }
 }

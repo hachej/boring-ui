@@ -2,14 +2,21 @@ import { describe, it, expect, vi } from "vitest"
 import { dispatchUiCommand, type DispatchContext } from "../uiCommandDispatcher"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 
-function fakeSurface(): SurfaceShellApi & { __opened: string[]; __panels: unknown[] } {
+function fakeSurface(): SurfaceShellApi & {
+  __opened: string[]
+  __surfaces: unknown[]
+  __panels: unknown[]
+} {
   const opened: string[] = []
+  const surfaces: unknown[] = []
   const panels: unknown[] = []
   return {
     openFile: (path: string) => opened.push(path),
+    openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
     getSnapshot: (): SurfaceShellSnapshot => ({ openTabs: [], activeTab: null }),
     __opened: opened,
+    __surfaces: surfaces,
     __panels: panels,
   }
 }
@@ -39,6 +46,23 @@ describe("dispatchUiCommand", () => {
     dispatchUiCommand({ kind: "openFile", params: {} }, c)
     dispatchUiCommand({ kind: "openFile", params: { path: 42 as unknown as string } }, c)
     expect(c.__surface.__opened).toEqual([])
+  })
+
+  it("openFile catches surface errors so dispatch stays alive", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const surface = fakeSurface()
+    surface.openFile = () => {
+      throw new Error("invalid path")
+    }
+    const c = ctx({}, surface)
+
+    expect(() =>
+      dispatchUiCommand({ kind: "openFile", params: { path: "../secret.txt" } }, c),
+    ).not.toThrow()
+    expect(warn).toHaveBeenCalledWith(
+      "[uiCommandDispatcher] openFile dispatch failed:",
+      "invalid path",
+    )
   })
 
   it("openFile auto-opens the workbench when closed AND defers via RAF", async () => {
@@ -98,6 +122,35 @@ describe("dispatchUiCommand", () => {
     expect(c.__surface.__panels).toEqual([
       { id: "logs", component: "log-viewer", title: "Logs", params: { source: "agent" } },
     ])
+  })
+
+  it("openSurface calls surface.openSurface with the generic target", () => {
+    const c = ctx()
+    dispatchUiCommand(
+      {
+        kind: "openSurface",
+        params: {
+          kind: "data-catalog.open-row",
+          target: "orders_daily",
+          meta: { catalogId: "metrics" },
+        },
+      },
+      c,
+    )
+    expect(c.__surface.__surfaces).toEqual([
+      {
+        kind: "data-catalog.open-row",
+        target: "orders_daily",
+        meta: { catalogId: "metrics" },
+      },
+    ])
+  })
+
+  it("openSurface requires kind and target", () => {
+    const c = ctx()
+    dispatchUiCommand({ kind: "openSurface", params: { kind: "x" } }, c)
+    dispatchUiCommand({ kind: "openSurface", params: { target: "y" } }, c)
+    expect(c.__surface.__surfaces).toEqual([])
   })
 
   it("openPanel requires both id and component", () => {

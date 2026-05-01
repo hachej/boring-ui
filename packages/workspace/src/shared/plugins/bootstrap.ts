@@ -1,25 +1,38 @@
-import type { ComponentType } from "react"
-import type { ChatPanelProps } from "@boring/agent"
-import type { AgentTool } from "@boring/agent/shared"
-import type { CommandRegistry } from "../../front/registry/CommandRegistry"
-import type { PanelRegistry } from "../../front/registry/PanelRegistry"
 import { PluginError } from "./definePlugin"
-import type { CatalogRegistry } from "../../front/plugin/CatalogRegistry"
-import type { Plugin, PluginOutput } from "./types"
+import type { AgentTool, CatalogConfig, Plugin, PluginOutput } from "./types"
+import type { CommandConfig, PanelRegistration } from "../types/panel"
+import type { SurfaceResolverRegistration } from "../types/surface"
 
 export interface AgentToolRegistry {
   register(tool: AgentTool, pluginId: string): void
 }
 
+export interface PanelRegistryLike {
+  register(id: string, config: PanelRegistration): void
+}
+
+export interface CommandRegistryLike {
+  registerCommand(command: CommandConfig): void
+}
+
+export interface CatalogRegistryLike {
+  register(catalog: CatalogConfig, pluginId: string): void
+}
+
+export interface SurfaceResolverRegistryLike {
+  register(id: string, config: SurfaceResolverRegistration): void
+}
+
 export interface BootstrapOptions {
-  chatPanel: ComponentType<ChatPanelProps>
+  chatPanel: unknown
   plugins?: Plugin[]
   defaults?: Plugin[]
   excludeDefaults?: string[]
   registries: {
-    panels: PanelRegistry
-    commands: CommandRegistry
-    catalogs: CatalogRegistry
+    panels: PanelRegistryLike
+    commands: CommandRegistryLike
+    catalogs: CatalogRegistryLike
+    surfaceResolvers?: SurfaceResolverRegistryLike
     agentTools?: AgentToolRegistry
   }
 }
@@ -55,10 +68,16 @@ function registerOutput(
     case "catalog":
       registries.catalogs.register(output.catalog, plugin.id)
       return
+    case "surface-resolver": {
+      const { id, ...registration } = output.resolver
+      registries.surfaceResolvers?.register(id, { ...registration, pluginId: plugin.id })
+      return
+    }
     case "agent-tool":
       registries.agentTools?.register(output.tool, plugin.id)
       return
     case "binding":
+    case "provider":
       return
   }
 }

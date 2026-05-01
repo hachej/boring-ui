@@ -12,7 +12,23 @@ export type {
   CommandOutput,
   CatalogOutput,
   BindingOutput,
+  ProviderOutput,
+  SurfaceResolverOutput,
+  PluginProvider,
+  PluginProviderProps,
+  AgentTool,
+  JSONSchema,
+  ToolExecContext,
+  ToolResult,
   AgentToolOutput,
 } from "./types"
 export { bootstrap } from "./bootstrap"
-export type { BootstrapOptions, BootstrapResult, AgentToolRegistry } from "./bootstrap"
+export type {
+  BootstrapOptions,
+  BootstrapResult,
+  AgentToolRegistry,
+  PanelRegistryLike,
+  CommandRegistryLike,
+  CatalogRegistryLike,
+  SurfaceResolverRegistryLike,
+} from "./bootstrap"

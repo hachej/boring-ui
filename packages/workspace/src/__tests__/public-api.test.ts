@@ -34,6 +34,22 @@ describe("@boring/workspace public API", () => {
     })
   })
 
+  describe("plugins", () => {
+    it("exports data catalog plugin factories", () => {
+      expect(api.createDataCatalogPlugin).toBeDefined()
+      expect(api.createDataCatalogOutputs).toBeDefined()
+      expect(api.appendDataCatalogOutputs).toBeDefined()
+      expect(api.openDataCatalogVisualization).toBeDefined()
+      expect(api.useDataCatalogQuery).toBeDefined()
+      expect(api.useDataCatalogVisualizationState).toBeDefined()
+      expect(api.DATA_CATALOG_PLUGIN_ID).toBe("data-catalog")
+    })
+
+    it("does not export the retired static data factory", () => {
+      expect("makeStaticDataPlugin" in api).toBe(false)
+    })
+  })
+
   describe("dockview panes", () => {
     it("exports all pane wrappers", () => {
       expect(api.FileTreePane).toBeDefined()
@@ -109,22 +125,13 @@ describe("@boring/workspace public API", () => {
     })
   })
 
-  describe("data hooks", () => {
-    it("exports DataProvider", () => {
-      expect(api.DataProvider).toBeDefined()
-    })
-
-    it("exports useFileData alias", () => {
-      expect(api.useFileData).toBeDefined()
-      expect(api.useFileData).toBe(api.useFileContent)
-    })
-
-    it("exports all data hooks", () => {
-      expect(api.useFileContent).toBeDefined()
-      expect(api.useFileList).toBeDefined()
-      expect(api.useFileWrite).toBeDefined()
-      expect(api.useStat).toBeDefined()
-      expect(api.useFileSearch).toBeDefined()
+  describe("filesystem data APIs", () => {
+    it("does not export filesystem data APIs from the package root", () => {
+      expect("DataProvider" in api).toBe(false)
+      expect("useDataClient" in api).toBe(false)
+      expect("useFileContent" in api).toBe(false)
+      expect("useFileData" in api).toBe(false)
+      expect("FetchClient" in api).toBe(false)
     })
   })
 

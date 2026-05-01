@@ -16,3 +16,8 @@ export type {
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
 } from "./WorkspaceProvider"
+export type {
+  OpenArtifactHandler,
+  WorkspaceChatPanelComponent,
+  WorkspaceChatPanelProps,
+} from "../chrome/chat/types"

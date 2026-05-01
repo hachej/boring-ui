@@ -16,12 +16,7 @@ vi.mock("../ArtifactSurfacePane", () => {
     capturedSurfaceStorageKey = props.storageKey
     return <div data-testid="mock-artifact-surface" />
   }
-  MockArtifactSurfacePane.defaultAllowedPanels = [
-    "code-editor",
-    "markdown-editor",
-    "csv-viewer",
-    "empty",
-  ]
+  MockArtifactSurfacePane.defaultAllowedPanels = [] as string[]
   return { ArtifactSurfacePane: MockArtifactSurfacePane }
 })
 

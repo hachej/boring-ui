@@ -13,5 +13,12 @@
  */
 export type { UiBridge, UiState, UiCommand, CommandResult } from "./ui-bridge"
 export type { PanelConfig, CommandConfig, PaneProps, PanelRegistration } from "./types/panel"
+export type {
+  SurfaceOpenRequest,
+  SurfacePanelResolution,
+  SurfaceResolverConfig,
+  SurfaceResolverRegistration,
+} from "./types/surface"
+export { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "./types/surface"
 export { definePanel } from "./types/panel"
 export type { ExplorerAdapter, ExplorerRow, SearchResult } from "./types/explorer"

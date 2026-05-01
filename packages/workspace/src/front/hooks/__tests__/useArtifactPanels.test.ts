@@ -10,6 +10,9 @@ function createMockShellApi(): DockviewShellApi {
     activatePanel: vi.fn(),
     movePanel: vi.fn(),
     getActivePanel: vi.fn().mockReturnValue(null),
+    updatePanelParams: vi.fn(),
+    setPanelTitle: vi.fn(),
+    findPanelsByParam: vi.fn().mockReturnValue([]),
     toJSON: vi.fn().mockReturnValue({ panels: {} }),
   }
 }

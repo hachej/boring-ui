@@ -73,6 +73,9 @@ export interface DockviewShellApi {
           referencePanelId: string
         },
   ): void
+  updatePanelParams(panelId: string, params: Record<string, unknown>): void
+  setPanelTitle(panelId: string, title: string): void
+  findPanelsByParam(key: string, value: unknown): string[]
   getActivePanel(): string | null
   toJSON(): SerializedLayout
 }

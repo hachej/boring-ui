@@ -164,6 +164,16 @@ export function createExecUiTool(
       "                          component:'chart-canvas',",
       "                          params:{seriesId:'GDPC1'}}}",
       "",
+      "  openSurface  params: { kind: string, target: string, meta?: object }",
+      "               — Open a plugin-owned target through the workspace",
+      "                 surface resolver registry. Use this when a plugin",
+      "                 defines the mapping from domain target to panel",
+      "                 component, for example a data catalog row.",
+      "                 Example: {kind:'openSurface', params:{",
+      "                          kind:'data-catalog.open-row',",
+      "                          target:'orders_daily',",
+      "                          meta:{catalogId:'data-catalog'}}}",
+      "",
       "  closePanel   params: { id: string }",
       "  navigateToLine params: { file: string, line: number }",
       "  expandToFile params: { path: string }",
@@ -185,6 +195,7 @@ export function createExecUiTool(
           enum: [
             "openFile",
             "openPanel",
+            "openSurface",
             "closePanel",
             "navigateToLine",
             "expandToFile",
@@ -211,6 +222,23 @@ export function createExecUiTool(
       }
 
       const cmdParams = (params as Record<string, unknown> | undefined) ?? {}
+
+      if (kind === "openSurface") {
+        if (typeof cmdParams.kind !== "string" || cmdParams.kind.length === 0) {
+          return makeError("openSurface: kind param is required")
+        }
+        if (typeof cmdParams.target !== "string" || cmdParams.target.length === 0) {
+          return makeError("openSurface: target param is required")
+        }
+        if (
+          cmdParams.meta !== undefined &&
+          (typeof cmdParams.meta !== "object" ||
+            cmdParams.meta === null ||
+            Array.isArray(cmdParams.meta))
+        ) {
+          return makeError("openSurface: meta must be an object when provided")
+        }
+      }
 
       // Validate path-bearing kinds against the workspace root so the agent
       // gets immediate feedback when a path is wrong, rather than the

@@ -19,7 +19,7 @@ import "dockview-react/dist/styles/dockview.css"
 import "./dockview-overrides.css"
 import { useRegistry } from "../registry"
 import { useHydrationComplete } from "../store/selectors"
-import { events } from "../events"
+import { events, workspaceEvents, type WorkspacePanelMatch } from "../events"
 import type {
   DockviewShellApi,
   DockviewShellProps,
@@ -31,6 +31,30 @@ import { ShadcnTab } from "./ShadcnTab"
 const PERSIST_DEBOUNCE_MS = 300
 
 const DockviewApiContext = createContext<DockviewShellApi | null>(null)
+
+function matchesPanel(
+  panel: DockviewApi["panels"][number],
+  match: WorkspacePanelMatch,
+): boolean {
+  if ("id" in match) return panel.id === match.id
+  return (panel.params as Record<string, unknown> | undefined)?.[match.param] === match.value
+}
+
+function findMatchingPanels(
+  api: DockviewApi,
+  match: WorkspacePanelMatch | WorkspacePanelMatch[],
+): DockviewApi["panels"] {
+  const matches = Array.isArray(match) ? match : [match]
+  const seen = new Set<string>()
+  const panels: DockviewApi["panels"] = []
+  for (const panel of api.panels) {
+    if (!matches.some((candidate) => matchesPanel(panel, candidate))) continue
+    if (seen.has(panel.id)) continue
+    seen.add(panel.id)
+    panels.push(panel)
+  }
+  return panels
+}
 
 export function useDockviewApi(): DockviewShellApi {
   const api = useContext(DockviewApiContext)
@@ -119,6 +143,26 @@ function createShellApi(
             : undefined,
         })
       }
+    },
+
+    updatePanelParams(panelId, params) {
+      const panel = getApi().getPanel(panelId)
+      if (!panel) return
+      panel.api.updateParameters({
+        ...((panel.params as Record<string, unknown> | undefined) ?? {}),
+        ...params,
+      })
+    },
+
+    setPanelTitle(panelId, title) {
+      const panel = getApi().getPanel(panelId)
+      if (panel) panel.api.setTitle(title)
+    },
+
+    findPanelsByParam(key, value) {
+      return getApi().panels
+        .filter((panel) => (panel.params as Record<string, unknown> | undefined)?.[key] === value)
+        .map((panel) => panel.id)
     },
 
     getActivePanel() {
@@ -304,47 +348,30 @@ export function DockviewShell({
     return () => disposeRef.current?.()
   }, [])
 
-  // Propagate filesystem mutations into open panels: a moved/renamed
-  // file updates the matching tab's params.path + title in place; a
-  // deleted file closes its tab. Matches panels by id (`file:${path}`
-  // convention) AND by `params.path` so it survives id changes from
-  // earlier moves. Iterates with filter+forEach so duplicate panels
-  // pointing at the same path all get reconciled, not just the first.
   useEffect(() => {
-    const offMoved = events.on("file:moved", ({ from, to }) => {
+    const offUpdate = events.on(workspaceEvents.panelUpdate, ({ match, params, title }) => {
       const api = apiRef.current
       if (!api) return
-      const newTitle = to.split("/").pop() ?? to
-      api.panels
-        .filter(
-          (p) =>
-            p.id === `file:${from}` ||
-            (p.params as { path?: string } | undefined)?.path === from,
-        )
-        .forEach((target) => {
-          target.api.updateParameters({
-            ...((target.params as Record<string, unknown> | undefined) ?? {}),
-            path: to,
+      for (const panel of findMatchingPanels(api, match)) {
+        if (params) {
+          panel.api.updateParameters({
+            ...((panel.params as Record<string, unknown> | undefined) ?? {}),
+            ...params,
           })
-          target.api.setTitle(newTitle)
-        })
+        }
+        if (title) panel.api.setTitle(title)
+      }
     })
-
-    const offDeleted = events.on("file:deleted", ({ path }) => {
+    const offClose = events.on(workspaceEvents.panelClose, ({ match }) => {
       const api = apiRef.current
       if (!api) return
-      api.panels
-        .filter(
-          (p) =>
-            p.id === `file:${path}` ||
-            (p.params as { path?: string } | undefined)?.path === path,
-        )
-        .forEach((target) => api.removePanel(target))
+      for (const panel of findMatchingPanels(api, match)) {
+        api.removePanel(panel)
+      }
     })
-
     return () => {
-      offMoved()
-      offDeleted()
+      offUpdate()
+      offClose()
     }
   }, [])
 

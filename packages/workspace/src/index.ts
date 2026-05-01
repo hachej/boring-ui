@@ -11,7 +11,16 @@ export {
   bootstrap,
   PluginError,
 } from "./shared/plugins"
-export type { PluginErrorKind, BootstrapOptions, BootstrapResult, AgentToolRegistry } from "./shared/plugins"
+export type {
+  PluginErrorKind,
+  BootstrapOptions,
+  BootstrapResult,
+  AgentToolRegistry,
+  PanelRegistryLike,
+  CommandRegistryLike,
+  CatalogRegistryLike,
+  SurfaceResolverRegistryLike,
+} from "./shared/plugins"
 export type {
   Plugin,
   PluginBinding,
@@ -24,6 +33,14 @@ export type {
   CommandOutput,
   CatalogOutput,
   BindingOutput,
+  ProviderOutput,
+  SurfaceResolverOutput,
+  PluginProvider,
+  PluginProviderProps,
+  AgentTool,
+  JSONSchema,
+  ToolExecContext,
+  ToolResult,
   AgentToolOutput,
 } from "./shared/plugins"
 export {
@@ -36,9 +53,41 @@ export {
   usePluginErrors,
 } from "./front/plugin"
 export type { CatalogRegistryOptions, PluginError as PluginContributionError } from "./front/plugin"
-export { filesystemPlugin } from "./plugins/filesystemPlugin"
-export { makeStaticDataPlugin } from "./plugins/factories/makeStaticDataPlugin"
-export type { StaticDataPluginOpts } from "./plugins/factories/makeStaticDataPlugin"
+export {
+  filesystemPlugin,
+  emitFilesystemAgentFileChange,
+  useAutoOpenAgentFiles,
+} from "./plugins/filesystemPlugin"
+export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin"
+export {
+  appendDataCatalogOutputs,
+  createDataCatalogOpenHandler,
+  createDataCatalogCatalog,
+  createDataCatalogOutputs,
+  createDataCatalogPlugin,
+  createDataCatalogSurfaceResolver,
+  dataCatalogPanelInstanceId,
+  openDataCatalogVisualization,
+  readDataCatalogRow,
+  resolveDataCatalogControlledQuery,
+  resolveDataCatalogQuery,
+  resolveDataCatalogVisualizationState,
+  useDataCatalogOpenVisualization,
+  useDataCatalogQuery,
+  useDataCatalogVisualizationState,
+  DATA_CATALOG_DEFAULT_TOOL_NAME,
+  DATA_CATALOG_PLUGIN_ID,
+  DATA_CATALOG_ROW_SURFACE_KIND,
+} from "./plugins/dataCatalogPlugin"
+export type {
+  CreateDataCatalogOutputsOptions,
+  CreateDataCatalogPluginOptions,
+  CreateDataCatalogSurfaceResolverOptions,
+  DataCatalogResolvedQuery,
+  DataCatalogVisualizationParams,
+  DataCatalogVisualizationState,
+  OpenDataCatalogVisualizationOptions,
+} from "./plugins/dataCatalogPlugin"
 
 // Utility
 export { cn } from "./front/lib/utils"
@@ -51,6 +100,9 @@ export {
   useRegistry,
   useCommandRegistry,
   useCatalogRegistry,
+  useSurfaceResolverRegistry,
+  SurfaceResolverRegistry,
+  WORKSPACE_OPEN_PATH_SURFACE_KIND,
 } from "./front/registry"
 export { getFileIcon } from "./front/registry"
 export type {
@@ -58,6 +110,10 @@ export type {
   PanelRegistration,
   CommandConfig,
   PaneProps,
+  SurfaceOpenRequest,
+  SurfacePanelResolution,
+  SurfaceResolverConfig,
+  SurfaceResolverRegistration,
 } from "./front/registry"
 
 // Dock / layout runtime
@@ -87,22 +143,6 @@ export type {
   ResponsiveDockviewShellProps,
 } from "./front/layout"
 
-// Data layer
-export { DataProvider, useDataClient, useApiBaseUrl } from "./front/data"
-export { FetchClient, FetchError } from "./front/data"
-export {
-  useFileContent,
-  useFileData,
-  useFileList,
-  useStat,
-  useFileSearch,
-  useFileWrite,
-  useCreateDir,
-  useMoveFile,
-  useDeleteFile,
-} from "./front/data"
-export type { FileEntry, FileContent, FileStat, FetchClientOptions } from "./front/data"
-
 // Hooks
 export {
   useEditorLifecycle,
@@ -130,10 +170,6 @@ export {
   formatShortcut,
   type ShortcutBinding,
   type UseKeyboardShortcutsOptions,
-} from "./front/hooks"
-export {
-  useAutoOpenAgentFiles,
-  type UseAutoOpenAgentFilesOptions,
 } from "./front/hooks"
 
 // Command Palette
@@ -168,7 +204,7 @@ export {
   useEvent,
   userMeta,
   agentMeta,
-  emitAgentFileChange,
+  emitAgentData,
 } from "./front/events"
 export type {
   Origin,
@@ -253,6 +289,11 @@ export { SurfaceShell } from "./front/chrome/artifact-surface/SurfaceShell"
 export { WorkbenchLeftPane } from "./front/chrome/workbench-left/WorkbenchLeftPane"
 export type { SessionBrowserProps } from "./front/chrome/session-list/SessionBrowser"
 export type {
+  OpenArtifactHandler,
+  WorkspaceChatPanelComponent,
+  WorkspaceChatPanelProps,
+} from "./front/chrome/chat/types"
+export type {
   SurfaceShellProps,
   SurfaceShellApi,
   SurfaceShellSnapshot,
@@ -261,8 +302,7 @@ export type {
 } from "./front/chrome/artifact-surface/SurfaceShell"
 export type {
   WorkbenchLeftPaneProps,
-  WorkbenchLeftTab,
-  DataPaneConfig,
+  WorkbenchLeftTabId,
 } from "./front/chrome/workbench-left/WorkbenchLeftPane"
 
 // Provider

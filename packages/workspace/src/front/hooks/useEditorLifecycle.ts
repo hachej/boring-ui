@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { events } from "../events"
+import { events, workspaceEvents } from "../events"
 
 export interface EditorLifecycleAdapter {
   isDirty: () => boolean
@@ -56,7 +56,7 @@ export function useEditorLifecycle(
 
     const p = (async () => {
       setIsSaving(true)
-      events.emit("editor:save:start", { panelId })
+      events.emit(workspaceEvents.editorSaveStart, { panelId })
       try {
         await a.save()
         lastSaveTimeRef.current = Date.now()
@@ -73,7 +73,7 @@ export function useEditorLifecycle(
         // Always signal save:end so consumers (e.g. tab spinner) clear
         // their pending UI even when save throws. Error semantics live
         // on the adapter's own UI surface.
-        events.emit("editor:save:end", { panelId })
+        events.emit(workspaceEvents.editorSaveEnd, { panelId })
         setIsSaving(false)
         saveInFlightRef.current = null
       }

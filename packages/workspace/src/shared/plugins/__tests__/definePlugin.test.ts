@@ -157,6 +157,115 @@ describe("definePlugin", () => {
     })
   })
 
+  describe("outputs validation", () => {
+    it("accepts a left-tab output", () => {
+      const result = definePlugin({
+        id: "test",
+        outputs: [
+          {
+            type: "left-tab",
+            id: "files",
+            title: "Files",
+            component: DummyComponent,
+            source: "builtin",
+          },
+        ],
+      })
+      expect(result.outputs).toHaveLength(1)
+    })
+
+    it("throws on duplicate output identities", () => {
+      expect(() =>
+        definePlugin({
+          id: "test",
+          outputs: [
+            { type: "left-tab", id: "files", title: "Files", component: DummyComponent },
+            { type: "left-tab", id: "files", title: "Files", component: DummyComponent },
+          ],
+        }),
+      ).toThrow('outputs[1] "left-tab:files" is duplicated')
+    })
+
+    it("throws on invalid output type", () => {
+      expect(() =>
+        definePlugin({
+          id: "test",
+          outputs: [{ type: "side-tab", id: "x" } as any],
+        }),
+      ).toThrow("outputs[0].type must be one of")
+    })
+
+    it("throws on invalid left-tab component", () => {
+      expect(() =>
+        definePlugin({
+          id: "test",
+          outputs: [
+            { type: "left-tab", id: "files", title: "Files", component: 42 as any },
+          ],
+        }),
+      ).toThrow("outputs[0].component must be a ComponentType")
+    })
+
+    it("accepts a provider output", () => {
+      const result = definePlugin({
+        id: "test",
+        outputs: [
+          {
+            type: "provider",
+            id: "runtime",
+            component: DummyComponent,
+          },
+        ],
+      })
+      expect(result.outputs).toHaveLength(1)
+    })
+
+    it("throws on invalid provider output component", () => {
+      expect(() =>
+        definePlugin({
+          id: "test",
+          outputs: [
+            {
+              type: "provider",
+              id: "runtime",
+              component: null as any,
+            },
+          ],
+        }),
+      ).toThrow("bindings[0] must be a component function")
+    })
+
+    it("accepts a surface resolver output", () => {
+      const result = definePlugin({
+        id: "test",
+        outputs: [
+          {
+            type: "surface-resolver",
+            resolver: {
+              id: "open-target",
+              resolve: () => ({ component: "test-panel" }),
+            },
+          },
+        ],
+      })
+      expect(result.outputs).toHaveLength(1)
+    })
+
+    it("throws on invalid surface resolver output", () => {
+      expect(() =>
+        definePlugin({
+          id: "test",
+          outputs: [
+            {
+              type: "surface-resolver",
+              resolver: { id: "open-target" } as any,
+            },
+          ],
+        }),
+      ).toThrow("outputs[0].resolver.resolve must be a function")
+    })
+  })
+
   describe("commands validation", () => {
     it("accepts valid commands", () => {
       const result = definePlugin({

@@ -1,5 +1,4 @@
 import { createElement, lazy, type ComponentType } from "react"
-import micromatch from "micromatch"
 import type { PanelConfig, PanelRegistration } from "./types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 
@@ -49,34 +48,6 @@ export class PanelRegistry {
 
   list(): PanelConfig[] {
     return this.filteredPanels()
-  }
-
-  resolve(path: string): PanelConfig | undefined {
-    let bestMatch: PanelConfig | undefined
-    let bestScore = -1
-    let bestIsApp = false
-
-    for (const id of this.registrationOrder) {
-      const panel = this.panels.get(id)!
-      if (!panel.filePatterns) continue
-      if (!this.satisfiesCapabilities(panel)) continue
-
-      for (const pattern of panel.filePatterns) {
-        if (!micromatch.isMatch(path, pattern, { matchBase: false, dot: true })) continue
-        const score = specificity(pattern)
-        const isApp = panel.source === "app"
-        if (
-          score > bestScore ||
-          (score === bestScore && isApp && !bestIsApp) ||
-          (score === bestScore && isApp === bestIsApp)
-        ) {
-          bestScore = score
-          bestIsApp = isApp
-          bestMatch = panel
-        }
-      }
-    }
-    return bestMatch
   }
 
   // Loose return type: shells render panels via different paths (dockview
@@ -138,11 +109,4 @@ export class PanelRegistry {
     if (!panel.requiresCapabilities?.length) return true
     return panel.requiresCapabilities.every((cap) => this.capabilities.has(cap))
   }
-}
-
-
-export function specificity(pattern: string): number {
-  const segmentCount = pattern.split("/").filter(Boolean).length
-  const nonWildcardChars = pattern.replace(/[*?!]/g, "").length
-  return segmentCount * 10 + nonWildcardChars
 }

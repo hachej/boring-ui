@@ -2,6 +2,8 @@
 
 import {
   createElement,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -13,44 +15,17 @@ import {
 import { ChevronLeft, PanelLeft, Search, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
-import type { SourceEntry } from "../../components/DataExplorer/adapters"
-import type {
-  DragPayload,
-  ExplorerAdapter,
-  ExplorerRow,
-  FacetConfig,
-} from "../../components/DataExplorer/types"
 import { useRegistry } from "../../registry"
 import type { PaneProps, PanelConfig } from "../../registry/types"
 import type { LeftTabParams } from "../../../shared/plugins/types"
+import { PluginErrorBoundary } from "../../plugin/PluginErrorBoundary"
 
-export type DataSource = SourceEntry
-
-/**
- * Plug-in config for the chat shell's data tab. When provided, the shell
- * routes the data pane through DataExplorer with the host-supplied adapter
- * — supports macro-style catalogs (thousands of records, async search,
- * facets, drag-to-overlay) without exposing DataExplorer details.
- */
-export type DataPaneConfig = {
-  adapter: ExplorerAdapter
-  groupBy?: string
-  facets?: FacetConfig[]
-  onActivate?: (row: ExplorerRow) => void
-  getDragPayload?: (row: ExplorerRow) => DragPayload | null | undefined
-  emptyState?: React.ReactNode
-}
-
-export type WorkbenchLeftTab = "files" | "data" | string
+export type WorkbenchLeftTabId = string
 
 export interface WorkbenchLeftPaneProps {
   rootDir?: string
   bridge?: WorkspaceBridge
-  /** @deprecated Register a plugin output with `type: "left-tab"` instead. */
-  dataSources?: DataSource[]
-  /** @deprecated Register a plugin output with `type: "left-tab"` instead. */
-  data?: DataPaneConfig
-  defaultTab?: WorkbenchLeftTab
+  defaultTab?: WorkbenchLeftTabId
   onCollapse?: () => void
   className?: string
 }
@@ -85,8 +60,8 @@ export function WorkbenchLeftPane({
     }
     return next
   }, [leftTabPanels])
-  const [tab, setTab] = useState<WorkbenchLeftTab>(defaultTab ?? "")
-  const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "files")
+  const [tab, setTab] = useState<WorkbenchLeftTabId>(defaultTab ?? "")
+  const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "")
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -238,26 +213,45 @@ const noopContainerApi = new Proxy(
 ) as PaneProps["containerApi"]
 
 function LeftTabPanelHost({ panel, params }: { panel?: PanelConfig; params: LeftTabParams }) {
-  if (!panel) {
+  const Inner = useMemo(() => {
+    if (!panel) return null
+    if (panel.lazy) {
+      return lazy(
+        panel.component as () => Promise<{ default: ComponentType<unknown> }>,
+      )
+    }
+    return panel.component as ComponentType<any>
+  }, [panel])
+
+  if (!panel || !Inner) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
         No workbench source registered.
       </div>
     )
   }
-  if (panel.lazy) {
-    return (
-      <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
-        Loading source…
-      </div>
-    )
-  }
-  return createElement(panel.component as ComponentType<any>, {
-    params,
-    api: noopPaneApi,
-    containerApi: noopContainerApi,
-    className: "h-full",
-  })
+  return (
+    <PluginErrorBoundary
+      pluginId={panel.pluginId ?? panel.id}
+      contributionKind="panel"
+      contributionId={panel.id}
+    >
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
+            Loading source...
+          </div>
+        }
+      >
+        {createElement(Inner, {
+          params,
+          api: noopPaneApi,
+          containerApi: noopContainerApi,
+          className: "h-full",
+        })}
+      </Suspense>
+    </PluginErrorBoundary>
+  )
 }
 
 function SegmentedTab({

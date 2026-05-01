@@ -2,9 +2,15 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
 import type { ReactNode } from "react"
-import { PanelRegistry, specificity } from "../PanelRegistry"
+import { PanelRegistry } from "../PanelRegistry"
 import { CommandRegistry } from "../CommandRegistry"
-import { RegistryProvider, useRegistry, useCommandRegistry } from "../RegistryProvider"
+import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
+import {
+  RegistryProvider,
+  useRegistry,
+  useCommandRegistry,
+  useSurfaceResolverRegistry,
+} from "../RegistryProvider"
 import { getFileIcon } from "../getFileIcon"
 import {
   FileIcon,
@@ -82,151 +88,58 @@ describe("PanelRegistry", () => {
   })
 })
 
-// --- File-type routing ---
-describe("PanelRegistry.resolve", () => {
-  it("resolve('readme.md') matches *.md pattern", () => {
-    const reg = new PanelRegistry()
-    reg.register("markdown-editor", {
-      title: "MD",
-      component: DummyPanel,
-      filePatterns: ["*.md", "*.mdx"],
-    })
-    reg.register("code-editor", {
-      title: "Code",
-      component: DummyPanel,
-      filePatterns: ["*"],
-    })
-    expect(reg.resolve("readme.md")!.id).toBe("markdown-editor")
+// --- Surface resolver routing ---
+describe("SurfaceResolverRegistry", () => {
+  it("returns the resolver with the highest score", () => {
+    const reg = new SurfaceResolverRegistry()
+    reg.register("fallback", { resolve: () => ({ component: "fallback", score: 1 }) })
+    reg.register("specific", { resolve: () => ({ component: "specific", score: 10 }) })
+    expect(reg.resolve({ kind: "workspace.open.path", target: "readme.md" })!.component).toBe("specific")
   })
 
-  it("resolve('main.ts') falls back to wildcard", () => {
-    const reg = new PanelRegistry()
-    reg.register("code-editor", {
-      title: "Code",
-      component: DummyPanel,
-      filePatterns: ["*"],
-    })
-    expect(reg.resolve("main.ts")!.id).toBe("code-editor")
-  })
-
-  it("app panel overrides built-in with same pattern regardless of order", () => {
-    const reg = new PanelRegistry()
-    reg.register("builtin-ts", {
-      title: "Builtin TS",
-      component: DummyPanel,
-      filePatterns: ["*.ts"],
-      source: "builtin",
-    })
-    reg.register("app-ts", {
-      title: "App TS",
-      component: DummyPanel,
-      filePatterns: ["*.ts"],
-      source: "app",
-    })
-    expect(reg.resolve("main.ts")!.id).toBe("app-ts")
-  })
-
-  it("*.test.ts beats *.ts (longest suffix wins)", () => {
-    const reg = new PanelRegistry()
-    reg.register("test-runner", {
-      title: "Tests",
-      component: DummyPanel,
-      filePatterns: ["*.test.ts"],
-    })
-    reg.register("code-editor", {
-      title: "Code",
-      component: DummyPanel,
-      filePatterns: ["*.ts"],
-    })
-    expect(reg.resolve("utils.test.ts")!.id).toBe("test-runner")
-    expect(reg.resolve("utils.ts")!.id).toBe("code-editor")
-  })
-
-  it("tied specificity: later registration wins", () => {
-    const reg = new PanelRegistry()
-    reg.register("first", {
-      title: "First",
-      component: DummyPanel,
-      filePatterns: ["*.ts"],
-    })
-    reg.register("second", {
-      title: "Second",
-      component: DummyPanel,
-      filePatterns: ["*.ts"],
-    })
-    expect(reg.resolve("a.ts")!.id).toBe("second")
-  })
-
-  it("resolve returns undefined when no match", () => {
-    const reg = new PanelRegistry()
-    expect(reg.resolve("file.txt")).toBeUndefined()
-  })
-
-  it("path-aware: deck/**/*.md beats **/*.md for deep path", () => {
-    const reg = new PanelRegistry()
-    reg.register("markdown", {
-      title: "Markdown",
-      component: DummyPanel,
-      filePatterns: ["**/*.md"],
-    })
-    reg.register("deck", {
-      title: "Deck",
-      component: DummyPanel,
-      filePatterns: ["deck/**/*.md"],
-    })
-    expect(reg.resolve("deck/labor/labor.md")!.id).toBe("deck")
-    expect(reg.resolve("notes.md")!.id).toBe("markdown")
-  })
-
-  it("path-aware: **/*.md matches nested paths", () => {
-    const reg = new PanelRegistry()
-    reg.register("markdown", {
-      title: "Markdown",
-      component: DummyPanel,
-      filePatterns: ["**/*.md"],
-    })
-    expect(reg.resolve("src/docs/readme.md")!.id).toBe("markdown")
-  })
-
-  it("app source beats builtin on equal specificity", () => {
-    const reg = new PanelRegistry()
+  it("app resolver wins equal-score ties over builtin", () => {
+    const reg = new SurfaceResolverRegistry()
     reg.register("builtin", {
-      title: "Builtin",
-      component: DummyPanel,
-      filePatterns: ["**/*.ts"],
       source: "builtin",
+      resolve: () => ({ component: "builtin", score: 5 }),
     })
     reg.register("app", {
-      title: "App",
-      component: DummyPanel,
-      filePatterns: ["**/*.ts"],
       source: "app",
+      resolve: () => ({ component: "app", score: 5 }),
     })
-    expect(reg.resolve("src/foo.ts")!.id).toBe("app")
+    expect(reg.resolve({ kind: "workspace.open.path", target: "main.ts" })!.component).toBe("app")
   })
 
-  it("panel with no filePatterns never matches", () => {
-    const reg = new PanelRegistry()
-    reg.register("agent", { title: "Agent", component: DummyPanel })
-    expect(reg.resolve("anything.txt")).toBeUndefined()
-  })
-})
-
-describe("specificity", () => {
-  it("deck/**/*.md scores higher than **/*.md", () => {
-    expect(specificity("deck/**/*.md")).toBeGreaterThan(specificity("**/*.md"))
+  it("later resolver wins exact ties within the same source", () => {
+    const reg = new SurfaceResolverRegistry()
+    reg.register("first", { resolve: () => ({ component: "first", score: 5 }) })
+    reg.register("second", { resolve: () => ({ component: "second", score: 5 }) })
+    expect(reg.resolve({ kind: "workspace.open.path", target: "main.ts" })!.component).toBe("second")
   })
 
-  it("deck/labor/*.md scores higher than deck/**/*.md", () => {
-    expect(specificity("deck/labor/*.md")).toBeGreaterThan(specificity("deck/**/*.md"))
+  it("returns undefined when no resolver handles the request", () => {
+    const reg = new SurfaceResolverRegistry()
+    reg.register("other", { resolve: () => undefined })
+    expect(reg.resolve({ kind: "workspace.open.path", target: "file.txt" })).toBeUndefined()
   })
 
-  it("exact path scores highest", () => {
-    expect(specificity("deck/labor/labor.md")).toBeGreaterThan(specificity("deck/**/*.md"))
-  })
+  it("continues resolving when one resolver throws", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const reg = new SurfaceResolverRegistry()
+    reg.register("broken", {
+      resolve: () => {
+        throw new Error("resolver failed")
+      },
+    })
+    reg.register("fallback", { resolve: () => ({ component: "fallback", score: 1 }) })
 
-  it("* scores 10 (1 segment, 0 non-wildcard chars)", () => {
-    expect(specificity("*")).toBe(10)
+    expect(reg.resolve({ kind: "workspace.open.path", target: "file.txt" })!.component).toBe(
+      "fallback",
+    )
+    expect(warn).toHaveBeenCalledWith(
+      `[SurfaceResolverRegistry] resolver "broken" failed:`,
+      "resolver failed",
+    )
   })
 })
 
@@ -287,21 +200,6 @@ describe("PanelRegistry capability gating", () => {
     expect(Object.keys(comps)).toEqual(["open"])
   })
 
-  it("resolve skips panels with unsatisfied capabilities", () => {
-    const reg = new PanelRegistry({})
-    reg.register("gated-md", {
-      title: "Gated MD",
-      component: DummyPanel,
-      filePatterns: ["*.md"],
-      requiresCapabilities: ["premium"],
-    })
-    reg.register("fallback", {
-      title: "Fallback",
-      component: DummyPanel,
-      filePatterns: ["*"],
-    })
-    expect(reg.resolve("readme.md")!.id).toBe("fallback")
-  })
 })
 
 // --- CommandRegistry ---
@@ -389,6 +287,25 @@ describe("RegistryProvider", () => {
     expect(result.current.getCommand("cmd")).toBeDefined()
   })
 
+  it("useSurfaceResolverRegistry returns SurfaceResolverRegistry inside provider", () => {
+    const panelReg = new PanelRegistry()
+    const cmdReg = new CommandRegistry()
+    const resolverReg = new SurfaceResolverRegistry()
+    resolverReg.register("test", { resolve: () => ({ component: "test" }) })
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <RegistryProvider
+        panelRegistry={panelReg}
+        commandRegistry={cmdReg}
+        surfaceResolverRegistry={resolverReg}
+      >
+        {children}
+      </RegistryProvider>
+    )
+    const { result } = renderHook(() => useSurfaceResolverRegistry(), { wrapper })
+    expect(result.current.has("test")).toBe(true)
+  })
+
   it("useRegistry throws outside RegistryProvider", () => {
     expect(() => {
       renderHook(() => useRegistry())
@@ -399,6 +316,12 @@ describe("RegistryProvider", () => {
     expect(() => {
       renderHook(() => useCommandRegistry())
     }).toThrow("useCommandRegistry must be used within a RegistryProvider")
+  })
+
+  it("useSurfaceResolverRegistry throws outside RegistryProvider", () => {
+    expect(() => {
+      renderHook(() => useSurfaceResolverRegistry())
+    }).toThrow("useSurfaceResolverRegistry must be used within a RegistryProvider")
   })
 })
 

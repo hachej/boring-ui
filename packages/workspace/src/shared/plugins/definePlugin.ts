@@ -1,7 +1,5 @@
-import { validateTool } from "@boring/agent/shared"
-import type { Plugin, CatalogConfig, PluginOutput, LeftTabOutput } from "./types"
-import type { PanelConfig } from "../../front/registry/types"
-import type { CommandConfig } from "../../front/registry/types"
+import type { Plugin, CatalogConfig, PluginOutput, LeftTabOutput, AgentTool } from "./types"
+import type { CommandConfig, PanelConfig } from "../types/panel"
 
 export type PluginErrorKind =
   | "validation"
@@ -32,6 +30,8 @@ const VALID_OUTPUT_TYPES = new Set([
   "command",
   "catalog",
   "binding",
+  "provider",
+  "surface-resolver",
   "agent-tool",
 ])
 
@@ -139,7 +139,7 @@ function validateCatalogs(pluginId: string, catalogs: CatalogConfig[]): void {
 
 function validateAgentTools(pluginId: string, tools: unknown[]): void {
   for (let i = 0; i < tools.length; i++) {
-    const valid = validateTool(tools[i])
+    const valid = validateAgentTool(tools[i])
     if (!valid) {
       fail(
         pluginId,
@@ -149,11 +149,38 @@ function validateAgentTools(pluginId: string, tools: unknown[]): void {
   }
 }
 
+function validateAgentTool(tool: unknown): AgentTool | null {
+  if (!tool || typeof tool !== "object") return null
+  const candidate = tool as Record<string, unknown>
+  if (typeof candidate.name !== "string" || candidate.name.length === 0) return null
+  if (typeof candidate.description !== "string") return null
+  if (!candidate.parameters || typeof candidate.parameters !== "object") return null
+  if (typeof candidate.execute !== "function") return null
+  return candidate as unknown as AgentTool
+}
+
 function validateBindings(pluginId: string, bindings: unknown[]): void {
   for (let i = 0; i < bindings.length; i++) {
     if (typeof bindings[i] !== "function") {
       fail(pluginId, `bindings[${i}] must be a component function (got: ${typeof bindings[i]})`)
     }
+  }
+}
+
+function validateSurfaceResolverOutput(
+  pluginId: string,
+  output: Extract<PluginOutput, { type: "surface-resolver" }>,
+  index: number,
+): void {
+  const resolver = output.resolver
+  if (!resolver || typeof resolver !== "object") {
+    fail(pluginId, `outputs[${index}].resolver must be an object`)
+  }
+  if (!resolver.id || typeof resolver.id !== "string") {
+    fail(pluginId, `outputs[${index}].resolver.id must be a non-empty string`)
+  }
+  if (typeof resolver.resolve !== "function") {
+    fail(pluginId, `outputs[${index}].resolver.resolve must be a function`)
   }
 }
 
@@ -194,7 +221,10 @@ function outputIdentity(output: PluginOutput, index: number): string {
     case "catalog":
       return `${output.type}:${output.catalog?.id ?? `<missing:${index}>`}`
     case "binding":
+    case "provider":
       return `${output.type}:${output.id}`
+    case "surface-resolver":
+      return `${output.type}:${output.resolver?.id ?? `<missing:${index}>`}`
     case "agent-tool":
       return `${output.type}:${output.id}`
     default:
@@ -248,6 +278,15 @@ function validateOutputs(pluginId: string, outputs: PluginOutput[]): void {
           fail(pluginId, `outputs[${i}].id must be a non-empty string`)
         }
         validateBindings(pluginId, [output.component])
+        break
+      case "provider":
+        if (!output.id || typeof output.id !== "string") {
+          fail(pluginId, `outputs[${i}].id must be a non-empty string`)
+        }
+        validateBindings(pluginId, [output.component])
+        break
+      case "surface-resolver":
+        validateSurfaceResolverOutput(pluginId, output, i)
         break
       case "agent-tool":
         if (!output.id || typeof output.id !== "string") {

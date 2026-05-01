@@ -3,16 +3,6 @@
 import { useCallback } from "react"
 import type { UseArtifactPanelsReturn } from "./useArtifactPanels"
 
-const DEFAULT_TOOL_PANEL_MAP: Record<string, string> = {
-  write: "code-editor",
-  edit: "code-editor",
-  read: "code-editor",
-  create_file: "code-editor",
-  markdown: "markdown-editor",
-  csv: "csv-viewer",
-  data: "csv-viewer",
-}
-
 export interface UseArtifactRoutingOptions {
   toolPanelMap?: Record<string, string>
 }
@@ -29,7 +19,7 @@ export function useArtifactRouting(
   artifactPanels: UseArtifactPanelsReturn,
   opts: UseArtifactRoutingOptions = {},
 ): UseArtifactRoutingReturn {
-  const map = { ...DEFAULT_TOOL_PANEL_MAP, ...opts.toolPanelMap }
+  const map = opts.toolPanelMap ?? {}
 
   const resolvePanel = useCallback(
     (toolName: string): string | undefined => {

@@ -1,12 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { ChatPanelProps } from "@boring/agent"
 import { WorkspaceProvider } from "../../../provider"
 import { events } from "../../../events"
+import { filesystemEvents } from "../../../../plugins/filesystemPlugin/events"
 import type { SurfaceShellApi } from "../../artifact-surface/SurfaceShell"
 import { ChatPanelHost } from "../ChatPanelHost"
+import type { WorkspaceChatPanelProps } from "../types"
 
-function FakeChatPanel({ onData, onOpenArtifact }: ChatPanelProps) {
+function FakeChatPanel({ onData, onOpenArtifact }: WorkspaceChatPanelProps) {
   return (
     <div>
       <button
@@ -43,7 +44,7 @@ describe("ChatPanelHost", () => {
   it("composes workspace file-change bridge with caller onData", () => {
     const onData = vi.fn()
     const changed = vi.fn()
-    events.on("file:changed", changed)
+    events.on(filesystemEvents.changed, changed)
 
     render(
       <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
@@ -71,6 +72,7 @@ describe("ChatPanelHost", () => {
     const onOpenArtifact = vi.fn()
     const surface: SurfaceShellApi = {
       openFile,
+      openSurface: vi.fn(),
       openPanel: vi.fn(),
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }

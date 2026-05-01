@@ -1,24 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useEvent } from "../useEvent"
-import { events } from "../index"
+import { events, workspaceEvents } from "../index"
 import { userMeta } from "../types"
+import { filesystemEvents } from "../../../plugins/filesystemPlugin/events"
 
 describe("useEvent", () => {
   beforeEach(() => events._reset())
 
   it("subscribes on mount and unsubscribes on unmount", () => {
     const fn = vi.fn()
-    const { unmount } = renderHook(() => useEvent("file:moved", fn))
+    const { unmount } = renderHook(() => useEvent(filesystemEvents.moved, fn))
 
     act(() => {
-      events.emit("file:moved", { ...userMeta(), from: "a", to: "b" })
+      events.emit(filesystemEvents.moved, { ...userMeta(), from: "a", to: "b" })
     })
     expect(fn).toHaveBeenCalledTimes(1)
 
     unmount()
     act(() => {
-      events.emit("file:moved", { ...userMeta(), from: "x", to: "y" })
+      events.emit(filesystemEvents.moved, { ...userMeta(), from: "x", to: "y" })
     })
     expect(fn).toHaveBeenCalledTimes(1)
   })
@@ -27,7 +28,7 @@ describe("useEvent", () => {
     let last: { from: string; to: string } | undefined
     const { rerender } = renderHook(
       ({ tag }: { tag: string }) =>
-        useEvent("file:moved", (p) => {
+        useEvent(filesystemEvents.moved, (p) => {
           last = { from: `${tag}:${p.from}`, to: p.to }
         }),
       { initialProps: { tag: "v1" } },
@@ -35,7 +36,7 @@ describe("useEvent", () => {
 
     rerender({ tag: "v2" })
     act(() => {
-      events.emit("file:moved", { ...userMeta(), from: "src", to: "dst" })
+      events.emit(filesystemEvents.moved, { ...userMeta(), from: "src", to: "dst" })
     })
     // Latest handler closure (with tag=v2) was used — proves the ref
     // is updated between renders without re-subscribing.
@@ -44,9 +45,9 @@ describe("useEvent", () => {
 
   it("passes the typed payload through unchanged", () => {
     const fn = vi.fn()
-    renderHook(() => useEvent("editor:save:end", fn))
+    renderHook(() => useEvent(workspaceEvents.editorSaveEnd, fn))
     act(() => {
-      events.emit("editor:save:end", {
+      events.emit(workspaceEvents.editorSaveEnd, {
         panelId: "p1",
         ok: false,
         error: "disk full",
@@ -63,11 +64,11 @@ describe("useEvent", () => {
     const movedFn = vi.fn()
     const deletedFn = vi.fn()
     renderHook(() => {
-      useEvent("file:moved", movedFn)
-      useEvent("file:deleted", deletedFn)
+      useEvent(filesystemEvents.moved, movedFn)
+      useEvent(filesystemEvents.deleted, deletedFn)
     })
     act(() => {
-      events.emit("file:deleted", { ...userMeta(), path: "x" })
+      events.emit(filesystemEvents.deleted, { ...userMeta(), path: "x" })
     })
     expect(movedFn).not.toHaveBeenCalled()
     expect(deletedFn).toHaveBeenCalledTimes(1)
@@ -75,26 +76,27 @@ describe("useEvent", () => {
 
   it("name-switch unsubscribes the old channel and subscribes the new", () => {
     const fn = vi.fn()
+    type DynamicName = typeof filesystemEvents.moved | typeof filesystemEvents.deleted
     const { rerender } = renderHook(
-      ({ name }: { name: "file:moved" | "file:deleted" }) =>
+      ({ name }: { name: DynamicName }) =>
         // Cast keeps the test ergonomic — production callers would
         // pass a literal name. We're only exercising the prop change.
-        useEvent(name as "file:moved", fn as (p: unknown) => void),
-      { initialProps: { name: "file:moved" as "file:moved" | "file:deleted" } },
+        useEvent(name as typeof filesystemEvents.moved, fn as (p: unknown) => void),
+      { initialProps: { name: filesystemEvents.moved as DynamicName } },
     )
     act(() => {
-      events.emit("file:moved", { ...userMeta(), from: "a", to: "b" })
+      events.emit(filesystemEvents.moved, { ...userMeta(), from: "a", to: "b" })
     })
     expect(fn).toHaveBeenCalledTimes(1)
-    rerender({ name: "file:deleted" as const })
+    rerender({ name: filesystemEvents.deleted })
     // Old channel must no longer be subscribed
     act(() => {
-      events.emit("file:moved", { ...userMeta(), from: "x", to: "y" })
+      events.emit(filesystemEvents.moved, { ...userMeta(), from: "x", to: "y" })
     })
     expect(fn).toHaveBeenCalledTimes(1)
     // New channel must now be subscribed
     act(() => {
-      events.emit("file:deleted", { ...userMeta(), path: "z" })
+      events.emit(filesystemEvents.deleted, { ...userMeta(), path: "z" })
     })
     expect(fn).toHaveBeenCalledTimes(2)
   })

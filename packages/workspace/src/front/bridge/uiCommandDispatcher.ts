@@ -7,6 +7,7 @@
  */
 import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surface/SurfaceShell"
 import type { UiCommand } from "./types"
+import type { SurfaceOpenRequest } from "../../shared/types/surface"
 
 export interface DispatchContext {
   /**
@@ -23,6 +24,7 @@ export interface DispatchContext {
 
 const KNOWN_KINDS = new Set([
   "openFile",
+  "openSurface",
   "openPanel",
   "navigateToLine",
   "expandToFile",
@@ -46,6 +48,17 @@ function recordParam(
   return undefined
 }
 
+function surfaceRequestParam(params: Record<string, unknown>): SurfaceOpenRequest | null {
+  const kind = strParam(params, "kind")
+  const target = strParam(params, "target")
+  if (!kind || !target) return null
+  return {
+    kind,
+    target,
+    meta: recordParam(params, "meta"),
+  }
+}
+
 /**
  * Apply a single agent-issued UI command. Pure function: takes a command
  * + a context with the surface handle and returns nothing. Unknown kinds
@@ -65,12 +78,42 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (!path) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
-      const run = () => surface.openFile(path)
+      const run = () => {
+        try {
+          surface.openFile(path)
+        } catch (err) {
+          // eslint-disable-next-line no-console -- intentional dev signal
+          console.warn(
+            `[uiCommandDispatcher] openFile dispatch failed:`,
+            err instanceof Error ? err.message : err,
+          )
+        }
+      }
       // If the workbench was just opened, dockview hasn't laid out yet —
       // a double-RAF defers the openFile call until after the next paint
       // pair so the panel actually mounts. We branch on the BEFORE state
       // so a synchronously-applied openWorkbench (e.g. a test stub)
       // doesn't fool the dispatcher into skipping the defer.
+      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(run))
+      else run()
+      return
+    }
+    case "openSurface": {
+      const request = surfaceRequestParam(cmd.params)
+      if (!request) return
+      const wasClosed = !ctx.isWorkbenchOpen()
+      if (wasClosed) ctx.openWorkbench()
+      const run = () => {
+        try {
+          surface.openSurface(request)
+        } catch (err) {
+          // eslint-disable-next-line no-console -- intentional dev signal
+          console.warn(
+            `[uiCommandDispatcher] openSurface dispatch failed:`,
+            err instanceof Error ? err.message : err,
+          )
+        }
+      }
       if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(run))
       else run()
       return

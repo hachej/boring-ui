@@ -53,10 +53,10 @@
   height: 44px !important;
 }
 
-/* When the left file tree is collapsed, reserve room at the left of the tab strip
-   for the overlaid "Show files" button (44px wide). */
-.workbench-dockview[data-collapsed-files="true"] .dv-tabs-and-actions-container,
-.workbench-dockview[data-collapsed-files="true"] .tabs-and-actions-container {
+/* When the left sources pane is collapsed, reserve room at the left of the tab strip
+   for the overlaid "Show sources" button (44px wide). */
+.workbench-dockview[data-collapsed-sources="true"] .dv-tabs-and-actions-container,
+.workbench-dockview[data-collapsed-sources="true"] .tabs-and-actions-container {
   padding-left: 44px !important;
 }
 

@@ -1,12 +1,11 @@
 "use client"
 
 import { useCallback, useEffect } from "react"
-import type { ChatPanelProps } from "@boring/agent"
 import { useWorkspaceChatPanel } from "../../provider"
-import { emitAgentFileChange } from "../../events"
-import { useAutoOpenAgentFiles } from "../../hooks/useAutoOpenAgentFiles"
+import { emitAgentData } from "../../events"
 import { startUiCommandStream } from "../../bridge/uiCommandStream"
 import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
+import type { WorkspaceChatPanelProps } from "./types"
 
 export interface ChatPanelHostShellProps {
   /** Headers forwarded to the embedded ChatPanel's agent API requests. */
@@ -16,7 +15,7 @@ export interface ChatPanelHostShellProps {
   openWorkbench?: () => void
 }
 
-export type ChatPanelHostProps = ChatPanelProps & ChatPanelHostShellProps
+export type ChatPanelHostProps = WorkspaceChatPanelProps & ChatPanelHostShellProps
 
 function workspaceIdFromHeaders(headers?: Record<string, string>): string | null {
   return headers?.["x-boring-workspace-id"] ?? headers?.["X-Boring-Workspace-Id"] ?? null
@@ -44,8 +43,6 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
     [getSurface, isWorkbenchOpen, openWorkbench, props.onOpenArtifact],
   )
 
-  useAutoOpenAgentFiles(openArtifact)
-
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
 
   useEffect(() => {
@@ -62,7 +59,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
 
   const handleData = useCallback(
     (part: unknown) => {
-      emitAgentFileChange(part)
+      emitAgentData(part)
       props.onData?.(part)
     },
     [props.onData],

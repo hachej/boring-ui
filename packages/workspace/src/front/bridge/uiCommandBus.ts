@@ -1,6 +1,6 @@
-import { events, userMeta } from "../events"
+import { events, userMeta, workspaceEvents } from "../events"
 import type { UiCommand } from "./types"
 
 export function postUiCommand(command: UiCommand): void {
-  events.emit("ui:command", { ...userMeta(), command })
+  events.emit(workspaceEvents.uiCommand, { ...userMeta(), command })
 }

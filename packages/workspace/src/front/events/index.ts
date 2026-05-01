@@ -12,13 +12,26 @@ import type { WorkspaceEventMap } from "./types"
 
 export const events = createEventBus<WorkspaceEventMap>()
 
-export { userMeta, agentMeta, remoteMeta } from "./types"
+export {
+  userMeta,
+  agentMeta,
+  remoteMeta,
+  workspaceEvents,
+  WORKSPACE_PLUGIN_ID,
+  WORKSPACE_UI_COMMAND_EVENT,
+  WORKSPACE_EDITOR_SAVE_START_EVENT,
+  WORKSPACE_EDITOR_SAVE_END_EVENT,
+  WORKSPACE_PANEL_UPDATE_EVENT,
+  WORKSPACE_PANEL_CLOSE_EVENT,
+  WORKSPACE_AGENT_DATA_EVENT,
+} from "./types"
 export type {
   Origin,
   EventMeta,
+  WorkspacePanelMatch,
   WorkspaceEventMap,
   WorkspaceEventName,
 } from "./types"
 
 export { useEvent } from "./useEvent"
-export { emitAgentFileChange } from "./agentBridge"
+export { emitAgentData } from "./agentBridge"
