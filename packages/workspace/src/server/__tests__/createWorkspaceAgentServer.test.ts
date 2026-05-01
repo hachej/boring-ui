@@ -7,7 +7,7 @@
  * "standalone agent has NO UI bridge surface" — this file pins the inverse:
  * "workspace wrapper EXPOSES the UI bridge surface via shared instance".
  */
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, describe } from "vitest"
@@ -129,6 +129,46 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
         url: "/api/v1/ui/commands/next?poll=true",
       })
       expect(drainAgain.json()).toEqual([])
+    } finally {
+      await app.close()
+    }
+  })
+})
+
+describe("createWorkspaceAgentServer — plugin provisioning", () => {
+  test("collects plugin provisioning declarations and asks agent to seed workspace", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-provisioned-")
+    const templateRoot = await makeTempDir("boring-workspace-template-")
+    await mkdir(join(templateRoot, ".agents", "skills", "plugin-skill"), { recursive: true })
+    await writeFile(join(templateRoot, "README.md"), "# provisioned\n", "utf8")
+    await writeFile(
+      join(templateRoot, ".agents", "skills", "plugin-skill", "SKILL.md"),
+      "---\nname: plugin-skill\n---\n# Provisioned skill\n",
+      "utf8",
+    )
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      plugins: [
+        {
+          id: "provisioning-plugin",
+          provisioning: {
+            templateDirs: [{ id: "template", path: templateRoot }],
+          },
+        },
+      ],
+    })
+
+    try {
+      await expect(readFile(join(workspaceRoot, "README.md"), "utf8")).resolves.toBe("# provisioned\n")
+      await expect(
+        readFile(join(workspaceRoot, ".agents", "skills", "plugin-skill", "SKILL.md"), "utf8"),
+      ).resolves.toContain("Provisioned skill")
+      await expect(
+        readFile(join(workspaceRoot, ".boring-agent", "provisioning.json"), "utf8"),
+      ).resolves.toContain("sha256:")
     } finally {
       await app.close()
     }
