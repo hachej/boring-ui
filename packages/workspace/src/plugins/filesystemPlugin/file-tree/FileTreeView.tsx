@@ -18,8 +18,8 @@ import {
   useDeleteFile,
   useFileSearch,
   useDataClient,
-} from "../../../front/data"
-import type { FileEntry } from "../../../front/data/types"
+} from "../data"
+import type { FileEntry } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
 import type { WorkspaceBridge } from "../../../front/bridge/types"
 import { PanelChrome } from "../../../front/dock"
@@ -44,6 +44,7 @@ import {
 import { cn } from "../../../front/lib/utils"
 import { toast } from "../../../front/toast"
 import { events, userMeta } from "../../../front/events"
+import { filesystemEvents } from "../events"
 import type { PaneProps } from "../../../shared/types/panel"
 import type { LeftTabParams } from "../../../shared/plugins/types"
 
@@ -549,10 +550,10 @@ export function FileTreeView({
               kind: "file",
               path: newPath,
             })
-            // useFileWrite stays silent (it can't tell create from edit);
+            // useFileWrite emits changed (it can't tell create from edit);
             // the call site knows this was a creation, so emit here.
-            // useCreateDir already emits its own file:created event.
-            events.emit("file:created", {
+            // useCreateDir already emits its own filesystem create event.
+            events.emit(filesystemEvents.created, {
               ...userMeta(),
               path: newPath,
               kind: "file",

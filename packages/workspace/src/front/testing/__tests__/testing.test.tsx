@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import type { WorkspaceBridge } from "../../bridge/types"
-import { useFileContent, useFileList } from "../../data/hooks"
+import { useFileContent, useFileList } from "../../../plugins/filesystemPlugin/data/hooks"
 import * as testingApi from "../index"
 import { createMockBridge } from "../createMockBridge"
 import { createMockRegistry } from "../createMockRegistry"

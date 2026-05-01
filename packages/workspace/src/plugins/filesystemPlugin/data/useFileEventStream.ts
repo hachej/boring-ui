@@ -2,8 +2,10 @@
 
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { events, remoteMeta } from "../events"
+import { events, remoteMeta } from "../../../front/events"
 import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
+import { filesystemEvents } from "../events"
+import { FILES_QUERY_KEY_SEGMENT } from "../constants"
 
 /**
  * Subscribes to the server-side `/api/v1/fs/events` SSE stream and
@@ -128,19 +130,19 @@ interface ChangeEnvelope {
 function relay(c: ChangeEnvelope["change"]): void {
   switch (c.op) {
     case "write":
-      events.emit("file:changed", { ...remoteMeta(), path: c.path })
+      events.emit(filesystemEvents.changed, { ...remoteMeta(), path: c.path })
       return
     case "mkdir":
-      events.emit("file:created", { ...remoteMeta(), path: c.path, kind: "dir" })
+      events.emit(filesystemEvents.created, { ...remoteMeta(), path: c.path, kind: "dir" })
       return
     case "unlink":
-      events.emit("file:deleted", { ...remoteMeta(), path: c.path })
+      events.emit(filesystemEvents.deleted, { ...remoteMeta(), path: c.path })
       return
     case "rename":
       if (c.oldPath) {
-        events.emit("file:moved", { ...remoteMeta(), from: c.oldPath, to: c.path })
+        events.emit(filesystemEvents.moved, { ...remoteMeta(), from: c.oldPath, to: c.path })
       } else {
-        events.emit("file:created", { ...remoteMeta(), path: c.path, kind: "file" })
+        events.emit(filesystemEvents.created, { ...remoteMeta(), path: c.path, kind: "file" })
       }
       return
   }
@@ -148,7 +150,7 @@ function relay(c: ChangeEnvelope["change"]): void {
 
 function isFileQueryKey(key: readonly unknown[]): boolean {
   for (const seg of key) {
-    if (seg === "files" || seg === "tree" || seg === "stat" || seg === "search") {
+    if (seg === FILES_QUERY_KEY_SEGMENT || seg === "tree" || seg === "stat" || seg === "search") {
       return true
     }
   }

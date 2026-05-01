@@ -6,7 +6,7 @@ import type React from "react"
 const mockFileContent = vi.fn()
 const mockFileWrite = vi.fn()
 
-vi.mock("../../../../front/data", () => ({
+vi.mock("../../data", () => ({
   useFileContent: (path: string) => mockFileContent(path),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useApiBaseUrl: () => "/api",

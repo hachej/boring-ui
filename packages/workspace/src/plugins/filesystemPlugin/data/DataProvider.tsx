@@ -81,7 +81,7 @@ export function DataProvider({
  * pipelines:
  *   1. SSE stream from /api/v1/fs/events → emit onto workspace bus
  *      with cause:"remote".
- *   2. Bus `file:*` subscriber → React Query invalidation.
+ *   2. Bus `filesystem:file.*` subscriber → React Query invalidation.
  *
  * Mounted as a sibling of `children` so the subscriptions run whether
  * or not consumers render any file-aware UI.

@@ -9,7 +9,9 @@ import {
 import { useRef, useState, useEffect } from "react"
 import { useDataClient, useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 import { FetchError } from "./fetchClient"
-import { events, userMeta } from "../events"
+import { events, userMeta } from "../../../front/events"
+import { filesystemEvents } from "../events"
+import { FILES_QUERY_KEY_SEGMENT } from "../constants"
 import type { FileContent, FileEntry, FileStat } from "./types"
 
 function noRetryOn404(count: number, error: Error): boolean {
@@ -22,8 +24,8 @@ export function useFileContent(path: string | null): UseQueryResult<FileContent>
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
   return useQuery({
-    queryKey: [base, workspaceId, "files", path],
-    queryFn: () => client.getFile(path!),
+    queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, path],
+    queryFn: ({ signal }) => client.getFile(path!, signal),
     enabled: path != null,
     staleTime: 0,
     retry: noRetryOn404,
@@ -36,7 +38,7 @@ export function useFileList(dir: string | null): UseQueryResult<FileEntry[]> {
   const workspaceId = useWorkspaceRequestId()
   return useQuery({
     queryKey: [base, workspaceId, "tree", dir],
-    queryFn: () => client.getTree(dir!),
+    queryFn: ({ signal }) => client.getTree(dir!, signal),
     enabled: dir != null,
     staleTime: 3_000,
     // File-event SSE invalidates this query when files change. Polling every
@@ -52,7 +54,7 @@ export function useStat(path: string | null): UseQueryResult<FileStat> {
   const workspaceId = useWorkspaceRequestId()
   return useQuery({
     queryKey: [base, workspaceId, "stat", path],
-    queryFn: () => client.stat(path!),
+    queryFn: ({ signal }) => client.stat(path!, signal),
     enabled: path != null,
     retry: noRetryOn404,
   })
@@ -76,7 +78,7 @@ export function useFileSearch(
 
   return useQuery({
     queryKey: [base, workspaceId, "search", debounced, limit],
-    queryFn: () => client.search(debounced, limit),
+    queryFn: ({ signal }) => client.search(debounced, limit, signal),
     enabled: debounced.length > 0,
     retry: noRetryOn404,
   })
@@ -109,8 +111,8 @@ export function useFileWrite(): UseMutationResult<FileWriteResult, Error, FileWr
       // invalidation. We can't tell create-vs-edit from the mutation
       // alone, so consumers wanting "created" emits do it themselves
       // at the call site (see FileTreeView.handleSubmitEdit). Plain
-      // edits emit `file:changed` — file identity didn't change.
-      events.emit("file:changed", { ...userMeta(), path })
+      // edits emit filesystem changed — file identity didn't change.
+      events.emit(filesystemEvents.changed, { ...userMeta(), path })
     },
   })
 }
@@ -121,7 +123,7 @@ export function useCreateDir(): UseMutationResult<void, Error, { path: string }>
     mutationFn: ({ path }) => client.createDir(path),
     onSuccess: (_, { path }) => {
       // Bus emit only — `useFileEventInvalidation` runs the cache invalidation.
-      events.emit("file:created", { ...userMeta(), path, kind: "dir" })
+      events.emit(filesystemEvents.created, { ...userMeta(), path, kind: "dir" })
     },
   })
 }
@@ -131,7 +133,7 @@ export function useMoveFile(): UseMutationResult<void, Error, { from: string; to
   return useMutation({
     mutationFn: ({ from, to }) => client.moveFile(from, to),
     onSuccess: (_, { from, to }) => {
-      events.emit("file:moved", { ...userMeta(), from, to })
+      events.emit(filesystemEvents.moved, { ...userMeta(), from, to })
     },
   })
 }
@@ -141,7 +143,7 @@ export function useDeleteFile(): UseMutationResult<void, Error, { path: string }
   return useMutation({
     mutationFn: ({ path }) => client.deleteFile(path),
     onSuccess: (_, { path }) => {
-      events.emit("file:deleted", { ...userMeta(), path })
+      events.emit(filesystemEvents.deleted, { ...userMeta(), path })
     },
   })
 }

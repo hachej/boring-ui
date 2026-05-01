@@ -1,4 +1,4 @@
-import type { FileEntry } from "../../front/data/types"
+import type { FileEntry } from "./data/types"
 
 export const CLIENT_FILTER_THRESHOLD = 5000
 

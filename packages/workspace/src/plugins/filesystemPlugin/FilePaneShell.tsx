@@ -3,7 +3,7 @@
 import { lazy, Suspense } from "react"
 import type { ReactNode } from "react"
 import { ConflictBanner } from "./ConflictBanner"
-import type { FileConflictError } from "../../front/data/fetchClient"
+import type { FileConflictError } from "./data/fetchClient"
 
 export interface FilePaneShellProps {
   /** The file path being edited (for "no file selected" check). */

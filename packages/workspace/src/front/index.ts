@@ -8,7 +8,6 @@
 export * from "./bridge"
 export * from "./chrome"
 export * from "./components"
-export * from "./data"
 export * from "./dock"
 export * from "./events"
 export * from "./hooks"

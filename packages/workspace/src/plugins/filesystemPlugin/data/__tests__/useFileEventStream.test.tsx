@@ -13,7 +13,8 @@ vi.mock("../DataProvider", () => ({
 }))
 
 import { useFileEventStream } from "../useFileEventStream"
-import { events } from "../../events"
+import { events } from "../../../../front/events"
+import { filesystemEvents } from "../../events"
 
 let nextSeq = 1
 function envelope(change: {
@@ -104,9 +105,9 @@ describe("useFileEventStream", () => {
     )
   })
 
-  it("emits file:changed onto the bus with cause:remote on a write event", () => {
+  it("emits filesystem changed onto the bus with cause:remote on a write event", () => {
     const fn = vi.fn()
-    events.on("file:changed", fn)
+    events.on(filesystemEvents.changed, fn)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     MockEventSource.lastInstance().dispatch(
@@ -119,9 +120,9 @@ describe("useFileEventStream", () => {
     )
   })
 
-  it("emits file:created (kind:dir) on mkdir", () => {
+  it("emits filesystem created (kind:dir) on mkdir", () => {
     const fn = vi.fn()
-    events.on("file:created", fn)
+    events.on(filesystemEvents.created, fn)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     MockEventSource.lastInstance().dispatch(
@@ -134,9 +135,9 @@ describe("useFileEventStream", () => {
     )
   })
 
-  it("emits file:deleted on unlink", () => {
+  it("emits filesystem deleted on unlink", () => {
     const fn = vi.fn()
-    events.on("file:deleted", fn)
+    events.on(filesystemEvents.deleted, fn)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     MockEventSource.lastInstance().dispatch(
@@ -149,9 +150,9 @@ describe("useFileEventStream", () => {
     )
   })
 
-  it("emits file:moved on rename when oldPath is present", () => {
+  it("emits filesystem moved on rename when oldPath is present", () => {
     const fn = vi.fn()
-    events.on("file:moved", fn)
+    events.on(filesystemEvents.moved, fn)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     MockEventSource.lastInstance().dispatch(
@@ -166,7 +167,7 @@ describe("useFileEventStream", () => {
 
   it("dedupes by eventId — repeated envelopes only relay once", () => {
     const fn = vi.fn()
-    events.on("file:changed", fn)
+    events.on(filesystemEvents.changed, fn)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     const dup = JSON.stringify({
@@ -218,7 +219,7 @@ describe("useFileEventStream", () => {
 
   it("ignores malformed JSON without throwing", () => {
     const fn = vi.fn()
-    events.on("file:changed", fn)
+    events.on(filesystemEvents.changed, fn)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     expect(() =>
@@ -229,7 +230,7 @@ describe("useFileEventStream", () => {
 
   it("ignores envelopes missing eventId or change", () => {
     const fn = vi.fn()
-    events.on("file:changed", fn)
+    events.on(filesystemEvents.changed, fn)
     renderHook(() => useFileEventStream(), { wrapper: Wrapper })
 
     MockEventSource.lastInstance().dispatch(

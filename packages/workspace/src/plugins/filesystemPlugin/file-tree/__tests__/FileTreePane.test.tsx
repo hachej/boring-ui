@@ -13,7 +13,7 @@ const mockFileSearch = vi.fn()
 
 const mockGetTree = vi.fn()
 
-vi.mock("../../../../front/data", () => ({
+vi.mock("../../data", () => ({
   useFileList: (dir: string) => mockFileList(dir),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useCreateDir: () => ({ mutateAsync: mockCreateDir }),
@@ -493,12 +493,13 @@ describe("FileTreePane", () => {
       )
     })
 
-    it("New file submit emits file:created on the bus with cause:'user'", async () => {
+    it("New file submit emits filesystem created on the bus with cause:'user'", async () => {
       const { events } = await import("../../../../front/events")
+      const { filesystemEvents } = await import("../../events")
       events._reset()
       mockFileWrite.mockResolvedValue(undefined)
       const onCreated = vi.fn()
-      events.on("file:created", onCreated)
+      events.on(filesystemEvents.created, onCreated)
 
       render(<FileTreePane />, { wrapper })
       await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())

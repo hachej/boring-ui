@@ -113,16 +113,25 @@ export class FetchClient {
     throw lastError ?? new FetchError(0, "Request failed after retries")
   }
 
-  async getTree(path: string): Promise<FileEntry[]> {
+  async getTree(path: string, signal?: AbortSignal): Promise<FileEntry[]> {
     const res = await this.request<{ entries: FileEntry[] }>(
       "GET",
       `/api/v1/tree?path=${encodeURIComponent(path)}`,
+      undefined,
+      undefined,
+      signal,
     )
     return res.entries
   }
 
-  async getFile(path: string): Promise<FileContent> {
-    return this.request<FileContent>("GET", `/api/v1/files?path=${encodeURIComponent(path)}`)
+  async getFile(path: string, signal?: AbortSignal): Promise<FileContent> {
+    return this.request<FileContent>(
+      "GET",
+      `/api/v1/files?path=${encodeURIComponent(path)}`,
+      undefined,
+      undefined,
+      signal,
+    )
   }
 
   /**
@@ -160,8 +169,14 @@ export class FetchClient {
     await this.request<void>("DELETE", `/api/v1/files?path=${encodeURIComponent(path)}`)
   }
 
-  async stat(path: string): Promise<FileStat> {
-    return this.request<FileStat>("GET", `/api/v1/stat?path=${encodeURIComponent(path)}`)
+  async stat(path: string, signal?: AbortSignal): Promise<FileStat> {
+    return this.request<FileStat>(
+      "GET",
+      `/api/v1/stat?path=${encodeURIComponent(path)}`,
+      undefined,
+      undefined,
+      signal,
+    )
   }
 
   async search(query: string, limit?: number, signal?: AbortSignal): Promise<string[]> {

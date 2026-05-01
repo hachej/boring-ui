@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { createFilesystemPlugin, filesystemPlugin } from "../index"
-import { createFilesCatalog } from "../catalog"
+import { createFilesCatalog } from "../catalogs"
 
 describe("filesystemPlugin", () => {
   it("has id 'filesystem'", () => {
@@ -15,9 +15,15 @@ describe("filesystemPlugin", () => {
     expect(filesystemPlugin.agentTools).toBeUndefined()
   })
 
-  it("registers editor panels and a files left-tab output", () => {
-    expect(filesystemPlugin.outputs).toHaveLength(1)
+  it("registers provider, files left-tab output, surface resolver, and editor panels", () => {
+    expect(filesystemPlugin.outputs).toHaveLength(7)
     expect(filesystemPlugin.outputs![0]).toEqual(
+      expect.objectContaining({
+        type: "provider",
+        id: "filesystem-data",
+      }),
+    )
+    expect(filesystemPlugin.outputs![1]).toEqual(
       expect.objectContaining({
         type: "left-tab",
         id: "files",
@@ -25,37 +31,67 @@ describe("filesystemPlugin", () => {
         source: "builtin",
       }),
     )
-    expect(filesystemPlugin.panels).toHaveLength(2)
-    const ids = filesystemPlugin.panels!.map((p) => p.id)
-    expect(ids).toEqual(["code-editor", "markdown-editor"])
+    expect(filesystemPlugin.outputs![6]).toEqual(
+      expect.objectContaining({
+        type: "surface-resolver",
+        resolver: expect.objectContaining({ id: "filesystem-path" }),
+      }),
+    )
+    expect(filesystemPlugin.panels).toBeUndefined()
+    const ids = filesystemPlugin.outputs!
+      .filter((output) => output.type === "panel")
+      .map((output) => output.panel.id)
+    expect(ids).toEqual(["empty-file-panel", "code-editor", "csv-viewer", "markdown-editor"])
   })
 
   it("all panels have source 'builtin'", () => {
-    for (const panel of filesystemPlugin.panels!) {
-      expect(panel.source).toBe("builtin")
+    for (const output of filesystemPlugin.outputs!) {
+      if (output.type === "panel") expect(output.panel.source).toBe("builtin")
     }
   })
 
-  it("code-editor panel covers common file extensions", () => {
-    const editor = filesystemPlugin.panels!.find((p) => p.id === "code-editor")!
-    expect(editor.filePatterns).toContain("**/*.ts")
-    expect(editor.filePatterns).toContain("**/*.tsx")
-    expect(editor.filePatterns).toContain("**/*.py")
-    expect(editor.filePatterns).toContain("**/*.json")
+  it("surface resolver routes common code extensions", () => {
+    const resolver = filesystemPlugin.outputs!.find((output) => output.type === "surface-resolver")!
+    expect(resolver.type).toBe("surface-resolver")
+    expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "src/App.tsx" })).toEqual(
+      expect.objectContaining({ component: "code-editor", params: { path: "src/App.tsx" } }),
+    )
+    expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "py/main.py" })).toEqual(
+      expect.objectContaining({ component: "code-editor" }),
+    )
   })
 
-  it("markdown-editor panel covers .md and .mdx", () => {
-    const md = filesystemPlugin.panels!.find((p) => p.id === "markdown-editor")!
-    expect(md.filePatterns).toEqual(["**/*.md", "**/*.mdx"])
+  it("surface resolver routes markdown paths", () => {
+    const resolver = filesystemPlugin.outputs!.find((output) => output.type === "surface-resolver")!
+    expect(resolver.type).toBe("surface-resolver")
+    expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "README.md" })).toEqual(
+      expect.objectContaining({ component: "markdown-editor" }),
+    )
+  })
+
+  it("surface resolver routes tabular file artifacts", () => {
+    const resolver = filesystemPlugin.outputs!.find((output) => output.type === "surface-resolver")!
+    expect(resolver.type).toBe("surface-resolver")
+    expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "data/status.csv" })).toEqual(
+      expect.objectContaining({ component: "csv-viewer" }),
+    )
+  })
+
+  it("surface resolver falls back for unsupported paths", () => {
+    const resolver = filesystemPlugin.outputs!.find((output) => output.type === "surface-resolver")!
+    expect(resolver.type).toBe("surface-resolver")
+    expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "blob.bin" })).toEqual(
+      expect.objectContaining({ component: "empty-file-panel" }),
+    )
   })
 
   it("has no catalogs (catalogs are registered at runtime via bindings)", () => {
     expect(filesystemPlugin.catalogs).toBeUndefined()
   })
 
-  it("ships the files catalog as a plugin binding", () => {
-    expect(filesystemPlugin.bindings).toHaveLength(1)
-    expect(createFilesystemPlugin().bindings).toHaveLength(1)
+  it("ships runtime bindings for catalog, file-panel events, and agent-created file opens", () => {
+    expect(filesystemPlugin.bindings).toHaveLength(3)
+    expect(createFilesystemPlugin().bindings).toHaveLength(3)
   })
 
   it("creates a case-insensitive files catalog adapter", async () => {

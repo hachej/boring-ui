@@ -1,9 +1,7 @@
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { ExplorerRow, SearchResult } from "../../front/components/DataExplorer/types"
 import { toFileSearchGlob } from "./search"
-
-export const FILESYSTEM_PLUGIN_ID = "filesystem"
-export const FILES_CATALOG_ID = "files"
+import { FILES_CATALOG_ID } from "./constants"
 
 export interface FilesCatalogClient {
   search(query: string, limit?: number, signal?: AbortSignal): Promise<string[]>

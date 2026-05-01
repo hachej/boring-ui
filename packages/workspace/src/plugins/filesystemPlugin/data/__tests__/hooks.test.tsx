@@ -12,7 +12,8 @@ import {
   useMoveFile,
   useDeleteFile,
 } from "../hooks"
-import { events } from "../../events"
+import { events } from "../../../../front/events"
+import { filesystemEvents } from "../../events"
 
 const TEST_BASE = "http://test"
 const TEST_WORKSPACE_ID = "workspace-hooks-test"
@@ -62,7 +63,7 @@ describe("useFileContent", () => {
     const { result } = renderHook(() => useFileContent("/a.ts"), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual({ content: "hello" })
-    expect(mockClient.getFile).toHaveBeenCalledWith("/a.ts")
+    expect(mockClient.getFile).toHaveBeenCalledWith("/a.ts", expect.any(AbortSignal))
   })
 
   it("is disabled when path is null", () => {
@@ -90,6 +91,7 @@ describe("useFileList", () => {
     const { result } = renderHook(() => useFileList("/"), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual(entries)
+    expect(mockClient.getTree).toHaveBeenCalledWith("/", expect.any(AbortSignal))
   })
 })
 
@@ -99,6 +101,7 @@ describe("useStat", () => {
     const { result } = renderHook(() => useStat("/a.ts"), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual({ size: 42, mtimeMs: 100, kind: "file" })
+    expect(mockClient.stat).toHaveBeenCalledWith("/a.ts", expect.any(AbortSignal))
   })
 })
 
@@ -108,7 +111,7 @@ describe("useFileSearch", () => {
     const { result } = renderHook(() => useFileSearch("*.ts", 10), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual(["/a.ts", "/b.ts"])
-    expect(mockClient.search).toHaveBeenCalledWith("*.ts", 10)
+    expect(mockClient.search).toHaveBeenCalledWith("*.ts", 10, expect.any(AbortSignal))
   })
 
   it("is disabled for empty query", () => {
@@ -120,7 +123,7 @@ describe("useFileSearch", () => {
 // File-mutation hooks no longer invalidate React Query directly.
 // Invalidation is centralized in `useFileEventInvalidation`, which
 // subscribes to the workspace event bus. The hooks' only post-success
-// side effect is to emit the right `file:*` event onto the bus —
+// side effect is to emit the right `filesystem:file.*` event onto the bus —
 // asserted in the "Mutation file-event emissions" suite below.
 
 describe("useFileWrite", () => {
@@ -161,10 +164,10 @@ describe("useFileWrite", () => {
 describe("Mutation file-event emissions", () => {
   beforeEach(() => events._reset())
 
-  it("useMoveFile emits file:moved with cause=user after success", async () => {
+  it("useMoveFile emits filesystem moved with cause=user after success", async () => {
     mockClient.moveFile.mockResolvedValue(undefined)
     const fn = vi.fn()
-    events.on("file:moved", fn)
+    events.on(filesystemEvents.moved, fn)
 
     const { result } = renderHook(() => useMoveFile(), { wrapper })
     await act(async () => {
@@ -183,7 +186,7 @@ describe("Mutation file-event emissions", () => {
   it("useMoveFile does NOT emit if the underlying call rejects", async () => {
     mockClient.moveFile.mockRejectedValue(new Error("denied"))
     const fn = vi.fn()
-    events.on("file:moved", fn)
+    events.on(filesystemEvents.moved, fn)
 
     const { result } = renderHook(() => useMoveFile(), { wrapper })
     await act(async () => {
@@ -195,10 +198,10 @@ describe("Mutation file-event emissions", () => {
     expect(fn).not.toHaveBeenCalled()
   })
 
-  it("useDeleteFile emits file:deleted after success", async () => {
+  it("useDeleteFile emits filesystem deleted after success", async () => {
     mockClient.deleteFile.mockResolvedValue(undefined)
     const fn = vi.fn()
-    events.on("file:deleted", fn)
+    events.on(filesystemEvents.deleted, fn)
 
     const { result } = renderHook(() => useDeleteFile(), { wrapper })
     await act(async () => {
@@ -210,10 +213,10 @@ describe("Mutation file-event emissions", () => {
     )
   })
 
-  it("useCreateDir emits file:created with kind=dir", async () => {
+  it("useCreateDir emits filesystem created with kind=dir", async () => {
     mockClient.createDir.mockResolvedValue(undefined)
     const fn = vi.fn()
-    events.on("file:created", fn)
+    events.on(filesystemEvents.created, fn)
 
     const { result } = renderHook(() => useCreateDir(), { wrapper })
     await act(async () => {
@@ -225,10 +228,10 @@ describe("Mutation file-event emissions", () => {
     )
   })
 
-  it("useFileWrite emits file:changed with cause=user after success", async () => {
+  it("useFileWrite emits filesystem changed with cause=user after success", async () => {
     mockClient.writeFile.mockResolvedValue(undefined)
     const changed = vi.fn()
-    events.on("file:changed", changed)
+    events.on(filesystemEvents.changed, changed)
 
     const { result } = renderHook(() => useFileWrite(), { wrapper })
     await act(async () => {
@@ -240,10 +243,10 @@ describe("Mutation file-event emissions", () => {
     )
   })
 
-  it("useFileWrite does NOT emit file:changed if the underlying call rejects", async () => {
+  it("useFileWrite does NOT emit filesystem changed if the underlying call rejects", async () => {
     mockClient.writeFile.mockRejectedValue(new Error("denied"))
     const changed = vi.fn()
-    events.on("file:changed", changed)
+    events.on(filesystemEvents.changed, changed)
 
     const { result } = renderHook(() => useFileWrite(), { wrapper })
     await act(async () => {

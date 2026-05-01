@@ -1,6 +1,6 @@
 "use client"
 
-import { FileConflictError } from "../../front/data/fetchClient"
+import { FileConflictError } from "./data/fetchClient"
 
 export interface ConflictBannerProps {
   conflict: FileConflictError

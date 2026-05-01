@@ -1,58 +1,111 @@
-import { useEffect } from "react"
+import { createElement, useEffect } from "react"
 import { FolderTree } from "lucide-react"
 import { definePlugin } from "../../shared/plugins/definePlugin"
 import { postUiCommand } from "../../front/bridge"
-import { useDataClient } from "../../front/data"
+import { useDataClient } from "./data"
+import { DataProvider } from "./data/DataProvider"
 import { useCatalogRegistry } from "../../front/registry"
 import { FileTreePane } from "./file-tree/FileTreeView"
+import { FilesystemFilePanelBinding } from "./filePanelBinding"
+import { FilesystemAgentFileBridge } from "./agentFileBridge"
 import { CodeEditorPane } from "./code-editor/CodeEditorPane"
 import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
-import type { Plugin } from "../../shared/plugins/types"
+import { emptyFilePanelDef } from "./empty-file-panel/definition"
+import { filesystemSurfaceResolver } from "./surfaceResolver"
+import type { Plugin, PluginProviderProps } from "../../shared/plugins/types"
 import {
-  createFilesCatalog,
+  CODE_EDITOR_PANEL_ID,
+  CSV_VIEWER_PANEL_ID,
   FILES_CATALOG_ID,
+  FILES_LEFT_TAB_ID,
   FILESYSTEM_PLUGIN_ID,
-} from "./catalog"
+  MARKDOWN_EDITOR_PANEL_ID,
+} from "./constants"
+import { createFilesCatalog } from "./catalogs"
 
 // Re-export shared file pane utilities for external use
 export { useFilePane } from "./useFilePane"
 export { FilePaneShell } from "./FilePaneShell"
 export { ConflictBanner } from "./ConflictBanner"
+export {
+  emitFilesystemAgentFileChange,
+  useAutoOpenAgentFiles,
+} from "./agentFileBridge"
 export type { UseFilePaneOptions, UseFilePaneReturn } from "./useFilePane"
+export type { UseAutoOpenAgentFilesOptions } from "./agentFileBridge"
+
+function FilesystemDataProvider({
+  apiBaseUrl,
+  authHeaders,
+  onAuthError,
+  apiTimeout,
+  children,
+}: PluginProviderProps) {
+  return createElement(
+    DataProvider,
+    {
+      apiBaseUrl,
+      authHeaders,
+      onAuthError,
+      timeout: apiTimeout,
+      children,
+    },
+  )
+}
 
 const filesystemOutputs: Plugin["outputs"] = [
   {
+    type: "provider",
+    id: "filesystem-data",
+    component: FilesystemDataProvider,
+  },
+  {
     type: "left-tab",
-    id: "files",
+    id: FILES_LEFT_TAB_ID,
     title: "Files",
     component: FileTreePane,
     source: "builtin",
     icon: FolderTree,
   },
-]
-
-const filesystemPanels: Plugin["panels"] = [
   {
-    id: "code-editor",
-    title: "Code",
-    component: CodeEditorPane,
-    placement: "center",
-    filePatterns: [
-      "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx",
-      "**/*.py", "**/*.rs", "**/*.go",
-      "**/*.json", "**/*.yml", "**/*.yaml",
-      "**/*.toml", "**/*.css", "**/*.html", "**/*.svg",
-      "**/*.sh", "**/*.sql", "**/*.graphql",
-    ],
-    source: "builtin",
+    type: "panel",
+    panel: emptyFilePanelDef,
   },
   {
-    id: "markdown-editor",
-    title: "Markdown",
-    component: MarkdownEditorPane,
-    placement: "center",
-    filePatterns: ["**/*.md", "**/*.mdx"],
-    source: "builtin",
+    type: "panel",
+    panel: {
+      id: CODE_EDITOR_PANEL_ID,
+      title: "Code",
+      component: CodeEditorPane,
+      placement: "center",
+      source: "builtin",
+    },
+  },
+  {
+    type: "panel",
+    panel: {
+      id: CSV_VIEWER_PANEL_ID,
+      title: "CSV",
+      // CSV currently uses the text editor shell; a tabular viewer can replace
+      // this panel without changing the filesystem resolver contract.
+      component: CodeEditorPane,
+      placement: "center",
+      source: "builtin",
+    },
+  },
+  {
+    type: "panel",
+    panel: {
+      id: MARKDOWN_EDITOR_PANEL_ID,
+      title: "Markdown",
+      component: MarkdownEditorPane,
+      placement: "center",
+      source: "builtin",
+    },
+  },
+  {
+    type: "surface-resolver",
+    resolver: filesystemSurfaceResolver,
   },
 ]
 
@@ -88,8 +141,11 @@ export function createFilesystemPlugin(): Plugin {
     id: FILESYSTEM_PLUGIN_ID,
     label: "Filesystem",
     outputs: filesystemOutputs,
-    panels: filesystemPanels,
-    bindings: [FilesystemCatalogBinding],
+    bindings: [
+      FilesystemCatalogBinding,
+      FilesystemFilePanelBinding,
+      FilesystemAgentFileBridge,
+    ],
   })
 }
 

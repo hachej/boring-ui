@@ -1,4 +1,4 @@
-import type { PaneProps } from "../../registry/types"
+import type { PaneProps } from "../../../front/registry/types"
 
 interface EmptyFilePanelParams {
   path: string

@@ -2,11 +2,13 @@
 
 import { useEffect } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { events } from "../events"
+import { events } from "../../../front/events"
 import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
+import { filesystemEvents } from "../events"
+import { FILES_QUERY_KEY_SEGMENT } from "../constants"
 
 /**
- * Single source of truth for translating workspace bus `file:*` events
+ * Single source of truth for translating workspace bus `filesystem:file.*` events
  * into React Query invalidation. Mounted once inside `DataProvider`.
  *
  * Why centralized:
@@ -15,17 +17,17 @@ import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
  *     vs the workspace's `[base, "files", path]`). Editor never
  *     refreshed on agent edits.
  *   - Now: agent SSE chunks → ChatPanelHost forwards via
- *     `emitAgentFileChange` → bus → THIS hook → invalidate.
+ *     filesystem agent-data bridge → filesystem bus event → THIS hook → invalidate.
  *     User actions (`useFileWrite`, etc.) emit onto the same bus →
  *     same invalidator. One path, one bug surface.
  *
  * Granular invalidation per event kind so a content-only change
  * doesn't nuke tree/search caches:
- *   file:changed                 → files(path) + stat(path)
- *   file:created (file)          → tree + stat(path)  (file appears in listing)
- *   file:created (dir)           → tree only          (no file content, no stat fetch)
- *   file:moved                   → tree + files(from+to) + stat(from+to) + search
- *   file:deleted                 → tree + files(path) + stat(path) + search
+ *   filesystem:file.changed      → files(path) + stat(path)
+ *   filesystem:file.created file → tree + files(path) + stat(path)
+ *   filesystem:file.created dir  → tree only          (no file content, no stat fetch)
+ *   filesystem:file.moved        → tree + files(from+to) + stat(from+to) + search
+ *   filesystem:file.deleted      → tree + files(path) + stat(path) + search
  */
 export function useFileEventInvalidation(): void {
   const queryClient = useQueryClient()
@@ -33,22 +35,22 @@ export function useFileEventInvalidation(): void {
   const workspaceId = useWorkspaceRequestId()
 
   useEffect(() => {
-    const offChanged = events.on("file:changed", (e) => {
+    const offChanged = events.on(filesystemEvents.changed, (e) => {
       invalidateFile(queryClient, base, workspaceId, e.path)
     })
-    const offCreated = events.on("file:created", (e) => {
+    const offCreated = events.on(filesystemEvents.created, (e) => {
       invalidateTree(queryClient, base, workspaceId)
       if (e.kind === "file") {
-        invalidateStat(queryClient, base, workspaceId, e.path)
+        invalidateFile(queryClient, base, workspaceId, e.path)
       }
     })
-    const offMoved = events.on("file:moved", (e) => {
+    const offMoved = events.on(filesystemEvents.moved, (e) => {
       invalidateTree(queryClient, base, workspaceId)
       invalidateFile(queryClient, base, workspaceId, e.from)
       invalidateFile(queryClient, base, workspaceId, e.to)
       invalidateSearch(queryClient, base, workspaceId)
     })
-    const offDeleted = events.on("file:deleted", (e) => {
+    const offDeleted = events.on(filesystemEvents.deleted, (e) => {
       invalidateTree(queryClient, base, workspaceId)
       invalidateFile(queryClient, base, workspaceId, e.path)
       invalidateSearch(queryClient, base, workspaceId)
@@ -68,7 +70,7 @@ function invalidateFile(
   workspaceId: string | null,
   path: string,
 ): void {
-  qc.invalidateQueries({ queryKey: [base, workspaceId, "files", path] })
+  qc.invalidateQueries({ queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, path] })
   qc.invalidateQueries({ queryKey: [base, workspaceId, "stat", path] })
 }
 

@@ -5,7 +5,7 @@ import {
   useMemo,
   type ReactNode,
 } from "react"
-import { DataProvider } from "../data/DataProvider"
+import { DataProvider } from "../../plugins/filesystemPlugin/data/DataProvider"
 import type { PanelRegistry } from "../registry/PanelRegistry"
 import { WorkspaceProvider } from "../provider"
 import { createMockRegistry } from "./createMockRegistry"
