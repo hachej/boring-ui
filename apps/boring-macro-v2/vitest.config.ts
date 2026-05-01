@@ -11,11 +11,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
-      "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/front/testing/index.ts"),
-      "@boring/workspace/ui-shadcn": resolve(PACKAGES, "workspace/src/front/components/ui/index.ts"),
+      "@boring/workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
+      "@boring/workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),
+      "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/testing/index.ts"),
+      "@boring/workspace/ui-shadcn": resolve(PACKAGES, "workspace/src/components/ui/index.ts"),
       "@boring/workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
-      "@boring/workspace/app": resolve(PACKAGES, "workspace/src/app/index.ts"),
-      "@boring/workspace/events": resolve(PACKAGES, "workspace/src/front/events/index.ts"),
       "@boring/workspace": resolve(PACKAGES, "workspace/src/index.ts"),
       "@/": resolve(PACKAGES, "workspace/src") + "/",
       "@": resolve(PACKAGES, "workspace/src"),

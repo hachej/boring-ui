@@ -10,7 +10,7 @@ test("/api/v1/agent/catalog lists workspace UI tools + macro tools", async ({ re
   const body = await res.json()
   const names = body.tools.map((t: { name: string }) => t.name)
 
-  // Workspace UI bridge tools (added by the inlined createWorkspaceUiTools).
+  // Workspace UI bridge tools (added by @boring/workspace/app/server).
   expect(names).toContain("exec_ui")
   expect(names).toContain("get_ui_state")
 
