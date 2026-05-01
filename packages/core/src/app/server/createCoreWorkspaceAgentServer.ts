@@ -1,18 +1,23 @@
-import { access, readFile, stat } from 'node:fs/promises'
+import { access, mkdir, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import path from 'node:path'
 
 import {
-  provisionRuntimeWorkspace,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
   type RuntimeProvisioningContribution,
 } from '@boring/agent/server'
 import {
-  createWorkspaceAgentServerBindings,
+  collectWorkspaceAgentServerPlugins,
+  provisionWorkspaceAgentServer,
   type CreateWorkspaceAgentServerOptions,
 } from '@boring/workspace/app/server'
-import { uiRoutes } from '@boring/workspace/server'
+import {
+  createInMemoryBridge,
+  createWorkspaceUiTools,
+  uiRoutes,
+  type UiBridge,
+} from '@boring/workspace/server'
 import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
@@ -182,6 +187,64 @@ function encodeAuthRequestBody(
   }
 
   return JSON.stringify(bodyValue)
+}
+
+function httpError(message: string, statusCode: number): Error & { statusCode: number } {
+  const error = new Error(message) as Error & { statusCode: number }
+  error.statusCode = statusCode
+  return error
+}
+
+function validateWorkspaceIdSegment(value: string): string {
+  const workspaceId = value.trim()
+  if (!workspaceId) throw httpError('workspace id is required', 400)
+  if (
+    workspaceId.includes('\0') ||
+    workspaceId.includes('/') ||
+    workspaceId.includes('\\') ||
+    workspaceId.includes('..') ||
+    path.isAbsolute(workspaceId)
+  ) {
+    throw httpError('invalid workspace id', 400)
+  }
+  return workspaceId
+}
+
+async function resolveAuthorizedWorkspaceId(
+  request: { headers?: Record<string, unknown>; query?: unknown; user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
+  workspaceStore: WorkspaceStore,
+): Promise<string> {
+  const headerValue = request.headers?.['x-boring-workspace-id']
+  const query = request.query as Record<string, unknown> | undefined
+  const queryValue = query?.workspaceId
+  const workspaceId = typeof headerValue === 'string'
+    ? headerValue
+    : typeof queryValue === 'string'
+      ? queryValue
+      : ''
+  const normalizedWorkspaceId = validateWorkspaceIdSegment(workspaceId)
+  const user = request.user
+  if (!user?.id) throw httpError('authentication required', 401)
+
+  let member = false
+  try {
+    member = await workspaceStore.isMember(normalizedWorkspaceId, user.id)
+  } catch (error) {
+    request.log?.error({ err: error, workspaceId: normalizedWorkspaceId }, 'workspace access check failed')
+    throw httpError('workspace access check failed', 500)
+  }
+  if (!member) throw httpError('workspace access denied', 403)
+  return normalizedWorkspaceId
+}
+
+async function resolveWorkspaceRoot(baseRoot: string, workspaceId: string): Promise<string> {
+  const base = path.resolve(baseRoot)
+  const scopedRoot = path.resolve(base, workspaceId)
+  if (scopedRoot === base || !scopedRoot.startsWith(`${base}${path.sep}`)) {
+    throw httpError('invalid workspace id', 400)
+  }
+  await mkdir(scopedRoot, { recursive: true })
+  return scopedRoot
 }
 
 function shouldServeFrontend(pathname: string): boolean {
@@ -368,22 +431,6 @@ async function registerCoreRoutes({
   await app.register(registerInviteRoutes)
 }
 
-async function provisionWorkspacePlugins(
-  options: CreateCoreWorkspaceAgentServerOptions,
-  workspaceRoot: string,
-) {
-  if (!options.plugins?.some((plugin) => plugin.provisioning)) return
-
-  await provisionRuntimeWorkspace({
-    workspaceRoot,
-    contributions: options.plugins.map((plugin) => ({
-      id: plugin.id,
-      provisioning: plugin.provisioning,
-    })),
-    force: options.forceProvisioning,
-  })
-}
-
 export async function createCoreWorkspaceAgentServer(
   options: CreateCoreWorkspaceAgentServerOptions = {},
 ): Promise<CoreWorkspaceAgentServer> {
@@ -405,14 +452,40 @@ export async function createCoreWorkspaceAgentServer(
 
   await registerAuthProxy(app)
 
-  await provisionWorkspacePlugins(options, workspaceRoot)
-
-  const bindings = createWorkspaceAgentServerBindings({
+  const pluginCollection = collectWorkspaceAgentServerPlugins({
     workspaceRoot,
-    extraTools: options.extraTools,
     systemPromptAppend: options.systemPromptAppend,
+    resourceLoaderOptions: options.resourceLoaderOptions,
     plugins: options.plugins,
+    excludeDefaults: options.excludeDefaults,
   })
+
+  await provisionWorkspaceAgentServer({
+    workspaceRoot,
+    provisioningContributions: pluginCollection.provisioningContributions,
+    force: options.forceProvisioning,
+  })
+
+  const bridges = new Map<string, UiBridge>()
+  const getUiBridge = (workspaceId: string): UiBridge => {
+    let bridge = bridges.get(workspaceId)
+    if (!bridge) {
+      bridge = createInMemoryBridge()
+      bridges.set(workspaceId, bridge)
+    }
+    return bridge
+  }
+  const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
+    options.getWorkspaceId
+      ? await options.getWorkspaceId(request)
+      : await resolveAuthorizedWorkspaceId(request, workspaceStore)
+  const resolveRoot = async (
+    workspaceId: string,
+    request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceRoot']>>[1],
+  ) =>
+    options.getWorkspaceRoot
+      ? await options.getWorkspaceRoot(workspaceId, request)
+      : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
@@ -420,13 +493,32 @@ export async function createCoreWorkspaceAgentServer(
     templatePath: options.templatePath,
     mode: options.mode,
     version: options.version,
-    extraTools: bindings.agentOptions.extraTools,
+    extraTools: [
+      ...(options.extraTools ?? []),
+      ...(pluginCollection.agentOptions.extraTools ?? []),
+    ],
+    systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
+    resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
+    getExtraTools: async (ctx) => {
+      const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
+      return [
+        ...callerTools,
+        ...createWorkspaceUiTools(getUiBridge(ctx.workspaceId), { workspaceRoot: ctx.workspaceRoot }),
+      ]
+    },
+    sandboxHandleStore: options.sandboxHandleStore,
+    getWorkspaceId: resolveWorkspaceId,
+    getWorkspaceRoot: resolveRoot,
     registerHealthRoute: options.registerHealthRoute ?? false,
   })
 
   await app.register(uiRoutes, {
-    bridge: bindings.bridge,
+    getBridge: async (request) => getUiBridge(await resolveWorkspaceId(request)),
   })
+
+  for (const { routes } of pluginCollection.routeContributions) {
+    await app.register(routes)
+  }
 
   if (serveFrontend && appRoot) {
     await registerFrontendFallback(app, appRoot)

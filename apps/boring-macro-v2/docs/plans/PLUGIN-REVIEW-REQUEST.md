@@ -22,7 +22,7 @@ This plan proposes a **self-contained macro plugin** for the boring-macro-v2 app
 
 **Current Plan**:
 - Server plugin: `makeMacroServerPlugin()` returns `{ id, agentTools, systemPrompt }`
-- Frontend plugin: `definePlugin({ panels, commands, catalogs })`
+- Frontend plugin: `defineFrontPlugin({ panels, commands, catalogs })`
 
 **Concern**: The plugin spec mentions "register additional tools into the catalog" but doesn't clearly define the frontend plugin pattern. Is this the right approach?
 
@@ -36,7 +36,7 @@ This plan proposes a **self-contained macro plugin** for the boring-macro-v2 app
 > `createAgentApp` disables automatic plugin loading when runtime mode is `vercel-sandbox`. This is intentional: plugin files are discovered via host Node filesystem access, while sandbox workspace/exec are remote.
 
 **Current Plan**:
-- Relies on `plugins: [...]` option in `createWorkspaceAgentApp`
+- Relies on `plugins: [...]` option in `createWorkspaceAgentServer`
 - Assumes plugin auto-discovery works
 
 **Concern**: Should we use `extraTools` instead for vercel-sandbox compatibility?

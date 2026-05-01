@@ -29,8 +29,8 @@ export function makeMacroServerPlugin(macroConfig) {
 
 **Frontend Plugin** (extension of spec):
 ```typescript
-// @boring/workspace defines definePlugin for UI contributions
-export const macroFrontendPlugin = definePlugin({
+// @boring/workspace defines defineFrontPlugin for UI contributions
+export const macroFrontendPlugin = defineFrontPlugin({
   id: 'boring-macro',
   panels: [...],
   commands: [...],
@@ -46,7 +46,7 @@ From `PLUGINS.md`:
 **Current Plan Problem**:
 ```typescript
 // This won't work in vercel-sandbox:
-const app = await createWorkspaceAgentApp({
+const app = await createWorkspaceAgentServer({
   mode: 'vercel-sandbox',
   plugins: [makeMacroServerPlugin(macroConfig)] // ← Auto-discovery disabled
 })
@@ -54,7 +54,7 @@ const app = await createWorkspaceAgentApp({
 
 **Fix**: Use `extraTools` for vercel-sandbox:
 ```typescript
-const app = await createWorkspaceAgentApp({
+const app = await createWorkspaceAgentServer({
   mode: 'vercel-sandbox',
   extraTools: createMacroTools(macroConfig) // ← Explicit registration
 })
@@ -64,7 +64,7 @@ const app = await createWorkspaceAgentApp({
 ```typescript
 const isVercelSandbox = mode === 'vercel-sandbox'
 
-const app = await createWorkspaceAgentApp({
+const app = await createWorkspaceAgentServer({
   mode,
   plugins: isVercelSandbox ? [] : [makeMacroServerPlugin(macroConfig)],
   extraTools: isVercelSandbox ? createMacroTools(macroConfig) : []
@@ -384,7 +384,7 @@ if (catalog.has(tool.name)) {
 }
 ```
 
-**Recommendation**: Enforce naming convention in `definePlugin` validation.
+**Recommendation**: Enforce naming convention in `defineFrontPlugin` validation.
 
 ---
 
@@ -412,7 +412,7 @@ if (catalog.has(tool.name)) {
 For `vercel-sandbox` mode, plugin auto-discovery is disabled. Use:
 
 ```typescript
-const app = await createWorkspaceAgentApp({
+const app = await createWorkspaceAgentServer({
   mode,
   plugins: mode === 'vercel-sandbox' ? [] : [makeMacroServerPlugin(macroConfig)],
   extraTools: mode === 'vercel-sandbox' ? createMacroTools(macroConfig) : []

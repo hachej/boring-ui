@@ -22,6 +22,17 @@ export {
 } from "./ui-control/tools/uiTools"
 export type { UiBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
 export {
+  bootstrapServer,
+  defineServerPlugin,
+} from "./plugins/bootstrapServer"
+export type {
+  ServerBootstrapOptions,
+  ServerBootstrapResult,
+  WorkspaceProvisioningContribution,
+  WorkspaceRouteContribution,
+  WorkspaceServerPlugin,
+} from "./plugins/bootstrapServer"
+export {
   createDataCatalogAgentTool,
   createDataCatalogServerPlugin,
   createDataCatalogSkillPrompt,

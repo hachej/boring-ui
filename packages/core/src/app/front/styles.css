@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@source "../..";
+@source "../../../../workspace/src";
+@source "../../../../agent/src/front/**/*.{ts,tsx}";
+
+@import "../../front/theme.css";
+@import "@boring/workspace/globals.css";
+@import "@boring/agent/front/styles.css";

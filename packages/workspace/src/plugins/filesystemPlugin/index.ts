@@ -1,18 +1,21 @@
 import { createElement, useEffect } from "react"
 import { FolderTree } from "lucide-react"
-import { definePlugin } from "../../shared/plugins/definePlugin"
+import { defineFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
 import { postUiCommand } from "../../front/bridge"
-import { useDataClient } from "./data"
+import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
 import { useCatalogRegistry } from "../../front/registry"
-import { FileTreePane } from "./file-tree/FileTreeView"
+import { FileTreePane, preloadFileTreeComponent } from "./file-tree/FileTreeView"
 import { FilesystemFilePanelBinding } from "./filePanelBinding"
 import { FilesystemAgentFileBridge } from "./agentFileBridge"
 import { CodeEditorPane } from "./code-editor/CodeEditorPane"
 import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
 import { emptyFilePanelDef } from "./empty-file-panel/definition"
 import { filesystemSurfaceResolver } from "./surfaceResolver"
-import type { Plugin, PluginProviderProps } from "../../shared/plugins/types"
+import type {
+  PluginProviderProps,
+} from "../../shared/plugins/types"
+import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
 import {
   CODE_EDITOR_PANEL_ID,
   CSV_VIEWER_PANEL_ID,
@@ -53,11 +56,24 @@ function FilesystemDataProvider({
   )
 }
 
-const filesystemOutputs: Plugin["outputs"] = [
+function FilesystemTreePreloadBinding() {
+  useEffect(() => {
+    preloadFileTreeComponent()
+  }, [])
+  useFileList(".")
+  return null
+}
+
+const filesystemOutputs: WorkspaceFrontPlugin["outputs"] = [
   {
     type: "provider",
     id: "filesystem-data",
     component: FilesystemDataProvider,
+  },
+  {
+    type: "binding",
+    id: "filesystem-tree-preload",
+    component: FilesystemTreePreloadBinding,
   },
   {
     type: "left-tab",
@@ -136,8 +152,8 @@ function FilesystemCatalogBinding() {
   return null
 }
 
-export function createFilesystemPlugin(): Plugin {
-  return definePlugin({
+export function createFilesystemPlugin(): WorkspaceFrontPlugin {
+  return defineFrontPlugin({
     id: FILESYSTEM_PLUGIN_ID,
     label: "Filesystem",
     outputs: filesystemOutputs,

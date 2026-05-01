@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { bootstrapServer } from "../plugins/bootstrapServer"
+import { bootstrapServer, defineServerPlugin } from "../plugins/bootstrapServer"
 
 function makeAgentTool(name = "tool") {
   return {
@@ -17,6 +17,8 @@ describe("bootstrapServer", () => {
       registered: [],
       systemPromptAppend: "",
       agentTools: [],
+      provisioningContributions: [],
+      routeContributions: [],
     })
   })
 
@@ -120,5 +122,28 @@ describe("bootstrapServer", () => {
 
     expect(result.agentTools).toHaveLength(0)
     expect(result.registered).toEqual(["ui-only"])
+  })
+
+  it("collects route contributions from plugins", () => {
+    const routes = vi.fn()
+    const result = bootstrapServer({
+      plugins: [{ id: "routes", routes }],
+    })
+
+    expect(result.routeContributions).toEqual([{ id: "routes", routes }])
+  })
+
+  it("defineServerPlugin preserves the standard server plugin shape", () => {
+    const plugin = defineServerPlugin({
+      id: "standard",
+      label: "Standard",
+      systemPrompt: "Prompt",
+    })
+
+    expect(plugin).toEqual({
+      id: "standard",
+      label: "Standard",
+      systemPrompt: "Prompt",
+    })
   })
 })

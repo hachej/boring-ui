@@ -174,6 +174,15 @@ function assertEnvKey(key: string): void {
   }
 }
 
+async function isRuntimeMaterialized(
+  workspaceRoot: string,
+  contributions: Array<{ provisioning: RuntimeProvisioningContribution }>,
+): Promise<boolean> {
+  const hasPython = contributions.some(({ provisioning }) => (provisioning.python ?? []).length > 0)
+  if (hasPython && !(await exists(join(workspaceRoot, '.venv', 'bin', 'python')))) return false
+  return true
+}
+
 async function writeShims(workspaceRoot: string, env: Record<string, string>): Promise<string> {
   const shimDir = join(workspaceRoot, '.boring-agent', 'bin')
   const venvBin = join(workspaceRoot, '.venv', 'bin')
@@ -202,7 +211,13 @@ VENV_BIN="$WORKSPACE_ROOT/.venv/bin"
       const full = join(venvBin, entry)
       const info = await stat(full).catch(() => null)
       if (!info?.isFile()) continue
-      await writeExecutable(join(shimDir, entry), `${base}exec "$VENV_BIN"/${bashSingleQuote(entry)} "$@"\n`)
+      await writeExecutable(join(shimDir, entry), `${base}TARGET="$VENV_BIN"/${bashSingleQuote(entry)}
+SHEBANG="$(head -n 1 "$TARGET" 2>/dev/null || true)"
+case "$SHEBANG" in
+  *python*) exec "$VENV_BIN/python" "$TARGET" "$@" ;;
+esac
+exec "$TARGET" "$@"
+`)
     }
   }
   return shimDir
@@ -227,7 +242,7 @@ export async function provisionRuntimeWorkspace({
   if (!force && await exists(markerPath)) {
     try {
       const marker = JSON.parse(await readFile(markerPath, 'utf8')) as { fingerprint?: string }
-      if (marker.fingerprint === hash) {
+      if (marker.fingerprint === hash && await isRuntimeMaterialized(workspaceRoot, active)) {
         await writeShims(workspaceRoot, env)
         return { fingerprint: hash, changed: false, env, binDir }
       }

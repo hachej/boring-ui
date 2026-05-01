@@ -35,7 +35,7 @@ test.describe("workspace-playground auth-free boot", () => {
     })
 
     await page.goto("/")
-    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
+    await page.waitForLoadState("networkidle")
     // Idle long enough for any deferred AuthProvider / ConfigProvider
     // useEffects to fire.
     await page.waitForTimeout(1500)
@@ -50,11 +50,12 @@ test.describe("workspace-playground auth-free boot", () => {
     page,
   }) => {
     await page.goto("/")
-    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
+    await page.waitForLoadState("networkidle")
     await page.waitForTimeout(1500)
 
-    // The playground shell should be visible — appTitle "Boring" in top chrome.
-    await expect(page.getByText("Boring").first()).toBeVisible()
+    // The workspace shell should be visible without a core app wrapper.
+    await expect(page.getByLabel("Chat stage")).toBeVisible()
+    await expect(page.getByLabel("Session browser")).toBeVisible()
 
     // AppErrorBoundary surfaces "Something went wrong" — must NOT be
     // present. Was the visible failure mode when normalizeUser

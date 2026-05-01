@@ -5,7 +5,7 @@ import { PanelRegistry } from "../../../front/registry/PanelRegistry"
 import { SurfaceResolverRegistry } from "../../../front/registry/SurfaceResolverRegistry"
 import { CatalogRegistry } from "../../../front/plugin/CatalogRegistry"
 import { events, workspaceEvents } from "../../../front/events"
-import { bootstrap, definePlugin } from "../../../shared/plugins"
+import { bootstrap, defineFrontPlugin } from "../../../shared/plugins"
 import type { ExplorerAdapter, ExplorerRow } from "../../../front/components/DataExplorer"
 import {
   DATA_CATALOG_ROW_SURFACE_KIND,
@@ -148,7 +148,7 @@ describe("dataCatalogPlugin", () => {
   })
 
   it("appends outputs to a child app plugin without replacing its own panels", () => {
-    const child = definePlugin({
+    const child = defineFrontPlugin({
       id: "analytics-host",
       label: "Analytics",
       panels: [

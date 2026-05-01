@@ -9,6 +9,7 @@ export default defineConfig([
       'server/db/index': 'src/server/db/index.ts',
       'app/server/index': 'src/app/server/index.ts',
       'app/front/index': 'src/app/front/index.ts',
+      'app/vite/index': 'src/app/vite/index.ts',
       'front/index': 'src/front/index.ts',
       'front/top-bar-slot': 'src/front/components/TopBarSlot.tsx',
       'shared/index': 'src/shared/index.ts',

@@ -72,11 +72,11 @@ workspace UI bridge tool — do NOT shell out to a custom tool):
 
 ```json
 {
-  "kind": "openPanel",
+  "kind": "openSurface",
   "params": {
-    "id": "chart:CPIAUCSL",
-    "component": "chart-canvas",
-    "params": { "seriesId": "CPIAUCSL" }
+    "kind": "macro.open-series",
+    "target": "CPIAUCSL",
+    "meta": { "title": "Consumer Price Index" }
   }
 }
 ```
@@ -85,11 +85,10 @@ To open a deck:
 
 ```json
 {
-  "kind": "openPanel",
+  "kind": "openSurface",
   "params": {
-    "id": "deck:intro",
-    "component": "deck",
-    "params": { "path": "intro.md" }
+    "kind": "workspace.open.path",
+    "target": "deck/intro.md"
   }
 }
 ```

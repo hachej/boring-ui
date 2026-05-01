@@ -2,10 +2,12 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Compo
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, workspaceEvents } from "../events"
+import { useKeyboardShortcuts, type ShortcutBinding } from "../hooks/useKeyboardShortcuts"
 import type { SurfaceShellApi } from "../chrome/artifact-surface/SurfaceShell"
 import type { LayoutConfig, GroupConfig } from "../dock"
 import { useCommandRegistry, useRegistry } from "../registry"
 import type { PaneProps } from "../registry/types"
+import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
@@ -70,15 +72,21 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
 }
 
 export function ChatLayout(props: ChatLayoutProps) {
-  const navOpen = Boolean(props.nav ?? "session-list")
+  const navOpen = props.nav !== null
   const surfaceConfigured = props.surface !== undefined && props.surface !== null
   const surfaceOpen = Boolean(props.surface)
   const navId = props.nav || "session-list"
   const centerId = props.center ?? "chat"
   const surfaceId = props.surface || "artifact-surface"
   const viewport = useViewportWidth()
-  const [navWidth, setNavWidth] = useState(260)
-  const [surfaceWidth, setSurfaceWidth] = useState(680)
+  const [navWidth, setNavWidth] = useStoredNumberState(
+    props.storageKey ? `${props.storageKey}:drawerWidth` : undefined,
+    260,
+  )
+  const [surfaceWidth, setSurfaceWidth] = useStoredNumberState(
+    props.storageKey ? `${props.storageKey}:surfaceWidth` : undefined,
+    680,
+  )
   const commandRegistry = useCommandRegistry()
   const effectiveNavWidth = clamp(navWidth, 200, 360)
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
@@ -86,15 +94,51 @@ export function ChatLayout(props: ChatLayoutProps) {
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
   const uiIsWorkbenchOpen = getFunction<() => boolean>(props.centerParams, "isWorkbenchOpen")
   const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
+  const closeNav = getCallback(props.navParams, "onClose")
+  const closeSurface = getCallback(props.surfaceParams, "onClose")
+  const createSession = getCallback(props.navParams, "onCreate")
+  const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
+  const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
+  const toggleNav = useCallback(() => {
+    if (navOpen) {
+      closeNav?.()
+      return
+    }
+    props.onOpenNav?.()
+  }, [closeNav, navOpen, props.onOpenNav])
+  const toggleSurface = useCallback(() => {
+    if (surfaceOpen) {
+      closeSurface?.()
+      return
+    }
+    props.onOpenSurface?.()
+  }, [closeSurface, props.onOpenSurface, surfaceOpen])
+  const focusChat = useCallback(() => {
+    if (navOpen) closeNav?.()
+    if (surfaceOpen) closeSurface?.()
+    focusAgentComposer()
+    scheduleComposerFocus()
+  }, [closeNav, closeSurface, navOpen, surfaceOpen])
+
+  useKeyboardShortcuts({
+    shortcuts: useMemo(() => {
+      const shortcuts: ShortcutBinding[] = []
+      if (canControlNav) {
+        shortcuts.push({ key: "1", mod: true, handler: toggleNav })
+      }
+      if (canControlSurface) {
+        shortcuts.push({ key: "2", mod: true, handler: toggleSurface })
+      }
+      if (centerId === "chat") {
+        shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
+      }
+      return shortcuts
+    }, [canControlNav, canControlSurface, centerId, focusChat, toggleNav, toggleSurface]),
+  })
 
   useEffect(() => {
     const pluginId = "workspace:chat-layout"
     const agentPluginId = "agent:chat-layout"
-    const closeNav = getCallback(props.navParams, "onClose")
-    const closeSurface = getCallback(props.surfaceParams, "onClose")
-    const createSession = getCallback(props.navParams, "onCreate")
-    const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
-    const canControlSurface = surfaceConfigured && (surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface))
 
     commandRegistry.unregisterByPluginId(pluginId)
     commandRegistry.unregisterByPluginId(agentPluginId)
@@ -105,13 +149,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       shortcut: "⌘1",
       pluginId,
       when: () => canControlNav,
-      run: () => {
-        if (navOpen) {
-          closeNav?.()
-          return
-        }
-        props.onOpenNav?.()
-      },
+      run: toggleNav,
     })
     commandRegistry.registerCommand({
       id: "workspace:open-workbench",
@@ -120,13 +158,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       shortcut: "⌘2",
       pluginId,
       when: () => canControlSurface,
-      run: () => {
-        if (surfaceOpen) {
-          closeSurface?.()
-          return
-        }
-        props.onOpenSurface?.()
-      },
+      run: toggleSurface,
     })
     if (centerId === "chat") {
       commandRegistry.registerCommand({
@@ -134,12 +166,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         title: "Focus Chat",
         keywords: ["agent", "chat", "prompt", "composer", "input", "focus"],
         pluginId: agentPluginId,
-        run: () => {
-          if (navOpen) closeNav?.()
-          if (surfaceOpen) closeSurface?.()
-          focusAgentComposer()
-          scheduleComposerFocus()
-        },
+        run: focusChat,
       })
     }
     if (createSession) {
@@ -165,6 +192,14 @@ export function ChatLayout(props: ChatLayoutProps) {
     props.surfaceParams,
     props.onOpenNav,
     props.onOpenSurface,
+    canControlNav,
+    canControlSurface,
+    closeNav,
+    closeSurface,
+    createSession,
+    focusChat,
+    toggleNav,
+    toggleSurface,
   ])
 
   useEffect(() => {
@@ -288,6 +323,34 @@ export function ChatLayout(props: ChatLayoutProps) {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
+}
+
+type StoredNumberUpdate = number | ((previous: number) => number)
+
+function useStoredNumberState(
+  key: string | undefined,
+  fallback: number,
+): [number, (next: StoredNumberUpdate) => void] {
+  const [value, setValue] = useState(() =>
+    key ? readStoredNumber(key, fallback) : fallback,
+  )
+
+  useEffect(() => {
+    setValue(key ? readStoredNumber(key, fallback) : fallback)
+  }, [key, fallback])
+
+  const setStoredValue = useCallback(
+    (next: StoredNumberUpdate) => {
+      setValue((previous) => {
+        const resolved = typeof next === "function" ? next(previous) : next
+        if (key) writeStoredNumber(key, resolved)
+        return resolved
+      })
+    },
+    [key],
+  )
+
+  return [value, setStoredValue]
 }
 
 function useViewportWidth(): number {

@@ -1,10 +1,10 @@
-import { definePlugin } from "@boring/workspace"
+import { defineFrontPlugin } from "@boring/workspace"
 import { SAMPLE_PLUGIN_ID } from "./constants"
 import { samplePanel } from "./panels"
 import { sampleSurfaceResolver } from "./surfaceResolver"
 
 export function createSamplePlugin() {
-  return definePlugin({
+  return defineFrontPlugin({
     id: SAMPLE_PLUGIN_ID,
     label: "Sample",
     outputs: [

@@ -6,19 +6,20 @@ import type { ReactNode } from "react"
 import { WorkspaceProvider } from "../front/provider"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
-import { definePlugin } from "../shared/plugins/definePlugin"
+import { defineFrontPlugin } from "../shared/plugins/defineFrontPlugin"
 import {
   DATA_CATALOG_ROW_SURFACE_KIND,
   createDataCatalogPlugin,
 } from "../plugins/dataCatalogPlugin"
-import type { Plugin, PluginOutput } from "../shared/plugins/types"
+import type { PluginOutput } from "../shared/plugins/types"
+import type { WorkspaceFrontPlugin } from "../shared/plugins/defineFrontPlugin"
 import { events, workspaceEvents } from "../front/events"
 import type { ExplorerAdapter, SearchResult } from "../front/components/DataExplorer/types"
 
 const DummyPanel = () => null
 
 function getPluginOutput<T extends PluginOutput["type"]>(
-  plugin: Plugin,
+  plugin: WorkspaceFrontPlugin,
   type: T,
 ): Extract<PluginOutput, { type: T }> {
   const output = plugin.outputs?.find(
@@ -77,7 +78,7 @@ const stubAdapter: ExplorerAdapter = {
 
 describe("WorkspaceProvider — plugin integration", () => {
   it("bootstrap runs once on mount and registers user plugin contributions", () => {
-    const testPlugin = definePlugin({
+    const testPlugin = defineFrontPlugin({
       id: "test-plugin",
       label: "Test",
       panels: [
@@ -145,7 +146,7 @@ describe("WorkspaceProvider — plugin integration", () => {
   it("plugin-provided commands appear in CommandPalette and execute", async () => {
     const user = userEvent.setup()
     const run = vi.fn()
-    const plugin = definePlugin({
+    const plugin = defineFrontPlugin({
       id: "plugin-commands",
       label: "Plugin Commands",
       commands: [
@@ -250,7 +251,7 @@ describe("WorkspaceProvider — plugin integration", () => {
   })
 
   it("user plugin alongside defaults does not conflict", () => {
-    const customPlugin = definePlugin({
+    const customPlugin = defineFrontPlugin({
       id: "analytics",
       panels: [
         { id: "analytics-dashboard", title: "Analytics", component: DummyPanel, source: "app" },
@@ -276,7 +277,7 @@ describe("WorkspaceProvider — plugin integration", () => {
 })
 
 describe("createDataCatalogPlugin integration", () => {
-  it("returns a Plugin with a left-tab output, visualization panel, and catalog", () => {
+  it("returns a WorkspaceFrontPlugin with a left-tab output, visualization panel, and catalog", () => {
     const plugin = createDataCatalogPlugin({ adapter: stubAdapter })
     expect(plugin.id).toBe("data-catalog")
     expect(plugin.label).toBe("Data Catalog")
@@ -450,7 +451,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
   })
 
   it("core panels register BEFORE plugin panels (ordering)", () => {
-    const testPlugin = definePlugin({
+    const testPlugin = defineFrontPlugin({
       id: "custom",
       panels: [{ id: "custom-panel", title: "Custom", component: DummyPanel, source: "app" }],
     })
@@ -474,7 +475,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
   })
 
   it("core panels + filesystem defaults + user plugin all coexist", () => {
-    const testPlugin = definePlugin({
+    const testPlugin = defineFrontPlugin({
       id: "test",
       panels: [{ id: "test-panel", title: "Test", component: DummyPanel, source: "app" }],
     })

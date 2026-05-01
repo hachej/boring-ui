@@ -132,6 +132,12 @@ export interface RegisterAgentRoutesOptions {
     workspaceRoot: string
     runtimeMode: RuntimeModeId
   }) => AgentTool[] | Promise<AgentTool[]>
+  systemPromptAppend?: string
+  resourceLoaderOptions?: {
+    noContextFiles?: boolean
+    noSkills?: boolean
+    additionalSkillPaths?: string[]
+  }
   registerHealthRoute?: boolean
   sandboxHandleStore?: SandboxHandleStore
   getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
@@ -225,7 +231,16 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       pluginTools,
       logger: app.log,
     })
-    const harness = createPiCodingAgentHarness({ tools, cwd: root })
+    const harness = createPiCodingAgentHarness({
+      tools,
+      cwd: root,
+      systemPromptAppend: opts.systemPromptAppend,
+      resourceLoaderOptions: {
+        noContextFiles: true,
+        noSkills: true,
+        ...opts.resourceLoaderOptions,
+      },
+    })
     const readyTracker = new ReadyStatusTracker({
       sandboxReady: resolvedMode !== 'vercel-sandbox',
       harnessReady: true,

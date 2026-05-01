@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { ChatPanel as DefaultChatPanel, useSessions as useDefaultAgentSessions } from "@boring/agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { ChatLayout, type ChatLayoutProps } from "../../front/layout"
+import { ChatLayout, TopBar, type ChatLayoutProps } from "../../front/layout"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
-import type { SurfaceShellProps } from "../../front/chrome/artifact-surface/SurfaceShell"
-import type { Plugin } from "../../shared/plugins"
+import type {
+  SurfaceShellApi,
+  SurfaceShellProps,
+  SurfaceShellSnapshot,
+} from "../../front/chrome/artifact-surface/SurfaceShell"
+import { useRegistry } from "../../front/registry"
+import type { WorkspaceFrontPlugin } from "../../shared/plugins"
 import type { PanelOutput, PluginOutput } from "../../shared/plugins/types"
+import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
 import {
   createLocalStorageSessions,
   useLocalStorageSessions,
@@ -13,7 +20,7 @@ import {
 export interface WorkspaceAgentSession {
   id: string
   title?: string | null
-  updatedAt?: number
+  updatedAt?: string | number
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -38,9 +45,9 @@ export type UseWorkspaceAgentSessions<
 export interface WorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 > extends Omit<WorkspaceProviderProps, "children" | "workspaceId" | "storageKey" | "chatPanel">,
-    Omit<ChatLayoutProps, "nav" | "navParams" | "center" | "centerParams" | "surface" | "surfaceParams" | "sidebar" | "sidebarParams"> {
+    Omit<ChatLayoutProps, "nav" | "navParams" | "center" | "centerParams" | "surface" | "surfaceParams" | "sidebar" | "sidebarParams" | "storageKey"> {
   workspaceId: string
-  chatPanel: ComponentType<WorkspaceChatPanelProps>
+  chatPanel?: ComponentType<WorkspaceChatPanelProps>
   useSessions?: UseWorkspaceAgentSessions<TSession>
   requestHeaders?: Record<string, string>
   sessionStorageKey?: string
@@ -49,9 +56,10 @@ export interface WorkspaceAgentFrontProps<
   beforeShell?: ReactNode
   afterShell?: ReactNode
   appTitle?: string
+  defaultSessionTitle?: string
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
-  sessions?: Array<{ id: string; title?: string | null; updatedAt?: number }>
+  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
   onCreateSession?: () => void
@@ -65,13 +73,117 @@ function isPanelOutput(output: PluginOutput): output is PanelOutput {
   return output.type === "panel"
 }
 
+function shellStorageKeyFromSurfaceStorage(
+  surfaceKey: string,
+  fallback: string,
+): string {
+  return surfaceKey.endsWith(":surface")
+    ? surfaceKey.slice(0, -":surface".length)
+    : fallback
+}
+
+function useStoredBooleanState(
+  key: string,
+  fallback: boolean,
+  enabled: boolean,
+): [boolean, (next: boolean) => void] {
+  const [value, setValue] = useState(() => readStoredBoolean(key, fallback, enabled))
+
+  useEffect(() => {
+    setValue(readStoredBoolean(key, fallback, enabled))
+  }, [key, fallback, enabled])
+
+  const setStoredValue = useCallback(
+    (next: boolean) => {
+      setValue(next)
+      writeStoredBoolean(key, next, enabled)
+    },
+    [enabled, key],
+  )
+
+  return [value, setStoredValue]
+}
+
+const EMPTY_HEADERS: Record<string, string> = {}
+
+const emptySurfaceSnapshot: SurfaceShellSnapshot = {
+  openTabs: [],
+  activeTab: null,
+}
+
+function uiEndpointBase(endpoint: string | null | undefined): string {
+  if (!endpoint) return "/api/v1/ui"
+  const normalized = endpoint.replace(/\/$/, "")
+  const suffix = "/api/v1/ui"
+  if (normalized.endsWith(suffix)) return normalized
+  return `${normalized}${suffix}`
+}
+
+function uiStateEndpointUrl(endpoint: string | null | undefined): string {
+  return `${uiEndpointBase(endpoint)}/state`
+}
+
+function activeFileFromSnapshot(snapshot: SurfaceShellSnapshot): string | null {
+  const active = snapshot.openTabs.find((tab) => tab.id === snapshot.activeTab)
+  const path = active?.params?.path
+  return typeof path === "string" ? path : null
+}
+
+function WorkspaceUiStateSync({
+  bridgeEndpoint,
+  requestHeaders,
+  navOpen,
+  surfaceOpen,
+  snapshot,
+}: {
+  bridgeEndpoint?: string | null
+  requestHeaders: Record<string, string>
+  navOpen: boolean
+  surfaceOpen: boolean
+  snapshot: SurfaceShellSnapshot
+}) {
+  const panelRegistry = useRegistry()
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (bridgeEndpoint === null) return
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const state = {
+      v: 1,
+      drawerOpen: navOpen,
+      workbenchOpen: surfaceOpen,
+      openTabs: snapshot.openTabs,
+      activeTab: snapshot.activeTab,
+      activeFile: activeFileFromSnapshot(snapshot),
+      availablePanels: panelRegistry.list().map((panel) => panel.id),
+    }
+
+    void fetch(uiStateEndpointUrl(bridgeEndpoint), {
+      method: "PUT",
+      headers: { ...requestHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ state, causedBy: "user" }),
+      signal: controller.signal,
+    }).catch(() => {
+      // UI state is advisory for the agent; command delivery still works.
+    })
+
+    return () => {
+      controller.abort()
+    }
+  }, [bridgeEndpoint, navOpen, panelRegistry, requestHeaders, snapshot, surfaceOpen])
+
+  return null
+}
+
 export function WorkspaceAgentFront<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 >({
   workspaceId,
-  chatPanel,
-  useSessions,
-  requestHeaders = {},
+  chatPanel: chatPanelProp,
+  useSessions: useSessionsProp,
+  requestHeaders = EMPTY_HEADERS,
   sessionStorageKey,
   providerStorageKey,
   surfaceStorageKey,
@@ -98,6 +210,7 @@ export function WorkspaceAgentFront<
   onDeleteSession,
   onActiveSessionIdChange,
   appTitle = "Boring",
+  defaultSessionTitle = "New session",
   topBarLeft,
   topBarRight,
   chatParams,
@@ -106,6 +219,15 @@ export function WorkspaceAgentFront<
   onOpenSurface,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
+  const resolvedProviderStorageKey =
+    providerStorageKey ?? `boring-ui-v2:layout:${workspaceId}`
+  const resolvedSurfaceStorageKey =
+    surfaceStorageKey ?? `${resolvedProviderStorageKey}:surface`
+  const shellStorageKey = shellStorageKeyFromSurfaceStorage(
+    resolvedSurfaceStorageKey,
+    resolvedProviderStorageKey,
+  )
+  const shellPersistenceEnabled = persistenceEnabled !== false
   const resolvedSessionStorageKey =
     sessionStorageKey ?? `boring-workspace:sessions:${workspaceId}`
   const localSessionStore = useMemo(
@@ -113,6 +235,10 @@ export function WorkspaceAgentFront<
     [resolvedSessionStorageKey],
   )
   const localSessions = useLocalStorageSessions(localSessionStore)
+  const chatPanel = (chatPanelProp ?? DefaultChatPanel) as ComponentType<WorkspaceChatPanelProps>
+  const useSessions = (useSessionsProp ?? (chatPanelProp ? undefined : useDefaultAgentSessions)) as
+    | UseWorkspaceAgentSessions<TSession>
+    | undefined
   const sessionApi = useSessions?.({
     requestHeaders,
     storageKey: resolvedSessionStorageKey,
@@ -142,11 +268,82 @@ export function WorkspaceAgentFront<
     ? () => sessionApi.create()
     : onCreateSession ?? localSessionStore.create
   const resolvedDelete = sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
+  const resolvedSessionTitle = resolvedSessions.find((session) => session.id === resolvedActiveId)?.title ?? undefined
 
-  const [navOpen, setNavOpen] = useState(true)
-  const [surfaceOpen, setSurfaceOpen] = useState(false)
+  const [navOpen, setNavOpen] = useStoredBooleanState(
+    `${shellStorageKey}:drawer`,
+    true,
+    shellPersistenceEnabled,
+  )
+  const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
+    `${shellStorageKey}:surface`,
+    false,
+    shellPersistenceEnabled,
+  )
+  const autoCreateSessionRef = useRef(false)
+  const surfaceOpenRef = useRef(surfaceOpen)
+  const surfaceRef = useRef<SurfaceShellApi | null>(null)
+  const [surfaceSnapshotState, setSurfaceSnapshotState] = useState(() => ({
+    key: resolvedSurfaceStorageKey,
+    snapshot: emptySurfaceSnapshot,
+  }))
+  const surfaceSnapshot = surfaceSnapshotState.key === resolvedSurfaceStorageKey
+    ? surfaceSnapshotState.snapshot
+    : emptySurfaceSnapshot
+
+  useEffect(() => {
+    surfaceRef.current = null
+    setSurfaceSnapshotState({
+      key: resolvedSurfaceStorageKey,
+      snapshot: emptySurfaceSnapshot,
+    })
+  }, [resolvedSurfaceStorageKey])
+
+  useEffect(() => {
+    autoCreateSessionRef.current = false
+  }, [workspaceId])
+
+  useEffect(() => {
+    if (!sessionApi || sessionApi.loading) return
+    if (sessionApi.sessions.length > 0) {
+      autoCreateSessionRef.current = false
+      return
+    }
+    if (autoCreateSessionRef.current) return
+    autoCreateSessionRef.current = true
+    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle })).catch(() => {
+      autoCreateSessionRef.current = false
+    })
+  }, [defaultSessionTitle, sessionApi])
+
+  useEffect(() => {
+    surfaceOpenRef.current = surfaceOpen
+    if (!surfaceOpen) surfaceRef.current = null
+  }, [surfaceOpen])
+
+  const handleSurfaceReady = useCallback((api: SurfaceShellApi) => {
+    surfaceRef.current = api
+    setSurfaceSnapshotState({
+      key: resolvedSurfaceStorageKey,
+      snapshot: api.getSnapshot(),
+    })
+  }, [resolvedSurfaceStorageKey])
+
+  const handleSurfaceChange = useCallback((snapshot: SurfaceShellSnapshot) => {
+    setSurfaceSnapshotState({
+      key: resolvedSurfaceStorageKey,
+      snapshot,
+    })
+  }, [resolvedSurfaceStorageKey])
+
+  const getSurface = useCallback(() => surfaceRef.current, [])
+  const isWorkbenchOpen = useCallback(() => surfaceOpenRef.current, [])
+  const openWorkbench = useCallback(() => {
+    surfaceOpenRef.current = true
+    setSurfaceOpen(true)
+  }, [setSurfaceOpen])
   const pluginOutputs = useMemo(
-    () => plugins?.flatMap((plugin: Plugin) => plugin.outputs ?? []) ?? [],
+    () => plugins?.flatMap((plugin: WorkspaceFrontPlugin) => plugin.outputs ?? []) ?? [],
     [plugins],
   )
   const hasLeftTabs = useMemo(
@@ -172,15 +369,40 @@ export function WorkspaceAgentFront<
       ...chatParams,
       sessionId: chatSessionId,
       requestHeaders,
+      bridgeEndpoint,
+      getSurface,
+      isWorkbenchOpen,
+      openWorkbench,
     }),
-    [chatParams, chatSessionId, requestHeaders],
+    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench],
   )
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
-    storageKey: surfaceStorageKey ?? `${providerStorageKey ?? `boring-workspace:${workspaceId}`}:surface`,
+    storageKey: resolvedSurfaceStorageKey,
     extraPanels: shellExtraPanels,
-    onClose: () => setSurfaceOpen(false),
-  }), [providerStorageKey, shellExtraPanels, surfaceStorageKey, workspaceId])
+    onReady: handleSurfaceReady,
+    onChange: handleSurfaceChange,
+    onClose: () => {
+      surfaceOpenRef.current = false
+      setSurfaceOpen(false)
+    },
+  }), [
+    handleSurfaceChange,
+    handleSurfaceReady,
+    resolvedSurfaceStorageKey,
+    shellExtraPanels,
+    setSurfaceOpen,
+  ])
+
+  const openCommandPalette = () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "k",
+      metaKey: true,
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    }))
+  }
 
   return (
     <div className="h-full bg-background text-foreground">
@@ -198,31 +420,56 @@ export function WorkspaceAgentFront<
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}
-        storageKey={providerStorageKey}
+        storageKey={resolvedProviderStorageKey}
         persistenceEnabled={persistenceEnabled}
-        bridgeEndpoint={bridgeEndpoint}
+        bridgeEndpoint={null}
         onAuthError={onAuthError}
       >
         {beforeShell}
-        <ChatLayout
-          className={className}
-          nav={navOpen ? "session-list" : null}
-          navParams={{
-            sessions: resolvedSessions,
-            activeId: resolvedActiveId,
-            onSwitch: resolvedSwitch,
-            onCreate: resolvedCreate,
-            onDelete: resolvedDelete,
-            onClose: () => setNavOpen(false),
-          }}
-          center="chat"
-          centerParams={centerParams}
-          surface={surfaceOpen ? "artifact-surface" : null}
-          surfaceParams={surfaceParams as Record<string, unknown>}
-          sidebar={surfaceOpen && hasLeftTabs ? "workbench-left" : null}
-          onOpenNav={onOpenNav ?? (() => setNavOpen(true))}
-          onOpenSurface={onOpenSurface ?? (() => setSurfaceOpen(true))}
+        <WorkspaceUiStateSync
+          bridgeEndpoint={bridgeEndpoint}
+          requestHeaders={requestHeaders}
+          navOpen={navOpen}
+          surfaceOpen={surfaceOpen}
+          snapshot={surfaceSnapshot}
         />
+        <div className="flex h-full min-h-0 flex-col">
+          <TopBar
+            appTitle={appTitle}
+            sessionTitle={resolvedSessionTitle ?? defaultSessionTitle}
+            onCommandPalette={openCommandPalette}
+            onNewChat={resolvedCreate}
+            topBarLeft={topBarLeft}
+            topBarRight={topBarRight}
+          />
+          <ChatLayout
+            className={className}
+            nav={navOpen ? "session-list" : null}
+            navParams={{
+              sessions: resolvedSessions,
+              activeId: resolvedActiveId,
+              onSwitch: resolvedSwitch,
+              onCreate: resolvedCreate,
+              onDelete: resolvedDelete,
+              onClose: () => setNavOpen(false),
+            }}
+            center="chat"
+            centerParams={centerParams}
+            surface={surfaceOpen ? "artifact-surface" : null}
+            surfaceParams={surfaceParams as Record<string, unknown>}
+            sidebar={surfaceOpen && hasLeftTabs ? "workbench-left" : null}
+            storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
+            onOpenNav={() => {
+              setNavOpen(true)
+              onOpenNav?.()
+            }}
+            onOpenSurface={() => {
+              surfaceOpenRef.current = true
+              setSurfaceOpen(true)
+              onOpenSurface?.()
+            }}
+          />
+        </div>
         {afterShell}
       </WorkspaceProvider>
     </div>

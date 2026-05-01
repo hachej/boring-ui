@@ -11,7 +11,10 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, describe } from "vitest"
-import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
+import {
+  collectWorkspaceAgentServerPlugins,
+  createWorkspaceAgentServer,
+} from "../../app/server/createWorkspaceAgentServer"
 import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
 
@@ -32,7 +35,75 @@ async function makeTempDir(prefix: string): Promise<string> {
 describe("createWorkspaceAgentServer — UI bridge wiring", () => {
   test("is exported from the app entry, not the server entry", () => {
     expect(appServerApi.createWorkspaceAgentServer).toBe(createWorkspaceAgentServer)
+    expect(appServerApi.collectWorkspaceAgentServerPlugins).toBe(collectWorkspaceAgentServerPlugins)
+    expect("createWorkspaceAgentServerBindings" in appServerApi).toBe(false)
     expect("createWorkspaceAgentServer" in serverApi).toBe(false)
+  })
+
+  test("plugin collector excludes standalone UI bridge tools", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-collector-")
+    const domainTool = {
+      name: "plugin_ping",
+      description: "A plugin tool.",
+      parameters: { type: "object" as const, properties: {} },
+      async execute() {
+        return { content: [{ type: "text" as const, text: "ok" }] }
+      },
+    }
+    const result = collectWorkspaceAgentServerPlugins({
+      workspaceRoot,
+      systemPromptAppend: "Host prompt",
+      resourceLoaderOptions: { additionalSkillPaths: ["custom-skills"] },
+      plugins: [{ id: "plugin", systemPrompt: "Plugin prompt", agentTools: [domainTool] }],
+    })
+
+    expect(result.agentOptions.extraTools?.map((tool) => tool.name)).toEqual(["plugin_ping"])
+    expect(result.agentOptions.systemPromptAppend).toBe("Host prompt\n\nPlugin prompt")
+    expect(result.agentOptions.resourceLoaderOptions?.additionalSkillPaths).toEqual([
+      join(workspaceRoot, ".agents", "skills"),
+      "custom-skills",
+    ])
+  })
+
+  test("plugin collector applies server defaults before host plugins", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-defaults-")
+    const defaultTool = {
+      name: "default_tool",
+      description: "A default plugin tool.",
+      parameters: { type: "object" as const, properties: {} },
+      async execute() {
+        return { content: [{ type: "text" as const, text: "default" }] }
+      },
+    }
+    const hostTool = {
+      name: "host_tool",
+      description: "A host plugin tool.",
+      parameters: { type: "object" as const, properties: {} },
+      async execute() {
+        return { content: [{ type: "text" as const, text: "host" }] }
+      },
+    }
+
+    const included = collectWorkspaceAgentServerPlugins({
+      workspaceRoot,
+      defaults: [{ id: "default", systemPrompt: "Default prompt", agentTools: [defaultTool] }],
+      plugins: [{ id: "host", systemPrompt: "Host prompt", agentTools: [hostTool] }],
+    })
+    expect(included.agentOptions.extraTools?.map((tool) => tool.name)).toEqual([
+      "default_tool",
+      "host_tool",
+    ])
+    expect(included.agentOptions.systemPromptAppend).toBe("Default prompt\n\nHost prompt")
+
+    const excluded = collectWorkspaceAgentServerPlugins({
+      workspaceRoot,
+      defaults: [{ id: "default", agentTools: [defaultTool] }],
+      plugins: [{ id: "host", agentTools: [hostTool] }],
+      excludeDefaults: ["default"],
+    })
+    expect(excluded.agentOptions.extraTools?.map((tool) => tool.name)).toEqual([
+      "host_tool",
+    ])
   })
 
   test("registers get_ui_state and exec_ui in the catalog", async () => {
@@ -173,9 +244,62 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       await app.close()
     }
   })
+
+  test("can skip plugin provisioning when the host opts out", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-provision-skip-")
+    const templateRoot = await makeTempDir("boring-workspace-template-skip-")
+    await writeFile(join(templateRoot, "README.md"), "# provisioned\n", "utf8")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [
+        {
+          id: "provisioning-plugin",
+          provisioning: {
+            templateDirs: [{ id: "template", path: templateRoot }],
+          },
+        },
+      ],
+    })
+
+    try {
+      await expect(readFile(join(workspaceRoot, "README.md"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      })
+    } finally {
+      await app.close()
+    }
+  })
 })
 
 describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
+  test("plugin routes are registered by the composer", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-plugin-routes-")
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      plugins: [
+        {
+          id: "route-plugin",
+          routes: async (instance) => {
+            instance.get("/plugin/ping", async () => ({ ok: true }))
+          },
+        },
+      ],
+    })
+    try {
+      const res = await app.inject({ method: "GET", url: "/plugin/ping" })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ ok: true })
+    } finally {
+      await app.close()
+    }
+  })
+
   test("plugin agentTools appear in the tool catalog", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-plugins-")
     const domainTool = {

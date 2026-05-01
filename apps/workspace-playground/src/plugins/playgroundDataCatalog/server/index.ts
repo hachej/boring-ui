@@ -1,5 +1,9 @@
 import { DuckDBConnection, quotedIdentifier, quotedString } from "@duckdb/node-api"
-import type { AgentTool, ToolResult } from "@boring/agent/shared"
+import type { AgentTool, ToolResult } from "@boring/workspace"
+import {
+  defineServerPlugin,
+  type WorkspaceServerPlugin,
+} from "@boring/workspace/app/server"
 import { resolve } from "node:path"
 import { PLAYGROUND_CSV_DATASETS } from "../fixtures"
 import { PLAYGROUND_DATA_PLUGIN_ID } from "../constants"
@@ -163,14 +167,9 @@ function createExecuteSqlTool(workspaceRoot: string): AgentTool {
 
 export function createPlaygroundDataServerPlugin(
   options: CreatePlaygroundDataServerPluginOptions,
-): {
-  id: string
-  label: string
-  agentTools: AgentTool[]
-  systemPrompt: string
-} {
+): WorkspaceServerPlugin {
   const sqlTool = createExecuteSqlTool(options.workspaceRoot)
-  return {
+  return defineServerPlugin({
     id: PLAYGROUND_DATA_PLUGIN_ID,
     label: "Playground Data",
     agentTools: [sqlTool],
@@ -181,9 +180,9 @@ export function createPlaygroundDataServerPlugin(
       "Use `execute_sql` for read-only SQL and discovery over these tables:",
       tableList(),
       "",
-      "When you need to show a playground catalog row, call `exec_ui` with",
-      "`kind: \"openSurface\"` and params",
-      `\`{ kind: "data-catalog.open-row", target: row.id, meta: { catalogId: "${PLAYGROUND_DATA_PLUGIN_ID}", row } }\`.`,
+      "When you need to show a playground CSV fixture, call `exec_ui` with",
+      '`kind: "openSurface"` and params',
+      '`{ kind: "workspace.open.path", target: "<csv path>" }`.',
     ].join("\n"),
-  }
+  })
 }

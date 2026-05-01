@@ -6,10 +6,6 @@ export { PanelErrorBoundary } from "./PanelErrorBoundary"
 export type { PanelErrorBoundaryProps } from "./PanelErrorBoundary"
 export { SessionList } from "./SessionList"
 export type { SessionItem, SessionListProps } from "./SessionList"
-export { DataCatalog } from "./data-catalog/DataCatalog"
-export type { DataCatalogProps, DataSource } from "./data-catalog/DataCatalog"
-export { DataCatalogPane } from "./data-catalog/DataCatalogPane"
-export type { DataCatalogPaneProps } from "./data-catalog/DataCatalogPane"
 export {
   DataExplorer,
   useExplorerState,

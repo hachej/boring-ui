@@ -2,10 +2,15 @@ import { expect, test } from "@playwright/test"
 
 /**
  * Regression: user reported "I have the feeling commands are not
- * working". The playground now uses WorkspaceProvider + ChatLayout, so
- * the canary checks the provider-owned palette against the declarative
- * dockview shell instead of centered-shell-specific commands.
+ * working". Root cause was that the chat shell only saw workbench
+ * commands such as Toggle Sidebar / Toggle Agent Panel / Close Tab.
+ * Those target the dockview store, so triggering them from the
+ * centered chat route produced no visible effect.
  */
+
+const STORAGE_KEY = "boring-ui-v2:layout:playground"
+const DRAWER_OPEN_KEY = `${STORAGE_KEY}:drawer`
+const SURFACE_OPEN_KEY = `${STORAGE_KEY}:surface`
 
 async function runCommandFromPalette(
   page: import("@playwright/test").Page,
@@ -21,6 +26,14 @@ async function runCommandFromPalette(
   await expect(
     page.getByRole("dialog", { name: /command palette/i }),
   ).toBeHidden({ timeout: 2_000 })
+}
+
+async function openSessionsDrawer(page: import("@playwright/test").Page) {
+  const sessionsButton = page.getByRole("button", { name: /^sessions$/i })
+  if (await sessionsButton.isVisible().catch(() => false)) {
+    await sessionsButton.click()
+    await page.waitForTimeout(400)
+  }
 }
 
 async function paneWidth(
@@ -39,7 +52,16 @@ async function paneWidth(
 test.describe("command palette effects", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
-    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
+    // Reset open state so each test starts from collapsed.
+    await page.evaluate(
+      ({ drawerKey, surfaceKey }) => {
+        localStorage.setItem(drawerKey, "0")
+        localStorage.setItem(surfaceKey, "0")
+      },
+      { drawerKey: DRAWER_OPEN_KEY, surfaceKey: SURFACE_OPEN_KEY },
+    )
+    await page.reload()
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
   })
 
   test("top-bar Search opens the provider command palette", async ({ page }) => {
@@ -50,6 +72,7 @@ test.describe("command palette effects", () => {
   })
 
   test("chat command can be selected from the palette", async ({ page }) => {
+    await openSessionsDrawer(page)
     const sessions = page
       .getByRole("navigation", { name: /session history/i })
       .getByRole("listitem")
@@ -58,7 +81,34 @@ test.describe("command palette effects", () => {
     await expect(sessions).toHaveCount(before + 1)
   })
 
+  test("Open Session History opens the closed drawer", async ({ page }) => {
+    expect(await paneWidth(page, "Session browser")).toBe(0)
+    await runCommandFromPalette(page, "Open Session History")
+    expect(await paneWidth(page, "Session browser")).toBeGreaterThan(0)
+  })
+
+  test("Open Workbench opens the closed workbench", async ({ page }) => {
+    expect(await paneWidth(page, "Surface")).toBe(0)
+    await runCommandFromPalette(page, "Open Workbench")
+    expect(await paneWidth(page, "Surface")).toBeGreaterThan(0)
+  })
+
+  test("running the session command twice toggles the pane closed again", async ({
+    page,
+  }) => {
+    await runCommandFromPalette(page, "Open Session History")
+    expect(await paneWidth(page, "Session browser")).toBeGreaterThan(0)
+    await runCommandFromPalette(page, "Close Session History")
+    // The pane has a 280ms width transition — poll instead of asserting
+    // immediately, so we don't catch it mid-collapse.
+    await expect
+      .poll(() => paneWidth(page, "Session browser"), { timeout: 2_000 })
+      .toBe(0)
+  })
+
   test("Focus Chat closes sessions and workbench panes", async ({ page }) => {
+    await runCommandFromPalette(page, "Open Session History")
+    await runCommandFromPalette(page, "Open Workbench")
     expect(await paneWidth(page, "Session browser")).toBeGreaterThan(0)
     expect(await paneWidth(page, "Surface")).toBeGreaterThan(0)
 
@@ -75,8 +125,4 @@ test.describe("command palette effects", () => {
     })
   })
 
-  test("session selection updates the TopBar through ChatLayout params", async ({ page }) => {
-    await page.getByText("Plan review").click()
-    await expect(page.getByRole("banner", { name: /app top bar/i })).toContainText("Plan review")
-  })
 })

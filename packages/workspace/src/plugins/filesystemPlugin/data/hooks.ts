@@ -9,6 +9,7 @@ import {
 import { useRef, useState, useEffect } from "react"
 import { useDataClient, useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 import { FetchError } from "./fetchClient"
+import { getPreloadedTreeEntries } from "./treePreloadCache"
 import { events, userMeta } from "../../../front/events"
 import { filesystemEvents } from "../events"
 import { FILES_QUERY_KEY_SEGMENT } from "../constants"
@@ -38,9 +39,10 @@ export function useFileList(dir: string | null): UseQueryResult<FileEntry[]> {
   const workspaceId = useWorkspaceRequestId()
   return useQuery({
     queryKey: [base, workspaceId, "tree", dir],
-    queryFn: ({ signal }) => client.getTree(dir!, signal),
+    queryFn: async ({ signal }) => (await client.getTree(dir!, signal)) ?? [],
     enabled: dir != null,
     staleTime: 3_000,
+    initialData: () => getPreloadedTreeEntries(base, workspaceId, dir),
     // File-event SSE invalidates this query when files change. Polling every
     // 3s made slow/dev backends self-abort before the first tree response,
     // leaving the workbench tree stuck on its skeleton.

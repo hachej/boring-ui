@@ -48,19 +48,24 @@ function StateBadge({ state }: { state: string }) {
   )
 }
 
-function SettingsTopBar({ workspaceName }: { workspaceName: string }) {
+function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
+  const navigate = useNavigate()
+  const workspaceHref = workspaceId ? `/workspace/${encodeURIComponent(workspaceId)}` : '/'
   return (
     <header
       className="relative flex h-[52px] items-center justify-between gap-3 border-b border-border/40 bg-background px-4"
       aria-label="App top bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <div
-          aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+        <button
+          type="button"
+          aria-label="Back to workspace"
+          title="Back to workspace"
+          onClick={() => navigate(workspaceHref)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           B
-        </div>
+        </button>
         <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
           Boring
         </span>
@@ -355,7 +360,9 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
   const canDeleteWorkspace = role === 'owner' || role === null
   const workspaceName = workspace?.name ?? 'Workspace'
   const workspaceInitial = (workspace?.name?.trim()?.[0] ?? 'W').toUpperCase()
-  const topBarNode = topBar === undefined ? <SettingsTopBar workspaceName={workspaceName} /> : topBar
+  const topBarNode = topBar === undefined
+    ? <SettingsTopBar workspaceId={workspaceId} workspaceName={workspaceName} />
+    : topBar
   const navItems = hasRuntime
     ? WORKSPACE_NAV_ITEMS
     : WORKSPACE_NAV_ITEMS.filter((item) => item.href !== '#runtime')

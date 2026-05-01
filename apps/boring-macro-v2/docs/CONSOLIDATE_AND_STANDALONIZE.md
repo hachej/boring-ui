@@ -1,114 +1,67 @@
 # Consolidate the macro app + make it portable
 
-**Status:** draft
+**Status:** implemented; historical migration notes retained below
 **Owner:** macro
-**Last updated:** 2026-04-28
+**Last updated:** 2026-05-01
 
-## Problem
+## Current Shape
 
-There are two macro apps today:
+`apps/boring-macro-v2` is now the single macro app. The app shell stays thin;
+macro-specific behavior lives in `src/plugins/macro`.
 
-1. **`apps/boring-macro-v2/`** (in this monorepo) — server-only Fastify app
-   (~2.9k LOC). Has Stripe billing, FRED refresh job, ClickHouse data
-   service, agent tools, the macro Fastify routes. **No frontend.**
-2. **`/home/ubuntu/projects/boring-macro-v2/`** (separate folder, not in
-   this monorepo) — full-stack app built during the migration session.
-   Has the React frontend (ChartCanvasPane, DeckPane, App.tsx wired to
-   ChatCenteredShell), an inlined `uiBridge.ts` (workaround for
-   `@boring/workspace/server` not being built), 29-spec e2e suite,
-   `.pi/APPEND_SYSTEM.md`. Has a *copy* of older versions of
-   `clickhouse.ts`, `macroTools.ts`, `config.ts`, `macroRoutes.ts`.
-
-The two are diverging:
-
-- Backend changes (e.g. tabBus, billing, fredRefresh) only landed in
-  the in-monorepo version.
-- Frontend changes (ChartCanvasPane tabs, DeckPane edit, lineage
-  routes) only exist in the standalone.
-- Both define `clickhouse.ts`, `macroTools.ts`, `config.ts` — same
-  filenames, different content. Pure recipe for "fixed in one, broken
-  in the other."
-
-## Goal
-
-**Single source of truth at `apps/boring-macro-v2/`** containing the
-full stack, depending only on the workspace packages, and structured so
-that `git mv apps/boring-macro-v2/` to a sibling-or-external repo is a
-mechanical move — not a rewrite.
-
-That means:
-
-1. **Front-end + back-end live together** under `apps/boring-macro-v2/{src/front, src/server}`,
-   matching the `apps/full-app/` shape.
-2. **All cross-package dependencies go through `@boring/*` package
-   names**, never relative paths into other apps or directly into a
-   package's `src/`. Inside the monorepo this resolves via pnpm
-   workspaces; in a future extracted repo it resolves via `file:` /
-   published versions of the same package names.
-3. **The standalone repo dies** — its current contents are merged into
-   the monorepo app. `/home/ubuntu/projects/boring-macro-v2/` becomes a
-   `.boring-macro-v2-standalone-archive-2026-04-28/` rename + reference
-   only.
-4. **Portability checklist passes** — see the bottom of this doc.
-   Anything that today only works because of monorepo Vite path
-   aliases or workspace-root tooling gets ported to portable
-   equivalents.
-
-## What stays where (final shape)
+## Layout
 
 ```
 apps/boring-macro-v2/
   src/
-    front/                          ← from standalone /src/web/
+    front/
       main.tsx
-      App.tsx                       — ChatCenteredShell + macro panes registered
-      panes/
-        ChartCanvasPane.tsx         — Chart/Table/Metadata/Lineage tabs
-        DeckPane.tsx                — markdown + TimeSeries widgets, edit/save
-      macroSeriesAdapter.ts         — DataCatalog adapter → /api/macro/catalog
-      sessions.ts                   — localStorage-backed session list
+      App.tsx                       — starts WorkspaceAgentFront with macroPlugin
       app.css
-    server/                         ← from in-monorepo apps/boring-macro-v2/src/server
-      index.ts                      — boots createWorkspaceAgentApp + macro routes + extras
-      config.ts                     — BM_* env, ClickHouse + Stripe creds
-      routes/
-        macro.ts                    — /api/macro/{catalog,facets,series,deck,…}
-        billing.ts                  — Stripe checkout/webhook/quota
-        waitlist.ts                 — landing email capture
-      services/
-        clickhouse.ts               — DataService (single canonical version)
-        fredRefresh.ts              — daily refresh job
-      tools/
-        macroTools.ts               — execute_sql, macro_search, …
+    server/
+      index.ts                      — starts createWorkspaceAgentServer
+      dev.ts                        — boots backend + Vite for local dev
       __tests__/
-  e2e/                              ← from standalone /e2e/
-    playwright.config.ts
-    helpers.ts
-    *.spec.ts                       — only macro-specific (post-cleanup-plan migration: ~14 specs)
-  deck/                             ← seed deck files for tests + bootstrap
-  .pi/APPEND_SYSTEM.md              — pi system-prompt addendum
+    plugins/macro/
+      index.tsx                     — client plugin factory and shell options
+      catalogs.ts                   — macro series data catalog output
+      panels.tsx                    — chart/deck panel definitions
+      surfaceResolver.ts            — macro.open-series + deck path routing
+      data/                         — macro data client, types, UI helpers
+      panels/                       — ChartCanvasPane, DeckPane
+      routes/                       — standalone presentation route helper
+      server/
+        index.ts                    — server plugin factory + provisioning
+        config.ts
+        routes/macro.ts
+        services/
+        tools/
+      sdk/
+      transforms/
+      workspace-template/
+    eval/
+  e2e/
+  .pi/APPEND_SYSTEM.md
   index.html
-  vite.config.ts                    — front + agent backend boot
-  tsconfig.json (and tsconfig.server.json if needed)
+  vite.config.ts
   package.json
-  Dockerfile
-  fly.toml
-  .env.example
-  README.md
 ```
 
-Files that cease to exist:
+## Ownership Rules
 
-- `apps/boring-macro-v2/src/server/services/tabBus.ts` — replaced by
-  `bridge.postCommand({kind:"openPanel"})` (see CODE_OWNERSHIP_CLEANUP_PLAN
-  Phase 4). 6 call sites in `routes/macro.ts` + `tools/macroTools.ts`.
-- `boring-macro-v2/src/server/uiBridge.ts` (in the standalone) — the
-  hand-inlined `createWorkspaceAgentApp`. Deleted once
-  `@boring/workspace/server` is built (CODE_OWNERSHIP_CLEANUP_PLAN
-  Phase 0).
-- `boring-macro-v2/src/web/workspace-types.ts` (in the standalone) —
-  the local type shim used while `@boring/workspace`'s `dist/.d.ts`
-  was empty. Deleted once workspace's types are stable.
+- App `front/` only renders the workspace composer and passes `macroPlugin`.
+- App `server/` only starts the workspace server composer and registers macro
+  routes from the plugin.
+- Macro catalog selection uses `openSurface` with `macro.open-series`.
+- Deck markdown routing is plugin-owned through `surfaceResolver.ts`.
+- Python SDK, transforms, and workspace seed templates belong to the macro
+  plugin because they are plugin provisioning inputs.
+- Generated Python artifacts (`*.egg-info`, `build`, `__pycache__`) are ignored.
+
+## Historical Migration Notes
+
+The remaining phases below record the original consolidation plan. They are not
+the current source layout.
 
 ## Migration phases
 
@@ -149,10 +102,10 @@ the merged-in standalone improvements.
 ### Phase C — Drop the standalone shims
 
 Prerequisite: CODE_OWNERSHIP_CLEANUP_PLAN Phase 0 is done
-(`@boring/workspace/server` actually builds).
+(`@boring/workspace/app/server` actually builds).
 
 1. Delete `src/server/uiBridge.ts`. Replace with
-   `import { createWorkspaceAgentApp } from "@boring/workspace/server"`.
+   `import { createWorkspaceAgentServer } from "@boring/workspace/app/server"`.
 2. Delete `src/front/workspace-types.ts`. Replace imports with
    `from "@boring/workspace"`.
 3. Replace `tabBus` call sites (6) with `bridge.postCommand` per the

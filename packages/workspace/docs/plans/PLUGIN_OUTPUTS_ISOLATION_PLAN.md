@@ -63,20 +63,20 @@ type PluginOutput =
   | CatalogOutput
   | CommandOutput
   | BindingOutput
-  | SurfaceResolverOutput
+  | SurfaceResolverOutput;
 
 interface LeftTabOutput {
-  type: "left-tab"
-  id: string
-  title: string
-  icon?: ReactNode
-  component: ComponentType<LeftTabProps>
+  type: "left-tab";
+  id: string;
+  title: string;
+  icon?: ReactNode;
+  component: ComponentType<LeftTabProps>;
 }
 
 interface LeftTabProps {
-  query: string
-  rootDir?: string
-  bridge: WorkspaceBridge
+  query: string;
+  rootDir?: string;
+  bridge: WorkspaceBridge;
 }
 ```
 
@@ -96,6 +96,7 @@ Workspace core owns:
 - command palette shell
 - event bus transport and workspace-owned event contracts
 - generic data explorer primitives, if they remain domain-neutral
+  - superseded for explorer panes by `GENERIC_EXPLORER_PLUGIN_PLAN.md`: generic explorer becomes a workspace-owned feature plugin once it owns pane/output contracts
 - the generic resolver dispatch loop: given an open request, ask registered
   resolvers in precedence order and open the returned panel config
 
@@ -217,25 +218,25 @@ Example shape:
 
 ```ts
 interface SurfaceOpenRequest {
-  kind: string
-  target: string
-  meta?: Record<string, unknown>
+  kind: string;
+  target: string;
+  meta?: Record<string, unknown>;
 }
 
 interface SurfacePanelResolution {
-  component: string
-  id?: string
-  title?: string
-  params?: Record<string, unknown>
-  score?: number
+  component: string;
+  id?: string;
+  title?: string;
+  params?: Record<string, unknown>;
+  score?: number;
 }
 
 interface SurfaceResolverOutput {
-  type: "surface-resolver"
+  type: "surface-resolver";
   resolver: {
-    id: string
-    resolve(request: SurfaceOpenRequest): SurfacePanelResolution | undefined
-  }
+    id: string;
+    resolve(request: SurfaceOpenRequest): SurfacePanelResolution | undefined;
+  };
 }
 ```
 

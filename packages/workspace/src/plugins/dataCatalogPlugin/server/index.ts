@@ -1,31 +1,14 @@
 import type { ExplorerAdapter, ExplorerRow, SearchResult } from "../../../shared/types/explorer"
 import {
+  defineServerPlugin,
+  type WorkspaceServerPlugin,
+} from "../../../server/plugins/bootstrapServer"
+import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
+import {
   DATA_CATALOG_DEFAULT_TOOL_NAME,
   DATA_CATALOG_PLUGIN_ID,
   DATA_CATALOG_ROW_SURFACE_KIND,
 } from "../constants"
-
-export type JSONSchema = Record<string, unknown>
-
-export interface ToolExecContext {
-  abortSignal: AbortSignal
-  toolCallId: string
-  onUpdate?: (partial: string) => void
-}
-
-export interface ToolResult {
-  content: Array<{ type: "text"; text: string }>
-  isError?: boolean
-  details?: unknown
-}
-
-export interface AgentTool {
-  name: string
-  description: string
-  promptSnippet?: string
-  parameters: JSONSchema
-  execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult>
-}
 
 export interface DataCatalogAgentToolOptions {
   name?: string
@@ -175,14 +158,9 @@ export function createDataCatalogSkillPrompt(
 
 export function createDataCatalogServerPlugin(
   options: DataCatalogServerPluginOptions,
-): {
-  id: string
-  label: string
-  agentTools: AgentTool[]
-  systemPrompt: string
-} {
+): WorkspaceServerPlugin & { agentTools: AgentTool[]; systemPrompt: string } {
   const tool = createDataCatalogAgentTool(options)
-  return {
+  return defineServerPlugin({
     id: options.id ?? DATA_CATALOG_PLUGIN_ID,
     label: options.label ?? "Data Catalog",
     agentTools: [tool],
@@ -192,5 +170,5 @@ export function createDataCatalogServerPlugin(
       surfaceKind: options.surfaceKind,
       guidance: options.guidance,
     }),
-  }
+  })
 }

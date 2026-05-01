@@ -60,6 +60,22 @@ function surfaceRequestParam(params: Record<string, unknown>): SurfaceOpenReques
   }
 }
 
+const SURFACE_READY_RETRY_FRAMES = 60
+
+function runWhenSurfaceReady(
+  ctx: DispatchContext,
+  run: (surface: SurfaceShellApi) => void,
+  attempts = SURFACE_READY_RETRY_FRAMES,
+): void {
+  const surface = ctx.surface()
+  if (surface) {
+    run(surface)
+    return
+  }
+  if (!ctx.isWorkbenchOpen() || attempts <= 0) return
+  requestAnimationFrame(() => runWhenSurfaceReady(ctx, run, attempts - 1))
+}
+
 /**
  * Apply a single agent-issued UI command. Pure function: takes a command
  * + a context with the surface handle and returns nothing. Unknown kinds
@@ -70,8 +86,6 @@ function surfaceRequestParam(params: Record<string, unknown>): SurfaceOpenReques
  */
 export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
   if (!KNOWN_KINDS.has(cmd.kind)) return
-  const surface = ctx.surface()
-  if (!surface) return
 
   switch (cmd.kind) {
     case "openFile": {
@@ -79,7 +93,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (!path) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
-      const run = () => {
+      const run = (surface: SurfaceShellApi) => {
         try {
           surface.openFile(path)
         } catch (err) {
@@ -90,13 +104,12 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
           )
         }
       }
-      // If the workbench was just opened, dockview hasn't laid out yet —
-      // a double-RAF defers the openFile call until after the next paint
-      // pair so the panel actually mounts. We branch on the BEFORE state
-      // so a synchronously-applied openWorkbench (e.g. a test stub)
-      // doesn't fool the dispatcher into skipping the defer.
-      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(run))
-      else run()
+      // If the workbench was just opened, dockview hasn't laid out yet.
+      // Then keep polling the getter for a few frames because opening the
+      // surface is React stateful: the handle does not exist until the
+      // SurfaceShell mounts and calls onReady.
+      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(() => runWhenSurfaceReady(ctx, run)))
+      else runWhenSurfaceReady(ctx, run)
       return
     }
     case "openSurface": {
@@ -104,7 +117,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (!request) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
-      const run = () => {
+      const run = (surface: SurfaceShellApi) => {
         try {
           surface.openSurface(request)
         } catch (err) {
@@ -115,8 +128,8 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
           )
         }
       }
-      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(run))
-      else run()
+      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(() => runWhenSurfaceReady(ctx, run)))
+      else runWhenSurfaceReady(ctx, run)
       return
     }
     case "openPanel": {
@@ -131,16 +144,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       }
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
-      // Wrap in try/catch so an unknown-component throw from
-      // SurfaceShell.openPanel doesn't kill the SSE stream. The error is
-      // logged with enough context for devs to see it; the LLM still
-      // receives `ok` from its preceding exec_ui call (dispatch is async
-      // and unidirectional today — making it bidirectional is a separate
-      // refactor). Workbench will still auto-open, just without the new
-      // panel — visibly broken from the user's POV, which is the right
-      // signal that the agent asked for a panel the host hasn't
-      // registered.
-      const run = () => {
+      const run = (surface: SurfaceShellApi) => {
         try {
           surface.openPanel(cfg)
         } catch (err) {
@@ -151,12 +155,12 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
           )
         }
       }
-      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(run))
-      else run()
+      if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(() => runWhenSurfaceReady(ctx, run)))
+      else runWhenSurfaceReady(ctx, run)
       return
     }
     case "closeWorkbenchLeftPane": {
-      surface.closeWorkbenchLeftPane()
+      runWhenSurfaceReady(ctx, (surface) => surface.closeWorkbenchLeftPane())
       return
     }
   }

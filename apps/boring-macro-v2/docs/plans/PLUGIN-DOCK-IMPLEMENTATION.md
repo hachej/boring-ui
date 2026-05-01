@@ -64,7 +64,7 @@ export function makeMacroServerPlugin(macroConfig): {
 }
 ```
 
-**Integration**: Already wired in `src/server/index.ts` via `createWorkspaceAgentApp({ plugins: [...] })`
+**Integration**: Already wired in `src/server/index.ts` via `createWorkspaceAgentServer({ plugins: [...] })`
 
 ---
 
@@ -74,12 +74,12 @@ export function makeMacroServerPlugin(macroConfig): {
 
 **Implementation**:
 ```typescript
-import { definePlugin } from '@boring/workspace'
+import { defineFrontPlugin } from '@boring/workspace'
 import { definePanel } from '@boring/workspace'
 import { MacroCatalogPane } from '../front/panes/MacroCatalogPane'
 import { SeriesViewerPane } from '../front/panes/SeriesViewerPane'
 
-export const macroFrontendPlugin = definePlugin({
+export const macroFrontendPlugin = defineFrontPlugin({
   id: 'boring-macro',
   label: 'Macro',
   panels: [
@@ -190,13 +190,13 @@ bm scaffold --name my_transform  # Create custom transform
 **File**: `apps/boring-macro-v2/src/server/index.ts`
 
 ```typescript
-import { createWorkspaceAgentApp } from '@boring/workspace/server'
+import { createWorkspaceAgentServer } from '@boring/workspace/app/server'
 import { makeMacroServerPlugin } from '../plugin/server'
 
 export async function buildServer(opts) {
   const macroConfig = await loadMacroConfig()
   
-  const app = await createWorkspaceAgentApp({
+  const app = await createWorkspaceAgentServer({
     workspaceRoot: opts.workspaceRoot,
     mode: 'local',
     plugins: [makeMacroServerPlugin(macroConfig)],
@@ -332,7 +332,7 @@ dependencies = [
 
 | Risk | Mitigation |
 |------|-----------|
-| Panel registration conflicts | Use `definePlugin` validation |
+| Panel registration conflicts | Use `defineFrontPlugin` validation |
 | CLI not available in sandbox | Ensure `package.json` includes `bin` entry |
 | Python dependencies missing | Document requirements, use `uv` for management |
 | Plugin loading order | Document dependency graph |

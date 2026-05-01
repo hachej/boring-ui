@@ -15,6 +15,12 @@
       "@boring/core/server/db": ["src/server/db/index.ts"],
       "@boring/core/app/server": ["src/app/server/index.ts"],
       "@boring/core/app/front": ["src/app/front/index.ts"],
+      "@boring/core/app/vite": ["src/app/vite/index.ts"],
+      "@boring/workspace/app/front": ["../workspace/src/app/front/index.ts"],
+      "@boring/workspace/app/server": ["../workspace/src/app/server/index.ts"],
+      "@boring/workspace/server": ["../workspace/src/server/index.ts"],
+      "@boring/agent/server": ["../agent/src/server/index.ts"],
+      "@/*": ["../workspace/src/*"],
       "@boring/core/front": ["src/front/index.ts"],
       "@boring/core/shared": ["src/shared/index.ts"]
     },

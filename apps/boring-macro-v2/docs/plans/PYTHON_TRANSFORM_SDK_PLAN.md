@@ -21,7 +21,7 @@ workflow for derived-series creation.
 ## Shipped pieces
 
 - Workspace-template seeded skill:
-  - `workspace-template/.agents/skills/macro-transform/SKILL.md`
+  - `src/plugins/macro/workspace-template/.agents/skills/macro-transform/SKILL.md`
 - Persist route/tool support for richer `transform_spec`
 - Eval:
   - `eval/macro-transform-skill.yaml`

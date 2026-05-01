@@ -231,8 +231,10 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(searchFn).toHaveBeenCalledWith(expect.objectContaining({ query: "app" }))
       })
-      expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
-      expect(getFileOption("/src/index.ts")).toBeInTheDocument()
+      await waitFor(() => {
+        expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
+        expect(getFileOption("/src/index.ts")).toBeInTheDocument()
+      })
     })
 
     it("calls catalog onSelect when row is selected", async () => {

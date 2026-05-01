@@ -4,13 +4,13 @@ import { BarChart3, Database } from "lucide-react"
 import { definePanel } from "../../front/registry/types"
 import { PanelChrome } from "../../front/dock"
 import { DataExplorer } from "../../front/components/DataExplorer"
-import { definePlugin } from "../../shared/plugins/definePlugin"
+import { defineFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
 import type {
   CatalogConfig,
   LeftTabParams,
-  Plugin,
   PluginOutput,
 } from "../../shared/plugins/types"
+import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
 import type { PaneProps, PanelConfig } from "../../front/registry/types"
 import {
   DATA_CATALOG_PLUGIN_ID,
@@ -214,20 +214,20 @@ export function createDataCatalogOutputs(
 
 export function createDataCatalogPlugin(
   options: CreateDataCatalogPluginOptions,
-): Plugin {
+): WorkspaceFrontPlugin {
   const pluginId = options.pluginId ?? options.id ?? DATA_CATALOG_PLUGIN_ID
-  return definePlugin({
+  return defineFrontPlugin({
     id: pluginId,
     label: options.label ?? "Data Catalog",
     outputs: createDataCatalogOutputs(options),
   })
 }
 
-export function appendDataCatalogOutputs<T extends Plugin>(
+export function appendDataCatalogOutputs<T extends WorkspaceFrontPlugin>(
   plugin: T,
   options: CreateDataCatalogOutputsOptions,
 ): T {
-  return definePlugin({
+  return defineFrontPlugin({
     ...plugin,
     outputs: [...(plugin.outputs ?? []), ...createDataCatalogOutputs(options)],
   }) as T

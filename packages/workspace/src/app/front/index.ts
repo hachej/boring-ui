@@ -6,6 +6,10 @@ export {
   type UseWorkspaceAgentSessions,
 } from "./WorkspaceAgentFront"
 export {
+  WorkspaceBootGate,
+  type WorkspaceBootGateProps,
+} from "./WorkspaceBootGate"
+export {
   createLocalStorageSessions,
   useLocalStorageSessions,
   type CreateLocalStorageSessionsOptions,

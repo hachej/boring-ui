@@ -23,8 +23,10 @@ export default defineConfig({
       // doesn't shadow `@boring/workspace/testing` etc.
       "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
       "@boring/agent/front/styles.css": resolve(PACKAGES, "agent/src/front/styles/globals.css"),
-      "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/front/testing/index.ts"),
-      "@boring/workspace/ui-shadcn": resolve(PACKAGES, "workspace/src/front/components/ui/index.ts"),
+      "@boring/workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
+      "@boring/workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),
+      "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/testing/index.ts"),
+      "@boring/workspace/ui-shadcn": resolve(PACKAGES, "workspace/src/components/ui/index.ts"),
       "@boring/workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
       "@boring/workspace": resolve(PACKAGES, "workspace/src/index.ts"),
       // Workspace's own source uses `@/front/lib/utils` etc. (its private alias).

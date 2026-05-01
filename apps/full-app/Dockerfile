@@ -59,7 +59,7 @@ COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
 
 ENV NODE_ENV=production \
   BORING_AGENT_MODE=vercel-sandbox \
-  FULL_APP_WORKSPACE_ROOT=/data/workspaces
+  BORING_AGENT_WORKSPACE_ROOT=/data/workspaces
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

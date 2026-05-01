@@ -8,33 +8,51 @@ import {
   createAgentApp,
   provisionRuntimeWorkspace,
   type CreateAgentAppOptions,
-  type RuntimeProvisioningContribution,
 } from "@boring/agent/server"
 import type { FastifyInstance } from "fastify"
 import { join } from "node:path"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
-import { bootstrapServer, type ServerBootstrapOptions } from "../../server/plugins/bootstrapServer"
-import type { UiBridge } from "../../shared/ui-bridge"
+import {
+  bootstrapServer,
+  defineServerPlugin,
+  type ServerBootstrapOptions,
+  type WorkspaceServerPlugin,
+  type WorkspaceProvisioningContribution,
+  type WorkspaceRouteContribution,
+} from "../../server/plugins/bootstrapServer"
 
 export interface CreateWorkspaceAgentServerOptions
   extends CreateAgentAppOptions,
-    Pick<ServerBootstrapOptions, "plugins" | "excludeDefaults"> {}
+    Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
+  provisionWorkspace?: boolean
+  workspaceProvisioning?: { force?: boolean }
+}
 
-export interface WorkspaceAgentServerBindings {
-  bridge: UiBridge
-  provisioningContributions: Array<{ id: string; provisioning: RuntimeProvisioningContribution }>
+export { defineServerPlugin }
+export type { WorkspaceServerPlugin, WorkspaceProvisioningContribution }
+export type { WorkspaceRouteContribution }
+
+export interface WorkspaceAgentServerPluginCollection {
+  provisioningContributions: WorkspaceProvisioningContribution[]
+  routeContributions: WorkspaceRouteContribution[]
   agentOptions: Pick<CreateAgentAppOptions, "extraTools" | "systemPromptAppend" | "resourceLoaderOptions">
 }
 
-export function createWorkspaceAgentServerBindings(
-  opts: CreateWorkspaceAgentServerOptions = {},
-): WorkspaceAgentServerBindings {
-  const bridge = createInMemoryBridge()
+export interface CollectWorkspaceAgentServerPluginsOptions
+  extends Pick<
+      CreateAgentAppOptions,
+      "workspaceRoot" | "systemPromptAppend" | "resourceLoaderOptions"
+    >,
+    Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {}
+
+export function collectWorkspaceAgentServerPlugins(
+  opts: CollectWorkspaceAgentServerPluginsOptions = {},
+): WorkspaceAgentServerPluginCollection {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
-  const uiTools = createWorkspaceUiTools(bridge, { workspaceRoot })
   const result = bootstrapServer({
+    defaults: opts.defaults,
     plugins: opts.plugins,
     excludeDefaults: opts.excludeDefaults,
   })
@@ -42,10 +60,10 @@ export function createWorkspaceAgentServerBindings(
   const callerAdditional = opts.resourceLoaderOptions?.additionalSkillPaths ?? []
 
   return {
-    bridge,
     provisioningContributions: result.provisioningContributions,
+    routeContributions: result.routeContributions,
     agentOptions: {
-      extraTools: [...(opts.extraTools ?? []), ...uiTools, ...result.agentTools],
+      extraTools: result.agentTools,
       systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
         .filter(Boolean)
         .join("\n\n") || undefined,
@@ -57,26 +75,50 @@ export function createWorkspaceAgentServerBindings(
   }
 }
 
+export async function provisionWorkspaceAgentServer(opts: {
+  workspaceRoot: string
+  provisioningContributions?: WorkspaceProvisioningContribution[]
+  force?: boolean
+}) {
+  if (!opts.provisioningContributions?.length) return
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot: opts.workspaceRoot,
+    contributions: opts.provisioningContributions,
+    force: opts.force,
+  })
+}
+
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
-  const bindings = createWorkspaceAgentServerBindings(opts)
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  const bridge = createInMemoryBridge()
+  const uiTools = createWorkspaceUiTools(bridge, { workspaceRoot })
+  const pluginCollection = collectWorkspaceAgentServerPlugins(opts)
 
-  if (bindings.provisioningContributions.length > 0) {
-    await provisionRuntimeWorkspace({
+  if (opts.provisionWorkspace !== false) {
+    await provisionWorkspaceAgentServer({
       workspaceRoot,
-      contributions: bindings.provisioningContributions,
+      provisioningContributions: pluginCollection.provisioningContributions,
+      force: opts.workspaceProvisioning?.force,
     })
   }
 
   const app = await createAgentApp({
     ...opts,
     workspaceRoot,
-    extraTools: bindings.agentOptions.extraTools,
-    systemPromptAppend: bindings.agentOptions.systemPromptAppend,
-    resourceLoaderOptions: bindings.agentOptions.resourceLoaderOptions,
+    extraTools: [
+      ...(opts.extraTools ?? []),
+      ...uiTools,
+      ...(pluginCollection.agentOptions.extraTools ?? []),
+    ],
+    systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
+    resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
   })
-  await app.register(uiRoutes, { bridge: bindings.bridge })
+  await app.register(uiRoutes, { bridge })
+  for (const { routes } of pluginCollection.routeContributions) {
+    await app.register(routes)
+  }
   return app
 }

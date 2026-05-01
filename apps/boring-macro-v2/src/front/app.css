@@ -1,7 +1,5 @@
-@import "tailwindcss";
-/* Workspace's own globals.css declares @source for its components, so we
- * don't need to repeat that here — `import "@boring/workspace/globals.css"`
- * in main.tsx pulls them in via Tailwind's @import resolution. */
+@import "@boring/workspace/globals.css";
+@source "../../../../packages/agent/src/front/**/*.{ts,tsx}";
 
 html,
 body,

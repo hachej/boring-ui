@@ -1,4 +1,5 @@
 import type { ComponentType } from "react"
+import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
 
 export type OpenArtifactHandler = (path: string) => void
 
@@ -8,6 +9,14 @@ export interface WorkspaceChatPanelProps {
   requestHeaders?: Record<string, string>
   onOpenArtifact?: OpenArtifactHandler
   className?: string
+  /** Endpoint base for agent → visible-workbench UI commands. */
+  bridgeEndpoint?: string | null
+  /** Imperative handle getter for the visible workbench surface. */
+  getSurface?: () => SurfaceShellApi | null
+  /** Reads whether the visible workbench surface should be open. */
+  isWorkbenchOpen?: () => boolean
+  /** Opens the visible workbench surface before dispatching a command. */
+  openWorkbench?: () => void
   [key: string]: unknown
 }
 
