@@ -461,6 +461,6 @@ A failing nightly doesn't block merging; it surfaces a regression for triage. A 
 - [ ] CLI: `pnpm --filter @boring/agent eval [path]` runs a suite and exits non-zero on any failure (or on suite-level timeout).
 - [ ] Vitest unit tests for the matcher (partial-match, EvalAny, EvalRegex, strict mode, missing key, type mismatch, parallel-call existence check, expectFirst ordering, expectNoToolCall negative). NO real LLM in unit tests — the matcher is exercised against fixed `ToolCall[]` inputs.
 - [ ] One canary vitest suite using a real LLM, gated on `ANTHROPIC_API_KEY` being present (skip-with-warning otherwise), runs ≤ 3 prompts to validate the framework end-to-end without burning tokens on every PR.
-- [ ] Documentation in `packages/agent/README.md` + a one-paragraph reference in `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`.
+- [ ] Documentation in `packages/agent/README.md` + a one-paragraph reference in `packages/workspace/docs/plans/archive/WORKSPACE_V2_PLAN.md`.
 - [ ] CI workflow files: nightly cron + per-PR canary + fork-PR `/eval` trigger with environment protection.
 - [ ] No-API-key path: framework prints a clear "skipping evals: ANTHROPIC_API_KEY not set" warning and exits 0. Verified by a CI matrix entry that runs the canary without the secret set.

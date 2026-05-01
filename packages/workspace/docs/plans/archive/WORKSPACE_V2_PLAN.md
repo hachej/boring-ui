@@ -1,7 +1,7 @@
 # Workspace v2 — Architecture & Implementation Plan
 
 > **Historical plan.** This file is kept for implementation history. Use
-> `../INTERFACES.md` and `../PLUGIN_STRUCTURE.md` for the current workspace
+> `../../INTERFACES.md` and `../../PLUGIN_STRUCTURE.md` for the current workspace
 > contracts and plugin ownership rules.
 
 ## Execution Tracker (2026-04-24)

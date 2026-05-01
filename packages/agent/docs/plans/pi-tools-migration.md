@@ -1058,4 +1058,4 @@ sense pi's Operations would).
 - Why grep is default: [pi-mono#3782 — Default to using custom `grep` tool](https://github.com/badlogic/pi-mono/issues/3782)
 - Active SSH-extension iteration: [pi-mono#3500](https://github.com/badlogic/pi-mono/issues/3500), [#3320](https://github.com/badlogic/pi-mono/issues/3320), [#2965](https://github.com/badlogic/pi-mono/issues/2965)
 - Original spec: `packages/agent/docs/plans/agent-package-spec.md` (decisions #4, #6)
-- Companion plan (lands after this): `packages/workspace/docs/plans/PLUGIN_MODEL.md`
+- Companion plan (lands after this): `packages/workspace/docs/plans/archive/PLUGIN_MODEL.md`

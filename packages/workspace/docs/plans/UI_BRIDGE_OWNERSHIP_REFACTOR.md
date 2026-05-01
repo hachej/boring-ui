@@ -256,7 +256,7 @@ Implementation order within the PR (driven by what compiles at each step):
 5. Add the new tests in workspace: round-trip / queue-drain against `createWorkspaceAgentApp`, plus the `extraTools` merge test.
 6. Migrate `apps/workspace-playground/vite.config.ts` to use `createWorkspaceAgentApp`.
 7. Wire bundle isolation check (`scripts/assert-bundle-isolation.mjs` + postbuild hook + CI runtime check).
-8. Documentation pass — update `WORKSPACE_V2_PLAN.md` and `agent/docs/API.md`.
+8. Documentation pass — update `archive/WORKSPACE_V2_PLAN.md` and `agent/docs/API.md`.
 
 CI must be green at the END of the PR. Intermediate commits within the PR may be red — the agent-only step (3) breaks until the workspace side (1, 2) is in place. That's acceptable for a single PR landing as one merge.
 
@@ -293,5 +293,5 @@ CI must be green at the END of the PR. Intermediate commits within the PR may be
 - [ ] CI runtime test confirms importing `@boring/workspace` in node does not pull `fastify` into the module graph.
 - [ ] No remaining `import ... from "@boring/agent/shared"` for `UiBridge` / `UiCommand` / `UiState` anywhere in the repo.
 - [ ] `@boring/agent`'s `ChatPanel` no longer references `UiBridge`.
-- [ ] `WORKSPACE_V2_PLAN.md` and `agent/docs/API.md` reflect the new shape.
+- [ ] `archive/WORKSPACE_V2_PLAN.md` and `agent/docs/API.md` reflect the new shape.
 - [ ] Single PR (multiple commits within it OK as long as the final tree is green).

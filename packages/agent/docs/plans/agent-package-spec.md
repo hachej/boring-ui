@@ -1529,7 +1529,7 @@ v1 is **prove the architecture works end-to-end**, not **productionize**. Each a
 
 ## Coordination with `@boring/workspace`
 
-The workspace package (spec: `/home/ubuntu/projects/boring-ui-v2/packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`) is designed to be composed with this agent package. Contracts agreed across the two plans:
+The workspace package (spec: `/home/ubuntu/projects/boring-ui-v2/packages/workspace/docs/plans/archive/WORKSPACE_V2_PLAN.md`) is designed to be composed with this agent package. Contracts agreed across the two plans:
 
 ### Backend ownership (single source of truth)
 
@@ -1582,7 +1582,7 @@ const { sessions, activeSession, create, switch: switchTo, delete: remove } = us
 
 ### Cross-plan alignment status
 
-As of the 2026-04-22 alignment pass, the workspace plan (`/home/ubuntu/projects/boring-ui-v2/packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`) has been updated to match this spec. Specific edits applied to the workspace plan:
+As of the 2026-04-22 alignment pass, the workspace plan (`/home/ubuntu/projects/boring-ui-v2/packages/workspace/docs/plans/archive/WORKSPACE_V2_PLAN.md`) has been updated to match this spec. Specific edits applied to the workspace plan:
 
 - Backend ownership: workspace-server-owns claims removed; server-side ownership table rewritten to show agent owns all routes; workspace is frontend-only.
 - File-tree endpoints: `/api/v1/files/list` → `/api/v1/tree`; added concrete `/api/v1/files/search` route (filename glob via `find`) matching workspace's search-input need.

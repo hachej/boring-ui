@@ -34,7 +34,7 @@ Read this first. Re-read after compaction.
 ```
 `@boring/core` owns persistence and identity. `@boring/agent` and `@boring/workspace` stay DB-free; core injects stores via `createCoreApp` options. Agent can also boot standalone (`createAgentApp`) with zero core dependency.
 
-The three packages are designed to be composed by a final **app shell** (the end user's app). See `packages/agent/docs/plans/agent-package-spec.md`, `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`, and `packages/core/docs/CORE.md` for full designs.
+The three packages are designed to be composed by a final **app shell** (the end user's app). See `packages/agent/docs/plans/agent-package-spec.md`, `packages/workspace/docs/INTERFACES.md`, and `packages/core/docs/CORE.md` for current package boundaries.
 
 ### Why two packages (and how we build)
 
@@ -77,7 +77,7 @@ Packages live in `packages/`. App fixtures and demos live in `apps/`. Do not add
 |---|---|
 | Agent package spec (canonical design) | `packages/agent/docs/plans/agent-package-spec.md` |
 | Workspace package interfaces | `packages/workspace/docs/INTERFACES.md` |
-| Workspace package history | `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md` |
+| Workspace package history | `packages/workspace/docs/plans/archive/WORKSPACE_V2_PLAN.md` |
 | Execution plan (all tasks, decisions, risks, tests) | `.beads/` — `br ready`, `br show <id>` |
 | Old boring-ui (reference for porting — don't re-research) | `/home/ubuntu/projects/boring-ui/` |
 

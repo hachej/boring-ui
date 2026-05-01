@@ -13,7 +13,8 @@ chat chrome.
 
 - `docs/INTERFACES.md` - current package boundaries and contracts.
 - `docs/PLUGIN_STRUCTURE.md` - plugin layout and invariant checks.
-- `docs/plans/` - historical implementation plans.
+- `docs/plans/` - current ownership plans; old plans live in
+  `docs/plans/archive/`.
 
 ## Three-tier API
 

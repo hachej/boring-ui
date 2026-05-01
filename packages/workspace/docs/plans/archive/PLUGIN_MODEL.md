@@ -1,7 +1,7 @@
 # Workspace plugin model
 
 > **Historical plan.** This file records the plugin model design process. Use
-> `../INTERFACES.md` and `../PLUGIN_STRUCTURE.md` for the current concise
+> `../../INTERFACES.md` and `../../PLUGIN_STRUCTURE.md` for the current concise
 > contract reference.
 
 **Status:** v7.7 — round-7 governance: ChatPanel via dependency injection (NOT plugin); baseline protocol uses `git worktree` (NOT `git stash`); systemPrompt ordering reaffirmed (bootstrap first, createAgentApp second); excludeDefaults semantics corrected (UI off; tools stay); j9p7.30 sed→explicit Edits; bead-level dep + path fixes integrated.
