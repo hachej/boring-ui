@@ -97,6 +97,26 @@ async function main(): Promise<void> {
     assert(second.changed === false, 'second provisioning run should hit marker and report changed=false')
     assert(second.fingerprint === first.fingerprint, 'fingerprint changed across identical runs')
 
+    await rm(path.join(workspaceRoot, '.venv'), { recursive: true, force: true })
+    const repaired = await provisionRuntimeWorkspace({
+      workspaceRoot,
+      contributions: [
+        {
+          id: 'test-sdk',
+          provisioning: {
+            templateDirs: [{ id: 'test-template', path: path.join(fixtureRoot, 'template') }],
+            python: [{
+              id: 'test-python-sdk',
+              projectFile: path.join(fixtureRoot, 'test-sdk', 'pyproject.toml'),
+              env: { BORING_PROVISION_TEST_ENV: 'from-agent-provisioner' },
+            }],
+          },
+        },
+      ],
+    })
+    assert(repaired.changed === true, 'missing venv should force reprovision despite matching marker')
+    await execFileAsync(cliPath, ['repaired'], { maxBuffer: 1024 * 1024 })
+
     relocatedRoot = await mkdtemp(path.join(tmpdir(), 'boring-agent-provisioning-relocated-'))
     await cp(workspaceRoot, relocatedRoot, { recursive: true })
     await rm(workspaceRoot, { recursive: true, force: true })
@@ -118,6 +138,7 @@ async function main(): Promise<void> {
       fingerprint: first.fingerprint,
       binDir: first.binDir,
       cli: payload,
+      repaired: { changed: repaired.changed },
       relocatedCli: relocatedPayload,
     }, null, 2))
   } finally {
