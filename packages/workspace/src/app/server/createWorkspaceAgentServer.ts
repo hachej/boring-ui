@@ -4,7 +4,12 @@
  * This entry intentionally imports @boring/agent/server. Browser-facing
  * workspace entrypoints must not.
  */
-import { createAgentApp, type CreateAgentAppOptions } from "@boring/agent/server"
+import {
+  createAgentApp,
+  provisionRuntimeWorkspace,
+  type CreateAgentAppOptions,
+  type RuntimeProvisioningContribution,
+} from "@boring/agent/server"
 import type { FastifyInstance } from "fastify"
 import { join } from "node:path"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
@@ -19,6 +24,7 @@ export interface CreateWorkspaceAgentServerOptions
 
 export interface WorkspaceAgentServerBindings {
   bridge: UiBridge
+  provisioningContributions: Array<{ id: string; provisioning: RuntimeProvisioningContribution }>
   agentOptions: Pick<CreateAgentAppOptions, "extraTools" | "systemPromptAppend" | "resourceLoaderOptions">
 }
 
@@ -37,6 +43,7 @@ export function createWorkspaceAgentServerBindings(
 
   return {
     bridge,
+    provisioningContributions: result.provisioningContributions,
     agentOptions: {
       extraTools: [...(opts.extraTools ?? []), ...uiTools, ...result.agentTools],
       systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
@@ -54,8 +61,18 @@ export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const bindings = createWorkspaceAgentServerBindings(opts)
+  const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+
+  if (bindings.provisioningContributions.length > 0) {
+    await provisionRuntimeWorkspace({
+      workspaceRoot,
+      contributions: bindings.provisioningContributions,
+    })
+  }
+
   const app = await createAgentApp({
     ...opts,
+    workspaceRoot,
     extraTools: bindings.agentOptions.extraTools,
     systemPromptAppend: bindings.agentOptions.systemPromptAppend,
     resourceLoaderOptions: bindings.agentOptions.resourceLoaderOptions,

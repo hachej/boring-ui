@@ -1,9 +1,11 @@
+import type { RuntimeProvisioningContribution } from "@boring/agent/server"
 import type { AgentTool } from "../../shared/types/agent-tool"
 
 interface ServerPlugin {
   id: string
   systemPrompt?: string
   agentTools?: AgentTool[]
+  provisioning?: RuntimeProvisioningContribution
 }
 
 export interface ServerBootstrapOptions {
@@ -16,6 +18,7 @@ export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
   agentTools: AgentTool[]
+  provisioningContributions: Array<{ id: string; provisioning: RuntimeProvisioningContribution }>
 }
 
 export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstrapResult {
@@ -45,9 +48,14 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .map((p) => p.systemPrompt!.trim())
     .join("\n\n")
 
+  const provisioningContributions = finalPlugins
+    .filter((p) => p.provisioning)
+    .map((p) => ({ id: p.id, provisioning: p.provisioning! }))
+
   return {
     registered: finalPlugins.map((p) => p.id),
     systemPromptAppend,
     agentTools,
+    provisioningContributions,
   }
 }
