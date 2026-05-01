@@ -3,7 +3,39 @@ export { createDirectSandbox } from './sandbox/direct/createDirectSandbox'
 export { createBwrapSandbox } from './sandbox/bwrap/createBwrapSandbox'
 export { FileHandleStore } from './sandbox/vercel-sandbox/FileHandleStore'
 export { resolveSandboxHandle } from './sandbox/vercel-sandbox/resolveSandboxHandle'
+export { bakeSnapshotIfNeeded, buildPackageHash, buildSnapshotRecipeHash } from './sandbox/vercel-sandbox/bake'
+export type {
+  SnapshotBakeOptions,
+  SnapshotBakeResult,
+  VercelBakeClient,
+  VercelBakeSandbox,
+} from './sandbox/vercel-sandbox/bake'
+export {
+  buildDeploymentSnapshotRecipe,
+  prepareDeploymentSnapshot,
+  UV_SETUP_COMMANDS,
+} from './sandbox/snapshots/deploymentSnapshot'
+export type {
+  DeploymentSnapshotProvider,
+  DeploymentSnapshotRecipe,
+  DeploymentSnapshotResult,
+  DeploymentSnapshotStatus,
+} from './sandbox/snapshots/deploymentSnapshot'
+export {
+  createVercelDeploymentSnapshotProvider,
+  prepareVercelDeploymentSnapshot,
+  VERCEL_UV_SETUP_COMMANDS,
+} from './sandbox/vercel-sandbox/deploymentSnapshot'
+export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export { createNodeWorkspace } from './workspace/createNodeWorkspace'
+export {
+  provisionRuntimeWorkspace,
+  type ProvisionRuntimeWorkspaceOptions,
+  type RuntimeWorkspaceProvisioningResult,
+  type RuntimeProvisioningContribution,
+  type RuntimeTemplateContribution,
+  type RuntimePythonSpec,
+} from './workspace/provisionRuntime'
 export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'

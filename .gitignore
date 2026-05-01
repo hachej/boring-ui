@@ -21,6 +21,16 @@ apps/boring-macro-v2/sdk/*.egg-info/
 apps/boring-macro-v2/sdk/build/
 apps/boring-macro-v2/transforms/**/__pycache__/
 apps/boring-macro-v2/transforms/**/*.py[cod]
+apps/boring-macro-v2/src/plugins/macro/sdk/**/__pycache__/
+apps/boring-macro-v2/src/plugins/macro/sdk/**/*.py[cod]
+apps/boring-macro-v2/src/plugins/macro/sdk/*.egg-info/
+apps/boring-macro-v2/src/plugins/macro/sdk/build/
+apps/boring-macro-v2/src/plugins/macro/transforms/**/__pycache__/
+apps/boring-macro-v2/src/plugins/macro/transforms/**/*.py[cod]
+packages/agent/fixtures/provisioning/test-sdk/**/__pycache__/
+packages/agent/fixtures/provisioning/test-sdk/**/*.py[cod]
+packages/agent/fixtures/provisioning/test-sdk/*.egg-info/
+packages/agent/fixtures/provisioning/test-sdk/build/
 playwright-report/
 test-results/
 e2e-artifacts/

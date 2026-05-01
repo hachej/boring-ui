@@ -201,7 +201,31 @@ test('configured snapshot id skips bake work', async () => {
   expect(client.create).not.toHaveBeenCalled()
 })
 
-test('no packages configured skips bake', async () => {
+test('setup commands are baked and cached as part of the recipe', async () => {
+  const cachePath = await makeCachePath('setup-commands')
+  const sandbox = createMockSandbox({ snapshotId: 'snap-setup' })
+  const client: VercelBakeClient = {
+    create: vi.fn(async () => sandbox.sandbox),
+  }
+
+  const result = await bakeSnapshotIfNeeded({
+    client,
+    cachePath,
+    setupCommands: ['command -v uv || python3 -m pip install uv', 'uv --version'],
+  })
+
+  expect(result).toMatchObject({
+    status: 'baked',
+    reason: 'baked',
+    snapshotId: 'snap-setup',
+  })
+  expect(sandbox.scripts).toEqual([
+    'command -v uv || python3 -m pip install uv',
+    'uv --version',
+  ])
+})
+
+test('no packages or setup commands configured skips bake', async () => {
   const cachePath = await makeCachePath('no-packages')
   const client: VercelBakeClient = {
     create: vi.fn(async () => {

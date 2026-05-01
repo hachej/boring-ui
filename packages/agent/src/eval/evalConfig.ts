@@ -6,7 +6,7 @@
  * fixtures override this at the suite level so consumers upgrade at
  * their own pace.
  */
-export const DEFAULT_EVAL_MODEL = "claude-haiku-4-5-20251001"
+export const DEFAULT_EVAL_MODEL = { provider: "openrouter", id: "qwen/qwen3.6-plus" } as const
 
 /** Default per-call timeout in ms. */
 export const DEFAULT_TIMEOUT_MS = 30_000
