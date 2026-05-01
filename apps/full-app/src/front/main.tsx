@@ -53,6 +53,27 @@ const panels: PanelConfig[] = [
 const layoutStorageKey = 'boring-ui-v2:layout:full-app'
 const WORKSPACE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
+function readStoredBoolean(key: string, fallback: boolean): boolean {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const value = window.localStorage.getItem(key)
+    if (value === '1') return true
+    if (value === '0') return false
+  } catch {
+    // storage unavailable — use default
+  }
+  return fallback
+}
+
+function writeStoredBoolean(key: string, value: boolean): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    // storage unavailable — ignore
+  }
+}
+
 function AppTopBar({
   sessionTitle,
   onNewChat,
@@ -101,16 +122,31 @@ function Shell({ workspaceId }: { workspaceId: string }) {
   })
   const shellStorageKey = `boring-ui-v2:chat-layout:full-app:${workspaceId}`
   const surfaceStorageKey = `${shellStorageKey}:surface`
+  const drawerOpenStorageKey = `${shellStorageKey}:drawerOpen`
+  const surfaceOpenStorageKey = `${shellStorageKey}:workbenchOpen`
   const panelRegistry = useRegistry()
   const surfaceSnapshotRef = useRef<SurfaceShellSnapshot>({ openTabs: [], activeTab: null })
-  const [drawerOpen, setDrawerOpenState] = useState(true)
-  const [surfaceOpen, setSurfaceOpenState] = useState(true)
-  const drawerOpenRef = useRef(true)
-  const surfaceOpenRef = useRef(true)
+  const [drawerOpen, setDrawerOpenState] = useState(() =>
+    readStoredBoolean(drawerOpenStorageKey, true),
+  )
+  const [surfaceOpen, setSurfaceOpenState] = useState(() =>
+    readStoredBoolean(surfaceOpenStorageKey, true),
+  )
+  const drawerOpenRef = useRef(drawerOpen)
+  const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceRef = useRef<SurfaceShellApi | null>(null)
   const pushAbortRef = useRef<AbortController | null>(null)
 
   const sessionCount = sessionApi.sessions.length
+
+  useEffect(() => {
+    const nextDrawerOpen = readStoredBoolean(drawerOpenStorageKey, true)
+    const nextSurfaceOpen = readStoredBoolean(surfaceOpenStorageKey, true)
+    drawerOpenRef.current = nextDrawerOpen
+    surfaceOpenRef.current = nextSurfaceOpen
+    setDrawerOpenState(nextDrawerOpen)
+    setSurfaceOpenState(nextSurfaceOpen)
+  }, [drawerOpenStorageKey, surfaceOpenStorageKey])
 
   useEffect(() => {
     if (sessionApi.loading || sessionCount > 0) return
@@ -188,19 +224,21 @@ function Shell({ workspaceId }: { workspaceId: string }) {
   const setDrawerOpen = useCallback(
     (open: boolean) => {
       drawerOpenRef.current = open
+      writeStoredBoolean(drawerOpenStorageKey, open)
       setDrawerOpenState(open)
       pushUiState()
     },
-    [pushUiState],
+    [drawerOpenStorageKey, pushUiState],
   )
 
   const setSurfaceOpen = useCallback(
     (open: boolean) => {
       surfaceOpenRef.current = open
+      writeStoredBoolean(surfaceOpenStorageKey, open)
       setSurfaceOpenState(open)
       pushUiState()
     },
-    [pushUiState],
+    [pushUiState, surfaceOpenStorageKey],
   )
 
   const getSurface = useCallback(() => surfaceRef.current, [])
