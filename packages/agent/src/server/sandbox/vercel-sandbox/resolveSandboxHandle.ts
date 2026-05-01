@@ -119,7 +119,8 @@ function extractHttpStatus(error: unknown): number | null {
 
 function shouldRecreateFromSnapshot(error: unknown): boolean {
   const status = extractHttpStatus(error)
-  return status === 404 || status === 410
+  const apiCode = (error as { json?: { error?: { code?: unknown } } } | null)?.json?.error?.code
+  return status === 404 || status === 410 || apiCode === 'snapshot_not_found'
 }
 
 function throwUnavailable(

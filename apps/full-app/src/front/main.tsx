@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Navigate, Route, useParams } from 'react-router-dom'
 import { ChatPanel } from '@boring/agent'
@@ -51,6 +51,7 @@ const panels: PanelConfig[] = [
 ]
 
 const layoutStorageKey = 'boring-ui-v2:layout:full-app'
+const WORKSPACE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function AppTopBar({
   sessionTitle,
@@ -265,39 +266,162 @@ function openCommandPalette() {
   )
 }
 
+function WorkspaceLoadingPage({
+  title = 'Switching workspace',
+  description = 'Restoring files, sessions, and saved layout.',
+  status = 'Loading workspace',
+}: {
+  title?: string
+  description?: string
+  status?: string
+}) {
+  return (
+    <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
+      <AppTopBar />
+      <main className="min-h-0 flex-1">
+        <WorkspaceLoadingState
+          title={title}
+          description={description}
+          status={status}
+          fullscreen={false}
+          className="h-full min-h-0"
+        />
+      </main>
+    </div>
+  )
+}
+
+function WorkspaceErrorPage({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
+      <AppTopBar />
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+        <div className="max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <p className="text-sm font-medium text-destructive">Workspace failed to open</p>
+          <h1 className="mt-2 text-xl font-semibold">{title}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+          <button
+            className="mt-4 inline-flex text-sm font-medium text-primary underline"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type WorkspaceBootState =
+  | { status: 'loading'; label: string }
+  | { status: 'ready' }
+  | { status: 'error'; message: string }
+
+function WorkspaceBootGate({ id, children }: { id: string; children: ReactNode }) {
+  const [state, setState] = useState<WorkspaceBootState>({
+    status: 'loading',
+    label: 'Waking workspace runtime',
+  })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const headers = { 'x-boring-workspace-id': id }
+
+    async function fetchOk(path: string): Promise<void> {
+      const response = await fetch(path, { headers, signal: controller.signal })
+      if (!response.ok) {
+        const text = await response.text().catch(() => '')
+        throw new Error(text || `${path} failed with ${response.status}`)
+      }
+    }
+
+    async function boot() {
+      setState({ status: 'loading', label: 'Waking workspace runtime' })
+      try {
+        await Promise.all([
+          fetchOk('/api/v1/tree?path='),
+          fetchOk('/api/v1/agent/sessions'),
+        ])
+        if (!controller.signal.aborted) setState({ status: 'ready' })
+      } catch (error) {
+        if (controller.signal.aborted) return
+        setState({
+          status: 'error',
+          message: error instanceof Error ? error.message : 'Unknown workspace boot error',
+        })
+      }
+    }
+
+    void boot()
+    return () => controller.abort()
+  }, [id])
+
+  if (state.status === 'ready') return <>{children}</>
+
+  if (state.status === 'error') {
+    return (
+      <WorkspaceErrorPage
+        title="Runtime failed to wake"
+        description={state.message}
+      />
+    )
+  }
+
+  return (
+    <WorkspaceLoadingPage
+      title="Opening workspace"
+      description="Waking the sandbox and preparing files, sessions, and layout."
+      status={state.label}
+    />
+  )
+}
+
 function WorkspaceRoute() {
   const { id } = useParams<{ id: string }>()
   const currentWorkspace = useCurrentWorkspace()
   const coreCommands = useCoreCommands()
   if (!id) return null
 
-  if (currentWorkspace?.id !== id) {
+  if (!WORKSPACE_ID_RE.test(id)) {
     return (
-      <WorkspaceLoadingState
-        title="Switching workspace"
-        description="Restoring files, sessions, and saved layout."
-        status="Loading workspace"
-      />
+      <div className="flex h-screen items-center justify-center bg-background px-6 text-foreground">
+        <div className="max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <p className="text-sm font-medium text-destructive">Invalid workspace URL</p>
+          <h1 className="mt-2 text-xl font-semibold">Workspace id is malformed</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This link contains an invalid workspace id. Check for accidental spaces like %20.
+          </p>
+          <a className="mt-4 inline-flex text-sm font-medium text-primary underline" href="/">
+            Go to default workspace
+          </a>
+        </div>
+      </div>
     )
   }
 
+  if (currentWorkspace?.id !== id) {
+    return <WorkspaceLoadingPage />
+  }
+
   return (
-    <div className="h-screen bg-background text-foreground">
-      <WorkspaceProvider
-        key={id}
-        workspaceId={id}
-        chatPanel={ChatPanel}
-        panels={panels}
-        commands={coreCommands}
-        apiBaseUrl=""
-        authHeaders={{ 'x-boring-workspace-id': id }}
-        apiTimeout={10_000}
-        persistenceEnabled
-        storageKey={`${layoutStorageKey}:${id}`}
-      >
-        <Shell workspaceId={id} />
-      </WorkspaceProvider>
-    </div>
+    <WorkspaceBootGate id={id}>
+      <div className="h-screen bg-background text-foreground">
+        <WorkspaceProvider
+          key={id}
+          workspaceId={id}
+          chatPanel={ChatPanel}
+          panels={panels}
+          commands={coreCommands}
+          apiBaseUrl=""
+          authHeaders={{ 'x-boring-workspace-id': id }}
+          apiTimeout={10_000}
+          persistenceEnabled
+          storageKey={`${layoutStorageKey}:${id}`}
+        >
+          <Shell workspaceId={id} />
+        </WorkspaceProvider>
+      </div>
+    </WorkspaceBootGate>
   )
 }
 
@@ -305,7 +429,7 @@ function HomeRedirect() {
   const workspace = useCurrentWorkspace()
   if (!workspace) {
     return (
-      <WorkspaceLoadingState
+      <WorkspaceLoadingPage
         title="Opening workspace"
         description="Finding your default workspace."
         status="Loading workspace"
