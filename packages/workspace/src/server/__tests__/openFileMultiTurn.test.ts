@@ -18,7 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { FastifyInstance } from "fastify"
-import { createWorkspaceAgentApp } from "../../app/createWorkspaceAgentApp"
+import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
 
 const HAS_KEY = !!process.env.ANTHROPIC_API_KEY
 const describeIf = HAS_KEY ? describe : describe.skip
@@ -101,7 +101,7 @@ describeIf("exec_ui openFile — re-open after close (live LLM)", () => {
       join(workspaceRoot, "src", "README.md"),
       "# nested readme\n\nUsed by the re-open regression test.\n",
     )
-    app = await createWorkspaceAgentApp({
+    app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,

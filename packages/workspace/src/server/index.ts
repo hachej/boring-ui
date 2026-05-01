@@ -3,7 +3,7 @@
  *
  * Lower-level Node factories for advanced wiring. Hosts that want the
  * composed workspace + agent Fastify app should import
- * `createWorkspaceAgentApp` from `@boring/workspace/app`.
+ * `createWorkspaceAgentServer` from `@boring/workspace/app/server`.
  *
  * Bundling: this entry MUST NOT be imported by browser code. The workspace
  * package's exports map keeps it under `./server`, and the front bundle's

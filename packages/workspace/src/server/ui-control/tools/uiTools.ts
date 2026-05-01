@@ -6,7 +6,7 @@
  * tools encode workspace-specific concerns (UI state shape, command kinds
  * like `openFile` / `openPanel`) — `@boring/agent` is now a pure tool
  * harness with no UI knowledge. Hosts that want UI-aware agent tools
- * use `createWorkspaceAgentApp` (which closes over a bridge instance and
+ * use `createWorkspaceAgentServer` (which closes over a bridge instance and
  * registers these factories), or pass the result of `createWorkspaceUiTools`
  * via `createAgentApp({ extraTools })` if they prefer hand-wiring.
  */
@@ -279,7 +279,7 @@ export function createExecUiTool(
 
 /**
  * Convenience: returns both UI tools as an `AgentTool[]` ready to merge into
- * `extraTools`. `createWorkspaceAgentApp` calls this internally; hosts that
+ * `extraTools`. `createWorkspaceAgentServer` calls this internally; hosts that
  * want manual control can use it directly:
  *
  *   const bridge = createInMemoryBridge()
