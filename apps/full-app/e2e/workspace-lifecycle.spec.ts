@@ -80,6 +80,11 @@ function workspaceIdFromRequest(route: Route): string {
   return route.request().headers()['x-boring-workspace-id'] ?? 'missing-workspace'
 }
 
+function uiCommandWorkspaceIdFromRequest(route: Route): string {
+  const url = new URL(route.request().url())
+  return url.searchParams.get('workspaceId') ?? workspaceIdFromRequest(route)
+}
+
 function listEntries(files: Map<string, string>, dir: string | null): FileEntry[] {
   const normalizedDir = dir && dir !== '.' ? dir.replace(/^\/+|\/+$/g, '') : ''
   const prefix = normalizedDir ? `${normalizedDir}/` : ''
@@ -110,13 +115,17 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
     workspace('ws-beta', 'Beta Workspace'),
   ]
   const filesByWorkspace = new Map<string, Map<string, string>>([
-    ['ws-alpha', new Map([['alpha.md', '# alpha']])],
+    ['ws-alpha', new Map([
+      ['alpha.md', '# alpha'],
+      ['alpha.ts', 'export const alpha = 1'],
+    ])],
     ['ws-beta', new Map([['beta.md', '# beta']])],
   ])
   const sessionsByWorkspace = new Map<string, SessionSummary[]>()
   const sessionRequests: string[] = []
   const treeRequests: string[] = []
   const fileWrites: Array<{ workspaceId: string; path: string; content: string }> = []
+  const uiCommandsByWorkspace = new Map<string, unknown[]>()
   let sessionSeq = 0
 
   await page.route('**/*', async (route) => {
@@ -253,11 +262,17 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
     }
 
     if (path === '/api/v1/ui/commands/next') {
-      if (url.searchParams.get('poll') === 'true') return route.fulfill(json([]))
+      const workspaceId = uiCommandWorkspaceIdFromRequest(route)
+      const commands = uiCommandsByWorkspace.get(workspaceId) ?? []
+      const drained = commands.splice(0)
+      if (url.searchParams.get('poll') === 'true') return route.fulfill(json(drained))
+      const commandEvents = drained
+        .map((command) => `event: command\ndata: ${JSON.stringify(command)}\n\n`)
+        .join('')
       return route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
-        body: 'event: init\ndata: {"v":1}\n\n',
+        body: `event: init\ndata: {"v":1}\n\n${commandEvents}`,
       })
     }
 
@@ -276,7 +291,7 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
     return route.continue()
   })
 
-  return { filesByWorkspace, fileWrites, sessionRequests, treeRequests }
+  return { filesByWorkspace, fileWrites, sessionRequests, treeRequests, uiCommandsByWorkspace }
 }
 
 async function openWorkspaceMenu(page: Page) {
@@ -298,6 +313,21 @@ async function openWorkbench(page: Page) {
   }
   await expect(page.getByLabel('Workbench left pane')).toBeVisible({ timeout: 10_000 })
 }
+
+test('agent openFile command opens a closed workbench and focuses the file', async ({ page, baseURL }) => {
+  const state = await installWorkspaceLifecycleMocks(page, baseURL)
+  state.uiCommandsByWorkspace.set('ws-alpha', [
+    { kind: 'openFile', params: { path: 'alpha.ts' }, seq: 1 },
+  ])
+
+  await page.goto('/workspace/ws-alpha')
+  await expect(page.getByRole('button', { name: /Workspace menu: Alpha Workspace/ }))
+    .toBeVisible({ timeout: 10_000 })
+
+  await expect(page.getByLabel('Surface')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
+  await expect(page.locator('.cm-content')).toContainText('export const alpha = 1', { timeout: 10_000 })
+})
 
 test('workspace create and switch keeps files and sessions scoped per workspace', async ({ page, baseURL }) => {
   const state = await installWorkspaceLifecycleMocks(page, baseURL)

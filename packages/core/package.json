@@ -20,6 +20,11 @@
       "types": "./dist/app/front/index.d.ts",
       "import": "./dist/app/front/index.js"
     },
+    "./app/front/styles.css": "./dist/app/front/styles.css",
+    "./app/vite": {
+      "types": "./dist/app/vite/index.d.ts",
+      "import": "./dist/app/vite/index.js"
+    },
     "./front": {
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
@@ -42,7 +47,7 @@
     "drizzle"
   ],
   "scripts": {
-    "build": "tsup && cp src/front/theme.css dist/front/theme.css",
+    "build": "tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
     "dev": "tsup --watch",
     "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",

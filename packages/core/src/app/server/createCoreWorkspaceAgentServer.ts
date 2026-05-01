@@ -8,7 +8,7 @@ import {
   type RuntimeProvisioningContribution,
 } from '@boring/agent/server'
 import {
-  createWorkspaceAgentServerBindings,
+  collectWorkspaceAgentServerPlugins,
   provisionWorkspaceAgentServer,
   type CreateWorkspaceAgentServerOptions,
 } from '@boring/workspace/app/server'
@@ -452,17 +452,17 @@ export async function createCoreWorkspaceAgentServer(
 
   await registerAuthProxy(app)
 
-  const bindings = createWorkspaceAgentServerBindings({
+  const pluginCollection = collectWorkspaceAgentServerPlugins({
     workspaceRoot,
-    extraTools: [],
     systemPromptAppend: options.systemPromptAppend,
+    resourceLoaderOptions: options.resourceLoaderOptions,
     plugins: options.plugins,
     excludeDefaults: options.excludeDefaults,
   })
 
   await provisionWorkspaceAgentServer({
     workspaceRoot,
-    provisioningContributions: bindings.provisioningContributions,
+    provisioningContributions: pluginCollection.provisioningContributions,
     force: options.forceProvisioning,
   })
 
@@ -487,17 +487,18 @@ export async function createCoreWorkspaceAgentServer(
       ? await options.getWorkspaceRoot(workspaceId, request)
       : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
 
-  const nonUiBindingTools = (bindings.agentOptions.extraTools ?? []).filter(
-    (tool) => tool.name !== 'get_ui_state' && tool.name !== 'exec_ui',
-  )
-
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
     templatePath: options.templatePath,
     mode: options.mode,
     version: options.version,
-    extraTools: [...(options.extraTools ?? []), ...nonUiBindingTools],
+    extraTools: [
+      ...(options.extraTools ?? []),
+      ...(pluginCollection.agentOptions.extraTools ?? []),
+    ],
+    systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
+    resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
       return [
@@ -514,6 +515,10 @@ export async function createCoreWorkspaceAgentServer(
   await app.register(uiRoutes, {
     getBridge: async (request) => getUiBridge(await resolveWorkspaceId(request)),
   })
+
+  for (const { routes } of pluginCollection.routeContributions) {
+    await app.register(routes)
+  }
 
   if (serveFrontend && appRoot) {
     await registerFrontendFallback(app, appRoot)

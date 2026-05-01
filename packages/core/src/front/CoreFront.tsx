@@ -113,8 +113,11 @@ export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
                               <Route path={routes.callbackGithub} element={<PlaceholderPage name="github-callback" />} />
                               <Route path={routes.me} element={<UserSettingsPage />} />
                               <Route path={routes.workspaceMembers} element={<MembersPage />} />
+                              <Route path="/workspace/:id/members" element={<MembersPage />} />
                               <Route path={routes.workspaceInvites} element={<InvitesPage />} />
+                              <Route path="/workspace/:id/invites" element={<InvitesPage />} />
                               <Route path={routes.workspaceSettings} element={<WorkspaceSettingsPage />} />
+                              <Route path="/workspace/:id/settings" element={<WorkspaceSettingsPage />} />
                               <Route path={routes.inviteAccept} element={<InviteAcceptPage />} />
                               {children}
                             </Routes>

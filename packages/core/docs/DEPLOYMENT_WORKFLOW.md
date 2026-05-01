@@ -173,11 +173,11 @@ provisioning: {
 Workspace server composition:
 
 ```ts
-const bindings = createWorkspaceAgentServerBindings({ plugins, workspaceRoot })
+const pluginCollection = collectWorkspaceAgentServerPlugins({ plugins, workspaceRoot })
 
 await provisionWorkspaceAgentServer({
   workspaceRoot,
-  provisioningContributions: bindings.provisioningContributions,
+  provisioningContributions: pluginCollection.provisioningContributions,
 })
 ```
 

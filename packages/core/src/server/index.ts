@@ -24,6 +24,10 @@ export {
 
 export { createDatabase, runMigrations } from './db/index.js'
 export type { Database } from './db/index.js'
+export {
+  runCoreMigrationsFromEnv,
+  type RunCoreMigrationsFromEnvOptions,
+} from './migrations.js'
 
 export {
   createAuth,

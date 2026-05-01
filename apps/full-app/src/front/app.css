@@ -1,6 +1,4 @@
-@import "tailwindcss";
-@source "../../../../packages/workspace/src";
-@source "../../../../packages/core/src";
+@import "../../../../packages/core/src/app/front/styles.css";
 
 html,
 body,

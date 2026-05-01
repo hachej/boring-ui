@@ -1,10 +1,7 @@
-import { loadConfig } from '@boring/core/server'
-import { runMigrations } from '@boring/core/server/db'
+import { runCoreMigrationsFromEnv } from '@boring/core/server'
 
 async function main() {
-  const config = await loadConfig()
-  await runMigrations(config)
-  console.log('migrations complete')
+  await runCoreMigrationsFromEnv({ log: console })
 }
 
 main().catch((err) => {

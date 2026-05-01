@@ -33,7 +33,7 @@ Optional Vercel sandbox lifetime:
 3. Run DB migrations (before app boot):
 
 ```bash
-pnpm --dir packages/core drizzle:migrate
+pnpm --filter full-app migrate
 ```
 
 4. Start the app:

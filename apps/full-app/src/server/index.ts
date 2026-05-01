@@ -1,5 +1,3 @@
-import { mkdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -18,20 +16,10 @@ export function defaultAppRoot(): string {
   return path.resolve(thisDir, '../..')
 }
 
-export function defaultWorkspaceRoot(): string {
-  return (
-    process.env.FULL_APP_WORKSPACE_ROOT ??
-    path.resolve(tmpdir(), 'boring-ui-v2-full-app-workspace')
-  )
-}
-
 export async function buildServer(options: FullAppServerOptions = {}): Promise<FullAppServer> {
-  const workspaceRoot = options.workspaceRoot ?? defaultWorkspaceRoot()
-  await mkdir(workspaceRoot, { recursive: true })
-
   return createCoreWorkspaceAgentServer({
     appRoot: options.appRoot ?? defaultAppRoot(),
-    workspaceRoot,
+    workspaceRoot: options.workspaceRoot,
     serveFrontend: options.serveFrontend,
   })
 }

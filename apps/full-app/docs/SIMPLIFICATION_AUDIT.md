@@ -11,7 +11,7 @@ package or plugin. Standalone workspace app wiring belongs in
 
 - `@boring/workspace/app/front` exports `WorkspaceAgentFront`.
 - `@boring/workspace/app/server` exports `createWorkspaceAgentServer` and
-  `createWorkspaceAgentServerBindings`.
+  `collectWorkspaceAgentServerPlugins`.
 - `@boring/workspace/server` exposes low-level bridge primitives only.
 - workspace front/shared code has no value import from `@boring/agent`.
 - file-backed panels and path routing are owned by the default filesystem
@@ -192,14 +192,13 @@ Rules:
 - `WorkspaceAgentFront` composes workspace UI with an injected chat panel
 - `createWorkspaceAgentServer` remains the standalone workspace-agent server
   composition helper for users who want workspace without core
-- expose `createWorkspaceAgentServerBindings` so standalone and core-backed
+- expose `collectWorkspaceAgentServerPlugins` so standalone and core-backed
   composition can share server plugin tools, system prompt append text,
-  workspace skill paths, and provisioning behavior
+  workspace skill paths, routes, and provisioning behavior
 
-`createWorkspaceAgentServerBindings` must not assume one UI bridge per Fastify
-app. UI bridge routing/tools are supplied by `registerWorkspaceUiBridge` so
-standalone and core-backed composition can choose one-app or per-workspace
-bridge lifecycles.
+`collectWorkspaceAgentServerPlugins` intentionally does not create UI bridge
+tools. Standalone composition adds one app-level bridge; core-backed composition
+adds per-workspace bridges.
 
 File naming should mirror public API names:
 
@@ -327,12 +326,12 @@ DB, or membership.
    `createInMemoryBridge`, `uiRoutes`, and `createWorkspaceUiTools`.
 7. Done: add bridge lifecycle controls before full-app server migration: dispose by
    workspace id, idle cleanup, and bounded pending-command queues.
-8. Done: extract `createWorkspaceAgentServerBindings` in
+8. Done: extract `collectWorkspaceAgentServerPlugins` in
    `@boring/workspace/app/server`. It should build server plugin tools, system
-   prompt append text, workspace skill paths, and provisioning behavior without
-   creating a standalone Fastify app or assuming one UI bridge per app.
+   prompt append text, workspace skill paths, routes, and provisioning behavior
+   without creating a standalone Fastify app or UI bridge tools.
 9. Done: rebuild `createWorkspaceAgentServer` on top of
-   `createWorkspaceAgentServerBindings`, `registerWorkspaceUiBridge`, and
+   `collectWorkspaceAgentServerPlugins`, workspace UI bridge tools/routes, and
    `createAgentApp`.
 10. Done: update first-party consumers of the workspace app names and subpaths:
    workspace tests, `apps/workspace-playground`, `apps/boring-macro-v2`, and any
@@ -361,8 +360,8 @@ DB, or membership.
 20. Update full-app front code directly to `CoreWorkspaceAgentFront`. Do not
     leave an interim `WorkspaceAgentFront` migration in full-app.
 21. Add `@boring/core/app/server` with `createCoreWorkspaceAgentServer`, reusing
-    `createWorkspaceAgentServerBindings`, `registerWorkspaceUiBridge`, and
-    layering core auth/membership/root resolution on top.
+    `collectWorkspaceAgentServerPlugins`, per-workspace UI bridge tools/routes,
+    and layering core auth/membership/root resolution on top.
 22. Update full-app server to `createCoreWorkspaceAgentServer`.
 23. Remove any temporary compatibility aliases and old workspace app
     names before final verification.
@@ -405,9 +404,10 @@ DB, or membership.
 - `WorkspaceAgentFrontProps.workspaceId` is required. `CoreWorkspaceAgentFront`
   resolves workspace identity from core route state instead of accepting a
   `workspaceId` prop.
-- Full-app supplies `ChatPanel` and `useSessions` to `CoreWorkspaceAgentFront`;
-  `@boring/core/app/front` does not import `@boring/agent` or
-  `@boring/agent/front`.
+- Full-app uses `CoreWorkspaceAgentFront` without supplying `ChatPanel` or
+  `useSessions`; `@boring/workspace/app/front` provides the default
+  `@boring/agent/front` composition while base workspace front/shared code
+  remains agent-free.
 - `@boring/core/server`, `@boring/core/front`, and the core root have no
   `@boring/agent` imports.
 - `@boring/core/app/server` is the only core subpath allowed to import
@@ -417,7 +417,8 @@ DB, or membership.
   not share a singleton standalone bridge across authenticated workspaces.
 - `@boring/workspace/front` and `@boring/workspace/shared` have no
   `@boring/agent` value imports.
-- `@boring/workspace/app/front` has no server-only imports.
+- `@boring/workspace/app/front` may import documented `@boring/agent/front`
+  APIs for batteries-included app composition, and has no server-only imports.
 - `@boring/workspace/app/server` has no React/browser imports.
 - `@boring/core/app/front` has no server-only imports.
 - `@boring/core/app/server` has no React/browser imports.
