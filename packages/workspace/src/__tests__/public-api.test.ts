@@ -18,11 +18,11 @@ describe("@boring/workspace public API", () => {
   })
 
   describe("standalone components", () => {
-    it("exports FileTree, CodeEditor, MarkdownEditor, DataCatalog", () => {
+    it("exports FileTree, CodeEditor, and MarkdownEditor", () => {
       expect(api.FileTree).toBeDefined()
       expect(api.CodeEditor).toBeDefined()
       expect(api.MarkdownEditor).toBeDefined()
-      expect(api.DataCatalog).toBeDefined()
+      expect("DataCatalog" in api).toBe(false)
     })
 
     it("exports SessionList", () => {
@@ -55,7 +55,7 @@ describe("@boring/workspace public API", () => {
       expect(api.FileTreePane).toBeDefined()
       expect(api.CodeEditorPane).toBeDefined()
       expect(api.MarkdownEditorPane).toBeDefined()
-      expect(api.DataCatalogPane).toBeDefined()
+      expect("DataCatalogPane" in api).toBe(false)
       expect(api.EmptyPane).toBeDefined()
       expect(api.ArtifactSurfacePane).toBeDefined()
     })

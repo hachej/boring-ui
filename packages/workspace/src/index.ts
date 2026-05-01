@@ -183,8 +183,6 @@ export { ArtifactSurfacePane } from "./front/chrome/artifact-surface/ArtifactSur
 export type { ArtifactSurfacePaneProps } from "./front/chrome/artifact-surface/ArtifactSurfacePane"
 export { EmptyPane } from "./front/chrome/empty-pane/EmptyPane"
 export type { EmptyPaneProps } from "./front/chrome/empty-pane/EmptyPane"
-export { DataCatalogPane } from "./front/components/data-catalog/DataCatalogPane"
-export type { DataCatalogPaneProps } from "./front/components/data-catalog/DataCatalogPane"
 export { CodeEditorPane } from "./plugins/filesystemPlugin/code-editor/CodeEditorPane"
 export type { CodeEditorPaneProps } from "./plugins/filesystemPlugin/code-editor/CodeEditorPane"
 export { FileTreePane, FileTreeView } from "./plugins/filesystemPlugin/file-tree/FileTreeView"
@@ -209,6 +207,8 @@ export {
 export type {
   Origin,
   EventMeta,
+  WorkspaceCoreEventMap,
+  WorkspacePluginEventMap,
   WorkspaceEventMap,
   WorkspaceEventName,
 } from "./front/events"
@@ -262,8 +262,6 @@ export { FileTree } from "./plugins/filesystemPlugin/file-tree/FileTree"
 export type { FileTreeProps, FileTreeNode } from "./plugins/filesystemPlugin/file-tree/FileTree"
 export { MarkdownEditor } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditor"
 export type { MarkdownEditorProps } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditor"
-export { DataCatalog } from "./front/components/data-catalog/DataCatalog"
-export type { DataCatalogProps, DataSource } from "./front/components/data-catalog/DataCatalog"
 export { DataExplorer, useExplorerState } from "./front/components/DataExplorer"
 export type {
   DataExplorerProps,

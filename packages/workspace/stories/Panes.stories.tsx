@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import {
   CodeEditorPane as CodeEditorPaneComponent,
-  DataCatalogPane as DataCatalogPaneComponent,
   EmptyPane,
   FileTreePane as FileTreePaneComponent,
   MarkdownEditorPane as MarkdownEditorPaneComponent,
@@ -23,17 +22,6 @@ type Story = StoryObj<typeof EmptyPane>
 
 export const Empty: Story = {
   render: () => <EmptyPane />,
-}
-
-export const DataCatalogPane: Story = {
-  render: () => (
-    <DataCatalogPaneComponent
-      sources={[
-        { id: "warehouse", name: "Warehouse", type: "bigquery" },
-        { id: "postgres-main", name: "Postgres Main", type: "postgres" },
-      ]}
-    />
-  ),
 }
 
 export const FileTreePane: Story = {

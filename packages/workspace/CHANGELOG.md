@@ -7,6 +7,13 @@ Canonical migration example: `d26e1e7` (`refactor(macro): rewrite App.tsx + serv
 
 ### Breaking Changes
 
+#### Legacy `DataCatalog` components removed
+
+`DataCatalog` and `DataCatalogPane` are no longer exported from `@boring/workspace`.
+Data catalog UI now lives behind plugin outputs. Use `createDataCatalogPlugin()`
+for standalone catalogs or `appendDataCatalogOutputs()` inside an app/domain
+plugin. Use `DataExplorer` directly only for generic explorer UI.
+
 #### `<CommandPalette>` no longer accepts file-search props
 
 `fileSearchFn` and `onOpenFile` are removed. File search is now a catalog contribution in the registry. `WorkspaceProvider` owns the stock command palette mount.
