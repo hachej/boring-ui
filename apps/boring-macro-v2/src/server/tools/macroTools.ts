@@ -203,9 +203,9 @@ export function createMacroTools(chConfig: ClickHouseConfig | null): AgentTool[]
     },
   }
 
-  // open_series was deleted in favor of exec_ui openPanel, which arrives
+  // open_series was deleted in favor of exec_ui openSurface, which arrives
   // via the workspace UI bridge SSE stream and is dispatched by
-  // SurfaceShell.openPanel on the frontend. The bridge surface (registered
+  // SurfaceShell through plugin-owned resolvers on the frontend. The bridge surface (registered
   // by createWorkspaceAgentApp) replaces tabBus's push/poll semantics with
   // an SSE drain — no app-specific tool needed.
   return [executeSql, macroSearch, getSeriesData, persistDerivedSeries]

@@ -3,7 +3,7 @@
  */
 
 import type { AgentTool } from '@boring/agent/shared'
-import type { PanelConfig, CommandConfig, CatalogConfig } from '@boring/workspace'
+import type { PanelConfig, CommandConfig, CatalogConfig, PluginOutput } from '@boring/workspace'
 
 export interface MacroConfig {
   clickhouse: {
@@ -28,4 +28,5 @@ export interface MacroFrontendPlugin {
   panels: PanelConfig[]
   commands?: CommandConfig[]
   catalogs?: CatalogConfig[]
+  outputs?: PluginOutput[]
 }

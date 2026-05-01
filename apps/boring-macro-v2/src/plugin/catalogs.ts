@@ -1,17 +1,8 @@
-import type { CatalogConfig, ExplorerRow } from "@boring/workspace"
+import type { CreateDataCatalogOutputsOptions, ExplorerRow } from "@boring/workspace"
 import { createMacroSeriesAdapter } from "../front/macroSeriesAdapter"
 import { FREQ_LABELS } from "../front/macroSeriesUi"
 
 const macroAdapter = createMacroSeriesAdapter()
-
-export function createSeriesCatalog(onSelect: (row: ExplorerRow) => void): CatalogConfig {
-  return {
-    id: "macro-series",
-    label: "Macro Series",
-    adapter: macroAdapter,
-    onSelect,
-  }
-}
 
 export const MACRO_FACETS = [
   {
@@ -27,3 +18,24 @@ export const MACRO_FACETS = [
       v === "fred" ? "FRED" : v === "derived" ? "Derived" : v,
   },
 ]
+
+export function createMacroSeriesDataCatalogOptions(
+  onSelect: (row: ExplorerRow) => void,
+): CreateDataCatalogOutputsOptions {
+  return {
+    id: "macro-series",
+    label: "Data",
+    adapter: macroAdapter,
+    facets: MACRO_FACETS,
+    groupBy: "frequency",
+    onSelect,
+    leftTabId: "macro-series",
+    leftTabTitle: "Data",
+    catalogId: "macro-series",
+    catalogLabel: "Macro Series",
+    includeVisualizationPanel: false,
+    emptyState: "No series match",
+    searchPlaceholder: "Search...",
+    getDragPayload: (row) => ({ mimeType: "text/series-id", value: row.id }),
+  }
+}

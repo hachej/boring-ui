@@ -5,8 +5,9 @@
  */
 
 import type { AgentTool } from '@boring/agent/shared'
-import type { MacroConfig } from '../server/config'
-import { createMacroTools } from '../server/tools/macroTools'
+import type { MacroConfig } from '../../server/config'
+import { createMacroTools } from '../../server/tools/macroTools'
+import { MACRO_OPEN_SERIES_SURFACE_KIND } from '../constants'
 
 export function makeMacroServerPlugin(macroConfig: MacroConfig): {
   id: string
@@ -37,7 +38,8 @@ You have access to macro-economic timeseries tools and data.
 1. Search for series before using them
 2. Use read-only SQL (SELECT, WITH, EXPLAIN only)
 3. Always persist derived series with meaningful IDs
-4. Open panels to display results to the user
-`.trim(),
+	4. To show a series chart, call exec_ui with kind "openSurface" and params
+	   { kind: "${MACRO_OPEN_SERIES_SURFACE_KIND}", target: series_id, meta: { title } }
+	`.trim(),
   }
 }

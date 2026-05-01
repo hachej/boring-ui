@@ -1,9 +1,11 @@
 "use client"
 import type { ChatSuggestion } from "@boring/agent"
-import { definePlugin, type Plugin } from "@boring/workspace"
+import { appendDataCatalogOutputs, definePlugin, type Plugin } from "@boring/workspace"
 import { LineChart, Search, TrendingUp, Presentation } from "lucide-react"
-import { chartCanvasPanel, deckPanel, macroSeriesPanel } from "./panels"
-import { createSeriesCatalog } from "./catalogs"
+import { chartCanvasPanel, deckPanel } from "./panels"
+import { createMacroSeriesDataCatalogOptions } from "./catalogs"
+import { macroSurfaceOutputs } from "./surfaceResolver"
+import { MACRO_PLUGIN_ID } from "./constants"
 import type { ExplorerRow } from "@boring/workspace"
 
 export const macroChatSuggestions: ChatSuggestion[] = [
@@ -37,10 +39,15 @@ export const macroChatSuggestions: ChatSuggestion[] = [
 ]
 
 export function makeMacroClientPlugin(onSeriesSelect: (row: ExplorerRow) => void): Plugin {
-  return definePlugin({
-    id: "boring-macro",
+  const plugin = definePlugin({
+    id: MACRO_PLUGIN_ID,
     label: "Macro",
-    panels: [chartCanvasPanel, deckPanel, macroSeriesPanel],
-    catalogs: [createSeriesCatalog(onSeriesSelect)],
+    outputs: [
+      { type: "panel", panel: chartCanvasPanel },
+      { type: "panel", panel: deckPanel },
+      ...macroSurfaceOutputs,
+    ],
   })
+
+  return appendDataCatalogOutputs(plugin, createMacroSeriesDataCatalogOptions(onSeriesSelect))
 }
