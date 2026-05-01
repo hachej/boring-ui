@@ -1,4 +1,4 @@
-import type { AgentTool } from "@boring/agent/shared"
+import type { AgentTool } from "@boring/workspace"
 import { SAMPLE_PLUGIN_ID } from "../constants"
 
 export function createSampleServerPlugin(): {

@@ -75,6 +75,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
+      "@boring/agent/front/styles.css": resolve(__dirname, "../../packages/agent/src/front/styles/globals.css"),
       "@boring/workspace/ui-shadcn": resolve(__dirname, "../../packages/workspace/src/front/components/ui/index.ts"),
       "@boring/workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
       "@boring/workspace/testing": resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts"),

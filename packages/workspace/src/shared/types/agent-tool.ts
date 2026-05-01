@@ -1,0 +1,26 @@
+export type JSONSchema = Record<string, unknown>
+
+export interface ToolExecContext {
+  abortSignal: AbortSignal
+  toolCallId: string
+  onUpdate?: (partial: string) => void
+}
+
+export interface ToolResult {
+  content: Array<{ type: "text"; text: string }>
+  isError?: boolean
+  details?: unknown
+}
+
+/**
+ * Structural tool contract accepted from workspace plugins and UI tool
+ * factories. Kept agent-runtime-neutral so only the app integration layer
+ * needs to import @boring/agent.
+ */
+export interface AgentTool {
+  name: string
+  description: string
+  promptSnippet?: string
+  parameters: JSONSchema
+  execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult>
+}

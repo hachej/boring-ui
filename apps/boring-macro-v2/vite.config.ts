@@ -22,6 +22,7 @@ export default defineConfig({
       // Order matters — most-specific subpaths first so `@boring/workspace`
       // doesn't shadow `@boring/workspace/testing` etc.
       "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
+      "@boring/agent/front/styles.css": resolve(PACKAGES, "agent/src/front/styles/globals.css"),
       "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/front/testing/index.ts"),
       "@boring/workspace/ui-shadcn": resolve(PACKAGES, "workspace/src/front/components/ui/index.ts"),
       "@boring/workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),

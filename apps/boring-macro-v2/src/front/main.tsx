@@ -4,6 +4,7 @@ import type { PaneProps } from "@boring/workspace"
 import { App } from "./App"
 import { DeckPane } from "./panes/DeckPane"
 import "@boring/workspace/globals.css"
+import "@boring/agent/front/styles.css"
 import "./app.css"
 
 // Standalone deck route: /present?path=<deck>. Boots the SPA into deck-only

@@ -22,3 +22,4 @@ export type {
 export { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "./types/surface"
 export { definePanel } from "./types/panel"
 export type { ExplorerAdapter, ExplorerRow, SearchResult } from "./types/explorer"
+export type { AgentTool, JSONSchema, ToolExecContext, ToolResult } from "./types/agent-tool"

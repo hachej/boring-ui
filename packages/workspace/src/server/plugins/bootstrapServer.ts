@@ -1,4 +1,4 @@
-import type { AgentTool } from "@boring/agent/shared"
+import type { AgentTool } from "../../shared/types/agent-tool"
 
 interface ServerPlugin {
   id: string

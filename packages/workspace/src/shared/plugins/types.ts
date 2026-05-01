@@ -1,36 +1,12 @@
 import type { ComponentType, ReactNode } from "react"
+import type { AgentTool, JSONSchema, ToolExecContext, ToolResult } from "../types/agent-tool"
 import type { ExplorerAdapter, ExplorerRow } from "../types/explorer"
 import type { CommandConfig, PaneProps, PanelConfig } from "../types/panel"
 import type { SurfaceResolverConfig } from "../types/surface"
 
+export type { AgentTool, JSONSchema, ToolExecContext, ToolResult } from "../types/agent-tool"
+
 export type PluginBinding = ComponentType<unknown>
-
-export type JSONSchema = Record<string, unknown>
-
-export interface ToolExecContext {
-  abortSignal: AbortSignal
-  toolCallId: string
-  onUpdate?: (partial: string) => void
-}
-
-export interface ToolResult {
-  content: Array<{ type: "text"; text: string }>
-  isError?: boolean
-  details?: unknown
-}
-
-/**
- * Structural tool contract accepted from plugins. Workspace keeps this local so
- * the shared plugin layer does not import the agent package; app shells can
- * adapt these tools into whichever agent runtime they compose with.
- */
-export interface AgentTool {
-  name: string
-  description: string
-  promptSnippet?: string
-  parameters: JSONSchema
-  execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult>
-}
 
 export interface PluginProviderProps {
   apiBaseUrl: string
