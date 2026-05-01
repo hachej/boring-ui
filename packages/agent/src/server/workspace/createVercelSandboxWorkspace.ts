@@ -10,6 +10,28 @@ import type {
 import { validatePath } from './paths'
 
 const VERCEL_SANDBOX_ROOT = '/vercel/sandbox'
+
+type VercelSandboxCompat = VercelSandbox & {
+  fs?: {
+    readFile(path: string, encoding?: BufferEncoding): Promise<string | Uint8Array | Buffer>
+    readdir(path: string, opts: { withFileTypes: true }): Promise<Array<{ name: string; isDirectory(): boolean }>>
+    stat(path: string): Promise<{ size: number; mtimeMs: number; isDirectory(): boolean }>
+    mkdir(path: string, opts?: { recursive?: boolean }): Promise<unknown>
+    rename(from: string, to: string): Promise<unknown>
+    rm(path: string, opts?: { recursive?: boolean; force?: boolean }): Promise<unknown>
+  }
+  readFileToBuffer?(file: { path: string; cwd?: string }, opts?: { signal?: AbortSignal }): Promise<Buffer | null>
+  mkDir?(path: string, opts?: { signal?: AbortSignal }): Promise<void>
+  runCommand(params: {
+    cmd: string
+    args?: string[]
+    cwd?: string
+  }): Promise<{
+    exitCode?: number
+    stdout?: () => Promise<string>
+    stderr?: () => Promise<string>
+  }>
+}
 const CACHE_TTL_MS = 15_000
 const CACHE_MAX_ENTRIES = 512
 const metadataInvalidators = new WeakMap<VercelSandbox, Set<() => void>>()
@@ -64,6 +86,30 @@ function cloneStat(stat: Stat): Stat {
 
 function cloneEntries(entries: Entry[]): Entry[] {
   return entries.map((entry) => ({ name: entry.name, kind: entry.kind }))
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+async function runJson<T>(sandbox: VercelSandboxCompat, script: string): Promise<T> {
+  const result = await sandbox.runCommand({ cmd: 'sh', args: ['-c', script] })
+  const [out, err] = await Promise.all([
+    result.stdout?.() ?? Promise.resolve(''),
+    result.stderr?.() ?? Promise.resolve(''),
+  ])
+  if ((result.exitCode ?? 1) !== 0) {
+    throw new Error(err || `sandbox command failed with exit code ${result.exitCode}`)
+  }
+  return JSON.parse(out) as T
+}
+
+async function runShell(sandbox: VercelSandboxCompat, script: string): Promise<void> {
+  const result = await sandbox.runCommand({ cmd: 'sh', args: ['-c', script] })
+  if ((result.exitCode ?? 1) !== 0) {
+    const err = await (result.stderr?.() ?? Promise.resolve(''))
+    throw new Error(err || `sandbox command failed with exit code ${result.exitCode}`)
+  }
 }
 
 function registerMetadataInvalidator(
@@ -147,7 +193,10 @@ export function createVercelSandboxWorkspace(
     CACHE_MAX_ENTRIES,
   )
 
+  let metadataVersion = 0
+
   function invalidateMetadataCache() {
+    metadataVersion += 1
     statCache.clear()
     readdirCache.clear()
   }
@@ -155,6 +204,7 @@ export function createVercelSandboxWorkspace(
   registerMetadataInvalidator(sandbox, invalidateMetadataCache)
 
   const { emit: emitChange, watcher } = createSandboxBroadcaster()
+  const remote = sandbox as VercelSandboxCompat
 
   return {
     root: VERCEL_SANDBOX_ROOT,
@@ -165,9 +215,16 @@ export function createVercelSandboxWorkspace(
     invalidateMetadataCache,
     async readFile(relPath) {
       const sandboxPath = toSandboxPath(relPath)
-      const content = await sandbox.fs.readFile(sandboxPath, 'utf8')
-      if (typeof content === 'string') {
-        return content
+      if (remote.fs?.readFile) {
+        const content = await remote.fs.readFile(sandboxPath, 'utf8')
+        if (typeof content === 'string') return content
+        return Buffer.from(content).toString('utf-8')
+      }
+      const content = await remote.readFileToBuffer?.({ path: sandboxPath })
+      if (!content) {
+        const err = new Error(`ENOENT: file not found, open '${sandboxPath}'`) as NodeJS.ErrnoException
+        err.code = 'ENOENT'
+        throw err
       }
       return Buffer.from(content).toString('utf-8')
     },
@@ -185,7 +242,8 @@ export function createVercelSandboxWorkspace(
     },
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)
-      await sandbox.fs.rm(sandboxPath, { recursive: false, force: false })
+      if (remote.fs?.rm) await remote.fs.rm(sandboxPath, { recursive: false, force: false })
+      else await runShell(remote, `rm -- ${shellQuote(sandboxPath)}`)
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'unlink', path: relPath })
@@ -195,14 +253,20 @@ export function createVercelSandboxWorkspace(
       const cached = readdirCache.get(sandboxPath)
       if (cached) return cloneEntries(cached)
 
-      const entries = await sandbox.fs.readdir(sandboxPath, {
-        withFileTypes: true,
-      })
-      const mappedEntries: Entry[] = entries.map((entry): Entry => ({
-        name: entry.name,
-        kind: entry.isDirectory() ? 'dir' : 'file',
-      }))
-      readdirCache.set(sandboxPath, mappedEntries)
+      const version = metadataVersion
+      const mappedEntries: Entry[] = remote.fs?.readdir
+        ? (await remote.fs.readdir(sandboxPath, { withFileTypes: true })).map((entry): Entry => ({
+            name: entry.name,
+            kind: entry.isDirectory() ? 'dir' : 'file',
+          }))
+        : await runJson<Entry[]>(
+            remote,
+            `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const entries=fs.readdirSync(p,{withFileTypes:true}).map((e)=>({name:e.name,kind:e.isDirectory()?'dir':'file'})); console.log(JSON.stringify(entries))`)} ${shellQuote(sandboxPath)}`,
+          )
+
+      if (metadataVersion === version) {
+        readdirCache.set(sandboxPath, mappedEntries)
+      }
       return cloneEntries(mappedEntries)
     },
     async stat(relPath) {
@@ -210,18 +274,32 @@ export function createVercelSandboxWorkspace(
       const cached = statCache.get(sandboxPath)
       if (cached) return cloneStat(cached)
 
-      const fileStat = await sandbox.fs.stat(sandboxPath)
-      const mappedStat: Stat = {
-        size: fileStat.size,
-        mtimeMs: fileStat.mtimeMs,
-        kind: fileStat.isDirectory() ? 'dir' : 'file',
+      const version = metadataVersion
+      let mappedStat: Stat
+      if (remote.fs?.stat) {
+        const fileStat = await remote.fs.stat(sandboxPath)
+        mappedStat = {
+          size: fileStat.size,
+          mtimeMs: fileStat.mtimeMs,
+          kind: fileStat.isDirectory() ? 'dir' : 'file',
+        }
+      } else {
+        mappedStat = await runJson<Stat>(
+          remote,
+          `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); console.log(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
+        )
       }
-      statCache.set(sandboxPath, mappedStat)
+      if (metadataVersion === version) {
+        statCache.set(sandboxPath, mappedStat)
+      }
       return cloneStat(mappedStat)
     },
     async mkdir(relPath, opts) {
       const sandboxPath = toSandboxPath(relPath)
-      await sandbox.fs.mkdir(sandboxPath, { recursive: opts?.recursive ?? false })
+      if (remote.fs?.mkdir) await remote.fs.mkdir(sandboxPath, { recursive: opts?.recursive ?? false })
+      else if (opts?.recursive) await runShell(remote, `mkdir -p -- ${shellQuote(sandboxPath)}`)
+      else if (remote.mkDir) await remote.mkDir(sandboxPath)
+      else await runShell(remote, `mkdir -- ${shellQuote(sandboxPath)}`)
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'mkdir', path: relPath })
@@ -229,7 +307,8 @@ export function createVercelSandboxWorkspace(
     async rename(fromRelPath, toRelPath) {
       const fromSandboxPath = toSandboxPath(fromRelPath)
       const toSandboxAbsolutePath = toSandboxPath(toRelPath)
-      await sandbox.fs.rename(fromSandboxPath, toSandboxAbsolutePath)
+      if (remote.fs?.rename) await remote.fs.rename(fromSandboxPath, toSandboxAbsolutePath)
+      else await runShell(remote, `mv -- ${shellQuote(fromSandboxPath)} ${shellQuote(toSandboxAbsolutePath)}`)
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'rename', path: toRelPath, oldPath: fromRelPath })

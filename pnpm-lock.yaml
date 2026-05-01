@@ -316,8 +316,8 @@ importers:
         specifier: ^2.3.3
         version: 2.3.3
       '@vercel/sandbox':
-        specifier: ^1.10.0
-        version: 1.10.0
+        specifier: 2.0.0-beta.14
+        version: 2.0.0-beta.14
       ai:
         specifier: ^6.0.168
         version: 6.0.168(zod@3.25.76)
@@ -4302,8 +4302,8 @@ packages:
     resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
     engines: {node: '>= 20'}
 
-  '@vercel/sandbox@1.10.0':
-    resolution: {integrity: sha512-rGA8KJB5ZwQeygzsndgrbHsys3HGWKHQaRQlmyIEHce2BFuTfQUgivHDj5DCZhWiyjjSEodLHpoJkZBd95K0/Q==}
+  '@vercel/sandbox@2.0.0-beta.14':
+    resolution: {integrity: sha512-rXz0UYzDXC7nPe3BfRWe7WJMqZvvMCkDMcCWUaGnDNpfJ+AEIlCO5WIDJ4dIW5TD5d2bTPHzktUenn8wXYLsKA==}
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -11866,7 +11866,7 @@ snapshots:
 
   '@vercel/oidc@3.2.0': {}
 
-  '@vercel/sandbox@1.10.0':
+  '@vercel/sandbox@2.0.0-beta.14':
     dependencies:
       '@vercel/oidc': 3.2.0
       '@workflow/serde': 4.1.0-beta.2
