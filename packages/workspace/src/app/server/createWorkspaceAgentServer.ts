@@ -8,23 +8,28 @@ import {
   createAgentApp,
   provisionRuntimeWorkspace,
   type CreateAgentAppOptions,
-  type RuntimeProvisioningContribution,
 } from "@boring/agent/server"
 import type { FastifyInstance } from "fastify"
 import { join } from "node:path"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
-import { bootstrapServer, type ServerBootstrapOptions } from "../../server/plugins/bootstrapServer"
+import {
+  bootstrapServer,
+  type ServerBootstrapOptions,
+  type WorkspaceProvisioningContribution,
+} from "../../server/plugins/bootstrapServer"
 import type { UiBridge } from "../../shared/ui-bridge"
 
 export interface CreateWorkspaceAgentServerOptions
   extends CreateAgentAppOptions,
     Pick<ServerBootstrapOptions, "plugins" | "excludeDefaults"> {}
 
+export type { WorkspaceProvisioningContribution }
+
 export interface WorkspaceAgentServerBindings {
   bridge: UiBridge
-  provisioningContributions: Array<{ id: string; provisioning: RuntimeProvisioningContribution }>
+  provisioningContributions: WorkspaceProvisioningContribution[]
   agentOptions: Pick<CreateAgentAppOptions, "extraTools" | "systemPromptAppend" | "resourceLoaderOptions">
 }
 
@@ -57,18 +62,30 @@ export function createWorkspaceAgentServerBindings(
   }
 }
 
+export async function provisionWorkspaceAgentServer(opts: {
+  workspaceRoot: string
+  provisioningContributions?: WorkspaceProvisioningContribution[]
+  force?: boolean
+}) {
+  if (!opts.provisioningContributions?.length) return
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot: opts.workspaceRoot,
+    contributions: opts.provisioningContributions,
+    force: opts.force,
+  })
+}
+
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const bindings = createWorkspaceAgentServerBindings(opts)
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
 
-  if (bindings.provisioningContributions.length > 0) {
-    await provisionRuntimeWorkspace({
-      workspaceRoot,
-      contributions: bindings.provisioningContributions,
-    })
-  }
+  await provisionWorkspaceAgentServer({
+    workspaceRoot,
+    provisioningContributions: bindings.provisioningContributions,
+  })
 
   const app = await createAgentApp({
     ...opts,

@@ -14,11 +14,16 @@ export interface ServerBootstrapOptions {
   excludeDefaults?: string[]
 }
 
+export type WorkspaceProvisioningContribution = {
+  id: string
+  provisioning: RuntimeProvisioningContribution
+}
+
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
   agentTools: AgentTool[]
-  provisioningContributions: Array<{ id: string; provisioning: RuntimeProvisioningContribution }>
+  provisioningContributions: WorkspaceProvisioningContribution[]
 }
 
 export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstrapResult {

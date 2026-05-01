@@ -3,13 +3,13 @@ import { createReadStream } from 'node:fs'
 import path from 'node:path'
 
 import {
-  provisionRuntimeWorkspace,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
   type RuntimeProvisioningContribution,
 } from '@boring/agent/server'
 import {
   createWorkspaceAgentServerBindings,
+  provisionWorkspaceAgentServer,
   type CreateWorkspaceAgentServerOptions,
 } from '@boring/workspace/app/server'
 import { uiRoutes } from '@boring/workspace/server'
@@ -368,22 +368,6 @@ async function registerCoreRoutes({
   await app.register(registerInviteRoutes)
 }
 
-async function provisionWorkspacePlugins(
-  options: CreateCoreWorkspaceAgentServerOptions,
-  workspaceRoot: string,
-) {
-  if (!options.plugins?.some((plugin) => plugin.provisioning)) return
-
-  await provisionRuntimeWorkspace({
-    workspaceRoot,
-    contributions: options.plugins.map((plugin) => ({
-      id: plugin.id,
-      provisioning: plugin.provisioning,
-    })),
-    force: options.forceProvisioning,
-  })
-}
-
 export async function createCoreWorkspaceAgentServer(
   options: CreateCoreWorkspaceAgentServerOptions = {},
 ): Promise<CoreWorkspaceAgentServer> {
@@ -405,13 +389,17 @@ export async function createCoreWorkspaceAgentServer(
 
   await registerAuthProxy(app)
 
-  await provisionWorkspacePlugins(options, workspaceRoot)
-
   const bindings = createWorkspaceAgentServerBindings({
     workspaceRoot,
     extraTools: options.extraTools,
     systemPromptAppend: options.systemPromptAppend,
     plugins: options.plugins,
+  })
+
+  await provisionWorkspaceAgentServer({
+    workspaceRoot,
+    provisioningContributions: bindings.provisioningContributions,
+    force: options.forceProvisioning,
   })
 
   await app.register(registerAgentRoutes, {
