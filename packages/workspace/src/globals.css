@@ -32,12 +32,8 @@
   --radius-md: var(--boring-radius-md);
   --radius-lg: var(--boring-radius-lg);
   --radius-xl: var(--boring-radius-xl);
-  --font-sans:
-    "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono:
-    "Geist Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
+  --font-sans: var(--boring-font-sans);
+  --font-mono: var(--boring-font-mono);
 }
 
 :root {
@@ -67,8 +63,8 @@
   --boring-radius-md: calc(var(--boring-radius) - 2px);
   --boring-radius-lg: var(--boring-radius);
   --boring-radius-xl: calc(var(--boring-radius) + 4px);
-  --boring-font-sans: var(--font-sans);
-  --boring-font-mono: var(--font-mono);
+  --boring-font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --boring-font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --boring-canvas: oklch(0.928 0.006 72);
   --boring-surface-chat: oklch(1 0 0);
   --boring-surface-workbench: oklch(1 0 0);
@@ -95,6 +91,8 @@
   --accent-soft: var(--boring-accent-soft);
   --ring: var(--boring-ring);
   --radius: var(--boring-radius);
+  --font-sans: var(--boring-font-sans);
+  --font-mono: var(--boring-font-mono);
   --canvas: var(--boring-canvas);
   --surface-chat: var(--boring-surface-chat);
   --surface-workbench: var(--boring-surface-workbench);
@@ -148,6 +146,8 @@
   --canvas: var(--boring-canvas);
   --surface-chat: var(--boring-surface-chat);
   --surface-workbench: var(--boring-surface-workbench);
+  --font-sans: var(--boring-font-sans);
+  --font-mono: var(--boring-font-mono);
   --surface-workbench-left: var(--boring-surface-workbench-left);
 }
 
