@@ -1,8 +1,15 @@
 # Unified event bus for workspace + agent
 
-**Status:** revision 2 — incorporating Codex + Gemini review
+**Status:** historical revision 2 — filesystem event ownership superseded by
+`PLUGIN_OUTPUTS_ISOLATION_PLAN.md`
 **Owners:** workspace
 **Last updated:** 2026-04-28
+
+**2026-04-30 amendment:** filesystem events are no longer workspace-core
+`file:*` events or a `src/data/fileEvents.ts` shim. Filesystem event names
+are plugin-keyed (`filesystem:file.changed`, `filesystem:file.created`,
+`filesystem:file.moved`, `filesystem:file.deleted`) and the filesystem plugin
+owns its event stream, cache invalidation, and file-panel binding.
 
 ## Review summary (2026-04-28)
 
@@ -68,7 +75,7 @@ The rest of this document is the original plan with edits inline.
 We have at least four disjoint pubsub-shaped mechanisms today, each
 reinventing emit/subscribe with subtly different semantics:
 
-1. **`packages/workspace/src/data/fileEvents.ts`** — module-level set of
+1. **Historical:** `packages/workspace/src/data/fileEvents.ts` was a module-level set of
    listeners. Mutations `useMoveFile` / `useDeleteFile` / `useCreateDir`
    emit `moved | deleted | created`. `DockviewShell` listens and updates
    open panels in place (rename-in-place + tab close on delete). User-
@@ -296,7 +303,9 @@ the type system the bus is trying to introduce — reviewer-driven
 change):
 
 ```ts
-// packages/workspace/src/data/fileEvents.ts — kept for one release
+// Historical shape only. The compatibility shim was not kept after the
+// hard plugin migration; filesystem events now live under
+// packages/workspace/src/plugins/filesystemPlugin/events.ts.
 import { events } from '../events'
 
 let warnedSubscribe = false

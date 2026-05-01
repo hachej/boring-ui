@@ -2,6 +2,13 @@
 
 **Status:** v7.7 — round-7 governance: ChatPanel via dependency injection (NOT plugin); baseline protocol uses `git worktree` (NOT `git stash`); systemPrompt ordering reaffirmed (bootstrap first, createAgentApp second); excludeDefaults semantics corrected (UI off; tools stay); j9p7.30 sed→explicit Edits; bead-level dep + path fixes integrated.
 
+> **2026-04-30 routing update:** any later references in this historical plan
+> to `PanelConfig.filePatterns`, `fileFallback`, or `PanelRegistry.resolve`
+> are superseded by generic `surface-resolver` outputs. Workspace core owns
+> only the resolver registry and `openSurface` dispatch. Filesystem path/glob
+> mapping lives in `plugins/filesystemPlugin/surfaceResolver.ts`; data catalog
+> row-to-visualization mapping lives in `plugins/dataCatalogPlugin`.
+
 Prior status (v7.6): round-5 review patches — Step 0 sequencing (move workspace into v7.5 layout BEFORE Phase 1, not after); split plugin entrypoints (index.ts client + server.ts per plugin); strict type-only imports for cross-folder Plugin refs; cleanup pack (uiBridge dedup, EmptyFilePanel relocation, A/B parallelism tightened, TL;DR scrub, tsconfig excludes, pi-tools-migration catch-up). **Meta-rule: when files move, they go DIRECTLY to final v7.6 destinations — no intermediate placements.**
 
 > **Factory pattern:** Plugins may be exposed as factories when they need
@@ -572,69 +579,37 @@ await app.close()
 
 Use Fastify's `inject()` for in-process testing; no port binding.
 
-### Convenience: `makeStaticDataPlugin(opts)`
+### Convenience: `createDataCatalogPlugin(opts)`
 
 Dropping `data: DataPaneConfig` from `<ChatCenteredShell>` removed
 the one-liner ergonomics for hosts that just want a simple data
-tab with their adapter (gemini P2). Restore them via a convenience
-factory exported from `@boring/workspace`:
+tab with their adapter (gemini P2). Restore them via the reusable
+data catalog plugin factory exported from `@boring/workspace`:
 
 ```ts
-// packages/workspace/src/plugin/factories/makeStaticDataPlugin.ts
-import { definePlugin, type Plugin } from "../definePlugin"
-import { DataExplorer } from "../../components/DataExplorer"
-import type { ExplorerAdapter, ExplorerRow } from "../../components/DataExplorer/types"
+import { createDataCatalogPlugin } from "@boring/workspace"
+import { myAdapter } from "./adapter"
 
-export interface StaticDataPluginOpts {
-  /** Plugin id; defaults to "static-data". Must be unique if a host
-   *  uses more than one. */
-  id?: string
-  label?: string
-  adapter: ExplorerAdapter
-  /** Optional onActivate — fires when a row is double-clicked /
-   *  primary-activated. If omitted, only the catalog onSelect runs
-   *  (cmd palette pick). */
-  onActivate?: (row: ExplorerRow) => void
-}
-
-export function makeStaticDataPlugin(opts: StaticDataPluginOpts): Plugin {
-  const id = opts.id ?? "static-data"
-  return definePlugin({
-    id,
-    label: opts.label ?? "Data",
-    panels: [{
-      id: `${id}-tab`,
-      title: opts.label ?? "Data",
-      placement: "left-tab",
-      component: () => <DataExplorer adapter={opts.adapter} onActivate={opts.onActivate} />,
-      source: "app",
-    }],
-    catalogs: [{
-      id,
-      label: opts.label ?? "Data",
-      adapter: opts.adapter,
-      onSelect: opts.onActivate ?? (() => {}),
-    }],
-  })
-}
+export const dataPlugin = createDataCatalogPlugin({
+  id: "my-data",
+  label: "Data",
+  adapter: myAdapter,
+  catalogId: "my-data",
+})
 ```
 
 Host with simple needs (single adapter, no custom panel):
 
 ```tsx
-import { makeStaticDataPlugin } from "@boring/workspace"
-import { myAdapter } from "./adapter"
-
-<WorkspaceProvider plugins={[makeStaticDataPlugin({ adapter: myAdapter })]}>
+<WorkspaceProvider plugins={[dataPlugin]}>
   <ChatCenteredShell />
 </WorkspaceProvider>
 ```
 
-Macro doesn't use this factory — it has custom row-activation
-behavior (open chart-canvas panel) that needs `surfaceRef` access,
-so its `macroSeriesPanel` is hand-authored. The factory serves the
-~80% case where the host just wants "a data tab with this
-adapter."
+Apps with domain-specific behavior compose around this factory:
+boring-macro installs the data catalog outputs inside its own
+macro plugin, then keeps chart/deck panels and macro server tools
+in the app plugin.
 
 ### Concrete filesystemPlugin source
 
@@ -1951,9 +1926,8 @@ restructure; subsequent phases assume the v7.6 layout exists.
 │        was the original justification for the retrofit.          │
 │      - Drop `data: DataPaneConfig` prop. Hosts that want a       │
 │        workbench data tab register their own left-tab panel      │
-│        (see macro's macroSeriesPanel example), or use the        │
-│        `makeStaticDataPlugin(opts)` convenience factory          │
-│        (see §"Convenience: makeStaticDataPlugin").               │
+│        or compose the reusable `createDataCatalogPlugin(opts)`   │
+│        / `appendDataCatalogOutputs(...)` helpers.                │
 │      - Drop `extraPanels` prop. Panels come from PanelRegistry;  │
 │        new optional `allowedPanels?: string[]` for gating.       │
 │      - KEEP `chatSuggestions: ChatSuggestion[]` prop.            │
@@ -3437,13 +3411,11 @@ so the assumption holds for now; honest about when it breaks.
 **P2 — Dropping `dataSources`/`data` props forces boilerplate for
 simple hosts.** A host that just wants "a data tab with my
 adapter" had a one-liner; v6.2's "register your own left-tab
-panel" makes it ~10 lines. **Fix:** added §"Convenience:
-`makeStaticDataPlugin`" — a workspace-exported factory that
-constructs a Plugin wrapping a `DataExplorer` panel + catalog
-from a single `{adapter, onActivate?}` opts argument. Restores
-1-liner ergonomics for the common case; macro keeps its
-hand-authored `macroSeriesPanel` because it needs surface access
-for chart-opening.
+panel" makes it ~10 lines. **Fix:** use
+`createDataCatalogPlugin` for standalone data catalog plugins, or
+`appendDataCatalogOutputs` when an app plugin needs to install
+the data catalog as part of a domain plugin. Macro uses the latter
+so chart/deck behavior stays in the macro app.
 
 ### Verdict on the simplification cuts (gemini)
 
@@ -3470,7 +3442,7 @@ cut holds for Phase 1; the sensitivity is acknowledged.
 - JSON-serializable invariant on `ExplorerRow` documented.
 - Known-gaps register adds the non-React-adapter lifecycle item
   with `onMount` re-introduction trigger.
-- New `makeStaticDataPlugin` convenience export.
+- Replaced the static data factory with the reusable data catalog plugin helpers.
 - Same boring-macro acceptance test; LOC accounting unchanged.
 
 ## Changelog v6.1 → v6.2 (round-3 codex review patches)

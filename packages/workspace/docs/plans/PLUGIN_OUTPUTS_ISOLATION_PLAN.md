@@ -1,6 +1,6 @@
 # Plugin outputs and workspace isolation plan
 
-**Status:** draft implementation plan
+**Status:** implemented migration plan
 **Owners:** workspace
 **Last updated:** 2026-04-30
 
@@ -16,30 +16,36 @@ search, file hooks, file open behavior, and file routing: those belong to
 the filesystem plugin, with the workspace only providing generic
 registries, hosts, event transport, and UI manipulation contracts.
 
-## Current problems
+## Problems Addressed
 
 1. **Left tabs are too implicit.** Plugins currently express a workbench
    left tab as a normal panel with `placement: "left-tab"`. That makes
    the host infer semantics from a layout hint instead of consuming an
    intentional plugin output.
 
-2. **The left pane still knows filesystem details.**
-   `WorkbenchLeftPane` imports and renders the filesystem file tree
-   directly. It also has built-in handling for the Data tab. That means
-   `excludeDefaults` and plugin composition cannot fully own the visible
+2. **The left pane knew filesystem details.**
+   `WorkbenchLeftPane` imported and rendered the filesystem file tree
+   directly. It also had built-in handling for the Data tab. That meant
+   `excludeDefaults` and plugin composition could not fully own the visible
    left-tab set.
 
-3. **Filesystem data lives in `front/`.** `front/data` contains
+3. **Filesystem data lived in `front/`.** `front/data` contained
    filesystem-specific client methods, hooks, event invalidation, and SSE
    subscription logic. Those are not generic workspace frontend
    primitives; they are filesystem plugin runtime.
 
-4. **Artifact routing hardcodes file plugin behavior.** The artifact
-   surface still knows about `code-editor`, `markdown-editor`,
+4. **Event domains were not plugin-owned.** The event bus is generic
+   workspace substrate, but event names such as `file:changed`
+   make filesystem behavior look like workspace core behavior. Plugin
+   events must be keyed by their owning plugin id, for example
+   `filesystem:file.changed`.
+
+5. **Artifact routing hardcoded file plugin behavior.** The artifact
+   surface knew about `code-editor`, `markdown-editor`,
    `csv-viewer`, and `empty-file-panel` fallback behavior. File type
    routing should be contributed by whichever plugin handles files.
 
-5. **Workspace still imports agent types.** The workspace shared/plugin
+6. **Workspace imported agent types.** The workspace shared/plugin
    layer imports `@boring/agent` types and validation. That violates the
    package invariant that the app shell wires agent and workspace
    together.
@@ -57,7 +63,7 @@ type PluginOutput =
   | CatalogOutput
   | CommandOutput
   | BindingOutput
-  | FileHandlerOutput
+  | SurfaceResolverOutput
 
 interface LeftTabOutput {
   type: "left-tab"
@@ -84,27 +90,35 @@ with the lower-level registries.
 Workspace core owns:
 
 - plugin bootstrap and validation
-- command, catalog, panel, and output registries
+- command, catalog, panel, output, and surface-resolver registries
 - `DockviewShell` and generic panel hosting
 - generic left-tab host chrome
 - command palette shell
-- event bus and UI command dispatch contract
+- event bus transport and workspace-owned event contracts
 - generic data explorer primitives, if they remain domain-neutral
+- the generic resolver dispatch loop: given an open request, ask registered
+  resolvers in precedence order and open the returned panel config
 
 Filesystem plugin owns:
 
 - Files left-tab output
 - Files catalog output
 - filesystem client and React hooks
+- file event namespace and constants (`filesystem:file.*`)
 - file event stream and cache invalidation binding
-- file editor panels and file-pattern handlers
-- open-file behavior through the workspace UI command contract
+- file editor panels and fallback panels
+- the filesystem surface resolver: path/file requests, extension or glob
+  matching, mapping paths to `code-editor` / `markdown-editor` / `csv-viewer`
+  / fallback panels, and open-file behavior through the workspace UI command
+  contract
 
 Static data / domain plugins own:
 
 - their own left-tab outputs
 - their own catalogs
-- their own panel routing rules
+- their own surface resolvers for their resource types, e.g. series,
+  datasets, SQL results, images, notebooks, dashboards, or app-specific
+  artifacts
 - their own data source adapters
 
 The app shell owns:
@@ -137,7 +151,7 @@ Acceptance:
   workspace bridge/UI contract.
 - Move the Files tab declaration into `filesystemPlugin` as a
   `left-tab` output.
-- Move the Data tab declaration into the static data plugin factory.
+- Move the Data tab declaration into data catalog plugin outputs.
 
 Acceptance:
 
@@ -150,35 +164,109 @@ Acceptance:
 
 - Move the implementation of filesystem client, hooks, event stream, and
   invalidation into `plugins/filesystemPlugin/data`.
-- Leave `front/data` as compatibility re-export wrappers for now. Do not
-  delete files in this pass.
-- Update filesystem plugin internals to import from its own data module,
-  not from `front/data`.
+- Delete `front/data`; do **not** keep compatibility re-export wrappers.
+  Filesystem data APIs are plugin-owned and must be imported from the
+  filesystem plugin package surface.
+- Update filesystem plugin internals and all first-party consumers to import
+  from `plugins/filesystemPlugin/data`, not from `front/data`.
 - Keep generic React Query provider behavior in workspace core only if it
-  is still domain-neutral after the move.
+  is still domain-neutral after the move; otherwise let the filesystem plugin
+  own its provider/binding.
 
 Acceptance:
 
-- `plugins/filesystemPlugin/**` no longer imports `front/data`.
-- Public imports from `front/data` still work through wrappers.
+- No tracked files remain under `packages/workspace/src/front/data/`.
+- No first-party code imports `front/data`.
+- Filesystem data APIs remain available through the filesystem plugin public
+  surface, not through `front/data` compatibility wrappers.
 - File tree, file search, write, move, create directory, delete, and
   invalidation tests still pass.
 
-### Phase 4: Move file routing out of artifact surface
+### Phase 4: Make plugin events composable and plugin-keyed
 
-- Add a plugin output for file handlers or panel resolvers.
-- Let filesystem plugin contribute default handlers for code, markdown,
-  CSV/TSV, and empty-file fallback.
-- Make artifact surface ask the registry for a handler instead of
-  hardcoding plugin panel IDs.
+- Split the event map into workspace-core events plus an augmentable
+  plugin event map.
+- Key workspace-owned events with the workspace id:
+  `workspace:ui.command`, `workspace:editor.save.start`, and
+  `workspace:editor.save.end`.
+- Let the filesystem plugin contribute typed event constants and payloads:
+  `filesystem:file.changed`, `filesystem:file.created`,
+  `filesystem:file.moved`, and `filesystem:file.deleted`.
+- Replace bare event strings in emitters/subscribers with the owning
+  contract constants.
 
 Acceptance:
 
-- Artifact surface has no hardcoded filesystem panel IDs.
-- Excluding filesystem defaults removes filesystem routing.
-- A host/plugin can override routing by registering a later handler.
+- No production code emits or subscribes to bare `file:*` or `ui:command`
+  names.
+- The generic event bus remains in `front/events`.
+- Filesystem event names are defined by the filesystem plugin.
+- Existing file invalidation, open-file, dock rename/delete, and UI command
+  tests still pass after migrating event names.
 
-### Phase 5: Remove workspace-to-agent imports
+### Phase 5: Move artifact routing out of artifact surface
+
+Do **not** add a filesystem-specific `FileHandlerOutput` to the shared plugin
+model. That would make the shared plugin contract know about paths, files,
+globs, and extensions. Instead, add a generic `SurfaceResolverOutput`:
+shared workspace knows only that a plugin can resolve an open request into an
+`OpenPanelConfig`; each plugin owns the request kinds and mapping rules for
+its domain.
+
+Example shape:
+
+```ts
+interface SurfaceOpenRequest {
+  kind: string
+  target: string
+  meta?: Record<string, unknown>
+}
+
+interface SurfacePanelResolution {
+  component: string
+  id?: string
+  title?: string
+  params?: Record<string, unknown>
+  score?: number
+}
+
+interface SurfaceResolverOutput {
+  type: "surface-resolver"
+  resolver: {
+    id: string
+    resolve(request: SurfaceOpenRequest): SurfacePanelResolution | undefined
+  }
+}
+```
+
+Mapping ownership:
+
+- Workspace core owns the resolver registry and dispatch loop only:
+  collect resolver results and pick the best score.
+- Filesystem plugin owns `workspace.open.path` requests and maps file paths to
+  its panels (`code-editor`, `markdown-editor`, `csv-viewer`, fallback, etc.).
+- Data catalog plugin owns `data-catalog.open-row` requests and maps rows to
+  its visualization panel. Catalog search remains a separate catalog output.
+- Data/domain plugins own their own resource requests, for example
+  `{ type: "series", id: "GDP" } -> chart panel` or
+  `{ type: "sql-result", id: "q1" } -> table panel`.
+- The app shell owns plugin order. Later plugins should be able to override
+  earlier/default resolvers, so an app plugin can replace filesystem's CSV
+  mapping or add domain-specific routing without changing workspace core.
+
+Make artifact surface ask the surface resolver registry for an open-panel
+config instead of hardcoding filesystem panel IDs or file extensions.
+
+Acceptance:
+
+- Artifact surface has no hardcoded filesystem panel IDs, extension maps, or
+  fallback panel IDs.
+- Shared plugin types do not mention file/path/glob-specific handler fields.
+- Filesystem plugin contributes the resolver for file/path requests.
+- Excluding filesystem defaults removes filesystem file routing.
+- A host/plugin can override routing by registering a later resolver.
+
+### Phase 6: Remove workspace-to-agent imports
 
 - Replace workspace shared usage of `@boring/agent` types with local
   structural contracts or app-shell-provided adapters.
@@ -199,7 +287,7 @@ Acceptance:
 - `WorkbenchLeftPane` tests for generic left-tab hosting.
 - Filesystem plugin tests for Files tab, catalog search, and open-file
   command dispatch.
-- Artifact surface tests for file handler resolution and host override.
+- Artifact surface tests for surface resolver resolution and host override.
 - Browser smoke: command palette Files search opens the selected file in
   the workbench with Enter.
 
@@ -210,4 +298,3 @@ Acceptance:
 - No route-as-plugin-output support.
 - No deletion of compatibility wrapper files until the migration is
   proven and explicitly approved.
-

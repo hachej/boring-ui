@@ -6,6 +6,11 @@
 > abstractions all live as contributions inside a `Plugin`. Read
 > `PLUGIN_MODEL.md` for the canonical design; this doc is kept for
 > historical reference of the palette-first iterations.
+>
+> **2026-04-30 update:** references below to `src/data`, `front/data`, or
+> `createFilesCatalog` as a core export are historical. Filesystem catalogs
+> now live under `src/plugins/filesystemPlugin`; the palette searches generic
+> catalog outputs, and "files" are only the filesystem plugin's catalog.
 
 **Status:** SUPERSEDED — review v3 (factory pattern + shell auto-registration locked in)
 **Owners:** workspace

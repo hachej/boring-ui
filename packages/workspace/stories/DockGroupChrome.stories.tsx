@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react"
 import { DockviewShell } from "../src/front/dock"
-import { WorkspaceProvider } from "../src/front/WorkspaceProvider"
+import { WorkspaceProvider } from "../src/front/provider/WorkspaceProvider"
 import type { PanelConfig } from "../src/front/registry"
 
 function PlaceholderPanel({ label }: { label: string }) {

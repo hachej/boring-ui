@@ -1,11 +1,17 @@
 # `@boring/workspace` — src/ Folder Reorganization Plan
 
-**Status:** Draft v2 (Opus review applied) — follow-up to j9p7 plugin model epic
+**Status:** Historical reorg plan. Filesystem ownership was superseded on
+2026-04-30 by `PLUGIN_OUTPUTS_ISOLATION_PLAN.md`.
 **Goal:** Consolidate all scattered root-level `src/` folders into the canonical
 4-folder layout (`front/`, `server/`, `shared/`, `plugins/`) so the codebase
 matches the plugin model's architectural intent end-to-end.
 
-**Non-goals:** No behavior changes. No public API breakage. Pure moves + re-exports.
+**Non-goals at the time:** No behavior changes. No public API breakage. Pure
+moves + re-exports.
+
+**2026-04-30 amendment:** the later plugin-isolation migration intentionally
+removed `front/data` compatibility wrappers. Filesystem data, file handlers,
+and the empty-file fallback now belong under `plugins/filesystemPlugin/`.
 
 ---
 
@@ -27,7 +33,7 @@ src/
 
 These belong under `front/` (UI code) or inside their respective `plugins/`
 (pane components). Leaving them at root creates two problems:
-1. Import paths don't reflect ownership (`../../data` vs `../front/data`)
+1. Import paths don't reflect ownership (`../../data` vs plugin-owned data)
 2. `panes/` is the most glaring — plugin-owned components live outside their plugin
 
 ---
@@ -45,7 +51,6 @@ src/
 │   │   │   └── ArtifactSurfacePane.tsx   ← MOVED from panes/ArtifactSurfacePane.tsx
 │   │   ├── chat/               (existing)
 │   │   ├── chat-stage-placeholder/  (existing)
-│   │   ├── empty-file-panel/   (existing — j9p7.12)
 │   │   ├── empty-pane/
 │   │   │   └── EmptyPane.tsx   ← MOVED from panes/EmptyPane.tsx
 │   │   ├── session-list/       (existing)
@@ -55,7 +60,6 @@ src/
 │   │   ├── DataExplorer/       (existing)
 │   │   ├── ui/                 (existing)
 │   │   └── …                   (existing)
-│   ├── data/             ← MOVED from src/data/
 │   ├── dock/             (existing)
 │   ├── events/           (existing)
 │   ├── hooks/            (existing)
@@ -72,6 +76,8 @@ src/
 ├── plugins/
 │   ├── filesystemPlugin/       (existing — panes move IN)
 │   │   ├── index.ts            (plugin def — update import paths)
+│   │   ├── data/               ← filesystem client/hooks/provider
+│   │   ├── empty-file-panel/   ← fallback for unmatched files
 │   │   ├── FileTreeView.tsx    ← MOVED from panes/file-tree/ (exports FileTreePane + FileTreeView)
 │   │   ├── FileTree.tsx        ← MOVED from panes/file-tree/
 │   │   ├── CodeEditorPane.tsx  ← MOVED from panes/code-editor/ (exports CodeEditorPane)
@@ -81,7 +87,7 @@ src/
 │   │   ├── defaultEditorPanels.ts ← MOVED from panes/ (3 apps consume via barrel — keep)
 │   │   └── __tests__/
 │   │
-│   └── factories/              (existing — makeStaticDataPlugin)
+│   └── dataCatalogPlugin/      (reusable data catalog outputs + hooks)
 │
 ├── server/           (existing)
 └── shared/           (existing)
@@ -92,16 +98,18 @@ src/
 
 ---
 
-## Why DataCatalog is NOT a plugin
+## Why DataCatalog Presentation Is Not the Plugin
 
 `DataCatalog` / `DataCatalogPane` are **presentation components** — generic UI shells
-with no concrete data of their own. Real catalogs come from `makeStaticDataPlugin`
-(already in `plugins/factories/`). A "data-catalog" built-in plugin would be a
-no-op: apps would register it and wonder why nothing shows up.
+with no concrete data of their own. Real catalogs come from app/domain plugins
+that pass an `ExplorerAdapter` into the reusable data catalog plugin helpers.
+The data catalog plugin is therefore a reusable factory, not a default workspace
+plugin with hardcoded data.
 
 `DataCatalog` belongs alongside `DataExplorer` in `front/components/` — both are
 presentational peers. Move `panes/data-catalog/*` → `front/components/data-catalog/*`.
-No new plugin. No `WorkspaceProvider` defaults decision needed.
+Apps install data catalog outputs through `createDataCatalogPlugin` or
+`appendDataCatalogOutputs`.
 
 ---
 
@@ -124,9 +132,9 @@ export { DataCatalogPane } from "./front/components/data-catalog/DataCatalogPane
 export { ArtifactSurfacePane } from "./front/chrome/artifact-surface/ArtifactSurfacePane"
 export { EmptyPane } from "./front/chrome/empty-pane/EmptyPane"
 
-// Data layer, store, theme, toast, utils — re-exported from new front/ locations
-export { DataProvider, useDataClient, useApiBaseUrl } from "./front/data"
-export { FetchClient, FetchError } from "./front/data"
+// Filesystem data layer is plugin-owned and intentionally not re-exported
+// from the package root. First-party code imports it from
+// ./plugins/filesystemPlugin/data; consumers use the filesystem plugin surface.
 export { createWorkspaceStore } from "./front/store"
 export { bindStore, useActiveFile, … } from "./front/store/selectors"
 export { createShadcnTheme, useShadcnTheme } from "./front/theme"
@@ -153,11 +161,12 @@ Run `pnpm --filter @boring/workspace typecheck` — must be green before A2.
 
 ### Phase A2 — Remaining utility folders (parallel after A1)
 
-Move 5 directories simultaneously:
+Move 4 generic frontend directories simultaneously. The old `src/data/`
+line from this plan was superseded; filesystem data now moves directly into
+`src/plugins/filesystemPlugin/data/`.
 
 | From | To |
 |------|----|
-| `src/data/` | `src/front/data/` |
 | `src/store/` | `src/front/store/` |
 | `src/theme/` | `src/front/theme/` |
 | `src/toast/` | `src/front/toast/` |
@@ -194,8 +203,9 @@ Move `ArtifactSurfacePane` and `EmptyPane` to sit alongside the rest of chrome:
 
 Update `src/panes/index.ts` + `src/index.ts` re-exports.
 
-**Note:** `src/front/chrome/empty-file-panel/` (j9p7.12, the *registered panel*) and
-`empty-pane/EmptyPane.tsx` (the *generic empty state component*) coexist — keep separate.
+**2026-04-30 update:** the registered empty-file fallback is no longer core
+chrome. It lives in `src/plugins/filesystemPlugin/empty-file-panel/`.
+`empty-pane/EmptyPane.tsx` remains the generic empty state component.
 
 **Acceptance:** typecheck + tests green, public API test green.
 

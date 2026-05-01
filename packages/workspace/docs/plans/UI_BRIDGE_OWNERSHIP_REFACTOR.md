@@ -159,7 +159,7 @@ Workspace today is a single browser-targeted bundle. After refactor it must prod
 
 | Bundle | Source | Targets | Allowed runtime |
 |--------|--------|---------|-----------------|
-| `dist/index.js` (front) | `src/components`, `src/dock`, `src/data`, etc. | browser | DOM, React, Tailwind. NO node built-ins, NO fastify. |
+| `dist/index.js` (front) | `src/components`, `src/dock`, plugin-owned frontend data such as `src/plugins/filesystemPlugin/data`, etc. | browser | DOM, React, Tailwind. NO node built-ins, NO fastify. |
 | `dist/server/index.js` | `src/server` | node | Fastify, node http/streams. NO React, NO DOM. |
 | `dist/shared/index.js` | `src/shared` | both | Pure types only, no runtime imports. |
 

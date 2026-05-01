@@ -114,7 +114,7 @@ Migration recipe:
 
 1. Replace `ChatCenteredShell` with `ChatLayout` for stock chat/workbench chrome, or `ResponsiveDockviewShell` when you need custom group layout.
 2. Pass `chatPanel={ChatPanel}` to `WorkspaceProvider`; do not import `@boring/agent` from inside `@boring/workspace`.
-3. Move `data: DataPaneConfig` to a plugin-owned `placement: "left-tab"` panel, or use `makeStaticDataPlugin({ adapter })` for simple static data.
+3. Move `data: DataPaneConfig` to a plugin-owned data catalog plugin, using `createDataCatalogPlugin({ adapter })` for standalone catalogs or `appendDataCatalogOutputs(...)` inside an app/domain plugin.
 4. Move `extraPanels` to the declarative surface gate (`allowedPanels`) or omit it when every registered panel is allowed in that shell. In Tier 1 layouts this travels through `surfaceParams` to the surface panel that reads the gate.
 5. Delete `withCommandPalette`; `WorkspaceProvider` mounts the registry-backed command palette.
 
@@ -284,7 +284,7 @@ type Plugin = {
 - Tier 1 layouts: `ChatLayout`, `IdeLayout`, `buildChatLayout`, and `buildIdeLayout`.
 - Tier 2 shell primitives: `TopBar` and `ResponsiveDockviewShell`.
 - Registry-driven workbench tabs via `placement: "left-tab"` panels.
-- `makeStaticDataPlugin()` for simple data tabs backed by an `ExplorerAdapter`.
+- `createDataCatalogPlugin()` / `appendDataCatalogOutputs()` for reusable data catalog tabs backed by an `ExplorerAdapter`.
 - Polymorphic Recent entries for catalogs and commands.
 - Path-aware file-pattern resolution for plugin panels, including directory patterns such as `deck/**/*.md`.
 - `@boring/workspace/events` package subpath for typed workspace UI events.

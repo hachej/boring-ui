@@ -10,6 +10,15 @@ Use this section as the live handoff ledger while executing this plan.
 - Current public surface is the three-tier API in `packages/workspace/README.md`: preset layouts, declarative shell, and raw dock runtime.
 - App-level chat/workbench integration now passes callbacks through `ChatLayout` panel params; no shell context compatibility layer remains in the package source.
 
+### Surface resolver migration note (2026-04-30)
+
+- File routing examples below that mention `filePatterns`, `fileFallback`, or
+  `PanelRegistry.resolve` are historical.
+- Current source uses generic `surface-resolver` plugin outputs plus the
+  `openSurface` UI command. Filesystem path matching belongs to
+  `plugins/filesystemPlugin/surfaceResolver.ts`; data catalog row opening
+  belongs to `plugins/dataCatalogPlugin`.
+
 ### Pass 2 — Full milestone verification (2026-04-24)
 
 - Methodology: Three parallel verification agents compared every Phase 1-4 task item against actual source files, reading implementations line-by-line.
