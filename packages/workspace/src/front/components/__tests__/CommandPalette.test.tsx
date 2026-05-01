@@ -172,7 +172,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const newInput = screen.getByPlaceholderText(/Search files/)
+      const newInput = screen.getByPlaceholderText(/Search catalogs/)
       expect(newInput).toHaveValue("")
     })
 
@@ -315,7 +315,7 @@ describe("CommandPalette", () => {
   })
 
   describe("command mode", () => {
-    it("switches between files and commands with the mode buttons", async () => {
+    it("switches between catalogs and commands with the mode buttons", async () => {
       const user = userEvent.setup()
       const cr = new CommandRegistry()
       cr.registerCommand({
@@ -329,7 +329,7 @@ describe("CommandPalette", () => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
 
-      expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute("aria-pressed", "true")
+      expect(screen.getByRole("button", { name: "Catalogs" })).toHaveAttribute("aria-pressed", "true")
       await user.click(screen.getByRole("button", { name: "Commands" }))
 
       expect(screen.getByPlaceholderText(/Run a command/)).toBeInTheDocument()
@@ -337,7 +337,7 @@ describe("CommandPalette", () => {
       expect(screen.getByText("Test Command")).toBeInTheDocument()
     })
 
-    it("toggles files and commands with Tab", async () => {
+    it("toggles catalogs and commands with Tab", async () => {
       const user = userEvent.setup()
       const cr = new CommandRegistry()
       cr.registerCommand({
@@ -357,7 +357,7 @@ describe("CommandPalette", () => {
       expect(screen.getByText("Test Command")).toBeInTheDocument()
 
       await user.keyboard("{Tab}")
-      expect(input.getAttribute("placeholder")).toMatch(/Search files/)
+      expect(input.getAttribute("placeholder")).toMatch(/Search catalogs/)
       expect(screen.queryByText("Test Command")).not.toBeInTheDocument()
     })
 

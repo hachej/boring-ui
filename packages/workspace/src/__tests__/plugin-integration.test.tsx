@@ -7,11 +7,27 @@ import { WorkspaceProvider } from "../front/provider"
 import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
 import { definePlugin } from "../shared/plugins/definePlugin"
-import { makeStaticDataPlugin } from "../plugins/factories/makeStaticDataPlugin"
-import type { Plugin } from "../shared/plugins/types"
+import {
+  DATA_CATALOG_ROW_SURFACE_KIND,
+  createDataCatalogPlugin,
+} from "../plugins/dataCatalogPlugin"
+import type { Plugin, PluginOutput } from "../shared/plugins/types"
+import { events, workspaceEvents } from "../front/events"
 import type { ExplorerAdapter, SearchResult } from "../front/components/DataExplorer/types"
 
 const DummyPanel = () => null
+
+function getPluginOutput<T extends PluginOutput["type"]>(
+  plugin: Plugin,
+  type: T,
+): Extract<PluginOutput, { type: T }> {
+  const output = plugin.outputs?.find(
+    (candidate): candidate is Extract<PluginOutput, { type: T }> =>
+      candidate.type === type,
+  )
+  if (!output) throw new Error(`missing ${type} output`)
+  return output
+}
 
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {}
@@ -163,7 +179,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
   })
 
-  it("defaults include filesystemPlugin (files, code-editor, markdown-editor panels)", () => {
+  it("defaults include filesystemPlugin (files, editors, and file fallback panels)", () => {
     function Inspector() {
       const reg = useRegistry()
       const ids = reg.list().map((p) => p.id)
@@ -178,6 +194,7 @@ describe("WorkspaceProvider — plugin integration", () => {
 
     const ids = screen.getByTestId("ids").textContent!.split(",")
     expect(ids).toContain("files")
+    expect(ids).toContain("empty-file-panel")
     expect(ids).toContain("code-editor")
     expect(ids).toContain("markdown-editor")
   })
@@ -202,6 +219,7 @@ describe("WorkspaceProvider — plugin integration", () => {
 
     const panelIds = screen.getByTestId("panel-ids").textContent!.split(",")
     expect(panelIds).not.toContain("files")
+    expect(panelIds).not.toContain("empty-file-panel")
     expect(panelIds).not.toContain("code-editor")
     expect(panelIds).not.toContain("markdown-editor")
     // core panels remain
@@ -257,74 +275,122 @@ describe("WorkspaceProvider — plugin integration", () => {
   })
 })
 
-describe("makeStaticDataPlugin", () => {
-  it("returns a Plugin with one left-tab output and one catalog", () => {
-    const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
-    expect(plugin.id).toBe("static-data")
-    expect(plugin.label).toBe("Data")
-    expect(plugin.outputs).toHaveLength(1)
-    expect(plugin.catalogs).toHaveLength(1)
+describe("createDataCatalogPlugin integration", () => {
+  it("returns a Plugin with a left-tab output, visualization panel, and catalog", () => {
+    const plugin = createDataCatalogPlugin({ adapter: stubAdapter })
+    expect(plugin.id).toBe("data-catalog")
+    expect(plugin.label).toBe("Data Catalog")
+    expect(plugin.outputs?.map((output) => output.type)).toEqual([
+      "left-tab",
+      "panel",
+      "catalog",
+      "surface-resolver",
+    ])
+    expect(plugin.catalogs).toBeUndefined()
   })
 
-  it("left-tab output id is ${id}-tab", () => {
-    const plugin = makeStaticDataPlugin({ id: "metrics", adapter: stubAdapter })
-    expect(plugin.outputs![0]).toEqual(
-      expect.objectContaining({ type: "left-tab", id: "metrics-tab" }),
-    )
-  })
-
-  it("catalog id matches plugin id", () => {
-    const plugin = makeStaticDataPlugin({ id: "metrics", adapter: stubAdapter })
-    expect(plugin.catalogs![0].id).toBe("metrics")
+  it("catalog id matches the configured catalog id", () => {
+    const plugin = createDataCatalogPlugin({ id: "metrics", catalogId: "metrics", adapter: stubAdapter })
+    const catalog = getPluginOutput(plugin, "catalog")
+    expect(catalog.type).toBe("catalog")
+    expect(catalog.catalog.id).toBe("metrics")
   })
 
   it("uses defaults for id and label when not provided", () => {
-    const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
-    expect(plugin.id).toBe("static-data")
-    expect(plugin.label).toBe("Data")
-    expect(plugin.outputs![0]).toEqual(
-      expect.objectContaining({ type: "left-tab", title: "Data" }),
+    const plugin = createDataCatalogPlugin({ adapter: stubAdapter })
+    expect(plugin.id).toBe("data-catalog")
+    expect(plugin.label).toBe("Data Catalog")
+    expect(getPluginOutput(plugin, "left-tab")).toEqual(
+      expect.objectContaining({ type: "left-tab", title: "Data", id: "data-catalog-tab" }),
     )
   })
 
   it("uses custom label", () => {
-    const plugin = makeStaticDataPlugin({ adapter: stubAdapter, label: "Series" })
+    const plugin = createDataCatalogPlugin({ adapter: stubAdapter, label: "Series" })
     expect(plugin.label).toBe("Series")
     expect(plugin.outputs![0]).toEqual(
       expect.objectContaining({ type: "left-tab", title: "Series" }),
     )
-    expect(plugin.catalogs![0].label).toBe("Series")
+    const catalog = getPluginOutput(plugin, "catalog")
+    expect(catalog.type).toBe("catalog")
+    expect(catalog.catalog.label).toBe("Series")
   })
 
   it("left-tab output has type left-tab and source app", () => {
-    const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
+    const plugin = createDataCatalogPlugin({ adapter: stubAdapter })
     expect(plugin.outputs![0]).toEqual(
       expect.objectContaining({ type: "left-tab", source: "app" }),
     )
   })
 
-  it("catalog onSelect falls back to noop when onActivate is not provided", () => {
-    const plugin = makeStaticDataPlugin({ adapter: stubAdapter })
-    expect(() => plugin.catalogs![0].onSelect({ id: "x", title: "X" })).not.toThrow()
+  it("catalog onSelect falls back to opening the data visualization surface", () => {
+    const observed: unknown[] = []
+    const unsubscribe = events.on(workspaceEvents.uiCommand, (payload) =>
+      observed.push(payload.command),
+    )
+    const plugin = createDataCatalogPlugin({ adapter: stubAdapter })
+    const catalog = getPluginOutput(plugin, "catalog")
+    expect(catalog.type).toBe("catalog")
+    expect(() => catalog.catalog.onSelect({ id: "x", title: "X" })).not.toThrow()
+    expect(observed).toEqual([
+      expect.objectContaining({
+        kind: "openSurface",
+        params: expect.objectContaining({
+          kind: DATA_CATALOG_ROW_SURFACE_KIND,
+          target: "x",
+          meta: expect.objectContaining({
+            catalogId: "data-catalog",
+            row: { id: "x", title: "X" },
+          }),
+        }),
+      }),
+    ])
+    unsubscribe()
+  })
+
+  it("surface resolver maps catalog rows to the data visualization panel", () => {
+    const plugin = createDataCatalogPlugin({ adapter: stubAdapter })
+    const resolver = getPluginOutput(plugin, "surface-resolver")
+    const resolved = resolver.resolver.resolve({
+      kind: DATA_CATALOG_ROW_SURFACE_KIND,
+      target: "x",
+      meta: { catalogId: "data-catalog", row: { id: "x", title: "X" } },
+    })
+    expect(resolved).toEqual(
+      expect.objectContaining({
+        component: "data-catalog-visualization",
+        title: "X",
+        params: { row: { id: "x", title: "X" } },
+      }),
+    )
   })
 
   it("catalog wires adapter and onSelect correctly", () => {
-    const onActivate = vi.fn()
-    const plugin = makeStaticDataPlugin({ adapter: stubAdapter, onActivate })
-    plugin.catalogs![0].onSelect({ id: "x", title: "X" })
-    expect(onActivate).toHaveBeenCalledWith({ id: "x", title: "X" })
-    expect(plugin.catalogs![0].adapter).toBe(stubAdapter)
+    const onSelect = vi.fn()
+    const plugin = createDataCatalogPlugin({ adapter: stubAdapter, onSelect })
+    const catalog = getPluginOutput(plugin, "catalog")
+    expect(catalog.type).toBe("catalog")
+    catalog.catalog.onSelect({ id: "x", title: "X" })
+    expect(onSelect).toHaveBeenCalledWith({ id: "x", title: "X" })
+    expect(catalog.catalog.adapter).toBe(stubAdapter)
   })
 
   it("works when passed to WorkspaceProvider plugins", () => {
-    const plugin = makeStaticDataPlugin({ adapter: stubAdapter, id: "my-data", label: "My Data" })
+    const plugin = createDataCatalogPlugin({
+      adapter: stubAdapter,
+      id: "my-data",
+      label: "My Data",
+      leftTabId: "my-data",
+      catalogId: "my-data",
+    })
 
     function Inspector() {
       const reg = useRegistry()
       const catalogs = useCatalogRegistry()
       return (
         <div>
-          <span data-testid="has-panel">{String(reg.has("my-data-tab"))}</span>
+          <span data-testid="has-panel">{String(reg.has("my-data-visualization"))}</span>
+          <span data-testid="has-left-tab">{String(reg.has("my-data"))}</span>
           <span data-testid="has-catalog">{String(!!catalogs.get("my-data"))}</span>
         </div>
       )
@@ -337,12 +403,13 @@ describe("makeStaticDataPlugin", () => {
     )
 
     expect(screen.getByTestId("has-panel").textContent).toBe("true")
+    expect(screen.getByTestId("has-left-tab").textContent).toBe("true")
     expect(screen.getByTestId("has-catalog").textContent).toBe("true")
   })
 })
 
 describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
-  it("registers the 5 core panels with no plugins", () => {
+  it("registers the 4 core panels when default plugins are excluded", () => {
     function Inspector() {
       const reg = useRegistry()
       const ids = reg.list().map((p) => p.id)
@@ -350,7 +417,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
     }
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
@@ -360,25 +427,25 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
     expect(ids).toContain("session-list")
     expect(ids).toContain("workbench-left")
     expect(ids).toContain("artifact-surface")
-    expect(ids).toContain("empty-file-panel")
+    expect(ids).not.toContain("empty-file-panel")
   })
 
   it("core panels have source 'builtin'", () => {
     function Inspector() {
       const reg = useRegistry()
-      const coreIds = ["chat", "session-list", "workbench-left", "artifact-surface", "empty-file-panel"]
+      const coreIds = ["chat", "session-list", "workbench-left", "artifact-surface"]
       const sources = coreIds.map((id) => reg.get(id)?.source).join(",")
       return <div data-testid="sources">{sources}</div>
     }
 
     render(
-      <WorkspaceProvider persistenceEnabled={false}>
+      <WorkspaceProvider excludeDefaults={["filesystem"]} persistenceEnabled={false}>
         <Inspector />
       </WorkspaceProvider>,
     )
 
     expect(screen.getByTestId("sources").textContent).toBe(
-      "builtin,builtin,builtin,builtin,builtin",
+      "builtin,builtin,builtin,builtin",
     )
   })
 
@@ -423,7 +490,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
       </WorkspaceProvider>,
     )
 
-    // 5 core + 3 filesystem + 1 test = 9
-    expect(screen.getByTestId("count").textContent).toBe("9")
+    // 4 core + 5 filesystem outputs/panels + 1 test = 10
+    expect(screen.getByTestId("count").textContent).toBe("10")
   })
 })

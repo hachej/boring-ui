@@ -42,7 +42,8 @@ import type { RecentEntry } from "./recent"
 const MAX_RESULTS = 50
 
 export type CommandPaletteProps = Record<string, never>
-type PaletteMode = "files" | "commands"
+type PaletteMode = "catalogs" | "commands"
+const CATALOG_MODE_LABEL = "Catalogs"
 
 interface CatalogSearchGroup {
   catalog: CatalogConfig
@@ -67,7 +68,8 @@ function isActiveCommand(cmd: CommandConfig): boolean {
 export function CommandPalette(_props?: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const [mode, setMode] = useState<PaletteMode>("files")
+  const [mode, setMode] = useState<PaletteMode>("catalogs")
+  const [debouncedCatalogQuery, setDebouncedCatalogQuery] = useState("")
   const [catalogGroups, setCatalogGroups] = useState<CatalogSearchGroup[]>([])
   const catalogs = useCatalogs()
   const commands = useCommands()
@@ -77,6 +79,15 @@ export function CommandPalette(_props?: CommandPaletteProps) {
 
   const isCommandMode = mode === "commands"
   const searchQuery = query.trim()
+
+  useEffect(() => {
+    if (isCommandMode) {
+      setDebouncedCatalogQuery("")
+      return
+    }
+    const timer = setTimeout(() => setDebouncedCatalogQuery(searchQuery), 180)
+    return () => clearTimeout(timer)
+  }, [isCommandMode, searchQuery])
 
   // cmdk's CommandInput captures Escape and preventDefaults to clear its
   // own value before the event can reach Radix's onEscapeKeyDown — so the
@@ -137,7 +148,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   useEffect(() => {
     if (open) {
       setQuery("")
-      setMode("files")
+      setMode("catalogs")
       requestAnimationFrame(() => {
         inputRef.current?.focus()
       })
@@ -158,7 +169,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   }, [])
 
   const toggleMode = useCallback(() => {
-    switchMode(mode === "commands" ? "files" : "commands")
+    switchMode(mode === "commands" ? "catalogs" : "commands")
   }, [mode, switchMode])
 
   const handleQueryChange = useCallback((next: string) => {
@@ -178,7 +189,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   }, [toggleMode])
 
   useEffect(() => {
-    if (isCommandMode || !searchQuery) {
+    if (isCommandMode || !debouncedCatalogQuery) {
       setCatalogGroups([])
       return
     }
@@ -208,7 +219,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     for (const catalog of activeCatalogs) {
       try {
         const result = catalog.adapter.search({
-          query: searchQuery,
+          query: debouncedCatalogQuery,
           filters: {},
           limit: MAX_RESULTS,
           offset: 0,
@@ -241,7 +252,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     return () => {
       controller.abort()
     }
-  }, [catalogs, isCommandMode, searchQuery])
+  }, [catalogs, debouncedCatalogQuery, isCommandMode])
 
   const commandResults = useMemo(() => {
     if (!isCommandMode) return []
@@ -307,7 +318,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Command Palette</DialogTitle>
-          <DialogDescription>Search files and catalogs or switch to commands</DialogDescription>
+          <DialogDescription>Search catalogs or switch to commands</DialogDescription>
         </DialogHeader>
         <Command shouldFilter={false} className="bg-transparent">
           {/*
@@ -330,8 +341,8 @@ export function CommandPalette(_props?: CommandPaletteProps) {
               <ModeButton
                 active={!isCommandMode}
                 icon={<FileIcon className="size-3" />}
-                label="Files"
-                onClick={() => switchMode("files")}
+                label={CATALOG_MODE_LABEL}
+                onClick={() => switchMode("catalogs")}
               />
               <ModeButton
                 active={isCommandMode}
@@ -345,7 +356,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
               placeholder={
                 isCommandMode
                   ? "Run a command..."
-                  : "Search files or type > for commands"
+                  : "Search catalogs or type > for commands"
               }
               value={query}
               onValueChange={handleQueryChange}
@@ -458,7 +469,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
 
           <div className="flex items-center justify-between border-t border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
             <span className="font-medium tracking-wide uppercase">
-              {isCommandMode ? "Commands" : "Files"}
+              {isCommandMode ? "Commands" : CATALOG_MODE_LABEL}
             </span>
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1">
