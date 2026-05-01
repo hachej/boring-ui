@@ -35,6 +35,13 @@ describe("@boring/workspace public API", () => {
   })
 
   describe("plugins", () => {
+    it("exports explorer plugin factories", () => {
+      expect(api.createExplorerPlugin).toBeDefined()
+      expect(api.createExplorerOutputs).toBeDefined()
+      expect(api.ExplorerView).toBeDefined()
+      expect(api.EXPLORER_PLUGIN_ID).toBe("explorer")
+    })
+
     it("exports data catalog plugin factories", () => {
       expect(api.createDataCatalogPlugin).toBeDefined()
       expect(api.createDataCatalogOutputs).toBeDefined()
@@ -67,6 +74,7 @@ describe("@boring/workspace public API", () => {
       expect(api.CommandRegistry).toBeDefined()
       expect(api.CatalogRegistry).toBeDefined()
       expect(api.bootstrap).toBeDefined()
+      expect(api.composePlugins).toBeDefined()
     })
 
     it("exports registry hooks and provider", () => {
