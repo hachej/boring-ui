@@ -9,7 +9,8 @@ import type {
 } from '../../shared/workspace'
 import { validatePath } from './paths'
 
-const VERCEL_SANDBOX_ROOT = '/vercel/sandbox'
+export const VERCEL_SANDBOX_REMOTE_ROOT = '/vercel/sandbox'
+export const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
 
 type VercelSandboxCompat = VercelSandbox & {
   fs?: {
@@ -37,7 +38,7 @@ const CACHE_MAX_ENTRIES = 512
 const metadataInvalidators = new WeakMap<VercelSandbox, Set<() => void>>()
 
 function toSandboxPath(relPath: string): string {
-  return validatePath(VERCEL_SANDBOX_ROOT, relPath)
+  return validatePath(VERCEL_SANDBOX_REMOTE_ROOT, relPath)
 }
 
 interface CacheEntry<T> {
@@ -207,7 +208,7 @@ export function createVercelSandboxWorkspace(
   const remote = sandbox as VercelSandboxCompat
 
   return {
-    root: VERCEL_SANDBOX_ROOT,
+    root: VERCEL_SANDBOX_WORKSPACE_ROOT,
     fsCapability: 'best-effort',
     watch() {
       return watcher

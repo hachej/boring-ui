@@ -6,6 +6,7 @@ import type { Writable } from 'node:stream'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 const VERCEL_SANDBOX_ROOT = '/vercel/sandbox'
+const VERCEL_WORKSPACE_ALIAS = '/workspace'
 
 interface WriteInput {
   path: string
@@ -27,7 +28,12 @@ function toSandboxAbsolutePath(pathInput: string): string {
 
 function toHostPath(hostRoot: string, sandboxPath: string): string {
   const absoluteSandboxPath = toSandboxAbsolutePath(sandboxPath)
-  const relPath = relative(VERCEL_SANDBOX_ROOT, absoluteSandboxPath)
+  const canonicalPath = absoluteSandboxPath === VERCEL_WORKSPACE_ALIAS
+    ? VERCEL_SANDBOX_ROOT
+    : absoluteSandboxPath.startsWith(`${VERCEL_WORKSPACE_ALIAS}/`)
+      ? `${VERCEL_SANDBOX_ROOT}${absoluteSandboxPath.slice(VERCEL_WORKSPACE_ALIAS.length)}`
+      : absoluteSandboxPath
+  const relPath = relative(VERCEL_SANDBOX_ROOT, canonicalPath)
   if (relPath === '') return hostRoot
   if (relPath === '..' || relPath.startsWith('../')) {
     throw new Error(`Sandbox path escaped root: ${sandboxPath}`)
@@ -127,6 +133,10 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
           stdout: async () => stdoutText,
           stderr: async () => stderrText,
         }
+      }
+
+      if (script === 'mkdir -p /vercel/sandbox && ln -sfn /vercel/sandbox /workspace') {
+        return emitResult(0, '', '')
       }
 
       if (script.startsWith('cat ')) {
