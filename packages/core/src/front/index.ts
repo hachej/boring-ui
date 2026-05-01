@@ -66,8 +66,8 @@ export type { RouteMap } from './utils.js'
 export { AuthGate } from './AuthGate.js'
 export type { AuthGateProps } from './AuthGate.js'
 
-export { BoringApp } from './BoringApp.js'
-export type { BoringAppProps, BoringAppAuthPagesOverride } from './BoringApp.js'
+export { CoreFront } from './CoreFront.js'
+export type { CoreFrontProps, CoreFrontAuthPagesOverride } from './CoreFront.js'
 
 export { useCoreCommands } from './commands/CoreCommandContributions.js'
 export type { CoreCommand } from './commands/CoreCommandContributions.js'

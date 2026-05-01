@@ -21,7 +21,7 @@ vi.mock('better-auth/client/plugins', () => ({
 
 import { withBeadId } from '../../server/__tests__/_setup'
 import type { RuntimeConfig } from '../../shared/types'
-import { BoringApp } from '../BoringApp'
+import { CoreFront } from '../CoreFront'
 import { useTopBarSlot } from '../components/TopBarSlot'
 import { useMswHandler } from './_setup'
 
@@ -119,12 +119,12 @@ afterEach(() => {
   window.history.pushState({}, '', '/')
 })
 
-describe('BoringApp', () => {
+describe('CoreFront', () => {
   it(
     'renders real SignInPage at /auth/signin',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       setupAll()
-      render(<BoringApp />)
+      render(<CoreFront />)
 
       await waitFor(() =>
         expect(screen.getByRole('button', { name: /sign in/i })).toBeTruthy(),
@@ -139,7 +139,7 @@ describe('BoringApp', () => {
       setupAll()
       const CustomSignIn = () => <div data-testid="custom-signin">Custom</div>
 
-      render(<BoringApp authPages={{ signIn: CustomSignIn }} />)
+      render(<CoreFront authPages={{ signIn: CustomSignIn }} />)
 
       await waitFor(() =>
         expect(screen.getByTestId('custom-signin')).toBeTruthy(),
@@ -156,9 +156,9 @@ describe('BoringApp', () => {
       window.history.pushState({}, '', '/custom')
 
       render(
-        <BoringApp>
+        <CoreFront>
           <Route path="/custom" element={<div data-testid="custom-page">Custom Page</div>} />
-        </BoringApp>,
+        </CoreFront>,
       )
 
       await waitFor(() =>
@@ -189,7 +189,7 @@ describe('BoringApp', () => {
         return undefined
       })
 
-      render(<BoringApp />)
+      render(<CoreFront />)
 
       await waitFor(
         () => expect(screen.getByText(/cannot reach server/i)).toBeTruthy(),
@@ -215,7 +215,7 @@ describe('BoringApp', () => {
 
       for (const { path, marker } of routes) {
         window.history.pushState({}, '', path)
-        const { unmount } = render(<BoringApp />)
+        const { unmount } = render(<CoreFront />)
 
         await waitFor(() => {
           const byText = document.body.textContent?.includes(marker)
@@ -232,7 +232,7 @@ describe('BoringApp', () => {
     'threads csp nonce into Helmet script tags',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
       setupAll()
-      render(<BoringApp cspNonce="test-nonce-123" />)
+      render(<CoreFront cspNonce="test-nonce-123" />)
 
       await waitFor(() => {
         const script = document.head.querySelector(
@@ -265,9 +265,9 @@ describe('BoringApp', () => {
       window.history.pushState({}, '', '/slot')
 
       render(
-        <BoringApp>
+        <CoreFront>
           <Route path="/slot" element={<SlotProbe />} />
-        </BoringApp>,
+        </CoreFront>,
       )
 
       await waitFor(() =>

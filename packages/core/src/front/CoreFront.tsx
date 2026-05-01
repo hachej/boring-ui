@@ -24,7 +24,7 @@ import { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
 import { InviteAcceptPage } from './auth/InviteAcceptPage.js'
 import { routes } from './utils.js'
 
-export interface BoringAppAuthPagesOverride {
+export interface CoreFrontAuthPagesOverride {
   signIn?: React.FC
   signUp?: React.FC
   forgotPassword?: React.FC
@@ -33,9 +33,9 @@ export interface BoringAppAuthPagesOverride {
   userSettings?: React.FC
 }
 
-export interface BoringAppProps {
+export interface CoreFrontProps {
   children?: ReactNode
-  authPages?: BoringAppAuthPagesOverride
+  authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
 }
 
@@ -63,7 +63,7 @@ function createDefaultQueryClient(): QueryClient {
   })
 }
 
-export function BoringApp({ children, authPages, cspNonce }: BoringAppProps) {
+export function CoreFront({ children, authPages, cspNonce }: CoreFrontProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
   const resolvedCspNonce = useMemo(
     () => cspNonce ?? readCspNonceFromDom(),

@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
 import { Navigate, Route, useParams } from 'react-router-dom'
 import {
-  BoringApp,
+  CoreFront,
   ThemeToggle,
   UserMenu,
   WorkspaceSwitcher,
   useCurrentWorkspace,
-  type BoringAppAuthPagesOverride,
+  type CoreFrontAuthPagesOverride,
 } from '../../front/index.js'
 import {
   WorkspaceAgentFront,
@@ -20,7 +20,7 @@ const DEFAULT_WORKSPACE_ID_PARAM = 'id'
 export interface CoreWorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 > extends Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId'> {
-  authPages?: BoringAppAuthPagesOverride
+  authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
   children?: ReactNode
   workspaceRoute?: string
@@ -106,7 +106,7 @@ export function CoreWorkspaceAgentFront<
   }
 
   return (
-    <BoringApp authPages={authPages} cspNonce={cspNonce}>
+    <CoreFront authPages={authPages} cspNonce={cspNonce}>
       <Route
         path="/"
         element={
@@ -127,6 +127,6 @@ export function CoreWorkspaceAgentFront<
         }
       />
       {children}
-    </BoringApp>
+    </CoreFront>
   )
 }
