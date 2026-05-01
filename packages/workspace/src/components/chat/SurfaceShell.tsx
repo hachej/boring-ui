@@ -419,12 +419,15 @@ export function SurfaceShell({
   return (
     <div
       ref={containerRef}
+      data-boring-workspace-part="surface"
       className={cn("flex h-full min-h-0 w-full bg-background", className)}
       data-testid="surface-shell"
     >
       {!collapsed ? (
         <>
           <aside
+            data-boring-workspace-part="surface-sidebar"
+            data-boring-state="expanded"
             className="flex h-full min-h-0 flex-col"
             style={{ width: sidebarWidth, minWidth: sidebarWidth, maxWidth: sidebarWidth }}
             aria-label="Workbench left pane"
@@ -460,6 +463,8 @@ export function SurfaceShell({
 
       <div className="relative min-w-0 flex-1">
         <div
+          data-boring-workspace-part="surface-tabs"
+          data-boring-state={collapsed ? "collapsed" : "expanded"}
           className="workbench-dockview h-full"
           data-collapsed-files={collapsed ? "true" : undefined}
         >

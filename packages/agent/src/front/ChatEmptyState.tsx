@@ -99,6 +99,7 @@ export function ChatEmptyState({
 }: ChatEmptyStateProps) {
   return (
     <div
+      data-boring-agent-part="empty-state"
       className={cn(
         "mx-auto flex w-full max-w-[640px] flex-col px-2 pt-12 pb-4",
         className,
@@ -121,13 +122,17 @@ export function ChatEmptyState({
         </p>
       )}
       {suggestions.length > 0 && (
-        <div className="mt-8 grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 sm:grid-cols-2">
+        <div
+          data-boring-agent-part="suggestion-grid"
+          className="mt-8 grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 sm:grid-cols-2"
+        >
           {suggestions.map((suggestion) => {
             const Icon = suggestion.icon
             return (
               <button
                 key={suggestion.label}
                 type="button"
+                data-boring-agent-part="suggestion-card"
                 onClick={() => {
                   if (suggestion.onSelect) {
                     suggestion.onSelect()

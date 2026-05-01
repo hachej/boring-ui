@@ -93,6 +93,7 @@ export function SessionList({
 
   return (
     <div
+      data-boring-workspace-part="session-list"
       className={cn("flex h-full flex-col", className)}
       role="navigation"
       aria-label="Sessions"
@@ -172,6 +173,8 @@ function SessionRow({
     <div
       ref={rowRef}
       role="listitem"
+      data-boring-workspace-part="session-row"
+      data-boring-state={isActive ? "selected" : undefined}
       data-focused={isFocused ? "true" : "false"}
       className={cn(
         "group flex items-center gap-2 border-b border-border px-3 py-2 text-sm cursor-pointer transition-colors",

@@ -30,7 +30,7 @@ export function DataCatalog({ sources, onSelect, className }: DataCatalogProps) 
   }
 
   return (
-    <ul className={cn("flex flex-col px-1 py-1", className)}>
+    <ul data-boring-workspace-part="catalog" className={cn("flex flex-col px-1 py-1", className)}>
       {sources.map((source) => {
         const interactive = Boolean(onSelect)
         const label = TYPE_LABELS[source.type] ?? source.type.slice(0, 3).toUpperCase()

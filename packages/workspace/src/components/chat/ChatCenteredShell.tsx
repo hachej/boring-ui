@@ -529,6 +529,8 @@ export function ChatCenteredShell({
   return (
     <ChatShellContext.Provider value={ctx}>
       <div
+        data-boring-workspace=""
+        data-boring-workspace-part="shell"
         className={cn(
           "flex h-full min-h-0 w-full flex-col overflow-hidden",
           "bg-[color:var(--canvas)]",
@@ -536,7 +538,7 @@ export function ChatCenteredShell({
         )}
         style={rootStyle}
       >
-        <div className="shrink-0" aria-label="App top bar">
+        <div data-boring-workspace-part="topbar" className="shrink-0" aria-label="App top bar">
           <ChatTopBar
             appTitle={appTitle}
             sessionTitle={activeSession?.title}
@@ -549,6 +551,8 @@ export function ChatCenteredShell({
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Sessions drawer — flush, full-height, no shadow */}
           <aside
+            data-boring-workspace-part="session-drawer"
+            data-boring-state={drawerOpen ? "expanded" : "collapsed"}
             aria-label="Session browser"
             aria-hidden={!drawerOpen}
             className={cn(
@@ -592,6 +596,7 @@ export function ChatCenteredShell({
 
           {/* Chat stage — full-bleed, no card chrome */}
           <main
+            data-boring-workspace-part="chat-stage"
             className="surface-chat-root relative flex min-w-0 flex-1 overflow-hidden bg-background"
             aria-label="Chat stage"
           >
@@ -619,6 +624,8 @@ export function ChatCenteredShell({
 
           {/* Workbench — flush, full-height, no shadow */}
           <aside
+            data-boring-workspace-part="workbench"
+            data-boring-state={surfaceOpen ? "expanded" : "collapsed"}
             aria-label="Surface"
             aria-hidden={!surfaceOpen}
             className={cn(

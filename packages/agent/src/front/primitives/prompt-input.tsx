@@ -916,6 +916,7 @@ export const PromptInput = ({
         type="file"
       />
       <form
+        data-boring-agent-part="composer"
         className={cn("w-full", className)}
         onSubmit={handleSubmit}
         ref={formRef}
@@ -1055,6 +1056,7 @@ export const PromptInputTextarea = ({
 
   return (
     <InputGroupTextarea
+      data-boring-agent-part="composer-input"
       className={cn("field-sizing-content max-h-48 min-h-16", className)}
       name="message"
       onCompositionEnd={handleCompositionEnd}

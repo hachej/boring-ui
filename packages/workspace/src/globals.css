@@ -7,38 +7,31 @@
  * consumer moved between repos. */
 @source "./**/*.{ts,tsx}";
 
-/* Tell Tailwind to scan @boring/agent's source files so classes used inside
- * agent's ChatPanel + primitives end up in the final CSS. The packages share
- * the same token system (see @theme inline below), so co-loading the agent
- * primitives here is safe — no duplicate token declarations. */
-@source "../../../node_modules/@boring/agent/dist/**/*.{js,d.ts}";
-@source "../../agent/src/**/*.{ts,tsx}";
-
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--boring-background);
+  --color-foreground: var(--boring-foreground);
+  --color-card: var(--boring-card);
+  --color-card-foreground: var(--boring-card-foreground);
+  --color-popover: var(--boring-popover);
+  --color-popover-foreground: var(--boring-popover-foreground);
+  --color-primary: var(--boring-primary);
+  --color-primary-foreground: var(--boring-primary-foreground);
+  --color-secondary: var(--boring-secondary);
+  --color-secondary-foreground: var(--boring-secondary-foreground);
+  --color-muted: var(--boring-muted);
+  --color-muted-foreground: var(--boring-muted-foreground);
+  --color-accent: var(--boring-accent);
+  --color-accent-foreground: var(--boring-accent-foreground);
+  --color-destructive: var(--boring-destructive);
+  --color-border: var(--boring-border);
+  --color-input: var(--boring-input);
+  --color-ring: var(--boring-ring);
+  --radius-sm: var(--boring-radius-sm);
+  --radius-md: var(--boring-radius-md);
+  --radius-lg: var(--boring-radius-lg);
+  --radius-xl: var(--boring-radius-xl);
   --font-sans:
     "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -48,63 +41,114 @@
 }
 
 :root {
-  /* Neutrals warmly tinted (hue ~72, very low chroma) — subconscious cohesion with brand accent */
-  --background: oklch(0.995 0.0015 72);
-  --foreground: oklch(0.18 0.004 72);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.004 72);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.004 72);
-  --primary: oklch(0.22 0.006 72);
-  --primary-foreground: oklch(0.985 0.002 72);
-  --secondary: oklch(0.965 0.003 72);
-  --secondary-foreground: oklch(0.22 0.006 72);
-  --muted: oklch(0.965 0.003 72);
-  --muted-foreground: oklch(0.52 0.008 72);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.915 0.004 72);
-  --input: oklch(0.915 0.004 72);
+  /* Public @boring token contract. Workspace owns these base visual tokens;
+   * packages and child apps consume/override them without source scanning. */
+  --boring-background: oklch(0.995 0.0015 72);
+  --boring-foreground: oklch(0.18 0.004 72);
+  --boring-card: oklch(1 0 0);
+  --boring-card-foreground: oklch(0.18 0.004 72);
+  --boring-popover: oklch(1 0 0);
+  --boring-popover-foreground: oklch(0.18 0.004 72);
+  --boring-primary: oklch(0.22 0.006 72);
+  --boring-primary-foreground: oklch(0.985 0.002 72);
+  --boring-secondary: oklch(0.965 0.003 72);
+  --boring-secondary-foreground: oklch(0.22 0.006 72);
+  --boring-muted: oklch(0.965 0.003 72);
+  --boring-muted-foreground: oklch(0.52 0.008 72);
+  --boring-destructive: oklch(0.577 0.245 27.325);
+  --boring-border: oklch(0.915 0.004 72);
+  --boring-input: oklch(0.915 0.004 72);
+  --boring-accent: oklch(0.62 0.14 65);
+  --boring-accent-foreground: oklch(0.995 0 0);
+  --boring-accent-soft: oklch(0.96 0.03 65);
+  --boring-ring: oklch(0.62 0.14 65);
+  --boring-radius: 0.625rem;
+  --boring-radius-sm: calc(var(--boring-radius) - 4px);
+  --boring-radius-md: calc(var(--boring-radius) - 2px);
+  --boring-radius-lg: var(--boring-radius);
+  --boring-radius-xl: calc(var(--boring-radius) + 4px);
+  --boring-font-sans: var(--font-sans);
+  --boring-font-mono: var(--font-mono);
+  --boring-canvas: oklch(0.928 0.006 72);
+  --boring-surface-chat: oklch(1 0 0);
+  --boring-surface-workbench: oklch(1 0 0);
+  --boring-surface-workbench-left: oklch(0.976 0.003 72);
 
-  /* Brand accent — warm amber/ochre. Rare by design (≤10% visual weight). */
-  --accent: oklch(0.62 0.14 65);
-  --accent-foreground: oklch(0.995 0 0);
-  --accent-soft: oklch(0.96 0.03 65);
-  --ring: oklch(0.62 0.14 65);
-
-  --radius: 0.625rem;
-
-  /* Workspace surface tints (light): subtle 3-step hierarchy, warmly tinted */
-  --canvas: oklch(0.928 0.006 72);
-  --surface-chat: oklch(1 0 0);
-  --surface-workbench: oklch(1 0 0);
-  --surface-workbench-left: oklch(0.976 0.003 72);
+  /* Internal shadcn-style bridge. */
+  --background: var(--boring-background);
+  --foreground: var(--boring-foreground);
+  --card: var(--boring-card);
+  --card-foreground: var(--boring-card-foreground);
+  --popover: var(--boring-popover);
+  --popover-foreground: var(--boring-popover-foreground);
+  --primary: var(--boring-primary);
+  --primary-foreground: var(--boring-primary-foreground);
+  --secondary: var(--boring-secondary);
+  --secondary-foreground: var(--boring-secondary-foreground);
+  --muted: var(--boring-muted);
+  --muted-foreground: var(--boring-muted-foreground);
+  --destructive: var(--boring-destructive);
+  --border: var(--boring-border);
+  --input: var(--boring-input);
+  --accent: var(--boring-accent);
+  --accent-foreground: var(--boring-accent-foreground);
+  --accent-soft: var(--boring-accent-soft);
+  --ring: var(--boring-ring);
+  --radius: var(--boring-radius);
+  --canvas: var(--boring-canvas);
+  --surface-chat: var(--boring-surface-chat);
+  --surface-workbench: var(--boring-surface-workbench);
+  --surface-workbench-left: var(--boring-surface-workbench-left);
 }
 
 .dark {
-  --background: oklch(0.145 0.004 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0.004 285.823);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0.004 285.823);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0.006 285.885);
-  --secondary: oklch(0.269 0.006 285.885);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0.006 285.885);
-  --muted-foreground: oklch(0.708 0.01 286.073);
-  --accent: oklch(0.269 0.006 285.885);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.768);
-  --border: oklch(0.269 0.006 285.885);
-  --input: oklch(0.269 0.006 285.885);
-  --ring: oklch(0.439 0.01 286.029);
+  --boring-background: oklch(0.145 0.004 285.823);
+  --boring-foreground: oklch(0.985 0 0);
+  --boring-card: oklch(0.145 0.004 285.823);
+  --boring-card-foreground: oklch(0.985 0 0);
+  --boring-popover: oklch(0.145 0.004 285.823);
+  --boring-popover-foreground: oklch(0.985 0 0);
+  --boring-primary: oklch(0.985 0 0);
+  --boring-primary-foreground: oklch(0.205 0.006 285.885);
+  --boring-secondary: oklch(0.269 0.006 285.885);
+  --boring-secondary-foreground: oklch(0.985 0 0);
+  --boring-muted: oklch(0.269 0.006 285.885);
+  --boring-muted-foreground: oklch(0.708 0.01 286.073);
+  --boring-accent: oklch(0.269 0.006 285.885);
+  --boring-accent-foreground: oklch(0.985 0 0);
+  --boring-accent-soft: oklch(0.28 0.04 65);
+  --boring-destructive: oklch(0.396 0.141 25.768);
+  --boring-border: oklch(0.269 0.006 285.885);
+  --boring-input: oklch(0.269 0.006 285.885);
+  --boring-ring: oklch(0.439 0.01 286.029);
+  --boring-canvas: oklch(0.12 0.004 285.823);
+  --boring-surface-chat: oklch(0.165 0.004 285.823);
+  --boring-surface-workbench: oklch(0.165 0.004 285.823);
+  --boring-surface-workbench-left: oklch(0.195 0.004 285.823);
 
-  /* Workspace surface tints (dark): subtle step-up from background */
-  --canvas: oklch(0.12 0.004 285.823);
-  --surface-chat: oklch(0.165 0.004 285.823);
-  --surface-workbench: oklch(0.165 0.004 285.823);
-  --surface-workbench-left: oklch(0.195 0.004 285.823);
+  --background: var(--boring-background);
+  --foreground: var(--boring-foreground);
+  --card: var(--boring-card);
+  --card-foreground: var(--boring-card-foreground);
+  --popover: var(--boring-popover);
+  --popover-foreground: var(--boring-popover-foreground);
+  --primary: var(--boring-primary);
+  --primary-foreground: var(--boring-primary-foreground);
+  --secondary: var(--boring-secondary);
+  --secondary-foreground: var(--boring-secondary-foreground);
+  --muted: var(--boring-muted);
+  --muted-foreground: var(--boring-muted-foreground);
+  --destructive: var(--boring-destructive);
+  --border: var(--boring-border);
+  --input: var(--boring-input);
+  --accent: var(--boring-accent);
+  --accent-foreground: var(--boring-accent-foreground);
+  --accent-soft: var(--boring-accent-soft);
+  --ring: var(--boring-ring);
+  --canvas: var(--boring-canvas);
+  --surface-chat: var(--boring-surface-chat);
+  --surface-workbench: var(--boring-surface-workbench);
+  --surface-workbench-left: var(--boring-surface-workbench-left);
 }
 
 @layer base {

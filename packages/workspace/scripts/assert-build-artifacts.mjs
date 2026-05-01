@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises"
+import { access, readFile } from "node:fs/promises"
 import { constants } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -22,6 +22,7 @@ const requiredFiles = [
   "dist/server.d.ts",
   "dist/shared.js",
   "dist/shared.d.ts",
+  "dist/workspace.css",
 ]
 
 async function exists(rel) {
@@ -38,6 +39,19 @@ for (const rel of requiredFiles) {
   if (!(await exists(rel))) missing.push(rel)
 }
 
+async function assertConsumerSafeCss(rel) {
+  const sourceText = await readFile(path.resolve(packageRoot, rel), "utf8")
+  const forbidden = [/@source\b/, /@import\s+["']tailwindcss/, /packages\/workspace\/src/, /packages\/agent\/src/]
+  for (const pattern of forbidden) {
+    if (pattern.test(sourceText)) {
+      console.error(
+        `assert-build-artifacts: ${rel} contains consumer-unsafe CSS directive/path: ${pattern}`,
+      )
+      process.exit(1)
+    }
+  }
+}
+
 if (missing.length > 0) {
   console.error(
     `assert-build-artifacts: missing ${missing.length} required artifact(s):`,
@@ -49,6 +63,8 @@ if (missing.length > 0) {
   )
   process.exit(1)
 }
+
+await assertConsumerSafeCss("dist/workspace.css")
 
 console.log(
   `assert-build-artifacts: all ${requiredFiles.length} artifacts present`,

@@ -4,8 +4,7 @@
   "type": "module",
   "description": "Frontend-only layout package. Composes ChatPanel + FileTree + Editor into IDE / Chat layouts via DockView.",
   "files": [
-    "dist",
-    "src/globals.css"
+    "dist"
   ],
   "exports": {
     ".": {
@@ -29,7 +28,7 @@
       "import": "./dist/server.js",
       "default": "./dist/server.js"
     },
-    "./globals.css": "./src/globals.css"
+    "./globals.css": "./dist/workspace.css"
   },
   "sideEffects": [
     "**/*.css"

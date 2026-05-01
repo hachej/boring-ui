@@ -14,8 +14,8 @@
  * ]
  * ```
  */
-import { CodeEditorPane } from "./CodeEditorPane"
-import { MarkdownEditorPane } from "./MarkdownEditorPane"
+import { CodeEditorPane } from "./code-editor/CodeEditorPane"
+import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
 import { definePanel } from "../registry/types"
 
 // Type inferred (not annotated): PanelConfig<unknown>[] would force a

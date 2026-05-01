@@ -78,9 +78,10 @@ beforeEach(() => {
 })
 
 describe('ChatPanel (shadcn)', () => {
-  test('renders data-boring-chat attribute on root', () => {
+  test('renders data-boring-agent attributes on root', () => {
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-1" />)
-    expect(html).toMatch(/data-boring-chat(?:=| |>|\/>)/)
+    expect(html).toMatch(/data-boring-agent(?:=| |>|\/>)/)
+    expect(html).toContain('data-boring-agent-part="chat"')
     expect(html).toContain('role="region"')
     expect(html).toContain('aria-label="Agent assistant"')
     expect(html).toContain('data-testid="conversation"')

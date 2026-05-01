@@ -482,7 +482,8 @@ export function ChatPanel(props: ChatPanelProps) {
   return (
     <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
     <div
-      data-boring-chat=""
+      data-boring-agent=""
+      data-boring-agent-part="chat"
       className={cn(
         "flex h-full min-h-0 flex-col overflow-hidden text-foreground antialiased",
         chrome
@@ -823,6 +824,7 @@ export function ChatPanel(props: ChatPanelProps) {
           )}
         >
           <PromptInput
+            data-boring-state={status}
             onSubmit={handleSubmit}
             multiple
             // Guard rails for the attachments pipeline. The server schema
@@ -992,6 +994,8 @@ function ModelSelect({
       disabled={disabled}
     >
       <SelectTrigger
+        data-boring-agent-part="model-select"
+        data-boring-state={disabled ? "disabled" : undefined}
         className={cn(composerActionClass, "px-3 text-xs font-medium")}
         aria-label="Model"
       >
@@ -1063,6 +1067,8 @@ function ThinkingSelect({
       disabled={disabled}
     >
       <SelectTrigger
+        data-boring-agent-part="thinking-select"
+        data-boring-state={disabled ? "disabled" : undefined}
         className={cn(composerActionClass, "w-8 px-0")}
         aria-label="Thinking level"
         data-testid="thinking-select"
@@ -1100,6 +1106,8 @@ function ThoughtVisibilityButton({
   return (
     <button
       type="button"
+      data-boring-agent-part="thought-toggle"
+      data-boring-state={visible ? "selected" : undefined}
       onClick={onToggle}
       className={cn(composerActionClass, "w-8")}
       aria-pressed={visible}

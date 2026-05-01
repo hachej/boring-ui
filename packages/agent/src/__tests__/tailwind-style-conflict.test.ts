@@ -28,50 +28,55 @@ function readCss(path: string): string {
   return readFileSync(path, 'utf-8')
 }
 
-describe('Tailwind v4 style isolation (qs8)', () => {
+describe('Tailwind v4 style contract', () => {
   const workspaceCss = readCss(WORKSPACE_GLOBALS)
-  const agentShadcnCss = readCss(AGENT_SHADCN_STYLES)
+  const agentCss = readCss(AGENT_SHADCN_STYLES)
 
-  test('documents overlapping :root variable names between workspace and agent/front', () => {
+  test('workspace owns public --boring-* base tokens at :root', () => {
     const workspaceVars = extractCssVarNames(workspaceCss, ':root')
-    const agentVars = extractCssVarNames(agentShadcnCss, ':root')
 
-    const overlap = workspaceVars.filter((v) => agentVars.includes(v))
-
-    expect(overlap.length).toBeGreaterThan(0)
-    expect(overlap).toContain('--background')
-    expect(overlap).toContain('--primary')
-    expect(overlap).toContain('--border')
+    expect(workspaceVars).toContain('--boring-background')
+    expect(workspaceVars).toContain('--boring-foreground')
+    expect(workspaceVars).toContain('--boring-primary')
+    expect(workspaceVars).toContain('--boring-border')
   })
 
-  test('workspace and agent/front both use oklch format (aligned)', () => {
-    const workspaceHasOklch = /--background:\s*oklch\(/.test(workspaceCss)
-    const agentHasOklch = /--background:\s*oklch\(/.test(agentShadcnCss)
-
-    expect(workspaceHasOklch).toBe(true)
-    expect(agentHasOklch).toBe(true)
+  test('workspace bridges public tokens to internal shadcn aliases', () => {
+    expect(workspaceCss).toMatch(/--background:\s*var\(--boring-background\)/)
+    expect(workspaceCss).toMatch(/--foreground:\s*var\(--boring-foreground\)/)
+    expect(workspaceCss).toMatch(/--primary:\s*var\(--boring-primary\)/)
+    expect(workspaceCss).toMatch(/--border:\s*var\(--boring-border\)/)
   })
 
-  test('agent/front styles.css does not import tailwindcss outside comments', () => {
-    const uncommented = agentShadcnCss.replace(/\/\*[\s\S]*?\*\//g, '')
-    expect(uncommented).not.toMatch(/@import\s+['"]tailwindcss['"]/)
+  test('agent consumes host --boring-* tokens under its public root', () => {
+    expect(agentCss).toMatch(/\[data-boring-agent\]\s*{[\s\S]*--background:\s*var\(--boring-background,/)
+    expect(agentCss).toMatch(/\[data-boring-agent\]\s*{[\s\S]*--foreground:\s*var\(--boring-foreground,/)
+    expect(agentCss).toMatch(/\[data-boring-agent\]\s*{[\s\S]*--primary:\s*var\(--boring-primary,/)
+    expect(agentCss).toMatch(/\[data-boring-agent\]\s*{[\s\S]*--border:\s*var\(--boring-border,/)
   })
 
-  test('agent/front styles.css has no @layer base (no double-reset risk)', () => {
-    expect(agentShadcnCss).not.toMatch(/@layer\s+base/)
+  test('agent does not define global :root tokens', () => {
+    expect(extractCssVarNames(agentCss, ':root')).toHaveLength(0)
   })
 
-  test('workspace globals.css has @layer base with border-border reset', () => {
+  test('agent source CSS omits Tailwind preflight/base reset', () => {
+    const uncommented = agentCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(uncommented).not.toMatch(/@import\s+["']tailwindcss["']/)
+    expect(uncommented).not.toMatch(/@import\s+["']tailwindcss\/preflight\.css["']/)
+    expect(uncommented).not.toMatch(/@layer\s+base/)
+  })
+
+  test('workspace keeps reset/base layer ownership', () => {
     expect(workspaceCss).toMatch(/@layer\s+base/)
     expect(workspaceCss).toMatch(/border-border/)
   })
 
-  test('both define .dark selector with different values', () => {
+  test('dark mode is tokenized by workspace and inherited by agent', () => {
     const workspaceDarkVars = extractCssVarNames(workspaceCss, '.dark')
-    const agentDarkVars = extractCssVarNames(agentShadcnCss, '.dark')
 
-    const overlap = workspaceDarkVars.filter((v) => agentDarkVars.includes(v))
-    expect(overlap.length).toBeGreaterThan(0)
-    expect(overlap).toContain('--background')
+    expect(workspaceDarkVars).toContain('--boring-background')
+    expect(workspaceDarkVars).toContain('--boring-foreground')
+    expect(agentCss).toMatch(/\.dark \[data-boring-agent\]/)
+    expect(agentCss).toMatch(/--background:\s*var\(--boring-background,/) 
   })
 })

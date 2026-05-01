@@ -358,7 +358,7 @@ export function FileTree({
 
   return (
     <TreeHandlersCtx.Provider value={handlers}>
-      <div className={cn("file-tree", className)}>
+      <div data-boring-workspace-part="file-tree" className={cn("file-tree", className)}>
         <Tree<FileTreeNode>
           ref={treeRef}
           data={files}

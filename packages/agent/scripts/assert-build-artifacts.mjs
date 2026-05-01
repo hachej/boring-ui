@@ -68,6 +68,16 @@ function assertCliShebang() {
   }
 }
 
+function assertConsumerSafeCss(relPath) {
+  const sourceText = readFileSync(resolveFromPackage(relPath), 'utf8')
+  const forbidden = [/@source\b/, /@import\s+['"]tailwindcss/, /packages\/agent\/src/, /packages\/workspace\/src/]
+  for (const pattern of forbidden) {
+    if (pattern.test(sourceText)) {
+      throw new Error(`${relPath} contains consumer-unsafe CSS directive/path: ${pattern}`)
+    }
+  }
+}
+
 async function main() {
   for (const relPath of requiredFiles) {
     await assertExists(relPath)
@@ -83,6 +93,7 @@ async function main() {
   assertTsParsable('dist/front/index.d.ts')
 
   assertCliShebang()
+  assertConsumerSafeCss('dist/front/styles.css')
 
   process.stdout.write('build-artifacts: OK\n')
 }

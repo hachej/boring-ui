@@ -29,7 +29,7 @@ test.describe('accessibility', () => {
   test('chat panel has no serious/critical axe violations', async ({
     browserPage,
   }) => {
-    await expect(browserPage.locator('[data-boring-chat]')).toBeVisible()
+    await expect(browserPage.locator('[data-boring-agent]')).toBeVisible()
 
     await browserPage.addScriptTag({
       path: axeScriptPath,
@@ -40,7 +40,7 @@ test.describe('accessibility', () => {
       if (!axeApi) {
         throw new Error('axe was not loaded')
       }
-      const target = document.querySelector('[data-boring-chat]') ?? document
+      const target = document.querySelector('[data-boring-agent]') ?? document
       return await axeApi.run(target)
     }) as {
       violations: Array<{

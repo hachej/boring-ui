@@ -2,6 +2,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { WorkspaceShell } from "./App"
 import "@boring/workspace/globals.css"
+import "@boring/agent/front/styles.css"
 import "./app.css"
 
 // The playground is the standalone dev surface for @boring/workspace.

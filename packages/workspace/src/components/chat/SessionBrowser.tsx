@@ -103,6 +103,7 @@ export function SessionBrowser({
 
   return (
     <div
+      data-boring-workspace-part="session-list"
       className={cn("flex h-full min-h-0 flex-col bg-background", className)}
       role="navigation"
       aria-label="Session history"
@@ -187,6 +188,8 @@ function SessionRow({
   return (
     <li
       role="listitem"
+      data-boring-workspace-part="session-row"
+      data-boring-state={active ? "selected" : undefined}
       className={cn(
         "group relative mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
         "cursor-pointer hover:bg-foreground/[0.04]",

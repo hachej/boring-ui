@@ -32,6 +32,7 @@ export type ToolProps = ComponentProps<typeof Collapsible>;
 
 export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
+    data-boring-agent-part="tool-card"
     className={cn(
       // Inset-border + micro-shadow surface, matching the chat panel's
       // own card and the workspace shell. No `border` utility — the
@@ -169,7 +170,7 @@ export const ToolOutput = ({
   }
 
   return (
-    <div className={cn("space-y-2", className)} {...props}>
+    <div data-boring-agent-part="tool-result" className={cn("space-y-2", className)} {...props}>
       <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
         {errorText ? "Error" : "Result"}
       </h4>
