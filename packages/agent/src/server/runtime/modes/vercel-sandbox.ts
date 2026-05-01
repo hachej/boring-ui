@@ -14,10 +14,7 @@ import {
   type VercelSandboxClient,
   resolveSandboxHandle,
 } from '../../sandbox/vercel-sandbox/resolveSandboxHandle'
-import {
-  createPeriodicSnapshotScheduler,
-  type PeriodicSnapshotScheduler,
-} from '../../sandbox/vercel-sandbox/periodicSnapshot'
+import type { PeriodicSnapshotScheduler } from '../../sandbox/vercel-sandbox/periodicSnapshot'
 import { createVercelSandboxWorkspace } from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { RuntimeModeAdapter } from '../mode'
@@ -63,23 +60,60 @@ function createDefaultVercelClient(
 
   return {
     async create(params) {
+      const base = {
+        ...createOptions,
+        ...(params?.name ? { name: params.name } : {}),
+        persistent: params?.persistent ?? true,
+        snapshotExpiration: params?.snapshotExpiration ?? 0,
+      }
       if (params?.source?.type === 'snapshot') {
         return await VercelSandbox.create({
-          ...createOptions,
+          ...base,
           source: { type: 'snapshot', snapshotId: params.source.snapshotId },
         })
       }
       if (params?.source?.type === 'tarball') {
         return await VercelSandbox.create({
-          ...createOptions,
+          ...base,
           source: { type: 'tarball', url: params.source.url },
         })
       }
-      return await VercelSandbox.create({ ...createOptions })
+      return await VercelSandbox.create(base)
     },
     async get(params) {
-      return await VercelSandbox.get({ ...credentials, ...params })
+      const getParams = {
+        ...credentials,
+        name: params.name ?? params.sandboxId ?? '',
+        resume: params.resume ?? true,
+      } as unknown as Parameters<typeof VercelSandbox.get>[0] & { name?: string }
+      return await VercelSandbox.get(getParams)
     },
+  }
+}
+
+async function ensureVercelWorkspaceRoot(sandbox: VercelSandbox & {
+  fs?: { mkdir(path: string, opts?: { recursive?: boolean }): Promise<unknown> }
+  mkDir?: (path: string) => Promise<void>
+  runCommand?: (params: { cmd: string; args?: string[] }) => Promise<{ exitCode?: number }>
+}): Promise<void> {
+  if (sandbox.fs?.mkdir) {
+    await sandbox.fs.mkdir('/vercel/sandbox', { recursive: true })
+    return
+  }
+  if (sandbox.mkDir) {
+    try {
+      await sandbox.mkDir('/vercel/sandbox')
+      return
+    } catch {
+      // Fall through to mkdir -p for already-existing parents or SDK variants.
+    }
+  }
+  if (!sandbox.runCommand) {
+    throw new Error('failed to initialize /vercel/sandbox: sandbox runCommand is unavailable')
+  }
+  const result = await sandbox.runCommand({ cmd: 'mkdir', args: ['-p', '/vercel/sandbox'] })
+  if ((result.exitCode ?? 1) !== 0) {
+    throw new Error(`failed to initialize /vercel/sandbox (exit ${result.exitCode ?? 'unknown'})`)
   }
 }
 
@@ -135,9 +169,10 @@ export function createVercelSandboxModeAdapter(
   const store = opts.store ?? new FileHandleStore()
   const getEnvVar = opts.getEnvVar ?? getEnv
   const logger = opts.logger ?? DEFAULT_MODE_LOGGER
-  const snapshotScheduler = opts.snapshotScheduler === null
-    ? null
-    : opts.snapshotScheduler ?? createPeriodicSnapshotScheduler({ logger })
+  // @vercel/sandbox@beta persistent sandboxes auto-snapshot when their
+  // session stops and auto-resume on the next command. Do not run the old
+  // periodic snapshotter here: sandbox.snapshot() stops the active session.
+  const snapshotScheduler = opts.snapshotScheduler ?? null
 
   return {
     id: 'vercel-sandbox',
@@ -197,23 +232,33 @@ export function createVercelSandboxModeAdapter(
         },
       )
 
+      const sandboxId = sandboxHandle.name ?? sandboxHandle.sandboxId ?? 'unknown-sandbox'
       logger.info('[vercel-sandbox:mode] resolved sandbox handle', {
         workspaceId,
-        sandboxId: sandboxHandle.sandboxId,
-        snapshotId: sandboxHandle.sourceSnapshotId ?? null,
+        sandboxId,
+        snapshotId: sandboxHandle.currentSnapshotId ?? sandboxHandle.sourceSnapshotId ?? null,
         tarballUrl: tarballUrl ?? null,
       })
 
-      snapshotScheduler?.trackWorkspace({
-        workspaceId,
-        sandbox: sandboxHandle,
-        store,
-      })
+      if (snapshotScheduler && sandboxHandle.sandboxId) {
+        snapshotScheduler.trackWorkspace({
+          workspaceId,
+          sandbox: sandboxHandle as typeof sandboxHandle & { sandboxId: string; snapshot(opts?: { signal?: AbortSignal }): Promise<{ snapshotId: string }> },
+          store,
+        })
+      }
       const markDirty = () => snapshotScheduler?.markDirty(workspaceId)
 
       const workspace = createVercelSandboxWorkspace(sandboxHandle, {
         onMutation: markDirty,
       })
+
+      // Fresh Vercel sandboxes do not guarantee our logical workspace root
+      // exists. Create it before any file-tree, mkdir, or rename operation so
+      // first user actions do not fail with ENOENT/404. This bootstrap is
+      // intentionally outside Workspace.mkdir so it does not mark the user's
+      // filesystem dirty or emit a fake mkdir event.
+      await ensureVercelWorkspaceRoot(sandboxHandle)
 
       if (ctx.templatePath && !tarballUrl) {
         logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {

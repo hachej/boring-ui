@@ -30,6 +30,7 @@ const KNOWN_KINDS = new Set([
   "expandToFile",
   "showNotification",
   "closePanel",
+  "closeWorkbenchLeftPane",
 ])
 
 function strParam(params: Record<string, unknown>, key: string): string | null {
@@ -152,6 +153,10 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       }
       if (wasClosed) requestAnimationFrame(() => requestAnimationFrame(run))
       else run()
+      return
+    }
+    case "closeWorkbenchLeftPane": {
+      surface.closeWorkbenchLeftPane()
       return
     }
   }

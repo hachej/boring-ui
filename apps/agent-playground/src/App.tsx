@@ -6,20 +6,6 @@ import type { SessionSummary } from '@boring/agent/shared'
 type Theme = 'light' | 'dark'
 
 const THEME_STORAGE_KEY = 'boring-agent:playground:theme'
-const MODEL_STORAGE_KEY = 'boring-agent:composer:model'
-const INFOMANIAK_DEFAULT_MODEL = {
-  provider: 'infomaniak',
-  id: 'moonshotai/Kimi-K2.6',
-}
-
-function preferInfomaniakDefaultModel(): void {
-  try {
-    const raw = localStorage.getItem(MODEL_STORAGE_KEY)
-    if (!raw || raw.includes('anthropic')) {
-      localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify(INFOMANIAK_DEFAULT_MODEL))
-    }
-  } catch { /* noop */ }
-}
 
 function readStoredTheme(): Theme {
   try {
@@ -30,7 +16,6 @@ function readStoredTheme(): Theme {
 }
 
 function Playground() {
-  preferInfomaniakDefaultModel()
   const sessions = useSessions()
   const [chrome, setChrome] = useState(true)
   const [thinkingControl, setThinkingControl] = useState(true)

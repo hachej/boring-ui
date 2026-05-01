@@ -136,7 +136,7 @@ describe("createExecUiTool — path validation", () => {
     expect(kind?.enum).toContain("openSurface")
   })
 
-  test("non-path kinds (openPanel, openSurface, showNotification) do not get path-validated", async () => {
+  test("non-path kinds (openPanel, openSurface, showNotification, closeWorkbenchLeftPane) do not get path-validated", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const openPanelResult = await tool.execute(
       {
@@ -168,6 +168,15 @@ describe("createExecUiTool — path validation", () => {
       FAKE_CTX,
     )
     expect(showNotifResult.isError).toBeFalsy()
+
+    const closeLeftResult = await tool.execute(
+      {
+        kind: "closeWorkbenchLeftPane",
+        params: {},
+      },
+      FAKE_CTX,
+    )
+    expect(closeLeftResult.isError).toBeFalsy()
   })
 
   test("openSurface validates required target params", async () => {

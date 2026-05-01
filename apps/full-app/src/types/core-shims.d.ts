@@ -2,6 +2,7 @@ declare module '@boring/core/front' {
   export const BoringApp: any
   export const ThemeToggle: any
   export const UserMenu: any
+  export const UserSettingsPage: any
   export const WorkspaceSwitcher: any
   export const WorkspaceSettingsPage: any
   export const useCoreCommands: any

@@ -632,7 +632,7 @@ test('store.put failure does not poison in-process cache', async () => {
   ).rejects.toThrow('put failed')
   const resolved = await resolveSandboxHandle('workspace-put-failure', store, client)
 
-  expect(resolved.sandboxId).toBe('sb-second-attempt')
+  expect((resolved as any).sandboxId).toBe('sb-second-attempt')
   expect(client.create).toHaveBeenCalledTimes(2)
 })
 

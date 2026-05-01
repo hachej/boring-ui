@@ -74,6 +74,7 @@ describe("ChatPanelHost", () => {
       openFile,
       openSurface: vi.fn(),
       openPanel: vi.fn(),
+      closeWorkbenchLeftPane: vi.fn(),
       getSnapshot: () => ({ openTabs: [], activeTab: null }),
     }
 

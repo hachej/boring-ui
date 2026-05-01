@@ -23,30 +23,25 @@ test.describe("command palette visual chrome", () => {
   }) => {
     await openPalette(page)
 
-    // Count elements with a non-zero border-bottom-width inside the
-    // dialog content, ABOVE the result list. A "double border" bug
-    // reappears as 2+ — assert exactly 1.
-    const borderCount = await page.evaluate(() => {
+    // The input wrapper owns the single divider below the search row.
+    // The surrounding row must not add a second full-width border.
+    const inputChrome = await page.evaluate(() => {
       const content = document.querySelector('[data-slot="dialog-content"]')
-      if (!content) return -1
-      const list = content.querySelector('[cmdk-list]')
-      if (!list) return -1
-      // Walk every element in the dialog that comes BEFORE the list
-      // and check its computed border-bottom-width.
-      const range = document.createRange()
-      range.setStartBefore(content)
-      range.setEndBefore(list)
-      const all = Array.from(content.querySelectorAll("*")).filter((el) =>
-        range.intersectsNode(el) && !list.contains(el) && !el.contains(list),
-      )
-      return all.filter((el) => {
-        const cs = getComputedStyle(el)
-        const w = parseFloat(cs.borderBottomWidth)
-        return w > 0 && cs.borderBottomStyle !== "none"
-      }).length
+      const wrapper = content?.querySelector('[data-slot="command-input-wrapper"]')
+      const row = wrapper?.parentElement
+      if (!wrapper || !row) return null
+      const wrapperStyle = getComputedStyle(wrapper)
+      const rowStyle = getComputedStyle(row)
+      return {
+        wrapperBorderBottom: parseFloat(wrapperStyle.borderBottomWidth),
+        rowBorderBottom: parseFloat(rowStyle.borderBottomWidth),
+      }
     })
 
-    expect(borderCount).toBe(1)
+    expect(inputChrome).toEqual({
+      wrapperBorderBottom: 1,
+      rowBorderBottom: 0,
+    })
   })
 
   test("dialog is widened to the design's 640px max", async ({ page }) => {
@@ -69,12 +64,18 @@ test.describe("command palette visual chrome", () => {
     await expect(page.getByText(/close/i).last()).toBeVisible()
   })
 
-  test("> prefix surfaces the 'Command' mode pill", async ({ page }) => {
+  test("> prefix switches to command mode", async ({ page }) => {
     await openPalette(page)
-    // Pill not present yet
-    await expect(page.getByText("Command", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Commands" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    )
     await page.keyboard.type(">")
-    await expect(page.getByText("Command", { exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Commands" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    await expect(page.getByPlaceholder("Run a command...")).toBeVisible()
   })
 })
 

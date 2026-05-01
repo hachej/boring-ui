@@ -152,6 +152,11 @@ export function createMockBridge(options: CreateMockBridgeOptions = {}): MockWor
       return nextResult()
     }),
 
+    closeWorkbenchLeftPane: spy(async () => {
+      emit("sidebar:toggled", { collapsed: true })
+      return nextResult()
+    }),
+
     showNotification: spy(async (message, level = "info") => {
       emit("notification:shown", { message, level })
       return nextResult()

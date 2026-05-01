@@ -284,6 +284,47 @@ describe('ChatPanel (shadcn)', () => {
     )
   })
 
+  test('uses provided defaultModel when stored model was not user-selected', async () => {
+    withLocalStorage({
+      'boring-agent:composer:model': JSON.stringify({ provider: 'infomaniak', id: 'moonshotai/Kimi-K2.6' }),
+    }, () => {
+      renderToStaticMarkup(
+        <ChatPanel
+          sessionId="sess-default-model"
+          defaultModel={{ provider: 'openai', id: 'gpt-4o-mini' }}
+        />,
+      )
+    })
+
+    await capturedOnSubmit!({ text: 'Run tests', files: [] })
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: 'Run tests', files: [] },
+      { body: expect.objectContaining({ model: { provider: 'openai', id: 'gpt-4o-mini' } }) },
+    )
+  })
+
+  test('keeps stored model when explicit user-selected marker is present', async () => {
+    withLocalStorage({
+      'boring-agent:composer:model': JSON.stringify({ provider: 'infomaniak', id: 'moonshotai/Kimi-K2.6' }),
+      'boring-agent:composer:model:user-selected': '1',
+    }, () => {
+      renderToStaticMarkup(
+        <ChatPanel
+          sessionId="sess-user-model"
+          defaultModel={{ provider: 'openai', id: 'gpt-4o-mini' }}
+        />,
+      )
+    })
+
+    await capturedOnSubmit!({ text: 'Run tests', files: [] })
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: 'Run tests', files: [] },
+      { body: expect.objectContaining({ model: { provider: 'infomaniak', id: 'moonshotai/Kimi-K2.6' } }) },
+    )
+  })
+
   test('slash command is intercepted and does not send to AI', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
 

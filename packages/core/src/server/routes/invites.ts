@@ -153,7 +153,7 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
 
       if (invite.acceptedAt) {
         throw new HttpError({
-          status: 409,
+          status: 410,
           code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
           message: 'Invite already accepted',
           requestId: request.id,

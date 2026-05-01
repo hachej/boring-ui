@@ -203,7 +203,7 @@ describe('UserMenu', () => {
 
       expect(await screen.findByText('Menu User')).toBeInTheDocument()
       expect(screen.getByText('menu-user@boring.dev')).toBeInTheDocument()
-      expect(screen.getByRole('menuitem', { name: 'Theme: Light' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Light' })).toHaveAttribute('data-current', 'true')
       expect(screen.getByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
       expect(screen.queryByRole('menuitem', { name: 'Create workspace' })).toBeNull()
       expect(screen.queryByRole('menuitem', { name: 'Workspace settings' })).toBeNull()

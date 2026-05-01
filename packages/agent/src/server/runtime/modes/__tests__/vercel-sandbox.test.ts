@@ -186,6 +186,7 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
   sandboxWithMeta.sourceSnapshotId = 'snap-mode-1'
   sandboxWithMeta.status = 'running'
 
+  const mkdirSpy = vi.spyOn((harness.sandbox as any).fs, 'mkdir')
   const store = createStore()
   const client: VercelSandboxClient = {
     create: vi.fn(async () => harness.sandbox),
@@ -219,6 +220,7 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
     expect(result.exitCode).toBe(0)
     expect(client.create).toHaveBeenCalledTimes(1)
     expect(client.create).toHaveBeenCalledWith()
+    expect(mkdirSpy).toHaveBeenCalledWith('/vercel/sandbox', { recursive: true })
     expect(logger.info).toHaveBeenCalledWith(
       '[vercel-sandbox:mode] auth resolved',
       { source: 'VERCEL_TOKEN', hasProjectId: false, timeoutMs: null },

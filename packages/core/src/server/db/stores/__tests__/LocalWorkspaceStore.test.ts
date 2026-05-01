@@ -204,7 +204,7 @@ describe('LocalWorkspaceStore', () => {
       }
     })
 
-    it('acceptInvite throws INVITE_ALREADY_ACCEPTED (409) on already accepted', async () => {
+    it('acceptInvite throws INVITE_ALREADY_ACCEPTED (410) on already accepted', async () => {
       const ws = await store.create('u1', 'WS', 'app1')
       const { invite } = await store.createInvite(ws.id, 'bob@test.com', 'editor', null)
       await store.acceptInvite(ws.id, invite.id, 'u2')
@@ -213,7 +213,7 @@ describe('LocalWorkspaceStore', () => {
         expect.unreachable('should have thrown')
       } catch (e) {
         expect(e).toBeInstanceOf(HttpError)
-        expect((e as HttpError).status).toBe(409)
+        expect((e as HttpError).status).toBe(410)
         expect((e as HttpError).code).toBe(ERROR_CODES.INVITE_ALREADY_ACCEPTED)
       }
     })

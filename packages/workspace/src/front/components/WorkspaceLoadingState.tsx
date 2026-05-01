@@ -1,5 +1,3 @@
-import { LoaderCircle } from "lucide-react"
-
 import { cn } from "../lib/utils"
 
 export interface WorkspaceLoadingStateProps {
@@ -30,9 +28,9 @@ export function WorkspaceLoadingState({
     >
       <div className="flex w-full max-w-sm flex-col items-center gap-5 text-center">
         <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground">
-          <LoaderCircle
+          <span
             aria-hidden="true"
-            className="h-5 w-5 animate-spin text-muted-foreground motion-reduce:animate-none"
+            className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/25 border-t-muted-foreground motion-reduce:animate-none"
           />
         </div>
         <div className="space-y-2">

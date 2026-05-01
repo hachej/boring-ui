@@ -16,6 +16,8 @@ export default defineConfig({
       '@boring/core/theme.css': resolve(coreSrc, 'front/theme.css'),
       '@boring/agent/front/styles.css': resolve(agentSrc, 'front/styles/globals.css'),
       '@boring/agent/front': resolve(agentSrc, 'front/index.ts'),
+      '@boring/agent/shared': resolve(agentSrc, 'shared/index.ts'),
+      '@boring/agent': resolve(agentSrc, 'front/index.ts'),
       '@boring/workspace/ui-shadcn': resolve(workspaceSrc, 'front/components/ui/index.ts'),
       '@boring/workspace/globals.css': resolve(workspaceSrc, 'globals.css'),
       '@boring/workspace/shared': resolve(workspaceSrc, 'shared/index.ts'),

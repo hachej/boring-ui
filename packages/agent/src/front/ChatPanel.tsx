@@ -54,7 +54,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon, BotIcon } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -131,10 +131,6 @@ function readStoredModel(): ModelSelection | null {
   return null
 }
 
-function isLegacyImplicitModel(model: ModelSelection | null): boolean {
-  return model?.provider === DEFAULT_MODEL.provider && model.id === DEFAULT_MODEL.id
-}
-
 function readStoredModelState(): { model: ModelSelection | null; userSelected: boolean } {
   const model = readStoredModel()
   let userSelected = false
@@ -142,8 +138,12 @@ function readStoredModelState(): { model: ModelSelection | null; userSelected: b
     userSelected = globalThis.localStorage?.getItem(STORAGE_MODEL_USER_KEY) === '1'
   } catch { /* storage unavailable */ }
   return {
-    model,
-    userSelected: userSelected || (model !== null && !isLegacyImplicitModel(model)),
+    // Only an explicit user-selection marker makes a stored model authoritative.
+    // App defaults must come from props or /api/v1/agent/models.defaultModel;
+    // otherwise child apps that seed localStorage can silently override the
+    // composer after the user picks a different provider.
+    model: userSelected ? model : null,
+    userSelected,
   }
 }
 
@@ -201,13 +201,29 @@ function friendlyError(err: Error): FriendlyError {
 function displayModelLabel(id: string): string {
   // "claude-sonnet-4-6" → "Claude Sonnet 4.6"
   // "gpt-5.3-codex" → "GPT-5.3 Codex"
-  return id
+  const modelId = id.split('/').pop() ?? id
+  return modelId
     .replace(/[-_]/g, ' ')
     .replace(/\s(\d+)\s(\d+)/g, ' $1.$2')
     .replace(/\bgpt\b/g, 'GPT')
-    .replace(/\b(claude|sonnet|haiku|opus|codex|mini|max|spark)\b/g, (m) =>
+    .replace(/\b(qwen|grok|glm|claude|sonnet|haiku|opus|codex|mini|max|spark|flash|turbo|pro|omni|mimo|deepseek|euryale)\b/g, (m) =>
       m.charAt(0).toUpperCase() + m.slice(1),
     )
+}
+
+function displayProviderLabel(provider: string): string {
+  const known: Record<string, string> = {
+    anthropic: 'Anthropic',
+    openai: 'OpenAI',
+    'openai-codex': 'OpenAI Codex',
+    infomaniak: 'Infomaniak',
+  }
+  if (known[provider]) return known[provider]
+  return provider
+    .split(/[-_]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 export interface ChatPanelProps {
@@ -1045,20 +1061,34 @@ function ModelSelect({
   options: AvailableModel[]
   disabled?: boolean
 }) {
-  // Group by provider, preserving the server's already-sorted order.
-  const groups = new Map<string, AvailableModel[]>()
-  for (const m of options) {
-    if (!m.available) continue
-    const list = groups.get(m.provider) ?? []
-    list.push(m)
-    groups.set(m.provider, list)
-  }
-
   const currentKey = encodeModelKey(value)
   // Trigger label prefers a live entry, falls back to raw id for offline /
   // legacy short-alias sessions so the label never goes blank.
   const current = options.find((m) => m.provider === value.provider && m.id === value.id)
   const triggerLabel = current?.label ?? displayModelLabel(value.id)
+  const triggerProviderLabel = displayProviderLabel(value.provider)
+
+  const availableOptions = options.filter((m) => m.available)
+  const hasCurrentOption = availableOptions.some((m) => encodeModelKey(m) === currentKey)
+  const menuOptions = hasCurrentOption
+    ? availableOptions
+    : [
+        {
+          provider: value.provider,
+          id: value.id,
+          label: triggerLabel,
+          available: true,
+        },
+        ...availableOptions,
+      ]
+
+  // Group by provider, preserving the server's already-sorted order.
+  const groups = new Map<string, AvailableModel[]>()
+  for (const m of menuOptions) {
+    const list = groups.get(m.provider) ?? []
+    list.push(m)
+    groups.set(m.provider, list)
+  }
 
   return (
     <Select
@@ -1070,24 +1100,45 @@ function ModelSelect({
       disabled={disabled}
     >
       <SelectTrigger
-        className={cn(composerActionClass, "px-3 text-xs font-medium")}
+        className={cn(
+          composerActionClass,
+          "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
+          "data-[state=open]:bg-muted/60 data-[state=open]:text-foreground",
+        )}
         aria-label="Model"
       >
-        <SelectValue>{triggerLabel}</SelectValue>
+        <BotIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">
+          <SelectValue>{triggerLabel}</SelectValue>
+        </span>
+        <span className="hidden shrink-0 rounded-full border border-border/70 bg-background/45 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
+          {triggerProviderLabel}
+        </span>
       </SelectTrigger>
-      <SelectContent className="max-h-[320px]">
+      <SelectContent
+        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
+        style={{ maxHeight: 'min(340px, var(--radix-select-content-available-height))' }}
+      >
         {[...groups.entries()].map(([provider, list]) => (
-          <div key={provider} className="px-1 py-1">
-            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
-              {provider}
+          <div key={provider} className="py-1">
+            <div className="px-2 pb-1 text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">
+              {displayProviderLabel(provider)}
             </div>
             {list.map((m) => (
               <SelectItem
                 key={encodeModelKey(m)}
                 value={encodeModelKey(m)}
-                className="text-xs font-medium"
+                aria-label={`${m.label || displayModelLabel(m.id)}, ${displayProviderLabel(m.provider)}`}
+                className="rounded-md py-2 pl-8 pr-2 text-[13px] focus:bg-foreground/[0.06] data-[state=checked]:bg-foreground/[0.06]"
               >
-                {m.label || displayModelLabel(m.id)}
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate font-medium">
+                    {m.label || displayModelLabel(m.id)}
+                  </span>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {m.id}
+                  </span>
+                </span>
               </SelectItem>
             ))}
           </div>
@@ -1147,7 +1198,7 @@ function ThinkingSelect({
       >
         <BrainIcon className="h-3.5 w-3.5" />
       </SelectTrigger>
-      <SelectContent className="w-auto min-w-0 p-2">
+      <SelectContent className="w-auto min-w-0 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl">
         <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
           Think
         </div>

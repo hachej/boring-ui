@@ -1,10 +1,12 @@
 # boring-ui-v2
 
-Boring UI v2 is a framework for building chat-first products with real tools, files, and workspaces — apps that feel like ChatGPT plus an IDE.
+Boring UI is a framework for building agent-driven workflows in the browser.
 
-With it, you can build things like AI coding environments, internal copilots, research workbenches, document+chat apps, and domain-specific tools such as data or macro-analysis products.
+It gives you an embedded chat interface for directing the agent, plus a workbench for reviewing the outputs it creates — files, documents, code, research, and other artifacts.
 
-It gives you the backend foundation (`@boring/core`), the agent runtime (`@boring/agent`), and the frontend workspace shell (`@boring/workspace`).
+Use it to build things like coding agents, research copilots, internal workflow tools, analyst workbenches, and document-based products where the agent needs to do work and hand the results back in a structured UI.
+
+It provides the backend foundation (`@boring/core`), the agent runtime (`@boring/agent`), and the frontend workspace shell (`@boring/workspace`).
 
 ## Packages
 

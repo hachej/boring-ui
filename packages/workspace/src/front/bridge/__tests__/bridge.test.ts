@@ -215,6 +215,20 @@ describe("createBridge", () => {
     })
   })
 
+  describe("closeWorkbenchLeftPane", () => {
+    it("collapses the sidebar and fires sidebar:toggled", async () => {
+      const bridge = createBridge(store)
+      const handler = vi.fn()
+      bridge.subscribe("sidebar:toggled", handler)
+
+      const result = await bridge.closeWorkbenchLeftPane()
+
+      expect(result.status).toBe("ok")
+      expect(store.state.setSidebar).toHaveBeenCalledWith({ collapsed: true })
+      expect(handler).toHaveBeenCalledWith({ collapsed: true })
+    })
+  })
+
   describe("navigateToLine", () => {
     it("opens file then navigates to line", async () => {
       const bridge = createBridge(store)

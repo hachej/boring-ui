@@ -23,6 +23,19 @@ async function runCommandFromPalette(
   ).toBeHidden({ timeout: 2_000 })
 }
 
+async function paneWidth(
+  page: import("@playwright/test").Page,
+  ariaLabel: string,
+) {
+  return page.evaluate(
+    (label) =>
+      document
+        .querySelector(`aside[aria-label="${label}"]`)
+        ?.getBoundingClientRect().width ?? 0,
+    ariaLabel,
+  )
+}
+
 test.describe("command palette effects", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
@@ -43,6 +56,23 @@ test.describe("command palette effects", () => {
     const before = await sessions.count()
     await runCommandFromPalette(page, "New Chat")
     await expect(sessions).toHaveCount(before + 1)
+  })
+
+  test("Focus Chat closes sessions and workbench panes", async ({ page }) => {
+    expect(await paneWidth(page, "Session browser")).toBeGreaterThan(0)
+    expect(await paneWidth(page, "Surface")).toBeGreaterThan(0)
+
+    await runCommandFromPalette(page, "Focus Chat")
+
+    await expect
+      .poll(() => paneWidth(page, "Session browser"), { timeout: 2_000 })
+      .toBe(0)
+    await expect
+      .poll(() => paneWidth(page, "Surface"), { timeout: 2_000 })
+      .toBe(0)
+    await expect(page.locator('[data-boring-chat] textarea[name="message"]')).toBeFocused({
+      timeout: 2_000,
+    })
   })
 
   test("session selection updates the TopBar through ChatLayout params", async ({ page }) => {

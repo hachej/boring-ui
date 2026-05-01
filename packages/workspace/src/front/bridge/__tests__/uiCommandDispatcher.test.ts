@@ -6,19 +6,30 @@ function fakeSurface(): SurfaceShellApi & {
   __opened: string[]
   __surfaces: unknown[]
   __panels: unknown[]
+  __leftClosed: number
 } {
   const opened: string[] = []
   const surfaces: unknown[] = []
   const panels: unknown[] = []
-  return {
+  const surface: SurfaceShellApi & {
+    __opened: string[]
+    __surfaces: unknown[]
+    __panels: unknown[]
+    __leftClosed: number
+  } = {
     openFile: (path: string) => opened.push(path),
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
+    closeWorkbenchLeftPane: () => {
+      surface.__leftClosed += 1
+    },
     getSnapshot: (): SurfaceShellSnapshot => ({ openTabs: [], activeTab: null }),
     __opened: opened,
     __surfaces: surfaces,
     __panels: panels,
+    __leftClosed: 0,
   }
+  return surface
 }
 
 function ctx(over: Partial<DispatchContext> = {}, surface = fakeSurface()): DispatchContext & { __surface: ReturnType<typeof fakeSurface> } {
@@ -158,6 +169,12 @@ describe("dispatchUiCommand", () => {
     dispatchUiCommand({ kind: "openPanel", params: { id: "logs" } }, c)
     dispatchUiCommand({ kind: "openPanel", params: { component: "log-viewer" } }, c)
     expect(c.__surface.__panels).toEqual([])
+  })
+
+  it("closeWorkbenchLeftPane closes the workbench left pane", () => {
+    const c = ctx()
+    dispatchUiCommand({ kind: "closeWorkbenchLeftPane", params: {} }, c)
+    expect(c.__surface.__leftClosed).toBe(1)
   })
 
   it("unknown kinds are silently ignored — no surface call, no throw", () => {
