@@ -24,7 +24,7 @@ Read this first. Re-read after compaction.
 
 - **`@boring/core`** — canonical app shell: DB (Postgres/Drizzle), auth (better-auth), config, HTTP app factory (Fastify), and frontend provider stack (`<BoringApp>`). Every child app imports core first. See [`packages/core/docs/CORE.md`](packages/core/docs/CORE.md) for the full spec.
 - **`@boring/agent`** — pane-embeddable coding agent. Ships 3 execution modes behind one mental model: `direct` (no isolation, macOS/Windows dev) / `local` (bwrap on Linux) / `vercel-sandbox` (Firecracker microVM). Also ships as a first-class CLI (`npx @boring/agent`), zero setup, zero deploy.
-- **`@boring/workspace`** — frontend-only layout package. Composes `ChatPanel` (from `@boring/agent`) + FileTree + Editor into IDE / Chat layouts. Consumes agent's HTTP routes; ZERO backend code. ZERO imports from `@boring/agent` (app shell wires them together).
+- **`@boring/workspace`** — workspace UI and bridge package. Front code composes injected chat, plugin-owned left tabs/editors/catalogs, DockView layouts, and the UI bridge client. Server/app code exports workspace bridge routes/tools and `createWorkspaceAgentApp()` for shells that compose `@boring/agent/server`.
 
 **Dependency graph (inverted — core at the bottom):**
 ```
@@ -41,7 +41,7 @@ The three packages are designed to be composed by a final **app shell** (the end
 v1 boring-ui tangled chat, layout, sandboxing, and deploy concerns into a single repo. v2 untangles them on purpose:
 
 - **`@boring/agent` is a product by itself** — `npx @boring/agent` is a legitimate standalone tool. Users who want "Claude Code in a browser against my repo" don't need layouts or panels or git UI.
-- **`@boring/workspace` is pure layout** — it composes the agent's chat pane with file/editor panes into a DockView IDE. It has no opinion about what the agent does; it just renders components the app-shell hands it.
+- **`@boring/workspace` owns workspace UI contracts** — layouts, plugin registries, catalogs, surface resolvers, and the UI bridge. It does not own agent execution; app shells compose it with `@boring/agent`.
 
 **Future packages (not yet implemented, but shape current decisions):**
 
@@ -68,14 +68,16 @@ Design implication today: every interface that might need DB-backing in the futu
 
 ## Repo Layout
 
-No `apps/`, no `src/` at repo root, no CLI Go tool (`bui` is a v1 concept). Everything lives inside `packages/`.
+Packages live in `packages/`. App fixtures and demos live in `apps/`. Do not add
+`src/` at repo root, and do not add the old v1 CLI Go tool (`bui`).
 
 ## Where to Find What
 
 | What | Where |
 |---|---|
 | Agent package spec (canonical design) | `packages/agent/docs/plans/agent-package-spec.md` |
-| Workspace package plan (canonical design) | `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md` |
+| Workspace package interfaces | `packages/workspace/docs/INTERFACES.md` |
+| Workspace package history | `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md` |
 | Execution plan (all tasks, decisions, risks, tests) | `.beads/` — `br ready`, `br show <id>` |
 | Old boring-ui (reference for porting — don't re-research) | `/home/ubuntu/projects/boring-ui/` |
 
@@ -93,7 +95,7 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 4. **Path validation is the adapter's job** — consumers pass user paths; adapters reject `../` / absolute / symlink-escape.
 5. **Workspace + Sandbox swap as a paired `RuntimeModeAdapter`** — they must share a filesystem substrate. Mixed pairings = split-brain.
 6. **`UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
-7. **Workspace package has ZERO imports from `@boring/agent`** — app shell wires `ChatPanel` via `WorkspaceProvider panels` prop.
+7. **Workspace front/shared code has ZERO value imports from `@boring/agent`** — app shells inject `ChatPanel` through `WorkspaceProvider.chatPanel`; workspace app/server composition may import documented `@boring/agent/server` APIs.
 8. **Every error has a stable code** from the canonical error-codes enum (one import site, no raw string codes).
 9. **Pi-tools migration stays locked** — `bash`/`read`/`write`/`edit`/`find`/`grep`/`ls` flow through pi factories plus Operations adapters. Custom AgentTools require Principle 3 justification from epic `boring-ui-v2-uhwx`.
 

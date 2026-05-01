@@ -1,8 +1,13 @@
 # Workspace Plugin Structure
 
+Last updated: 2026-05-01
+
 Workspace plugins use a small, predictable folder shape. The goal is
 ownership clarity, not ceremony: plugin domain behavior stays in the plugin,
 and workspace core stays a generic host.
+
+See `INTERFACES.md` for the package-level contracts these plugins contribute
+to.
 
 ## Standard Layout
 

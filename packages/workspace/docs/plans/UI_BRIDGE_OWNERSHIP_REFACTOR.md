@@ -1,8 +1,12 @@
 # UI bridge ownership refactor — move UI tools out of `@boring/agent`
 
-**Status:** review v2 (incorporates Gemini review feedback)
+**Status:** implemented; kept as ownership record
 **Owners:** workspace, agent
-**Last updated:** 2026-04-27
+**Last updated:** 2026-05-01
+
+> Current shared contracts live in `packages/workspace/src/shared/ui-bridge.ts`.
+> Current server wiring lives in `packages/workspace/src/app/createWorkspaceAgentApp.ts`
+> and `packages/workspace/src/server/ui-control`.
 
 ## Problem
 
