@@ -130,6 +130,13 @@
   font-family: var(--font-mono);
   font-feature-settings: "ss02", "ss03", "zero";
 }
+[data-boring-agent] input,
+[data-boring-agent] textarea,
+[data-boring-agent] select,
+[data-boring-agent] button {
+  color: var(--foreground);
+  font: inherit;
+}
 
 /*
  * Streamdown's Shiki highlighting sets per-token CSS custom properties
