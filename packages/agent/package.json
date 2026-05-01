@@ -44,6 +44,7 @@
     "eval": "tsx ./scripts/eval.ts",
     "eval:provisioning": "tsx ./scripts/eval-provisioning-sdk.mts",
     "eval:provisioning:agent": "tsx ./scripts/eval-provisioning-agent.mts",
+    "eval:provisioning:agent:vercel": "tsx ./scripts/eval-provisioning-agent-vercel.mts",
     "check:isolation": "tsx ./scripts/check-agent-isolation.ts",
     "pi-sdk:canary": "./scripts/pi-sdk-canary.sh",
     "typecheck": "tsc --noEmit",

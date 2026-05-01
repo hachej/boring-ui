@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "boring-agent-provisioning-test-sdk"
 version = "0.1.0"
 description = "Fixture SDK used by @boring/agent provisioning evals"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = []
 
 [project.scripts]
