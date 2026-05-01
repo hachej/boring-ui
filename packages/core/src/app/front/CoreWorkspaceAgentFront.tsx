@@ -73,10 +73,14 @@ function WorkspaceRoute<
   const workspaceId = params[workspaceIdParam]?.trim()
   if (!workspaceId) return <>{loadingFallback}</>
 
+  const workspaceHeader = { 'x-boring-workspace-id': workspaceId }
+
   return (
     <WorkspaceAgentFront
       {...workspaceProps}
       workspaceId={workspaceId}
+      requestHeaders={{ ...workspaceProps.requestHeaders, ...workspaceHeader }}
+      authHeaders={{ ...workspaceProps.authHeaders, ...workspaceHeader }}
     />
   )
 }
