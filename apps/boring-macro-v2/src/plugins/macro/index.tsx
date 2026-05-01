@@ -1,14 +1,15 @@
 "use client"
 import type { ComponentType } from "react"
 import {
-  appendDataCatalogOutputs,
+  composePlugins,
+  createExplorerPlugin,
   defineFrontPlugin,
   type ExplorerRow,
   type WorkspaceFrontPlugin,
 } from "@boring/workspace"
 import { LineChart, Search, TrendingUp, Presentation } from "lucide-react"
 import { chartCanvasPanel, deckPanel } from "./panels"
-import { createMacroSeriesDataCatalogOptions } from "./catalogs"
+import { createMacroSeriesExplorerOptions } from "./catalogs"
 import { macroSurfaceOutputs } from "./surfaceResolver"
 import { MACRO_PLUGIN_ID } from "./constants"
 import { openSeriesPane } from "./data/macroSeriesUi"
@@ -70,17 +71,28 @@ export const macroShellOptions = {
 export function makeMacroClientPlugin(
   onSeriesSelect: (row: ExplorerRow) => void = (row) => openSeriesPane(row.id),
 ): WorkspaceFrontPlugin {
-  const plugin = defineFrontPlugin({
-    id: MACRO_PLUGIN_ID,
-    label: "Macro",
+  const macroPanelsPlugin = defineFrontPlugin({
+    id: `${MACRO_PLUGIN_ID}:panels`,
     outputs: [
       { type: "panel", panel: chartCanvasPanel },
       { type: "panel", panel: deckPanel },
-      ...macroSurfaceOutputs,
     ],
   })
 
-  return appendDataCatalogOutputs(plugin, createMacroSeriesDataCatalogOptions(onSeriesSelect))
+  const macroSurfacesPlugin = defineFrontPlugin({
+    id: `${MACRO_PLUGIN_ID}:surfaces`,
+    outputs: macroSurfaceOutputs,
+  })
+
+  const macroSeriesCatalogPlugin = createExplorerPlugin(
+    createMacroSeriesExplorerOptions(onSeriesSelect),
+  )
+
+  return composePlugins({
+    id: MACRO_PLUGIN_ID,
+    label: "Macro",
+    plugins: [macroPanelsPlugin, macroSurfacesPlugin, macroSeriesCatalogPlugin],
+  })
 }
 
 export const macroPlugin = makeMacroClientPlugin()
