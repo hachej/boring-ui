@@ -442,6 +442,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@boring/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@boring/workspace':
         specifier: workspace:*
         version: link:../workspace

@@ -13,6 +13,8 @@
     "paths": {
       "@boring/core/server": ["src/server/index.ts"],
       "@boring/core/server/db": ["src/server/db/index.ts"],
+      "@boring/core/app/server": ["src/app/server/index.ts"],
+      "@boring/core/app/front": ["src/app/front/index.ts"],
       "@boring/core/front": ["src/front/index.ts"],
       "@boring/core/shared": ["src/shared/index.ts"]
     },
