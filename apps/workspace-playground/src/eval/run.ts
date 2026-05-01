@@ -4,13 +4,13 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { runEvalSuite } from "@boring/agent/eval"
-import { createWorkspaceAgentApp } from "../../../packages/workspace/src/app"
+import { createWorkspaceAgentServer } from "@boring/workspace/app/server"
+import { createPlaygroundDataServerPlugin } from "../plugins/playgroundDataCatalog/server"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const APP_ROOT = resolve(__dirname, "..")
+const APP_ROOT = resolve(__dirname, "../..")
 const FIXTURES_ROOT = resolve(APP_ROOT, "src/fixtures")
-const TEMPLATE_ROOT = resolve(APP_ROOT, "workspace-template")
 
 function seedWorkspace(): string {
   const root = mkdtempSync(join(tmpdir(), "workspace-playground-eval-"))
@@ -20,18 +20,18 @@ function seedWorkspace(): string {
 
 async function main(): Promise<number> {
   const fixturesPath = resolve(
-    process.argv[2] ?? join(APP_ROOT, "eval", "woreplace-skill.yaml"),
+    process.argv[2] ?? join(APP_ROOT, "src/eval", "woreplace-skill.yaml"),
   )
   console.log(`[workspace-playground eval] running suite: ${fixturesPath}`)
 
   const workspaceRoot = seedWorkspace()
   console.log(`[workspace-playground eval] seeded workspace: ${workspaceRoot}`)
 
-  const app = await createWorkspaceAgentApp({
+  const app = await createWorkspaceAgentServer({
     workspaceRoot,
-    templatePath: TEMPLATE_ROOT,
     mode: "local",
     logger: false,
+    plugins: [createPlaygroundDataServerPlugin({ workspaceRoot })],
   })
 
   try {

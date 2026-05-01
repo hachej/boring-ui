@@ -250,9 +250,9 @@ export const showcaseMessages = [
  * Call once on mount in showcase mode; ChatPanel then renders the fixture
  * with no network round-trip.
  */
-export function seedShowcase() {
+export function seedShowcase(sessionId = SHOWCASE_SESSION_ID) {
   try {
-    localStorage.setItem(`boring-agent:messages:${SHOWCASE_SESSION_ID}`, JSON.stringify(showcaseMessages))
+    localStorage.setItem(`boring-agent:messages:${sessionId}`, JSON.stringify(showcaseMessages))
   } catch {
     /* noop — quota or disabled storage */
   }
