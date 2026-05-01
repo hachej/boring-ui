@@ -40,6 +40,7 @@ export type {
   ExpectedCall,
   EvalAnyType,
   EvalRegexMatcher,
+  EvalModelSelection,
   EvalPromptOptions,
   EvalResult,
   SuiteOptions,

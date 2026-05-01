@@ -261,7 +261,8 @@ function parseModelString(input: string | { provider: string; id: string }): {
   if (typeof input === "object") return input
   if (input.startsWith("claude-")) return { provider: "anthropic", id: input }
   if (input.startsWith("gpt-")) return { provider: "openai", id: input }
-  // Fall back to anthropic if we can't tell — most likely correct given
-  // our default lineage.
+  if (input.startsWith("qwen/")) return { provider: "openrouter", id: input }
+  // Preserve the historical fallback for bare model ids; new eval defaults
+  // use the explicit { provider, id } shape instead of relying on this path.
   return { provider: "anthropic", id: input }
 }

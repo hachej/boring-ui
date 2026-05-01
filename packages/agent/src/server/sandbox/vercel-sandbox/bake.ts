@@ -17,6 +17,7 @@ interface SnapshotCacheEntry {
   runtime: string
   pythonPackages: string[]
   systemPackages: string[]
+  setupCommands: string[]
   createdAt: string
   updatedAt: string
 }
@@ -76,6 +77,7 @@ export interface SnapshotBakeOptions {
   client: VercelBakeClient
   pythonPackages?: readonly string[]
   systemPackages?: readonly string[]
+  setupCommands?: readonly string[]
   snapshotId?: string
   runtime?: string
   cachePath?: string
@@ -89,6 +91,13 @@ function normalizePackages(packages: readonly string[] | undefined): string[] {
     .map((value) => value.trim())
     .filter((value) => value.length > 0)
     .sort()
+}
+
+function normalizeSetupCommands(commands: readonly string[] | undefined): string[] {
+  if (!commands) return []
+  return commands
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
 }
 
 function shellQuote(value: string): string {
@@ -208,6 +217,23 @@ export function buildPackageHash(input: {
     .digest('hex')
 }
 
+export function buildSnapshotRecipeHash(input: {
+  runtime?: string
+  pythonPackages?: readonly string[]
+  systemPackages?: readonly string[]
+  setupCommands?: readonly string[]
+}): string {
+  const normalized = {
+    runtime: input.runtime?.trim() || DEFAULT_RUNTIME,
+    pythonPackages: normalizePackages(input.pythonPackages),
+    systemPackages: normalizePackages(input.systemPackages),
+    setupCommands: normalizeSetupCommands(input.setupCommands),
+  }
+  return createHash('sha256')
+    .update(JSON.stringify(normalized))
+    .digest('hex')
+}
+
 export async function bakeSnapshotIfNeeded(
   opts: SnapshotBakeOptions,
 ): Promise<SnapshotBakeResult> {
@@ -222,7 +248,8 @@ export async function bakeSnapshotIfNeeded(
 
   const pythonPackages = normalizePackages(opts.pythonPackages)
   const systemPackages = normalizePackages(opts.systemPackages)
-  if (pythonPackages.length === 0 && systemPackages.length === 0) {
+  const setupCommands = normalizeSetupCommands(opts.setupCommands)
+  if (pythonPackages.length === 0 && systemPackages.length === 0 && setupCommands.length === 0) {
     return {
       status: 'skipped',
       reason: 'no-packages',
@@ -231,7 +258,7 @@ export async function bakeSnapshotIfNeeded(
 
   const cachePath = opts.cachePath ?? DEFAULT_CACHE_PATH
   const runtime = opts.runtime?.trim() || DEFAULT_RUNTIME
-  const hash = buildPackageHash({ pythonPackages, systemPackages })
+  const hash = buildSnapshotRecipeHash({ runtime, pythonPackages, systemPackages, setupCommands })
   const cache = await readCache(cachePath)
 
   const cached = cache.entries[hash]
@@ -258,6 +285,9 @@ export async function bakeSnapshotIfNeeded(
         makeInstallCommand('dnf', systemPackages),
       )
     }
+    for (const setupCommand of setupCommands) {
+      await runCheckedCommand(seedSandbox, setupCommand)
+    }
     if (pythonPackages.length > 0) {
       await runCheckedCommand(
         seedSandbox,
@@ -273,6 +303,7 @@ export async function bakeSnapshotIfNeeded(
       runtime,
       pythonPackages,
       systemPackages,
+      setupCommands,
       createdAt: cache.entries[hash]?.createdAt ?? timestamp,
       updatedAt: timestamp,
     }

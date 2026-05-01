@@ -68,6 +68,8 @@ export interface ExpectedCall {
 /**
  * Per-prompt eval options. See `evalAgentPrompt(opts)` in evalPrompt.ts.
  */
+export type EvalModelSelection = string | { provider: string; id: string }
+
 export interface EvalPromptOptions {
   /** A FastifyInstance from createAgentApp / createWorkspaceAgentApp / etc. */
   app: FastifyInstance
@@ -93,7 +95,7 @@ export interface EvalPromptOptions {
    * Model id. Defaults to the agent's pinned model (see evalConfig.ts).
    * Suites typically override at the suite level (in YAML).
    */
-  model?: string
+  model?: EvalModelSelection
   /** Optional system prompt. */
   systemPrompt?: string
   /** Override the chat session id (defaults to a fresh uuid). */
@@ -132,7 +134,7 @@ export interface SuiteOptions {
   /** Suite-level timeout in ms. Default: 5 * 60_000 (5 minutes). */
   suiteTimeoutMs?: number
   /** Override per-prompt model. Useful for ad-hoc model comparison runs. */
-  model?: string
+  model?: EvalModelSelection
 }
 
 export interface SuiteFixturePrompt {
@@ -142,12 +144,12 @@ export interface SuiteFixturePrompt {
   expectNoToolCall?: boolean
   retries?: number
   timeoutMs?: number
-  model?: string
+  model?: EvalModelSelection
 }
 
 export interface SuiteFixture {
   /** Pinned model for the whole suite (each prompt may override). */
-  model?: string
+  model?: EvalModelSelection
   /** System prompt prepended to every prompt in this suite. */
   systemPrompt?: string
   /** Defaults applied to each prompt unless inline-overridden. */

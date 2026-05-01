@@ -5,9 +5,11 @@
 # own suites in their respective packages.
 #
 # Run:  pnpm --filter @boring/agent eval eval/standard-tools.yaml
-# Reqs: ANTHROPIC_API_KEY in env.
+# Reqs: OPENROUTER_API_KEY in env by default.
 
-model: claude-haiku-4-5-20251001
+model:
+  provider: openrouter
+  id: qwen/qwen3.6-plus
 systemPrompt: |
   You are a coding assistant working in the user's project directory.
   You have access to tools for reading, writing, editing files, running
