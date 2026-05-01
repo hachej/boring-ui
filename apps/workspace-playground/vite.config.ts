@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { createWorkspaceAgentApp } from "../../packages/workspace/src/app"
+import { createWorkspaceAgentServer } from "../../packages/workspace/src/app/server"
 import { createPlaygroundDataServerPlugin } from "./src/plugins/playgroundDataCatalog/server"
 
 // The playground is the standalone dev surface for @boring/workspace.
@@ -41,14 +41,14 @@ let agentBoot: Promise<void> | null = null
 async function startAgentApp() {
   if (agentBoot) return agentBoot
   agentBoot = (async () => {
-    // createWorkspaceAgentApp wraps @boring/agent's createAgentApp and
+    // createWorkspaceAgentServer wraps @boring/agent's createAgentApp and
     // additionally registers the UI bridge surface (get_ui_state /
     // exec_ui tools + /api/v1/ui/* routes) plus the file/tree/stat HTTP
     // endpoints the workspace frontend calls. One server, one filesystem,
     // one set of paths — agent and frontend can't drift apart.
     seedWorkspaceFromFixtures()
     const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       templatePath: TEMPLATE_DIR,
       mode: "local",

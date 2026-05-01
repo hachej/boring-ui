@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { runEvalSuite } from "@boring/agent/eval"
-import { createWorkspaceAgentApp } from "../../../packages/workspace/src/app"
+import { createWorkspaceAgentServer } from "../../../packages/workspace/src/app/server"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -27,7 +27,7 @@ async function main(): Promise<number> {
   const workspaceRoot = seedWorkspace()
   console.log(`[workspace-playground eval] seeded workspace: ${workspaceRoot}`)
 
-  const app = await createWorkspaceAgentApp({
+  const app = await createWorkspaceAgentServer({
     workspaceRoot,
     templatePath: TEMPLATE_ROOT,
     mode: "local",
