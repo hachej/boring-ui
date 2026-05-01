@@ -16,10 +16,10 @@
   },
   "include": [
     "src/server/**/*",
-    "src/app/**/*",
+    "src/app/server/**/*",
     "src/shared/**/*",
     "src/plugins/**/server/**/*",
     "src/plugins/**/constants.ts"
   ],
-  "exclude": ["node_modules", "dist", "src/shared/plugins/**"]
+  "exclude": ["node_modules", "dist", "src/app/front/**", "src/shared/plugins/**"]
 }

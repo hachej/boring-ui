@@ -1,7 +1,6 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { useTopBarSlot } from "@boring/core/front/top-bar-slot"
 import { Plus, Search } from "lucide-react"
 import { cn } from "../lib/utils"
 
@@ -30,8 +29,7 @@ export function TopBar({
   topBarRight,
   className,
 }: TopBarProps) {
-  const slot = useTopBarSlot()
-  const right = topBarRight ?? slot ?? null
+  const right = topBarRight ?? null
 
   return (
     <header

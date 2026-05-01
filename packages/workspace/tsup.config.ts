@@ -4,7 +4,7 @@ const PEER_EXTERNALS = ["react", "react-dom", "react/jsx-runtime"]
 
 export default defineConfig({
   entry: {
-    app: "src/app/index.ts",
+    "app-server": "src/app/server/index.ts",
     server: "src/server/index.ts",
     shared: "src/shared/index.ts",
     events: "src/front/events/index.ts",
@@ -13,7 +13,7 @@ export default defineConfig({
   dts: {
     resolve: false,
     entry: {
-      app: "src/app/index.ts",
+      "app-server": "src/app/server/index.ts",
       server: "src/server/index.ts",
       shared: "src/shared/index.ts",
       events: "src/front/events/index.ts",

@@ -23,10 +23,15 @@
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"
     },
-    "./app": {
-      "types": "./dist/app.d.ts",
-      "import": "./dist/app.js",
-      "default": "./dist/app.js"
+    "./app/front": {
+      "types": "./dist/app-front.d.ts",
+      "import": "./dist/app-front.js",
+      "default": "./dist/app-front.js"
+    },
+    "./app/server": {
+      "types": "./dist/app-server.d.ts",
+      "import": "./dist/app-server.js",
+      "default": "./dist/app-server.js"
     },
     "./server": {
       "types": "./dist/server.d.ts",
@@ -71,7 +76,6 @@
   },
   "dependencies": {
     "@boring/agent": "workspace:*",
-    "@boring/core": "workspace:*",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",

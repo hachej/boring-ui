@@ -1,5 +1,5 @@
 /**
- * Integration tests for createWorkspaceAgentApp — the wrapper that
+ * Integration tests for createWorkspaceAgentServer — the wrapper that
  * registers the UI bridge surface on top of @boring/agent's createAgentApp.
  *
  * Migrated from packages/agent/src/server/__tests__/createAgentApp.test.ts
@@ -11,8 +11,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, describe } from "vitest"
-import { createWorkspaceAgentApp } from "../../app/createWorkspaceAgentApp"
-import * as appApi from "../../app"
+import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
+import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
 
 const tempDirs: string[] = []
@@ -29,15 +29,15 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-describe("createWorkspaceAgentApp — UI bridge wiring", () => {
+describe("createWorkspaceAgentServer — UI bridge wiring", () => {
   test("is exported from the app entry, not the server entry", () => {
-    expect(appApi.createWorkspaceAgentApp).toBe(createWorkspaceAgentApp)
-    expect("createWorkspaceAgentApp" in serverApi).toBe(false)
+    expect(appServerApi.createWorkspaceAgentServer).toBe(createWorkspaceAgentServer)
+    expect("createWorkspaceAgentServer" in serverApi).toBe(false)
   })
 
   test("registers get_ui_state and exec_ui in the catalog", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-uitools-")
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,
@@ -55,7 +55,7 @@ describe("createWorkspaceAgentApp — UI bridge wiring", () => {
 
   test("PUT /api/v1/ui/state is round-tripped by GET", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-roundtrip-")
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,
@@ -96,7 +96,7 @@ describe("createWorkspaceAgentApp — UI bridge wiring", () => {
     // and the frontend would drain a different (always-empty) queue. This
     // test proves they share by going through both surfaces.
     const workspaceRoot = await makeTempDir("boring-workspace-cmds-")
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,
@@ -135,7 +135,7 @@ describe("createWorkspaceAgentApp — UI bridge wiring", () => {
   })
 })
 
-describe("createWorkspaceAgentApp — plugin model (j9p7.11)", () => {
+describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
   test("plugin agentTools appear in the tool catalog", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-plugins-")
     const domainTool = {
@@ -146,7 +146,7 @@ describe("createWorkspaceAgentApp — plugin model (j9p7.11)", () => {
         return { content: [{ type: "text" as const, text: "ok" }] }
       },
     }
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,
@@ -175,7 +175,7 @@ describe("createWorkspaceAgentApp — plugin model (j9p7.11)", () => {
         return { content: [{ type: "text" as const, text: "plugin-ok" }] }
       },
     }
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,
@@ -194,7 +194,7 @@ describe("createWorkspaceAgentApp — plugin model (j9p7.11)", () => {
 
   test("excludeDefaults does not remove harness file tools", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-exclude-")
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,
@@ -215,7 +215,7 @@ describe("createWorkspaceAgentApp — plugin model (j9p7.11)", () => {
 
   test("/api/v1/files/search responds regardless of excludeDefaults", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-search-")
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,
@@ -233,7 +233,7 @@ describe("createWorkspaceAgentApp — plugin model (j9p7.11)", () => {
   })
 })
 
-describe("createWorkspaceAgentApp — extraTools merge", () => {
+describe("createWorkspaceAgentServer — extraTools merge", () => {
   // Pins the wrapper's tool-merge contract: host-provided extraTools must
   // appear in the catalog ALONGSIDE the workspace UI tools, neither side
   // overwriting the other (assuming no name collisions). Per the wrapper's
@@ -250,7 +250,7 @@ describe("createWorkspaceAgentApp — extraTools merge", () => {
         return { content: [{ type: "text" as const, text: "host" }] }
       },
     }
-    const app = await createWorkspaceAgentApp({
+    const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "direct",
       logger: false,

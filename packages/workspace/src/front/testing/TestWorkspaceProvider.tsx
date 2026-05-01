@@ -7,7 +7,7 @@ import {
 } from "react"
 import { DataProvider } from "../../plugins/filesystemPlugin/data/DataProvider"
 import type { PanelRegistry } from "../registry/PanelRegistry"
-import { WorkspaceProvider } from "../provider"
+import { WorkspaceProvider } from "../provider/WorkspaceProvider"
 import { createMockRegistry } from "./createMockRegistry"
 import { createMockApiFetch, type MockDataFixtures } from "./mockApi"
 
