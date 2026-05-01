@@ -30,7 +30,7 @@ export function WorkspaceLoadingState({
         <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card text-foreground">
           <span
             aria-hidden="true"
-            className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/25 border-t-muted-foreground motion-reduce:animate-none"
+            className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent opacity-70"
           />
         </div>
         <div className="space-y-2">
