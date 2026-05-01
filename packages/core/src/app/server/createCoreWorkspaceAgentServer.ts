@@ -1,0 +1,436 @@
+import { access, readFile, stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import path from 'node:path'
+
+import {
+  provisionRuntimeWorkspace,
+  registerAgentRoutes,
+  type RegisterAgentRoutesOptions,
+  type RuntimeProvisioningContribution,
+} from '@boring/agent/server'
+import {
+  createWorkspaceAgentServerBindings,
+  type CreateWorkspaceAgentServerOptions,
+} from '@boring/workspace/app/server'
+import { uiRoutes } from '@boring/workspace/server'
+import type { FastifyInstance } from 'fastify'
+import type postgres from 'postgres'
+import type { CoreConfig } from '../../shared/types.js'
+import {
+  authHook,
+  createAuth,
+  type BetterAuthInstance,
+} from '../../server/auth/index.js'
+import {
+  createCoreApp,
+  registerRoutes,
+  type UserStore,
+  type WorkspaceStore,
+} from '../../server/app/index.js'
+import {
+  registerInviteRoutes,
+  registerMemberRoutes,
+  registerSettingsRoutes,
+  registerWorkspaceRoutes,
+} from '../../server/routes/index.js'
+import {
+  createDatabase,
+  PostgresUserStore,
+  PostgresWorkspaceStore,
+  type Database,
+} from '../../server/db/index.js'
+import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
+
+const MIME_TYPES: Record<string, string> = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+}
+
+const AUTH_PROXY_BLOCKED_RESPONSE_HEADERS = new Set([
+  'connection',
+  'content-encoding',
+  'content-length',
+  'keep-alive',
+  'transfer-encoding',
+])
+
+const FRONTEND_AUTH_PAGES = new Set([
+  '/auth/signin',
+  '/auth/signup',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/verify-email',
+  '/auth/callback/github',
+])
+
+export type CoreWorkspaceAgentServer = FastifyInstance & {
+  auth: BetterAuthInstance
+  db: Database
+  userStore: UserStore
+  workspaceStore: WorkspaceStore
+}
+
+export type CoreWorkspaceAgentServerPlugin =
+  NonNullable<CreateWorkspaceAgentServerOptions['plugins']>[number] & {
+    provisioning?: RuntimeProvisioningContribution
+  }
+
+export interface CreateCoreWorkspaceAgentServerOptions
+  extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {
+  appRoot?: string
+  config?: CoreConfig
+  loadConfigOptions?: LoadConfigOptions
+  plugins?: CoreWorkspaceAgentServerPlugin[]
+  excludeDefaults?: CreateWorkspaceAgentServerOptions['excludeDefaults']
+  forceProvisioning?: boolean
+  extraTools?: RegisterAgentRoutesOptions['extraTools']
+  systemPromptAppend?: string
+  serveFrontend?: boolean
+}
+
+function contentType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase()
+  return MIME_TYPES[ext] ?? 'application/octet-stream'
+}
+
+function injectCspNonceIntoHtml(html: string, nonce: string | undefined): string {
+  if (!nonce) return html
+
+  const metaTag = `<meta name="boring-csp-nonce" content="${nonce}" />`
+  const withMeta = html.includes('</head>')
+    ? html.replace('</head>', `  ${metaTag}\n</head>`)
+    : `${metaTag}\n${html}`
+
+  return withMeta
+    .replace(/<script(?![^>]*\bnonce=)/g, `<script nonce="${nonce}"`)
+    .replace(/<style(?![^>]*\bnonce=)/g, `<style nonce="${nonce}"`)
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function pathIsFile(filePath: string): Promise<boolean> {
+  try {
+    const info = await stat(filePath)
+    return info.isFile()
+  } catch {
+    return false
+  }
+}
+
+function toHeaders(
+  source: Record<string, string | string[] | undefined>,
+): Headers {
+  const headers = new Headers()
+
+  for (const [key, value] of Object.entries(source)) {
+    if (!value) continue
+    headers.set(key, Array.isArray(value) ? value[0] : value)
+  }
+
+  return headers
+}
+
+function extractSetCookies(headers: Headers): string[] {
+  const withGetSetCookie = headers as Headers & { getSetCookie?: () => string[] }
+  if (typeof withGetSetCookie.getSetCookie === 'function') {
+    return withGetSetCookie.getSetCookie()
+  }
+
+  const value = headers.get('set-cookie')
+  return value ? [value] : []
+}
+
+function encodeAuthRequestBody(
+  request: {
+    method: string
+    body?: unknown
+    headers?: Record<string, string | string[] | undefined>
+  },
+): string | Uint8Array | URLSearchParams | undefined {
+  const isBodyless = request.method === 'GET' || request.method === 'HEAD'
+  if (isBodyless) return undefined
+
+  const bodyValue = request.body
+  if (bodyValue == null) return undefined
+  if (typeof bodyValue === 'string') return bodyValue
+  if (bodyValue instanceof Uint8Array) return bodyValue
+  if (bodyValue instanceof URLSearchParams) return bodyValue
+
+  const requestContentType = String(request.headers?.['content-type'] ?? '').toLowerCase()
+  if (requestContentType.includes('application/x-www-form-urlencoded')) {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(bodyValue as Record<string, unknown>)) {
+      if (value == null) continue
+      params.append(key, String(value))
+    }
+    return params
+  }
+
+  return JSON.stringify(bodyValue)
+}
+
+function shouldServeFrontend(pathname: string): boolean {
+  if (pathname === '/health') return false
+  if (pathname.startsWith('/api/')) return false
+  if (FRONTEND_AUTH_PAGES.has(pathname)) return true
+  if (pathname === '/auth') return false
+  if (pathname.startsWith('/auth/')) return false
+  return true
+}
+
+async function registerAuthProxy(app: CoreWorkspaceAgentServer) {
+  app.all('/auth/*', async (request, reply) => {
+    const accept = String(request.headers?.accept ?? '')
+    if (request.method === 'GET' && accept.includes('text/html')) {
+      return reply.callNotFound()
+    }
+
+    const body = encodeAuthRequestBody(request)
+    const targetUrl = new URL(request.url, app.config.auth.url).toString()
+
+    const response = await app.auth.handler(
+      new Request(targetUrl, {
+        method: request.method,
+        headers: toHeaders(request.headers),
+        body: body as BodyInit | undefined,
+      }),
+    )
+
+    for (const [key, value] of response.headers.entries()) {
+      const lowered = key.toLowerCase()
+      if (lowered === 'set-cookie') continue
+      if (AUTH_PROXY_BLOCKED_RESPONSE_HEADERS.has(lowered)) continue
+      reply.header(key, value)
+    }
+
+    const setCookies = extractSetCookies(response.headers)
+    if (setCookies.length > 0) {
+      reply.header('set-cookie', setCookies.length === 1 ? setCookies[0] : setCookies)
+    }
+
+    reply.status(response.status)
+    const responseBody = Buffer.from(await response.arrayBuffer())
+    reply.send(responseBody)
+  })
+}
+
+async function registerFrontendAuthPages(
+  app: CoreWorkspaceAgentServer,
+  appRoot: string,
+) {
+  const frontDistDir = path.resolve(appRoot, 'dist/front')
+  const indexPath = path.resolve(frontDistDir, 'index.html')
+
+  for (const pagePath of FRONTEND_AUTH_PAGES) {
+    app.get(pagePath, async (request, reply) => {
+      if (!(await pathExists(indexPath))) {
+        reply.status(503)
+        return {
+          error: 'frontend_not_built',
+          message: 'Build the frontend before starting in production mode.',
+        }
+      }
+      const html = await readFile(indexPath, 'utf-8')
+      reply.type('text/html; charset=utf-8')
+      return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
+    })
+  }
+}
+
+async function registerFrontendFallback(
+  app: CoreWorkspaceAgentServer,
+  appRoot: string,
+) {
+  const frontDistDir = path.resolve(appRoot, 'dist/front')
+  const indexPath = path.resolve(frontDistDir, 'index.html')
+
+  app.get('/', async (request, reply) => {
+    if (!(await pathExists(indexPath))) {
+      reply.status(503)
+      return {
+        error: 'frontend_not_built',
+        message: 'Build the frontend before starting in production mode.',
+      }
+    }
+
+    const html = await readFile(indexPath, 'utf-8')
+    reply.type('text/html; charset=utf-8')
+    return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
+  })
+
+  app.get('/*', async (request, reply) => {
+    const pathname = request.url.split('?')[0] ?? '/'
+    if (!shouldServeFrontend(pathname)) return reply.callNotFound()
+
+    const candidate = path.resolve(frontDistDir, `.${pathname}`)
+    const withinDist =
+      candidate === frontDistDir ||
+      candidate.startsWith(`${frontDistDir}${path.sep}`)
+    if (!withinDist) {
+      reply.status(400)
+      return { error: 'invalid_path' }
+    }
+
+    if (await pathIsFile(candidate)) {
+      reply.type(contentType(candidate))
+      return reply.send(createReadStream(candidate))
+    }
+
+    if (!(await pathExists(indexPath))) {
+      reply.status(503)
+      return {
+        error: 'frontend_not_built',
+        message: 'Build the frontend before starting in production mode.',
+      }
+    }
+
+    const html = await readFile(indexPath, 'utf-8')
+    reply.type('text/html; charset=utf-8')
+    return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
+  })
+}
+
+async function createCoreRuntime(config: CoreConfig): Promise<{
+  app: CoreWorkspaceAgentServer
+  sql: postgres.Sql
+  db: Database
+  userStore: UserStore
+  workspaceStore: WorkspaceStore
+}> {
+  if (config.stores !== 'postgres') {
+    throw new Error('createCoreWorkspaceAgentServer currently supports only CORE_STORES=postgres')
+  }
+
+  const { db, sql } = createDatabase(config)
+  const storeDb = db as unknown as ConstructorParameters<typeof PostgresUserStore>[0]
+  const userStore = new PostgresUserStore(storeDb)
+  const workspaceStore = new PostgresWorkspaceStore(
+    storeDb,
+    config.encryption.workspaceSettingsKey,
+  )
+
+  const app = await createCoreApp(config) as CoreWorkspaceAgentServer
+  const auth = createAuth(config, db, {
+    workspaceStore,
+    logger: app.log,
+  })
+
+  app.decorate('db', db)
+  app.decorate('auth', auth)
+  app.decorate('userStore', userStore)
+  app.decorate('workspaceStore', workspaceStore)
+
+  app.addHook('onClose', async () => {
+    await sql.end()
+  })
+
+  return { app, sql, db, userStore, workspaceStore }
+}
+
+async function registerCoreRoutes({
+  app,
+  sql,
+  db,
+  userStore,
+  workspaceStore,
+}: {
+  app: CoreWorkspaceAgentServer
+  sql: postgres.Sql
+  db: Database
+  userStore: UserStore
+  workspaceStore: WorkspaceStore
+}) {
+  await app.register(authHook)
+  await app.register(registerRoutes, {
+    sql,
+    db,
+    userStore,
+    workspaceStore,
+  })
+  await app.register(registerWorkspaceRoutes)
+  await app.register(registerMemberRoutes)
+  await app.register(registerSettingsRoutes)
+  await app.register(registerInviteRoutes)
+}
+
+async function provisionWorkspacePlugins(
+  options: CreateCoreWorkspaceAgentServerOptions,
+  workspaceRoot: string,
+) {
+  if (!options.plugins?.some((plugin) => plugin.provisioning)) return
+
+  await provisionRuntimeWorkspace({
+    workspaceRoot,
+    contributions: options.plugins.map((plugin) => ({
+      id: plugin.id,
+      provisioning: plugin.provisioning,
+    })),
+    force: options.forceProvisioning,
+  })
+}
+
+export async function createCoreWorkspaceAgentServer(
+  options: CreateCoreWorkspaceAgentServerOptions = {},
+): Promise<CoreWorkspaceAgentServer> {
+  const config = options.config ?? (await loadConfig({
+    allowMissingSecrets: process.env.NODE_ENV !== 'production',
+    ...options.loadConfigOptions,
+  }))
+  const { app, sql, db, userStore, workspaceStore } = await createCoreRuntime(config)
+  const appRoot = options.appRoot
+  const serveFrontend =
+    options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
+  const workspaceRoot = options.workspaceRoot ?? process.cwd()
+
+  await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
+
+  if (serveFrontend && appRoot) {
+    await registerFrontendAuthPages(app, appRoot)
+  }
+
+  await registerAuthProxy(app)
+
+  await provisionWorkspacePlugins(options, workspaceRoot)
+
+  const bindings = createWorkspaceAgentServerBindings({
+    workspaceRoot,
+    extraTools: options.extraTools,
+    systemPromptAppend: options.systemPromptAppend,
+    plugins: options.plugins,
+  })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    sessionId: options.sessionId,
+    templatePath: options.templatePath,
+    mode: options.mode,
+    version: options.version,
+    extraTools: bindings.agentOptions.extraTools,
+    registerHealthRoute: options.registerHealthRoute ?? false,
+  })
+
+  await app.register(uiRoutes, {
+    bridge: bindings.bridge,
+  })
+
+  if (serveFrontend && appRoot) {
+    await registerFrontendFallback(app, appRoot)
+  }
+
+  return app
+}

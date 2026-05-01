@@ -12,6 +12,14 @@
       "types": "./dist/server/db/index.d.ts",
       "import": "./dist/server/db/index.js"
     },
+    "./app/server": {
+      "types": "./dist/app/server/index.d.ts",
+      "import": "./dist/app/server/index.js"
+    },
+    "./app/front": {
+      "types": "./dist/app/front/index.d.ts",
+      "import": "./dist/app/front/index.js"
+    },
     "./front": {
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
@@ -47,6 +55,7 @@
     "drizzle:migrate": "drizzle-kit migrate --config drizzle.config.ts"
   },
   "dependencies": {
+    "@boring/agent": "workspace:*",
     "@boring/workspace": "workspace:*",
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.1",
