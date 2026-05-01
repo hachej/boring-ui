@@ -47,20 +47,29 @@
 
 .boring-settings-shell {
   height: 100vh;
-  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--canvas, var(--background));
   color: var(--foreground);
+}
+
+.boring-settings-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
 }
 
 .boring-settings-layout {
   box-sizing: border-box;
   width: 100%;
-  max-width: 72rem;
+  max-width: 70rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
-  padding: 1.5rem 1rem;
+  gap: 1.5rem;
+  padding: 1.25rem 1rem 2rem;
 }
 
 .boring-settings-sidebar {
@@ -71,22 +80,89 @@
   min-width: 0;
 }
 
+.boring-settings-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+}
+
+.boring-settings-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--muted) 28%, transparent);
+  padding: 0.75rem;
+}
+
+.boring-settings-nav {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.boring-settings-nav-label {
+  padding: 0 0.5rem 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1rem;
+  color: color-mix(in oklch, var(--muted-foreground) 82%, transparent);
+}
+
+.boring-settings-nav-item {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.boring-settings-nav-item:hover {
+  background: color-mix(in oklch, var(--muted) 34%, transparent);
+  color: var(--foreground);
+}
+
+.boring-settings-action-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--muted) 22%, transparent);
+  padding: 0.75rem;
+}
+
 @media (min-width: 1024px) {
   .boring-settings-layout {
     flex-direction: row;
     align-items: flex-start;
-    padding: 2rem 1.5rem;
+    gap: 2.5rem;
+    padding: 2rem 1.5rem 3rem;
   }
 
   .boring-settings-sidebar {
     position: sticky;
-    top: 5rem;
-    width: 14rem;
-    flex: 0 0 14rem;
+    top: 2rem;
+    width: 13rem;
+    flex: 0 0 13rem;
   }
 
   .boring-settings-content {
     flex: 1 1 auto;
-    max-width: 48rem;
+    max-width: 50rem;
+  }
+
+  .boring-settings-action-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
   }
 }

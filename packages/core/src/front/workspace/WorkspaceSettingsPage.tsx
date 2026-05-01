@@ -27,6 +27,10 @@ import { WORKSPACES_QUERY_KEY, workspaceQueryKey } from '../WorkspaceAuthProvide
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
 import type { WorkspaceRuntime } from '../../shared/types.js'
 
+export interface WorkspaceSettingsPageProps {
+  topBar?: ReactNode
+}
+
 const STATE_STYLES: Record<string, string> = {
   pending: 'border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-200',
   ready: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
@@ -46,8 +50,11 @@ function StateBadge({ state }: { state: string }) {
 
 function SettingsTopBar({ workspaceName }: { workspaceName: string }) {
   return (
-    <header className="sticky top-0 z-20 flex h-[52px] items-center border-b border-border/40 bg-background px-4">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <header
+      className="relative flex h-[52px] items-center justify-between gap-3 border-b border-border/40 bg-background px-4"
+      aria-label="App top bar"
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <div
           aria-hidden="true"
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
@@ -67,6 +74,7 @@ function SettingsTopBar({ workspaceName }: { workspaceName: string }) {
 }
 
 function SettingsPanel({
+  id,
   icon,
   title,
   description,
@@ -75,6 +83,7 @@ function SettingsPanel({
   danger = false,
   testId,
 }: {
+  id: string
   icon: ReactNode
   title: string
   description?: ReactNode
@@ -85,8 +94,9 @@ function SettingsPanel({
 }) {
   return (
     <section
+      id={id}
       data-testid={testId}
-      className="overflow-hidden rounded-lg border border-border/60 bg-background shadow-none"
+      className="scroll-mt-6 overflow-hidden rounded-lg border border-border/60 bg-background shadow-none"
     >
       <div className="flex min-h-11 items-center gap-2 border-b border-border/50 px-4 py-2.5">
         <span className={danger ? 'text-destructive' : 'text-muted-foreground'}>
@@ -108,6 +118,74 @@ function SettingsPanel({
         </div>
       ) : null}
     </section>
+  )
+}
+
+function SettingsNav({
+  label,
+  items,
+}: {
+  label: string
+  items: Array<{ href: string; label: string; description: string }>
+}) {
+  return (
+    <nav aria-label={`${label} sections`} className="boring-settings-nav">
+      <p className="boring-settings-nav-label">{label}</p>
+      {items.map((item) => (
+        <a key={item.href} href={item.href} className="boring-settings-nav-item">
+          <span className="min-w-0">
+            <span className="block truncate text-[12.5px] font-medium text-foreground">{item.label}</span>
+            <span className="block truncate text-[11.5px] leading-4 text-muted-foreground">
+              {item.description}
+            </span>
+          </span>
+        </a>
+      ))}
+    </nav>
+  )
+}
+
+function SettingsPageHeader({
+  workspaceName,
+  workspaceInitial,
+  role,
+  isDefault,
+}: {
+  workspaceName: string
+  workspaceInitial: string
+  role: string | null
+  isDefault: boolean
+}) {
+  return (
+    <header className="boring-settings-page-header">
+      <div className="boring-settings-context">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background">
+          {workspaceInitial}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-medium text-foreground">{workspaceName}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex h-5 items-center rounded border border-border/60 px-1.5 text-[11px] text-muted-foreground">
+              {roleLabel(role)}
+            </span>
+            {isDefault ? (
+              <span className="inline-flex h-5 items-center rounded border border-border/60 px-1.5 text-[11px] text-muted-foreground">
+                Default
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="max-w-2xl">
+        <p className="text-[11px] font-medium uppercase leading-4 text-muted-foreground">Workspace</p>
+        <h1 className="mt-1 text-[20px] font-semibold leading-7 tracking-tight text-foreground">
+          Workspace settings
+        </h1>
+        <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+          Manage workspace identity, runtime recovery, and irreversible workspace actions.
+        </p>
+      </div>
+    </header>
   )
 }
 
@@ -133,12 +211,38 @@ function FieldNote({ children }: { children: ReactNode }) {
   return <p className="text-[12px] leading-5 text-muted-foreground">{children}</p>
 }
 
+function ActionRow({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description: ReactNode
+  action: ReactNode
+}) {
+  return (
+    <div className="boring-settings-action-row">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium leading-5 text-foreground">{title}</p>
+        <p className="mt-1 max-w-xl text-[12px] leading-5 text-muted-foreground">{description}</p>
+      </div>
+      <div className="shrink-0">{action}</div>
+    </div>
+  )
+}
+
 function roleLabel(role: string | null): string {
   if (!role) return 'Loading role'
   return role.charAt(0).toUpperCase() + role.slice(1)
 }
 
-export function WorkspaceSettingsPage() {
+const WORKSPACE_NAV_ITEMS = [
+  { href: '#general', label: 'General', description: 'Name and access' },
+  { href: '#runtime', label: 'Runtime', description: 'Provisioning state' },
+  { href: '#danger-zone', label: 'Danger zone', description: 'Permanent actions' },
+]
+
+export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {}) {
   const workspace = useCurrentWorkspace()
   const role = useWorkspaceRole()
   const queryClient = useQueryClient()
@@ -249,47 +353,31 @@ export function WorkspaceSettingsPage() {
   const nameChanged = nameValue !== null && nameValue.trim() !== workspace?.name
   const canEditName = role !== 'viewer'
   const canDeleteWorkspace = role === 'owner' || role === null
+  const workspaceName = workspace?.name ?? 'Workspace'
+  const workspaceInitial = (workspace?.name?.trim()?.[0] ?? 'W').toUpperCase()
+  const topBarNode = topBar === undefined ? <SettingsTopBar workspaceName={workspaceName} /> : topBar
+  const navItems = hasRuntime
+    ? WORKSPACE_NAV_ITEMS
+    : WORKSPACE_NAV_ITEMS.filter((item) => item.href !== '#runtime')
 
   return (
     <main className="boring-settings-shell">
-      <SettingsTopBar workspaceName={workspace?.name ?? 'Workspace'} />
-      <div className="boring-settings-layout">
-        <aside className="boring-settings-sidebar">
-          <div className="rounded-lg border border-border/60 bg-background p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background">
-              {(workspace?.name?.trim()?.[0] ?? 'W').toUpperCase()}
-            </div>
-            <div className="mt-4 space-y-1">
-              <h1 className="text-[15px] font-semibold leading-5 tracking-tight">Workspace settings</h1>
-              <p className="text-[12.5px] leading-5 text-muted-foreground">
-                Identity, runtime state, and destructive workspace actions.
-              </p>
-            </div>
-            <div className="mt-4 rounded-md border border-border/50 bg-muted/10 p-3">
-              <p className="truncate text-[13px] font-medium">{workspace?.name ?? 'Loading workspace'}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="inline-flex h-6 items-center rounded-md border border-border/60 px-2 text-[12px] text-muted-foreground">
-                  {roleLabel(role)}
-                </span>
-                {workspace?.isDefault ? (
-                  <span className="inline-flex h-6 items-center rounded-md border border-border/60 px-2 text-[12px] text-muted-foreground">
-                    Default
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <div className="mt-4 divide-y divide-border/50 rounded-md border border-border/50 bg-muted/10">
-              {['General', 'Runtime', 'Deletion'].map((item) => (
-                <div key={item} className="flex h-9 items-center px-3 text-[12px] text-muted-foreground">
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
+      {topBarNode}
+      <div className="boring-settings-scroll">
+        <div className="boring-settings-layout">
+          <aside className="boring-settings-sidebar">
+            <SettingsNav label="Workspace settings" items={navItems} />
+          </aside>
 
-        <div className="boring-settings-content space-y-4">
+          <div className="boring-settings-content space-y-4">
+            <SettingsPageHeader
+              workspaceName={workspaceName}
+              workspaceInitial={workspaceInitial}
+              role={role}
+              isDefault={Boolean(workspace?.isDefault)}
+            />
           <SettingsPanel
+            id="general"
             icon={<Settings2 className="h-3.5 w-3.5" aria-hidden="true" />}
             title="General"
             description="Keep the workspace name clear enough to scan in menus."
@@ -344,6 +432,7 @@ export function WorkspaceSettingsPage() {
 
           {hasRuntime && (
             <SettingsPanel
+              id="runtime"
               testId="runtime-card"
               icon={<HardDrive className="h-3.5 w-3.5" aria-hidden="true" />}
               title="Runtime"
@@ -403,6 +492,7 @@ export function WorkspaceSettingsPage() {
           )}
 
           <SettingsPanel
+            id="danger-zone"
             testId="danger-zone"
             icon={<ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />}
             title="Danger zone"
@@ -416,6 +506,10 @@ export function WorkspaceSettingsPage() {
                   Only workspace owners can delete this workspace.
                 </div>
               ) : null}
+              <ActionRow
+                title="Delete workspace"
+                description="Delete the workspace record and re-issue cleanup for provisioned runtime data."
+                action={(
               <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <Button
                   variant="destructive"
@@ -458,8 +552,11 @@ export function WorkspaceSettingsPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+                )}
+              />
             </div>
           </SettingsPanel>
+          </div>
         </div>
       </div>
     </main>

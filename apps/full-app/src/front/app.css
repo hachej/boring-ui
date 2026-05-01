@@ -1,6 +1,6 @@
 @import "tailwindcss";
-@source "../../../packages/workspace/src";
-@source "../../../packages/core/src";
+@source "../../../../packages/workspace/src";
+@source "../../../../packages/core/src";
 
 html,
 body,

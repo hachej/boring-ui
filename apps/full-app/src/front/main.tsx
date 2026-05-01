@@ -5,7 +5,8 @@ import { ChatPanel } from '@boring/agent'
 import {
   BoringApp,
   UserMenu,
-  WorkspaceSettingsPage,
+  UserSettingsPage as CoreUserSettingsPage,
+  WorkspaceSettingsPage as CoreWorkspaceSettingsPage,
   WorkspaceSwitcher,
   useCoreCommands,
   useCurrentWorkspace,
@@ -50,6 +51,33 @@ const panels: PanelConfig[] = [
 ]
 
 const layoutStorageKey = 'boring-ui-v2:layout:full-app'
+
+function AppTopBar({
+  sessionTitle,
+  onNewChat,
+}: {
+  sessionTitle?: string
+  onNewChat?: () => void
+}) {
+  return (
+    <TopBar
+      appTitle="Boring"
+      sessionTitle={sessionTitle}
+      onCommandPalette={openCommandPalette}
+      onNewChat={onNewChat}
+      topBarLeft={<WorkspaceSwitcher workspacePathPrefix="/workspace" />}
+      topBarRight={<UserMenu />}
+    />
+  )
+}
+
+function AppUserSettingsPage() {
+  return <CoreUserSettingsPage topBar={<AppTopBar />} />
+}
+
+function AppWorkspaceSettingsPage() {
+  return <CoreWorkspaceSettingsPage topBar={<AppTopBar />} />
+}
 
 function isShowcaseRoute(): boolean {
   if (typeof window === 'undefined') return false
@@ -185,22 +213,9 @@ function Shell({ workspaceId }: { workspaceId: string }) {
     }
   }, [pushUiState])
 
-  const openCommandPalette = useCallback(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true, bubbles: true }),
-    )
-  }, [])
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <TopBar
-        appTitle="Boring"
-        sessionTitle={activeSession?.title}
-        onCommandPalette={openCommandPalette}
-        onNewChat={handleCreateSession}
-        topBarLeft={<WorkspaceSwitcher workspacePathPrefix="/workspace" />}
-        topBarRight={<UserMenu />}
-      />
+      <AppTopBar sessionTitle={activeSession?.title} onNewChat={handleCreateSession} />
       <div className="min-h-0 flex-1">
         <ChatLayout
           nav={drawerOpen ? 'session-list' : ''}
@@ -241,6 +256,12 @@ function Shell({ workspaceId }: { workspaceId: string }) {
         />
       </div>
     </div>
+  )
+}
+
+function openCommandPalette() {
+  document.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true, bubbles: true }),
   )
 }
 
@@ -295,9 +316,9 @@ function HomeRedirect() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <BoringApp>
+  <BoringApp authPages={{ userSettings: AppUserSettingsPage }}>
     <Route path="/" element={<HomeRedirect />} />
     <Route path="/workspace/:id" element={<WorkspaceRoute />} />
-    <Route path="/workspace/:id/settings" element={<WorkspaceSettingsPage />} />
+    <Route path="/workspace/:id/settings" element={<AppWorkspaceSettingsPage />} />
   </BoringApp>,
 )

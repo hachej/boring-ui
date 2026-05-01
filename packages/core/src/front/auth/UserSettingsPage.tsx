@@ -42,6 +42,10 @@ const changePasswordSchema = z
 
 type ChangePasswordData = z.infer<typeof changePasswordSchema>
 
+export interface UserSettingsPageProps {
+  topBar?: ReactNode
+}
+
 function initialsFor(name: string | null | undefined, email: string): string {
   const source = name?.trim() ? name : email
   return source
@@ -64,8 +68,11 @@ function formatMemberSince(value: string): string {
 
 function SettingsTopBar() {
   return (
-    <header className="sticky top-0 z-20 flex h-[52px] items-center border-b border-border/40 bg-background px-4">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <header
+      className="relative flex h-[52px] items-center justify-between gap-3 border-b border-border/40 bg-background px-4"
+      aria-label="App top bar"
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <div
           aria-hidden="true"
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
@@ -83,6 +90,7 @@ function SettingsTopBar() {
 }
 
 function SettingsPanel({
+  id,
   icon,
   title,
   description,
@@ -90,6 +98,7 @@ function SettingsPanel({
   footer,
   danger = false,
 }: {
+  id: string
   icon: ReactNode
   title: string
   description?: ReactNode
@@ -98,7 +107,7 @@ function SettingsPanel({
   danger?: boolean
 }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-border/60 bg-background shadow-none">
+    <section id={id} className="scroll-mt-6 overflow-hidden rounded-lg border border-border/60 bg-background shadow-none">
       <div className="flex min-h-11 items-center gap-2 border-b border-border/50 px-4 py-2.5">
         <span className={danger ? 'text-destructive' : 'text-muted-foreground'}>
           {icon}
@@ -122,6 +131,67 @@ function SettingsPanel({
   )
 }
 
+function SettingsNav({
+  label,
+  items,
+}: {
+  label: string
+  items: Array<{ href: string; label: string; description: string }>
+}) {
+  return (
+    <nav aria-label={`${label} sections`} className="boring-settings-nav">
+      <p className="boring-settings-nav-label">{label}</p>
+      {items.map((item) => (
+        <a key={item.href} href={item.href} className="boring-settings-nav-item">
+          <span className="min-w-0">
+            <span className="block truncate text-[12.5px] font-medium text-foreground">{item.label}</span>
+            <span className="block truncate text-[11.5px] leading-4 text-muted-foreground">
+              {item.description}
+            </span>
+          </span>
+        </a>
+      ))}
+    </nav>
+  )
+}
+
+function SettingsPageHeader({
+  initials,
+  displayName,
+  email,
+}: {
+  initials: string
+  displayName: string
+  email: string
+}) {
+  return (
+    <header className="boring-settings-page-header">
+      <div className="boring-settings-context">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background">
+          {initials}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-medium text-foreground">
+            Signed in as {displayName}
+          </p>
+          <p className="truncate text-[12px] leading-5 text-muted-foreground">
+            {email} account
+          </p>
+        </div>
+      </div>
+      <div className="max-w-2xl">
+        <p className="text-[11px] font-medium uppercase leading-4 text-muted-foreground">Account</p>
+        <h1 className="mt-1 text-[20px] font-semibold leading-7 tracking-tight text-foreground">
+          Account settings
+        </h1>
+        <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+          Review your profile, change your password, and manage account-level actions.
+        </p>
+      </div>
+    </header>
+  )
+}
+
 function DetailLine({
   icon,
   label,
@@ -138,6 +208,26 @@ function DetailLine({
       </span>
       <dt className="w-32 shrink-0 text-[12px] text-muted-foreground">{label}</dt>
       <dd className="min-w-0 flex-1 text-foreground">{children}</dd>
+    </div>
+  )
+}
+
+function ActionRow({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description: ReactNode
+  action: ReactNode
+}) {
+  return (
+    <div className="boring-settings-action-row">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium leading-5 text-foreground">{title}</p>
+        <p className="mt-1 max-w-xl text-[12px] leading-5 text-muted-foreground">{description}</p>
+      </div>
+      <div className="shrink-0">{action}</div>
     </div>
   )
 }
@@ -164,7 +254,13 @@ function StatusMessage({
   )
 }
 
-export function UserSettingsPage() {
+const ACCOUNT_NAV_ITEMS = [
+  { href: '#profile', label: 'Profile', description: 'Identity and email' },
+  { href: '#password', label: 'Password', description: 'Sign-in security' },
+  { href: '#danger-zone', label: 'Deletion', description: 'Permanent actions' },
+]
+
+export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
   const session = useSession()
   const identity = useUser()
   const signOut = useSignOut()
@@ -242,14 +338,18 @@ export function UserSettingsPage() {
     }
   }, [user?.email, signOut])
 
+  const topBarNode = topBar === undefined ? <SettingsTopBar /> : topBar
+
   if (!user) {
     return (
       <main className="boring-settings-shell">
-        <SettingsTopBar />
-        <div className="mx-auto flex min-h-[calc(100vh-52px)] w-full max-w-5xl items-center justify-center px-4">
-          <div className="w-full max-w-sm rounded-lg border border-border/60 bg-background p-4">
-            <h1 className="text-[13px] font-medium">Account settings</h1>
-            <p className="mt-1 text-[12px] text-muted-foreground">Loading your account...</p>
+        {topBarNode}
+        <div className="boring-settings-scroll">
+          <div className="mx-auto flex min-h-full w-full max-w-5xl items-center justify-center px-4">
+            <div className="w-full max-w-sm rounded-lg border border-border/60 bg-background p-4">
+              <h1 className="text-[13px] font-medium">Account settings</h1>
+              <p className="mt-1 text-[12px] text-muted-foreground">Loading your account...</p>
+            </div>
           </div>
         </div>
       </main>
@@ -260,31 +360,21 @@ export function UserSettingsPage() {
 
   return (
     <main className="boring-settings-shell">
-      <SettingsTopBar />
-      <div className="boring-settings-layout">
-        <aside className="boring-settings-sidebar">
-          <div className="rounded-lg border border-border/60 bg-background p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background">
-              {initials}
-            </div>
-            <div className="mt-4 space-y-1">
-              <h1 className="text-[15px] font-semibold leading-5 tracking-tight">Account settings</h1>
-              <p className="text-[12.5px] leading-5 text-muted-foreground">
-                Sign-in details, security, and irreversible account actions.
-              </p>
-            </div>
-            <div className="mt-4 divide-y divide-border/50 rounded-md border border-border/50 bg-muted/10">
-              {['Profile', 'Password', 'Deletion'].map((item) => (
-                <div key={item} className="flex h-9 items-center px-3 text-[12px] text-muted-foreground">
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
+      {topBarNode}
+      <div className="boring-settings-scroll">
+        <div className="boring-settings-layout">
+          <aside className="boring-settings-sidebar">
+            <SettingsNav label="Account settings" items={ACCOUNT_NAV_ITEMS} />
+          </aside>
 
-        <div className="boring-settings-content space-y-4">
+          <div className="boring-settings-content space-y-4">
+            <SettingsPageHeader
+              initials={initials}
+              displayName={user.name ?? user.email}
+              email={user.email}
+            />
           <SettingsPanel
+            id="profile"
             icon={<UserRound className="h-3.5 w-3.5" aria-hidden="true" />}
             title="Profile"
             description="The identity shown inside this app."
@@ -319,6 +409,7 @@ export function UserSettingsPage() {
 
           <form onSubmit={handleSubmit(onChangePassword)} noValidate>
             <SettingsPanel
+              id="password"
               icon={<KeyRound className="h-3.5 w-3.5" aria-hidden="true" />}
               title="Change password"
               description="Update the password used for email sign-in."
@@ -383,11 +474,16 @@ export function UserSettingsPage() {
           </form>
 
           <SettingsPanel
+            id="danger-zone"
             icon={<ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />}
             title="Danger zone"
             description="Permanently delete this account and remove its workspace access."
             danger
           >
+            <ActionRow
+              title="Delete account"
+              description="Delete your account, user settings, and workspace memberships after confirmation."
+              action={(
               <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" size="sm">
@@ -439,7 +535,10 @@ export function UserSettingsPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+              )}
+            />
           </SettingsPanel>
+          </div>
         </div>
       </div>
     </main>
