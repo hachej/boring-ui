@@ -18,10 +18,14 @@ const requiredFiles = [
   "dist/testing.d.ts",
   "dist/ui-shadcn.js",
   "dist/ui-shadcn.d.ts",
+  "dist/app.js",
+  "dist/app.d.ts",
   "dist/server.js",
   "dist/server.d.ts",
   "dist/shared.js",
   "dist/shared.d.ts",
+  "dist/events.js",
+  "dist/events.d.ts",
 ]
 
 async function exists(rel) {

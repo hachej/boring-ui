@@ -245,11 +245,11 @@ Not "let one tool be silently broken because the other 47 passed."
 YAML over JSONL because nested `expect.params` is unreadable on a single line and quote-escaping inside `prompt` strings is hostile. Suite-level config (model, system prompt, defaults) lives at the file head.
 
 ```yaml
-# packages/workspace/eval/ui-bridge.yaml
+# packages/agent/eval/standard-tools.yaml
 model: claude-haiku-4-5-20251001
 systemPrompt: |
-  You are a workspace assistant. Use the registered tools to act on the user's
-  workspace. Always prefer typed tools over generic exec_ui when both apply.
+  You are a coding assistant. Use the registered tools to act on the user's
+  workspace. Prefer purpose-built tools over generic shell commands when both apply.
 defaults:
   retries: 0
   timeoutMs: 30000
@@ -417,9 +417,9 @@ A failing nightly doesn't block merging; it surfaces a regression for triage. A 
 
 ## Migration / authoring path
 
-1. Land the framework in `@boring/agent/testing` with one fixture file (`packages/agent/eval/standard-tools.yaml`) covering bash / read / write / edit / find. Validates the framework on agent's own catalog.
-2. Workspace adds `packages/workspace/eval/ui-bridge.yaml` covering `exec_ui openFile / openPanel`, `get_ui_state` discovery, plus the parallel-call case ("open README and tell me about it"). Wires `createWorkspaceAgentApp` as the app under test.
-3. Documentation pass — agent README + workspace plan reference the suite locations and the `pnpm agent:eval` cli.
+1. Land the framework in `@boring/agent/eval` with one fixture file (`packages/agent/eval/standard-tools.yaml`) covering bash / read / write / edit / find. Validates the framework on agent's own catalog.
+2. Child apps that compose workspace UI can add app-local eval suites (for example under `apps/*/eval/`) and wire their own app server as the `runEvalSuite({ app, fixturesPath })` target. Workspace itself does not publish a parallel eval subpath; it owns structural UI-tool contracts and app-shell helpers.
+3. Documentation pass — agent README + app docs reference suite locations and the package `eval` script.
 4. CI — add the nightly workflow + the per-PR canary step + the fork-PR `/eval` trigger.
 
 ## Out of scope (v1)

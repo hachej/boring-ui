@@ -19,6 +19,8 @@ const requiredFiles = [
   'dist/front/index.js',
   'dist/front/index.d.ts',
   'dist/front/styles.css',
+  'dist/eval/index.js',
+  'dist/eval/index.d.ts',
 ]
 
 function resolveFromPackage(relPath) {
@@ -67,10 +69,12 @@ async function main() {
   assertNodeParsable('dist/shared/index.js')
   assertNodeParsable('dist/server/index.js')
   assertNodeParsable('dist/front/index.js')
+  assertNodeParsable('dist/eval/index.js')
 
   assertTsParsable('dist/shared/index.d.ts')
   assertTsParsable('dist/server/index.d.ts')
   assertTsParsable('dist/front/index.d.ts')
+  assertTsParsable('dist/eval/index.d.ts')
 
   process.stdout.write('build-artifacts: OK\n')
 }
