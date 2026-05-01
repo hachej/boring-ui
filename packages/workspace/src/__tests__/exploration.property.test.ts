@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest"
 import * as fc from "fast-check"
-import { createWorkspaceStore } from "../store"
-import { createBridge } from "../bridge/createBridge"
-import type { WorkspaceBridge } from "../bridge/types"
-import type { WorkspaceStore } from "../store/types"
+import { createWorkspaceStore } from "../front/store"
+import { createBridge } from "../front/bridge/createBridge"
+import type { WorkspaceBridge } from "../front/bridge/types"
+import type { WorkspaceStore } from "../front/store/types"
 
 type StoreApi = ReturnType<typeof createWorkspaceStore>
 

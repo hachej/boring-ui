@@ -47,6 +47,21 @@ function readCapturedEmails(): Array<{ to: string; subject: string; html: string
   return content.split('\n').map((line) => JSON.parse(line))
 }
 
+async function waitForCapturedEmail(
+  matcher: (email: { to: string; subject: string; html: string; text: string }) => boolean,
+  timeoutMs = 2_000,
+): Promise<{ to: string; subject: string; html: string; text: string } | undefined> {
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const match = readCapturedEmails().find(matcher)
+    if (match) return match
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+
+  return readCapturedEmails().find(matcher)
+}
+
 function clearCapturedEmails() {
   if (existsSync(MAIL_CAPTURE_PATH)) unlinkSync(MAIL_CAPTURE_PATH)
 }
@@ -113,9 +128,9 @@ describe('createAuth', () => {
       expect(data.user).toBeDefined()
       expect(data.user.email).toBe('signup-happy@auth-test.dev')
 
-      const emails = readCapturedEmails()
-      expect(emails.length).toBeGreaterThanOrEqual(1)
-      const verifyEmail = emails.find((e) => e.subject.includes('Verify'))
+      const verifyEmail = await waitForCapturedEmail((email) =>
+        email.subject.includes('Verify'),
+      )
       expect(verifyEmail).toBeDefined()
       expect(verifyEmail!.to).toBe('signup-happy@auth-test.dev')
     })
@@ -182,8 +197,9 @@ describe('createAuth', () => {
 
       expect(res.status).toBe(200)
 
-      const emails = readCapturedEmails()
-      const resetEmail = emails.find((e) => e.subject.includes('Reset'))
+      const resetEmail = await waitForCapturedEmail((email) =>
+        email.subject.includes('Reset'),
+      )
       expect(resetEmail).toBeDefined()
       expect(resetEmail!.to).toBe('reset-pwd@auth-test.dev')
     })
@@ -206,8 +222,9 @@ describe('createAuth', () => {
 
       expect(res.status).toBe(200)
 
-      const emails = readCapturedEmails()
-      const magicEmail = emails.find((e) => e.subject.includes('Sign in'))
+      const magicEmail = await waitForCapturedEmail((email) =>
+        email.subject.includes('Sign in'),
+      )
       expect(magicEmail).toBeDefined()
       expect(magicEmail!.to).toBe('magic-link@auth-test.dev')
     })

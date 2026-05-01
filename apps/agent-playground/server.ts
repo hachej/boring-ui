@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
 import { applyCspHeaders } from '../../packages/agent/src/server/http/csp'
@@ -21,8 +21,8 @@ const packageRoot = path.resolve(playgroundRoot, '../../packages/agent')
 const packageSrc = path.resolve(packageRoot, 'src')
 
 const vite = await createViteServer({
+  configFile: false,
   root: playgroundRoot,
-  css: { postcss: playgroundRoot },
   resolve: {
     alias: {
       '@boring/agent/front/styles.css': path.resolve(packageSrc, 'front/styles/globals.css'),
@@ -33,7 +33,7 @@ const vite = await createViteServer({
     },
   },
   plugins: [
-    react(),
+    tailwindcss(),
     {
       name: 'agent-playground-index',
       configureServer(server) {

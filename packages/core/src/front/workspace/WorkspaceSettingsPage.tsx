@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -10,39 +11,240 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
   Input,
   Label,
 } from '@boring/workspace/ui-shadcn'
-import { useCurrentWorkspace } from '../WorkspaceAuthProvider.js'
+import {
+  AlertCircle,
+  HardDrive,
+  RefreshCw,
+  Settings2,
+  ShieldAlert,
+  Trash2,
+} from 'lucide-react'
+import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { WORKSPACES_QUERY_KEY, workspaceQueryKey } from '../WorkspaceAuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
 import type { WorkspaceRuntime } from '../../shared/types.js'
 
+export interface WorkspaceSettingsPageProps {
+  topBar?: ReactNode
+}
+
 const STATE_STYLES: Record<string, string> = {
-  pending: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  ready: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-  error: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+  pending: 'border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-200',
+  ready: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
+  error: 'border-destructive/40 bg-destructive/10 text-destructive',
 }
 
 function StateBadge({ state }: { state: string }) {
   return (
     <span
       data-testid={`runtime-state-${state}`}
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATE_STYLES[state] ?? ''}`}
+      className={`inline-flex h-6 items-center rounded-md border px-2 text-[12px] font-medium ${STATE_STYLES[state] ?? 'border-border bg-muted/30 text-muted-foreground'}`}
     >
       {state}
     </span>
   )
 }
 
-export function WorkspaceSettingsPage() {
+function SettingsTopBar({ workspaceName }: { workspaceName: string }) {
+  return (
+    <header
+      className="relative flex h-[52px] items-center justify-between gap-3 border-b border-border/40 bg-background px-4"
+      aria-label="App top bar"
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        <div
+          aria-hidden="true"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+        >
+          B
+        </div>
+        <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
+          Boring
+        </span>
+        <span aria-hidden="true" className="text-muted-foreground/30">/</span>
+        <span className="truncate text-[13px] text-muted-foreground">{workspaceName}</span>
+        <span aria-hidden="true" className="text-muted-foreground/30">/</span>
+        <span className="truncate text-[13px] text-muted-foreground">Settings</span>
+      </div>
+    </header>
+  )
+}
+
+function SettingsPanel({
+  id,
+  icon,
+  title,
+  description,
+  children,
+  footer,
+  danger = false,
+  testId,
+}: {
+  id: string
+  icon: ReactNode
+  title: string
+  description?: ReactNode
+  children: ReactNode
+  footer?: ReactNode
+  danger?: boolean
+  testId?: string
+}) {
+  return (
+    <section
+      id={id}
+      data-testid={testId}
+      className="scroll-mt-6 overflow-hidden rounded-lg border border-border/60 bg-background shadow-none"
+    >
+      <div className="flex min-h-11 items-center gap-2 border-b border-border/50 px-4 py-2.5">
+        <span className={danger ? 'text-destructive' : 'text-muted-foreground'}>
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <h2 className={`text-[13px] font-medium leading-5 ${danger ? 'text-destructive' : 'text-foreground'}`}>
+            {title}
+          </h2>
+          {description ? (
+            <p className="text-[12px] leading-5 text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
+      </div>
+      <div className="p-4">{children}</div>
+      {footer ? (
+        <div className="flex items-center justify-end gap-2 border-t border-border/50 bg-muted/10 px-4 py-3">
+          {footer}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function SettingsNav({
+  label,
+  items,
+}: {
+  label: string
+  items: Array<{ href: string; label: string; description: string }>
+}) {
+  return (
+    <nav aria-label={`${label} sections`} className="boring-settings-nav">
+      <p className="boring-settings-nav-label">{label}</p>
+      {items.map((item) => (
+        <a key={item.href} href={item.href} className="boring-settings-nav-item">
+          <span className="min-w-0">
+            <span className="block truncate text-[12.5px] font-medium text-foreground">{item.label}</span>
+            <span className="block truncate text-[11.5px] leading-4 text-muted-foreground">
+              {item.description}
+            </span>
+          </span>
+        </a>
+      ))}
+    </nav>
+  )
+}
+
+function SettingsPageHeader({
+  workspaceName,
+  workspaceInitial,
+  role,
+  isDefault,
+}: {
+  workspaceName: string
+  workspaceInitial: string
+  role: string | null
+  isDefault: boolean
+}) {
+  return (
+    <header className="boring-settings-page-header">
+      <div className="boring-settings-context">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background">
+          {workspaceInitial}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-medium text-foreground">{workspaceName}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex h-5 items-center rounded border border-border/60 px-1.5 text-[11px] text-muted-foreground">
+              {roleLabel(role)}
+            </span>
+            {isDefault ? (
+              <span className="inline-flex h-5 items-center rounded border border-border/60 px-1.5 text-[11px] text-muted-foreground">
+                Default
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="max-w-2xl">
+        <p className="text-[11px] font-medium uppercase leading-4 text-muted-foreground">Workspace</p>
+        <h1 className="mt-1 text-[20px] font-semibold leading-7 tracking-tight text-foreground">
+          Workspace settings
+        </h1>
+        <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+          Manage workspace identity, runtime recovery, and irreversible workspace actions.
+        </p>
+      </div>
+    </header>
+  )
+}
+
+function StatusMessage({
+  children,
+  testId,
+}: {
+  children: ReactNode
+  testId?: string
+}) {
+  return (
+    <div
+      data-testid={testId}
+      role="alert"
+      className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] leading-5 text-destructive"
+    >
+      {children}
+    </div>
+  )
+}
+
+function FieldNote({ children }: { children: ReactNode }) {
+  return <p className="text-[12px] leading-5 text-muted-foreground">{children}</p>
+}
+
+function ActionRow({
+  title,
+  description,
+  action,
+}: {
+  title: string
+  description: ReactNode
+  action: ReactNode
+}) {
+  return (
+    <div className="boring-settings-action-row">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium leading-5 text-foreground">{title}</p>
+        <p className="mt-1 max-w-xl text-[12px] leading-5 text-muted-foreground">{description}</p>
+      </div>
+      <div className="shrink-0">{action}</div>
+    </div>
+  )
+}
+
+function roleLabel(role: string | null): string {
+  if (!role) return 'Loading role'
+  return role.charAt(0).toUpperCase() + role.slice(1)
+}
+
+const WORKSPACE_NAV_ITEMS = [
+  { href: '#general', label: 'General', description: 'Name and access' },
+  { href: '#runtime', label: 'Runtime', description: 'Provisioning state' },
+  { href: '#danger-zone', label: 'Danger zone', description: 'Permanent actions' },
+]
+
+export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {}) {
   const workspace = useCurrentWorkspace()
+  const role = useWorkspaceRole()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
@@ -56,13 +258,14 @@ export function WorkspaceSettingsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const displayName = nameValue ?? workspace?.name ?? ''
+  const encodedWorkspaceId = encodeURIComponent(workspaceId)
 
   const runtimeQuery = useQuery({
     queryKey: ['runtime', workspaceId],
     queryFn: async () => {
       try {
         const data = await apiFetchJson<{ runtime: WorkspaceRuntime }>(
-          `/api/v1/workspaces/${workspaceId}/runtime`,
+          `/api/v1/workspaces/${encodedWorkspaceId}/runtime`,
         )
         return data.runtime
       } catch (err: unknown) {
@@ -76,7 +279,7 @@ export function WorkspaceSettingsPage() {
 
   const renameMutation = useMutation({
     mutationFn: async (name: string) => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}`, {
+      await apiFetch(`/api/v1/workspaces/${encodedWorkspaceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -96,7 +299,7 @@ export function WorkspaceSettingsPage() {
 
   const retryMutation = useMutation({
     mutationFn: async () => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}/runtime/retry`, {
+      await apiFetch(`/api/v1/workspaces/${encodedWorkspaceId}/runtime/retry`, {
         method: 'POST',
       })
     },
@@ -112,7 +315,7 @@ export function WorkspaceSettingsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}`, {
+      await apiFetch(`/api/v1/workspaces/${encodedWorkspaceId}`, {
         method: 'DELETE',
       })
     },
@@ -148,140 +351,214 @@ export function WorkspaceSettingsPage() {
   const runtime = runtimeQuery.data ?? null
   const hasRuntime = runtime !== null && runtimeQuery.isSuccess
   const nameChanged = nameValue !== null && nameValue.trim() !== workspace?.name
+  const canEditName = role !== 'viewer'
+  const canDeleteWorkspace = role === 'owner' || role === null
+  const workspaceName = workspace?.name ?? 'Workspace'
+  const workspaceInitial = (workspace?.name?.trim()?.[0] ?? 'W').toUpperCase()
+  const topBarNode = topBar === undefined ? <SettingsTopBar workspaceName={workspaceName} /> : topBar
+  const navItems = hasRuntime
+    ? WORKSPACE_NAV_ITEMS
+    : WORKSPACE_NAV_ITEMS.filter((item) => item.href !== '#runtime')
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-2xl space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>General</CardTitle>
-            <CardDescription>Workspace settings for {workspace?.name ?? 'this workspace'}.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {nameError && (
-              <div data-testid="name-error" role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {nameError}
-              </div>
+    <main className="boring-settings-shell">
+      {topBarNode}
+      <div className="boring-settings-scroll">
+        <div className="boring-settings-layout">
+          <aside className="boring-settings-sidebar">
+            <SettingsNav label="Workspace settings" items={navItems} />
+          </aside>
+
+          <div className="boring-settings-content space-y-4">
+            <SettingsPageHeader
+              workspaceName={workspaceName}
+              workspaceInitial={workspaceInitial}
+              role={role}
+              isDefault={Boolean(workspace?.isDefault)}
+            />
+          <SettingsPanel
+            id="general"
+            icon={<Settings2 className="h-3.5 w-3.5" aria-hidden="true" />}
+            title="General"
+            description="Keep the workspace name clear enough to scan in menus."
+            footer={(
+              <>
+                {nameChanged ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setNameValue(null)
+                      setNameError(null)
+                    }}
+                    disabled={renameMutation.isPending}
+                  >
+                    Reset
+                  </Button>
+                ) : null}
+                <Button
+                  data-testid="save-name"
+                  size="sm"
+                  disabled={!nameChanged || renameMutation.isPending || !canEditName}
+                  onClick={handleSaveName}
+                >
+                  {renameMutation.isPending ? 'Saving...' : 'Save changes'}
+                </Button>
+              </>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="workspace-name">Workspace name</Label>
-              <Input
-                id="workspace-name"
-                data-testid="workspace-name-input"
-                value={displayName}
-                onChange={(e) => setNameValue(e.target.value)}
+          >
+            <div className="space-y-4">
+              {nameError && <StatusMessage testId="name-error">{nameError}</StatusMessage>}
+              <div className="space-y-2">
+                <Label htmlFor="workspace-name" className="text-[12px]">Workspace name</Label>
+                <Input
+                  id="workspace-name"
+                  data-testid="workspace-name-input"
+                  className="h-8 text-[13px]"
+                  value={displayName}
+                  onChange={(e) => setNameValue(e.target.value)}
+                  disabled={!canEditName}
+                  aria-invalid={nameError ? 'true' : 'false'}
+                />
+                <FieldNote>
+                  {canEditName
+                    ? 'Editors and owners can rename a workspace.'
+                    : 'Viewers can inspect settings, but cannot rename this workspace.'}
+                </FieldNote>
+              </div>
+            </div>
+          </SettingsPanel>
+
+          {hasRuntime && (
+            <SettingsPanel
+              id="runtime"
+              testId="runtime-card"
+              icon={<HardDrive className="h-3.5 w-3.5" aria-hidden="true" />}
+              title="Runtime"
+              description="Provisioning status for this workspace."
+            >
+              <div className="space-y-3">
+                <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 rounded-md border border-border/50 bg-muted/10 px-3 py-2">
+                  <span className="text-[13px] font-medium">State</span>
+                  <StateBadge state={runtime.state} />
+                </div>
+                {runtime.state === 'ready' && runtime.volumePath && (
+                  <div
+                    data-testid="volume-path"
+                    className="space-y-1 rounded-md border border-border/50 bg-muted/10 px-3 py-2"
+                  >
+                    <p className="text-[13px] font-medium">Volume</p>
+                    <code className="block overflow-x-auto whitespace-nowrap text-[12px] text-muted-foreground">
+                      {runtime.volumePath}
+                    </code>
+                  </div>
+                )}
+                {runtime.state === 'error' && runtime.lastError && (
+                  <div
+                    data-testid="runtime-error"
+                    role="alert"
+                    className="flex gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] leading-5 text-destructive"
+                  >
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    {runtime.lastError}
+                  </div>
+                )}
+                {runtime.state === 'error' && runtime.lastErrorOp === 'provision' && (
+                  <div className="space-y-3">
+                    <Button
+                      data-testid="retry-provision"
+                      variant="outline"
+                      size="sm"
+                      disabled={retryMutation.isPending}
+                      onClick={() => retryMutation.mutate()}
+                    >
+                      <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                      {retryMutation.isPending ? 'Retrying...' : 'Retry provisioning'}
+                    </Button>
+                    {retryError && <StatusMessage testId="retry-error">{retryError}</StatusMessage>}
+                  </div>
+                )}
+                {runtime.state === 'error' && runtime.lastErrorOp === 'destroy' && (
+                  <p
+                    data-testid="destroy-guidance"
+                    className="rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-[13px] leading-5 text-muted-foreground"
+                  >
+                    Destroy failed. Use the Delete button below to re-issue the delete.
+                  </p>
+                )}
+              </div>
+            </SettingsPanel>
+          )}
+
+          <SettingsPanel
+            id="danger-zone"
+            testId="danger-zone"
+            icon={<ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />}
+            title="Danger zone"
+            description="Permanently delete this workspace and all provisioned data."
+            danger
+          >
+            <div className="space-y-4">
+              {deleteError && <StatusMessage testId="delete-error">{deleteError}</StatusMessage>}
+              {!canDeleteWorkspace ? (
+                <div className="rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-[13px] leading-5 text-muted-foreground">
+                  Only workspace owners can delete this workspace.
+                </div>
+              ) : null}
+              <ActionRow
+                title="Delete workspace"
+                description="Delete the workspace record and re-issue cleanup for provisioned runtime data."
+                action={(
+              <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  data-testid="delete-workspace"
+                  disabled={!canDeleteWorkspace}
+                  onClick={() => { setDeleteDialogOpen(true); setDeleteConfirmName('') }}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  Delete workspace
+                </Button>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete workspace?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. Type <strong>{workspace?.name}</strong> to confirm.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="px-6 pb-2">
+                    <Input
+                      data-testid="delete-confirm-input"
+                      className="h-8 text-[13px]"
+                      placeholder={workspace?.name ?? ''}
+                      value={deleteConfirmName}
+                      onChange={(e) => setDeleteConfirmName(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      data-testid="confirm-delete"
+                      disabled={deleteConfirmName !== workspace?.name || deleteMutation.isPending}
+                      onClick={handleDelete}
+                    >
+                      {deleteMutation.isPending ? 'Deleting...' : 'Delete workspace'}
+                    </Button>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+                )}
               />
             </div>
-          </CardContent>
-          <CardFooter>
-            <Button
-              data-testid="save-name"
-              disabled={!nameChanged || renameMutation.isPending}
-              onClick={handleSaveName}
-            >
-              {renameMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </CardFooter>
-        </Card>
-
-        {hasRuntime && (
-          <Card data-testid="runtime-card">
-            <CardHeader>
-              <CardTitle>Runtime</CardTitle>
-              <CardDescription>Provisioning status for this workspace.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">State:</span>
-                <StateBadge state={runtime.state} />
-              </div>
-              {runtime.state === 'ready' && runtime.volumePath && (
-                <div data-testid="volume-path">
-                  <span className="text-sm font-medium">Volume: </span>
-                  <code className="text-sm">{runtime.volumePath}</code>
-                </div>
-              )}
-              {runtime.state === 'error' && runtime.lastError && (
-                <div data-testid="runtime-error" role="alert" className="text-sm text-destructive">
-                  {runtime.lastError}
-                </div>
-              )}
-              {runtime.state === 'error' && runtime.lastErrorOp === 'provision' && (
-                <>
-                  <Button
-                    data-testid="retry-provision"
-                    variant="outline"
-                    disabled={retryMutation.isPending}
-                    onClick={() => retryMutation.mutate()}
-                  >
-                    {retryMutation.isPending ? 'Retrying…' : 'Retry'}
-                  </Button>
-                  {retryError && (
-                    <div data-testid="retry-error" role="alert" className="text-sm text-destructive">
-                      {retryError}
-                    </div>
-                  )}
-                </>
-              )}
-              {runtime.state === 'error' && runtime.lastErrorOp === 'destroy' && (
-                <p data-testid="destroy-guidance" className="text-sm text-muted-foreground">
-                  Destroy failed. Use the Delete button below to re-issue the delete.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        <Card data-testid="danger-zone">
-          <CardHeader>
-            <CardTitle className="text-destructive">Danger zone</CardTitle>
-            <CardDescription>Permanently delete this workspace and all its data.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {deleteError && (
-              <div data-testid="delete-error" role="alert" className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {deleteError}
-              </div>
-            )}
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-              <Button
-                variant="destructive"
-                data-testid="delete-workspace"
-                onClick={() => { setDeleteDialogOpen(true); setDeleteConfirmName('') }}
-              >
-                Delete workspace
-              </Button>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete workspace?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This action cannot be undone. Type <strong>{workspace?.name}</strong> to confirm.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <div className="px-6 pb-2">
-                  <Input
-                    data-testid="delete-confirm-input"
-                    placeholder={workspace?.name ?? ''}
-                    value={deleteConfirmName}
-                    onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  />
-                </div>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <Button
-                    variant="destructive"
-                    data-testid="confirm-delete"
-                    disabled={deleteConfirmName !== workspace?.name || deleteMutation.isPending}
-                    onClick={handleDelete}
-                  >
-                    {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-                  </Button>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </CardContent>
-        </Card>
+          </SettingsPanel>
+          </div>
+        </div>
       </div>
-    </div>
+    </main>
   )
 }

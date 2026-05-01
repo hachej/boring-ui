@@ -3,6 +3,8 @@
  * catalog adapter). Kept separate from `macroSeriesData.ts` so fetch/cache
  * logic and presentation primitives don't bleed into each other.
  */
+import { postUiCommand } from "@boring/workspace"
+import { MACRO_OPEN_SERIES_SURFACE_KIND } from "../plugin/constants"
 
 export const FREQ_LABELS: Record<string, string> = {
   D: "Daily",
@@ -49,23 +51,19 @@ interface OpenSeriesOptions {
 }
 
 /**
- * Push an openPanel command through the workspace UI bridge. Used by panes
- * that want to open a chart for a related series (deck embeds, lineage
+ * Push a macro-owned surface target through the workspace UI bridge. Used by
+ * panes that want to open a chart for a related series (deck embeds, lineage
  * graph, etc.) without holding a SurfaceShellApi reference.
  */
 export function openSeriesPane(seriesId: string, opts: OpenSeriesOptions = {}): void {
-  if (!seriesId) return
-  void fetch("/api/v1/ui/commands", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      kind: "openPanel",
-      params: {
-        id: `chart:${seriesId}`,
-        component: "chart-canvas",
-        title: opts.title ?? seriesId,
-        params: { seriesId },
-      },
-    }),
+  const target = seriesId.trim()
+  if (!target) return
+  postUiCommand({
+    kind: "openSurface",
+    params: {
+      kind: MACRO_OPEN_SERIES_SURFACE_KIND,
+      target,
+      meta: opts.title ? { title: opts.title } : {},
+    },
   })
 }

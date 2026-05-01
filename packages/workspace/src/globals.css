@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Workspace's own components — every consumer that imports this CSS file
- * gets the utility classes used by ChatCenteredShell, panes, ui-shadcn
+ * gets the utility classes used by workspace chrome, panes, ui-shadcn
  * primitives, etc. Without this, consumers had to add their own
  * @source pointing back at workspace's src; that broke whenever the
  * consumer moved between repos. */
@@ -172,7 +172,7 @@
   }
 }
 
-/* Workspace surface tints (applied via className hooks in ChatCenteredShell, SurfaceShell, WorkbenchLeftPane) */
+/* Workspace surface tints (applied via className hooks in SurfaceShell and WorkbenchLeftPane) */
 .surface-chat-root { background-color: var(--surface-chat); }
 .workbench-surface-root { background-color: var(--surface-workbench); }
 .workbench-left-root { background-color: var(--surface-workbench-left); }
@@ -283,6 +283,26 @@
   border: none;
   border-top: 1px solid oklch(from var(--border) l c h / 0.7);
   margin: 1.5rem 0;
+}
+.tiptap-prose .tableWrapper {
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+.tiptap-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.tiptap-prose th,
+.tiptap-prose td {
+  border: 1px solid oklch(from var(--border) l c h / 0.7);
+  padding: 0.55rem 0.7rem;
+  vertical-align: top;
+  text-align: left;
+}
+.tiptap-prose th {
+  background: oklch(from var(--foreground) l c h / 0.04);
+  font-weight: 600;
 }
 .tiptap-prose strong { font-weight: 600; }
 .tiptap-prose mark { background-color: oklch(from var(--accent) l c h / 0.2); color: inherit; padding: 0 2px; border-radius: 2px; }

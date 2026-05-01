@@ -35,7 +35,7 @@ test.describe("workspace-playground auth-free boot", () => {
     })
 
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
     // Idle long enough for any deferred AuthProvider / ConfigProvider
     // useEffects to fire.
     await page.waitForTimeout(1500)
@@ -50,11 +50,10 @@ test.describe("workspace-playground auth-free boot", () => {
     page,
   }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
     await page.waitForTimeout(1500)
 
-    // The chat shell should be visible — appTitle "Boring" + the
-    // workbench/sessions toggle buttons in the chrome.
+    // The playground shell should be visible — appTitle "Boring" in top chrome.
     await expect(page.getByText("Boring").first()).toBeVisible()
 
     // AppErrorBoundary surfaces "Something went wrong" — must NOT be

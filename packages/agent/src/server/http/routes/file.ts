@@ -81,10 +81,17 @@ function requireStringParam(
 
 export function fileRoutes(
   app: FastifyInstance,
-  opts: { workspace: Workspace },
+  opts: {
+    workspace?: Workspace
+    getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+  },
   done: (err?: Error) => void,
 ): void {
-  const { workspace } = opts
+  async function resolveWorkspace(request: FastifyRequest): Promise<Workspace> {
+    if (opts.getWorkspace) return await opts.getWorkspace(request)
+    if (opts.workspace) return opts.workspace
+    throw new Error('file route requires workspace or getWorkspace')
+  }
 
   app.get('/api/v1/files', async (request, reply) => {
     const query = request.query as Record<string, unknown>
@@ -92,19 +99,13 @@ export function fileRoutes(
     if (path === null) return
 
     try {
+      const workspace = await resolveWorkspace(request)
       const content = await workspace.readFile(path)
-      // Best-effort stat. If the file disappears between read and stat
-      // (rare race), we still return the content with mtimeMs omitted —
-      // the OCC check on a subsequent write will run only when the
-      // client actually has a baseline mtime.
-      let mtimeMs: number | undefined
-      try {
-        const s = await workspace.stat(path)
-        mtimeMs = s.mtimeMs
-      } catch {
-        /* swallow — content is the load-bearing field */
-      }
-      return { content, mtimeMs }
+      // Do not stat after read. Remote runtimes like Vercel Sandbox expose
+      // readFile as a fast API call but stat as an extra command roundtrip.
+      // Returning content without mtime keeps file-open responsive; OCC is
+      // enabled only when the client has a baseline mtime.
+      return { content }
     } catch (err) {
       return classifyError(err, reply, 'file')
     }
@@ -130,6 +131,7 @@ export function fileRoutes(
       : null
 
     try {
+      const workspace = await resolveWorkspace(request)
       if (expectedMtimeMs !== null) {
         try {
           const current = await workspace.stat(path)
@@ -166,13 +168,9 @@ export function fileRoutes(
         if (dir) await workspace.mkdir(dir, { recursive: true })
       }
       await workspace.writeFile(path, body.content)
-      // Stat after write so the client can update its OCC baseline.
-      let mtimeMs: number | undefined
-      try {
-        const s = await workspace.stat(path)
-        mtimeMs = s.mtimeMs
-      } catch { /* swallow */ }
-      return { ok: true, mtimeMs }
+      // Avoid post-write stat for remote runtimes; it is an extra roundtrip
+      // and the write event/refetch path is enough for UI freshness.
+      return { ok: true }
     } catch (err) {
       return classifyError(err, reply, 'file')
     }
@@ -184,6 +182,7 @@ export function fileRoutes(
     if (path === null) return
 
     try {
+      const workspace = await resolveWorkspace(request)
       await workspace.unlink(path)
       return { ok: true }
     } catch (err) {
@@ -199,6 +198,7 @@ export function fileRoutes(
     if (to === null) return
 
     try {
+      const workspace = await resolveWorkspace(request)
       await workspace.rename(from, to)
       return { ok: true }
     } catch (err) {
@@ -214,6 +214,7 @@ export function fileRoutes(
     const recursive = body.recursive === true
 
     try {
+      const workspace = await resolveWorkspace(request)
       await workspace.mkdir(path, { recursive })
       return { ok: true }
     } catch (err) {
@@ -227,6 +228,7 @@ export function fileRoutes(
     if (path === null) return
 
     try {
+      const workspace = await resolveWorkspace(request)
       const stat = await workspace.stat(path)
       return stat
     } catch (err) {

@@ -142,10 +142,48 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
         })
       }
 
-      const result = await store.acceptInvite(id, inviteId, user.id)
+      if (invite.lockedUntil && new Date(invite.lockedUntil) > new Date()) {
+        throw new HttpError({
+          status: 423,
+          code: ERROR_CODES.INVITE_LOCKED,
+          message: 'Invite token is locked',
+          requestId: request.id,
+        })
+      }
 
-      request.log.info({ workspaceId: id, inviteId, userId: user.id }, 'invite.accept')
-      return { invite: result.invite, member: result.member }
+      if (invite.acceptedAt) {
+        throw new HttpError({
+          status: 410,
+          code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
+          message: 'Invite already accepted',
+          requestId: request.id,
+        })
+      }
+
+      if (new Date(invite.expiresAt) <= new Date()) {
+        await store.incrementInviteFailedAttempts(invite.id)
+        throw new HttpError({
+          status: 410,
+          code: ERROR_CODES.INVITE_EXPIRED,
+          message: 'Invite expired',
+          requestId: request.id,
+        })
+      }
+
+      try {
+        const result = await store.acceptInvite(id, inviteId, user.id)
+        await store.resetInviteFailedAttempts(invite.id)
+        request.log.info({ workspaceId: id, inviteId, userId: user.id }, 'invite.accept')
+        return { invite: result.invite, member: result.member }
+      } catch (err) {
+        if (err instanceof HttpError) {
+          if (err.code === ERROR_CODES.INVITE_EMAIL_MISMATCH) {
+            await store.incrementInviteFailedAttempts(invite.id)
+          }
+          throw err
+        }
+        throw err
+      }
     },
   )
 
@@ -265,7 +303,7 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
     if (invite.acceptedAt) {
       await store.incrementInviteFailedAttempts(invite.id)
       throw new HttpError({
-        status: 410,
+        status: 409,
         code: ERROR_CODES.INVITE_ALREADY_ACCEPTED,
         message: 'Invite already accepted',
         requestId: request.id,

@@ -1,7 +1,7 @@
 import { DatabaseIcon } from "lucide-react"
 import type { Meta, StoryObj } from "@storybook/react"
 import type { DockviewPanelApi } from "dockview-react"
-import { PanelChrome } from "../src/dock/PanelChrome"
+import { PanelChrome } from "../src/front/dock/PanelChrome"
 
 function createPanelApi(id: string, title: string): DockviewPanelApi {
   return {

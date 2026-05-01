@@ -2,18 +2,10 @@ import { expect, test } from "@playwright/test"
 
 /**
  * Regression: user reported "I have the feeling commands are not
- * working". Root cause was that ChatCenteredShell only saw the
- * IDE-flavored commands the WorkspaceProvider registers (Toggle
- * Sidebar / Toggle Agent Panel / Close Tab) — those target the
- * dockview store, which the chat shell doesn't render, so triggering
- * them produced no visible effect.
- *
- * Fix surfaced shell-specific commands (Toggle Sessions Drawer,
- * Toggle Workbench, New Chat) in the ⌘K palette. These tests check
- * that selecting them actually toggles the corresponding pane.
+ * working". The playground now uses WorkspaceProvider + ChatLayout, so
+ * the canary checks the provider-owned palette against the declarative
+ * dockview shell instead of centered-shell-specific commands.
  */
-
-const STORAGE_KEY = "boring-ui-v2:chat-centered-shell:v2"
 
 async function runCommandFromPalette(
   page: import("@playwright/test").Page,
@@ -47,39 +39,44 @@ async function paneWidth(
 test.describe("command palette effects", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
-    // Reset open state so each test starts from collapsed.
-    await page.evaluate((prefix) => {
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i)
-        if (k?.startsWith(prefix)) localStorage.removeItem(k)
-      }
-    }, STORAGE_KEY)
-    await page.reload()
-    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible()
   })
 
-  test("'Toggle Sessions Drawer' opens the closed drawer", async ({ page }) => {
-    expect(await paneWidth(page, "Session browser")).toBe(0)
-    await runCommandFromPalette(page, "Toggle Sessions")
+  test("top-bar Search opens the provider command palette", async ({ page }) => {
+    await page.getByRole("button", { name: /search catalogs and commands/i }).click()
+    await expect(
+      page.getByRole("dialog", { name: /command palette/i }),
+    ).toBeVisible({ timeout: 5_000 })
+  })
+
+  test("chat command can be selected from the palette", async ({ page }) => {
+    const sessions = page
+      .getByRole("navigation", { name: /session history/i })
+      .getByRole("listitem")
+    const before = await sessions.count()
+    await runCommandFromPalette(page, "New Chat")
+    await expect(sessions).toHaveCount(before + 1)
+  })
+
+  test("Focus Chat closes sessions and workbench panes", async ({ page }) => {
     expect(await paneWidth(page, "Session browser")).toBeGreaterThan(0)
-  })
-
-  test("'Toggle Workbench' opens the closed workbench", async ({ page }) => {
-    expect(await paneWidth(page, "Surface")).toBe(0)
-    await runCommandFromPalette(page, "Toggle Workbench")
     expect(await paneWidth(page, "Surface")).toBeGreaterThan(0)
-  })
 
-  test("running the command twice toggles the pane closed again", async ({
-    page,
-  }) => {
-    await runCommandFromPalette(page, "Toggle Sessions")
-    expect(await paneWidth(page, "Session browser")).toBeGreaterThan(0)
-    await runCommandFromPalette(page, "Toggle Sessions")
-    // The pane has a 280ms width transition — poll instead of asserting
-    // immediately, so we don't catch it mid-collapse.
+    await runCommandFromPalette(page, "Focus Chat")
+
     await expect
       .poll(() => paneWidth(page, "Session browser"), { timeout: 2_000 })
       .toBe(0)
+    await expect
+      .poll(() => paneWidth(page, "Surface"), { timeout: 2_000 })
+      .toBe(0)
+    await expect(page.locator('[data-boring-agent] textarea[name="message"]')).toBeFocused({
+      timeout: 2_000,
+    })
+  })
+
+  test("session selection updates the TopBar through ChatLayout params", async ({ page }) => {
+    await page.getByText("Plan review").click()
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toContainText("Plan review")
   })
 })

@@ -2,8 +2,7 @@
 
 ## Vercel Sandbox cold-start benchmark (2026-04-23)
 
-Benchmark harness: [scripts/bench-vercel-cold-start.ts](../scripts/bench-vercel-cold-start.ts)  
-Historical CSV artifacts were removed from the package tree; the rollup below preserves the benchmark results.
+> **Note:** The benchmark harness script has been removed from the repository. The results below are preserved for historical reference.
 
 ### Method
 

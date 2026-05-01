@@ -1,0 +1,49 @@
+# Workspace Interfaces
+
+Last updated: 2026-05-01
+
+`@boring/workspace` is a workspace UI and bridge package. The app shell owns
+auth, routing, application persistence, and the concrete chat component.
+Workspace owns layout runtime, layout preferences, plugin registries, bridge
+commands, and default workspace plugins.
+
+## Package Boundaries
+
+- `src/front/` hosts React providers, layouts, Dockview chrome, registries,
+  bridge clients, and generic UI.
+- `src/plugins/` hosts plugin-owned domain behavior such as filesystem panes,
+  catalogs, event bindings, data hooks, and surface resolvers.
+- `src/server/` hosts workspace UI bridge routes, UI tools, and server plugin
+  bootstrap helpers.
+- `src/shared/` hosts browser-safe contracts only. No `node:*`, no `Buffer`,
+  and no agent package imports.
+- `src/app/` hosts composition helpers such as `createWorkspaceAgentApp`, where
+  workspace server code may compose with `@boring/agent/server`.
+
+## Core Contracts
+
+- Plugin outputs: `src/shared/plugins/types.ts`
+  - `panel`, `left-tab`, `command`, `catalog`, `binding`, `provider`,
+    `surface-resolver`, and `agent-tool`.
+- Surface opening: `src/shared/types/surface.ts`
+  - `SurfaceOpenRequest { kind, target, meta }` is resolved by plugin
+    `surface-resolver` outputs into panel openings.
+- UI bridge: `src/shared/ui-bridge.ts`
+  - Agents and servers post `UiCommand` values. The front-end dispatches them
+    against the workspace runtime.
+- Filesystem data: `src/plugins/filesystemPlugin/data`
+  - Filesystem client, hooks, event stream, and cache invalidation are plugin
+    owned.
+- Data catalog: `src/plugins/dataCatalogPlugin`
+  - Catalog rows are opened through `openSurface`; row-to-panel mapping belongs
+    to the plugin resolver.
+
+## Ownership Rules
+
+- Workspace chrome must not hardcode plugin panel ids or plugin domain rules.
+- Plugin data APIs stay under the owning plugin; there is no `front/data`
+  compatibility layer.
+- Use `openSurface` for domain targets that need resolver selection.
+- Use `openPanel` only when the caller intentionally names the concrete panel.
+- Front/shared workspace code does not value-import `@boring/agent`; app/server
+  composition may import documented agent server APIs.

@@ -2,10 +2,7 @@
   "name": "@boring/agent",
   "version": "0.1.0",
   "type": "module",
-  "description": "Pane-embeddable coding agent with CLI. Ships direct/local/vercel-sandbox execution modes behind one interface.",
-  "bin": {
-    "boring-agent": "./dist/bin/boring-agent.js"
-  },
+  "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
   "exports": {
     ".": {
       "types": "./dist/front/index.d.ts",
@@ -39,17 +36,11 @@
   "scripts": {
     "build": "tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
-    "bench:vercel-cold-start": "tsx ./scripts/bench-vercel-cold-start.ts",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
-    "smoke:direct": "tsx scripts/smoke-modes/direct.mts",
-    "smoke:local": "tsx scripts/smoke-modes/local.mts",
-    "smoke:vercel": "tsx scripts/smoke-modes/vercel-sandbox.mts",
-    "smoke": "pnpm run smoke:direct",
     "test:regression": "vitest run src/server/__tests__/system-prompt-size.regression.test.ts",
     "test:watch": "vitest",
-    "eval": "tsx ./scripts/eval.ts",
     "check:isolation": "tsx ./scripts/check-agent-isolation.ts",
     "pi-sdk:canary": "./scripts/pi-sdk-canary.sh",
     "typecheck": "tsc --noEmit",
@@ -75,7 +66,7 @@
     "@streamdown/mermaid": "^1.0.2",
     "@tanstack/react-query": "^5.0.0",
     "@vercel/blob": "^2.3.3",
-    "@vercel/sandbox": "^1.10.0",
+    "@vercel/sandbox": "2.0.0-beta.14",
     "ai": "^6.0.168",
     "chokidar": "^4.0.3",
     "class-variance-authority": "^0.7.1",

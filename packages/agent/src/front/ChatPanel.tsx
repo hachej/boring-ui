@@ -18,8 +18,9 @@ async function readFileAsText(file: FileUIPart): Promise<string | null> {
     return null
   }
 }
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentChat } from './hooks/useAgentChat'
+import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
@@ -53,7 +54,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon, BotIcon } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -64,6 +65,7 @@ import {
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
+const STORAGE_MODEL_USER_KEY = 'boring-agent:composer:model:user-selected'
 const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
 const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
 
@@ -114,10 +116,10 @@ interface AvailableModel extends ModelSelection {
 
 const DEFAULT_MODEL: ModelSelection = { provider: 'anthropic', id: 'sonnet' }
 
-function readStoredModel(): ModelSelection {
+function readStoredModel(): ModelSelection | null {
   try {
     const raw = globalThis.localStorage?.getItem(STORAGE_MODEL_KEY)
-    if (!raw) return DEFAULT_MODEL
+    if (!raw) return null
     if (raw.startsWith('{')) {
       const parsed = JSON.parse(raw) as Partial<ModelSelection>
       if (typeof parsed?.provider === 'string' && typeof parsed?.id === 'string') {
@@ -126,7 +128,23 @@ function readStoredModel(): ModelSelection {
     }
     if (isModelId(raw)) return { provider: 'anthropic', id: raw }
   } catch { /* storage unavailable */ }
-  return DEFAULT_MODEL
+  return null
+}
+
+function readStoredModelState(): { model: ModelSelection | null; userSelected: boolean } {
+  const model = readStoredModel()
+  let userSelected = false
+  try {
+    userSelected = globalThis.localStorage?.getItem(STORAGE_MODEL_USER_KEY) === '1'
+  } catch { /* storage unavailable */ }
+  return {
+    // Only an explicit user-selection marker makes a stored model authoritative.
+    // App defaults must come from props or /api/v1/agent/models.defaultModel;
+    // otherwise child apps that seed localStorage can silently override the
+    // composer after the user picks a different provider.
+    model: userSelected ? model : null,
+    userSelected,
+  }
 }
 
 function encodeModelKey(sel: ModelSelection): string {
@@ -183,13 +201,29 @@ function friendlyError(err: Error): FriendlyError {
 function displayModelLabel(id: string): string {
   // "claude-sonnet-4-6" → "Claude Sonnet 4.6"
   // "gpt-5.3-codex" → "GPT-5.3 Codex"
-  return id
+  const modelId = id.split('/').pop() ?? id
+  return modelId
     .replace(/[-_]/g, ' ')
     .replace(/\s(\d+)\s(\d+)/g, ' $1.$2')
     .replace(/\bgpt\b/g, 'GPT')
-    .replace(/\b(claude|sonnet|haiku|opus|codex|mini|max|spark)\b/g, (m) =>
+    .replace(/\b(qwen|grok|glm|claude|sonnet|haiku|opus|codex|mini|max|spark|flash|turbo|pro|omni|mimo|deepseek|euryale)\b/g, (m) =>
       m.charAt(0).toUpperCase() + m.slice(1),
     )
+}
+
+function displayProviderLabel(provider: string): string {
+  const known: Record<string, string> = {
+    anthropic: 'Anthropic',
+    openai: 'OpenAI',
+    'openai-codex': 'OpenAI Codex',
+    infomaniak: 'Infomaniak',
+  }
+  if (known[provider]) return known[provider]
+  return provider
+    .split(/[-_]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 export interface ChatPanelProps {
@@ -226,6 +260,12 @@ export interface ChatPanelProps {
    */
   thinkingControl?: boolean
   /**
+   * Model selected before any local user choice exists. Usually supplied by
+   * the host's /api/v1/agent/models payload, so deployment env can choose
+   * the default without rebuilding consumers.
+   */
+  defaultModel?: ModelSelection
+  /**
    * Tap into the SSE data stream. Called for every `onData` part the
    * agent emits — host apps use this to bridge agent-driven file
    * changes into their own UI plumbing (see
@@ -233,6 +273,8 @@ export interface ChatPanelProps {
    * canonical wire-up).
    */
   onData?: (part: unknown) => void
+  /** Headers sent with chat and chat-history requests. */
+  requestHeaders?: Record<string, string>
   /**
    * Called with a file path when the user clicks the path label inside
    * a read / write / edit tool card. Hosts (e.g. @boring/workspace)
@@ -241,6 +283,12 @@ export interface ChatPanelProps {
    * future renderer can consume it without a prop drill.
    */
   onOpenArtifact?: OpenArtifactHandler
+  /**
+   * Enable the admin debug drawer — system prompt, raw messages JSON, and
+   * live onData stream events. Intended for development and ops; keep off
+   * in production consumer UIs.
+   */
+  debug?: boolean
   className?: string
 }
 
@@ -301,12 +349,16 @@ export function ChatPanel(props: ChatPanelProps) {
     emptyTitle,
     emptyDescription,
     thinkingControl = false,
+    defaultModel,
     onData,
+    requestHeaders,
     onOpenArtifact,
+    debug = false,
   } = props
+  const [debugWidth, setDebugWidth] = useState(440)
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
-  } = useAgentChat({ sessionId, onData })
+  } = useAgentChat({ sessionId, onData, requestHeaders })
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
   const registry = useMemo(
@@ -314,7 +366,21 @@ export function ChatPanel(props: ChatPanelProps) {
     [extraCommands],
   )
 
-  const [model, setModel] = useState<ModelSelection>(() => readStoredModel())
+  const initialModelState = useMemo(readStoredModelState, [])
+  const [model, setModelState] = useState<ModelSelection>(
+    () => initialModelState.model ?? defaultModel ?? DEFAULT_MODEL,
+  )
+  const [userSelectedModel, setUserSelectedModel] = useState<boolean>(
+    () => initialModelState.userSelected,
+  )
+  const userSelectedModelRef = useRef(userSelectedModel)
+  useEffect(() => {
+    userSelectedModelRef.current = userSelectedModel
+  }, [userSelectedModel])
+  const setModel = useCallback((next: ModelSelection) => {
+    setUserSelectedModel(true)
+    setModelState(next)
+  }, [])
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
     thinkingControl ? readStoredThinking() : DEFAULT_THINKING,
   )
@@ -345,24 +411,34 @@ export function ChatPanel(props: ChatPanelProps) {
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
 
   useEffect(() => {
+    if (!userSelectedModel) return
     try {
       globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(model))
+      globalThis.localStorage?.setItem(STORAGE_MODEL_USER_KEY, '1')
     } catch { /* noop */ }
-  }, [model])
+  }, [model, userSelectedModel])
+
+  useEffect(() => {
+    if (userSelectedModelRef.current || !defaultModel) return
+    setModelState(defaultModel)
+  }, [defaultModel])
 
   // Fetch the live list from pi's ModelRegistry so the dropdown reflects
   // what the server actually has auth for, not a hardcoded alias set.
   useEffect(() => {
     let aborted = false
-    fetch('/api/v1/agent/models')
+    fetch('/api/v1/agent/models', { headers: requestHeaders })
       .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { models?: AvailableModel[] } | null) => {
+      .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
         if (aborted || !payload?.models) return
         setAvailableModels(payload.models)
+        if (payload.defaultModel && !userSelectedModelRef.current) {
+          setModelState(payload.defaultModel)
+        }
       })
       .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
     return () => { aborted = true }
-  }, [])
+  }, [requestHeaders])
 
   // Legacy single-string event payload (used by the /model slash command)
   // still works — treat it as an anthropic short alias.
@@ -398,7 +474,12 @@ export function ChatPanel(props: ChatPanelProps) {
           clearMessages: () => setMessages([]),
           resetSession: () => {
             setMessages([])
-            fetch(`/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => {})
+            fetch(
+              `/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`,
+              requestHeaders
+                ? { method: 'DELETE', headers: requestHeaders }
+                : { method: 'DELETE' },
+            ).catch(() => {})
             void onSessionReset?.()
           },
           setModel: (model) => {
@@ -485,7 +566,8 @@ export function ChatPanel(props: ChatPanelProps) {
       data-boring-agent=""
       data-boring-agent-part="chat"
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden text-foreground antialiased",
+        "flex h-full min-h-0 overflow-hidden text-foreground antialiased",
+        debug ? "flex-row" : "flex-col",
         chrome
           ? "bg-[color:var(--canvas)] text-[13px]"
           : "bg-transparent text-[13px]",
@@ -494,6 +576,7 @@ export function ChatPanel(props: ChatPanelProps) {
       role="region"
       aria-label="Agent assistant"
     >
+      <div className={cn("flex min-h-0 min-w-0 flex-col", debug ? "flex-1" : "h-full")}>
       <div
         className={cn(
           "flex h-full min-h-0 flex-col overflow-hidden",
@@ -723,16 +806,17 @@ export function ChatPanel(props: ChatPanelProps) {
               </Message>
             )
           })}
-          {/* Thinking caption — fills the gap between user submit and the
-              first assistant chunk. Hides as soon as the AI SDK appends an
-              assistant message (i.e. the model has started replying). The
-              top progress bar continues from there. */}
-          {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === 'user' && (
+          {/* Persistent working caption — stays visible for the whole run:
+              waiting for first byte, streaming text, reasoning, or tool work.
+              It used to hide as soon as an assistant message appeared, which
+              made long tool turns feel idle even though the progress bar kept
+              moving. */}
+          {isStreaming && (
             <div
-              data-testid="chat-thinking"
+              data-testid="chat-working"
               role="status"
               aria-live="polite"
-              className="flex items-center gap-2 text-[12px] text-muted-foreground/70"
+              className="sticky bottom-0 z-10 flex items-center gap-2 self-start rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur"
             >
               <motion.span
                 aria-hidden="true"
@@ -740,7 +824,7 @@ export function ChatPanel(props: ChatPanelProps) {
                 animate={{ opacity: [0.35, 1, 0.35] }}
                 transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
               />
-              <span>Thinking…</span>
+              <span>Working…</span>
             </div>
           )}
           {(() => {
@@ -917,6 +1001,16 @@ export function ChatPanel(props: ChatPanelProps) {
         </div>
       </div>
       </div>
+      </div>
+      {debug && (
+        <DebugDrawer
+          sessionId={sessionId}
+          messages={messages}
+          requestHeaders={requestHeaders}
+          width={debugWidth}
+          onWidthChange={setDebugWidth}
+        />
+      )}
     </div>
     </ArtifactOpenProvider>
   )
@@ -969,20 +1063,34 @@ function ModelSelect({
   options: AvailableModel[]
   disabled?: boolean
 }) {
-  // Group by provider, preserving the server's already-sorted order.
-  const groups = new Map<string, AvailableModel[]>()
-  for (const m of options) {
-    if (!m.available) continue
-    const list = groups.get(m.provider) ?? []
-    list.push(m)
-    groups.set(m.provider, list)
-  }
-
   const currentKey = encodeModelKey(value)
   // Trigger label prefers a live entry, falls back to raw id for offline /
   // legacy short-alias sessions so the label never goes blank.
   const current = options.find((m) => m.provider === value.provider && m.id === value.id)
   const triggerLabel = current?.label ?? displayModelLabel(value.id)
+  const triggerProviderLabel = displayProviderLabel(value.provider)
+
+  const availableOptions = options.filter((m) => m.available)
+  const hasCurrentOption = availableOptions.some((m) => encodeModelKey(m) === currentKey)
+  const menuOptions = hasCurrentOption
+    ? availableOptions
+    : [
+        {
+          provider: value.provider,
+          id: value.id,
+          label: triggerLabel,
+          available: true,
+        },
+        ...availableOptions,
+      ]
+
+  // Group by provider, preserving the server's already-sorted order.
+  const groups = new Map<string, AvailableModel[]>()
+  for (const m of menuOptions) {
+    const list = groups.get(m.provider) ?? []
+    list.push(m)
+    groups.set(m.provider, list)
+  }
 
   return (
     <Select
@@ -996,24 +1104,45 @@ function ModelSelect({
       <SelectTrigger
         data-boring-agent-part="model-select"
         data-boring-state={disabled ? "disabled" : undefined}
-        className={cn(composerActionClass, "px-3 text-xs font-medium")}
+        className={cn(
+          composerActionClass,
+          "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
+          "data-[state=open]:bg-muted/60 data-[state=open]:text-foreground",
+        )}
         aria-label="Model"
       >
-        <SelectValue>{triggerLabel}</SelectValue>
+        <BotIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">
+          <SelectValue>{triggerLabel}</SelectValue>
+        </span>
+        <span className="hidden shrink-0 rounded-full border border-border/70 bg-background/45 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
+          {triggerProviderLabel}
+        </span>
       </SelectTrigger>
-      <SelectContent className="max-h-[320px]">
+      <SelectContent
+        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
+        style={{ maxHeight: 'min(340px, var(--radix-select-content-available-height))' }}
+      >
         {[...groups.entries()].map(([provider, list]) => (
-          <div key={provider} className="px-1 py-1">
-            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
-              {provider}
+          <div key={provider} className="py-1">
+            <div className="px-2 pb-1 text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">
+              {displayProviderLabel(provider)}
             </div>
             {list.map((m) => (
               <SelectItem
                 key={encodeModelKey(m)}
                 value={encodeModelKey(m)}
-                className="text-xs font-medium"
+                aria-label={`${m.label || displayModelLabel(m.id)}, ${displayProviderLabel(m.provider)}`}
+                className="rounded-md py-2 pl-8 pr-2 text-[13px] focus:bg-foreground/[0.06] data-[state=checked]:bg-foreground/[0.06]"
               >
-                {m.label || displayModelLabel(m.id)}
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate font-medium">
+                    {m.label || displayModelLabel(m.id)}
+                  </span>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {m.id}
+                  </span>
+                </span>
               </SelectItem>
             ))}
           </div>
@@ -1075,7 +1204,7 @@ function ThinkingSelect({
       >
         <BrainIcon className="h-3.5 w-3.5" />
       </SelectTrigger>
-      <SelectContent className="w-auto min-w-0 p-2">
+      <SelectContent className="w-auto min-w-0 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl">
         <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
           Think
         </div>

@@ -811,9 +811,8 @@ unbounded-output commands (`find / -type f` style) — especially in
 
 **Verified resolution (smoke-tested 2026-04-28):** the `@vercel/sandbox`
 SDK supports streaming via two APIs (`Command.logs()` async-generator
-and `runCommand({ stdout, stderr: Writable })` pipe-to-stream). Smoke
-script at `packages/agent/scripts/smoke-vercel-sandbox.mts` ran a
-100-line command and observed **80 incremental `Writable.write()`
+and `runCommand({ stdout, stderr: Writable })` pipe-to-stream). A smoke
+test ran a 100-line command and observed **80 incremental `Writable.write()`
 calls** spread across the 1.3-second run — first chunk at +421ms, not
 buffered-and-dumped. Abort latency ~12ms. The streaming question is
 empirically resolved.
@@ -1059,4 +1058,4 @@ sense pi's Operations would).
 - Why grep is default: [pi-mono#3782 — Default to using custom `grep` tool](https://github.com/badlogic/pi-mono/issues/3782)
 - Active SSH-extension iteration: [pi-mono#3500](https://github.com/badlogic/pi-mono/issues/3500), [#3320](https://github.com/badlogic/pi-mono/issues/3320), [#2965](https://github.com/badlogic/pi-mono/issues/2965)
 - Original spec: `packages/agent/docs/plans/agent-package-spec.md` (decisions #4, #6)
-- Companion plan (lands after this): `packages/workspace/docs/plans/PLUGIN_MODEL.md`
+- Companion plan (lands after this): `packages/workspace/docs/plans/archive/PLUGIN_MODEL.md`

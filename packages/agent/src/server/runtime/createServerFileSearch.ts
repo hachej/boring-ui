@@ -25,25 +25,25 @@ function normalizeLimit(limit: number | undefined): number {
 // "src/<globstar>/foo.ts" or just "package.json") into a `find` invocation
 // that actually matches.
 //
-// `find -name <pat>` only matches the BASENAME — it has no concept of
-// path segments — and `find -path <pat>` doesn't understand the
+// `find -iname <pat>` only matches the BASENAME — it has no concept of
+// path segments — and `find -ipath <pat>` doesn't understand the
 // double-asterisk globstar (find treats it as two literal asterisks,
 // which fails to match anything). LLMs default to globstar/path globs,
 // which is how the "no files found" reports kept surfacing.
 //
 // Heuristic:
-//   - bare basename ("*.ts", "package.json", "Dockerfile") → -name <pat>
-//   - path-shaped ("src/*.ts", "<globstar>/foo.ts") → -path, with the
+//   - bare basename ("*.ts", "package.json", "Dockerfile") → -iname <pat>
+//   - path-shaped ("src/*.ts", "<globstar>/foo.ts") → -ipath, with the
 //     globstar collapsed to a single `*` so find recurses, prefixed
 //     with `*` so it matches anywhere under cwd unless already anchored.
 function buildFindArgs(glob: string): string {
   const isPathShaped = glob.includes('/') || glob.includes('**')
   if (!isPathShaped) {
-    return `-name ${shellQuote(glob)}`
+    return `-iname ${shellQuote(glob)}`
   }
 
-  // `find -path` matches the FULL path of each candidate (including
-  // leading `./`). `*` inside a `-path` arg matches across `/` so we
+  // `find -ipath` matches the FULL path of each candidate (including
+  // leading `./`). `*` inside a `-ipath` arg matches across `/` so we
   // translate `**` → `*` (idempotent: a single `*` is the recursive
   // form). Ensure the pattern matches anywhere by prefixing `*` when
   // the glob is not already anchored — this covers both "src/foo.ts"
@@ -55,7 +55,7 @@ function buildFindArgs(glob: string): string {
   if (!translated.startsWith('*')) {
     translated = `*${translated}`
   }
-  return `-path ${shellQuote(translated)}`
+  return `-ipath ${shellQuote(translated)}`
 }
 
 export function createServerFileSearch(

@@ -110,6 +110,10 @@ export async function loadConfig(
     ? corsOriginsRaw.split(',').map((s) => s.trim()).filter(Boolean)
     : ['http://localhost:3000', 'http://localhost:5173']
   const cspEnabled = env.CSP_ENABLED !== 'false'
+  const cspUpgradeInsecureRequests =
+    env.CSP_UPGRADE_INSECURE_REQUESTS !== undefined
+      ? env.CSP_UPGRADE_INSECURE_REQUESTS === 'true'
+      : authUrl.startsWith('https://')
 
   const sessionCookieSecureOverride = env.SESSION_COOKIE_SECURE
   const sessionCookieSecure =
@@ -157,6 +161,7 @@ export async function loadConfig(
     security: {
       csp: {
         enabled: cspEnabled,
+        upgradeInsecureRequests: cspUpgradeInsecureRequests,
       },
     },
 

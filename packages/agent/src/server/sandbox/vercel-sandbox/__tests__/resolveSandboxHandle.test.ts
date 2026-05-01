@@ -5,7 +5,9 @@ import type {
   SandboxHandleRecord,
   SandboxHandleStore,
 } from '../../../../shared/sandbox-handle-store'
+import { ErrorCode } from '../../../../shared/error-codes'
 import {
+  SandboxHandleUnavailableError,
   type VercelSandboxClient,
   resetSandboxHandleCacheForTests,
   resolveSandboxHandle,
@@ -253,6 +255,49 @@ test('stale persisted sandbox is stopped by orphan guard and recreated from snap
   )
 })
 
+test('orphan guard reuses stale sandbox when no snapshot is available', async () => {
+  const oldRecord: SandboxHandleRecord = {
+    workspaceId: 'workspace-orphan-no-snapshot',
+    sandboxId: 'sb-orphan-no-snapshot',
+    createdAt: '2026-04-23T00:00:00.000Z',
+    lastUsedAt: '2026-04-23T00:00:00.000Z',
+  }
+  const store = createStore([oldRecord])
+  const stale = createSandboxHandle('sb-orphan-no-snapshot', {
+    status: 'running',
+  })
+  const client: VercelSandboxClient = {
+    create: vi.fn(),
+    get: vi.fn(async () => stale),
+  }
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+  }
+
+  const resolved = await resolveSandboxHandle(
+    'workspace-orphan-no-snapshot',
+    store,
+    client,
+    {
+      maxIdleMs: 5 * 60 * 1000,
+      now: () => Date.parse('2026-04-23T01:00:00.000Z'),
+      logger,
+    },
+  )
+
+  expect(resolved).toBe(stale)
+  expect(stale.stop).not.toHaveBeenCalled()
+  expect(client.create).not.toHaveBeenCalled()
+  expect(logger.warn).toHaveBeenCalledWith(
+    '[sandbox] orphan-guard skipped; no snapshot available',
+    expect.objectContaining({
+      workspaceId: 'workspace-orphan-no-snapshot',
+      sandboxId: 'sb-orphan-no-snapshot',
+    }),
+  )
+})
+
 test('concurrent requests use a single in-flight resolution', async () => {
   const store = createStore()
   const deferred = createDeferred<VercelSandbox>()
@@ -358,7 +403,88 @@ test('persisted sandbox in expired status recreates from snapshot', async () => 
   })
 })
 
-test('404 from get recreates, and missing snapshot falls back to create() with no args', async () => {
+test('persisted sandbox in expired status recreates empty when no snapshot is available', async () => {
+  const oldRecord: SandboxHandleRecord = {
+    workspaceId: 'workspace-stopped-empty',
+    sandboxId: 'sb-stopped-empty',
+    createdAt: '2026-04-23T00:00:00.000Z',
+    lastUsedAt: '2026-04-23T00:00:00.000Z',
+  }
+  const store = createStore([oldRecord])
+  const stopped = createSandboxHandle('sb-stopped-empty', {
+    status: 'stopped',
+  })
+  const recreated = createSandboxHandle('sb-fresh-empty')
+  const logger = {
+    warn: vi.fn(),
+  }
+  const client: VercelSandboxClient = {
+    create: vi.fn(async () => recreated),
+    get: vi.fn(async () => stopped),
+  }
+
+  const resolved = await resolveSandboxHandle('workspace-stopped-empty', store, client, {
+    logger,
+  })
+
+  expect(resolved).toBe(recreated)
+  expect(client.get).toHaveBeenCalledWith({ sandboxId: 'sb-stopped-empty' })
+  expect(client.create).toHaveBeenCalledWith()
+  expect(logger.warn).toHaveBeenCalledWith(
+    '[sandbox] recreating empty sandbox; no snapshot available',
+    expect.objectContaining({
+      workspaceId: 'workspace-stopped-empty',
+      sandboxId: 'sb-stopped-empty',
+      reason: 'sandbox status is stopped',
+    }),
+  )
+  expect(store.puts[0]).toMatchObject({
+    workspaceId: 'workspace-stopped-empty',
+    sandboxId: 'sb-fresh-empty',
+    createdAt: oldRecord.createdAt,
+  })
+  expect(store.puts[0]?.snapshotId).toBeUndefined()
+})
+
+test('expired sandbox policy can reject stopped persisted sandbox instead of recreating', async () => {
+  const oldRecord: SandboxHandleRecord = {
+    workspaceId: 'workspace-stopped-error',
+    sandboxId: 'sb-stopped-error',
+    snapshotId: 'snap-stopped-error',
+    createdAt: '2026-04-23T00:00:00.000Z',
+    lastUsedAt: '2026-04-23T00:00:00.000Z',
+  }
+  const store = createStore([oldRecord])
+  const stopped = createSandboxHandle('sb-stopped-error', {
+    status: 'stopped',
+    sourceSnapshotId: 'snap-stopped-error',
+  })
+  const client: VercelSandboxClient = {
+    create: vi.fn(),
+    get: vi.fn(async () => stopped),
+  }
+
+  await expect(
+    resolveSandboxHandle('workspace-stopped-error', store, client, {
+      expiredSandboxPolicy: 'error',
+    }),
+  ).rejects.toMatchObject({
+    name: 'SandboxHandleUnavailableError',
+    code: ErrorCode.enum.SANDBOX_EXPIRED,
+    statusCode: 410,
+    workspaceId: 'workspace-stopped-error',
+    sandboxId: 'sb-stopped-error',
+    reason: 'sandbox status is stopped',
+  })
+  await expect(
+    resolveSandboxHandle('workspace-stopped-error', store, client, {
+      expiredSandboxPolicy: 'error',
+    }),
+  ).rejects.toBeInstanceOf(SandboxHandleUnavailableError)
+  expect(client.create).not.toHaveBeenCalled()
+})
+
+test('404 from get recreates empty when persisted sandbox has no snapshot', async () => {
   const oldRecord: SandboxHandleRecord = {
     workspaceId: 'workspace-404',
     sandboxId: 'sb-404',
@@ -366,7 +492,10 @@ test('404 from get recreates, and missing snapshot falls back to create() with n
     lastUsedAt: '2026-04-23T00:00:00.000Z',
   }
   const store = createStore([oldRecord])
-  const recreated = createSandboxHandle('sb-new-404')
+  const recreated = createSandboxHandle('sb-404-recreated')
+  const logger = {
+    warn: vi.fn(),
+  }
   const client: VercelSandboxClient = {
     create: vi.fn(async () => recreated),
     get: vi.fn(async () => {
@@ -374,11 +503,50 @@ test('404 from get recreates, and missing snapshot falls back to create() with n
     }),
   }
 
-  const resolved = await resolveSandboxHandle('workspace-404', store, client)
+  const resolved = await resolveSandboxHandle('workspace-404', store, client, {
+    logger,
+  })
 
   expect(resolved).toBe(recreated)
-  expect(client.create).toHaveBeenCalledTimes(1)
   expect(client.create).toHaveBeenCalledWith()
+  expect(logger.warn).toHaveBeenCalledWith(
+    '[sandbox] recreating empty sandbox; no snapshot available',
+    expect.objectContaining({
+      workspaceId: 'workspace-404',
+      sandboxId: 'sb-404',
+      reason: 'sandbox lookup returned HTTP 404',
+    }),
+  )
+})
+
+test('expired sandbox policy can reject missing persisted sandbox instead of recreating', async () => {
+  const oldRecord: SandboxHandleRecord = {
+    workspaceId: 'workspace-410-error',
+    sandboxId: 'sb-410-error',
+    snapshotId: 'snap-410-error',
+    createdAt: '2026-04-23T00:00:00.000Z',
+    lastUsedAt: '2026-04-23T00:00:00.000Z',
+  }
+  const store = createStore([oldRecord])
+  const client: VercelSandboxClient = {
+    create: vi.fn(),
+    get: vi.fn(async () => {
+      throw createDirectStatusError(410)
+    }),
+  }
+
+  await expect(
+    resolveSandboxHandle('workspace-410-error', store, client, {
+      expiredSandboxPolicy: 'error',
+    }),
+  ).rejects.toMatchObject({
+    code: ErrorCode.enum.SANDBOX_EXPIRED,
+    statusCode: 410,
+    workspaceId: 'workspace-410-error',
+    sandboxId: 'sb-410-error',
+    reason: 'sandbox lookup returned HTTP 410',
+  })
+  expect(client.create).not.toHaveBeenCalled()
 })
 
 test('direct status 410 from get recreates from snapshot', async () => {
@@ -464,7 +632,7 @@ test('store.put failure does not poison in-process cache', async () => {
   ).rejects.toThrow('put failed')
   const resolved = await resolveSandboxHandle('workspace-put-failure', store, client)
 
-  expect(resolved.sandboxId).toBe('sb-second-attempt')
+  expect((resolved as any).sandboxId).toBe('sb-second-attempt')
   expect(client.create).toHaveBeenCalledTimes(2)
 })
 

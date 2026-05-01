@@ -8,8 +8,8 @@ import {
   WorkspaceProvider,
   ThemeProvider,
   useTheme,
-} from "../WorkspaceProvider"
-import { createShadcnTheme } from "../theme/codemirror-theme"
+} from "../front/provider"
+import { createShadcnTheme } from "../front/theme/codemirror-theme"
 
 // ---------------------------------------------------------------------------
 // localStorage mock
@@ -258,7 +258,7 @@ describe("CodeMirror theme sync", () => {
 
 describe("Dockview theme sync", () => {
   it("12. dockview-overrides.css maps --dv-background-color to var(--background)", () => {
-    const cssPath = resolve(__dirname, "../dock/dockview-overrides.css")
+    const cssPath = resolve(__dirname, "../front/dock/dockview-overrides.css")
     const content = readFileSync(cssPath, "utf-8")
     expect(content).toContain("--dv-background-color")
     expect(content).toContain("var(--background)")

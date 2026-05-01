@@ -23,8 +23,31 @@ function log(event: string, fields: Record<string, unknown> = {}): void {
   console.info(JSON.stringify({ level: 'info', bead: BEAD, event, ...fields }))
 }
 
+function json(body: unknown, status = 200) {
+  return {
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  }
+}
+
 test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
   let signedIn = false
+  const cspEvalViolations: string[] = []
+
+  page.on('console', (msg) => {
+    const text = msg.text()
+    if (text.includes('Content-Security-Policy') && text.includes('unsafe-eval')) {
+      cspEvalViolations.push(text)
+    }
+  })
+
+  page.on('pageerror', (err) => {
+    const text = String(err)
+    if (text.includes('Content-Security-Policy') && text.includes('unsafe-eval')) {
+      cspEvalViolations.push(text)
+    }
+  })
 
   await page.route('**/*', async (route) => {
     const request = route.request()
@@ -36,21 +59,17 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
     const path = url.pathname
 
     if (path === '/api/v1/config') {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          appId: 'boring-app',
-          appName: 'Boring Full App',
-          appLogo: null,
-          apiBase: baseURL,
-          features: {
-            githubOauth: false,
-            invitesEnabled: true,
-            sendWelcomeEmail: false,
-          },
-        }),
-      })
+      return route.fulfill(json({
+        appId: 'boring-app',
+        appName: 'Boring Full App',
+        appLogo: null,
+        apiBase: baseURL,
+        features: {
+          githubOauth: false,
+          invitesEnabled: true,
+          sendWelcomeEmail: false,
+        },
+      }))
     }
 
     if (path === '/auth/get-session') {
@@ -69,61 +88,58 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
           }
         : null
 
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(payload),
-      })
+      return route.fulfill(json(payload))
     }
 
     if (path === '/auth/sign-in/email' && request.method() === 'POST') {
       signedIn = true
       log('smoke.signin.mocked')
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ user: USER }),
-      })
+      return route.fulfill(json({ user: USER }))
     }
 
     if (path === '/api/v1/workspaces') {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ workspaces: [WORKSPACE] }),
-      })
+      return route.fulfill(json({ workspaces: [WORKSPACE] }))
     }
 
     if (path === `/api/v1/workspaces/${WORKSPACE_ID}`) {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ workspace: WORKSPACE, role: 'owner' }),
-      })
+      return route.fulfill(json({ workspace: WORKSPACE, role: 'owner' }))
     }
 
     if (path === '/api/v1/tree' && request.method() === 'GET') {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ entries: [] }),
-      })
+      return route.fulfill(json({ entries: [] }))
     }
 
     if (path === '/api/v1/agent/models') {
+      return route.fulfill(json({ models: [] }))
+    }
+
+    if (path === '/api/v1/agent/sessions') {
+      return route.fulfill(json([]))
+    }
+
+    if (path === '/api/v1/ui/state' && request.method() === 'PUT') {
+      return route.fulfill({ status: 204, body: '' })
+    }
+
+    if (path === '/api/v1/ui/commands/next') {
+      if (url.searchParams.get('poll') === 'true') return route.fulfill(json([]))
       return route.fulfill({
         status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ models: [] }),
+        contentType: 'text/event-stream',
+        body: 'event: init\ndata: {"v":1}\n\n',
+      })
+    }
+
+    if (path === '/api/v1/fs/events') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: 'event: init\ndata: {"v":1}\n\n',
       })
     }
 
     if (path.startsWith('/api/v1/agent/')) {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({}),
-      })
+      return route.fulfill(json({}))
     }
 
     return route.continue()
@@ -146,7 +162,8 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
   await page.goto(`/workspace/${WORKSPACE_ID}`)
   await expect(page).toHaveURL(new RegExp(`/workspace/${WORKSPACE_ID}$`))
   await expect(page.getByText('Smoke Workspace')).toBeVisible()
-  await expect(page.locator('.dv-shell')).toBeVisible()
+  await expect(page.getByLabel('Workbench left pane')).toBeVisible()
+  expect(cspEvalViolations, cspEvalViolations.join('\n')).toEqual([])
 
   log('smoke.complete', { workspaceId: WORKSPACE_ID })
 })

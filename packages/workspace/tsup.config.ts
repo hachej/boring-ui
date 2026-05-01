@@ -4,11 +4,21 @@ const PEER_EXTERNALS = ["react", "react-dom", "react/jsx-runtime"]
 
 export default defineConfig({
   entry: {
+    app: "src/app/index.ts",
     server: "src/server/index.ts",
     shared: "src/shared/index.ts",
+    events: "src/front/events/index.ts",
   },
   format: ["esm"],
-  dts: { resolve: false, entry: { server: "src/server/index.ts", shared: "src/shared/index.ts" } },
+  dts: {
+    resolve: false,
+    entry: {
+      app: "src/app/index.ts",
+      server: "src/server/index.ts",
+      shared: "src/shared/index.ts",
+      events: "src/front/events/index.ts",
+    },
+  },
   tsconfig: "tsconfig.tsup.json",
   splitting: false,
   clean: true,

@@ -10,8 +10,8 @@ import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, expect, test, describe } from "vitest"
-import { createExecUiTool, createWorkspaceUiTools } from "../uiTools"
-import { createInMemoryBridge } from "../ui-bridge/createInMemoryBridge"
+import { createExecUiTool, createWorkspaceUiTools } from "../ui-control/tools/uiTools"
+import { createInMemoryBridge } from "../bridge/createInMemoryBridge"
 import type { UiBridge } from "../../shared/ui-bridge"
 
 const FAKE_CTX = {
@@ -127,7 +127,16 @@ describe("createExecUiTool — path validation", () => {
     expect(result.isError).toBe(true)
   })
 
-  test("non-path kinds (openPanel, showNotification) do not get path-validated", async () => {
+  test("exec_ui advertises openSurface", () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+    const parameters = tool.parameters as {
+      properties?: { kind?: { enum?: string[] } }
+    }
+    const kind = parameters.properties?.kind
+    expect(kind?.enum).toContain("openSurface")
+  })
+
+  test("non-path kinds (openPanel, openSurface, showNotification, closeWorkbenchLeftPane) do not get path-validated", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const openPanelResult = await tool.execute(
       {
@@ -138,6 +147,19 @@ describe("createExecUiTool — path validation", () => {
     )
     expect(openPanelResult.isError).toBeFalsy()
 
+    const openSurfaceResult = await tool.execute(
+      {
+        kind: "openSurface",
+        params: {
+          kind: "data-catalog.open-row",
+          target: "orders_daily",
+          meta: { catalogId: "data-catalog" },
+        },
+      },
+      FAKE_CTX,
+    )
+    expect(openSurfaceResult.isError).toBeFalsy()
+
     const showNotifResult = await tool.execute(
       {
         kind: "showNotification",
@@ -146,6 +168,33 @@ describe("createExecUiTool — path validation", () => {
       FAKE_CTX,
     )
     expect(showNotifResult.isError).toBeFalsy()
+
+    const closeLeftResult = await tool.execute(
+      {
+        kind: "closeWorkbenchLeftPane",
+        params: {},
+      },
+      FAKE_CTX,
+    )
+    expect(closeLeftResult.isError).toBeFalsy()
+  })
+
+  test("openSurface validates required target params", async () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+    const missingTarget = await tool.execute(
+      { kind: "openSurface", params: { kind: "data-catalog.open-row" } },
+      FAKE_CTX,
+    )
+    expect(missingTarget.isError).toBe(true)
+
+    const badMeta = await tool.execute(
+      {
+        kind: "openSurface",
+        params: { kind: "data-catalog.open-row", target: "x", meta: "bad" },
+      },
+      FAKE_CTX,
+    )
+    expect(badMeta.isError).toBe(true)
   })
 
   test("opts omitted: paths pass through without validation (back-compat)", async () => {

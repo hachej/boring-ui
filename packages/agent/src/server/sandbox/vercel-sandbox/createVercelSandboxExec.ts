@@ -61,7 +61,10 @@ function timeoutResult(durationMs: number): ExecResult {
   }
 }
 
-export function createVercelSandboxExec(sandbox: VercelSandbox): Sandbox {
+export function createVercelSandboxExec(
+  sandbox: VercelSandbox,
+  execOpts: { onMutation?: () => void } = {},
+): Sandbox {
   return {
     id: 'vercel-sandbox',
     placement: 'remote',
@@ -137,6 +140,7 @@ export function createVercelSandboxExec(sandbox: VercelSandbox): Sandbox {
         throw error
       } finally {
         invalidateVercelSandboxWorkspaceMetadataCache(sandbox)
+        execOpts.onMutation?.()
         if (timeoutHandle) clearTimeout(timeoutHandle)
         if (heartbeatHandle) clearInterval(heartbeatHandle)
         externalSignal?.removeEventListener('abort', abortFromExternalSignal)

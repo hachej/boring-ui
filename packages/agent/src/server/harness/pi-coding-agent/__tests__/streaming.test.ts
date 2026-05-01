@@ -1,44 +1,67 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockSubscribers, promptHandle } = vi.hoisted(() => ({
+const {
+  mockSubscribers,
+  promptHandle,
+  mockCurrentModel,
+  mockSetModel,
+  mockSetThinkingLevel,
+  mockFindModel,
+} = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
+  mockCurrentModel: {
+    value: undefined as undefined | { provider: string; id: string },
+  },
+  mockSetModel: vi.fn(async (model: { provider: string; id: string }) => {
+    mockCurrentModel.value = model;
+  }),
+  mockSetThinkingLevel: vi.fn(),
+  mockFindModel: vi.fn((provider: string, id: string) => ({ provider, id })),
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
-  createAgentSession: vi.fn().mockResolvedValue({
-    session: {
-      subscribe(listener: (event: any) => void) {
-        mockSubscribers.push(listener);
-        return () => {
-          const idx = mockSubscribers.indexOf(listener);
-          if (idx >= 0) mockSubscribers.splice(idx, 1);
-        };
+  createAgentSession: vi.fn().mockImplementation(async (config: any) => {
+    mockCurrentModel.value = config.model;
+    return {
+      session: {
+        subscribe(listener: (event: any) => void) {
+          mockSubscribers.push(listener);
+          return () => {
+            const idx = mockSubscribers.indexOf(listener);
+            if (idx >= 0) mockSubscribers.splice(idx, 1);
+          };
+        },
+        // prompt() resolves only when the test calls promptHandle.resolve().
+        // This mirrors pi-coding-agent's real behaviour where prompt() waits
+        // for agent_end before returning.
+        prompt: vi.fn().mockImplementation(
+          () =>
+            new Promise<void>((resolve) => {
+              promptHandle.resolve = resolve;
+            }),
+        ),
+        abort: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+        setModel: mockSetModel,
+        setThinkingLevel: mockSetThinkingLevel,
+        get model() {
+          return mockCurrentModel.value;
+        },
+        // Mirrors pi's `get systemPrompt(): string` accessor — used by the
+        // harness to satisfy AgentHarness.getSystemPrompt without a route
+        // round-trip through the LLM.
+        get systemPrompt() {
+          return "You are a fake test agent.";
+        },
       },
-      // prompt() resolves only when the test calls promptHandle.resolve().
-      // This mirrors pi-coding-agent's real behaviour where prompt() waits
-      // for agent_end before returning.
-      prompt: vi.fn().mockImplementation(
-        () =>
-          new Promise<void>((resolve) => {
-            promptHandle.resolve = resolve;
-          }),
-      ),
-      abort: vi.fn().mockResolvedValue(undefined),
-      dispose: vi.fn(),
-      // Mirrors pi's `get systemPrompt(): string` accessor — used by the
-      // harness to satisfy AgentHarness.getSystemPrompt without a route
-      // round-trip through the LLM.
-      get systemPrompt() {
-        return "You are a fake test agent.";
-      },
-    },
+    };
   }),
   SessionManager: { inMemory: () => ({}) },
   AuthStorage: { inMemory: () => ({}), create: () => ({}) },
   ModelRegistry: {
-    inMemory: () => ({ find: () => undefined }),
-    create: () => ({ find: () => undefined }),
+    inMemory: () => ({ find: mockFindModel }),
+    create: () => ({ find: mockFindModel }),
   },
 }));
 
@@ -53,6 +76,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockSubscribers.length = 0;
   promptHandle.resolve = undefined;
+  mockCurrentModel.value = undefined;
 });
 
 describe("streaming concurrency", () => {
@@ -217,5 +241,62 @@ describe("getSystemPrompt", () => {
     emitPiEvent({ type: "agent_end" });
     promptHandle.resolve?.();
     await reader.next();
+  });
+});
+
+describe("model switching", () => {
+  it("applies requested model changes to an existing pi session", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-model-switch",
+    });
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-model-switch",
+    };
+
+    const first = harness.sendMessage(
+      {
+        sessionId: "sess-model-switch",
+        message: "first",
+        model: { provider: "anthropic", id: "sonnet" },
+      },
+      ctx,
+    );
+    const firstReader = first[Symbol.asyncIterator]();
+    const firstPending = firstReader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve!();
+    await firstPending;
+
+    expect(mockCurrentModel.value).toEqual({
+      provider: "anthropic",
+      id: "claude-sonnet-4.6",
+    });
+    expect(mockSetModel).not.toHaveBeenCalled();
+
+    const second = harness.sendMessage(
+      {
+        sessionId: "sess-model-switch",
+        message: "second",
+        model: { provider: "openai-codex", id: "gpt-5.1" },
+        thinkingLevel: "low",
+      },
+      ctx,
+    );
+    const secondReader = second[Symbol.asyncIterator]();
+    const secondPending = secondReader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(mockSetModel).toHaveBeenCalledWith({
+      provider: "openai-codex",
+      id: "gpt-5.1",
+    });
+    expect(mockSetThinkingLevel).toHaveBeenCalledWith("low");
+
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve!();
+    await secondPending;
   });
 });

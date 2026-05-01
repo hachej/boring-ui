@@ -1,8 +1,10 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
+import type { PaneProps } from "@boring/workspace"
 import { App } from "./App"
 import { DeckPane } from "./panes/DeckPane"
 import "@boring/workspace/globals.css"
+import "@boring/agent/front/styles.css"
 import "./app.css"
 
 // Standalone deck route: /present?path=<deck>. Boots the SPA into deck-only
@@ -16,12 +18,20 @@ const deckPath =
   url.pathname === "/present" || url.pathname === "/present/"
     ? url.searchParams.get("path")
     : null
+const standalonePaneApi = {
+  onDidParametersChange: () => ({ dispose() {} }),
+} as unknown as PaneProps<{ path: string }>["api"]
+const standaloneContainerApi = {} as PaneProps<{ path: string }>["containerApi"]
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {deckPath ? (
       <div className="h-full bg-background text-foreground">
-        <DeckPane params={{ path: deckPath }} />
+        <DeckPane
+          params={{ path: deckPath }}
+          api={standalonePaneApi}
+          containerApi={standaloneContainerApi}
+        />
       </div>
     ) : (
       <App />

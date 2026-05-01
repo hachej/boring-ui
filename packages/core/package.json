@@ -36,7 +36,7 @@
   "scripts": {
     "build": "tsup && cp src/front/theme.css dist/front/theme.css",
     "dev": "tsup --watch",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm run typecheck",
@@ -64,6 +64,7 @@
     "fastify": "^5.3.3",
     "fastify-plugin": "^5.1.0",
     "isomorphic-dompurify": "^3.10.0",
+    "lucide-react": "^1.8.0",
     "nodemailer": "^8.0.6",
     "pino": "^10.3.1",
     "postgres": "^3.4.9",
@@ -86,6 +87,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tsup": "^8.4.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3",
     "vitest": "^3.1.3"
   },

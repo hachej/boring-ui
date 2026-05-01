@@ -33,6 +33,7 @@ export function MembersPage() {
 
   const workspaceId = workspace?.id ?? ''
   const currentUserId = session.data?.user?.id ?? ''
+  const encodedWorkspaceId = encodeURIComponent(workspaceId)
 
   const membersQuery = useWorkspaceMembers(workspaceId)
 
@@ -46,11 +47,14 @@ export function MembersPage() {
 
   const changeRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: MemberRole }) => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}/members/${userId}/role`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role }),
-      })
+      await apiFetch(
+        `/api/v1/workspaces/${encodedWorkspaceId}/members/${encodeURIComponent(userId)}/role`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role }),
+        },
+      )
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['members', workspaceId] })
@@ -68,9 +72,10 @@ export function MembersPage() {
 
   const removeMutation = useMutation({
     mutationFn: async (userId: string) => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}/members/${userId}`, {
-        method: 'DELETE',
-      })
+      await apiFetch(
+        `/api/v1/workspaces/${encodedWorkspaceId}/members/${encodeURIComponent(userId)}`,
+        { method: 'DELETE' },
+      )
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['members', workspaceId] })

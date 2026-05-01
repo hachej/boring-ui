@@ -6,6 +6,9 @@ import {
   AuthStorage,
   ModelRegistry,
   DefaultResourceLoader,
+  SettingsManager,
+  getAgentDir,
+  loadSkills,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, SendMessageInput, RunContext } from "../../../shared/harness.js";
 import type { AgentTool } from "../../../shared/tool.js";
@@ -14,10 +17,65 @@ import { adaptToolsForPi } from "./tool-adapter.js";
 import { piEventToChunks } from "./stream-adapter.js";
 import { PiSessionStore } from "./sessions.js";
 import { createSessionTitleScheduler } from "./sessionTitle.js";
+import {
+  readConfiguredDefaultModel,
+  registerConfiguredModelProviders,
+} from "../../models/modelConfig.js";
 
 interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
+}
+
+const ALIAS_TO_PI_ID: Record<string, string> = {
+  sonnet: "claude-sonnet-4.6",
+  haiku: "claude-haiku-4.5",
+  opus: "claude-opus-4.7",
+  // Anthropic deprecated this legacy ID; map to current haiku family.
+  "claude-3-5-haiku-20241022": "claude-haiku-4.5",
+};
+
+function resolveRequestedModel(
+  modelRegistry: ModelRegistry,
+  input: SendMessageInput,
+) {
+  const requestedId = input.model?.id;
+  const piId = requestedId
+    ? (ALIAS_TO_PI_ID[requestedId] ?? requestedId)
+    : undefined;
+  return input.model && piId
+    ? modelRegistry.find(input.model.provider, piId)
+    : undefined;
+}
+
+function resolveDefaultModel(modelRegistry: ModelRegistry) {
+  const configured = readConfiguredDefaultModel();
+  if (configured) {
+    const model = modelRegistry.find(configured.provider, configured.id);
+    if (model) return model;
+  }
+  return modelRegistry.find("anthropic", ALIAS_TO_PI_ID.sonnet);
+}
+
+async function applyRequestedSessionOptions(
+  handle: PiSessionHandle,
+  input: SendMessageInput,
+): Promise<void> {
+  const requestedModel = resolveRequestedModel(handle.modelRegistry, input);
+  if (requestedModel) {
+    const current = handle.piSession.model;
+    if (
+      !current ||
+      current.provider !== requestedModel.provider ||
+      current.id !== requestedModel.id
+    ) {
+      await handle.piSession.setModel(requestedModel);
+    }
+  }
+
+  if (input.thinkingLevel) {
+    handle.piSession.setThinkingLevel(input.thinkingLevel);
+  }
 }
 
 export function createPiCodingAgentHarness(opts: {
@@ -25,6 +83,12 @@ export function createPiCodingAgentHarness(opts: {
   cwd: string;
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
+  /** Optional pi resource-loader isolation knobs. */
+  resourceLoaderOptions?: {
+    noContextFiles?: boolean;
+    noSkills?: boolean;
+    additionalSkillPaths?: string[];
+  };
 }): AgentHarness {
   const sessionStore = new PiSessionStore(opts.cwd);
   const piSessions = new Map<string, PiSessionHandle>();
@@ -42,45 +106,65 @@ export function createPiCodingAgentHarness(opts: {
     ctx: RunContext,
   ): Promise<PiSessionHandle> {
     const existing = piSessions.get(sessionId);
-    if (existing) return existing;
+    if (existing) {
+      await applyRequestedSessionOptions(existing, input);
+      return existing;
+    }
 
     // AuthStorage.create() reads env vars (ANTHROPIC_API_KEY etc.) + ~/.pi/agent/auth.json.
     // AuthStorage.inMemory() would not pick up credentials.
     const authStorage = AuthStorage.create();
     const modelRegistry = ModelRegistry.create(authStorage);
+    registerConfiguredModelProviders(modelRegistry);
 
-    // Map our short aliases → pi-ai's registered model IDs.
-    // Frontend sends {provider:'anthropic', id:'sonnet'|'haiku'|'opus'}; pi-ai
-    // registers 'claude-sonnet-4.6' / 'claude-haiku-4.5' / 'claude-opus-4.7'.
-    const ALIAS_TO_PI_ID: Record<string, string> = {
-      sonnet: "claude-sonnet-4.6",
-      haiku: "claude-haiku-4.5",
-      opus: "claude-opus-4.7",
-      // Anthropic deprecated this legacy ID; map to current haiku family.
-      "claude-3-5-haiku-20241022": "claude-haiku-4.5",
-    };
-    const requestedId = input.model?.id;
-    const piId = requestedId
-      ? (ALIAS_TO_PI_ID[requestedId] ?? requestedId)
-      : undefined;
-    const resolvedModel = input.model && piId
-      ? modelRegistry.find(input.model.provider, piId)
-      : undefined;
+    const resolvedModel = resolveRequestedModel(modelRegistry, input);
     // Default: sonnet for anthropic if nothing resolved, preventing pi from
     // falling back to openai-codex when only ANTHROPIC_API_KEY is set.
-    const model = resolvedModel
-      ?? modelRegistry.find("anthropic", ALIAS_TO_PI_ID.sonnet);
+    const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
 
-    // When the host supplies a systemPromptAppend, build a resource loader
-    // that hands it to pi as `appendSystemPrompt`. Pi appends each entry
-    // (separated by blank lines) AFTER its base system prompt — host apps
-    // EXTEND, never replace.
-    const resourceLoader = opts.systemPromptAppend
-      ? new DefaultResourceLoader({
-          cwd: ctx.workdir,
-          appendSystemPrompt: [opts.systemPromptAppend],
-        })
-      : undefined;
+    // Hosts may extend pi's base prompt and/or isolate resource discovery.
+    // We keep pi's default system prompt, but can disable ambient AGENTS.md
+    // and global skill discovery while injecting explicit local skill paths.
+    const resourceLoader =
+      opts.systemPromptAppend ||
+      opts.resourceLoaderOptions?.noContextFiles ||
+      opts.resourceLoaderOptions?.noSkills ||
+      (opts.resourceLoaderOptions?.additionalSkillPaths?.length ?? 0) > 0
+        ? (() => {
+            const agentDir = getAgentDir()
+            const settingsManager = SettingsManager.create(ctx.workdir, agentDir)
+            const additionalSkillPaths =
+              opts.resourceLoaderOptions?.additionalSkillPaths ?? []
+            return new DefaultResourceLoader({
+              cwd: ctx.workdir,
+              agentDir,
+              settingsManager,
+              ...(opts.systemPromptAppend
+                ? { appendSystemPrompt: [opts.systemPromptAppend] }
+                : {}),
+              ...(opts.resourceLoaderOptions?.noContextFiles
+                ? { noContextFiles: true }
+                : {}),
+              ...(opts.resourceLoaderOptions?.noSkills ? { noSkills: true } : {}),
+              ...(additionalSkillPaths.length
+                ? { additionalSkillPaths }
+                : {}),
+              ...(opts.resourceLoaderOptions?.noSkills || additionalSkillPaths.length
+                ? {
+                    skillsOverride: () =>
+                      loadSkills({
+                        cwd: ctx.workdir,
+                        agentDir,
+                        skillPaths: additionalSkillPaths,
+                        includeDefaults: false,
+                      }),
+                  }
+                : {}),
+            })
+          })()
+        : undefined;
+
+    await resourceLoader?.reload()
 
     const { session: piSession } = await createAgentSession({
       cwd: ctx.workdir,

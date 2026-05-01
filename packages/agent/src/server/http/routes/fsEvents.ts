@@ -33,7 +33,13 @@ import {
  */
 
 interface FsEventsRouteOptions {
-  workspace: Workspace
+  workspace?: Workspace
+  getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+}
+
+interface BroadcasterEntry {
+  broadcaster: FsEventBroadcaster
+  subscribers: number
 }
 
 export function fsEventsRoutes(
@@ -41,46 +47,77 @@ export function fsEventsRoutes(
   opts: FsEventsRouteOptions,
   done: (err?: Error) => void,
 ): void {
-  const { workspace } = opts
+  // Lazy because workspaces without `watch?` shouldn't allocate a broadcaster
+  // they'll never use. Dynamic embedded mode keeps one broadcaster per
+  // request-scoped workspace id.
+  const broadcasters = new Map<string, BroadcasterEntry>()
 
-  // Lazy because workspaces without `watch?` shouldn't allocate a
-  // broadcaster they'll never use.
-  let broadcaster: FsEventBroadcaster | null = null
-
-  const ensureBroadcaster = (): FsEventBroadcaster | null => {
-    if (broadcaster) return broadcaster
+  const ensureBroadcaster = async (request: FastifyRequest): Promise<{
+    workspaceId: string
+    entry: BroadcasterEntry
+  } | null> => {
+    const workspace = opts.getWorkspace
+      ? await opts.getWorkspace(request)
+      : opts.workspace
+    if (!workspace) throw new Error('fs event route requires workspace or getWorkspace')
     if (typeof workspace.watch !== 'function') return null
-    broadcaster = createFsEventBroadcaster(workspace.watch())
-    return broadcaster
+    const workspaceId = request.workspaceContext?.workspaceId ?? 'default'
+    const existing = broadcasters.get(workspaceId)
+    if (existing) return { workspaceId, entry: existing }
+    const broadcaster = createFsEventBroadcaster(workspace.watch())
+    const entry = { broadcaster, subscribers: 0 }
+    broadcasters.set(workspaceId, entry)
+    return { workspaceId, entry }
+  }
+
+  function releaseBroadcaster(workspaceId: string, entry: BroadcasterEntry): void {
+    entry.subscribers = Math.max(0, entry.subscribers - 1)
+    if (entry.subscribers > 0) return
+    if (broadcasters.get(workspaceId) !== entry) return
+    entry.broadcaster.close()
+    broadcasters.delete(workspaceId)
   }
 
   app.addHook('onClose', async () => {
-    broadcaster?.close()
-    broadcaster = null
+    for (const entry of broadcasters.values()) entry.broadcaster.close()
+    broadcasters.clear()
   })
 
   app.get('/api/v1/fs/events', async (request, reply) => {
+    const resolved = await ensureBroadcaster(request)
+    reply.hijack()
     setupSse(request, reply.raw)
 
-    const b = ensureBroadcaster()
-    if (!b) {
+    if (!resolved) {
       writeSse(reply.raw, 'unsupported', { reason: 'watch_not_implemented' })
       reply.raw.end()
-      return reply
+      return
     }
+    const { workspaceId, entry } = resolved
+    entry.subscribers += 1
 
     const lastSeenSeq = parseLastEventId(request.headers['last-event-id'])
 
-    const sub = b.subscribe(
-      (env) => writeChange(reply.raw, env),
-      lastSeenSeq != null ? { lastSeenSeq } : undefined,
-    )
+    let sub: ReturnType<FsEventBroadcaster['subscribe']>
+    try {
+      sub = entry.broadcaster.subscribe(
+        (env) => writeChange(reply.raw, env),
+        lastSeenSeq != null ? { lastSeenSeq } : undefined,
+      )
+    } catch (error) {
+      releaseBroadcaster(workspaceId, entry)
+      request.log.error({ err: error }, 'fs events subscribe failed')
+      writeSse(reply.raw, 'error', { reason: 'subscribe_failed' })
+      reply.raw.end()
+      return
+    }
 
     if (sub.resyncRequired) {
       writeSse(reply.raw, 'resync-required', {})
       sub.unsubscribe()
+      releaseBroadcaster(workspaceId, entry)
       reply.raw.end()
-      return reply
+      return
     }
 
     // Drain the replay backlog before any live event can interleave.
@@ -100,9 +137,8 @@ export function fsEventsRoutes(
     request.raw.on('close', () => {
       clearInterval(heartbeat)
       sub.unsubscribe()
+      releaseBroadcaster(workspaceId, entry)
     })
-
-    return reply
   })
 
   done()

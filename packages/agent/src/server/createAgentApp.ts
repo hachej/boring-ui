@@ -53,6 +53,12 @@ export interface CreateAgentAppOptions {
    * via DefaultResourceLoader's `appendSystemPromptSource`.
    */
   systemPromptAppend?: string
+  /** Optional pi resource-loader isolation knobs. */
+  resourceLoaderOptions?: {
+    noContextFiles?: boolean
+    noSkills?: boolean
+    additionalSkillPaths?: string[]
+  }
 }
 
 export async function createAgentApp(
@@ -72,7 +78,7 @@ export async function createAgentApp(
 
   // UI-aware tools (get_ui_state, exec_ui) and the /api/v1/ui/* routes
   // are now owned by @boring/workspace. Hosts that want them call
-  // @boring/workspace/server's createWorkspaceAgentApp() instead of
+  // @boring/workspace/app's createWorkspaceAgentApp() instead of
   // createAgentApp() directly. Standalone agent (CLI, no workspace)
   // ships zero UI surface — smaller bundle, honest contract.
   const pluginTools: AgentTool[] = []
@@ -99,6 +105,11 @@ export async function createAgentApp(
     tools,
     cwd: workspaceRoot,
     systemPromptAppend: opts.systemPromptAppend,
+    resourceLoaderOptions: {
+      noContextFiles: true,
+      noSkills: true,
+      ...opts.resourceLoaderOptions,
+    },
   })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 

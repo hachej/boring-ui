@@ -204,7 +204,7 @@ describe('LocalWorkspaceStore', () => {
       }
     })
 
-    it('acceptInvite throws INVITE_ALREADY_ACCEPTED (409) on already accepted', async () => {
+    it('acceptInvite throws INVITE_ALREADY_ACCEPTED (410) on already accepted', async () => {
       const ws = await store.create('u1', 'WS', 'app1')
       const { invite } = await store.createInvite(ws.id, 'bob@test.com', 'editor', null)
       await store.acceptInvite(ws.id, invite.id, 'u2')
@@ -213,7 +213,7 @@ describe('LocalWorkspaceStore', () => {
         expect.unreachable('should have thrown')
       } catch (e) {
         expect(e).toBeInstanceOf(HttpError)
-        expect((e as HttpError).status).toBe(409)
+        expect((e as HttpError).status).toBe(410)
         expect((e as HttpError).code).toBe(ERROR_CODES.INVITE_ALREADY_ACCEPTED)
       }
     })
@@ -268,6 +268,45 @@ describe('LocalWorkspaceStore', () => {
     it('retryWorkspaceRuntime returns null if not in error state', async () => {
       const ws = await store.create('u1', 'WS', 'app1')
       expect(await store.retryWorkspaceRuntime(ws.id)).toBeNull()
+    })
+
+    it('stores provider-agnostic runtime resources', async () => {
+      const ws = await store.create('u1', 'WS', 'app1')
+
+      const created = await store.putWorkspaceRuntimeResource(ws.id, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+        handleKind: 'named',
+        stableKey: `boring-dev-${ws.id}`,
+        providerResourceId: 'sbx_current',
+        state: 'ready',
+        persistenceMode: 'persistent',
+        providerMeta: { runtime: 'node24' },
+        lastUsedAt: '2026-04-29T00:00:00.000Z',
+      })
+
+      expect(created.generation).toBe(0)
+      expect(created.stableKey).toBe(`boring-dev-${ws.id}`)
+
+      const fetched = await store.getWorkspaceRuntimeResource(ws.id, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+      })
+      expect(fetched?.providerResourceId).toBe('sbx_current')
+      expect(fetched?.providerMeta).toEqual({ runtime: 'node24' })
+
+      await store.deleteWorkspaceRuntimeResource(ws.id, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+      })
+      expect(await store.getWorkspaceRuntimeResource(ws.id, {
+        kind: 'sandbox',
+        purpose: 'main',
+        provider: 'vercel',
+      })).toBeNull()
     })
   })
 

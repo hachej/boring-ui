@@ -11,16 +11,21 @@ import {
   workspaceSettings,
 } from '../db/schema.js'
 
-const SERIALIZATION_FAILURE_CODE = '40001'
-const SERIALIZATION_RETRY_LIMIT = 3
+const RETRYABLE_TX_ERROR_CODES = new Set(['40001', '40P01'])
+const SERIALIZATION_RETRY_LIMIT = 5
+const BASE_RETRY_DELAY_MS = 25
 
-function isSerializationFailure(error: unknown): boolean {
+function isRetryableTxFailure(error: unknown): boolean {
   return (
     typeof error === 'object'
     && error !== null
     && 'code' in error
-    && (error as { code?: unknown }).code === SERIALIZATION_FAILURE_CODE
+    && RETRYABLE_TX_ERROR_CODES.has(String((error as { code?: unknown }).code))
   )
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export interface DeleteUserCompletelyDeps {
@@ -210,7 +215,8 @@ export async function deleteUserCompletely(
 
       return
     } catch (error) {
-      if (attempt < SERIALIZATION_RETRY_LIMIT && isSerializationFailure(error)) {
+      if (attempt < SERIALIZATION_RETRY_LIMIT && isRetryableTxFailure(error)) {
+        await sleep(BASE_RETRY_DELAY_MS * attempt)
         continue
       }
 

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { waitForPlaygroundReady } from "./helpers"
 
 /**
  * Regression test for the "Escape needs two presses to close the
@@ -12,7 +13,7 @@ import { expect, test } from "@playwright/test"
 test.describe("command palette", () => {
   test("Escape closes the palette on the first press", async ({ page }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
 
     // Open the palette via the keyboard shortcut. The shell binds Cmd+P
     // / Ctrl+P globally.
@@ -36,7 +37,7 @@ test.describe("command palette", () => {
 
   test("Escape closes even with an empty input", async ({ page }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
 
     await page.keyboard.press("ControlOrMeta+KeyK")
     await expect(
@@ -51,12 +52,12 @@ test.describe("command palette", () => {
 
   test("only ONE palette dialog mounts (no double-layer)", async ({ page }) => {
     // Regression for "double layer cmd pane" — both WorkspaceProvider
-    // and ChatCenteredShell were mounting <CommandPalette />. Apps that
+    // and the app shell were mounting <CommandPalette />. Apps that
     // use the chat shell inside a workspace provider (the canonical
     // setup, including this playground) ended up with two stacked
     // dialogs and two ⌘K listeners.
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await waitForPlaygroundReady(page)
     await page.keyboard.press("ControlOrMeta+KeyK")
 
     const dialogs = page.getByRole("dialog", { name: /command palette/i })

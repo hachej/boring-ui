@@ -10,19 +10,23 @@ import {
   type PackageTemplateOptions,
 } from '../../sandbox/vercel-sandbox/packageTemplate'
 import {
+  type ExpiredSandboxPolicy,
   type VercelSandboxClient,
   resolveSandboxHandle,
 } from '../../sandbox/vercel-sandbox/resolveSandboxHandle'
+import type { PeriodicSnapshotScheduler } from '../../sandbox/vercel-sandbox/periodicSnapshot'
 import { createVercelSandboxWorkspace } from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { RuntimeModeAdapter } from '../mode'
 
 interface ModeLogger {
   info(message: string, metadata: Record<string, unknown>): void
+  warn?(message: string, metadata?: Record<string, unknown>): void
 }
 
 type EnvGetter = (name: string) => string | undefined
 const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
+const VERCEL_SANDBOX_TIMEOUT_MS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS'
 
 export interface VercelSandboxModeAdapterOptions {
   store?: SandboxHandleStore
@@ -30,25 +34,87 @@ export interface VercelSandboxModeAdapterOptions {
   getEnvVar?: EnvGetter
   logger?: ModeLogger
   packageTemplateOpts?: PackageTemplateOptions
+  expiredSandboxPolicy?: ExpiredSandboxPolicy
+  orphanGuardMaxIdleMs?: number | null
+  snapshotScheduler?: PeriodicSnapshotScheduler | null
 }
 
-const DEFAULT_VERCEL_CLIENT: VercelSandboxClient = {
-  async create(params) {
-    if (params?.source?.type === 'snapshot') {
-      return await VercelSandbox.create({
-        source: { type: 'snapshot', snapshotId: params.source.snapshotId },
-      })
+interface VercelAuthConfig {
+  token: string
+  teamId: string
+  projectId?: string
+}
+
+function createDefaultVercelClient(
+  auth: VercelAuthConfig,
+  opts: { timeoutMs?: number } = {},
+): VercelSandboxClient {
+  const credentials = {
+    token: auth.token,
+    teamId: auth.teamId,
+    ...(auth.projectId ? { projectId: auth.projectId } : {}),
+  }
+  const createOptions = opts.timeoutMs
+    ? { ...credentials, timeout: opts.timeoutMs }
+    : credentials
+
+  return {
+    async create(params) {
+      const base = {
+        ...createOptions,
+        ...(params?.name ? { name: params.name } : {}),
+        persistent: params?.persistent ?? true,
+        snapshotExpiration: params?.snapshotExpiration ?? 0,
+      }
+      if (params?.source?.type === 'snapshot') {
+        return await VercelSandbox.create({
+          ...base,
+          source: { type: 'snapshot', snapshotId: params.source.snapshotId },
+        })
+      }
+      if (params?.source?.type === 'tarball') {
+        return await VercelSandbox.create({
+          ...base,
+          source: { type: 'tarball', url: params.source.url },
+        })
+      }
+      return await VercelSandbox.create(base)
+    },
+    async get(params) {
+      const getParams = {
+        ...credentials,
+        name: params.name ?? params.sandboxId ?? '',
+        resume: params.resume ?? true,
+      } as unknown as Parameters<typeof VercelSandbox.get>[0] & { name?: string }
+      return await VercelSandbox.get(getParams)
+    },
+  }
+}
+
+async function ensureVercelWorkspaceRoot(sandbox: VercelSandbox & {
+  fs?: { mkdir(path: string, opts?: { recursive?: boolean }): Promise<unknown> }
+  mkDir?: (path: string) => Promise<void>
+  runCommand?: (params: { cmd: string; args?: string[] }) => Promise<{ exitCode?: number }>
+}): Promise<void> {
+  if (sandbox.fs?.mkdir) {
+    await sandbox.fs.mkdir('/vercel/sandbox', { recursive: true })
+    return
+  }
+  if (sandbox.mkDir) {
+    try {
+      await sandbox.mkDir('/vercel/sandbox')
+      return
+    } catch {
+      // Fall through to mkdir -p for already-existing parents or SDK variants.
     }
-    if (params?.source?.type === 'tarball') {
-      return await VercelSandbox.create({
-        source: { type: 'tarball', url: params.source.url },
-      })
-    }
-    return await VercelSandbox.create()
-  },
-  async get(params) {
-    return await VercelSandbox.get(params)
-  },
+  }
+  if (!sandbox.runCommand) {
+    throw new Error('failed to initialize /vercel/sandbox: sandbox runCommand is unavailable')
+  }
+  const result = await sandbox.runCommand({ cmd: 'mkdir', args: ['-p', '/vercel/sandbox'] })
+  if ((result.exitCode ?? 1) !== 0) {
+    throw new Error(`failed to initialize /vercel/sandbox (exit ${result.exitCode ?? 'unknown'})`)
+  }
 }
 
 const DEFAULT_MODE_LOGGER: ModeLogger = {
@@ -65,21 +131,76 @@ function requireEnvVar(name: string, getEnvVar: EnvGetter): string {
   return value
 }
 
+function readOptionalPositiveIntegerEnv(
+  name: string,
+  getEnvVar: EnvGetter,
+): number | undefined {
+  const raw = getEnvVar(name)?.trim()
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`)
+  }
+  return parsed
+}
+
+function resolveVercelAuth(getEnvVar: EnvGetter): { token: string; source: 'VERCEL_OIDC_TOKEN' | 'VERCEL_ACCESS_TOKEN' | 'VERCEL_TOKEN' } {
+  const oidc = getEnvVar('VERCEL_OIDC_TOKEN')?.trim()
+  if (oidc) {
+    return { token: oidc, source: 'VERCEL_OIDC_TOKEN' }
+  }
+
+  const accessToken = getEnvVar('VERCEL_ACCESS_TOKEN')?.trim()
+  if (accessToken) {
+    return { token: accessToken, source: 'VERCEL_ACCESS_TOKEN' }
+  }
+
+  const apiToken = getEnvVar('VERCEL_TOKEN')?.trim()
+  if (apiToken) {
+    return { token: apiToken, source: 'VERCEL_TOKEN' }
+  }
+
+  throw new Error('VERCEL_OIDC_TOKEN or VERCEL_ACCESS_TOKEN or VERCEL_TOKEN is required for vercel-sandbox mode')
+}
+
 export function createVercelSandboxModeAdapter(
   opts: VercelSandboxModeAdapterOptions = {},
 ): RuntimeModeAdapter {
   const store = opts.store ?? new FileHandleStore()
-  const vercelClient = opts.vercelClient ?? DEFAULT_VERCEL_CLIENT
   const getEnvVar = opts.getEnvVar ?? getEnv
   const logger = opts.logger ?? DEFAULT_MODE_LOGGER
+  // @vercel/sandbox@beta persistent sandboxes auto-snapshot when their
+  // session stops and auto-resume on the next command. Do not run the old
+  // periodic snapshotter here: sandbox.snapshot() stops the active session.
+  const snapshotScheduler = opts.snapshotScheduler ?? null
 
   return {
     id: 'vercel-sandbox',
+    async dispose() {
+      await snapshotScheduler?.shutdown()
+    },
     async create(ctx) {
-      requireEnvVar('VERCEL_OIDC_TOKEN', getEnvVar)
-      requireEnvVar('VERCEL_TEAM_ID', getEnvVar)
+      const auth = resolveVercelAuth(getEnvVar)
+      const teamId = requireEnvVar('VERCEL_TEAM_ID', getEnvVar)
+      const projectId = getEnvVar('VERCEL_PROJECT_ID')?.trim()
+      const timeoutMs = readOptionalPositiveIntegerEnv(
+        VERCEL_SANDBOX_TIMEOUT_MS_ENV,
+        getEnvVar,
+      )
 
-      const workspaceId = ctx.workspaceRoot
+      const vercelClient = opts.vercelClient ?? createDefaultVercelClient({
+        token: auth.token,
+        teamId,
+        projectId,
+      }, { timeoutMs })
+
+      logger.info('[vercel-sandbox:mode] auth resolved', {
+        source: auth.source,
+        hasProjectId: Boolean(projectId),
+        timeoutMs: timeoutMs ?? null,
+      })
+
+      const workspaceId = ctx.workspaceId ?? ctx.workspaceRoot
       let tarballUrl: string | undefined
 
       if (ctx.templatePath) {
@@ -104,18 +225,40 @@ export function createVercelSandboxModeAdapter(
         {
           tarballUrl,
           logger,
-          maxIdleMs: ORPHAN_GUARD_MAX_IDLE_MS,
+          maxIdleMs: opts.orphanGuardMaxIdleMs === null
+            ? undefined
+            : opts.orphanGuardMaxIdleMs ?? ORPHAN_GUARD_MAX_IDLE_MS,
+          expiredSandboxPolicy: opts.expiredSandboxPolicy,
         },
       )
 
+      const sandboxId = sandboxHandle.name ?? sandboxHandle.sandboxId ?? 'unknown-sandbox'
       logger.info('[vercel-sandbox:mode] resolved sandbox handle', {
         workspaceId,
-        sandboxId: sandboxHandle.sandboxId,
-        snapshotId: sandboxHandle.sourceSnapshotId ?? null,
+        sandboxId,
+        snapshotId: sandboxHandle.currentSnapshotId ?? sandboxHandle.sourceSnapshotId ?? null,
         tarballUrl: tarballUrl ?? null,
       })
 
-      const workspace = createVercelSandboxWorkspace(sandboxHandle)
+      if (snapshotScheduler && sandboxHandle.sandboxId) {
+        snapshotScheduler.trackWorkspace({
+          workspaceId,
+          sandbox: sandboxHandle as typeof sandboxHandle & { sandboxId: string; snapshot(opts?: { signal?: AbortSignal }): Promise<{ snapshotId: string }> },
+          store,
+        })
+      }
+      const markDirty = () => snapshotScheduler?.markDirty(workspaceId)
+
+      const workspace = createVercelSandboxWorkspace(sandboxHandle, {
+        onMutation: markDirty,
+      })
+
+      // Fresh Vercel sandboxes do not guarantee our logical workspace root
+      // exists. Create it before any file-tree, mkdir, or rename operation so
+      // first user actions do not fail with ENOENT/404. This bootstrap is
+      // intentionally outside Workspace.mkdir so it does not mark the user's
+      // filesystem dirty or emit a fake mkdir event.
+      await ensureVercelWorkspaceRoot(sandboxHandle)
 
       if (ctx.templatePath && !tarballUrl) {
         logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {
@@ -130,7 +273,9 @@ export function createVercelSandboxModeAdapter(
         })
       }
 
-      const sandbox = createVercelSandboxExec(sandboxHandle)
+      const sandbox = createVercelSandboxExec(sandboxHandle, {
+        onMutation: markDirty,
+      })
       await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
 
       return {

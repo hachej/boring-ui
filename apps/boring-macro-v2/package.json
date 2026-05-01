@@ -7,9 +7,11 @@
     "dev": "tsx src/server/dev.ts",
     "dev:server": "tsx watch src/server/index.ts",
     "build:web": "vite build",
+    "eval": "tsx eval/run.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e:baseline": "node e2e/run-baseline.mjs",
     "test:e2e:headed": "playwright test -c e2e/playwright.config.ts --headed",
     "typecheck": "tsc --noEmit"
   },

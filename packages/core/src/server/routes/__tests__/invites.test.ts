@@ -90,7 +90,7 @@ function mockWorkspaceStore(): WorkspaceStore {
         throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_EXPIRED, message: 'Invite has expired' })
       }
       if (inv.acceptedAt) {
-        throw new HttpError({ status: 409, code: ERROR_CODES.INVITE_ALREADY_ACCEPTED, message: 'Invite already accepted' })
+        throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_ALREADY_ACCEPTED, message: 'Invite already accepted' })
       }
       const user = fakeUsers[userId]
       if (user && inv.email.toLowerCase() !== user.email.toLowerCase()) {
@@ -384,7 +384,7 @@ describe('POST /api/v1/workspaces/:id/invites/:inviteId/accept', () => {
     expect(res.json().code).toBe('invite_expired')
   })
 
-  it('409 when invite is already accepted', async () => {
+  it('410 when invite is already accepted', async () => {
     const ws = seedWorkspace(OWNER_ID)
     const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { accepted: true })
 
@@ -393,7 +393,7 @@ describe('POST /api/v1/workspaces/:id/invites/:inviteId/accept', () => {
       `/api/v1/workspaces/${ws.id}/invites/${invite.id}/accept?invite_token=${rawToken}`,
       INVITEE_ID,
     )
-    expect(res.statusCode).toBe(409)
+    expect(res.statusCode).toBe(410)
     expect(res.json().code).toBe('invite_already_accepted')
   })
 
@@ -528,12 +528,12 @@ describe('POST /api/v1/invites/accept', () => {
     expect(res.json().code).toBe('invite_not_found')
   })
 
-  it('410 on already-accepted invite (increments failed_attempts)', async () => {
+  it('409 on already-accepted invite (increments failed_attempts)', async () => {
     const ws = seedWorkspace(OWNER_ID)
     const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor', { accepted: true })
 
     const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken })
-    expect(res.statusCode).toBe(410)
+    expect(res.statusCode).toBe(409)
     expect(res.json().code).toBe('invite_already_accepted')
     expect(inviteDb.get(invite.id)?.failedAttempts).toBe(1)
   })

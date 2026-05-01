@@ -1,3 +1,5 @@
+import "./globals.css"
+
 // ---------------------------------------------------------------------------
 // @boring/workspace — Public API
 //
@@ -10,39 +12,114 @@ export {
   definePlugin,
   bootstrap,
   PluginError,
+} from "./shared/plugins"
+export type {
+  PluginErrorKind,
+  BootstrapOptions,
+  BootstrapResult,
+  AgentToolRegistry,
+  PanelRegistryLike,
+  CommandRegistryLike,
+  CatalogRegistryLike,
+  SurfaceResolverRegistryLike,
+} from "./shared/plugins"
+export type {
+  Plugin,
+  PluginBinding,
+  CatalogConfig,
+  PluginOutput,
+  LeftTabOutput,
+  LeftTabParams,
+  LeftTabComponent,
+  PanelOutput,
+  CommandOutput,
+  CatalogOutput,
+  BindingOutput,
+  ProviderOutput,
+  SurfaceResolverOutput,
+  PluginProvider,
+  PluginProviderProps,
+  AgentTool,
+  JSONSchema,
+  ToolExecContext,
+  ToolResult,
+  AgentToolOutput,
+} from "./shared/plugins"
+export {
   CatalogRegistry,
   useCommands,
   useActivePanels,
   useCatalogs,
-} from "./plugin"
-export type { PluginErrorKind, BootstrapOptions, BootstrapResult, AgentToolRegistry } from "./plugin"
-export type { Plugin, CatalogConfig, CatalogRegistryOptions } from "./plugin"
+  PluginErrorBoundary,
+  PluginErrorProvider,
+  usePluginErrors,
+} from "./front/plugin"
+export type { CatalogRegistryOptions, PluginError as PluginContributionError } from "./front/plugin"
+export {
+  filesystemPlugin,
+  emitFilesystemAgentFileChange,
+  useAutoOpenAgentFiles,
+} from "./plugins/filesystemPlugin"
+export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin"
+export {
+  appendDataCatalogOutputs,
+  createDataCatalogOpenHandler,
+  createDataCatalogCatalog,
+  createDataCatalogOutputs,
+  createDataCatalogPlugin,
+  createDataCatalogSurfaceResolver,
+  dataCatalogPanelInstanceId,
+  openDataCatalogVisualization,
+  readDataCatalogRow,
+  resolveDataCatalogControlledQuery,
+  resolveDataCatalogQuery,
+  resolveDataCatalogVisualizationState,
+  useDataCatalogOpenVisualization,
+  useDataCatalogQuery,
+  useDataCatalogVisualizationState,
+  DATA_CATALOG_DEFAULT_TOOL_NAME,
+  DATA_CATALOG_PLUGIN_ID,
+  DATA_CATALOG_ROW_SURFACE_KIND,
+} from "./plugins/dataCatalogPlugin"
+export type {
+  CreateDataCatalogOutputsOptions,
+  CreateDataCatalogPluginOptions,
+  CreateDataCatalogSurfaceResolverOptions,
+  DataCatalogResolvedQuery,
+  DataCatalogVisualizationParams,
+  DataCatalogVisualizationState,
+  OpenDataCatalogVisualizationOptions,
+} from "./plugins/dataCatalogPlugin"
 
 // Utility
-export { cn } from "./lib/utils"
+export { cn } from "./front/lib/utils"
 
 // Registry & panel management
-export { PanelRegistry } from "./registry/PanelRegistry"
-export { CommandRegistry } from "./registry/CommandRegistry"
+export { PanelRegistry } from "./front/registry/PanelRegistry"
+export { CommandRegistry } from "./front/registry/CommandRegistry"
 export {
   RegistryProvider,
   useRegistry,
   useCommandRegistry,
   useCatalogRegistry,
-} from "./registry"
-export { getFileIcon } from "./registry"
+  useSurfaceResolverRegistry,
+  SurfaceResolverRegistry,
+  WORKSPACE_OPEN_PATH_SURFACE_KIND,
+} from "./front/registry"
+export { getFileIcon } from "./front/registry"
 export type {
   PanelConfig,
   PanelRegistration,
-  SyncPanelConfig,
-  LazyPanelConfig,
   CommandConfig,
   PaneProps,
-  PanelRegistryType,
-} from "./registry"
+  SurfaceOpenRequest,
+  SurfacePanelResolution,
+  SurfaceResolverConfig,
+  SurfaceResolverRegistration,
+} from "./front/registry"
 
 // Dock / layout runtime
-export { DockviewShell, useDockviewApi } from "./dock"
+export { DockviewShell, useDockviewApi } from "./front/dock"
 export type {
   LayoutConfig,
   GroupConfig,
@@ -50,27 +127,23 @@ export type {
   DockviewShellApi,
   PanelLifecycleApi,
   SerializedLayout,
-} from "./dock"
+} from "./front/dock"
 
 // Layout presets
-export { IdeLayout, buildIdeLayout, ChatLayout, buildChatLayout } from "./layouts"
-export type { IdeLayoutProps, ChatLayoutProps } from "./layouts"
-
-// Data layer
-export { DataProvider, useDataClient, useApiBaseUrl } from "./data"
-export { FetchClient, FetchError } from "./data"
 export {
-  useFileContent,
-  useFileData,
-  useFileList,
-  useStat,
-  useFileSearch,
-  useFileWrite,
-  useCreateDir,
-  useMoveFile,
-  useDeleteFile,
-} from "./data"
-export type { FileEntry, FileContent, FileStat, FetchClientOptions } from "./data"
+  IdeLayout,
+  buildIdeLayout,
+  ChatLayout,
+  buildChatLayout,
+  TopBar,
+  ResponsiveDockviewShell,
+} from "./front/layout"
+export type {
+  IdeLayoutProps,
+  ChatLayoutProps,
+  TopBarProps,
+  ResponsiveDockviewShellProps,
+} from "./front/layout"
 
 // Hooks
 export {
@@ -78,55 +151,52 @@ export {
   type EditorLifecycleAdapter,
   type UseEditorLifecycleOptions,
   type UseEditorLifecycleReturn,
-} from "./hooks"
-export { useViewportBreakpoint } from "./hooks"
+} from "./front/hooks"
+export { useViewportBreakpoint } from "./front/hooks"
 export {
   useResponsiveSidebarCollapse,
   type UseResponsiveSidebarCollapseOptions,
-} from "./hooks"
+} from "./front/hooks"
 export {
   useArtifactPanels,
   type ArtifactPanel,
   type UseArtifactPanelsReturn,
-} from "./hooks"
+} from "./front/hooks"
 export {
   useArtifactRouting,
   type UseArtifactRoutingOptions,
   type UseArtifactRoutingReturn,
-} from "./hooks"
+} from "./front/hooks"
 export {
   useKeyboardShortcuts,
   formatShortcut,
   type ShortcutBinding,
   type UseKeyboardShortcutsOptions,
-} from "./hooks"
-export {
-  useAutoOpenAgentFiles,
-  type UseAutoOpenAgentFilesOptions,
-} from "./hooks"
+} from "./front/hooks"
 
 // Command Palette
-export { CommandPalette } from "./components/CommandPalette"
-export type { CommandPaletteProps } from "./components/CommandPalette"
+export { CommandPalette } from "./front/components/CommandPalette"
+export type { CommandPaletteProps } from "./front/components/CommandPalette"
+export { WorkspaceLoadingState } from "./front/components/WorkspaceLoadingState"
+export type { WorkspaceLoadingStateProps } from "./front/components/WorkspaceLoadingState"
 
 // Panes (dockview wrappers — require WorkspaceProvider)
-export { ArtifactSurfacePane } from "./panes"
-export type { ArtifactSurfacePaneProps } from "./panes"
-export { EmptyPane } from "./panes"
-export type { EmptyPaneProps } from "./panes"
-export { DataCatalogPane } from "./panes"
-export type { DataCatalogPaneProps } from "./panes"
-export { CodeEditorPane } from "./panes"
-export type { CodeEditorPaneProps } from "./panes"
-export { FileTreePane, FileTreeView } from "./panes/file-tree/FileTreeView"
-export type { FileTreePaneProps, FileTreeViewProps } from "./panes/file-tree/FileTreeView"
-export { MarkdownEditorPane } from "./panes"
-export type { MarkdownEditorPaneProps } from "./panes"
-export { defaultEditorPanels } from "./panes"
-export { definePanel } from "./registry/types"
+export { ArtifactSurfacePane } from "./front/chrome/artifact-surface/ArtifactSurfacePane"
+export type { ArtifactSurfacePaneProps } from "./front/chrome/artifact-surface/ArtifactSurfacePane"
+export { EmptyPane } from "./front/chrome/empty-pane/EmptyPane"
+export type { EmptyPaneProps } from "./front/chrome/empty-pane/EmptyPane"
+export { DataCatalogPane } from "./front/components/data-catalog/DataCatalogPane"
+export type { DataCatalogPaneProps } from "./front/components/data-catalog/DataCatalogPane"
+export { CodeEditorPane } from "./plugins/filesystemPlugin/code-editor/CodeEditorPane"
+export type { CodeEditorPaneProps } from "./plugins/filesystemPlugin/code-editor/CodeEditorPane"
+export { FileTreePane, FileTreeView } from "./plugins/filesystemPlugin/file-tree/FileTreeView"
+export type { FileTreePaneProps, FileTreeViewProps } from "./plugins/filesystemPlugin/file-tree/FileTreeView"
+export { MarkdownEditorPane } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
+export type { MarkdownEditorPaneProps } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
+export { definePanel } from "./front/registry/types"
 
 // Theme
-export { createShadcnTheme, useShadcnTheme } from "./theme"
+export { createShadcnTheme } from "./front/theme"
 
 // Unified event bus — typed pubsub for cross-cutting signals
 // (filesystem mutations, panel/editor/query lifecycle). See
@@ -136,37 +206,40 @@ export {
   useEvent,
   userMeta,
   agentMeta,
-  emitAgentFileChange,
-} from "./events"
+  emitAgentData,
+} from "./front/events"
 export type {
   Origin,
   EventMeta,
   WorkspaceEventMap,
   WorkspaceEventName,
-} from "./events"
+} from "./front/events"
 
 // Toast notifications (app-global; mounted automatically by WorkspaceProvider)
-export { toast, Toaster, dismissToast } from "./toast"
+export { toast, Toaster, dismissToast } from "./front/toast"
 export type {
   ToastApi,
   ToastInput,
   ToastRecord,
   ToastVariant,
   ToasterProps,
-} from "./toast"
+} from "./front/toast"
 
 // Bridge
-export { createBridge } from "./bridge"
-export { createBridgeClient } from "./bridge"
-export type { BridgeClient, BridgeClientOptions, UIStatePut } from "./bridge"
+export { createBridge } from "./front/bridge"
+export { createBridgeClient } from "./front/bridge"
+export { postUiCommand } from "./front/bridge"
+export type { BridgeClient, BridgeClientOptions, UIStatePut } from "./front/bridge"
 export type {
+  DispatchContext,
+  UiCommand,
   WorkspaceBridge,
   BridgeEventMap,
   CommandResult,
   DynamicPaneConfig,
   Unsubscribe,
   CausedBy,
-} from "./bridge"
+} from "./front/bridge"
 export {
   openFileSchema,
   openPanelSchema,
@@ -175,25 +248,25 @@ export {
   navigateToLineSchema,
   expandToFileSchema,
   MAX_PANELS,
-} from "./bridge"
+} from "./front/bridge"
 
 // shadcn UI primitives
-export * from "./components/ui"
+export * from "./front/components/ui"
 
 // Error handling
-export { PanelErrorBoundary } from "./components/PanelErrorBoundary"
-export type { PanelErrorBoundaryProps } from "./components/PanelErrorBoundary"
+export { PanelErrorBoundary } from "./front/components/PanelErrorBoundary"
+export type { PanelErrorBoundaryProps } from "./front/components/PanelErrorBoundary"
 
 // Standalone components (usable WITHOUT WorkspaceProvider)
-export { CodeEditor } from "./panes/code-editor/CodeEditor"
-export type { CodeEditorProps } from "./panes/code-editor/CodeEditor"
-export { FileTree } from "./panes/file-tree/FileTree"
-export type { FileTreeProps, FileTreeNode } from "./panes/file-tree/FileTree"
-export { MarkdownEditor } from "./panes/markdown-editor/MarkdownEditor"
-export type { MarkdownEditorProps } from "./panes/markdown-editor/MarkdownEditor"
-export { DataCatalog } from "./panes/data-catalog/DataCatalog"
-export type { DataCatalogProps, DataSource } from "./panes/data-catalog/DataCatalog"
-export { DataExplorer, useExplorerState } from "./components/DataExplorer"
+export { CodeEditor } from "./plugins/filesystemPlugin/code-editor/CodeEditor"
+export type { CodeEditorProps } from "./plugins/filesystemPlugin/code-editor/CodeEditor"
+export { FileTree } from "./plugins/filesystemPlugin/file-tree/FileTree"
+export type { FileTreeProps, FileTreeNode } from "./plugins/filesystemPlugin/file-tree/FileTree"
+export { MarkdownEditor } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditor"
+export type { MarkdownEditorProps } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditor"
+export { DataCatalog } from "./front/components/data-catalog/DataCatalog"
+export type { DataCatalogProps, DataSource } from "./front/components/data-catalog/DataCatalog"
+export { DataExplorer, useExplorerState } from "./front/components/DataExplorer"
 export type {
   DataExplorerProps,
   UseExplorerStateOptions,
@@ -204,42 +277,35 @@ export type {
   FacetConfig,
   FacetValue,
   Facets,
+  FacetsArgs,
   SearchArgs,
   SearchResult,
-  FacetsArgs,
   DragPayload,
-} from "./components/DataExplorer"
-export { SessionList } from "./components/SessionList"
-export type { SessionListProps, SessionItem } from "./components/SessionList"
+} from "./front/components/DataExplorer"
+export { SessionList } from "./front/components/SessionList"
+export type { SessionListProps, SessionItem } from "./front/components/SessionList"
 
-// Chat-centered layout
-export {
-  SessionBrowser,
-  ChatStagePlaceholder,
-  SurfaceShell,
-  WorkbenchLeftPane,
-  ChatCenteredShell,
-  ChatTopBar,
-  useChatShell,
-  useChatSurface,
-} from "./components/chat"
+// Declarative chat/workbench chrome
+export { SessionBrowser } from "./front/chrome/session-list/SessionBrowser"
+export { SurfaceShell } from "./front/chrome/artifact-surface/SurfaceShell"
+export { WorkbenchLeftPane } from "./front/chrome/workbench-left/WorkbenchLeftPane"
+export type { SessionBrowserProps } from "./front/chrome/session-list/SessionBrowser"
 export type {
-  SessionBrowserProps,
-  ChatStagePlaceholderProps,
-  ChatStageHandle,
+  OpenArtifactHandler,
+  WorkspaceChatPanelComponent,
+  WorkspaceChatPanelProps,
+} from "./front/chrome/chat/types"
+export type {
   SurfaceShellProps,
   SurfaceShellApi,
   SurfaceShellSnapshot,
   SurfaceShellTab,
   OpenPanelConfig,
+} from "./front/chrome/artifact-surface/SurfaceShell"
+export type {
   WorkbenchLeftPaneProps,
-  WorkbenchLeftTab,
-  DataPaneConfig,
-  ChatCenteredShellProps,
-  ChatTopBarProps,
-  ChatShellContextValue,
-} from "./components/chat"
-export type { ChatSuggestion } from "@boring/agent/front"
+  WorkbenchLeftTabId,
+} from "./front/chrome/workbench-left/WorkbenchLeftPane"
 
 // Provider
 export {
@@ -247,16 +313,19 @@ export {
   ThemeProvider,
   useTheme,
   useWorkspaceBridge,
-} from "./WorkspaceProvider"
+  useWorkspaceContext,
+  useWorkspaceChatPanel,
+} from "./front/provider"
 export type {
   WorkspaceProviderProps,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
-} from "./WorkspaceProvider"
+  WorkspaceContextValue,
+} from "./front/provider"
 
 // Store (selectors only — store itself is NOT exported)
-export { createWorkspaceStore } from "./store"
-export type { CreateWorkspaceStoreOptions } from "./store"
+export { createWorkspaceStore } from "./front/store"
+export type { CreateWorkspaceStoreOptions } from "./front/store"
 export {
   bindStore,
   useActiveFile,
@@ -268,7 +337,7 @@ export {
   useThemePreference,
   useHydrationComplete,
   useResetLayout,
-} from "./store/selectors"
+} from "./front/store/selectors"
 export type {
   WorkspaceState,
   WorkspaceActions,
@@ -276,4 +345,4 @@ export type {
   PanelState,
   Notification,
   SidebarState,
-} from "./store/types"
+} from "./front/store/types"

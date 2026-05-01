@@ -22,6 +22,14 @@ Update `.env` with real values for:
 - `WORKSPACE_SETTINGS_ENCRYPTION_KEY`
 - `BETTER_AUTH_URL`
 
+Optional model default:
+- `BORING_AGENT_DEFAULT_MODEL_PROVIDER` + `BORING_AGENT_DEFAULT_MODEL_ID`
+- For Infomaniak OpenAI-compatible chat, set `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, and `BORING_AGENT_INFOMANIAK_MODEL`
+
+Optional Vercel sandbox lifetime:
+- `BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS` controls new sandbox auto-stop timeout. Vercel currently rejects values above `2700000`.
+- Dirty `vercel-sandbox` workspaces snapshot every 10 minutes; `BORING_AGENT_SNAPSHOT_KEEP` controls retained snapshots and defaults to `2`.
+
 3. Run DB migrations (before app boot):
 
 ```bash

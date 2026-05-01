@@ -18,7 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { FastifyInstance } from "fastify"
-import { createWorkspaceAgentApp } from "../createWorkspaceAgentApp"
+import { createWorkspaceAgentApp } from "../../app/createWorkspaceAgentApp"
 
 const HAS_KEY = !!process.env.ANTHROPIC_API_KEY
 const describeIf = HAS_KEY ? describe : describe.skip

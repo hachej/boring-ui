@@ -63,6 +63,26 @@ vi.mock('../primitives/prompt-input', () => ({
 
 import { ChatPanel } from '../ChatPanel'
 
+function withLocalStorage(values: Record<string, string>, fn: () => void): void {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  const store = new Map(Object.entries(values))
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, String(value)),
+      removeItem: (key: string) => store.delete(key),
+      clear: () => store.clear(),
+    },
+  })
+  try {
+    fn()
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else delete (globalThis as { localStorage?: unknown }).localStorage
+  }
+}
+
 beforeEach(() => {
   capturedOnSubmit = undefined
   mockSendMessage.mockReset()
@@ -162,11 +182,13 @@ describe('ChatPanel (shadcn)', () => {
       error: undefined,
     })
 
-    const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
+    withLocalStorage({ 'boring-agent:composer:show-thoughts': '1' }, () => {
+      const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning" />)
 
-    expect(html).toContain('data-testid="reasoning"')
-    expect(html).toContain('thinking hard')
-    expect(html).toContain('The answer is 42')
+      expect(html).toContain('data-testid="reasoning"')
+      expect(html).toContain('thinking hard')
+      expect(html).toContain('The answer is 42')
+    })
   })
 
   test('renders tool call with default renderer', () => {
@@ -263,6 +285,47 @@ describe('ChatPanel (shadcn)', () => {
     )
   })
 
+  test('uses provided defaultModel when stored model was not user-selected', async () => {
+    withLocalStorage({
+      'boring-agent:composer:model': JSON.stringify({ provider: 'infomaniak', id: 'moonshotai/Kimi-K2.6' }),
+    }, () => {
+      renderToStaticMarkup(
+        <ChatPanel
+          sessionId="sess-default-model"
+          defaultModel={{ provider: 'openai', id: 'gpt-4o-mini' }}
+        />,
+      )
+    })
+
+    await capturedOnSubmit!({ text: 'Run tests', files: [] })
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: 'Run tests', files: [] },
+      { body: expect.objectContaining({ model: { provider: 'openai', id: 'gpt-4o-mini' } }) },
+    )
+  })
+
+  test('keeps stored model when explicit user-selected marker is present', async () => {
+    withLocalStorage({
+      'boring-agent:composer:model': JSON.stringify({ provider: 'infomaniak', id: 'moonshotai/Kimi-K2.6' }),
+      'boring-agent:composer:model:user-selected': '1',
+    }, () => {
+      renderToStaticMarkup(
+        <ChatPanel
+          sessionId="sess-user-model"
+          defaultModel={{ provider: 'openai', id: 'gpt-4o-mini' }}
+        />,
+      )
+    })
+
+    await capturedOnSubmit!({ text: 'Run tests', files: [] })
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: 'Run tests', files: [] },
+      { body: expect.objectContaining({ model: { provider: 'infomaniak', id: 'moonshotai/Kimi-K2.6' } }) },
+    )
+  })
+
   test('slash command is intercepted and does not send to AI', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
 
@@ -300,6 +363,29 @@ describe('ChatPanel (shadcn)', () => {
       { method: 'DELETE' },
     )
     expect(onSessionReset).toHaveBeenCalledOnce()
+  })
+
+  test('/reset forwards requestHeaders when deleting server session', async () => {
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', mockFetch)
+
+    renderToStaticMarkup(
+      <ChatPanel
+        sessionId="sess-reset"
+        requestHeaders={{ 'x-boring-workspace-id': 'w1' }}
+      />,
+    )
+
+    await capturedOnSubmit!({ text: '/reset', files: [] })
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/agent/sessions/sess-reset',
+      {
+        method: 'DELETE',
+        headers: { 'x-boring-workspace-id': 'w1' },
+      },
+    )
   })
 
   test('unknown slash command falls through as regular message', async () => {
@@ -344,7 +430,9 @@ describe('ChatPanel (shadcn)', () => {
 
   test('passes sessionId to useAgentChat', () => {
     renderToStaticMarkup(<ChatPanel sessionId="test-session-42" />)
-    expect(mockUseAgentChat).toHaveBeenCalledWith({ sessionId: 'test-session-42' })
+    expect(mockUseAgentChat).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'test-session-42' }),
+    )
   })
 
   test('prompt submit status reflects streaming state', () => {
@@ -398,7 +486,7 @@ describe('ChatPanel (shadcn)', () => {
       expect(html).not.toContain('aria-label="Agent working"')
     })
 
-    test('thinking caption shows when last message is user and streaming', () => {
+    test('working caption shows when waiting for first byte', () => {
       mockUseAgentChat.mockReturnValue({
         messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
         sendMessage: mockSendMessage,
@@ -407,11 +495,11 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      expect(html).toContain('data-testid="chat-thinking"')
-      expect(html).toContain('Thinking…')
+      expect(html).toContain('data-testid="chat-working"')
+      expect(html).toContain('Working…')
     })
 
-    test('thinking caption hides once assistant message exists (model replying)', () => {
+    test('working caption stays visible once assistant message exists', () => {
       mockUseAgentChat.mockReturnValue({
         messages: [
           { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
@@ -423,12 +511,11 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      // Bar still shown (still streaming), but caption gone.
       expect(html).toContain('aria-label="Agent working"')
-      expect(html).not.toContain('data-testid="chat-thinking"')
+      expect(html).toContain('data-testid="chat-working"')
     })
 
-    test('thinking caption hides when ready', () => {
+    test('working caption hides when ready', () => {
       mockUseAgentChat.mockReturnValue({
         messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
         sendMessage: mockSendMessage,
@@ -437,7 +524,7 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      expect(html).not.toContain('data-testid="chat-thinking"')
+      expect(html).not.toContain('data-testid="chat-working"')
     })
   })
 
@@ -500,9 +587,9 @@ describe('ChatPanel (shadcn)', () => {
     test('thinking control hidden by default (opt-in)', () => {
       const html = renderToStaticMarkup(<ChatPanel sessionId="s-no-think" />)
       // None of the four level labels should appear when the control is off.
-      expect(html).not.toContain('No thinking')
-      expect(html).not.toContain('Think a little')
-      expect(html).not.toContain('Think hard')
+      expect(html).not.toContain('lucide-brain')
+      expect(html).not.toContain('data-value="off"')
+      expect(html).not.toContain('data-value="high"')
     })
 
     test('thinking control rendered when thinkingControl=true', () => {
@@ -510,9 +597,10 @@ describe('ChatPanel (shadcn)', () => {
         <ChatPanel sessionId="s-think" thinkingControl />,
       )
       // The select renders all four level options as children.
-      expect(html).toContain('No thinking')
-      expect(html).toContain('Think a little')
-      expect(html).toContain('Think hard')
+      expect(html).toContain('data-value="off"')
+      expect(html).toContain('data-value="low"')
+      expect(html).toContain('data-value="medium"')
+      expect(html).toContain('data-value="high"')
       // BrainIcon rendered alongside the trigger.
       expect(html).toContain('lucide-brain')
     })

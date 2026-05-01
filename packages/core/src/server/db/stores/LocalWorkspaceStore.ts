@@ -5,6 +5,9 @@ import type {
   WorkspaceMember,
   WorkspaceInvite,
   WorkspaceRuntime,
+  WorkspaceRuntimeResource,
+  WorkspaceRuntimeResourceInput,
+  WorkspaceRuntimeResourceSelector,
   MemberRole,
   User,
 } from '../../../shared/types.js'
@@ -16,6 +19,7 @@ export class LocalWorkspaceStore implements WorkspaceStore {
   private members = new Map<string, WorkspaceMember>() // key: `${workspaceId}:${userId}`
   private invites = new Map<string, WorkspaceInvite>()
   private runtimes = new Map<string, WorkspaceRuntime>()
+  private runtimeResources = new Map<string, WorkspaceRuntimeResource>()
   private wsSettings = new Map<string, Map<string, { value: string; updatedAt: string }>>()
   private uiStates = new Map<string, Record<string, unknown>>() // key: `${userId}:${workspaceId}`
 
@@ -48,6 +52,14 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       lastError: null,
       volumePath: null,
       lastErrorOp: null,
+      sandboxProvider: null,
+      sandboxId: null,
+      sandboxStatus: null,
+      sandboxSnapshotId: null,
+      sandboxCreatedAt: null,
+      sandboxLastUsedAt: null,
+      sandboxLastSeenAt: null,
+      sandboxExpiresAt: null,
       provisioningStep: null,
       stepStartedAt: null,
       updatedAt: now,
@@ -245,11 +257,11 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     if (!inv || inv.workspaceId !== workspaceId) {
       throw new HttpError({ status: 404, code: ERROR_CODES.INVITE_NOT_FOUND, message: 'Invite not found' })
     }
-    if (new Date(inv.expiresAt) <= new Date()) {
-      throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_EXPIRED, message: 'Invite has expired' })
-    }
     if (inv.acceptedAt) {
       throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_ALREADY_ACCEPTED, message: 'Invite already accepted' })
+    }
+    if (new Date(inv.expiresAt) <= new Date()) {
+      throw new HttpError({ status: 410, code: ERROR_CODES.INVITE_EXPIRED, message: 'Invite has expired' })
     }
     const user = await this.userStore.getById(userId)
     if (!user || inv.email.toLowerCase() !== user.email.toLowerCase()) {
@@ -337,6 +349,83 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     }
     this.runtimes.set(workspaceId, updated)
     return updated
+  }
+
+  async listWorkspaceRuntimes(): Promise<WorkspaceRuntime[]> {
+    return Array.from(this.runtimes.values())
+  }
+
+  private runtimeResourceKey(
+    workspaceId: string,
+    selector: WorkspaceRuntimeResourceSelector,
+  ): string {
+    return `${workspaceId}:${selector.kind}:${selector.purpose}:${selector.provider}`
+  }
+
+  async getWorkspaceRuntimeResource(
+    workspaceId: string,
+    selector: WorkspaceRuntimeResourceSelector,
+  ): Promise<WorkspaceRuntimeResource | null> {
+    const resource = this.runtimeResources.get(this.runtimeResourceKey(workspaceId, selector))
+    if (!resource || resource.state === 'deleted') return null
+    return resource
+  }
+
+  async putWorkspaceRuntimeResource(
+    workspaceId: string,
+    resource: WorkspaceRuntimeResourceInput,
+  ): Promise<WorkspaceRuntimeResource> {
+    const ws = this.workspaces.get(workspaceId)
+    if (!ws || ws.deletedAt) throw new Error(`Workspace ${workspaceId} not found`)
+
+    const key = this.runtimeResourceKey(workspaceId, resource)
+    const existing = this.runtimeResources.get(key)
+    const now = new Date().toISOString()
+    const next: WorkspaceRuntimeResource = {
+      id: resource.id ?? existing?.id ?? randomUUID(),
+      workspaceId,
+      kind: resource.kind,
+      purpose: resource.purpose,
+      provider: resource.provider,
+      handleKind: resource.handleKind,
+      stableKey: resource.stableKey ?? null,
+      providerResourceId: resource.providerResourceId ?? null,
+      parentResourceId: resource.parentResourceId ?? null,
+      state: resource.state,
+      persistenceMode: resource.persistenceMode,
+      config: resource.config ?? {},
+      providerMeta: resource.providerMeta ?? {},
+      lastError: resource.lastError ?? null,
+      lastErrorCode: resource.lastErrorCode ?? null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      lastSeenAt: resource.lastSeenAt ?? null,
+      lastUsedAt: resource.lastUsedAt ?? null,
+      expiresAt: resource.expiresAt ?? null,
+      generation: resource.generation ?? ((existing?.generation ?? -1) + 1),
+    }
+    this.runtimeResources.set(key, next)
+    return next
+  }
+
+  async deleteWorkspaceRuntimeResource(
+    workspaceId: string,
+    selector: WorkspaceRuntimeResourceSelector,
+  ): Promise<void> {
+    const key = this.runtimeResourceKey(workspaceId, selector)
+    const existing = this.runtimeResources.get(key)
+    if (!existing) return
+    this.runtimeResources.set(key, {
+      ...existing,
+      state: 'deleted',
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
+  async listWorkspaceRuntimeResources(workspaceId?: string): Promise<WorkspaceRuntimeResource[]> {
+    return Array.from(this.runtimeResources.values()).filter(
+      (resource) => (!workspaceId || resource.workspaceId === workspaceId),
+    )
   }
 
   async retryWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null> {

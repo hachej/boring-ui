@@ -18,8 +18,9 @@ const requiredFiles = [
   'dist/server/index.d.ts',
   'dist/front/index.js',
   'dist/front/index.d.ts',
-  'dist/bin/boring-agent.js',
   'dist/front/styles.css',
+  'dist/eval/index.js',
+  'dist/eval/index.d.ts',
 ]
 
 function resolveFromPackage(relPath) {
@@ -60,14 +61,6 @@ function assertTsParsable(relPath) {
   }
 }
 
-function assertCliShebang() {
-  const cliPath = resolveFromPackage('dist/bin/boring-agent.js')
-  const sourceText = readFileSync(cliPath, 'utf8')
-  if (!sourceText.startsWith('#!/usr/bin/env node')) {
-    throw new Error('dist/bin/boring-agent.js is missing expected shebang')
-  }
-}
-
 function assertConsumerSafeCss(relPath) {
   const sourceText = readFileSync(resolveFromPackage(relPath), 'utf8')
   const forbidden = [/@source\b/, /@import\s+['"]tailwindcss/, /packages\/agent\/src/, /packages\/workspace\/src/]
@@ -86,13 +79,12 @@ async function main() {
   assertNodeParsable('dist/shared/index.js')
   assertNodeParsable('dist/server/index.js')
   assertNodeParsable('dist/front/index.js')
-  assertNodeParsable('dist/bin/boring-agent.js')
+  assertNodeParsable('dist/eval/index.js')
 
   assertTsParsable('dist/shared/index.d.ts')
   assertTsParsable('dist/server/index.d.ts')
   assertTsParsable('dist/front/index.d.ts')
-
-  assertCliShebang()
+  assertTsParsable('dist/eval/index.d.ts')
   assertConsumerSafeCss('dist/front/styles.css')
 
   process.stdout.write('build-artifacts: OK\n')

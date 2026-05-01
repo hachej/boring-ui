@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 
+import { getEnv } from '../../config/env'
 import { createLogger } from '../../logging'
 
 const log = createLogger('libs-preinstall')
@@ -138,9 +139,11 @@ export function buildVenvEnv(tier1Path: string | null, workspaceRoot: string): R
 
   const pathParts = [tier2Bin]
   if (tier1Bin) pathParts.push(tier1Bin)
+  const hostPath = getEnv('PATH')
+  if (hostPath) pathParts.push(hostPath)
 
   return {
-    PATH: pathParts.join(':') + ':${PATH}',
+    PATH: pathParts.join(':'),
     VIRTUAL_ENV: join(workspaceRoot, '.venv'),
   }
 }

@@ -8,6 +8,8 @@ const ROLE_LEVELS: Record<MemberRole, number> = {
   owner: 2,
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 export function requireWorkspaceMember(
   minimumRole?: MemberRole,
 ): preHandlerHookHandler {
@@ -24,6 +26,25 @@ export function requireWorkspaceMember(
       throw new Error(
         'requireWorkspaceMember: missing :id param — route must include :id',
       )
+    }
+
+    if (!UUID_RE.test(workspaceId)) {
+      throw new HttpError({
+        status: 400,
+        code: ERROR_CODES.VALIDATION_FAILED,
+        message: 'Invalid workspace id',
+        requestId: request.id,
+      })
+    }
+
+    const workspace = await request.server.workspaceStore.get(workspaceId)
+    if (!workspace || workspace.appId !== request.server.config.appId) {
+      throw new HttpError({
+        status: 404,
+        code: ERROR_CODES.NOT_FOUND,
+        message: 'Workspace not found',
+        requestId: request.id,
+      })
     }
 
     const role = await request.server.workspaceStore.getMemberRole(

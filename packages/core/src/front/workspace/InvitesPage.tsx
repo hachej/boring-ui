@@ -58,12 +58,13 @@ export function InvitesPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const workspaceId = workspace?.id ?? ''
+  const encodedWorkspaceId = encodeURIComponent(workspaceId)
 
   const invitesQuery = useQuery({
     queryKey: invitesQueryKey(workspaceId),
     queryFn: () =>
       apiFetchJson<{ invites: WorkspaceInvite[] }>(
-        `/api/v1/workspaces/${workspaceId}/invites`,
+        `/api/v1/workspaces/${encodedWorkspaceId}/invites`,
       ).then((data) => data.invites),
     enabled: workspaceId.length > 0,
   })
@@ -71,7 +72,7 @@ export function InvitesPage() {
   const createMutation = useMutation({
     mutationFn: async ({ email: invEmail, role: invRole }: { email: string; role: MemberRole }) => {
       const idempotencyKey = generateIdempotencyKey()
-      const response = await apiFetch(`/api/v1/workspaces/${workspaceId}/invites`, {
+      const response = await apiFetch(`/api/v1/workspaces/${encodedWorkspaceId}/invites`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -99,9 +100,10 @@ export function InvitesPage() {
 
   const revokeMutation = useMutation({
     mutationFn: async (inviteId: string) => {
-      await apiFetch(`/api/v1/workspaces/${workspaceId}/invites/${inviteId}`, {
-        method: 'DELETE',
-      })
+      await apiFetch(
+        `/api/v1/workspaces/${encodedWorkspaceId}/invites/${encodeURIComponent(inviteId)}`,
+        { method: 'DELETE' },
+      )
     },
     onSuccess: () => {
       setRevokeError(null)

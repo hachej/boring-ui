@@ -14,6 +14,13 @@ dist/
 
 # Playwright output
 apps/boring-macro-v2/workspace/
+apps/boring-macro-v2/.eval-venv/
+apps/boring-macro-v2/sdk/**/__pycache__/
+apps/boring-macro-v2/sdk/**/*.py[cod]
+apps/boring-macro-v2/sdk/*.egg-info/
+apps/boring-macro-v2/sdk/build/
+apps/boring-macro-v2/transforms/**/__pycache__/
+apps/boring-macro-v2/transforms/**/*.py[cod]
 playwright-report/
 test-results/
 e2e-artifacts/

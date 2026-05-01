@@ -131,6 +131,14 @@ export const workspaceRuntimes = pgTable(
     lastError: text('last_error'),
     volumePath: text('volume_path'),
     lastErrorOp: text('last_error_op'),
+    sandboxProvider: text('sandbox_provider'),
+    sandboxId: text('sandbox_id'),
+    sandboxStatus: text('sandbox_status'),
+    sandboxSnapshotId: text('sandbox_snapshot_id'),
+    sandboxCreatedAt: timestamp('sandbox_created_at'),
+    sandboxLastUsedAt: timestamp('sandbox_last_used_at'),
+    sandboxLastSeenAt: timestamp('sandbox_last_seen_at'),
+    sandboxExpiresAt: timestamp('sandbox_expires_at'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     provisioningStep: text('provisioning_step'),
     stepStartedAt: timestamp('step_started_at'),
@@ -148,6 +156,55 @@ export const workspaceRuntimesRelations = relations(
   ({ one }) => ({
     workspace: one(workspaces, {
       fields: [workspaceRuntimes.workspaceId],
+      references: [workspaces.id],
+    }),
+  }),
+)
+
+export const workspaceRuntimeResources = pgTable(
+  'workspace_runtime_resources',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    purpose: text('purpose').notNull().default('main'),
+    provider: text('provider').notNull(),
+    handleKind: text('handle_kind').notNull(),
+    stableKey: text('stable_key'),
+    providerResourceId: text('provider_resource_id'),
+    parentResourceId: uuid('parent_resource_id'),
+    state: text('state').notNull(),
+    persistenceMode: text('persistence_mode').notNull(),
+    config: jsonb('config').notNull().default({}),
+    providerMeta: jsonb('provider_meta').notNull().default({}),
+    lastError: text('last_error'),
+    lastErrorCode: text('last_error_code'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at'),
+    lastUsedAt: timestamp('last_used_at'),
+    expiresAt: timestamp('expires_at'),
+    generation: integer('generation').notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex('workspace_runtime_resources_active_idx')
+      .on(table.workspaceId, table.kind, table.purpose, table.provider)
+      .where(sql`${table.state} <> 'deleted'`),
+    index('workspace_runtime_resources_workspace_kind_idx').on(table.workspaceId, table.kind),
+    index('workspace_runtime_resources_provider_stable_key_idx').on(table.provider, table.stableKey),
+    index('workspace_runtime_resources_provider_resource_id_idx').on(table.provider, table.providerResourceId),
+  ],
+)
+
+export const workspaceRuntimeResourcesRelations = relations(
+  workspaceRuntimeResources,
+  ({ one }) => ({
+    workspace: one(workspaces, {
+      fields: [workspaceRuntimeResources.workspaceId],
       references: [workspaces.id],
     }),
   }),

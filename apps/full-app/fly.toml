@@ -9,6 +9,10 @@ primary_region = "cdg"
 [deploy]
   release_command = "node apps/full-app/dist/server/migrate.js"
 
+[[mounts]]
+  source = "workspace_data"
+  destination = "/data"
+
 [http_service]
   internal_port = 3000
   force_https = true
