@@ -622,6 +622,34 @@ describe("createBridgeClient", () => {
       expect(bridge.openFile).not.toHaveBeenCalled()
       client.disconnect()
     })
+
+    it("resets agent command depth when a poll command dispatch fails", async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          status: 200,
+          ok: true,
+          json: async () => [
+            { v: 1, kind: "openFile", params: { path: "/a.ts" } },
+          ],
+        })
+        .mockResolvedValue({ status: 204, ok: true })
+      const { client, bridge, store } = createClient({ pollMode: true })
+      ;(bridge.openFile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"))
+      client.connect()
+      await vi.advanceTimersByTimeAsync(0)
+
+      store.notify()
+      await vi.advanceTimersByTimeAsync(200)
+
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        "http://localhost:3000/api/v1/ui/state",
+        expect.objectContaining({
+          method: "PUT",
+          body: expect.stringContaining('"causedBy":"user"'),
+        }),
+      )
+      client.disconnect()
+    })
   })
 
   describe("disconnect", () => {

@@ -15,7 +15,11 @@ import {
   resolveSandboxHandle,
 } from '../../sandbox/vercel-sandbox/resolveSandboxHandle'
 import type { PeriodicSnapshotScheduler } from '../../sandbox/vercel-sandbox/periodicSnapshot'
-import { createVercelSandboxWorkspace } from '../../workspace/createVercelSandboxWorkspace'
+import {
+  createVercelSandboxWorkspace,
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { RuntimeModeAdapter } from '../mode'
 
@@ -96,24 +100,28 @@ async function ensureVercelWorkspaceRoot(sandbox: VercelSandbox & {
   mkDir?: (path: string) => Promise<void>
   runCommand?: (params: { cmd: string; args?: string[] }) => Promise<{ exitCode?: number }>
 }): Promise<void> {
+  let rootCreated = false
   if (sandbox.fs?.mkdir) {
-    await sandbox.fs.mkdir('/vercel/sandbox', { recursive: true })
-    return
-  }
-  if (sandbox.mkDir) {
+    await sandbox.fs.mkdir(VERCEL_SANDBOX_REMOTE_ROOT, { recursive: true })
+    rootCreated = true
+  } else if (sandbox.mkDir) {
     try {
-      await sandbox.mkDir('/vercel/sandbox')
-      return
+      await sandbox.mkDir(VERCEL_SANDBOX_REMOTE_ROOT)
+      rootCreated = true
     } catch {
       // Fall through to mkdir -p for already-existing parents or SDK variants.
     }
   }
   if (!sandbox.runCommand) {
-    throw new Error('failed to initialize /vercel/sandbox: sandbox runCommand is unavailable')
+    if (rootCreated) return
+    throw new Error(`failed to initialize ${VERCEL_SANDBOX_REMOTE_ROOT}: sandbox runCommand is unavailable`)
   }
-  const result = await sandbox.runCommand({ cmd: 'mkdir', args: ['-p', '/vercel/sandbox'] })
+  const result = await sandbox.runCommand({
+    cmd: 'sh',
+    args: ['-c', `mkdir -p ${VERCEL_SANDBOX_REMOTE_ROOT} && (ln -sfn ${VERCEL_SANDBOX_REMOTE_ROOT} ${VERCEL_SANDBOX_WORKSPACE_ROOT} 2>/dev/null || true)`],
+  })
   if ((result.exitCode ?? 1) !== 0) {
-    throw new Error(`failed to initialize /vercel/sandbox (exit ${result.exitCode ?? 'unknown'})`)
+    throw new Error(`failed to initialize ${VERCEL_SANDBOX_REMOTE_ROOT} (exit ${result.exitCode ?? 'unknown'})`)
   }
 }
 

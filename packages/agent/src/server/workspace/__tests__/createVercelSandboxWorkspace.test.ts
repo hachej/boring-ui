@@ -9,6 +9,7 @@ test('writes via workspace are visible to paired exec on same sandbox handle', a
   const workspace = createVercelSandboxWorkspace(harness.sandbox)
 
   try {
+    expect(workspace.root).toBe('/workspace')
     await workspace.mkdir('shared', { recursive: true })
     await workspace.writeFile('shared/hello.txt', 'hello-from-workspace')
 

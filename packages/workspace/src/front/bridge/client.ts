@@ -275,8 +275,11 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
           continue
         }
         agentCommandDepth++
-        await dispatchCommand(bridge, cmd.kind, cmd.params)
-        agentCommandDepth--
+        try {
+          await dispatchCommand(bridge, cmd.kind, cmd.params)
+        } finally {
+          agentCommandDepth--
+        }
       }
       setConnected(true)
     } catch {
