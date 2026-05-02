@@ -1,16 +1,12 @@
 @import 'tailwindcss';
-@import '../../../packages/agent/src/front/styles/globals.css';
 @plugin '@tailwindcss/typography';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* In this app we boot Vite manually from server.ts, so be explicit about
- * every scan root Tailwind should watch. Otherwise the playground shell can
- * render with raw class names while package styles still load. */
+/* App-local Tailwind scan roots only. Agent classes ship precompiled via
+ * @boring/agent/front/styles.css imported from main.tsx. */
 @source "./**/*.{ts,tsx,js,jsx}";
 @source "../index.html";
-@source "../../../packages/agent/src/front/**/*.{ts,tsx,js,jsx}";
-@source "../../../packages/agent/dist/front/**/*.{js,d.ts}";
 
 @layer base {
   * { @apply border-border; }

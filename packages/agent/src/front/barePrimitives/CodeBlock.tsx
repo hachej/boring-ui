@@ -37,10 +37,10 @@ export function CodeBlock({
     <div
       className={className}
       style={{
-        background: 'var(--boring-chat-code-bg, #1e1e1e)',
-        color: 'var(--boring-chat-code-fg, #d4d4d4)',
-        borderRadius: 'var(--boring-chat-code-radius, 0.375rem)',
-        fontFamily: 'var(--boring-chat-font-mono, monospace)',
+        background: 'var(--boring-agent-code-bg, #1e1e1e)',
+        color: 'var(--boring-agent-code-fg, #d4d4d4)',
+        borderRadius: 'var(--boring-agent-code-radius, 0.375rem)',
+        fontFamily: 'var(--boring-agent-font-mono, monospace)',
         fontSize: '0.8125rem',
         lineHeight: 1.6,
         overflow: 'hidden',
@@ -54,8 +54,8 @@ export function CodeBlock({
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '0.375rem 0.75rem',
-            background: 'var(--boring-chat-code-header-bg, #2d2d2d)',
-            borderBottom: '1px solid var(--boring-chat-code-border, #404040)',
+            background: 'var(--boring-agent-code-header-bg, #2d2d2d)',
+            borderBottom: '1px solid var(--boring-agent-code-border, #404040)',
             fontSize: '0.75rem',
           }}
         >
@@ -112,7 +112,7 @@ export function CodeBlock({
             position: 'absolute',
             top: '0.5rem',
             right: '0.5rem',
-            background: 'var(--boring-chat-code-copy-bg, rgba(255,255,255,0.1))',
+            background: 'var(--boring-agent-code-copy-bg, rgba(255,255,255,0.1))',
             border: 'none',
             color: 'inherit',
             cursor: 'pointer',

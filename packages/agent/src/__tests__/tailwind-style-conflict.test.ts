@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
@@ -26,6 +26,17 @@ function extractCssVarNames(css: string, selector: string): string[] {
 
 function readCss(path: string): string {
   return readFileSync(path, 'utf-8')
+}
+
+function listFiles(dir: string, exts = new Set(['.ts', '.tsx', '.css'])): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(dir)) {
+    const path = resolve(dir, entry)
+    const stat = statSync(path)
+    if (stat.isDirectory()) out.push(...listFiles(path, exts))
+    else if (exts.has(path.slice(path.lastIndexOf('.')))) out.push(path)
+  }
+  return out
 }
 
 describe('Tailwind v4 style contract', () => {
@@ -77,6 +88,22 @@ describe('Tailwind v4 style contract', () => {
     expect(workspaceDarkVars).toContain('--boring-background')
     expect(workspaceDarkVars).toContain('--boring-foreground')
     expect(agentCss).toMatch(/\.dark \[data-boring-agent\]/)
-    expect(agentCss).toMatch(/--background:\s*var\(--boring-background,/) 
+    expect(agentCss).toMatch(/--background:\s*var\(--boring-background,/)
+  })
+
+  test('front source has no stale boring-chat namespace', () => {
+    const offenders = listFiles(resolve(ROOT, 'packages/agent/src/front'))
+      .filter((file) => /boring-chat/.test(readFileSync(file, 'utf-8')))
+      .map((file) => file.replace(`${ROOT}/`, ''))
+
+    expect(offenders).toEqual([])
+  })
+
+  test('child apps do not scan package source CSS', () => {
+    const offenders = listFiles(resolve(ROOT, 'apps'), new Set(['.css']))
+      .filter((file) => /@source\s+["'][^"']*packages\/(agent|workspace)\/src/.test(readFileSync(file, 'utf-8')))
+      .map((file) => file.replace(`${ROOT}/`, ''))
+
+    expect(offenders).toEqual([])
   })
 })

@@ -32,10 +32,10 @@ export function Reasoning({
       className={className}
       data-state={state}
       style={{
-        border: '1px solid var(--boring-chat-reasoning-border, #e5e7eb)',
-        borderRadius: 'var(--boring-chat-reasoning-radius, 0.375rem)',
+        border: '1px solid var(--boring-agent-reasoning-border, #e5e7eb)',
+        borderRadius: 'var(--boring-agent-reasoning-radius, 0.375rem)',
         overflow: 'hidden',
-        fontSize: 'var(--boring-chat-font-size, 0.875rem)',
+        fontSize: 'var(--boring-agent-font-size, 0.875rem)',
       }}
     >
       <button
@@ -47,12 +47,12 @@ export function Reasoning({
           gap: '0.5rem',
           width: '100%',
           padding: '0.5rem 0.75rem',
-          background: 'var(--boring-chat-reasoning-header-bg, #f9fafb)',
+          background: 'var(--boring-agent-reasoning-header-bg, #f9fafb)',
           border: 'none',
           cursor: 'pointer',
           textAlign: 'left',
           fontSize: '0.8125rem',
-          color: 'var(--boring-chat-reasoning-fg, inherit)',
+          color: 'var(--boring-agent-reasoning-fg, inherit)',
         }}
         aria-expanded={expanded}
       >
@@ -67,7 +67,7 @@ export function Reasoning({
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: 'var(--boring-chat-reasoning-streaming, #8b5cf6)',
+              background: 'var(--boring-agent-reasoning-streaming, #8b5cf6)',
               animation: 'boring-pulse 1.5s ease-in-out infinite',
             }}
             aria-label="streaming"
@@ -79,9 +79,9 @@ export function Reasoning({
         <div
           style={{
             padding: '0.75rem',
-            borderTop: '1px solid var(--boring-chat-reasoning-border, #e5e7eb)',
+            borderTop: '1px solid var(--boring-agent-reasoning-border, #e5e7eb)',
             whiteSpace: 'pre-wrap',
-            color: 'var(--boring-chat-reasoning-text, #6b7280)',
+            color: 'var(--boring-agent-reasoning-text, #6b7280)',
             fontSize: '0.8125rem',
             lineHeight: 1.6,
           }}

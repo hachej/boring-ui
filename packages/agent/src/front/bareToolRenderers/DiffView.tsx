@@ -32,12 +32,12 @@ function parsePatch(patch: string): DiffLine[] {
 
 const lineStyle: Record<DiffLine['type'], React.CSSProperties> = {
   '+': {
-    background: 'var(--boring-chat-diff-add, rgba(46, 160, 67, 0.15))',
-    color: 'var(--boring-chat-diff-add-fg, #3fb950)',
+    background: 'var(--boring-agent-diff-add, rgba(46, 160, 67, 0.15))',
+    color: 'var(--boring-agent-diff-add-fg, #3fb950)',
   },
   '-': {
-    background: 'var(--boring-chat-diff-remove, rgba(248, 81, 73, 0.15))',
-    color: 'var(--boring-chat-diff-remove-fg, #f85149)',
+    background: 'var(--boring-agent-diff-remove, rgba(248, 81, 73, 0.15))',
+    color: 'var(--boring-agent-diff-remove-fg, #f85149)',
   },
   ' ': {},
 }
@@ -67,7 +67,7 @@ export function DiffView({ oldString, newString, path, replaceAll }: DiffViewPro
           padding: '0.375rem 0.75rem',
           fontSize: '0.75rem',
           opacity: 0.7,
-          fontFamily: 'var(--boring-chat-font-mono, monospace)',
+          fontFamily: 'var(--boring-agent-font-mono, monospace)',
         }}
       >
         {path}{replaceAll ? ' (replace all)' : ''}
@@ -76,7 +76,7 @@ export function DiffView({ oldString, newString, path, replaceAll }: DiffViewPro
         style={{
           margin: 0,
           padding: '0.5rem 0',
-          fontFamily: 'var(--boring-chat-font-mono, monospace)',
+          fontFamily: 'var(--boring-agent-font-mono, monospace)',
           fontSize: '0.8125rem',
           lineHeight: 1.6,
           overflow: 'auto',

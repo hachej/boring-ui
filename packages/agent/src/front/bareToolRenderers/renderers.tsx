@@ -99,7 +99,7 @@ function renderWrite(part: ToolPart): ReactNode {
 
   return (
     <Tool toolName="write" toolCallId={part.toolCallId} state={part.state} errorText={part.errorText} defaultExpanded>
-      <span style={{ fontFamily: 'var(--boring-chat-font-mono, monospace)', fontSize: '0.8125rem' }}>
+      <span style={{ fontFamily: 'var(--boring-agent-font-mono, monospace)', fontSize: '0.8125rem' }}>
         Wrote {content.length} bytes to <strong>{path}</strong>
       </span>
     </Tool>
@@ -153,7 +153,7 @@ function renderGetUiState(part: ToolPart): ReactNode {
   return (
     <Tool toolName="get_ui_state" toolCallId={part.toolCallId} state={part.state} errorText={part.errorText}
       renderOutput={(output) => (
-        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.8125rem', fontFamily: 'var(--boring-chat-font-mono, monospace)' }}>
+        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.8125rem', fontFamily: 'var(--boring-agent-font-mono, monospace)' }}>
           {typeof output === 'string' ? output : JSON.stringify(output, null, 2)}
         </pre>
       )}
@@ -189,7 +189,7 @@ function renderExecUi(part: ToolPart): ReactNode {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
         <span
           style={{
-            fontFamily: 'var(--boring-chat-font-mono, monospace)',
+            fontFamily: 'var(--boring-agent-font-mono, monospace)',
             fontSize: '0.8125rem',
             wordBreak: 'break-all',
           }}
@@ -200,8 +200,8 @@ function renderExecUi(part: ToolPart): ReactNode {
           <span
             data-testid="tool-error"
             style={{
-              color: 'var(--boring-chat-tool-error, #ef4444)',
-              fontFamily: 'var(--boring-chat-font-mono, monospace)',
+              color: 'var(--boring-agent-tool-error, #ef4444)',
+              fontFamily: 'var(--boring-agent-font-mono, monospace)',
               fontSize: '0.8125rem',
             }}
           >
@@ -220,7 +220,7 @@ function renderFallback(part: ToolPart): ReactNode {
         margin: 0,
         whiteSpace: 'pre-wrap',
         fontSize: '0.8125rem',
-        fontFamily: 'var(--boring-chat-font-mono, monospace)',
+        fontFamily: 'var(--boring-agent-font-mono, monospace)',
       }}
     >
       {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}

@@ -64,8 +64,8 @@ export const ComposerPrimitive = forwardRef<ComposerPrimitiveRef, ComposerPrimit
         onKeyDown={handleKeyDown}
         style={{
           resize: 'none',
-          fontFamily: 'var(--boring-chat-font-family, inherit)',
-          fontSize: 'var(--boring-chat-font-size, 0.875rem)',
+          fontFamily: 'var(--boring-agent-font-family, inherit)',
+          fontSize: 'var(--boring-agent-font-size, 0.875rem)',
           ...textareaProps.style,
         }}
       />

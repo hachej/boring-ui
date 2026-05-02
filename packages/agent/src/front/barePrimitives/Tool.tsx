@@ -83,10 +83,10 @@ export function Tool({
       className={className}
       data-tool-state={state}
       style={{
-        border: '1px solid var(--boring-chat-tool-border, #e5e7eb)',
-        borderRadius: 'var(--boring-chat-tool-radius, 0.375rem)',
+        border: '1px solid var(--boring-agent-tool-border, #e5e7eb)',
+        borderRadius: 'var(--boring-agent-tool-radius, 0.375rem)',
         overflow: 'hidden',
-        fontSize: 'var(--boring-chat-font-size, 0.875rem)',
+        fontSize: 'var(--boring-agent-font-size, 0.875rem)',
       }}
     >
       <button
@@ -98,11 +98,11 @@ export function Tool({
           gap: '0.5rem',
           width: '100%',
           padding: '0.5rem 0.75rem',
-          background: 'var(--boring-chat-tool-header-bg, #f9fafb)',
+          background: 'var(--boring-agent-tool-header-bg, #f9fafb)',
           border: 'none',
           cursor: 'pointer',
           textAlign: 'left',
-          fontFamily: 'var(--boring-chat-font-mono, monospace)',
+          fontFamily: 'var(--boring-agent-font-mono, monospace)',
           fontSize: '0.8125rem',
         }}
         aria-expanded={expanded}
@@ -122,14 +122,14 @@ export function Tool({
         </span>
         {!isComplete && (
           <span
-            style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--boring-chat-tool-running, #3b82f6)' }}
+            style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--boring-agent-tool-running, #3b82f6)' }}
             aria-label="running"
           />
         )}
       </button>
 
       {expanded && (
-        <div style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--boring-chat-tool-border, #e5e7eb)' }}>
+        <div style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--boring-agent-tool-border, #e5e7eb)' }}>
           {children ?? (
             <>
               {input !== undefined && (
@@ -153,7 +153,7 @@ export function Tool({
               {errorText && (
                 <div
                   data-testid="tool-error"
-                  style={{ color: 'var(--boring-chat-tool-error, #ef4444)', marginTop: '0.5rem' }}
+                  style={{ color: 'var(--boring-agent-tool-error, #ef4444)', marginTop: '0.5rem' }}
                 >
                   {errorText}
                 </div>

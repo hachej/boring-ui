@@ -656,7 +656,7 @@ packages/agent/
 | 11f | Settings | **env vars only** (`ANTHROPIC_API_KEY`, `BORING_AGENT_MODE`, etc.). No `/api/settings` route, no runtime prefs file. | Vault / consumer wires production secrets. Workspace package can add a settings UI on top of its own storage if needed. |
 | 11g | AI SDK harness | **NOT shipped in v1.** pi-coding-agent only. ai-sdk harness is a design seam (`AgentHarness` interface accommodates it) but not implemented. | boring-macro's current ai-sdk usage will require migration to pi-coding-agent when it adopts v2 — deferred; v1 scope does not include parallel ai-sdk support. |
 | 12 | Backend stack | Fastify + Node ESM | Matches existing boring-ui; pi-coding-agent is Node-native. |
-| 13 | Styling contract | CSS custom properties (`--boring-chat-*`) + render-prop escape hatches | Same JSX, workspace sets vars at root scope. |
+| 13 | Styling contract | CSS custom properties (`--boring-agent-*`) + render-prop escape hatches | Same JSX, workspace sets vars at root scope. |
 | 14 | UI export pattern | **Default component + reusable primitives** for every user-facing piece | Standalone mounts the defaults; workspace composes primitives into layout-native UIs. Same pattern for chat, sessions, future widgets. |
 | 15 | Export surface | **Defaults:** `ChatPanel`, `SessionToolbar`. **Primitives:** `Message`, `MessageGroup`, `Composer`, `ModelPicker`, `ThinkingToggle`, `Tool`, `Terminal`, `CodeBlock`, `Reasoning`, `NewChatButton`. **Hooks:** `useAgentChat`, `useSessions` (list + create + switch + delete; rename deferred). **Plus** `theme.css`. | Single canonical name `ChatPanel` for the chat component; workspace plan aligned. Rename dialog, full SessionList, `useRegisterTool` hook, DiffView all deferred to workspace package / later. |
 | 16 | Import convention | **Top-level barrel `@boring/agent` re-exports frontend + shared types** (browser-safe; no Node deps leak). **`@boring/agent/server` required for Node-only** (Fastify routes, harness impl). **`@boring/agent/shared` available** for type-only imports. | Workspace + apps import from `@boring/agent` for normal use; server wiring uses `@boring/agent/server`. Matches workspace plan's `import X from '@boring/agent'` examples. Enforced via `package.json` `exports` conditions. |
@@ -1005,12 +1005,12 @@ Pi extensions that register commands via `pi.registerCommand()` appear in `/help
 
 ```css
 :root {
-  --boring-chat-bg: #0b0b0e;
-  --boring-chat-fg: #eaeaea;
-  --boring-chat-accent: #7c5cff;
-  --boring-chat-radius: 12px;
-  --boring-chat-font-body: system-ui, sans-serif;
-  --boring-chat-font-mono: ui-monospace, monospace;
+  --boring-agent-bg: #0b0b0e;
+  --boring-agent-fg: #eaeaea;
+  --boring-agent-accent: #7c5cff;
+  --boring-agent-radius: 12px;
+  --boring-agent-font-body: system-ui, sans-serif;
+  --boring-agent-font-mono: ui-monospace, monospace;
   /* … */
 }
 ```
@@ -1021,7 +1021,7 @@ ai-elements-adapted primitives are authored with Tailwind classes that reference
 
 ```tsx
 // src/front/primitives/Message.tsx — authored pattern
-<div className="rounded-[var(--boring-chat-radius)] bg-[var(--boring-chat-bg)] text-[var(--boring-chat-fg)]">
+<div className="rounded-[var(--boring-agent-radius)] bg-[var(--boring-agent-bg)] text-[var(--boring-agent-fg)]">
 ```
 
 Tailwind's `bg-[var(--…)]` / `text-[var(--…)]` syntax reads the CSS var at render time. Setting the var anywhere in the cascade above the primitive re-colors it without class overrides. **Contract:** primitives always use `bg-[var(...)]`, never `bg-slate-900`. No Tailwind theme-plugin is shipped. (Future lint rule: no hard-coded color classes in `primitives/`.)
@@ -1390,7 +1390,7 @@ UX polish on top of the M3a contracts. Pure frontend + minor backend additions.
 - [x] Tool rendering — `Tool`, `Terminal`, `CodeBlock` primitives + `DiffView` for edit tool. `toolRenderers` prop exposed on `<ChatPanel />`.
 - [x] ai-elements primitives in `src/front/primitives/`: Message, Composer, Tool, Terminal, CodeBlock, Reasoning.
 - [x] `<SessionToolbar />` — current session title + dropdown of recent (MAX_VISIBLE=10) + new chat button + per-session delete with confirmation.
-- [x] `theme.css` + CSS vars scoped to `[data-boring-chat]`. Default dark theme.
+- [x] `theme.css` + CSS vars scoped to `[data-boring-agent]`. Default dark theme.
 - [x] Background title generation via `createSessionTitleScheduler`.
 - [x] **Slash commands** infrastructure + 5 built-ins (`/clear`, `/reset`, `/model`, `/help`, `/cost`). Registry + parser + builtins.
 - [x] **Heartbeat events** during long tool execution: `onHeartbeat` callback in `ExecOptions`; rendered in Tool component.
@@ -1416,7 +1416,7 @@ The public API that `@boring/workspace` will consume when we build it.
 
 - [ ] `registerTool()` runtime API (alongside pi extensions). *(deferred)*
 - [x] `<ChatPanel toolRenderers={...}>` override prop. Implemented via `ToolRendererOverrides`.
-- [x] Per-panel CSS var scoping — `[data-boring-chat]` attribute scoping, all vars `--boring-chat-*`.
+- [x] Per-panel CSS var scoping — `[data-boring-agent]` attribute scoping, all vars `--boring-agent-*`.
 - [ ] API docs under `docs/`. *(deferred)*
 - [ ] Migration guide: "your boring-macro, now with mode switch." *(deferred)*
 
@@ -1477,7 +1477,7 @@ v1 is **prove the architecture works end-to-end**, not **productionize**. Each a
 
 ## Test strategy (v1)
 
-- **CI:** lint + typecheck (`tsc --noEmit`) on every PR. Lint rule in `primitives/`: no hard-coded color classes (`bg-slate-*`, etc.) — must use `bg-[var(--boring-chat-*)]`.
+- **CI:** lint + typecheck (`tsc --noEmit`) on every PR. Lint rule in `primitives/`: no hard-coded color classes (`bg-slate-*`, etc.) — must use `bg-[var(--boring-agent-*)]`.
 - **Unit tests:** stream-adapter fixture-based (pi event → UIMessage mapping). `ExecOptions` timeout + maxOutputBytes + buffer handling. Path validator (`validatePath`, `assertRealPathWithinWorkspace`). Slash-command parser.
 - **One e2e smoke test per mode:** spawn CLI, send a message, assert streamed response contains expected bash output. Direct + local run in CI on every PR. `vercel-sandbox` skipped on PRs (costs money) and runs on release tags only.
 - **No UI snapshot tests in v1.** Accepted drift; easy to add when the UI stabilizes.

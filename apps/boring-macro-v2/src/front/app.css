@@ -1,6 +1,3 @@
-@import "@boring/workspace/globals.css";
-@source "../../../../packages/agent/src/front/**/*.{ts,tsx}";
-
 html,
 body,
 #root {
