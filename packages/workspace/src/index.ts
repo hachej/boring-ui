@@ -57,8 +57,8 @@ export {
   filesystemPlugin,
   emitFilesystemAgentFileChange,
   useAutoOpenAgentFiles,
-} from "./plugins/filesystemPlugin"
-export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin"
+} from "./plugins/filesystemPlugin/front"
+export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin/front"
 export {
   appendDataCatalogOutputs,
   createDataCatalogOpenHandler,
@@ -78,7 +78,7 @@ export {
   DATA_CATALOG_DEFAULT_TOOL_NAME,
   DATA_CATALOG_PLUGIN_ID,
   DATA_CATALOG_ROW_SURFACE_KIND,
-} from "./plugins/dataCatalogPlugin"
+} from "./plugins/dataCatalogPlugin/front"
 export type {
   CreateDataCatalogOutputsOptions,
   CreateDataCatalogPluginOptions,
@@ -88,7 +88,7 @@ export type {
   DataCatalogVisualizationParams,
   DataCatalogVisualizationState,
   OpenDataCatalogVisualizationOptions,
-} from "./plugins/dataCatalogPlugin"
+} from "./plugins/dataCatalogPlugin/front"
 
 // Utility
 export { cn } from "./front/lib/utils"
@@ -184,12 +184,12 @@ export { ArtifactSurfacePane } from "./front/chrome/artifact-surface/ArtifactSur
 export type { ArtifactSurfacePaneProps } from "./front/chrome/artifact-surface/ArtifactSurfacePane"
 export { EmptyPane } from "./front/chrome/empty-pane/EmptyPane"
 export type { EmptyPaneProps } from "./front/chrome/empty-pane/EmptyPane"
-export { CodeEditorPane } from "./plugins/filesystemPlugin/code-editor/CodeEditorPane"
-export type { CodeEditorPaneProps } from "./plugins/filesystemPlugin/code-editor/CodeEditorPane"
-export { FileTreePane, FileTreeView } from "./plugins/filesystemPlugin/file-tree/FileTreeView"
-export type { FileTreePaneProps, FileTreeViewProps } from "./plugins/filesystemPlugin/file-tree/FileTreeView"
-export { MarkdownEditorPane } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
-export type { MarkdownEditorPaneProps } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditorPane"
+export { CodeEditorPane } from "./plugins/filesystemPlugin/front/code-editor/CodeEditorPane"
+export type { CodeEditorPaneProps } from "./plugins/filesystemPlugin/front/code-editor/CodeEditorPane"
+export { FileTreePane, FileTreeView } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
+export type { FileTreePaneProps, FileTreeViewProps } from "./plugins/filesystemPlugin/front/file-tree/FileTreeView"
+export { MarkdownEditorPane } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditorPane"
+export type { MarkdownEditorPaneProps } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditorPane"
 export { definePanel } from "./front/registry/types"
 
 // Theme
@@ -255,12 +255,12 @@ export { PanelErrorBoundary } from "./front/components/PanelErrorBoundary"
 export type { PanelErrorBoundaryProps } from "./front/components/PanelErrorBoundary"
 
 // Standalone components (usable WITHOUT WorkspaceProvider)
-export { CodeEditor } from "./plugins/filesystemPlugin/code-editor/CodeEditor"
-export type { CodeEditorProps } from "./plugins/filesystemPlugin/code-editor/CodeEditor"
-export { FileTree } from "./plugins/filesystemPlugin/file-tree/FileTree"
-export type { FileTreeProps, FileTreeNode } from "./plugins/filesystemPlugin/file-tree/FileTree"
-export { MarkdownEditor } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditor"
-export type { MarkdownEditorProps } from "./plugins/filesystemPlugin/markdown-editor/MarkdownEditor"
+export { CodeEditor } from "./plugins/filesystemPlugin/front/code-editor/CodeEditor"
+export type { CodeEditorProps } from "./plugins/filesystemPlugin/front/code-editor/CodeEditor"
+export { FileTree } from "./plugins/filesystemPlugin/front/file-tree/FileTree"
+export type { FileTreeProps, FileTreeNode } from "./plugins/filesystemPlugin/front/file-tree/FileTree"
+export { MarkdownEditor } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditor"
+export type { MarkdownEditorProps } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditor"
 export { DataExplorer, useExplorerState } from "./front/components/DataExplorer"
 export type {
   DataExplorerProps,

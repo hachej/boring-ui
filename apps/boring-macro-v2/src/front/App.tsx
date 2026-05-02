@@ -4,7 +4,7 @@ import {
   MacroStandaloneDeckRoute,
   macroPlugin,
   macroShellOptions,
-} from "../plugins/macro"
+} from "../plugins/macro/front"
 
 export function App() {
   return (

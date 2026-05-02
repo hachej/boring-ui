@@ -31,10 +31,11 @@ package or plugin. Standalone workspace app wiring belongs in
 
 - front code only supplies `ChatPanel` to `MacroWorkspaceApp`
 - server code uses `createWorkspaceAgentServer` and registers macro routes
-- macro panels, catalogs, data, routes, tools, provisioning templates, Python
-  SDK source, and transforms live under `src/plugins/macro`
+- macro panels, catalogs, and front data live under `src/plugins/macro/front`
+- macro routes, tools, provisioning templates, Python SDK source, and transforms
+  live under `src/plugins/macro/server`
 - the only macro workspace template is plugin-owned:
-  `src/plugins/macro/workspace-template`
+  `src/plugins/macro/server/workspace-template`
 
 `apps/full-app` is partially simplified:
 

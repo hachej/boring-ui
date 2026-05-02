@@ -15,8 +15,10 @@ import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
+  ServerPluginError,
   bootstrapServer,
   defineServerPlugin,
+  validateServerPlugin,
   type ServerBootstrapOptions,
   type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
@@ -30,7 +32,7 @@ export interface CreateWorkspaceAgentServerOptions
   workspaceProvisioning?: { force?: boolean }
 }
 
-export { defineServerPlugin }
+export { ServerPluginError, defineServerPlugin, validateServerPlugin }
 export type { WorkspaceServerPlugin, WorkspaceProvisioningContribution }
 export type { WorkspaceRouteContribution }
 
