@@ -1,10 +1,20 @@
 import type { ComponentType, ReactNode } from "react"
-import type { AgentTool, JSONSchema, ToolExecContext, ToolResult } from "../types/agent-tool"
+import type {
+  AgentTool,
+  JSONSchema,
+  ToolExecContext,
+  ToolResult,
+} from "../types/agent-tool"
 import type { ExplorerAdapter, ExplorerRow } from "../types/explorer"
 import type { CommandConfig, PaneProps, PanelConfig } from "../types/panel"
 import type { SurfaceResolverConfig } from "../types/surface"
 
-export type { AgentTool, JSONSchema, ToolExecContext, ToolResult } from "../types/agent-tool"
+export type {
+  AgentTool,
+  JSONSchema,
+  ToolExecContext,
+  ToolResult,
+} from "../types/agent-tool"
 
 export type PluginBinding = ComponentType<unknown>
 

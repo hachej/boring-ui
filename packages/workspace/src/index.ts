@@ -7,11 +7,13 @@
 
 // Plugin model
 export {
+  composePlugins,
   defineFrontPlugin,
   bootstrap,
   PluginError,
 } from "./shared/plugins"
 export type {
+  ComposePluginsOptions,
   PluginErrorKind,
   BootstrapOptions,
   BootstrapResult,
@@ -52,13 +54,37 @@ export {
   PluginErrorProvider,
   usePluginErrors,
 } from "./front/plugin"
-export type { CatalogRegistryOptions, PluginError as PluginContributionError } from "./front/plugin"
+export type {
+  CatalogRegistryOptions,
+  PluginError as PluginContributionError,
+} from "./front/plugin"
 export {
   filesystemPlugin,
   emitFilesystemAgentFileChange,
   useAutoOpenAgentFiles,
 } from "./plugins/filesystemPlugin/front"
 export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin/front"
+export {
+  createExplorerPlugin,
+  createExplorerOutputs,
+  ExplorerView,
+  EXPLORER_PLUGIN_ID,
+} from "./plugins/explorerPlugin/front"
+export type {
+  CreateExplorerOutputsOptions,
+  CreateExplorerPluginOptions,
+  ExplorerCatalogConfig,
+  ExplorerContributionConfig,
+  ExplorerMode,
+  ExplorerSection,
+  ExplorerSectionFilter,
+  ExplorerViewProps,
+  SectionedExplorerAdapter,
+  SectionedExplorerFacetArgs,
+  SectionedExplorerProps,
+  SectionedExplorerSearchArgs,
+  SectionedExplorerSectionsArgs,
+} from "./plugins/explorerPlugin/front"
 export {
   appendDataCatalogOutputs,
   createDataCatalogOpenHandler,
@@ -226,7 +252,11 @@ export type {
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
 export { postUiCommand } from "./front/bridge"
-export type { BridgeClient, BridgeClientOptions, UIStatePut } from "./front/bridge"
+export type {
+  BridgeClient,
+  BridgeClientOptions,
+  UIStatePut,
+} from "./front/bridge"
 export type {
   DispatchContext,
   UiCommand,
@@ -278,7 +308,10 @@ export type {
   DragPayload,
 } from "./front/components/DataExplorer"
 export { SessionList } from "./front/components/SessionList"
-export type { SessionListProps, SessionItem } from "./front/components/SessionList"
+export type {
+  SessionListProps,
+  SessionItem,
+} from "./front/components/SessionList"
 
 // Declarative chat/workbench chrome
 export { SessionBrowser } from "./front/chrome/session-list/SessionBrowser"
