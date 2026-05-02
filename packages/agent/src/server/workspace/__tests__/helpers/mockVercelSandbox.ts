@@ -135,7 +135,7 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         }
       }
 
-      if (script === 'mkdir -p /vercel/sandbox && ln -sfn /vercel/sandbox /workspace') {
+      if (script === 'mkdir -p /vercel/sandbox && (ln -sfn /vercel/sandbox /workspace 2>/dev/null || true)') {
         return emitResult(0, '', '')
       }
 

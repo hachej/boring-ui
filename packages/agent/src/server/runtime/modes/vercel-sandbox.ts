@@ -118,7 +118,7 @@ async function ensureVercelWorkspaceRoot(sandbox: VercelSandbox & {
   }
   const result = await sandbox.runCommand({
     cmd: 'sh',
-    args: ['-c', `mkdir -p ${VERCEL_SANDBOX_REMOTE_ROOT} && ln -sfn ${VERCEL_SANDBOX_REMOTE_ROOT} ${VERCEL_SANDBOX_WORKSPACE_ROOT}`],
+    args: ['-c', `mkdir -p ${VERCEL_SANDBOX_REMOTE_ROOT} && (ln -sfn ${VERCEL_SANDBOX_REMOTE_ROOT} ${VERCEL_SANDBOX_WORKSPACE_ROOT} 2>/dev/null || true)`],
   })
   if ((result.exitCode ?? 1) !== 0) {
     throw new Error(`failed to initialize ${VERCEL_SANDBOX_REMOTE_ROOT} (exit ${result.exitCode ?? 'unknown'})`)
