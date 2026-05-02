@@ -283,3 +283,32 @@ describe("Dockview theme sync", () => {
     ).toBe("dark")
   })
 })
+
+// ---------------------------------------------------------------------------
+// Public style token contract (14)
+// ---------------------------------------------------------------------------
+
+describe("style token contract", () => {
+  it("14. workspace defines every public --boring-* token consumed by agent CSS", () => {
+    const workspaceCss = readFileSync(resolve(__dirname, "../globals.css"), "utf-8")
+    const agentCss = readFileSync(
+      resolve(__dirname, "../../../agent/src/front/styles/globals.css"),
+      "utf-8",
+    )
+
+    const workspaceDefined = new Set(
+      [...workspaceCss.matchAll(/(?:^|[\s{;])(--boring-[\w-]+)\s*:/gm)].map(
+        (match) => match[1],
+      ),
+    )
+    const agentConsumed = new Set(
+      [...agentCss.matchAll(/var\(\s*(--boring-[\w-]+)/g)].map((match) => match[1]),
+    )
+
+    const missing = [...agentConsumed]
+      .filter((token) => !workspaceDefined.has(token))
+      .sort()
+
+    expect(missing).toEqual([])
+  })
+})
