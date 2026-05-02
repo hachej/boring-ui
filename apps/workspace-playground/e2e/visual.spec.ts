@@ -8,7 +8,7 @@ import { expect, test } from "@playwright/test"
  * to the user-visible bug they catch.
  */
 
-const STORAGE_KEY = "boring-ui-v2:chat-centered-shell:v2"
+const STORAGE_KEY = "boring-ui-v2:layout:playground"
 
 async function openPalette(page: import("@playwright/test").Page) {
   await page.goto("/")
@@ -38,9 +38,11 @@ test.describe("command palette visual chrome", () => {
       const range = document.createRange()
       range.setStartBefore(content)
       range.setEndBefore(list)
-      const all = Array.from(content.querySelectorAll("*")).filter((el) =>
-        range.intersectsNode(el) && !list.contains(el) && !el.contains(list),
-      )
+      const all = Array.from(content.querySelectorAll("*"))
+        .filter((el) =>
+          range.intersectsNode(el) && !list.contains(el) && !el.contains(list),
+        )
+        .filter((el) => !el.closest('[aria-label="Palette mode"]'))
       return all.filter((el) => {
         const cs = getComputedStyle(el)
         const w = parseFloat(cs.borderBottomWidth)
@@ -71,12 +73,17 @@ test.describe("command palette visual chrome", () => {
     await expect(page.getByText(/close/i).last()).toBeVisible()
   })
 
-  test("> prefix surfaces the 'Command' mode pill", async ({ page }) => {
+  test("> prefix surfaces the command mode segment", async ({ page }) => {
     await openPalette(page)
-    // Pill not present yet
-    await expect(page.getByText("Command", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Commands" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    )
     await page.keyboard.type(">")
-    await expect(page.getByText("Command", { exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Commands" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
   })
 })
 
