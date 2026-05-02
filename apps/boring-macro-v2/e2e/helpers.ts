@@ -9,7 +9,7 @@ import {
   bootClean as bootCleanGeneric,
   openWorkbench as openWorkbenchGeneric,
   openPaneViaBridge,
-} from "@boring/workspace/testing"
+} from "@boring/workspace/testing/e2e"
 
 /** Storage prefix for boring.macro's chat shell (mirrors App.tsx). */
 export const SHELL_KEY = "boring-macro:shell"

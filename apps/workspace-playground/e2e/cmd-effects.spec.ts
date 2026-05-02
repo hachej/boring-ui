@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test"
  * that selecting them actually toggles the corresponding pane.
  */
 
-const STORAGE_KEY = "boring-ui-v2:chat-centered-shell:v2"
+const STORAGE_KEY = "boring-ui-v2:layout:playground"
 
 async function runCommandFromPalette(
   page: import("@playwright/test").Page,
@@ -24,7 +24,7 @@ async function runCommandFromPalette(
   ).toBeVisible({ timeout: 5_000 })
   await page.keyboard.type(`>${query}`)
   await page.waitForTimeout(200) // cmdk filter
-  await page.keyboard.press("Enter")
+  await page.getByRole("option", { name: new RegExp(query, "i") }).first().click()
   await expect(
     page.getByRole("dialog", { name: /command palette/i }),
   ).toBeHidden({ timeout: 2_000 })
@@ -52,29 +52,31 @@ test.describe("command palette effects", () => {
         const k = localStorage.key(i)
         if (k?.startsWith(prefix)) localStorage.removeItem(k)
       }
+      localStorage.setItem(`${prefix}:drawer`, "0")
+      localStorage.setItem(`${prefix}:surface`, "0")
     }, STORAGE_KEY)
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await page.waitForTimeout(500)
   })
 
-  test("'Toggle Sessions Drawer' opens the closed drawer", async ({ page }) => {
+  test("'Open Session History' opens the closed drawer", async ({ page }) => {
     expect(await paneWidth(page, "Session browser")).toBe(0)
-    await runCommandFromPalette(page, "Toggle Sessions")
+    await runCommandFromPalette(page, "Open Session History")
     expect(await paneWidth(page, "Session browser")).toBeGreaterThan(0)
   })
 
-  test("'Toggle Workbench' opens the closed workbench", async ({ page }) => {
+  test("'Open Workbench' opens the closed workbench", async ({ page }) => {
     expect(await paneWidth(page, "Surface")).toBe(0)
-    await runCommandFromPalette(page, "Toggle Workbench")
+    await runCommandFromPalette(page, "Open Workbench")
     expect(await paneWidth(page, "Surface")).toBeGreaterThan(0)
   })
 
   test("running the command twice toggles the pane closed again", async ({
     page,
   }) => {
-    await runCommandFromPalette(page, "Toggle Sessions")
+    await runCommandFromPalette(page, "Open Session History")
     expect(await paneWidth(page, "Session browser")).toBeGreaterThan(0)
-    await runCommandFromPalette(page, "Toggle Sessions")
+    await runCommandFromPalette(page, "Close Session History")
     // The pane has a 280ms width transition — poll instead of asserting
     // immediately, so we don't catch it mid-collapse.
     await expect
