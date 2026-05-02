@@ -2,6 +2,9 @@ const BEAD_ID = 'boring-ui-v2-6u3z'
 const REQUEST_TIMEOUT_MS = Number(process.env.SMOKE_REQUEST_TIMEOUT_MS ?? 10_000)
 const RESEND_POLL_TIMEOUT_MS = 60_000
 const RESEND_POLL_INTERVAL_MS = 5_000
+const AGENT_CHAT_TIMEOUT_MS = Number(process.env.SMOKE_AGENT_CHAT_TIMEOUT_MS ?? 120_000)
+const AGENT_SMOKE_MODEL_PROVIDER = process.env.SMOKE_AGENT_MODEL_PROVIDER ?? 'openrouter'
+const AGENT_SMOKE_MODEL_ID = process.env.SMOKE_AGENT_MODEL_ID ?? 'qwen/qwen3.6-plus'
 
 const VERIFY_LINK_PATTERN = /https?:\/\/[^\s"'<>]+\/auth\/verify-email\?[^\s"'<>]+/i
 
@@ -129,23 +132,32 @@ function extractVerifyLink(value: unknown): string | null {
   return null
 }
 
-async function requestJson(
+async function requestText(
   url: string,
   init: RequestInit,
   step: string,
-): Promise<{ status: number; json: unknown; headers: Headers }> {
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<{ status: number; text: string; headers: Headers }> {
   let response: Response
   try {
     response = await fetch(url, {
       ...init,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     fail(step, `request failed: ${detail}`)
   }
 
-  const text = await response.text()
+  return { status: response.status, text: await response.text(), headers: response.headers }
+}
+
+async function requestJson(
+  url: string,
+  init: RequestInit,
+  step: string,
+): Promise<{ status: number; json: unknown; headers: Headers }> {
+  const { status, text, headers } = await requestText(url, init, step)
   let parsed: unknown = text
   if (text.length > 0) {
     try {
@@ -155,7 +167,7 @@ async function requestJson(
     }
   }
 
-  return { status: response.status, json: parsed, headers: response.headers }
+  return { status, json: parsed, headers }
 }
 
 async function stepHealth(baseUrl: string): Promise<SmokeResult> {
@@ -453,6 +465,171 @@ async function stepCreateWorkspace(
   return { id, name: responseName ?? name }
 }
 
+async function stepAgentModels(
+  baseUrl: string,
+  cookie: string,
+  requireConfiguredModel: boolean,
+): Promise<void> {
+  const step = 'agent.models'
+  log('info', 'smoke.step.start', {
+    step,
+    modelProvider: AGENT_SMOKE_MODEL_PROVIDER,
+    modelId: AGENT_SMOKE_MODEL_ID,
+  })
+
+  const { status, json } = await requestJson(
+    `${baseUrl}/api/v1/agent/models`,
+    { method: 'GET', headers: { cookie } },
+    step,
+  )
+
+  if (status !== 200) {
+    fail(step, `expected HTTP 200, got ${status} (${JSON.stringify(json)})`)
+  }
+
+  const body = (json ?? {}) as {
+    models?: Array<{ provider?: string; id?: string }>
+    defaultModel?: { provider?: string; id?: string }
+  }
+  const models = Array.isArray(body.models) ? body.models : []
+  const found = models.some(
+    (model) => model.provider === AGENT_SMOKE_MODEL_PROVIDER && model.id === AGENT_SMOKE_MODEL_ID,
+  )
+  if (requireConfiguredModel && !found) {
+    fail(
+      step,
+      `expected ${AGENT_SMOKE_MODEL_PROVIDER}:${AGENT_SMOKE_MODEL_ID} in agent models, got ${JSON.stringify(json)}`,
+    )
+  }
+
+  log('info', 'smoke.step.ok', {
+    step,
+    status,
+    modelCount: models.length,
+    defaultModel: body.defaultModel ?? null,
+    configuredModelFound: found,
+  })
+}
+
+async function stepAgentSessions(
+  baseUrl: string,
+  cookie: string,
+  workspaceId: string,
+): Promise<void> {
+  const step = 'agent.sessions'
+  log('info', 'smoke.step.start', { step, workspaceId })
+
+  const { status, json } = await requestJson(
+    `${baseUrl}/api/v1/agent/sessions`,
+    { method: 'GET', headers: { cookie, 'x-boring-workspace-id': workspaceId } },
+    step,
+  )
+
+  if (status !== 200) {
+    fail(step, `expected HTTP 200, got ${status} (${JSON.stringify(json)})`)
+  }
+
+  log('info', 'smoke.step.ok', { step, status })
+}
+
+function extractSsePayloads(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice('data:'.length).trim())
+}
+
+async function stepAgentChat(
+  baseUrl: string,
+  cookie: string,
+  workspaceId: string,
+): Promise<void> {
+  const step = 'agent.chat'
+  const sessionId = `smoke-${Date.now()}`
+  log('info', 'smoke.step.start', {
+    step,
+    workspaceId,
+    sessionId,
+    modelProvider: AGENT_SMOKE_MODEL_PROVIDER,
+    modelId: AGENT_SMOKE_MODEL_ID,
+  })
+
+  try {
+    const { status, text, headers } = await requestText(
+      `${baseUrl}/api/v1/agent/chat`,
+      {
+        method: 'POST',
+        headers: {
+          cookie,
+          'content-type': 'application/json',
+          'x-boring-workspace-id': workspaceId,
+        },
+        body: JSON.stringify({
+          sessionId,
+          message: 'Reply with exactly: ok',
+          model: { provider: AGENT_SMOKE_MODEL_PROVIDER, id: AGENT_SMOKE_MODEL_ID },
+        }),
+      },
+      step,
+      AGENT_CHAT_TIMEOUT_MS,
+    )
+
+    if (status !== 200) {
+      fail(step, `expected HTTP 200, got ${status} (${text.slice(0, 500)})`)
+    }
+
+    const contentType = headers.get('content-type') ?? ''
+    if (!contentType.includes('text/event-stream')) {
+      fail(step, `expected text/event-stream, got ${contentType}`)
+    }
+
+    const payloads = extractSsePayloads(text)
+    if (!payloads.includes('[DONE]')) {
+      fail(step, `expected [DONE] SSE marker, got ${text.slice(0, 1_000)}`)
+    }
+
+    const joined = payloads.join('\n').toLowerCase()
+    if (!joined.includes('ok')) {
+      fail(step, `expected streamed response to contain ok, got ${text.slice(0, 1_000)}`)
+    }
+
+    log('info', 'smoke.step.ok', { step, status, sessionId, eventCount: payloads.length })
+  } finally {
+    const cleanup = await requestJson(
+      `${baseUrl}/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`,
+      { method: 'DELETE', headers: { cookie, 'x-boring-workspace-id': workspaceId } },
+      step,
+    ).catch((error) => ({ status: 0, json: String(error), headers: new Headers() }))
+    if ((cleanup.status < 200 || cleanup.status >= 300) && cleanup.status !== 404) {
+      log('warn', 'smoke.agent.chat.cleanup_failed', {
+        step,
+        sessionId,
+        status: cleanup.status,
+        detail: cleanup.json,
+      })
+    }
+  }
+}
+
+async function stepAgentSmoke(
+  baseUrl: string,
+  cookie: string,
+  workspaceId: string,
+): Promise<void> {
+  const chatEnabled = process.env.SMOKE_AGENT_CHAT === '1'
+  await stepAgentModels(baseUrl, cookie, chatEnabled)
+  await stepAgentSessions(baseUrl, cookie, workspaceId)
+  if (!chatEnabled) {
+    log('warn', 'smoke.step.skipped', {
+      step: 'agent.chat',
+      detail: 'set SMOKE_AGENT_CHAT=1 to run paid OpenRouter/Qwen agent chat smoke',
+    })
+    return
+  }
+  await stepAgentChat(baseUrl, cookie, workspaceId)
+}
+
 async function stepListWorkspaces(
   baseUrl: string,
   cookie: string,
@@ -535,6 +712,7 @@ async function main(): Promise<void> {
 
   const workspace = await stepCreateWorkspace(baseUrl, workspaceCookie)
   await stepListWorkspaces(baseUrl, workspaceCookie, workspace.id)
+  await stepAgentSmoke(baseUrl, workspaceCookie, workspace.id)
 
   if (signup.cookie) {
     // We had an authenticated session from signup — double-check the
