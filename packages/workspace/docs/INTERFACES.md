@@ -1,6 +1,6 @@
 # Workspace Interfaces
 
-Last updated: 2026-05-01
+Last updated: 2026-05-02
 
 `@boring/workspace` is a workspace UI and bridge package. The app shell owns
 auth, routing, application persistence, and the concrete chat component.
@@ -39,6 +39,13 @@ commands, and default workspace plugins.
   `src/plugins/dataCatalogPlugin/server`
   - Catalog rows are opened through `openSurface`; row-to-panel mapping belongs
     to the plugin resolver.
+- Server plugins: `src/server/plugins`
+  - `defineServerPlugin()` validates tools, routes, provisioning, and native Pi
+    package declarations.
+  - `composeServerPlugins()` combines smaller server plugin fragments.
+  - `piPackages` are passed to `@boring/agent` as in-memory Pi settings, so
+    workspace adapters can depend on native Pi packages without requiring
+    Boring-specific exports from those packages.
 
 ## Ownership Rules
 

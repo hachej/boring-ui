@@ -57,9 +57,9 @@ in subfolders such as `file-tree/`, `code-editor/`, or `empty-file-panel/`.
 
 ## Composed Plugins
 
-Use `composePlugins()` when a plugin is easier to build from smaller front
-fragments. The composed plugin flattens child panels, commands, catalogs,
-bindings, and outputs into one normal `WorkspaceFrontPlugin`.
+Use `composePlugins()` when a front plugin is easier to build from smaller
+front fragments. The composed plugin flattens child panels, commands,
+catalogs, bindings, and outputs into one normal `WorkspaceFrontPlugin`.
 
 Default behavior adopts child ownership to the parent plugin id. Use
 `adoptOutputs: false` only when registry ownership must stay attached to the
@@ -73,9 +73,17 @@ const macroPlugin = composePlugins({
 })
 ```
 
-Composition is a front-side authoring helper. Server plugins should still use
-`defineServerPlugin()` directly until server fragment composition has real
-route/provisioning lifecycle requirements.
+Use `composeServerPlugins()` for the matching server side. It concatenates
+child tools, prompt text, pi package declarations, provisioning, and routes
+into one normal `WorkspaceServerPlugin`.
+
+```ts
+const macroServerPlugin = composeServerPlugins({
+  id: "boring-macro",
+  label: "Macro",
+  plugins: [macroToolsPlugin, macroRoutesPlugin],
+})
+```
 
 ## Pi Package Adapters
 
@@ -87,6 +95,19 @@ Do not require pi packages to export Boring-specific adapters. The pi ecosystem
 already has its own shape, such as `package.json` `pi.extensions` entries and
 extension functions that call `pi.registerCommand(...)`. Workspace adapters
 should adapt to that shape.
+
+Declare native pi package dependencies on the server plugin:
+
+```ts
+defineServerPlugin({
+  id: "markdown-preview",
+  piPackages: ["npm:pi-markdown-preview@0.9.7"],
+})
+```
+
+Workspace passes these declarations to `@boring/agent` as in-memory Pi
+settings. This enables Pi's native package loader without mutating
+`.pi/settings.json`.
 
 ```txt
 src/plugins/markdownPreview/
