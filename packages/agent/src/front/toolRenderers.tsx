@@ -290,9 +290,9 @@ function renderEdit(part: ToolPart): ReactNode {
               </div>
             )}
             {newString && (
-              <div className="grid grid-cols-[auto_1fr] gap-2 bg-emerald-500/5 px-3 py-2">
-                <span className="select-none text-emerald-400/80">+</span>
-                <span className="whitespace-pre-wrap break-all text-emerald-300">{newString}</span>
+              <div className="grid grid-cols-[auto_1fr] gap-2 bg-accent/5 px-3 py-2">
+                <span className="select-none text-accent/80">+</span>
+                <span className="whitespace-pre-wrap break-all text-accent">{newString}</span>
               </div>
             )}
           </div>

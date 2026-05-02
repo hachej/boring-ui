@@ -509,7 +509,7 @@ function FloatingEdgeButton({
         "bg-background text-muted-foreground",
         "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.08),0_2px_8px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]",
         "transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        "hover:text-[color:var(--accent)] hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(0.62_0.14_65/0.25),inset_0_0_0_1px_oklch(0.62_0.14_65/0.35)]",
+        "hover:text-[color:var(--accent)] hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(from_var(--accent)_l_c_h/0.25),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.35)]",
         "hover:-translate-y-[calc(50%+1px)]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40",
       )}

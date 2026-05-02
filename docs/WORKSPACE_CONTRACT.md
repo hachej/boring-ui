@@ -126,12 +126,12 @@ These are exported by `@boring/agent` for the app shell to compose into `Workspa
 | `Reasoning` | Primitive | Collapsible reasoning/thinking display. |
 | `useAgentChat` | Hook | Headless chat state management. |
 | `useSessions` | Hook | Headless session CRUD. |
-| `theme.css` | Style | CSS custom properties (`--boring-chat-*`). |
+| `theme.css` | Style | CSS custom properties (`--boring-agent-*`). |
 
 ### 3. Styling Contract
 
-- All chat styles use `--boring-chat-*` CSS custom properties defined in `theme.css`.
-- Workspace can override at any scope via the `data-boring-chat` attribute on the panel container.
+- All chat styles use `--boring-agent-*` CSS custom properties defined in `theme.css`.
+- Workspace can override at any scope via the `data-boring-agent` attribute on the panel container.
 - No CSS-in-JS runtime; no Tailwind dependency from agent side.
 
 ### 4. UiBridge Semantics

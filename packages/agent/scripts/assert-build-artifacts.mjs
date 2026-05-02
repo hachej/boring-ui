@@ -63,7 +63,15 @@ function assertTsParsable(relPath) {
 
 function assertConsumerSafeCss(relPath) {
   const sourceText = readFileSync(resolveFromPackage(relPath), 'utf8')
-  const forbidden = [/@source\b/, /@import\s+['"]tailwindcss/, /packages\/agent\/src/, /packages\/workspace\/src/]
+  const forbidden = [
+    /@source\b/,
+    /@import\s+['"]tailwindcss/,
+    /packages\/agent\/src/,
+    /packages\/workspace\/src/,
+    /var\(--boring-agent-\*\)/,
+    /var\(--…\)/,
+    /var\(\.\.\.\)/,
+  ]
   for (const pattern of forbidden) {
     if (pattern.test(sourceText)) {
       throw new Error(`${relPath} contains consumer-unsafe CSS directive/path: ${pattern}`)

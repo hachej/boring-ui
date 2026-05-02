@@ -225,7 +225,7 @@ Each decision has four fields:
 
 | Field | |
 |---|---|
-| **What** | CSS custom properties (`--boring-chat-*`) + render-prop escape hatches. |
+| **What** | CSS custom properties (`--boring-agent-*`) + render-prop escape hatches. |
 | **Why** | Consumers need theming without CSS-in-JS runtime or build-tool coupling. |
 | **Rationale** | Custom properties work everywhere, compose with any framework, and have zero runtime cost. Render props cover cases where CSS alone isn't enough. |
 | **Re-evaluate when** | A widely-adopted zero-runtime CSS-in-JS solution emerges. |

@@ -19,7 +19,7 @@ export function ConflictBanner({ conflict, onReload, onOverwrite }: ConflictBann
   return (
     <div
       role="alert"
-      className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-200"
+      className="flex items-center gap-3 border-b border-accent/40 bg-[color:var(--accent-soft)] px-3 py-2 text-sm text-foreground"
     >
       <span className="flex-1">
         This file has been modified outside the editor. Your unsaved changes
@@ -29,7 +29,7 @@ export function ConflictBanner({ conflict, onReload, onOverwrite }: ConflictBann
       <button
         type="button"
         onClick={() => void onReload()}
-        className="rounded-sm border border-amber-500/50 bg-amber-500/20 px-2 py-0.5 text-xs hover:bg-amber-500/30"
+        className="rounded-sm border border-accent/50 bg-[color:var(--accent-soft)] px-2 py-0.5 text-xs text-foreground hover:bg-accent/15"
       >
         Reload
       </button>

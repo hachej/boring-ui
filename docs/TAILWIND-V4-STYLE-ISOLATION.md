@@ -35,7 +35,7 @@ The two CSS files serve different roles:
 
 The workspace-playground app imports only workspace globals; it does not import
 agent/ui-shadcn/styles.css. The agent's bare primitives (`@boring/agent/theme.css`)
-use `[data-boring-chat]`-scoped variables (`--boring-chat-*`) that never collide.
+use `[data-boring-agent]`-scoped variables (`--boring-agent-*`) that never collide.
 
 ### Constraint
 
@@ -57,7 +57,7 @@ Workspace globals.css declares:
 ```
 
 Agent's ui-shadcn/styles.css has **no** `@layer base` and **no** `@import "tailwindcss"`.
-The agent's bare theme.css is scoped to `[data-boring-chat]` and doesn't use
+The agent's bare theme.css is scoped to `[data-boring-agent]` and doesn't use
 `@layer` at all.
 
 **Result:** No double-reset today. If a future change adds `@import "tailwindcss"`
@@ -80,15 +80,15 @@ Identical class names resolving against a single variable source produce
 consistent styles.
 
 If prefixing is ever needed (e.g., embedding agent UI in a non-Tailwind host),
-the agent's `[data-boring-chat]` scoped primitives are already prefix-free.
+the agent's `[data-boring-agent]` scoped primitives are already prefix-free.
 The shadcn components would need a Tailwind `prefix` config.
 
 ## Architecture: Two Isolation Tiers
 
 ### Tier 1 — Bare primitives (`@boring/agent` default export)
 
-- Styles in `theme.css`, all scoped to `[data-boring-chat]` attribute selector
-- Variables namespaced: `--boring-chat-bg`, `--boring-chat-fg`, etc.
+- Styles in `theme.css`, all scoped to `[data-boring-agent]` attribute selector
+- Variables namespaced: `--boring-agent-bg`, `--boring-agent-fg`, etc.
 - **Zero collision risk** with any host framework
 
 ### Tier 2 — shadcn components (`@boring/agent/ui-shadcn`)
@@ -103,7 +103,7 @@ The shadcn components would need a Tailwind `prefix` config.
 `packages/agent/src/__tests__/tailwind-style-conflict.test.ts` verifies:
 - The 24 overlapping variable names are documented
 - Value format mismatch (oklch vs HSL) is detected
-- Agent's bare theme.css uses only `--boring-chat-*` (no collisions)
+- Agent's bare theme.css uses only `--boring-agent-*` (no collisions)
 - Agent's ui-shadcn/styles.css contains no `@import "tailwindcss"`
 
 ## Recommendations

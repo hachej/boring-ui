@@ -873,8 +873,8 @@ export function ChatPanel(props: ChatPanelProps) {
             role="status"
             aria-live="polite"
             className={cn(
-              "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-amber-500/40 bg-amber-500/10",
-              "px-3 py-2 text-xs text-amber-600 dark:text-amber-200",
+              "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-accent/40 bg-[color:var(--accent-soft)]",
+              "px-3 py-2 text-xs text-foreground",
             )}
           >
             {attachmentNotice}

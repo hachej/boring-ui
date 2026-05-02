@@ -45,17 +45,17 @@ export function createShadcnTheme(options?: { dark?: boolean }) {
         fontSize: "12px",
       },
       ".cm-activeLineGutter": {
-        backgroundColor: "oklch(0.62 0.14 65 / 0.05)",
+        backgroundColor: "oklch(from var(--accent) l c h / 0.05)",
         color: "var(--foreground)",
       },
       ".cm-activeLine": {
-        backgroundColor: "oklch(0.62 0.14 65 / 0.04)",
+        backgroundColor: "oklch(from var(--accent) l c h / 0.04)",
       },
       "&.cm-focused .cm-cursor": {
-        borderLeftColor: "oklch(0.62 0.14 65)",
+        borderLeftColor: "var(--accent)",
       },
       ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-        backgroundColor: "oklch(0.62 0.14 65 / 0.16)",
+        backgroundColor: "oklch(from var(--accent) l c h / 0.16)",
       },
       ".cm-panels": {
         backgroundColor: "var(--muted)",

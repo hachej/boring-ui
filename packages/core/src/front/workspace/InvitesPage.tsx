@@ -31,9 +31,9 @@ function getInviteStatus(invite: WorkspaceInvite): 'accepted' | 'expired' | 'pen
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  expired: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-  accepted: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  pending: 'bg-[color:var(--accent-soft)] text-foreground',
+  expired: 'bg-muted text-muted-foreground',
+  accepted: 'bg-[color:var(--success-soft)] text-success',
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -163,7 +163,7 @@ export function InvitesPage() {
                 </div>
               )}
               {successMessage && (
-                <div role="status" className="text-sm text-green-600 dark:text-green-400">
+                <div role="status" className="text-sm text-success">
                   {successMessage}
                 </div>
               )}

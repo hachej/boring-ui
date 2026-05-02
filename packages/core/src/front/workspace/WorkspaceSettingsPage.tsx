@@ -32,8 +32,8 @@ export interface WorkspaceSettingsPageProps {
 }
 
 const STATE_STYLES: Record<string, string> = {
-  pending: 'border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-200',
-  ready: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
+  pending: 'border-accent/35 bg-[color:var(--accent-soft)] text-foreground',
+  ready: 'border-success/35 bg-[color:var(--success-soft)] text-success',
   error: 'border-destructive/40 bg-destructive/10 text-destructive',
 }
 

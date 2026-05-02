@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 
 /* Workspace's own components — every consumer that imports this CSS file
  * gets the utility classes used by workspace chrome, panes, ui-shadcn
@@ -24,6 +24,9 @@
   --color-muted-foreground: var(--boring-muted-foreground);
   --color-accent: var(--boring-accent);
   --color-accent-foreground: var(--boring-accent-foreground);
+  --color-success: var(--boring-success);
+  --color-success-foreground: var(--boring-success-foreground);
+  --color-success-soft: var(--boring-success-soft);
   --color-destructive: var(--boring-destructive);
   --color-destructive-foreground: var(--boring-destructive-foreground);
   --color-border: var(--boring-border);
@@ -59,6 +62,9 @@
   --boring-accent: oklch(0.62 0.14 65);
   --boring-accent-foreground: oklch(0.995 0 0);
   --boring-accent-soft: oklch(0.96 0.03 65);
+  --boring-success: oklch(0.58 0.13 145);
+  --boring-success-foreground: oklch(0.995 0 0);
+  --boring-success-soft: oklch(0.95 0.035 145);
   --boring-ring: oklch(0.62 0.14 65);
   --boring-radius: 0.625rem;
   --boring-radius-sm: calc(var(--boring-radius) - 4px);
@@ -92,6 +98,9 @@
   --accent: var(--boring-accent);
   --accent-foreground: var(--boring-accent-foreground);
   --accent-soft: var(--boring-accent-soft);
+  --success: var(--boring-success);
+  --success-foreground: var(--boring-success-foreground);
+  --success-soft: var(--boring-success-soft);
   --ring: var(--boring-ring);
   --radius: var(--boring-radius);
   --font-sans: var(--boring-font-sans);
@@ -118,6 +127,9 @@
   --boring-accent: oklch(0.269 0.006 285.885);
   --boring-accent-foreground: oklch(0.985 0 0);
   --boring-accent-soft: oklch(0.28 0.04 65);
+  --boring-success: oklch(0.74 0.14 145);
+  --boring-success-foreground: oklch(0.12 0.004 285.823);
+  --boring-success-soft: oklch(0.22 0.04 145);
   --boring-destructive: oklch(0.396 0.141 25.768);
   --boring-destructive-foreground: oklch(0.985 0 0);
   --boring-border: oklch(0.269 0.006 285.885);
@@ -147,6 +159,9 @@
   --accent: var(--boring-accent);
   --accent-foreground: var(--boring-accent-foreground);
   --accent-soft: var(--boring-accent-soft);
+  --success: var(--boring-success);
+  --success-foreground: var(--boring-success-foreground);
+  --success-soft: var(--boring-success-soft);
   --ring: var(--boring-ring);
   --canvas: var(--boring-canvas);
   --surface-chat: var(--boring-surface-chat);

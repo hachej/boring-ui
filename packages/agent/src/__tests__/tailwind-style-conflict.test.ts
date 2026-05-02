@@ -99,6 +99,26 @@ describe('Tailwind v4 style contract', () => {
     expect(offenders).toEqual([])
   })
 
+  test('agent component tokens have package defaults', () => {
+    const sourceFiles = listFiles(resolve(ROOT, 'packages/agent/src/front'), new Set(['.ts', '.tsx']))
+    const consumed = new Set<string>()
+    for (const file of sourceFiles) {
+      const content = readFileSync(file, 'utf-8')
+      for (const match of content.matchAll(/--boring-agent-[\w-]+/g)) {
+        consumed.add(match[0])
+      }
+    }
+
+    const defined = new Set(
+      [...agentCss.matchAll(/(?:^|[\s{;])(--boring-agent-[\w-]+)\s*:/gm)].map(
+        (match) => match[1],
+      ),
+    )
+    const missing = [...consumed].filter((token) => !defined.has(token)).sort()
+
+    expect(missing).toEqual([])
+  })
+
   test('child apps do not scan package source CSS', () => {
     const offenders = listFiles(resolve(ROOT, 'apps'), new Set(['.css']))
       .filter((file) => /@source\s+["'][^"']*packages\/(agent|workspace)\/src/.test(readFileSync(file, 'utf-8')))

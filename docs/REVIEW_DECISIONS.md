@@ -192,7 +192,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 
 | | |
 |---|---|
-| **Finding** | Need a worked example showing how `--boring-chat-*` custom properties integrate with Tailwind. |
+| **Finding** | Need a worked example showing how `--boring-agent-*` custom properties integrate with Tailwind. |
 | **Action** | `theme.css` ships with all custom property definitions. Documentation includes Tailwind mapping example. |
 | **Implementing beads** | boring-ui-v2-2pe (theme CSS) |
 

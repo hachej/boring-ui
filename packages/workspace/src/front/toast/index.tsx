@@ -117,7 +117,7 @@ const VARIANT_ICON: Record<ToastVariant, typeof CheckIcon> = {
 
 const VARIANT_CLASS: Record<ToastVariant, string> = {
   success:
-    "border-emerald-500/40 bg-background text-foreground [&_[data-toast-icon]]:text-emerald-500",
+    "border-accent/40 bg-background text-foreground [&_[data-toast-icon]]:text-accent",
   error:
     "border-destructive/50 bg-background text-foreground [&_[data-toast-icon]]:text-destructive",
   info: "border-border bg-background text-foreground [&_[data-toast-icon]]:text-foreground/70",

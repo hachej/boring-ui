@@ -242,7 +242,7 @@ function StatusMessage({
   const className =
     tone === 'error'
       ? 'border-destructive/40 bg-destructive/10 text-destructive'
-      : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+      : 'border-success/35 bg-[color:var(--success-soft)] text-success'
 
   return (
     <div
