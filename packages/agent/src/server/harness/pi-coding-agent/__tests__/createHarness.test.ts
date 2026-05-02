@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createPiCodingAgentHarness } from "../createHarness.js";
+import {
+  createResourceSettingsManager,
+  createPiCodingAgentHarness,
+  mergePiPackageSources,
+} from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import { PiSessionStore } from "../sessions.js";
 import type { AgentTool } from "../../../../shared/tool.js";
@@ -26,6 +30,84 @@ describe("createPiCodingAgentHarness", () => {
     expect(harness.placement).toBe("server");
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
     expect(typeof harness.sendMessage).toBe("function");
+  });
+
+  it("merges host-declared Pi packages without mutating package filters", () => {
+    const filtered = {
+      source: "npm:pi-markdown-preview@0.9.7",
+      extensions: ["./index.ts"],
+    };
+
+    expect(
+      mergePiPackageSources(
+        ["npm:pi-markdown-preview@0.9.7", filtered],
+        ["npm:pi-markdown-preview@0.9.7", filtered, "git:github.com/user/pi-tools@v1"],
+      ),
+    ).toEqual([
+      "npm:pi-markdown-preview@0.9.7",
+      filtered,
+      "git:github.com/user/pi-tools@v1",
+    ]);
+  });
+
+  it("dedupes Pi package filters independent of declaration order", () => {
+    const first = {
+      source: "npm:pi-markdown-preview@0.9.7",
+      extensions: ["./preview.ts", "./index.ts"],
+    };
+    const second = {
+      source: "npm:pi-markdown-preview@0.9.7",
+      extensions: ["./index.ts", "./preview.ts"],
+    };
+
+    expect(mergePiPackageSources([first], [second])).toEqual([first]);
+  });
+
+  it("dedupes string sources and unfiltered object sources", () => {
+    expect(
+      mergePiPackageSources(
+        ["npm:pi-markdown-preview@0.9.7"],
+        [{ source: "npm:pi-markdown-preview@0.9.7" }],
+      ),
+    ).toEqual(["npm:pi-markdown-preview@0.9.7"]);
+  });
+
+  it("injects Pi packages into in-memory project settings only", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-settings-project-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-settings-agent-"));
+    try {
+      const settingsPath = join(cwd, ".pi", "settings.json");
+      await mkdir(join(cwd, ".pi"), { recursive: true });
+      await writeFile(
+        settingsPath,
+        JSON.stringify({
+          theme: "test-theme",
+          packages: ["npm:base-pi"],
+        }),
+        "utf8",
+      );
+
+      const manager = createResourceSettingsManager(cwd, agentDir, [
+        "npm:plugin-pi",
+      ]);
+
+      expect(manager.getProjectSettings().packages).toEqual([
+        "npm:base-pi",
+        "npm:plugin-pi",
+      ]);
+
+      manager.setDefaultProvider("anthropic");
+      await manager.flush();
+
+      expect(JSON.parse(await readFile(settingsPath, "utf8"))).toEqual({
+        theme: "test-theme",
+        packages: ["npm:base-pi"],
+      });
+      expect(manager.getGlobalSettings().defaultProvider).toBe("anthropic");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
   });
 });
 

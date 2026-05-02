@@ -6,6 +6,7 @@ import { getEnv } from './config/env'
 import type { RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
+import type { PiResourceLoaderOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
@@ -54,11 +55,7 @@ export interface CreateAgentAppOptions {
    */
   systemPromptAppend?: string
   /** Optional pi resource-loader isolation knobs. */
-  resourceLoaderOptions?: {
-    noContextFiles?: boolean
-    noSkills?: boolean
-    additionalSkillPaths?: string[]
-  }
+  resourceLoaderOptions?: PiResourceLoaderOptions
 }
 
 export async function createAgentApp(
