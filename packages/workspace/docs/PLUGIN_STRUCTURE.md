@@ -55,6 +55,81 @@ in subfolders such as `file-tree/`, `code-editor/`, or `empty-file-panel/`.
 - Executable agent tools should be server plugin contributions. The legacy
   front `agentTools` field remains for migration only.
 
+## Composed Plugins
+
+Use `composePlugins()` when a front plugin is easier to build from smaller
+front fragments. The composed plugin flattens child panels, commands,
+catalogs, bindings, and outputs into one normal `WorkspaceFrontPlugin`.
+
+Default behavior adopts child ownership to the parent plugin id. Use
+`adoptOutputs: false` only when registry ownership must stay attached to the
+child fragment for diagnostics or selective unregister behavior.
+
+```ts
+const macroPlugin = composePlugins({
+  id: "boring-macro",
+  label: "Macro",
+  plugins: [macroPanelsPlugin, macroSurfacesPlugin, macroSeriesExplorerPlugin],
+})
+```
+
+Use `composeServerPlugins()` for the matching server side. It concatenates
+child tools, prompt text, pi package declarations, provisioning, and routes
+into one normal `WorkspaceServerPlugin`.
+
+```ts
+const macroServerPlugin = composeServerPlugins({
+  id: "boring-macro",
+  label: "Macro",
+  plugins: [macroToolsPlugin, macroRoutesPlugin],
+})
+```
+
+## Pi Package Adapters
+
+Treat pi packages as implementation dependencies. The app-facing contract is a
+workspace adapter plugin that wraps the pi package and optionally adds front
+integration.
+
+Do not require pi packages to export Boring-specific adapters. The pi ecosystem
+already has its own shape, such as `package.json` `pi.extensions` entries and
+extension functions that call `pi.registerCommand(...)`. Workspace adapters
+should adapt to that shape.
+
+Declare native pi package dependencies on the server plugin:
+
+```ts
+defineServerPlugin({
+  id: "markdown-preview",
+  piPackages: ["npm:pi-markdown-preview@0.9.7"],
+})
+```
+
+Workspace passes these declarations to `@boring/agent` as in-memory Pi
+settings. This enables Pi's native package loader without mutating
+`.pi/settings.json`.
+
+```txt
+src/plugins/markdownPreview/
+  shared/
+    constants.ts        # workspace ids, surface kinds, command names
+  server/
+    index.ts            # defineServerPlugin(), pi package dependency wrapper
+    routes.ts           # optional workspace-native render/preview routes
+  front/
+    index.tsx           # defineFrontPlugin()
+    panels.tsx          # workspace-native preview panel
+    surfaceResolver.ts  # markdown-preview.open -> panel resolution
+```
+
+For example, a wrapper around `pi-markdown-preview` can depend on that package,
+read or invoke its pi extension behavior on the server side, and expose a
+workspace-native `markdown-preview.open` surface on the front side. The agent
+prompt should teach the model to use workspace `openSurface` when a Boring app
+is present, even if the underlying pi package also provides terminal/browser
+slash commands.
+
+
 ## Current Plugins
 
 - `packages/workspace/src/plugins/filesystemPlugin`

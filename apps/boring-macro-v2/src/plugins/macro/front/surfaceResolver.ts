@@ -7,6 +7,7 @@ import {
   MACRO_OPEN_SERIES_SURFACE_KIND,
   MACRO_SERIES_SURFACE_RESOLVER_ID,
 } from "../shared/constants"
+import type { MacroSeriesSurfaceMeta } from "../shared/types"
 
 function basename(path: string): string {
   return path.split("/").pop() ?? path
@@ -33,9 +34,10 @@ export const macroSurfaceOutputs: NonNullable<WorkspaceFrontPlugin["outputs"]> =
         if (request.kind !== MACRO_OPEN_SERIES_SURFACE_KIND) return undefined
         const seriesId = request.target.trim()
         if (!seriesId) return undefined
+        const meta = request.meta as MacroSeriesSurfaceMeta | undefined
         const title =
-          typeof request.meta?.title === "string" && request.meta.title.length > 0
-            ? request.meta.title
+          typeof meta?.title === "string" && meta.title.length > 0
+            ? meta.title
             : seriesId
         return {
           id: `chart:${seriesId}`,

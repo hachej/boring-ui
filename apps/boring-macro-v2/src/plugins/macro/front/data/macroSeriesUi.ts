@@ -5,6 +5,7 @@
  */
 import { postUiCommand } from "@boring/workspace"
 import { MACRO_OPEN_SERIES_SURFACE_KIND } from "../../shared/constants"
+import type { MacroSeriesSurfaceMeta } from "../../shared/types"
 
 export const FREQ_LABELS: Record<string, string> = {
   D: "Daily",
@@ -45,10 +46,7 @@ export function formatSeriesValue(
   return v.toFixed(precision)
 }
 
-interface OpenSeriesOptions {
-  /** Tab title; defaults to the series id. */
-  title?: string
-}
+type OpenSeriesOptions = MacroSeriesSurfaceMeta
 
 /**
  * Push a macro-owned surface target through the workspace UI bridge. Used by
