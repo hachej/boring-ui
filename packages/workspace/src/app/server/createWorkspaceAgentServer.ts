@@ -17,34 +17,65 @@ import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
   ServerPluginError,
   bootstrapServer,
+  composeServerPlugins,
   defineServerPlugin,
   validateServerPlugin,
+  compactPiPackages,
   type ServerBootstrapOptions,
+  type ComposeServerPluginsOptions,
+  type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
 
+export interface WorkspaceAgentResourceLoaderOptions {
+  noContextFiles?: boolean
+  noSkills?: boolean
+  additionalSkillPaths?: string[]
+  piPackages?: WorkspacePiPackageSource[]
+}
+
+type WorkspaceAgentCreateOptions = Omit<
+  CreateAgentAppOptions,
+  "resourceLoaderOptions"
+> & {
+  resourceLoaderOptions?: WorkspaceAgentResourceLoaderOptions
+}
+
 export interface CreateWorkspaceAgentServerOptions
-  extends CreateAgentAppOptions,
+  extends WorkspaceAgentCreateOptions,
     Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
 }
 
-export { ServerPluginError, defineServerPlugin, validateServerPlugin }
-export type { WorkspaceServerPlugin, WorkspaceProvisioningContribution }
-export type { WorkspaceRouteContribution }
+export {
+  ServerPluginError,
+  composeServerPlugins,
+  defineServerPlugin,
+  validateServerPlugin,
+}
+export type {
+  ComposeServerPluginsOptions,
+  WorkspacePiPackageSource,
+  WorkspaceServerPlugin,
+  WorkspaceProvisioningContribution,
+  WorkspaceRouteContribution,
+}
 
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
-  agentOptions: Pick<CreateAgentAppOptions, "extraTools" | "systemPromptAppend" | "resourceLoaderOptions">
+  agentOptions: Pick<
+    WorkspaceAgentCreateOptions,
+    "extraTools" | "systemPromptAppend" | "resourceLoaderOptions"
+  >
 }
 
 export interface CollectWorkspaceAgentServerPluginsOptions
   extends Pick<
-      CreateAgentAppOptions,
+      WorkspaceAgentCreateOptions,
       "workspaceRoot" | "systemPromptAppend" | "resourceLoaderOptions"
     >,
     Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {}
@@ -60,6 +91,7 @@ export function collectWorkspaceAgentServerPlugins(
   })
   const workspaceSkillsDir = join(workspaceRoot, ".agents", "skills")
   const callerAdditional = opts.resourceLoaderOptions?.additionalSkillPaths ?? []
+  const callerPiPackages = opts.resourceLoaderOptions?.piPackages ?? []
 
   return {
     provisioningContributions: result.provisioningContributions,
@@ -72,6 +104,7 @@ export function collectWorkspaceAgentServerPlugins(
       resourceLoaderOptions: {
         ...opts.resourceLoaderOptions,
         additionalSkillPaths: [workspaceSkillsDir, ...callerAdditional],
+        piPackages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
       },
     },
   }

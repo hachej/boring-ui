@@ -1,10 +1,20 @@
 import type { RuntimeProvisioningContribution } from "@boring/agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
+import {
+  PI_PACKAGE_RESOURCE_FILTERS,
+  type WorkspacePiPackageSource,
+} from "./piPackages"
 
 export interface WorkspaceServerPlugin {
   id: string
   label?: string
+  /**
+   * Native Pi package sources required by this workspace integration.
+   * Workspace declares them; @boring/agent applies them through Pi's native
+   * resource loader without asking Pi packages to export Boring adapters.
+   */
+  piPackages?: WorkspacePiPackageSource[]
   systemPrompt?: string
   agentTools?: AgentTool[]
   provisioning?: RuntimeProvisioningContribution
@@ -45,6 +55,34 @@ function validateAgentTool(pluginId: string, tool: unknown, index: number): void
   }
   if (typeof candidate.execute !== "function") {
     fail(pluginId, `agentTools[${index}].execute must be a function`)
+  }
+}
+
+function validatePiPackages(pluginId: string, piPackages: unknown[]): void {
+  for (let i = 0; i < piPackages.length; i++) {
+    const source = piPackages[i]
+    if (typeof source === "string") {
+      if (source.length === 0) {
+        fail(pluginId, `piPackages[${i}] must be a non-empty string`)
+      }
+      continue
+    }
+
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+      fail(pluginId, `piPackages[${i}] must be a string or package source object`)
+    }
+
+    const candidate = source as Record<string, unknown>
+    if (typeof candidate.source !== "string" || candidate.source.length === 0) {
+      fail(pluginId, `piPackages[${i}].source must be a non-empty string`)
+    }
+    for (const key of PI_PACKAGE_RESOURCE_FILTERS) {
+      const value = candidate[key]
+      if (value === undefined) continue
+      if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
+        fail(pluginId, `piPackages[${i}].${key} must be a string array when provided`)
+      }
+    }
   }
 }
 
@@ -125,6 +163,12 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   }
   if (plugin.systemPrompt !== undefined && typeof plugin.systemPrompt !== "string") {
     fail(plugin.id, "systemPrompt must be a string when provided")
+  }
+  if (plugin.piPackages !== undefined) {
+    if (!Array.isArray(plugin.piPackages)) {
+      fail(plugin.id, "piPackages must be an array when provided")
+    }
+    validatePiPackages(plugin.id, plugin.piPackages)
   }
   if (plugin.agentTools !== undefined) {
     if (!Array.isArray(plugin.agentTools)) {
