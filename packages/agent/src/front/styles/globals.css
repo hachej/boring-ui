@@ -17,6 +17,7 @@
 @import "tailwindcss/theme.css" layer(theme) source(none);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @source "../**/*.{ts,tsx}";
+@source "../../../../ui/src/**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));
 

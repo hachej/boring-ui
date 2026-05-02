@@ -6,6 +6,7 @@
  * @source pointing back at workspace's src; that broke whenever the
  * consumer moved between repos. */
 @source "./**/*.{ts,tsx}";
+@source "../../ui/src/**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));
 

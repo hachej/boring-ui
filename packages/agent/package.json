@@ -34,7 +34,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",
+    "build": "pnpm --filter @boring/ui build && tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
@@ -47,13 +47,14 @@
     "eval:provisioning:agent:vercel": "tsx ./scripts/eval-provisioning-agent-vercel.mts",
     "check:isolation": "tsx ./scripts/check-agent-isolation.ts",
     "pi-sdk:canary": "./scripts/pi-sdk-canary.sh",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm --filter @boring/ui build && tsc --noEmit",
     "lint": "pnpm run typecheck && pnpm run lint:invariants",
     "lint:invariants": "bash ../../scripts/check-invariants.sh .",
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.170",
+    "@boring/ui": "workspace:*",
     "@mariozechner/pi-coding-agent": "0.67.68",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
