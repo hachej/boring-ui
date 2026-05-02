@@ -162,6 +162,7 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
   await page.goto(`/workspace/${WORKSPACE_ID}`)
   await expect(page).toHaveURL(new RegExp(`/workspace/${WORKSPACE_ID}$`))
   await expect(page.getByText('Smoke Workspace')).toBeVisible()
+  await page.getByRole('button', { name: 'Workbench' }).click()
   await expect(page.getByLabel('Workbench left pane')).toBeVisible()
   expect(cspEvalViolations, cspEvalViolations.join('\n')).toEqual([])
 

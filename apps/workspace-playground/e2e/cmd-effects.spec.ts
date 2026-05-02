@@ -80,6 +80,7 @@ test.describe("command palette effects", () => {
     await expect(sessions).toHaveCount(before + 1)
   })
 
+
   test("'Open Session History' opens the closed drawer", async ({ page }) => {
     expect(await paneWidth(page, "Session browser")).toBe(0)
     await runCommandFromPalette(page, "Open Session History")

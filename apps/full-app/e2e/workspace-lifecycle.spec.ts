@@ -307,11 +307,24 @@ async function switchWorkspace(page: Page, name: string, id: string) {
 }
 
 async function openWorkbench(page: Page) {
+  const leftPane = page.getByLabel('Workbench left pane')
   const button = page.getByRole('button', { name: 'Workbench' })
-  if (await button.isVisible().catch(() => false)) {
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await leftPane.isVisible().catch(() => false)) return
+    await expect(button).toBeVisible({ timeout: 10_000 })
     await button.click()
+    try {
+      await expect(leftPane).toBeVisible({ timeout: 1_500 })
+      return
+    } catch {
+      // The route can swap the floating button during workspace creation.
+      // Retry only after a full visibility wait so we never double-toggle
+      // during the open animation.
+    }
   }
-  await expect(page.getByLabel('Workbench left pane')).toBeVisible({ timeout: 10_000 })
+
+  await expect(leftPane).toBeVisible({ timeout: 10_000 })
 }
 
 test('agent openFile command opens a closed workbench and focuses the file', async ({ page, baseURL }) => {
