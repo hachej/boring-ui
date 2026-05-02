@@ -21,10 +21,29 @@ import {
   readConfiguredDefaultModel,
   registerConfiguredModelProviders,
 } from "../../models/modelConfig.js";
+import {
+  mergePiPackageSources,
+  type PiPackageSource,
+} from "../../piPackages.js";
 
 interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
+}
+
+export { mergePiPackageSources } from "../../piPackages.js";
+export type { PiPackageSource } from "../../piPackages.js";
+
+export interface PiResourceLoaderOptions {
+  noContextFiles?: boolean;
+  noSkills?: boolean;
+  additionalSkillPaths?: string[];
+  /**
+   * Additional native Pi package sources to enable for this agent runtime.
+   * These are applied as in-memory SettingsManager overrides, so host/plugin
+   * declarations do not mutate .pi/settings.json.
+   */
+  piPackages?: PiPackageSource[];
 }
 
 const ALIAS_TO_PI_ID: Record<string, string> = {
@@ -57,6 +76,39 @@ function resolveDefaultModel(modelRegistry: ModelRegistry) {
   return modelRegistry.find("anthropic", ALIAS_TO_PI_ID.sonnet);
 }
 
+export function createResourceSettingsManager(
+  cwd: string,
+  agentDir: string,
+  piPackages: PiPackageSource[],
+): SettingsManager {
+  const fileSettingsManager = SettingsManager.create(cwd, agentDir);
+  if (piPackages.length === 0) return fileSettingsManager;
+
+  const projectSettings = fileSettingsManager.getProjectSettings();
+  let globalSettingsJson: string | undefined = JSON.stringify(
+    fileSettingsManager.getGlobalSettings(),
+  );
+  let projectSettingsJson: string | undefined = JSON.stringify({
+    ...projectSettings,
+    packages: mergePiPackageSources(projectSettings.packages ?? [], piPackages),
+  });
+  // Pi settings writes stay visible to this SettingsManager instance, but do
+  // not mutate host/project files while workspace-owned packages are injected.
+  // SettingsManager also uses `undefined` as the callback result for reads, so
+  // preserve the current JSON whenever a callback does not produce a new value.
+  const storage: Parameters<typeof SettingsManager.fromStorage>[0] = {
+    withLock(scope, fn) {
+      if (scope === "global") {
+        globalSettingsJson = fn(globalSettingsJson) ?? globalSettingsJson;
+      } else {
+        projectSettingsJson = fn(projectSettingsJson) ?? projectSettingsJson;
+      }
+    },
+  };
+
+  return SettingsManager.fromStorage(storage);
+}
+
 async function applyRequestedSessionOptions(
   handle: PiSessionHandle,
   input: SendMessageInput,
@@ -84,11 +136,7 @@ export function createPiCodingAgentHarness(opts: {
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
   /** Optional pi resource-loader isolation knobs. */
-  resourceLoaderOptions?: {
-    noContextFiles?: boolean;
-    noSkills?: boolean;
-    additionalSkillPaths?: string[];
-  };
+  resourceLoaderOptions?: PiResourceLoaderOptions;
 }): AgentHarness {
   const sessionStore = new PiSessionStore(opts.cwd);
   const piSessions = new Map<string, PiSessionHandle>();
@@ -129,12 +177,18 @@ export function createPiCodingAgentHarness(opts: {
       opts.systemPromptAppend ||
       opts.resourceLoaderOptions?.noContextFiles ||
       opts.resourceLoaderOptions?.noSkills ||
-      (opts.resourceLoaderOptions?.additionalSkillPaths?.length ?? 0) > 0
+      (opts.resourceLoaderOptions?.additionalSkillPaths?.length ?? 0) > 0 ||
+      (opts.resourceLoaderOptions?.piPackages?.length ?? 0) > 0
         ? (() => {
             const agentDir = getAgentDir()
-            const settingsManager = SettingsManager.create(ctx.workdir, agentDir)
             const additionalSkillPaths =
               opts.resourceLoaderOptions?.additionalSkillPaths ?? []
+            const piPackages = opts.resourceLoaderOptions?.piPackages ?? []
+            const settingsManager = createResourceSettingsManager(
+              ctx.workdir,
+              agentDir,
+              piPackages,
+            )
             return new DefaultResourceLoader({
               cwd: ctx.workdir,
               agentDir,
