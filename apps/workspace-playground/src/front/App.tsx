@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react"
 import { ChatPanel } from "@boring/agent"
 import { WorkspaceAgentFront } from "@boring/workspace/app/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog"
+import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog/front"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false

@@ -1,8 +1,15 @@
 import type { RuntimeProvisioningContribution } from "@boring/agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
-import type { WorkspaceServerPlugin } from "./defineServerPlugin"
-export { defineServerPlugin } from "./defineServerPlugin"
+import {
+  validateServerPlugin,
+  type WorkspaceServerPlugin,
+} from "./defineServerPlugin"
+export {
+  ServerPluginError,
+  defineServerPlugin,
+  validateServerPlugin,
+} from "./defineServerPlugin"
 export type { WorkspaceServerPlugin } from "./defineServerPlugin"
 
 export interface ServerBootstrapOptions {
@@ -38,6 +45,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
 
   const seenIds = new Set<string>()
   for (const plugin of finalPlugins) {
+    validateServerPlugin(plugin)
     if (seenIds.has(plugin.id)) {
       throw new Error(`plugin "${plugin.id}" registered twice`)
     }

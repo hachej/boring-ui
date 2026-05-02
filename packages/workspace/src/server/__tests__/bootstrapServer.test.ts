@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest"
-import { bootstrapServer, defineServerPlugin } from "../plugins/bootstrapServer"
+import {
+  ServerPluginError,
+  bootstrapServer,
+  defineServerPlugin,
+} from "../plugins/bootstrapServer"
 
 function makeAgentTool(name = "tool") {
   return {
@@ -134,16 +138,94 @@ describe("bootstrapServer", () => {
   })
 
   it("defineServerPlugin preserves the standard server plugin shape", () => {
-    const plugin = defineServerPlugin({
+    const spec = {
       id: "standard",
       label: "Standard",
       systemPrompt: "Prompt",
+    }
+    const plugin = defineServerPlugin(spec)
+
+    expect(plugin).toEqual(spec)
+    expect(plugin).not.toBe(spec)
+  })
+
+  it("defineServerPlugin rejects invalid ids", () => {
+    expect(() =>
+      defineServerPlugin({ id: "" }),
+    ).toThrow(ServerPluginError)
+    expect(() =>
+      defineServerPlugin({ id: "" }),
+    ).toThrow("id must be a non-empty string")
+  })
+
+  it("defineServerPlugin rejects malformed tools", () => {
+    expect(() =>
+      defineServerPlugin({
+        id: "bad-tools",
+        agentTools: [{ name: "missing-execute", description: "bad", parameters: {} } as any],
+      }),
+    ).toThrow("agentTools[0].execute must be a function")
+  })
+
+  it("defineServerPlugin rejects malformed routes", () => {
+    expect(() =>
+      defineServerPlugin({
+        id: "bad-routes",
+        routes: "not-a-function" as any,
+      }),
+    ).toThrow("routes must be a Fastify plugin function")
+  })
+
+  it("defineServerPlugin rejects malformed provisioning", () => {
+    expect(() =>
+      defineServerPlugin({
+        id: "bad-provisioning",
+        provisioning: {
+          templateDirs: [{ id: "missing-path" } as any],
+        },
+      }),
+    ).toThrow("provisioning.templateDirs[0].path must be a string or URL")
+
+    expect(() =>
+      defineServerPlugin({
+        id: "empty-template-path",
+        provisioning: {
+          templateDirs: [{ id: "template", path: "" }],
+        },
+      }),
+    ).toThrow("provisioning.templateDirs[0].path must be a string or URL")
+
+    expect(() =>
+      defineServerPlugin({
+        id: "empty-python-project",
+        provisioning: {
+          python: [{ id: "sdk", projectFile: "" }],
+        },
+      }),
+    ).toThrow("provisioning.python[0].projectFile must be a string or URL")
+  })
+
+  it("defineServerPlugin accepts valid route and provisioning contributions", () => {
+    const routes = vi.fn()
+    const plugin = defineServerPlugin({
+      id: "runtime",
+      routes,
+      provisioning: {
+        templateDirs: [
+          { id: "template", path: new URL("file:///tmp/template/"), target: "." },
+        ],
+        python: [
+          {
+            id: "sdk",
+            projectFile: new URL("file:///tmp/sdk/pyproject.toml"),
+            extraLibs: ["./libs/example"],
+            env: { EXAMPLE_ROOT: new URL("file:///tmp/sdk") },
+          },
+        ],
+      },
     })
 
-    expect(plugin).toEqual({
-      id: "standard",
-      label: "Standard",
-      systemPrompt: "Prompt",
-    })
+    expect(plugin.routes).toBe(routes)
+    expect(plugin.provisioning?.templateDirs).toHaveLength(1)
   })
 })

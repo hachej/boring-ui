@@ -238,7 +238,7 @@ export const macroClientPlugin = defineFrontPlugin({
 After:
 
 ```ts
-// src/plugins/macro/index.tsx
+// src/plugins/macro/front/index.tsx
 export const macroClientPlugin = defineFrontPlugin({
   id: "boring-macro",
   label: "Macro",

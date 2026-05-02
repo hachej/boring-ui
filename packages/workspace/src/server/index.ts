@@ -22,8 +22,10 @@ export {
 } from "./ui-control/tools/uiTools"
 export type { UiBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
 export {
+  ServerPluginError,
   bootstrapServer,
   defineServerPlugin,
+  validateServerPlugin,
 } from "./plugins/bootstrapServer"
 export type {
   ServerBootstrapOptions,

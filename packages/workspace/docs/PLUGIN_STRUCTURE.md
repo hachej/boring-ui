@@ -16,21 +16,20 @@ then delete the files the plugin does not need.
 
 ```txt
 <plugin>/
-  index.tsx              # client plugin factory and public exports
-  constants.ts           # plugin id, catalog ids, surface kinds
-  types.ts               # public plugin-owned types
-  panels.tsx             # panel definitions
-  catalogs.ts            # catalog outputs/config helpers
-  surfaceResolver.ts     # openSurface target -> panel resolution
-  bindings.tsx           # React side-effect bindings, if needed
-  events.ts              # plugin-keyed event names/payloads, if needed
-  data/                  # plugin-owned client data API/hooks/cache
+  front/
+    index.tsx            # front plugin factory and public front exports
+    panels.tsx           # panel definitions
+    catalogs.ts          # catalog outputs/config helpers
+    surfaceResolver.ts   # openSurface target -> panel resolution
+    bindings.tsx         # React side-effect bindings, if needed
+    data/                # plugin-owned client data API/hooks/cache
   server/
-    index.ts             # server plugin factory and public exports
+    index.ts             # server plugin factory and public server exports
     tools.ts             # agent tools, if needed
     routes.ts            # server routes, if needed
-    types.ts
-  __tests__/
+  shared/
+    constants.ts         # plugin id, catalog ids, surface kinds
+    types.ts             # platform-neutral shared types, if needed
 ```
 
 Use only the files a plugin actually needs. Large component families may live
@@ -38,16 +37,23 @@ in subfolders such as `file-tree/`, `code-editor/`, or `empty-file-panel/`.
 
 ## Ownership Rules
 
-- `index.tsx` composes and exports; large behavior belongs in focused files.
-- Domain search belongs in `catalogs.ts`.
-- Domain open behavior belongs in `surfaceResolver.ts`.
-- Domain event names live in `events.ts` and must be keyed by plugin id.
-- Plugin data clients/hooks live in `data/`, not `front/data`.
-- Server prompts/tools/routes live under `server/`, not mixed with client code.
+- `front/index.tsx` composes front outputs; large behavior belongs in focused files.
+- `server/index.ts` composes server outputs with `defineServerPlugin()`.
+- Shared files must stay platform-neutral. Do not import plugin `front/` or
+  `server/` code from `shared/`.
+- Domain search belongs in `front/catalogs.ts`.
+- Domain open behavior belongs in `front/surfaceResolver.ts`.
+- Domain event names live in `shared/events.ts` when both layers need the
+  contract; event names must be keyed by plugin id.
+- Plugin data clients/hooks live in `front/data/`, not package `front/data`.
+- Server prompts/tools/routes/provisioning live under `server/`, not mixed
+  with client code.
 - Workspace core may host registries, providers, event transport, and bridge
   dispatch only. It must not hardcode plugin panel ids or plugin domain rules.
 - Catalog selection and plugin-owned routing should prefer `openSurface`.
   `openPanel` remains available for explicit app-level panel opens.
+- Executable agent tools should be server plugin contributions. The legacy
+  front `agentTools` field remains for migration only.
 
 ## Current Plugins
 
@@ -71,6 +77,10 @@ The scan rejects:
 - `front/data` imports or path references in source.
 - `@boring/agent` imports from `workspace/src/shared/plugins`.
 - `front`/`server` imports from production `workspace/src/shared/plugins`.
+- Production plugin `front/`, `server/`, and `shared/` layers importing across
+  the wrong layer boundary.
+- TypeScript source files directly under a plugin root instead of
+  `front/`, `server/`, or `shared/`.
 - Plugin-domain imports from production `workspace/src/front/chrome`, `events`,
   and `hooks`.
 - Legacy plugin file names such as `catalog.ts`, `surfaceTargets.ts`,

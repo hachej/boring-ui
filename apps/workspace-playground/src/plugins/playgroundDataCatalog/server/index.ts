@@ -5,8 +5,8 @@ import {
   type WorkspaceServerPlugin,
 } from "@boring/workspace/app/server"
 import { resolve } from "node:path"
-import { PLAYGROUND_CSV_DATASETS } from "../fixtures"
-import { PLAYGROUND_DATA_PLUGIN_ID } from "../constants"
+import { PLAYGROUND_CSV_DATASETS } from "../shared/fixtures"
+import { PLAYGROUND_DATA_PLUGIN_ID } from "../shared/constants"
 
 interface CreatePlaygroundDataServerPluginOptions {
   workspaceRoot: string

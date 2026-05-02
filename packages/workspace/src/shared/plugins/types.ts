@@ -79,6 +79,10 @@ export interface SurfaceResolverOutput {
 }
 
 export interface AgentToolOutput {
+  /**
+   * @deprecated Executable agent tools should be contributed by server
+   * plugins. This output remains for migration only.
+   */
   type: "agent-tool"
   id: string
   tool: AgentTool

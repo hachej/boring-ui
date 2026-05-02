@@ -8,7 +8,7 @@ import {
   DATA_CATALOG_DEFAULT_TOOL_NAME,
   DATA_CATALOG_PLUGIN_ID,
   DATA_CATALOG_ROW_SURFACE_KIND,
-} from "../constants"
+} from "../shared/constants"
 
 export interface DataCatalogAgentToolOptions {
   name?: string

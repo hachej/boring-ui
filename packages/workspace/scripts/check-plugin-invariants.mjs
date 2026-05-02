@@ -19,6 +19,7 @@ const repoRoot = findRepoRoot(workspacePackageDir)
 const sourceRoots = [
   "packages/workspace/src",
   "packages/workspace/stories",
+  "packages/workspace/templates/plugin",
   "apps/boring-macro-v2/src",
   "apps/workspace-playground/src",
 ]
@@ -93,6 +94,41 @@ function isPluginRootFile(repoPath) {
   return false
 }
 
+function pluginLayer(repoPath) {
+  const parts = repoPath.split("/")
+
+  if (
+    parts[0] === "packages" &&
+    parts[1] === "workspace" &&
+    parts[2] === "src" &&
+    parts[3] === "plugins" &&
+    parts.length > 6
+  ) {
+    return parts[5]
+  }
+
+  if (
+    parts[0] === "apps" &&
+    parts[2] === "src" &&
+    parts[3] === "plugins" &&
+    parts.length > 6
+  ) {
+    return parts[5]
+  }
+
+  if (
+    parts[0] === "packages" &&
+    parts[1] === "workspace" &&
+    parts[2] === "templates" &&
+    parts[3] === "plugin" &&
+    parts.length > 5
+  ) {
+    return parts[4]
+  }
+
+  return null
+}
+
 function checkRegex(file, content, regex, message) {
   for (const match of content.matchAll(regex)) {
     addFailure(file, lineNumberFor(content, match.index ?? 0), message, match[0])
@@ -116,7 +152,7 @@ for (const file of files) {
   checkRegex(
     file,
     content,
-    /\b(?:src\/)?front\/data\b|from\s+["'][^"']*front\/data(?:\/|["'])/g,
+    /\bpackages\/workspace\/src\/front\/data\b|\bsrc\/front\/data\b|from\s+["'](?:\.\.\/)+front\/data(?:\/|["'])/g,
     "front/data is not allowed; plugin data belongs under the owning plugin",
   )
 
@@ -131,7 +167,7 @@ for (const file of files) {
       checkRegex(
         file,
         content,
-        /from\s+["'](?:\.\.\/)+(?:front|server)\/[^"']+["']|import\s*\(\s*["'](?:\.\.\/)+(?:front|server)\/[^"']+["']\s*\)/g,
+        /from\s+["'](?:\.\.\/)+(?:front|server)\/[^"']+["']|import\s*\(\s*["'](?:\.\.\/)+(?:front|server)\/[^"']+["']\s*\)|declare\s+module\s+["'](?:\.\.\/)+(?:front|server)\/[^"']+["']/g,
         "workspace shared plugin contracts must not import front/server modules",
       )
     }
@@ -157,7 +193,35 @@ for (const file of files) {
     )
   }
 
+  const layer = pluginLayer(repoPath)
+  if (layer && !isTestPath(repoPath)) {
+    if (layer === "front") {
+      checkRegex(
+        file,
+        content,
+        /from\s+["'](?:\.\.\/)+server(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+server(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+server(?:\/|["'])/g,
+        "plugin front layer must not import plugin server layer",
+      )
+    } else if (layer === "server") {
+      checkRegex(
+        file,
+        content,
+        /from\s+["'](?:\.\.\/)+front(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+front(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+front(?:\/|["'])/g,
+        "plugin server layer must not import plugin front layer",
+      )
+    } else if (layer === "shared") {
+      checkRegex(
+        file,
+        content,
+        /from\s+["'](?:\.\.\/)+(?:front|server)(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+(?:front|server)(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+(?:front|server)(?:\/|["'])/g,
+        "plugin shared layer must not import plugin front/server layers",
+      )
+    }
+  }
+
   if (!isPluginRootFile(repoPath)) continue
+
+  addFailure(file, 1, "plugin source files must live under front/, server/, or shared/")
 
   if (basename === "catalog.ts") {
     addFailure(file, 1, "plugin catalog files must be named catalogs.ts")

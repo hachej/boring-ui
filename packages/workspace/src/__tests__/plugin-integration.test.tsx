@@ -10,7 +10,7 @@ import { defineFrontPlugin } from "../shared/plugins/defineFrontPlugin"
 import {
   DATA_CATALOG_ROW_SURFACE_KIND,
   createDataCatalogPlugin,
-} from "../plugins/dataCatalogPlugin"
+} from "../plugins/dataCatalogPlugin/front"
 import type { PluginOutput } from "../shared/plugins/types"
 import type { WorkspaceFrontPlugin } from "../shared/plugins/defineFrontPlugin"
 import { events, workspaceEvents } from "../front/events"

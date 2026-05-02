@@ -7,14 +7,16 @@ Expected shape:
 
 ```txt
 samplePlugin/
-  index.tsx
-  constants.ts
-  types.ts
-  panels.tsx
-  catalogs.ts
-  surfaceResolver.ts
-  bindings.tsx
-  server/index.ts
-  __tests__/samplePlugin.test.ts
+  front/
+    index.tsx
+    panels.tsx
+    catalogs.ts
+    surfaceResolver.ts
+    bindings.tsx
+    __tests__/samplePlugin.test.ts
+  server/
+    index.ts
+  shared/
+    constants.ts
+    types.ts
 ```
-
