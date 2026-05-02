@@ -570,7 +570,7 @@ describe('GET /api/v1/agent/chat/:sessionId/messages', () => {
     await app.close()
   })
 
-  test('returns 404 with empty history payload when session lookup fails', async () => {
+  test('returns empty history payload when session lookup fails', async () => {
     const mockLoad = vi.fn().mockRejectedValue(new Error('not found'))
     const harness = createMockHarness()
     harness.sessions = { load: mockLoad } as any
@@ -580,7 +580,7 @@ describe('GET /api/v1/agent/chat/:sessionId/messages', () => {
       method: 'GET',
       url: '/api/v1/agent/chat/sess-missing/messages',
     })
-    expect(res.statusCode).toBe(404)
+    expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ messages: [] })
 
     await app.close()

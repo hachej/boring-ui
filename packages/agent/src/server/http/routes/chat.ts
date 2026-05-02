@@ -253,7 +253,10 @@ export function chatRoutes(
         const messages = Array.isArray(detail?.messages) ? detail.messages : []
         return reply.code(200).send({ messages })
       } catch {
-        return reply.code(404).send({ messages: [] })
+        // History hydration is best-effort: a missing session has no persisted
+        // messages yet. Return an empty history without surfacing a browser
+        // console 404 during first-load auto session creation.
+        return reply.code(200).send({ messages: [] })
       }
     },
   )

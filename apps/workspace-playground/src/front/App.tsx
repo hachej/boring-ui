@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react"
-import { ChatPanel } from "@boring/agent"
+import { ChatPanel, useSessions as useAgentSessions } from "@boring/agent"
 import { WorkspaceAgentFront } from "@boring/workspace/app/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog"
@@ -42,6 +42,7 @@ export function WorkspaceShell() {
       persistenceEnabled
       providerStorageKey="boring-ui-v2:layout:playground"
       appTitle="Boring"
+      useSessions={showcase ? undefined : useAgentSessions}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
