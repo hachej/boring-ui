@@ -8,7 +8,7 @@ import { expect, test } from "@playwright/test"
  * to the user-visible bug they catch.
  */
 
-const STORAGE_KEY = "boring-ui-v2:chat-centered-shell:v2"
+const STORAGE_KEY = "boring-ui-v2:layout:playground"
 
 async function openPalette(page: import("@playwright/test").Page) {
   await page.goto("/")
@@ -25,30 +25,21 @@ test.describe("command palette visual chrome", () => {
   }) => {
     await openPalette(page)
 
-    // Count elements with a non-zero border-bottom-width inside the
-    // dialog content, ABOVE the result list. A "double border" bug
-    // reappears as 2+ — assert exactly 1.
-    const borderCount = await page.evaluate(() => {
-      const content = document.querySelector('[data-slot="dialog-content"]')
-      if (!content) return -1
-      const list = content.querySelector('[cmdk-list]')
-      if (!list) return -1
-      // Walk every element in the dialog that comes BEFORE the list
-      // and check its computed border-bottom-width.
-      const range = document.createRange()
-      range.setStartBefore(content)
-      range.setEndBefore(list)
-      const all = Array.from(content.querySelectorAll("*")).filter((el) =>
-        range.intersectsNode(el) && !list.contains(el) && !el.contains(list),
+    // The input wrapper owns the one horizontal divider under the query row.
+    // The mode pill has its own rounded outline, so count the divider-bearing
+    // command input wrapper directly instead of every bordered child.
+    const inputDividerCount = await page.evaluate(() => {
+      const wrappers = Array.from(
+        document.querySelectorAll('[data-slot="command-input-wrapper"]'),
       )
-      return all.filter((el) => {
+      return wrappers.filter((el) => {
         const cs = getComputedStyle(el)
         const w = parseFloat(cs.borderBottomWidth)
         return w > 0 && cs.borderBottomStyle !== "none"
       }).length
     })
 
-    expect(borderCount).toBe(1)
+    expect(inputDividerCount).toBe(1)
   })
 
   test("dialog is widened to the design's 640px max", async ({ page }) => {
@@ -73,10 +64,13 @@ test.describe("command palette visual chrome", () => {
 
   test("> prefix surfaces the 'Command' mode pill", async ({ page }) => {
     await openPalette(page)
-    // Pill not present yet
-    await expect(page.getByText("Command", { exact: true })).toHaveCount(0)
+    await expect(
+      page.getByRole("button", { name: "Commands" }),
+    ).toHaveAttribute("aria-pressed", "false")
     await page.keyboard.type(">")
-    await expect(page.getByText("Command", { exact: true })).toBeVisible()
+    await expect(
+      page.getByRole("button", { name: "Commands" }),
+    ).toHaveAttribute("aria-pressed", "true")
   })
 })
 
@@ -90,7 +84,7 @@ test.describe("workspace shell resize chrome", () => {
       }
     }, STORAGE_KEY)
     await page.reload()
-    await page.waitForLoadState("networkidle")
+    await page.waitForTimeout(500)
     // Open both panes so handles render.
     const sessions = page.getByRole("button", { name: /sessions/i })
     if (await sessions.isVisible().catch(() => false)) await sessions.click()

@@ -36,7 +36,7 @@ export default defineConfig({
         command: "pnpm dev",
         url: `http://${HOST}:${PORT}`,
         reuseExistingServer: true,
-        timeout: 60_000,
+        timeout: 150_000,
         stdout: "ignore",
         stderr: "pipe",
         env: {

@@ -288,7 +288,7 @@ async function registerAuthProxy(app: CoreWorkspaceAgentServer) {
 
     reply.status(response.status)
     const responseBody = Buffer.from(await response.arrayBuffer())
-    reply.send(responseBody)
+    return reply.send(responseBody)
   })
 }
 

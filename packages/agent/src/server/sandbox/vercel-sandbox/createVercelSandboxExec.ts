@@ -2,7 +2,11 @@ import { Writable } from 'node:stream'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import type { ExecResult, Sandbox } from '../../../shared/sandbox'
-import { invalidateVercelSandboxWorkspaceMetadataCache } from '../../workspace/createVercelSandboxWorkspace'
+import {
+  invalidateVercelSandboxWorkspaceMetadataCache,
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from '../../workspace/createVercelSandboxWorkspace'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
@@ -61,6 +65,15 @@ function timeoutResult(durationMs: number): ExecResult {
   }
 }
 
+function toRemoteCwd(cwd: string | undefined): string | undefined {
+  if (!cwd) return cwd
+  if (cwd === VERCEL_SANDBOX_WORKSPACE_ROOT) return VERCEL_SANDBOX_REMOTE_ROOT
+  if (cwd.startsWith(`${VERCEL_SANDBOX_WORKSPACE_ROOT}/`)) {
+    return `${VERCEL_SANDBOX_REMOTE_ROOT}${cwd.slice(VERCEL_SANDBOX_WORKSPACE_ROOT.length)}`
+  }
+  return cwd
+}
+
 export function createVercelSandboxExec(
   sandbox: VercelSandbox,
   execOpts: { onMutation?: () => void } = {},
@@ -117,7 +130,7 @@ export function createVercelSandboxExec(
         const result = await sandbox.runCommand({
           cmd: 'sh',
           args: ['-c', cmd],
-          cwd: opts?.cwd,
+          cwd: toRemoteCwd(opts?.cwd),
           env: opts?.env,
           signal: controller.signal,
           stdout: createStreamWritable(stdoutCollector, captureState, opts?.onStdout),

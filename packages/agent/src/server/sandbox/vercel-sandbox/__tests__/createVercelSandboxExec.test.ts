@@ -63,6 +63,18 @@ test('workspace writes are visible through exec on same sandbox handle', async (
   }
 })
 
+test('maps display /workspace cwd to Vercel remote root', async () => {
+  const runCommand = mockRunCommand('', '')
+  const sandbox = { runCommand } as unknown as VercelSandbox
+  const adapter = createVercelSandboxExec(sandbox)
+
+  await adapter.exec('pwd', { cwd: '/workspace/nested' })
+
+  expect(runCommand).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: '/vercel/sandbox/nested' }),
+  )
+})
+
 test('timeout is respected', async () => {
   const runCommand = vi.fn(async (params: { signal?: AbortSignal }) => {
     return await new Promise<never>((_resolve, reject) => {

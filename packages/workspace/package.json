@@ -15,6 +15,10 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     },
+    "./testing/e2e": {
+      "types": "./dist/testing-e2e.d.ts",
+      "import": "./dist/testing-e2e.js"
+    },
     "./ui-shadcn": {
       "types": "./dist/ui-shadcn.d.ts",
       "import": "./dist/ui-shadcn.js"
