@@ -1,12 +1,19 @@
 const BEAD_ID = 'boring-ui-v2-6u3z'
-const REQUEST_TIMEOUT_MS = Number(process.env.SMOKE_REQUEST_TIMEOUT_MS ?? 10_000)
+const REQUEST_TIMEOUT_MS = readPositiveIntEnv('SMOKE_REQUEST_TIMEOUT_MS', 10_000)
 const RESEND_POLL_TIMEOUT_MS = 60_000
 const RESEND_POLL_INTERVAL_MS = 5_000
-const AGENT_CHAT_TIMEOUT_MS = Number(process.env.SMOKE_AGENT_CHAT_TIMEOUT_MS ?? 120_000)
+const AGENT_CHAT_TIMEOUT_MS = readPositiveIntEnv('SMOKE_AGENT_CHAT_TIMEOUT_MS', 120_000)
 const AGENT_SMOKE_MODEL_PROVIDER = process.env.SMOKE_AGENT_MODEL_PROVIDER ?? 'openrouter'
 const AGENT_SMOKE_MODEL_ID = process.env.SMOKE_AGENT_MODEL_ID ?? 'qwen/qwen3.6-plus'
 
 const VERIFY_LINK_PATTERN = /https?:\/\/[^\s"'<>]+\/auth\/verify-email\?[^\s"'<>]+/i
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const value = Number(raw)
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback
+}
 
 interface LogFields {
   [key: string]: unknown
@@ -149,7 +156,12 @@ async function requestText(
     fail(step, `request failed: ${detail}`)
   }
 
-  return { status: response.status, text: await response.text(), headers: response.headers }
+  try {
+    return { status: response.status, text: await response.text(), headers: response.headers }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    fail(step, `response body read failed: ${detail}`)
+  }
 }
 
 async function requestJson(
@@ -540,6 +552,71 @@ function extractSsePayloads(text: string): string[] {
     .map((line) => line.slice('data:'.length).trim())
 }
 
+function collectAssistantTextFromPayload(value: unknown, acc: string[] = []): string[] {
+  if (!value || typeof value !== 'object') return acc
+  if (Array.isArray(value)) {
+    for (const item of value) collectAssistantTextFromPayload(item, acc)
+    return acc
+  }
+
+  const record = value as Record<string, unknown>
+  for (const key of ['delta', 'text', 'textDelta', 'content']) {
+    const candidate = record[key]
+    if (typeof candidate === 'string') acc.push(candidate)
+  }
+
+  for (const key of ['parts', 'content', 'children']) {
+    collectAssistantTextFromPayload(record[key], acc)
+  }
+
+  return acc
+}
+
+function extractAssistantText(payloads: string[]): string {
+  const chunks: string[] = []
+  for (const payload of payloads) {
+    if (payload === '[DONE]') continue
+    try {
+      collectAssistantTextFromPayload(JSON.parse(payload), chunks)
+    } catch {
+      // Some stream encodings use raw text-ish payloads. Treat only those raw
+      // payloads as assistant text; metadata stays ignored by the JSON path.
+      chunks.push(payload)
+    }
+  }
+  return chunks.join('')
+}
+
+async function tryDeleteAgentSession(
+  baseUrl: string,
+  cookie: string,
+  workspaceId: string,
+  sessionId: string,
+): Promise<{ status: number; detail: unknown }> {
+  try {
+    const response = await fetch(
+      `${baseUrl}/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: 'DELETE',
+        headers: { cookie, 'x-boring-workspace-id': workspaceId },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      },
+    )
+    const text = await response.text().catch((error) => String(error))
+    let detail: unknown = text
+    if (text) {
+      try {
+        detail = JSON.parse(text)
+      } catch {
+        // Keep original text for diagnostics.
+      }
+    }
+    return { status: response.status, detail }
+  } catch (error) {
+    return { status: 0, detail: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 async function stepAgentChat(
   baseUrl: string,
   cookie: string,
@@ -589,24 +666,26 @@ async function stepAgentChat(
       fail(step, `expected [DONE] SSE marker, got ${text.slice(0, 1_000)}`)
     }
 
-    const joined = payloads.join('\n').toLowerCase()
-    if (!joined.includes('ok')) {
-      fail(step, `expected streamed response to contain ok, got ${text.slice(0, 1_000)}`)
+    const assistantText = extractAssistantText(payloads)
+    if (!assistantText.toLowerCase().includes('ok')) {
+      fail(step, `expected assistant text to contain ok, got ${JSON.stringify(assistantText)}`)
     }
 
-    log('info', 'smoke.step.ok', { step, status, sessionId, eventCount: payloads.length })
-  } finally {
-    const cleanup = await requestJson(
-      `${baseUrl}/api/v1/agent/sessions/${encodeURIComponent(sessionId)}`,
-      { method: 'DELETE', headers: { cookie, 'x-boring-workspace-id': workspaceId } },
+    log('info', 'smoke.step.ok', {
       step,
-    ).catch((error) => ({ status: 0, json: String(error), headers: new Headers() }))
+      status,
+      sessionId,
+      eventCount: payloads.length,
+      assistantText,
+    })
+  } finally {
+    const cleanup = await tryDeleteAgentSession(baseUrl, cookie, workspaceId, sessionId)
     if ((cleanup.status < 200 || cleanup.status >= 300) && cleanup.status !== 404) {
       log('warn', 'smoke.agent.chat.cleanup_failed', {
         step,
         sessionId,
         status: cleanup.status,
-        detail: cleanup.json,
+        detail: cleanup.detail,
       })
     }
   }
@@ -721,6 +800,9 @@ async function main(): Promise<void> {
     const signedIn = await stepSignin(baseUrl, signup.email, password)
     await stepListWorkspaces(baseUrl, signedIn.cookie, workspace.id)
     await stepSignout(baseUrl, signedIn.cookie)
+    if (signedIn.cookie !== workspaceCookie) {
+      await stepSignout(baseUrl, workspaceCookie)
+    }
   } else {
     await stepSignout(baseUrl, workspaceCookie)
   }
