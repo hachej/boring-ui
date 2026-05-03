@@ -579,9 +579,9 @@ function extractAssistantText(payloads: string[]): string {
     try {
       collectAssistantTextFromPayload(JSON.parse(payload), chunks)
     } catch {
-      // Some stream encodings use raw text-ish payloads. Treat only those raw
-      // payloads as assistant text; metadata stays ignored by the JSON path.
-      chunks.push(payload)
+      // Some stream encodings may use raw text payloads. Accept only the exact
+      // smoke target here so non-JSON error/metadata payloads cannot false-pass.
+      if (payload.trim().toLowerCase() === 'ok') chunks.push(payload)
     }
   }
   return chunks.join('')
