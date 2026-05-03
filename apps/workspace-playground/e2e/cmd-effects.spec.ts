@@ -7,9 +7,9 @@ import { expect, test } from "@playwright/test"
  * Those target the dockview store, so triggering them from the
  * centered chat route produced no visible effect.
  *
- * Fix surfaced shell-specific commands (Toggle Sessions Drawer,
- * Toggle Workbench, New Chat) in the ⌘K palette. These tests check
- * that selecting them actually toggles the corresponding pane.
+ * Fix surfaced shell-specific commands (Open/Close Session History,
+ * Open/Close Workbench, New Chat) in the ⌘K palette. These tests
+ * check that selecting them actually changes the corresponding pane.
  */
 
 const STORAGE_KEY = "boring-ui-v2:layout:playground"
