@@ -1,6 +1,24 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { Badge, Button, Input, Separator, Textarea, cn } from './index'
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  Input,
+  Kbd,
+  Pane,
+  PaneBody,
+  PaneHeader,
+  PaneTitle,
+  Separator,
+  Spinner,
+  StatusBadge,
+  Textarea,
+  TooltipProvider,
+  cn,
+} from './index'
 
 describe('@boring/ui primitives', () => {
   it('merges Tailwind classes predictably', () => {
@@ -15,6 +33,14 @@ describe('@boring/ui primitives', () => {
         <Input aria-label="Name" />
         <Textarea aria-label="Message" />
         <Separator />
+        <TooltipProvider delayDuration={100}><span>Tip host</span></TooltipProvider>
+        <IconButton aria-label="Icon action">I</IconButton>
+        <Kbd>⌘K</Kbd>
+        <Spinner />
+        <EmptyState title="Empty" description="Nothing here" />
+        <ErrorState title="Error" description="Broken" />
+        <Pane><PaneHeader><PaneTitle>Pane</PaneTitle></PaneHeader><PaneBody>Body</PaneBody></Pane>
+        <StatusBadge tone="success">Ready</StatusBadge>
       </div>,
     )
 
@@ -25,5 +51,11 @@ describe('@boring/ui primitives', () => {
     expect(html).toContain('data-slot="input"')
     expect(html).toContain('data-slot="textarea"')
     expect(html).toContain('data-slot="separator"')
+    expect(html).toContain('data-slot="kbd"')
+    expect(html).toContain('data-slot="spinner"')
+    expect(html).toContain('data-slot="empty-state"')
+    expect(html).toContain('data-slot="error-state"')
+    expect(html).toContain('data-slot="pane"')
+    expect(html).toContain('data-slot="status-badge"')
   })
 })

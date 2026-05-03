@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
+import { IconButton, Kbd } from "@boring/ui"
 import { cn } from "../lib/utils"
 
 export interface TopBarProps {
@@ -77,25 +78,21 @@ export function TopBar({
       >
         <Search className="h-3.5 w-3.5 shrink-0 opacity-70" strokeWidth={1.75} />
         <span className="font-normal tracking-tight">Search</span>
-        <kbd className="ml-1 font-mono text-[10px] tracking-tight text-muted-foreground/50 group-hover:text-muted-foreground">⌘K</kbd>
+        <Kbd className="ml-1 border-0 bg-transparent p-0 text-[10px] shadow-none group-hover:text-muted-foreground">⌘K</Kbd>
       </button>
 
       <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
         {onNewChat && (
-          <button
+          <IconButton
             type="button"
+            variant="ghost"
+            size="icon-sm"
             onClick={onNewChat}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-md",
-              "text-muted-foreground transition-colors",
-              "hover:bg-foreground/5 hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            )}
             aria-label="New chat"
             title="New chat"
           >
             <Plus className="h-4 w-4" />
-          </button>
+          </IconButton>
         )}
         {right}
       </div>

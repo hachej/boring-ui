@@ -8,9 +8,23 @@
 @source "./**/*.{ts,tsx}";
 @source "../../ui/src/badge.tsx";
 @source "../../ui/src/button.tsx";
+@source "../../ui/src/command.tsx";
+@source "../../ui/src/dialog.tsx";
+@source "../../ui/src/dropdown-menu.tsx";
 @source "../../ui/src/input.tsx";
+@source "../../ui/src/empty-state.tsx";
+@source "../../ui/src/error-state.tsx";
+@source "../../ui/src/field.tsx";
+@source "../../ui/src/icon-button.tsx";
+@source "../../ui/src/kbd.tsx";
+@source "../../ui/src/pane.tsx";
+@source "../../ui/src/spinner.tsx";
+@source "../../ui/src/status-badge.tsx";
+@source "../../ui/src/select.tsx";
 @source "../../ui/src/separator.tsx";
+@source "../../ui/src/tabs.tsx";
 @source "../../ui/src/textarea.tsx";
+@source "../../ui/src/tooltip.tsx";
 
 @custom-variant dark (&:is(.dark *));
 

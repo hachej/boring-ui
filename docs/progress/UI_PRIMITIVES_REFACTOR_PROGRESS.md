@@ -18,34 +18,34 @@ Goal: centralize generic shadcn-style primitives in `@boring/ui`, then consume t
 - [x] Input
 - [x] Textarea
 - [x] Separator
-- [ ] Tooltip
-- [ ] Dialog
-- [ ] DropdownMenu
-- [ ] Select
-- [ ] Command
-- [ ] Tabs
+- [x] Tooltip
+- [x] Dialog
+- [x] DropdownMenu
+- [x] Select
+- [x] Command
+- [x] Tabs
 
 ### Add shared atoms
 
-- [ ] IconButton
-- [ ] Kbd
-- [ ] Spinner
-- [ ] EmptyState
-- [ ] ErrorState
-- [ ] Panel primitives (`Pane`, `PaneHeader`, `PaneTitle`, `PaneBody`, `PaneFooter`, `PaneToolbar`)
-- [ ] Form/field primitives
-- [ ] StatusBadge
+- [x] IconButton
+- [x] Kbd
+- [x] Spinner
+- [x] EmptyState
+- [x] ErrorState
+- [x] Panel primitives (`Pane`, `PaneHeader`, `PaneTitle`, `PaneBody`, `PaneFooter`, `PaneToolbar`)
+- [x] Form/field primitives
+- [x] StatusBadge
 
 ### Consume primitives / reduce bespoke UI
 
-- [ ] Core `AppErrorBoundary`
-- [ ] Workspace `ConflictBanner`
-- [ ] Workspace `EmptyPane`
-- [ ] Workspace `PanelErrorBoundary`
-- [ ] Workspace `TopBar`
+- [x] Core `AppErrorBoundary`
+- [x] Workspace `ConflictBanner`
+- [x] Workspace `EmptyPane`
+- [x] Workspace `PanelErrorBoundary`
+- [x] Workspace `TopBar`
 - [ ] Workspace `FileTreeView` context menu
 - [ ] Workspace `WorkbenchLeftPane` tabs/search controls
-- [ ] Agent `ModelPicker`
+- [x] Agent `ModelPicker`
 - [ ] Agent `DebugDrawer`
 - [ ] Agent bare primitives cleanup
 - [ ] Agent `ChatPanel` subcomponent extraction
@@ -53,3 +53,4 @@ Goal: centralize generic shadcn-style primitives in `@boring/ui`, then consume t
 ## Validation log
 
 - 2026-05-03: baseline `@boring/ui` smoke tests, agent/workspace builds/typechecks passed before this follow-up.
+- 2026-05-03: moved Tooltip/Dialog/DropdownMenu/Select/Command/Tabs to `@boring/ui`; added shared atoms and migrated first core/workspace/agent consumers.

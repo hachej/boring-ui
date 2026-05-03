@@ -1,5 +1,6 @@
 "use client"
 
+import { Button } from "@boring/ui"
 import { FileConflictError } from "./data/fetchClient"
 
 export interface ConflictBannerProps {
@@ -26,20 +27,17 @@ export function ConflictBanner({ conflict, onReload, onOverwrite }: ConflictBann
         will be lost if you reload, or will overwrite the latest version on
         disk if you save.
       </span>
-      <button
-        type="button"
-        onClick={() => void onReload()}
-        className="rounded-sm border border-accent/50 bg-[color:var(--accent-soft)] px-2 py-0.5 text-xs text-foreground hover:bg-accent/15"
-      >
+      <Button type="button" variant="outline" size="xs" onClick={() => void onReload()}>
         Reload
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        variant="destructive"
+        size="xs"
         onClick={() => void onOverwrite()}
-        className="rounded-sm border border-destructive/50 bg-destructive/15 px-2 py-0.5 text-xs text-destructive hover:bg-destructive/25"
       >
         Overwrite
-      </button>
+      </Button>
       {/* The path is in the error for logging — show it on hover so the
           banner stays compact in narrow panes. */}
       <span className="sr-only">{conflict.path}</span>

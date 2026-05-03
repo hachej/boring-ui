@@ -13,11 +13,14 @@ import "@boring/agent/front/styles.css"
 
 Current primitives:
 
-- `Button`, `buttonVariants`
-- `Badge`, `badgeVariants`
-- `Input`
-- `Textarea`
-- `Separator`
+- `Button`, `buttonVariants`, `IconButton`
+- `Badge`, `badgeVariants`, `StatusBadge`
+- `Input`, `Textarea`
+- `Dialog`, `DropdownMenu`, `Select`, `Tooltip`, `Command`, `Tabs`
+- `Separator`, `Kbd`, `Spinner`
+- `EmptyState`, `ErrorState`
+- `Pane`, `PaneHeader`, `PaneTitle`, `PaneDescription`, `PaneBody`, `PaneFooter`, `PaneToolbar`
+- `Field`, `FieldLabel`, `FieldDescription`, `FieldError`
 - `cn`
 
 Keep this package low-level: no workspace, agent, auth, routing, persistence, or server imports.
