@@ -17,7 +17,11 @@
 @import "tailwindcss/theme.css" layer(theme) source(none);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @source "../**/*.{ts,tsx}";
-@source "../../../../ui/src/**/*.{ts,tsx}";
+@source "../../../../ui/src/badge.tsx";
+@source "../../../../ui/src/button.tsx";
+@source "../../../../ui/src/input.tsx";
+@source "../../../../ui/src/separator.tsx";
+@source "../../../../ui/src/textarea.tsx";
 
 @custom-variant dark (&:is(.dark *));
 
