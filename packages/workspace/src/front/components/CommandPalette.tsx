@@ -18,6 +18,7 @@ import {
   CommandList,
   Button,
   CommandShortcut,
+  Kbd,
 } from "@boring/ui"
 import {
   Dialog,
@@ -546,14 +547,6 @@ function CatalogRowLabel({ row }: { row: ExplorerRow }) {
         <span className="ml-auto shrink-0 text-xs text-muted-foreground/70">{row.meta}</span>
       ) : null}
     </span>
-  )
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/60 bg-background px-1 font-mono text-[10px] text-muted-foreground">
-      {children}
-    </kbd>
   )
 }
 

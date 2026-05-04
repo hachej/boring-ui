@@ -1,7 +1,7 @@
 import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, XIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { Button, EmptyState, Input, Spinner } from "@boring/ui"
+import { Button, Chip as UiChip, ChipButton, EmptyState, Input, Spinner, Toolbar as UiToolbar } from "@boring/ui"
 import { Popover, PopoverTrigger, PopoverContent } from "@boring/ui"
 import { useExplorerState } from "./useExplorerState"
 import type {
@@ -180,7 +180,7 @@ function Toolbar({
   total,
 }: ToolbarProps) {
   return (
-    <div className="flex items-center gap-1.5 border-b border-border/60 px-2 py-1.5">
+    <UiToolbar className="border-b border-border/60 px-2 py-1.5">
       {searchable ? (
         <Input
           aria-label="Search"
@@ -229,7 +229,7 @@ function Toolbar({
           </PopoverContent>
         </Popover>
       ) : null}
-    </div>
+    </UiToolbar>
   )
 }
 
@@ -263,24 +263,18 @@ function FacetSection({
           const active = selected.includes(v.value)
           const label = config.formatValue ? config.formatValue(v.value) : v.value
           return (
-            <Button
+            <ChipButton
               key={v.value}
               type="button"
-              variant="outline"
-              size="xs"
+              selected={active}
               onClick={() => onToggle(config.key, v.value)}
-              className={cn(
-                "h-auto gap-1 rounded-sm px-1.5 py-0.5 text-[11px]",
-                active
-                  ? "border-foreground/20 bg-foreground/8 text-foreground"
-                  : "border-border bg-transparent text-muted-foreground hover:border-foreground/15 hover:text-foreground",
-              )}
+              className="gap-1 rounded-sm text-[11px]"
             >
               {label}
               <span className="font-mono text-[10px] text-muted-foreground/80">
                 {v.count.toLocaleString()}
               </span>
-            </Button>
+            </ChipButton>
           )
         })}
       </div>
@@ -455,7 +449,7 @@ function Row({
       )}
       title={row.title}
     >
-      {row.leading ? <Chip badge={row.leading} /> : null}
+      {row.leading ? <BadgeChip badge={row.leading} /> : null}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-[12.5px] font-medium leading-tight text-foreground">
           {row.title}
@@ -469,7 +463,7 @@ function Row({
       {row.trailing?.length ? (
         <span className="flex shrink-0 items-center gap-1">
           {row.trailing.map((b, i) => (
-            <Chip key={i} badge={b} />
+            <BadgeChip key={i} badge={b} />
           ))}
         </span>
       ) : null}
@@ -482,14 +476,14 @@ function Row({
   )
 }
 
-function Chip({ badge }: { badge: BadgeT }) {
+function BadgeChip({ badge }: { badge: BadgeT }) {
   return (
-    <span
+    <UiChip
       aria-hidden="true"
       title={badge.tooltip}
-      className="mt-[1px] inline-flex h-[16px] min-w-[24px] shrink-0 items-center justify-center rounded-[3px] bg-muted/60 px-1 font-mono text-[9.5px] font-medium uppercase tracking-[0.06em] text-muted-foreground group-hover:text-foreground"
+      className="mt-[1px] h-[16px] min-w-[24px] rounded-[3px] border-0 bg-muted/60 px-1 font-mono text-[9.5px] uppercase tracking-[0.06em] text-muted-foreground group-hover:text-foreground"
     >
       {badge.code}
-    </span>
+    </UiChip>
   )
 }

@@ -15,6 +15,7 @@ Generic visuals belong in `@boring/ui`. Product/domain behavior stays in the own
 - [x] `Chip`, `ChipButton`, `ChipRemove` for tags, overlays, filters, selected entities.
 - [x] `SegmentedControl`, `SegmentedControlItem` for compact mode/view toggles.
 - [x] Settings primitives: `SettingsPanel`, `SettingsNav`, `SettingsPageHeader`, `SettingsActionRow`, `DetailLine`.
+- [x] `Disclosure`, `ResizeHandle`, `Avatar`/`InitialsAvatar`, and real `Toaster`/`toast` store.
 - [x] Filesystem plugin uses shared `Skeleton` for tree loading.
 - [x] Macro plugin chart/deck controls use shared `Button`, `ChipButton`, `SegmentedControl`, `Spinner`, `EmptyState`.
 - [x] Core settings pages consume shared settings primitives for panels/nav/action/detail rows.
@@ -24,8 +25,8 @@ Generic visuals belong in `@boring/ui`. Product/domain behavior stays in the own
 - [x] `WorkspaceSwitcher`, members/invites/settings pages: generic controls already from `@boring/ui`.
 - [x] `UserSettingsPage` / `WorkspaceSettingsPage`: settings layout extracted to `@boring/ui` and consumed with aliases.
 - [x] Replace remaining local settings helper definitions after a safe cleanup pass.
+- [x] Core member/invite/runtime surfaces use shared feedback/status/avatar primitives.
 - [ ] Convert remaining auth form label/input/error clusters to `Field`, `FieldLabel`, `FieldError`.
-- [ ] Consider `Avatar` primitive for initials/user/workspace badges if repeated outside settings/member rows.
 
 Keep core-local:
 - auth/session providers and page routing.
@@ -36,10 +37,14 @@ Keep core-local:
 
 - [x] Generic empty/error/loading feedback routes through `EmptyState`, `ErrorState`, `Notice`, `Spinner`, `Skeleton` where practical.
 - [x] Filesystem plugin shell/tree feedback standardized.
-- [ ] Markdown toolbar should migrate its local toolbar wrappers to `Toolbar*`.
+- [x] Markdown toolbar migrated local toolbar wrappers to `Toolbar*`.
+- [x] `DockviewShell` loading fallback uses shared `Spinner`.
+- [x] `DataExplorer` uses shared `Toolbar`/`Chip`/`ChipButton` for generic chrome.
+- [x] `CommandPalette` uses shared `Kbd`.
+- [x] `ChatLayout` resize affordance uses shared `ResizeHandle`.
+- [x] Workspace toast implementation moved behind `@boring/ui` `Toaster`/`toast`.
 - [ ] Consider replacing local context menu styling in `FileTreeView` with `DropdownMenu`/menu primitive if keyboard semantics remain correct.
-- [ ] Consider `ResizeHandle` / splitter primitive for `ChatLayout` and `SurfaceShell` resize affordances.
-- [ ] Consider `Disclosure` wrapper over `Collapsible` for repeated header+chevron reveal patterns.
+- [ ] Apply `ResizeHandle` to `SurfaceShell` after focused resize regression testing.
 
 Keep workspace-local:
 - `WorkspaceProvider`, panel registry, bridge/commands, artifact routing.
@@ -65,8 +70,8 @@ Keep agent-local:
 
 ## Future primitives worth adding only when repeated again
 
-- [ ] `Avatar` / `IdentityBadge`.
-- [ ] `ResizeHandle` / `SplitPaneHandle`.
-- [ ] `Disclosure`.
+- [x] `Avatar` / `IdentityBadge` baseline.
+- [x] `ResizeHandle` / `SplitPaneHandle` baseline.
+- [x] `Disclosure`.
 - [ ] `ContextMenu` wrapper if file-tree/menu patterns spread.
 - [ ] `CodeSnippet` for plain snippets outside agent chat.

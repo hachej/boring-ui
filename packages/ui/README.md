@@ -18,7 +18,10 @@ Current primitives:
 - `Input`, `Textarea`, `InputGroup`
 - `Dialog`, `DropdownMenu`, `Select`, `Tooltip`, `Command`, `Tabs`, `HoverCard`, `Collapsible`, `ButtonGroup`
 - `Separator`, `Kbd`, `InlineCode`, `Spinner`, `Skeleton`
-- `EmptyState`, `ErrorState`, `Notice`
+- `EmptyState`, `ErrorState`, `Notice`, `Toaster`, `toast`
+- `Avatar`, `AvatarFallback`, `InitialsAvatar`
+- `Disclosure`, `DisclosureTrigger`, `DisclosureContent`, `DisclosureChevron`
+- `ResizeHandle`
 - `Toolbar`, `ToolbarGroup`, `ToolbarButton`, `ToolbarSeparator`
 - `Chip`, `ChipButton`, `ChipRemove`, `SegmentedControl`, `SegmentedControlItem`
 - `Pane`, `PaneHeader`, `PaneTitle`, `PaneDescription`, `PaneBody`, `PaneFooter`, `PaneToolbar`
@@ -34,7 +37,7 @@ Plugins should compose generic visuals from `@boring/ui` so host apps stay visua
 
 - actions: `Button`, `IconButton`, `ButtonGroup`, `Toolbar*`
 - forms/search: `Field`, `Label`, `Input`, `Textarea`, `Select`, `InputGroup`
-- feedback: `Notice`, `EmptyState`, `ErrorState`, `Spinner`, `Skeleton`, `StatusBadge`
+- feedback: `Notice`, `EmptyState`, `ErrorState`, `Spinner`, `Skeleton`, `StatusBadge`, `toast`/`Toaster`
 - compact metadata: `Chip`, `ChipButton`, `InlineCode`, `Kbd`
 - mode toggles: `SegmentedControl`, `SegmentedControlItem`, `Tabs`
 - surfaces: `Pane*`, `Card*`, `Settings*`, `ScrollArea`, `Popover`, `Dialog`

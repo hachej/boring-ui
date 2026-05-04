@@ -15,6 +15,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  StatusBadge,
 } from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
@@ -35,21 +36,10 @@ function getInviteStatus(invite: WorkspaceInvite): 'accepted' | 'expired' | 'pen
   return 'pending'
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-[color:var(--accent-soft)] text-foreground',
-  expired: 'bg-muted text-muted-foreground',
-  accepted: 'bg-[color:var(--success-soft)] text-success',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      data-testid={`status-${status}`}
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[status] ?? ''}`}
-    >
-      {status}
-    </span>
-  )
+const STATUS_TONES: Record<string, 'info' | 'neutral' | 'success'> = {
+  pending: 'info',
+  expired: 'neutral',
+  accepted: 'success',
 }
 
 export function InvitesPage() {
@@ -242,7 +232,7 @@ export function InvitesPage() {
                         <p className="text-sm font-medium">{invite.email}</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span>{invite.role}</span>
-                          <StatusBadge status={status} />
+                          <StatusBadge data-testid={`status-${status}`} tone={STATUS_TONES[status] ?? 'neutral'}>{status}</StatusBadge>
                           <span>
                             expires{' '}
                             {new Date(invite.expiresAt).toLocaleDateString()}

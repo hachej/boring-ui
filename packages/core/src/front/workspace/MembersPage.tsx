@@ -20,6 +20,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  InitialsAvatar,
+  Notice,
+  Spinner,
 } from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { useSession } from '../auth/AuthProvider.js'
@@ -125,19 +128,13 @@ export function MembersPage() {
           </CardHeader>
           <CardContent>
             {toast && (
-              <div
-                role="alert"
-                data-testid="toast"
-                className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                {toast}
-              </div>
+              <Notice role="alert" data-testid="toast" tone="error" className="mb-4" description={toast} />
             )}
             {membersQuery.isLoading && (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="size-3.5" />Loading…</p>
             )}
             {membersQuery.isError && (
-              <p className="text-sm text-destructive">Failed to load members.</p>
+              <Notice tone="error" description="Failed to load members." />
             )}
             {membersQuery.data && membersQuery.data.length > 0 && (
               <div className="divide-y" data-testid="members-list">
@@ -153,9 +150,7 @@ export function MembersPage() {
                       data-testid={`member-row-${member.userId}`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                          {(member.user.name?.[0] ?? member.user.email[0]).toUpperCase()}
-                        </div>
+                        <InitialsAvatar initials={(member.user.name?.[0] ?? member.user.email[0]).toUpperCase()} />
                         <div>
                           <p className="text-sm font-medium">
                             {member.user.name ?? member.user.email}

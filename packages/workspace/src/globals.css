@@ -44,6 +44,10 @@
 @source "../../ui/src/chip.tsx";
 @source "../../ui/src/segmented-control.tsx";
 @source "../../ui/src/settings.tsx";
+@source "../../ui/src/disclosure.tsx";
+@source "../../ui/src/resize-handle.tsx";
+@source "../../ui/src/avatar.tsx";
+@source "../../ui/src/toast.tsx";
 
 @custom-variant dark (&:is(.dark *));
 

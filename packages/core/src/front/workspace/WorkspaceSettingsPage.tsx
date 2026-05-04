@@ -15,6 +15,7 @@ import {
   SettingsActionRow as UiSettingsActionRow,
   SettingsNav as UiSettingsNav,
   SettingsPanel as UiSettingsPanel,
+  StatusBadge,
   Input,
   Label,
 } from '@boring/ui'
@@ -35,21 +36,10 @@ export interface WorkspaceSettingsPageProps {
   topBar?: ReactNode
 }
 
-const STATE_STYLES: Record<string, string> = {
-  pending: 'border-accent/35 bg-[color:var(--accent-soft)] text-foreground',
-  ready: 'border-success/35 bg-[color:var(--success-soft)] text-success',
-  error: 'border-destructive/40 bg-destructive/10 text-destructive',
-}
-
-function StateBadge({ state }: { state: string }) {
-  return (
-    <span
-      data-testid={`runtime-state-${state}`}
-      className={`inline-flex h-6 items-center rounded-md border px-2 text-[12px] font-medium ${STATE_STYLES[state] ?? 'border-border bg-muted/30 text-muted-foreground'}`}
-    >
-      {state}
-    </span>
-  )
+const STATE_TONES: Record<string, 'info' | 'success' | 'danger' | 'neutral'> = {
+  pending: 'info',
+  ready: 'success',
+  error: 'danger',
 }
 
 function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
@@ -362,7 +352,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
               <div className="space-y-3">
                 <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 rounded-md border border-border/50 bg-muted/10 px-3 py-2">
                   <span className="text-[13px] font-medium">State</span>
-                  <StateBadge state={runtime.state} />
+                  <StatusBadge data-testid={`runtime-state-${runtime.state}`} tone={STATE_TONES[runtime.state] ?? 'neutral'}>{runtime.state}</StatusBadge>
                 </div>
                 {runtime.state === 'ready' && runtime.volumePath && (
                   <div

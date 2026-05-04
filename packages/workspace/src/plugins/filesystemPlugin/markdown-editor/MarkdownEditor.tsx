@@ -41,7 +41,7 @@ import {
   AlignCenterIcon,
   AlignRightIcon,
 } from "lucide-react"
-import { IconButton, Input } from "@boring/ui"
+import { Input, Toolbar as UiToolbar, ToolbarButton as UiToolbarButton, ToolbarSeparator as UiToolbarSeparator } from "@boring/ui"
 import { cn } from "../../../front/lib/utils"
 
 const lowlight = createLowlight(common)
@@ -122,9 +122,8 @@ interface ToolbarButtonProps {
 
 function ToolbarButton({ onClick, active, disabled, title, children }: ToolbarButtonProps) {
   return (
-    <IconButton
+    <UiToolbarButton
       type="button"
-      variant="ghost"
       size="icon-xs"
       onClick={onClick}
       disabled={disabled}
@@ -136,12 +135,12 @@ function ToolbarButton({ onClick, active, disabled, title, children }: ToolbarBu
       )}
     >
       {children}
-    </IconButton>
+    </UiToolbarButton>
   )
 }
 
 function ToolbarSeparator() {
-  return <div aria-hidden="true" className="mx-2 h-3.5 w-px bg-border/50" />
+  return <UiToolbarSeparator className="mx-2 h-3.5" />
 }
 
 export function isSafeUrl(url: string): boolean {
@@ -242,7 +241,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
   }
 
   return (
-    <div className="flex items-center gap-0.5 overflow-x-auto border-b border-border/60 bg-background px-3 py-1.5 whitespace-nowrap [&::-webkit-scrollbar]:hidden" role="toolbar" aria-label="Formatting toolbar">
+    <UiToolbar className="border-b border-border/60 bg-background px-3 py-1.5" aria-label="Formatting toolbar">
       <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} active={state.bold} title="Bold">
         <BoldIcon className="h-4 w-4" />
       </ToolbarButton>
@@ -326,7 +325,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal rule">
         <MinusIcon className="h-4 w-4" />
       </ToolbarButton>
-    </div>
+    </UiToolbar>
   )
 }
 

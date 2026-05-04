@@ -3,8 +3,13 @@ import { describe, expect, it } from 'vitest'
 import {
   Badge,
   Button,
+  Avatar,
+  AvatarFallback,
   Chip,
   DetailLine,
+  Disclosure,
+  DisclosureContent,
+  DisclosureTrigger,
   EmptyState,
   ErrorState,
   IconButton,
@@ -16,6 +21,7 @@ import {
   PaneBody,
   PaneHeader,
   PaneTitle,
+  ResizeHandle,
   SegmentedControl,
   SegmentedControlItem,
   Separator,
@@ -59,6 +65,9 @@ describe('@boring/ui primitives', () => {
         <InlineCode>src/app.ts</InlineCode>
         <Chip>Filter</Chip>
         <SegmentedControl><SegmentedControlItem selected>Chart</SegmentedControlItem></SegmentedControl>
+        <Disclosure><DisclosureTrigger>Open</DisclosureTrigger><DisclosureContent>Content</DisclosureContent></Disclosure>
+        <ResizeHandle aria-label="Resize" />
+        <Avatar><AvatarFallback>AB</AvatarFallback></Avatar>
         <Toolbar><ToolbarGroup><ToolbarButton>Bold</ToolbarButton></ToolbarGroup><ToolbarSeparator /></Toolbar>
         <SettingsPanel id="settings" title="Settings"><DetailLine label="Name">Boring</DetailLine></SettingsPanel>
         <SettingsNav label="Settings" items={[{ href: '#settings', label: 'General', description: 'Basics' }]} />
@@ -86,6 +95,9 @@ describe('@boring/ui primitives', () => {
     expect(html).toContain('data-slot="inline-code"')
     expect(html).toContain('data-slot="chip"')
     expect(html).toContain('data-slot="segmented-control"')
+    expect(html).toContain('data-slot="disclosure-trigger"')
+    expect(html).toContain('data-slot="resize-handle"')
+    expect(html).toContain('data-slot="avatar"')
     expect(html).toContain('data-slot="toolbar"')
     expect(html).toContain('data-slot="settings-panel"')
     expect(html).toContain('data-slot="settings-nav"')

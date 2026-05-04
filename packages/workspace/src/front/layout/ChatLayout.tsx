@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
-import { IconButton } from "@boring/ui"
+import { IconButton, ResizeHandle as UiResizeHandle } from "@boring/ui"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, workspaceEvents } from "../events"
@@ -397,22 +397,20 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
   }, [])
 
   return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
+    <UiResizeHandle
       aria-label={ariaLabel}
-      onPointerDown={handlePointerDown}
+      orientation="vertical"
+      onResizeStart={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       className={cn(
-        "absolute top-0 bottom-0 z-20 w-1 cursor-col-resize bg-transparent",
+        "absolute top-0 bottom-0 z-20 bg-transparent",
         "transition-colors duration-200",
         "hover:bg-[var(--accent)] hover:[transition-delay:150ms]",
         "active:bg-[var(--accent)]",
         side === "drawer-right" ? "right-0" : "left-0",
       )}
-      style={{ touchAction: "none" }}
     />
   )
 }
