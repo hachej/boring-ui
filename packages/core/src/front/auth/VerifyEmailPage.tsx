@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from '@boring/workspace/ui-shadcn'
+import { Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from '@boring/ui'
 import { useSession, useSendVerificationEmail, useVerifyEmail } from './AuthProvider.js'
 import { routes } from '../utils.js'
 

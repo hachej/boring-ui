@@ -7,7 +7,7 @@
  * Keeping it 1:1 with upstream so the "Vercel template" look/feel lands
  * without local invention.
  */
-import { Badge } from "@/front/ui/badge";
+import { Badge } from "@boring/ui";
 import {
   Collapsible,
   CollapsibleContent,

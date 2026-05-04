@@ -17,8 +17,8 @@ import {
   DropdownMenuTrigger,
   Input,
   Label,
-} from '@boring/workspace/ui-shadcn'
-import * as WorkspaceUi from '@boring/workspace/ui-shadcn'
+  useToast,
+} from '@boring/ui'
 import { Check, ChevronsUpDown, LayoutGrid, Plus, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
@@ -55,11 +55,6 @@ export interface WorkspaceSwitcherProps {
 }
 
 function useToastCompat(): ToastApi {
-  const maybeUseToast = (WorkspaceUi as unknown as {
-    useToast?: () => ToastApi
-  }).useToast
-
-  const useToast = maybeUseToast ?? (() => ({ toast: () => {} }))
   return useToast()
 }
 

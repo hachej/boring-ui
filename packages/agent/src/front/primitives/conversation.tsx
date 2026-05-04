@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/front/ui/button";
+import { Button } from "@boring/ui";
 import { cn } from "@/front/lib";
 import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";

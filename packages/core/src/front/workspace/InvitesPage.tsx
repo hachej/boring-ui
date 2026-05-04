@@ -10,7 +10,7 @@ import {
   CardTitle,
   Input,
   Label,
-} from '@boring/workspace/ui-shadcn'
+} from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
 import type { WorkspaceInvite, MemberRole } from '../../shared/types.js'

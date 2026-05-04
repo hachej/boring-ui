@@ -1,8 +1,8 @@
 import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, XIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { Input } from "../ui/input"
-import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover"
+import { Input } from "@boring/ui"
+import { Popover, PopoverTrigger, PopoverContent } from "@boring/ui"
 import { useExplorerState } from "./useExplorerState"
 import type {
   Badge as BadgeT,

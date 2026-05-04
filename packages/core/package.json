@@ -47,11 +47,11 @@
     "drizzle"
   ],
   "scripts": {
-    "build": "tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
+    "build": "pnpm --filter @boring/ui build && tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
     "dev": "tsup --watch",
     "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm --filter @boring/ui build && tsc --noEmit",
     "lint": "pnpm run typecheck",
     "check:bundle-size": "tsx ./scripts/check-bundle-size.ts",
     "clean": "rm -rf dist .tsbuildinfo",

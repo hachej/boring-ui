@@ -25,7 +25,6 @@ export function createBoringAppViteAliases({
     { find: '@boring/agent/front/styles.css', replacement: path.resolve(agentSrc, 'front/styles/globals.css') },
     { find: /^@boring\/agent\/front$/, replacement: path.resolve(agentSrc, 'front/index.ts') },
     { find: /^@boring\/agent$/, replacement: path.resolve(agentSrc, 'front/index.ts') },
-    { find: '@boring/workspace/ui-shadcn', replacement: path.resolve(workspaceSrc, 'front/components/ui/index.ts') },
     { find: '@boring/workspace/globals.css', replacement: path.resolve(workspaceSrc, 'globals.css') },
     { find: /^@boring\/workspace\/shared$/, replacement: path.resolve(workspaceSrc, 'shared/index.ts') },
     { find: /^@boring\/workspace\/app\/front$/, replacement: path.resolve(workspaceSrc, 'app/front/index.ts') },

@@ -12,7 +12,7 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "../components/ui"
+} from "@boring/ui"
 import {
   useResponsiveSidebarCollapse,
   useViewportBreakpoint,

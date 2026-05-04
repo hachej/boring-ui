@@ -17,14 +17,14 @@ import {
   CommandItem,
   CommandList,
   CommandShortcut,
-} from "./ui/command"
+} from "@boring/ui"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "./ui/dialog"
+} from "@boring/ui"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"

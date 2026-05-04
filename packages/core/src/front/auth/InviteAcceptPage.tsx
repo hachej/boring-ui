@@ -9,7 +9,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@boring/workspace/ui-shadcn'
+} from '@boring/ui'
 import { useSession } from './AuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail, routes } from '../utils.js'
 import { WORKSPACES_QUERY_KEY } from '../WorkspaceAuthProvider.js'

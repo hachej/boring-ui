@@ -15,7 +15,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@boring/workspace/ui-shadcn'
+} from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { useSession } from '../auth/AuthProvider.js'
 import { useWorkspaceMembers } from '../hooks/useWorkspaceMembers.js'

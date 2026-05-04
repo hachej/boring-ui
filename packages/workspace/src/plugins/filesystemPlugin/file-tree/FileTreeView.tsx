@@ -40,7 +40,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Input,
-} from "../../../front/components/ui"
+} from "@boring/ui"
 import { cn } from "../../../front/lib/utils"
 import { toast } from "../../../front/toast"
 import { events, userMeta } from "../../../front/events"

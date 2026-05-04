@@ -67,7 +67,7 @@ import { Route } from 'react-router-dom'
 | Auth | **better-auth** with email/password + email verification + password reset + magic links. Drizzle adapter against the same Postgres. `AuthProvider` interface kept as a partial swap seam. **GitHub OAuth deferred to v1.x** (bundled with agent's GitHub App install — both ship together so users do "Connect GitHub" once, not twice). |
 | Tenancy | Port v1: **workspaces + members + invites** with owner/editor/viewer roles. Matches agent's `workspaceId` per instance. |
 | Frontend shell | `<BoringApp>` mounts **react-router v6** with a route slot. Default routes: `/auth/signin`, `/auth/signup`, `/auth/callback/github`, `/auth/verify-email`, `/auth/forgot-password`, `/auth/reset-password`, `/me`. |
-| UI primitives | Stay in **`@boring/workspace/ui-shadcn`**. Core depends on workspace for UI. |
+| UI primitives | Stay in **`@boring/ui`**. Core depends on workspace for UI. |
 | Full-app wrapping | Server factory + frontend shell + config bridge + user/workspace management + auth — all four in-scope for v1. |
 
 ## Dependency position
@@ -87,7 +87,7 @@ v1 had `core ← workspace ← agent`. v2 fully inverts the chain:
 **Rationale for each edge:**
 
 - **workspace → agent**: workspace's `ChatPanel` pane consumes `@boring/agent`'s `<ChatPanel />` React component + `useAgentChat()` hook. Agent stays a leaf with no knowledge of workspace or core.
-- **core → workspace**: core imports shadcn primitives from `@boring/workspace/ui-shadcn` for its sign-in page, user menu, workspace switcher.
+- **core → workspace**: core imports shadcn primitives from `@boring/ui` for its sign-in page, user menu, workspace switcher.
 
 **Agent's two integration shapes (both first-class):**
 
@@ -121,7 +121,7 @@ A new app depending on `@boring/core` boots with Postgres + Drizzle, better-auth
 pnpm add @boring/core @boring/workspace fastify react react-dom react-router-dom
 ```
 
-(`@boring/workspace` is a peer dep because core imports shadcn primitives from `@boring/workspace/ui-shadcn`.)
+(`@boring/workspace` is a peer dep because core imports shadcn primitives from `@boring/ui`.)
 
 ### 2. Environment
 
@@ -977,7 +977,7 @@ function Header() {
 
 ### Sign-in / sign-up / reset / verify pages
 
-Core ships `<SignInPage>`, `<SignUpPage>`, `<ForgotPasswordPage>`, `<ResetPasswordPage>`, `<VerifyEmailPage>` — styled with `@boring/workspace/ui-shadcn`. Override individually via `<BoringApp authPages={...}>`:
+Core ships `<SignInPage>`, `<SignUpPage>`, `<ForgotPasswordPage>`, `<ResetPasswordPage>`, `<VerifyEmailPage>` — styled with `@boring/ui`. Override individually via `<BoringApp authPages={...}>`:
 
 ```ts
 export interface BoringAppAuthPagesOverride {
@@ -1404,7 +1404,7 @@ Easy to break accidentally; pinned here.
 |---|---|---|
 | Package split | `@boring/core` (OSS) + `@boring/cloud` (private) | **One** `@boring/core` (combined) |
 | Dependency order | `core ← workspace ← agent ← cloud` | `agent (leaf) ← workspace ← core`. Agent standalone has zero core dep; plugin path depends on core. |
-| UI primitives | Vendored in `@boring/core/front/design-system` | Live in `@boring/workspace/ui-shadcn`; core imports from there |
+| UI primitives | Vendored in `@boring/core/front/design-system` | Live in `@boring/ui`; core imports from there |
 | Auth | Hand-rolled `AuthProvider` + `LocalAuthProvider` / `NeonAuthProvider` | **better-auth** (email/pw + GitHub OAuth + verification + reset + magic links). `AuthProvider` interface kept as partial swap seam |
 | Control plane branching | `controlPlaneProvider: 'local' \| 'neon'` in config + runtime branching | **Removed** — Postgres-only; local = in-memory stores |
 | DB | Drizzle + Postgres (Neon), schema in `@boring/cloud/db` | Drizzle + Postgres, schema in `@boring/core/server/db` |
@@ -1425,7 +1425,7 @@ Easy to break accidentally; pinned here.
 
 | v1 | v2 |
 |---|---|
-| `@boring/core/front/design-system/ui/*` | `@boring/workspace/ui-shadcn/*` |
+| `@boring/core/front/design-system/ui/*` | `@boring/ui/*` |
 | `@boring/core/front/UserIdentityContext` | `@boring/core/front/UserIdentityProvider` (+ `useUser()`) |
 | `@boring/cloud/front/AuthPage` | `@boring/core/front/SignInPage` + `SignUpPage` + reset/verify pages |
 | `@boring/cloud/server/db/*` | `@boring/core/server/db/*` |
@@ -1443,7 +1443,7 @@ Easy to break accidentally; pinned here.
 ### Migration steps for a v1 app
 
 1. Replace `@boring/core` + `@boring/cloud` with `@boring/core`.
-2. Update imports (`@boring/cloud/server` → `@boring/core/server`; `@boring/core/front/design-system/ui` → `@boring/workspace/ui-shadcn`).
+2. Update imports (`@boring/cloud/server` → `@boring/core/server`; `@boring/core/front/design-system/ui` → `@boring/ui`).
 3. Delete hand-wired Fastify registration (`authHook`, `requestIdHook`, `secretRedaction`, `registerCoreRoutes`, `registerAuthRoutes`, `registerCollaborationRoutes`). Replace with `const app = await createCoreApp(config)`.
 4. Delete the frontend provider pyramid. Replace with `<BoringApp>{routes}</BoringApp>`.
 5. Remove `controlPlaneProvider` branching.
@@ -1496,7 +1496,7 @@ Done when:
 - `packages/core/package.json` declares all 5 exports (`./server`, `./server/db`, `./front`, `./shared`, `./theme.css`) with types+import maps.
 - Empty barrel files at each entry point; `pnpm --dir packages/core typecheck` green.
 - `pnpm --dir packages/core test` green (empty suite, but vitest wired).
-- `@boring/workspace` listed as a workspace dep; `import { Button } from '@boring/workspace/ui-shadcn'` resolves without error from `packages/core/src/front/_smoke.ts`.
+- `@boring/workspace` listed as a workspace dep; `import { Button } from '@boring/ui'` resolves without error from `packages/core/src/front/_smoke.ts`.
 - CI workflow runs typecheck + test on PRs.
 
 **M1 — DB + schema (days 2-3).**

@@ -13,7 +13,7 @@ import {
   Button,
   Input,
   Label,
-} from '@boring/workspace/ui-shadcn'
+} from '@boring/ui'
 import {
   AlertCircle,
   HardDrive,

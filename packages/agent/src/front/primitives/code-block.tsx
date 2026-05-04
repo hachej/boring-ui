@@ -1,13 +1,13 @@
 "use client";
 
-import { Button } from "@/front/ui/button";
+import { Button } from "@boring/ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/front/ui/select";
+} from "@boring/ui";
 import { cn } from "@/front/lib";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";

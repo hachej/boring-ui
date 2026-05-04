@@ -19,10 +19,6 @@
       "types": "./dist/testing-e2e.d.ts",
       "import": "./dist/testing-e2e.js"
     },
-    "./ui-shadcn": {
-      "types": "./dist/ui-shadcn.d.ts",
-      "import": "./dist/ui-shadcn.js"
-    },
     "./shared": {
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"

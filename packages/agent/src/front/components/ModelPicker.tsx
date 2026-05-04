@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@boring/ui'
 
 export const MODEL_IDS = ['sonnet', 'haiku', 'opus'] as const
 

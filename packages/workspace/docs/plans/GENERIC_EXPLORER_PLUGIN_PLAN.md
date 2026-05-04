@@ -364,7 +364,7 @@ filters.
 | `front/components/PanelErrorBoundary.tsx`     | Keep generic                                                                                      | Generic plugin/panel safety boundary.                                                                                                                |
 | `front/components/WorkspaceLoadingState.tsx`  | Keep generic                                                                                      | Generic shell loading UI.                                                                                                                            |
 | `front/components/SessionList.tsx`            | Re-evaluate after checking package-root consumers and whether it is only used by `SessionBrowser` | If it is just session chrome, consolidate under `front/chrome/session-list`; if consumers need a standalone primitive, keep a re-exported primitive. |
-| `front/components/ui/*`                       | Keep generic                                                                                      | Design primitives only.                                                                                                                              |
+| `@boring/ui/*`                       | Keep generic                                                                                      | Design primitives only.                                                                                                                              |
 | `front/chrome/artifact-surface/*`             | Keep in front chrome                                                                              | Core workspace surface host, not plugin domain.                                                                                                      |
 | `front/chrome/chat/*`                         | Keep in front chrome                                                                              | Chat host injection point, not agent/plugin domain.                                                                                                  |
 | `front/chrome/empty-pane/*`                   | Keep or move to core chrome                                                                       | Generic shell fallback. Not a domain plugin.                                                                                                         |
@@ -436,7 +436,7 @@ filesystem tree to explorer tree` before the legacy data-catalog removal bead.
 
 ## Non-goals
 
-- Do not make every visual component a plugin. `front/components/ui`, layout,
+- Do not make every visual component a plugin. `@boring/ui`, layout,
   chrome hosts, registries, bridge, and provider stay front-owned.
 - Do not force filesystem to depend on data catalog.
 - Do not rewrite file tree in the first bead.

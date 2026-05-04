@@ -248,7 +248,6 @@ export {
 } from "./front/bridge"
 
 // shadcn UI primitives
-export * from "./front/components/ui"
 
 // Error handling
 export { PanelErrorBoundary } from "./front/components/PanelErrorBoundary"

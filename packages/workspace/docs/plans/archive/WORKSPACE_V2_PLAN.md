@@ -543,7 +543,7 @@ The agent should feel like a co-user — seeing the same files, same open panels
 
 1.2. **shadcn UI vendoring**
    - Vendor core components: `Button`, `Tabs`, `Tooltip`, `DropdownMenu`, `Sheet`, `ResizablePanel`, `ScrollArea`, `Input`, `Badge`, `Separator`
-   - All under `src/components/ui/`
+   - All under `@boring/ui/`
    - Tailwind-only, no custom CSS classes
 
 1.3. **Dockview integration layer**
@@ -1607,7 +1607,7 @@ function App() {
 
 ### C. @boring/core dependency contract — ARCHIVED 2026-04-24
 
-**This section is archival.** It was written when the planned v2 dep graph was `workspace → core`. The actual v2 dep graph is inverted: `agent (leaf) ← workspace ← core`. Workspace does NOT import from core; core imports from workspace (specifically `@boring/workspace/ui-shadcn`). Canonical graph: `packages/core/docs/CORE.md` §Dependency position.
+**This section is archival.** It was written when the planned v2 dep graph was `workspace → core`. The actual v2 dep graph is inverted: `agent (leaf) ← workspace ← core`. Workspace does NOT import from core; core imports from workspace (specifically `@boring/ui`). Canonical graph: `packages/core/docs/CORE.md` §Dependency position.
 
 The list below was intended to constrain what workspace could pull from core. It's preserved only so that if we ever invert the graph again, we have a record of what v1 workspace actually used. Any mention of `@boring/core` as a workspace dep below is historical, not a contract.
 

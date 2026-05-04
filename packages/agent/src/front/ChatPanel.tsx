@@ -61,7 +61,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select'
+} from '@boring/ui'
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
@@ -1202,6 +1202,9 @@ function ThinkingSelect({
         aria-label="Thinking level"
         data-testid="thinking-select"
       >
+        {THINKING_LEVELS.map((level) => (
+          <span key={level} data-value={level} hidden />
+        ))}
         <BrainIcon className="h-3.5 w-3.5" />
       </SelectTrigger>
       <SelectContent className="w-auto min-w-0 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl">
