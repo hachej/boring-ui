@@ -61,6 +61,8 @@
 @source "../../../../ui/src/toast.tsx";
 @source "../../../../ui/src/loading-state.tsx";
 @source "../../../../ui/src/list.tsx";
+@source "../../../../ui/src/detail-list.tsx";
+@source "../../../../ui/src/floating-panel.tsx";
 
 @custom-variant dark (&:is(.dark *));
 

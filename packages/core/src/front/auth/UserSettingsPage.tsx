@@ -14,6 +14,7 @@ import {
   AlertDialogTrigger,
   Button,
   DetailLine as UiDetailLine,
+  DetailList,
   Input,
   Label,
   Notice,
@@ -256,7 +257,7 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
             title="Profile"
             description="The identity shown inside this app."
           >
-            <dl className="divide-y divide-border/50 rounded-md border border-border/50 bg-muted/10">
+            <DetailList>
               <UiDetailLine
                 icon={<Mail className="h-3.5 w-3.5" aria-hidden="true" />}
                 label="Email"
@@ -281,7 +282,7 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
               >
                 <p>{user.emailVerified ? 'Verified' : 'Not verified'}</p>
               </UiDetailLine>
-            </dl>
+            </DetailList>
           </UiSettingsPanel>
 
           <form onSubmit={handleSubmit(onChangePassword)} noValidate>

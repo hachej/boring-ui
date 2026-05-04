@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Disclosure, DisclosureContent, DisclosureTrigger, IconButton } from "@boring/ui"
+import { Disclosure, DisclosureContent, DisclosureTrigger, EmptyState, FloatingPanel, FloatingPanelBody, FloatingPanelHeader, IconButton } from "@boring/ui"
 import { useActivePanels } from "./useActivePanels"
 import { useCommands } from "./useCommands"
 import { useCatalogs } from "./useCatalogs"
@@ -40,11 +40,11 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
   if (!open) return null
 
   return (
-    <div
-      className="fixed bottom-2 right-2 z-[99999] max-h-[50vh] w-[360px] overflow-auto rounded-lg border border-border bg-background font-mono text-xs text-foreground shadow-2xl"
+    <FloatingPanel
+      className="fixed bottom-2 right-2 z-[99999] max-h-[50vh] w-[360px] overflow-auto font-mono text-xs"
       data-testid="plugin-inspector"
     >
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+      <FloatingPanelHeader className="px-1 py-0 pb-2">
         <strong className="font-semibold">Plugin Inspector ({plugins.length})</strong>
         <IconButton
           type="button"
@@ -56,8 +56,8 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
         >
           ✕
         </IconButton>
-      </div>
-      <div className="py-1">
+      </FloatingPanelHeader>
+      <FloatingPanelBody>
         {plugins.map((p) => {
           const myPanels = panels.filter((x) => x.pluginId === p.id)
           const myCommands = commands.filter((x) => x.pluginId === p.id)
@@ -108,9 +108,9 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
           )
         })}
         {plugins.length === 0 && (
-          <div className="px-3 py-2 text-muted-foreground">No plugins registered.</div>
+          <EmptyState className="min-h-0 border-0 px-3 py-2" description="No plugins registered." />
         )}
-      </div>
-    </div>
+      </FloatingPanelBody>
+    </FloatingPanel>
   )
 }

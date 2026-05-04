@@ -155,14 +155,10 @@ export function InvitesPage() {
           <form onSubmit={handleSubmit} data-testid="invite-form">
             <CardContent className="space-y-4">
               {formError && (
-                <div role="alert" className="text-sm text-destructive">
-                  {formError}
-                </div>
+                <Notice role="alert" tone="error" description={formError} />
               )}
               {successMessage && (
-                <div role="status" className="text-sm text-success">
-                  {successMessage}
-                </div>
+                <Notice role="status" tone="success" description={successMessage} />
               )}
               <div className="space-y-2">
                 <Label htmlFor="invite-email">Email address</Label>

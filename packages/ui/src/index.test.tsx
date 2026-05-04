@@ -7,6 +7,7 @@ import {
   AvatarFallback,
   Chip,
   DetailLine,
+  DetailList,
   Disclosure,
   DisclosureContent,
   DisclosureTrigger,
@@ -14,6 +15,9 @@ import {
   ErrorState,
   IconButton,
   Input,
+  FloatingPanel,
+  FloatingPanelBody,
+  FloatingPanelHeader,
   InlineCode,
   Kbd,
   List,
@@ -75,7 +79,8 @@ describe('@boring/ui primitives', () => {
         <ResizeHandle aria-label="Resize" />
         <Avatar><AvatarFallback>AB</AvatarFallback></Avatar>
         <Toolbar><ToolbarGroup><ToolbarButton>Bold</ToolbarButton></ToolbarGroup><ToolbarSeparator /></Toolbar>
-        <SettingsPanel id="settings" title="Settings"><DetailLine label="Name">Boring</DetailLine></SettingsPanel>
+        <SettingsPanel id="settings" title="Settings"><DetailList><DetailLine label="Name">Boring</DetailLine></DetailList></SettingsPanel>
+        <FloatingPanel><FloatingPanelHeader>Panel</FloatingPanelHeader><FloatingPanelBody>Body</FloatingPanelBody></FloatingPanel>
         <SettingsNav label="Settings" items={[{ href: '#settings', label: 'General', description: 'Basics' }]} />
         <SettingsPageHeader eyebrow="Account" title="Settings" description="Manage settings" />
         <SettingsActionRow title="Action" description="Do a thing" action={<Button size="xs">Run</Button>} />
@@ -108,6 +113,8 @@ describe('@boring/ui primitives', () => {
     expect(html).toContain('data-slot="avatar"')
     expect(html).toContain('data-slot="toolbar"')
     expect(html).toContain('data-slot="settings-panel"')
+    expect(html).toContain('data-slot="detail-list"')
+    expect(html).toContain('data-slot="floating-panel"')
     expect(html).toContain('data-slot="settings-nav"')
     expect(html).toContain('data-slot="settings-page-header"')
     expect(html).toContain('data-slot="settings-action-row"')

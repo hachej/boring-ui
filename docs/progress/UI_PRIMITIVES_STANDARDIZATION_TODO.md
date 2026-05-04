@@ -17,6 +17,7 @@ Generic visuals belong in `@boring/ui`. Product/domain behavior stays in the own
 - [x] Settings primitives: `SettingsPanel`, `SettingsNav`, `SettingsPageHeader`, `SettingsActionRow`, `DetailLine`.
 - [x] `Disclosure`, `ResizeHandle`, `Avatar`/`InitialsAvatar`, and real `Toaster`/`toast` store.
 - [x] `LoadingState` and `List*` row primitives for common app/plugin states and rows.
+- [x] `DetailList` and `FloatingPanel` for recurring detail groups and floating chrome.
 - [x] Filesystem plugin uses shared `Skeleton` for tree loading.
 - [x] Macro plugin chart/deck controls use shared `Button`, `ChipButton`, `SegmentedControl`, `Spinner`, `EmptyState`.
 - [x] Core settings pages consume shared settings primitives for panels/nav/action/detail rows.
@@ -28,6 +29,7 @@ Generic visuals belong in `@boring/ui`. Product/domain behavior stays in the own
 - [x] Replace remaining local settings helper definitions after a safe cleanup pass.
 - [x] Core member/invite/runtime surfaces use shared feedback/status/avatar/loading primitives.
 - [x] Core settings status messages use shared `Notice`.
+- [x] `InviteAcceptPage` loading/errors and `InvitesPage` feedback use shared `LoadingState`/`Notice`.
 - [ ] Convert remaining auth form label/input/error clusters to `Field`, `FieldLabel`, `FieldError`.
 
 Keep core-local:
@@ -45,8 +47,9 @@ Keep core-local:
 - [x] `CommandPalette` uses shared `Kbd`.
 - [x] `ChatLayout` resize affordance uses shared `ResizeHandle` and suspense fallback uses `LoadingState`.
 - [x] Workspace toast implementation moved behind `@boring/ui` `Toaster`/`toast`.
-- [ ] Consider replacing local context menu styling in `FileTreeView` with `DropdownMenu`/menu primitive if keyboard semantics remain correct.
-- [ ] Apply `ResizeHandle` to `SurfaceShell` after focused resize regression testing.
+- [x] `PluginInspector` shell uses shared `FloatingPanel`.
+- [ ] Consider replacing local context menu styling in `FileTreeView` with `DropdownMenu`/menu primitive if keyboard semantics remain correct. Risk: right-click positioning + focus management.
+- [ ] Apply `ResizeHandle` to `SurfaceShell` after focused resize regression testing. Risk: persisted workbench widths and drag hit targets.
 
 Keep workspace-local:
 - `WorkspaceProvider`, panel registry, bridge/commands, artifact routing.

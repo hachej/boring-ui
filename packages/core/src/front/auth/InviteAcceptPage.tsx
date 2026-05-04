@@ -9,6 +9,8 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  LoadingState,
+  Notice,
 } from '@boring/ui'
 import { useSession } from './AuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail, routes } from '../utils.js'
@@ -89,7 +91,7 @@ export function InviteAcceptPage() {
       <div className="flex min-h-screen items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardContent className="py-8 text-center">
-            <p className="text-muted-foreground" data-testid="loading">Loading…</p>
+            <LoadingState data-testid="loading" className="justify-center" />
           </CardContent>
         </Card>
       </div>
@@ -122,7 +124,7 @@ export function InviteAcceptPage() {
       <div className="flex min-h-screen items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardContent className="py-8 text-center">
-            <p className="text-muted-foreground" data-testid="loading">Loading…</p>
+            <LoadingState data-testid="loading" className="justify-center" />
           </CardContent>
         </Card>
       </div>
@@ -149,7 +151,7 @@ export function InviteAcceptPage() {
             <CardTitle>Invite unavailable</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground" data-testid="resolve-error">{message}</p>
+            <Notice data-testid="resolve-error" tone="error" description={message} />
           </CardContent>
           <CardFooter>
             <Button variant="outline" className="w-full" onClick={() => navigate('/')}>
@@ -175,9 +177,7 @@ export function InviteAcceptPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {acceptError && (
-            <div role="alert" className="text-sm text-destructive" data-testid="accept-error">
-              {acceptError}
-            </div>
+            <Notice role="alert" data-testid="accept-error" tone="error" description={acceptError} />
           )}
           <div className="text-sm text-muted-foreground">
             This invite expires on{' '}

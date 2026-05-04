@@ -25,6 +25,7 @@ Current primitives:
 - `Toolbar`, `ToolbarGroup`, `ToolbarButton`, `ToolbarSeparator`
 - `Chip`, `ChipButton`, `ChipRemove`, `SegmentedControl`, `SegmentedControlItem`
 - `List`, `ListRow`, `ListRowTitle`, `ListRowDescription`, `ListRowMeta`, `ListRowActions`
+- `DetailList`, `FloatingPanel`, `FloatingPanelHeader`, `FloatingPanelBody`
 - `Pane`, `PaneHeader`, `PaneTitle`, `PaneDescription`, `PaneBody`, `PaneFooter`, `PaneToolbar`
 - `Field`, `FieldLabel`, `FieldDescription`, `FieldError`
 - `SettingsPanel`, `SettingsNav`, `SettingsPageHeader`, `SettingsActionRow`, `DetailLine`

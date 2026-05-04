@@ -32,6 +32,8 @@ export { Avatar, AvatarFallback, InitialsAvatar, type AvatarProps, type AvatarFa
 export { Toaster, toast, dismissToast, subscribeToasts, getActiveToasts, clearToasts, type ToastApi, type ToastInput, type ToastRecord, type ToastVariant, type ToasterProps } from './toast'
 export { LoadingState, type LoadingStateProps } from './loading-state'
 export { List, ListRow, ListRowMain, ListRowTitle, ListRowDescription, ListRowMeta, ListRowActions, type ListProps, type ListRowProps, type ListRowMainProps, type ListRowTitleProps, type ListRowDescriptionProps, type ListRowMetaProps, type ListRowActionsProps } from './list'
+export { DetailList, type DetailListProps } from './detail-list'
+export { FloatingPanel, FloatingPanelHeader, FloatingPanelBody, type FloatingPanelProps, type FloatingPanelHeaderProps, type FloatingPanelBodyProps } from './floating-panel'
 export { Card, CardHeader, CardFooter, CardTitle, CardAction, CardDescription, CardContent } from './card'
 export { Label } from './label'
 export { Checkbox } from './checkbox'
