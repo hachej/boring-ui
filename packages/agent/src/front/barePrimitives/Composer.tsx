@@ -11,6 +11,8 @@ import {
   type KeyboardEvent,
   type TextareaHTMLAttributes,
 } from 'react'
+import { Textarea } from '@boring/ui'
+import { cn } from '../lib'
 
 export interface ComposerPrimitiveProps
   extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onSubmit'> {
@@ -25,7 +27,7 @@ export interface ComposerPrimitiveRef {
 }
 
 export const ComposerPrimitive = forwardRef<ComposerPrimitiveRef, ComposerPrimitiveProps>(
-  function ComposerPrimitive({ onSubmit, submitOnEnter = true, ...textareaProps }, ref) {
+  function ComposerPrimitive({ onSubmit, submitOnEnter = true, className, ...textareaProps }, ref) {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
 
     useImperativeHandle(ref, () => ({
@@ -58,16 +60,14 @@ export const ComposerPrimitive = forwardRef<ComposerPrimitiveRef, ComposerPrimit
     )
 
     return (
-      <textarea
+      <Textarea
         {...textareaProps}
         ref={textareaRef}
         onKeyDown={handleKeyDown}
-        style={{
-          resize: 'none',
-          fontFamily: 'var(--boring-agent-font-family, inherit)',
-          fontSize: 'var(--boring-agent-font-size, 0.875rem)',
-          ...textareaProps.style,
-        }}
+        className={cn(
+          'resize-none font-[family-name:var(--boring-agent-font-family,inherit)] text-[length:var(--boring-agent-font-size,0.875rem)]',
+          className,
+        )}
       />
     )
   },

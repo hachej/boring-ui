@@ -56,6 +56,8 @@ import {
 } from './primitives/attachments'
 import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon, BotIcon } from 'lucide-react'
 import {
+  Button,
+  IconButton,
   Select,
   SelectContent,
   SelectItem,
@@ -1236,10 +1238,12 @@ function ThoughtVisibilityButton({
 }) {
   const Icon = visible ? EyeIcon : EyeOffIcon
   return (
-    <button
+    <IconButton
       type="button"
       data-boring-agent-part="thought-toggle"
       data-boring-state={visible ? "selected" : undefined}
+      variant="ghost"
+      size="icon-sm"
       onClick={onToggle}
       className={cn(composerActionClass, "w-8")}
       aria-pressed={visible}
@@ -1247,21 +1251,23 @@ function ThoughtVisibilityButton({
       title={visible ? "Hide thoughts" : "Show thoughts"}
     >
       <Icon className="h-3.5 w-3.5" />
-    </button>
+    </IconButton>
   )
 }
 
 function AttachmentButton() {
   const attachments = usePromptInputAttachments()
   return (
-    <button
+    <IconButton
       type="button"
+      variant="ghost"
+      size="icon-sm"
       onClick={() => attachments.openFileDialog()}
       className={cn(composerActionClass, "w-8")}
       aria-label="Attach files"
     >
       <PaperclipIcon className="h-4 w-4" />
-    </button>
+    </IconButton>
   )
 }
 
@@ -1454,15 +1460,15 @@ function MessageActionsBar({
         "flex items-center gap-0.5 -mt-1",
       )}
     >
-      <button type="button" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>
+      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
         <span>{copied ? 'Copied' : 'Copy'}</span>
-      </button>
+      </Button>
       {canRegenerate && (
-        <button type="button" onClick={onRegenerate} className={actionBtnClass} aria-label="Regenerate">
+        <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={actionBtnClass} aria-label="Regenerate">
           <RefreshCwIcon className="h-3.5 w-3.5" />
           <span>Regenerate</span>
-        </button>
+        </Button>
       )}
     </div>
   )

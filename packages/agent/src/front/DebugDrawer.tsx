@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
 import { cn } from './lib'
+import { IconButton, Tabs, TabsList, TabsTrigger } from '@boring/ui'
 import { RefreshCwIcon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
 
 type Tab = 'prompt' | 'messages'
@@ -85,14 +86,16 @@ function SystemPromptTab({
             : 'error'}
         </span>
         {state.kind !== 'loading' && (
-          <button
+          <IconButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={refresh}
-            className="rounded p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-muted/50"
+            className="text-muted-foreground/60"
             aria-label="Refresh system prompt"
           >
             <RefreshCwIcon className="h-3 w-3" />
-          </button>
+          </IconButton>
         )}
       </div>
       {(state.kind === 'loading' || state.kind === 'empty') && (
@@ -293,21 +296,19 @@ export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidt
         )}
       >
         <header className="flex shrink-0 items-center gap-0 border-b border-border/60 px-1">
-          {TABS.map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={cn(
-                "px-3 py-2 text-[11px] font-medium transition-colors",
-                tab === id
-                  ? "text-foreground border-b-2 border-accent -mb-px"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </button>
-          ))}
+          <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="w-full">
+            <TabsList variant="line" className="h-auto gap-0 p-0">
+              {TABS.map(({ id, label }) => (
+                <TabsTrigger
+                  key={id}
+                  value={id}
+                  className="h-8 flex-none px-3 py-2 text-[11px] font-medium data-[state=active]:after:bg-[color:var(--accent)]"
+                >
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </header>
 
         <div className="flex flex-1 min-h-0 flex-col overflow-hidden">

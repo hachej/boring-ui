@@ -50,10 +50,10 @@ Goal: centralize generic shadcn-style primitives in `@boring/ui`, then consume t
 - [x] Workspace `EmptyPane`
 - [x] Workspace `PanelErrorBoundary`
 - [x] Workspace `TopBar`
-- [ ] Workspace `FileTreeView` context menu
-- [ ] Workspace `WorkbenchLeftPane` tabs/search controls
+- [x] Workspace `FileTreeView` context menu
+- [x] Workspace `WorkbenchLeftPane` tabs/search controls
 - [x] Agent `ModelPicker`
-- [ ] Agent `DebugDrawer`
+- [x] Agent `DebugDrawer`
 - [ ] Agent bare primitives cleanup
 - [ ] Agent `ChatPanel` subcomponent extraction
 
@@ -79,3 +79,4 @@ Each loop asks: **what can be simplified? what can be moved to `@boring/ui`? wha
 - 2026-05-03: baseline `@boring/ui` smoke tests, agent/workspace builds/typechecks passed before this follow-up.
 - 2026-05-03: moved Tooltip/Dialog/DropdownMenu/Select/Command/Tabs to `@boring/ui`; added shared atoms and migrated first core/workspace/agent consumers.
 - 2026-05-03: moved Card/Label/Checkbox/AlertDialog/Popover/ScrollArea/Sheet to `@boring/ui`; removed workspace `ui-shadcn` public export and package-local compatibility wrappers.
+- 2026-05-03: migrated WorkbenchLeftPane to `Tabs`/`Input`/`IconButton`, DebugDrawer to `Tabs`/`IconButton`, FileTreeView context actions to shared `Button`, and ChatPanel actions to `Button`/`IconButton`.

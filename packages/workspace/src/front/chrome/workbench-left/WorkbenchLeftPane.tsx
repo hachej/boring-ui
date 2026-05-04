@@ -13,6 +13,7 @@ import {
   type ComponentType,
 } from "react"
 import { ChevronLeft, PanelLeft, Search, X } from "lucide-react"
+import { IconButton, Input, Tabs, TabsList, TabsTrigger } from "@boring/ui"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
 import { useRegistry } from "../../registry"
@@ -113,80 +114,69 @@ export function WorkbenchLeftPane({
 
   return (
     <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0 flex-col", className)}>
-      <div className="flex items-center gap-1 border-b border-[color:oklch(from_var(--border)_l_c_h/0.25)] px-2" style={{ height: 44 }}>
-        <div
-          role="tablist"
-          aria-label="Workbench sources"
-          className="flex items-center gap-0.5"
-        >
-          {tabs.map((entry) => (
-            <SegmentedTab
-              key={entry.id}
-              active={activeTab === entry.id}
-              onClick={() => setTab(entry.id)}
-              icon={entry.icon}
-            >
-              {entry.title}
-            </SegmentedTab>
-          ))}
-        </div>
+      <div className="flex h-11 items-center gap-1 border-b border-[color:oklch(from_var(--border)_l_c_h/0.25)] px-2">
+        <Tabs value={activeTab} onValueChange={setTab} className="min-w-0 flex-1" aria-label="Workbench sources">
+          <TabsList variant="line" className="h-auto gap-0.5 p-0">
+            {tabs.map((entry) => (
+              <TabsTrigger
+                key={entry.id}
+                value={entry.id}
+                className="h-8 flex-none gap-1.5 px-2 py-1 text-[12px] data-[state=active]:text-foreground data-[state=active]:after:bg-[color:var(--accent)]"
+              >
+                <span className="data-[state=active]:text-[color:var(--accent)]">{entry.icon}</span>
+                <span className="tracking-tight">{entry.title}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
-        <div className="flex-1" />
-
-        <button
+        <IconButton
           type="button"
+          variant="ghost"
+          size="icon-xs"
           onClick={toggleSearch}
-          className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground",
-            "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-            "hover:bg-foreground/5 hover:text-foreground",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            searchOpen && "bg-foreground/5 text-foreground",
-          )}
+          className={cn(searchOpen && "bg-foreground/5 text-foreground")}
           aria-label="Search"
           title="Search"
         >
           <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
-        </button>
+        </IconButton>
         {onCollapse && (
-          <button
+          <IconButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={onCollapse}
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground",
-              "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "hover:bg-foreground/5 hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            )}
             aria-label="Hide sources"
             title="Hide sources"
           >
             <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-          </button>
+          </IconButton>
         )}
       </div>
 
       {searchOpen && (
         <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
           <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <input
+          <Input
             ref={searchInputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onSearchKeyDown}
             placeholder={`Search ${(activeEntry?.title ?? "sources").toLowerCase()}...`}
-            className="h-6 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+            className="h-7 flex-1 border-0 bg-transparent px-0 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
           {query && (
-            <button
+            <IconButton
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setQuery("")}
-              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
               aria-label="Clear search"
             >
               <X className="h-3 w-3" />
-            </button>
+            </IconButton>
           )}
         </div>
       )}
@@ -251,43 +241,5 @@ function LeftTabPanelHost({ panel, params }: { panel?: PanelConfig; params: Left
         })}
       </Suspense>
     </PluginErrorBoundary>
-  )
-}
-
-function SegmentedTab({
-  active,
-  onClick,
-  icon,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  icon?: React.ReactNode
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      role="tab"
-      aria-selected={active}
-      className={cn(
-        "relative flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium",
-        "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        active
-          ? "text-foreground"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      <span className={cn("transition-colors", active ? "text-[color:var(--accent)]" : "")}>{icon}</span>
-      <span className="tracking-tight">{children}</span>
-      {active && (
-        <span
-          aria-hidden="true"
-          className="absolute inset-x-1 -bottom-[9px] h-[2px] rounded-t-[2px] bg-[color:var(--accent)]"
-        />
-      )}
-    </button>
   )
 }

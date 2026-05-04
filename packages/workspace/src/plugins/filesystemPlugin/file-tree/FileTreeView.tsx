@@ -33,6 +33,7 @@ import {
 import {
   AlertDialog,
   AlertDialogAction,
+  Button,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -712,51 +713,32 @@ export function FileTreeView({
           className="fixed z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-            onClick={handleNewFile}
-          >
+          <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFile}>
             New file
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-            onClick={handleNewFolder}
-          >
+          </Button>
+          <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFolder}>
             New folder
-          </button>
+          </Button>
           {!ctxMenu.isBackground && (
             <>
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-                onClick={handleRename}
-              >
+              <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={handleRename}>
                 Rename
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                role="menuitem"
-                className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => {
                   setDeleteTarget(ctxMenu.node)
                   setCtxMenu(null)
                 }}
               >
                 Delete
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-                onClick={handleCopyPath}
-              >
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
                 Copy path
-              </button>
+              </Button>
             </>
           )}
         </div>
