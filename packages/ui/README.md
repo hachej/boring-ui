@@ -14,9 +14,9 @@ import "@boring/agent/front/styles.css"
 Current primitives:
 
 - `Button`, `buttonVariants`, `IconButton`
-- `Badge`, `badgeVariants`, `StatusBadge`
-- `Input`, `Textarea`
-- `Dialog`, `DropdownMenu`, `Select`, `Tooltip`, `Command`, `Tabs`
+- `Badge`, `badgeVariants`, `StatusBadge`, `Notice`
+- `Input`, `Textarea`, `InputGroup`
+- `Dialog`, `DropdownMenu`, `Select`, `Tooltip`, `Command`, `Tabs`, `HoverCard`, `Collapsible`, `ButtonGroup`
 - `Separator`, `Kbd`, `Spinner`
 - `EmptyState`, `ErrorState`
 - `Pane`, `PaneHeader`, `PaneTitle`, `PaneDescription`, `PaneBody`, `PaneFooter`, `PaneToolbar`
@@ -24,3 +24,14 @@ Current primitives:
 - `cn`
 
 Keep this package low-level: no workspace, agent, auth, routing, persistence, or server imports.
+
+## Plugin authoring rule
+
+Plugins should compose generic visuals from `@boring/ui` so host apps stay visually consistent:
+
+- actions: `Button`, `IconButton`, `ButtonGroup`
+- forms/search: `Field`, `Label`, `Input`, `Textarea`, `Select`, `InputGroup`
+- feedback: `Notice`, `EmptyState`, `ErrorState`, `Spinner`, `StatusBadge`
+- surfaces: `Pane*`, `Card*`, `Tabs`, `ScrollArea`, `Popover`, `Dialog`
+
+Plugin-specific components should stay in the plugin package when they encode domain behavior or data contracts (file trees, editors, data explorers, artifact renderers, catalog rows). Those components should still render `@boring/ui` primitives internally rather than raw HTML controls or bespoke alert/empty/loading treatments.

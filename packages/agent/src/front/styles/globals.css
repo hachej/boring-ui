@@ -48,6 +48,7 @@
 @source "../../../../ui/src/collapsible.tsx";
 @source "../../../../ui/src/button-group.tsx";
 @source "../../../../ui/src/input-group.tsx";
+@source "../../../../ui/src/notice.tsx";
 
 @custom-variant dark (&:is(.dark *));
 

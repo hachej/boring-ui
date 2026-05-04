@@ -2,6 +2,7 @@
 
 import { lazy, Suspense } from "react"
 import type { ReactNode } from "react"
+import { EmptyState, ErrorState, Spinner } from "@boring/ui"
 import { ConflictBanner } from "./ConflictBanner"
 import type { FileConflictError } from "./data/fetchClient"
 
@@ -89,8 +90,8 @@ export function FilePaneShell({
   // No file selected
   if (!path) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-        No file selected
+      <div className="flex h-full items-center justify-center p-6">
+        <EmptyState className="min-h-0 border-0" title="No file selected" description="Choose a file from the file tree to open an editor." />
       </div>
     )
   }
@@ -98,15 +99,16 @@ export function FilePaneShell({
   // Error state
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center text-destructive text-sm">
-        Failed to load file: {errorMessage ?? error.message}
+      <div className="flex h-full items-center justify-center p-6">
+        <ErrorState title="Failed to load file" description={errorMessage ?? error.message} />
       </div>
     )
   }
 
   const loadingSpinner = loadingFallback ?? (
-    <div className="flex h-full items-center justify-center text-muted-foreground">
-      <span className="animate-pulse">Loading file...</span>
+    <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+      <Spinner className="size-3.5" />
+      <span>Loading file...</span>
     </div>
   )
 

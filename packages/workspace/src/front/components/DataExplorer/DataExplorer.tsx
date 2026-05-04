@@ -1,7 +1,7 @@
 import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, XIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { Button, Input } from "@boring/ui"
+import { Button, EmptyState, Input, Spinner } from "@boring/ui"
 import { Popover, PopoverTrigger, PopoverContent } from "@boring/ui"
 import { useExplorerState } from "./useExplorerState"
 import type {
@@ -119,8 +119,8 @@ export function DataExplorer({
 
       <div className="flex-1 overflow-y-auto" data-slot="data-explorer-list">
         {showEmpty ? (
-          <div className="flex h-full items-center justify-center px-4 py-8 text-[12px] text-muted-foreground">
-            {emptyState}
+          <div className="flex h-full items-center justify-center px-4 py-8">
+            <EmptyState className="min-h-0 border-0" description={emptyState} />
           </div>
         ) : treeMode ? (
           <TreeList
@@ -386,7 +386,8 @@ function TreeList({
                   />
                 ))}
                 {group.loading && group.items.length === 0 ? (
-                  <li className="pl-7 pr-3 py-1.5 text-[11px] text-muted-foreground/80">
+                  <li className="flex items-center gap-1.5 pl-7 pr-3 py-1.5 text-[11px] text-muted-foreground/80">
+                    <Spinner className="size-3" />
                     Loading…
                   </li>
                 ) : null}

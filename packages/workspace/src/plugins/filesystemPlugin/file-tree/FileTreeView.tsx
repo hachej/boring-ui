@@ -34,6 +34,8 @@ import {
   AlertDialog,
   AlertDialogAction,
   Button,
+  ErrorState,
+  Spinner,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -647,9 +649,11 @@ export function FileTreeView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {error && (
-        <div className="px-3 py-2 text-xs text-destructive">
-          Failed to load files: {error.message}
-        </div>
+        <ErrorState
+          className="m-2 rounded-md p-3"
+          title="Failed to load files"
+          description={error.message}
+        />
       )}
 
       <div
@@ -670,8 +674,9 @@ export function FileTreeView({
         ) : (
           <Suspense
             fallback={
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                <span className="animate-pulse">Loading...</span>
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Spinner className="size-3.5" />
+                <span>Loading...</span>
               </div>
             }
           >

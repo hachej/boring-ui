@@ -8,6 +8,7 @@ import {
   IconButton,
   Input,
   Kbd,
+  Notice,
   Pane,
   PaneBody,
   PaneHeader,
@@ -39,6 +40,7 @@ describe('@boring/ui primitives', () => {
         <Spinner />
         <EmptyState title="Empty" description="Nothing here" />
         <ErrorState title="Error" description="Broken" />
+        <Notice tone="accent" title="Heads up" description="Consistent notice" />
         <Pane><PaneHeader><PaneTitle>Pane</PaneTitle></PaneHeader><PaneBody>Body</PaneBody></Pane>
         <StatusBadge tone="success">Ready</StatusBadge>
       </div>,
@@ -55,6 +57,8 @@ describe('@boring/ui primitives', () => {
     expect(html).toContain('data-slot="spinner"')
     expect(html).toContain('data-slot="empty-state"')
     expect(html).toContain('data-slot="error-state"')
+    expect(html).toContain('data-slot="notice"')
+    expect(html).toContain('data-tone="accent"')
     expect(html).toContain('data-slot="pane"')
     expect(html).toContain('data-slot="status-badge"')
   })
