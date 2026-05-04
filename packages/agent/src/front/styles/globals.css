@@ -49,6 +49,12 @@
 @source "../../../../ui/src/button-group.tsx";
 @source "../../../../ui/src/input-group.tsx";
 @source "../../../../ui/src/notice.tsx";
+@source "../../../../ui/src/skeleton.tsx";
+@source "../../../../ui/src/inline-code.tsx";
+@source "../../../../ui/src/toolbar.tsx";
+@source "../../../../ui/src/chip.tsx";
+@source "../../../../ui/src/segmented-control.tsx";
+@source "../../../../ui/src/settings.tsx";
 
 @custom-variant dark (&:is(.dark *));
 

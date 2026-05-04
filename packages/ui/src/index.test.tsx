@@ -3,20 +3,34 @@ import { describe, expect, it } from 'vitest'
 import {
   Badge,
   Button,
+  Chip,
+  DetailLine,
   EmptyState,
   ErrorState,
   IconButton,
   Input,
+  InlineCode,
   Kbd,
   Notice,
   Pane,
   PaneBody,
   PaneHeader,
   PaneTitle,
+  SegmentedControl,
+  SegmentedControlItem,
   Separator,
+  SettingsActionRow,
+  SettingsNav,
+  SettingsPageHeader,
+  SettingsPanel,
+  Skeleton,
   Spinner,
   StatusBadge,
   Textarea,
+  Toolbar,
+  ToolbarButton,
+  ToolbarGroup,
+  ToolbarSeparator,
   TooltipProvider,
   cn,
 } from './index'
@@ -41,6 +55,15 @@ describe('@boring/ui primitives', () => {
         <EmptyState title="Empty" description="Nothing here" />
         <ErrorState title="Error" description="Broken" />
         <Notice tone="accent" title="Heads up" description="Consistent notice" />
+        <Skeleton />
+        <InlineCode>src/app.ts</InlineCode>
+        <Chip>Filter</Chip>
+        <SegmentedControl><SegmentedControlItem selected>Chart</SegmentedControlItem></SegmentedControl>
+        <Toolbar><ToolbarGroup><ToolbarButton>Bold</ToolbarButton></ToolbarGroup><ToolbarSeparator /></Toolbar>
+        <SettingsPanel id="settings" title="Settings"><DetailLine label="Name">Boring</DetailLine></SettingsPanel>
+        <SettingsNav label="Settings" items={[{ href: '#settings', label: 'General', description: 'Basics' }]} />
+        <SettingsPageHeader eyebrow="Account" title="Settings" description="Manage settings" />
+        <SettingsActionRow title="Action" description="Do a thing" action={<Button size="xs">Run</Button>} />
         <Pane><PaneHeader><PaneTitle>Pane</PaneTitle></PaneHeader><PaneBody>Body</PaneBody></Pane>
         <StatusBadge tone="success">Ready</StatusBadge>
       </div>,
@@ -59,6 +82,15 @@ describe('@boring/ui primitives', () => {
     expect(html).toContain('data-slot="error-state"')
     expect(html).toContain('data-slot="notice"')
     expect(html).toContain('data-tone="accent"')
+    expect(html).toContain('data-slot="skeleton"')
+    expect(html).toContain('data-slot="inline-code"')
+    expect(html).toContain('data-slot="chip"')
+    expect(html).toContain('data-slot="segmented-control"')
+    expect(html).toContain('data-slot="toolbar"')
+    expect(html).toContain('data-slot="settings-panel"')
+    expect(html).toContain('data-slot="settings-nav"')
+    expect(html).toContain('data-slot="settings-page-header"')
+    expect(html).toContain('data-slot="settings-action-row"')
     expect(html).toContain('data-slot="pane"')
     expect(html).toContain('data-slot="status-badge"')
   })

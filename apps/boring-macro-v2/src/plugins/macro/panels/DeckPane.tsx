@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { Button, Separator } from "@boring/workspace"
+import { Button, ChipButton, SegmentedControl, SegmentedControlItem, Separator } from "@boring/ui"
 import { ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2 } from "lucide-react"
 
 const MarkdownEditor = lazy(() =>
@@ -126,11 +126,11 @@ function MiniTimeSeries({
             const color = COLORS[i % COLORS.length]
             const positive = c?.pct != null && c.pct >= 0
             return (
-              <button
+              <ChipButton
                 key={id}
                 type="button"
                 onClick={() => openSeriesPane(id)}
-                className="group inline-flex items-center gap-2 rounded-md border border-border/70 bg-background/60 px-2 py-1 text-[11px] transition-colors hover:border-border hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="group gap-2 rounded-md bg-background/60 py-1 text-[11px]"
                 title={`Open ${id} in chart pane`}
               >
                 <span
@@ -154,7 +154,7 @@ function MiniTimeSeries({
                     {c.pct.toFixed(1)}%
                   </span>
                 )}
-              </button>
+              </ChipButton>
             )
           })}
         </div>
@@ -576,23 +576,20 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <div className="inline-flex items-center rounded-md border border-border/70 bg-background p-0.5">
+          <SegmentedControl aria-label="Deck mode" className="bg-background">
             {(["read", "edit"] as const).map((m) => (
-              <button
+              <SegmentedControlItem
                 key={m}
                 type="button"
+                selected={mode === m}
                 onClick={() => setMode(m)}
                 aria-pressed={mode === m}
-                className={`rounded-[4px] px-2.5 py-1 text-[11px] font-medium tracking-tight transition-colors ${
-                  mode === m
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className="px-2.5 py-1 text-[11px]"
               >
                 {m === "read" ? "Read" : "Edit"}
-              </button>
+              </SegmentedControlItem>
             ))}
-          </div>
+          </SegmentedControl>
 
           <Button
             variant="ghost"
@@ -720,15 +717,17 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
                     ? "Cover"
                     : `Slide ${hasCover ? i : i + 1}`
                 return (
-                  <button
+                  <Button
                     key={i}
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     aria-current={isActive ? "true" : undefined}
                     aria-label={label}
                     onClick={() => setActiveSlide(i)}
                     // Hit target is the full button (≥24px tall via py-2.5);
                     // the visible pill stays editorial-thin via the inner span.
-                    className="group flex flex-1 min-w-[28px] max-w-[56px] cursor-pointer items-center justify-center px-0.5 py-2.5 focus-visible:outline-none"
+                    className="group flex flex-1 min-w-[28px] max-w-[56px] cursor-pointer items-center justify-center px-0.5 py-2.5"
                   >
                     <span className="sr-only">{label}</span>
                     <span
@@ -739,7 +738,7 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
                           : "bg-border group-hover:bg-muted-foreground/40 group-focus-visible:bg-muted-foreground/40"
                       }`}
                     />
-                  </button>
+                  </Button>
                 )
               })}
             </div>

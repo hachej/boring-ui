@@ -36,6 +36,7 @@ import {
   Button,
   ErrorState,
   Spinner,
+  Skeleton,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -664,9 +665,9 @@ export function FileTreeView({
         {isLoading ? (
           <div className="space-y-1 p-2" data-testid="tree-skeleton">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div
+              <Skeleton
                 key={i}
-                className="h-5 animate-pulse rounded bg-muted"
+                className="h-5"
                 style={{ width: `${60 + ((i * 13) % 30)}%` }}
               />
             ))}

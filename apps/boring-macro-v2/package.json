@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@boring/agent": "workspace:*",
+    "@boring/ui": "workspace:*",
     "@boring/workspace": "workspace:*",
     "@clickhouse/client": "^1.18.2",
     "fastify": "^5.8.4",

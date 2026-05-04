@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { PaneProps } from "@boring/workspace"
+import { Button, ChipButton, EmptyState, SegmentedControl, SegmentedControlItem, Spinner } from "@boring/ui"
 import {
   CartesianGrid,
   Legend,
@@ -300,53 +301,45 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {activeTab === "chart" && zoomRange && (
-            <button
-              type="button"
-              onClick={() => setZoomRange(null)}
-              className="text-xs text-orange-600 hover:underline"
-            >
+            <Button type="button" variant="ghost" size="xs" onClick={() => setZoomRange(null)}>
               Reset zoom
-            </button>
+            </Button>
           )}
-          <div className="flex items-center gap-0.5 rounded border border-border bg-muted/50 p-0.5">
+          <SegmentedControl aria-label="Chart view">
             {TABS.map((t) => (
-              <button
+              <SegmentedControlItem
                 key={t.id}
                 type="button"
+                selected={activeTab === t.id}
                 onClick={() => setActiveTab(t.id)}
-                className={`rounded px-2 py-0.5 text-xs ${
-                  activeTab === t.id
-                    ? "bg-background font-medium text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
               >
                 {t.label}
-              </button>
+              </SegmentedControlItem>
             ))}
-          </div>
+          </SegmentedControl>
         </div>
       </header>
 
       {overlays.length > 0 && (
         <div className="flex flex-wrap gap-1 border-b border-border px-3 py-1.5">
           {overlays.map((o) => (
-            <button
+            <ChipButton
               key={o.id}
               type="button"
               onClick={() => removeOverlay(o.id)}
-              className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs hover:bg-muted/70"
+              className="gap-1"
               style={{ color: colorFor(o.id) }}
             >
               <span>{o.id}</span>
               <span className="text-muted-foreground">×</span>
-            </button>
+            </ChipButton>
           ))}
         </div>
       )}
 
       <div className="min-h-0 flex-1">
         {loading && !primary ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>
+          <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner className="size-3.5" />Loading…</div>
         ) : activeTab === "chart" ? (
           <div className="h-full px-2 pb-2 pt-1">
             <ResponsiveContainer width="100%" height="100%">
@@ -569,10 +562,10 @@ function LineageTab({ seriesId }: { seriesId: string }) {
   }, [seriesId])
 
   if (data === undefined) {
-    return <div className="p-4 text-xs text-muted-foreground">Loading lineage…</div>
+    return <div className="flex items-center gap-2 p-4 text-xs text-muted-foreground"><Spinner className="size-3" />Loading lineage…</div>
   }
   if (data === null) {
-    return <div className="p-4 text-xs text-muted-foreground">No lineage data.</div>
+    return <EmptyState className="m-4 min-h-0 border-0" description="No lineage data." />
   }
 
   const upstream = data.edges.filter((e) => e.target === seriesId)
@@ -582,14 +575,16 @@ function LineageTab({ seriesId }: { seriesId: string }) {
   const Pill = ({ id }: { id: string }) => {
     const n = nodeFor(id)
     return (
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="xs"
         onClick={() => openTarget(id)}
-        className="inline-flex max-w-full items-center gap-1.5 rounded border border-border px-2 py-1 text-xs hover:bg-muted/50"
+        className="max-w-full justify-start gap-1.5"
       >
         <span className="font-mono">{id}</span>
         {n?.title && <span className="truncate text-muted-foreground">{n.title}</span>}
-      </button>
+      </Button>
     )
   }
 

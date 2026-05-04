@@ -47,6 +47,12 @@ Goal: centralize generic shadcn-style primitives in `@boring/ui`, then consume t
 - [x] Form/field primitives
 - [x] StatusBadge
 - [x] Notice / callout primitive
+- [x] Skeleton
+- [x] InlineCode
+- [x] Toolbar primitives
+- [x] Chip primitives
+- [x] SegmentedControl
+- [x] Settings layout primitives
 
 ### Consume primitives / reduce bespoke UI
 
@@ -88,3 +94,4 @@ Each loop asks: **what can be simplified? what can be moved to `@boring/ui`? wha
 - 2026-05-04: promoted HoverCard/Collapsible/ButtonGroup/InputGroup to `@boring/ui`; migrated agent ai-elements primitives to direct `@boring/ui`; cleaned remaining production raw buttons/inputs/selects across core/workspace/agent where generic design primitives apply. Raw-control scan now only reports tests, comments, and intentional non-button tool-renderer notes.
 - 2026-05-04: validation green: `@boring/ui` test/typecheck, agent typecheck + ChatPanel/bare primitive tests, workspace typecheck + full test suite (1048 passed, 2 skipped), core typecheck + smoke/user-nav tests, full-app typecheck + build.
 - 2026-05-04: plugin consistency pass: added shared `Notice`, documented plugin authoring rules, and migrated filesystem/data-explorer plugin feedback states to `Notice`/`EmptyState`/`ErrorState`/`Spinner` while keeping plugin-domain components local.
+- 2026-05-04: fresh component audit added `docs/progress/UI_PRIMITIVES_STANDARDIZATION_TODO.md`, extracted `Skeleton`/`InlineCode`/`Toolbar*`/`Chip*`/`SegmentedControl*`/settings primitives, and migrated core settings plus macro plugin controls to shared primitives.

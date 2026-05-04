@@ -93,6 +93,9 @@ importers:
       '@boring/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@boring/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@boring/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
