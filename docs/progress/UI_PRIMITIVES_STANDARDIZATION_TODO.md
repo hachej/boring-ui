@@ -16,6 +16,7 @@ Generic visuals belong in `@boring/ui`. Product/domain behavior stays in the own
 - [x] `SegmentedControl`, `SegmentedControlItem` for compact mode/view toggles.
 - [x] Settings primitives: `SettingsPanel`, `SettingsNav`, `SettingsPageHeader`, `SettingsActionRow`, `DetailLine`.
 - [x] `Disclosure`, `ResizeHandle`, `Avatar`/`InitialsAvatar`, and real `Toaster`/`toast` store.
+- [x] `LoadingState` and `List*` row primitives for common app/plugin states and rows.
 - [x] Filesystem plugin uses shared `Skeleton` for tree loading.
 - [x] Macro plugin chart/deck controls use shared `Button`, `ChipButton`, `SegmentedControl`, `Spinner`, `EmptyState`.
 - [x] Core settings pages consume shared settings primitives for panels/nav/action/detail rows.
@@ -25,7 +26,8 @@ Generic visuals belong in `@boring/ui`. Product/domain behavior stays in the own
 - [x] `WorkspaceSwitcher`, members/invites/settings pages: generic controls already from `@boring/ui`.
 - [x] `UserSettingsPage` / `WorkspaceSettingsPage`: settings layout extracted to `@boring/ui` and consumed with aliases.
 - [x] Replace remaining local settings helper definitions after a safe cleanup pass.
-- [x] Core member/invite/runtime surfaces use shared feedback/status/avatar primitives.
+- [x] Core member/invite/runtime surfaces use shared feedback/status/avatar/loading primitives.
+- [x] Core settings status messages use shared `Notice`.
 - [ ] Convert remaining auth form label/input/error clusters to `Field`, `FieldLabel`, `FieldError`.
 
 Keep core-local:
@@ -41,7 +43,7 @@ Keep core-local:
 - [x] `DockviewShell` loading fallback uses shared `Spinner`.
 - [x] `DataExplorer` uses shared `Toolbar`/`Chip`/`ChipButton` for generic chrome.
 - [x] `CommandPalette` uses shared `Kbd`.
-- [x] `ChatLayout` resize affordance uses shared `ResizeHandle`.
+- [x] `ChatLayout` resize affordance uses shared `ResizeHandle` and suspense fallback uses `LoadingState`.
 - [x] Workspace toast implementation moved behind `@boring/ui` `Toaster`/`toast`.
 - [ ] Consider replacing local context menu styling in `FileTreeView` with `DropdownMenu`/menu primitive if keyboard semantics remain correct.
 - [ ] Apply `ResizeHandle` to `SurfaceShell` after focused resize regression testing.
@@ -55,6 +57,7 @@ Keep workspace-local:
 
 - [x] Generic Radix/control wrappers moved to `@boring/ui`.
 - [x] Agent chrome uses shared controls where safe.
+- [x] `ModelPicker` uses shared `Field`/`FieldLabel` instead of a raw label.
 - [ ] Evaluate agent `DebugDrawer` tabs/resize affordances for `Toolbar`/future `ResizeHandle`.
 - [ ] Consider a generic `CodeSnippet` only for non-agent simple code blocks; keep current rich agent `CodeBlock` local.
 - [ ] Consider `Disclosure` for reasoning/tool collapsible headers if it does not weaken AI-message semantics.

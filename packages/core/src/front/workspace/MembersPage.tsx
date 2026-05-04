@@ -21,8 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
   InitialsAvatar,
+  LoadingState,
   Notice,
-  Spinner,
 } from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { useSession } from '../auth/AuthProvider.js'
@@ -130,9 +130,7 @@ export function MembersPage() {
             {toast && (
               <Notice role="alert" data-testid="toast" tone="error" className="mb-4" description={toast} />
             )}
-            {membersQuery.isLoading && (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="size-3.5" />Loading…</p>
-            )}
+            {membersQuery.isLoading && <LoadingState />}
             {membersQuery.isError && (
               <Notice tone="error" description="Failed to load members." />
             )}

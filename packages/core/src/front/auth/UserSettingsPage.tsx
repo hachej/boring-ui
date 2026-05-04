@@ -16,6 +16,7 @@ import {
   DetailLine as UiDetailLine,
   Input,
   Label,
+  Notice,
   SettingsActionRow as UiSettingsActionRow,
   SettingsNav as UiSettingsNav,
   SettingsPanel as UiSettingsPanel,
@@ -127,28 +128,6 @@ function SettingsPageHeader({
         </p>
       </div>
     </header>
-  )
-}
-
-function StatusMessage({
-  tone,
-  children,
-}: {
-  tone: 'error' | 'success'
-  children: ReactNode
-}) {
-  const className =
-    tone === 'error'
-      ? 'border-destructive/40 bg-destructive/10 text-destructive'
-      : 'border-success/35 bg-[color:var(--success-soft)] text-success'
-
-  return (
-    <div
-      role={tone === 'error' ? 'alert' : 'status'}
-      className={`rounded-md border px-3 py-2 text-[13px] leading-5 ${className}`}
-    >
-      {children}
-    </div>
   )
 }
 
@@ -318,9 +297,9 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
               )}
             >
               <div className="space-y-4">
-                {passwordError && <StatusMessage tone="error">{passwordError}</StatusMessage>}
+                {passwordError && <Notice role="alert" tone="error" description={passwordError} />}
                 {passwordSuccess && (
-                  <StatusMessage tone="success">Password changed successfully.</StatusMessage>
+                  <Notice role="status" tone="success" description="Password changed successfully." />
                 )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2 sm:col-span-2">
@@ -398,7 +377,7 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <div className="space-y-3 py-2">
-                    {deleteError && <StatusMessage tone="error">{deleteError}</StatusMessage>}
+                    {deleteError && <Notice role="alert" tone="error" description={deleteError} />}
                     <div className="space-y-2">
                       <Label htmlFor="delete-confirm">
                         Type <span className="font-mono font-bold">DELETE</span> to confirm

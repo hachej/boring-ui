@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
-import { IconButton, ResizeHandle as UiResizeHandle } from "@boring/ui"
+import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@boring/ui"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, workspaceEvents } from "../events"
@@ -450,7 +450,7 @@ function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown
   const api = useMemo(() => createPanelApi(id), [id])
   if (!Component) return null
   return (
-    <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>}>
+    <Suspense fallback={<LoadingState centered />}>
       <Component
         params={params}
         api={api as PaneProps["api"]}

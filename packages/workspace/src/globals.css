@@ -48,6 +48,8 @@
 @source "../../ui/src/resize-handle.tsx";
 @source "../../ui/src/avatar.tsx";
 @source "../../ui/src/toast.tsx";
+@source "../../ui/src/loading-state.tsx";
+@source "../../ui/src/list.tsx";
 
 @custom-variant dark (&:is(.dark *));
 

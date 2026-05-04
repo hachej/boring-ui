@@ -10,6 +10,8 @@ import {
   CardTitle,
   Input,
   Label,
+  LoadingState,
+  Notice,
   Select,
   SelectContent,
   SelectItem,
@@ -210,13 +212,11 @@ export function InvitesPage() {
           </CardHeader>
           <CardContent>
             {revokeError && (
-              <div role="alert" className="mb-4 text-sm text-destructive">
-                {revokeError}
-              </div>
+              <Notice role="alert" tone="error" className="mb-4" description={revokeError} />
             )}
-            {invitesQuery.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+            {invitesQuery.isLoading && <LoadingState />}
             {invitesQuery.isError && (
-              <p className="text-sm text-destructive">Failed to load invites.</p>
+              <Notice tone="error" description="Failed to load invites." />
             )}
             {invitesQuery.data && invitesQuery.data.length > 0 && (
               <div className="divide-y" data-testid="invites-list">

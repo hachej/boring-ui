@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@boring/ui'
+import { Field, FieldLabel, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@boring/ui'
 
 export const MODEL_IDS = ['sonnet', 'haiku', 'opus'] as const
 
@@ -23,8 +23,8 @@ export function ModelPicker(props: ModelPickerProps) {
   }
 
   return (
-    <label className="grid gap-1 text-sm">
-      <span className="text-muted-foreground">Model</span>
+    <Field className="grid gap-1 text-sm">
+      <FieldLabel className="text-muted-foreground">Model</FieldLabel>
       <Select disabled={disabled} onValueChange={handleValueChange} value={value}>
         <SelectTrigger aria-label="Model" className="w-full">
           <SelectValue />
@@ -37,6 +37,6 @@ export function ModelPicker(props: ModelPickerProps) {
           ))}
         </SelectContent>
       </Select>
-    </label>
+    </Field>
   )
 }

@@ -16,6 +16,10 @@ import {
   Input,
   InlineCode,
   Kbd,
+  List,
+  ListRow,
+  ListRowTitle,
+  LoadingState,
   Notice,
   Pane,
   PaneBody,
@@ -61,6 +65,8 @@ describe('@boring/ui primitives', () => {
         <EmptyState title="Empty" description="Nothing here" />
         <ErrorState title="Error" description="Broken" />
         <Notice tone="accent" title="Heads up" description="Consistent notice" />
+        <LoadingState />
+        <List><ListRow><ListRowTitle>Row</ListRowTitle></ListRow></List>
         <Skeleton />
         <InlineCode>src/app.ts</InlineCode>
         <Chip>Filter</Chip>
@@ -91,6 +97,8 @@ describe('@boring/ui primitives', () => {
     expect(html).toContain('data-slot="error-state"')
     expect(html).toContain('data-slot="notice"')
     expect(html).toContain('data-tone="accent"')
+    expect(html).toContain('data-slot="loading-state"')
+    expect(html).toContain('data-slot="list-row"')
     expect(html).toContain('data-slot="skeleton"')
     expect(html).toContain('data-slot="inline-code"')
     expect(html).toContain('data-slot="chip"')

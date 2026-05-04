@@ -17,13 +17,14 @@ Current primitives:
 - `Badge`, `badgeVariants`, `StatusBadge`, `Notice`
 - `Input`, `Textarea`, `InputGroup`
 - `Dialog`, `DropdownMenu`, `Select`, `Tooltip`, `Command`, `Tabs`, `HoverCard`, `Collapsible`, `ButtonGroup`
-- `Separator`, `Kbd`, `InlineCode`, `Spinner`, `Skeleton`
+- `Separator`, `Kbd`, `InlineCode`, `Spinner`, `Skeleton`, `LoadingState`
 - `EmptyState`, `ErrorState`, `Notice`, `Toaster`, `toast`
 - `Avatar`, `AvatarFallback`, `InitialsAvatar`
 - `Disclosure`, `DisclosureTrigger`, `DisclosureContent`, `DisclosureChevron`
 - `ResizeHandle`
 - `Toolbar`, `ToolbarGroup`, `ToolbarButton`, `ToolbarSeparator`
 - `Chip`, `ChipButton`, `ChipRemove`, `SegmentedControl`, `SegmentedControlItem`
+- `List`, `ListRow`, `ListRowTitle`, `ListRowDescription`, `ListRowMeta`, `ListRowActions`
 - `Pane`, `PaneHeader`, `PaneTitle`, `PaneDescription`, `PaneBody`, `PaneFooter`, `PaneToolbar`
 - `Field`, `FieldLabel`, `FieldDescription`, `FieldError`
 - `SettingsPanel`, `SettingsNav`, `SettingsPageHeader`, `SettingsActionRow`, `DetailLine`

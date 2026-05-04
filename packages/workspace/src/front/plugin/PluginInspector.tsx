@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Button, IconButton } from "@boring/ui"
+import { Disclosure, DisclosureContent, DisclosureTrigger, IconButton } from "@boring/ui"
 import { useActivePanels } from "./useActivePanels"
 import { useCommands } from "./useCommands"
 import { useCatalogs } from "./useCatalogs"
@@ -22,8 +22,8 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
   const { errors } = usePluginErrors()
 
   const toggle = useCallback(() => setOpen((v) => !v), [])
-  const toggleSection = useCallback((key: string) => {
-    setExpanded((current) => ({ ...current, [key]: !current[key] }))
+  const setSectionOpen = useCallback((key: string, value: boolean) => {
+    setExpanded((current) => ({ ...current, [key]: value }))
   }, [])
 
   useEffect(() => {
@@ -68,22 +68,14 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
           const promptOpen = expanded[promptKey] ?? false
           return (
             <section key={p.id} className="px-3 py-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-auto w-full justify-start px-0 py-0 font-mono text-xs"
-                aria-expanded={pluginOpen}
-                onClick={() => toggleSection(p.id)}
-              >
-                {pluginOpen ? "▾" : "▸"}
-                <span>{p.label ?? p.id}</span>
-                {myErrors.length > 0 && (
-                  <span className="ml-1 text-destructive">({myErrors.length} errors)</span>
-                )}
-              </Button>
-              {pluginOpen && (
-                <div className="space-y-0.5 pl-3 pt-1 leading-relaxed">
+              <Disclosure open={pluginOpen} onOpenChange={(value) => setSectionOpen(p.id, value)}>
+                <DisclosureTrigger className="h-auto w-full px-0 py-0 font-mono text-xs">
+                  <span>{p.label ?? p.id}</span>
+                  {myErrors.length > 0 && (
+                    <span className="ml-1 text-destructive">({myErrors.length} errors)</span>
+                  )}
+                </DisclosureTrigger>
+                <DisclosureContent className="space-y-0.5 pl-3 pt-1 leading-relaxed">
                   <div>
                     panels: {myPanels.length}
                     {myPanels.length > 0 && ` (${myPanels.map((x) => x.id).join(", ")})`}
@@ -91,24 +83,17 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
                   <div>commands: {myCommands.length}</div>
                   <div>catalogs: {myCatalogs.length}</div>
                   {p.systemPrompt && (
-                    <section className="mt-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-auto px-0 py-0 font-mono text-xs text-muted-foreground"
-                        aria-expanded={promptOpen}
-                        onClick={() => toggleSection(promptKey)}
-                      >
-                        {promptOpen ? "▾" : "▸"} systemPrompt
-                      </Button>
-                      {promptOpen && (
+                    <Disclosure open={promptOpen} onOpenChange={(value) => setSectionOpen(promptKey, value)}>
+                      <DisclosureTrigger className="h-auto px-0 py-0 font-mono text-xs text-muted-foreground">
+                        systemPrompt
+                      </DisclosureTrigger>
+                      <DisclosureContent>
                         <pre className="max-h-[120px] overflow-auto whitespace-pre-wrap text-[11px]">
                           {p.systemPrompt.slice(0, 500)}
                           {p.systemPrompt.length > 500 && "…"}
                         </pre>
-                      )}
-                    </section>
+                      </DisclosureContent>
+                    </Disclosure>
                   )}
                   {myErrors.length > 0 && (
                     <ul className="mt-1 list-disc pl-4 text-destructive">
@@ -117,8 +102,8 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
                       ))}
                     </ul>
                   )}
-                </div>
-              )}
+                </DisclosureContent>
+              </Disclosure>
             </section>
           )
         })}

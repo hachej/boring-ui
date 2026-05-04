@@ -18,6 +18,7 @@ import {
   StatusBadge,
   Input,
   Label,
+  Notice,
 } from '@boring/ui'
 import {
   AlertCircle,
@@ -115,24 +116,6 @@ function SettingsPageHeader({
         </p>
       </div>
     </header>
-  )
-}
-
-function StatusMessage({
-  children,
-  testId,
-}: {
-  children: ReactNode
-  testId?: string
-}) {
-  return (
-    <div
-      data-testid={testId}
-      role="alert"
-      className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] leading-5 text-destructive"
-    >
-      {children}
-    </div>
   )
 }
 
@@ -320,7 +303,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
             )}
           >
             <div className="space-y-4">
-              {nameError && <StatusMessage testId="name-error">{nameError}</StatusMessage>}
+              {nameError && <Notice data-testid="name-error" role="alert" tone="error" description={nameError} />}
               <div className="space-y-2">
                 <Label htmlFor="workspace-name" className="text-[12px]">Workspace name</Label>
                 <Input
@@ -387,7 +370,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
                       <RefreshCw className="h-4 w-4" aria-hidden="true" />
                       {retryMutation.isPending ? 'Retrying...' : 'Retry provisioning'}
                     </Button>
-                    {retryError && <StatusMessage testId="retry-error">{retryError}</StatusMessage>}
+                    {retryError && <Notice data-testid="retry-error" role="alert" tone="error" description={retryError} />}
                   </div>
                 )}
                 {runtime.state === 'error' && runtime.lastErrorOp === 'destroy' && (
@@ -411,7 +394,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
             danger
           >
             <div className="space-y-4">
-              {deleteError && <StatusMessage testId="delete-error">{deleteError}</StatusMessage>}
+              {deleteError && <Notice data-testid="delete-error" role="alert" tone="error" description={deleteError} />}
               {!canDeleteWorkspace ? (
                 <div className="rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-[13px] leading-5 text-muted-foreground">
                   Only workspace owners can delete this workspace.
