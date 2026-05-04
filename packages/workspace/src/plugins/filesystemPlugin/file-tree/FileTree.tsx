@@ -16,6 +16,7 @@ import {
   Loader2Icon,
 } from "lucide-react"
 import { getFileIcon } from "../../../front/registry/getFileIcon"
+import { Input } from "@boring/ui"
 import { cn } from "../../../front/lib/utils"
 
 export interface FileTreeNode {
@@ -120,7 +121,7 @@ function InlineEditInput({
   }
 
   return (
-    <input
+    <Input
       ref={inputRef}
       type="text"
       defaultValue={initialValue}
@@ -142,10 +143,7 @@ function InlineEditInput({
         }
       }}
       onBlur={submit}
-      className={cn(
-        "h-5 min-w-0 flex-1 rounded-sm border border-[color:var(--accent)]/60 bg-background px-1 text-[13px] leading-[1.2]",
-        "focus:outline-none focus:ring-1 focus:ring-[color:var(--accent)]",
-      )}
+      className="h-5 min-w-0 flex-1 rounded-sm border-[color:var(--accent)]/60 px-1 text-[13px] leading-[1.2] focus-visible:ring-[color:var(--accent)]"
     />
   )
 }

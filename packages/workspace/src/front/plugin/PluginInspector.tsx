@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { Button, IconButton } from "@boring/ui"
 import { useActivePanels } from "./useActivePanels"
 import { useCommands } from "./useCommands"
 import { useCatalogs } from "./useCatalogs"
@@ -14,12 +15,16 @@ export interface PluginMeta {
 
 export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
   const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const panels = useActivePanels()
   const commands = useCommands()
   const catalogs = useCatalogs()
   const { errors } = usePluginErrors()
 
   const toggle = useCallback(() => setOpen((v) => !v), [])
+  const toggleSection = useCallback((key: string) => {
+    setExpanded((current) => ({ ...current, [key]: !current[key] }))
+  }, [])
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -41,14 +46,16 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
     >
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <strong className="font-semibold">Plugin Inspector ({plugins.length})</strong>
-        <button
+        <IconButton
           type="button"
+          variant="ghost"
+          size="icon-xs"
           onClick={toggle}
-          className="rounded-sm px-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-muted-foreground"
           aria-label="Close plugin inspector"
         >
           ✕
-        </button>
+        </IconButton>
       </div>
       <div className="py-1">
         {plugins.map((p) => {
@@ -56,41 +63,63 @@ export function PluginInspector({ plugins }: { plugins: PluginMeta[] }) {
           const myCommands = commands.filter((x) => x.pluginId === p.id)
           const myCatalogs = catalogs.filter((x) => x.pluginId === p.id)
           const myErrors = errors.filter((x) => x.pluginId === p.id)
+          const pluginOpen = expanded[p.id] ?? false
+          const promptKey = `${p.id}:systemPrompt`
+          const promptOpen = expanded[promptKey] ?? false
           return (
-            <details key={p.id} className="px-3 py-1">
-              <summary className="cursor-pointer select-none">
-                {p.label ?? p.id}
+            <section key={p.id} className="px-3 py-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-auto w-full justify-start px-0 py-0 font-mono text-xs"
+                aria-expanded={pluginOpen}
+                onClick={() => toggleSection(p.id)}
+              >
+                {pluginOpen ? "▾" : "▸"}
+                <span>{p.label ?? p.id}</span>
                 {myErrors.length > 0 && (
                   <span className="ml-1 text-destructive">({myErrors.length} errors)</span>
                 )}
-              </summary>
-              <div className="space-y-0.5 pl-3 pt-1 leading-relaxed">
-                <div>
-                  panels: {myPanels.length}
-                  {myPanels.length > 0 && ` (${myPanels.map((x) => x.id).join(", ")})`}
+              </Button>
+              {pluginOpen && (
+                <div className="space-y-0.5 pl-3 pt-1 leading-relaxed">
+                  <div>
+                    panels: {myPanels.length}
+                    {myPanels.length > 0 && ` (${myPanels.map((x) => x.id).join(", ")})`}
+                  </div>
+                  <div>commands: {myCommands.length}</div>
+                  <div>catalogs: {myCatalogs.length}</div>
+                  {p.systemPrompt && (
+                    <section className="mt-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-0 py-0 font-mono text-xs text-muted-foreground"
+                        aria-expanded={promptOpen}
+                        onClick={() => toggleSection(promptKey)}
+                      >
+                        {promptOpen ? "▾" : "▸"} systemPrompt
+                      </Button>
+                      {promptOpen && (
+                        <pre className="max-h-[120px] overflow-auto whitespace-pre-wrap text-[11px]">
+                          {p.systemPrompt.slice(0, 500)}
+                          {p.systemPrompt.length > 500 && "…"}
+                        </pre>
+                      )}
+                    </section>
+                  )}
+                  {myErrors.length > 0 && (
+                    <ul className="mt-1 list-disc pl-4 text-destructive">
+                      {myErrors.map((e, i) => (
+                        <li key={i}>{e.error.message}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-                <div>commands: {myCommands.length}</div>
-                <div>catalogs: {myCatalogs.length}</div>
-                {p.systemPrompt && (
-                  <details className="mt-1">
-                    <summary className="cursor-pointer select-none text-muted-foreground">
-                      systemPrompt
-                    </summary>
-                    <pre className="max-h-[120px] overflow-auto whitespace-pre-wrap text-[11px]">
-                      {p.systemPrompt.slice(0, 500)}
-                      {p.systemPrompt.length > 500 && "…"}
-                    </pre>
-                  </details>
-                )}
-                {myErrors.length > 0 && (
-                  <ul className="mt-1 list-disc pl-4 text-destructive">
-                    {myErrors.map((e, i) => (
-                      <li key={i}>{e.error.message}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </details>
+              )}
+            </section>
           )
         })}
         {plugins.length === 0 && (

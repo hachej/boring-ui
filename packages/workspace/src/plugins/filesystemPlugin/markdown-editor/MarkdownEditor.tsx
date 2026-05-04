@@ -41,6 +41,7 @@ import {
   AlignCenterIcon,
   AlignRightIcon,
 } from "lucide-react"
+import { IconButton, Input } from "@boring/ui"
 import { cn } from "../../../front/lib/utils"
 
 const lowlight = createLowlight(common)
@@ -121,23 +122,21 @@ interface ToolbarButtonProps {
 
 function ToolbarButton({ onClick, active, disabled, title, children }: ToolbarButtonProps) {
   return (
-    <button
+    <IconButton
       type="button"
+      variant="ghost"
+      size="icon-xs"
       onClick={onClick}
       disabled={disabled}
       title={title}
       aria-pressed={active}
       className={cn(
-        "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/70",
-        "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        "hover:bg-foreground/5 hover:text-foreground",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        "disabled:pointer-events-none disabled:opacity-50",
+        "text-muted-foreground/70",
         active && "bg-[color:var(--accent-soft)] text-[color:var(--accent)]",
       )}
     >
       {children}
-    </button>
+    </IconButton>
   )
 }
 
@@ -298,7 +297,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       >
         <ImageIcon className="h-4 w-4" />
       </ToolbarButton>
-      <input
+      <Input
         ref={imageFileInputRef}
         data-testid="image-file-input"
         type="file"

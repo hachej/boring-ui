@@ -19,13 +19,11 @@ import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@/front/ui/hover-card";
-import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
-} from "@/front/ui/input-group";
+} from "@boring/ui";
 import {
   Select,
   SelectContent,
@@ -33,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@boring/ui";
-import { Spinner } from "@boring/ui";
+import { Input, Spinner } from "@boring/ui";
 import {
   Tooltip,
   TooltipContent,
@@ -905,7 +903,7 @@ export const PromptInput = ({
   // Render with or without local provider
   const inner = (
     <>
-      <input
+      <Input
         accept={accept}
         aria-label="Upload files"
         className="hidden"

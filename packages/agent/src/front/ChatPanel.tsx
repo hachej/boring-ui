@@ -849,17 +849,19 @@ export function ChatPanel(props: ChatPanelProps) {
                         <div className="mt-1 text-xs text-destructive/80">{friendly.detail}</div>
                       )}
                     </div>
-                    <button
+                    <IconButton
                       type="button"
+                      variant="ghost"
+                      size="icon-xs"
                       onClick={() => clearError()}
-                      className="shrink-0 rounded-md p-1 text-destructive/70 transition hover:bg-destructive/15 hover:text-destructive"
+                      className="shrink-0 text-destructive/70 hover:bg-destructive/15 hover:text-destructive"
                       aria-label="Dismiss"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
-                    </button>
+                    </IconButton>
                   </div>
                 </MessageContent>
               </Message>

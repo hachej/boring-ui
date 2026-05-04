@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
 import { cn } from './lib'
-import { IconButton, Tabs, TabsList, TabsTrigger } from '@boring/ui'
+import { Button, IconButton, Tabs, TabsList, TabsTrigger } from '@boring/ui'
 import { RefreshCwIcon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
 
 type Tab = 'prompt' | 'messages'
@@ -198,10 +198,11 @@ function MessagesTab({ messages }: { messages: UIMessage[] }) {
           const open = expanded === key
           return (
             <div key={key} className="border-b border-border/30 last:border-0">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={() => setExpanded(open ? null : key)}
-                className="flex w-full items-start gap-1.5 px-2 py-1.5 text-left hover:bg-muted/30 transition-colors"
+                className="h-auto w-full justify-start gap-1.5 rounded-none px-2 py-1.5 text-left"
               >
                 <span className="mt-0.5 shrink-0 text-muted-foreground/40">
                   {open
@@ -225,7 +226,7 @@ function MessagesTab({ messages }: { messages: UIMessage[] }) {
                 <span className="flex-1 min-w-0 font-mono text-[11px] text-foreground truncate">
                   {partSummary(fp.part)}
                 </span>
-              </button>
+              </Button>
               {open && (
                 <pre className="px-3 pb-2 font-mono text-[10px] leading-relaxed text-foreground/80 whitespace-pre-wrap break-words bg-muted/20">
                   {JSON.stringify(fp.part, null, 2)}

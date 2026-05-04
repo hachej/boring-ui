@@ -7,12 +7,7 @@
  * Keeping it 1:1 with upstream so the "Vercel template" look/feel lands
  * without local invention.
  */
-import { Badge } from "@boring/ui";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/front/ui/collapsible";
+import { Badge, Collapsible, CollapsibleContent, CollapsibleTrigger } from "@boring/ui";
 import { cn } from "@/front/lib";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {

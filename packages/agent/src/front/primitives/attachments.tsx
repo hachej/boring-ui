@@ -1,11 +1,6 @@
 "use client";
 
-import { Button } from "@boring/ui";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/front/ui/hover-card";
+import { Button, HoverCard, HoverCardContent, HoverCardTrigger } from "@boring/ui";
 import { cn } from "@/front/lib";
 import type { FileUIPart, SourceDocumentUIPart } from "ai";
 import {

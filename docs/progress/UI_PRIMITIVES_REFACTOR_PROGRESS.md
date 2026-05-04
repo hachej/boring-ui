@@ -24,6 +24,10 @@ Goal: centralize generic shadcn-style primitives in `@boring/ui`, then consume t
 - [x] Select
 - [x] Command
 - [x] Tabs
+- [x] HoverCard
+- [x] Collapsible
+- [x] ButtonGroup
+- [x] InputGroup
 - [x] Card
 - [x] Label
 - [x] Checkbox
@@ -54,15 +58,15 @@ Goal: centralize generic shadcn-style primitives in `@boring/ui`, then consume t
 - [x] Workspace `WorkbenchLeftPane` tabs/search controls
 - [x] Agent `ModelPicker`
 - [x] Agent `DebugDrawer`
-- [ ] Agent bare primitives cleanup
-- [ ] Agent `ChatPanel` subcomponent extraction
+- [x] Agent bare primitives cleanup
+- [x] Agent `ChatPanel` generic action cleanup
 
 ### Simplification / no-retro cleanup
 
 - [x] Replace core `@boring/workspace/ui-shadcn` imports with `@boring/ui`
 - [x] Remove workspace `ui-shadcn` public export and build entry
 - [x] Remove package-local wrapper files for primitives moved to `@boring/ui`
-- [x] Keep agent-only primitives (`button-group`, `input-group`, `collapsible`, `hover-card`) local for now
+- [x] Promote remaining generic agent primitives (`button-group`, `input-group`, `collapsible`, `hover-card`) to `@boring/ui` and consume direct imports
 
 ### Required self-review loops
 
@@ -80,3 +84,5 @@ Each loop asks: **what can be simplified? what can be moved to `@boring/ui`? wha
 - 2026-05-03: moved Tooltip/Dialog/DropdownMenu/Select/Command/Tabs to `@boring/ui`; added shared atoms and migrated first core/workspace/agent consumers.
 - 2026-05-03: moved Card/Label/Checkbox/AlertDialog/Popover/ScrollArea/Sheet to `@boring/ui`; removed workspace `ui-shadcn` public export and package-local compatibility wrappers.
 - 2026-05-03: migrated WorkbenchLeftPane to `Tabs`/`Input`/`IconButton`, DebugDrawer to `Tabs`/`IconButton`, FileTreeView context actions to shared `Button`, and ChatPanel actions to `Button`/`IconButton`.
+- 2026-05-04: promoted HoverCard/Collapsible/ButtonGroup/InputGroup to `@boring/ui`; migrated agent ai-elements primitives to direct `@boring/ui`; cleaned remaining production raw buttons/inputs/selects across core/workspace/agent where generic design primitives apply. Raw-control scan now only reports tests, comments, and intentional non-button tool-renderer notes.
+- 2026-05-04: validation green: `@boring/ui` test/typecheck, agent typecheck + ChatPanel/bare primitive tests, workspace typecheck + full test suite (1048 passed, 2 skipped), core typecheck + smoke/user-nav tests, full-app typecheck + build.

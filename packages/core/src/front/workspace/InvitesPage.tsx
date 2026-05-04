@@ -10,6 +10,11 @@ import {
   CardTitle,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
@@ -180,17 +185,16 @@ export function InvitesPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invite-role">Role</Label>
-                <select
-                  id="invite-role"
-                  data-testid="invite-role-select"
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as MemberRole)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                >
-                  <option value="editor">Editor</option>
-                  <option value="viewer">Viewer</option>
-                  <option value="owner">Owner</option>
-                </select>
+                <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as MemberRole)}>
+                  <SelectTrigger id="invite-role" data-testid="invite-role-select">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="editor">Editor</SelectItem>
+                    <SelectItem value="viewer">Viewer</SelectItem>
+                    <SelectItem value="owner">Owner</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
             <CardFooter>

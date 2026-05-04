@@ -44,6 +44,10 @@
 @source "../../../../ui/src/tabs.tsx";
 @source "../../../../ui/src/textarea.tsx";
 @source "../../../../ui/src/tooltip.tsx";
+@source "../../../../ui/src/hover-card.tsx";
+@source "../../../../ui/src/collapsible.tsx";
+@source "../../../../ui/src/button-group.tsx";
+@source "../../../../ui/src/input-group.tsx";
 
 @custom-variant dark (&:is(.dark *));
 

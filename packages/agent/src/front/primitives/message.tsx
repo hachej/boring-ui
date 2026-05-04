@@ -1,10 +1,6 @@
 "use client";
 
-import { Button } from "@boring/ui";
-import {
-  ButtonGroup,
-  ButtonGroupText,
-} from "@/front/ui/button-group";
+import { Button, ButtonGroup, ButtonGroupText } from "@boring/ui";
 import {
   Tooltip,
   TooltipContent,

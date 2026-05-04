@@ -16,6 +16,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  Button,
   CommandShortcut,
 } from "@boring/ui"
 import {
@@ -515,12 +516,14 @@ function ModeButton({
   onClick: () => void
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       aria-pressed={active}
       onClick={onClick}
       className={[
-        "inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors",
+        "h-7 gap-1.5 px-2 text-xs font-medium",
         active
           ? "bg-background text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground",
@@ -528,7 +531,7 @@ function ModeButton({
     >
       {icon}
       {label}
-    </button>
+    </Button>
   )
 }
 

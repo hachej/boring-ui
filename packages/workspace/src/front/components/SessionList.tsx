@@ -8,6 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react"
+import { IconButton } from "@boring/ui"
 import { cn } from "../lib/utils"
 
 export interface SessionItem {
@@ -103,12 +104,7 @@ export function SessionList({
           Sessions
         </span>
         {onCreate && (
-          <button
-            type="button"
-            onClick={onCreate}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            aria-label="New session"
-          >
+          <IconButton type="button" variant="ghost" size="icon-xs" onClick={onCreate} aria-label="New session">
             <svg
               width="16"
               height="16"
@@ -120,7 +116,7 @@ export function SessionList({
             >
               <path d="M8 3v10M3 8h10" />
             </svg>
-          </button>
+          </IconButton>
         )}
       </div>
 
@@ -197,9 +193,11 @@ function SessionRow({
         />
       )}
       {onDelete && (
-        <button
+        <IconButton
           type="button"
-          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-data-[focused=true]:opacity-100"
+          variant="ghost"
+          size="icon-xs"
+          className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 group-data-[focused=true]:opacity-100"
           onClick={(e) => {
             e.stopPropagation()
             onDelete(session.id)
@@ -218,7 +216,7 @@ function SessionRow({
           >
             <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />
           </svg>
-        </button>
+        </IconButton>
       )}
     </div>
   )

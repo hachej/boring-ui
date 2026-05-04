@@ -11,6 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
+  IconButton,
   Input,
   Label,
 } from '@boring/ui'
@@ -57,15 +58,17 @@ function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; w
       aria-label="App top bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <button
+        <IconButton
           type="button"
+          variant="default"
+          size="icon-xs"
           aria-label="Back to workspace"
           title="Back to workspace"
           onClick={() => navigate(workspaceHref)}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="shrink-0 bg-foreground text-[12px] font-semibold text-background hover:bg-foreground/90"
         >
           B
-        </button>
+        </IconButton>
         <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
           Boring
         </span>

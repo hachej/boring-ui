@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
+import { IconButton } from "@boring/ui"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, workspaceEvents } from "../events"
@@ -497,21 +498,19 @@ function FloatingEdgeButton({
   hint?: string
 }) {
   return (
-    <button
+    <IconButton
       type="button"
+      variant="ghost"
+      size="icon-sm"
       onClick={onClick}
       aria-label={label}
       title={hint ? `${label} (${hint})` : label}
       className={cn(
-        "absolute top-1/2 z-30 -translate-y-1/2",
+        "absolute top-1/2 z-30 h-9 w-9 -translate-y-1/2 gap-0.5 rounded-lg bg-background text-muted-foreground",
         side === "left" ? "left-2" : "right-2",
-        "flex h-9 w-9 flex-col items-center justify-center gap-0.5 rounded-lg",
-        "bg-background text-muted-foreground",
         "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.08),0_2px_8px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]",
-        "transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        "hover:text-[color:var(--accent)] hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(from_var(--accent)_l_c_h/0.25),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.35)]",
-        "hover:-translate-y-[calc(50%+1px)]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40",
+        "hover:-translate-y-[calc(50%+1px)] hover:text-[color:var(--accent)] hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(from_var(--accent)_l_c_h/0.25),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.35)]",
+        "focus-visible:ring-[color:var(--accent)]/40",
       )}
     >
       {icon === "sessions" ? (
@@ -524,6 +523,6 @@ function FloatingEdgeButton({
           <path d="M3 7.5 A1.5 1.5 0 0 1 4.5 6 h4 l2 2 h9 A1.5 1.5 0 0 1 21 9.5 V17.5 A1.5 1.5 0 0 1 19.5 19 H4.5 A1.5 1.5 0 0 1 3 17.5 Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
         </svg>
       )}
-    </button>
+    </IconButton>
   )
 }

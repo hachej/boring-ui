@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { DockviewApi } from "dockview-react"
 import { ChevronRight, FolderTree } from "lucide-react"
+import { Button, IconButton } from "@boring/ui"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult } from "../../bridge/types"
@@ -586,20 +587,17 @@ export function SurfaceShell({
             prefixHeaderActions on group creation). */}
         {collapsed && (
           <div className="pointer-events-none absolute left-0 top-0 z-20 flex items-center" style={{ height: 44 }}>
-            <button
+            <IconButton
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setCollapsed(false)}
-              className={cn(
-                "pointer-events-auto ml-2 flex h-7 w-7 items-center justify-center rounded-md",
-                "text-muted-foreground transition-colors",
-                "hover:bg-foreground/5 hover:text-foreground",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-              )}
+              className="pointer-events-auto ml-2"
               aria-label="Show sources"
               title="Show sources"
             >
               <FolderTree className="h-4 w-4" strokeWidth={1.75} />
-            </button>
+            </IconButton>
           </div>
         )}
         <EmptyWorkbenchOverlay
@@ -615,19 +613,17 @@ export function SurfaceShell({
 
 function WorkbenchCloseAction({ onClose }: { onClose: () => void }) {
   return (
-    <button
+    <IconButton
       type="button"
+      variant="ghost"
+      size="icon-xs"
       onClick={onClose}
-      className={cn(
-        "mx-1 flex h-7 w-7 items-center justify-center rounded-md",
-        "text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-      )}
+      className="mx-1"
       aria-label="Close workbench"
       title="Close workbench (⌘2)"
     >
       <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
-    </button>
+    </IconButton>
   )
 }
 
@@ -660,37 +656,31 @@ function EmptyWorkbenchOverlay({
       {/* Fallback top bar so icons are always visible even with no tabs */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-0.5 border-b border-[color:oklch(from_var(--border)_l_c_h/0.4)] bg-background px-1" style={{ height: 44 }}>
         {collapsed && (
-          <button
+          <IconButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={onExpandFiles}
-            className={cn(
-              "pointer-events-auto mx-1 flex h-7 w-7 items-center justify-center rounded-md",
-              "text-muted-foreground transition-colors",
-              "hover:bg-foreground/5 hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            )}
+            className="pointer-events-auto mx-1"
             aria-label="Show sources"
             title="Show sources"
           >
             <FolderTree className="h-4 w-4" strokeWidth={1.75} />
-          </button>
+          </IconButton>
         )}
         <div className="flex-1" />
         {onClose && (
-          <button
+          <IconButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={onClose}
-            className={cn(
-              "pointer-events-auto mx-1 flex h-7 w-7 items-center justify-center rounded-md",
-              "text-muted-foreground transition-colors",
-              "hover:bg-foreground/5 hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            )}
+            className="pointer-events-auto mx-1"
             aria-label="Close workbench"
             title="Close workbench (⌘2)"
           >
             <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
-          </button>
+          </IconButton>
         )}
       </div>
 
@@ -704,19 +694,16 @@ function EmptyWorkbenchOverlay({
           Open a source item, or let the agent produce an artifact here.
         </p>
         {collapsed && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={onExpandFiles}
-            className={cn(
-              "pointer-events-auto mt-2 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-[12px] font-medium text-foreground",
-              "shadow-[0_1px_0_oklch(0_0_0/0.02),0_2px_6px_-2px_oklch(0_0_0/0.06)]",
-              "transition-colors hover:border-[color:var(--accent)]/40 hover:text-[color:var(--accent)]",
-              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            )}
+            className="pointer-events-auto mt-2 gap-1.5 text-[12px] hover:border-[color:var(--accent)]/40 hover:text-[color:var(--accent)]"
           >
             <FolderTree className="h-3.5 w-3.5" strokeWidth={1.75} />
             Show sources
-          </button>
+          </Button>
         )}
       </div>
     </>

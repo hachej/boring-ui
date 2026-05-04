@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { CheckIcon, AlertCircleIcon, InfoIcon, XIcon } from "lucide-react"
+import { IconButton } from "@boring/ui"
 import { cn } from "../lib/utils"
 
 export type ToastVariant = "info" | "success" | "error"
@@ -191,18 +192,16 @@ export function Toaster({ position = "bottom-right", className }: ToasterProps) 
                 </div>
               )}
             </div>
-            <button
+            <IconButton
               type="button"
+              variant="ghost"
+              size="icon-xs"
               onClick={() => dismissToast(t.id)}
               aria-label="Dismiss"
-              className={cn(
-                "shrink-0 rounded-sm p-0.5 text-muted-foreground/70",
-                "transition-colors hover:bg-foreground/5 hover:text-foreground",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-              )}
+              className="shrink-0 text-muted-foreground/70"
             >
               <XIcon className="h-3 w-3" strokeWidth={2} />
-            </button>
+            </IconButton>
           </div>
         )
       })}

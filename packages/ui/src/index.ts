@@ -27,3 +27,7 @@ export { Popover, PopoverTrigger, PopoverContent, PopoverAnchor, PopoverHeader, 
 export { ScrollArea, ScrollBar } from './scroll-area'
 export { Sheet, SheetTrigger, SheetClose, SheetContent, SheetHeader, SheetFooter, SheetTitle, SheetDescription } from './sheet'
 export { useToast, type ToastApi, type ToastInput, type ToastVariant } from './use-toast'
+export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card'
+export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible'
+export { ButtonGroup, ButtonGroupSeparator, ButtonGroupText, buttonGroupVariants } from './button-group'
+export { InputGroup, InputGroupAddon, InputGroupButton, InputGroupText, InputGroupInput, InputGroupTextarea } from './input-group'

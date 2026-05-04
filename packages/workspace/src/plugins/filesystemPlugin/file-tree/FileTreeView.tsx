@@ -713,19 +713,20 @@ export function FileTreeView({
           className="fixed z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFile}>
+          <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFile}>
             New file
           </Button>
-          <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFolder}>
+          <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFolder}>
             New folder
           </Button>
           {!ctxMenu.isBackground && (
             <>
-              <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={handleRename}>
+              <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleRename}>
                 Rename
               </Button>
               <Button
                 type="button"
+                role="menuitem"
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
@@ -736,7 +737,7 @@ export function FileTreeView({
               >
                 Delete
               </Button>
-              <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
+              <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
                 Copy path
               </Button>
             </>

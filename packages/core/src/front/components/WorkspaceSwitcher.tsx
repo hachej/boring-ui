@@ -200,10 +200,11 @@ export function WorkspaceSwitcher({
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               aria-label={`Workspace menu: ${switcherLabel}`}
-              className="-ml-1 flex h-8 min-w-0 items-center gap-2.5 rounded-md border border-transparent px-1 py-1 text-left transition-colors hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="-ml-1 h-8 min-w-0 justify-start gap-2.5 border border-transparent px-1 py-1 text-left"
             >
               <span
                 aria-hidden="true"
@@ -221,7 +222,7 @@ export function WorkspaceSwitcher({
                 </span>
               </span>
               <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
-            </button>
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"

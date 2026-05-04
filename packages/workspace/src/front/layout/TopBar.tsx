@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
-import { IconButton, Kbd } from "@boring/ui"
+import { Button, IconButton, Kbd } from "@boring/ui"
 import { cn } from "../lib/utils"
 
 export interface TopBarProps {
@@ -64,22 +64,19 @@ export function TopBar({
       </div>
 
       {/* Command palette trigger — minimalist, no background */}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         onClick={onCommandPalette}
-        className={cn(
-          "group flex h-7 items-center gap-1.5 rounded px-1.5 text-[12.5px] text-muted-foreground/60",
-          "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          "hover:text-foreground",
-          "focus-visible:outline-none focus-visible:text-foreground",
-        )}
+        className="group h-7 gap-1.5 px-1.5 text-[12.5px] text-muted-foreground/60 hover:bg-transparent hover:text-foreground focus-visible:text-foreground"
         aria-label="Search catalogs and commands"
         title="Command palette (⌘K)"
       >
         <Search className="h-3.5 w-3.5 shrink-0 opacity-70" strokeWidth={1.75} />
         <span className="font-normal tracking-tight">Search</span>
         <Kbd className="ml-1 border-0 bg-transparent p-0 text-[10px] shadow-none group-hover:text-muted-foreground">⌘K</Kbd>
-      </button>
+      </Button>
 
       <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
         {onNewChat && (

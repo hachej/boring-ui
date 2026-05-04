@@ -25,6 +25,7 @@ import {
   indentOnInput,
 } from "@codemirror/language"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
+import { Button } from "@boring/ui"
 import { createShadcnTheme } from "../../../front/theme/codemirror-theme"
 import { cn } from "../../../front/lib/utils"
 
@@ -216,9 +217,11 @@ export function CodeEditor({
         <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
           <span>Large file — editing disabled</span>
           {isDownloadFile && (
-            <button
+            <Button
               type="button"
-              className="ml-auto rounded border border-border px-2 py-0.5 text-xs hover:bg-accent transition-colors"
+              variant="outline"
+              size="xs"
+              className="ml-auto"
               onClick={() => {
                 const blob = new Blob([content], { type: "text/plain" })
                 const url = URL.createObjectURL(blob)
@@ -230,7 +233,7 @@ export function CodeEditor({
               }}
             >
               Download
-            </button>
+            </Button>
           )}
         </div>
         <div ref={containerRef} className="flex-1 overflow-hidden" />

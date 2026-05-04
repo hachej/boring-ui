@@ -1,7 +1,7 @@
 import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, XIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { Input } from "@boring/ui"
+import { Button, Input } from "@boring/ui"
 import { Popover, PopoverTrigger, PopoverContent } from "@boring/ui"
 import { useExplorerState } from "./useExplorerState"
 import type {
@@ -222,13 +222,9 @@ function Toolbar({
               />
             ))}
             {filterCount > 0 ? (
-              <button
-                type="button"
-                onClick={onClearFilters}
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-              >
+              <Button type="button" variant="ghost" size="xs" onClick={onClearFilters} className="gap-1 text-[11px] text-muted-foreground hover:text-foreground">
                 <XIcon size={11} /> Clear all
-              </button>
+              </Button>
             ) : null}
           </PopoverContent>
         </Popover>
@@ -267,13 +263,14 @@ function FacetSection({
           const active = selected.includes(v.value)
           const label = config.formatValue ? config.formatValue(v.value) : v.value
           return (
-            <button
+            <Button
               key={v.value}
               type="button"
+              variant="outline"
+              size="xs"
               onClick={() => onToggle(config.key, v.value)}
               className={cn(
-                "inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px]",
-                "transition-colors duration-120 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                "h-auto gap-1 rounded-sm px-1.5 py-0.5 text-[11px]",
                 active
                   ? "border-foreground/20 bg-foreground/8 text-foreground"
                   : "border-border bg-transparent text-muted-foreground hover:border-foreground/15 hover:text-foreground",
@@ -283,7 +280,7 @@ function FacetSection({
               <span className="font-mono text-[10px] text-muted-foreground/80">
                 {v.count.toLocaleString()}
               </span>
-            </button>
+            </Button>
           )
         })}
       </div>
@@ -322,14 +319,9 @@ function FlatList({
       ))}
       {hasMore ? (
         <li className="px-3 py-2">
-          <button
-            type="button"
-            onClick={onLoadMore}
-            disabled={loading}
-            className="w-full text-left text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
-          >
+          <Button type="button" variant="ghost" size="xs" onClick={onLoadMore} disabled={loading} className="w-full justify-start text-[11px] text-muted-foreground hover:text-foreground">
             {loading ? "Loading…" : "Load more"}
-          </button>
+          </Button>
         </li>
       ) : null}
     </ul>
@@ -362,16 +354,15 @@ function TreeList({
         const group = getGroup(entry.value)
         return (
           <li key={entry.value}>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               aria-expanded={expanded}
               onClick={() =>
                 expanded ? onCollapse(entry.value) : onExpand(entry.value)
               }
-              className={cn(
-                "group mx-1 flex w-[calc(100%-0.5rem)] items-center gap-1.5 rounded-md px-1.5 py-1 text-left",
-                "transition-colors duration-120 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-muted/40",
-              )}
+              className="group mx-1 h-auto w-[calc(100%-0.5rem)] justify-start gap-1.5 px-1.5 py-1 text-left hover:bg-muted/40"
             >
               {expanded ? (
                 <ChevronDownIcon size={11} className="text-muted-foreground/80" />
@@ -382,7 +373,7 @@ function TreeList({
               <span className="ml-auto font-mono text-[10.5px] text-muted-foreground/80">
                 {entry.count.toLocaleString()}
               </span>
-            </button>
+            </Button>
             {expanded ? (
               <ul className="flex flex-col">
                 {group.items.map((row) => (
@@ -401,14 +392,9 @@ function TreeList({
                 ) : null}
                 {group.hasMore ? (
                   <li className="pl-7 pr-3 py-1">
-                    <button
-                      type="button"
-                      onClick={() => onLoadMoreGroup(entry.value)}
-                      disabled={group.loading}
-                      className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
-                    >
+                    <Button type="button" variant="ghost" size="xs" onClick={() => onLoadMoreGroup(entry.value)} disabled={group.loading} className="text-[11px] text-muted-foreground hover:text-foreground">
                       {group.loading ? "Loading…" : "Load more"}
-                    </button>
+                    </Button>
                   </li>
                 ) : null}
               </ul>

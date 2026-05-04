@@ -4,6 +4,7 @@
  * Copied: 2026-04-23. We own this file; upstream updates require re-port.
  */
 import type { ReactNode } from 'react'
+import { cn } from '../lib'
 
 export interface TerminalProps {
   children?: ReactNode
@@ -24,46 +25,31 @@ export function Terminal({
 }: TerminalProps) {
   return (
     <div
-      className={className}
-      style={{
-        background: 'var(--boring-agent-terminal-bg, #1e1e1e)',
-        color: 'var(--boring-agent-terminal-fg, #d4d4d4)',
-        borderRadius: 'var(--boring-agent-terminal-radius, 0.375rem)',
-        fontFamily: 'var(--boring-agent-font-mono, monospace)',
-        fontSize: '0.8125rem',
-        lineHeight: 1.5,
-        overflow: 'hidden',
-      }}
+      className={cn(
+        'overflow-hidden rounded-[var(--boring-agent-terminal-radius,0.375rem)] bg-[var(--boring-agent-terminal-bg,#1e1e1e)] font-[family-name:var(--boring-agent-font-mono,monospace)] text-[0.8125rem] leading-normal text-[var(--boring-agent-terminal-fg,#d4d4d4)]',
+        className,
+      )}
     >
       {title && (
-        <div
-          style={{
-            padding: '0.375rem 0.75rem',
-            background: 'var(--boring-agent-terminal-header-bg, #2d2d2d)',
-            borderBottom: '1px solid var(--boring-agent-terminal-border, #404040)',
-            fontSize: '0.75rem',
-            opacity: 0.8,
-          }}
-        >
+        <div className="border-b border-[var(--boring-agent-terminal-border,#404040)] bg-[var(--boring-agent-terminal-header-bg,#2d2d2d)] px-3 py-1.5 text-xs opacity-80">
           {title}
         </div>
       )}
-      <div style={{ padding: '0.75rem' }}>
+      <div className="p-3">
         {children ?? (
           <>
             {stdout && (
-              <pre data-stream="stdout" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              <pre data-stream="stdout" className="m-0 whitespace-pre-wrap">
                 {stdout}
               </pre>
             )}
             {stderr && (
               <pre
                 data-stream="stderr"
-                style={{
-                  margin: stdout ? '0.5rem 0 0' : 0,
-                  whiteSpace: 'pre-wrap',
-                  color: 'var(--boring-agent-terminal-stderr, #f87171)',
-                }}
+                className={cn(
+                  'm-0 whitespace-pre-wrap text-[var(--boring-agent-terminal-stderr,#f87171)]',
+                  stdout && 'mt-2',
+                )}
               >
                 {stderr}
               </pre>
@@ -74,15 +60,12 @@ export function Terminal({
       {exitCode != null && (
         <div
           data-testid="exit-code"
-          style={{
-            padding: '0.25rem 0.75rem',
-            borderTop: '1px solid var(--boring-agent-terminal-border, #404040)',
-            fontSize: '0.75rem',
-            opacity: 0.6,
-            color: exitCode === 0
-              ? 'var(--boring-agent-terminal-success, #4ade80)'
-              : 'var(--boring-agent-terminal-error, #f87171)',
-          }}
+          className={cn(
+            'border-t border-[var(--boring-agent-terminal-border,#404040)] px-3 py-1 text-xs opacity-60',
+            exitCode === 0
+              ? 'text-[var(--boring-agent-terminal-success,#4ade80)]'
+              : 'text-[var(--boring-agent-terminal-error,#f87171)]',
+          )}
         >
           exit {exitCode}
         </div>

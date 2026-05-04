@@ -15,6 +15,11 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { useSession } from '../auth/AuthProvider.js'
@@ -162,21 +167,22 @@ export function MembersPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <select
-                          data-testid={`role-select-${member.userId}`}
+                        <Select
                           value={member.role}
                           disabled={!canChangeRole}
-                          onChange={(e) =>
-                            handleRoleChange(member.userId, e.target.value as MemberRole)
-                          }
-                          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs disabled:opacity-50"
+                          onValueChange={(value) => handleRoleChange(member.userId, value as MemberRole)}
                         >
-                          {ROLE_OPTIONS.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger data-testid={`role-select-${member.userId}`} className="h-8 w-28 text-xs">
+                            <SelectValue placeholder="Role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLE_OPTIONS.map((r) => (
+                              <SelectItem key={r} value={r}>
+                                {r}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         {canRemove && (
                           <Button
                             variant="destructive"

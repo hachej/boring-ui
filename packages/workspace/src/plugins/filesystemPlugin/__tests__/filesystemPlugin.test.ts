@@ -15,8 +15,8 @@ describe("filesystemPlugin", () => {
     expect(filesystemPlugin.agentTools).toBeUndefined()
   })
 
-  it("registers provider, files left-tab output, surface resolver, and editor panels", () => {
-    expect(filesystemPlugin.outputs).toHaveLength(7)
+  it("registers provider, preload binding, files left-tab output, surface resolver, and editor panels", () => {
+    expect(filesystemPlugin.outputs).toHaveLength(8)
     expect(filesystemPlugin.outputs![0]).toEqual(
       expect.objectContaining({
         type: "provider",
@@ -25,13 +25,19 @@ describe("filesystemPlugin", () => {
     )
     expect(filesystemPlugin.outputs![1]).toEqual(
       expect.objectContaining({
+        type: "binding",
+        id: "filesystem-tree-preload",
+      }),
+    )
+    expect(filesystemPlugin.outputs![2]).toEqual(
+      expect.objectContaining({
         type: "left-tab",
         id: "files",
         title: "Files",
         source: "builtin",
       }),
     )
-    expect(filesystemPlugin.outputs![6]).toEqual(
+    expect(filesystemPlugin.outputs![7]).toEqual(
       expect.objectContaining({
         type: "surface-resolver",
         resolver: expect.objectContaining({ id: "filesystem-path" }),
