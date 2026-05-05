@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react"
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react"
-import { DataExplorer } from "../../front/components/DataExplorer"
+import { DataExplorer } from "../../../front/components/DataExplorer"
 import type {
   Badge,
   DataExplorerProps,
@@ -22,14 +22,14 @@ import type {
   FacetValue,
   Facets,
   SearchResult,
-} from "../../front/components/DataExplorer"
+} from "../../../front/components/DataExplorer"
 import { Input } from "@boring/ui"
-import { cn } from "../../front/lib/utils"
-import { definePanel } from "../../front/registry/types"
-import type { PaneProps, PanelConfig } from "../../front/registry/types"
-import { defineFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
-import type { CatalogConfig, LeftTabParams, PluginOutput } from "../../shared/plugins/types"
-import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
+import { cn } from "../../../front/lib/utils"
+import { definePanel } from "../../../front/registry/types"
+import type { PaneProps, PanelConfig } from "../../../front/registry/types"
+import { defineFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
+import type { CatalogConfig, LeftTabParams, PluginOutput } from "../../../shared/plugins/types"
+import type { WorkspaceFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
 
 export const EXPLORER_PLUGIN_ID = "explorer"
 

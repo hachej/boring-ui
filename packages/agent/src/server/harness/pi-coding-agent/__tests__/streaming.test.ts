@@ -60,8 +60,16 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   SessionManager: { inMemory: () => ({}) },
   AuthStorage: { inMemory: () => ({}), create: () => ({}) },
   ModelRegistry: {
-    inMemory: () => ({ find: mockFindModel }),
-    create: () => ({ find: mockFindModel }),
+    inMemory: () => ({
+      find: mockFindModel,
+      // Return every model find() has been called with — keeps the mock
+      // consistent: anything the registry "knows about" is also available.
+      getAvailable: () => mockFindModel.mock.calls.map(([provider, id]: [string, string]) => ({ provider, id })),
+    }),
+    create: () => ({
+      find: mockFindModel,
+      getAvailable: () => mockFindModel.mock.calls.map(([provider, id]: [string, string]) => ({ provider, id })),
+    }),
   },
 }));
 

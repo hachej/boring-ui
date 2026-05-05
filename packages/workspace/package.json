@@ -4,7 +4,8 @@
   "type": "module",
   "description": "Workspace UI, plugin, and bridge package for composing chat, files, catalogs, editors, and app-specific panes.",
   "files": [
-    "dist"
+    "dist",
+    "docs"
   ],
   "exports": {
     ".": {
@@ -54,7 +55,7 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm --filter @boring/ui build && tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
-    "typecheck": "pnpm --filter @boring/ui build && tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
+    "typecheck": "pnpm --filter @boring/ui build && pnpm --filter @boring/agent build && tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",
     "lint:plugin-invariants": "node ./scripts/check-plugin-invariants.mjs",

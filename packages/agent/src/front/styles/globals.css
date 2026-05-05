@@ -64,7 +64,7 @@
 @source "../../../../ui/src/detail-list.tsx";
 @source "../../../../ui/src/floating-panel.tsx";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark, .dark *));
 
 /* Bind CSS custom properties below to Tailwind v4 theme tokens so
  * `bg-background`, `text-foreground`, `rounded-lg`, etc. resolve to the
@@ -100,6 +100,29 @@
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+}
+
+
+.dark {
+  --background: oklch(0.145 0.004 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0.004 285.823);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.165 0.004 285.823);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0.006 285.885);
+  --secondary: oklch(0.269 0.006 285.885);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0.006 285.885);
+  --muted-foreground: oklch(0.708 0.01 286.073);
+  --accent: oklch(0.62 0.14 65);
+  --accent-foreground: oklch(0.12 0.004 285.823);
+  --accent-soft: oklch(0.28 0.04 65);
+  --border: oklch(0.269 0.006 285.885);
+  --input: oklch(0.269 0.006 285.885);
+  --ring: oklch(0.62 0.14 65);
+  --canvas: oklch(0.12 0.004 285.823);
 }
 
 [data-boring-agent] {
