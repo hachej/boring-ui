@@ -46,7 +46,7 @@ describe("workspace charts", () => {
         payload={[
           { dataKey: "value", name: "Value", value: 1, color: "red" },
           { dataKey: "value", name: "Value", value: 2, color: "blue" },
-        ] as any}
+        ]}
       />,
     )
 

@@ -1,5 +1,4 @@
 import type { ReactNode } from "react"
-import type { TooltipProps } from "recharts"
 import { cn } from "../lib/utils"
 
 export interface BoringChartTheme {
@@ -53,12 +52,26 @@ export function defaultBoringChartValueFormatter(value: unknown): string {
 
 export type BoringChartValueFormatter = (value: unknown) => string
 
+export interface BoringTooltipPayloadItem {
+  color?: string
+  dataKey?: string | number
+  name?: string | number
+  value?: unknown
+}
+
+export interface BoringTooltipProps {
+  active?: boolean
+  payload?: BoringTooltipPayloadItem[]
+  label?: unknown
+  valueFormatter?: BoringChartValueFormatter
+}
+
 export function BoringTooltip({
   active,
   payload,
   label,
   valueFormatter = defaultBoringChartValueFormatter,
-}: TooltipProps<number | string, string> & { valueFormatter?: BoringChartValueFormatter }) {
+}: BoringTooltipProps) {
   if (!active || !payload || payload.length === 0) return null
   return (
     <div
@@ -81,7 +94,7 @@ export function BoringTooltip({
               <span
                 aria-hidden="true"
                 className="size-2 rounded-full"
-                style={{ background: item.color }}
+                style={{ background: item.color ?? getBoringChartColor(index) }}
               />
               {String(item.name ?? item.dataKey ?? "Series")}
             </span>
