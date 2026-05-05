@@ -10,6 +10,10 @@ describe('parseSlashCommand', () => {
     expect(parseSlashCommand('/model sonnet')).toEqual({ name: 'model', args: 'sonnet' })
   })
 
+  test('parses hyphenated command names', () => {
+    expect(parseSlashCommand('/open-chart GDPC1')).toEqual({ name: 'open-chart', args: 'GDPC1' })
+  })
+
   test('trims whitespace from args', () => {
     expect(parseSlashCommand('/model   haiku  ')).toEqual({ name: 'model', args: 'haiku' })
   })
