@@ -3,7 +3,7 @@
 import { BarChart3, Database } from "lucide-react"
 import { definePanel } from "../../front/registry/types"
 import { PanelChrome } from "../../front/dock"
-import { DataExplorer } from "../../front/components/DataExplorer"
+import { DataExplorer, type ExplorerRow } from "../../front/components/DataExplorer"
 import { defineFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
 import type {
   CatalogConfig,
@@ -11,6 +11,7 @@ import type {
   PluginOutput,
 } from "../../shared/plugins/types"
 import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
+import type { WorkspaceBridge } from "../../front/bridge/types"
 import type { PaneProps, PanelConfig } from "../../front/registry/types"
 import {
   DATA_CATALOG_PLUGIN_ID,
@@ -55,6 +56,7 @@ export type {
   CreateDataCatalogOutputsOptions,
   CreateDataCatalogPluginOptions,
   DataCatalogResolvedQuery,
+  DataCatalogSelectContext,
   DataExplorerProps,
   DataCatalogVisualizationParams,
   DataCatalogVisualizationState,
@@ -92,12 +94,14 @@ export function createDataCatalogOutputs(
 
   function DataCatalogLeftTab({ params, className }: PaneProps<LeftTabParams>) {
     const { query, controlled } = useDataCatalogQuery(params)
+    const bridge = params?.bridge as WorkspaceBridge | undefined
+    const handleSelect = (row: ExplorerRow) => onSelect(row, { params, bridge })
     return (
       <DataExplorer
         adapter={options.adapter}
         facets={options.facets}
         groupBy={options.groupBy}
-        onActivate={onSelect}
+        onActivate={handleSelect}
         getDragPayload={options.getDragPayload}
         emptyState={emptyState}
         searchPlaceholder={searchPlaceholder}
@@ -119,6 +123,7 @@ export function createDataCatalogOutputs(
       params,
       visualizationTitle,
     )
+    const handleSelect = (nextRow: ExplorerRow) => onSelect(nextRow, {})
 
     return (
       <PanelChrome
@@ -139,7 +144,7 @@ export function createDataCatalogOutputs(
           adapter={options.adapter}
           facets={options.facets}
           groupBy={options.groupBy}
-          onActivate={onSelect}
+          onActivate={handleSelect}
           getDragPayload={options.getDragPayload}
           emptyState={emptyState}
           searchPlaceholder={searchPlaceholder}
@@ -188,7 +193,7 @@ export function createDataCatalogOutputs(
       id: catalogId,
       label: catalogLabel,
       adapter: options.adapter,
-      onSelect,
+      onSelect: (row) => onSelect(row, {}),
     }
     outputs.push({ type: "catalog", catalog })
   }
@@ -243,6 +248,6 @@ export function createDataCatalogCatalog(
     id: options.catalogId ?? options.id ?? DATA_CATALOG_PLUGIN_ID,
     label: options.catalogLabel ?? options.label ?? "Data",
     adapter: options.adapter,
-    onSelect: options.onSelect ?? (() => {}),
+    onSelect: (row) => options.onSelect?.(row, {}),
   }
 }

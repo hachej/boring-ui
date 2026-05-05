@@ -4,6 +4,7 @@ import {
   defineFrontPlugin,
   postUiCommand,
   type CreateDataCatalogOutputsOptions,
+  type DataCatalogSelectContext,
   type ExplorerAdapter,
   type ExplorerRow,
   type WorkspaceFrontPlugin,
@@ -48,7 +49,12 @@ const adapter: ExplorerAdapter = {
   },
 }
 
-function openDataset(row: ExplorerRow): void {
+function openDataset(row: ExplorerRow, context: DataCatalogSelectContext): void {
+  if (context.bridge) {
+    void context.bridge.openFile(row.id, { mode: "edit" })
+    return
+  }
+
   postUiCommand({
     kind: "openSurface",
     params: {

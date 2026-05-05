@@ -1,5 +1,6 @@
-import { renderHook } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import type { ComponentType } from "react"
+import { fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react"
+import { describe, expect, it, vi } from "vitest"
 import { CommandRegistry } from "../../../front/registry/CommandRegistry"
 import { PanelRegistry } from "../../../front/registry/PanelRegistry"
 import { SurfaceResolverRegistry } from "../../../front/registry/SurfaceResolverRegistry"
@@ -105,6 +106,29 @@ describe("dataCatalogPlugin", () => {
         resolver: expect.objectContaining({ id: "warehouse-data-row" }),
       }),
     )
+  })
+
+  it("passes workbench bridge context to left-tab row selection", async () => {
+    const onSelect = vi.fn()
+    const outputs = createDataCatalogOutputs({
+      id: "metrics",
+      label: "Metrics",
+      adapter,
+      onSelect,
+    })
+    const panel = outputs.find((output) => output.type === "left-tab")
+    if (!panel || panel.type !== "left-tab") throw new Error("missing left tab")
+    const Component = panel.component as ComponentType<any>
+    const bridge = { openFile: vi.fn() }
+
+    render(<Component params={{ bridge }} />)
+    await screen.findByText("Daily Orders")
+    fireEvent.click(screen.getByRole("button", { name: /Daily Orders/ }))
+
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith(rows[0], {
+      params: { bridge },
+      bridge,
+    }))
   })
 
   it("registers outputs through plugin bootstrap", () => {

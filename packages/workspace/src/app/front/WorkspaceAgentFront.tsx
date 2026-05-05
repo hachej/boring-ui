@@ -318,7 +318,6 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     surfaceOpenRef.current = surfaceOpen
-    if (!surfaceOpen) surfaceRef.current = null
   }, [surfaceOpen])
 
   const handleSurfaceReady = useCallback((api: SurfaceShellApi) => {

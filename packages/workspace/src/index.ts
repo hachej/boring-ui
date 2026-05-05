@@ -83,6 +83,7 @@ export type {
   CreateDataCatalogOutputsOptions,
   CreateDataCatalogPluginOptions,
   CreateDataCatalogSurfaceResolverOptions,
+  DataCatalogSelectContext,
   DataCatalogResolvedQuery,
   DataCatalogVisualizationParams,
   DataCatalogVisualizationState,

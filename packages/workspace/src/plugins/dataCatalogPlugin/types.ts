@@ -6,7 +6,9 @@ import type {
   ExplorerRow,
   FacetConfig,
 } from "../../front/components/DataExplorer"
+import type { WorkspaceBridge } from "../../front/bridge/types"
 import type { PaneProps, PanelConfig } from "../../front/registry/types"
+import type { LeftTabParams } from "../../shared/plugins/types"
 
 export interface DataCatalogVisualizationParams {
   row?: ExplorerRow
@@ -20,6 +22,11 @@ export interface OpenDataCatalogVisualizationOptions {
   params?: Record<string, unknown>
 }
 
+export interface DataCatalogSelectContext {
+  params?: LeftTabParams
+  bridge?: WorkspaceBridge
+}
+
 export interface CreateDataCatalogOutputsOptions {
   /**
    * Base contribution id. Defaults catalog id to this value and left tab /
@@ -31,7 +38,7 @@ export interface CreateDataCatalogOutputsOptions {
   facets?: FacetConfig[]
   groupBy?: string
   getDragPayload?: (row: ExplorerRow) => DragPayload | null | undefined
-  onSelect?: (row: ExplorerRow) => void
+  onSelect?: (row: ExplorerRow, context: DataCatalogSelectContext) => void
   emptyState?: ReactNode
   searchPlaceholder?: string
   pageSize?: number
