@@ -18,6 +18,8 @@ const requiredFiles = [
   "dist/testing.d.ts",
   "dist/ui-shadcn.js",
   "dist/ui-shadcn.d.ts",
+  "dist/charts.js",
+  "dist/charts.d.ts",
   "dist/app-front.js",
   "dist/app-front.d.ts",
   "dist/app-server.js",
@@ -65,7 +67,7 @@ if (missing.length > 0) {
   for (const m of missing) console.error(`  - ${m}`)
   console.error(
     "\nFix: ensure tsup.config.ts emits server + shared, and " +
-      "vite.config.ts emits workspace + testing + ui-shadcn.",
+      "vite.config.ts emits workspace + testing + ui-shadcn + charts.",
   )
   process.exit(1)
 }

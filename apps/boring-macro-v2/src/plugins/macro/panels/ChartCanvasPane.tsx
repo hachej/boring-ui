@@ -11,13 +11,22 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import {
+  BoringTooltip,
+  boringCartesianAxisProps,
+  boringCartesianGridProps,
+  boringLegendProps,
+  boringLineProps,
+  boringReferenceAreaProps,
+  getBoringChartColor,
+} from "@boring/workspace/charts"
 import type {
   Observation,
   SeriesMetadata,
   SeriesPayload,
 } from "../data/macroSeriesTypes"
 import { fetchMacroSeries } from "../data/macroSeriesData"
-import { SERIES_COLORS, formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
+import { formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
 
 interface ChartParams {
   seriesId?: string
@@ -39,7 +48,6 @@ function normalizeChartParams(value: unknown): ChartParams {
   return {}
 }
 
-const COLORS = SERIES_COLORS
 
 type TabId = "chart" | "table" | "metadata" | "lineage"
 
@@ -261,7 +269,7 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
   }
 
   const allIds = [seriesId, ...overlays.map((o) => o.id)]
-  const colorFor = (id: string) => COLORS[allIds.indexOf(id) % COLORS.length]
+  const colorFor = (id: string) => getBoringChartColor(Math.max(0, allIds.indexOf(id)))
 
   // Map each series id to its yAxisId for dual-axis mode.
   const axisIdFor = (id: string): string | undefined => {
@@ -377,36 +385,33 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
                   setZoomEnd(null)
                 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <CartesianGrid {...boringCartesianGridProps} />
+                <XAxis dataKey="date" {...boringCartesianAxisProps} />
                 {axisStrategy.mode === "dual" ? (
                   <>
-                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={formatValue} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={formatValue} />
+                    <YAxis yAxisId="left" {...boringCartesianAxisProps} tickFormatter={formatValue} />
+                    <YAxis yAxisId="right" orientation="right" {...boringCartesianAxisProps} tickFormatter={formatValue} />
                   </>
                 ) : (
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={formatValue} />
+                  <YAxis {...boringCartesianAxisProps} tickFormatter={formatValue} />
                 )}
-                <Tooltip formatter={(v) => formatValue(Number(v))} />
-                {allIds.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+                <Tooltip content={<BoringTooltip valueFormatter={(v) => formatValue(Number(v))} />} />
+                {allIds.length > 1 && <Legend {...boringLegendProps} />}
                 {allIds.map((id) => {
                   const axisId = axisIdFor(id)
                   const axisProps = axisId ? { yAxisId: axisId } : {}
                   return (
                     <Line
                       key={id}
-                      type="monotone"
+                      {...boringLineProps}
                       dataKey={id}
                       stroke={colorFor(id)}
                       {...axisProps}
-                      dot={false}
-                      isAnimationActive={false}
-                      connectNulls
                     />
                   )
                 })}
                 {zoomStart && zoomEnd && zoomStart !== zoomEnd && (
-                  <ReferenceArea x1={zoomStart} x2={zoomEnd} fill="#ff660033" />
+                  <ReferenceArea x1={zoomStart} x2={zoomEnd} {...boringReferenceAreaProps} />
                 )}
               </LineChart>
             </ResponsiveContainer>

@@ -10,6 +10,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import {
+  boringCartesianAxisProps,
+  boringLineProps,
+  getBoringChartColor,
+} from "@boring/workspace/charts"
 import { Button, Separator } from "@boring/workspace"
 import { ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2 } from "lucide-react"
 
@@ -18,7 +23,7 @@ const MarkdownEditor = lazy(() =>
 )
 import type { Observation, SeriesPayload } from "../data/macroSeriesTypes"
 import { fetchMacroSeries } from "../data/macroSeriesData"
-import { SERIES_COLORS, formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
+import { formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
 
 interface DeckParams {
   path?: string
@@ -30,7 +35,6 @@ interface DeckPaneProps {
   containerApi?: PaneProps<DeckParams | undefined>["containerApi"]
 }
 
-const COLORS = SERIES_COLORS.slice(0, 5)
 
 const fmtNumber = (v: number | null | undefined): string =>
   formatSeriesValue(v, { emptyLabel: "—" })
@@ -123,7 +127,7 @@ function MiniTimeSeries({
           {series.map((s, i) => {
             const id = ids[i]
             const c = changeBadge(s.observations)
-            const color = COLORS[i % COLORS.length]
+            const color = getBoringChartColor(i)
             const positive = c?.pct != null && c.pct >= 0
             return (
               <button
@@ -170,18 +174,17 @@ function MiniTimeSeries({
           <LineChart data={merged} margin={{ top: 8, right: 12, bottom: 0, left: -12 }}>
             <CartesianGrid
               vertical={false}
-              stroke="oklch(from var(--foreground) l c h / 0.08)"
+              stroke="oklch(from var(--border) l c h / 0.48)"
               strokeDasharray="2 4"
             />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 10, fill: "oklch(from var(--muted-foreground) l c h / 0.85)" }}
+              {...boringCartesianAxisProps}
               tickLine={false}
-              axisLine={{ stroke: "oklch(from var(--border) l c h / 0.6)" }}
               minTickGap={32}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: "oklch(from var(--muted-foreground) l c h / 0.85)" }}
+              {...boringCartesianAxisProps}
               tickLine={false}
               axisLine={false}
               width={48}
@@ -189,13 +192,10 @@ function MiniTimeSeries({
             {ids.map((id, i) => (
               <Line
                 key={id}
-                type="monotone"
+                {...boringLineProps}
                 dataKey={id}
-                stroke={COLORS[i % COLORS.length]}
+                stroke={getBoringChartColor(i)}
                 strokeWidth={1.75}
-                dot={false}
-                isAnimationActive={false}
-                connectNulls
               />
             ))}
           </LineChart>
