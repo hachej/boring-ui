@@ -24,7 +24,7 @@ export const Tool = ({ className, ...props }: ToolProps) => (
     className={cn(
       // Lighter card — inside a group it reads as a sub-item, not a standalone.
       // Thin inset border, almost-transparent bg, no outer shadow.
-      "group not-prose my-1.5 w-full rounded-[var(--radius-md)] bg-card/30",
+      "group not-prose my-1.5 w-full min-w-0 rounded-[var(--radius-md)] bg-card/30",
       "shadow-[inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.4)]",
       "overflow-hidden",
       className,
@@ -129,9 +129,8 @@ export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
 export const ToolContent = ({ className, ...props }: ToolContentProps) => (
   <CollapsibleContent
     className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2",
+      "overflow-hidden data-[state=closed]:animate-[boring-collapse-close_150ms_ease] data-[state=open]:animate-[boring-collapse-open_150ms_ease]",
       "space-y-2.5 border-t border-border/30 p-2.5 text-popover-foreground outline-none",
-      "data-[state=closed]:animate-out data-[state=open]:animate-in",
       className,
     )}
     {...props}
@@ -174,10 +173,10 @@ export const ToolOutput = ({
   }
 
   return (
-    <div data-boring-agent-part="tool-result" className={cn(className)} {...props}>
+    <div data-boring-agent-part="tool-result" className={cn("min-w-0 overflow-hidden", className)} {...props}>
       <div
         className={cn(
-          "max-h-72 overflow-auto rounded-sm text-xs",
+          "max-h-72 overflow-x-hidden overflow-y-auto rounded-sm text-xs",
           errorText
             ? "bg-destructive/10 text-destructive"
             : "",
