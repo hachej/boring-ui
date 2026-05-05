@@ -262,7 +262,7 @@ export function createVercelSandboxWorkspace(
           }))
         : await runJson<Entry[]>(
             remote,
-            `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const entries=fs.readdirSync(p,{withFileTypes:true}).map((e)=>({name:e.name,kind:e.isDirectory()?'dir':'file'})); console.log(JSON.stringify(entries))`)} ${shellQuote(sandboxPath)}`,
+            `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const entries=fs.readdirSync(p,{withFileTypes:true}).map((e)=>({name:e.name,kind:e.isDirectory()?'dir':'file'})); process.stdout.write(JSON.stringify(entries))`)} ${shellQuote(sandboxPath)}`,
           )
 
       if (metadataVersion === version) {
@@ -287,7 +287,7 @@ export function createVercelSandboxWorkspace(
       } else {
         mappedStat = await runJson<Stat>(
           remote,
-          `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); console.log(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
+          `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
         )
       }
       if (metadataVersion === version) {

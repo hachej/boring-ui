@@ -1140,8 +1140,7 @@ function ModelSelect({
         </span>
       </SelectTrigger>
       <SelectContent
-        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
-        style={{ maxHeight: 'min(340px, var(--radix-select-content-available-height))' }}
+        className="max-h-[min(340px,var(--radix-select-content-available-height))] w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
       >
         {[...groups.entries()].map(([provider, list]) => (
           <div key={provider} className="py-1">

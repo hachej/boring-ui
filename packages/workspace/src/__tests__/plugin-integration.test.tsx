@@ -372,7 +372,7 @@ describe("createDataCatalogPlugin integration", () => {
     const catalog = getPluginOutput(plugin, "catalog")
     expect(catalog.type).toBe("catalog")
     catalog.catalog.onSelect({ id: "x", title: "X" })
-    expect(onSelect).toHaveBeenCalledWith({ id: "x", title: "X" })
+    expect(onSelect).toHaveBeenCalledWith({ id: "x", title: "X" }, {})
     expect(catalog.catalog.adapter).toBe(stubAdapter)
   })
 

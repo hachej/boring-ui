@@ -30,6 +30,8 @@ function createSandboxHandle(
 
   const sandbox = {
     sandboxId,
+    name: sandboxId,
+    persistent: true,
     sourceSnapshotId: opts.sourceSnapshotId,
     stop,
     get status() {
@@ -230,12 +232,15 @@ test('stale persisted sandbox is stopped by orphan guard and recreated from snap
 
   expect(resolved).toBe(recreated)
   expect(stale.stop).toHaveBeenCalledTimes(1)
-  expect(client.create).toHaveBeenCalledWith({
+  expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
+    name: expect.any(String),
+    persistent: true,
+    snapshotExpiration: 0,
     source: {
       type: 'snapshot',
       snapshotId: 'snap-orphan',
     },
-  })
+  }))
   expect(logger.warn).toHaveBeenCalledWith(
     '[sandbox] orphan-guard stale sandbox detected',
     expect.objectContaining({
@@ -352,14 +357,17 @@ test('expired in-process/persisted handle transparently recreates from snapshot'
 
   expect(resolved).toBe(recreated)
   expect(client.get).toHaveBeenCalledTimes(1)
-  expect(client.get).toHaveBeenCalledWith({ sandboxId: 'sb-expired' })
+  expect(client.get).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: 'sb-expired', name: 'sb-expired', resume: true }))
   expect(client.create).toHaveBeenCalledTimes(1)
-  expect(client.create).toHaveBeenCalledWith({
+  expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
+    name: expect.any(String),
+    persistent: true,
+    snapshotExpiration: 0,
     source: {
       type: 'snapshot',
       snapshotId: 'snap-1',
     },
-  })
+  }))
   expect(store.puts).toHaveLength(1)
   expect(store.puts[0]).toMatchObject({
     workspaceId: 'workspace-expired',
@@ -394,13 +402,16 @@ test('persisted sandbox in expired status recreates from snapshot', async () => 
   const resolved = await resolveSandboxHandle('workspace-stopped', store, client)
 
   expect(resolved).toBe(recreated)
-  expect(client.get).toHaveBeenCalledWith({ sandboxId: 'sb-stopped' })
-  expect(client.create).toHaveBeenCalledWith({
+  expect(client.get).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: 'sb-stopped', name: 'sb-stopped', resume: true }))
+  expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
+    name: expect.any(String),
+    persistent: true,
+    snapshotExpiration: 0,
     source: {
       type: 'snapshot',
       snapshotId: 'snap-2',
     },
-  })
+  }))
 })
 
 test('persisted sandbox in expired status recreates empty when no snapshot is available', async () => {
@@ -428,8 +439,8 @@ test('persisted sandbox in expired status recreates empty when no snapshot is av
   })
 
   expect(resolved).toBe(recreated)
-  expect(client.get).toHaveBeenCalledWith({ sandboxId: 'sb-stopped-empty' })
-  expect(client.create).toHaveBeenCalledWith()
+  expect(client.get).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: 'sb-stopped-empty', name: 'sb-stopped-empty', resume: true }))
+  expect(client.create).toHaveBeenCalledWith(expect.objectContaining({ name: expect.any(String), persistent: true, snapshotExpiration: 0 }))
   expect(logger.warn).toHaveBeenCalledWith(
     '[sandbox] recreating empty sandbox; no snapshot available',
     expect.objectContaining({
@@ -508,7 +519,7 @@ test('404 from get recreates empty when persisted sandbox has no snapshot', asyn
   })
 
   expect(resolved).toBe(recreated)
-  expect(client.create).toHaveBeenCalledWith()
+  expect(client.create).toHaveBeenCalledWith(expect.objectContaining({ name: expect.any(String), persistent: true, snapshotExpiration: 0 }))
   expect(logger.warn).toHaveBeenCalledWith(
     '[sandbox] recreating empty sandbox; no snapshot available',
     expect.objectContaining({
@@ -569,12 +580,15 @@ test('direct status 410 from get recreates from snapshot', async () => {
   const resolved = await resolveSandboxHandle('workspace-status-410', store, client)
 
   expect(resolved).toBe(recreated)
-  expect(client.create).toHaveBeenCalledWith({
+  expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
+    name: expect.any(String),
+    persistent: true,
+    snapshotExpiration: 0,
     source: {
       type: 'snapshot',
       snapshotId: 'snap-status-410',
     },
-  })
+  }))
 })
 
 test('non-retryable get errors are propagated', async () => {

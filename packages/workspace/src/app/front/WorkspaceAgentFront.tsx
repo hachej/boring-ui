@@ -11,6 +11,7 @@ import type {
 import { useRegistry } from "../../front/registry"
 import type { WorkspaceFrontPlugin } from "../../shared/plugins"
 import type { PanelOutput, PluginOutput } from "../../shared/plugins/types"
+import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
 import {
   createLocalStorageSessions,
@@ -283,6 +284,7 @@ export function WorkspaceAgentFront<
   const autoCreateSessionRef = useRef(false)
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceRef = useRef<SurfaceShellApi | null>(null)
+  const surfaceRefKey = useRef(resolvedSurfaceStorageKey)
   const [surfaceSnapshotState, setSurfaceSnapshotState] = useState(() => ({
     key: resolvedSurfaceStorageKey,
     snapshot: emptySurfaceSnapshot,
@@ -292,6 +294,8 @@ export function WorkspaceAgentFront<
     : emptySurfaceSnapshot
 
   useEffect(() => {
+    if (surfaceRefKey.current === resolvedSurfaceStorageKey) return
+    surfaceRefKey.current = resolvedSurfaceStorageKey
     surfaceRef.current = null
     setSurfaceSnapshotState({
       key: resolvedSurfaceStorageKey,
@@ -358,6 +362,20 @@ export function WorkspaceAgentFront<
     [extraPanels, pluginPanelIds],
   )
   const chatSessionId = resolvedActiveId ?? resolvedSessions[0]?.id ?? "default"
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const command = (event as CustomEvent).detail
+      if (!command || typeof command !== "object" || command.kind === "openFile") return
+      dispatchUiCommand(command, {
+        surface: getSurface,
+        isWorkbenchOpen,
+        openWorkbench,
+      })
+    }
+    globalThis.addEventListener?.(UI_COMMAND_EVENT, handler)
+    return () => globalThis.removeEventListener?.(UI_COMMAND_EVENT, handler)
+  }, [getSurface, isWorkbenchOpen, openWorkbench])
 
   useEffect(() => {
     if (resolvedActiveId) onActiveSessionIdChange?.(resolvedActiveId)

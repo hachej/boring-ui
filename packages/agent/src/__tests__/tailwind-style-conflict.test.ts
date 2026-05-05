@@ -31,6 +31,8 @@ function readCss(path: string): string {
 function listFiles(dir: string, exts = new Set(['.ts', '.tsx', '.css'])): string[] {
   const out: string[] = []
   for (const entry of readdirSync(dir)) {
+    if (entry === 'node_modules' || entry === 'dist' || entry === '.next') continue
+
     const path = resolve(dir, entry)
     const stat = statSync(path)
     if (stat.isDirectory()) out.push(...listFiles(path, exts))
