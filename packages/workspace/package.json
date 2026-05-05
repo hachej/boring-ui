@@ -19,6 +19,10 @@
       "types": "./dist/testing-e2e.d.ts",
       "import": "./dist/testing-e2e.js"
     },
+    "./charts": {
+      "types": "./dist/charts.d.ts",
+      "import": "./dist/charts.js"
+    },
     "./shared": {
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"
@@ -58,7 +62,8 @@
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "react-dom": "^18.0.0 || ^19.0.0"
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "recharts": "^2.15.0"
   },
   "peerDependenciesMeta": {
     "@codemirror/state": {
@@ -71,6 +76,9 @@
       "optional": true
     },
     "@tiptap/starter-kit": {
+      "optional": true
+    },
+    "recharts": {
       "optional": true
     }
   },
@@ -124,7 +132,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
-    "postcss": "^8.5.13",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -136,8 +143,10 @@
     "@vitejs/plugin-react": "^4.0.0",
     "fast-check": "^4.7.0",
     "jsdom": "^29.0.2",
+    "postcss": "^8.5.13",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "recharts": "^2.15.4",
     "tailwindcss": "^4.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",

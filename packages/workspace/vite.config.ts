@@ -49,6 +49,7 @@ export default defineConfig({
         workspace: resolve(__dirname, "src/index.ts"),
         testing: resolve(__dirname, "src/front/testing/index.ts"),
         "testing-e2e": resolve(__dirname, "src/front/testing/e2e.ts"),
+        charts: resolve(__dirname, "src/front/charts/index.tsx"),
         "app-front": resolve(__dirname, "src/app/front/index.ts"),
       },
       formats: ["es"],

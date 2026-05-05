@@ -7,3 +7,4 @@ export {
   type SlashCommandHandler,
 } from './registry'
 export { builtinCommands } from './builtins'
+export { filterSlashCommandSuggestions, getSlashCommandQuery } from './suggestions'

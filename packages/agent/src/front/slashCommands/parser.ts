@@ -4,7 +4,7 @@ export interface ParsedCommand {
 }
 
 export function parseSlashCommand(text: string): ParsedCommand | null {
-  const match = text.match(/^\/(\w+)(?:\s+(.*))?$/s)
+  const match = text.match(/^\/([\w-]+)(?:\s+(.*))?$/s)
   if (!match) return null
   return { name: match[1], args: match[2]?.trim() ?? '' }
 }
