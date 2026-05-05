@@ -75,6 +75,7 @@ const inFlightResolutionsByWorkspaceId = new Map<string, Promise<VercelSandboxHa
 const EXPIRED_STATUSES: ReadonlySet<VercelSandboxStatus> = new Set([
   'aborted',
   'failed',
+  'stopped',
 ])
 const ESTIMATED_ABANDONED_SESSION_COST_USD = 0.10
 

@@ -4,6 +4,8 @@
  * Copied: 2026-04-23. We own this file; upstream updates require re-port.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Button } from '@boring/ui'
+import { cn } from '../lib'
 
 export type ToolState =
   | 'input-streaming'
@@ -31,7 +33,6 @@ export interface ToolProps {
 function stateLabel(state: ToolState): string {
   switch (state) {
     case 'input-streaming':
-      return 'Running…'
     case 'input-available':
       return 'Running…'
     case 'approval-requested':
@@ -45,6 +46,14 @@ function stateLabel(state: ToolState): string {
     case 'output-denied':
       return 'Denied'
   }
+}
+
+function ToolValue({ value }: { value: unknown }) {
+  return (
+    <pre className="m-0 whitespace-pre-wrap text-[0.8125rem]">
+      {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+    </pre>
+  )
 }
 
 export function Tool({
@@ -62,7 +71,6 @@ export function Tool({
   const [expanded, setExpanded] = useState(defaultExpanded)
   const isRunning = state === 'input-streaming' || state === 'input-available'
   const isComplete = state === 'output-available' || state === 'output-error' || state === 'output-denied'
-
   const [elapsedSec, setElapsedSec] = useState(0)
   const startRef = useRef(0)
 
@@ -80,81 +88,45 @@ export function Tool({
 
   return (
     <div
-      className={className}
+      className={cn(
+        'overflow-hidden rounded-[var(--boring-agent-tool-radius,0.375rem)] border border-[var(--boring-agent-tool-border,#e5e7eb)] text-[length:var(--boring-agent-font-size,0.875rem)]',
+        className,
+      )}
       data-tool-state={state}
-      style={{
-        border: '1px solid var(--boring-agent-tool-border, #e5e7eb)',
-        borderRadius: 'var(--boring-agent-tool-radius, 0.375rem)',
-        overflow: 'hidden',
-        fontSize: 'var(--boring-agent-font-size, 0.875rem)',
-      }}
     >
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          width: '100%',
-          padding: '0.5rem 0.75rem',
-          background: 'var(--boring-agent-tool-header-bg, #f9fafb)',
-          border: 'none',
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontFamily: 'var(--boring-agent-font-mono, monospace)',
-          fontSize: '0.8125rem',
-        }}
+        className="h-auto w-full justify-start gap-2 rounded-none bg-[var(--boring-agent-tool-header-bg,#f9fafb)] px-3 py-2 text-left font-[family-name:var(--boring-agent-font-mono,monospace)] text-[0.8125rem]"
         aria-expanded={expanded}
       >
-        <span style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }}>
-          ▶
-        </span>
-        <span style={{ fontWeight: 500 }}>{toolName}</span>
-        <span
-          style={{
-            marginLeft: 'auto',
-            opacity: 0.6,
-            fontSize: '0.75rem',
-          }}
-        >
+        <span className={cn('transition-transform duration-150', expanded && 'rotate-90')}>▶</span>
+        <span className="font-medium">{toolName}</span>
+        <span className="ml-auto text-xs opacity-60">
           {isRunning && elapsedSec >= 1 ? `Running… (${elapsedSec}s)` : stateLabel(state)}
         </span>
         {!isComplete && (
-          <span
-            style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--boring-agent-tool-running, #3b82f6)' }}
-            aria-label="running"
-          />
+          <span className="size-2 rounded-full bg-[var(--boring-agent-tool-running,#3b82f6)]" aria-label="running" />
         )}
-      </button>
+      </Button>
 
       {expanded && (
-        <div style={{ padding: '0.5rem 0.75rem', borderTop: '1px solid var(--boring-agent-tool-border, #e5e7eb)' }}>
+        <div className="border-t border-[var(--boring-agent-tool-border,#e5e7eb)] px-3 py-2">
           {children ?? (
             <>
               {input !== undefined && (
                 <div data-testid="tool-input">
-                  {renderInput ? renderInput(input) : (
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.8125rem' }}>
-                      {typeof input === 'string' ? input : JSON.stringify(input, null, 2)}
-                    </pre>
-                  )}
+                  {renderInput ? renderInput(input) : <ToolValue value={input} />}
                 </div>
               )}
               {output !== undefined && (
-                <div data-testid="tool-output" style={{ marginTop: '0.5rem' }}>
-                  {renderOutput ? renderOutput(output) : (
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.8125rem' }}>
-                      {typeof output === 'string' ? output : JSON.stringify(output, null, 2)}
-                    </pre>
-                  )}
+                <div data-testid="tool-output" className="mt-2">
+                  {renderOutput ? renderOutput(output) : <ToolValue value={output} />}
                 </div>
               )}
               {errorText && (
-                <div
-                  data-testid="tool-error"
-                  style={{ color: 'var(--boring-agent-tool-error, #ef4444)', marginTop: '0.5rem' }}
-                >
+                <div data-testid="tool-error" className="mt-2 text-[var(--boring-agent-tool-error,#ef4444)]">
                   {errorText}
                 </div>
               )}

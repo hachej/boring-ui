@@ -13,9 +13,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
   Button,
+  DetailLine as UiDetailLine,
+  DetailList,
   Input,
   Label,
-} from '@boring/workspace/ui-shadcn'
+  Notice,
+  SettingsActionRow as UiSettingsActionRow,
+  SettingsNav as UiSettingsNav,
+  SettingsPanel as UiSettingsPanel,
+} from '@boring/ui'
 import {
   CalendarDays,
   CheckCircle2,
@@ -89,72 +95,6 @@ function SettingsTopBar() {
   )
 }
 
-function SettingsPanel({
-  id,
-  icon,
-  title,
-  description,
-  children,
-  footer,
-  danger = false,
-}: {
-  id: string
-  icon: ReactNode
-  title: string
-  description?: ReactNode
-  children: ReactNode
-  footer?: ReactNode
-  danger?: boolean
-}) {
-  return (
-    <section id={id} className="scroll-mt-6 overflow-hidden rounded-lg border border-border/60 bg-background shadow-none">
-      <div className="flex min-h-11 items-center gap-2 border-b border-border/50 px-4 py-2.5">
-        <span className={danger ? 'text-destructive' : 'text-muted-foreground'}>
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <h2 className={`text-[13px] font-medium leading-5 ${danger ? 'text-destructive' : 'text-foreground'}`}>
-            {title}
-          </h2>
-          {description ? (
-            <p className="text-[12px] leading-5 text-muted-foreground">{description}</p>
-          ) : null}
-        </div>
-      </div>
-      <div className="p-4">{children}</div>
-      {footer ? (
-        <div className="flex items-center justify-end gap-2 border-t border-border/50 bg-muted/10 px-4 py-3">
-          {footer}
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
-function SettingsNav({
-  label,
-  items,
-}: {
-  label: string
-  items: Array<{ href: string; label: string; description: string }>
-}) {
-  return (
-    <nav aria-label={`${label} sections`} className="boring-settings-nav">
-      <p className="boring-settings-nav-label">{label}</p>
-      {items.map((item) => (
-        <a key={item.href} href={item.href} className="boring-settings-nav-item">
-          <span className="min-w-0">
-            <span className="block truncate text-[12.5px] font-medium text-foreground">{item.label}</span>
-            <span className="block truncate text-[11.5px] leading-4 text-muted-foreground">
-              {item.description}
-            </span>
-          </span>
-        </a>
-      ))}
-    </nav>
-  )
-}
-
 function SettingsPageHeader({
   initials,
   displayName,
@@ -189,68 +129,6 @@ function SettingsPageHeader({
         </p>
       </div>
     </header>
-  )
-}
-
-function DetailLine({
-  icon,
-  label,
-  children,
-}: {
-  icon: ReactNode
-  label: string
-  children: ReactNode
-}) {
-  return (
-    <div className="flex min-h-12 items-center gap-3 px-3 py-2 text-[13px]">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground">
-        {icon}
-      </span>
-      <dt className="w-32 shrink-0 text-[12px] text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 flex-1 text-foreground">{children}</dd>
-    </div>
-  )
-}
-
-function ActionRow({
-  title,
-  description,
-  action,
-}: {
-  title: string
-  description: ReactNode
-  action: ReactNode
-}) {
-  return (
-    <div className="boring-settings-action-row">
-      <div className="min-w-0">
-        <p className="text-[13px] font-medium leading-5 text-foreground">{title}</p>
-        <p className="mt-1 max-w-xl text-[12px] leading-5 text-muted-foreground">{description}</p>
-      </div>
-      <div className="shrink-0">{action}</div>
-    </div>
-  )
-}
-
-function StatusMessage({
-  tone,
-  children,
-}: {
-  tone: 'error' | 'success'
-  children: ReactNode
-}) {
-  const className =
-    tone === 'error'
-      ? 'border-destructive/40 bg-destructive/10 text-destructive'
-      : 'border-success/35 bg-[color:var(--success-soft)] text-success'
-
-  return (
-    <div
-      role={tone === 'error' ? 'alert' : 'status'}
-      className={`rounded-md border px-3 py-2 text-[13px] leading-5 ${className}`}
-    >
-      {children}
-    </div>
   )
 }
 
@@ -364,7 +242,7 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
       <div className="boring-settings-scroll">
         <div className="boring-settings-layout">
           <aside className="boring-settings-sidebar">
-            <SettingsNav label="Account settings" items={ACCOUNT_NAV_ITEMS} />
+            <UiSettingsNav label="Account settings" items={ACCOUNT_NAV_ITEMS} />
           </aside>
 
           <div className="boring-settings-content space-y-4">
@@ -373,42 +251,42 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
               displayName={user.name ?? user.email}
               email={user.email}
             />
-          <SettingsPanel
+          <UiSettingsPanel
             id="profile"
             icon={<UserRound className="h-3.5 w-3.5" aria-hidden="true" />}
             title="Profile"
             description="The identity shown inside this app."
           >
-            <dl className="divide-y divide-border/50 rounded-md border border-border/50 bg-muted/10">
-              <DetailLine
+            <DetailList>
+              <UiDetailLine
                 icon={<Mail className="h-3.5 w-3.5" aria-hidden="true" />}
                 label="Email"
               >
                 <p className="truncate">{user.email}</p>
-              </DetailLine>
-              <DetailLine
+              </UiDetailLine>
+              <UiDetailLine
                 icon={<UserRound className="h-3.5 w-3.5" aria-hidden="true" />}
                 label="Name"
               >
                 <p className="truncate">{user.name ?? 'Not set'}</p>
-              </DetailLine>
-              <DetailLine
+              </UiDetailLine>
+              <UiDetailLine
                 icon={<CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />}
                 label="Member since"
               >
                 <p>{formatMemberSince(user.createdAt)}</p>
-              </DetailLine>
-              <DetailLine
+              </UiDetailLine>
+              <UiDetailLine
                 icon={<CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />}
                 label="Email status"
               >
                 <p>{user.emailVerified ? 'Verified' : 'Not verified'}</p>
-              </DetailLine>
-            </dl>
-          </SettingsPanel>
+              </UiDetailLine>
+            </DetailList>
+          </UiSettingsPanel>
 
           <form onSubmit={handleSubmit(onChangePassword)} noValidate>
-            <SettingsPanel
+            <UiSettingsPanel
               id="password"
               icon={<KeyRound className="h-3.5 w-3.5" aria-hidden="true" />}
               title="Change password"
@@ -420,9 +298,9 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
               )}
             >
               <div className="space-y-4">
-                {passwordError && <StatusMessage tone="error">{passwordError}</StatusMessage>}
+                {passwordError && <Notice role="alert" tone="error" description={passwordError} />}
                 {passwordSuccess && (
-                  <StatusMessage tone="success">Password changed successfully.</StatusMessage>
+                  <Notice role="status" tone="success" description="Password changed successfully." />
                 )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2 sm:col-span-2">
@@ -470,17 +348,17 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
                   </div>
                 </div>
               </div>
-            </SettingsPanel>
+            </UiSettingsPanel>
           </form>
 
-          <SettingsPanel
+          <UiSettingsPanel
             id="danger-zone"
             icon={<ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />}
             title="Danger zone"
             description="Permanently delete this account and remove its workspace access."
             danger
           >
-            <ActionRow
+            <UiSettingsActionRow
               title="Delete account"
               description="Delete your account, user settings, and workspace memberships after confirmation."
               action={(
@@ -500,7 +378,7 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <div className="space-y-3 py-2">
-                    {deleteError && <StatusMessage tone="error">{deleteError}</StatusMessage>}
+                    {deleteError && <Notice role="alert" tone="error" description={deleteError} />}
                     <div className="space-y-2">
                       <Label htmlFor="delete-confirm">
                         Type <span className="font-mono font-bold">DELETE</span> to confirm
@@ -537,7 +415,7 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
               </AlertDialog>
               )}
             />
-          </SettingsPanel>
+          </UiSettingsPanel>
           </div>
         </div>
       </div>

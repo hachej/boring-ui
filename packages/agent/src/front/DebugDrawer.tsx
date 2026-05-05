@@ -1,9 +1,81 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
 import { cn } from './lib'
-import { RefreshCwIcon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
+import { Button, IconButton, Tabs, TabsList, TabsTrigger } from '@boring/ui'
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  RefreshCwIcon,
+} from 'lucide-react'
 
-type Tab = 'prompt' | 'messages'
+type Tab = 'session' | 'prompt' | 'messages'
+
+// ---- session tab ----
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const onCopy = useCallback(() => {
+    const writeText = navigator.clipboard?.writeText?.bind(navigator.clipboard)
+    if (!writeText) return
+    void writeText(value).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    })
+  }, [value])
+
+  return (
+    <IconButton
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      onClick={onCopy}
+      className="text-muted-foreground/60"
+      aria-label={label}
+      title={label}
+    >
+      {copied ? <CheckIcon className="h-3 w-3" /> : <CopyIcon className="h-3 w-3" />}
+    </IconButton>
+  )
+}
+
+function DebugValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border/40 bg-muted/20 p-2">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
+          {label}
+        </span>
+        <CopyButton value={value} label={`Copy ${label}`} />
+      </div>
+      <code className="block break-all font-mono text-[11px] leading-relaxed text-foreground">
+        {value}
+      </code>
+    </div>
+  )
+}
+
+function SessionTab({ sessionId }: { sessionId: string }) {
+  const resumeCommand = `pi --session ${sessionId}`
+
+  return (
+    <div className="flex flex-col gap-3 overflow-auto p-3 text-[11px] text-muted-foreground">
+      <p>
+        This web chat is backed by a pi session. Use the id below from the
+        workspace root to resume the same conversation in a terminal.
+      </p>
+      <DebugValue label="Pi session id" value={sessionId} />
+      <DebugValue label="Resume command" value={resumeCommand} />
+      <p className="rounded-md border border-border/30 bg-muted/10 p-2 text-[10px] leading-relaxed text-muted-foreground/75">
+        Tip: <code className="font-mono text-foreground/80">pi --continue</code>{' '}
+        opens the most recent session for the current working directory. The
+        explicit command above targets this session directly.
+      </p>
+    </div>
+  )
+}
 
 // ---- system prompt tab ----
 
@@ -85,14 +157,16 @@ function SystemPromptTab({
             : 'error'}
         </span>
         {state.kind !== 'loading' && (
-          <button
+          <IconButton
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={refresh}
-            className="rounded p-0.5 text-muted-foreground/60 hover:text-foreground hover:bg-muted/50"
+            className="text-muted-foreground/60"
             aria-label="Refresh system prompt"
           >
             <RefreshCwIcon className="h-3 w-3" />
-          </button>
+          </IconButton>
         )}
       </div>
       {(state.kind === 'loading' || state.kind === 'empty') && (
@@ -195,10 +269,11 @@ function MessagesTab({ messages }: { messages: UIMessage[] }) {
           const open = expanded === key
           return (
             <div key={key} className="border-b border-border/30 last:border-0">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={() => setExpanded(open ? null : key)}
-                className="flex w-full items-start gap-1.5 px-2 py-1.5 text-left hover:bg-muted/30 transition-colors"
+                className="h-auto w-full justify-start gap-1.5 rounded-none px-2 py-1.5 text-left"
               >
                 <span className="mt-0.5 shrink-0 text-muted-foreground/40">
                   {open
@@ -222,7 +297,7 @@ function MessagesTab({ messages }: { messages: UIMessage[] }) {
                 <span className="flex-1 min-w-0 font-mono text-[11px] text-foreground truncate">
                   {partSummary(fp.part)}
                 </span>
-              </button>
+              </Button>
               {open && (
                 <pre className="px-3 pb-2 font-mono text-[10px] leading-relaxed text-foreground/80 whitespace-pre-wrap break-words bg-muted/20">
                   {JSON.stringify(fp.part, null, 2)}
@@ -240,6 +315,7 @@ function MessagesTab({ messages }: { messages: UIMessage[] }) {
 // ---- drawer ----
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'session', label: 'Session' },
   { id: 'prompt', label: 'System prompt' },
   { id: 'messages', label: 'Messages' },
 ]
@@ -257,7 +333,7 @@ interface DebugDrawerProps {
 }
 
 export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidthChange }: DebugDrawerProps) {
-  const [tab, setTab] = useState<Tab>('prompt')
+  const [tab, setTab] = useState<Tab>('session')
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -293,24 +369,23 @@ export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidt
         )}
       >
         <header className="flex shrink-0 items-center gap-0 border-b border-border/60 px-1">
-          {TABS.map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={cn(
-                "px-3 py-2 text-[11px] font-medium transition-colors",
-                tab === id
-                  ? "text-foreground border-b-2 border-accent -mb-px"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </button>
-          ))}
+          <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="w-full">
+            <TabsList variant="line" className="h-auto gap-0 p-0">
+              {TABS.map(({ id, label }) => (
+                <TabsTrigger
+                  key={id}
+                  value={id}
+                  className="h-8 flex-none px-3 py-2 text-[11px] font-medium data-[state=active]:after:bg-[color:var(--accent)]"
+                >
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </header>
 
         <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+          {tab === 'session' && <SessionTab sessionId={sessionId} />}
           {tab === 'prompt' && (
             <SystemPromptTab sessionId={sessionId} requestHeaders={requestHeaders} />
           )}

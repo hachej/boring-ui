@@ -8,37 +8,35 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from "@/front/ui/command";
+} from "@boring/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/front/ui/dropdown-menu";
+} from "@boring/ui";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@/front/ui/hover-card";
-import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
-} from "@/front/ui/input-group";
+} from "@boring/ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/front/ui/select";
-import { Spinner } from "@/front/ui/spinner";
+} from "@boring/ui";
+import { Input, Spinner } from "@boring/ui";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/front/ui/tooltip";
+} from "@boring/ui";
 import { cn } from "@/front/lib";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
@@ -905,7 +903,7 @@ export const PromptInput = ({
   // Render with or without local provider
   const inner = (
     <>
-      <input
+      <Input
         accept={accept}
         aria-label="Upload files"
         className="hidden"

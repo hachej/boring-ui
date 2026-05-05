@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
+import { Button, ErrorState } from "@boring/ui"
 
 export interface PanelErrorBoundaryProps {
   panelId: string
@@ -35,23 +36,23 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-          <div className="text-destructive text-lg font-medium">Something went wrong</div>
-          <p className="text-muted-foreground text-sm">
-            Panel <code className="rounded bg-muted px-1 py-0.5 text-xs">{this.props.panelId}</code> encountered an error.
-          </p>
-          {this.state.error && (
-            <pre className="max-w-md overflow-auto rounded border border-border bg-muted p-3 text-xs text-muted-foreground">
-              {this.state.error.message}
-            </pre>
-          )}
-          <button
-            type="button"
-            onClick={this.handleRetry}
-            className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
-          >
-            Retry
-          </button>
+        <div className="flex h-full items-center justify-center p-6">
+          <ErrorState
+            className="w-full max-w-md"
+            title="Something went wrong"
+            description={
+              <>
+                Panel <code className="rounded bg-muted px-1 py-0.5 text-xs">{this.props.panelId}</code>{" "}
+                encountered an error.
+              </>
+            }
+            details={this.state.error?.message}
+            actions={
+              <Button type="button" variant="outline" onClick={this.handleRetry}>
+                Retry
+              </Button>
+            }
+          />
         </div>
       )
     }

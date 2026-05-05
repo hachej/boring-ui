@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { withBeadId } from '../../server/__tests__/_setup'
 import type { EnrichedMember } from '../hooks/useWorkspaceMembers'
@@ -32,6 +33,21 @@ function makeMember(overrides: Partial<EnrichedMember> & { userId: string }): En
 
 const OWNER_MEMBER = makeMember({ userId: OWNER_ID, role: 'owner' })
 const EDITOR_MEMBER = makeMember({ userId: EDITOR_ID, role: 'editor' })
+
+beforeAll(() => {
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => undefined
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => undefined
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => undefined
+  }
+})
 
 function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -157,8 +173,9 @@ describe('MembersPage', () => {
 
       await waitFor(() => expect(screen.getByTestId('members-list')).toBeTruthy())
 
-      const roleSelect = screen.getByTestId(`role-select-${EDITOR_ID}`) as HTMLSelectElement
-      fireEvent.change(roleSelect, { target: { value: 'viewer' } })
+      const user = userEvent.setup()
+      await user.click(screen.getByTestId(`role-select-${EDITOR_ID}`))
+      await user.click(await screen.findByRole('option', { name: 'viewer' }))
 
       await waitFor(() => expect(patchCalled).toBe(true))
       expect(patchBody).toEqual({ role: 'viewer' })
@@ -200,8 +217,9 @@ describe('MembersPage', () => {
 
       await waitFor(() => expect(screen.getByTestId('members-list')).toBeTruthy())
 
-      const roleSelect = screen.getByTestId(`role-select-${EDITOR_ID}`) as HTMLSelectElement
-      fireEvent.change(roleSelect, { target: { value: 'owner' } })
+      const user = userEvent.setup()
+      await user.click(screen.getByTestId(`role-select-${EDITOR_ID}`))
+      await user.click(await screen.findByRole('option', { name: 'owner' }))
 
       await waitFor(() => expect(screen.getByTestId('toast')).toBeTruthy())
       expect(screen.getByTestId('toast').textContent).toContain('no owners')

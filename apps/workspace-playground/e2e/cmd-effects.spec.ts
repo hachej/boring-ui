@@ -6,6 +6,10 @@ import { expect, test } from "@playwright/test"
  * commands such as Toggle Sidebar / Toggle Agent Panel / Close Tab.
  * Those target the dockview store, so triggering them from the
  * centered chat route produced no visible effect.
+ *
+ * Fix surfaced shell-specific commands (Open/Close Session History,
+ * Open/Close Workbench, New Chat) in the ⌘K palette. These tests
+ * check that selecting them actually changes the corresponding pane.
  */
 
 const STORAGE_KEY = "boring-ui-v2:layout:playground"
@@ -79,6 +83,7 @@ test.describe("command palette effects", () => {
     await runCommandFromPalette(page, "New Chat")
     await expect(sessions).toHaveCount(before + 1)
   })
+
 
   test("'Open Session History' opens the closed drawer", async ({ page }) => {
     expect(await paneWidth(page, "Session browser")).toBe(0)

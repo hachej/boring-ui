@@ -11,9 +11,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
+  IconButton,
+  SettingsActionRow as UiSettingsActionRow,
+  SettingsNav as UiSettingsNav,
+  SettingsPanel as UiSettingsPanel,
+  StatusBadge,
   Input,
   Label,
-} from '@boring/workspace/ui-shadcn'
+  Notice,
+} from '@boring/ui'
 import {
   AlertCircle,
   HardDrive,
@@ -31,21 +37,10 @@ export interface WorkspaceSettingsPageProps {
   topBar?: ReactNode
 }
 
-const STATE_STYLES: Record<string, string> = {
-  pending: 'border-accent/35 bg-[color:var(--accent-soft)] text-foreground',
-  ready: 'border-success/35 bg-[color:var(--success-soft)] text-success',
-  error: 'border-destructive/40 bg-destructive/10 text-destructive',
-}
-
-function StateBadge({ state }: { state: string }) {
-  return (
-    <span
-      data-testid={`runtime-state-${state}`}
-      className={`inline-flex h-6 items-center rounded-md border px-2 text-[12px] font-medium ${STATE_STYLES[state] ?? 'border-border bg-muted/30 text-muted-foreground'}`}
-    >
-      {state}
-    </span>
-  )
+const STATE_TONES: Record<string, 'info' | 'success' | 'danger' | 'neutral'> = {
+  pending: 'info',
+  ready: 'success',
+  error: 'danger',
 }
 
 function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
@@ -57,15 +52,17 @@ function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; w
       aria-label="App top bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <button
+        <IconButton
           type="button"
+          variant="default"
+          size="icon-xs"
           aria-label="Back to workspace"
           title="Back to workspace"
           onClick={() => navigate(workspaceHref)}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="shrink-0 bg-foreground text-[12px] font-semibold text-background hover:bg-foreground/90"
         >
           B
-        </button>
+        </IconButton>
         <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
           Boring
         </span>
@@ -75,78 +72,6 @@ function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; w
         <span className="truncate text-[13px] text-muted-foreground">Settings</span>
       </div>
     </header>
-  )
-}
-
-function SettingsPanel({
-  id,
-  icon,
-  title,
-  description,
-  children,
-  footer,
-  danger = false,
-  testId,
-}: {
-  id: string
-  icon: ReactNode
-  title: string
-  description?: ReactNode
-  children: ReactNode
-  footer?: ReactNode
-  danger?: boolean
-  testId?: string
-}) {
-  return (
-    <section
-      id={id}
-      data-testid={testId}
-      className="scroll-mt-6 overflow-hidden rounded-lg border border-border/60 bg-background shadow-none"
-    >
-      <div className="flex min-h-11 items-center gap-2 border-b border-border/50 px-4 py-2.5">
-        <span className={danger ? 'text-destructive' : 'text-muted-foreground'}>
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <h2 className={`text-[13px] font-medium leading-5 ${danger ? 'text-destructive' : 'text-foreground'}`}>
-            {title}
-          </h2>
-          {description ? (
-            <p className="text-[12px] leading-5 text-muted-foreground">{description}</p>
-          ) : null}
-        </div>
-      </div>
-      <div className="p-4">{children}</div>
-      {footer ? (
-        <div className="flex items-center justify-end gap-2 border-t border-border/50 bg-muted/10 px-4 py-3">
-          {footer}
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
-function SettingsNav({
-  label,
-  items,
-}: {
-  label: string
-  items: Array<{ href: string; label: string; description: string }>
-}) {
-  return (
-    <nav aria-label={`${label} sections`} className="boring-settings-nav">
-      <p className="boring-settings-nav-label">{label}</p>
-      {items.map((item) => (
-        <a key={item.href} href={item.href} className="boring-settings-nav-item">
-          <span className="min-w-0">
-            <span className="block truncate text-[12.5px] font-medium text-foreground">{item.label}</span>
-            <span className="block truncate text-[11.5px] leading-4 text-muted-foreground">
-              {item.description}
-            </span>
-          </span>
-        </a>
-      ))}
-    </nav>
   )
 }
 
@@ -194,46 +119,8 @@ function SettingsPageHeader({
   )
 }
 
-function StatusMessage({
-  children,
-  testId,
-}: {
-  children: ReactNode
-  testId?: string
-}) {
-  return (
-    <div
-      data-testid={testId}
-      role="alert"
-      className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] leading-5 text-destructive"
-    >
-      {children}
-    </div>
-  )
-}
-
 function FieldNote({ children }: { children: ReactNode }) {
   return <p className="text-[12px] leading-5 text-muted-foreground">{children}</p>
-}
-
-function ActionRow({
-  title,
-  description,
-  action,
-}: {
-  title: string
-  description: ReactNode
-  action: ReactNode
-}) {
-  return (
-    <div className="boring-settings-action-row">
-      <div className="min-w-0">
-        <p className="text-[13px] font-medium leading-5 text-foreground">{title}</p>
-        <p className="mt-1 max-w-xl text-[12px] leading-5 text-muted-foreground">{description}</p>
-      </div>
-      <div className="shrink-0">{action}</div>
-    </div>
-  )
 }
 
 function roleLabel(role: string | null): string {
@@ -373,7 +260,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
       <div className="boring-settings-scroll">
         <div className="boring-settings-layout">
           <aside className="boring-settings-sidebar">
-            <SettingsNav label="Workspace settings" items={navItems} />
+            <UiSettingsNav label="Workspace settings" items={navItems} />
           </aside>
 
           <div className="boring-settings-content space-y-4">
@@ -383,7 +270,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
               role={role}
               isDefault={Boolean(workspace?.isDefault)}
             />
-          <SettingsPanel
+          <UiSettingsPanel
             id="general"
             icon={<Settings2 className="h-3.5 w-3.5" aria-hidden="true" />}
             title="General"
@@ -416,7 +303,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
             )}
           >
             <div className="space-y-4">
-              {nameError && <StatusMessage testId="name-error">{nameError}</StatusMessage>}
+              {nameError && <Notice data-testid="name-error" role="alert" tone="error" description={nameError} />}
               <div className="space-y-2">
                 <Label htmlFor="workspace-name" className="text-[12px]">Workspace name</Label>
                 <Input
@@ -435,10 +322,10 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
                 </FieldNote>
               </div>
             </div>
-          </SettingsPanel>
+          </UiSettingsPanel>
 
           {hasRuntime && (
-            <SettingsPanel
+            <UiSettingsPanel
               id="runtime"
               testId="runtime-card"
               icon={<HardDrive className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -448,7 +335,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
               <div className="space-y-3">
                 <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 rounded-md border border-border/50 bg-muted/10 px-3 py-2">
                   <span className="text-[13px] font-medium">State</span>
-                  <StateBadge state={runtime.state} />
+                  <StatusBadge data-testid={`runtime-state-${runtime.state}`} tone={STATE_TONES[runtime.state] ?? 'neutral'}>{runtime.state}</StatusBadge>
                 </div>
                 {runtime.state === 'ready' && runtime.volumePath && (
                   <div
@@ -483,7 +370,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
                       <RefreshCw className="h-4 w-4" aria-hidden="true" />
                       {retryMutation.isPending ? 'Retrying...' : 'Retry provisioning'}
                     </Button>
-                    {retryError && <StatusMessage testId="retry-error">{retryError}</StatusMessage>}
+                    {retryError && <Notice data-testid="retry-error" role="alert" tone="error" description={retryError} />}
                   </div>
                 )}
                 {runtime.state === 'error' && runtime.lastErrorOp === 'destroy' && (
@@ -495,10 +382,10 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
                   </p>
                 )}
               </div>
-            </SettingsPanel>
+            </UiSettingsPanel>
           )}
 
-          <SettingsPanel
+          <UiSettingsPanel
             id="danger-zone"
             testId="danger-zone"
             icon={<ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -507,13 +394,13 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
             danger
           >
             <div className="space-y-4">
-              {deleteError && <StatusMessage testId="delete-error">{deleteError}</StatusMessage>}
+              {deleteError && <Notice data-testid="delete-error" role="alert" tone="error" description={deleteError} />}
               {!canDeleteWorkspace ? (
                 <div className="rounded-md border border-border/50 bg-muted/10 px-3 py-2 text-[13px] leading-5 text-muted-foreground">
                   Only workspace owners can delete this workspace.
                 </div>
               ) : null}
-              <ActionRow
+              <UiSettingsActionRow
                 title="Delete workspace"
                 description="Delete the workspace record and re-issue cleanup for provisioned runtime data."
                 action={(
@@ -562,7 +449,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
                 )}
               />
             </div>
-          </SettingsPanel>
+          </UiSettingsPanel>
           </div>
         </div>
       </div>

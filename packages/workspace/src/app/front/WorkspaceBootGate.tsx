@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { WorkspaceLoadingState } from "../../front/components/WorkspaceLoadingState"
-import { setPreloadedTreeEntries } from "../../plugins/filesystemPlugin/data/treePreloadCache"
+import { setPreloadedTreeEntries } from "../../plugins/filesystemPlugin/front/data/treePreloadCache"
 
 const DEFAULT_BOOT_PRELOAD_PATHS = ["/api/v1/tree?path=.", "/api/v1/agent/sessions"]
 

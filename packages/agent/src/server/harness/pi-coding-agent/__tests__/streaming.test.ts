@@ -201,6 +201,105 @@ describe("streaming concurrency", () => {
     promptHandle.resolve!();
     await reader.next();
   });
+
+  it("emits a text delta when pi only provides final text on text_end", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-text-end",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-text-end",
+    };
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-stream-text-end", message: "x" },
+      ctx,
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: unknown[] = [];
+
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({ type: "message_start" });
+    chunks.push((await firstRead).value);
+    emitPiEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+    });
+    emitPiEvent({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "text_end",
+        contentIndex: 0,
+        content: "final-only text",
+      },
+    });
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve!();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual({
+      type: "text-delta",
+      id: "0",
+      delta: "final-only text",
+    });
+  });
+
+  it("emits a text delta when pi only provides final text on agent_end", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-agent-end",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-agent-end",
+    };
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-stream-agent-end", message: "x" },
+      ctx,
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: unknown[] = [];
+
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({ type: "message_start" });
+    chunks.push((await firstRead).value);
+    emitPiEvent({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "x" }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "agent-end text" }],
+        },
+      ],
+    });
+    promptHandle.resolve!();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual({
+      type: "text-delta",
+      id: "0",
+      delta: "agent-end text",
+    });
+  });
 });
 
 describe("getSystemPrompt", () => {

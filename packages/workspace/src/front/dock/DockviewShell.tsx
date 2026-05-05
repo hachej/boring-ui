@@ -26,6 +26,7 @@ import type {
   GroupConfig,
   SerializedLayout,
 } from "./types"
+import { LoadingState } from "@boring/ui"
 import { ShadcnTab } from "./ShadcnTab"
 
 const PERSIST_DEBOUNCE_MS = 300
@@ -421,9 +422,7 @@ export function DockviewShell({
 
 function LoadingSkeleton() {
   return (
-    <div className="flex h-full w-full items-center justify-center bg-background text-muted-foreground">
-      <span className="animate-pulse">Loading workspace...</span>
-    </div>
+    <LoadingState centered className="bg-background" label="Loading workspace..." />
   )
 }
 

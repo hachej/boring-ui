@@ -26,7 +26,7 @@ import { events, workspaceEvents } from "../events"
 import { Toaster } from "../toast"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { bootstrap } from "../../shared/plugins/bootstrap"
-import { filesystemPlugin } from "../../plugins/filesystemPlugin"
+import { filesystemPlugin } from "../../plugins/filesystemPlugin/front"
 import { coreWorkspacePanels } from "../registry/coreRegistrations"
 import type {
   BindingOutput,

@@ -214,12 +214,16 @@ test('mode accepts VERCEL_TOKEN fallback and creates working bundle with shared 
 
     const result = await bundle.sandbox.exec('cat /vercel/sandbox/shared/hello.txt')
 
-    expect(bundle.workspace.root).toBe('/vercel/sandbox')
+    expect(bundle.workspace.root).toBe('/workspace')
     expect(bundle.sandbox.id).toBe('vercel-sandbox')
     expect(decoder.decode(result.stdout)).toBe('hello-from-mode')
     expect(result.exitCode).toBe(0)
     expect(client.create).toHaveBeenCalledTimes(1)
-    expect(client.create).toHaveBeenCalledWith()
+    expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
+      name: expect.any(String),
+      persistent: true,
+      snapshotExpiration: 0,
+    }))
     expect(mkdirSpy).toHaveBeenCalledWith('/vercel/sandbox', { recursive: true })
     expect(logger.info).toHaveBeenCalledWith(
       '[vercel-sandbox:mode] auth resolved',
@@ -380,9 +384,12 @@ test('mode recreates a stopped sandbox from snapshot without losing workspace fi
 
     await expect(secondBundle.workspace.readFile('src/persisted.txt'))
       .resolves.toBe('persisted after stop')
-    expect(client.create).toHaveBeenLastCalledWith({
+    expect(client.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      name: 'sb-persist-1',
+      persistent: true,
+      snapshotExpiration: 0,
       source: { type: 'snapshot', snapshotId: 'snap-persist-1' },
-    })
+    }))
     expect(await store.get('workspace-persist')).toMatchObject({
       sandboxId: 'sb-persist-2',
       snapshotId: 'snap-persist-1',

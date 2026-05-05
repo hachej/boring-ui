@@ -2,6 +2,7 @@
 
 import { ArrowUpRight, BookOpen, Code2, FileSearch, Wand2 } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
+import { Button } from "@boring/ui"
 import { cn } from "./lib"
 
 /**
@@ -129,9 +130,10 @@ export function ChatEmptyState({
           {suggestions.map((suggestion) => {
             const Icon = suggestion.icon
             return (
-              <button
+              <Button
                 key={suggestion.label}
                 type="button"
+                variant="ghost"
                 data-boring-agent-part="suggestion-card"
                 onClick={() => {
                   if (suggestion.onSelect) {
@@ -140,12 +142,7 @@ export function ChatEmptyState({
                   }
                   onSelect?.(suggestion)
                 }}
-                className={cn(
-                  "group flex items-start gap-3 bg-background px-4 py-3.5 text-left",
-                  "transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                  "hover:bg-[color:var(--accent-soft)]",
-                  "focus-visible:outline-none focus-visible:bg-[color:var(--accent-soft)]",
-                )}
+                className="group h-auto justify-start gap-3 rounded-none bg-background px-4 py-3.5 text-left hover:bg-[color:var(--accent-soft)] focus-visible:bg-[color:var(--accent-soft)]"
               >
                 {Icon && (
                   <Icon
@@ -170,7 +167,7 @@ export function ChatEmptyState({
                   )}
                   strokeWidth={2}
                 />
-              </button>
+              </Button>
             )
           })}
         </div>

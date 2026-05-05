@@ -1,9 +1,24 @@
 import type { RuntimeProvisioningContribution } from "@boring/agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
-import type { WorkspaceServerPlugin } from "./defineServerPlugin"
-export { defineServerPlugin } from "./defineServerPlugin"
+import {
+  validateServerPlugin,
+  type WorkspaceServerPlugin,
+} from "./defineServerPlugin"
+import {
+  compactPiPackages,
+  type WorkspacePiPackageSource,
+} from "./piPackages"
+export {
+  ServerPluginError,
+  defineServerPlugin,
+  validateServerPlugin,
+} from "./defineServerPlugin"
+export { composeServerPlugins } from "./composeServerPlugins"
+export type { ComposeServerPluginsOptions } from "./composeServerPlugins"
+export { compactPiPackages } from "./piPackages"
 export type { WorkspaceServerPlugin } from "./defineServerPlugin"
+export type { WorkspacePiPackageSource } from "./piPackages"
 
 export interface ServerBootstrapOptions {
   plugins?: WorkspaceServerPlugin[]
@@ -24,9 +39,14 @@ export type WorkspaceRouteContribution = {
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
+  piPackages: WorkspacePiPackageSource[]
   agentTools: AgentTool[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
+}
+
+function collectPiPackages(plugins: WorkspaceServerPlugin[]): WorkspacePiPackageSource[] {
+  return compactPiPackages(plugins.flatMap((plugin) => plugin.piPackages ?? []))
 }
 
 export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstrapResult {
@@ -38,6 +58,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
 
   const seenIds = new Set<string>()
   for (const plugin of finalPlugins) {
+    validateServerPlugin(plugin)
     if (seenIds.has(plugin.id)) {
       throw new Error(`plugin "${plugin.id}" registered twice`)
     }
@@ -56,6 +77,8 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .map((p) => p.systemPrompt!.trim())
     .join("\n\n")
 
+  const piPackages = collectPiPackages(finalPlugins)
+
   const provisioningContributions = finalPlugins
     .filter((p) => p.provisioning)
     .map((p) => ({ id: p.id, provisioning: p.provisioning! }))
@@ -67,6 +90,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
   return {
     registered: finalPlugins.map((p) => p.id),
     systemPromptAppend,
+    piPackages,
     agentTools,
     provisioningContributions,
     routeContributions,

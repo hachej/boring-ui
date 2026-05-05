@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { createPatch } from 'diff'
+import { Button } from '@boring/ui'
+import { cn } from '../lib'
 
 const COLLAPSE_THRESHOLD = 30
 
@@ -30,16 +32,10 @@ function parsePatch(patch: string): DiffLine[] {
   return result
 }
 
-const lineStyle: Record<DiffLine['type'], React.CSSProperties> = {
-  '+': {
-    background: 'var(--boring-agent-diff-add, rgba(46, 160, 67, 0.15))',
-    color: 'var(--boring-agent-diff-add-fg, #3fb950)',
-  },
-  '-': {
-    background: 'var(--boring-agent-diff-remove, rgba(248, 81, 73, 0.15))',
-    color: 'var(--boring-agent-diff-remove-fg, #f85149)',
-  },
-  ' ': {},
+const lineClass: Record<DiffLine['type'], string> = {
+  '+': 'bg-[var(--boring-agent-diff-add,rgba(46,160,67,0.15))] text-[var(--boring-agent-diff-add-fg,#3fb950)]',
+  '-': 'bg-[var(--boring-agent-diff-remove,rgba(248,81,73,0.15))] text-[var(--boring-agent-diff-remove-fg,#f85149)]',
+  ' ': '',
 }
 
 const prefixMap: Record<DiffLine['type'], string> = { '+': '+', '-': '-', ' ': ' ' }
@@ -49,7 +45,7 @@ export function DiffView({ oldString, newString, path, replaceAll }: DiffViewPro
 
   if (oldString === newString) {
     return (
-      <div data-testid="diff-no-change" style={{ opacity: 0.6, fontStyle: 'italic', padding: '0.5rem 0' }}>
+      <div data-testid="diff-no-change" className="py-2 italic opacity-60">
         No changes
       </div>
     )
@@ -62,29 +58,13 @@ export function DiffView({ oldString, newString, path, replaceAll }: DiffViewPro
 
   return (
     <div data-testid="diff-view">
-      <div
-        style={{
-          padding: '0.375rem 0.75rem',
-          fontSize: '0.75rem',
-          opacity: 0.7,
-          fontFamily: 'var(--boring-agent-font-mono, monospace)',
-        }}
-      >
+      <div className="px-3 py-1.5 font-[family-name:var(--boring-agent-font-mono,monospace)] text-xs opacity-70">
         {path}{replaceAll ? ' (replace all)' : ''}
       </div>
-      <pre
-        style={{
-          margin: 0,
-          padding: '0.5rem 0',
-          fontFamily: 'var(--boring-agent-font-mono, monospace)',
-          fontSize: '0.8125rem',
-          lineHeight: 1.6,
-          overflow: 'auto',
-        }}
-      >
+      <pre className="m-0 overflow-auto py-2 font-[family-name:var(--boring-agent-font-mono,monospace)] text-[0.8125rem] leading-relaxed">
         {visible.map((line, i) => (
-          <div key={i} style={{ ...lineStyle[line.type], padding: '0 0.75rem' }}>
-            <span style={{ display: 'inline-block', width: '1.5ch', opacity: 0.5, userSelect: 'none' }}>
+          <div key={i} className={cn('px-3', lineClass[line.type])}>
+            <span className="inline-block w-[1.5ch] select-none opacity-50">
               {prefixMap[line.type]}
             </span>
             {line.text}
@@ -92,23 +72,9 @@ export function DiffView({ oldString, newString, path, replaceAll }: DiffViewPro
         ))}
       </pre>
       {collapsed && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          style={{
-            display: 'block',
-            width: '100%',
-            padding: '0.375rem',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.75rem',
-            opacity: 0.6,
-            textAlign: 'center',
-          }}
-        >
+        <Button type="button" variant="ghost" size="sm" onClick={() => setExpanded(true)} className="w-full rounded-none text-xs opacity-60">
           Show {lines.length - COLLAPSE_THRESHOLD} more lines
-        </button>
+        </Button>
       )}
     </div>
   )

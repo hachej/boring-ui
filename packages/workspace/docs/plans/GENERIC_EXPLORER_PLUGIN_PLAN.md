@@ -364,17 +364,17 @@ filters.
 | `front/components/PanelErrorBoundary.tsx`     | Keep generic                                                                                      | Generic plugin/panel safety boundary.                                                                                                                |
 | `front/components/WorkspaceLoadingState.tsx`  | Keep generic                                                                                      | Generic shell loading UI.                                                                                                                            |
 | `front/components/SessionList.tsx`            | Re-evaluate after checking package-root consumers and whether it is only used by `SessionBrowser` | If it is just session chrome, consolidate under `front/chrome/session-list`; if consumers need a standalone primitive, keep a re-exported primitive. |
-| `front/components/ui/*`                       | Keep generic                                                                                      | Design primitives only.                                                                                                                              |
+| `@boring/ui/*`                       | Keep generic                                                                                      | Design primitives only.                                                                                                                              |
 | `front/chrome/artifact-surface/*`             | Keep in front chrome                                                                              | Core workspace surface host, not plugin domain.                                                                                                      |
 | `front/chrome/chat/*`                         | Keep in front chrome                                                                              | Chat host injection point, not agent/plugin domain.                                                                                                  |
 | `front/chrome/empty-pane/*`                   | Keep or move to core chrome                                                                       | Generic shell fallback. Not a domain plugin.                                                                                                         |
 | `front/chrome/session-list/*`                 | Keep in front chrome, maybe consolidate `SessionList` here                                        | Session chrome is host-level.                                                                                                                        |
 | `front/chrome/workbench-left/*`               | Keep in front chrome                                                                              | Renders plugin left-tabs; host chrome.                                                                                                               |
-| `plugins/filesystemPlugin/file-tree/*`        | Keep in filesystem plugin for now                                                                 | File-specific tree, path behavior, events, and open-file routing are domain-owned. May reuse explorer tree later.                                    |
-| `plugins/filesystemPlugin/code-editor/*`      | Keep in filesystem plugin                                                                         | File editor domain and file data hooks.                                                                                                              |
-| `plugins/filesystemPlugin/markdown-editor/*`  | Keep in filesystem plugin                                                                         | File editor domain and file data hooks.                                                                                                              |
-| `plugins/filesystemPlugin/empty-file-panel/*` | Keep in filesystem plugin                                                                         | File-specific empty panel.                                                                                                                           |
-| `plugins/dataCatalogPlugin/*`                 | Keep plugin-owned, but import explorer from `explorerPlugin`                                      | Domain specialization.                                                                                                                               |
+| `plugins/filesystemPlugin/front/file-tree/*`        | Keep in filesystem plugin for now                                                                 | File-specific tree, path behavior, events, and open-file routing are domain-owned. May reuse explorer tree later.                                    |
+| `plugins/filesystemPlugin/front/code-editor/*`      | Keep in filesystem plugin                                                                         | File editor domain and file data hooks.                                                                                                              |
+| `plugins/filesystemPlugin/front/markdown-editor/*`  | Keep in filesystem plugin                                                                         | File editor domain and file data hooks.                                                                                                              |
+| `plugins/filesystemPlugin/front/empty-file-panel/*` | Keep in filesystem plugin                                                                   | File-specific empty panel.                                                                                                                           |
+| `plugins/dataCatalogPlugin/front/*`           | Keep plugin-owned, but import explorer from `explorerPlugin`                                      | Domain specialization.                                                                                                                               |
 
 ## Public API Migration
 
@@ -436,7 +436,7 @@ filesystem tree to explorer tree` before the legacy data-catalog removal bead.
 
 ## Non-goals
 
-- Do not make every visual component a plugin. `front/components/ui`, layout,
+- Do not make every visual component a plugin. `@boring/ui`, layout,
   chrome hosts, registries, bridge, and provider stay front-owned.
 - Do not force filesystem to depend on data catalog.
 - Do not rewrite file tree in the first bead.

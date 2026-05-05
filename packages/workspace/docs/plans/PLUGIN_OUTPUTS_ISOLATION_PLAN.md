@@ -164,12 +164,12 @@ Acceptance:
 ### Phase 3: Move filesystem hooks into the filesystem plugin
 
 - Move the implementation of filesystem client, hooks, event stream, and
-  invalidation into `plugins/filesystemPlugin/data`.
+  invalidation into `plugins/filesystemPlugin/front/data`.
 - Delete `front/data`; do **not** keep compatibility re-export wrappers.
   Filesystem data APIs are plugin-owned and must be imported from the
   filesystem plugin package surface.
 - Update filesystem plugin internals and all first-party consumers to import
-  from `plugins/filesystemPlugin/data`, not from `front/data`.
+  from `plugins/filesystemPlugin/front/data`, not from `front/data`.
 - Keep generic React Query provider behavior in workspace core only if it
   is still domain-neutral after the move; otherwise let the filesystem plugin
   own its provider/binding.

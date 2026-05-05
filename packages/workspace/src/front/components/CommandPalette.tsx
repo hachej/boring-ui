@@ -16,15 +16,17 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  Button,
   CommandShortcut,
-} from "./ui/command"
+  Kbd,
+} from "@boring/ui"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "./ui/dialog"
+} from "@boring/ui"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
@@ -515,12 +517,14 @@ function ModeButton({
   onClick: () => void
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       aria-pressed={active}
       onClick={onClick}
       className={[
-        "inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors",
+        "h-7 gap-1.5 px-2 text-xs font-medium",
         active
           ? "bg-background text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground",
@@ -528,7 +532,7 @@ function ModeButton({
     >
       {icon}
       {label}
-    </button>
+    </Button>
   )
 }
 
@@ -543,14 +547,6 @@ function CatalogRowLabel({ row }: { row: ExplorerRow }) {
         <span className="ml-auto shrink-0 text-xs text-muted-foreground/70">{row.meta}</span>
       ) : null}
     </span>
-  )
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/60 bg-background px-1 font-mono text-[10px] text-muted-foreground">
-      {children}
-    </kbd>
   )
 }
 

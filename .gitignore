@@ -15,18 +15,12 @@ dist/
 # Playwright output
 apps/boring-macro-v2/workspace/
 apps/boring-macro-v2/.eval-venv/
-apps/boring-macro-v2/sdk/**/__pycache__/
-apps/boring-macro-v2/sdk/**/*.py[cod]
-apps/boring-macro-v2/sdk/*.egg-info/
-apps/boring-macro-v2/sdk/build/
-apps/boring-macro-v2/transforms/**/__pycache__/
-apps/boring-macro-v2/transforms/**/*.py[cod]
-apps/boring-macro-v2/src/plugins/macro/sdk/**/__pycache__/
-apps/boring-macro-v2/src/plugins/macro/sdk/**/*.py[cod]
-apps/boring-macro-v2/src/plugins/macro/sdk/*.egg-info/
-apps/boring-macro-v2/src/plugins/macro/sdk/build/
-apps/boring-macro-v2/src/plugins/macro/transforms/**/__pycache__/
-apps/boring-macro-v2/src/plugins/macro/transforms/**/*.py[cod]
+apps/boring-macro-v2/src/plugins/macro/server/sdk/**/__pycache__/
+apps/boring-macro-v2/src/plugins/macro/server/sdk/**/*.py[cod]
+apps/boring-macro-v2/src/plugins/macro/server/sdk/*.egg-info/
+apps/boring-macro-v2/src/plugins/macro/server/sdk/build/
+apps/boring-macro-v2/src/plugins/macro/server/transforms/**/__pycache__/
+apps/boring-macro-v2/src/plugins/macro/server/transforms/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/**/__pycache__/
 packages/agent/fixtures/provisioning/test-sdk/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/*.egg-info/

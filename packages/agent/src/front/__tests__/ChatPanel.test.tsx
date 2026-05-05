@@ -36,14 +36,6 @@ vi.mock('../primitives/attachments', () => ({
   AttachmentRemove: () => <div />,
 }))
 
-vi.mock('../ui/select', () => ({
-  Select: ({ children }: any) => <div>{children}</div>,
-  SelectContent: ({ children }: any) => <div>{children}</div>,
-  SelectItem: ({ children, value }: any) => <div data-value={value}>{children}</div>,
-  SelectTrigger: ({ children }: any) => <div>{children}</div>,
-  SelectValue: () => <div />,
-}))
-
 let capturedOnSubmit: ((input: { text: string; files: unknown[] }) => void) | undefined
 
 vi.mock('../primitives/prompt-input', () => ({

@@ -4,6 +4,8 @@
  * Copied: 2026-04-23. We own this file; upstream updates require re-port.
  */
 import { useCallback, useState } from 'react'
+import { Button } from '@boring/ui'
+import { cn } from '../lib'
 
 export interface CodeBlockProps {
   code: string
@@ -32,69 +34,31 @@ export function CodeBlock({
   }, [code])
 
   const lines = code.split('\n')
+  const lineNumberWidth = `${String(lines.length).length + 1}ch`
 
   return (
     <div
-      className={className}
-      style={{
-        background: 'var(--boring-agent-code-bg, #1e1e1e)',
-        color: 'var(--boring-agent-code-fg, #d4d4d4)',
-        borderRadius: 'var(--boring-agent-code-radius, 0.375rem)',
-        fontFamily: 'var(--boring-agent-font-mono, monospace)',
-        fontSize: '0.8125rem',
-        lineHeight: 1.6,
-        overflow: 'hidden',
-        position: 'relative',
-      }}
+      className={cn(
+        'relative overflow-hidden rounded-[var(--boring-agent-code-radius,0.375rem)] bg-[var(--boring-agent-code-bg,#1e1e1e)] font-[family-name:var(--boring-agent-font-mono,monospace)] text-[0.8125rem] leading-relaxed text-[var(--boring-agent-code-fg,#d4d4d4)]',
+        className,
+      )}
     >
       {(filename || language) && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0.375rem 0.75rem',
-            background: 'var(--boring-agent-code-header-bg, #2d2d2d)',
-            borderBottom: '1px solid var(--boring-agent-code-border, #404040)',
-            fontSize: '0.75rem',
-          }}
-        >
-          <span style={{ opacity: 0.7 }}>{filename ?? language}</span>
+        <div className="flex items-center justify-between border-b border-[var(--boring-agent-code-border,#404040)] bg-[var(--boring-agent-code-header-bg,#2d2d2d)] px-3 py-1.5 text-xs">
+          <span className="opacity-70">{filename ?? language}</span>
           {copyable && (
-            <button
-              type="button"
-              onClick={handleCopy}
-              aria-label="Copy code"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'inherit',
-                cursor: 'pointer',
-                padding: '0.125rem 0.375rem',
-                fontSize: '0.75rem',
-                opacity: 0.6,
-              }}
-            >
+            <Button type="button" variant="ghost" size="xs" onClick={handleCopy} aria-label="Copy code" className="h-6 px-1.5 text-xs text-inherit opacity-60">
               {copied ? 'Copied' : 'Copy'}
-            </button>
+            </Button>
           )}
         </div>
       )}
-      <pre style={{ margin: 0, padding: '0.75rem', overflow: 'auto' }}>
+      <pre className="m-0 overflow-auto p-3">
         <code data-language={language}>
           {showLineNumbers
             ? lines.map((line, i) => (
-                <span key={i} style={{ display: 'block' }}>
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      width: `${String(lines.length).length + 1}ch`,
-                      textAlign: 'right',
-                      marginRight: '1rem',
-                      opacity: 0.4,
-                      userSelect: 'none',
-                    }}
-                  >
+                <span key={i} className="block">
+                  <span className="mr-4 inline-block select-none text-right opacity-40" style={{ width: lineNumberWidth }}>
                     {i + 1}
                   </span>
                   {line}
@@ -104,25 +68,16 @@ export function CodeBlock({
         </code>
       </pre>
       {copyable && !filename && !language && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="xs"
           onClick={handleCopy}
           aria-label="Copy code"
-          style={{
-            position: 'absolute',
-            top: '0.5rem',
-            right: '0.5rem',
-            background: 'var(--boring-agent-code-copy-bg, rgba(255,255,255,0.1))',
-            border: 'none',
-            color: 'inherit',
-            cursor: 'pointer',
-            padding: '0.25rem 0.5rem',
-            borderRadius: '0.25rem',
-            fontSize: '0.75rem',
-          }}
+          className="absolute right-2 top-2 h-7 bg-[var(--boring-agent-code-copy-bg,rgba(255,255,255,0.1))] px-2 text-xs text-inherit"
         >
           {copied ? 'Copied' : 'Copy'}
-        </button>
+        </Button>
       )}
     </div>
   )

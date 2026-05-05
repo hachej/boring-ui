@@ -11,6 +11,7 @@ import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 import { evictSandboxHandleCacheForWorkspace } from './sandbox/vercel-sandbox/resolveSandboxHandle'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
+import type { PiResourceLoaderOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
@@ -133,11 +134,7 @@ export interface RegisterAgentRoutesOptions {
     runtimeMode: RuntimeModeId
   }) => AgentTool[] | Promise<AgentTool[]>
   systemPromptAppend?: string
-  resourceLoaderOptions?: {
-    noContextFiles?: boolean
-    noSkills?: boolean
-    additionalSkillPaths?: string[]
-  }
+  resourceLoaderOptions?: PiResourceLoaderOptions
   registerHealthRoute?: boolean
   sandboxHandleStore?: SandboxHandleStore
   getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>

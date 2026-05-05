@@ -11,9 +11,9 @@
     "prefix": ""
   },
   "aliases": {
-    "components": "@/front/ui",
+    "components": "@boring/ui",
     "utils": "@/front/lib",
-    "ui": "@/front/ui",
+    "ui": "@boring/ui",
     "lib": "@/front/lib",
     "hooks": "@/front/hooks"
   }

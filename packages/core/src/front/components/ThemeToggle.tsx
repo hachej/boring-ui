@@ -1,4 +1,4 @@
-import { Button } from '@boring/workspace/ui-shadcn'
+import { Button } from '@boring/ui'
 
 import { useTheme } from '../hooks/index.js'
 

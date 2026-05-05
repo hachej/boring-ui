@@ -1,7 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
+import type { PanelConfig } from "../../../front/registry/types"
 import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
 
 function ChatPanel(props: WorkspaceChatPanelProps) {
@@ -11,6 +13,18 @@ function ChatPanel(props: WorkspaceChatPanelProps) {
       <button type="button" onClick={() => props.onOpenArtifact?.("src/example.ts")}>Open artifact</button>
     </div>
   )
+}
+
+function GlobalCommandPanel() {
+  return <div>Global command panel body</div>
+}
+
+const globalCommandPanel: PanelConfig = {
+  id: "global-command-panel",
+  title: "Global command panel",
+  component: GlobalCommandPanel,
+  source: "app",
+  placement: "center",
 }
 
 describe("WorkspaceAgentFront", () => {
@@ -90,6 +104,89 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+    })
+  })
+
+  it("dispatches browser UI command events into the app surface", async () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="global-command-workspace"
+        chatPanel={ChatPanel}
+        panels={[globalCommandPanel]}
+        extraPanels={[globalCommandPanel.id]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
+
+    const command: UiCommand = {
+      kind: "openPanel",
+      params: {
+        id: "from-global-command",
+        component: globalCommandPanel.id,
+        title: "From global command",
+      },
+    }
+    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, { detail: command }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+    })
+    await waitFor(() => {
+      expect(screen.getByText("Global command panel body")).toBeInTheDocument()
+    })
+  })
+
+  it("does not reuse a stale surface handle after closing the workbench", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="stale-surface-workspace"
+        chatPanel={ChatPanel}
+        panels={[globalCommandPanel]}
+        extraPanels={[globalCommandPanel.id]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
+      detail: {
+        kind: "openPanel",
+        params: {
+          id: "before-close",
+          component: globalCommandPanel.id,
+          title: "Before close",
+        },
+      } satisfies UiCommand,
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByText("Global command panel body")).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole("button", { name: "Close workbench" }))
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
+    })
+
+    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
+      detail: {
+        kind: "openPanel",
+        params: {
+          id: "after-close",
+          component: globalCommandPanel.id,
+          title: "After close",
+        },
+      } satisfies UiCommand,
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+    })
+    await waitFor(() => {
+      expect(screen.getByText("Global command panel body")).toBeInTheDocument()
     })
   })
 

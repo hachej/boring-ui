@@ -4,6 +4,8 @@
  * Copied: 2026-04-23. We own this file; upstream updates require re-port.
  */
 import { useState, type ReactNode } from 'react'
+import { Button } from '@boring/ui'
+import { cn } from '../lib'
 
 export interface ReasoningProps {
   text: string
@@ -24,68 +26,35 @@ export function Reasoning({
 }: ReasoningProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const isStreaming = state === 'streaming'
-
   const displayLabel = label ?? (isStreaming ? 'Thinking…' : 'Thought process')
 
   return (
     <div
-      className={className}
+      className={cn(
+        'overflow-hidden rounded-[var(--boring-agent-reasoning-radius,0.375rem)] border border-[var(--boring-agent-reasoning-border,#e5e7eb)] text-[length:var(--boring-agent-font-size,0.875rem)]',
+        className,
+      )}
       data-state={state}
-      style={{
-        border: '1px solid var(--boring-agent-reasoning-border, #e5e7eb)',
-        borderRadius: 'var(--boring-agent-reasoning-radius, 0.375rem)',
-        overflow: 'hidden',
-        fontSize: 'var(--boring-agent-font-size, 0.875rem)',
-      }}
     >
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          width: '100%',
-          padding: '0.5rem 0.75rem',
-          background: 'var(--boring-agent-reasoning-header-bg, #f9fafb)',
-          border: 'none',
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontSize: '0.8125rem',
-          color: 'var(--boring-agent-reasoning-fg, inherit)',
-        }}
+        className="h-auto w-full justify-start gap-2 rounded-none bg-[var(--boring-agent-reasoning-header-bg,#f9fafb)] px-3 py-2 text-left text-[0.8125rem] text-[var(--boring-agent-reasoning-fg,inherit)]"
         aria-expanded={expanded}
       >
-        <span style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }}>
-          ▶
-        </span>
-        <span style={{ opacity: 0.7 }}>{displayLabel}</span>
+        <span className={cn('transition-transform duration-150', expanded && 'rotate-90')}>▶</span>
+        <span className="opacity-70">{displayLabel}</span>
         {isStreaming && (
           <span
-            style={{
-              marginLeft: 'auto',
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: 'var(--boring-agent-reasoning-streaming, #8b5cf6)',
-              animation: 'boring-pulse 1.5s ease-in-out infinite',
-            }}
+            className="ml-auto size-1.5 animate-pulse rounded-full bg-[var(--boring-agent-reasoning-streaming,#8b5cf6)]"
             aria-label="streaming"
           />
         )}
-      </button>
+      </Button>
 
       {expanded && (
-        <div
-          style={{
-            padding: '0.75rem',
-            borderTop: '1px solid var(--boring-agent-reasoning-border, #e5e7eb)',
-            whiteSpace: 'pre-wrap',
-            color: 'var(--boring-agent-reasoning-text, #6b7280)',
-            fontSize: '0.8125rem',
-            lineHeight: 1.6,
-          }}
-        >
+        <div className="whitespace-pre-wrap border-t border-[var(--boring-agent-reasoning-border,#e5e7eb)] p-3 text-[0.8125rem] leading-relaxed text-[var(--boring-agent-reasoning-text,#6b7280)]">
           {children ?? text}
         </div>
       )}

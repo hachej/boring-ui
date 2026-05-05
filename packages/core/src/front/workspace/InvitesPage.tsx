@@ -10,7 +10,15 @@ import {
   CardTitle,
   Input,
   Label,
-} from '@boring/workspace/ui-shadcn'
+  LoadingState,
+  Notice,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  StatusBadge,
+} from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
 import type { WorkspaceInvite, MemberRole } from '../../shared/types.js'
@@ -30,21 +38,10 @@ function getInviteStatus(invite: WorkspaceInvite): 'accepted' | 'expired' | 'pen
   return 'pending'
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-[color:var(--accent-soft)] text-foreground',
-  expired: 'bg-muted text-muted-foreground',
-  accepted: 'bg-[color:var(--success-soft)] text-success',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      data-testid={`status-${status}`}
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[status] ?? ''}`}
-    >
-      {status}
-    </span>
-  )
+const STATUS_TONES: Record<string, 'info' | 'neutral' | 'success'> = {
+  pending: 'info',
+  expired: 'neutral',
+  accepted: 'success',
 }
 
 export function InvitesPage() {
@@ -158,14 +155,10 @@ export function InvitesPage() {
           <form onSubmit={handleSubmit} data-testid="invite-form">
             <CardContent className="space-y-4">
               {formError && (
-                <div role="alert" className="text-sm text-destructive">
-                  {formError}
-                </div>
+                <Notice role="alert" tone="error" description={formError} />
               )}
               {successMessage && (
-                <div role="status" className="text-sm text-success">
-                  {successMessage}
-                </div>
+                <Notice role="status" tone="success" description={successMessage} />
               )}
               <div className="space-y-2">
                 <Label htmlFor="invite-email">Email address</Label>
@@ -180,17 +173,16 @@ export function InvitesPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invite-role">Role</Label>
-                <select
-                  id="invite-role"
-                  data-testid="invite-role-select"
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as MemberRole)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                >
-                  <option value="editor">Editor</option>
-                  <option value="viewer">Viewer</option>
-                  <option value="owner">Owner</option>
-                </select>
+                <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as MemberRole)}>
+                  <SelectTrigger id="invite-role" data-testid="invite-role-select">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="editor">Editor</SelectItem>
+                    <SelectItem value="viewer">Viewer</SelectItem>
+                    <SelectItem value="owner">Owner</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
             <CardFooter>
@@ -216,13 +208,11 @@ export function InvitesPage() {
           </CardHeader>
           <CardContent>
             {revokeError && (
-              <div role="alert" className="mb-4 text-sm text-destructive">
-                {revokeError}
-              </div>
+              <Notice role="alert" tone="error" className="mb-4" description={revokeError} />
             )}
-            {invitesQuery.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+            {invitesQuery.isLoading && <LoadingState />}
             {invitesQuery.isError && (
-              <p className="text-sm text-destructive">Failed to load invites.</p>
+              <Notice tone="error" description="Failed to load invites." />
             )}
             {invitesQuery.data && invitesQuery.data.length > 0 && (
               <div className="divide-y" data-testid="invites-list">
@@ -238,7 +228,7 @@ export function InvitesPage() {
                         <p className="text-sm font-medium">{invite.email}</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span>{invite.role}</span>
-                          <StatusBadge status={status} />
+                          <StatusBadge data-testid={`status-${status}`} tone={STATUS_TONES[status] ?? 'neutral'}>{status}</StatusBadge>
                           <span>
                             expires{' '}
                             {new Date(invite.expiresAt).toLocaleDateString()}

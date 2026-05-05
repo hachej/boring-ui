@@ -20,6 +20,10 @@ export interface WorkspaceFrontPlugin {
   commands?: CommandConfig[]
   catalogs?: CatalogConfig[]
   bindings?: PluginBinding[]
+  /**
+   * @deprecated Executable agent tools should be contributed by server
+   * plugins. This field remains for migration only.
+   */
   agentTools?: AgentTool[]
   outputs?: PluginOutput[]
 }

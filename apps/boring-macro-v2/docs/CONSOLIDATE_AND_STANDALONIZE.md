@@ -23,22 +23,26 @@ apps/boring-macro-v2/
       dev.ts                        — boots backend + Vite for local dev
       __tests__/
     plugins/macro/
-      index.tsx                     — client plugin factory and shell options
-      catalogs.ts                   — macro series data catalog output
-      panels.tsx                    — chart/deck panel definitions
-      surfaceResolver.ts            — macro.open-series + deck path routing
-      data/                         — macro data client, types, UI helpers
-      panels/                       — ChartCanvasPane, DeckPane
-      routes/                       — standalone presentation route helper
+      front/
+        index.tsx                   — front plugin factory and shell options
+        catalogs.ts                 — macro series data catalog output
+        panels.tsx                  — chart/deck panel definitions
+        surfaceResolver.ts          — macro.open-series + deck path routing
+        data/                       — macro data client, types, UI helpers
+        panels/                     — ChartCanvasPane, DeckPane
+        routes/                     — standalone presentation route helper
       server/
         index.ts                    — server plugin factory + provisioning
         config.ts
         routes/macro.ts
         services/
         tools/
-      sdk/
-      transforms/
-      workspace-template/
+        sdk/
+        transforms/
+        workspace-template/
+      shared/
+        constants.ts
+        types.ts
     eval/
   e2e/
   .pi/APPEND_SYSTEM.md

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react"
 import { ChevronLeft, Plus } from "lucide-react"
+import { IconButton } from "@boring/ui"
 import { cn } from "../../lib/utils"
 import type { SessionItem } from "../../components/SessionList"
 
@@ -117,26 +118,14 @@ export function SessionBrowser({
         </span>
         <div className="flex items-center gap-0.5">
           {onCreate && (
-            <button
-              type="button"
-              onClick={onCreate}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-              aria-label="New session"
-              title="New chat"
-            >
+            <IconButton type="button" variant="ghost" size="icon-xs" onClick={onCreate} aria-label="New session" title="New chat">
               <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
+            </IconButton>
           )}
           {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-              aria-label="Close sessions"
-              title="Close sessions (⌘1)"
-            >
+            <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close sessions" title="Close sessions (⌘1)">
               <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-            </button>
+            </IconButton>
           )}
         </div>
       </div>
@@ -206,14 +195,11 @@ function SessionRow({
         )}
       </span>
       {onDelete && (
-        <button
+        <IconButton
           type="button"
-          className={cn(
-            "shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity",
-            "hover:text-destructive",
-            "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            "group-hover:opacity-100",
-          )}
+          variant="ghost"
+          size="icon-xs"
+          className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation()
             onDelete(session.id)
@@ -223,7 +209,7 @@ function SessionRow({
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />
           </svg>
-        </button>
+        </IconButton>
       )}
     </li>
   )

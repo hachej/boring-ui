@@ -101,11 +101,8 @@ export function fileRoutes(
     try {
       const workspace = await resolveWorkspace(request)
       const content = await workspace.readFile(path)
-      // Do not stat after read. Remote runtimes like Vercel Sandbox expose
-      // readFile as a fast API call but stat as an extra command roundtrip.
-      // Returning content without mtime keeps file-open responsive; OCC is
-      // enabled only when the client has a baseline mtime.
-      return { content }
+      const stat = await workspace.stat(path)
+      return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
     } catch (err) {
       return classifyError(err, reply, 'file')
     }
@@ -168,9 +165,8 @@ export function fileRoutes(
         if (dir) await workspace.mkdir(dir, { recursive: true })
       }
       await workspace.writeFile(path, body.content)
-      // Avoid post-write stat for remote runtimes; it is an extra roundtrip
-      // and the write event/refetch path is enough for UI freshness.
-      return { ok: true }
+      const stat = await workspace.stat(path)
+      return { ok: true, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
     } catch (err) {
       return classifyError(err, reply, 'file')
     }

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react"
-import { CodeEditor } from "../src/plugins/filesystemPlugin/code-editor/CodeEditor"
+import { CodeEditor } from "../src/plugins/filesystemPlugin/front/code-editor/CodeEditor"
 
 const meta: Meta<typeof CodeEditor> = {
   title: "Workspace/CodeEditor",

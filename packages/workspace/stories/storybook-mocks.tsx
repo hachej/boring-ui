@@ -4,10 +4,10 @@ import {
   type ReactNode,
 } from "react"
 import type { Decorator } from "@storybook/react"
-import { DataProvider } from "../src/plugins/filesystemPlugin/data"
-import type { FileEntry } from "../src/plugins/filesystemPlugin/data/types"
+import { DataProvider } from "../src/plugins/filesystemPlugin/front/data"
+import type { FileEntry } from "../src/plugins/filesystemPlugin/front/data/types"
 import { WorkspaceProvider } from "../src/front/provider/WorkspaceProvider"
-import type { FileTreeNode } from "../src/plugins/filesystemPlugin/file-tree/FileTree"
+import type { FileTreeNode } from "../src/plugins/filesystemPlugin/front/file-tree/FileTree"
 
 const ROOT_TREE: Record<string, FileEntry[]> = {
   ".": [

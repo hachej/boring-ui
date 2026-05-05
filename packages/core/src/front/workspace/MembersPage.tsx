@@ -15,7 +15,15 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@boring/workspace/ui-shadcn'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  InitialsAvatar,
+  LoadingState,
+  Notice,
+} from '@boring/ui'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { useSession } from '../auth/AuthProvider.js'
 import { useWorkspaceMembers } from '../hooks/useWorkspaceMembers.js'
@@ -120,19 +128,11 @@ export function MembersPage() {
           </CardHeader>
           <CardContent>
             {toast && (
-              <div
-                role="alert"
-                data-testid="toast"
-                className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                {toast}
-              </div>
+              <Notice role="alert" data-testid="toast" tone="error" className="mb-4" description={toast} />
             )}
-            {membersQuery.isLoading && (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            )}
+            {membersQuery.isLoading && <LoadingState />}
             {membersQuery.isError && (
-              <p className="text-sm text-destructive">Failed to load members.</p>
+              <Notice tone="error" description="Failed to load members." />
             )}
             {membersQuery.data && membersQuery.data.length > 0 && (
               <div className="divide-y" data-testid="members-list">
@@ -148,9 +148,7 @@ export function MembersPage() {
                       data-testid={`member-row-${member.userId}`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                          {(member.user.name?.[0] ?? member.user.email[0]).toUpperCase()}
-                        </div>
+                        <InitialsAvatar initials={(member.user.name?.[0] ?? member.user.email[0]).toUpperCase()} />
                         <div>
                           <p className="text-sm font-medium">
                             {member.user.name ?? member.user.email}
@@ -162,21 +160,22 @@ export function MembersPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <select
-                          data-testid={`role-select-${member.userId}`}
+                        <Select
                           value={member.role}
                           disabled={!canChangeRole}
-                          onChange={(e) =>
-                            handleRoleChange(member.userId, e.target.value as MemberRole)
-                          }
-                          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs disabled:opacity-50"
+                          onValueChange={(value) => handleRoleChange(member.userId, value as MemberRole)}
                         >
-                          {ROLE_OPTIONS.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger data-testid={`role-select-${member.userId}`} className="h-8 w-28 text-xs">
+                            <SelectValue placeholder="Role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLE_OPTIONS.map((r) => (
+                              <SelectItem key={r} value={r}>
+                                {r}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         {canRemove && (
                           <Button
                             variant="destructive"

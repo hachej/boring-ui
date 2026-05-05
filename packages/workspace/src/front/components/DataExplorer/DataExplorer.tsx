@@ -1,8 +1,8 @@
 import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, XIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { Input } from "../ui/input"
-import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover"
+import { Button, Chip as UiChip, ChipButton, EmptyState, Input, Spinner, Toolbar as UiToolbar } from "@boring/ui"
+import { Popover, PopoverTrigger, PopoverContent } from "@boring/ui"
 import { useExplorerState } from "./useExplorerState"
 import type {
   Badge as BadgeT,
@@ -119,8 +119,8 @@ export function DataExplorer({
 
       <div className="flex-1 overflow-y-auto" data-slot="data-explorer-list">
         {showEmpty ? (
-          <div className="flex h-full items-center justify-center px-4 py-8 text-[12px] text-muted-foreground">
-            {emptyState}
+          <div className="flex h-full items-center justify-center px-4 py-8">
+            <EmptyState className="min-h-0 border-0" description={emptyState} />
           </div>
         ) : treeMode ? (
           <TreeList
@@ -180,7 +180,7 @@ function Toolbar({
   total,
 }: ToolbarProps) {
   return (
-    <div className="flex items-center gap-1.5 border-b border-border/60 px-2 py-1.5">
+    <UiToolbar className="border-b border-border/60 px-2 py-1.5">
       {searchable ? (
         <Input
           aria-label="Search"
@@ -222,18 +222,14 @@ function Toolbar({
               />
             ))}
             {filterCount > 0 ? (
-              <button
-                type="button"
-                onClick={onClearFilters}
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-              >
+              <Button type="button" variant="ghost" size="xs" onClick={onClearFilters} className="gap-1 text-[11px] text-muted-foreground hover:text-foreground">
                 <XIcon size={11} /> Clear all
-              </button>
+              </Button>
             ) : null}
           </PopoverContent>
         </Popover>
       ) : null}
-    </div>
+    </UiToolbar>
   )
 }
 
@@ -267,23 +263,18 @@ function FacetSection({
           const active = selected.includes(v.value)
           const label = config.formatValue ? config.formatValue(v.value) : v.value
           return (
-            <button
+            <ChipButton
               key={v.value}
               type="button"
+              selected={active}
               onClick={() => onToggle(config.key, v.value)}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px]",
-                "transition-colors duration-120 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                active
-                  ? "border-foreground/20 bg-foreground/8 text-foreground"
-                  : "border-border bg-transparent text-muted-foreground hover:border-foreground/15 hover:text-foreground",
-              )}
+              className="gap-1 rounded-sm text-[11px]"
             >
               {label}
               <span className="font-mono text-[10px] text-muted-foreground/80">
                 {v.count.toLocaleString()}
               </span>
-            </button>
+            </ChipButton>
           )
         })}
       </div>
@@ -322,14 +313,9 @@ function FlatList({
       ))}
       {hasMore ? (
         <li className="px-3 py-2">
-          <button
-            type="button"
-            onClick={onLoadMore}
-            disabled={loading}
-            className="w-full text-left text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
-          >
+          <Button type="button" variant="ghost" size="xs" onClick={onLoadMore} disabled={loading} className="w-full justify-start text-[11px] text-muted-foreground hover:text-foreground">
             {loading ? "Loading…" : "Load more"}
-          </button>
+          </Button>
         </li>
       ) : null}
     </ul>
@@ -362,16 +348,15 @@ function TreeList({
         const group = getGroup(entry.value)
         return (
           <li key={entry.value}>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               aria-expanded={expanded}
               onClick={() =>
                 expanded ? onCollapse(entry.value) : onExpand(entry.value)
               }
-              className={cn(
-                "group mx-1 flex w-[calc(100%-0.5rem)] items-center gap-1.5 rounded-md px-1.5 py-1 text-left",
-                "transition-colors duration-120 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-muted/40",
-              )}
+              className="group mx-1 h-auto w-[calc(100%-0.5rem)] justify-start gap-1.5 px-1.5 py-1 text-left hover:bg-muted/40"
             >
               {expanded ? (
                 <ChevronDownIcon size={11} className="text-muted-foreground/80" />
@@ -382,7 +367,7 @@ function TreeList({
               <span className="ml-auto font-mono text-[10.5px] text-muted-foreground/80">
                 {entry.count.toLocaleString()}
               </span>
-            </button>
+            </Button>
             {expanded ? (
               <ul className="flex flex-col">
                 {group.items.map((row) => (
@@ -395,20 +380,16 @@ function TreeList({
                   />
                 ))}
                 {group.loading && group.items.length === 0 ? (
-                  <li className="pl-7 pr-3 py-1.5 text-[11px] text-muted-foreground/80">
+                  <li className="flex items-center gap-1.5 pl-7 pr-3 py-1.5 text-[11px] text-muted-foreground/80">
+                    <Spinner className="size-3" />
                     Loading…
                   </li>
                 ) : null}
                 {group.hasMore ? (
                   <li className="pl-7 pr-3 py-1">
-                    <button
-                      type="button"
-                      onClick={() => onLoadMoreGroup(entry.value)}
-                      disabled={group.loading}
-                      className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
-                    >
+                    <Button type="button" variant="ghost" size="xs" onClick={() => onLoadMoreGroup(entry.value)} disabled={group.loading} className="text-[11px] text-muted-foreground hover:text-foreground">
                       {group.loading ? "Loading…" : "Load more"}
-                    </button>
+                    </Button>
                   </li>
                 ) : null}
               </ul>
@@ -468,7 +449,7 @@ function Row({
       )}
       title={row.title}
     >
-      {row.leading ? <Chip badge={row.leading} /> : null}
+      {row.leading ? <BadgeChip badge={row.leading} /> : null}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-[12.5px] font-medium leading-tight text-foreground">
           {row.title}
@@ -482,7 +463,7 @@ function Row({
       {row.trailing?.length ? (
         <span className="flex shrink-0 items-center gap-1">
           {row.trailing.map((b, i) => (
-            <Chip key={i} badge={b} />
+            <BadgeChip key={i} badge={b} />
           ))}
         </span>
       ) : null}
@@ -495,14 +476,14 @@ function Row({
   )
 }
 
-function Chip({ badge }: { badge: BadgeT }) {
+function BadgeChip({ badge }: { badge: BadgeT }) {
   return (
-    <span
+    <UiChip
       aria-hidden="true"
       title={badge.tooltip}
-      className="mt-[1px] inline-flex h-[16px] min-w-[24px] shrink-0 items-center justify-center rounded-[3px] bg-muted/60 px-1 font-mono text-[9.5px] font-medium uppercase tracking-[0.06em] text-muted-foreground group-hover:text-foreground"
+      className="mt-[1px] h-[16px] min-w-[24px] rounded-[3px] border-0 bg-muted/60 px-1 font-mono text-[9.5px] uppercase tracking-[0.06em] text-muted-foreground group-hover:text-foreground"
     >
       {badge.code}
-    </span>
+    </UiChip>
   )
 }

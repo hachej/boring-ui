@@ -57,12 +57,14 @@ import {
 } from './primitives/attachments'
 import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon, BotIcon } from 'lucide-react'
 import {
+  Button,
+  IconButton,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select'
+} from '@boring/ui'
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
@@ -477,7 +479,23 @@ export function ChatPanel(props: ChatPanelProps) {
       .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
         if (aborted || !payload?.models) return
         setAvailableModels(payload.models)
-        if (payload.defaultModel && !userSelectedModelRef.current) {
+        const available = payload.models.filter((m) => m.available)
+        const fallbackModel = payload.defaultModel ?? available[0]
+        if (fallbackModel) {
+          setModelState((current) => {
+            const currentAvailable = available.some(
+              (m) => m.provider === current.provider && m.id === current.id,
+            )
+            if (currentAvailable) return current
+            userSelectedModelRef.current = false
+            setUserSelectedModel(false)
+            try {
+              globalThis.localStorage?.removeItem(STORAGE_MODEL_KEY)
+              globalThis.localStorage?.removeItem(STORAGE_MODEL_USER_KEY)
+            } catch { /* noop */ }
+            return { provider: fallbackModel.provider, id: fallbackModel.id }
+          })
+        } else if (payload.defaultModel && !userSelectedModelRef.current) {
           setModelState(payload.defaultModel)
         }
       })
@@ -896,17 +914,19 @@ export function ChatPanel(props: ChatPanelProps) {
                         <div className="mt-1 text-xs text-destructive/80">{friendly.detail}</div>
                       )}
                     </div>
-                    <button
+                    <IconButton
                       type="button"
+                      variant="ghost"
+                      size="icon-xs"
                       onClick={() => clearError()}
-                      className="shrink-0 rounded-md p-1 text-destructive/70 transition hover:bg-destructive/15 hover:text-destructive"
+                      className="shrink-0 text-destructive/70 hover:bg-destructive/15 hover:text-destructive"
                       aria-label="Dismiss"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
-                    </button>
+                    </IconButton>
                   </div>
                 </MessageContent>
               </Message>
@@ -1236,8 +1256,7 @@ function ModelSelect({
         </span>
       </SelectTrigger>
       <SelectContent
-        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
-        style={{ maxHeight: 'min(340px, var(--radix-select-content-available-height))' }}
+        className="max-h-[min(340px,var(--radix-select-content-available-height))] w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
       >
         {[...groups.entries()].map(([provider, list]) => (
           <div key={provider} className="py-1">
@@ -1318,6 +1337,9 @@ function ThinkingSelect({
         aria-label="Thinking level"
         data-testid="thinking-select"
       >
+        {THINKING_LEVELS.map((level) => (
+          <span key={level} data-value={level} hidden />
+        ))}
         <BrainIcon className="h-3.5 w-3.5" />
       </SelectTrigger>
       <SelectContent className="w-auto min-w-0 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl">
@@ -1349,10 +1371,12 @@ function ThoughtVisibilityButton({
 }) {
   const Icon = visible ? EyeIcon : EyeOffIcon
   return (
-    <button
+    <IconButton
       type="button"
       data-boring-agent-part="thought-toggle"
       data-boring-state={visible ? "selected" : undefined}
+      variant="ghost"
+      size="icon-sm"
       onClick={onToggle}
       className={cn(composerActionClass, "w-8")}
       aria-pressed={visible}
@@ -1360,21 +1384,23 @@ function ThoughtVisibilityButton({
       title={visible ? "Hide thoughts" : "Show thoughts"}
     >
       <Icon className="h-3.5 w-3.5" />
-    </button>
+    </IconButton>
   )
 }
 
 function AttachmentButton() {
   const attachments = usePromptInputAttachments()
   return (
-    <button
+    <IconButton
       type="button"
+      variant="ghost"
+      size="icon-sm"
       onClick={() => attachments.openFileDialog()}
       className={cn(composerActionClass, "w-8")}
       aria-label="Attach files"
     >
       <PaperclipIcon className="h-4 w-4" />
-    </button>
+    </IconButton>
   )
 }
 
@@ -1567,15 +1593,15 @@ function MessageActionsBar({
         "flex items-center gap-0.5 -mt-1",
       )}
     >
-      <button type="button" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>
+      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
         <span>{copied ? 'Copied' : 'Copy'}</span>
-      </button>
+      </Button>
       {canRegenerate && (
-        <button type="button" onClick={onRegenerate} className={actionBtnClass} aria-label="Regenerate">
+        <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={actionBtnClass} aria-label="Regenerate">
           <RefreshCwIcon className="h-3.5 w-3.5" />
           <span>Regenerate</span>
-        </button>
+        </Button>
       )}
     </div>
   )

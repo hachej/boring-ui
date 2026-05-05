@@ -62,7 +62,7 @@ test.describe("command palette visual chrome", () => {
     await expect(page.getByText(/close/i).last()).toBeVisible()
   })
 
-  test("> prefix surfaces the 'Command' mode pill", async ({ page }) => {
+  test("> prefix surfaces the command mode segment", async ({ page }) => {
     await openPalette(page)
     await expect(
       page.getByRole("button", { name: "Commands" }),

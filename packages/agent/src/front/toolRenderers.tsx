@@ -16,7 +16,7 @@ import {
 } from './bareToolRenderers'
 import type { defaultToolRenderers as bareDefaults } from './bareToolRenderers/renderers'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
-import { CollapsibleTrigger } from './ui/collapsible'
+import { CollapsibleTrigger } from '@boring/ui'
 import { ChevronDownIcon, ExternalLinkIcon, ZapIcon } from 'lucide-react'
 import { CodeBlock } from './primitives/code-block'
 import { useOpenArtifact } from './ArtifactOpenContext'

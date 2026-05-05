@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import type { IDockviewPanelHeaderProps } from "dockview-react"
 import { X, Loader2 } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
+import { IconButton } from "@boring/ui"
 import { cn } from "../lib/utils"
 import { useEvent, workspaceEvents } from "../events"
 
@@ -71,14 +72,13 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
           )}
         />
       ) : null}
-      <button
+      <IconButton
         type="button"
+        variant="ghost"
+        size="icon-xs"
         className={cn(
-          "absolute right-1 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md",
-          "text-muted-foreground opacity-0 transition-opacity duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          "hover:bg-foreground/10 hover:text-foreground",
-          "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          "group-hover:opacity-100",
+          "absolute right-1 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground opacity-0",
+          "focus-visible:opacity-100 group-hover:opacity-100",
           "[.dv-active-tab_&]:opacity-50 [.active-tab_&]:opacity-50",
           "[.dv-active-tab_&]:hover:opacity-100 [.active-tab_&]:hover:opacity-100",
         )}
@@ -86,7 +86,7 @@ export function ShadcnTab(props: IDockviewPanelHeaderProps) {
         aria-label={`Close ${displayTitle}`}
       >
         <X className="h-3 w-3" strokeWidth={2.25} />
-      </button>
+      </IconButton>
     </div>
   )
 }

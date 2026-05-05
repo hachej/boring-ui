@@ -4,6 +4,7 @@
  * Copied: 2026-04-23. We own this file; upstream updates require re-port.
  */
 import type { ReactNode } from 'react'
+import { cn } from '../lib'
 
 export interface MessageProps {
   role: 'user' | 'assistant' | 'system'
@@ -15,41 +16,25 @@ export interface MessageProps {
 export function Message({ role, children, className, avatar }: MessageProps) {
   return (
     <div
-      className={className}
+      className={cn(
+        'flex items-start gap-[var(--boring-agent-message-gap,0.75rem)] p-[var(--boring-agent-message-padding,1rem)]',
+        role === 'user' && 'flex-row-reverse',
+        className,
+      )}
       data-role={role}
-      style={{
-        display: 'flex',
-        gap: 'var(--boring-agent-message-gap, 0.75rem)',
-        padding: 'var(--boring-agent-message-padding, 1rem)',
-        flexDirection: role === 'user' ? 'row-reverse' : 'row',
-        alignItems: 'flex-start',
-      }}
     >
       {avatar && (
-        <div
-          style={{
-            flexShrink: 0,
-            width: 'var(--boring-agent-avatar-size, 2rem)',
-            height: 'var(--boring-agent-avatar-size, 2rem)',
-          }}
-        >
+        <div className="size-[var(--boring-agent-avatar-size,2rem)] shrink-0">
           {avatar}
         </div>
       )}
       <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          background:
-            role === 'user'
-              ? 'var(--boring-agent-user-bg, transparent)'
-              : 'var(--boring-agent-assistant-bg, transparent)',
-          borderRadius: 'var(--boring-agent-message-radius, 0.5rem)',
-          padding:
-            role === 'user'
-              ? 'var(--boring-agent-user-padding, 0.5rem 0.75rem)'
-              : undefined,
-        }}
+        className={cn(
+          'min-w-0 flex-1 rounded-[var(--boring-agent-message-radius,0.5rem)]',
+          role === 'user'
+            ? 'bg-[var(--boring-agent-user-bg,transparent)] p-[var(--boring-agent-user-padding,0.5rem_0.75rem)]'
+            : 'bg-[var(--boring-agent-assistant-bg,transparent)]',
+        )}
       >
         {children}
       </div>
@@ -63,9 +48,5 @@ export interface MessagePartContainerProps {
 }
 
 export function MessagePartContainer({ children, className }: MessagePartContainerProps) {
-  return (
-    <div className={className} style={{ marginTop: 'var(--boring-agent-part-gap, 0.5rem)' }}>
-      {children}
-    </div>
-  )
+  return <div className={cn('mt-[var(--boring-agent-part-gap,0.5rem)]', className)}>{children}</div>
 }

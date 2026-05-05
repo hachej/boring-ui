@@ -45,6 +45,7 @@ import {
   type Database,
 } from '../../server/db/index.js'
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
+import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -506,7 +507,7 @@ export async function createCoreWorkspaceAgentServer(
         ...createWorkspaceUiTools(getUiBridge(ctx.workspaceId), { workspaceRoot: ctx.workspaceRoot }),
       ]
     },
-    sandboxHandleStore: options.sandboxHandleStore,
+    sandboxHandleStore: options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore),
     getWorkspaceId: resolveWorkspaceId,
     getWorkspaceRoot: resolveRoot,
     registerHealthRoute: options.registerHealthRoute ?? false,

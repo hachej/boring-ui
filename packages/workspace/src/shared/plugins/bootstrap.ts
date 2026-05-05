@@ -52,34 +52,48 @@ function registerOutput(
   plugin: WorkspaceFrontPlugin,
   registries: BootstrapOptions["registries"],
 ): void {
+  const ownedOutput = output as PluginOutput & { pluginId?: string }
+  const ownerPluginId = ownedOutput.pluginId ?? plugin.id
   switch (output.type) {
     case "left-tab": {
-      const { type: _type, id, ...registration } = output
+      const ownedLeftTab = output as Extract<PluginOutput, { type: "left-tab" }> & {
+        pluginId?: string
+      }
+      const { type: _type, id, pluginId: _pluginId, ...registration } = ownedLeftTab
       registries.panels.register(id, {
         ...registration,
         placement: "left-tab",
-        pluginId: plugin.id,
+        pluginId: ownerPluginId,
       })
       return
     }
     case "panel": {
       const { id, ...registration } = output.panel
-      registries.panels.register(id, { ...registration, pluginId: plugin.id })
+      registries.panels.register(id, {
+        ...registration,
+        pluginId: ownerPluginId,
+      })
       return
     }
     case "command":
-      registries.commands.registerCommand({ ...output.command, pluginId: plugin.id })
+      registries.commands.registerCommand({
+        ...output.command,
+        pluginId: ownerPluginId,
+      })
       return
     case "catalog":
-      registries.catalogs.register(output.catalog, plugin.id)
+      registries.catalogs.register(output.catalog, ownerPluginId)
       return
     case "surface-resolver": {
       const { id, ...registration } = output.resolver
-      registries.surfaceResolvers?.register(id, { ...registration, pluginId: plugin.id })
+      registries.surfaceResolvers?.register(id, {
+        ...registration,
+        pluginId: ownerPluginId,
+      })
       return
     }
     case "agent-tool":
-      registries.agentTools?.register(output.tool, plugin.id)
+      registries.agentTools?.register(output.tool, ownerPluginId)
       return
     case "binding":
     case "provider":
@@ -94,14 +108,19 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
 
   const excludedDefaults = new Set(options.excludeDefaults ?? [])
   const finalPlugins = [
-    ...(options.defaults ?? []).filter((plugin) => !excludedDefaults.has(plugin.id)),
+    ...(options.defaults ?? []).filter(
+      (plugin) => !excludedDefaults.has(plugin.id),
+    ),
     ...(options.plugins ?? []),
   ]
 
   const seenPluginIds = new Set<string>()
   for (const plugin of finalPlugins) {
     if (seenPluginIds.has(plugin.id)) {
-      throw new PluginError("duplicate-id", `plugin "${plugin.id}" registered twice`)
+      throw new PluginError(
+        "duplicate-id",
+        `plugin "${plugin.id}" registered twice`,
+      )
     }
     seenPluginIds.add(plugin.id)
   }
@@ -109,10 +128,16 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
   for (const plugin of finalPlugins) {
     for (const panel of plugin.panels ?? []) {
       const { id, ...registration } = panel
-      options.registries.panels.register(id, { ...registration, pluginId: plugin.id })
+      options.registries.panels.register(id, {
+        ...registration,
+        pluginId: plugin.id,
+      })
     }
     for (const command of plugin.commands ?? []) {
-      options.registries.commands.registerCommand({ ...command, pluginId: plugin.id })
+      options.registries.commands.registerCommand({
+        ...command,
+        pluginId: plugin.id,
+      })
     }
     for (const catalog of plugin.catalogs ?? []) {
       options.registries.catalogs.register(catalog, plugin.id)
@@ -132,5 +157,8 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
     .map((p) => p.systemPrompt!.trim())
     .join("\n\n")
 
-  return { registered: finalPlugins.map((plugin) => plugin.id), systemPromptAppend }
+  return {
+    registered: finalPlugins.map((plugin) => plugin.id),
+    systemPromptAppend,
+  }
 }

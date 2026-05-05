@@ -201,7 +201,7 @@ The public barrel import stays stable. Deep imports into internal paths can brea
 Before:
 
 ```ts
-import { Button } from "@boring/workspace/components/ui";
+import { Button } from "@boring/ui";
 import { ChatCenteredShell } from "@boring/workspace/components/chat";
 ```
 
@@ -209,13 +209,13 @@ After:
 
 ```ts
 import { ChatLayout, defineFrontPlugin, WorkspaceProvider } from "@boring/workspace";
-import { Button } from "@boring/workspace/ui-shadcn";
+import { Button } from "@boring/ui";
 ```
 
 Migration recipe:
 
 1. Replace deep imports with `@boring/workspace` barrel exports where possible.
-2. Use documented package subpaths only, such as `@boring/workspace/events`, `@boring/workspace/shared`, and `@boring/workspace/ui-shadcn`.
+2. Use documented package subpaths only, such as `@boring/workspace/events`, `@boring/workspace/shared`, and `@boring/ui`.
 3. Do not import from `src/front/**`, `src/server/**`, or `src/shared/**` from outside the package.
 4. Treat undocumented paths as private implementation details.
 5. Add a package-level typecheck after import cleanup.
@@ -238,7 +238,7 @@ export const macroClientPlugin = defineFrontPlugin({
 After:
 
 ```ts
-// src/plugins/macro/index.tsx
+// src/plugins/macro/front/index.tsx
 export const macroClientPlugin = defineFrontPlugin({
   id: "boring-macro",
   label: "Macro",

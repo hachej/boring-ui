@@ -1,6 +1,7 @@
 import { useMemo, type ComponentType, type ReactNode } from "react"
 import type { DockviewPanelApi } from "dockview-react"
 import type { PanelLifecycleApi } from "./types"
+import { IconButton } from "@boring/ui"
 import { cn } from "../lib/utils"
 
 export interface PanelChromeProps {
@@ -59,9 +60,11 @@ export function PanelChrome({
         <span className="truncate text-sm font-medium">{title}</span>
         <div className="flex-1" />
         {!essential && panelApi && (
-          <button
+          <IconButton
             type="button"
-            className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            variant="ghost"
+            size="icon-xs"
+            className="h-5 w-5 text-muted-foreground"
             onClick={() => panelApi.close()}
             aria-label={`Close ${title}`}
           >
@@ -74,7 +77,7 @@ export function PanelChrome({
             >
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
-          </button>
+          </IconButton>
         )}
       </div>
       <div className="flex-1 overflow-auto">{children}</div>

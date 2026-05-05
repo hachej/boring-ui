@@ -40,6 +40,16 @@ export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWor
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export type {
+  PiPackageSource,
+  PiResourceLoaderOptions,
+} from './harness/pi-coding-agent/createHarness'
+export {
+  compactPiPackages,
+  mergePiPackageSources,
+  piPackageSourceKey,
+  PI_PACKAGE_RESOURCE_FILTERS,
+} from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
 export { createLogger } from './logging'

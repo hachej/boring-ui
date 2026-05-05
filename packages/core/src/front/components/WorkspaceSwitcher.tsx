@@ -17,8 +17,8 @@ import {
   DropdownMenuTrigger,
   Input,
   Label,
-} from '@boring/workspace/ui-shadcn'
-import * as WorkspaceUi from '@boring/workspace/ui-shadcn'
+  useToast,
+} from '@boring/ui'
 import { Check, ChevronsUpDown, LayoutGrid, Plus, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
@@ -55,11 +55,6 @@ export interface WorkspaceSwitcherProps {
 }
 
 function useToastCompat(): ToastApi {
-  const maybeUseToast = (WorkspaceUi as unknown as {
-    useToast?: () => ToastApi
-  }).useToast
-
-  const useToast = maybeUseToast ?? (() => ({ toast: () => {} }))
   return useToast()
 }
 
@@ -205,10 +200,11 @@ export function WorkspaceSwitcher({
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               aria-label={`Workspace menu: ${switcherLabel}`}
-              className="-ml-1 flex h-8 min-w-0 items-center gap-2.5 rounded-md border border-transparent px-1 py-1 text-left transition-colors hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="-ml-1 h-8 min-w-0 justify-start gap-2.5 border border-transparent px-1 py-1 text-left"
             >
               <span
                 aria-hidden="true"
@@ -226,7 +222,7 @@ export function WorkspaceSwitcher({
                 </span>
               </span>
               <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
-            </button>
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"

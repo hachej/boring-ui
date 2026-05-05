@@ -82,7 +82,7 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
     // ClickHouse column shape — the DB has `series_id`, `frequency_short`,
     // `source_type`, etc.). Honors `q` (full-text search) by routing to
     // svc.search() instead of svc.catalog() when provided. The DataCatalog
-    // adapter in src/plugins/macro/data/macroSeriesAdapter.ts depends on this shape.
+    // adapter in src/plugins/macro/front/data/macroSeriesAdapter.ts depends on this shape.
     scoped.get('/catalog', async (req: FastifyRequest, _reply: FastifyReply) => {
       const q = req.query as Record<string, string | undefined>
       if (svc === null) return { items: [], total: 0, hasMore: false }

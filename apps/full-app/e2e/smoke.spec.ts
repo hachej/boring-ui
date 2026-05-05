@@ -31,6 +31,14 @@ function json(body: unknown, status = 200) {
   }
 }
 
+async function openWorkbench(page: import('@playwright/test').Page) {
+  const leftPane = page.getByLabel('Workbench left pane')
+  if (await leftPane.isVisible()) return
+
+  await page.getByRole('button', { name: 'Workbench' }).click()
+  await expect(leftPane).toBeVisible({ timeout: 10_000 })
+}
+
 test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
   let signedIn = false
   const cspEvalViolations: string[] = []
@@ -162,7 +170,7 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
   await page.goto(`/workspace/${WORKSPACE_ID}`)
   await expect(page).toHaveURL(new RegExp(`/workspace/${WORKSPACE_ID}$`))
   await expect(page.getByText('Smoke Workspace')).toBeVisible()
-  await expect(page.getByLabel('Workbench left pane')).toBeVisible()
+  await openWorkbench(page)
   expect(cspEvalViolations, cspEvalViolations.join('\n')).toEqual([])
 
   log('smoke.complete', { workspaceId: WORKSPACE_ID })

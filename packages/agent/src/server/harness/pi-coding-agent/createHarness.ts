@@ -21,10 +21,29 @@ import {
   readConfiguredDefaultModel,
   registerConfiguredModelProviders,
 } from "../../models/modelConfig.js";
+import {
+  mergePiPackageSources,
+  type PiPackageSource,
+} from "../../piPackages.js";
 
 interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
+}
+
+export { mergePiPackageSources } from "../../piPackages.js";
+export type { PiPackageSource } from "../../piPackages.js";
+
+export interface PiResourceLoaderOptions {
+  noContextFiles?: boolean;
+  noSkills?: boolean;
+  additionalSkillPaths?: string[];
+  /**
+   * Additional native Pi package sources to enable for this agent runtime.
+   * These are applied as in-memory SettingsManager overrides, so host/plugin
+   * declarations do not mutate .pi/settings.json.
+   */
+  piPackages?: PiPackageSource[];
 }
 
 const ALIAS_TO_PI_ID: Record<string, string> = {
@@ -34,6 +53,41 @@ const ALIAS_TO_PI_ID: Record<string, string> = {
   // Anthropic deprecated this legacy ID; map to current haiku family.
   "claude-3-5-haiku-20241022": "claude-haiku-4.5",
 };
+
+function extractAssistantMessageText(message: unknown): {
+  role?: string;
+  text: string;
+  errorText: string;
+} {
+  const record = message as {
+    role?: unknown;
+    content?: unknown;
+    errorMessage?: unknown;
+  } | null;
+  const role = typeof record?.role === "string" ? record.role : undefined;
+  const errorText =
+    typeof record?.errorMessage === "string" ? record.errorMessage : "";
+  const text = Array.isArray(record?.content)
+    ? record.content
+        .map((part) => {
+          const item = part as { type?: unknown; text?: unknown };
+          return item?.type === "text" && typeof item.text === "string"
+            ? item.text
+            : "";
+        })
+        .join("")
+    : "";
+  return { role, text, errorText };
+}
+
+function findLastAssistantMessage(messages: unknown): unknown {
+  if (!Array.isArray(messages)) return undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i] as { role?: unknown } | undefined;
+    if (message?.role === "assistant") return message;
+  }
+  return undefined;
+}
 
 function resolveRequestedModel(
   modelRegistry: ModelRegistry,
@@ -55,6 +109,39 @@ function resolveDefaultModel(modelRegistry: ModelRegistry) {
     if (model) return model;
   }
   return modelRegistry.find("anthropic", ALIAS_TO_PI_ID.sonnet);
+}
+
+export function createResourceSettingsManager(
+  cwd: string,
+  agentDir: string,
+  piPackages: PiPackageSource[],
+): SettingsManager {
+  const fileSettingsManager = SettingsManager.create(cwd, agentDir);
+  if (piPackages.length === 0) return fileSettingsManager;
+
+  const projectSettings = fileSettingsManager.getProjectSettings();
+  let globalSettingsJson: string | undefined = JSON.stringify(
+    fileSettingsManager.getGlobalSettings(),
+  );
+  let projectSettingsJson: string | undefined = JSON.stringify({
+    ...projectSettings,
+    packages: mergePiPackageSources(projectSettings.packages ?? [], piPackages),
+  });
+  // Pi settings writes stay visible to this SettingsManager instance, but do
+  // not mutate host/project files while workspace-owned packages are injected.
+  // SettingsManager also uses `undefined` as the callback result for reads, so
+  // preserve the current JSON whenever a callback does not produce a new value.
+  const storage: Parameters<typeof SettingsManager.fromStorage>[0] = {
+    withLock(scope, fn) {
+      if (scope === "global") {
+        globalSettingsJson = fn(globalSettingsJson) ?? globalSettingsJson;
+      } else {
+        projectSettingsJson = fn(projectSettingsJson) ?? projectSettingsJson;
+      }
+    },
+  };
+
+  return SettingsManager.fromStorage(storage);
 }
 
 async function applyRequestedSessionOptions(
@@ -84,11 +171,7 @@ export function createPiCodingAgentHarness(opts: {
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
   /** Optional pi resource-loader isolation knobs. */
-  resourceLoaderOptions?: {
-    noContextFiles?: boolean;
-    noSkills?: boolean;
-    additionalSkillPaths?: string[];
-  };
+  resourceLoaderOptions?: PiResourceLoaderOptions;
 }): AgentHarness {
   const sessionStore = new PiSessionStore(opts.cwd);
   const piSessions = new Map<string, PiSessionHandle>();
@@ -129,12 +212,18 @@ export function createPiCodingAgentHarness(opts: {
       opts.systemPromptAppend ||
       opts.resourceLoaderOptions?.noContextFiles ||
       opts.resourceLoaderOptions?.noSkills ||
-      (opts.resourceLoaderOptions?.additionalSkillPaths?.length ?? 0) > 0
+      (opts.resourceLoaderOptions?.additionalSkillPaths?.length ?? 0) > 0 ||
+      (opts.resourceLoaderOptions?.piPackages?.length ?? 0) > 0
         ? (() => {
             const agentDir = getAgentDir()
-            const settingsManager = SettingsManager.create(ctx.workdir, agentDir)
             const additionalSkillPaths =
               opts.resourceLoaderOptions?.additionalSkillPaths ?? []
+            const piPackages = opts.resourceLoaderOptions?.piPackages ?? []
+            const settingsManager = createResourceSettingsManager(
+              ctx.workdir,
+              agentDir,
+              piPackages,
+            )
             return new DefaultResourceLoader({
               cwd: ctx.workdir,
               agentDir,
@@ -226,6 +315,7 @@ export function createPiCodingAgentHarness(opts: {
       let streamError: unknown = null;
       let wake: (() => void) | null = null;
       let assistantText = "";
+      const textStartSeen = new Set<number>();
       const textDeltaSeen = new Set<number>();
 
       const activeTools = new Map<string, number>();
@@ -285,16 +375,12 @@ export function createPiCodingAgentHarness(opts: {
       const unsubscribe = piSession.subscribe((event: AgentSessionEvent) => {
         if (event.type === "message_update") {
           const ame = event.assistantMessageEvent;
+          if (ame.type === "text_start") {
+            textStartSeen.add(ame.contentIndex);
+          }
           if (ame.type === "text_delta") {
             textDeltaSeen.add(ame.contentIndex);
             assistantText += ame.delta;
-          }
-          if (
-            ame.type === "text_end"
-            && typeof ame.content === "string"
-            && !textDeltaSeen.has(ame.contentIndex)
-          ) {
-            assistantText += ame.content;
           }
         }
 
@@ -307,29 +393,42 @@ export function createPiCodingAgentHarness(opts: {
           if (activeTools.size === 0) stopHeartbeat();
         }
 
-        const converted = dedupStartChunks(piEventToChunks(event));
+        let converted = dedupStartChunks(piEventToChunks(event));
+        if (event.type === "message_update") {
+          const ame = event.assistantMessageEvent;
+          if (
+            ame.type === "text_end"
+            && typeof ame.content === "string"
+            && ame.content.length > 0
+            && !textDeltaSeen.has(ame.contentIndex)
+          ) {
+            const id = String(ame.contentIndex);
+            converted = [
+              ...(textStartSeen.has(ame.contentIndex)
+                ? []
+                : [{ type: "text-start", id } as UIMessageChunk]),
+              { type: "text-delta", id, delta: ame.content } as UIMessageChunk,
+              ...converted,
+            ];
+            textDeltaSeen.add(ame.contentIndex);
+            assistantText += ame.content;
+          }
+        }
         for (const chunk of converted) {
           const t = (chunk as { type?: string }).type;
-          if (t === "text-start" || t === "text-delta" || t === "text-end") {
+          if (t === "text-delta") {
             sawTextChunk = true;
           }
         }
         chunks.push(...converted);
 
-        // Some model/provider paths emit only message_end (no message_update deltas).
-        // Synthesize text chunks so SSE consumers still receive assistant text.
+        // Some model/provider paths emit only final message snapshots (no
+        // message_update deltas). Synthesize text chunks so SSE consumers still
+        // receive assistant text.
         if (event.type === "message_end" && !sawTextChunk) {
-          const message = (event as unknown as { message?: { role?: string; content?: unknown[]; errorMessage?: string } }).message;
-          const role = message?.role;
-          const errorText = typeof message?.errorMessage === "string" ? message.errorMessage : "";
-          const text = Array.isArray(message?.content)
-            ? message!.content
-                .map((part) => {
-                  const rec = part as { type?: string; text?: string };
-                  return rec?.type === "text" && typeof rec.text === "string" ? rec.text : "";
-                })
-                .join("")
-            : "";
+          const { role, text, errorText } = extractAssistantMessageText(
+            (event as unknown as { message?: unknown }).message,
+          );
           if (role === "assistant" && errorText.length > 0) {
             chunks.push({ type: "error", errorText } as UIMessageChunk);
             sawTextChunk = true;
@@ -345,6 +444,25 @@ export function createPiCodingAgentHarness(opts: {
         }
 
         if (event.type === "agent_end") {
+          if (!sawTextChunk) {
+            const { role, text, errorText } = extractAssistantMessageText(
+              findLastAssistantMessage(
+                (event as unknown as { messages?: unknown }).messages,
+              ),
+            );
+            if (role === "assistant" && errorText.length > 0) {
+              chunks.push({ type: "error", errorText } as UIMessageChunk);
+              sawTextChunk = true;
+            } else if (role === "assistant" && text.length > 0) {
+              chunks.push(
+                { type: "text-start", id: "0" } as UIMessageChunk,
+                { type: "text-delta", id: "0", delta: text } as UIMessageChunk,
+                { type: "text-end", id: "0" } as UIMessageChunk,
+              );
+              sawTextChunk = true;
+              assistantText += text;
+            }
+          }
           done = true;
           stopHeartbeat();
         }

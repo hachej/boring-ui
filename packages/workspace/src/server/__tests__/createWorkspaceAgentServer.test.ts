@@ -53,8 +53,18 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
     const result = collectWorkspaceAgentServerPlugins({
       workspaceRoot,
       systemPromptAppend: "Host prompt",
-      resourceLoaderOptions: { additionalSkillPaths: ["custom-skills"] },
-      plugins: [{ id: "plugin", systemPrompt: "Plugin prompt", agentTools: [domainTool] }],
+      resourceLoaderOptions: {
+        additionalSkillPaths: ["custom-skills"],
+        piPackages: ["npm:host-pi", { source: "npm:plugin-pi" }],
+      },
+      plugins: [
+        {
+          id: "plugin",
+          systemPrompt: "Plugin prompt",
+          agentTools: [domainTool],
+          piPackages: ["npm:plugin-pi"],
+        },
+      ],
     })
 
     expect(result.agentOptions.extraTools?.map((tool) => tool.name)).toEqual(["plugin_ping"])
@@ -62,6 +72,10 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
     expect(result.agentOptions.resourceLoaderOptions?.additionalSkillPaths).toEqual([
       join(workspaceRoot, ".agents", "skills"),
       "custom-skills",
+    ])
+    expect(result.agentOptions.resourceLoaderOptions?.piPackages).toEqual([
+      "npm:plugin-pi",
+      "npm:host-pi",
     ])
   })
 

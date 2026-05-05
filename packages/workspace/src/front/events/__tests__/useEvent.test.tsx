@@ -3,7 +3,7 @@ import { renderHook, act } from "@testing-library/react"
 import { useEvent } from "../useEvent"
 import { events, workspaceEvents } from "../index"
 import { userMeta } from "../types"
-import { filesystemEvents } from "../../../plugins/filesystemPlugin/events"
+import { filesystemEvents } from "../../../plugins/filesystemPlugin/shared/events"
 
 describe("useEvent", () => {
   beforeEach(() => events._reset())

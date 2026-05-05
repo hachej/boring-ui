@@ -7,7 +7,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@boring/workspace/ui-shadcn'
+} from '@boring/ui'
 import {
   ChevronDown,
   Check,

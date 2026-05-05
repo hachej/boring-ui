@@ -1,16 +1,12 @@
 "use client";
 
-import { Button } from "@/front/ui/button";
-import {
-  ButtonGroup,
-  ButtonGroupText,
-} from "@/front/ui/button-group";
+import { Button, ButtonGroup, ButtonGroupText } from "@boring/ui";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/front/ui/tooltip";
+} from "@boring/ui";
 import { cn } from "@/front/lib";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
