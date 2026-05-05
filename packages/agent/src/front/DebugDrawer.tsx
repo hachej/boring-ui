@@ -2,9 +2,80 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
 import { cn } from './lib'
 import { Button, IconButton, Tabs, TabsList, TabsTrigger } from '@boring/ui'
-import { RefreshCwIcon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  RefreshCwIcon,
+} from 'lucide-react'
 
-type Tab = 'prompt' | 'messages'
+type Tab = 'session' | 'prompt' | 'messages'
+
+// ---- session tab ----
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const onCopy = useCallback(() => {
+    const writeText = navigator.clipboard?.writeText?.bind(navigator.clipboard)
+    if (!writeText) return
+    void writeText(value).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    })
+  }, [value])
+
+  return (
+    <IconButton
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      onClick={onCopy}
+      className="text-muted-foreground/60"
+      aria-label={label}
+      title={label}
+    >
+      {copied ? <CheckIcon className="h-3 w-3" /> : <CopyIcon className="h-3 w-3" />}
+    </IconButton>
+  )
+}
+
+function DebugValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border/40 bg-muted/20 p-2">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
+          {label}
+        </span>
+        <CopyButton value={value} label={`Copy ${label}`} />
+      </div>
+      <code className="block break-all font-mono text-[11px] leading-relaxed text-foreground">
+        {value}
+      </code>
+    </div>
+  )
+}
+
+function SessionTab({ sessionId }: { sessionId: string }) {
+  const resumeCommand = `pi --session ${sessionId}`
+
+  return (
+    <div className="flex flex-col gap-3 overflow-auto p-3 text-[11px] text-muted-foreground">
+      <p>
+        This web chat is backed by a pi session. Use the id below from the
+        workspace root to resume the same conversation in a terminal.
+      </p>
+      <DebugValue label="Pi session id" value={sessionId} />
+      <DebugValue label="Resume command" value={resumeCommand} />
+      <p className="rounded-md border border-border/30 bg-muted/10 p-2 text-[10px] leading-relaxed text-muted-foreground/75">
+        Tip: <code className="font-mono text-foreground/80">pi --continue</code>{' '}
+        opens the most recent session for the current working directory. The
+        explicit command above targets this session directly.
+      </p>
+    </div>
+  )
+}
 
 // ---- system prompt tab ----
 
@@ -244,6 +315,7 @@ function MessagesTab({ messages }: { messages: UIMessage[] }) {
 // ---- drawer ----
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'session', label: 'Session' },
   { id: 'prompt', label: 'System prompt' },
   { id: 'messages', label: 'Messages' },
 ]
@@ -261,7 +333,7 @@ interface DebugDrawerProps {
 }
 
 export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidthChange }: DebugDrawerProps) {
-  const [tab, setTab] = useState<Tab>('prompt')
+  const [tab, setTab] = useState<Tab>('session')
 
   const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -313,6 +385,7 @@ export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidt
         </header>
 
         <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+          {tab === 'session' && <SessionTab sessionId={sessionId} />}
           {tab === 'prompt' && (
             <SystemPromptTab sessionId={sessionId} requestHeaders={requestHeaders} />
           )}
