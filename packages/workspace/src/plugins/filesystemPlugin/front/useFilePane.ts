@@ -72,7 +72,7 @@ export interface UseFilePaneReturn {
 export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const { path, panelId = path, initialContent = null } = options
 
-  const { data: fileData, isLoading, error, dataUpdatedAt } = useFileContent(path)
+  const { data: fileData, isLoading, error } = useFileContent(path)
   const { mutateAsync: writeFile } = useFileWrite()
 
   // Local content state
@@ -141,7 +141,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const lifecycle = useEditorLifecycle(path, {
     adapter,
     panelId,
-    serverMtime: dataUpdatedAt || null,
+    serverMtime: fileData?.mtimeMs ?? null,
   })
 
   // Handle external file changes (auto-sync when not dirty)
