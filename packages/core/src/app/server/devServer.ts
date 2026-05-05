@@ -1,3 +1,7 @@
+import { createRequire } from 'node:module'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+
 import type { CoreWorkspaceAgentServer } from './createCoreWorkspaceAgentServer.js'
 
 const DEFAULT_FRONTEND_PORT = 5173
@@ -31,9 +35,11 @@ export async function startCoreWorkspaceAgentDevServer({
 
   const apiPort = Number(new URL(address).port)
   const apiTarget = `http://127.0.0.1:${apiPort}`
-  const viteModule = await (new Function('specifier', 'return import(specifier)') as (
-    specifier: string,
-  ) => Promise<{ createServer: (options: unknown) => Promise<{ listen: () => Promise<void>; printUrls: () => void }> }>)('vite')
+  const requireFromApp = createRequire(path.join(appRoot, 'package.json'))
+  const viteEntry = requireFromApp.resolve('vite')
+  const viteModule = await import(pathToFileURL(viteEntry).href) as {
+    createServer: (options: unknown) => Promise<{ listen: () => Promise<void>; printUrls: () => void }>
+  }
 
   const vite = await viteModule.createServer({
     root: appRoot,

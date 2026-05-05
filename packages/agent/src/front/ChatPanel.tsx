@@ -531,6 +531,18 @@ export function ChatPanel(props: ChatPanelProps) {
     const parsed = parseSlashCommand(text)
     if (parsed) {
       const cmd = registry.get(parsed.name)
+      if (cmd?.kind === 'skill') {
+        const skillMessage = parsed.args
+          ? `skill: ${parsed.name}\n\n${parsed.args}`
+          : `skill: ${parsed.name}`
+        setComposerText('')
+        setTextareaValue('')
+        void sendMessage(
+          { text, files },
+          { body: { sessionId, message: skillMessage, model, attachments: [] } },
+        )
+        return
+      }
       if (cmd) {
         const ctx: SlashCommandContext = {
           sessionId,

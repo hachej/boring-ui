@@ -3,6 +3,8 @@ export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => st
 export interface SlashCommand {
   name: string
   description: string
+  /** 'skill' commands are forwarded to the PI agent as `skill: <name>\n\n<args>` instead of running locally. */
+  kind?: 'local' | 'skill'
   handler: SlashCommandHandler
 }
 

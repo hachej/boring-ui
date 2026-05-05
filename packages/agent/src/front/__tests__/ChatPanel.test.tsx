@@ -415,6 +415,66 @@ describe('ChatPanel (shadcn)', () => {
     expect(customHandler).toHaveBeenCalledWith('world', expect.objectContaining({ sessionId: 'sess-ext' }))
   })
 
+  describe('skill slash commands', () => {
+    const skillCommand = {
+      name: 'macro-deck',
+      description: 'Create a deck',
+      kind: 'skill' as const,
+      handler: vi.fn(),
+    }
+
+    test('forwards to PI as skill: name\\n\\nargs', async () => {
+      renderToStaticMarkup(
+        <ChatPanel sessionId="sess-skill" extraCommands={[skillCommand]} />,
+      )
+
+      await capturedOnSubmit!({ text: '/macro-deck create a labor market deck', files: [] })
+
+      expect(skillCommand.handler).not.toHaveBeenCalled()
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: '/macro-deck create a labor market deck', files: [] },
+        {
+          body: {
+            sessionId: 'sess-skill',
+            message: 'skill: macro-deck\n\ncreate a labor market deck',
+            model: { provider: 'anthropic', id: 'sonnet' },
+            attachments: [],
+          },
+        },
+      )
+    })
+
+    test('forwards to PI as skill: name with no args', async () => {
+      renderToStaticMarkup(
+        <ChatPanel sessionId="sess-skill-noargs" extraCommands={[skillCommand]} />,
+      )
+
+      await capturedOnSubmit!({ text: '/macro-deck', files: [] })
+
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: '/macro-deck', files: [] },
+        expect.objectContaining({
+          body: expect.objectContaining({ message: 'skill: macro-deck' }),
+        }),
+      )
+    })
+
+    test('local commands with no kind still run handler, not PI', async () => {
+      const localHandler = vi.fn().mockReturnValue('local result')
+      renderToStaticMarkup(
+        <ChatPanel
+          sessionId="sess-local"
+          extraCommands={[{ name: 'greet', description: 'Say hello', handler: localHandler }]}
+        />,
+      )
+
+      await capturedOnSubmit!({ text: '/greet world', files: [] })
+
+      expect(localHandler).toHaveBeenCalledWith('world', expect.anything())
+      expect(mockSendMessage).not.toHaveBeenCalled()
+    })
+  })
+
   test('className prop is forwarded to root element', () => {
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-cls" className="custom-class" />)
     expect(html).toContain('custom-class')

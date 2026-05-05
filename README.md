@@ -1,63 +1,36 @@
-# boring-ui-v2
+# boring-ui
 
-Boring UI is a framework for building agent-driven workflows in the browser.
+The boring foundation for agent-powered products.
 
-It gives you an embedded chat interface for directing the agent, plus a workbench for reviewing the outputs it creates — files, documents, code, research, and other artifacts.
+One chat. Panes. A command palette. That's it.
 
-Use it to build things like coding agents, research copilots, internal workflow tools, analyst workbenches, and document-based products where the agent needs to do work and hand the results back in a structured UI.
+No opinionated layouts, no AI chrome, no dashboard bloat — just the three primitives every agent UI needs, wired to a production-ready backend. You own the product; boring-ui handles the scaffolding.
 
-It provides the backend foundation (`@boring/core`), the agent runtime (`@boring/agent`), and the frontend workspace shell (`@boring/workspace`).
+---
+
+## What you get
+
+**One chat** — a persistent conversation surface that drives the agent. Not a widget, not a sidebar hack. The chat *is* the interface.
+
+**Panes** — a panel registry for whatever the agent produces: files, code, documents, data, artifacts. Each pane is a plugin. Add yours, remove the defaults.
+
+**Command palette** — keyboard-first access to everything. Ships ready, extensible by default.
+
+Plus the backend you'd have to build anyway: Postgres + Drizzle, auth + workspaces, a Fastify app factory, and three runtime modes for the agent (`direct`, `local`, `vercel-sandbox`).
+
+---
 
 ## Packages
 
-### `@boring/core`
-App foundation:
-- Postgres + Drizzle
-- auth + users + workspaces
-- Fastify app factory
-- frontend app shell (`<BoringApp />`)
+| Package | What it is |
+|---|---|
+| `@boring/core` | DB, auth, app factory, frontend shell |
+| `@boring/agent` | Coding agent runtime + tool catalog |
+| `@boring/workspace` | Chat layout, file tree, panel registry |
 
-Docs: [`packages/core/docs/CORE.md`](packages/core/docs/CORE.md)
+---
 
-### `@boring/agent`
-Pane-embeddable coding agent:
-- chat runtime
-- tool catalog (`bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`)
-- runtime modes: `direct`, `local` (bwrap), `vercel-sandbox`
-- standalone server/CLI surface
-
-Docs: [`packages/agent/README.md`](packages/agent/README.md)
-
-### `@boring/workspace`
-Frontend-only IDE/workspace shell:
-- chat-centered layout
-- file tree
-- editors
-- panel registry
-- UI bridge integration
-
-## Repo shape
-
-```text
-apps/*                  # example / reference apps
-packages/core           # app foundation
-packages/agent          # coding agent
-packages/workspace      # workspace UI shell
-```
-
-Dependency direction:
-
-```text
-apps/* -> @boring/workspace -> @boring/core
-   └──> @boring/agent
-```
-
-## Example apps
-
-### `apps/full-app`
-Reference production-style app wiring core + agent + workspace together.
-
-Run:
+## Quickstart
 
 ```bash
 pnpm install
@@ -66,51 +39,44 @@ pnpm --dir packages/core drizzle:migrate
 pnpm --filter full-app dev
 ```
 
-See: [`apps/full-app/README.md`](apps/full-app/README.md)
+Then open `http://localhost:3000`.
 
-### `apps/workspace-playground`
-Fastest way to poke at the workspace UI locally.
+---
 
-```bash
-pnpm --filter workspace-playground dev
+## Server
+
+```ts
+import { createCoreApp, loadConfig } from '@boring/core/server'
+import { registerAgentRoutes } from '@boring/agent/server'
+
+const config = await loadConfig()
+const app = await createCoreApp(config)
+await app.register(registerAgentRoutes)
+await app.listen({ port: config.port })
 ```
 
-### `apps/boring-macro-v2`
-Macro-economic analysis app built on top of the workspace + agent stack.
+## Frontend
 
-```bash
-pnpm --dir apps/boring-macro-v2 dev
+```tsx
+import { BoringApp } from '@boring/core/front'
+import { WorkspaceProvider, IdeLayout } from '@boring/workspace'
+
+<BoringApp>
+  <Route path="/" element={<WorkspaceProvider><IdeLayout /></WorkspaceProvider>} />
+</BoringApp>
 ```
 
-## Root commands
+---
 
-```bash
-pnpm install
-pnpm typecheck
-pnpm test
-pnpm lint
-pnpm build
+## Repo shape
+
+```
+packages/core       → app foundation
+packages/agent      → coding agent
+packages/workspace  → workspace UI shell
+apps/full-app       → reference production app
 ```
 
-Useful targeted commands:
+---
 
-```bash
-pnpm --filter @boring/agent dev
-pnpm --filter @boring/workspace dev
-pnpm --filter full-app dev
-pnpm --filter workspace-playground dev
-pnpm --dir apps/boring-macro-v2 dev
-```
-
-## Current focus
-
-This repo is building toward three publishable building blocks:
-- a canonical app core
-- a standalone/embeddable coding agent
-- a frontend-only workspace shell
-
-If you want the full architectural spec, start with:
-- [`AGENTS.md`](AGENTS.md)
-- [`packages/agent/docs/plans/agent-package-spec.md`](packages/agent/docs/plans/agent-package-spec.md)
-- [`packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md`](packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md)
-- [`packages/core/docs/CORE.md`](packages/core/docs/CORE.md)
+Built with TypeScript, React 19, Tailwind v4, Fastify, Drizzle, better-auth.

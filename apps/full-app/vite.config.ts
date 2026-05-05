@@ -12,5 +12,14 @@ export default defineConfig({
   build: {
     outDir: 'dist/front',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("recharts") || id.includes("victory-vendor")) return "vendor-recharts"
+          if (id.includes("@codemirror/")) return "vendor-codemirror"
+          if (id.includes("@tiptap/") || id.includes("lowlight")) return "vendor-tiptap"
+        },
+      },
+    },
   },
 })

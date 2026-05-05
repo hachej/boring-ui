@@ -17,13 +17,13 @@ import {
 } from "@boring/workspace/charts"
 import { Button, ChipButton, SegmentedControl, SegmentedControlItem, Separator } from "@boring/ui"
 import { ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2 } from "lucide-react"
+import type { Observation, SeriesPayload } from "../data/macroSeriesTypes"
+import { fetchMacroSeries } from "../data/macroSeriesData"
+import { formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
 
 const MarkdownEditor = lazy(() =>
   import("@boring/workspace").then((m) => ({ default: m.MarkdownEditor })),
 )
-import type { Observation, SeriesPayload } from "../data/macroSeriesTypes"
-import { fetchMacroSeries } from "../data/macroSeriesData"
-import { formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
 
 interface DeckParams {
   path?: string
