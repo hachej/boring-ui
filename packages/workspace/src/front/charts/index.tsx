@@ -11,10 +11,10 @@ export interface BoringChartTheme {
   tooltipBackground: string
   tooltipBorder: string
   tooltipForeground: string
-  palette: string[]
+  palette: readonly string[]
 }
 
-export const boringChartPalette = [
+export const boringChartPalette: readonly string[] = [
   "var(--chart-1, var(--accent))",
   "var(--chart-2, #60a5fa)",
   "var(--chart-3, #34d399)",
@@ -39,8 +39,9 @@ export const boringChartTheme: BoringChartTheme = {
 
 export function getBoringChartColor(index: number, theme: BoringChartTheme = boringChartTheme): string {
   if (theme.palette.length === 0) return "var(--accent)"
-  const normalizedIndex = Number.isFinite(index) ? Math.abs(Math.trunc(index)) : 0
-  return theme.palette[normalizedIndex % theme.palette.length] ?? theme.palette[0] ?? "var(--accent)"
+  const integerIndex = Number.isFinite(index) ? Math.trunc(index) : 0
+  const paletteIndex = ((integerIndex % theme.palette.length) + theme.palette.length) % theme.palette.length
+  return theme.palette[paletteIndex] ?? theme.palette[0] ?? "var(--accent)"
 }
 
 export function defaultBoringChartValueFormatter(value: unknown): string {
@@ -82,7 +83,7 @@ export function BoringTooltip({
                 className="size-2 rounded-full"
                 style={{ background: item.color }}
               />
-              {item.name ?? item.dataKey}
+              {String(item.name ?? item.dataKey ?? "Series")}
             </span>
             <span className="font-mono tabular-nums" style={{ color: boringChartTheme.foreground }}>
               {valueFormatter(item.value)}

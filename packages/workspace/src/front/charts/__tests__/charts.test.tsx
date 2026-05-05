@@ -20,6 +20,7 @@ describe("workspace charts", () => {
     expect(boringChartTheme.border).toBe("var(--border)")
     expect(getBoringChartColor(0)).toContain("var(--chart-1")
     expect(getBoringChartColor(9)).toBe(getBoringChartColor(1))
+    expect(getBoringChartColor(-1)).toBe(getBoringChartColor(7))
     expect(getBoringChartColor(0, { ...boringChartTheme, palette: [] })).toBe("var(--accent)")
   })
 
