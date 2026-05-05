@@ -20,6 +20,7 @@ async function readFileAsText(file: FileUIPart): Promise<string | null> {
 }
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MentionPicker, detectMention, type MentionState } from './primitives/mention-picker'
+import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
 import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
@@ -1496,76 +1497,6 @@ function AttachmentsList() {
         </Attachment>
       ))}
     </Attachments>
-  )
-}
-
-function SlashCommandPicker({
-  query,
-  commands,
-  onSelect,
-  onDismiss,
-}: {
-  query: string
-  commands: Array<{ name: string; description: string }>
-  onSelect: (name: string) => void
-  onDismiss: () => void
-}) {
-  const filtered = useMemo(
-    () => commands.filter((c) => c.name.toLowerCase().startsWith(query.toLowerCase())),
-    [commands, query],
-  )
-  const [activeIdx, setActiveIdx] = useState(0)
-  const listRef = useRef<HTMLUListElement>(null)
-
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setActiveIdx((i) => Math.min(i + 1, filtered.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setActiveIdx((i) => Math.max(i - 1, 0))
-    } else if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault()
-      if (filtered[activeIdx]) onSelect(filtered[activeIdx].name)
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onDismiss()
-    }
-  }, [filtered, activeIdx, onSelect, onDismiss])
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown, { capture: true })
-    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true })
-  }, [handleKeyDown])
-
-  useEffect(() => {
-    const el = listRef.current?.children[activeIdx] as HTMLElement | undefined
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [activeIdx])
-
-  if (filtered.length === 0) return null
-
-  return (
-    <div className="mb-1 w-full overflow-hidden rounded-lg border border-border/60 bg-popover shadow-lg">
-      <ul ref={listRef} className="max-h-48 overflow-y-auto py-1" role="listbox" aria-label="Commands">
-        {filtered.map((cmd, i) => (
-          <li
-            key={cmd.name}
-            role="option"
-            aria-selected={i === activeIdx}
-            className={cn(
-              'flex cursor-pointer flex-col gap-0.5 px-3 py-1.5 text-[12px]',
-              i === activeIdx ? 'bg-accent/10 text-foreground' : 'text-muted-foreground hover:bg-muted/40',
-            )}
-            onMouseEnter={() => setActiveIdx(i)}
-            onMouseDown={(e) => { e.preventDefault(); onSelect(cmd.name) }}
-          >
-            <span className="font-medium text-foreground/80">/{cmd.name}</span>
-            <span className="truncate text-[11px] opacity-50">{cmd.description}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   )
 }
 
