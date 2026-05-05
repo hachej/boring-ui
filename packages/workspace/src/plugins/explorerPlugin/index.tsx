@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ChangeEvent,
   type DragEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -22,8 +23,8 @@ import type {
   Facets,
   SearchResult,
 } from "../../front/components/DataExplorer"
+import { Input } from "@boring/ui"
 import { cn } from "../../front/lib/utils"
-import { Input } from "../../front/components/ui/input"
 import { definePanel } from "../../front/registry/types"
 import type { PaneProps, PanelConfig } from "../../front/registry/types"
 import { defineFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
@@ -456,7 +457,7 @@ function SectionedExplorer({
             aria-label="Search"
             placeholder={searchPlaceholder}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
             className="h-7 rounded-sm border-transparent bg-muted/40 px-2 text-[12.5px] shadow-none focus-visible:bg-background focus-visible:ring-1"
           />
         </div>
