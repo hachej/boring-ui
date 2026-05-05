@@ -48,8 +48,9 @@ export interface PanelConfig<T = any> {
   source?: string
   pluginId?: string
   /**
-   * When true, component is a lazy loader. When false/undefined, component
-   * is a direct React component. Defaults to sync (non-lazy).
+   * Whether to wrap the component with React.lazy + Suspense. Omit to let
+   * the registry auto-detect: zero-arg functions (factories) are treated as
+   * lazy; components that accept a props argument are treated as eager.
    */
   lazy?: boolean
   component: ComponentType<PaneProps<T>> | (() => Promise<{ default: ComponentType<PaneProps<T>> }>)

@@ -83,20 +83,11 @@ function validatePanels(pluginId: string, panels: PanelConfig[]): void {
         `panels[${i}].placement must be one of ${[...VALID_PLACEMENTS].join(", ")} (got: "${p.placement}")`,
       )
     }
-    if (p.lazy) {
-      if (typeof p.component !== "function") {
-        fail(
-          pluginId,
-          `panels[${i}].component must be a thunk when lazy:true (got: ${typeof p.component})`,
-        )
-      }
-    } else {
-      if (typeof p.component !== "function") {
-        fail(
-          pluginId,
-          `panels[${i}].component must be a ComponentType (got: ${typeof p.component})`,
-        )
-      }
+    if (typeof p.component !== "function") {
+      fail(
+        pluginId,
+        `panels[${i}].component must be a ComponentType or lazy factory (got: ${typeof p.component})`,
+      )
     }
   }
 }
@@ -222,17 +213,10 @@ function validateLeftTabOutput(
   if (!output.title || typeof output.title !== "string") {
     fail(pluginId, `outputs[${index}].title must be a non-empty string`)
   }
-  if (output.lazy) {
-    if (typeof output.component !== "function") {
-      fail(
-        pluginId,
-        `outputs[${index}].component must be a thunk when lazy:true (got: ${typeof output.component})`,
-      )
-    }
-  } else if (typeof output.component !== "function") {
+  if (typeof output.component !== "function") {
     fail(
       pluginId,
-      `outputs[${index}].component must be a ComponentType (got: ${typeof output.component})`,
+      `outputs[${index}].component must be a ComponentType or lazy factory (got: ${typeof output.component})`,
     )
   }
 }
