@@ -45,6 +45,41 @@ test('writeFile delegates UTF-8 bytes via sandbox.writeFiles', async () => {
   }
 })
 
+test('optimized read/write with stat helpers return content and metadata', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.mkdir('optimized', { recursive: true })
+    const writeStat = await workspace.writeFileWithStat?.('optimized/a.txt', 'hello')
+    expect(writeStat?.kind).toBe('file')
+    expect(writeStat?.size).toBe(5)
+
+    const read = await workspace.readFileWithStat?.('optimized/a.txt')
+    expect(read?.content).toBe('hello')
+    expect(read?.stat.kind).toBe('file')
+    expect(read?.stat.size).toBe(5)
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('optimized small writes return stat in a single sandbox command', async () => {
+  const harness = await createMockVercelSandboxHarness()
+  const runSpy = vi.spyOn(harness.sandbox, 'runCommand')
+  const writeFilesSpy = vi.spyOn(harness.sandbox, 'writeFiles')
+  const workspace = createVercelSandboxWorkspace(harness.sandbox)
+
+  try {
+    await workspace.writeFileWithStat?.('single-call.txt', 'hello')
+
+    expect(runSpy).toHaveBeenCalledTimes(1)
+    expect(writeFilesSpy).not.toHaveBeenCalled()
+  } finally {
+    await harness.cleanup()
+  }
+})
+
 test('reuses stat/readdir cache entries inside ttl and refreshes after expiry', async () => {
   const harness = await createMockVercelSandboxHarness()
   const statSpy = vi.spyOn((harness.sandbox as any).fs, 'stat')

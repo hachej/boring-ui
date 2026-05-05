@@ -63,6 +63,21 @@ test('supports all 7 workspace methods on happy paths', async () => {
   await expect(workspace.readFile('dst/moved.txt')).rejects.toThrow()
 })
 
+test('optimized read/write with stat helpers return content and metadata', async () => {
+  const { workspace } = await setupWorkspace()
+
+  await workspace.writeFileWithStat?.('optimized.txt', 'hello')
+  const read = await workspace.readFileWithStat?.('optimized.txt')
+
+  expect(read?.content).toBe('hello')
+  expect(read?.stat.kind).toBe('file')
+  expect(read?.stat.size).toBe(5)
+
+  const writeStat = await workspace.writeFileWithStat?.('optimized.txt', 'hello again')
+  expect(writeStat?.kind).toBe('file')
+  expect(writeStat?.size).toBe(11)
+})
+
 test('readdir returns only name and kind fields', async () => {
   const { workspace } = await setupWorkspace()
   await workspace.mkdir('data', { recursive: false })

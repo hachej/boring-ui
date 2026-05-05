@@ -119,6 +119,31 @@ export function createNodeWorkspace(root: string): Workspace {
       const absPath = await ensureWritableWorkspacePath(root, relPath)
       await writeFile(absPath, data, 'utf-8')
     },
+    async readFileWithStat(relPath) {
+      const absPath = await ensureExistingWorkspacePath(root, relPath)
+      const [content, fileStat] = await Promise.all([
+        readFile(absPath, 'utf-8'),
+        stat(absPath),
+      ])
+      return {
+        content,
+        stat: {
+          size: fileStat.size,
+          mtimeMs: fileStat.mtimeMs,
+          kind: fileStat.isDirectory() ? 'dir' : 'file',
+        },
+      }
+    },
+    async writeFileWithStat(relPath, data) {
+      const absPath = await ensureWritableWorkspacePath(root, relPath)
+      await writeFile(absPath, data, 'utf-8')
+      const fileStat = await stat(absPath)
+      return {
+        size: fileStat.size,
+        mtimeMs: fileStat.mtimeMs,
+        kind: fileStat.isDirectory() ? 'dir' : 'file',
+      }
+    },
     async unlink(relPath) {
       const absPath = await ensureExistingWorkspacePath(root, relPath)
       const pathStat = await lstat(absPath)
