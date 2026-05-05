@@ -38,6 +38,8 @@ export interface ModelsResponse {
   defaultModel?: AgentModelSelection
 }
 
+const AUTH_CHECK_TTL_MS = 60_000
+
 export function modelsRoutes(
   app: FastifyInstance,
   _opts: unknown,
@@ -48,16 +50,43 @@ export function modelsRoutes(
   const authStorage = AuthStorage.create()
   const registry = ModelRegistry.create(authStorage)
   registerConfiguredModelProviders(registry)
+  const providerAuthCache = new Map<string, { available: boolean; expiresAt: number }>()
+
+  async function providerHasResolvableAuth(provider: string): Promise<boolean> {
+    const now = Date.now()
+    const cached = providerAuthCache.get(provider)
+    if (cached && cached.expiresAt > now) return cached.available
+
+    let available = false
+    try {
+      const model = registry.getAvailable().find((candidate) => candidate.provider === provider)
+      const auth = model ? await registry.getApiKeyAndHeaders(model) : undefined
+      available = auth?.ok === true
+        && (typeof auth.apiKey === 'string' && auth.apiKey.trim().length > 0
+          || auth.headers !== undefined)
+    } catch {
+      available = false
+    }
+    providerAuthCache.set(provider, { available, expiresAt: now + AUTH_CHECK_TTL_MS })
+    return available
+  }
 
   app.get('/api/v1/agent/models', async (_request, reply) => {
+    const availableModels = registry.getAvailable()
     const availableSet = new Set(
-      registry.getAvailable().map((m) => `${m.provider}:${m.id}`),
+      availableModels.map((m) => `${m.provider}:${m.id}`),
     )
+    const providerAvailability = new Map<string, boolean>()
+    await Promise.all([...new Set(availableModels.map((m) => m.provider))].map(async (provider) => {
+      providerAvailability.set(provider, await providerHasResolvableAuth(provider))
+    }))
+
     const models: ModelSummary[] = registry.getAll().map((m) => ({
       provider: m.provider,
       id: m.id,
       label: (m as unknown as { label?: string }).label ?? m.id,
-      available: availableSet.has(`${m.provider}:${m.id}`),
+      available: availableSet.has(`${m.provider}:${m.id}`)
+        && providerAvailability.get(m.provider) === true,
     }))
     // Stable order: available first, then alphabetically by (provider, id).
     models.sort((a, b) => {
@@ -65,9 +94,13 @@ export function modelsRoutes(
       if (a.provider !== b.provider) return a.provider.localeCompare(b.provider)
       return a.id.localeCompare(b.id)
     })
-    const defaultModel = readConfiguredDefaultModel()
+    const configuredDefaultModel = readConfiguredDefaultModel()
+    const defaultModel = configuredDefaultModel
+      && models.some((m) => m.available && m.provider === configuredDefaultModel.provider && m.id === configuredDefaultModel.id)
+      ? configuredDefaultModel
+      : models.find((m) => m.available)
     const payload: ModelsResponse = defaultModel
-      ? { models, defaultModel }
+      ? { models, defaultModel: { provider: defaultModel.provider, id: defaultModel.id } }
       : { models }
     return reply.code(200).send(payload)
   })

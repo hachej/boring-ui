@@ -434,7 +434,23 @@ export function ChatPanel(props: ChatPanelProps) {
       .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
         if (aborted || !payload?.models) return
         setAvailableModels(payload.models)
-        if (payload.defaultModel && !userSelectedModelRef.current) {
+        const available = payload.models.filter((m) => m.available)
+        const fallbackModel = payload.defaultModel ?? available[0]
+        if (fallbackModel) {
+          setModelState((current) => {
+            const currentAvailable = available.some(
+              (m) => m.provider === current.provider && m.id === current.id,
+            )
+            if (currentAvailable) return current
+            userSelectedModelRef.current = false
+            setUserSelectedModel(false)
+            try {
+              globalThis.localStorage?.removeItem(STORAGE_MODEL_KEY)
+              globalThis.localStorage?.removeItem(STORAGE_MODEL_USER_KEY)
+            } catch { /* noop */ }
+            return { provider: fallbackModel.provider, id: fallbackModel.id }
+          })
+        } else if (payload.defaultModel && !userSelectedModelRef.current) {
           setModelState(payload.defaultModel)
         }
       })
