@@ -1,15 +1,6 @@
-import { startCoreWorkspaceAgentDevServer } from '@boring/core/app/server'
-import { buildServer, defaultAppRoot } from './index.js'
+import { startCoreWorkspaceAgentDevServerFromMeta } from '@boring/core/app/server'
 
-async function main() {
-  await startCoreWorkspaceAgentDevServer({
-    appRoot: defaultAppRoot(),
-    buildServer,
-    eventPrefix: 'full-app',
-  })
-}
-
-main().catch((error) => {
+startCoreWorkspaceAgentDevServerFromMeta(import.meta.url).catch((error) => {
   console.error(error)
   process.exit(1)
 })

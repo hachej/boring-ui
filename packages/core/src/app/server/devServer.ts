@@ -3,6 +3,8 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import type { CoreWorkspaceAgentServer } from './createCoreWorkspaceAgentServer.js'
+import { appRootFromImportMeta } from './appRootFromImportMeta.js'
+import { createCoreWorkspaceAgentServer } from './createCoreWorkspaceAgentServer.js'
 
 const DEFAULT_FRONTEND_PORT = 5173
 
@@ -78,4 +80,23 @@ export async function startCoreWorkspaceAgentDevServer({
   )
 
   return { app, address, apiTarget }
+}
+
+export interface StartCoreWorkspaceAgentDevServerFromMetaOptions {
+  frontendPort?: number
+  eventPrefix?: string
+  levelsUp?: number
+}
+
+export async function startCoreWorkspaceAgentDevServerFromMeta(
+  importMetaUrl: string,
+  opts: StartCoreWorkspaceAgentDevServerFromMetaOptions = {},
+): Promise<CoreWorkspaceAgentDevServerHandle> {
+  const appRoot = appRootFromImportMeta(importMetaUrl, opts.levelsUp ?? 2)
+  return startCoreWorkspaceAgentDevServer({
+    appRoot,
+    buildServer: (options) => createCoreWorkspaceAgentServer(options),
+    frontendPort: opts.frontendPort,
+    eventPrefix: opts.eventPrefix,
+  })
 }

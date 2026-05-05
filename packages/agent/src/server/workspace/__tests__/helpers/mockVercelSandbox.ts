@@ -154,6 +154,38 @@ export async function createMockVercelSandboxHarness(): Promise<MockVercelSandbo
         return emitResult(0, `${script.slice(5)}\n`, '')
       }
 
+      if (script.startsWith('node -e ')) {
+        const writeMatch = script.match(/\s'(\/vercel\/sandbox[^']*)'\s'([^']*)'$/)
+        const readOrStatMatch = script.match(/\s'(\/vercel\/sandbox[^']*)'$/)
+        const pathArg = writeMatch?.[1] ?? readOrStatMatch?.[1]
+        const dataArg = writeMatch?.[2]
+        if (!pathArg) return emitResult(127, '', `unsupported mock command: ${script}`)
+
+        try {
+          const hostPath = toHostPath(hostRoot, pathArg)
+          if (script.includes('fs.writeFileSync')) {
+            await mkdir(dirname(hostPath), { recursive: true })
+            await writeFile(hostPath, Buffer.from(dataArg ?? '', 'base64'))
+          }
+          const fileStat = await stat(hostPath)
+          const payload: Record<string, unknown> = {
+            size: fileStat.size,
+            mtimeMs: fileStat.mtimeMs,
+            kind: fileStat.isDirectory() ? 'dir' : 'file',
+          }
+          if (script.includes('fs.readFileSync')) {
+            return emitResult(0, JSON.stringify({
+              content: await readFile(hostPath, 'utf-8'),
+              stat: payload,
+            }), '')
+          }
+          return emitResult(0, JSON.stringify(payload), '')
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error)
+          return emitResult(1, '', message)
+        }
+      }
+
       return emitResult(127, '', `unsupported mock command: ${script}`)
     },
   } as unknown as VercelSandbox

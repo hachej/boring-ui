@@ -2,6 +2,16 @@ export interface Workspace {
   readonly root: string
   readFile(relPath: string): Promise<string>
   writeFile(relPath: string, data: string): Promise<void>
+  /**
+   * Optional optimized read+metadata operation. Remote workspaces should
+   * implement this as one round trip when possible.
+   */
+  readFileWithStat?(relPath: string): Promise<{ content: string; stat: Stat }>
+  /**
+   * Optional optimized write+metadata operation. Remote workspaces should
+   * implement this as one round trip when possible.
+   */
+  writeFileWithStat?(relPath: string, data: string): Promise<Stat>
   unlink(relPath: string): Promise<void>
   readdir(relPath: string): Promise<Entry[]>
   stat(relPath: string): Promise<Stat>

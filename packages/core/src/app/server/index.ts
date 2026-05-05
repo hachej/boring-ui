@@ -6,8 +6,10 @@ export {
 } from './createCoreWorkspaceAgentServer.js'
 export {
   startCoreWorkspaceAgentDevServer,
+  startCoreWorkspaceAgentDevServerFromMeta,
   type CoreWorkspaceAgentDevServerHandle,
   type StartCoreWorkspaceAgentDevServerOptions,
+  type StartCoreWorkspaceAgentDevServerFromMetaOptions,
 } from './devServer.js'
 export {
   createVercelFastifyHandler,
@@ -15,3 +17,12 @@ export {
   type VercelFastifyHandler,
   type VercelFastifyLikeServer,
 } from './vercelFastifyHandler.js'
+export { appRootFromImportMeta } from './appRootFromImportMeta.js'
+export {
+  runCoreWorkspaceAgentServer,
+  type RunCoreWorkspaceAgentServerOptions,
+} from './runServer.js'
+export {
+  createCoreVercelEntry,
+  type CreateCoreVercelEntryOptions,
+} from './vercelEntry.js'

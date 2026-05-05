@@ -97,9 +97,17 @@ function resolveRequestedModel(
   const piId = requestedId
     ? (ALIAS_TO_PI_ID[requestedId] ?? requestedId)
     : undefined;
-  return input.model && piId
-    ? modelRegistry.find(input.model.provider, piId)
-    : undefined;
+  if (!input.model || !piId) return undefined;
+  const model = modelRegistry.find(input.model.provider, piId);
+  if (!model) return undefined;
+  // Only return the model if the provider actually has credentials — otherwise
+  // fall through to resolveDefaultModel so a stale localStorage selection
+  // (e.g. openai-codex/gpt-5.1 with no API key) doesn't break the chat.
+  const available = modelRegistry.getAvailable();
+  const hasAuth = available.some(
+    (m) => m.provider === model.provider && m.id === model.id,
+  );
+  return hasAuth ? model : undefined;
 }
 
 function resolveDefaultModel(modelRegistry: ModelRegistry) {

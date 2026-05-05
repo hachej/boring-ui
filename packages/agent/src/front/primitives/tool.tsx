@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * Adapted from ai-elements (vercel/ai-elements) v1.9.0. This is the canonical
+ * shadcn-styled Tool primitive — header with icon + title + status badge +
+ * chevron, collapsible content with <ToolInput> / <ToolOutput> sections.
+ * Keeping it 1:1 with upstream so the "Vercel template" look/feel lands
+ * without local invention.
+ */
 import { Badge, Collapsible, CollapsibleContent, CollapsibleTrigger } from "@boring/ui";
 import { cn } from "@/front/lib";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
@@ -12,7 +19,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { isValidElement, useEffect, useRef, useState } from "react";
+import { isValidElement } from "react";
 
 import { CodeBlock } from "./code-block";
 
@@ -22,10 +29,12 @@ export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
     data-boring-agent-part="tool-card"
     className={cn(
-      // Lighter card — inside a group it reads as a sub-item, not a standalone.
-      // Thin inset border, almost-transparent bg, no outer shadow.
-      "group not-prose my-1.5 w-full min-w-0 rounded-[var(--radius-md)] bg-card/30",
-      "shadow-[inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.4)]",
+      // Inset-border + micro-shadow surface, matching the chat panel's
+      // own card and the workspace shell. No `border` utility — the
+      // 1px hairline lives inside `shadow` so the element's box metrics
+      // don't shift between :hover and :focus states.
+      "group not-prose my-3 w-full rounded-[var(--radius-lg)] bg-card/60",
+      "shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.55)]",
       "overflow-hidden",
       className,
     )}
@@ -48,50 +57,29 @@ export type ToolHeaderProps = {
 );
 
 const statusLabels: Record<ToolPart["state"], string> = {
-  "approval-requested": "Awaiting",
+  "approval-requested": "Awaiting Approval",
   "approval-responded": "Responded",
   "input-available": "Running",
   "input-streaming": "Pending",
-  "output-available": "Done",
+  "output-available": "Completed",
   "output-denied": "Denied",
   "output-error": "Error",
 };
 
 const statusIcons: Record<ToolPart["state"], ReactNode> = {
-  "approval-requested": <ClockIcon className="size-3 text-accent" />,
-  "approval-responded": <CheckCircleIcon className="size-3 text-accent" />,
-  "input-available": <ClockIcon className="size-3 animate-pulse text-muted-foreground" />,
-  "input-streaming": <CircleIcon className="size-3 text-muted-foreground" />,
-  "output-available": <CheckCircleIcon className="size-3 text-accent" />,
-  "output-denied": <XCircleIcon className="size-3 text-destructive" />,
-  "output-error": <XCircleIcon className="size-3 text-destructive" />,
+  "approval-requested": <ClockIcon className="size-4 text-accent" />,
+  "approval-responded": <CheckCircleIcon className="size-4 text-accent" />,
+  "input-available": <ClockIcon className="size-4 animate-pulse text-muted-foreground" />,
+  "input-streaming": <CircleIcon className="size-4 text-muted-foreground" />,
+  "output-available": <CheckCircleIcon className="size-4 text-accent" />,
+  "output-denied": <XCircleIcon className="size-4 text-destructive" />,
+  "output-error": <XCircleIcon className="size-4 text-destructive" />,
 };
 
-function ElapsedSeconds({ isRunning }: { isRunning: boolean }) {
-  const startRef = useRef<number | null>(null)
-  const [elapsed, setElapsed] = useState(0)
-
-  useEffect(() => {
-    if (!isRunning) return
-    if (startRef.current === null) startRef.current = Date.now()
-    const tick = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current!) / 1000))
-    }, 1000)
-    return () => clearInterval(tick)
-  }, [isRunning])
-
-  if (!isRunning || elapsed === 0) return null
-  return <span className="tabular-nums opacity-50">{elapsed}s</span>
-}
-
 export const getStatusBadge = (status: ToolPart["state"]) => (
-  <Badge
-    className="gap-1 rounded-full px-1.5 py-0 text-[10px] leading-5"
-    variant="secondary"
-  >
+  <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
     {statusIcons[status]}
     {statusLabels[status]}
-    {status === "input-available" && <ElapsedSeconds isRunning={true} />}
   </Badge>
 );
 
@@ -109,17 +97,17 @@ export const ToolHeader = ({
   return (
     <CollapsibleTrigger
       className={cn(
-        "flex w-full items-center justify-between gap-3 px-2.5 py-2",
+        "flex w-full items-center justify-between gap-4 p-3",
         className,
       )}
       {...props}
     >
-      <div className="flex min-w-0 items-center gap-1.5">
-        <WrenchIcon className="size-3.5 shrink-0 text-muted-foreground/50" />
-        <span className="truncate font-medium text-[13px]">{title ?? derivedName}</span>
+      <div className="flex items-center gap-2">
+        <WrenchIcon className="size-4 text-muted-foreground" />
+        <span className="font-medium text-sm">{title ?? derivedName}</span>
         {getStatusBadge(state)}
       </div>
-      <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground/50 transition-transform group-data-[state=open]:rotate-180" />
+      <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
     </CollapsibleTrigger>
   );
 };
@@ -129,8 +117,7 @@ export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
 export const ToolContent = ({ className, ...props }: ToolContentProps) => (
   <CollapsibleContent
     className={cn(
-      "overflow-hidden data-[state=closed]:animate-[boring-collapse-close_150ms_ease] data-[state=open]:animate-[boring-collapse-open_150ms_ease]",
-      "space-y-2.5 border-t border-border/30 p-2.5 text-popover-foreground outline-none",
+      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 space-y-4 p-4 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
       className,
     )}
     {...props}
@@ -142,8 +129,13 @@ export type ToolInputProps = ComponentProps<"div"> & {
 };
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
-  <div className={cn("overflow-hidden rounded-sm", className)} {...props}>
-    <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
+  <div className={cn("space-y-2 overflow-hidden", className)} {...props}>
+    <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+      Parameters
+    </h4>
+    <div className="rounded-md bg-muted/50">
+      <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
+    </div>
   </div>
 );
 
@@ -173,17 +165,20 @@ export const ToolOutput = ({
   }
 
   return (
-    <div data-boring-agent-part="tool-result" className={cn("min-w-0 overflow-hidden", className)} {...props}>
+    <div data-boring-agent-part="tool-result" className={cn("space-y-2", className)} {...props}>
+      <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+        {errorText ? "Error" : "Result"}
+      </h4>
       <div
         className={cn(
-          "max-h-72 overflow-x-hidden overflow-y-auto rounded-sm text-xs",
+          "overflow-x-auto rounded-md text-xs [&_table]:w-full",
           errorText
             ? "bg-destructive/10 text-destructive"
-            : "",
+            : "bg-muted/30 text-foreground",
         )}
       >
-        {errorText && <div className="p-2 font-mono text-[11px]">{errorText}</div>}
-        {!errorText && Output}
+        {errorText && <div className="p-3">{errorText}</div>}
+        {Output}
       </div>
     </div>
   );

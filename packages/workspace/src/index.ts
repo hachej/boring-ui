@@ -69,7 +69,7 @@ export {
   createExplorerOutputs,
   ExplorerView,
   EXPLORER_PLUGIN_ID,
-} from "./plugins/explorerPlugin"
+} from "./plugins/explorerPlugin/front"
 export type {
   CreateExplorerOutputsOptions,
   CreateExplorerPluginOptions,
@@ -84,7 +84,7 @@ export type {
   SectionedExplorerProps,
   SectionedExplorerSearchArgs,
   SectionedExplorerSectionsArgs,
-} from "./plugins/explorerPlugin"
+} from "./plugins/explorerPlugin/front"
 export {
   appendDataCatalogOutputs,
   createDataCatalogOpenHandler,

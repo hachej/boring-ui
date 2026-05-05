@@ -100,6 +100,10 @@ export function fileRoutes(
 
     try {
       const workspace = await resolveWorkspace(request)
+      if (workspace.readFileWithStat) {
+        const { content, stat } = await workspace.readFileWithStat(path)
+        return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
+      }
       const content = await workspace.readFile(path)
       const stat = await workspace.stat(path)
       return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
@@ -164,8 +168,13 @@ export function fileRoutes(
         const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : undefined
         if (dir) await workspace.mkdir(dir, { recursive: true })
       }
-      await workspace.writeFile(path, body.content)
-      const stat = await workspace.stat(path)
+      const content = body.content
+      const stat = workspace.writeFileWithStat
+        ? await workspace.writeFileWithStat(path, content)
+        : await (async () => {
+            await workspace.writeFile(path, content)
+            return await workspace.stat(path)
+          })()
       return { ok: true, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
     } catch (err) {
       return classifyError(err, reply, 'file')

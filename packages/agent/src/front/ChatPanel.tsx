@@ -1,5 +1,5 @@
 import type { FileUIPart, UIMessage } from 'ai'
-import { isToolUIPart } from 'ai'
+import { isToolUIPart, getToolName } from 'ai'
 import { motion } from 'motion/react'
 
 const INLINE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml', 'application/yaml']
@@ -28,6 +28,8 @@ import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
 import { isModelId, type ModelId } from './components/ModelPicker'
 import {
+  resolveToolRenderer,
+  type ToolPart,
   type ToolRendererOverrides,
 } from './bareToolRenderers'
 import { mergeShadcnToolRenderers } from './toolRenderers'
@@ -40,7 +42,6 @@ import {
 import { ChatEmptyState, defaultChatSuggestions, type ChatSuggestion } from './ChatEmptyState'
 import { Message, MessageContent, MessageResponse } from './primitives/message'
 import { Reasoning, ReasoningTrigger, ReasoningContent } from './primitives/reasoning'
-import { ToolCallGroup, type GroupedToolEntry } from './primitives/tool-call-group'
 import {
   PromptInput,
   PromptInputTextarea,
@@ -64,15 +65,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
 } from '@boring/ui'
 import { cn } from './lib'
 
@@ -338,6 +330,16 @@ function getReasoningPart(part: UIMessage['parts'][number]): ReasoningPartView |
   }
 }
 
+function ToolCard({ toolPart, mergedToolRenderers }: { toolPart: UIMessage['parts'][number]; mergedToolRenderers: ToolRendererOverrides }) {
+  const tp = toolPart as unknown as ToolPart
+  const name = getToolName(toolPart as any)
+  const render = resolveToolRenderer(name, mergedToolRenderers)
+  // Renderer owns its own container. No wrapping div — avoids the
+  // "nested box" feel when a consumer-supplied renderer already styles its
+  // outer element.
+  return <>{render({ ...tp, toolName: name })}</>
+}
+
 export function ChatPanel(props: ChatPanelProps) {
   const {
     sessionId,
@@ -531,7 +533,6 @@ export function ChatPanel(props: ChatPanelProps) {
   const selectMention = useCallback((path: string) => {
     const ta = textareaRef.current
     if (!ta || !mentionState) return
-    // Insert @basename inline; full path is tracked in mentionedFiles for server context
     const { anchorStart, anchorEnd } = mentionState
     const token = `@${path.split('/').pop() ?? path}`
     const newValue = ta.value.slice(0, anchorStart) + token + ta.value.slice(anchorEnd)
@@ -560,7 +561,6 @@ export function ChatPanel(props: ChatPanelProps) {
   const handleComposerKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const ta = e.currentTarget
     textareaRef.current = ta
-    // Pickers handle their own navigation via window capture listener — bail here
     if (mentionState !== null || slashQuery !== null) return
     if (e.key === 'ArrowUp') {
       if (ta.selectionStart !== 0 || ta.selectionEnd !== 0) return
@@ -668,13 +668,12 @@ export function ChatPanel(props: ChatPanelProps) {
     }
     const mentionNote = mentionedFiles.length > 0
       ? `@files: ${mentionedFiles.join(', ')}`
-      : ''
+      : null
     const serverMessage = [
       text.trim(),
-      attachmentSummaries.join('\n\n'),
-      mentionNote,
-    ].filter(Boolean).join('\n\n')
-
+      ...(attachmentSummaries.length > 0 ? [attachmentSummaries.join('\n\n')] : []),
+      ...(mentionNote ? [mentionNote] : []),
+    ].filter(Boolean).join('\n\n') || text
     setMentionedFiles([])
 
     // Fire-and-forget the send so handleSubmit returns as soon as the
@@ -812,26 +811,6 @@ export function ChatPanel(props: ChatPanelProps) {
               }
               return items
             }, [])
-            // Group consecutive tool parts into a single collapsible block.
-            // This collapses N separate tool cards into one "Used bash · edit"
-            // line while the turn is idle, and auto-expands while tools run.
-            type FinalPart =
-              | (typeof orderedParts)[number]
-              | { kind: 'tool-group'; tools: GroupedToolEntry[]; key: string }
-            const finalParts = orderedParts.reduce<FinalPart[]>((acc, item) => {
-              if (item.kind === 'part' && isToolUIPart(item.part)) {
-                const prev = acc[acc.length - 1]
-                if (prev?.kind === 'tool-group') {
-                  prev.tools.push({ part: item.part, key: item.key })
-                } else {
-                  acc.push({ kind: 'tool-group', tools: [{ part: item.part, key: item.key }], key: item.key })
-                }
-              } else {
-                acc.push(item)
-              }
-              return acc
-            }, [])
-
             // Regenerate is only meaningful for the most recent assistant
             // reply — regenerating an older turn would fork history in
             // ways we don't support. Restricting visibility to the tail
@@ -888,10 +867,10 @@ export function ChatPanel(props: ChatPanelProps) {
                   )}
 
                   {/* Render reasoning + text + tool parts in the order the
-                      model emitted them. Consecutive tool parts are grouped
-                      into a single collapsible block that auto-expands while
-                      tools run and collapses to a summary when they settle. */}
-                  {finalParts.map((item, index) => {
+                      model emitted them. Grouping by type would put thoughts
+                      before every tool, hiding which thought caused which
+                      action. AI SDK guarantees `message.parts` is chronological. */}
+                  {orderedParts.map((item, index) => {
                     if (item.kind === 'reasoning') {
                       if (!showThoughts) return null
                       return (
@@ -903,15 +882,6 @@ export function ChatPanel(props: ChatPanelProps) {
                           <ReasoningTrigger />
                           <ReasoningContent>{item.text}</ReasoningContent>
                         </Reasoning>
-                      )
-                    }
-                    if (item.kind === 'tool-group') {
-                      return (
-                        <ToolCallGroup
-                          key={item.key}
-                          tools={item.tools}
-                          mergedToolRenderers={mergedToolRenderers}
-                        />
                       )
                     }
                     const { part } = item
@@ -948,6 +918,15 @@ export function ChatPanel(props: ChatPanelProps) {
                         </MessageResponse>
                       )
                     }
+                    if (isToolUIPart(part)) {
+                      return (
+                        <ToolCard
+                          key={(part as unknown as ToolPart).toolCallId}
+                          toolPart={part}
+                          mergedToolRenderers={mergedToolRenderers}
+                        />
+                      )
+                    }
                     return null
                   })}
                 </MessageContent>
@@ -959,11 +938,10 @@ export function ChatPanel(props: ChatPanelProps) {
                  * Regenerate is gated to the LAST assistant message — see
                  * the regenerateLastTurn helper below for why we bypass
                  * AI SDK's built-in `regenerate()`. */}
-                {role === 'assistant' && textParts.length > 0 && (
+                {role === 'assistant' && !isStreaming && textParts.length > 0 && (
                   <MessageActionsBar
                     text={textParts.map((p) => p.text).join('\n\n')}
-                    canRegenerate={isLastMessage && !isStreaming}
-                    hidden={isStreaming}
+                    canRegenerate={isLastMessage}
                     onRegenerate={() => {
                       void regenerateLastTurn({
                         messages,
@@ -978,6 +956,27 @@ export function ChatPanel(props: ChatPanelProps) {
               </Message>
             )
           })}
+          {/* Persistent working caption — stays visible for the whole run:
+              waiting for first byte, streaming text, reasoning, or tool work.
+              It used to hide as soon as an assistant message appeared, which
+              made long tool turns feel idle even though the progress bar kept
+              moving. */}
+          {isStreaming && (
+            <div
+              data-testid="chat-working"
+              role="status"
+              aria-live="polite"
+              className="sticky bottom-0 z-10 flex items-center gap-2 self-start rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur"
+            >
+              <motion.span
+                aria-hidden="true"
+                className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
+                animate={{ opacity: [0.35, 1, 0.35] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <span>Working…</span>
+            </div>
+          )}
           {(() => {
             if (!error) return null
             const friendly = friendlyError(error)
@@ -1021,31 +1020,6 @@ export function ChatPanel(props: ChatPanelProps) {
       </Conversation>
 
       <div className={cn(chrome ? "px-4 pb-4 pt-2 sm:px-6 sm:pb-5" : "px-3 pb-3 pt-1")}>
-        <div
-          className={cn(
-            "mx-auto mb-2 flex w-full items-center gap-2",
-            chrome ? "max-w-3xl" : "max-w-[680px]",
-          )}
-        >
-          <div
-            data-testid="chat-working"
-            role="status"
-            aria-live="polite"
-            className={cn(
-              "flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur",
-              "transition-opacity duration-300",
-              isStreaming ? "opacity-100" : "opacity-0 pointer-events-none",
-            )}
-          >
-            <motion.span
-              aria-hidden="true"
-              className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
-              animate={{ opacity: [0.35, 1, 0.35] }}
-              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <span>Working…</span>
-          </div>
-        </div>
         {attachmentNotice && (
           <div
             role="status"
@@ -1129,8 +1103,8 @@ export function ChatPanel(props: ChatPanelProps) {
             <AttachmentsList />
             <PromptInputTextarea
               placeholder="Ask anything…"
-              onKeyDown={handleComposerKeyDown}
               onChange={handleComposerChange}
+              onKeyDown={handleComposerKeyDown}
               className={cn(
                 "min-h-[52px] resize-none border-0 bg-transparent shadow-none",
                 "px-5 pt-3.5 pb-1 text-[13px] leading-[1.55] placeholder:text-muted-foreground/60",
@@ -1289,78 +1263,62 @@ function ModelSelect({
     groups.set(m.provider, list)
   }
 
-  const [open, setOpen] = useState(false)
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          data-boring-agent-part="model-select"
-          data-boring-state={disabled ? "disabled" : open ? "open" : undefined}
-          disabled={disabled}
-          aria-label="Model"
-          aria-expanded={open}
-          className={cn(
-            composerActionClass,
-            "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
-            open && "bg-muted/60 text-foreground",
-          )}
-        >
-          <BotIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate">{triggerLabel}</span>
-          <span className="hidden shrink-0 rounded-full border border-border/70 bg-background/45 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
-            {triggerProviderLabel}
-          </span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-popover p-0 shadow-2xl"
+    <Select
+      value={currentKey}
+      onValueChange={(next) => {
+        const parsed = decodeModelKey(next)
+        if (parsed) onChange(parsed)
+      }}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        data-boring-agent-part="model-select"
+        data-boring-state={disabled ? "disabled" : undefined}
+        className={cn(
+          composerActionClass,
+          "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
+          "data-[state=open]:bg-muted/60 data-[state=open]:text-foreground",
+        )}
+        aria-label="Model"
       >
-        <Command>
-          <CommandInput
-            placeholder="Search models…"
-            className="h-9 border-0 text-[13px] focus:ring-0"
-          />
-          <CommandList className="max-h-[280px]">
-            <CommandEmpty className="py-4 text-center text-[13px] text-muted-foreground">
-              No models found
-            </CommandEmpty>
-            {[...groups.entries()].map(([provider, list]) => (
-              <CommandGroup
-                key={provider}
-                heading={displayProviderLabel(provider)}
-                className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-muted-foreground/75"
+        <BotIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">
+          <SelectValue>{triggerLabel}</SelectValue>
+        </span>
+        <span className="hidden shrink-0 rounded-full border border-border/70 bg-background/45 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
+          {triggerProviderLabel}
+        </span>
+      </SelectTrigger>
+      <SelectContent
+        className="max-h-[min(340px,var(--radix-select-content-available-height))] w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
+      >
+        {[...groups.entries()].map(([provider, list]) => (
+          <div key={provider} className="py-1">
+            <div className="px-2 pb-1 text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">
+              {displayProviderLabel(provider)}
+            </div>
+            {list.map((m) => (
+              <SelectItem
+                key={encodeModelKey(m)}
+                value={encodeModelKey(m)}
+                aria-label={`${m.label || displayModelLabel(m.id)}, ${displayProviderLabel(m.provider)}`}
+                className="rounded-md py-2 pl-8 pr-2 text-[13px] focus:bg-foreground/[0.06] data-[state=checked]:bg-foreground/[0.06]"
               >
-                {list.map((m) => {
-                  const key = encodeModelKey(m)
-                  const label = m.label || displayModelLabel(m.id)
-                  return (
-                    <CommandItem
-                      key={key}
-                      value={`${label} ${m.id} ${displayProviderLabel(m.provider)}`}
-                      onSelect={() => {
-                        onChange(m)
-                        setOpen(false)
-                      }}
-                      className={cn(
-                        "flex flex-col items-start gap-0.5 rounded-md px-2 py-2 text-[13px]",
-                        key === currentKey && "bg-foreground/[0.06]",
-                      )}
-                    >
-                      <span className="truncate font-medium">{label}</span>
-                      <span className="truncate text-[11px] text-muted-foreground">{m.id}</span>
-                    </CommandItem>
-                  )
-                })}
-              </CommandGroup>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate font-medium">
+                    {m.label || displayModelLabel(m.id)}
+                  </span>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {m.id}
+                  </span>
+                </span>
+              </SelectItem>
             ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+          </div>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -1419,7 +1377,7 @@ function ThinkingSelect({
         ))}
         <BrainIcon className="h-3.5 w-3.5" />
       </SelectTrigger>
-      <SelectContent className="w-auto min-w-0 rounded-lg border-border/70 bg-popover p-2 shadow-2xl">
+      <SelectContent className="w-auto min-w-0 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl">
         <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
           Think
         </div>
@@ -1612,12 +1570,10 @@ function regenerateLastTurn({
 function MessageActionsBar({
   text,
   canRegenerate,
-  hidden,
   onRegenerate,
 }: {
   text: string
   canRegenerate: boolean
-  hidden?: boolean
   onRegenerate: () => void
 }) {
   const [copied, setCopied] = useState(false)
@@ -1666,8 +1622,10 @@ function MessageActionsBar({
   return (
     <div
       className={cn(
-        "flex items-center gap-0.5 -mt-1 transition-opacity duration-200",
-        hidden && "pointer-events-none opacity-0",
+        // Always visible but quiet — discrete utility row under the
+        // assistant message. Hovering an individual button bumps it
+        // back to full contrast.
+        "flex items-center gap-0.5 -mt-1",
       )}
     >
       <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>

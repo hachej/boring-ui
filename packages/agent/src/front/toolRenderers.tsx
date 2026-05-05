@@ -1,10 +1,11 @@
 /**
  * Default shadcn-styled tool renderers for @boring/agent/front.
  *
- * These build on the canonical Tool primitive (Collapsible + ToolHeader +
- * ToolContent + ToolOutput). Each renderer is intentionally minimal — the
- * title carries the key info (verb + path/command), the body shows output
- * only when there's something worth seeing. No redundant "Parameters" dumps.
+ * These now build on the canonical ai-elements <Tool> primitive
+ * (Collapsible + ToolHeader + ToolInput + ToolOutput) — same components
+ * Vercel's template ships — plus a tight layer of bash/edit/etc. visual
+ * treatment on top. Consumers can override any tool name via the
+ * `toolRenderers` prop on <ChatPanel />.
  */
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import {
@@ -52,6 +53,13 @@ function extractTextContent(record: Record<string, unknown>, field = 'text'): st
   return ''
 }
 
+/**
+ * The Tool primitive's discriminated union wants a `type` prop that matches
+ * either a static ToolUIPart (`tool-<name>`) or the DynamicToolUIPart
+ * (`dynamic-tool` plus `toolName`). Our ToolPart here just has a generic
+ * toolName string — so we always project into the dynamic-tool branch, which
+ * works for both custom and registered tools without us hardcoding types.
+ */
 function toHeaderProps(part: ToolPart) {
   return {
     type: 'dynamic-tool' as const,
@@ -61,15 +69,22 @@ function toHeaderProps(part: ToolPart) {
 }
 
 /**
- * Clickable path label for read/edit/write headers. Opens the file in the
- * workbench if an ArtifactOpenContext is mounted; falls back to plain text.
- * Rendered as a <span role="button"> to avoid nesting <button> inside the
- * CollapsibleTrigger <button>.
+ * Path label for the read/edit/write tool headers. When an
+ * ArtifactOpenContext provider is mounted (i.e. a workbench host like
+ * @boring/workspace is around), the path becomes clickable and opens
+ * the file in the host. Without a host, it falls back to plain text.
+ *
+ * Implementation note: the surrounding Tool header is itself a Radix
+ * `CollapsibleTrigger` rendered as a `<button>`, and HTML forbids a
+ * nested `<button>`. We therefore render this as a `<span>` with
+ * `role="button"` + `tabIndex={0}` + keyboard handling — same a11y
+ * affordance, valid HTML. Click + Enter/Space stop propagation and
+ * prevent default so they don't also toggle the collapsible.
  */
 function PathLabel({ path }: { path: string }) {
   const onOpen = useOpenArtifact()
   if (!onOpen) {
-    return <span className="font-mono text-[12px] text-foreground/75">{path}</span>
+    return <span className="font-mono text-[12.5px] text-foreground/85">{path}</span>
   }
   const open = (e: ReactMouseEvent<HTMLSpanElement> | ReactKeyboardEvent<HTMLSpanElement>) => {
     e.preventDefault()
@@ -87,16 +102,16 @@ function PathLabel({ path }: { path: string }) {
       onKeyDown={handleKeyDown}
       title={`Open ${path} in workbench`}
       className={cn(
-        'group/path inline-flex min-w-0 items-center gap-1 rounded-sm px-0.5',
-        'cursor-pointer font-mono text-[12px] text-foreground/75',
+        'group/path inline-flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5',
+        'cursor-pointer font-mono text-[12.5px] text-foreground/85',
         'transition-colors duration-150',
-        'hover:text-[color:var(--accent)]',
+        'hover:bg-foreground/[0.05] hover:text-[color:var(--accent)]',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40',
       )}
     >
       <span className="truncate">{path}</span>
       <ExternalLinkIcon
-        className="h-2.5 w-2.5 shrink-0 opacity-0 transition-opacity group-hover/path:opacity-100"
+        className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/path:opacity-100"
         strokeWidth={1.75}
         aria-hidden="true"
       />
@@ -106,9 +121,9 @@ function PathLabel({ path }: { path: string }) {
 
 function pathTitle(prefix: string, path: string): ReactNode {
   return (
-    <span className="flex min-w-0 items-center gap-1">
-      <span className="shrink-0 text-muted-foreground/70">{prefix}</span>
-      <span className="text-muted-foreground/30" aria-hidden="true">·</span>
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="text-muted-foreground">{prefix}</span>
+      <span className="text-muted-foreground/40" aria-hidden="true">·</span>
       <PathLabel path={path} />
     </span>
   )
@@ -125,23 +140,28 @@ function renderBash(part: ToolPart): ReactNode {
   const stderr = typeof output.stderr === 'string' ? output.stderr : ''
   const exitCode = typeof output.exitCode === 'number' ? output.exitCode : null
 
-  const title = description || (command.length > 60 ? command.slice(0, 60) + '…' : command) || 'bash'
-  const errorText = part.errorText || (stderr && (exitCode ?? 0) !== 0 ? stderr : undefined)
+  const title = description || (command.length > 64 ? command.slice(0, 64) + '…' : command) || 'bash'
+  const errorText = part.errorText
+    || (stderr && (exitCode ?? 0) !== 0 ? stderr : undefined)
 
   return (
     <Tool>
       <ToolHeader title={`bash · ${title}`} {...toHeaderProps(part)} />
       <ToolContent>
-        {/* Show full command only when a description is used as title (otherwise it's already visible) */}
-        {description && command && (
-          <CodeBlock code={command} language="bash" />
+        {command && (
+          <section className="space-y-2">
+            <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+              Command
+            </h4>
+            <CodeBlock code={command} language="bash" />
+          </section>
         )}
         <ToolOutput
           output={stdout && !errorText ? stdout : undefined}
           errorText={errorText}
         />
         {exitCode !== null && exitCode !== 0 && !errorText && (
-          <div className="font-mono text-[11px] text-destructive/70">exit {exitCode}</div>
+          <div className="text-xs text-destructive">exit {exitCode}</div>
         )}
       </ToolContent>
     </Tool>
@@ -160,16 +180,26 @@ function renderRead(part: ToolPart): ReactNode {
   return (
     <Tool>
       <ToolHeader title={pathTitle('read', path)} {...toHeaderProps(part)} />
-      {content && (
-        <ToolContent>
-          <CodeBlock code={content} language={lang ?? 'text'} />
-        </ToolContent>
-      )}
+      <ToolContent>
+        <ToolInput input={input} />
+        {content && (
+          <section className="space-y-2">
+            <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+              Content
+            </h4>
+            <CodeBlock code={content} language={lang ?? 'text'} />
+          </section>
+        )}
+      </ToolContent>
     </Tool>
   )
 }
 
 // ---- write ----
+//
+// Uses the canonical <Artifact> primitive to present the written file as a
+// workspace artifact. Saved content is shown in a titled card with download
+// + copy actions, matching the Vercel artifact pattern.
 
 function renderWrite(part: ToolPart): ReactNode {
   const input = asRecord(part.input)
@@ -182,6 +212,9 @@ function renderWrite(part: ToolPart): ReactNode {
     <Tool>
       <ToolHeader title={pathTitle('write', path)} {...toHeaderProps(part)} />
       <ToolContent>
+        {/* Flat surface: the outer <Tool> already owns a bordered card, so
+         * the nested <Artifact> drops its own border/shadow to keep stacked
+         * depth at 1 — no "box-in-a-box" feel. */}
         <Artifact className="rounded-none border-0 bg-transparent shadow-none">
           <ArtifactHeader className="border-0 px-0 pt-0 pb-2">
             <div>
@@ -245,20 +278,25 @@ function renderEdit(part: ToolPart): ReactNode {
     <Tool>
       <ToolHeader title={pathTitle('edit', path)} {...toHeaderProps(part)} />
       <ToolContent>
-        <div className="overflow-hidden rounded-sm border border-border/40 font-mono text-[12px] leading-relaxed">
-          {oldString && (
-            <div className="grid grid-cols-[16px_1fr] gap-2 border-b border-border/30 bg-destructive/5 px-2 py-1.5">
-              <span className="select-none text-destructive/60">-</span>
-              <span className="whitespace-pre-wrap break-all text-destructive/80">{oldString}</span>
-            </div>
-          )}
-          {newString && (
-            <div className="grid grid-cols-[16px_1fr] gap-2 bg-accent/5 px-2 py-1.5">
-              <span className="select-none text-accent/70">+</span>
-              <span className="whitespace-pre-wrap break-all text-accent/90">{newString}</span>
-            </div>
-          )}
-        </div>
+        <section className="space-y-2">
+          <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Diff
+          </h4>
+          <div className="overflow-hidden rounded-sm border border-input/60 bg-muted/30 font-mono text-[13px] leading-relaxed">
+            {oldString && (
+              <div className="grid grid-cols-[auto_1fr] gap-2 border-b border-input/40 bg-destructive/5 px-3 py-2">
+                <span className="select-none text-destructive/70">-</span>
+                <span className={cn('whitespace-pre-wrap break-all text-destructive/90')}>{oldString}</span>
+              </div>
+            )}
+            {newString && (
+              <div className="grid grid-cols-[auto_1fr] gap-2 bg-accent/5 px-3 py-2">
+                <span className="select-none text-accent/80">+</span>
+                <span className="whitespace-pre-wrap break-all text-accent">{newString}</span>
+              </div>
+            )}
+          </div>
+        </section>
         <ToolOutput output={part.output} errorText={part.errorText} />
       </ToolContent>
     </Tool>
@@ -281,6 +319,7 @@ function renderSearchLike(toolName: 'find' | 'grep' | 'ls', part: ToolPart): Rea
         {...toHeaderProps(part)}
       />
       <ToolContent>
+        <ToolInput input={input} />
         <ToolOutput output={part.output} errorText={part.errorText} />
       </ToolContent>
     </Tool>
@@ -288,6 +327,16 @@ function renderSearchLike(toolName: 'find' | 'grep' | 'ls', part: ToolPart): Rea
 }
 
 // ---- exec_ui / get_ui_state ----
+//
+// Custom header (not ToolHeader): the wrench icon + "exec_ui · …" prefix
+// from the default header is redundant for high-frequency UI commands.
+// We replace it with a tighter layout — a lightning glyph hints at the
+// "fire-and-forget UI command" semantics, the kind name reads as the
+// verb, and primitive param values render as mono tokens (no JSON
+// braces). Generic across all kinds; no per-kind branching.
+//
+// Body collapsed by default, stays consistent with bash/read/edit. On
+// error, errorText surfaces in the body via ToolOutput.
 
 function extractParamTokens(value: unknown, depth = 0): string[] {
   if (value === null || value === undefined) return []
@@ -317,17 +366,28 @@ function renderExecUi(part: ToolPart): ReactNode {
   return (
     <Tool>
       <CollapsibleTrigger
-        className="group/exec-ui flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-muted/30"
+        className={cn(
+          'group/exec-ui flex w-full items-center gap-3 px-3 py-2.5 text-left',
+          'hover:bg-muted/40 transition-colors',
+        )}
       >
-        <ZapIcon className="size-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
-        <span className="font-medium text-[13px]">{kind}</span>
+        <ZapIcon
+          className="size-3.5 shrink-0 text-muted-foreground/70"
+          aria-hidden="true"
+        />
+        <span className="font-medium text-sm">{kind}</span>
         {tokens.length > 0 && (
           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-            <span className="text-muted-foreground/30" aria-hidden="true">·</span>
+            <span className="text-muted-foreground/40" aria-hidden="true">
+              ·
+            </span>
             {tokens.map((tok, i) => (
               <span
                 key={i}
-                className="truncate rounded-sm bg-muted/50 px-1 py-0.5 font-mono text-[10px] text-muted-foreground"
+                className={cn(
+                  'truncate rounded-sm bg-muted/60 px-1.5 py-0.5',
+                  'font-mono text-[11px] text-muted-foreground',
+                )}
                 title={tok}
               >
                 {tok}
@@ -335,15 +395,18 @@ function renderExecUi(part: ToolPart): ReactNode {
             ))}
           </div>
         )}
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {getStatusBadge(headerProps.state)}
           <ChevronDownIcon
-            className="size-3.5 text-muted-foreground/40 transition-transform group-data-[state=open]/exec-ui:rotate-180"
+            className="size-4 text-muted-foreground/60 transition-transform group-data-[state=open]/exec-ui:rotate-180"
             aria-hidden="true"
           />
         </div>
       </CollapsibleTrigger>
       <ToolContent>
+        {part.input !== undefined && part.input !== null && (
+          <ToolInput input={part.input} />
+        )}
         <ToolOutput output={part.output} errorText={part.errorText} />
       </ToolContent>
     </Tool>

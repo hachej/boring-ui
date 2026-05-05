@@ -35,6 +35,7 @@ type VercelSandboxCompat = VercelSandbox & {
 }
 const CACHE_TTL_MS = 15_000
 const CACHE_MAX_ENTRIES = 512
+const MAX_INLINE_WRITE_BYTES = 128 * 1024
 const metadataInvalidators = new WeakMap<VercelSandbox, Set<() => void>>()
 
 function toSandboxPath(relPath: string): string {
@@ -240,6 +241,86 @@ export function createVercelSandboxWorkspace(
       invalidateMetadataCache()
       workspaceOpts.onMutation?.()
       emitChange({ op: 'write', path: relPath })
+    },
+    async readFileWithStat(relPath) {
+      const sandboxPath = toSandboxPath(relPath)
+      const cachedStat = statCache.get(sandboxPath)
+      if (remote.fs?.readFile) {
+        if (cachedStat) {
+          const content = await remote.fs.readFile(sandboxPath, 'utf8')
+          return {
+            content: typeof content === 'string' ? content : Buffer.from(content).toString('utf-8'),
+            stat: cloneStat(cachedStat),
+          }
+        }
+
+        const [content, fileStat] = await Promise.all([
+          remote.fs.readFile(sandboxPath, 'utf8'),
+          remote.fs.stat(sandboxPath),
+        ])
+        const stat: Stat = {
+          size: fileStat.size,
+          mtimeMs: fileStat.mtimeMs,
+          kind: fileStat.isDirectory() ? 'dir' : 'file',
+        }
+        statCache.set(sandboxPath, stat)
+        return {
+          content: typeof content === 'string' ? content : Buffer.from(content).toString('utf-8'),
+          stat: cloneStat(stat),
+        }
+      }
+
+      const version = metadataVersion
+      const result = await runJson<{ content: string; stat: Stat }>(
+        remote,
+        `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); const content=fs.readFileSync(p,'utf8'); process.stdout.write(JSON.stringify({content,stat:{size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}}))`)} ${shellQuote(sandboxPath)}`,
+      )
+      if (metadataVersion === version) {
+        statCache.set(sandboxPath, result.stat)
+      }
+      return { content: result.content, stat: cloneStat(result.stat) }
+    },
+    async writeFileWithStat(relPath, data) {
+      const sandboxPath = toSandboxPath(relPath)
+      const payload = Buffer.from(data, 'utf-8')
+
+      if (payload.byteLength > MAX_INLINE_WRITE_BYTES) {
+        await sandbox.writeFiles([
+          {
+            path: sandboxPath,
+            content: payload,
+          },
+        ])
+        invalidateMetadataCache()
+        workspaceOpts.onMutation?.()
+        const writtenStat = remote.fs?.stat
+          ? await (async (): Promise<Stat> => {
+              const fileStat = await remote.fs!.stat(sandboxPath)
+              return {
+                size: fileStat.size,
+                mtimeMs: fileStat.mtimeMs,
+                kind: fileStat.isDirectory() ? 'dir' : 'file',
+              }
+            })()
+          : await runJson<Stat>(
+              remote,
+              `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
+            )
+        statCache.set(sandboxPath, writtenStat)
+        emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
+        return cloneStat(writtenStat)
+      }
+
+      const encoded = payload.toString('base64')
+      const writtenStat = await runJson<Stat>(
+        remote,
+        `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const data=Buffer.from(process.argv[2],'base64'); fs.writeFileSync(p,data); const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)} ${shellQuote(encoded)}`,
+      )
+      invalidateMetadataCache()
+      statCache.set(sandboxPath, writtenStat)
+      workspaceOpts.onMutation?.()
+      emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
+      return cloneStat(writtenStat)
     },
     async unlink(relPath) {
       const sandboxPath = toSandboxPath(relPath)

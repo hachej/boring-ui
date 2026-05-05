@@ -65,8 +65,5 @@ export {
   Shimmer,
 } from './primitives'
 
-export { ToolCallGroup, type GroupedToolEntry } from './primitives/tool-call-group'
-export { mergeShadcnToolRenderers, shadcnDefaultToolRenderers } from './toolRenderers'
-
 // cn utility for consumers doing custom composition
 export { cn } from './lib'

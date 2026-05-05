@@ -1,4 +1,4 @@
-import { createElement, lazy, type ComponentType } from "react"
+import { createElement, lazy, Suspense, type ComponentType } from "react"
 import type { PanelConfig, PanelRegistration } from "./types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 
@@ -18,8 +18,11 @@ export class PanelRegistry {
   }
 
   register(id: string, config: PanelRegistration): void {
+    // Auto-detect lazy: factories are zero-arg arrow functions (() => import(...));
+    // panel components always take a props argument, so .length >= 1.
+    const isFactory = typeof config.component === "function" && config.component.length === 0
     const existed = this.panels.has(id)
-    this.panels.set(id, { ...config, id } as PanelConfig)
+    this.panels.set(id, { ...config, id, lazy: config.lazy ?? isFactory } as PanelConfig)
     if (!existed) {
       this.registrationOrder.push(id)
     }
@@ -71,11 +74,16 @@ export class PanelRegistry {
       }
       const pluginId = panel.pluginId ?? panel.id
       const panelId = panel.id
+      const isLazy = panel.lazy
       // biome-ignore lint/suspicious/noExplicitAny: dockview props passthrough
       result[panel.id] = function WrappedPanel(props: any) {
+        const inner = createElement(Inner, props)
         return createElement(
           PluginErrorBoundary,
-          { pluginId, contributionKind: "panel" as const, contributionId: panelId, children: createElement(Inner, props) },
+          { pluginId, contributionKind: "panel" as const, contributionId: panelId },
+          isLazy
+            ? createElement(Suspense, { fallback: createElement(PanelLoadingFallback) }, inner)
+            : inner,
         )
       }
     }
@@ -109,4 +117,11 @@ export class PanelRegistry {
     if (!panel.requiresCapabilities?.length) return true
     return panel.requiresCapabilities.every((cap) => this.capabilities.has(cap))
   }
+}
+
+function PanelLoadingFallback() {
+  return createElement("div", {
+    style: { display: "flex", height: "100%", alignItems: "center", justifyContent: "center" },
+    className: "text-sm text-muted-foreground animate-pulse",
+  }, "Loading…")
 }
