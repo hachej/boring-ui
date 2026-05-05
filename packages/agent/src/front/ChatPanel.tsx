@@ -367,6 +367,9 @@ export function ChatPanel(props: ChatPanelProps) {
     () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
     [extraCommands],
   )
+  // Bumped when server skills are added to registry so the picker re-renders
+  const [skillsStamp, setSkillsStamp] = useState(0)
+  const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
 
   const initialModelState = useMemo(readStoredModelState, [])
   const [model, setModelState] = useState<ModelSelection>(
@@ -457,6 +460,28 @@ export function ChatPanel(props: ChatPanelProps) {
       .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
     return () => { aborted = true }
   }, [requestHeaders])
+
+  // Fetch PI skills and register them so the slash picker shows them without
+  // host apps needing to hardcode them in extraCommands. Server skills never
+  // overwrite builtins or host-provided extraCommands (first-write wins).
+  useEffect(() => {
+    let aborted = false
+    fetch('/api/v1/agent/skills', { headers: requestHeaders })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload: { skills?: Array<{ name: string; description: string }> } | null) => {
+        if (aborted || !payload?.skills) return
+        let added = 0
+        for (const skill of payload.skills) {
+          if (!registry.get(skill.name)) {
+            registry.register({ name: skill.name, description: skill.description, kind: 'skill', handler: () => {} })
+            added++
+          }
+        }
+        if (added > 0) setSkillsStamp((n) => n + 1)
+      })
+      .catch(() => {})
+    return () => { aborted = true }
+  }, [requestHeaders, registry])
 
   // Legacy single-string event payload (used by the /model slash command)
   // still works — treat it as an anthropic short alias.
@@ -1044,7 +1069,7 @@ export function ChatPanel(props: ChatPanelProps) {
           {slashQuery !== null && (
             <SlashCommandPicker
               query={slashQuery}
-              commands={registry.list()}
+              commands={allCommands}
               onSelect={selectSlashCommand}
               onDismiss={() => setSlashQuery(null)}
             />
