@@ -277,7 +277,10 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
-    `${shellStorageKey}:surface`,
+    // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
+    // layout JSON at the same ":surface" suffix). Writing "1"/"0" to the same
+    // key corrupts the JSON and drops the persisted workbench layout on reload.
+    `${shellStorageKey}:workbenchOpen`,
     false,
     shellPersistenceEnabled,
   )

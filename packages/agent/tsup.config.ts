@@ -11,7 +11,7 @@ export default defineConfig({
     "eval/index": "src/eval/index.ts",
   },
   format: ["esm"],
-  dts: true,
+  dts: { resolve: ['@boring/ui'] },
   splitting: true,
   clean: true,
   outDir: "dist",

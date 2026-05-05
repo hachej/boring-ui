@@ -81,6 +81,8 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const dirtyRef = useRef(false)
   const loadedPathRef = useRef<string | null>(null)
   const baselineMtimeRef = useRef<number | null>(null)
+  // Ref so the save callback (defined before lifecycle) can call lifecycle.notifySaved.
+  const notifySavedRef = useRef<((mtime: number) => void) | null>(null)
 
   // Conflict state
   const [conflict, setConflict] = useState<FileConflictError | null>(null)
@@ -123,6 +125,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
               })
               if (typeof result.mtimeMs === "number") {
                 baselineMtimeRef.current = result.mtimeMs
+                notifySavedRef.current?.(result.mtimeMs)
               }
               dirtyRef.current = false
               setConflict(null)
@@ -143,17 +146,36 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     panelId,
     serverMtime: fileData?.mtimeMs ?? null,
   })
+  // Keep the ref in sync so the save callback can call notifySaved without
+  // creating a circular dependency at definition time.
+  notifySavedRef.current = lifecycle.notifySaved
 
-  // Handle external file changes (auto-sync when not dirty)
+  // Auto-sync when an external change is detected and the editor is clean.
+  // Guard with dirtyRef (synchronous) rather than lifecycle.isDirty (React
+  // state) to avoid overwriting keystrokes that arrived since detection.
   useEffect(() => {
-    if (lifecycle.shouldSync && fileData?.content != null) {
-      setContentState(fileData.content)
-      contentRef.current = fileData.content
-      baselineMtimeRef.current = fileData.mtimeMs ?? null
-      dirtyRef.current = false
+    if (!lifecycle.shouldSync || fileData?.content == null) return
+    if (dirtyRef.current) {
+      // User became dirty between detection and this render; don't clobber
+      // their edits — the next save will hit 409 and handle it properly.
       lifecycle.ackSync()
+      return
     }
-  }, [lifecycle.shouldSync, fileData, setContentState, lifecycle])
+    setContentState(fileData.content)
+    contentRef.current = fileData.content
+    baselineMtimeRef.current = fileData.mtimeMs ?? null
+    dirtyRef.current = false
+    lifecycle.ackSync()
+  }, [lifecycle.shouldSync, lifecycle, fileData, setContentState])
+
+  // Show the conflict banner immediately when the file is modified externally
+  // while the editor has unsaved changes, instead of waiting for the next
+  // save to fail with a 409.
+  useEffect(() => {
+    if (!lifecycle.externalChangeWhileDirty || fileData?.mtimeMs == null) return
+    setConflict(new FileConflictError(path, fileData.mtimeMs, baselineMtimeRef.current))
+    lifecycle.ackExternalChange()
+  }, [lifecycle.externalChangeWhileDirty, lifecycle, fileData, path])
 
   // Tab title with dirty indicator
   const fileName = path ? (path.split("/").pop() ?? path) : ""

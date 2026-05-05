@@ -24,6 +24,11 @@ export interface UseEditorLifecycleReturn {
   flushSave: () => Promise<void>
   shouldSync: boolean
   ackSync: () => void
+  /** True when the file was modified externally while the editor has unsaved changes. */
+  externalChangeWhileDirty: boolean
+  ackExternalChange: () => void
+  /** Call after a successful save with the mtime the server returned. */
+  notifySaved: (mtime: number) => void
 }
 
 const AUTO_SAVE_DELAY = 1000
@@ -39,6 +44,7 @@ export function useEditorLifecycle(
   const [isSaving, setIsSaving] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
   const [shouldSync, setShouldSync] = useState(false)
+  const [externalChangeWhileDirty, setExternalChangeWhileDirty] = useState(false)
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const saveInFlightRef = useRef<Promise<void> | null>(null)
@@ -102,6 +108,16 @@ export function useEditorLifecycle(
   }, [doSave])
 
   const ackSync = useCallback(() => setShouldSync(false), [])
+  const ackExternalChange = useCallback(() => setExternalChangeWhileDirty(false), [])
+
+  const notifySaved = useCallback((mtime: number) => {
+    // Immediately record the server mtime so the post-save SSE echo is never
+    // mistaken for an external modification. Without this, lastKnownMtimeRef
+    // stays at the pre-save value and any refetch during the suppression window
+    // leaves a stale baseline that mis-fires after the window expires.
+    lastKnownMtimeRef.current = mtime
+    setExternalChangeWhileDirty(false)
+  }, [])
 
   useEffect(() => {
     if (serverMtime == null || !path) return
@@ -113,10 +129,19 @@ export function useEditorLifecycle(
 
     if (serverMtime !== lastKnownMtimeRef.current) {
       const elapsed = Date.now() - lastSaveTimeRef.current
-      if (elapsed < STALE_SUPPRESSION_MS) return
+      if (elapsed < STALE_SUPPRESSION_MS) {
+        // Absorb the echo of our own save so post-suppression comparisons
+        // are anchored to the correct mtime, not the pre-save one.
+        lastKnownMtimeRef.current = serverMtime
+        return
+      }
       lastKnownMtimeRef.current = serverMtime
       if (!isDirty) {
         setShouldSync(true)
+      } else {
+        // File changed externally while we have unsaved edits — surface this
+        // immediately so the user isn't surprised by a 409 on next save.
+        setExternalChangeWhileDirty(true)
       }
     }
   }, [serverMtime, path, isDirty])
@@ -125,5 +150,8 @@ export function useEditorLifecycle(
     return () => clearTimeout(saveTimerRef.current)
   }, [])
 
-  return { isDirty, isSaving, lastSavedAt, markDirty, flushSave, shouldSync, ackSync }
+  return {
+    isDirty, isSaving, lastSavedAt, markDirty, flushSave, shouldSync, ackSync,
+    externalChangeWhileDirty, ackExternalChange, notifySaved,
+  }
 }

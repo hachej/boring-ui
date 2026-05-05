@@ -8,7 +8,6 @@ createRoot(document.getElementById('root')!).render(
     apiBaseUrl=""
     apiTimeout={10_000}
     persistenceEnabled
-    providerStorageKey="boring-ui-v2:layout:full-app"
     chatParams={{ thinkingControl: true }}
   />,
 )
