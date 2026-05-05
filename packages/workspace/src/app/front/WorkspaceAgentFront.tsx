@@ -11,7 +11,7 @@ import type {
 import { useRegistry } from "../../front/registry"
 import type { WorkspaceFrontPlugin } from "../../shared/plugins"
 import type { PanelOutput, PluginOutput } from "../../shared/plugins/types"
-import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front"
+import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
 import {
   createLocalStorageSessions,
@@ -283,8 +283,12 @@ export function WorkspaceAgentFront<
   )
   const autoCreateSessionRef = useRef(false)
   const surfaceOpenRef = useRef(surfaceOpen)
-  const surfaceRef = useRef<SurfaceShellApi | null>(null)
-  const surfaceRefKey = useRef(resolvedSurfaceStorageKey)
+  const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
+  const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
+  // Keep the latest key available to stable command callbacks. We tag the
+  // SurfaceShell handle instead of clearing it in an effect: clearing after
+  // mount races with Dockview's onReady on the initial render.
+  surfaceKeyRef.current = resolvedSurfaceStorageKey
   const [surfaceSnapshotState, setSurfaceSnapshotState] = useState(() => ({
     key: resolvedSurfaceStorageKey,
     snapshot: emptySurfaceSnapshot,
@@ -292,16 +296,6 @@ export function WorkspaceAgentFront<
   const surfaceSnapshot = surfaceSnapshotState.key === resolvedSurfaceStorageKey
     ? surfaceSnapshotState.snapshot
     : emptySurfaceSnapshot
-
-  useEffect(() => {
-    if (surfaceRefKey.current === resolvedSurfaceStorageKey) return
-    surfaceRefKey.current = resolvedSurfaceStorageKey
-    surfaceRef.current = null
-    setSurfaceSnapshotState({
-      key: resolvedSurfaceStorageKey,
-      snapshot: emptySurfaceSnapshot,
-    })
-  }, [resolvedSurfaceStorageKey])
 
   useEffect(() => {
     autoCreateSessionRef.current = false
@@ -325,7 +319,7 @@ export function WorkspaceAgentFront<
   }, [surfaceOpen])
 
   const handleSurfaceReady = useCallback((api: SurfaceShellApi) => {
-    surfaceRef.current = api
+    surfaceRef.current = { key: resolvedSurfaceStorageKey, api }
     setSurfaceSnapshotState({
       key: resolvedSurfaceStorageKey,
       snapshot: api.getSnapshot(),
@@ -339,7 +333,10 @@ export function WorkspaceAgentFront<
     })
   }, [resolvedSurfaceStorageKey])
 
-  const getSurface = useCallback(() => surfaceRef.current, [])
+  const getSurface = useCallback(() => {
+    const ready = surfaceRef.current
+    return ready?.key === surfaceKeyRef.current ? ready.api : null
+  }, [])
   const isWorkbenchOpen = useCallback(() => surfaceOpenRef.current, [])
   const openWorkbench = useCallback(() => {
     surfaceOpenRef.current = true
@@ -364,9 +361,11 @@ export function WorkspaceAgentFront<
   const chatSessionId = resolvedActiveId ?? resolvedSessions[0]?.id ?? "default"
 
   useEffect(() => {
+    // postUiCommand also emits a browser CustomEvent so app/plugin bundles
+    // loaded through different module graphs can still reach this shell.
     const handler = (event: Event) => {
       const command = (event as CustomEvent).detail
-      if (!command || typeof command !== "object" || command.kind === "openFile") return
+      if (!command || typeof command !== "object") return
       dispatchUiCommand(command, {
         surface: getSurface,
         isWorkbenchOpen,
@@ -401,6 +400,7 @@ export function WorkspaceAgentFront<
     onChange: handleSurfaceChange,
     onClose: () => {
       surfaceOpenRef.current = false
+      surfaceRef.current = null
       setSurfaceOpen(false)
     },
   }), [
