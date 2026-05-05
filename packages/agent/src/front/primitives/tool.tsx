@@ -1,12 +1,5 @@
 "use client";
 
-/**
- * Adapted from ai-elements (vercel/ai-elements) v1.9.0. This is the canonical
- * shadcn-styled Tool primitive — header with icon + title + status badge +
- * chevron, collapsible content with <ToolInput> / <ToolOutput> sections.
- * Keeping it 1:1 with upstream so the "Vercel template" look/feel lands
- * without local invention.
- */
 import { Badge, Collapsible, CollapsibleContent, CollapsibleTrigger } from "@boring/ui";
 import { cn } from "@/front/lib";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
@@ -15,11 +8,19 @@ import {
   ChevronDownIcon,
   CircleIcon,
   ClockIcon,
+  FilePenIcon,
+  FilePlusIcon,
+  FileTextIcon,
+  FolderOpenIcon,
+  FolderSearchIcon,
+  SearchIcon,
+  TerminalIcon,
   WrenchIcon,
   XCircleIcon,
+  ZapIcon,
 } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
-import { isValidElement } from "react";
+import type { ComponentProps, ElementType, ReactNode } from "react";
+import { isValidElement, useEffect, useRef, useState } from "react";
 
 import { CodeBlock } from "./code-block";
 
@@ -29,10 +30,6 @@ export const Tool = ({ className, ...props }: ToolProps) => (
   <Collapsible
     data-boring-agent-part="tool-card"
     className={cn(
-      // Inset-border + micro-shadow surface, matching the chat panel's
-      // own card and the workspace shell. No `border` utility — the
-      // 1px hairline lives inside `shadow` so the element's box metrics
-      // don't shift between :hover and :focus states.
       "group not-prose my-3 w-full rounded-[var(--radius-lg)] bg-card/60",
       "shadow-[0_1px_0_oklch(0_0_0/0.02),0_1px_2px_-1px_oklch(0_0_0/0.04),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.55)]",
       "overflow-hidden",
@@ -56,6 +53,21 @@ export type ToolHeaderProps = {
     }
 );
 
+const TOOL_ICONS: Record<string, ElementType> = {
+  bash: TerminalIcon,
+  read: FileTextIcon,
+  write: FilePlusIcon,
+  edit: FilePenIcon,
+  grep: SearchIcon,
+  find: FolderSearchIcon,
+  ls: FolderOpenIcon,
+  exec_ui: ZapIcon,
+  get_ui_state: ZapIcon,
+};
+
+export const getToolIcon = (toolName: string): ElementType =>
+  TOOL_ICONS[toolName] ?? WrenchIcon;
+
 const statusLabels: Record<ToolPart["state"], string> = {
   "approval-requested": "Awaiting Approval",
   "approval-responded": "Responded",
@@ -67,19 +79,39 @@ const statusLabels: Record<ToolPart["state"], string> = {
 };
 
 const statusIcons: Record<ToolPart["state"], ReactNode> = {
-  "approval-requested": <ClockIcon className="size-4 text-accent" />,
-  "approval-responded": <CheckCircleIcon className="size-4 text-accent" />,
-  "input-available": <ClockIcon className="size-4 animate-pulse text-muted-foreground" />,
-  "input-streaming": <CircleIcon className="size-4 text-muted-foreground" />,
-  "output-available": <CheckCircleIcon className="size-4 text-accent" />,
-  "output-denied": <XCircleIcon className="size-4 text-destructive" />,
-  "output-error": <XCircleIcon className="size-4 text-destructive" />,
+  "approval-requested": <ClockIcon className="size-3.5 text-accent" />,
+  "approval-responded": <CheckCircleIcon className="size-3.5 text-accent" />,
+  "input-available": <ClockIcon className="size-3.5 animate-pulse text-muted-foreground" />,
+  "input-streaming": <CircleIcon className="size-3.5 text-muted-foreground" />,
+  "output-available": <CheckCircleIcon className="size-3.5 text-accent" />,
+  "output-denied": <XCircleIcon className="size-3.5 text-destructive" />,
+  "output-error": <XCircleIcon className="size-3.5 text-destructive" />,
 };
 
+function ElapsedSeconds({ isRunning }: { isRunning: boolean }) {
+  const startRef = useRef<number | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    if (!isRunning) return
+    if (startRef.current === null) startRef.current = Date.now()
+    const tick = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current!) / 1000))
+    }, 1000)
+    return () => clearInterval(tick)
+  }, [isRunning])
+
+  if (!isRunning || elapsed === 0) return null
+  return <span className="tabular-nums text-muted-foreground/50">{elapsed}s</span>
+}
+
 export const getStatusBadge = (status: ToolPart["state"]) => (
-  <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
+  <Badge className="gap-1.5 rounded-full px-2 py-0.5 text-[11px]" variant="secondary">
     {statusIcons[status]}
     {statusLabels[status]}
+    {status === "input-available" && (
+      <ElapsedSeconds isRunning={true} />
+    )}
   </Badge>
 );
 
@@ -94,6 +126,8 @@ export const ToolHeader = ({
   const derivedName =
     type === "dynamic-tool" ? toolName : type.split("-").slice(1).join("-");
 
+  const Icon = getToolIcon(derivedName);
+
   return (
     <CollapsibleTrigger
       className={cn(
@@ -103,7 +137,7 @@ export const ToolHeader = ({
       {...props}
     >
       <div className="flex items-center gap-2">
-        <WrenchIcon className="size-4 text-muted-foreground" />
+        <Icon className="size-4 text-muted-foreground/70" />
         <span className="font-medium text-sm">{title ?? derivedName}</span>
         {getStatusBadge(state)}
       </div>
