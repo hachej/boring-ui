@@ -25,7 +25,7 @@ function ResizeHandle({
       tabIndex={tabIndex}
       onPointerDown={onResizeStart}
       className={cn(
-        'shrink-0 touch-none select-none bg-transparent transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+        'shrink-0 touch-none select-none bg-transparent transition-colors hover:bg-border/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
         orientation === 'vertical' ? 'w-1 cursor-col-resize' : 'h-1 cursor-row-resize',
         className,
       )}

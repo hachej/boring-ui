@@ -74,7 +74,7 @@ export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
 
 export function ChatLayout(props: ChatLayoutProps) {
   const navOpen = props.nav !== null
-  const surfaceConfigured = props.surface !== undefined && props.surface !== null
+  const surfaceConfigured = props.surface !== undefined
   const surfaceOpen = Boolean(props.surface)
   const navId = props.nav || "session-list"
   const centerId = props.center ?? "chat"
@@ -286,7 +286,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         <aside
           data-boring-workspace-part="workbench"
           data-boring-state={surfaceOpen ? "expanded" : "collapsed"}
-          aria-label="Surface"
+          aria-label={surfaceOpen ? "Surface" : undefined}
           aria-hidden={!surfaceOpen}
           className={cn(
             "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
@@ -407,8 +407,8 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
       className={cn(
         "absolute top-0 bottom-0 z-20 bg-transparent",
         "transition-colors duration-200",
-        "hover:bg-[var(--accent)] hover:[transition-delay:150ms]",
-        "active:bg-[var(--accent)]",
+        "hover:bg-border/70 hover:[transition-delay:150ms]",
+        "active:bg-muted-foreground/30",
         side === "drawer-right" ? "right-0" : "left-0",
       )}
     />
@@ -507,8 +507,8 @@ function FloatingEdgeButton({
         "absolute top-1/2 z-30 h-9 w-9 -translate-y-1/2 gap-0.5 rounded-lg bg-background text-muted-foreground",
         side === "left" ? "left-2" : "right-2",
         "shadow-[0_1px_2px_-1px_oklch(0_0_0/0.08),0_2px_8px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.7)]",
-        "hover:-translate-y-[calc(50%+1px)] hover:text-[color:var(--accent)] hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(from_var(--accent)_l_c_h/0.25),inset_0_0_0_1px_oklch(from_var(--accent)_l_c_h/0.35)]",
-        "focus-visible:ring-[color:var(--accent)]/40",
+        "hover:-translate-y-[calc(50%+1px)] hover:bg-muted/60 hover:text-foreground hover:shadow-[0_2px_4px_-1px_oklch(0_0_0/0.08),0_4px_12px_-4px_oklch(0_0_0/0.10),inset_0_0_0_1px_oklch(from_var(--border)_l_c_h/0.9)]",
+        "focus-visible:ring-ring/40",
       )}
     >
       {icon === "sessions" ? (
