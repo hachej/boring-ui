@@ -5,7 +5,7 @@ app = "boring-macro"
 primary_region = "cdg"
 
 [build]
-  dockerfile = "apps/boring-macro-v2/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [[mounts]]
   source = "boring_macro_workspace"

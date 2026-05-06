@@ -102,6 +102,9 @@ importers:
       '@clickhouse/client':
         specifier: ^1.18.2
         version: 1.18.3
+      '@fastify/static':
+        specifier: ^8.3.0
+        version: 8.3.0
       fastify:
         specifier: ^5.8.4
         version: 5.8.5
