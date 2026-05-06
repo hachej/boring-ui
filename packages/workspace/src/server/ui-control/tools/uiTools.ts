@@ -13,7 +13,7 @@
 import { access } from "node:fs/promises"
 import { resolve, isAbsolute, relative } from "node:path"
 import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
-import type { UiBridge, UiCommand } from "../../../shared/ui-bridge"
+import type { UiBridge, UiCommand, UiState } from "../../../shared/ui-bridge"
 
 function makeError(message: string): ToolResult {
   return {
@@ -129,18 +129,18 @@ export function createGetUiStateTool(uiBridge: UiBridge): AgentTool {
 // Commands that mutate workbench tab state — verified via getState() after dispatch.
 const VERIFIABLE_KINDS = new Set(["openFile", "openPanel", "openSurface", "closePanel"])
 
+type UiTab = { id: string; params?: Record<string, unknown> }
+
 function isVerified(
   kind: string,
   params: Record<string, unknown>,
-  state: import("../../shared/ui-bridge").UiState | null,
+  state: UiState | null,
 ): boolean {
   if (!state) return false
-  const tabs = state.openTabs ?? []
+  const tabs = (state.openTabs as UiTab[] | undefined) ?? []
   if (kind === "openFile") {
     const path = typeof params.path === "string" ? params.path : null
-    return path !== null && tabs.some(
-      (t) => (t.params as Record<string, unknown> | undefined)?.path === path,
-    )
+    return path !== null && tabs.some((t) => t.params?.path === path)
   }
   if (kind === "openPanel") {
     const id = typeof params.id === "string" ? params.id : null
