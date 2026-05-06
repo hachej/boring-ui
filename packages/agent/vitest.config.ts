@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@hachej/boring-ui-kit": fileURLToPath(new URL("../ui/src/index.ts", import.meta.url)),
     },
   },
   test: {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { runEvalSuite } from "@hachej/boring-agent/eval"
-import { buildServer } from "../server/index.js"
+import { buildMacroServer as buildServer } from "../server/index.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)

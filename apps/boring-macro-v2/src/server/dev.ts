@@ -6,7 +6,7 @@ import { resolve } from "node:path"
 // Load .env before anything else (Node 22 native, no dotenv dep).
 try { process.loadEnvFile(new URL("../../.env", import.meta.url)) } catch { /* optional */ }
 import { createServer as createViteServer } from "vite"
-import { buildServer } from "./index.js"
+import { buildMacroServer as buildServer } from "./index.js"
 
 const API_PORT = Number(process.env.API_PORT) || 5210
 const FRONTEND_PORT = Number(process.env.FRONTEND_PORT) || 5200

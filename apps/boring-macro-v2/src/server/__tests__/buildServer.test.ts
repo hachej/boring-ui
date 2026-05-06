@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { createRequire } from "node:module"
 import { spawnSync } from "node:child_process"
 import { describe, expect, it } from "vitest"
-import { buildServer } from "../index"
+import { buildMacroServer as buildServer } from "../index"
 
 const require = createRequire(import.meta.url)
 
