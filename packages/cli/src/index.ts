@@ -1,6 +1,7 @@
 import { createWorkspaceAgentServer } from "@boring/workspace/app/server"
 import fastifyStatic from "@fastify/static"
-import { AuthStorage } from "@mariozechner/pi-coding-agent"
+import { AuthStorage, LoginDialogComponent, OAuthSelectorComponent, initTheme } from "@mariozechner/pi-coding-agent"
+import { ProcessTerminal, TUI } from "@mariozechner/pi-tui"
 import { execSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { createInterface } from "node:readline"
@@ -26,41 +27,73 @@ function openBrowser(url: string) {
   } catch {}
 }
 
-function prompt(question: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
-  return new Promise((resolve) => rl.question(question, (ans) => { rl.close(); resolve(ans.trim()) }))
+async function loginWithPi(auth: InstanceType<typeof AuthStorage>): Promise<void> {
+  const term = new ProcessTerminal()
+  const tui = new TUI(term, false)
+  initTheme("dark", tui)
+
+  term.start()
+  tui.start()
+
+  // Step 1: provider selector — same UI as pi
+  const providerId = await new Promise<string>((resolve, reject) => {
+    const selector = new OAuthSelectorComponent("login", auth, resolve, () =>
+      reject(new Error("Login cancelled")),
+    )
+    tui.addChild(selector)
+    tui.setFocus(selector)
+    tui.requestRender()
+  })
+
+  // Step 2: login dialog for the chosen provider
+  await new Promise<void>((resolve, reject) => {
+    const dialog = new LoginDialogComponent(tui, providerId, (success: unknown) => {
+      success !== false ? resolve() : reject(new Error("Login cancelled"))
+    })
+
+    tui.addChild(dialog)
+    tui.setFocus(dialog)
+    tui.requestRender()
+
+    auth
+      .login(providerId, {
+        onAuth: (url: string) => {
+          openBrowser(url)
+          dialog.showAuth(url, "Your browser should open automatically. Waiting for login…")
+        },
+        onProgress: (msg: string) => dialog.showProgress(msg),
+        onPrompt: (msg: string) => dialog.showWaiting(msg),
+        onManualCodeInput: () =>
+          new Promise<string>((res) => {
+            dialog.showManualInput("Paste the code from your browser:")
+            const rl = createInterface({ input: process.stdin, output: process.stdout })
+            rl.question("", (code) => { rl.close(); res(code.trim()) })
+          }),
+      })
+      .catch(reject)
+  })
+
+  tui.stop()
+  term.stop()
 }
 
 async function resolveApiKey(): Promise<string> {
-  // 1. env var
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY
 
-  // 2. pi credential store
   const auth = AuthStorage.create()
   await auth.reload()
+
   const stored = await auth.getApiKey("anthropic")
   if (stored) return stored
 
-  // 3. inline OAuth — same flow pi uses
-  console.log("\nNo API key found. Logging in with Anthropic (Claude Pro/Max)...\n")
-
-  await auth.login("anthropic", {
-    onAuth: (url: string) => {
-      console.log(`Opening browser: ${url}\n`)
-      openBrowser(url)
-    },
-    onPrompt: (msg: string) => process.stdout.write(msg),
-    onProgress: (msg: string) => process.stdout.write(msg),
-    onManualCodeInput: () => prompt("Paste the code from your browser: "),
-  })
+  console.log("\nNo API key found — launching login…\n")
+  await loginWithPi(auth)
 
   const key = await auth.getApiKey("anthropic")
   if (!key) {
-    console.error("\nLogin failed. Try setting ANTHROPIC_API_KEY manually.\n")
+    console.error("\nLogin failed. Set ANTHROPIC_API_KEY manually.\n")
     process.exit(1)
   }
-
-  console.log("\nLogged in. Credentials saved to ~/.pi/agent/\n")
   return key
 }
 
