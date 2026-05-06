@@ -226,7 +226,13 @@ The manifest does not need a security model. The deployment context — chosen b
 
 ---
 
-## jiti Loader — Copy Pi's Pattern
+## jiti Loader — Pi's Proven Pattern
+
+Pi hot-reloads its own extensions via `/reload`: `resourceLoader.reload()` re-discovers all extension files and re-runs `loadExtensions`. `moduleCache: false` on jiti means every call to `jiti.import(path)` returns a fresh module — no manual cache invalidation, no process restart.
+
+We copy this exactly. The difference is the trigger: pi uses an explicit `/reload` command typed by the human; the workspace uses a file watcher on `.boring/plugins/`. Same jiti mechanism underneath, different initiator. The agent just writes files.
+
+
 
 ```ts
 import { createJiti } from "@mariozechner/jiti"
