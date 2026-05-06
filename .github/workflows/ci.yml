@@ -149,7 +149,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install system dependencies
-        run: sudo apt-get install -y ripgrep bubblewrap
+        run: sudo apt-get install -y ripgrep
 
       - name: Build UI package
         run: pnpm --filter @boring/ui build
