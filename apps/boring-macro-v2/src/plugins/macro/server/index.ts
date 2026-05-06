@@ -12,7 +12,7 @@ import {
 import type { FastifyPluginAsync } from "fastify"
 import { loadMacroConfig, type MacroConfig } from "./config"
 import { registerMacroRoutes } from "./routes/macro"
-import { createMacroTools } from "./tools/macroTools"
+import { createMacroTools } from "../agent/tools/macroTools"
 import { MACRO_OPEN_SERIES_SURFACE_KIND } from "../shared/constants"
 
 interface MacroProvisioningContribution {
@@ -36,16 +36,16 @@ export const macroProvisioning: MacroProvisioningContribution = {
   templateDirs: [
     {
       id: "macro-template",
-      path: new URL("./workspace-template", import.meta.url),
+      path: new URL("../agent/workspace-template", import.meta.url),
     },
   ],
   python: [
     {
       id: "macro-sdk",
-      projectFile: new URL("./sdk/pyproject.toml", import.meta.url),
+      projectFile: new URL("../agent/sdk/pyproject.toml", import.meta.url),
       extraLibs: [],
       env: {
-        BORING_MACRO_BUILTINS_ROOT: new URL("./transforms/builtins", import.meta.url),
+        BORING_MACRO_BUILTINS_ROOT: new URL("../agent/transforms/builtins", import.meta.url),
       },
     },
   ],

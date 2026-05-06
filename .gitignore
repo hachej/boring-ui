@@ -15,12 +15,15 @@ dist/
 # Playwright output
 apps/boring-macro-v2/workspace/
 apps/boring-macro-v2/.eval-venv/
-apps/boring-macro-v2/src/plugins/macro/server/sdk/**/__pycache__/
-apps/boring-macro-v2/src/plugins/macro/server/sdk/**/*.py[cod]
-apps/boring-macro-v2/src/plugins/macro/server/sdk/*.egg-info/
-apps/boring-macro-v2/src/plugins/macro/server/sdk/build/
-apps/boring-macro-v2/src/plugins/macro/server/transforms/**/__pycache__/
-apps/boring-macro-v2/src/plugins/macro/server/transforms/**/*.py[cod]
+apps/boring-macro-v2/src/plugins/macro/agent/sdk/**/__pycache__/
+apps/boring-macro-v2/src/plugins/macro/agent/sdk/**/*.py[cod]
+apps/boring-macro-v2/src/plugins/macro/agent/sdk/*.egg-info/
+apps/boring-macro-v2/src/plugins/macro/agent/sdk/build/
+apps/boring-macro-v2/src/plugins/macro/agent/transforms/**/__pycache__/
+apps/boring-macro-v2/src/plugins/macro/agent/transforms/**/*.py[cod]
+# Stale untracked root-level duplicates (generated artifacts, not in git)
+apps/boring-macro-v2/src/plugins/macro/sdk/
+apps/boring-macro-v2/src/plugins/macro/transforms/
 packages/agent/fixtures/provisioning/test-sdk/**/__pycache__/
 packages/agent/fixtures/provisioning/test-sdk/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/*.egg-info/

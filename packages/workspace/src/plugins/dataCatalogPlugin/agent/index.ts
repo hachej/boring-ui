@@ -1,12 +1,7 @@
 import type { ExplorerAdapter, ExplorerRow, SearchResult } from "../../../shared/types/explorer"
-import {
-  defineServerPlugin,
-  type WorkspaceServerPlugin,
-} from "../../../server/plugins/bootstrapServer"
 import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
 import {
   DATA_CATALOG_DEFAULT_TOOL_NAME,
-  DATA_CATALOG_PLUGIN_ID,
   DATA_CATALOG_ROW_SURFACE_KIND,
 } from "../shared/constants"
 
@@ -25,7 +20,7 @@ export interface DataCatalogSkillOptions {
   guidance?: string
 }
 
-export interface DataCatalogServerPluginOptions
+export interface DataCatalogAgentPluginOptions
   extends DataCatalogAgentToolOptions,
     DataCatalogSkillOptions {
   id?: string
@@ -156,19 +151,3 @@ export function createDataCatalogSkillPrompt(
     .join("\n")
 }
 
-export function createDataCatalogServerPlugin(
-  options: DataCatalogServerPluginOptions,
-): WorkspaceServerPlugin & { agentTools: AgentTool[]; systemPrompt: string } {
-  const tool = createDataCatalogAgentTool(options)
-  return defineServerPlugin({
-    id: options.id ?? DATA_CATALOG_PLUGIN_ID,
-    label: options.label ?? "Data Catalog",
-    agentTools: [tool],
-    systemPrompt: createDataCatalogSkillPrompt({
-      label: options.label,
-      toolName: tool.name,
-      surfaceKind: options.surfaceKind,
-      guidance: options.guidance,
-    }),
-  })
-}

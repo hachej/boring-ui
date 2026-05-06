@@ -25,8 +25,16 @@ then delete the files the plugin does not need.
     data/                # plugin-owned client data API/hooks/cache
   server/
     index.ts             # server plugin factory and public server exports
-    tools.ts             # agent tools, if needed
-    routes.ts            # server routes, if needed
+    routes.ts            # trusted server routes, if needed
+    services/            # Node.js services (DB clients, etc.), if needed
+    config.ts            # server-side config loading, if needed
+  agent/
+    tools/               # AgentTool[] implementations (pi/sandbox runtime)
+    sdk/                 # Python SDK installed into agent sandbox, if needed
+    transforms/          # Executable/user-editable transforms, if needed
+    workspace-template/  # Workspace scaffold copied at provision time, if needed
+    skills/              # Agent skill .md files, if needed
+    prompts/             # Pi prompt templates, if needed
   shared/
     constants.ts         # plugin id, catalog ids, surface kinds
     types.ts             # platform-neutral shared types, if needed
@@ -34,6 +42,19 @@ then delete the files the plugin does not need.
 
 Use only the files a plugin actually needs. Large component families may live
 in subfolders such as `file-tree/`, `code-editor/`, or `empty-file-panel/`.
+
+### Layer Boundaries
+
+The four layers have strict ownership rules:
+
+- **`front/`** — React only. Never imports `server/` or `agent/`.
+- **`server/`** — Trusted Node.js host. Never imports `front/`. Imports tool
+  factories from `../agent/tools/` and references other agent assets via
+  `import.meta.url` URLs passed to `provisioning`.
+- **`agent/`** — Pi/sandbox runtime assets. Keep free of Node.js server
+  infrastructure. Tools may import from `../../server/` only for shared type
+  definitions (e.g. config types). Prefer moving shared types to `shared/`.
+- **`shared/`** — Platform-neutral. Never imports `front/`, `server/`, or `agent/`.
 
 ## Ownership Rules
 
@@ -46,14 +67,19 @@ in subfolders such as `file-tree/`, `code-editor/`, or `empty-file-panel/`.
 - Domain event names live in `shared/events.ts` when both layers need the
   contract; event names must be keyed by plugin id.
 - Plugin data clients/hooks live in `front/data/`, not package `front/data`.
-- Server prompts/tools/routes/provisioning live under `server/`, not mixed
+- Server routes, DB services, and config live under `server/`, not mixed
   with client code.
+- Agent tools, Python SDKs, transforms, workspace seeds, and skills live under
+  `agent/`, not under `server/`. The `server/` layer is the integration point:
+  it imports tool factories from `../agent/tools/` and passes `agent/` asset
+  URLs to `provisioning`.
 - Workspace core may host registries, providers, event transport, and bridge
   dispatch only. It must not hardcode plugin panel ids or plugin domain rules.
 - Catalog selection and plugin-owned routing should prefer `openSurface`.
   `openPanel` remains available for explicit app-level panel opens.
-- Executable agent tools should be server plugin contributions. The legacy
-  front `agentTools` field remains for migration only.
+- Executable agent tools should be `agent/` plugin contributions registered
+  via `server/index.ts`. The legacy front `agentTools` field remains for
+  migration only.
 
 ## Composed Plugins
 
@@ -154,8 +180,10 @@ The scan rejects:
 - `front`/`server` imports from production `workspace/src/shared/plugins`.
 - Production plugin `front/`, `server/`, and `shared/` layers importing across
   the wrong layer boundary.
+- `server/sdk`, `server/transforms`, `server/workspace-template` paths inside
+  plugin directories (these are agent assets and must live under `agent/`).
 - TypeScript source files directly under a plugin root instead of
-  `front/`, `server/`, or `shared/`.
+  `front/`, `server/`, `agent/`, or `shared/`.
 - Plugin-domain imports from production `workspace/src/front/chrome`, `events`,
   and `hooks`.
 - Legacy plugin file names such as `catalog.ts`, `surfaceTargets.ts`,

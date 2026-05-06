@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { AgentTool, ToolResult } from '@boring/workspace'
-import { createMacroTools } from '../tools/macroTools'
+import { createMacroTools } from '../../agent/tools/macroTools'
 
 function findTool(tools: AgentTool[], name: string): AgentTool {
   const tool = tools.find((t) => t.name === name)

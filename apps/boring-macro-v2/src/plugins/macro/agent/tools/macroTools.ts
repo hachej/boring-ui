@@ -1,6 +1,6 @@
 import type { AgentTool, ToolResult } from '@boring/workspace'
-import type { ClickHouseConfig } from '../config'
-import { DataService } from '../services/clickhouse'
+import type { ClickHouseConfig } from '../../server/config'
+import { DataService } from '../../server/services/clickhouse'
 
 function textResult(text: string): ToolResult {
   return { content: [{ type: 'text', text }] }
