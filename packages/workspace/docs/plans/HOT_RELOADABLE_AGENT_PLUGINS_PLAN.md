@@ -38,6 +38,45 @@ The workspace has two plugin tiers that coexist and share the same registry infr
 
 Boring-ui plugins ARE pi extensions. The factory is a valid pi `ExtensionFactory` — the same file loads in pi's loader unchanged. Boring-ui extends the API object with optional UI-registration methods that pi simply doesn't provide.
 
+### boring-pi-extension.ts — boring-ui as a pi extension
+
+Boring-ui ships a first-class pi extension: `packages/agent/src/server/boring-pi-extension.ts`. Pi loads it via `extensionFactories[]` in `DefaultResourceLoader` (inline factory, closed over Fastify-side objects). It can also be loaded as a physical file by any standalone pi user who adds it to their `.pi/settings.json`.
+
+```ts
+// boring-pi-extension.ts — loaded by pi on startup and on every /reload
+export default function boringUiExtension(api: ExtensionAPI): void {
+  // ── Agent tools (registered in pi's tool registry) ───────────────────
+  api.registerTool(defineTool({ name: "exec_ui", ... }))   // open panels, run commands
+  api.registerTool(defineTool({ name: "open_panel", ... }))
+
+  // ── /boring.reload slash command ─────────────────────────────────────
+  // Reloads only boring-ui agent plugins — faster than a full /reload.
+  api.registerCommand("boring.reload", {
+    description: "Reload boring-ui agent plugins from .boring/plugins/",
+    handler: async (_args, _ctx) => {
+      await fetch("http://localhost:${port}/api/agent-plugins/reload", { method: "POST" })
+    },
+  })
+
+  // ── Plugin reload hook ────────────────────────────────────────────────
+  // Fires on every /reload (full reload) and on first startup.
+  api.on("session_start", async (event) => {
+    if (event.reason !== "reload") return
+    await fetch("http://localhost:${port}/api/agent-plugins/reload", { method: "POST" })
+  })
+}
+```
+
+**Two reload granularities:**
+- `/reload` — pi's full reload: re-jiti all pi extensions + triggers boring-ui plugin scan via `session_start` hook
+- `/boring.reload` — boring-ui only: scans `.boring/plugins/` without re-running pi's full reload cycle
+
+**Inline vs file-based wiring:**
+- `extensionFactories: [createBoringPiExtension({ port, registry, emit })]` — used by boring-ui server (closes over Fastify objects directly, skips HTTP round-trip)
+- File path in `.pi/settings.json` — used by standalone pi users; communicates via `POST /api/agent-plugins/reload`
+
+**No file watcher.** The commit signal is `/reload` — same as pi. The agent writes plugin files, then types `/reload` (or `/boring.reload`). No `package.json` write triggers anything automatically.
+
 ### Discovery and loading
 
 Pi uses `@mariozechner/jiti` to load extensions — TypeScript and TSX are handled natively without a compilation step. Pi reads `package.json["pi"]["extensions"]` to find entry points; those paths are passed directly to jiti regardless of file extension. The directory scanner (for extensionless index files) only picks up `.ts` / `.js`, but explicitly declared paths in `extensions[]` bypass that filter — so `"./front.tsx"` works.
@@ -270,16 +309,24 @@ In V2, the factory never runs in the browser, so manifest arrays are the sole so
 
 ### Agent workflow
 
-`package.json` is the commit signal. The agent writes code files first, then writes `package.json` last to trigger reload.
+`/reload` (or `/boring.reload`) is the commit signal. The agent writes all files first, then triggers reload explicitly — same philosophy as pi.
 
 ```
 1. write front.tsx             (no reload)
 2. write plugin.server.ts      (no reload)
-3. if new npm deps needed:
+3. write package.json          (no reload — plain metadata now)
+4. if new npm deps needed:
      exec `pnpm install` in .boring/plugins/<name>/  (installs to plugin-local node_modules)
      OR: pnpm add <pkg> at workspace root (simpler — always Vite-resolvable)
-4. write package.json          ← reload fires here
+5. /boring.reload              ← reload fires here (boring-ui plugins only)
+   OR /reload                  ← also reloads all pi extensions
 ```
+
+**Why explicit reload is better than file watching:**
+- No partial-write race conditions — all files are fully on disk before reload fires
+- No per-plugin promise locks or 80 ms retry hacks
+- No chokidar/fs.watch infrastructure
+- Reload always fires between agent turns — never mid-message
 
 **V1 dependency resolution:** Vite resolves bare imports from the workspace `node_modules`. For plugin-local dependencies, the workspace `vite.config.ts` must include `.boring/plugins` in `server.fs.allow`. The simplest approach for V1 is to install plugin deps at the workspace root — they're always resolvable without Vite config changes. Plugin-local `node_modules` require an additional `resolve.modules` config entry.
 
@@ -290,7 +337,8 @@ In V2, the factory never runs in the browser, so manifest arrays are the sole so
 | Decision | Choice | Rationale |
 |---|---|---|
 | Manifest file | `package.json` only | Mirrors pi's `"pi": { "extensions": [...] }` pattern exactly. One file, no `boring.plugin.json`. |
-| Reload trigger | `package.json` write | Commit signal pattern — all code files are on disk before reload fires. Mirrors pi's explicit `/reload` philosophy. |
+| Reload trigger | `/reload` or `/boring.reload` | Same as pi — explicit user/agent gesture. No file watcher, no race conditions, no partial-write guards. `package.json` is plain metadata. |
+| Boring-ui as pi extension | `boring-pi-extension.ts` | Boring-ui's coordinator ships as a real pi extension loaded via `extensionFactories[]`. Hooks into pi's `session_start { reason: "reload" }` event. Also distributable as a standalone file for pi users. |
 | Plugin API naming | Flat `register*` throughout | Consistent with pi's `registerTool` / `registerCommand`. No namespace objects. |
 | Boring-ui extras | Optional methods | `registerPanel?`, `registerLeftTab?`, etc. are absent in pi — optional chaining makes the same factory safe in both runtimes. |
 | `registerTool` shape | Pi's verbatim `ToolDefinition` (TypeBox) | TypeBox parameters, full execute signature. Plugin authors use pi's `defineTool()` helper. Identical surface across both runtimes. |
@@ -379,11 +427,12 @@ V1 is **dev mode only**. Use V2 for any deployed environment.
 ### Load flow
 
 ```
-Agent writes .boring/plugins/csv-viewer/package.json
+Agent writes files, then types /boring.reload (or /reload)
   │
-  ▼ workspace.watch() fires
+  ▼ POST /api/agent-plugins/reload  (from boring-pi-extension.ts)
+  │  OR session_start { reason: "reload" } hook fires (on full /reload)
   │
-  ├─ (server — stage → commit)
+  ├─ (server — scan .boring/plugins/ → stage → commit per plugin)
   │   Read + validate package.json["boring"]           → fail: .error file + SSE error
   │   revision[pluginId]++
   │   jiti.import(boring.server) if present            → capture server tools (front.tsx never loaded server-side)
@@ -408,7 +457,7 @@ Agent writes .boring/plugins/csv-viewer/package.json
         panel key={`${panelId}:${revision}`} forces React remount on hot-reload
 ```
 
-Unload: `package.json` deleted → server runs disposers → SSE `boring.plugin.unload` → browser pops resolver stack, removes from stores → open panels show "Plugin not loaded" placeholder.
+Unload: agent deletes plugin directory → `/boring.reload` → server sees plugin missing → runs disposers → SSE `boring.plugin.unload` → browser pops resolver stack, removes from stores → open panels show "Plugin not loaded" placeholder.
 
 ### Contribution surface (V1)
 
@@ -453,9 +502,9 @@ V2 works in any environment (no Vite dev server required).
 ### Load flow
 
 ```
-Agent writes .boring/plugins/csv-viewer/package.json
+Agent writes files, then types /boring.reload (or /reload)
   │
-  ▼ workspace.watch() fires
+  ▼ POST /api/agent-plugins/reload
   │
   ├─ (server — identical to V1)
   │   Validate → stage → commit; SSE boring.plugin.load { boring, revision }
@@ -633,7 +682,7 @@ V1 and V2 share all infrastructure except the panel render strategy.
 
 | Layer | V1 | V2 |
 |---|---|---|
-| `package.json` watcher | ✅ | ✅ |
+| `boring-pi-extension.ts` reload hook | ✅ | ✅ |
 | Server: jiti loads `plugin.server.ts` | ✅ | ✅ via `ServerPluginLoader` |
 | SSE `boring.plugin.load` dispatch | ✅ | ✅ |
 | Browser SSE handler | ✅ | ✅ |
@@ -834,24 +883,24 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 - [ ] Create `packages/workspace/docs/bridge.md` — postMessage bridge API, `@boring/workspace/bridge-client` usage
 - [ ] `boringSystemPrompt.ts` — embed all three docs as static strings; `BORING_DOCS_PATH` overrides path for dev
 
-### C — Fix `pluginLoader.ts` + Plugin watcher + SSE dispatch
+### C — Fix `pluginLoader.ts` + `boring-pi-extension.ts` + SSE dispatch
 
 **Fix boring-ui's pi-extension loader** (`packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`):
 - [ ] Replace `const defaultImport: ImportFn = (url) => import(url)` with `createJiti(import.meta.url, { moduleCache: false })`
 - [ ] Widen `VALID_EXTENSIONS` from `{".js", ".mjs"}` to `{".ts", ".tsx", ".js", ".mjs"}`
 - [ ] Keep `extractTools` / `validateTool` / `PluginLoadResult` shapes unchanged — callers unaffected
 
-**Plugin watcher** (`packages/workspace/src/server/plugins/agentPluginWatcher.ts`):
+**`boring-pi-extension.ts`** (`packages/agent/src/server/boring-pi-extension.ts`):
 
-The watcher subscribes to the existing workspace `WorkspaceWatcher` (already provided by `createNodeWorkspace` in `packages/agent`). To emit SSE plugin events it receives a `PluginEventEmitter` — a thin interface satisfied by the existing `FsEventBroadcaster` with a new `emitPlugin` method. The agent wires both together.
+This is boring-ui's first-class pi extension. It is wired via `extensionFactories[]` in `DefaultResourceLoader` (inline factory closed over Fastify objects) and is also usable as a standalone file by pi users. No file watcher — reload is triggered explicitly by the agent.
 
-- [ ] `createAgentPluginWatcher(watcher: WorkspaceWatcher, emit: PluginEventEmitter, loader: ServerPluginLoader): Disposable`
-- [ ] Filter events: only `.boring/plugins/*/package.json` writes trigger reload; all other paths ignored
-- [ ] Extract `pluginId` from the directory name segment between `plugins/` and `/package.json`
-- [ ] Per-pluginId promise lock — serialize concurrent reloads (no debounce; `package.json` write IS the commit signal)
-- [ ] On `write`: `readBoringPackage(dir)` → validate → jiti stage → commit → `emit.pluginLoad({ boring, version, revision, eventId: randomUUID() })`; on any failure write `.boring/plugins/<id>/.error` + `emit.pluginError`. If `JSON.parse` fails, retry once after 80 ms before classifying as error (guards against partial writes on slow filesystems).
-- [ ] On `unlink`: run disposers, remove from registry → `emit.pluginUnload({ pluginId, revision })`
-- [ ] On success: delete `.boring/plugins/<id>/.error` if present
+- [ ] `createBoringPiExtension(opts: { pluginsDir, registry: ServerPluginRegistry, emit: PluginEventEmitter }): ExtensionFactory`
+- [ ] `api.registerTool(...)` — register `exec_ui`, `open_panel`, and other boring-ui agent tools (moved here from harness static `customTools`)
+- [ ] `api.registerCommand("boring.reload", { handler: () => scanAndReloadBoringPlugins(opts) })` — reloads boring-ui plugins only, faster than a full `/reload`
+- [ ] `api.on("session_start", async (event) => { if (event.reason === "reload") await scanAndReloadBoringPlugins(opts) })` — hooks into pi's full `/reload` cycle
+- [ ] `scanAndReloadBoringPlugins(opts)`: scan `.boring/plugins/` for `package.json` files → for each: `readBoringPackage` → validate → jiti stage → commit → emit SSE; detect removed plugins → disposers → `emit.pluginUnload`; delete `.error` on success
+- [ ] Wire into `createHarness.ts`: add `extensionFactories: [createBoringPiExtension({ pluginsDir, registry, emit })]` to `DefaultResourceLoader` options
+- [ ] `POST /api/agent-plugins/reload` route — for standalone pi users (file-based extension) and for `/boring.reload` when boring-ui runs as a separate server: calls `scanAndReloadBoringPlugins` directly; 200 on success, 500 with error body on failure
 
 **SSE multiplexing** (`packages/agent/src/server/http/fsEvents.ts`):
 - [ ] Add `emitPlugin(event: BoringPluginEvent): void` to `FsEventBroadcaster` — writes SSE with `event: "boring.plugin.load" | "boring.plugin.unload" | "boring.plugin.error"` alongside existing `event: "change"` entries
@@ -867,9 +916,8 @@ All files in `packages/workspace/src/server/plugins/` unless noted. API routes i
 - [ ] `agentPluginRoutes.ts` (in agent routes) — two endpoints:
   - `GET /api/agent-plugins` → `Array<{ boring: BoringPackageField, version, revision }>` from `serverPluginRegistry.activePlugins()`; browser calls this on connect/reconnect
   - `GET /api/agent-plugins/:id/catalog/search?q=` → delegates to registered `CatalogSearchHandler`; 404 if none registered; in-flight requests finish before handler removal on reload
-- [ ] Wire `createAgentPluginWatcher` into `createAgentApp` — passes workspace watcher + broadcaster + jiti loader
 - [ ] `pluginRegistry.register({ id })` called for each outside plugin id at startup (before SSE replay)
-- [ ] Update `createPiCodingAgentHarness` to accept `getExtraTools: () => ToolDefinition[]` (live getter); each `AgentSession` calls it at creation — plugin tools registered after startup are visible to new sessions without restart
+- [ ] `getExtraTools()` getter: because `boring-pi-extension.ts` registers agent tools via pi's own `api.registerTool()`, plugin tools are visible to the session after the next `/reload` — no separate getter mechanism needed for the pi session itself. Server-side plugin tools (from `plugin.server.ts`) still use the `getExtraTools()` getter on `createPiCodingAgentHarness` for new sessions.
 - [ ] Catalog handler snapshot pattern: `agentPluginRoutes.ts` captures handler reference at request entry (`const handler = registry.getCatalogHandler(id)`) so in-flight searches complete against the captured reference even if the plugin reloads mid-request
 - [ ] Running-session tool injection: `getExtraTools()` getter solves new sessions; investigate whether running sessions can pick up new plugin tools without full restart. Check if `piAgent.ctx.reload()` or equivalent triggers tool list refresh. If not, document the limitation: "tools added by a plugin after a session starts require starting a new session."
 
@@ -971,3 +1019,4 @@ This PR ships the skeleton: the route exists and the iframe renders, but the pos
 - Worker-thread `ServerPluginLoader` — deferred; jiti sufficient today
 - postMessage bridge wiring (TODO H) and provisioning (TODO I) — follow-up PRs after G skeleton ships
 - `registerShortcut` implementation — accepted by `BoringExtensionAPI` but no-op in V1 (no keybinding registry yet)
+- File-watching as an alternative reload trigger — deliberately excluded; explicit `/reload` is simpler and race-free
