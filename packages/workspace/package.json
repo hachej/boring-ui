@@ -43,6 +43,10 @@
       "types": "./dist/events.d.ts",
       "import": "./dist/events.js"
     },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
     "./globals.css": "./src/globals.css"
   },
   "sideEffects": [
