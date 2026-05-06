@@ -26,7 +26,7 @@ import type {
   GroupConfig,
   SerializedLayout,
 } from "./types"
-import { LoadingState } from "@hachej/boring-ui"
+import { LoadingState } from "@hachej/boring-ui-kit"
 import { ShadcnTab } from "./ShadcnTab"
 
 const PERSIST_DEBOUNCE_MS = 300

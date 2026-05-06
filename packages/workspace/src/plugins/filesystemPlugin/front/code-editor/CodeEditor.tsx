@@ -25,7 +25,7 @@ import {
   indentOnInput,
 } from "@codemirror/language"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
-import { Button } from "@hachej/boring-ui"
+import { Button } from "@hachej/boring-ui-kit"
 import { createShadcnTheme } from "../../../../front/theme/codemirror-theme"
 import { cn } from "../../../../front/lib/utils"
 

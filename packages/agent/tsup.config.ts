@@ -11,7 +11,7 @@ export default defineConfig({
     "eval/index": "src/eval/index.ts",
   },
   format: ["esm"],
-  dts: { resolve: ['@hachej/boring-ui'] },
+  dts: { resolve: ['@hachej/boring-ui-kit] },
   splitting: true,
   clean: true,
   outDir: "dist",

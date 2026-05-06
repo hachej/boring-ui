@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Disclosure, DisclosureContent, DisclosureTrigger, EmptyState, FloatingPanel, FloatingPanelBody, FloatingPanelHeader, IconButton } from "@hachej/boring-ui"
+import { Disclosure, DisclosureContent, DisclosureTrigger, EmptyState, FloatingPanel, FloatingPanelBody, FloatingPanelHeader, IconButton } from "@hachej/boring-ui-kit"
 import { useActivePanels } from "./useActivePanels"
 import { useCommands } from "./useCommands"
 import { useCatalogs } from "./useCatalogs"

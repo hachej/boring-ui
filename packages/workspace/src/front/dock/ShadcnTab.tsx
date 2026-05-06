@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import type { IDockviewPanelHeaderProps } from "dockview-react"
 import { X, Loader2 } from "lucide-react"
 import { getFileIcon } from "../registry/getFileIcon"
-import { IconButton } from "@hachej/boring-ui"
+import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { useEvent, workspaceEvents } from "../events"
 

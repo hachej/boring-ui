@@ -12,7 +12,7 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@hachej/boring-ui"
+} from "@hachej/boring-ui-kit"
 import {
   useResponsiveSidebarCollapse,
   useViewportBreakpoint,

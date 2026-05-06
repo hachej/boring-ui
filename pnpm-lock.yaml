@@ -102,7 +102,7 @@ importers:
       '@hachej/boring-core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@hachej/boring-ui':
+      '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
       '@hachej/boring-workspace':
@@ -267,7 +267,7 @@ importers:
       '@ai-sdk/react':
         specifier: ^3.0.170
         version: 3.0.170(react@19.2.5)(zod@3.25.76)
-      '@hachej/boring-ui':
+      '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
       '@mariozechner/pi-coding-agent':
@@ -470,7 +470,7 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
-      '@hachej/boring-ui':
+      '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
       '@hachej/boring-workspace':
@@ -706,7 +706,7 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
-      '@hachej/boring-ui':
+      '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
       '@lezer/highlight':

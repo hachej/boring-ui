@@ -18,7 +18,7 @@ import {
   Input,
   Label,
   useToast,
-} from '@hachej/boring-ui'
+} from '@hachej/boring-ui-kit
 import { Check, ChevronsUpDown, LayoutGrid, Plus, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'

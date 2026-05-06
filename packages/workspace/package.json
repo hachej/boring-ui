@@ -57,8 +57,8 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "pnpm --filter @hachej/boring-ui build && tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
-    "typecheck": "pnpm --filter @hachej/boring-ui build && pnpm --filter @hachej/boring-agent build && tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
+    "build": "pnpm --filter @hachej/boring-ui-kitbuild && tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
+    "typecheck": "pnpm --filter @hachej/boring-ui-kitbuild && pnpm --filter @hachej/boring-agent build && tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",
     "lint:plugin-invariants": "node ./scripts/check-plugin-invariants.mjs",
@@ -88,7 +88,7 @@
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
-    "@hachej/boring-ui": "workspace:*",
+    "@hachej/boring-ui-kit": "workspace:*",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",

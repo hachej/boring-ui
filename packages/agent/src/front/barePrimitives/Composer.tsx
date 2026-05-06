@@ -11,7 +11,7 @@ import {
   type KeyboardEvent,
   type TextareaHTMLAttributes,
 } from 'react'
-import { Textarea } from '@hachej/boring-ui'
+import { Textarea } from '@hachej/boring-ui-kit
 import { cn } from '../lib'
 
 export interface ComposerPrimitiveProps

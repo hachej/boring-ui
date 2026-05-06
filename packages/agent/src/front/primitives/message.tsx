@@ -1,12 +1,12 @@
 "use client";
 
-import { Button, ButtonGroup, ButtonGroupText } from "@hachej/boring-ui";
+import { Button, ButtonGroup, ButtonGroupText } from "@hachej/boring-ui-kit";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@hachej/boring-ui";
+} from "@hachej/boring-ui-kit";
 import { cn } from "@/front/lib";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";

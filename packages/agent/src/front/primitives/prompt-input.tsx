@@ -8,13 +8,13 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from "@hachej/boring-ui";
+} from "@hachej/boring-ui-kit";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@hachej/boring-ui";
+} from "@hachej/boring-ui-kit";
 import {
   HoverCard,
   HoverCardContent,
@@ -23,20 +23,20 @@ import {
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
-} from "@hachej/boring-ui";
+} from "@hachej/boring-ui-kit";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@hachej/boring-ui";
-import { Input, Spinner } from "@hachej/boring-ui";
+} from "@hachej/boring-ui-kit";
+import { Input, Spinner } from "@hachej/boring-ui-kit";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@hachej/boring-ui";
+} from "@hachej/boring-ui-kit";
 import { cn } from "@/front/lib";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {

@@ -73,7 +73,7 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-} from '@hachej/boring-ui'
+} from '@hachej/boring-ui-kit
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'

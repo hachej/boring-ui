@@ -1,4 +1,4 @@
-import { Field, FieldLabel, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@hachej/boring-ui'
+import { Field, FieldLabel, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@hachej/boring-ui-kit
 
 export const MODEL_IDS = ['sonnet', 'haiku', 'opus'] as const
 
