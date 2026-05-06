@@ -158,7 +158,6 @@ interface BoringExtensionAPI {
   registerPanelCommand?(reg: BoringPluginCommandRegistration): void  // UI palette → opens panel
   registerLeftTab?(reg: BoringPluginLeftTabRegistration): void
   registerSurfaceResolver?(reg: BoringPluginSurfaceResolverRegistration): void
-  registerCatalog?(reg: BoringPluginCatalogRegistration): void
 }
 ```
 
@@ -241,7 +240,6 @@ export default function serverFactory(api: BoringServerPluginAPI): void | Promis
     parameters: Type.Object({ path: Type.String() }),
     execute: async (_id, { path }) => ({ content: [{ type: "text", text: "..." }] }),
   }))
-  api.registerCatalogHandler(async (q) => [...])
   api.registerDisposer(() => { /* cleanup sockets/timers on unload */ })
 }
 ```
@@ -277,8 +275,7 @@ Every inside plugin is an npm package. `package.json` is the **single manifest a
     "commands":        [{ "id": "open-csv", "title": "Open CSV Viewer", "panelId": "csv-viewer-panel" }],
     "leftTabs":        [{ "id": "csv-tab",  "title": "CSV", "panelId": "csv-viewer-panel" }],
     "surfaceResolvers":[{ "id": "csv-open", "surfaceKind": "csv.open", "panelId": "csv-viewer-panel" }],
-    "catalogs":        [{ "id": "csv-catalog" }]
-  },
+    },
   "pi": { "extensions": ["./front.tsx"] },
   "dependencies": { "papaparse": "^5.0.0" }
 }
@@ -304,7 +301,6 @@ interface BoringPackageField {
   commands?:         Array<{ id: string; title: string; panelId?: string; description?: string }>
   leftTabs?:         Array<{ id: string; title: string; panelId: string; icon?: string }>
   surfaceResolvers?: Array<{ id: string; surfaceKind: string; panelId: string }>
-  catalogs?:         Array<{ id: string; title?: string }>
 }
 ```
 
@@ -386,7 +382,7 @@ Both server and browser use a **stage → validate → commit / rollback** patte
 
 ```
 1. Read + validate package.json["boring"]  →  fail: write .error, SSE error, return (no state change)
-2. (boring.server only) jiti.import(boring.server) — capture registerTool + registerCatalogHandler into temp registry
+2. (boring.server only) jiti.import(boring.server) — capture registerTool into temp registry
    (if boring.server absent — no server-side loading)
 3. Stage fails (jiti throws)  →  write .error, SSE error, return (old tools untouched)
 4. Commit: atomically swap temp registry → live registry; run old disposers first
@@ -489,7 +485,6 @@ Inside plugins run in the same process — full surface available.
 | `panelCommand` | ✅ |
 | `leftTab` | ✅ |
 | `surfaceResolver` | ✅ |
-| `catalog` | ✅ |
 | `agentTool` | ✅ front + server |
 | `binding` | ✅ runtime React component |
 | `provider` | ⚠️ possible but not recommended |
@@ -650,23 +645,17 @@ export function onInit(cb: (data: { theme: Record<string, string>; derivedFrom?:
 }
 ```
 
-### `ServerPluginLoader` interface
-
-The interface exists to allow swapping jiti (default) for a worker-thread loader in future multi-tenant scenarios. Today only `createJitiLoader()` is implemented.
+### `BoringServerPluginAPI`
 
 ```ts
-interface ServerPluginLoader {
-  load(pluginId: string, serverPath: string, api: BoringServerPluginAPI): Promise<void>
-  unload(pluginId: string): Promise<void>
-}
-
 interface BoringServerPluginAPI {
-  registerTool(tool: ToolDefinition): void           // same shape as front-side
-  registerCatalogHandler(handler: CatalogSearchHandler): void
+  registerTool(tool: ToolDefinition): void
   registerDisposer(fn: () => void | Promise<void>): void
   log(level: "info" | "warn" | "error", message: string): void
 }
 ```
+
+No `ServerPluginLoader` interface — jiti is the only loader and is used directly in `jitiPluginLoader.ts`. The worker-thread swap point is Out of Scope.
 
 ### Dependencies in the iframe
 
@@ -701,7 +690,6 @@ Provisioning seeds a shared `node_modules` for all plugins at `.boring/plugins/p
 | `panelCommand` | ✅ | manifest → host registers wrapper |
 | `leftTab` | ✅ | manifest → host registers wrapper |
 | `surfaceResolver` | ✅ | LIFO stack, same as V1 |
-| `catalog` | ✅ | server-side via `/api/agent-plugins/:id/catalog/search?q=` |
 | `agentTool` | ✅ | `plugin.server.ts` via jiti |
 | `binding` | ❌ | requires host React tree |
 | `provider` | ❌ | wraps entire app tree |
@@ -952,26 +940,17 @@ This is boring-ui's first-class pi extension. It is wired via `extensionFactorie
 All files in `packages/workspace/src/server/plugins/` unless noted. API routes in `packages/agent/src/server/http/routes/`.
 
 - [ ] `serverPluginRegistry.ts` — `Map<pluginId, { extensionContract?, activeRevision }>`. Registers outside plugin ids at startup (collision guard). Exposes `activePlugins(): ActivePlugin[]` for the reconnect endpoint.
-- [ ] `jitiPluginLoader.ts` — implements `ServerPluginLoader` interface. Uses `createJiti(import.meta.url, { moduleCache: false })`. Stage: jiti imports entry into a temp `BoringServerPluginAPI` instance. Commit: atomically swap temp → live, run old disposers first. Unload: run disposers, clear from live map.
-- [ ] `boringServerPluginAPI.ts` — `BoringServerPluginAPI` implementation: `registerTool(ToolDefinition)`, `registerCatalogHandler(fn)`, `registerDisposer(fn)`, `log(level, msg)`.
-- [ ] `agentPluginRoutes.ts` (in agent routes) — two endpoints:
+- [ ] `jitiPluginLoader.ts` — uses `createJiti(import.meta.url, { moduleCache: false })` directly (no interface). Stage: jiti imports entry into a temp `BoringServerPluginAPI` instance. Commit: atomically swap temp → live, run old disposers first. Unload: run disposers, clear from live map.
+- [ ] `boringServerPluginAPI.ts` — `BoringServerPluginAPI` implementation: `registerTool(ToolDefinition)`, `registerDisposer(fn)`, `log(level, msg)`.
+- [ ] `agentPluginRoutes.ts` (in agent routes):
   - `GET /api/agent-plugins` → `Array<{ boring: BoringPackageField, version, revision }>` from `serverPluginRegistry.activePlugins()`; browser calls this on connect/reconnect
-  - `GET /api/agent-plugins/:id/catalog/search?q=` → delegates to registered `CatalogSearchHandler`; 404 if none registered; in-flight requests finish before handler removal on reload
+  - `GET /api/agent-plugins/:id/error` → returns `.boring/plugins/<id>/.error` content; 404 if none
 - [ ] `pluginRegistry.register({ id })` called for each outside plugin id at startup (before SSE replay)
-- [ ] `getExtraTools()` getter: because `boring-pi-extension.ts` registers agent tools via pi's own `api.registerTool()`, plugin tools are visible to the session after the next `/reload` — no separate getter mechanism needed for the pi session itself. Server-side plugin tools (from `plugin.server.ts`) still use the `getExtraTools()` getter on `createPiCodingAgentHarness` for new sessions.
-- [ ] Catalog handler snapshot pattern: `agentPluginRoutes.ts` captures handler reference at request entry (`const handler = registry.getCatalogHandler(id)`) so in-flight searches complete against the captured reference even if the plugin reloads mid-request
-- [ ] Running-session tool injection: tools registered in `boring-pi-extension.ts` via `api.registerTool()` are visible to the **same** pi session after `/reload` (pi's runner rebuilds its tool registry from the fresh extension). Server-side tools from `plugin.server.ts` use `getExtraTools()` and are visible to **new** sessions only. Document both behaviours explicitly:
-  - Front-side tools (in `boring-pi-extension.ts`): available immediately after `/reload` in the current session.
-  - Server-side tools (in `plugin.server.ts`): available in new sessions started after `/reload`. The plugin status panel surfaces this: _"Server tools from this plugin will be available in new agent sessions."_
+- [ ] Running-session tool injection: front-side tools (in `boring-pi-extension.ts`) visible immediately after `/reload` in the current session. Server-side tools (in `plugin.server.ts`) visible in new sessions only — plugin status panel surfaces this distinction.
 
-### E — TypeBox migration + `authoring.ts`: `BoringPluginAPI` → `BoringExtensionAPI`
+### E — `authoring.ts`: `BoringPluginAPI` → `BoringExtensionAPI`
 
-**TypeBox full migration** (prerequisite for `registerTool`):
-- [ ] Change `AgentTool.parameters` from `JSONSchema = Record<string, unknown>` to `TSchema` (import from `@sinclair/typebox`)
-- [ ] Update `validateTool` to accept TypeBox schemas
-- [ ] Drop `parameters: tool.parameters as any` in `tool-adapter.ts` — now type-safe end-to-end
-- [ ] Update all existing tools (filesystem, harness, dataCatalog, etc.) to use `Type.Object(...)` parameters
-- [ ] Update `AgentTool.execute` params type from `Record<string, unknown>` to `Static<TParams>`
+**TypeBox migration for existing tools is deferred** — `parameters: tool.parameters as any` in `tool-adapter.ts` stays. New plugin tools written in `boring-pi-extension.ts` use TypeBox natively via pi's `defineTool()`. Migrating all existing tools to `Type.Object(...)` is a separate follow-up.
 
 **`authoring.ts` rewrite:**
 - [ ] Replace namespaced `BoringPluginAPI` with flat `BoringExtensionAPI`
@@ -980,9 +959,9 @@ All files in `packages/workspace/src/server/plugins/` unless noted. API routes i
 - [ ] `registerCommand` — pi slash command (`/name [args]`); boring-ui registers it as a front-side slash command handler (not available in `BoringServerPluginAPI`)
 - [ ] `on("load"/"unload", handler)` wired; all other events no-op with dev-mode warning
 - [ ] Pi stub methods (no-op + `console.warn` in dev): `exec`, `sendMessage`, `sendUserMessage`, `appendEntry`, `setSessionName`, `getActiveTools`, `setActiveTools`, `setModel`, `events`, `registerFlag`, `registerProvider`, etc.
-- [ ] Boring-ui optional flat methods: `registerPanel?`, `registerPanelCommand?`, `registerLeftTab?`, `registerSurfaceResolver?`, `registerCatalog?`, `registerProvider?`, `registerSlotFill?`
+- [ ] Boring-ui optional flat methods: `registerPanel?`, `registerPanelCommand?`, `registerLeftTab?`, `registerSurfaceResolver?`, `registerProvider?`, `registerSlotFill?`
 - [ ] `export type BoringExtensionFactory = (api: BoringExtensionAPI) => void | Promise<void>`
-- [ ] Update `createCapturingAPI()` — implement `BoringExtensionAPI`; `registerTool` is a no-op (not captured); `flush()` returns `{ panels, panelCommands, leftTabs, surfaceResolvers, catalogs, slashCommands, ... }`
+- [ ] Update `createCapturingAPI()` — implement `BoringExtensionAPI`; `registerTool` is a no-op (not captured); `flush()` returns `{ panels, panelCommands, leftTabs, surfaceResolvers, slashCommands }`
 - [ ] Keep `BoringPluginAPI` as deprecated alias
 - [ ] Export `BoringExtensionAPI`, `BoringExtensionFactory`, `ToolDefinition` (re-export) from `@boring/workspace/plugin`
 
@@ -1008,7 +987,7 @@ All files in `packages/workspace/src/server/plugins/` unless noted. API routes i
   - `mode="iframe"` (V2 stub): renders placeholder `<div>V2 iframe — wired in TODO G</div>`
   - When panel absent from store: renders "Plugin not loaded" placeholder
 - [ ] Introduce `useWorkspaceEventStream` — a workspace-level shared `EventSource` to `/api/v1/fs/events` that fans out to type-specific subscribers. Both file-event and plugin-event listeners attach here. Replaces per-component `EventSource` creation in `useFileEventStream`. Eliminates duplicate connections.
-- [ ] SSE handler: subscribe via `useWorkspaceEventStream` — filter for `boring.plugin.*` event types → `registerAgentPlugin` / unregister / toast. Each `boring.plugin.load` event carries an `eventId: string` (UUID); check against a per-pluginId LRU before processing to deduplicate replay-then-live races.
+- [ ] SSE handler: subscribe via `useWorkspaceEventStream` — filter for `boring.plugin.*` event types → `registerAgentPlugin` / unregister / toast. Stale events discarded via `revision ≤ lastSeen[pluginId]` — no additional dedup needed.
 - [ ] `await factory(capturingAPI)` before calling `flush()` — async factories that register after an internal `await` are correctly captured
 - [ ] On connect/reconnect: `GET /api/agent-plugins` → for each entry where `revision > lastSeen[pluginId]`, call `registerAgentPlugin`
 
@@ -1063,3 +1042,7 @@ This PR ships the skeleton: the route exists and the iframe renders, but the pos
 - postMessage bridge wiring (TODO H) and provisioning (TODO I) — follow-up PRs after G skeleton ships
 - `registerShortcut` implementation — accepted by `BoringExtensionAPI` but no-op in V1 (no keybinding registry yet)
 - File-watching as an alternative reload trigger — deliberately excluded; explicit `/reload` is simpler and race-free
+- Catalog handlers (`registerCatalogHandler` / `catalogs?` field) — complexity not yet justified; add when a real use case emerges
+- `ServerPluginLoader` interface — jiti is the only loader; abstraction adds indirection without benefit today
+- Full TypeBox migration for existing tools — new plugin tools use TypeBox natively via `defineTool()`; legacy `parameters: tool.parameters as any` stays until a real migration PR
+- `eventId` UUID dedup — `revision ≤ lastSeen[pluginId]` is the sole dedup mechanism; LRU overhead is unnecessary
