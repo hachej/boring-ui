@@ -43,26 +43,43 @@ Boring-ui plugins ARE pi extensions. The factory is a valid pi `ExtensionFactory
 Boring-ui ships a first-class pi extension: `packages/agent/src/server/boring-pi-extension.ts`. Pi loads it via `extensionFactories[]` in `DefaultResourceLoader` (inline factory, closed over Fastify-side objects). It can also be loaded as a physical file by any standalone pi user who adds it to their `.pi/settings.json`.
 
 ```ts
-// boring-pi-extension.ts — loaded by pi on startup and on every /reload
+// boring-pi-extension.ts — two usage modes, same file
+
+// Mode A: inline factory (boring-ui server) — closes over Fastify objects, no HTTP
+export function createBoringPiExtension(opts: {
+  scanAndReload: () => Promise<void>   // direct call into Fastify-side logic
+}): ExtensionFactory {
+  return (api) => {
+    api.registerTool(defineTool({ name: "exec_ui", ... }))
+    api.registerTool(defineTool({ name: "open_panel", ... }))
+
+    api.registerCommand("boring.reload", {
+      description: "Reload boring-ui agent plugins from .boring/plugins/",
+      handler: async () => { await opts.scanAndReload() },  // direct, no fetch
+    })
+
+    api.on("session_start", async (event) => {
+      if (event.reason !== "reload") return
+      await opts.scanAndReload()                            // direct, no fetch
+    })
+  }
+}
+
+// Mode B: file-based default export (standalone pi users) — communicates via HTTP
 export default function boringUiExtension(api: ExtensionAPI): void {
-  // ── Agent tools (registered in pi's tool registry) ───────────────────
-  api.registerTool(defineTool({ name: "exec_ui", ... }))   // open panels, run commands
+  const reload = () => fetch("http://localhost:3000/api/agent-plugins/reload", { method: "POST" })
+
+  api.registerTool(defineTool({ name: "exec_ui", ... }))
   api.registerTool(defineTool({ name: "open_panel", ... }))
 
-  // ── /boring.reload slash command ─────────────────────────────────────
-  // Reloads only boring-ui agent plugins — faster than a full /reload.
   api.registerCommand("boring.reload", {
     description: "Reload boring-ui agent plugins from .boring/plugins/",
-    handler: async (_args, _ctx) => {
-      await fetch("http://localhost:${port}/api/agent-plugins/reload", { method: "POST" })
-    },
+    handler: async () => { await reload() },
   })
 
-  // ── Plugin reload hook ────────────────────────────────────────────────
-  // Fires on every /reload (full reload) and on first startup.
   api.on("session_start", async (event) => {
     if (event.reason !== "reload") return
-    await fetch("http://localhost:${port}/api/agent-plugins/reload", { method: "POST" })
+    await reload()
   })
 }
 ```
@@ -72,8 +89,8 @@ export default function boringUiExtension(api: ExtensionAPI): void {
 - `/boring.reload` — boring-ui only: scans `.boring/plugins/` without re-running pi's full reload cycle
 
 **Inline vs file-based wiring:**
-- `extensionFactories: [createBoringPiExtension({ port, registry, emit })]` — used by boring-ui server (closes over Fastify objects directly, skips HTTP round-trip)
-- File path in `.pi/settings.json` — used by standalone pi users; communicates via `POST /api/agent-plugins/reload`
+- `extensionFactories: [createBoringPiExtension({ scanAndReload })]` — used by boring-ui server; `scanAndReload` closes over `serverPluginRegistry` + `FsEventBroadcaster` directly, zero HTTP overhead
+- Default export loaded from `.pi/settings.json` — used by standalone pi users; `PORT` env var or config points to the boring-ui server
 
 **No file watcher.** The commit signal is `/reload` — same as pi. The agent writes plugin files, then types `/reload` (or `/boring.reload`). No `package.json` write triggers anything automatically.
 
@@ -120,6 +137,11 @@ interface BoringExtensionAPI {
   // ── Pi methods — boring-ui stubs (no-op, pi handles natively) ─────────
   // When pi loads front.tsx, pi registers the tool in its own registry.
   // Boring-ui ignores it from the front — tools belong in plugin.server.ts.
+  // IMPORTANT: registerTool is a no-op in the capturing API. If a plugin
+  // author calls it in front.tsx, the tool is silently dropped. To surface
+  // this error to the agent (who cannot see browser console), the capturing
+  // API logs a captured warning that is included in the SSE boring.plugin.load
+  // response and shown in the plugin status panel as a diagnostic.
   registerTool(tool: ToolDefinition): void
 
   exec(...args: unknown[]): Promise<unknown>
@@ -290,12 +312,10 @@ interface BoringPackageField {
 
 `boring.panels[]`, `boring.commands[]`, `boring.leftTabs[]`, and `boring.surfaceResolvers[]` are the **authoritative declaration** of what a plugin contributes — in both V1 and V2. The factory is the **implementation**: it provides component references and slash-command handlers that the manifest ids reference.
 
-Validation at load time (V1):
-- Every `boring.panels[i].id` must have a matching `registerPanel?.({ id })` call in the factory
-- Any manifest-declared panel with no corresponding factory registration → `MANIFEST_IMPL_MISMATCH` error
-- This makes the manifest the contract and the factory the fulfilment — consistent across V1/V2
-
-In V2, the factory never runs in the browser, so manifest arrays are the sole source of truth.
+Validation at load time:
+- **V1 only:** every `boring.panels[i].id` must have a matching `registerPanel?.({ id })` call in the factory → `MANIFEST_IMPL_MISMATCH` error. This check runs post-factory inside `registerAgentPlugin` (mode="direct") and is skipped entirely in V2.
+- **V2 only:** manifest arrays are the sole source of truth — the factory never runs in the browser. No `MANIFEST_IMPL_MISMATCH` check applies.
+- `MANIFEST_IMPL_MISMATCH` is therefore a runtime diagnostic, not a manifest parsing error — it belongs in `registerAgentPlugin`, not in `manifest.ts` or `readBoringPackage`.
 
 ### Validation rules
 
@@ -650,15 +670,28 @@ interface BoringServerPluginAPI {
 
 ### Dependencies in the iframe
 
-Provisioning seeds a shared `node_modules` for all plugins:
+Provisioning seeds a shared `node_modules` for all plugins at `.boring/plugins/package.json`. **This file is distinct from any per-plugin `package.json` and must never be confused with one.**
+
+```
+.boring/plugins/
+  package.json          ← ROOT manifest (seeded by provisioning, NOT a plugin)
+  node_modules/         ← shared react, react-dom for all iframe plugins
+  csv-viewer/
+    package.json        ← per-plugin manifest (boring field, pi field)
+    front.tsx
+    plugin.server.ts
+```
+
 ```json
-// .boring/plugins/package.json (seeded by provisioning — distinct from per-plugin package.json)
+// .boring/plugins/package.json — provisioned root, agent should not edit this
 {
   "name": "boring-agent-plugins-root",
   "private": true,
   "dependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" }
 }
 ```
+
+**Guard:** `readBoringPackage(dir)` is only called for directories one level under `.boring/plugins/` (i.e. `.boring/plugins/<name>/package.json`). The root `.boring/plugins/package.json` is never passed to `readBoringPackage` — the scanner skips the root level. The system prompt and docs explicitly tell the agent: _"Your plugin's package.json lives at `.boring/plugins/<name>/package.json`. Do not edit `.boring/plugins/package.json` (the shared root)."_
 
 ### Contribution surface (V2)
 
@@ -720,17 +753,24 @@ The check is:
 
 ### Surface resolver LIFO stack
 
+Outside plugins register their surface resolvers at `bootstrap()` time — they form the **base layer** of the stack, ordered by bootstrap registration order (first-registered = deepest). Inside plugins always push on top. If two outside plugins register the same `surfaceKind`, the later-bootstrapped plugin's resolver is active (it sits above the earlier one). This ordering is fixed at startup and cannot change without a page reload.
+
 ```
-base loads:     surfaceKind="csv.open" → csv-base-panel       stack: [base]
-derived-a loads: surfaceKind="csv.open" → csv-viewer-panel    stack: [base, derived-a]
-derived-b loads: surfaceKind="csv.open" → csv-detail-panel    stack: [base, derived-a, derived-b]
+bootstrap():
+  outside-a registers surfaceKind="csv.open"                   stack: [outside-a]
+  outside-b registers surfaceKind="csv.open"                   stack: [outside-a, outside-b]
+active resolver → outside-b  (later bootstrap = top)
+
+inside plugin loads:
+  derived-a registers surfaceKind="csv.open"                   stack: [outside-a, outside-b, derived-a]
+  derived-b registers surfaceKind="csv.open"                   stack: [outside-a, outside-b, derived-a, derived-b]
 active resolver → derived-b (top)
 
-derived-b unloads                                              stack: [base, derived-a]
+derived-b unloads                                              stack: [outside-a, outside-b, derived-a]
 active resolver → derived-a
 
-derived-a unloads                                              stack: [base]
-active resolver → base
+derived-a unloads                                              stack: [outside-a, outside-b]
+active resolver → outside-b  (base layer restored)
 ```
 
 ### Panel and command ID namespacing
@@ -872,7 +912,8 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
   - `entry` and `server` (if declared) exist on disk — `MISSING_ENTRY_FILE` with actionable message
   - `derivesFrom` passes `isValidBoringPluginId`; cross-references valid; no duplicate ids within arrays
   - `AllowedContribution` is a strict union: `"panel" | "panelCommand" | "leftTab" | "surfaceResolver" | "catalog" | "agentTool"` — validated at registry time
-- [ ] Error codes: `INVALID_ID | INVALID_VERSION | INVALID_PATH | MISSING_REQUIRED_FIELD | MISSING_ENTRY_FILE | UNKNOWN_FIELD | CROSS_REFERENCE | DUPLICATE_ID | MANIFEST_IMPL_MISMATCH`
+- [ ] Error codes in `manifest.ts` (parse-time): `INVALID_ID | INVALID_VERSION | INVALID_PATH | MISSING_REQUIRED_FIELD | MISSING_ENTRY_FILE | UNKNOWN_FIELD | CROSS_REFERENCE | DUPLICATE_ID`
+- [ ] `MANIFEST_IMPL_MISMATCH` lives in `registerAgentPlugin` (mode="direct" only) — not in manifest.ts. It fires post-factory when a manifest-declared panel id has no matching `registerPanel?()` call.
 - [ ] Export `BoringPackageField` from `plugin.ts` and `@boring/workspace/plugin` subpath
 - [ ] Rewrite `manifest.test.ts`
 
@@ -919,7 +960,9 @@ All files in `packages/workspace/src/server/plugins/` unless noted. API routes i
 - [ ] `pluginRegistry.register({ id })` called for each outside plugin id at startup (before SSE replay)
 - [ ] `getExtraTools()` getter: because `boring-pi-extension.ts` registers agent tools via pi's own `api.registerTool()`, plugin tools are visible to the session after the next `/reload` — no separate getter mechanism needed for the pi session itself. Server-side plugin tools (from `plugin.server.ts`) still use the `getExtraTools()` getter on `createPiCodingAgentHarness` for new sessions.
 - [ ] Catalog handler snapshot pattern: `agentPluginRoutes.ts` captures handler reference at request entry (`const handler = registry.getCatalogHandler(id)`) so in-flight searches complete against the captured reference even if the plugin reloads mid-request
-- [ ] Running-session tool injection: `getExtraTools()` getter solves new sessions; investigate whether running sessions can pick up new plugin tools without full restart. Check if `piAgent.ctx.reload()` or equivalent triggers tool list refresh. If not, document the limitation: "tools added by a plugin after a session starts require starting a new session."
+- [ ] Running-session tool injection: tools registered in `boring-pi-extension.ts` via `api.registerTool()` are visible to the **same** pi session after `/reload` (pi's runner rebuilds its tool registry from the fresh extension). Server-side tools from `plugin.server.ts` use `getExtraTools()` and are visible to **new** sessions only. Document both behaviours explicitly:
+  - Front-side tools (in `boring-pi-extension.ts`): available immediately after `/reload` in the current session.
+  - Server-side tools (in `plugin.server.ts`): available in new sessions started after `/reload`. The plugin status panel surfaces this: _"Server tools from this plugin will be available in new agent sessions."_
 
 ### E — TypeBox migration + `authoring.ts`: `BoringPluginAPI` → `BoringExtensionAPI`
 
@@ -933,7 +976,7 @@ All files in `packages/workspace/src/server/plugins/` unless noted. API routes i
 **`authoring.ts` rewrite:**
 - [ ] Replace namespaced `BoringPluginAPI` with flat `BoringExtensionAPI`
 - [ ] Pi methods boring-ui implements: `registerTool(ToolDefinition)`, `registerCommand(name, opts)`, `registerShortcut(key, opts)`, `on(event, handler)`
-- [ ] `registerTool` — **no-op stub** in `BoringExtensionAPI`. When pi loads `front.tsx` pi handles the tool natively. Boring-ui ignores it from the front — all boring-ui tools go in `plugin.server.ts`. Re-export `ToolDefinition` from `@boring/workspace/plugin` so plugin authors can import it.
+- [ ] `registerTool` — **no-op stub** in `BoringExtensionAPI`. When pi loads `front.tsx` pi handles the tool natively. Boring-ui ignores it from the front — all boring-ui tools go in `plugin.server.ts`. Re-export `ToolDefinition` from `@boring/workspace/plugin` so plugin authors can import it. **Diagnostic:** the capturing API records a `warning` diagnostic when `registerTool` is called, included in the SSE `boring.plugin.load` payload and shown in the plugin status panel — the agent sees it via `GET /api/agent-plugins/:id/error` or status panel, not via browser console.
 - [ ] `registerCommand` — pi slash command (`/name [args]`); boring-ui registers it as a front-side slash command handler (not available in `BoringServerPluginAPI`)
 - [ ] `on("load"/"unload", handler)` wired; all other events no-op with dev-mode warning
 - [ ] Pi stub methods (no-op + `console.warn` in dev): `exec`, `sendMessage`, `sendUserMessage`, `appendEntry`, `setSessionName`, `getActiveTools`, `setActiveTools`, `setModel`, `events`, `registerFlag`, `registerProvider`, etc.
