@@ -805,21 +805,38 @@ The one file that changes is `authoring.ts` — the capturing API expands to the
 
 ### Agent-tool split — current state and desired direction
 
-**Current state:** First-party plugin agent tools (`buildFilesystemAgentTools()`, harness tools, catalog tools, etc.) are static `AgentTool[]` arrays assembled in `createAgentApp.ts` and passed to the pi harness as `customTools` after `adaptToolsForPi()`.
+**Current state:** First-party plugin agent tools (`buildFilesystemAgentTools()`, harness tools, etc.) are static `AgentTool[]` arrays assembled in `createAgentApp.ts` and passed to the pi harness as `customTools` after `adaptToolsForPi()`.
 
-**Desired direction:** Agent tools for any plugin — first-party or inside — should live in a pi extension. The right structure is:
+`AgentTool` is boring-ui's own interface. It differs from pi's `ToolDefinition` in two ways:
+- execute signature: `execute(params, { abortSignal, toolCallId, onUpdate })` vs pi's `execute(toolCallId, params, signal, onUpdate, ctx)`
+- parameters: `JSONSchema` (plain object) vs pi's `TSchema` (TypeBox)
+
+`adaptToolsForPi()` bridges these two shapes at the harness boundary.
+
+**Desired direction:** Agent tools for any plugin — first-party or inside — should live in a pi extension using pi's native `ToolDefinition` format:
 
 ```
 filesystemPlugin/
   front/index.ts        ← UI: WorkspaceFrontPlugin (unchanged)
-  agent/extension.ts    ← NEW: pi ExtensionFactory — api.registerTool(filesystem tools)
+  agent/extension.ts    ← NEW: pi ExtensionFactory — api.registerTool(defineTool({...}))
 ```
 
-`agent/extension.ts` exports a pi-compatible `ExtensionFactory` default. The harness wires it via `extensionFactories[]` alongside `boring-pi-extension.ts`. No `customTools` array, no `adaptToolsForPi()`.
+`agent/extension.ts` exports a pi-compatible `ExtensionFactory`. The harness wires it via `extensionFactories[]` alongside `boring-pi-extension.ts`. This eliminates the conversion layer entirely.
 
-**This PR:** First-party tool migration is **out of scope** — it requires touching every plugin's agent layer. The `customTools` path stays for now. Inside plugin tools already use the correct path (`plugin.server.ts` → `getExtraTools()`).
+**The full migration is one unified follow-up — not two separate items:**
 
-**Follow-up:** Migrate each first-party plugin's agent tools to `agent/extension.ts` pi extensions, then delete `adaptToolsForPi()` and the static `customTools` array from `createAgentApp.ts`.
+| Step | What changes |
+|---|---|
+| Rewrite first-party tools as `ToolDefinition` | execute signature + TypeBox parameters; one tool file at a time |
+| Move into `agent/extension.ts` per plugin | structured as `ExtensionFactory`; wired via `extensionFactories[]` |
+| Refactor `catalogRoutes` | works directly with `ToolDefinition[]` instead of `AgentTool[]` |
+| Delete `AgentTool` type | fully replaced by `ToolDefinition` |
+| Delete `adaptToolsForPi()` | no longer needed; all tools are native `ToolDefinition` |
+| Delete `customTools` from `createAgentApp` | tools flow through `extensionFactories[]` only |
+
+Completing this follow-up also closes the TypeBox migration (currently deferred as `parameters: tool.parameters as any`) — they are the same work.
+
+**This PR:** Migration is **out of scope**. `AgentTool`, `adaptToolsForPi()`, and the `customTools` path stay untouched. Inside plugin tools already use the correct path (`plugin.server.ts` → `BoringServerPluginAPI.registerTool(ToolDefinition)`).
 
 ### What DOES change: `authoring.ts`
 
@@ -1010,7 +1027,7 @@ This PR ships the skeleton: the route exists and the iframe renders, but the pos
 ## Out of Scope
 
 - Outside plugin **front** migration to factory pattern — `bootstrap()` stays; no forcing function
-- First-party plugin **agent tool** migration to pi extensions — `buildFilesystemAgentTools()`, harness tools, and catalog tools stay as `customTools` for now; migrate to `agent/extension.ts` pi extensions in a follow-up that also deletes `adaptToolsForPi()`
+- **Unified tool migration follow-up** — rewrite first-party tools as `ToolDefinition` (TypeBox + pi execute signature), move to `agent/extension.ts` per plugin, refactor `catalogRoutes`, delete `AgentTool` type and `adaptToolsForPi()`. This is also the TypeBox migration. See "Agent-tool split" section for full breakdown.
 - `binding` / `provider` / `slotFill` in V2 — require host React tree; incompatible with iframe sandbox
 - `host.query()` bridge for V2 derived plugins — deferred until Path A + full bridge land
 - Vite HMR for outside plugins — separate concern
@@ -1020,5 +1037,4 @@ This PR ships the skeleton: the route exists and the iframe renders, but the pos
 - File-watching as an alternative reload trigger — deliberately excluded; explicit `/reload` is simpler and race-free
 - Catalog handlers (`registerCatalogHandler` / `catalogs?` field) — complexity not yet justified; add when a real use case emerges
 - `ServerPluginLoader` interface — jiti is the only loader; abstraction adds indirection without benefit today
-- Full TypeBox migration for existing tools — new plugin tools use TypeBox natively via `defineTool()`; legacy `parameters: tool.parameters as any` stays until a real migration PR
 - `eventId` UUID dedup — `revision ≤ lastSeen[pluginId]` is the sole dedup mechanism; LRU overhead is unnecessary
