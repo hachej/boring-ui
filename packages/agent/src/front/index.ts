@@ -36,6 +36,9 @@ export {
   type ToolRenderer,
   type ToolRendererOverrides,
 } from './bareToolRenderers'
+export { mergeShadcnToolRenderers } from './toolRenderers'
+export { ToolCallGroup } from './primitives/tool-call-group'
+export type { GroupedToolEntry } from './primitives/tool-call-group'
 
 // Styled primitives (Tailwind + shadcn)
 export {

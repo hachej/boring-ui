@@ -2,6 +2,7 @@ import './app.css'
 import { useEffect, useState } from 'react'
 import { ChatPanel, useSessions } from '@boring/agent/front'
 import type { SessionSummary } from '@boring/agent/shared'
+import { Showcase } from '../Showcase'
 
 type Theme = 'light' | 'dark'
 
@@ -17,6 +18,7 @@ function readStoredTheme(): Theme {
 
 function Playground() {
   const sessions = useSessions()
+  const [tab, setTab] = useState<'chat' | 'showcase'>('chat')
   const [chrome, setChrome] = useState(true)
   const [thinkingControl, setThinkingControl] = useState(true)
   const [suggestions, setSuggestions] = useState<'default' | 'none'>('default')
@@ -39,11 +41,17 @@ function Playground() {
         sessions={sessions}
         onToggleSystemPrompt={() => setSystemPromptOpen((v) => !v)}
         systemPromptOpen={systemPromptOpen}
+        tab={tab}
+        onTabChange={setTab}
       />
 
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1">
-          {sessions.activeSessionId ? (
+          {tab === 'showcase' ? (
+            <div className="h-full overflow-y-auto">
+              <Showcase />
+            </div>
+          ) : sessions.activeSessionId ? (
             // key forces ChatPanel to remount on session switch so useAgentChat
             // re-hydrates from /messages cleanly.
             <ChatPanel
@@ -58,6 +66,7 @@ function Playground() {
           ) : (
             <Empty onCreate={() => sessions.create()} loading={sessions.loading} />
           )}
+
         </div>
         {systemPromptOpen && sessions.activeSessionId && (
           <SystemPromptDrawer
@@ -81,10 +90,14 @@ function SessionBar({
   sessions,
   onToggleSystemPrompt,
   systemPromptOpen,
+  tab,
+  onTabChange,
 }: {
   sessions: ReturnType<typeof useSessions>
   onToggleSystemPrompt: () => void
   systemPromptOpen: boolean
+  tab: 'chat' | 'showcase'
+  onTabChange: (t: 'chat' | 'showcase') => void
 }) {
   const handleCreate = async () => {
     try { await sessions.create() } catch { /* surfaced via sessions.error */ }
@@ -96,6 +109,16 @@ function SessionBar({
   }
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border/60 bg-background px-3 py-2 text-[12px]">
+      <div className="flex items-center gap-0.5 rounded-md border border-border/50 p-0.5">
+        <button type="button" onClick={() => onTabChange('chat')}
+          className={`h-6 rounded px-2.5 text-[11px] transition-colors ${tab === 'chat' ? 'bg-muted/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+          chat
+        </button>
+        <button type="button" onClick={() => onTabChange('showcase')}
+          className={`h-6 rounded px-2.5 text-[11px] transition-colors ${tab === 'showcase' ? 'bg-muted/60 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+          showcase
+        </button>
+      </div>
       <span className="font-medium text-muted-foreground">Session</span>
       <select
         className="h-7 rounded-md border border-border/70 bg-background px-2 text-[12px] outline-none focus:ring-2 focus:ring-ring/40 disabled:opacity-50"
