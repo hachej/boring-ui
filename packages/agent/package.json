@@ -38,6 +38,7 @@
   ],
   "scripts": {
     "build": "pnpm --filter @boring/ui build && tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",
+    "build:dev": "{ [ -d '../ui/dist' ] || pnpm --filter @boring/ui build; } && tsup --config tsup.dev.config.ts && node ./scripts/build-front-css.mjs",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
