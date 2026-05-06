@@ -10,6 +10,7 @@
  *   --workspace <path> Workspace root
  */
 import path from 'node:path'
+import os from 'node:os'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createServer as createViteServer } from 'vite'
@@ -68,6 +69,9 @@ async function startFrontend(apiPort: number): Promise<string> {
   const vite = await createViteServer({
     configFile: false,
     root: playgroundRoot,
+    // Use a port-scoped cache dir so parallel E2E workers don't race on shared
+    // node_modules/.vite/deps.
+    cacheDir: path.join(os.tmpdir(), `vite-boring-agent-${apiPort}`),
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
@@ -75,6 +79,8 @@ async function startFrontend(apiPort: number): Promise<string> {
         '@boring/agent/front': path.resolve(packageSrc, 'front/index.ts'),
         '@boring/agent/shared': path.resolve(packageSrc, 'shared/index.ts'),
         '@boring/agent/server': path.resolve(packageSrc, 'server/index.ts'),
+        // Resolve @boring/ui from source so E2E doesn't need a pre-built dist.
+        '@boring/ui': path.resolve(packageSrc, '..', '..', 'ui', 'src', 'index.ts'),
         '@': packageSrc,
       },
     },

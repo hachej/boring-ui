@@ -41,31 +41,33 @@ describe("makeMacroClientPlugin", () => {
     expect(plugin.outputs?.map((output) => output.type)).toEqual([
       "panel",
       "panel",
+      "command",
+      "command",
       "surface-resolver",
       "surface-resolver",
       "left-tab",
       "catalog",
     ])
-    expect(plugin.outputs?.[2]).toEqual(
+    expect(plugin.outputs?.[4]).toEqual(
       expect.objectContaining({
         type: "surface-resolver",
         resolver: expect.objectContaining({ id: "boring-macro-series" }),
       }),
     )
-    expect(plugin.outputs?.[3]).toEqual(
+    expect(plugin.outputs?.[5]).toEqual(
       expect.objectContaining({
         type: "surface-resolver",
         resolver: expect.objectContaining({ id: "boring-macro-deck-path" }),
       }),
     )
-    expect(plugin.outputs?.[4]).toEqual(
+    expect(plugin.outputs?.[6]).toEqual(
       expect.objectContaining({
         type: "left-tab",
         id: "macro-series",
         title: "Data",
       }),
     )
-    expect(plugin.outputs?.[5]).toEqual(
+    expect(plugin.outputs?.[7]).toEqual(
       expect.objectContaining({
         type: "catalog",
         catalog: expect.objectContaining({
