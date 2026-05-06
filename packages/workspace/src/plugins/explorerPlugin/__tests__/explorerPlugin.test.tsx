@@ -5,7 +5,7 @@ import {
   createExplorerPlugin,
   ExplorerView,
   type SectionedExplorerAdapter,
-} from "../index"
+} from "../front"
 import type { ExplorerAdapter, ExplorerRow } from "../../../front/components/DataExplorer"
 
 const rows: ExplorerRow[] = [
