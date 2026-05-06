@@ -28,7 +28,39 @@ No parallel type system. The existing `WorkspaceFrontPlugin` / `defineFrontPlugi
 
 **Path A — Derive from an existing outside plugin**
 
-The app exposes a derivation API: the agent extends an existing outside plugin by adding panels, commands, or tools on top of it. The host plugin declares what it allows to be extended via a typed extension contract. Useful when the agent wants to add a panel to the macro plugin or the filesystem plugin.
+The agent extends an existing outside plugin (e.g. macro, filesystem) by adding panels, commands, or server tools on top of it. The host plugin declares what it allows via a `PluginExtensionContract` — a typed allowlist on the outside plugin definition. The manifest uses `derivesFrom: "<pluginId>"`. At load time the browser validates the base plugin has a contract and that all contributions are in `allowedContributions`. The iframe is told which plugin it derives from via `boring.bridge.init { derivedFrom }`.
+
+Key design points:
+- `extensionContract` is opt-in on outside plugins. A plugin that does not declare one cannot be derived.
+- `allowedContributions` is an explicit allowlist: `["panel", "command", "left-tab", "surface-resolver", "agent-tool"]`. Contributions outside the list are rejected at load time.
+- Derived contributions are registered under the derived plugin's namespace, not the base plugin's.
+- Context data queries (iframe asks host for base plugin state) are v2. For v1 the iframe only knows `derivedFrom`.
+
+```ts
+// Outside plugin definition (host side)
+export interface PluginExtensionContract {
+  allowedContributions: ReadonlyArray<
+    "panel" | "command" | "left-tab" | "surface-resolver" | "agent-tool"
+  >
+}
+
+// Added to WorkspaceFrontPlugin / defineFrontPlugin options:
+extensionContract?: PluginExtensionContract
+```
+
+```json
+// Agent manifest: .boring/plugins/macro-csv-exporter/boring.plugin.json
+{
+  "id": "macro-csv-exporter",
+  "version": "1.0.0",
+  "derivesFrom": "macro",
+  "front": "front.tsx",
+  "panels": [{ "id": "csv-export-panel", "label": "Export to CSV" }],
+  "commands": [{ "id": "export-csv", "label": "Export Macro to CSV", "panelId": "csv-export-panel" }]
+}
+```
+
+Load flow for derived plugin: manifest `derivesFrom` → browser looks up base plugin in registry → checks `extensionContract` exists → validates all contributions are in `allowedContributions` → registers contributions normally → iframe gets `boring.bridge.init { derivedFrom: "macro" }`.
 
 **Path B — Build from scratch**
 
@@ -68,6 +100,7 @@ The agent writes a self-contained plugin with its own `front.tsx` + `plugin.serv
 
 `BoringPluginManifest` declares all contributions directly. No factory, no code execution on the host side.
 
+Path B (scratch) — all fields:
 ```json
 {
   "id": "csv-viewer",
@@ -90,6 +123,20 @@ The agent writes a self-contained plugin with its own `front.tsx` + `plugin.serv
   "catalogs": [
     { "id": "csv-rows", "label": "CSV Rows" }
   ]
+}
+```
+
+Path A (derive) — adds `derivesFrom`, omits fields not in contract:
+```json
+{
+  "id": "macro-csv-exporter",
+  "version": "1.0.0",
+  "label": "CSV Exporter",
+  "derivesFrom": "macro",
+  "front": "front.tsx",
+  "server": "plugin.server.ts",
+  "panels": [{ "id": "csv-export-panel", "label": "Export to CSV" }],
+  "commands": [{ "id": "export-csv", "label": "Export Macro to CSV", "panelId": "csv-export-panel" }]
 }
 ```
 
@@ -262,6 +309,33 @@ Host validates origin before dispatching. v2 adds `host.query()` for data access
 - [ ] Add `boring.plugin.json` example to template
 - [ ] Update `check-plugin-invariants.mjs` to recognise `.boring/plugins/` as valid plugin location (not subject to layer rules)
 
+### I — Path A: Extension contract + derivation
+
+**Types** (`packages/workspace/src/shared/plugins/types.ts` or new `extension.ts`):
+- [ ] Add `PluginExtensionContract` interface: `{ allowedContributions: ReadonlyArray<InsidePluginContributionKind> }`
+- [ ] Add `InsidePluginContributionKind` type: `"panel" | "command" | "left-tab" | "surface-resolver" | "agent-tool"`
+- [ ] Add `extensionContract?: PluginExtensionContract` to the `WorkspaceFrontPlugin` definition shape (or `defineFrontPlugin` options)
+
+**Manifest** (`manifest.ts`):
+- [ ] Add `derivesFrom?: string` field to `BoringPluginManifest`
+- [ ] Add `"derivesFrom"` to `KNOWN_FIELDS`
+- [ ] Validate: if present, must be a valid plugin id string (reuse `isValidBoringPluginId`)
+- [ ] Add test cases: valid `derivesFrom`, invalid value, works alongside contributions
+
+**Browser load path** (`agentPluginRegistry.ts`):
+- [ ] When `manifest.derivesFrom` is set: look up base plugin in the `PanelRegistry` / plugin registry by id
+- [ ] If base plugin has no `extensionContract`: throw `PluginDerivationError("plugin '${id}' does not expose an extensionContract")`
+- [ ] For each contribution in manifest: check its kind is in `extensionContract.allowedContributions`, throw if not
+- [ ] Pass `derivedFrom: manifest.derivesFrom` through to `AgentPluginPane` / `boring.bridge.init`
+
+**Bridge** (`agentPluginBridge.ts`):
+- [ ] `boring.bridge.init` payload type: add `derivedFrom?: string`
+- [ ] Host sends `derivedFrom` in init message when plugin has `manifest.derivesFrom`
+
+**Outside plugins** (`apps/boring-macro-v2` and other apps):
+- [ ] Add `extensionContract` to macro plugin definition (example: `allowedContributions: ["panel", "command", "agent-tool"]`)
+- [ ] Document in `docs/plugins.md` which plugins expose an extension contract
+
 ---
 
 ## Out of Scope (v1)
@@ -270,5 +344,5 @@ Host validates origin before dispatching. v2 adds `host.query()` for data access
 - `provider` — app-tree context wrapper, only filesystem uses it for HTTP client setup
 - `slot-fill` — no production usage yet
 - iframe `host.query()` bridge for data access — v2
-- Path A (derive from existing plugin) extension contract — v2
+- Path A context queries (iframe requests live data from base plugin) — v2
 - Vite HMR for outside plugins (jiti Tier 1 reload) — separate concern
