@@ -191,16 +191,33 @@ The Fastify server runs in Vercel as a serverless function with no filesystem ac
 
 ---
 
-## Security Boundary — Workspace's Responsibility, Not the Plugin's
+## Security Boundary — Core Injects, Workspace Executes
 
-Plugins do not own or care how they are loaded. A plugin exports a factory function and declares contributions in its manifest — the execution environment is entirely the workspace's concern.
+Plugins do not own or care how they are loaded. A plugin exports a factory function and declares contributions in its manifest — nothing more.
 
-The workspace core parameterizes the loader strategy:
-- **Local dev**: jiti loads `plugin.server.ts` in-process (fast, zero overhead)
-- **Hosted/sandbox mode** (bwrap, Vercel): the workspace already runs inside a sandbox, so in-process loading inherits that boundary automatically — no extra isolation needed
-- **Future**: worker thread or subprocess loader can be swapped in as a workspace config option without any change to the plugin API
+The **workspace package** is environment-agnostic. It exposes a `ServerPluginLoader` interface and calls it when loading/unloading server plugins. It does not know whether it is inside a sandbox.
 
-The manifest does not need a security model. The deployment context provides it.
+The **core** (the app entry point / Fastify bootstrap) knows the deployment environment and injects the concrete loader:
+
+```ts
+// workspace package exposes the interface + built-in implementations:
+interface ServerPluginLoader {
+  load(pluginId: string, path: string, api: BoringServerPluginAPI): Promise<void>
+  unload(pluginId: string): Promise<void>
+}
+
+// workspace accepts it at init:
+createWorkspaceServer({ pluginLoader })
+
+// core decides which to inject:
+// - local dev → createJitiLoader()          (in-process, fast)
+// - hosted/bwrap → createJitiLoader()       (outer bwrap sandbox already provides isolation)
+// - future → createWorkerLoader()           (worker thread, no API change to plugins)
+```
+
+The workspace package ships `createJitiLoader` and (eventually) `createWorkerLoader` as utilities, but the **selection is the core's responsibility**. Swapping strategies requires no change to the plugin API or the workspace internals.
+
+The manifest does not need a security model. The deployment context — chosen by the core — provides it.
 
 ---
 
@@ -291,13 +308,13 @@ Host validates origin before dispatching. v2 adds `host.query()` for data access
 - [ ] Register routes in `src/server/index.ts`
 - [ ] Add `esbuild` as server dependency to `packages/workspace/package.json`
 
-### D — jiti server loader
-- [ ] `src/server/plugins/jitiPluginLoader.ts` — copy pi's `loadExtensionModule` pattern, alias `@boring/workspace/plugin`
-- [ ] `BoringServerPluginAPI` interface: `tools.register(tool)`, `catalogs.register({ id, search })`
-- [ ] On load: call factory with server API, collect tools + catalog handlers
-- [ ] Register tools into Fastify agent tool registry
-- [ ] Register catalog search handlers (called by the catalog route in C)
-- [ ] On unload: remove tools + catalog handlers, jiti discards module via `moduleCache: false`
+### D — Server plugin loader interface + jiti implementation
+- [ ] `src/server/plugins/serverPluginLoader.ts` — define `ServerPluginLoader` interface + `BoringServerPluginAPI` (`tools.register`, `catalogs.register`)
+- [ ] `src/server/plugins/jitiPluginLoader.ts` — `createJitiLoader()`: copy pi's `loadExtensionModule` pattern, alias `@boring/workspace/plugin`, `moduleCache: false`
+- [ ] `createWorkspaceServer` accepts `pluginLoader?: ServerPluginLoader`; defaults to `createJitiLoader()` if omitted
+- [ ] On load: call factory(api), collect tools + catalog handlers, register into Fastify tool registry / catalog route store
+- [ ] On unload: remove tools + catalog handlers owned by pluginId; jiti discards module automatically via `moduleCache: false`
+- [ ] Core (app entry point) selects and passes the loader — workspace does not auto-detect environment
 
 ### E — exec_ui trigger
 - [ ] Add `"boring.plugin.load"` and `"boring.plugin.unload"` to `CommandKind` in `src/front/bridge/client.ts`
