@@ -975,27 +975,6 @@ export function ChatPanel(props: ChatPanelProps) {
               </Message>
             )
           })}
-          {/* Persistent working caption — stays visible for the whole run:
-              waiting for first byte, streaming text, reasoning, or tool work.
-              It used to hide as soon as an assistant message appeared, which
-              made long tool turns feel idle even though the progress bar kept
-              moving. */}
-          {isStreaming && (
-            <div
-              data-testid="chat-working"
-              role="status"
-              aria-live="polite"
-              className="sticky bottom-0 z-10 flex items-center gap-2 self-start rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur"
-            >
-              <motion.span
-                aria-hidden="true"
-                className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
-                animate={{ opacity: [0.35, 1, 0.35] }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-              />
-              <span>Working…</span>
-            </div>
-          )}
           {(() => {
             if (!error) return null
             const friendly = friendlyError(error)
@@ -1039,6 +1018,31 @@ export function ChatPanel(props: ChatPanelProps) {
       </Conversation>
 
       <div className={cn(chrome ? "px-4 pb-4 pt-2 sm:px-6 sm:pb-5" : "px-3 pb-3 pt-1")}>
+        <div
+          className={cn(
+            "mx-auto mb-2 flex w-full items-center gap-2",
+            chrome ? "max-w-3xl" : "max-w-[680px]",
+          )}
+        >
+          <div
+            data-testid="chat-working"
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur",
+              "transition-opacity duration-300",
+              isStreaming ? "opacity-100" : "opacity-0 pointer-events-none",
+            )}
+          >
+            <motion.span
+              aria-hidden="true"
+              className="inline-block size-1.5 rounded-full bg-[color:var(--accent)]"
+              animate={{ opacity: [0.35, 1, 0.35] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <span>Working…</span>
+          </div>
+        </div>
         {attachmentNotice && (
           <div
             role="status"

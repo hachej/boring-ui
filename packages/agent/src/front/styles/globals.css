@@ -235,6 +235,17 @@
   --boring-agent-diff-add-fg: oklch(0.78 0.14 145);
 }
 
+/* Smooth height-based collapse/expand for Collapsible components.
+ * Uses the CSS variable Radix sets on CollapsibleContent. */
+@keyframes boring-collapse-open {
+  from { height: 0; opacity: 0.6; }
+  to   { height: var(--radix-collapsible-content-height); opacity: 1; }
+}
+@keyframes boring-collapse-close {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to   { height: 0; opacity: 0; }
+}
+
 /* Base typography cohesion for the chat panel root. Consumers embedding
  * the panel inherit these — independent of their own Tailwind base. */
 [data-boring-agent] {
