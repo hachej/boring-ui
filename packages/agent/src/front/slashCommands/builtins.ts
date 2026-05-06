@@ -17,30 +17,4 @@ export const builtinCommands: SlashCommand[] = [
       return 'Session reset.'
     },
   },
-  {
-    name: 'model',
-    description: 'Swap active model (sonnet, haiku, opus)',
-    handler(args, ctx) {
-      const model = args.trim()
-      if (!model) return 'Usage: /model <sonnet|haiku|opus>'
-      if (!ctx.setModel(model)) return `Unknown model "${model}". Available: sonnet, haiku, opus`
-      return `Model set to ${model}.`
-    },
-  },
-  {
-    name: 'help',
-    description: 'Show available commands',
-    handler(_, ctx) {
-      const cmds = ctx.listCommands()
-      if (cmds.length === 0) return 'No commands available.'
-      return cmds.map((c) => `/${c.name} — ${c.description}`).join('\n')
-    },
-  },
-  {
-    name: 'cost',
-    description: 'Show per-session token/cost estimates',
-    handler() {
-      return 'Coming soon.'
-    },
-  },
 ]
