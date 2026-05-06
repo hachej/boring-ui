@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
 import { cn } from './lib'
-import { Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger } from '@hachej/boring-ui-kit
+import { Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger } from '@hachej/boring-ui-kit'
 import {
   CheckIcon,
   ChevronDownIcon,
