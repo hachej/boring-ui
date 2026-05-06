@@ -23,9 +23,10 @@ export async function buildMacroServer(opts: MacroAppOptions = {}) {
   const app = await createCoreWorkspaceAgentServer({
     workspaceRoot,
     appRoot: opts.appRoot,
-    logger: opts.logger ?? true,
     plugins: [macroPlugin],
   })
 
   return { app, port, host }
 }
+
+export { buildMacroServer as buildServer }
