@@ -1,10 +1,6 @@
-import { readFile } from "node:fs/promises"
-import { glob } from "node:fs"
-import { promisify } from "node:util"
+import { readFile, readdir } from "node:fs/promises"
 import path from "node:path"
 import process from "node:process"
-
-const globAsync = promisify(glob)
 
 const APPS_DIR = path.resolve("apps")
 
@@ -53,17 +49,27 @@ interface Violation {
 }
 
 async function collectSourceFiles(): Promise<string[]> {
-  const patterns = [
-    path.join(APPS_DIR, "*/src/**/*.ts"),
-    path.join(APPS_DIR, "*/src/**/*.tsx"),
-    path.join(APPS_DIR, "*/src/**/*.js"),
-    path.join(APPS_DIR, "*/src/**/*.jsx"),
-  ]
-
+  const SOURCE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx"])
   const allFiles: string[] = []
-  for (const pattern of patterns) {
-    const files = await globAsync(pattern)
-    allFiles.push(...files)
+
+  const appDirs = await readdir(APPS_DIR, { withFileTypes: true })
+  for (const appEntry of appDirs) {
+    if (!appEntry.isDirectory()) continue
+    const srcDir = path.join(APPS_DIR, appEntry.name, "src")
+    let entries: Awaited<ReturnType<typeof readdir>>
+    try {
+      entries = await readdir(srcDir, { withFileTypes: true, recursive: true })
+    } catch {
+      continue
+    }
+    for (const e of entries) {
+      if (!e.isFile()) continue
+      const ext = path.extname(e.name)
+      if (!SOURCE_EXTS.has(ext)) continue
+      // e.parentPath is available in Node.js 20.12+ / 18.20+; fall back to e.path
+      const dir = (e as { parentPath?: string; path?: string }).parentPath ?? (e as { path?: string }).path ?? srcDir
+      allFiles.push(path.join(dir, e.name))
+    }
   }
 
   return allFiles.filter(
