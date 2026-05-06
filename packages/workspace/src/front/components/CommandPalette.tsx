@@ -34,7 +34,7 @@ import type { CommandConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 import type { ExplorerRow } from "./DataExplorer/types"
-import { useWorkspaceContext } from "../provider/WorkspaceProvider"
+import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
 import {
   loadRecent,
   addCatalogToRecent,
@@ -76,14 +76,14 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   const [catalogGroups, setCatalogGroups] = useState<CatalogSearchGroup[]>([])
   const catalogs = useCatalogs()
   const commands = useCommands()
-  const { registeredPlugins } = useWorkspaceContext()
+  const workspaceCtx = useWorkspaceContextOptional()
   const pluginLabelMap = useMemo(() => {
     const map: Record<string, string> = {}
-    for (const plugin of registeredPlugins) {
+    for (const plugin of workspaceCtx?.registeredPlugins ?? []) {
       if (plugin.label) map[plugin.id] = plugin.label
     }
     return map
-  }, [registeredPlugins])
+  }, [workspaceCtx?.registeredPlugins])
   const inputRef = useRef<HTMLInputElement>(null)
   const priorFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(false)

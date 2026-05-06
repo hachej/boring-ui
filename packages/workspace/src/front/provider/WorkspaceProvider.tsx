@@ -157,6 +157,10 @@ export function useWorkspaceContext(): WorkspaceContextValue {
   return ctx
 }
 
+export function useWorkspaceContextOptional(): WorkspaceContextValue | null {
+  return useContext(WorkspaceContext)
+}
+
 export function useWorkspaceChatPanel(): WorkspaceChatPanelComponent {
   const { chatPanel } = useWorkspaceContext()
   if (!chatPanel) {

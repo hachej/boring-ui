@@ -357,6 +357,7 @@ export {
   useTheme,
   useWorkspaceBridge,
   useWorkspaceContext,
+  useWorkspaceContextOptional,
   useWorkspaceChatPanel,
 } from "./front/provider"
 export type {

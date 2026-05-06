@@ -8,6 +8,7 @@ export {
   useTheme,
   useWorkspaceBridge,
   useWorkspaceContext,
+  useWorkspaceContextOptional,
   useWorkspaceChatPanel,
 } from "./WorkspaceProvider"
 export type {
