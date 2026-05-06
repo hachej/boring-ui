@@ -5,6 +5,7 @@ app = "boring-full-app"
 primary_region = "cdg"
 
 [build]
+  dockerfile = "apps/full-app/Dockerfile"
 
 [deploy]
   release_command = "node apps/full-app/dist/server/migrate.js"
