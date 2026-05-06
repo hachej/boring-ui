@@ -165,14 +165,13 @@ Pass the plugin to the shell:
 
 ## Quickstart
 
-### 1. Try it — no database needed
+### 1. Try it in seconds
 
 ```bash
-pnpm install
-pnpm --filter workspace-playground dev
+npx boring-ui
 ```
 
-Open `http://localhost:5200`. Full workspace — chat, panels, agent runtime, file tree. No auth, no DB, no setup.
+Starts the full workspace — chat, panels, agent runtime — pointed at your current directory. No clone, no install, no config. Requires `ANTHROPIC_API_KEY` in your environment.
 
 ---
 
