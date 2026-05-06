@@ -17,6 +17,7 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { chatRoutes } from './http/routes/chat'
 import { modelsRoutes } from './http/routes/models'
+import { skillsRoutes } from './http/routes/skills'
 import { sessionRoutes } from './http/routes/sessions'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
@@ -150,6 +151,7 @@ export async function createAgentApp(
   })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)
+  await app.register(skillsRoutes, { workspaceRoot })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
   await app.register(readyStatusRoutes, { tracker: readyTracker })

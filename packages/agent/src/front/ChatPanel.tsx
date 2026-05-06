@@ -65,6 +65,15 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
 } from '@boring/ui'
 import { cn } from './lib'
 
@@ -118,7 +127,7 @@ interface AvailableModel extends ModelSelection {
   available: boolean
 }
 
-const DEFAULT_MODEL: ModelSelection = { provider: 'anthropic', id: 'sonnet' }
+const DEFAULT_MODEL: ModelSelection = { provider: 'qwen', id: 'qwen3.5' }
 
 function readStoredModel(): ModelSelection | null {
   try {
@@ -1263,62 +1272,74 @@ function ModelSelect({
     groups.set(m.provider, list)
   }
 
+  const [open, setOpen] = useState(false)
+
   return (
-    <Select
-      value={currentKey}
-      onValueChange={(next) => {
-        const parsed = decodeModelKey(next)
-        if (parsed) onChange(parsed)
-      }}
-      disabled={disabled}
-    >
-      <SelectTrigger
-        data-boring-agent-part="model-select"
-        data-boring-state={disabled ? "disabled" : undefined}
-        className={cn(
-          composerActionClass,
-          "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
-          "data-[state=open]:bg-muted/60 data-[state=open]:text-foreground",
-        )}
-        aria-label="Model"
+    <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-boring-agent-part="model-select"
+          data-boring-state={disabled ? "disabled" : undefined}
+          disabled={disabled}
+          aria-label="Model"
+          className={cn(
+            composerActionClass,
+            "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
+            open && "bg-muted/60 text-foreground",
+          )}
+        >
+          <BotIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 truncate">{triggerLabel}</span>
+          <span className="hidden shrink-0 rounded-full border border-border/70 bg-background/45 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
+            {triggerProviderLabel}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-popover p-0 shadow-2xl"
       >
-        <BotIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 truncate">
-          <SelectValue>{triggerLabel}</SelectValue>
-        </span>
-        <span className="hidden shrink-0 rounded-full border border-border/70 bg-background/45 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
-          {triggerProviderLabel}
-        </span>
-      </SelectTrigger>
-      <SelectContent
-        className="max-h-[min(340px,var(--radix-select-content-available-height))] w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
-      >
-        {[...groups.entries()].map(([provider, list]) => (
-          <div key={provider} className="py-1">
-            <div className="px-2 pb-1 text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">
-              {displayProviderLabel(provider)}
-            </div>
-            {list.map((m) => (
-              <SelectItem
-                key={encodeModelKey(m)}
-                value={encodeModelKey(m)}
-                aria-label={`${m.label || displayModelLabel(m.id)}, ${displayProviderLabel(m.provider)}`}
-                className="rounded-md py-2 pl-8 pr-2 text-[13px] focus:bg-foreground/[0.06] data-[state=checked]:bg-foreground/[0.06]"
+        <Command>
+          <CommandInput
+            placeholder="Search models…"
+            className="h-9 border-0 text-[13px] focus:ring-0"
+          />
+          <CommandList className="max-h-[280px]">
+            <CommandEmpty className="py-4 text-center text-[13px] text-muted-foreground">
+              No models found
+            </CommandEmpty>
+            {[...groups.entries()].map(([provider, list]) => (
+              <CommandGroup
+                key={provider}
+                heading={displayProviderLabel(provider)}
+                className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-muted-foreground/75"
               >
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate font-medium">
-                    {m.label || displayModelLabel(m.id)}
-                  </span>
-                  <span className="truncate text-[11px] text-muted-foreground">
-                    {m.id}
-                  </span>
-                </span>
-              </SelectItem>
+                {list.map((m) => {
+                  const key = encodeModelKey(m)
+                  const label = m.label || displayModelLabel(m.id)
+                  return (
+                    <CommandItem
+                      key={key}
+                      value={`${label} ${m.id} ${displayProviderLabel(m.provider)}`}
+                      onSelect={() => { onChange(m); setOpen(false) }}
+                      className={cn(
+                        "flex flex-col items-start gap-0.5 rounded-md px-2 py-2 text-[13px]",
+                        key === currentKey && "bg-foreground/[0.06]",
+                      )}
+                    >
+                      <span className="truncate font-medium">{label}</span>
+                      <span className="truncate text-[11px] text-muted-foreground">{m.id}</span>
+                    </CommandItem>
+                  )
+                })}
+              </CommandGroup>
             ))}
-          </div>
-        ))}
-      </SelectContent>
-    </Select>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }
 
