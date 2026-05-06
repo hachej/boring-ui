@@ -161,6 +161,9 @@ jobs:
       - name: Build agent package
         run: pnpm --filter @boring/agent build
 
+      - name: Build workspace package
+        run: pnpm --filter @boring/workspace build
+
       - name: Run vitest suite
         run: pnpm test
 
