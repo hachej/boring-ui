@@ -1313,6 +1313,7 @@ function ModelSelect({
       <PopoverContent
         align="start"
         sideOffset={6}
+        data-boring-agent=""
         className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-popover p-0 shadow-2xl"
       >
         <Command>
@@ -1412,7 +1413,7 @@ function ThinkingSelect({
         ))}
         <BrainIcon className="h-3.5 w-3.5" />
       </SelectTrigger>
-      <SelectContent className="w-auto min-w-0 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl">
+      <SelectContent position="popper" side="top" align="end" data-boring-agent="" className="w-auto min-w-0 rounded-lg border-border/70 bg-popover p-2 shadow-2xl">
         <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
           Think
         </div>

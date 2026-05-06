@@ -88,6 +88,14 @@ export class InMemorySessionStore implements SessionStore {
       this.sessions.delete(sessionId)
     }
   }
+
+  async saveMessages(ctx: SessionCtx, sessionId: string, messages: UIMessage[]): Promise<void> {
+    const session = this.sessions.get(sessionId)
+    if (session && session.workspaceId === ctx.workspaceId) {
+      session.messages = messages
+      session.updatedAt = new Date().toISOString()
+    }
+  }
 }
 
 export interface SessionRoutesOptions {

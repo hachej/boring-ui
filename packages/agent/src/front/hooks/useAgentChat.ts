@@ -108,5 +108,28 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     } catch { /* quota exceeded: drop cache silently */ }
   }, [hydrated, cacheKey, messages])
 
+  // Push a server-side snapshot after each completed turn. Fires only when
+  // status transitions from streaming → ready, not on every message change,
+  // so we don't spam the server during hydration or between turns.
+  const status = chat.status
+  const prevStatusRef = useRef(status)
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    prevStatusRef.current = status
+    if (status !== 'ready') return
+    // Only save when we're settling from an active streaming turn.
+    if (prev !== 'streaming' && prev !== 'submitted') return
+    if (!sessionId || messages.length === 0) return
+    const url = `/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`
+    fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...optsRef.current.requestHeaders,
+      },
+      body: JSON.stringify({ messages }),
+    }).catch(() => { /* best-effort, ignore failures */ })
+  }, [sessionId, status, messages])
+
   return chat
 }

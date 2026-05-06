@@ -5,6 +5,7 @@ import { createUIMessageStream, pipeUIMessageStreamToResponse } from '../sse'
 import type { UIMessageChunk } from '../sse'
 import type { AgentHarness, RunContext } from '../../../shared/harness'
 import type { SessionCtx } from '../../../shared/session'
+import type { UIMessage } from '../../../shared/message'
 import {
   createBodyValidator,
   ERROR_CODE_INTERNAL,
@@ -261,6 +262,32 @@ export function chatRoutes(
         // messages yet. Return an empty history without surfacing a browser
         // console 404 during first-load auto session creation.
         return reply.code(200).send({ messages: [] })
+      }
+    },
+  )
+
+  // Client pushes a snapshot of UI messages after each completed turn so the
+  // server can persist them. On reload the GET /messages endpoint returns
+  // these instead of reconstructing from pi's (in-memory) native format.
+  app.put(
+    '/api/v1/agent/chat/:sessionId/messages',
+    async (request, reply) => {
+      const { sessionId } = request.params as { sessionId: string }
+      const body = request.body as { messages?: UIMessage[] }
+      if (!Array.isArray(body?.messages)) {
+        return reply.code(400).send({ error: { code: 'validation_error', message: 'messages must be an array' } })
+      }
+      const ctx: SessionCtx = {
+        workspaceId: request.workspaceContext?.workspaceId ?? 'default',
+      }
+      try {
+        const runtime = await resolveRuntime(request)
+        if (runtime.harness.sessions.saveMessages) {
+          await runtime.harness.sessions.saveMessages(ctx, sessionId, body.messages)
+        }
+        return reply.code(204).send()
+      } catch {
+        return reply.code(204).send()
       }
     },
   )

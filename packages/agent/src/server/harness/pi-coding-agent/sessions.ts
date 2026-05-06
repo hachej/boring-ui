@@ -115,13 +115,18 @@ export class PiSessionStore implements SessionStore {
     );
 
     const fileStat = await fsStat(filepath);
-    const context = buildSessionContext(sessionEntries);
-    const messages = piMessagesToUIMessages(context.messages);
+
+    // Prefer a persisted UI snapshot if available — these are written by
+    // the client after each turn and survive server restarts. Fall back to
+    // reconstructing from pi's native message format (which is empty when
+    // SessionManager.inMemory() is used, so the fallback is mostly a no-op).
+    const uiSnapshot = extractLatestUiSnapshot(fileEntries);
+    const messages = uiSnapshot ?? piMessagesToUIMessages(
+      buildSessionContext(sessionEntries).messages,
+    );
 
     const title = extractTitle(sessionEntries) ?? "New session";
-    const turnCount = context.messages.filter(
-      (m) => "role" in m && (m as any).role === "user",
-    ).length;
+    const turnCount = messages.filter((m) => m.role === "user").length;
 
     return {
       id: sessionId,
@@ -131,6 +136,17 @@ export class PiSessionStore implements SessionStore {
       turnCount,
       messages,
     };
+  }
+
+  async saveMessages(ctx: SessionCtx, sessionId: string, messages: UIMessage[]): Promise<void> {
+    const filepath = await this.resolveSessionFile(sessionId);
+    const entry = JSON.stringify({
+      type: "ui_snapshot",
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      messages,
+    });
+    await appendFile(filepath, entry + "\n");
   }
 
   async delete(ctx: SessionCtx, sessionId: string): Promise<void> {
@@ -222,6 +238,17 @@ export class PiSessionStore implements SessionStore {
       return null;
     }
   }
+}
+
+function extractLatestUiSnapshot(entries: (SessionHeader | SessionEntry)[]): UIMessage[] | null {
+  let latest: UIMessage[] | null = null;
+  for (const e of entries) {
+    const rec = e as { type?: string; messages?: unknown };
+    if (rec.type === "ui_snapshot" && Array.isArray(rec.messages)) {
+      latest = rec.messages as UIMessage[];
+    }
+  }
+  return latest;
 }
 
 function extractTitle(entries: SessionEntry[]): string | undefined {
