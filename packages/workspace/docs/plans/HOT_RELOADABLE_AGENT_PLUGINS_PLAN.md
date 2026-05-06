@@ -146,15 +146,18 @@ Permissions are implicit from declarations. No `runtime` field — implicit from
 
 ## Load Flow
 
+The agent only writes files. The workspace watches `.boring/plugins/` and handles everything.
+
 ```
-Pi writes .boring/plugins/csv-viewer/ files
+Agent writes/edits .boring/plugins/csv-viewer/ files
   │
   ▼
-Pi calls exec_ui { kind: "boring.plugin.load", params: { pluginId: "csv-viewer" } }
+Workspace file watcher detects change to boring.plugin.json (or any file in the dir)
   │
   ▼ (server)
-Read + validate boring.plugin.json via workspace.readFile()   ← Vercel-safe
-Load plugin.server.ts via jiti (moduleCache: false)           ← Pi's pattern
+Read + validate boring.plugin.json via workspace.readFile()
+If already loaded → unload old (remove tools, catalog handlers, jiti module discarded)
+Load plugin.server.ts via injected ServerPluginLoader (jiti by default)
 Register agent tools into Fastify tool registry
 Register catalog search handler at /api/agent-plugins/:id/catalog/search
   │
@@ -162,20 +165,22 @@ Register catalog search handler at /api/agent-plugins/:id/catalog/search
 dispatchCommand "boring.plugin.load" { manifest }
   │
   ▼ (browser)
-Register wrapper panel "agent-plugin-frame" with params { pluginId }
-Register wrapper commands from manifest.commands[]
-Register wrapper surface resolvers from manifest.surfaceResolvers[]
-Register catalog adapters from manifest.catalogs[]
-Register left tabs from manifest.leftTabs[]
+registerAgentPlugin(manifest):
+  unregisterByPluginId(pluginId)         ← no-op on first load
+  register wrapper panel "agent-plugin-frame" with { pluginId }
+  register commands, left-tabs, surface-resolvers, catalog adapters from manifest
+  send boring.bridge.reload to any open iframe for this pluginId
   │
-  ▼ (user opens panel)
+  ▼ (user opens panel, or iframe reloads)
 <AgentPluginPane pluginId="csv-viewer" />
   → <iframe src="/api/agent-plugins/csv-viewer/front.js?v=timestamp" sandbox="allow-scripts" />
-  → esbuild compiles front.tsx on demand via workspace.readFile() (Vercel-safe)
+  → esbuild compiles front.tsx on demand, Cache-Control: no-store
   → iframe ↔ host via postMessage bridge
 ```
 
-Unload: `exec_ui { kind: "boring.plugin.unload", params: { pluginId } }` → jiti module discarded, all registry entries removed via `unregisterByPluginId`.
+Unload: agent deletes `boring.plugin.json` → watcher fires → jiti module discarded, all registry entries removed via `unregisterByPluginId`, SSE `boring.plugin.unload` sent to browser.
+
+The `exec_ui` plugin load/unload kinds are internal workspace mechanisms — not part of the agent API.
 
 ---
 
@@ -316,10 +321,13 @@ Host validates origin before dispatching. v2 adds `host.query()` for data access
 - [ ] On unload: remove tools + catalog handlers owned by pluginId; jiti discards module automatically via `moduleCache: false`
 - [ ] Core (app entry point) selects and passes the loader — workspace does not auto-detect environment
 
-### E — exec_ui trigger
+### E — File watcher + SSE dispatch
+- [ ] `src/server/plugins/agentPluginWatcher.ts` — watch `.boring/plugins/*/boring.plugin.json` for create/change/delete using workspace file watching primitives
+- [ ] On create/change: validate manifest → (re)load server plugin → SSE `dispatchCommand("boring.plugin.load", { manifest })` to all connected browsers
+- [ ] On delete: unload server plugin → SSE `dispatchCommand("boring.plugin.unload", { pluginId })` to all connected browsers
 - [ ] Add `"boring.plugin.load"` and `"boring.plugin.unload"` to `CommandKind` in `src/front/bridge/client.ts`
-- [ ] Server-side exec_ui handler: validate manifest → jiti load → SSE manifest payload to browser
 - [ ] Browser `dispatchCommand` cases: call `registerAgentPlugin(manifest)` / `unregisterAgentPlugin(pluginId)`
+- [ ] `boring.bridge.reload` sent to open iframes after re-registration on hot reload
 
 ### F — Browser registration + generic iframe panel
 - [ ] `src/front/plugins/agentPluginRegistry.ts`:
