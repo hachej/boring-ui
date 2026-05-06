@@ -1,11 +1,11 @@
 {
-  "name": "boring-ui",
+  "name": "@hachej/boring-workspace",
   "version": "0.1.0",
   "description": "Turn an agent into an app",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "boring-ui": "./dist/index.js"
+    "boring-workspace": "./dist/index.js"
   },
   "files": [
     "dist/",
