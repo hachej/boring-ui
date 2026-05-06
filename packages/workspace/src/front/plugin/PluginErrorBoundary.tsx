@@ -6,7 +6,7 @@ interface Props {
   pluginId: string
   contributionKind: "panel" | "catalog-row" | "chat-suggestion"
   contributionId?: string
-  children: ReactNode
+  children?: ReactNode
 }
 
 interface State {
