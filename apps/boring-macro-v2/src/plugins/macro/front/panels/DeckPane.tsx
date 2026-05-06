@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { PaneProps } from "@boring/workspace"
-import { events, filesystemEvents } from "@boring/workspace"
+import { onFilesystemChanged } from "@boring/workspace"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import {
@@ -478,7 +478,7 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
   // (e.g. the agent wrote it via the write tool).
   useEffect(() => {
     if (!path) return
-    return events.on(filesystemEvents.changed, (e) => {
+    return onFilesystemChanged((e) => {
       if (e.path === path) setReloadToken((n) => n + 1)
     })
   }, [path])

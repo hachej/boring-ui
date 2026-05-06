@@ -11,8 +11,9 @@ import { LineChart, Search, TrendingUp, Presentation } from "lucide-react"
 import { chartCanvasPanel, deckPanel } from "./panels"
 import { createMacroSeriesExplorerOptions } from "./catalogs"
 import { macroSurfaceOutputs } from "./surfaceResolver"
-import { MACRO_PLUGIN_ID } from "../shared/constants"
+import { MACRO_PLUGIN_ID, MACRO_DECK_PANEL_ID } from "../shared/constants"
 import { openSeriesPane } from "./data/macroSeriesUi"
+import { postUiCommand } from "@boring/workspace"
 export { MacroStandaloneDeckRoute } from "./routes/StandaloneDeckRoute"
 
 interface MacroChatSuggestion {
@@ -79,37 +80,28 @@ export function makeMacroClientPlugin(
       {
         type: "command",
         command: {
-          id: "macro:open-gdp-chart",
-          title: "Open Real GDP Chart",
-          keywords: ["macro", "gdp", "gdpc1", "chart", "series"],
-          run: () => openSeriesPane("GDPC1", { title: "Real GDP" }),
+          id: "macro:browse-series",
+          title: "Browse FRED Series",
+          keywords: ["macro", "fred", "series", "data", "search", "catalog", "browse"],
+          // Reopen the command palette after it closes — it defaults to catalog
+          // mode where the FRED series search is available.
+          run: () => setTimeout(() => {
+            document.dispatchEvent(new KeyboardEvent("keydown", {
+              key: "k", metaKey: true, ctrlKey: true, bubbles: true, cancelable: true,
+            }))
+          }, 50),
         },
       },
       {
         type: "command",
         command: {
-          id: "macro:open-unemployment-chart",
-          title: "Open Unemployment Rate Chart",
-          keywords: ["macro", "unemployment", "unrate", "chart", "series", "labor"],
-          run: () => openSeriesPane("UNRATE", { title: "Unemployment Rate" }),
-        },
-      },
-      {
-        type: "command",
-        command: {
-          id: "macro:open-cpi-chart",
-          title: "Open CPI Inflation Chart",
-          keywords: ["macro", "cpi", "inflation", "price", "chart", "series"],
-          run: () => openSeriesPane("CPIAUCSL", { title: "CPI Inflation" }),
-        },
-      },
-      {
-        type: "command",
-        command: {
-          id: "macro:open-fed-funds-chart",
-          title: "Open Fed Funds Rate Chart",
-          keywords: ["macro", "fed", "funds", "rate", "interest", "fomc", "fedfunds", "chart"],
-          run: () => openSeriesPane("FEDFUNDS", { title: "Fed Funds Rate" }),
+          id: "macro:new-deck",
+          title: "New Briefing Deck",
+          keywords: ["macro", "deck", "briefing", "presentation", "slides", "new"],
+          run: () => postUiCommand({
+            kind: "openPanel",
+            params: { id: `${MACRO_DECK_PANEL_ID}:briefing`, component: MACRO_DECK_PANEL_ID, params: { path: "deck/briefing.md" } },
+          }),
         },
       },
     ],

@@ -34,6 +34,7 @@ export { ConflictBanner } from "./ConflictBanner"
 export {
   emitFilesystemAgentFileChange,
   useAutoOpenAgentFiles,
+  onFilesystemChanged,
 } from "./agentFileBridge"
 export type { UseFilePaneOptions, UseFilePaneReturn } from "./useFilePane"
 export type { UseAutoOpenAgentFilesOptions } from "./agentFileBridge"

@@ -107,6 +107,13 @@ export function useAutoOpenAgentFiles(
   })
 }
 
+/** Subscribe to file-changed events. Returns the unsubscribe function. */
+export function onFilesystemChanged(
+  handler: (payload: { path: string }) => void,
+): () => void {
+  return events.on(filesystemEvents.changed, handler)
+}
+
 export function FilesystemAgentFileBridge() {
   useEffect(() => {
     return events.on(workspaceEvents.agentData, ({ part }) => {
