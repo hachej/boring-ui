@@ -15,15 +15,15 @@ FROM deps AS build
 COPY packages/ packages/
 COPY apps/boring-macro-v2/ apps/boring-macro-v2/
 
-RUN pnpm --filter @boring/ui exec tsup
+RUN pnpm --filter @hachej/boring-ui-kit exec tsup
 
-RUN pnpm --filter @boring/agent exec tsup \
+RUN pnpm --filter @hachej/boring-agent exec tsup \
   && cp packages/agent/src/front/styles/globals.css packages/agent/dist/front/styles.css
 
-RUN pnpm --filter @boring/core run build
+RUN pnpm --filter @hachej/boring-core run build
 
-RUN pnpm --filter @boring/workspace exec tsup --no-dts \
-  && pnpm --filter @boring/workspace exec vite build
+RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
+  && pnpm --filter @hachej/boring-workspace exec vite build
 
 RUN BORING_USE_LOCAL_PACKAGES=1 pnpm --filter @boring/macro exec vite build
 

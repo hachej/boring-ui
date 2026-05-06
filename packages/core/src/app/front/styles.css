@@ -2,5 +2,5 @@
 @source "../..";
 
 @import "../../front/theme.css";
-@import "@boring/workspace/globals.css";
-@import "@boring/agent/front/styles.css";
+@import "@hachej/boring-workspace/globals.css";
+@import "@hachej/boring-agent/front/styles.css";
