@@ -11,8 +11,8 @@ const repoRoot = resolve(agentRoot, '..', '..')
 const auditedFiles = [
   { root: agentRoot, path: 'src/front/ChatPanel.tsx' },
   { root: agentRoot, path: 'examples/with-custom-tool/client.tsx' },
-  { root: repoRoot, path: 'apps/agent-playground/src/App.tsx' },
-  { root: repoRoot, path: 'apps/agent-playground/server.ts' },
+  { root: repoRoot, path: 'apps/agent-playground/src/front/App.tsx' },
+  { root: repoRoot, path: 'apps/agent-playground/src/server/index.ts' },
 ]
 
 function readFile(root: string, relPath: string): string {
