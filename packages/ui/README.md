@@ -1,47 +1,65 @@
 # @boring/ui
 
-Shared shadcn-style primitives for Boring packages and app-generated panes.
+Shared UI primitives for boring-ui packages and plugins.
 
-This package intentionally ships class-only React primitives and no global CSS. Consumers get styles from the host package CSS they already import, for example:
-
-```ts
-import "@boring/workspace/globals.css"
-import "@boring/agent/front/styles.css"
+```bash
+pnpm add @boring/ui
 ```
 
-`@boring/workspace` and `@boring/agent` scan these primitive sources when building their package CSS, so downstream apps do not need package-source `@source` entries.
+---
 
-Current primitives:
+## What it provides
 
-- `Button`, `buttonVariants`, `IconButton`
-- `Badge`, `badgeVariants`, `StatusBadge`, `Notice`
-- `Input`, `Textarea`, `InputGroup`
-- `Dialog`, `DropdownMenu`, `Select`, `Tooltip`, `Command`, `Tabs`, `HoverCard`, `Collapsible`, `ButtonGroup`
-- `Separator`, `Kbd`, `InlineCode`, `Spinner`, `Skeleton`, `LoadingState`
-- `EmptyState`, `ErrorState`, `Notice`, `Toaster`, `toast`
-- `Avatar`, `AvatarFallback`, `InitialsAvatar`
-- `Disclosure`, `DisclosureTrigger`, `DisclosureContent`, `DisclosureChevron`
-- `ResizeHandle`
-- `Toolbar`, `ToolbarGroup`, `ToolbarButton`, `ToolbarSeparator`
-- `Chip`, `ChipButton`, `ChipRemove`, `SegmentedControl`, `SegmentedControlItem`
-- `List`, `ListRow`, `ListRowTitle`, `ListRowDescription`, `ListRowMeta`, `ListRowActions`
-- `DetailList`, `FloatingPanel`, `FloatingPanelHeader`, `FloatingPanelBody`
-- `Pane`, `PaneHeader`, `PaneTitle`, `PaneDescription`, `PaneBody`, `PaneFooter`, `PaneToolbar`
-- `Field`, `FieldLabel`, `FieldDescription`, `FieldError`
-- `SettingsPanel`, `SettingsNav`, `SettingsPageHeader`, `SettingsActionRow`, `DetailLine`
-- `cn`
+shadcn-style React components with no global CSS — styles come from the host package CSS (`@boring/workspace/globals.css`).
 
-Keep this package low-level: no workspace, agent, auth, routing, persistence, or server imports.
+**Layout & surfaces** — `Pane`, `PaneHeader`, `PaneBody`, `PaneToolbar`, `FloatingPanel`
 
-## Plugin authoring rule
+**Actions** — `Button`, `IconButton`, `ButtonGroup`, `Toolbar`, `ToolbarButton`
 
-Plugins should compose generic visuals from `@boring/ui` so host apps stay visually consistent:
+**Forms** — `Input`, `Textarea`, `Select`, `Field`, `FieldLabel`, `InputGroup`
 
-- actions: `Button`, `IconButton`, `ButtonGroup`, `Toolbar*`
-- forms/search: `Field`, `Label`, `Input`, `Textarea`, `Select`, `InputGroup`
-- feedback: `Notice`, `EmptyState`, `ErrorState`, `Spinner`, `Skeleton`, `StatusBadge`, `toast`/`Toaster`
-- compact metadata: `Chip`, `ChipButton`, `InlineCode`, `Kbd`
-- mode toggles: `SegmentedControl`, `SegmentedControlItem`, `Tabs`
-- surfaces: `Pane*`, `Card*`, `Settings*`, `ScrollArea`, `Popover`, `Dialog`
+**Feedback** — `Notice`, `EmptyState`, `ErrorState`, `Spinner`, `Skeleton`, `StatusBadge`, `toast`
 
-Plugin-specific components should stay in the plugin package when they encode domain behavior or data contracts (file trees, editors, data explorers, artifact renderers, catalog rows). Those components should still render `@boring/ui` primitives internally rather than raw HTML controls or bespoke alert/empty/loading treatments.
+**Display** — `Badge`, `Chip`, `InlineCode`, `Kbd`, `Avatar`, `List`, `DetailList`
+
+**Overlays** — `Dialog`, `DropdownMenu`, `Tooltip`, `HoverCard`, `Tabs`, `Command`
+
+**Settings** — `SettingsPanel`, `SettingsNav`, `SettingsActionRow`
+
+---
+
+## Usage
+
+```tsx
+import { Button, EmptyState, Pane, PaneHeader, PaneBody } from "@boring/ui"
+
+export function MyPanel() {
+  return (
+    <Pane>
+      <PaneHeader>My Panel</PaneHeader>
+      <PaneBody>
+        <EmptyState title="Nothing here" />
+        <Button>Action</Button>
+      </PaneBody>
+    </Pane>
+  )
+}
+```
+
+Styles are provided by the host — no separate CSS import needed in plugins:
+
+```ts
+// In your app shell (once)
+import "@boring/workspace/globals.css"
+```
+
+---
+
+## Part of [boring-ui](https://github.com/hachej/boring-ui)
+
+| Package | Role |
+|---|---|
+| `@boring/core` | DB, auth, app factory |
+| `@boring/workspace` | Plugin system, layouts |
+| `@boring/agent` | Agent runtime + tools |
+| `@boring/ui` | Shared UI primitives |

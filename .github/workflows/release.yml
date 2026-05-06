@@ -7,28 +7,39 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   ci:
     name: CI
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: boring_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm lint:invariants
+      - run: pnpm lint && pnpm typecheck && pnpm test && pnpm lint:invariants
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/boring_test
 
   publish:
     name: Publish to npm
@@ -36,23 +47,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
-
       - run: pnpm install --frozen-lockfile
-
-      - name: Build all packages
+      - name: Build packages
         run: pnpm build
-
-      - name: Publish packages
-        run: pnpm publish -r --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Build CLI frontend
+        run: pnpm --filter @hachej/boring-ui build:full
+      - name: Publish
+        run: pnpm publish -r --access public --no-git-checks --provenance

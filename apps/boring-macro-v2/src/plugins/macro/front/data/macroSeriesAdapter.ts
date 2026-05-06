@@ -52,12 +52,16 @@ function buildQuery(params: Record<string, string | number | string[] | undefine
 export function createMacroSeriesAdapter(): ExplorerAdapter {
   return {
     async search(args) {
+      // When expanding a group, translate its key/value into the server-side
+      // filter param — the server has no concept of `group`, only flat filters.
+      const frequency = args.group?.key === 'frequency'
+        ? [args.group.value]
+        : args.filters.frequency
       const qs = buildQuery({
         q: args.query || undefined,
         offset: args.offset,
         limit: args.limit,
-        group: args.group?.value,
-        frequency: args.filters.frequency,
+        frequency,
         source: args.filters.source,
       })
       const res = await fetch(`/api/macro/catalog${qs}`, { signal: args.signal })

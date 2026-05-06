@@ -377,9 +377,12 @@ export class DataService {
       params.st = sourceType
     }
 
+    const freqWhere = where
+      ? `${where} AND series_id IN (SELECT DISTINCT series_id FROM timeseries)`
+      : `WHERE series_id IN (SELECT DISTINCT series_id FROM timeseries)`
     const freqRows = await this.query<{ frequency_short: string; cnt: string }>(
       `SELECT frequency_short, count() AS cnt FROM ${CATALOG_TABLE}
-       ${where} GROUP BY frequency_short ORDER BY cnt DESC`,
+       ${freqWhere} GROUP BY frequency_short ORDER BY cnt DESC`,
       Object.keys(params).length > 0 ? params : undefined,
     )
 

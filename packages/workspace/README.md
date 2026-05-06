@@ -1,70 +1,94 @@
 # @boring/workspace
 
-Workspace UI and bridge package for composing chat, files, catalogs, editors,
-and app-specific panes. It provides React layouts, plugin registries, default
-workspace plugins, and server helpers that wire workspace UI tools onto
-`@boring/agent`.
+Plugin system, panel registry, and IDE-style layout for boring-ui apps.
 
-App shells still own auth, routing, application persistence, and the concrete
-chat component. Pass the chat component to `WorkspaceProvider` when rendering
-chat chrome.
+```bash
+pnpm add @boring/workspace
+```
 
-## Docs
+---
 
-- `docs/INTERFACES.md` - current package boundaries and contracts.
-- `docs/PLUGIN_STRUCTURE.md` - plugin layout and invariant checks.
-- `docs/plans/` - current ownership plans; old plans live in
-  `docs/plans/archive/`.
+## What it provides
 
-## Three-tier API
+- **Plugin system** — contribute panels, commands, catalogs, sidebar tabs, and surface resolvers
+- **Layouts** — `ChatLayout`, `IdeLayout`, `ResponsiveDockviewShell`
+- **Panel registry** — auto-lazy code splitting, error boundaries, dockview integration
+- **Bridge** — typed pubsub between agent backend and frontend panels
+- **Built-in plugins** — file tree, editor, artifact surface, command palette
 
-### Tier 1: Preset Layouts
+---
 
-Use `ChatLayout` or `IdeLayout` when the stock workspace shape fits and you only need to choose panels by id.
+## Quickstart
 
 ```tsx
+import { WorkspaceProvider, IdeLayout } from "@boring/workspace"
 import { ChatPanel } from "@boring/agent"
-import { ChatLayout, WorkspaceProvider } from "@boring/workspace"
 
 export function App() {
   return (
     <WorkspaceProvider chatPanel={ChatPanel} plugins={[myPlugin]}>
-      <ChatLayout sidebar="files" surface="artifact-surface" />
+      <IdeLayout />
     </WorkspaceProvider>
   )
 }
 ```
 
-### Tier 2: Declarative Shell
+---
 
-Use `TopBar` with `ResponsiveDockviewShell` when preset slots are too narrow but you still want stock responsive chrome.
+## Writing a plugin
 
-```tsx
-import { ChatPanel } from "@boring/agent"
-import { ResponsiveDockviewShell, TopBar, WorkspaceProvider } from "@boring/workspace"
+```ts
+import { defineFrontPlugin, definePanel } from "@boring/workspace"
 
-export function App() {
-  return (
-    <WorkspaceProvider chatPanel={ChatPanel} plugins={[myPlugin]}>
-      <TopBar appTitle="My App" />
-      <ResponsiveDockviewShell layout={myLayout} />
-    </WorkspaceProvider>
-  )
+export const myPlugin = defineFrontPlugin({
+  id: "my-plugin",
+  label: "My Plugin",
+  systemPrompt: "You can open widgets with the 'open-widget' tool.",
+  outputs: [
+    {
+      type: "panel",
+      panel: definePanel({
+        id: "my-widget",
+        title: "Widget",
+        placement: "center",
+        component: () => import("./WidgetPane").then(m => ({ default: m.WidgetPane })),
+      }),
+    },
+  ],
+})
+```
+
+Panel components receive `PaneProps<T>`:
+
+```ts
+import type { PaneProps } from "@boring/workspace"
+
+export function WidgetPane({ params, api }: PaneProps<{ id: string }>) {
+  // params — data passed when the panel is opened
+  // api    — DockviewPanelApi (close, setTitle, …)
 }
 ```
 
-### Tier 3: Dock Runtime
+Panels are auto-lazy: a zero-arg factory `() => import(...)` is code-split automatically.
 
-Use `DockviewShell` directly when the host owns all chrome and wants only registry-backed panel rendering.
+---
 
-```tsx
-import { DockviewShell, WorkspaceProvider } from "@boring/workspace"
+## Output types
 
-export function App() {
-  return (
-    <WorkspaceProvider plugins={[myPlugin]}>
-      <DockviewShell layout={myLayout} />
-    </WorkspaceProvider>
-  )
-}
-```
+| type | contributes |
+|---|---|
+| `panel` | a center/right/bottom pane |
+| `left-tab` | a persistent sidebar tab |
+| `command` | a command palette entry |
+| `catalog` | a searchable data explorer |
+| `surface-resolver` | maps agent `exec_ui` calls to panel opens |
+
+---
+
+## Part of [boring-ui](https://github.com/hachej/boring-ui)
+
+| Package | Role |
+|---|---|
+| `@boring/core` | DB, auth, app factory |
+| `@boring/workspace` | Plugin system, layouts |
+| `@boring/agent` | Agent runtime + tools |
