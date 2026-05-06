@@ -38,19 +38,23 @@ The workspace has two plugin tiers that coexist and share the same registry infr
 
 Boring-ui plugins ARE pi extensions. The factory is a valid pi `ExtensionFactory` — the same file loads in pi's loader unchanged. Boring-ui extends the API object with optional UI-registration methods that pi simply doesn't provide.
 
-### Discovery
+### Discovery and loading
 
-Pi discovers extensions in `.pi/extensions/<name>/` using `package.json`:
+Pi uses `@mariozechner/jiti` to load extensions — TypeScript and TSX are handled natively without a compilation step. Pi reads `package.json["pi"]["extensions"]` to find entry points; those paths are passed directly to jiti regardless of file extension. The directory scanner (for extensionless index files) only picks up `.ts` / `.js`, but explicitly declared paths in `extensions[]` bypass that filter — so `"./front.tsx"` works.
+
 ```json
 { "pi": { "extensions": ["./front.tsx"] } }
 ```
 
-Boring-ui mirrors this exactly for `.boring/plugins/<name>/`:
+Boring-ui mirrors this exactly for `.boring/plugins/<name>/`. Both fields point to the same factory file; both runtimes use jiti:
+
 ```json
 { "boring": { "extensions": ["./front.tsx"], ... } }
 ```
 
-Both fields point to the same factory file. A plugin with only `"pi"` (no `"boring"` field) also loads in boring-ui — `registerTool` and `registerCommand` work; no UI contributions are registered. This is the minimal pi-compatible plugin that runs identically in both runtimes.
+A plugin with only `"pi"` (no `"boring"` field) also loads in boring-ui — `registerTool` and `registerCommand` work; no UI contributions are registered. This is the minimal pi-compatible plugin that runs identically in both runtimes.
+
+**Note:** boring-ui's existing `pluginLoader.ts` (the custom wrapper in `packages/agent/`) uses native `import()` and restricts to `.js/.mjs`. This is wrong — it needs to be replaced with jiti to match pi's real loader behaviour (see TODO C).
 
 ### `BoringExtensionAPI`
 
@@ -261,9 +265,14 @@ interface BoringPackageField {
 | Reload trigger | `package.json` write | Commit signal pattern — all code files are on disk before reload fires. Mirrors pi's explicit `/reload` philosophy. |
 | Plugin API naming | Flat `register*` throughout | Consistent with pi's `registerTool` / `registerCommand`. No namespace objects. |
 | Boring-ui extras | Optional methods | `registerPanel?`, `registerLeftTab?`, etc. are absent in pi — optional chaining makes the same factory safe in both runtimes. |
-| `registerTool` shape | Pi's verbatim `ToolDefinition` | TypeBox parameters, full execute signature. Plugin authors use pi's `defineTool()` helper. Identical surface across both runtimes. |
+| `registerTool` shape | Pi's verbatim `ToolDefinition` (TypeBox) | TypeBox parameters, full execute signature. Plugin authors use pi's `defineTool()` helper. Identical surface across both runtimes. |
+| TypeBox — full migration | `AgentTool.parameters` becomes `TSchema` | Drops `as any` in `tool-adapter.ts`. All existing tools (filesystem, harness, dataCatalog) updated. Clean end-to-end TypeBox pipeline. |
+| No build step | jiti handles `.tsx` natively | Pi's real loader uses `@mariozechner/jiti`; boring-ui also uses jiti for server plugins. No esbuild pre-compilation needed in V1. |
+| Fix `pluginLoader.ts` | Replace native `import()` with jiti | Boring-ui's custom wrapper incorrectly restricts to `.js/.mjs`. Rewrite to use `createJiti` matching pi's real loader. |
 | Server plugins | Boring-ui only | Pi has no server plugin concept. `plugin.server.ts` is loaded by jiti into the Fastify process. |
 | Outside plugins | Stay declarative | `filesystemPlugin`, `macroPlugin`, etc. keep `WorkspaceFrontPlugin` shape. `bootstrap()` loads them. No forced migration. |
+| PluginCoordinator | Full replacement | `PluginCoordinator` deleted. New `BoringExtensionAPI`-based system handles both outside (bootstrap) and inside (agent) plugins. Bootstrap migrates to factory API. |
+| SSE for plugin events | Multiplex on `/api/v1/fs/events` | `boring.plugin.load`, `boring.plugin.unload`, `boring.plugin.error` are new event types on the existing stream. Browser SSE handler already connected — add filter. |
 | Rollback on failure | Restore old state | Stage → validate → commit/rollback on both server and browser. Old plugin stays live on any failure. |
 | Registries | Zustand stores | SSE updates go through `setState` — no Map mutation during React render cycle. |
 | iframe handshake | Iframe sends `ready` first | Eliminates lost-init race. Host responds with `init`; iframe then renders. |
@@ -785,13 +794,14 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 - [ ] Create `packages/workspace/docs/bridge.md` — postMessage bridge API, `@boring/workspace/bridge-client` usage
 - [ ] `boringSystemPrompt.ts` — embed all three docs as static strings; `BORING_DOCS_PATH` overrides path for dev
 
-### C — Plugin watcher + SSE dispatch
+### C — Fix `pluginLoader.ts` + Plugin watcher + SSE dispatch
 
+- [ ] **Rewrite `packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`** — replace native `import()` (`.js/.mjs` only) with `createJiti(import.meta.url, { moduleCache: false })`. Match pi's real loader: accept `.ts`, `.tsx`, `.js`, `.mjs`. Keep the same `extractTools` / `validateTool` shape.
 - [ ] `src/server/plugins/agentPluginWatcher.ts` — subscribe to `workspace.watch()`
 - [ ] Filter: `event.path` matches `.boring/plugins/*/package.json` — `package.json` is the only reload trigger; `front.tsx` / `plugin.server.ts` changes do not reload
 - [ ] Extract pluginId from directory name segment
 - [ ] Serialize concurrent reloads per pluginId (no debounce — `package.json` write IS the signal)
-- [ ] On `write`: `readBoringPackage(dir)` → stage → commit model → SSE `boring.plugin.load { boring, version, revision }` on success; `.error` + SSE `boring.plugin.error` on failure
+- [ ] On `write`: `readBoringPackage(dir)` → stage → commit model → SSE `boring.plugin.load` on existing `/api/v1/fs/events` stream (new event type alongside `change`) on success; `.error` + SSE `boring.plugin.error` on failure
 - [ ] On `unlink`: unload server plugin → SSE `boring.plugin.unload { pluginId, revision }`
 - [ ] On success: delete `.boring/plugins/<id>/.error` if present
 
@@ -806,12 +816,20 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 - [ ] `GET /api/agent-plugins/:id/catalog/search?q=` — delegates to registered `CatalogSearchHandler`; in-flight requests complete before handler removal
 - [ ] Active plugin state map: `Map<pluginId, { boring, version, revision }>` updated before SSE dispatch
 
-### E — `authoring.ts`: `BoringPluginAPI` → `BoringExtensionAPI`
+### E — TypeBox migration + `authoring.ts`: `BoringPluginAPI` → `BoringExtensionAPI`
 
+**TypeBox full migration** (prerequisite for `registerTool`):
+- [ ] Change `AgentTool.parameters` from `JSONSchema = Record<string, unknown>` to `TSchema` (import from `@sinclair/typebox`)
+- [ ] Update `validateTool` to accept TypeBox schemas
+- [ ] Drop `parameters: tool.parameters as any` in `tool-adapter.ts` — now type-safe end-to-end
+- [ ] Update all existing tools (filesystem, harness, dataCatalog, etc.) to use `Type.Object(...)` parameters
+- [ ] Update `AgentTool.execute` params type from `Record<string, unknown>` to `Static<TParams>`
+
+**`authoring.ts` rewrite:**
 - [ ] Replace namespaced `BoringPluginAPI` with flat `BoringExtensionAPI`
 - [ ] Pi methods boring-ui implements: `registerTool(ToolDefinition)`, `registerCommand(name, opts)`, `registerShortcut(key, opts)`, `on(event, handler)`
 - [ ] `registerTool` — import `ToolDefinition` from `@mariozechner/pi-coding-agent`; re-export from `@boring/workspace/plugin`; plugin authors use `defineTool()` helper
-- [ ] `registerCommand` — pi slash command (`/name [args]`); boring-ui registers it as a slash command handler, not a UI palette entry
+- [ ] `registerCommand` — pi slash command (`/name [args]`); boring-ui registers it as a front-side slash command handler (not available in `BoringServerPluginAPI`)
 - [ ] `on("load"/"unload", handler)` wired; all other events no-op with dev-mode warning
 - [ ] Pi stub methods (no-op + `console.warn` in dev): `exec`, `sendMessage`, `sendUserMessage`, `appendEntry`, `setSessionName`, `getActiveTools`, `setActiveTools`, `setModel`, `events`, `registerFlag`, `registerProvider`, etc.
 - [ ] Boring-ui optional flat methods: `registerPanel?`, `registerPanelCommand?`, `registerLeftTab?`, `registerSurfaceResolver?`, `registerCatalog?`, `registerProvider?`, `registerSlotFill?`
@@ -820,12 +838,16 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 - [ ] Keep `BoringPluginAPI` as deprecated alias
 - [ ] Export `BoringExtensionAPI`, `BoringExtensionFactory`, `ToolDefinition` (re-export) from `@boring/workspace/plugin`
 
-### F — Browser: SSE handler + `registerAgentPlugin` + `AgentPluginPane` V1
+### F — Browser: replace `PluginCoordinator` + SSE handler + `AgentPluginPane` V1
 
+`PluginCoordinator` (`src/shared/plugins/coordinator.ts`) is **deleted** and replaced by the new `BoringExtensionAPI`-based system. `bootstrap()` migrates to call the new factory loader; outside plugins get a thin adapter wrapping their declarative shape into a factory call.
+
+- [ ] Delete `src/shared/plugins/coordinator.ts` and its `CapturingAPIHandle` / `CapturedRegistrations` types (moved into `authoring.ts`)
 - [ ] Registries as **Zustand stores** — `usePanelStore`, `useCommandStore`, `useTabStore`, `useResolverStore`; SSE updates go through `setState`, never direct Map mutation
 - [ ] Resolver LIFO stack: entries tagged `(pluginId, revision)`; on commit pop all old entries for pluginId, push new; `unregisterByPluginId` removes only entries matching that pluginId
 - [ ] `src/front/plugins/agentPluginRegistry.ts` — browser-side Map of outside pluginId → extensionContract; `lastSeen: Map<string, number>`
-- [ ] `src/front/plugins/registerAgentPlugin.ts` — implement the stage → commit logic described in the Atomicity Model section
+- [ ] `src/front/plugins/registerAgentPlugin.ts` — implement the stage → commit logic described in the Atomicity Model section (replaces coordinator)
+- [ ] Migrate `bootstrap()` — outside plugins get `declarativeToFactory(plugin: WorkspaceFrontPlugin): BoringExtensionFactory` adapter; `bootstrap()` calls `registerAgentPlugin` for each
 - [ ] `src/front/plugins/AgentPluginPane.tsx`:
   - `mode="direct"`: factory module ref IS the component (no second `React.lazy`); panel key includes revision to force remount
   - `mode="iframe"`: `<iframe sandbox="allow-scripts">` (stubbed in V1; wired in G)
