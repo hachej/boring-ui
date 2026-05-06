@@ -99,12 +99,21 @@ export interface WorkspaceHostEventMap {
 }
 
 /**
- * Plugins augment this interface with their public event contracts.
+ * Built-in plugin events baked into the public workspace event map.
  *
- * Example:
- * `declare module "../../front/events/types" { interface WorkspacePluginEventMap extends FilesystemEventMap {} }`
+ * Filesystem events are declared inline (using EventMeta which is structurally
+ * identical to FilesystemEventMeta) so the keys survive vite's rollupTypes
+ * bundling without importing plugin-domain modules.
+ *
+ * Third-party plugins can extend this interface via declare module augmentation,
+ * though that only works in source compilation — it does not survive dist bundling.
  */
-export interface WorkspacePluginEventMap {}
+export interface WorkspacePluginEventMap {
+  "filesystem:file.changed": EventMeta & { path: string }
+  "filesystem:file.created": EventMeta & { path: string; kind: "file" | "dir" }
+  "filesystem:file.moved": EventMeta & { from: string; to: string }
+  "filesystem:file.deleted": EventMeta & { path: string }
+}
 
 export interface WorkspaceEventMap
   extends WorkspaceHostEventMap,

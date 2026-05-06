@@ -165,14 +165,42 @@ Pass the plugin to the shell:
 
 ## Quickstart
 
+### 1. Try it — no database needed
+
+```bash
+pnpm install
+pnpm --filter workspace-playground dev
+```
+
+Open `http://localhost:5200`. Full workspace — chat, panels, agent runtime, file tree. No auth, no DB, no setup.
+
+---
+
+### 2. Full app — with auth and user management
+
+Requires a running Postgres instance.
+
 ```bash
 pnpm install
 cp apps/full-app/.env.example apps/full-app/.env
+```
+
+Edit `.env` — the only required fields to get started:
+
+```bash
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/boring
+BETTER_AUTH_SECRET=<any 64-char hex string>
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Then:
+
+```bash
 pnpm --filter @boring/core drizzle:migrate
 pnpm --filter full-app dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3000`. Sign up, create a workspace, start chatting. User accounts, workspace isolation, and invite flows are all wired in out of the box.
 
 ---
 

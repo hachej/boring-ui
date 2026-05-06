@@ -5,6 +5,7 @@ import { events, agentMeta, workspaceEvents } from "../../../front/events"
 import { useEvent } from "../../../front/events/useEvent"
 import { postUiCommand } from "../../../front/bridge"
 import { filesystemEvents } from "../shared/events"
+import type { FilesystemEventMeta } from "../shared/events"
 
 type Op = "write" | "edit" | "unlink" | "rename" | "mkdir"
 
@@ -109,7 +110,7 @@ export function useAutoOpenAgentFiles(
 
 /** Subscribe to file-changed events. Returns the unsubscribe function. */
 export function onFilesystemChanged(
-  handler: (payload: { path: string }) => void,
+  handler: (payload: FilesystemEventMeta & { path: string }) => void,
 ): () => void {
   return events.on(filesystemEvents.changed, handler)
 }
