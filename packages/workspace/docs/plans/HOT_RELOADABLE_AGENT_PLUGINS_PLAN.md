@@ -7,7 +7,7 @@
 
 ## Goal
 
-Let an agent write a plugin to `.boring/plugins/<name>/` and have it load live into a running workspace without a page refresh — contributing panels, commands, left tabs, surface resolvers, catalog search, and server-side agent tools.
+Let an agent write a plugin to `.boring/plugins/<name>/` and have it load live into a running workspace without a page refresh — contributing panels, commands, left tabs, surface resolvers, and server-side agent tools.
 
 ---
 
@@ -19,7 +19,7 @@ The workspace has two plugin tiers that coexist and share the same registry infr
 |---|---|---|
 | Authored by | App developer | Agent at runtime |
 | Defined via | `defineFrontPlugin` / `composePlugins` | `package.json` (`"boring"` field) + factory |
-| Loaded | At app startup via `bootstrap()` | At runtime via file watcher + SSE |
+| Loaded | At app startup via `bootstrap()` | At runtime via explicit reload + SSE |
 | Migration required | No — stays declarative | N/A — new system |
 
 **Outside plugins** (`filesystemPlugin`, `macroPlugin`, etc.) keep their current declarative `WorkspaceFrontPlugin` shape. `bootstrap()` registers them directly into registries at startup — unchanged. No migration.
@@ -239,16 +239,16 @@ export default function serverFactory(api: BoringServerPluginAPI): void | Promis
 
 ## Package Structure
 
-Every inside plugin is an npm package. `package.json` is the **single manifest and commit signal** — there is no `boring.plugin.json`.
+Every inside plugin is an npm package. `package.json` is the **single manifest** — there is no `boring.plugin.json`. The commit signal is `/reload` (or `/boring.reload`), not a file write.
 
 ### File layout
 
 ```
 .boring/plugins/
   csv-viewer/
-    package.json          ← single source of truth: discovery + metadata + commit signal
+    package.json          ← single source of truth: discovery + metadata
     front.tsx             ← pi-compatible factory (default export)
-    plugin.server.ts      ← optional: server tools + catalog handlers
+    plugin.server.ts      ← optional: server tools
 ```
 
 ### `package.json` shape
@@ -376,9 +376,9 @@ Both server and browser use a **stage → validate → commit / rollback** patte
    (if boring.server absent — no server-side loading)
 3. Stage fails (jiti throws)  →  write .error, SSE error, return (old tools untouched)
 4. Commit: atomically swap temp registry → live registry; run old disposers first
-5. activePlugins[pluginId] = { boring, version, revision }  (updated BEFORE SSE dispatch)
+5. activePlugins[pluginId] = { id: pluginId, boring, version, revision }  (updated BEFORE SSE dispatch)
 6. Delete .boring/plugins/<id>/.error if present
-7. SSE boring.plugin.load { boring, version, revision }
+7. SSE boring.plugin.load { id: pluginId, boring, version, revision }
 ```
 
 **Plugin tools in running sessions:** The harness currently receives a static `customTools` array at session creation. Plugin tools registered after startup must be visible to running sessions. `createPiCodingAgentHarness` is updated to accept `getExtraTools: () => ToolDefinition[]` (a live getter) instead of a frozen array. Each new `AgentSession` calls the getter at creation time, picking up any plugin tools registered since startup.
@@ -388,8 +388,8 @@ Unload: run disposers, remove from live registry and activePlugins, SSE `boring.
 ### Browser
 
 ```
-SSE boring.plugin.load { boring, version, revision } received:
-1. revision ≤ lastSeen[pluginId]  →  discard stale
+SSE boring.plugin.load { id, boring, version, revision } received:
+1. revision ≤ lastSeen[id]  →  discard stale
 2. Snapshot current Zustand state for pluginId (for rollback)
 3. Build staged registrations:
      V1 (direct): await import(url?v=revision) → run factory(capturingAPI) → captured registrations
@@ -408,10 +408,10 @@ Unload: if `revision ≤ lastSeen[pluginId]` discard; else pop resolver stack, r
 Server updates `activePlugins` **before** dispatching SSE, so `GET /api/agent-plugins` always reflects state ≥ what SSE has announced.
 
 ```
-plugins = await fetch('/api/agent-plugins')   // → [{ boring, version, revision }]
-for each { boring, version, revision }:
-  if revision > lastSeen[boring.id]:
-    registerAgentPlugin(boring, version, revision, mode)
+plugins = await fetch('/api/agent-plugins')   // → [{ id, boring, version, revision }]
+for each { id, boring, version, revision }:
+  if revision > lastSeen[id]:
+    registerAgentPlugin(id, boring, version, revision, mode)
 ```
 
 ---
@@ -475,8 +475,8 @@ Inside plugins run in the same process — full surface available.
 | `panelCommand` | ✅ |
 | `leftTab` | ✅ |
 | `surfaceResolver` | ✅ |
-| `agentTool` | ✅ front + server |
-| `binding` | ✅ runtime React component |
+| `agentTool` | ✅ server only (`plugin.server.ts`) |
+| `binding` | ❌ not in API surface; deferred |
 | `provider` | ⚠️ possible but not recommended |
 | `slotFill` | ✅ |
 
@@ -874,7 +874,14 @@ This is boring-ui's first-class pi extension. It is wired via `extensionFactorie
 - [ ] `POST /api/agent-plugins/reload` route — for standalone pi users (file-based extension) and for `/boring.reload` when boring-ui runs as a separate server: calls `scanAndReloadBoringPlugins` directly; 200 on success, 500 with error body on failure
 
 **SSE multiplexing** (`packages/agent/src/server/http/fsEvents.ts`):
-- [ ] Add `emitPlugin(event: BoringPluginEvent): void` to `FsEventBroadcaster` — writes SSE with `event: "boring.plugin.load" | "boring.plugin.unload" | "boring.plugin.error"` alongside existing `event: "change"` entries
+- [ ] Define `BoringPluginEvent` discriminated union:
+  ```ts
+  type BoringPluginEvent =
+    | { type: "boring.plugin.load";   id: string; boring: BoringPackageField; version: string; revision: number }
+    | { type: "boring.plugin.unload"; id: string; revision: number }
+    | { type: "boring.plugin.error";  id: string; revision: number; message: string }
+  ```
+- [ ] Add `emitPlugin(event: BoringPluginEvent): void` to `FsEventBroadcaster` — writes SSE with `event: event.type` alongside existing `event: "change"` entries
 - [ ] Browser clients filter by event type; no new SSE endpoint needed
 
 ### D — Server plugin loading: jiti + registry + API routes
