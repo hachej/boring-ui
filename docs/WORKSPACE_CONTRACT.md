@@ -25,29 +25,34 @@ See also: [DECISIONS.md](./DECISIONS.md) (locked decisions), [REVIEW_DECISIONS.m
 **Rules:**
 1. `@boring/workspace` has **zero imports** from `@boring/agent`.
 2. `@boring/agent` has **zero imports** from `@boring/workspace`.
-3. The app shell imports from both and wires them via `WorkspaceProvider`'s `panels` prop.
-4. Shared types (`UiCommand`, `CommandResult`) live in `@boring/core` (or are duplicated as compatible interfaces).
+3. The app shell imports from both and wires them via `createWorkspaceAgentServer` (server) + `WorkspaceAgentFront` / `WorkspaceProvider` (frontend).
+4. Shared types (`UiBridge`, `UiCommand`, `CommandResult`) live in `@boring/workspace/shared` and are re-exported from `@boring/workspace/server`.
 
-**App-shell wiring example:**
+**App-shell wiring example (plugin-based — recommended):**
 
 ```tsx
-import { ChatPanel } from '@boring/agent'
-import { WorkspaceProvider } from '@boring/workspace'
+import { WorkspaceAgentFront } from '@boring/workspace'
+import { myPlugin } from './plugins/myPlugin'
 
 function App() {
   return (
-    <WorkspaceProvider
+    <WorkspaceAgentFront
       apiBaseUrl="http://localhost:5180"
-      panels={[
-        {
-          id: 'agent',
-          title: 'Chat',
-          component: ChatPanel,
-          essential: true,
-          source: 'app',
-        },
-      ]}
-    >
+      plugins={[myPlugin]}
+    />
+  )
+}
+```
+
+**Low-level example (manual `WorkspaceProvider`):**
+
+```tsx
+import { ChatPanel } from '@boring/agent'
+import { WorkspaceProvider, IdeLayout } from '@boring/workspace'
+
+function App() {
+  return (
+    <WorkspaceProvider apiBaseUrl="http://localhost:5180">
       <IdeLayout />
     </WorkspaceProvider>
   )
@@ -155,13 +160,18 @@ interface CommandResult {
 
 ```typescript
 type UiCommand =
-  | { kind: 'openFile'; params: { path: string; mode?: 'view' | 'edit' | 'diff' } }
-  | { kind: 'openPanel'; params: { id: string; component: string; params?: Record<string, unknown> } }
-  | { kind: 'closePanel'; params: { id: string } }
-  | { kind: 'showNotification'; params: { msg: string; level?: 'info' | 'warn' | 'error' } }
-  | { kind: 'navigateToLine'; params: { file: string; line: number } }
-  | { kind: 'expandToFile'; params: { path: string } }
+  | { kind: 'openFile';               params: { path: string; mode?: 'view' | 'edit' | 'diff' } }
+  | { kind: 'openPanel';              params: { id: string; component: string; title?: string; params?: Record<string, unknown> } }
+  | { kind: 'openSurface';            params: { kind: string; target: string; meta?: Record<string, unknown> } }
+  | { kind: 'closePanel';             params: { id: string } }
+  | { kind: 'closeWorkbenchLeftPane'; params: Record<string, never> }
+  | { kind: 'showNotification';       params: { msg: string; level?: 'info' | 'warn' | 'error' } }
+  | { kind: 'navigateToLine';         params: { file: string; line: number } }
+  | { kind: 'expandToFile';           params: { path: string } }
 ```
+
+- `openSurface` routes through the workspace `SurfaceResolverRegistry` — plugins register resolvers that map a `kind`+`target` to a panel open call.
+- `closeWorkbenchLeftPane` hides the workbench's left sources/files sidebar without closing the workbench itself.
 
 Workspace may extend this union with workspace-specific kinds.
 
