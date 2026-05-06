@@ -19,7 +19,8 @@ COPY apps/full-app/ apps/full-app/
 # ui and agent need dts so workspace's vite-plugin-dts can resolve their types.
 # workspace tsup skips dts (vite-plugin-dts covers the front entries instead).
 RUN pnpm --filter @boring/core exec tsup --no-dts \
-  && cp packages/core/src/front/theme.css packages/core/dist/front/theme.css
+  && cp packages/core/src/front/theme.css packages/core/dist/front/theme.css \
+  && cp packages/core/src/app/front/styles.css packages/core/dist/app/front/styles.css
 
 RUN pnpm --filter @boring/ui exec tsup
 
