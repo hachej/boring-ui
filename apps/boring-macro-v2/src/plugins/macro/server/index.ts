@@ -74,14 +74,6 @@ export function makeMacroServerPlugin(
 ): WorkspaceServerPlugin {
   const tools = createMacroTools(macroConfig.clickhouse)
   const systemPrompt = `
-## Environment
-
-Your workspace root is available via the \`BORING_AGENT_WORKSPACE_ROOT\` environment variable (also \`$(pwd)\` when you run bash commands). In production this is a subdirectory of \`/data/workspace/\`.
-
-- Skill files live at \`$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/\`
-- The \`bm\` CLI and Python venv are at \`$BORING_AGENT_WORKSPACE_ROOT/.venv/\`
-- Deck files go in \`$BORING_AGENT_WORKSPACE_ROOT/deck/\`
-
 ## Macro Plugin Capabilities
 
 You have access to macro-economic timeseries tools and data.

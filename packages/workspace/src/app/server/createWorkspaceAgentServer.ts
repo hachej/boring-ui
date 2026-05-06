@@ -87,6 +87,15 @@ export interface CollectWorkspaceAgentServerPluginsOptions
     >,
     Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {}
 
+export function buildWorkspaceContextPrompt(): string {
+  return [
+    '## Workspace',
+    '- Root: `$BORING_AGENT_WORKSPACE_ROOT` (exported into every bash invocation)',
+    '- Skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
+    '- CLI shims (`bm`, `python`, `pip`): `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/bin/` — already on PATH, call directly',
+  ].join('\n')
+}
+
 export function collectWorkspaceAgentServerPlugins(
   opts: CollectWorkspaceAgentServerPluginsOptions = {},
 ): WorkspaceAgentServerPluginCollection {
@@ -158,7 +167,10 @@ export async function createWorkspaceAgentServer(
       ...uiTools,
       ...(pluginCollection.agentOptions.extraTools ?? []),
     ],
-    systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
+    systemPromptAppend: [
+      opts.mode !== 'vercel-sandbox' ? buildWorkspaceContextPrompt() : undefined,
+      pluginCollection.agentOptions.systemPromptAppend,
+    ].filter(Boolean).join('\n\n') || undefined,
     resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
   })
   await app.register(uiRoutes, { bridge })
