@@ -1,5 +1,6 @@
 import { createWorkspaceAgentServer } from "@boring/workspace/app/server"
 import fastifyStatic from "@fastify/static"
+import { AuthStorage } from "@mariozechner/pi-coding-agent"
 import { execSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { dirname, resolve } from "node:path"
@@ -16,11 +17,24 @@ if (!existsSync(publicDir)) {
   process.exit(1)
 }
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error("\nMissing ANTHROPIC_API_KEY")
-  console.error("  export ANTHROPIC_API_KEY=sk-ant-...\n")
+// Resolve API key: env var → pi credential store → error
+async function resolveApiKey(): Promise<string> {
+  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY
+
+  const auth = AuthStorage.create()
+  await auth.reload()
+  const key = await auth.getApiKey("anthropic")
+  if (key) return key
+
+  console.error("\nNo Anthropic API key found.")
+  console.error("Either:")
+  console.error("  export ANTHROPIC_API_KEY=sk-ant-...")
+  console.error("  or log in with pi:  npx @mariozechner/pi-coding-agent  →  /login\n")
   process.exit(1)
 }
+
+const apiKey = await resolveApiKey()
+process.env.ANTHROPIC_API_KEY = apiKey
 
 console.log(`\nboring-ui`)
 console.log(`  workspace  ${workspaceRoot}`)
