@@ -22,7 +22,7 @@ RUN pnpm --filter @boring/agent exec tsup \
 RUN pnpm --filter @boring/workspace exec tsup --no-dts \
   && pnpm --filter @boring/workspace exec vite build
 
-RUN pnpm --filter @boring/macro exec vite build
+RUN BORING_USE_LOCAL_PACKAGES=1 pnpm --filter @boring/macro exec vite build
 
 FROM node:22-slim AS runtime
 WORKDIR /app
