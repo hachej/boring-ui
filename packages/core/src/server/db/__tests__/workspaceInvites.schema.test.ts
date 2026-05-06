@@ -122,7 +122,7 @@ describe('workspace_invites schema', () => {
     `
     await expect(
       sql`DELETE FROM users WHERE id = ${tempUserId}`,
-    ).rejects.toThrow(/restrict/i)
+    ).rejects.toThrow(/foreign key constraint/i)
 
     await sql`DELETE FROM workspace_invites WHERE token_hash = 'hash_restrict_test'`
     await sql`DELETE FROM users WHERE id = ${tempUserId}`
