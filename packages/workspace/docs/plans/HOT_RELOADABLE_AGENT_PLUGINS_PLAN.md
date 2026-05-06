@@ -191,6 +191,19 @@ The Fastify server runs in Vercel as a serverless function with no filesystem ac
 
 ---
 
+## Security Boundary — Workspace's Responsibility, Not the Plugin's
+
+Plugins do not own or care how they are loaded. A plugin exports a factory function and declares contributions in its manifest — the execution environment is entirely the workspace's concern.
+
+The workspace core parameterizes the loader strategy:
+- **Local dev**: jiti loads `plugin.server.ts` in-process (fast, zero overhead)
+- **Hosted/sandbox mode** (bwrap, Vercel): the workspace already runs inside a sandbox, so in-process loading inherits that boundary automatically — no extra isolation needed
+- **Future**: worker thread or subprocess loader can be swapped in as a workspace config option without any change to the plugin API
+
+The manifest does not need a security model. The deployment context provides it.
+
+---
+
 ## jiti Loader — Copy Pi's Pattern
 
 ```ts
