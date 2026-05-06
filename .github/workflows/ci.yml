@@ -31,8 +31,13 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Install ripgrep
+        run: sudo apt-get install -y ripgrep
+
       - name: Run lint
         run: pnpm lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
   typecheck:
     name: Typecheck
@@ -57,6 +62,8 @@ jobs:
 
       - name: Run typecheck
         run: pnpm typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
   bundle-budget:
     name: Bundle Budget
@@ -78,6 +85,9 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - name: Build dependencies
+        run: pnpm --filter @boring/ui build && pnpm --filter @boring/agent build
 
       - name: Build workspace package
         run: pnpm --filter @boring/workspace run build
@@ -142,6 +152,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Install system dependencies
+        run: sudo apt-get install -y ripgrep
+
+      - name: Build UI package
+        run: pnpm --filter @boring/ui build
+
       - name: Run vitest suite
         run: pnpm test
 
@@ -165,6 +181,9 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - name: Install ripgrep
+        run: sudo apt-get install -y ripgrep
 
       - name: Run invariants
         run: pnpm lint:invariants

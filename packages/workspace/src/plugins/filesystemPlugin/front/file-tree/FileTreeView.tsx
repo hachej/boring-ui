@@ -535,11 +535,15 @@ export function FileTreeView({
       if (!current) return
       const trimmed = value.trim()
       if (!trimmed) return
-      const trackPath =
-        current.kind === "rename"
-          ? current.path
-          : `${current.parentDir}/${trimmed}`
+      const dir = current.kind === "rename" ? parentDir(current.path) : current.parentDir
+      const newPath = current.kind === "rename"
+        ? current.path
+        : dir === "." || dir === ""
+          ? trimmed
+          : `${dir}/${trimmed}`
+      const trackPath = current.kind === "rename" ? current.path : newPath
       markPending(trackPath)
+      let addedOptimisticPath: string | null = null
       try {
         if (current.kind === "rename") {
           if (trimmed === current.initialValue) return
@@ -550,15 +554,15 @@ export function FileTreeView({
           await refreshDirs([parentDir(current.path)])
           toast.success({ title: "Renamed", description: `${current.path} → ${to}` })
         } else {
-          const dir = current.parentDir
-          const newPath = dir === "." || dir === "" ? trimmed : `${dir}/${trimmed}`
+          const optimisticEntry = {
+            name: trimmed,
+            kind: current.kind === "create-file" ? "file" as const : "dir" as const,
+            path: newPath,
+          }
+          addOptimisticEntry(dir, optimisticEntry)
+          addedOptimisticPath = newPath
           if (current.kind === "create-file") {
             await writeFile({ path: newPath, content: "" })
-            addOptimisticEntry(dir, {
-              name: trimmed,
-              kind: "file",
-              path: newPath,
-            })
             // useFileWrite emits changed (it can't tell create from edit);
             // the call site knows this was a creation, so emit here.
             // useCreateDir already emits its own filesystem create event.
@@ -570,17 +574,13 @@ export function FileTreeView({
             toast.success({ title: "File created", description: newPath })
           } else {
             await createDir({ path: newPath })
-            addOptimisticEntry(dir, {
-              name: trimmed,
-              kind: "dir",
-              path: newPath,
-            })
             toast.success({ title: "Folder created", description: newPath })
           }
           await refreshDirs([dir], { force: true })
           setRevealPath(newPath)
         }
       } catch (err) {
+        if (addedOptimisticPath) removeOptimisticEntry(dir, addedOptimisticPath)
         const msg = err instanceof Error ? err.message : String(err)
         toast.error({
           title:
@@ -604,6 +604,7 @@ export function FileTreeView({
       markPending,
       clearPending,
       addOptimisticEntry,
+      removeOptimisticEntry,
     ],
   )
 

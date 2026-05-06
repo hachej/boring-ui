@@ -472,6 +472,31 @@ describe("FileTreePane", () => {
       expect(draftRow.getAttribute("data-kind")).toBe("file")
     })
 
+    it("New file submit keeps an optimistic pending row while create is in flight", async () => {
+      let resolveCreate!: () => void
+      mockFileWrite.mockReturnValue(new Promise<void>((resolve) => {
+        resolveCreate = resolve
+      }))
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const container = screen.getByTestId("file-tree").parentElement!
+      fireEvent.contextMenu(container)
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" }))
+
+      const input = await screen.findByTestId("file-tree-edit-input")
+      fireEvent.change(input, { target: { value: "notes.md" } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      await waitFor(() => expect(screen.queryByTestId("file-tree-edit-input")).not.toBeInTheDocument())
+      const pendingRow = screen.getByText("notes.md").closest("[data-path]") as HTMLElement
+      expect(pendingRow).toHaveAttribute("data-path", "notes.md")
+      expect(pendingRow).toHaveAttribute("data-kind", "file")
+      expect(pendingRow).toHaveAttribute("data-pending", "1")
+
+      await act(async () => resolveCreate())
+    })
+
     it("New file submit calls writeFile with empty content at the chosen path", async () => {
       mockFileWrite.mockResolvedValue(undefined)
       render(<FileTreePane />, { wrapper })

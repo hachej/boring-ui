@@ -27,6 +27,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Install ripgrep
+        run: sudo apt-get install -y ripgrep
+
       - name: Run invariant checks
         run: pnpm lint:invariants
 

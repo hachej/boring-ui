@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
-import { ChatPanel as DefaultChatPanel, useSessions as useDefaultAgentSessions } from "@boring/agent/front"
+import { ChatPanel as DefaultChatPanel, useSessions as useDefaultAgentSessions, type SlashCommand } from "@boring/agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
 import { ChatLayout, TopBar, type ChatLayoutProps } from "../../front/layout"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
@@ -68,6 +68,7 @@ export interface WorkspaceAgentFrontProps<
   onActiveSessionIdChange?: (sessionId: string) => void
   chatParams?: Record<string, unknown>
   extraPanels?: string[]
+  extraCommands?: SlashCommand[]
 }
 
 function isPanelOutput(output: PluginOutput): output is PanelOutput {
@@ -216,6 +217,7 @@ export function WorkspaceAgentFront<
   topBarRight,
   chatParams,
   extraPanels,
+  extraCommands,
   onOpenNav,
   onOpenSurface,
   className,
@@ -392,8 +394,9 @@ export function WorkspaceAgentFront<
       getSurface,
       isWorkbenchOpen,
       openWorkbench,
+      extraCommands,
     }),
-    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench],
+    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, extraCommands],
   )
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
