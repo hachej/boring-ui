@@ -13,7 +13,7 @@
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:baseline": "node e2e/run-baseline.mjs",
     "test:e2e:headed": "playwright test -c e2e/playwright.config.ts --headed",
-    "typecheck": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit"
+    "typecheck": "pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
