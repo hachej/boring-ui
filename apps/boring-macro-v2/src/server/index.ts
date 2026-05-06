@@ -1,6 +1,6 @@
 // boring.macro server entry. The workspace server composer owns the agent,
 // UI bridge, plugin tools, plugin provisioning, and plugin routes.
-import { createWorkspaceAgentServer } from "@boring/workspace/app/server"
+import { createCoreWorkspaceAgentServer } from "@boring/core/app/server"
 import { createMacroServerPlugin } from "../plugins/macro/server"
 
 export interface MacroAppOptions {
@@ -8,9 +8,10 @@ export interface MacroAppOptions {
   host?: string
   workspaceRoot?: string
   logger?: boolean
+  appRoot?: string
 }
 
-export async function buildServer(opts: MacroAppOptions = {}) {
+export async function buildMacroServer(opts: MacroAppOptions = {}) {
   const port = opts.port ?? (Number(process.env.PORT ?? process.env.API_PORT) || 5210)
   const host = opts.host ?? (process.env.HOST || "0.0.0.0")
   const workspaceRoot =
@@ -19,9 +20,9 @@ export async function buildServer(opts: MacroAppOptions = {}) {
 
   const macroPlugin = await createMacroServerPlugin()
 
-  const app = await createWorkspaceAgentServer({
+  const app = await createCoreWorkspaceAgentServer({
     workspaceRoot,
-    mode: "local",
+    appRoot: opts.appRoot,
     logger: opts.logger ?? true,
     plugins: [macroPlugin],
   })

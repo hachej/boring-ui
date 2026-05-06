@@ -7,6 +7,7 @@ COPY .npmrc pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/workspace/package.json packages/workspace/package.json
 COPY packages/agent/package.json packages/agent/package.json
+COPY packages/core/package.json packages/core/package.json
 COPY apps/boring-macro-v2/package.json apps/boring-macro-v2/package.json
 RUN pnpm install --frozen-lockfile
 
@@ -18,6 +19,8 @@ RUN pnpm --filter @boring/ui exec tsup
 
 RUN pnpm --filter @boring/agent exec tsup \
   && cp packages/agent/src/front/styles/globals.css packages/agent/dist/front/styles.css
+
+RUN pnpm --filter @boring/core run build
 
 RUN pnpm --filter @boring/workspace exec tsup --no-dts \
   && pnpm --filter @boring/workspace exec vite build
@@ -41,6 +44,10 @@ COPY --from=build /app/packages/ui/node_modules/ packages/ui/node_modules/
 COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
 COPY --from=build /app/packages/agent/package.json packages/agent/package.json
 COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
+
+COPY --from=build /app/packages/core/dist/ packages/core/dist/
+COPY --from=build /app/packages/core/package.json packages/core/package.json
+COPY --from=build /app/packages/core/node_modules/ packages/core/node_modules/
 
 COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
 COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json

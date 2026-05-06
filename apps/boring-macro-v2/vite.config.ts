@@ -7,20 +7,25 @@ const API_PORT = Number(process.env.API_PORT) || 5210
 const PACKAGES = resolve(__dirname, "../../packages")
 const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
 const localPackageAlias = useLocalPackages
-  ? {
-      // Order matters — most-specific subpaths first so `@boring/workspace`
-      // doesn't shadow `@boring/workspace/testing` etc.
-      "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
-      "@boring/agent/front/styles.css": resolve(PACKAGES, "agent/src/front/styles/globals.css"),
-      "@boring/workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
-      "@boring/workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),
-      "@boring/workspace/charts": resolve(PACKAGES, "workspace/src/front/charts/index.tsx"),
-      "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/front/testing/index.ts"),
-      "@boring/workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
-      "@boring/workspace": resolve(PACKAGES, "workspace/src/index.ts"),
-      "@/": resolve(PACKAGES, "workspace/src") + "/",
-      "@": resolve(PACKAGES, "workspace/src"),
-    }
+  ? [
+      // Core aliases — order matters: most-specific subpaths first
+      { find: "@boring/core/front/top-bar-slot", replacement: resolve(PACKAGES, "core/src/front/components/TopBarSlot.tsx") },
+      { find: "@boring/core/app/front/styles.css", replacement: resolve(PACKAGES, "core/src/app/front/styles.css") },
+      { find: /^@boring\/core\/app\/front$/, replacement: resolve(PACKAGES, "core/src/app/front/index.ts") },
+      { find: /^@boring\/core\/front$/, replacement: resolve(PACKAGES, "core/src/front/index.ts") },
+      { find: "@boring/core/theme.css", replacement: resolve(PACKAGES, "core/src/front/theme.css") },
+      // Workspace + agent aliases
+      { find: "@boring/workspace/globals.css", replacement: resolve(PACKAGES, "workspace/src/globals.css") },
+      { find: "@boring/agent/front/styles.css", replacement: resolve(PACKAGES, "agent/src/front/styles/globals.css") },
+      { find: /^@boring\/workspace\/app\/front$/, replacement: resolve(PACKAGES, "workspace/src/app/front/index.ts") },
+      { find: /^@boring\/workspace\/app\/server$/, replacement: resolve(PACKAGES, "workspace/src/app/server/index.ts") },
+      { find: /^@boring\/workspace\/charts$/, replacement: resolve(PACKAGES, "workspace/src/front/charts/index.tsx") },
+      { find: /^@boring\/workspace\/testing$/, replacement: resolve(PACKAGES, "workspace/src/front/testing/index.ts") },
+      { find: /^@boring\/workspace\/shared$/, replacement: resolve(PACKAGES, "workspace/src/shared/index.ts") },
+      { find: /^@boring\/workspace$/, replacement: resolve(PACKAGES, "workspace/src/index.ts") },
+      { find: "@/", replacement: resolve(PACKAGES, "workspace/src") + "/" },
+      { find: "@", replacement: resolve(PACKAGES, "workspace/src") },
+    ]
   : undefined
 
 // Default mode consumes @boring/* through package exports/dist, matching an npm
