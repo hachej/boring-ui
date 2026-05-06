@@ -30,7 +30,7 @@ The existing `WorkspaceFrontPlugin` / `defineFrontPlugin` surface remains untouc
 
 The agent extends an existing outside plugin (e.g. macro, filesystem) by adding panels, commands, or server tools on top of it. The host plugin opts in by declaring `extensionContract: { allowedContributions: [...] }`. The manifest uses `derivesFrom: "<pluginId>"`.
 
-Surface resolvers use **last-registered-wins**: a derived plugin registering `kind: "series"` shadows the base plugin's resolver while loaded. On unload, the base resolver becomes active again automatically.
+Surface resolvers use **last-registered-wins**: a derived plugin registering a resolver for a given `surfaceKind` shadows the base plugin's resolver while loaded. On unload, the base resolver becomes active again automatically.
 
 **Path B — Build from scratch**
 
@@ -38,11 +38,32 @@ Self-contained plugin with its own front + server code. No dependency on any exi
 
 ---
 
+## Unified Load Architecture — Paves the Way for V2
+
+V1 and V2 share the same browser-side load infrastructure. The only thing that changes from V1 → V2 is **how the panel renders**:
+
+| Layer | V1 (local) | V2 (hosted/sandbox) |
+|---|---|---|
+| Plugin watcher | ✅ shared | ✅ shared |
+| Server: jiti loads `plugin.server.ts` | ✅ shared | ✅ shared (via injected ServerPluginLoader) |
+| SSE `boring.plugin.load` dispatch | ✅ shared | ✅ shared |
+| Browser SSE handler | ✅ shared | ✅ shared |
+| `registerAgentPlugin(manifest, registries)` | ✅ shared | ✅ shared |
+| `GET /api/agent-plugins` reconnect endpoint | ✅ shared | ✅ shared |
+| Path A extensionContract validation | ✅ shared | ✅ shared |
+| Panel render strategy | direct `React.lazy` import via Vite | `<iframe>` served by esbuild |
+| postMessage bridge | ❌ not needed | ✅ v2 only |
+| Provisioned node_modules | ❌ not needed | ✅ v2 only |
+
+This means all SSE dispatch, browser registration, and Path A wiring written for V1 is reused unchanged in V2. V2 only adds: esbuild route, iframe render mode in `AgentPluginPane`, postMessage bridge, and provisioning.
+
+---
+
 ## V1 — Local Mode (full node process access)
 
 ### What v1 means
 
-The agent runs locally. The workspace server runs locally. The plugin has full access to the Node.js process — `front.tsx` loads directly into the host React tree, `plugin.server.ts` loads into the Fastify process. No iframe, no sandbox, no esbuild compilation.
+The agent runs locally. The workspace server runs locally. `plugin.server.ts` loads into the Fastify process via jiti. `front.tsx` is imported by the browser directly from Vite's dev server — no iframe, no esbuild, no sandbox. The component runs in the host React tree.
 
 ### File layout
 
@@ -50,9 +71,40 @@ The agent runs locally. The workspace server runs locally. The plugin has full a
 .boring/plugins/
   csv-viewer/
     boring.plugin.json    ← manifest
-    front.tsx             ← React component, loaded directly via jiti into host process
+    front.tsx             ← React factory, imported by browser via Vite
     plugin.server.ts      ← server tools + catalog handlers, loaded via jiti
 ```
+
+### Load flow (v1)
+
+```
+Agent writes .boring/plugins/csv-viewer/ files
+  │
+  ▼
+workspace.watch() fires on boring.plugin.json (write/unlink)
+  │
+  ▼ (server)
+Read + validate boring.plugin.json
+Extract pluginId from path segment — must match manifest.id
+jiti.import(plugin.server.ts, { moduleCache: false }) → register server tools
+SSE → dispatchCommand("boring.plugin.load", { manifest })
+  │
+  ▼ (browser — SSE handler)
+const { default: factory } = await import(`/.boring/plugins/${id}/front.tsx`)
+  ↑ Vite transforms TSX on the fly, component runs in host React tree
+registerAgentPlugin(manifest, registries):
+  unregisterByPluginId(pluginId)          ← no-op on first load
+  factory(capturingAPI) → captured registrations
+  If derivesFrom: check pluginRegistry → validate extensionContract
+  Apply registrations: panel, command, tab, resolver, catalog
+AgentPluginPane mode="direct":
+  React.lazy(() => import(`/.boring/plugins/${id}/front.tsx`))
+  Renders component directly in host React tree — no iframe
+```
+
+Hot-reload: watcher fires → jiti re-imports fresh module → SSE → browser re-imports via Vite (cache-busted with timestamp param) → registries update → React reconciles.
+
+Unload: `boring.plugin.json` deleted → jiti module discarded, server tools removed → SSE `boring.plugin.unload` → browser calls `unregisterByPluginId`.
 
 ### Contribution surface (v1)
 
@@ -67,39 +119,12 @@ All outside plugin contribution types are available — the inside plugin runs i
 | `catalog` | ✅ |
 | `agent-tool` | ✅ |
 | `binding` | ✅ runs in host React tree |
-| `provider` | ⚠️ possible but not recommended — only filesystem uses it |
+| `provider` | ⚠️ possible but not recommended |
 | `slot-fill` | ✅ |
-
-### Load flow (v1)
-
-```
-Agent writes .boring/plugins/csv-viewer/ files
-  │
-  ▼
-workspace.watch() fires on boring.plugin.json (write/unlink)
-  │
-  ▼ (server — same process)
-Read + validate boring.plugin.json
-Extract pluginId from path segment — must match manifest.id
-jiti.import(front.tsx, { moduleCache: false })     → React component factory
-jiti.import(plugin.server.ts, { moduleCache: false }) → server plugin factory
-Register contributions into all registries (panel, command, tab, resolver, catalog, tools)
-  │
-  ▼ (browser — same React tree)
-Component renders directly — no iframe, no SSE dispatch needed for hot-reload
-Panel swaps live via registry update → React reconciles
-```
-
-Hot-reload: watcher fires → jiti re-imports fresh module → registries update → React re-renders.  
-Unload: `boring.plugin.json` deleted → jiti module discarded, all registry entries removed via `unregisterByPluginId`.
-
-### What existing Phase 1 code handles v1
-
-The `PluginCoordinator` from Phase 1 is the v1 hot-reload engine. It was designed for exactly this: load a plugin factory, register contributions, swap on reload with rollback on failure. **v1 reuses it directly.**
 
 ### Security (v1)
 
-Plugin runs in the same Node.js process. This is intentional — local mode means the developer trusts their own agent. No sandbox needed. Same model as pi loading its own extensions.
+Plugin runs in the same Node.js process. This is intentional — local mode means the developer trusts their own agent. No sandbox needed.
 
 ---
 
@@ -107,16 +132,28 @@ Plugin runs in the same Node.js process. This is intentional — local mode mean
 
 ### What v2 means
 
-The agent runs in a sandboxed environment (bwrap, Vercel). Plugin code cannot run in the host process. `front.tsx` is compiled to a JS bundle served to an iframe. `plugin.server.ts` loads via an injected `ServerPluginLoader` (the core decides isolation strategy). Contributions are restricted to what an iframe can express.
+The agent runs in a sandboxed environment (bwrap, Vercel). Plugin code cannot run in the host process. `front.tsx` is compiled to a JS bundle served to an iframe. `plugin.server.ts` loads via an injected `ServerPluginLoader`. The SSE notification and `registerAgentPlugin` call are **identical to v1** — only `AgentPluginPane` switches to iframe mode.
 
 ### File layout (same as v1)
 
 ```
 .boring/plugins/
   csv-viewer/
-    boring.plugin.json    ← manifest
-    front.tsx             ← iframe UI (React, compiled by esbuild on demand)
-    plugin.server.ts      ← tools + catalog handlers (loaded by injected ServerPluginLoader)
+    boring.plugin.json
+    front.tsx             ← compiled by esbuild on demand, served to iframe
+    plugin.server.ts      ← loaded by injected ServerPluginLoader
+```
+
+### Load flow (v2) — delta from v1
+
+```
+... same watcher, same SSE dispatch, same registerAgentPlugin call ...
+  │
+  ▼ (AgentPluginPane mode="iframe")
+<iframe src="/api/agent-plugins/csv-viewer/front.js?v=timestamp"
+        sandbox="allow-scripts" />
+esbuild compiles front.tsx on demand (nodePaths from provisioned node_modules)
+iframe ↔ host via postMessage bridge
 ```
 
 ### Contribution surface (v2)
@@ -124,53 +161,14 @@ The agent runs in a sandboxed environment (bwrap, Vercel). Plugin code cannot ru
 | Output type | Supported | Notes |
 |---|---|---|
 | `panel` | ✅ | iframe served from `/api/agent-plugins/:id/front.js` |
-| `command` | ✅ | manifest → host registers wrapper opening the panel |
-| `left-tab` | ✅ | manifest → host registers wrapper tab |
+| `command` | ✅ | manifest → host registers wrapper |
+| `left-tab` | ✅ | manifest → host registers wrapper |
 | `surface-resolver` | ✅ | last-registered-wins, same as v1 |
 | `catalog` | ✅ | server route → jiti-loaded handler |
 | `agent-tool` | ✅ | `plugin.server.ts` via injected ServerPluginLoader |
 | `binding` | ❌ | requires host React tree |
-| `provider` | ❌ | wraps entire app tree, filesystem-only pattern |
+| `provider` | ❌ | wraps entire app tree |
 | `slot-fill` | ❌ | deferred |
-
-### Load flow (v2)
-
-```
-Agent writes .boring/plugins/csv-viewer/ files
-  │
-  ▼
-workspace.watch() fires on boring.plugin.json
-  │
-  ▼ (server)
-Read + validate manifest — enforce directory name == manifest.id
-Debounce 50ms per pluginId, serialize concurrent reloads per pluginId
-If derivesFrom: validate against server-side extension contract registry
-If already loaded: unload old (remove tools, catalog handlers)
-Load plugin.server.ts via injected ServerPluginLoader
-Register tools into Fastify tool registry
-Register catalog handler at /api/agent-plugins/:id/catalog/search
-  │
-  ▼ (SSE → browser)
-dispatchCommand "boring.plugin.load" { manifest }
-  │
-  ▼ (browser)
-registerAgentPlugin(manifest, registries, pluginRegistry):
-  If derivesFrom: look up in pluginRegistry → validate extensionContract
-  unregisterByPluginId(pluginId)          ← no-op on first load
-  Register wrapper panel "agent-plugin-frame" with { pluginId }
-  Register commands, left-tabs, surface-resolvers, catalog adapters
-  Send boring.bridge.reload to any open iframe for this pluginId
-  │
-  ▼ (user opens panel)
-<AgentPluginPane pluginId="csv-viewer" />
-  → <iframe src="/api/agent-plugins/csv-viewer/front.js?v=timestamp" sandbox="allow-scripts" />
-  → esbuild compiles front.tsx on demand, nodePaths from provisioned node_modules
-  → iframe ↔ host via postMessage bridge
-```
-
-Unload: `boring.plugin.json` deleted → unload server plugin → SSE `boring.plugin.unload` → browser unregisters.
-
-On browser connect/reconnect: fetch `GET /api/agent-plugins` → re-register all active manifests.
 
 ### Security boundary — core injects, workspace executes (v2)
 
@@ -181,23 +179,11 @@ interface ServerPluginLoader {
   load(pluginId: string, path: string, api: BoringServerPluginAPI): Promise<void>
   unload(pluginId: string): Promise<void>
 }
-// Core injects: createJitiLoader() for local/bwrap (outer sandbox provides isolation)
+// Core injects: createJitiLoader() for local/bwrap
 // Future: createWorkerLoader() for stricter multi-tenant isolation
 ```
 
-### Dependencies in the iframe (v2)
-
-The workspace package's `node_modules` are bundled into the Vercel artifact — not available as files on disk. esbuild needs real files. Provisioning seeds dependencies into the workspace sandbox filesystem:
-
-- **React + react-dom**: `nodeInstall` provisioning contribution seeds `.boring/plugins/package.json` and runs `npm install` → `.boring/plugins/node_modules/`
-- **bridge-client**: provisioning writes pre-built `.boring/plugins/.boring-vendor/bridge-client.js` from workspace package source
-
-esbuild config:
-```ts
-{ nodePaths: ['.boring/plugins/node_modules'], alias: { '@boring/workspace/bridge-client': '.boring/plugins/.boring-vendor/bridge-client.js' } }
-```
-
-### postMessage bridge (v2 minimal)
+### postMessage bridge (v2)
 
 Host → iframe: `{ type: "boring.bridge.init", theme: {...}, derivedFrom?: string }`
 Iframe → host: `{ type: "boring.bridge.openPanel", panelId: string }`
@@ -206,21 +192,89 @@ Host → iframe: `{ type: "boring.bridge.reload" }` (on hot-reload)
 
 Host validates `event.source === iframeRef.current.contentWindow` — NOT `event.origin` (sandboxed iframes have `null` origin).
 
+### Dependencies in the iframe (v2)
+
+- **React + react-dom**: `nodeInstall` provisioning contribution seeds `.boring/plugins/package.json` and runs `npm install`
+- **bridge-client**: provisioning writes pre-built `.boring/plugins/.boring-vendor/bridge-client.js`
+
+```ts
+// esbuild config
+{ nodePaths: ['.boring/plugins/node_modules'],
+  alias: { '@boring/workspace/bridge-client': '.boring/plugins/.boring-vendor/bridge-client.js' } }
+```
+
+---
+
+## Manifest Schema
+
+### Shape
+
+```ts
+interface BoringPluginManifest {
+  id: string           // kebab-case, 2–64 chars
+  version: string      // semver
+  label?: string
+  description?: string
+  front?: string       // safe relative path to front.tsx (default: "front.tsx")
+  server?: string      // safe relative path to plugin.server.ts
+  derivesFrom?: string // valid plugin id — triggers Path A validation
+
+  // Contribution declarations (optional in v1, authoritative in v2)
+  panels?: Array<{ id: string; title?: string }>
+  commands?: Array<{ id: string; title: string; panelId?: string; description?: string }>
+  leftTabs?: Array<{ id: string; title: string; panelId: string; icon?: string }>
+  surfaceResolvers?: Array<{ id: string; surfaceKind: string; panelId: string }>
+  catalogs?: Array<{ id: string; title?: string }>
+}
+```
+
+### Why contribution arrays exist
+
+- **V1**: optional metadata. Factory is authoritative for registration. Arrays enable upfront cross-reference validation (`command.panelId` must reference a declared panel) and Path A checking before the factory loads.
+- **V2**: authoritative. Browser registers panels/commands/tabs/resolvers from the manifest directly — the factory runs inside the iframe and has no access to host registries.
+
+### Validation rules
+
+- `command.panelId` and `leftTab.panelId` and `surfaceResolver.panelId` must reference an `id` in `panels[]`
+- No duplicate `id` within each array
+- `front` and `server` must pass `isSafePluginRelativePath`
+- `derivesFrom` must pass `isValidBoringPluginId`
+- Directory name segment must match `manifest.id` (enforced at load time, not in schema)
+
+### Error codes
+
+```
+INVALID_ID | INVALID_VERSION | INVALID_PATH | INVALID_GLOB |
+MISSING_REQUIRED_FIELD | UNKNOWN_FIELD | CROSS_REFERENCE | DUPLICATE_ID
+```
+
+(`INVALID_ENTRY_PATH` → renamed `INVALID_PATH`. `runtime` + `permissions` + `entry` fields removed.)
+
 ---
 
 ## Path A — Outside Plugin Registry (both modes)
 
-Outside plugins need a runtime registry keyed by plugin ID so the browser (v1) or server (v2) can resolve `derivesFrom` and check `extensionContract`:
+Outside plugins need a runtime registry keyed by plugin ID so the browser can resolve `derivesFrom` and check `extensionContract`. Server-side registry for `agent-tool` validation before `plugin.server.ts` loads.
 
 ```ts
 export interface PluginExtensionContract {
-  allowedContributions: ReadonlyArray<"panel" | "command" | "left-tab" | "surface-resolver" | "agent-tool">
+  allowedContributions: ReadonlyArray<
+    "panel" | "command" | "left-tab" | "surface-resolver" | "agent-tool"
+  >
 }
-// Registered at workspace init alongside panel/command registration:
+// Registered at workspace init:
 pluginRegistry.register({ id: "macro", extensionContract: { allowedContributions: ["panel", "command", "agent-tool"] } })
 ```
 
-Server-side: a parallel registry for `agent-tool` validation before `plugin.server.ts` loads.
+---
+
+## Error Surfacing
+
+When plugin load fails (jiti error, bad import, validation failure):
+- Server writes `.boring/plugins/<id>/.error` with the error message — agent reads it with normal file tools
+- Server sends SSE `boring.plugin.error` — workspace UI shows a toast notification
+
+On next successful load, `.error` is deleted.
 
 ---
 
@@ -232,86 +286,80 @@ Server-side: a parallel registry for `agent-tool` validation before `plugin.serv
 
 ---
 
-## What Existing Phase 1 Code Is Still Used
-
-| File | Role |
-|---|---|
-| `manifest.ts` | Needs full redesign (new contribution fields) |
-| `coordinator.ts` + `PluginCoordinator` | **v1 hot-reload engine** — reused directly |
-| `authoring.ts` + `BoringPluginAPI` | v1 plugin factory API |
-| `@boring/workspace/plugin` subpath | Still the public authoring surface |
-
----
-
 ## Implementation TODO
 
 ### V1 first — then V2
 
-Implement v1 completely before touching v2. v1 is simpler (no iframe, no esbuild, no bridge), validates the manifest + watcher + coordinator loop end-to-end, and ships real value.
+Implement all shared infrastructure in V1. V2 only adds the three iframe-specific pieces (esbuild route, iframe render mode, postMessage bridge) and provisioning.
 
 ---
 
 ### A — Manifest redesign `manifest.ts` (both)
-- [ ] Add `front?`, `server?`, `panels[]`, `leftTabs[]`, `commands[]`, `surfaceResolvers[]`, `catalogs[]`, `derivesFrom?` fields to `BoringPluginManifest`
+- [ ] Replace `BoringPluginRuntime`, `BoringPluginPermissions` with new contribution declaration types
+- [ ] Add `front?`, `server?`, `derivesFrom?`, `panels[]`, `commands[]`, `leftTabs[]`, `surfaceResolvers[]`, `catalogs[]`
 - [ ] Remove `runtime`, `permissions`, `entry`
-- [ ] Cross-reference validation: `command.panelId` and `leftTab.panelId` must reference a declared panel; no duplicate ids within arrays
-- [ ] Validate `front` and `server` are safe relative paths
-- [ ] Validate `derivesFrom` is a valid plugin id string
+- [ ] Add `CROSS_REFERENCE` and `DUPLICATE_ID` error codes; rename `INVALID_ENTRY_PATH` → `INVALID_PATH`
+- [ ] Cross-reference validation: `*.panelId` must reference a `panels[].id`; no duplicate ids within arrays
+- [ ] Validate `front` and `server` with `isSafePluginRelativePath`; validate `derivesFrom` with `isValidBoringPluginId`
 - [ ] Update `KNOWN_FIELDS` + all validation branches
 - [ ] Rewrite `manifest.test.ts`
+- [ ] Remove `BoringPluginRuntime` / `BoringPluginPermissions` exports from `plugin.ts` and `index.ts`
 
 ### B — Doc seeding + system prompt (both)
-- [ ] Add `packages/workspace/templates/workspace-base/.boring/docs/` with `plugins.md`, `panels.md`, `bridge.md`
+- [ ] Add `packages/workspace/docs/` with `plugins.md`, `panels.md`, `bridge.md`
 - [ ] Static strings in `boringSystemPrompt.ts` — no codegen. `BORING_DOCS_PATH` overrides for dev.
-- [ ] Rewrite `docs/plugins.md`: v1 vs v2 authoring paths, file layout, available imports, hot-reload
+- [ ] `plugins.md`: file layout, manifest schema, v1 vs v2 authoring paths, hot-reload, Path A
 
-### C — Plugin watcher (both)
-- [ ] `src/server/plugins/agentPluginWatcher.ts` — subscribe to `workspace.watch()` (chokidar local, sandbox emitter Vercel)
+### C — Plugin watcher + SSE dispatch (both)
+- [ ] `src/server/plugins/agentPluginWatcher.ts` — subscribe to `workspace.watch()`
 - [ ] Filter: `event.path.startsWith('.boring/plugins/') && event.path.endsWith('boring.plugin.json')`
 - [ ] Enforce: directory name segment must match `manifest.id`
 - [ ] Debounce 50ms per pluginId; serialize concurrent reloads per pluginId
-- [ ] On `write`: route to v1 or v2 load path depending on mode
-- [ ] On `unlink`: extract pluginId from path → unload
+- [ ] On `write`: validate manifest → load server plugin → dispatch SSE `boring.plugin.load { manifest }`
+- [ ] On `unlink`: extract pluginId from path → unload server plugin → dispatch SSE `boring.plugin.unload { pluginId }`
+- [ ] On load failure: write `.boring/plugins/<id>/.error` + dispatch SSE `boring.plugin.error`
+- [ ] On success: delete `.error` if present
 
-### D — V1 load path (local)
-- [ ] Reuse `PluginCoordinator` from Phase 1 — wire it to the watcher
-- [ ] jiti loads `front.tsx` default export (React component factory) + `plugin.server.ts`
-- [ ] Register contributions into panel/command/tab/resolver/catalog/tool registries
-- [ ] On reload: coordinator handles unload-then-reload with rollback on failure
-- [ ] Outside plugin registry: `pluginRegistry.register({ id, extensionContract? })` called at workspace init for each outside plugin
+### D — Server plugin loading: jiti + Path A registry (both)
+- [ ] `src/server/plugins/serverPluginRegistry.ts` — server-side Map of pluginId → extensionContract (for `agent-tool` validation)
+- [ ] `src/server/plugins/jitiPluginLoader.ts` — `loadServerPlugin(pluginId, serverPath)` via jiti `{ moduleCache: false }`, registers tools into Fastify tool registry and catalog handlers
+- [ ] `createWorkspaceServer` accepts `pluginLoader?: ServerPluginLoader`; defaults to jiti in v1; core injects alternative in v2
+- [ ] `pluginRegistry.register({ id, extensionContract? })` called at workspace init for each outside plugin
 
-### E — V2 server plugin loader interface + jiti implementation (sandbox)
-- [ ] `src/server/plugins/serverPluginLoader.ts` — `ServerPluginLoader` interface + `BoringServerPluginAPI`
-- [ ] `src/server/plugins/jitiPluginLoader.ts` — `createJitiLoader()` copying pi's `loadExtensionModule` pattern
-- [ ] `createWorkspaceServer` accepts `pluginLoader?: ServerPluginLoader`; defaults to `createJitiLoader()`
-- [ ] Server-side extension contract registry: validate `derivesFrom` + `agent-tool` contributions before loading
+### E — Browser: SSE handler + `registerAgentPlugin` + `AgentPluginPane` direct mode (v1)
+- [ ] `src/front/plugins/agentPluginRegistry.ts` — browser-side Map of pluginId → extensionContract (for Path A checks)
+- [ ] `src/front/plugins/registerAgentPlugin.ts` — `registerAgentPlugin(manifest, registries, pluginRegistry)`:
+  - If `derivesFrom`: lookup in pluginRegistry → validate extensionContract
+  - `unregisterByPluginId(pluginId)` (no-op on first load)
+  - `const { default: factory } = await import(url)` — url includes `?v=<timestamp>` for cache-bust
+  - Run factory with capturing API → apply captured registrations
+- [ ] `src/front/plugins/AgentPluginPane.tsx` — `mode="direct"`: `React.lazy(() => import(url))` renders component in host tree; `mode="iframe"`: renders `<iframe>` (stubbed for now, wired in V2)
+- [ ] Register `agent-plugin-frame` panel wrapper in `coreRegistrations.ts`
+- [ ] Wire SSE handler in workspace front entry: `boring.plugin.load` → `registerAgentPlugin`; `boring.plugin.unload` → `unregisterByPluginId`
+- [ ] On browser connect: `GET /api/agent-plugins` → re-register all active manifests
 
-### F — V2 browser registration + generic iframe panel (sandbox)
-- [ ] `src/front/plugins/pluginRegistry.ts` — runtime Map of outside plugin id → extensionContract
-- [ ] `src/front/plugins/agentPluginRegistry.ts` — `registerAgentPlugin` / `unregisterAgentPlugin`
-- [ ] `src/front/plugins/AgentPluginPane.tsx` — iframe, timestamp cache-bust, exposes `reload()` via module-level Map
-- [ ] Register `agent-plugin-frame` in `coreRegistrations.ts`
-- [ ] On browser connect: `GET /api/agent-plugins` → register all active manifests
+### F — `GET /api/agent-plugins` reconnect endpoint (both)
+- [ ] Returns all currently-loaded manifests as JSON
+- [ ] Browser fetches this on connect/reconnect and calls `registerAgentPlugin` for each
 
-### G — V2 plugin file serving routes (sandbox)
-- [ ] `GET /api/agent-plugins` — returns all active manifests (reconnect state sync)
+### G — V2: esbuild route + iframe render mode (v2)
 - [ ] `GET /api/agent-plugins/:pluginId/front.js` — esbuild on demand, `bundle:true jsx:'automatic' format:'iife'`, `nodePaths` + `alias` for bridge-client, `Cache-Control: no-store`
 - [ ] `GET /api/agent-plugins/:pluginId/catalog/search?q=` — delegates to jiti-loaded handler
-- [ ] Register routes in `src/server/index.ts`; add `esbuild` to `package.json`
+- [ ] Switch `AgentPluginPane` to `mode="iframe"` in hosted mode; send `boring.bridge.reload` to open iframe on hot-reload
 
-### H — V2 postMessage bridge (sandbox)
+### H — V2: postMessage bridge (v2)
 - [ ] `src/front/plugins/agentPluginBridge.ts` — validate `event.source`, handle `openPanel` / `showNotification` / `reload`
 - [ ] `src/front/plugins/agentPluginBridgeClient.ts` — `sendToHost(type, payload)`
 - [ ] Theme tokens + `derivedFrom` in `boring.bridge.init`
 
-### I — V2 provisioning: React + bridge-client (sandbox)
-- [ ] Add `nodeInstall` field to `RuntimeProvisioningContribution` in `packages/agent/src/server/workspace/provisionRuntime.ts`
+### I — V2: provisioning React + bridge-client (v2)
+- [ ] Add `nodeInstall` field to `RuntimeProvisioningContribution`
 - [ ] Workspace base template seeds `.boring/plugins/package.json` with `{ react, react-dom }`
-- [ ] Provisioning runs `npm install` in `.boring/plugins/` → `.boring/plugins/node_modules/`
+- [ ] Provisioning runs `npm install` in `.boring/plugins/`
 - [ ] Provisioning writes pre-built `.boring/plugins/.boring-vendor/bridge-client.js`
 
-### J — Plugin template + docs (both)
-- [ ] Update `packages/workspace/templates/plugin/` with v1 example (direct React component)
+### J — Plugin templates + docs (both)
+- [ ] Update `packages/workspace/templates/plugin/` with v1 example (direct factory pattern)
 - [ ] Add v2 example (iframe-compatible, no host hooks)
 - [ ] Add `boring.plugin.json` example for both Path A and Path B
 - [ ] Update `check-plugin-invariants.mjs` to allow `.boring/plugins/` location
