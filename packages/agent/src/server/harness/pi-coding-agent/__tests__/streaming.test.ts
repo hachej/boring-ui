@@ -366,7 +366,7 @@ describe("model switching", () => {
       {
         sessionId: "sess-model-switch",
         message: "first",
-        model: { provider: "anthropic", id: "sonnet" },
+        model: { provider: "anthropic", id: "claude-sonnet-4-6" },
       },
       ctx,
     );
@@ -379,7 +379,7 @@ describe("model switching", () => {
 
     expect(mockCurrentModel.value).toEqual({
       provider: "anthropic",
-      id: "claude-sonnet-4.6",
+      id: "claude-sonnet-4-6",
     });
     expect(mockSetModel).not.toHaveBeenCalled();
 

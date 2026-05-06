@@ -46,13 +46,6 @@ export interface PiResourceLoaderOptions {
   piPackages?: PiPackageSource[];
 }
 
-const ALIAS_TO_PI_ID: Record<string, string> = {
-  sonnet: "claude-sonnet-4-6",
-  haiku: "claude-haiku-4-5",
-  opus: "claude-opus-4-7",
-  // Anthropic deprecated this legacy ID; map to current haiku family.
-  "claude-3-5-haiku-20241022": "claude-haiku-4-5",
-};
 
 function extractAssistantMessageText(message: unknown): {
   role?: string;
@@ -94,11 +87,8 @@ function resolveRequestedModel(
   input: SendMessageInput,
 ) {
   const requestedId = input.model?.id;
-  const piId = requestedId
-    ? (ALIAS_TO_PI_ID[requestedId] ?? requestedId)
-    : undefined;
-  if (!input.model || !piId) return undefined;
-  const model = modelRegistry.find(input.model.provider, piId);
+  if (!input.model || !requestedId) return undefined;
+  const model = modelRegistry.find(input.model.provider, requestedId);
   if (!model) return undefined;
   // Only return the model if the provider actually has credentials — otherwise
   // fall through to resolveDefaultModel so a stale localStorage selection
@@ -116,7 +106,7 @@ function resolveDefaultModel(modelRegistry: ModelRegistry) {
     const model = modelRegistry.find(configured.provider, configured.id);
     if (model) return model;
   }
-  return modelRegistry.find("anthropic", ALIAS_TO_PI_ID.sonnet);
+  return modelRegistry.find("anthropic", "claude-sonnet-4-6");
 }
 
 export function createResourceSettingsManager(
