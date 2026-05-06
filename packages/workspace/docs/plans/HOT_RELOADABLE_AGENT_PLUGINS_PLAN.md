@@ -22,9 +22,9 @@ The workspace has two plugin tiers that coexist and share the same registry infr
 | Loaded | At app startup via `bootstrap()` | At runtime via file watcher + SSE |
 | Migration required | No — stays declarative | N/A — new system |
 
-**Outside plugins** (`filesystemPlugin`, `macroPlugin`, etc.) keep their current declarative `WorkspaceFrontPlugin` shape. No forced migration. `bootstrap()` continues loading them.
+**Outside plugins** (`filesystemPlugin`, `macroPlugin`, etc.) keep their current declarative `WorkspaceFrontPlugin` shape. `bootstrap()` registers them directly into registries at startup — unchanged. No migration.
 
-**Inside plugins** are agent-authored. They use the factory-based `BoringExtensionAPI` and are loaded hot via the watcher.
+**Inside plugins** are agent-authored. They use the factory-based `BoringExtensionAPI` and are loaded hot via the watcher. `PluginCoordinator` is **deleted** and replaced by `registerAgentPlugin` — this replacement is scoped to inside plugins only. `bootstrap()` is not affected.
 
 ### Inside plugin authoring paths
 
@@ -165,12 +165,21 @@ export default function factory(api: BoringExtensionAPI): void | Promise<void> {
 
 ### `plugin.server.ts` — boring-ui only (pi has no server concept)
 
+**All agent tools must go here, not in `front.tsx`.** The server loads `plugin.server.ts` via jiti (Node.js). `front.tsx` is browser-only and is never evaluated server-side — any React imports, `document`, or CSS modules in `front.tsx` would crash jiti.
+
 ```ts
 // plugin.server.ts — loaded by jiti into the Fastify process
+import { defineTool, Type } from "@mariozechner/pi-coding-agent"
 import type { BoringServerPluginAPI } from "@boring/workspace/plugin"
 
 export default function serverFactory(api: BoringServerPluginAPI): void | Promise<void> {
-  api.registerTool({ name: "parse_csv", ... })        // same ToolDefinition shape as front
+  api.registerTool(defineTool({
+    name: "parse_csv",
+    label: "Parse CSV",
+    description: "Parse and return rows from a CSV file",
+    parameters: Type.Object({ path: Type.String() }),
+    execute: async (_id, { path }) => ({ content: [{ type: "text", text: "..." }] }),
+  }))
   api.registerCatalogHandler(async (q) => [...])
   api.registerDisposer(() => { /* cleanup sockets/timers on unload */ })
 }
@@ -286,16 +295,20 @@ Both server and browser use a **stage → validate → commit / rollback** patte
 
 ### Server
 
+`boring.extensions[0]` (`front.tsx`) is **never loaded by the server**. It is browser-only and may import React, `document`, CSS modules — any of which crash jiti in Node.js. Only `boring.server` (`plugin.server.ts`) runs server-side. All agent tools contributed by a plugin must live in `plugin.server.ts`.
+
 ```
 1. Read + validate package.json["boring"]  →  fail: write .error, SSE error, return (no state change)
-2. jiti.import(boring.extensions[0]) — capture registerTool calls into temp registry
-   jiti.import(boring.server)         — capture server tools + catalog handler
+2. (boring.server only) jiti.import(boring.server) — capture registerTool + registerCatalogHandler into temp registry
+   (if boring.server absent — no server-side loading)
 3. Stage fails (jiti throws)  →  write .error, SSE error, return (old tools untouched)
 4. Commit: atomically swap temp registry → live registry; run old disposers first
 5. activePlugins[pluginId] = { boring, version, revision }  (updated BEFORE SSE dispatch)
 6. Delete .boring/plugins/<id>/.error if present
 7. SSE boring.plugin.load { boring, version, revision }
 ```
+
+**Plugin tools in running sessions:** The harness currently receives a static `customTools` array at session creation. Plugin tools registered after startup must be visible to running sessions. `createPiCodingAgentHarness` is updated to accept `getExtraTools: () => ToolDefinition[]` (a live getter) instead of a frozen array. Each new `AgentSession` calls the getter at creation time, picking up any plugin tools registered since startup.
 
 Unload: run disposers, remove from live registry and activePlugins, SSE `boring.plugin.unload { pluginId, revision }`.
 
@@ -354,10 +367,10 @@ Agent writes .boring/plugins/csv-viewer/package.json
   ├─ (server — stage → commit)
   │   Read + validate package.json["boring"]           → fail: .error file + SSE error
   │   revision[pluginId]++
-  │   jiti.import(boring.extensions[0])                → capture registerTool calls
-  │   jiti.import(boring.server)                       → capture server tools
+  │   jiti.import(boring.server) if present            → capture server tools (front.tsx never loaded server-side)
   │   Stage fail (jiti throws)                         → .error + SSE error (old tools live)
   │   Commit: swap temp → live registry; run old disposers
+  │   getExtraTools() getter updated (new session picks up plugin tools automatically)
   │   activePlugins[pluginId] = { boring, revision }
   │   Delete .error if present
   │   SSE boring.plugin.load { boring, revision }
@@ -690,7 +703,7 @@ On next successful load, `.error` is deleted automatically.
 
 All current first-party plugins use the declarative `WorkspaceFrontPlugin` shape. None use the factory pattern. **Outside plugins do not need to migrate** — `bootstrap()` continues loading them as-is. The factory pattern is for inside (agent-authored) plugins only.
 
-However, the `BoringPluginAPI` in `authoring.ts` must expand to support the new flat `register*` surface. The coordinator already calls factory functions today; only the API shape changes.
+The `BoringPluginAPI` in `authoring.ts` must expand to the new flat `BoringExtensionAPI` surface. The `PluginCoordinator` (browser-side stage/commit for inside plugins) is deleted and replaced by `registerAgentPlugin`. Outside plugins are not affected — `bootstrap()` registers them directly into registries as before.
 
 ### `filesystemPlugin` — Small effort
 
@@ -796,25 +809,41 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 
 ### C — Fix `pluginLoader.ts` + Plugin watcher + SSE dispatch
 
-- [ ] **Rewrite `packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`** — replace native `import()` (`.js/.mjs` only) with `createJiti(import.meta.url, { moduleCache: false })`. Match pi's real loader: accept `.ts`, `.tsx`, `.js`, `.mjs`. Keep the same `extractTools` / `validateTool` shape.
-- [ ] `src/server/plugins/agentPluginWatcher.ts` — subscribe to `workspace.watch()`
-- [ ] Filter: `event.path` matches `.boring/plugins/*/package.json` — `package.json` is the only reload trigger; `front.tsx` / `plugin.server.ts` changes do not reload
-- [ ] Extract pluginId from directory name segment
-- [ ] Serialize concurrent reloads per pluginId (no debounce — `package.json` write IS the signal)
-- [ ] On `write`: `readBoringPackage(dir)` → stage → commit model → SSE `boring.plugin.load` on existing `/api/v1/fs/events` stream (new event type alongside `change`) on success; `.error` + SSE `boring.plugin.error` on failure
-- [ ] On `unlink`: unload server plugin → SSE `boring.plugin.unload { pluginId, revision }`
+**Fix boring-ui's pi-extension loader** (`packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`):
+- [ ] Replace `const defaultImport: ImportFn = (url) => import(url)` with `createJiti(import.meta.url, { moduleCache: false })`
+- [ ] Widen `VALID_EXTENSIONS` from `{".js", ".mjs"}` to `{".ts", ".tsx", ".js", ".mjs"}`
+- [ ] Keep `extractTools` / `validateTool` / `PluginLoadResult` shapes unchanged — callers unaffected
+
+**Plugin watcher** (`packages/workspace/src/server/plugins/agentPluginWatcher.ts`):
+
+The watcher subscribes to the existing workspace `WorkspaceWatcher` (already provided by `createNodeWorkspace` in `packages/agent`). To emit SSE plugin events it receives a `PluginEventEmitter` — a thin interface satisfied by the existing `FsEventBroadcaster` with a new `emitPlugin` method. The agent wires both together.
+
+- [ ] `createAgentPluginWatcher(watcher: WorkspaceWatcher, emit: PluginEventEmitter, loader: ServerPluginLoader): Disposable`
+- [ ] Filter events: only `.boring/plugins/*/package.json` writes trigger reload; all other paths ignored
+- [ ] Extract `pluginId` from the directory name segment between `plugins/` and `/package.json`
+- [ ] Per-pluginId promise lock — serialize concurrent reloads (no debounce; `package.json` write IS the commit signal)
+- [ ] On `write`: `readBoringPackage(dir)` → validate → jiti stage → commit → `emit.pluginLoad({ boring, version, revision, eventId: randomUUID() })`; on any failure write `.boring/plugins/<id>/.error` + `emit.pluginError`. If `JSON.parse` fails, retry once after 80 ms before classifying as error (guards against partial writes on slow filesystems).
+- [ ] On `unlink`: run disposers, remove from registry → `emit.pluginUnload({ pluginId, revision })`
 - [ ] On success: delete `.boring/plugins/<id>/.error` if present
 
-### D — Server plugin loading: jiti + Path A registry + catalog
+**SSE multiplexing** (`packages/agent/src/server/http/fsEvents.ts`):
+- [ ] Add `emitPlugin(event: BoringPluginEvent): void` to `FsEventBroadcaster` — writes SSE with `event: "boring.plugin.load" | "boring.plugin.unload" | "boring.plugin.error"` alongside existing `event: "change"` entries
+- [ ] Browser clients filter by event type; no new SSE endpoint needed
 
-- [ ] `src/server/plugins/serverPluginRegistry.ts` — Map of pluginId → extensionContract; collision check against outside plugin ids
-- [ ] `src/server/plugins/jitiPluginLoader.ts` — implements `ServerPluginLoader`; `createJiti(import.meta.url, { moduleCache: false })` (pi pattern); staging via temp Map atomically swapped on commit; disposers called before tools removed on reload/unload
-- [ ] `BoringServerPluginAPI` — `registerTool(ToolDefinition)`, `registerCatalogHandler`, `registerDisposer`, `log`
-- [ ] `createWorkspaceServer` accepts `pluginLoader?: ServerPluginLoader`; defaults to `createJitiLoader()`
-- [ ] `pluginRegistry.register({ id, extensionContract? })` called at workspace init for each outside plugin (before any inside plugin replay)
-- [ ] `GET /api/agent-plugins` — returns `Array<{ boring, version, revision }>` for all active plugins
-- [ ] `GET /api/agent-plugins/:id/catalog/search?q=` — delegates to registered `CatalogSearchHandler`; in-flight requests complete before handler removal
-- [ ] Active plugin state map: `Map<pluginId, { boring, version, revision }>` updated before SSE dispatch
+### D — Server plugin loading: jiti + registry + API routes
+
+All files in `packages/workspace/src/server/plugins/` unless noted. API routes in `packages/agent/src/server/http/routes/`.
+
+- [ ] `serverPluginRegistry.ts` — `Map<pluginId, { extensionContract?, activeRevision }>`. Registers outside plugin ids at startup (collision guard). Exposes `activePlugins(): ActivePlugin[]` for the reconnect endpoint.
+- [ ] `jitiPluginLoader.ts` — implements `ServerPluginLoader` interface. Uses `createJiti(import.meta.url, { moduleCache: false })`. Stage: jiti imports entry into a temp `BoringServerPluginAPI` instance. Commit: atomically swap temp → live, run old disposers first. Unload: run disposers, clear from live map.
+- [ ] `boringServerPluginAPI.ts` — `BoringServerPluginAPI` implementation: `registerTool(ToolDefinition)`, `registerCatalogHandler(fn)`, `registerDisposer(fn)`, `log(level, msg)`.
+- [ ] `agentPluginRoutes.ts` (in agent routes) — two endpoints:
+  - `GET /api/agent-plugins` → `Array<{ boring: BoringPackageField, version, revision }>` from `serverPluginRegistry.activePlugins()`; browser calls this on connect/reconnect
+  - `GET /api/agent-plugins/:id/catalog/search?q=` → delegates to registered `CatalogSearchHandler`; 404 if none registered; in-flight requests finish before handler removal on reload
+- [ ] Wire `createAgentPluginWatcher` into `createAgentApp` — passes workspace watcher + broadcaster + jiti loader
+- [ ] `pluginRegistry.register({ id })` called for each outside plugin id at startup (before SSE replay)
+- [ ] Update `createPiCodingAgentHarness` to accept `getExtraTools: () => ToolDefinition[]` (live getter); each `AgentSession` calls it at creation — plugin tools registered after startup are visible to new sessions without restart
+- [ ] Catalog handler snapshot pattern: `agentPluginRoutes.ts` captures handler reference at request entry (`const handler = registry.getCatalogHandler(id)`) so in-flight searches complete against the captured reference even if the plugin reloads mid-request
 
 ### E — TypeBox migration + `authoring.ts`: `BoringPluginAPI` → `BoringExtensionAPI`
 
@@ -838,31 +867,42 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 - [ ] Keep `BoringPluginAPI` as deprecated alias
 - [ ] Export `BoringExtensionAPI`, `BoringExtensionFactory`, `ToolDefinition` (re-export) from `@boring/workspace/plugin`
 
-### F — Browser: replace `PluginCoordinator` + SSE handler + `AgentPluginPane` V1
+### F — Browser: `registerAgentPlugin` + SSE handler + `AgentPluginPane` V1
 
-`PluginCoordinator` (`src/shared/plugins/coordinator.ts`) is **deleted** and replaced by the new `BoringExtensionAPI`-based system. `bootstrap()` migrates to call the new factory loader; outside plugins get a thin adapter wrapping their declarative shape into a factory call.
+`PluginCoordinator` (`src/shared/plugins/coordinator.ts`) and its tests are **deleted**. The new system handles inside plugins only — `bootstrap()` and outside plugin registration are unchanged.
 
-- [ ] Delete `src/shared/plugins/coordinator.ts` and its `CapturingAPIHandle` / `CapturedRegistrations` types (moved into `authoring.ts`)
-- [ ] Registries as **Zustand stores** — `usePanelStore`, `useCommandStore`, `useTabStore`, `useResolverStore`; SSE updates go through `setState`, never direct Map mutation
-- [ ] Resolver LIFO stack: entries tagged `(pluginId, revision)`; on commit pop all old entries for pluginId, push new; `unregisterByPluginId` removes only entries matching that pluginId
-- [ ] `src/front/plugins/agentPluginRegistry.ts` — browser-side Map of outside pluginId → extensionContract; `lastSeen: Map<string, number>`
-- [ ] `src/front/plugins/registerAgentPlugin.ts` — implement the stage → commit logic described in the Atomicity Model section (replaces coordinator)
-- [ ] Migrate `bootstrap()` — outside plugins get `declarativeToFactory(plugin: WorkspaceFrontPlugin): BoringExtensionFactory` adapter; `bootstrap()` calls `registerAgentPlugin` for each
+- [ ] Delete `src/shared/plugins/coordinator.ts`. `CapturedRegistrations` type moves into `authoring.ts`. Update `src/shared/plugins/index.ts` exports.
+- [ ] Delete `src/shared/plugins/__tests__/coordinator.test.ts` and `hotReload.test.ts` — replaced by integration tests on `registerAgentPlugin`
+- [ ] `src/front/plugins/agentPluginRegistry.ts` — `Map<pluginId, extensionContract>` for outside plugins (populated at bootstrap); `Map<pluginId, number>` for `lastSeen` revisions
+- [ ] `src/front/plugins/registerAgentPlugin.ts` — stage → commit for inside plugins:
+  - Check `revision ≤ lastSeen[pluginId]` → discard stale
+  - Snapshot current store state for pluginId (rollback target)
+  - V1: `await import(url?v=revision)` → `factory(createCapturingBoringExtensionAPI())` → captured registrations
+  - V2: read `boring.panels[]`, `boring.commands[]`, etc. from manifest (no dynamic import)
+  - Path A: check captured/manifest contribution types vs `extensionContract`
+  - On failure: restore snapshot, dispatch toast
+  - On success: commit to Zustand stores; update resolver LIFO stack; set `lastSeen[pluginId] = revision`
+- [ ] Registries: update existing panel/command/surface-resolver Zustand stores to support `unregisterByPluginId(pluginId)` and LIFO stack tagging `(pluginId, revision)` for surface resolvers
 - [ ] `src/front/plugins/AgentPluginPane.tsx`:
-  - `mode="direct"`: factory module ref IS the component (no second `React.lazy`); panel key includes revision to force remount
-  - `mode="iframe"`: `<iframe sandbox="allow-scripts">` (stubbed in V1; wired in G)
-  - Renders "Plugin not loaded" placeholder when plugin absent from store
-- [ ] Register `agent-plugin-frame` panel wrapper in `coreRegistrations.ts`
-- [ ] SSE handler: `boring.plugin.load` → `registerAgentPlugin`; `boring.plugin.unload` → pop stack + remove from stores; `boring.plugin.error` → toast
-- [ ] On browser connect/reconnect: `GET /api/agent-plugins` → call `registerAgentPlugin` for each entry where `revision > lastSeen`
+  - `mode="direct"` (V1): `React.lazy(() => import(url?v=revision))` where the module's default export IS the panel component; key includes revision to force remount on reload
+  - `mode="iframe"` (V2 stub): renders placeholder `<div>V2 iframe — wired in TODO G</div>`
+  - When plugin absent from store: renders "Plugin not loaded" placeholder
+- [ ] Introduce `useWorkspaceEventStream` — a workspace-level shared `EventSource` to `/api/v1/fs/events` that fans out to type-specific subscribers. Both file-event and plugin-event listeners attach here. Replaces per-component `EventSource` creation in `useFileEventStream`. Eliminates duplicate connections.
+- [ ] SSE handler: subscribe via `useWorkspaceEventStream` — filter for `boring.plugin.*` event types → `registerAgentPlugin` / unregister / toast. Each `boring.plugin.load` event carries an `eventId: string` (UUID); check against a per-pluginId LRU before processing to deduplicate replay-then-live races.
+- [ ] `await factory(capturingAPI)` before calling `flush()` — async factories that register after an internal `await` are correctly captured
+- [ ] On connect/reconnect: `GET /api/agent-plugins` → for each entry where `revision > lastSeen[pluginId]`, call `registerAgentPlugin`
 
-### G — V2: esbuild route + iframe render
+### G — V2: esbuild route + iframe render (skeleton this PR, wire fully later)
 
-- [ ] `GET /api/agent-plugins/:pluginId/front.js` — compile `boring.extensions[0]` on demand; cache by mtime; `Cache-Control: no-store`; esbuild config as specified in V2 section
-- [ ] Path security: validate pluginId with `isValidBoringPluginId`; resolve path within `workspaceRoot/.boring/plugins/` (reject symlink escapes)
-- [ ] CSP header: `default-src 'none'; script-src 'self'; connect-src 'self'`
-- [ ] Switch `AgentPluginPane` to `mode="iframe"` in hosted mode
-- [ ] On esbuild error: write `.error`, serve last cached bundle or 500
+This PR ships the skeleton: the route exists and the iframe renders, but the postMessage bridge (TODO H) and provisioning (TODO I) are follow-up work.
+
+- [ ] `GET /api/agent-plugins/:pluginId/front.js` (`packages/agent/src/server/http/routes/agentPluginFront.ts`):
+  - Validate pluginId with `isValidBoringPluginId`; resolve and verify path stays within `workspaceRoot/.boring/plugins/` (no symlink escapes)
+  - Compile `boring.extensions[0]` via esbuild on demand; cache keyed by `(pluginId, mtime)` of the entry file; invalidate cache on watcher reload event
+  - esbuild config: `format: "iife"`, `jsx: "automatic"`, `jsxImportSource: "react"`, `platform: "browser"`, `write: false`
+  - `Cache-Control: no-store`; CSP: `default-src 'none'; script-src 'self'`
+  - On esbuild error: write `.boring/plugins/<id>/.error`, serve last cached bundle or 500
+- [ ] Wire `AgentPluginPane mode="iframe"` — replaces the V1 stub with real `<iframe sandbox="allow-scripts" src={url} />`; bridge messages not yet handled (TODO H)
 
 ### H — V2: postMessage bridge
 
@@ -889,8 +929,10 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 
 ## Out of Scope
 
-- Outside plugin migration to factory pattern — no forcing function; `bootstrap()` stays
+- Outside plugin migration to factory pattern — `bootstrap()` stays; no forcing function
 - `binding` / `provider` / `slotFill` in V2 — require host React tree; incompatible with iframe sandbox
-- `host.query()` bridge for V2 derived plugins — deferred until after Path A + bridge land
+- `host.query()` bridge for V2 derived plugins — deferred until Path A + full bridge land
 - Vite HMR for outside plugins — separate concern
-- Worker-thread `ServerPluginLoader` for multi-tenant — deferred; jiti is sufficient today
+- Worker-thread `ServerPluginLoader` — deferred; jiti sufficient today
+- postMessage bridge wiring (TODO H) and provisioning (TODO I) — follow-up PRs after G skeleton ships
+- `registerShortcut` implementation — accepted by `BoringExtensionAPI` but no-op in V1 (no keybinding registry yet)
