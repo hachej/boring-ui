@@ -38,6 +38,7 @@ export default defineConfig({
   },
   resolve: localPackageAlias ? { alias: localPackageAlias } : undefined,
   build: {
+    outDir: "dist/front",
     rollupOptions: {
       output: {
         manualChunks(id) {
