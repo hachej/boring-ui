@@ -146,13 +146,13 @@ Permissions are implicit from declarations. No `runtime` field — implicit from
 
 ## Load Flow
 
-The agent only writes files. The workspace watches `.boring/plugins/` and handles everything.
+The agent only writes files. The workspace watches `.boring/plugins/` via the existing `workspace.watch()` channel (chokidar on local, sandbox event emitter on Vercel — no new infrastructure).
 
 ```
 Agent writes/edits .boring/plugins/csv-viewer/ files
   │
   ▼
-Workspace file watcher detects change to boring.plugin.json (or any file in the dir)
+workspace.watch() fires WorkspaceChangeEvent for boring.plugin.json
   │
   ▼ (server)
 Read + validate boring.plugin.json via workspace.readFile()
@@ -327,10 +327,11 @@ Host validates origin before dispatching. v2 adds `host.query()` for data access
 - [ ] On unload: remove tools + catalog handlers owned by pluginId; jiti discards module automatically via `moduleCache: false`
 - [ ] Core (app entry point) selects and passes the loader — workspace does not auto-detect environment
 
-### E — File watcher + SSE dispatch
-- [ ] `src/server/plugins/agentPluginWatcher.ts` — watch `.boring/plugins/*/boring.plugin.json` for create/change/delete using workspace file watching primitives
-- [ ] On create/change: validate manifest → (re)load server plugin → SSE `dispatchCommand("boring.plugin.load", { manifest })` to all connected browsers
-- [ ] On delete: unload server plugin → SSE `dispatchCommand("boring.plugin.unload", { pluginId })` to all connected browsers
+### E — Plugin watcher + SSE dispatch
+- [ ] `src/server/plugins/agentPluginWatcher.ts` — subscribe to `workspace.watch()` (already backed by chokidar for local, sandbox event emitter for Vercel — no new infrastructure needed)
+- [ ] Filter: `event.path.startsWith('.boring/plugins/') && event.path.endsWith('boring.plugin.json')`
+- [ ] On `write`: validate manifest → (re)load via ServerPluginLoader → SSE `dispatchCommand("boring.plugin.load", { manifest })` to all connected browsers
+- [ ] On `unlink`: unload → SSE `dispatchCommand("boring.plugin.unload", { pluginId })` to all connected browsers
 - [ ] Add `"boring.plugin.load"` and `"boring.plugin.unload"` to `CommandKind` in `src/front/bridge/client.ts`
 - [ ] Browser `dispatchCommand` cases: call `registerAgentPlugin(manifest)` / `unregisterAgentPlugin(pluginId)`
 - [ ] `boring.bridge.reload` sent to open iframes after re-registration on hot reload
