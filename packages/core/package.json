@@ -50,11 +50,11 @@
     "drizzle"
   ],
   "scripts": {
-    "build": "pnpm --filter @hachej/boring-ui-kitbuild && tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
+    "build": "pnpm --filter @hachej/boring-ui-kit build && tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
     "dev": "tsup --watch",
     "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
-    "typecheck": "pnpm --filter @hachej/boring-ui-kitbuild && tsc --noEmit",
+    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && tsc --noEmit",
     "lint": "pnpm run typecheck",
     "check:bundle-size": "tsx ./scripts/check-bundle-size.ts",
     "clean": "rm -rf dist .tsbuildinfo",
