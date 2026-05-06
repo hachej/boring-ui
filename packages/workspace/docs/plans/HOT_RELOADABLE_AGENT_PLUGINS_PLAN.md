@@ -457,9 +457,85 @@ MISSING_REQUIRED_FIELD | UNKNOWN_FIELD | CROSS_REFERENCE | DUPLICATE_ID
 
 ---
 
-## Path A — Outside Plugin Registry (both modes)
+## Path A — Derivation Behavior
 
-Outside plugins need a runtime registry keyed by plugin ID so the browser can resolve `derivesFrom` and check `extensionContract`. Server-side registry for `agent-tool` validation before `plugin.server.ts` loads.
+### The fundamental contract: purely additive
+
+A derived plugin **adds** new contributions on top of the base plugin. It never removes, replaces, or silences the base plugin's existing panels, commands, tabs, or tools. The base plugin continues to run independently and all its contributions remain active while the derived plugin is loaded.
+
+The only exception is **surface resolvers** — they use last-registered-wins for a given `surfaceKind`. A derived plugin registering a resolver for `"csv.open"` shadows the base's resolver for that kind. On unload the previous resolver (base or another derived plugin) becomes active again.
+
+### What `extensionContract.allowedContributions` gates
+
+It is a **whitelist of contribution types** the derived plugin is permitted to add. If a type is not listed, any attempt to register that type causes the load to fail (error written + SSE fired, load rolled back).
+
+```ts
+// base plugin declares:
+extensionContract: { allowedContributions: ["panel", "command", "agent-tool"] }
+
+// derived plugin cannot register left-tabs or surface-resolvers
+// attempting to do so → load fails with CROSS_REFERENCE error
+```
+
+The check happens:
+- **V1**: post-factory on captured registrations (what the factory actually registered)
+- **V2**: pre-registration on manifest contribution arrays (manifest is authoritative)
+
+### What happens to base plugin contributions on derived load
+
+| Base contribution | When derived loads | When derived unloads |
+|---|---|---|
+| Base panels | Still registered, still openable | Unchanged |
+| Base commands | Still in command palette | Unchanged |
+| Base left tabs | Still visible | Unchanged |
+| Base surface resolvers | Active unless derived shadows same surfaceKind | Active again (stack pop) |
+| Base agent tools | Still callable by agent | Unchanged |
+
+The base plugin's front.tsx continues rendering. The base plugin is unaware of the derived plugin.
+
+### Surface resolver shadowing — stack semantics
+
+Resolvers for a given `surfaceKind` use a LIFO stack per kind (not a flat last-registered-wins):
+
+```
+base registers: surfaceKind="csv.open" → panelId="csv-base-panel"   (stack: [base])
+derived-a loads: surfaceKind="csv.open" → panelId="csv-viewer-panel" (stack: [base, derived-a])
+derived-b loads: surfaceKind="csv.open" → panelId="csv-detail-panel" (stack: [base, derived-a, derived-b])
+active resolver: derived-b (top of stack)
+
+derived-b unloads: (stack: [base, derived-a])
+active resolver: derived-a
+
+derived-a unloads: (stack: [base])
+active resolver: base
+```
+
+The `unregisterByPluginId` call removes all resolvers tagged with that pluginId from the stack. The stack top becomes the new active resolver.
+
+### Panel and command ID namespacing
+
+Derived plugin contributions must use IDs that **do not collide** with base plugin contribution IDs. If the derived plugin's factory (v1) or manifest (v2) registers a panel with the same ID as a base plugin panel, the load fails with a `DUPLICATE_ID` error (the base plugin's panel is already in the registry).
+
+Recommended convention: prefix with derived plugin id — `"csv-viewer-enhanced-panel"` not `"csv-viewer-panel"`.
+
+### State and event access by mode
+
+**V1 (host React tree):**
+- Derived `front.tsx` runs in the same React tree as the base plugin
+- Can import React context exported by the base plugin's package (if it exposes one)
+- Can read/write shared Zustand stores exported by the base plugin
+- Can subscribe to any event bus the base plugin exports
+- This is intentional — V1 trusts the local agent
+
+**V2 (iframe):**
+- Derived plugin's `front.tsx` runs in a sandboxed iframe — no direct access to base plugin state
+- `boring.bridge.init` sends `{ derivedFrom: "macro" }` so the iframe knows which base it extends
+- No shared context or event subscription possible across iframe boundary in v2
+- "Path A context queries" (`host.query()`) are out of scope — deferred as a v2 bridge extension
+
+### Outside plugin registry
+
+Outside plugins register at workspace init. The registry is maintained both browser-side and server-side:
 
 ```ts
 export interface PluginExtensionContract {
@@ -467,9 +543,16 @@ export interface PluginExtensionContract {
     "panel" | "command" | "left-tab" | "surface-resolver" | "agent-tool"
   >
 }
-// Registered at workspace init:
-pluginRegistry.register({ id: "macro", extensionContract: { allowedContributions: ["panel", "command", "agent-tool"] } })
+// At workspace init (both server and browser):
+pluginRegistry.register({
+  id: "macro",
+  extensionContract: { allowedContributions: ["panel", "command", "agent-tool"] }
+})
 ```
+
+- **Browser registry**: `agentPluginRegistry.ts` Map — used by `registerAgentPlugin` for extensionContract check and by `unregisterByPluginId` for surface resolver stack management
+- **Server registry**: `serverPluginRegistry.ts` Map — used before loading `plugin.server.ts` to gate `agent-tool` contributions
+- `derivesFrom` referencing an unregistered plugin ID → hard load failure (error file + SSE), not a silent skip
 
 ---
 
