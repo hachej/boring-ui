@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Rich standalone playground for @boring/agent.",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "tsx src/server/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

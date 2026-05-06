@@ -6,7 +6,7 @@
 /* App-local Tailwind scan roots only. Agent classes ship precompiled via
  * @boring/agent/front/styles.css imported from main.tsx. */
 @source "./**/*.{ts,tsx,js,jsx}";
-@source "../index.html";
+@source "../../index.html";
 
 @layer base {
   * { border-color: var(--color-border); }

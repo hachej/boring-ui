@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
-import { applyCspHeaders } from '../../packages/agent/src/server/http/csp'
-import { createAgentApp } from '../../packages/agent/src/server/createAgentApp'
+import { applyCspHeaders } from '../../../../packages/agent/src/server/http/csp'
+import { createAgentApp } from '../../../../packages/agent/src/server/createAgentApp'
 
 const app = await createAgentApp({
   mode: 'direct',
@@ -16,7 +16,7 @@ const apiAddress = await app.listen({ port: 0, host: '127.0.0.1' })
 const apiPort = Number(new URL(apiAddress).port)
 const apiTarget = `http://127.0.0.1:${apiPort}`
 
-const playgroundRoot = path.dirname(fileURLToPath(import.meta.url))
+const playgroundRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const packageRoot = path.resolve(playgroundRoot, '../../packages/agent')
 const packageSrc = path.resolve(packageRoot, 'src')
 
@@ -54,7 +54,7 @@ const vite = await createViteServer({
               '  </head>',
               '  <body class="bg-background text-foreground antialiased">',
               '    <div id="root" class="h-screen"></div>',
-              '    <script type="module" src="/src/main.tsx"></script>',
+              '    <script type="module" src="/src/front/main.tsx"></script>',
               '  </body>',
               '</html>',
             ].join('\n')
