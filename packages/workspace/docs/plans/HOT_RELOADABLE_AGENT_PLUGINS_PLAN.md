@@ -134,23 +134,14 @@ interface BoringExtensionAPI {
   // "load" and "unload" events are wired; all other events are no-ops.
   on(event: string, handler: (...args: unknown[]) => void): void
 
-  // ── Pi methods — boring-ui stubs (no-op, pi handles natively) ─────────
-  // When pi loads front.tsx, pi registers the tool in its own registry.
-  // Boring-ui ignores it from the front — tools belong in plugin.server.ts.
-  // IMPORTANT: registerTool is a no-op in the capturing API. If a plugin
-  // author calls it in front.tsx, the tool is silently dropped. To surface
-  // this error to the agent (who cannot see browser console), the capturing
-  // API logs a captured warning that is included in the SSE boring.plugin.load
-  // response and shown in the plugin status panel as a diagnostic.
+  // ── Pi methods — boring-ui stubs (no-op + console.warn in dev) ─────────
+  // registerTool: no-op in the capturing API; logs a warning diagnostic
+  // visible in the plugin status panel. Plugin tools must go in plugin.server.ts,
+  // not front.tsx — calling registerTool in front.tsx silently drops the tool.
   registerTool(tool: ToolDefinition): void
-
-  exec(...args: unknown[]): Promise<unknown>
-  sendMessage(...args: unknown[]): void
-  sendUserMessage(...args: unknown[]): void
-  events: { on(): void; off(): void; emit(): void }
-  getActiveTools(): string[]
-  setActiveTools(tools: string[]): void
-  // remaining pi-specific methods (setModel, appendEntry, etc.) also stubbed
+  // All remaining pi API surface (exec, sendMessage, sendUserMessage,
+  // events, getActiveTools, setActiveTools, setModel, appendEntry,
+  // registerFlag, registerProvider, etc.) — no-op stubs
 
   // ── Boring-ui extras — flat optional methods, absent in pi ───────────
   // Use optional chaining so the factory is safe when pi loads it.
@@ -358,7 +349,6 @@ Validation at load time:
 | Plugin API naming | Flat `register*` throughout | Consistent with pi's `registerTool` / `registerCommand`. No namespace objects. |
 | Boring-ui extras | Optional methods | `registerPanel?`, `registerLeftTab?`, etc. are absent in pi — optional chaining makes the same factory safe in both runtimes. |
 | `registerTool` shape | Pi's verbatim `ToolDefinition` (TypeBox) | TypeBox parameters, full execute signature. Plugin authors use pi's `defineTool()` helper. Identical surface across both runtimes. |
-| TypeBox — full migration | `AgentTool.parameters` becomes `TSchema` | Drops `as any` in `tool-adapter.ts`. All existing tools (filesystem, harness, dataCatalog) updated. Clean end-to-end TypeBox pipeline. |
 | No build step | jiti handles `.tsx` natively | Pi's real loader uses `@mariozechner/jiti`; boring-ui also uses jiti for server plugins. No esbuild pre-compilation needed in V1. |
 | Fix `pluginLoader.ts` | Replace native `import()` with jiti | Boring-ui's custom wrapper incorrectly restricts to `.js/.mjs`. Rewrite to use `createJiti` matching pi's real loader. |
 | Server plugins | Boring-ui only | Pi has no server plugin concept. `plugin.server.ts` is loaded by jiti into the Fastify process. |
@@ -500,7 +490,7 @@ Plugin runs in the same Node.js process. This is intentional — local mode mean
 
 ### What V2 means
 
-The agent runs in a sandboxed environment (bwrap, Vercel). `front.tsx` is compiled to a JS bundle served to a sandboxed iframe. `plugin.server.ts` loads via an injected `ServerPluginLoader` into the host Fastify process (not sandboxed — the sandbox is for the agent, not the server plugin). The SSE path is **identical to V1** — only how the browser handles the panel render differs.
+The agent runs in a sandboxed environment (bwrap, Vercel). `front.tsx` is compiled to a JS bundle served to a sandboxed iframe. `plugin.server.ts` loads via jiti into the host Fastify process (not sandboxed — the sandbox is for the agent, not the server plugin). The SSE path is **identical to V1** — only how the browser handles the panel render differs.
 
 V2 works in any environment (no Vite dev server required).
 
@@ -704,7 +694,7 @@ V1 and V2 share all infrastructure except the panel render strategy.
 | Layer | V1 | V2 |
 |---|---|---|
 | `boring-pi-extension.ts` reload hook | ✅ | ✅ |
-| Server: jiti loads `plugin.server.ts` | ✅ | ✅ via `ServerPluginLoader` |
+| Server: jiti loads `plugin.server.ts` | ✅ | ✅ |
 | SSE `boring.plugin.load` dispatch | ✅ | ✅ |
 | Browser SSE handler | ✅ | ✅ |
 | `registerAgentPlugin` function | ✅ | ✅ (different branch) |
@@ -799,58 +789,11 @@ On next successful load, `.error` is deleted automatically.
 
 ---
 
-## Existing Plugins — Migration Gap
+## Existing Plugins — No Migration Required
 
-All current first-party plugins use the declarative `WorkspaceFrontPlugin` shape. None use the factory pattern. **Outside plugins do not need to migrate** — `bootstrap()` continues loading them as-is. The factory pattern is for inside (agent-authored) plugins only.
+All current first-party plugins (`filesystemPlugin`, `explorerPlugin`, `dataCatalogPlugin`, `macroPlugin`, `playgroundDataCatalogPlugin`) use the declarative `WorkspaceFrontPlugin` shape and stay that way. `bootstrap()` continues loading them as-is. The factory pattern is for inside (agent-authored) plugins only.
 
-The `BoringPluginAPI` in `authoring.ts` must expand to the new flat `BoringExtensionAPI` surface. The `PluginCoordinator` (browser-side stage/commit for inside plugins) is deleted and replaced by `registerAgentPlugin`. Outside plugins are not affected — `bootstrap()` registers them directly into registries as before.
-
-### `filesystemPlugin` — Small effort
-
-**File:** `packages/workspace/src/plugins/filesystemPlugin/front/index.ts`  
-**Current shape:** `defineFrontPlugin({ outputs: [...], bindings: [...] })`
-
-What changes if migrated to factory:
-- `outputs` loop → `registerPanel?()`, `registerLeftTab?()`, `registerSurfaceResolver?()`
-- **Bindings** (`FilesystemCatalogBinding`, `FilesystemFilePanelBinding`, `FilesystemAgentFileBridge`) are runtime React components, not declarative registrations. They stay as-is — register via `registerSlotFill?` or keep as a `bindings` field on the outside plugin.
-
-**Decision: stays declarative.** Outside plugin. No migration needed.
-
-### `explorerPlugin` — Trivial if migrated
-
-**File:** `packages/workspace/src/plugins/explorerPlugin/front/index.tsx`  
-**Current shape:** `createExplorerOutputs()` helper → `defineFrontPlugin({ outputs })`
-
-Logic is already modular; migration is mechanical. If it ever moves to factory: `createExplorerPlugin()` becomes `(api: BoringExtensionAPI) => void`, replacing the outputs loop with individual `register*?()` calls.
-
-**Decision: stays declarative.** Outside plugin. No migration needed.
-
-### `dataCatalogPlugin` — Medium (three tiers)
-
-**Files:**
-- Front: `packages/workspace/src/plugins/dataCatalogPlugin/front/index.tsx`
-- Server: `packages/workspace/src/plugins/dataCatalogPlugin/server/index.ts`
-- Agent: `packages/workspace/src/plugins/dataCatalogPlugin/agent/index.ts`
-
-Front uses `createDataCatalogOutputs()` helper + `appendDataCatalogOutputs()` for composition. Server uses `defineServerPlugin({ agentTools, systemPrompt })`.
-
-The `appendDataCatalogOutputs()` helper (used by `playgroundDataCatalogPlugin` and macro) is the main composition primitive. Under a factory model, this becomes `composeFactories()`.
-
-**Decision: stays declarative.** Outside plugin. `appendDataCatalogOutputs()` and `defineServerPlugin` remain.
-
-### `macroPlugin` — Medium (composite)
-
-**File:** `apps/boring-macro-v2/src/plugins/macro/front/index.tsx`  
-**Current shape:** `composePlugins({ plugins: [macroPanels, macroSurfaces, macroSeriesCatalog] })`
-
-Three sub-plugins composed via `composePlugins()`. If ever migrated, needs `composeFactories()` or inline all registrations into a single factory.
-
-**Decision: stays declarative.** Outside plugin. `composePlugins()` remains.
-
-### `playgroundDataCatalogPlugin` — Trivial dependency
-
-**File:** `apps/workspace-playground/src/plugins/playgroundDataCatalog/front/index.tsx`  
-Thin wrapper over `appendDataCatalogOutputs()`. Stays declarative, follows dataCatalogPlugin.
+The one file that changes is `authoring.ts` — the capturing API expands to the new flat `BoringExtensionAPI` surface. Outside plugins are not affected — `bootstrap()` registers them directly into registries as before.
 
 ### What DOES change: `authoring.ts`
 
@@ -865,7 +808,6 @@ The coordinator already calls factories today via `createCapturingAPI()`. The ca
 | `slotFills.register(reg)` | `registerSlotFill?(reg)` | rename + flatten |
 | ❌ missing | `registerTool(tool)` | add — no-op stub (pi handles it; boring-ui tools go in plugin.server.ts) |
 | ❌ missing | `registerLeftTab?(reg)` | add |
-| ❌ missing | `registerCatalog?(reg)` | add |
 | ❌ missing | `registerCommand(name, opts)` | add — pi slash command |
 | ❌ missing | `on(event, handler)` | add |
 | ❌ missing | pi stub methods | add no-ops |
@@ -893,13 +835,13 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 ### A — `manifest.ts`: parse `package.json["boring"]`
 
 - [ ] Remove `BoringPluginManifest`, `BoringPluginRuntime`, `BoringPluginPermissions` (old shapes)
-- [ ] Introduce `BoringPackageField` type — `entry: string`, `server?`, `label?`, `description?`, `derivesFrom?`, `panels[]`, `commands[]`, `leftTabs[]`, `surfaceResolvers[]`, `catalogs[]`
+- [ ] Introduce `BoringPackageField` type — `entry: string`, `server?`, `label?`, `description?`, `derivesFrom?`, `panels[]`, `commands[]`, `leftTabs[]`, `surfaceResolvers[]`
 - [ ] `readBoringPackage(dir)` — reads `package.json`, extracts `version` from top-level, id from directory name, contributions from `boring` field
 - [ ] Validation:
   - `entry` required, passes `isSafePluginRelativePath`
   - `entry` and `server` (if declared) exist on disk — `MISSING_ENTRY_FILE` with actionable message
   - `derivesFrom` passes `isValidBoringPluginId`; cross-references valid; no duplicate ids within arrays
-  - `AllowedContribution` is a strict union: `"panel" | "panelCommand" | "leftTab" | "surfaceResolver" | "catalog" | "agentTool"` — validated at registry time
+  - `AllowedContribution` is a strict union: `"panel" | "panelCommand" | "leftTab" | "surfaceResolver" | "agentTool"` — validated at registry time
 - [ ] Error codes in `manifest.ts` (parse-time): `INVALID_ID | INVALID_VERSION | INVALID_PATH | MISSING_REQUIRED_FIELD | MISSING_ENTRY_FILE | UNKNOWN_FIELD | CROSS_REFERENCE | DUPLICATE_ID`
 - [ ] `MANIFEST_IMPL_MISMATCH` lives in `registerAgentPlugin` (mode="direct" only) — not in manifest.ts. It fires post-factory when a manifest-declared panel id has no matching `registerPanel?()` call.
 - [ ] Export `BoringPackageField` from `plugin.ts` and `@boring/workspace/plugin` subpath
@@ -1020,7 +962,7 @@ This PR ships the skeleton: the route exists and the iframe renders, but the pos
 
 - [ ] `packages/workspace/templates/plugin/` — V1 example: `package.json` + `front.tsx` (Path B from scratch)
 - [ ] Add Path A example: `package.json` with `derivesFrom`, `front.tsx` using `registerPanel?` + `registerSurfaceResolver?`
-- [ ] Add `plugin.server.ts` example with `registerTool` + `registerCatalogHandler`
+- [ ] Add `plugin.server.ts` example with `registerTool` + `registerDisposer`
 - [ ] Update `check-plugin-invariants.mjs` to allow `.boring/plugins/` location
 - [ ] Docs: `plugins.md` includes agent-facing walkthrough and worked examples
 - [ ] **Plugin Status Panel** — a first-party outside plugin registered via `bootstrap()` at startup:
