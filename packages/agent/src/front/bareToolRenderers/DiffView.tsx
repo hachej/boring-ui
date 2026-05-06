@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createPatch } from 'diff'
-import { Button } from '@boring/ui'
+import { Button } from '@hachej/boring-ui-kit'
 import { cn } from '../lib'
 
 const COLLAPSE_THRESHOLD = 30

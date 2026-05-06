@@ -1,4 +1,4 @@
-// @boring/agent/front — Tailwind + shadcn styled ChatPanel, primitives, hooks, and slash commands.
+// @hachej/boring-agent/front — Tailwind + shadcn styled ChatPanel, primitives, hooks, and slash commands.
 
 export { ChatPanel } from './ChatPanel'
 export type { ChatPanelProps } from './ChatPanel'

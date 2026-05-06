@@ -41,7 +41,7 @@ import {
   AlignCenterIcon,
   AlignRightIcon,
 } from "lucide-react"
-import { Input, Toolbar as UiToolbar, ToolbarButton as UiToolbarButton, ToolbarSeparator as UiToolbarSeparator } from "@boring/ui"
+import { Input, Toolbar as UiToolbar, ToolbarButton as UiToolbarButton, ToolbarSeparator as UiToolbarSeparator } from "@hachej/boring-ui-kit"
 import { cn } from "../../../../front/lib/utils"
 
 const lowlight = createLowlight(common)

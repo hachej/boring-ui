@@ -190,7 +190,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     })
 
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
-    // to @boring/workspace. Hosts that want them register uiRoutes
+    // to @hachej/boring-workspace. Hosts that want them register uiRoutes
     // alongside this plugin.
     const standardTools = [
       ...buildHarnessAgentTools(runtimeBundle),

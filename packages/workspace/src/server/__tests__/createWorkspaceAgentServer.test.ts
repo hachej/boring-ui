@@ -1,6 +1,6 @@
 /**
  * Integration tests for createWorkspaceAgentServer — the wrapper that
- * registers the UI bridge surface on top of @boring/agent's createAgentApp.
+ * registers the UI bridge surface on top of @hachej/boring-agent's createAgentApp.
  *
  * Migrated from packages/agent/src/server/__tests__/createAgentApp.test.ts
  * as part of UI_BRIDGE_OWNERSHIP_REFACTOR. The agent test suite still pins
@@ -20,7 +20,7 @@ import * as serverApi from "../index"
 
 // Note: vercel-sandbox mode UI bridge tests live in
 // createWorkspaceAgentServer.vercel-sandbox.test.ts — they require a
-// top-level vi.mock on @boring/agent/server which would affect all tests here.
+// top-level vi.mock on @hachej/boring-agent/server which would affect all tests here.
 
 const tempDirs: string[] = []
 

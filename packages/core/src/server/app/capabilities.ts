@@ -17,7 +17,7 @@ function readCorePackageVersion(startDir: string): string | undefined {
         name?: string
         version?: string
       }
-      if (pkg.name === '@boring/core' && typeof pkg.version === 'string') {
+      if (pkg.name === '@hachej/boring-core' && typeof pkg.version === 'string') {
         return pkg.version
       }
     }

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest"
-import { events } from "@boring/workspace"
+import { events } from "@hachej/boring-workspace"
 import { makeMacroClientPlugin, macroChatSuggestions } from "../index"
 import { makeMacroServerPlugin } from "../../server"
 import { MACRO_OPEN_SERIES_SURFACE_KIND } from "../../shared/constants"
 import { openSeriesPane } from "../data/macroSeriesUi"
 import type { MacroConfig } from "../../server/config"
-import type { SurfaceResolverOutput } from "@boring/workspace"
+import type { SurfaceResolverOutput } from "@hachej/boring-workspace"
 
 const UI_COMMAND_EVENT = "workspace:ui.command"
 

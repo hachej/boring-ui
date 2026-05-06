@@ -8,7 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react"
-import { IconButton } from "@boring/ui"
+import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 
 export interface SessionItem {

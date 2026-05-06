@@ -1,4 +1,4 @@
-import { runCoreMigrationsFromEnv } from '@boring/core/server'
+import { runCoreMigrationsFromEnv } from '@hachej/boring-core/server'
 
 async function main() {
   await runCoreMigrationsFromEnv({ log: console })

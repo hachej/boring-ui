@@ -75,8 +75,8 @@ export async function createAgentApp(
   })
 
   // UI-aware tools (get_ui_state, exec_ui) and the /api/v1/ui/* routes
-  // are now owned by @boring/workspace. Hosts that want them call
-  // @boring/workspace/app's createWorkspaceAgentApp() instead of
+  // are now owned by @hachej/boring-workspace. Hosts that want them call
+  // @hachej/boring-workspace/app's createWorkspaceAgentApp() instead of
   // createAgentApp() directly. Standalone agent (CLI, no workspace)
   // ships zero UI surface — smaller bundle, honest contract.
   const pluginTools: AgentTool[] = []

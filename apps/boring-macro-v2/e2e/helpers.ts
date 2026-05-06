@@ -1,7 +1,7 @@
 /**
  * Macro-specific Playwright helpers. Generic primitives (`bootClean`,
  * `openWorkbench`, `openPaneViaBridge`) live in
- * `@boring/workspace/testing` — this file only carries the
+ * `@hachej/boring-workspace/testing` — this file only carries the
  * macro-flavoured wrappers (chart pane, deck pane).
  */
 import type { Page } from "@playwright/test"
@@ -9,7 +9,7 @@ import {
   bootClean as bootCleanGeneric,
   openWorkbench as openWorkbenchGeneric,
   openPaneViaBridge,
-} from "@boring/workspace/testing/e2e"
+} from "@hachej/boring-workspace/testing/e2e"
 
 /** Storage prefix for boring.macro's chat shell (mirrors App.tsx). */
 export const SHELL_KEY = "boring-macro:shell"

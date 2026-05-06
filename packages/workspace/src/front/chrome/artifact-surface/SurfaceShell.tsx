@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { DockviewApi } from "dockview-react"
 import { ChevronRight, FolderTree } from "lucide-react"
-import { Button, IconButton } from "@boring/ui"
+import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult } from "../../bridge/types"

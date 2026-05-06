@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react"
-import { ChatPanel, useSessions as useAgentSessions } from "@boring/agent"
-import { WorkspaceAgentFront } from "@boring/workspace/app/front"
+import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
+import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog/front"
 

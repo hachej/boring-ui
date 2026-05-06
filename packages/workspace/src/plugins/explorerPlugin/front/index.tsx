@@ -23,7 +23,7 @@ import type {
   Facets,
   SearchResult,
 } from "../../../front/components/DataExplorer"
-import { Input } from "@boring/ui"
+import { Input } from "@hachej/boring-ui-kit"
 import { cn } from "../../../front/lib/utils"
 import { definePanel } from "../../../front/registry/types"
 import type { PaneProps, PanelConfig } from "../../../front/registry/types"

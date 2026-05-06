@@ -1,4 +1,4 @@
-import { ToolCallGroup, mergeShadcnToolRenderers } from '@boring/agent/front'
+import { ToolCallGroup, mergeShadcnToolRenderers } from '@hachej/boring-agent/front'
 import type { UIMessage } from 'ai'
 
 const renderers = mergeShadcnToolRenderers()
@@ -76,7 +76,7 @@ const runningGroup = [
   mockTool({
     toolName: 'bash',
     state: 'input-available',
-    input: { command: 'pnpm --filter @boring/agent build', description: '' },
+    input: { command: 'pnpm --filter @hachej/boring-agent build', description: '' },
   }),
   mockTool({
     toolName: 'grep',
@@ -96,7 +96,7 @@ const singleRead = mockTool({
   toolName: 'read',
   state: 'output-available',
   input: { path: 'packages/agent/package.json' },
-  output: { text: '{\n  "name": "@boring/agent",\n  "version": "0.1.0",\n  "main": "dist/index.js"\n}' },
+  output: { text: '{\n  "name": "@hachej/boring-agent",\n  "version": "0.1.0",\n  "main": "dist/index.js"\n}' },
 })
 const singleEdit = mockTool({
   toolName: 'edit',

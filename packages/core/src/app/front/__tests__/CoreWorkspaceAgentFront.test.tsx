@@ -19,7 +19,7 @@ vi.mock('../../../front/index.js', () => ({
   useCurrentWorkspace: () => ({ id: currentWorkspaceId, name: 'Workspace A' }),
 }))
 
-vi.mock('@boring/workspace/app/front', () => ({
+vi.mock('@hachej/boring-workspace/app/front', () => ({
   WorkspaceBootGate: ({ children, ...props }: { children?: ReactNode }) => {
     bootGateProps = props
     return <div data-testid="boot-gate">{children}</div>

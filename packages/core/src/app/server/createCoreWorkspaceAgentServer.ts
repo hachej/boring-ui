@@ -6,18 +6,18 @@ import {
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
   type RuntimeProvisioningContribution,
-} from '@boring/agent/server'
+} from '@hachej/boring-agent/server'
 import {
   collectWorkspaceAgentServerPlugins,
   provisionWorkspaceAgentServer,
   type CreateWorkspaceAgentServerOptions,
-} from '@boring/workspace/app/server'
+} from '@hachej/boring-workspace/app/server'
 import {
   createInMemoryBridge,
   createWorkspaceUiTools,
   uiRoutes,
   type UiBridge,
-} from '@boring/workspace/server'
+} from '@hachej/boring-workspace/server'
 import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'

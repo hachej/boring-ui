@@ -1,4 +1,4 @@
-import { defineFrontPlugin } from "@boring/workspace"
+import { defineFrontPlugin } from "@hachej/boring-workspace"
 import { SAMPLE_PLUGIN_ID } from "../shared/constants"
 import { samplePanel } from "./panels"
 import { sampleSurfaceResolver } from "./surfaceResolver"

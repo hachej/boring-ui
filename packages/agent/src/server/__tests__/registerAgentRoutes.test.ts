@@ -185,10 +185,10 @@ test('registerAgentRoutes registers agent capabilities contributor when host sup
   await app.close()
 })
 
-test('createAgentApp has zero runtime imports from @boring/core', async () => {
+test('createAgentApp has zero runtime imports from @hachej/boring-core', async () => {
   // Read the built output or source to verify no runtime imports from core.
   // We check the source file directly — type-only imports are erased by tsc,
-  // so only `import ... from '@boring/core'` (without `type`) would be a violation.
+  // so only `import ... from '@hachej/boring-core'` (without `type`) would be a violation.
   const { readFile } = await import('node:fs/promises')
   const { join: pathJoin } = await import('node:path')
 
@@ -197,13 +197,13 @@ test('createAgentApp has zero runtime imports from @boring/core', async () => {
     'utf-8',
   )
 
-  // No runtime import from @boring/core (import type is OK — stripped by tsc)
+  // No runtime import from @hachej/boring-core (import type is OK — stripped by tsc)
   const runtimeImportPattern = /^import\s+(?!type\b).*from\s+['"]@boring\/core/gm
   const matches = createAgentAppSrc.match(runtimeImportPattern)
   expect(matches).toBeNull()
 })
 
-test('registerAgentRoutes has zero runtime imports from @boring/core', async () => {
+test('registerAgentRoutes has zero runtime imports from @hachej/boring-core', async () => {
   const { readFile } = await import('node:fs/promises')
   const { join: pathJoin } = await import('node:path')
 
@@ -366,7 +366,7 @@ test('request-scoped models endpoint does not require workspace header', async (
   await app.close()
 })
 
-test('registerAgentRoutes does NOT expose /api/v1/ui/* (moved to @boring/workspace)', async () => {
+test('registerAgentRoutes does NOT expose /api/v1/ui/* (moved to @hachej/boring-workspace)', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-no-ui-')
   const app = Fastify({ logger: false })
 

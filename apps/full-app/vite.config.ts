@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { createBoringAppViteAliases } from '@boring/core/app/vite'
+import { createBoringAppViteAliases } from '@hachej/boring-core/app/vite'
 
 const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === '1'
 

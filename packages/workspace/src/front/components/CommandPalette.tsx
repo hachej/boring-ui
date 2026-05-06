@@ -19,14 +19,14 @@ import {
   Button,
   CommandShortcut,
   Kbd,
-} from "@boring/ui"
+} from "@hachej/boring-ui-kit"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@boring/ui"
+} from "@hachej/boring-ui-kit"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"

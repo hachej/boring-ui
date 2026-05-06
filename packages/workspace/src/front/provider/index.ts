@@ -1,5 +1,5 @@
 /**
- * @boring/workspace/front/provider — Provider components.
+ * @hachej/boring-workspace/front/provider — Provider components.
  */
 
 export {

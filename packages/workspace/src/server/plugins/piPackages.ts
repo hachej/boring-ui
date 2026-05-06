@@ -4,4 +4,4 @@ export {
   piPackageSourceKey,
   PI_PACKAGE_RESOURCE_FILTERS,
   type PiPackageSource as WorkspacePiPackageSource,
-} from "@boring/agent/server"
+} from "@hachej/boring-agent/server"

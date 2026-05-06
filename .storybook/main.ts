@@ -45,43 +45,43 @@ const config: StorybookConfig = {
             replacement: `${path.resolve(rootDir, "packages/workspace/src")}/`,
           },
           {
-            find: "@boring/workspace/ui-shadcn",
+            find: "@hachej/boring-workspace/ui-shadcn",
             replacement: path.resolve(rootDir, "packages/workspace/src/front/components/ui/index.ts"),
           },
           {
-            find: "@boring/workspace",
+            find: "@hachej/boring-workspace",
             replacement: path.resolve(rootDir, "packages/workspace/src/index.ts"),
           },
           {
-            find: "@boring/agent/front/styles.css",
+            find: "@hachej/boring-agent/front/styles.css",
             replacement: path.resolve(rootDir, "packages/agent/src/front/styles/globals.css"),
           },
           {
-            find: "@boring/agent/front",
+            find: "@hachej/boring-agent/front",
             replacement: path.resolve(rootDir, "packages/agent/src/front/index.ts"),
           },
           {
-            find: "@boring/agent/shared",
+            find: "@hachej/boring-agent/shared",
             replacement: path.resolve(rootDir, "packages/agent/src/shared/index.ts"),
           },
           {
-            find: "@boring/agent",
+            find: "@hachej/boring-agent",
             replacement: path.resolve(rootDir, "packages/agent/src/front/index.ts"),
           },
           {
-            find: "@boring/core/front/top-bar-slot",
+            find: "@hachej/boring-core/front/top-bar-slot",
             replacement: path.resolve(rootDir, "packages/core/src/front/components/TopBarSlot.tsx"),
           },
           {
-            find: "@boring/core/theme.css",
+            find: "@hachej/boring-core/theme.css",
             replacement: path.resolve(rootDir, "packages/core/src/front/theme.css"),
           },
           {
-            find: "@boring/core/front",
+            find: "@hachej/boring-core/front",
             replacement: path.resolve(rootDir, "packages/core/src/front/index.ts"),
           },
           {
-            find: "@boring/core/shared",
+            find: "@hachej/boring-core/shared",
             replacement: path.resolve(rootDir, "packages/core/src/shared/index.ts"),
           },
         ],

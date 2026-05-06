@@ -1,5 +1,5 @@
 {
-  "name": "@boring/core",
+  "name": "@hachej/boring-core",
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
@@ -50,11 +50,11 @@
     "drizzle"
   ],
   "scripts": {
-    "build": "pnpm --filter @boring/ui build && tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
+    "build": "pnpm --filter @hachej/boring-ui-kit build && tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
     "dev": "tsup --watch",
     "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
-    "typecheck": "pnpm --filter @boring/ui build && tsc --noEmit",
+    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && tsc --noEmit",
     "lint": "pnpm run typecheck",
     "check:bundle-size": "tsx ./scripts/check-bundle-size.ts",
     "clean": "rm -rf dist .tsbuildinfo",
@@ -63,9 +63,9 @@
     "drizzle:migrate": "drizzle-kit migrate --config drizzle.config.ts"
   },
   "dependencies": {
-    "@boring/agent": "workspace:*",
-    "@boring/ui": "workspace:*",
-    "@boring/workspace": "workspace:*",
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-ui-kit": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.1",
     "@fastify/rate-limit": "^10.3.0",

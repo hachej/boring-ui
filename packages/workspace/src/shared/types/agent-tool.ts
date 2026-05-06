@@ -15,7 +15,7 @@ export interface ToolResult {
 /**
  * Structural tool contract accepted from workspace plugins and UI tool
  * factories. Kept agent-runtime-neutral so only the app integration layer
- * needs to import @boring/agent.
+ * needs to import @hachej/boring-agent.
  */
 export interface AgentTool {
   name: string

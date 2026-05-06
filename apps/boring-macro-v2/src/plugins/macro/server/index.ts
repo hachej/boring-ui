@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises"
 import {
   defineServerPlugin,
   type WorkspaceServerPlugin,
-} from "@boring/workspace/app/server"
+} from "@hachej/boring-workspace/app/server"
 import type { FastifyPluginAsync } from "fastify"
 import { loadMacroConfig, type MacroConfig } from "./config"
 import { registerMacroRoutes } from "./routes/macro"

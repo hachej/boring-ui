@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
   StatusBadge,
-} from '@boring/ui'
+} from '@hachej/boring-ui-kit'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
 import type { WorkspaceInvite, MemberRole } from '../../shared/types.js'

@@ -48,5 +48,5 @@ if (
   const { app, address } = await startDevServer(0)
   const apiPort = Number(new URL(address).port)
   await startViteDevServer(apiPort)
-  app.log.info(`@boring/agent API server listening at ${address}`)
+  app.log.info(`@hachej/boring-agent API server listening at ${address}`)
 }

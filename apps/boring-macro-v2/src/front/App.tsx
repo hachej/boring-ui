@@ -1,6 +1,6 @@
-import { ChatPanel } from "@boring/agent"
-import type { SlashCommand } from "@boring/agent"
-import { CoreWorkspaceAgentFront } from "@boring/core/app/front"
+import { ChatPanel } from "@hachej/boring-agent"
+import type { SlashCommand } from "@hachej/boring-agent"
+import { CoreWorkspaceAgentFront } from "@hachej/boring-core/app/front"
 import {
   macroPlugin,
   macroShellOptions,

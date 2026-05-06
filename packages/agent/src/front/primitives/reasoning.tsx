@@ -5,7 +5,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@boring/ui";
+} from "@hachej/boring-ui-kit";
 import { cn } from "@/front/lib";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";

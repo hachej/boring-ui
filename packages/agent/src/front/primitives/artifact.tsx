@@ -1,12 +1,12 @@
 "use client";
 
-import { Button } from "@boring/ui";
+import { Button } from "@hachej/boring-ui-kit";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@boring/ui";
+} from "@hachej/boring-ui-kit";
 import { cn } from "@/front/lib";
 import type { LucideIcon } from "lucide-react";
 import { XIcon } from "lucide-react";

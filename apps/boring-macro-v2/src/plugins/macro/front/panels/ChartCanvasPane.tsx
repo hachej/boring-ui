@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { PaneProps } from "@boring/workspace"
-import { Button, ChipButton, EmptyState, SegmentedControl, SegmentedControlItem, Spinner } from "@boring/ui"
+import type { PaneProps } from "@hachej/boring-workspace"
+import { Button, ChipButton, EmptyState, SegmentedControl, SegmentedControlItem, Spinner } from "@hachej/boring-ui-kit"
 import {
   CartesianGrid,
   Legend,
@@ -20,7 +20,7 @@ import {
   boringLineProps,
   boringReferenceAreaProps,
   getBoringChartColor,
-} from "@boring/workspace/charts"
+} from "@hachej/boring-workspace/charts"
 import type {
   Observation,
   SeriesMetadata,

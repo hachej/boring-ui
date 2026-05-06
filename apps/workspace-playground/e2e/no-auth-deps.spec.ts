@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 
 /**
  * Regression: the workspace-playground deliberately runs WITHOUT
- * @boring/core. No auth provider, no config provider, no DB,
+ * @hachej/boring-core. No auth provider, no config provider, no DB,
  * no /api/v1/me, /api/v1/config, /api/v1/workspaces, /auth/* calls.
  *
  * This test asserts the boot path doesn't accidentally fire any of
@@ -21,7 +21,7 @@ const FORBIDDEN_PATHS = [
 ]
 
 test.describe("workspace-playground auth-free boot", () => {
-  test("does not request any @boring/core endpoints on cold load", async ({ page }) => {
+  test("does not request any @hachej/boring-core endpoints on cold load", async ({ page }) => {
     const seen: string[] = []
     page.on("request", (req) => {
       const url = new URL(req.url())

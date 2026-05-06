@@ -291,7 +291,7 @@ test('real local plugin file remains callable and appears in app catalog', async
 //
 // Background: the UI bridge (interface, in-memory impl, /api/v1/ui/* routes,
 // get_ui_state + exec_ui tool factories) used to live here. As of
-// UI_BRIDGE_OWNERSHIP_REFACTOR they moved to @boring/workspace. Standalone
+// UI_BRIDGE_OWNERSHIP_REFACTOR they moved to @hachej/boring-workspace. Standalone
 // CLI agent and any non-workspace embedder must not see them.
 // ----------------------------------------------------------------------
 

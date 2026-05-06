@@ -1,1 +1,1 @@
-import {} from '@boring/agent/server'
+import {} from '@hachej/boring-agent/server'

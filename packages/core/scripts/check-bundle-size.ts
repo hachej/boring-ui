@@ -68,7 +68,7 @@ function parseSizeMd(content: string): Map<string, number> {
 
 function renderSizeMd(entries: Entry[]): string {
   const lines = [
-    "# @boring/core bundle size",
+    "# @hachej/boring-core bundle size",
     "",
     "| Entry  | Gzip (KB) |",
     "|--------|-----------|",
@@ -120,12 +120,12 @@ async function main(): Promise<void> {
     ])
   } catch {
     console.error(
-      `No dist output found at ${CORE_DIST}. Run "pnpm --filter @boring/core build" first.`,
+      `No dist output found at ${CORE_DIST}. Run "pnpm --filter @hachej/boring-core build" first.`,
     )
     process.exit(1)
   }
 
-  console.log("\n@boring/core bundle sizes (gzip):")
+  console.log("\n@hachej/boring-core bundle sizes (gzip):")
   for (const entry of entries) {
     console.log(`  ${entry.name}:`)
     for (const chunk of entry.chunks) {
@@ -207,7 +207,7 @@ async function main(): Promise<void> {
     `\nThreshold: ${(DRIFT_THRESHOLD * 100).toFixed(0)}%. To approve:`,
   )
   console.error(
-    `  1. Bump baseline: pnpm --filter @boring/core run check:bundle-size -- --update-baseline`,
+    `  1. Bump baseline: pnpm --filter @hachej/boring-core run check:bundle-size -- --update-baseline`,
   )
   console.error(
     `  2. Or add "// approved-growth: <reason>" to your PR description`,

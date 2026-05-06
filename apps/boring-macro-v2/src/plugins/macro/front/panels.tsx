@@ -1,4 +1,4 @@
-import { definePanel, type PanelConfig } from "@boring/workspace"
+import { definePanel, type PanelConfig } from "@hachej/boring-workspace"
 import { ChartCanvasPane } from "./panels/ChartCanvasPane"
 import { DeckPane } from "./panels/DeckPane"
 import { MACRO_CHART_PANEL_ID, MACRO_DECK_PANEL_ID } from "../shared/constants"

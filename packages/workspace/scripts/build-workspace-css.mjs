@@ -25,9 +25,9 @@ const globalsResult = await postcss([tailwindcss()]).process(globalsCss, {
 const css = [
   "/* dockview-react/dist/styles/dockview.css */",
   dockviewCss,
-  "/* @boring/workspace globals */",
+  "/* @hachej/boring-workspace globals */",
   globalsResult.css,
-  "/* @boring/workspace dockview overrides */",
+  "/* @hachej/boring-workspace dockview overrides */",
   dockviewOverridesCss,
 ].join("\n\n")
 

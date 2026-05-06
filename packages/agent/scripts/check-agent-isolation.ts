@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
 const AGENT_DIST = join(import.meta.dirname!, '..', 'dist')
-const FORBIDDEN_PREFIX = '@boring/core'
+const FORBIDDEN_PREFIX = '@hachej/boring-core'
 
 const SPECIFIER_RE =
   /(?:from\s+|import\s*\(|require\s*\()["']([^"']+)["']/g
@@ -26,7 +26,7 @@ async function main() {
   if (files.length === 0) {
     process.stderr.write(
       `agent-isolation: FAIL — no .js/.mjs files found in ${AGENT_DIST}\n` +
-        '  Run "pnpm --filter @boring/agent build" first.\n',
+        '  Run "pnpm --filter @hachej/boring-agent build" first.\n',
     )
     process.exitCode = 1
     return
@@ -62,7 +62,7 @@ async function main() {
       process.stderr.write(`  ${v.file}:${v.line}  →  ${v.specifier}\n`)
     }
     process.stderr.write(
-      `\n  @boring/agent must have ZERO runtime imports from @boring/core.\n` +
+      `\n  @hachej/boring-agent must have ZERO runtime imports from @hachej/boring-core.\n` +
         '  Type-only imports are allowed (erased by tsc).\n',
     )
     process.exitCode = 1

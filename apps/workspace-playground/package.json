@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && vite",
-    "dev:local": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && BORING_USE_LOCAL_PACKAGES=1 vite",
-    "build": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && vite build",
-    "typecheck": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && tsc --noEmit",
+    "dev": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && vite",
+    "dev:local": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && BORING_USE_LOCAL_PACKAGES=1 vite",
+    "build": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && vite build",
+    "typecheck": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@boring/agent": "workspace:*",
-    "@boring/workspace": "workspace:*",
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
     "@duckdb/node-api": "1.5.2-r.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

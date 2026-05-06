@@ -1,4 +1,4 @@
-import type { SurfaceResolverConfig } from "@boring/workspace"
+import type { SurfaceResolverConfig } from "@hachej/boring-workspace"
 import { SAMPLE_SURFACE_KIND } from "../shared/constants"
 
 export const sampleSurfaceResolver: SurfaceResolverConfig = {

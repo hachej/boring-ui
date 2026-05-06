@@ -99,8 +99,8 @@ run_check \
   "src/server/catalog"
 
 run_check \
-  "No frontend/server bleed from @boring/agent/server into src/front/**" \
-  "from\\s+['\"]@boring/agent/server['\"]" \
+  "No frontend/server bleed from @hachej/boring-agent/server into src/front/**" \
+  "from\\s+['\"]@hachej/boring-agent/server['\"]" \
   "Frontend must stay platform-agnostic." \
   "src/front"
 

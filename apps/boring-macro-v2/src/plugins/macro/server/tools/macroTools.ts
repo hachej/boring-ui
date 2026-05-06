@@ -1,4 +1,4 @@
-import type { AgentTool, ToolResult } from '@boring/workspace'
+import type { AgentTool, ToolResult } from '@hachej/boring-workspace'
 import type { ClickHouseConfig } from '../config'
 import { DataService } from '../services/clickhouse'
 

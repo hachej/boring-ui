@@ -12,7 +12,7 @@ import {
   WorkspaceBootGate,
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentSession,
-} from '@boring/workspace/app/front'
+} from '@hachej/boring-workspace/app/front'
 
 const DEFAULT_WORKSPACE_ROUTE = '/workspace/:id'
 const DEFAULT_WORKSPACE_ID_PARAM = 'id'

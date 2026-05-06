@@ -15,8 +15,8 @@ const HAS_BWRAP = (() => {
 
 describe("buildServer", () => {
   it("exposes workspace + agent server entries to CJS-style resolvers", () => {
-    expect(() => require.resolve("@boring/workspace/app/server")).not.toThrow()
-    expect(() => require.resolve("@boring/agent/server")).not.toThrow()
+    expect(() => require.resolve("@hachej/boring-workspace/app/server")).not.toThrow()
+    expect(() => require.resolve("@hachej/boring-agent/server")).not.toThrow()
   })
 
   it.skipIf(!HAS_BWRAP)("boots with workspace UI bridge routes wired", async () => {

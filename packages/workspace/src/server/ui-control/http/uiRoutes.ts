@@ -15,7 +15,7 @@ const postCommandBodySchema = z.object({
   params: z.record(z.unknown()).default({}),
 });
 
-// Inlined to avoid pulling on @boring/agent's internal http/middleware module.
+// Inlined to avoid pulling on @hachej/boring-agent's internal http/middleware module.
 function createBodyValidator<T>(schema: ZodSchema<T>) {
   return async function validateBody(
     request: FastifyRequest,

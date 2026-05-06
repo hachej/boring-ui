@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * Context that lets ChatPanel host apps (e.g. @boring/workspace) wire a
+ * Context that lets ChatPanel host apps (e.g. @hachej/boring-workspace) wire a
  * "open this file in my workbench" callback into the canonical agent
  * tool renderers. The renderers (read / write / edit) consume the
  * context to render the file path as a clickable button — without it,

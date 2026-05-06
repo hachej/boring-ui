@@ -73,7 +73,7 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-} from '@boring/ui'
+} from '@hachej/boring-ui-kit'
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
@@ -281,7 +281,7 @@ export interface ChatPanelProps {
    * Tap into the SSE data stream. Called for every `onData` part the
    * agent emits — host apps use this to bridge agent-driven file
    * changes into their own UI plumbing (see
-   * `useAgentFileChangeBridge` in `@boring/workspace` for the
+   * `useAgentFileChangeBridge` in `@hachej/boring-workspace` for the
    * canonical wire-up).
    */
   onData?: (part: unknown) => void
@@ -289,7 +289,7 @@ export interface ChatPanelProps {
   requestHeaders?: Record<string, string>
   /**
    * Called with a file path when the user clicks the path label inside
-   * a read / write / edit tool card. Hosts (e.g. @boring/workspace)
+   * a read / write / edit tool card. Hosts (e.g. @hachej/boring-workspace)
    * supply this to open the file in the surrounding workbench. Without
    * it the path renders as plain text. Mounted via context so any
    * future renderer can consume it without a prop drill.

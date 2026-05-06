@@ -9,26 +9,26 @@ const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
 const localPackageAlias = useLocalPackages
   ? [
       // Core aliases — order matters: most-specific subpaths first
-      { find: "@boring/core/front/top-bar-slot", replacement: resolve(PACKAGES, "core/src/front/components/TopBarSlot.tsx") },
-      { find: "@boring/core/app/front/styles.css", replacement: resolve(PACKAGES, "core/src/app/front/styles.css") },
-      { find: /^@boring\/core\/app\/front$/, replacement: resolve(PACKAGES, "core/src/app/front/index.ts") },
-      { find: /^@boring\/core\/front$/, replacement: resolve(PACKAGES, "core/src/front/index.ts") },
-      { find: "@boring/core/theme.css", replacement: resolve(PACKAGES, "core/src/front/theme.css") },
+      { find: "@hachej/boring-core/front/top-bar-slot", replacement: resolve(PACKAGES, "core/src/front/components/TopBarSlot.tsx") },
+      { find: "@hachej/boring-core/app/front/styles.css", replacement: resolve(PACKAGES, "core/src/app/front/styles.css") },
+      { find: /^@hachej\/boring-core\/app\/front$/, replacement: resolve(PACKAGES, "core/src/app/front/index.ts") },
+      { find: /^@hachej\/boring-core\/front$/, replacement: resolve(PACKAGES, "core/src/front/index.ts") },
+      { find: "@hachej/boring-core/theme.css", replacement: resolve(PACKAGES, "core/src/front/theme.css") },
       // Workspace + agent aliases
-      { find: "@boring/workspace/globals.css", replacement: resolve(PACKAGES, "workspace/src/globals.css") },
-      { find: "@boring/agent/front/styles.css", replacement: resolve(PACKAGES, "agent/src/front/styles/globals.css") },
-      { find: /^@boring\/workspace\/app\/front$/, replacement: resolve(PACKAGES, "workspace/src/app/front/index.ts") },
-      { find: /^@boring\/workspace\/app\/server$/, replacement: resolve(PACKAGES, "workspace/src/app/server/index.ts") },
-      { find: /^@boring\/workspace\/charts$/, replacement: resolve(PACKAGES, "workspace/src/front/charts/index.tsx") },
-      { find: /^@boring\/workspace\/testing$/, replacement: resolve(PACKAGES, "workspace/src/front/testing/index.ts") },
-      { find: /^@boring\/workspace\/shared$/, replacement: resolve(PACKAGES, "workspace/src/shared/index.ts") },
-      { find: /^@boring\/workspace$/, replacement: resolve(PACKAGES, "workspace/src/index.ts") },
+      { find: "@hachej/boring-workspace/globals.css", replacement: resolve(PACKAGES, "workspace/src/globals.css") },
+      { find: "@hachej/boring-agent/front/styles.css", replacement: resolve(PACKAGES, "agent/src/front/styles/globals.css") },
+      { find: /^@hachej\/boring-workspace\/app\/front$/, replacement: resolve(PACKAGES, "workspace/src/app/front/index.ts") },
+      { find: /^@hachej\/boring-workspace\/app\/server$/, replacement: resolve(PACKAGES, "workspace/src/app/server/index.ts") },
+      { find: /^@hachej\/boring-workspace\/charts$/, replacement: resolve(PACKAGES, "workspace/src/front/charts/index.tsx") },
+      { find: /^@hachej\/boring-workspace\/testing$/, replacement: resolve(PACKAGES, "workspace/src/front/testing/index.ts") },
+      { find: /^@hachej\/boring-workspace\/shared$/, replacement: resolve(PACKAGES, "workspace/src/shared/index.ts") },
+      { find: /^@hachej\/boring-workspace$/, replacement: resolve(PACKAGES, "workspace/src/index.ts") },
       { find: "@/", replacement: resolve(PACKAGES, "workspace/src") + "/" },
       { find: "@", replacement: resolve(PACKAGES, "workspace/src") },
     ]
   : undefined
 
-// Default mode consumes @boring/* through package exports/dist, matching an npm
+// Default mode consumes @hachej/boring-* through package exports/dist, matching an npm
 // consumer. Set BORING_USE_LOCAL_PACKAGES=1 for local package source aliases and
 // fast HMR while developing workspace/agent internals.
 export default defineConfig({

@@ -7,7 +7,7 @@
  * baseline runner.
  *
  * Usage:
- *   pnpm --filter @boring/agent eval [path/to/suite.yaml]
+ *   pnpm --filter @hachej/boring-agent eval [path/to/suite.yaml]
  *
  * Behavior:
  * - Defaults the suite path to packages/agent/eval/standard-tools.yaml.

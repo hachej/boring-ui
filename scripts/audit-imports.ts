@@ -10,15 +10,15 @@ const FORBIDDEN_PATTERNS: Array<{
 }> = [
   {
     pattern: /from\s+['"]\.\.\/.*packages\/core\/src\//,
-    message: "Direct import from packages/core/src/ — use @boring/core/* public exports",
+    message: "Direct import from packages/core/src/ — use @hachej/boring-core/* public exports",
   },
   {
     pattern: /from\s+['"]\.\.\/.*packages\/workspace\/src\//,
-    message: "Direct import from packages/workspace/src/ — use @boring/workspace public exports",
+    message: "Direct import from packages/workspace/src/ — use @hachej/boring-workspace public exports",
   },
   {
     pattern: /from\s+['"]\.\.\/.*packages\/agent\/src\//,
-    message: "Direct import from packages/agent/src/ — use @boring/agent/* public exports",
+    message: "Direct import from packages/agent/src/ — use @hachej/boring-agent/* public exports",
   },
   {
     pattern: /from\s+['"]boring-ui['"\/]/,
@@ -26,11 +26,11 @@ const FORBIDDEN_PATTERNS: Array<{
   },
   {
     pattern: /from\s+['"]\.\.\/\.\.\/\.\.\/\.\.\/packages\//,
-    message: "Relative import crossing package boundary — use @boring/* workspace deps",
+    message: "Relative import crossing package boundary — use @hachej/boring-* workspace deps",
   },
   {
     pattern: /require\s*\(\s*['"]\.\.\/.*packages\/(core|workspace|agent)\/src\//,
-    message: "Require from packages/*/src/ — use @boring/* public exports",
+    message: "Require from packages/*/src/ — use @hachej/boring-* public exports",
   },
 ]
 

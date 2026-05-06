@@ -1,4 +1,4 @@
-// @boring/agent — shared (platform-agnostic) public API
+// @hachej/boring-agent — shared (platform-agnostic) public API
 
 export type { AgentHarness, SendMessageInput, RunContext } from './harness'
 export type { Workspace, Entry, Stat } from './workspace'

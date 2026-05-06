@@ -1,4 +1,4 @@
-import type { CreateExplorerPluginOptions, ExplorerRow } from "@boring/workspace"
+import type { CreateExplorerPluginOptions, ExplorerRow } from "@hachej/boring-workspace"
 import { createMacroSeriesAdapter } from "./data/macroSeriesAdapter"
 import { FREQ_LABELS } from "./data/macroSeriesUi"
 

@@ -3,7 +3,7 @@
  * catalog adapter). Kept separate from `macroSeriesData.ts` so fetch/cache
  * logic and presentation primitives don't bleed into each other.
  */
-import { postUiCommand } from "@boring/workspace"
+import { postUiCommand } from "@hachej/boring-workspace"
 import { MACRO_OPEN_SERIES_SURFACE_KIND } from "../../shared/constants"
 import type { MacroSeriesSurfaceMeta } from "../../shared/types"
 

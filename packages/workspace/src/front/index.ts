@@ -1,5 +1,5 @@
 /**
- * @boring/workspace/front — Frontend module entry point.
+ * @hachej/boring-workspace/front — Frontend module entry point.
  *
  * This index re-exports all frontend modules for internal use.
  * Public API goes through src/index.ts, not this file.

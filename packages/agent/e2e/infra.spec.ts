@@ -9,7 +9,7 @@ test('fixtures boot CLI backend, seed workspace, and load browser page', async (
   expect(health.ok()).toBe(true)
 
   const healthBody = (await health.json()) as { version?: string }
-  expect(healthBody.version).toContain('@boring/agent@')
+  expect(healthBody.version).toContain('@hachej/boring-agent@')
 
   const readSeeded = await browserPage.request.get(
     `${backend.apiUrl}/api/v1/files?path=README.md`,
