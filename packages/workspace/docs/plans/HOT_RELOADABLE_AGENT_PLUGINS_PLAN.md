@@ -273,31 +273,40 @@ if (!base?.extensionContract) throw new PluginDerivationError(...)
 
 ---
 
-## iframe: Dependencies via Workspace node_modules
+## iframe: Dependencies via Provisioned node_modules
 
 `front.tsx` uses React JSX. The iframe is a separate browsing context — it cannot share the host's React instance.
 
-**Workspace provisioning installs boring-ui (+ React) in the workspace `node_modules` once.** The agent imports normally:
+The workspace package's own `node_modules` are bundled into the serverless artifact in Vercel — not available as files on disk. esbuild running server-side needs real files to resolve from. So dependencies are provisioned **into the workspace sandbox filesystem** once at startup.
 
+**Provisioning seeds two things into `.boring/plugins/`:**
+
+1. **React + react-dom** via `nodeInstall` provisioning contribution:
+   - Template seeds `.boring/plugins/package.json` → `{ react, react-dom }` as dependencies
+   - Provisioning runs `npm install` in `.boring/plugins/` → creates `.boring/plugins/node_modules/`
+   - Works in local, bwrap, and Vercel sandbox (all have a real writable filesystem)
+
+2. **bridge-client** as a pre-built vendor file:
+   - Workspace package writes `.boring/plugins/.boring-vendor/bridge-client.js` during provisioning
+   - esbuild alias: `"@boring/workspace/bridge-client"` → that vendored file
+   - No npm publish needed — tiny pre-built file, written once at provision time
+
+Agent imports normally in `front.tsx`:
 ```ts
 import React from "react"
 import { sendToHost } from "@boring/workspace/bridge-client"
-import { Button } from "@boring/ui"   // boring-ui UI components
 ```
 
-esbuild resolves all imports from the workspace's actual `node_modules` — no aliases, no virtual modules:
-
+esbuild config:
 ```ts
 esbuild.build({
-  entryPoints: [...],
-  bundle: true,
-  jsx: 'automatic',
-  format: 'iife',
-  nodePaths: [join(workspaceRoot, 'node_modules')],
+  bundle: true, jsx: 'automatic', format: 'iife',
+  nodePaths: [join(workspaceRoot, '.boring/plugins/node_modules')],
+  alias: { '@boring/workspace/bridge-client': join(workspaceRoot, '.boring/plugins/.boring-vendor/bridge-client.js') },
 })
 ```
 
-React, boring-ui components, and the bridge client all bundle inline into `front.js`. No CDN, no special resolver tricks. The provisioning step that already seeds template files also runs the install.
+`provisionRuntimeWorkspace` needs a new `nodeInstall` field in `RuntimeProvisioningContribution` (alongside existing `templateDirs` and `python`).
 
 ---
 
@@ -358,13 +367,16 @@ Host validates `event.source` (not `event.origin` — sandboxed iframes have `nu
 - [ ] Add `packages/workspace/templates/workspace-base/.boring/docs/` with `plugins.md`, `panels.md`, `bridge.md`
 - [ ] Docs ship as **static strings** in `src/server/boringSystemPrompt.ts` — no codegen, no `.gitignore` stubs. `BORING_DOCS_PATH` env var overrides for local dev editing.
 - [ ] Update `boringSystemPrompt.ts`: inline string constants as primary, `BORING_DOCS_PATH` as override
-- [ ] Workspace provisioning installs boring-ui + React in workspace `node_modules` (one-time install step alongside template seeding) so `front.tsx` can import `react`, `@boring/ui`, `@boring/workspace/bridge-client` as normal npm packages
+- [ ] Add `nodeInstall` field to `RuntimeProvisioningContribution` in `packages/agent/src/server/workspace/provisionRuntime.ts` — runs `npm install` in a specified directory after seeding templates
+- [ ] Workspace base template seeds `.boring/plugins/package.json` with `{ react, react-dom }` dependencies
+- [ ] Provisioning runs `npm install` in `.boring/plugins/` → creates `.boring/plugins/node_modules/` on sandbox filesystem
+- [ ] Provisioning writes pre-built `.boring/plugins/.boring-vendor/bridge-client.js` from workspace package source
 - [ ] Rewrite `docs/plugins.md` to describe `.boring/plugins/` agent authoring path, two paths (derive vs scratch), file watcher trigger, available imports
 
 ### C — Plugin file serving routes
 - [ ] `src/server/plugins/agentPluginRoutes.ts`:
   - `GET /api/agent-plugins` — returns all currently active manifests (for browser reconnect state sync)
-  - `GET /api/agent-plugins/:pluginId/front.js` — `workspace.readFile()` front.tsx, esbuild-bundle: `bundle:true`, `jsx:'automatic'`, `format:'iife'`, `nodePaths:[workspaceRoot/node_modules]` (React + boring-ui + bridge-client resolved from workspace install), `Cache-Control: no-store`
+  - `GET /api/agent-plugins/:pluginId/front.js` — `workspace.readFile()` front.tsx, esbuild-bundle: `bundle:true`, `jsx:'automatic'`, `format:'iife'`, `nodePaths:[workspaceRoot/.boring/plugins/node_modules]`, `alias:{'@boring/workspace/bridge-client': workspaceRoot/.boring/plugins/.boring-vendor/bridge-client.js}`, `Cache-Control: no-store`
   - `GET /api/agent-plugins/:pluginId/catalog/search?q=` — delegates to registered catalog handler from jiti-loaded server plugin
 - [ ] Register routes in `src/server/index.ts`
 - [ ] Add `esbuild` as server dependency to `packages/workspace/package.json`
