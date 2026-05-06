@@ -36,7 +36,13 @@ The workspace has two plugin tiers that coexist and share the same registry infr
 
 ## Pi Plugin Compatibility
 
-Boring-ui plugins ARE pi extensions. The factory is a valid pi `ExtensionFactory` — the same file loads in pi's loader unchanged. Boring-ui extends the API object with optional UI-registration methods that pi simply doesn't provide.
+Boring-ui uses pi as its agent runtime. There are **two levels** of pi extensions in play:
+
+1. **`boring-pi-extension.ts`** — boring-ui's own infrastructure extension. Loaded once into the harness via `extensionFactories[]`. Registers `exec_ui`, `open_panel`, wires `/boring.reload`, hooks `session_start { reason: "reload" }`.
+
+2. **Each `.boring/plugins/<name>/front.tsx`** — the agent-authored plugin's own pi extension. `api.registerTool()` and `api.registerCommand()` in the plugin factory go to pi natively. `api.registerPanel?()`, `api.registerLeftTab?()`, etc. are the boring-ui extras that pi ignores.
+
+Both are valid pi `ExtensionFactory` functions — the same file loads in pi's loader unchanged. Boring-ui extends the API object with optional UI-registration methods (`registerPanel?`, etc.) that pi simply doesn't provide.
 
 ### boring-pi-extension.ts — boring-ui as a pi extension
 
@@ -797,6 +803,24 @@ All current first-party plugins (`filesystemPlugin`, `explorerPlugin`, `dataCata
 
 The one file that changes is `authoring.ts` — the capturing API expands to the new flat `BoringExtensionAPI` surface. Outside plugins are not affected — `bootstrap()` registers them directly into registries as before.
 
+### Agent-tool split — current state and desired direction
+
+**Current state:** First-party plugin agent tools (`buildFilesystemAgentTools()`, harness tools, catalog tools, etc.) are static `AgentTool[]` arrays assembled in `createAgentApp.ts` and passed to the pi harness as `customTools` after `adaptToolsForPi()`.
+
+**Desired direction:** Agent tools for any plugin — first-party or inside — should live in a pi extension. The right structure is:
+
+```
+filesystemPlugin/
+  front/index.ts        ← UI: WorkspaceFrontPlugin (unchanged)
+  agent/extension.ts    ← NEW: pi ExtensionFactory — api.registerTool(filesystem tools)
+```
+
+`agent/extension.ts` exports a pi-compatible `ExtensionFactory` default. The harness wires it via `extensionFactories[]` alongside `boring-pi-extension.ts`. No `customTools` array, no `adaptToolsForPi()`.
+
+**This PR:** First-party tool migration is **out of scope** — it requires touching every plugin's agent layer. The `customTools` path stays for now. Inside plugin tools already use the correct path (`plugin.server.ts` → `getExtraTools()`).
+
+**Follow-up:** Migrate each first-party plugin's agent tools to `agent/extension.ts` pi extensions, then delete `adaptToolsForPi()` and the static `customTools` array from `createAgentApp.ts`.
+
 ### What DOES change: `authoring.ts`
 
 The coordinator already calls factories today via `createCapturingAPI()`. The capturing API needs to expand from the old namespaced shape to the new flat `BoringExtensionAPI` interface. This unblocks inside plugins but does not require outside plugins to change.
@@ -985,7 +1009,8 @@ This PR ships the skeleton: the route exists and the iframe renders, but the pos
 
 ## Out of Scope
 
-- Outside plugin migration to factory pattern — `bootstrap()` stays; no forcing function
+- Outside plugin **front** migration to factory pattern — `bootstrap()` stays; no forcing function
+- First-party plugin **agent tool** migration to pi extensions — `buildFilesystemAgentTools()`, harness tools, and catalog tools stay as `customTools` for now; migrate to `agent/extension.ts` pi extensions in a follow-up that also deletes `adaptToolsForPi()`
 - `binding` / `provider` / `slotFill` in V2 — require host React tree; incompatible with iframe sandbox
 - `host.query()` bridge for V2 derived plugins — deferred until Path A + full bridge land
 - Vite HMR for outside plugins — separate concern
