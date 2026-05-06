@@ -66,6 +66,7 @@ export const macroShellOptions = {
     suggestions: macroChatSuggestions,
     emptyTitle: "What macro question are we tackling?",
     emptyDescription: "Search FRED, plot a series, derive a transform, or draft a briefing deck.",
+    thinkingControl: true,
   },
 } as const
 

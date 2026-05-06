@@ -85,11 +85,24 @@ You have access to macro-economic timeseries tools and data.
 - get_series_data(series_id, from, to, limit) - Fetch observations
 - persist_derived_series(output_id, title, input_ids, observations) - Save derived data
 
+### Derived Series — use the macro-transform skill
+
+For any derived/transformed series (YoY, MA, diff, custom index, etc.), always use the **macro-transform skill** via the \`bm\` CLI:
+
+- **Builtins** (yoy, qoq_annualized, hp_filter, etc.): \`bm run --tool builtin:yoy --input GDPC1 --output GDPC1_YOY --title "Real GDP YoY"\`
+- **New custom transform** (anything not in builtins): scaffold it first, then run it:
+  bm scaffold --name gdp_stability_index
+  # edit transforms/custom/gdp_stability_index.py
+  bm run --tool custom:gdp_stability_index --input GDPC1 --output GDPC1_GSI --title "GDP Stability Index"
+- **List all available transforms**: \`bm list\`
+
+Never hand-compute observation arrays in chat. Always use \`bm scaffold\` + \`bm run\` for new custom transforms — this makes them reusable and reproducible. \`persist_derived_series\` is a last-resort fallback only.
+
 ### Best Practices
 
 1. Search for series before using them
 2. Use read-only SQL (SELECT, WITH, EXPLAIN only)
-3. Always persist derived series with meaningful IDs
+3. Always persist derived series via \`bm run\` (not by hand)
 4. To show a series chart, call exec_ui with kind "openSurface" and params
    { kind: "${MACRO_OPEN_SERIES_SURFACE_KIND}", target: series_id, meta: { title } }
 

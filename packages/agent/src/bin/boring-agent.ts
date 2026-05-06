@@ -69,9 +69,11 @@ async function startFrontend(apiPort: number): Promise<string> {
   const vite = await createViteServer({
     configFile: false,
     root: playgroundRoot,
-    // Use a port-scoped cache dir so parallel E2E workers don't race on shared
-    // node_modules/.vite/deps.
-    cacheDir: path.join(os.tmpdir(), `vite-boring-agent-${apiPort}`),
+    // Store pre-bundled deps in a tmpdir shared across all E2E backends in the
+    // same OS session. Avoids both (a) racing on the project-local
+    // node_modules/.vite/deps when parallel workers run concurrently and
+    // (b) cold-rebuilding on every sequential test in CI.
+    cacheDir: path.join(os.tmpdir(), 'vite-boring-agent-cache'),
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

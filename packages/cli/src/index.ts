@@ -27,12 +27,11 @@ function openBrowser(url: string) {
   } catch {}
 }
 
-async function loginWithPi(auth: InstanceType<typeof AuthStorage>): Promise<void> {
+async function loginWithPi(auth: AuthStorage): Promise<void> {
   const term = new ProcessTerminal()
   const tui = new TUI(term, false)
-  initTheme("dark", tui)
+  initTheme("dark")
 
-  term.start()
   tui.start()
 
   // Step 1: provider selector — same UI as pi
@@ -57,15 +56,14 @@ async function loginWithPi(auth: InstanceType<typeof AuthStorage>): Promise<void
 
     auth
       .login(providerId, {
-        onAuth: (url: string) => {
+        onAuth: ({ url }) => {
           openBrowser(url)
           dialog.showAuth(url, "Your browser should open automatically. Waiting for login…")
         },
         onProgress: (msg: string) => dialog.showProgress(msg),
-        onPrompt: (msg: string) => dialog.showWaiting(msg),
-        onManualCodeInput: () =>
+        onPrompt: ({ message }) =>
           new Promise<string>((res) => {
-            dialog.showManualInput("Paste the code from your browser:")
+            dialog.showManualInput(message)
             const rl = createInterface({ input: process.stdin, output: process.stdout })
             rl.question("", (code) => { rl.close(); res(code.trim()) })
           }),
