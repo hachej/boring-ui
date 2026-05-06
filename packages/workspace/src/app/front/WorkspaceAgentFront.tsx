@@ -67,6 +67,7 @@ export interface WorkspaceAgentFrontProps<
   onActiveSessionIdChange?: (sessionId: string) => void
   chatParams?: Record<string, unknown>
   extraPanels?: string[]
+  debug?: boolean
 }
 
 function isPanelOutput(output: PluginOutput): output is PanelOutput {
@@ -215,6 +216,7 @@ export function WorkspaceAgentFront<
   topBarRight,
   chatParams,
   extraPanels,
+  debug = false,
   onOpenNav,
   onOpenSurface,
   className,
@@ -408,6 +410,7 @@ export function WorkspaceAgentFront<
     <div className="h-full bg-background text-foreground">
       <WorkspaceProvider
         chatPanel={chatPanel}
+        debug={debug}
         panels={panels}
         commands={commands}
         catalogs={catalogs}

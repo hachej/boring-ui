@@ -147,6 +147,7 @@ export interface RegisteredPluginMeta {
 export interface WorkspaceContextValue {
   chatPanel: WorkspaceChatPanelComponent | null
   registeredPlugins: RegisteredPluginMeta[]
+  debug: boolean
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
@@ -375,6 +376,7 @@ export function WorkspaceProvider({
   bridgeEndpoint,
   onAuthError,
   onOpenFile,
+  debug = false,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -526,8 +528,8 @@ export function WorkspaceProvider({
     [bridgeConnected],
   )
   const workspaceValue = useMemo<WorkspaceContextValue>(
-    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas }),
-    [chatPanel, pluginMetas],
+    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas, debug }),
+    [chatPanel, pluginMetas, debug],
   )
 
   return (

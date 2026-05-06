@@ -9,8 +9,14 @@ function isShowcaseRoute(): boolean {
   return new URLSearchParams(window.location.search).get("showcase") === "1"
 }
 
+function isDebugRoute(): boolean {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("debug") === "1"
+}
+
 export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
+  const debug = useMemo(isDebugRoute, [])
   const sessions = useMemo(
     () =>
       showcase
@@ -46,6 +52,7 @@ export function WorkspaceShell() {
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
       chatParams={{ thinkingControl: true }}
+      debug={debug}
     />
   )
 }

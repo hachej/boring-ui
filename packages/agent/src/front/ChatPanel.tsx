@@ -23,6 +23,7 @@ import { useAgentChat } from './hooks/useAgentChat'
 import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
+import { filterSlashCommandSuggestions } from './slashCommands/suggestions'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
 import { isModelId, type ModelId } from './components/ModelPicker'
 import {
@@ -61,7 +62,11 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+<<<<<<< Updated upstream
 } from './ui/select'
+=======
+} from '@boring/ui'
+>>>>>>> Stashed changes
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
@@ -409,6 +414,50 @@ export function ChatPanel(props: ChatPanelProps) {
     return () => clearTimeout(timer)
   }, [attachmentNotice])
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
+  const [composerText, setComposerText] = useState('')
+  const [activeSlashIndex, setActiveSlashIndex] = useState(0)
+  const [dismissedSlashText, setDismissedSlashText] = useState<string | null>(null)
+  const composerRootRef = useRef<HTMLDivElement>(null)
+  const slashSuggestions = useMemo(
+    () => filterSlashCommandSuggestions(registry.list(), composerText),
+    [registry, composerText],
+  )
+  const slashMenuOpen = slashSuggestions.length > 0 && dismissedSlashText !== composerText
+
+  useEffect(() => {
+    setActiveSlashIndex(0)
+  }, [composerText])
+
+  useEffect(() => {
+    setActiveSlashIndex((index) => {
+      if (slashSuggestions.length === 0) return 0
+      return Math.min(index, slashSuggestions.length - 1)
+    })
+  }, [slashSuggestions.length])
+
+  const setTextareaValue = useCallback((next: string, textarea?: HTMLTextAreaElement | null) => {
+    const target = textarea ?? composerRootRef.current?.querySelector('textarea')
+    if (!target) return
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      'value',
+    )?.set
+    if (valueSetter) valueSetter.call(target, next)
+    else target.value = next
+    target.dispatchEvent(new Event('input', { bubbles: true }))
+  }, [])
+
+  const selectSlashCommand = useCallback((command: SlashCommand, textarea?: HTMLTextAreaElement | null) => {
+    const next = `/${command.name} `
+    const target = textarea ?? composerRootRef.current?.querySelector('textarea')
+    setTextareaValue(next, target)
+    if (target) {
+      target.focus()
+      target.setSelectionRange(next.length, next.length)
+    }
+    setComposerText(next)
+    setDismissedSlashText(null)
+  }, [setTextareaValue])
 
   useEffect(() => {
     if (!userSelectedModel) return
@@ -468,6 +517,21 @@ export function ChatPanel(props: ChatPanelProps) {
     const parsed = parseSlashCommand(text)
     if (parsed) {
       const cmd = registry.get(parsed.name)
+<<<<<<< Updated upstream
+=======
+      if (cmd?.kind === 'skill') {
+        const skillMessage = parsed.args
+          ? `skill: ${parsed.name}\n\n${parsed.args}`
+          : `skill: ${parsed.name}`
+        setComposerText('')
+        setTextareaValue('')
+        void sendMessage(
+          { text, files },
+          { body: { sessionId, message: skillMessage, model, attachments: [] } },
+        )
+        return
+      }
+>>>>>>> Stashed changes
       if (cmd) {
         const ctx: SlashCommandContext = {
           sessionId,
@@ -491,6 +555,8 @@ export function ChatPanel(props: ChatPanelProps) {
           listCommands: () => registry.list(),
         }
         const result = cmd.handler(parsed.args, ctx)
+        setComposerText('')
+        setTextareaValue('')
         if (typeof result === 'string') {
           setMessages((prev) => [
             ...prev,
@@ -532,6 +598,8 @@ export function ChatPanel(props: ChatPanelProps) {
     // composer chips would linger for the entire duration of the server
     // stream. The send still runs (and errors still surface via useChat's
     // `error` state rendered above).
+    setComposerText('')
+    setTextareaValue('')
     void sendMessage(
       {
         // Rendered bubble: unchanged user text + file chips via files parts.
@@ -880,6 +948,7 @@ export function ChatPanel(props: ChatPanelProps) {
           </div>
         )}
         <div
+          ref={composerRootRef}
           className={cn(
             "relative mx-auto w-full overflow-hidden",
             chrome ? "max-w-3xl" : "max-w-[680px]",
@@ -906,6 +975,46 @@ export function ChatPanel(props: ChatPanelProps) {
             "[&_[data-slot=input-group]]:has-[:focus]:!ring-0",
           )}
         >
+          {slashMenuOpen && (
+            <div
+              className="absolute bottom-full left-2 right-2 z-30 mb-2 overflow-hidden rounded-xl border border-border/70 bg-popover/95 text-popover-foreground shadow-2xl backdrop-blur"
+              role="listbox"
+              aria-label="Slash commands"
+            >
+              <div className="border-b border-border/50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Commands
+              </div>
+              <div className="max-h-56 overflow-auto p-1.5">
+                {slashSuggestions.map((command, index) => {
+                  const active = index === activeSlashIndex
+                  return (
+                    <button
+                      key={command.name}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onMouseEnter={() => setActiveSlashIndex(index)}
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+                        selectSlashCommand(command)
+                      }}
+                      className={cn(
+                        "flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+                        active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                      )}
+                    >
+                      <span className="shrink-0 font-mono text-[12px] font-semibold text-foreground">
+                        /{command.name}
+                      </span>
+                      <span className="min-w-0 flex-1 text-[12px] leading-relaxed">
+                        {command.description}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           <PromptInput
             onSubmit={handleSubmit}
             multiple
@@ -932,6 +1041,35 @@ export function ChatPanel(props: ChatPanelProps) {
             <AttachmentsList />
             <PromptInputTextarea
               placeholder="Ask anything…"
+<<<<<<< Updated upstream
+=======
+              onChange={(event) => {
+                setComposerText(event.currentTarget.value)
+                setDismissedSlashText(null)
+              }}
+              onKeyDown={(event) => {
+                if (!slashMenuOpen) return
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  setActiveSlashIndex((index) => (index + 1) % slashSuggestions.length)
+                  return
+                }
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  setActiveSlashIndex((index) => (index - 1 + slashSuggestions.length) % slashSuggestions.length)
+                  return
+                }
+                if (event.key === 'Tab' || event.key === 'Enter') {
+                  event.preventDefault()
+                  selectSlashCommand(slashSuggestions[activeSlashIndex] ?? slashSuggestions[0], event.currentTarget)
+                  return
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setDismissedSlashText(composerText)
+                }
+              }}
+>>>>>>> Stashed changes
               className={cn(
                 "min-h-[52px] resize-none border-0 bg-transparent shadow-none",
                 "px-5 pt-3.5 pb-1 text-[13px] leading-[1.55] placeholder:text-muted-foreground/60",
@@ -1100,6 +1238,11 @@ function ModelSelect({
       disabled={disabled}
     >
       <SelectTrigger
+<<<<<<< Updated upstream
+=======
+        data-boring-agent-part="model-select"
+        data-boring-state={disabled ? "disabled" : undefined}
+>>>>>>> Stashed changes
         className={cn(
           composerActionClass,
           "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
@@ -1116,8 +1259,12 @@ function ModelSelect({
         </span>
       </SelectTrigger>
       <SelectContent
+<<<<<<< Updated upstream
         className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
         style={{ maxHeight: 'min(340px, var(--radix-select-content-available-height))' }}
+=======
+        className="max-h-[min(340px,var(--radix-select-content-available-height))] w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
+>>>>>>> Stashed changes
       >
         {[...groups.entries()].map(([provider, list]) => (
           <div key={provider} className="py-1">

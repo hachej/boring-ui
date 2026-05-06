@@ -11,6 +11,7 @@ import {
 } from "@boring/agent/server"
 import type { FastifyInstance } from "fastify"
 import { join } from "node:path"
+import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
@@ -98,7 +99,7 @@ export function collectWorkspaceAgentServerPlugins(
     routeContributions: result.routeContributions,
     agentOptions: {
       extraTools: result.agentTools,
-      systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
+      systemPromptAppend: [buildBoringSystemPrompt(), opts.systemPromptAppend, result.systemPromptAppend]
         .filter(Boolean)
         .join("\n\n") || undefined,
       resourceLoaderOptions: {

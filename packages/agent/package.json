@@ -31,7 +31,8 @@
     "**/*.css"
   ],
   "files": [
-    "dist"
+    "dist",
+    "docs"
   ],
   "scripts": {
     "build": "tsup && cp src/front/styles/globals.css dist/front/styles.css && pnpm run build:assert",

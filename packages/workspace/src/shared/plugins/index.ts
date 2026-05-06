@@ -68,14 +68,20 @@ export type {
 } from "./manifest"
 
 // Hot-reload coordinator
-export { PluginCoordinator } from "./coordinator"
+export { PluginCoordinator, BoringPluginReloadCoordinator } from "./coordinator"
 export type {
+  PluginCoordinatorOptions,
+  BoringPluginReloadCoordinatorOptions,
   CoordinatorPanelRegistry,
   CoordinatorCommandRegistry,
   CoordinatorSurfaceResolverRegistry,
   CoordinatorProviderRegistry,
   CoordinatorSlotFillRegistry,
   CoordinatorRegistries,
+  BoringPluginContributionRegistries,
+  HotReloadPanelRegistryLike,
+  HotReloadCommandRegistryLike,
+  HotReloadSurfaceResolverRegistryLike,
   BoringPluginFactory,
   BoringPluginRuntimeRecord,
   CapturedRegistrations,
@@ -83,5 +89,6 @@ export type {
   PluginDiagnostic,
   LoadPluginResult,
   UnloadPluginResult,
-  PluginCoordinatorOptions,
+  BoringPluginReloadResult,
+  BoringPluginReloadDiagnostic,
 } from "./coordinator"

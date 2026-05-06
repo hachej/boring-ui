@@ -434,3 +434,17 @@ export interface CapturedRegistrations {
   providers: BoringPluginContextProviderRegistration[]
   slotFills: BoringPluginSlotFillRegistration[]
 }
+
+// ---------------------------------------------------------------------------
+// Public API aliases — use these in consumer code and @boring/workspace/plugin
+// ---------------------------------------------------------------------------
+
+/** @public Primary export name for the hot-reload coordinator. */
+export { PluginCoordinator as BoringPluginReloadCoordinator }
+export type { PluginCoordinatorOptions as BoringPluginReloadCoordinatorOptions }
+export type { CoordinatorRegistries as BoringPluginContributionRegistries }
+export type { CoordinatorPanelRegistry as HotReloadPanelRegistryLike }
+export type { CoordinatorCommandRegistry as HotReloadCommandRegistryLike }
+export type { CoordinatorSurfaceResolverRegistry as HotReloadSurfaceResolverRegistryLike }
+export type { LoadPluginResult as BoringPluginReloadResult }
+export type { PluginDiagnostic as BoringPluginReloadDiagnostic }

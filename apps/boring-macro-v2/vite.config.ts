@@ -21,6 +21,7 @@ export default defineConfig({
     alias: {
       // Order matters — most-specific subpaths first so `@boring/workspace`
       // doesn't shadow `@boring/workspace/testing` etc.
+      "@boring/workspace/charts": resolve(PACKAGES, "workspace/src/front/charts/index.tsx"),
       "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
       "@boring/agent/front/styles.css": resolve(PACKAGES, "agent/src/front/styles/globals.css"),
       "@boring/workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
