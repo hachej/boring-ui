@@ -153,6 +153,10 @@ export function chatRoutes(
             'Cache-Control': 'no-cache, no-transform',
           },
         })
+        // Flush headers immediately so clients don't have to wait for the
+        // first LLM chunk before the response starts (improves perceived latency
+        // and lets clients read X-Turn-Id without a round-trip delay).
+        reply.raw.flushHeaders()
         return
       } catch (err) {
         request.log.error({ err, sessionId }, '[chat] error')

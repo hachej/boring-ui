@@ -69,7 +69,31 @@ boring-ui is aggressively extensible so it doesn't have to dictate your domain. 
 - No AI chrome — no model badges, no thinking spinners, nothing that makes your product look like a generic AI tool
 - No hardcoded data sources, APIs, or integrations
 
-Everything that makes your product yours lives in plugins. The example domain app (`boring-macro-v2`) shows what that looks like — a macro research tool that talks to FRED's 87k economic series, renders charts and data catalogs, and lets the agent generate briefing decks, all in ~400 lines of plugin code on top of an untouched core.
+Everything that makes your app yours lives in plugins:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       you bring                             │
+│                                                             │
+│   Panels              Skills             Data               │
+│   ─────────────       ──────────────     ────────────────   │
+│   charts              domain tools       APIs               │
+│   documents           agent prompts      catalogs           │
+│   data tables         workflows          external DBs       │
+│   code views          slash commands     file sources       │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│                    boring-ui provides                       │
+│                                                             │
+│   Chat      Workspace     Auth +      Agent        Tool     │
+│             shell         workspaces  runtime      catalog  │
+│                                                             │
+│   Command   Plugin        Sandbox     Database     File     │
+│   palette   registry      execution   schema       tree     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The example domain app (`boring-macro-v2`) shows what that looks like — a macro research tool that talks to FRED's 87k economic series, renders charts and data catalogs, and lets the agent generate briefing decks, all in ~400 lines of plugin code on top of an untouched core.
 
 The reference app (`full-app`) is a working app you can start from today.
 

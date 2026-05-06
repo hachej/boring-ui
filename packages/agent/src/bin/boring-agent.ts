@@ -114,9 +114,10 @@ const app = await createAgentApp({
 
 // Allow cross-origin requests from the Vite dev server so that
 // browserPage.evaluate() calls to the raw API port work in E2E tests.
-// Set the header on reply.raw so it survives reply.hijack() for streaming.
+// Set headers on reply.raw so they survive reply.hijack() for streaming responses.
 app.addHook('onRequest', async (request, reply) => {
   reply.raw.setHeader('Access-Control-Allow-Origin', '*')
+  reply.raw.setHeader('Access-Control-Expose-Headers', 'X-Turn-Id')
   if (request.method === 'OPTIONS') {
     reply.raw.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
     reply.raw.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Turn-Id')
