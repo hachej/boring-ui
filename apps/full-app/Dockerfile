@@ -18,19 +18,19 @@ COPY apps/full-app/ apps/full-app/
 # Build packages in dependency order.
 # ui and agent need dts so workspace's vite-plugin-dts can resolve their types.
 # workspace tsup skips dts (vite-plugin-dts covers the front entries instead).
-RUN pnpm --filter @boring/core exec tsup --no-dts \
+RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
   && cp packages/core/src/front/theme.css packages/core/dist/front/theme.css \
   && cp packages/core/src/app/front/styles.css packages/core/dist/app/front/styles.css
 
-RUN pnpm --filter @boring/ui exec tsup
+RUN pnpm --filter @hachej/boring-ui-kit exec tsup
 
-RUN pnpm --filter @boring/agent exec tsup \
+RUN pnpm --filter @hachej/boring-agent exec tsup \
   && cp packages/agent/src/front/styles/globals.css packages/agent/dist/front/styles.css
 
-RUN pnpm --filter @boring/workspace exec tsup --no-dts \
-  && pnpm --filter @boring/workspace exec vite build
+RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
+  && pnpm --filter @hachej/boring-workspace exec vite build
 
-# BORING_USE_LOCAL_PACKAGES=1 lets Vite resolve @boring/* from source so
+# BORING_USE_LOCAL_PACKAGES=1 lets Vite resolve @hachej/* from source so
 # Tailwind scans the actual TSX files instead of compiled dist JS. Without
 # this, Tailwind only sees packages/core/dist and tree-shakes all workspace
 # utility classes out of the final CSS bundle.
