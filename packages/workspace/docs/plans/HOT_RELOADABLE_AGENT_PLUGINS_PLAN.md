@@ -38,6 +38,65 @@ Self-contained plugin with its own front + server code. No dependency on any exi
 
 ---
 
+## Pi Plugin Compatibility — The "Overload" Model
+
+A boring-ui plugin factory is a valid pi `ExtensionFactory`. The same file can be loaded by pi's loader unchanged. When boring-ui's loader runs it, the API object carries additional UI-registration namespaces that pi doesn't know about.
+
+### The authoring pattern
+
+```ts
+// front.tsx — works in both pi and boring-ui
+export default function factory(api: BoringExtensionAPI): void | Promise<void> {
+  // pi-compatible — works in pi and boring-ui:
+  api.registerTool({
+    name: "my_tool",
+    description: "...",
+    parameters: { type: "object", properties: { q: { type: "string" } }, required: ["q"] },
+    execute: async ({ q }) => ({ content: [{ type: "text", text: `result: ${q}` }] }),
+  })
+
+  // boring-ui-only — optional chaining so pi context doesn't throw:
+  api.panels?.register({ id: "my-panel", label: "My Panel", component: MyPanel })
+  api.leftTabs?.register({ id: "my-tab", title: "My Tab", panelId: "my-panel" })
+  api.surfaceResolvers?.register({ kind: "my.open", resolve: (req) => ({ panelId: "my-panel" }) })
+}
+```
+
+### `BoringExtensionAPI` — extends pi's `ExtensionAPI`
+
+```ts
+// BoringExtensionAPI is a structural superset of pi's ExtensionAPI.
+// When pi loads the factory it passes its own ExtensionAPI — the optional
+// boring-ui namespaces are absent; optional chaining keeps the factory safe.
+interface BoringExtensionAPI extends ExtensionAPI {
+  // Optional extras — always populated in boring-ui; absent in pi:
+  panels?: { register(reg: BoringPluginPanelRegistration): void }
+  leftTabs?: { register(reg: BoringPluginLeftTabRegistration): void }
+  surfaceResolvers?: { register(reg: BoringPluginSurfaceResolverRegistration): void }
+  catalogs?: { register(reg: BoringPluginCatalogRegistration): void }
+}
+```
+
+Note: `commands.register` (panel-opening command palette entries) lives on `panels` side of boring-ui. Pi's `registerCommand` (non-panel workspace commands) is separately implemented on the capturing API and maps to boring-ui's command palette with no panel association.
+
+### `registerTool` — pi's exact signature, boring-ui's backend
+
+The capturing API implements `registerTool(tool: ToolDefinition): void` with pi's verbatim `ToolDefinition` shape. In boring-ui, the tool routes to the workspace's agent tool registry. The authoring surface is identical to pi — the same tool definition works in both runtimes.
+
+### Pi methods boring-ui stubs
+
+`exec`, `sendMessage`, `events`, `registerShortcut` are pi-specific runtime methods. Boring-ui's capturing API provides no-op stubs for them (warning in dev mode). Plugin authors who need these are writing pi-specific behavior; boring-ui ignores it gracefully.
+
+### Replacing `BoringPluginAPI`
+
+`BoringPluginAPI` (the old namespaced-only interface in `authoring.ts`) is superseded by `BoringExtensionAPI`. The capturing API is rewritten to implement `BoringExtensionAPI`. For backward compat during migration, `BoringPluginAPI` can be kept as a deprecated alias until callers update.
+
+### Why this matters for the manifest
+
+The manifest's `panels[]`, `commands[]`, `leftTabs[]`, `surfaceResolvers[]` arrays are not redundant — they are the **authoritative declaration** for V2 (iframe mode, no dynamic import in host). The factory is authoritative for V1. Both tiers co-exist; the factory is also what pi loads.
+
+---
+
 ## Design Decisions
 
 | Decision | Choice | Rationale |
@@ -48,6 +107,7 @@ Self-contained plugin with its own front + server code. No dependency on any exi
 | iframe handshake | Iframe sends `ready` first | Iframe signals it's ready; host responds with `init`. Eliminates lost-init race from `onLoad` timing. |
 | Revision scope | Monotonic per pluginId | Every SSE event (load, unload, error) and reconnect response carries revision. Browser drops events where `revision ≤ lastSeen[pluginId]`. |
 | pi alignment | Follow pi patterns | jiti loading via `createJiti(import.meta.url, { moduleCache: false })`, plugin API style, error surfacing all follow pi's conventions. |
+| Plugin API shape | `BoringExtensionAPI extends ExtensionAPI` | Factory signature stays pi-compatible. Boring-ui extras (`panels?`, `leftTabs?`, `surfaceResolvers?`, `catalogs?`) are optional — same factory loads in pi unchanged. `registerTool` uses pi's verbatim `ToolDefinition` shape. |
 
 ---
 
@@ -701,12 +761,21 @@ Implement all shared infrastructure in V1. V2 only adds the three iframe-specifi
 - [ ] `pluginRegistry.register({ id, extensionContract? })` called at workspace init for each outside plugin (before any inside plugin replay)
 - [ ] `GET /api/agent-plugins/:pluginId/catalog/search?q=` — delegates to registered CatalogSearchHandler; in-flight requests complete before handler removal on unload
 - [ ] Active plugin state map: `Map<pluginId, { manifest, revision }>` updated before SSE dispatch
+- [ ] `GET /api/agent-plugins` reconnect endpoint — returns `Array<{ manifest, revision }>` for all currently-loaded plugins (implement alongside this task)
 
-### F — `GET /api/agent-plugins` reconnect endpoint (both) — implement alongside D
-- [ ] Returns `Array<{ manifest, revision }>` for all currently-loaded plugins
-- [ ] Browser fetches on connect/reconnect → for each entry, calls `registerAgentPlugin` only if `revision > lastSeen[pluginId]`
+### E — `authoring.ts`: Rewrite `BoringPluginAPI` → `BoringExtensionAPI` (both)
+- [ ] Replace `BoringPluginAPI` with `BoringExtensionAPI extends ExtensionAPI` (pi's interface)
+- [ ] Add `registerTool(tool: ToolDefinition): void` to the interface using pi's verbatim `ToolDefinition` shape (import from `@mariozechner/pi-coding-agent` or re-export the type); routes to workspace agent tool registry
+- [ ] Add `registerCommand(name: string, options: { title: string; execute(): void }): void` — pi-compatible command registration (maps to command palette without panel association)
+- [ ] Add `on(event: string, handler: (...args: unknown[]) => void): void` — lifecycle hooks (`load`, `unload` wired; others no-op with dev warning)
+- [ ] Mark boring-ui UI namespaces optional: `panels?: { register(...): void }`, `leftTabs?: { register(...): void }`, `surfaceResolvers?: { register(...): void }`, `catalogs?: { register(...): void }`
+- [ ] Stub pi-specific methods not applicable in boring-ui context: `exec`, `sendMessage`, `events`, `registerShortcut` — stubs log `[BoringPlugin] <method> is not supported in boring-ui context` in dev mode
+- [ ] Factory type: `export type BoringExtensionFactory = (api: BoringExtensionAPI) => void | Promise<void>`
+- [ ] Update `createCapturingAPI()`: implement `BoringExtensionAPI`; capture `registerTool` calls into `tools[]`; flush includes `tools: AgentTool[]`
+- [ ] Keep `BoringPluginAPI` as deprecated alias to avoid breaking callers during migration
+- [ ] Export `BoringExtensionAPI` and `BoringExtensionFactory` from `@boring/workspace/plugin` subpath
 
-### E — Browser: SSE handler + `registerAgentPlugin` + `AgentPluginPane` direct mode (v1)
+### F — Browser: SSE handler + `registerAgentPlugin` + `AgentPluginPane` direct mode (v1)
 - [ ] Registries are **Zustand stores** (`usePanelStore`, `useCommandStore`, `useTabStore`, `useResolverStore`) — SSE updates go through `setState`, never direct Map mutation
 - [ ] Resolver LIFO stack: each entry tagged `(pluginId, revision)`; on commit, pop all entries for pluginId before pushing new ones; `unregisterByPluginId` only removes entries matching that pluginId
 - [ ] `src/front/plugins/agentPluginRegistry.ts` — browser-side Map of outside pluginId → extensionContract; `lastSeen: Map<pluginId, revision>`
@@ -716,11 +785,11 @@ Implement all shared infrastructure in V1. V2 only adds the three iframe-specifi
   - mode="direct": `await import(url?v=revision)` → run factory → capture; Path A: check captured types vs extensionContract
   - mode="iframe": build registration set from manifest arrays; Path A: check manifest contribution types
   - Any failure → restore snapshot via `setState`, show toast, return
-  - Commit: `usePanelStore.setState(...)` etc.; update resolver stack
+  - Commit: `usePanelStore.setState(...)` etc.; update resolver stack; register captured agent tools with harness
   - `lastSeen[manifest.id] = revision`
 - [ ] `src/front/plugins/AgentPluginPane.tsx`:
   - mode="direct": use factory's exported component directly (no second lazy import); panel wrapper key includes revision to force remount
-  - mode="iframe": `<iframe sandbox="allow-scripts">` (stubbed; wired in G)
+  - mode="iframe": `<iframe sandbox="allow-scripts">` (stubbed; wired in H)
   - When plugin missing from store: render "Plugin not loaded" placeholder
 - [ ] Register `agent-plugin-frame` panel wrapper in `coreRegistrations.ts`
 - [ ] SSE handler: `boring.plugin.load` → `registerAgentPlugin`; `boring.plugin.unload` → pop resolver stack + remove from stores; `boring.plugin.error` → show toast
