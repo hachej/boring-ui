@@ -2,7 +2,10 @@
   "name": "@boring/core",
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
   "description": "Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, and frontend app shell.",
+  "repository": { "type": "git", "url": "https://github.com/hachej/boring-ui.git" },
+  "homepage": "https://github.com/hachej/boring-ui",
   "exports": {
     "./server": {
       "types": "./dist/server/index.d.ts",

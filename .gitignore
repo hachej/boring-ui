@@ -21,6 +21,12 @@ apps/boring-macro-v2/src/plugins/macro/server/sdk/*.egg-info/
 apps/boring-macro-v2/src/plugins/macro/server/sdk/build/
 apps/boring-macro-v2/src/plugins/macro/server/transforms/**/__pycache__/
 apps/boring-macro-v2/src/plugins/macro/server/transforms/**/*.py[cod]
+apps/boring-macro-v2/src/plugins/macro/sdk/**/__pycache__/
+apps/boring-macro-v2/src/plugins/macro/sdk/**/*.py[cod]
+apps/boring-macro-v2/src/plugins/macro/sdk/*.egg-info/
+apps/boring-macro-v2/src/plugins/macro/sdk/build/
+apps/boring-macro-v2/src/plugins/macro/transforms/**/__pycache__/
+apps/boring-macro-v2/src/plugins/macro/transforms/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/**/__pycache__/
 packages/agent/fixtures/provisioning/test-sdk/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/*.egg-info/
@@ -42,3 +48,4 @@ packages/agent/bench-results/
 # Vitest transient transpiled-config artifacts (leaked when a run is interrupted)
 **/vitest.config.ts.timestamp-*.mjs
 **/vitest.config.js.timestamp-*.mjs
+.claude/worktrees/

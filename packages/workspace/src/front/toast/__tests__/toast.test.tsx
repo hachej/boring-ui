@@ -7,6 +7,7 @@ import {
   getActiveToasts,
   clearToasts,
   subscribeToasts,
+  type ToastRecord,
 } from ".."
 
 describe("toast (module store)", () => {
@@ -33,7 +34,7 @@ describe("toast (module store)", () => {
     toast.success("Saved")
     toast.error("Boom")
     toast.info("FYI")
-    const variants = getActiveToasts().map((t) => t.variant)
+    const variants = getActiveToasts().map((t: ToastRecord) => t.variant)
     expect(variants).toEqual(["success", "error", "info"])
   })
 

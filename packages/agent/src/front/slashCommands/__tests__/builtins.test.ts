@@ -55,61 +55,12 @@ describe('/reset', () => {
   })
 })
 
-describe('/model', () => {
-  test('sets model when valid', () => {
-    const ctx = makeContext()
-    const result = getBuiltin('model').handler('haiku', ctx)
-    expect(ctx.setModel).toHaveBeenCalledWith('haiku')
-    expect(result).toBe('Model set to haiku.')
+describe('all 2 builtins are registered', () => {
+  test('has exactly 2 commands', () => {
+    expect(builtinCommands).toHaveLength(2)
   })
 
-  test('returns usage when no args', () => {
-    const ctx = makeContext()
-    const result = getBuiltin('model').handler('', ctx)
-    expect(ctx.setModel).not.toHaveBeenCalled()
-    expect(result).toContain('Usage')
-  })
-
-  test('returns error for invalid model', () => {
-    const ctx = makeContext({ setModel: vi.fn().mockReturnValue(false) })
-    const result = getBuiltin('model').handler('gpt4', ctx)
-    expect(result).toContain('Unknown model')
-    expect(result).toContain('gpt4')
-  })
-})
-
-describe('/help', () => {
-  test('lists all commands', () => {
-    const ctx = makeContext()
-    const result = getBuiltin('help').handler('', ctx)
-    expect(result).toContain('/clear')
-    expect(result).toContain('/model')
-    expect(result).toContain('/help')
-    expect(result).toContain('/cost')
-    expect(result).toContain('/reset')
-  })
-
-  test('returns message when no commands', () => {
-    const ctx = makeContext({ listCommands: vi.fn().mockReturnValue([]) })
-    const result = getBuiltin('help').handler('', ctx)
-    expect(result).toBe('No commands available.')
-  })
-})
-
-describe('/cost', () => {
-  test('returns coming soon', () => {
-    const ctx = makeContext()
-    const result = getBuiltin('cost').handler('', ctx)
-    expect(result).toBe('Coming soon.')
-  })
-})
-
-describe('all 5 builtins are registered', () => {
-  test('has exactly 5 commands', () => {
-    expect(builtinCommands).toHaveLength(5)
-  })
-
-  test.each(['clear', 'reset', 'model', 'help', 'cost'])('includes /%s', (name) => {
+  test.each(['clear', 'reset'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 })

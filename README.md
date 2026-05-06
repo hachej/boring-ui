@@ -35,7 +35,7 @@ Plus the backend you'd have to build anyway: Postgres + Drizzle, auth + workspac
 ```bash
 pnpm install
 cp apps/full-app/.env.example apps/full-app/.env
-pnpm --dir packages/core drizzle:migrate
+pnpm --filter @boring/core drizzle:migrate
 pnpm --filter full-app dev
 ```
 

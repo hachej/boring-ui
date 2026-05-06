@@ -18,6 +18,10 @@ import {
 import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
 
+// Note: vercel-sandbox mode UI bridge tests live in
+// createWorkspaceAgentServer.vercel-sandbox.test.ts — they require a
+// top-level vi.mock on @boring/agent/server which would affect all tests here.
+
 const tempDirs: string[] = []
 
 afterEach(async () => {
@@ -450,3 +454,4 @@ describe("createWorkspaceAgentServer — extraTools merge", () => {
     }
   })
 })
+

@@ -2,7 +2,10 @@
   "name": "@boring/ui",
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
   "description": "Shared shadcn-style UI primitives for Boring packages and app-generated panes.",
+  "repository": { "type": "git", "url": "https://github.com/hachej/boring-ui.git" },
+  "homepage": "https://github.com/hachej/boring-ui",
   "files": [
     "dist"
   ],

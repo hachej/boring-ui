@@ -48,6 +48,13 @@ export interface CreateWorkspaceAgentServerOptions
     Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
+  /**
+   * Whether exec_ui should stat-check file paths against the workspaceRoot
+   * before queueing the command. Defaults to true in direct/local mode and
+   * false in vercel-sandbox (where workspace files live inside the microVM,
+   * not on the host server running this Fastify process).
+   */
+  validateUiPaths?: boolean
 }
 
 export {
@@ -129,7 +136,10 @@ export async function createWorkspaceAgentServer(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
-  const uiTools = createWorkspaceUiTools(bridge, { workspaceRoot })
+  const validateUiPaths = opts.validateUiPaths ?? opts.mode !== "vercel-sandbox"
+  const uiTools = createWorkspaceUiTools(bridge, {
+    workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
+  })
   const pluginCollection = collectWorkspaceAgentServerPlugins(opts)
 
   if (opts.provisionWorkspace !== false) {

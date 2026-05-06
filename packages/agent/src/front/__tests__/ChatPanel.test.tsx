@@ -207,7 +207,8 @@ describe('ChatPanel (shadcn)', () => {
 
     const html = renderToStaticMarkup(<ChatPanel sessionId="sess-tool" />)
 
-    expect(html).toContain('bash · ls')
+    // ToolCallGroup collapses tools; trigger shows "Used <noun>" summary
+    expect(html).toContain('Used command')
   })
 
   test('custom toolRenderers override default renderer', () => {
@@ -240,8 +241,11 @@ describe('ChatPanel (shadcn)', () => {
       <ChatPanel sessionId="sess-custom" toolRenderers={{ bash: customRenderer }} />,
     )
 
-    expect(customRenderer).toHaveBeenCalledTimes(1)
-    expect(html).toContain('custom:call-custom')
+    // ToolCallGroup is collapsed by default — custom renderers run inside
+    // CollapsibleContent which Radix omits from SSR when closed.
+    // Verify the group trigger is present; renderer invocation is covered
+    // by the ToolCallGroup unit tests.
+    expect(html).toContain('Used command')
   })
 
   test('renders error message', () => {
@@ -270,7 +274,7 @@ describe('ChatPanel (shadcn)', () => {
         body: {
           sessionId: 'sess-send',
           message: 'Run tests',
-          model: { provider: 'anthropic', id: 'sonnet' },
+          model: { provider: 'qwen', id: 'qwen3.5' },
           attachments: [],
         },
       },
@@ -321,7 +325,7 @@ describe('ChatPanel (shadcn)', () => {
   test('slash command is intercepted and does not send to AI', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-cmd" />)
 
-    await capturedOnSubmit!({ text: '/cost', files: [] })
+    await capturedOnSubmit!({ text: '/clear', files: [] })
 
     expect(mockSendMessage).not.toHaveBeenCalled()
     expect(mockSetMessages).toHaveBeenCalled()
@@ -391,7 +395,7 @@ describe('ChatPanel (shadcn)', () => {
         body: {
           sessionId: 'sess-unk',
           message: '/unknown hello',
-          model: { provider: 'anthropic', id: 'sonnet' },
+          model: { provider: 'qwen', id: 'qwen3.5' },
           attachments: [],
         },
       },
@@ -437,7 +441,7 @@ describe('ChatPanel (shadcn)', () => {
           body: {
             sessionId: 'sess-skill',
             message: 'skill: macro-deck\n\ncreate a labor market deck',
-            model: { provider: 'anthropic', id: 'sonnet' },
+            model: { provider: 'qwen', id: 'qwen3.5' },
             attachments: [],
           },
         },
@@ -576,7 +580,8 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      expect(html).not.toContain('data-testid="chat-working"')
+      // Badge is always in DOM; hidden via opacity when not working
+      expect(html).toContain('opacity-0 pointer-events-none')
     })
   })
 
@@ -624,16 +629,16 @@ describe('ChatPanel (shadcn)', () => {
       const html = renderToStaticMarkup(
         <ChatPanel sessionId="s-order" toolRenderers={{ bash: customRenderer }} />,
       )
+      // ToolCallGroup collapses tool content — verify text parts preserve
+      // chronological order and tool group triggers appear between them.
       const idxFirstText = html.indexOf('FIRST_TEXT')
-      const idxToolA = html.indexOf('TOOL_CALLA')
+      const idxGroupA = html.indexOf('Used command')
       const idxSecondText = html.indexOf('SECOND_TEXT')
-      const idxToolB = html.indexOf('TOOL_CALLB')
       const idxThirdText = html.indexOf('THIRD_TEXT')
       expect(idxFirstText).toBeGreaterThan(-1)
-      expect(idxToolA).toBeGreaterThan(idxFirstText)
-      expect(idxSecondText).toBeGreaterThan(idxToolA)
-      expect(idxToolB).toBeGreaterThan(idxSecondText)
-      expect(idxThirdText).toBeGreaterThan(idxToolB)
+      expect(idxGroupA).toBeGreaterThan(idxFirstText)
+      expect(idxSecondText).toBeGreaterThan(idxGroupA)
+      expect(idxThirdText).toBeGreaterThan(idxSecondText)
     })
 
     test('thinking control hidden by default (opt-in)', () => {
@@ -705,10 +710,10 @@ describe('ChatPanel (shadcn)', () => {
       // Regression guard: the previous renderer grouped by type and rendered
       // all texts first then all tools. With that bug, a tool-then-text
       // sequence in `parts` would render text first.
-      const customRenderer = vi.fn((part: ToolPart) => (
-        <div data-testid={`tool-${part.toolCallId}`}>TOOL_{part.toolCallId}</div>
-      ))
-
+      //
+      // ToolCallGroup collapses tool content via Radix Presence (not rendered
+      // on initial mount), so we check the collapsible trigger position instead
+      // of the custom renderer output — the trigger IS in the static HTML.
       mockUseAgentChat.mockReturnValue({
         messages: [
           {
@@ -732,10 +737,9 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
 
-      const html = renderToStaticMarkup(
-        <ChatPanel sessionId="s-tool-first" toolRenderers={{ bash: customRenderer }} />,
-      )
-      const idxTool = html.indexOf('TOOL_EARLY')
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-tool-first" />)
+      // The group trigger ("Used command") must precede the text part.
+      const idxTool = html.indexOf('Used command')
       const idxText = html.indexOf('AFTER_TOOL')
       expect(idxTool).toBeGreaterThan(-1)
       expect(idxText).toBeGreaterThan(idxTool)
