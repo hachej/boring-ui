@@ -23,6 +23,7 @@ const globalCommandPanel: PanelConfig = {
   id: "global-command-panel",
   title: "Global command panel",
   component: GlobalCommandPanel,
+  lazy: false,
   source: "app",
   placement: "center",
 }
@@ -59,9 +60,9 @@ describe("WorkspaceAgentFront", () => {
 
   it("restores session history and workbench visibility per workspace", async () => {
     localStorage.setItem("boring-ui-v2:layout:workspace-a:drawer", "0")
-    localStorage.setItem("boring-ui-v2:layout:workspace-a:surface", "1")
+    localStorage.setItem("boring-ui-v2:layout:workspace-a:workbenchOpen", "1")
     localStorage.setItem("boring-ui-v2:layout:workspace-b:drawer", "1")
-    localStorage.setItem("boring-ui-v2:layout:workspace-b:surface", "0")
+    localStorage.setItem("boring-ui-v2:layout:workspace-b:workbenchOpen", "0")
 
     const { rerender } = render(
       <WorkspaceAgentFront

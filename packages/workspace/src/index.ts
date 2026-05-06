@@ -85,27 +85,7 @@ export type {
   SectionedExplorerSearchArgs,
   SectionedExplorerSectionsArgs,
 } from "./plugins/explorerPlugin/front"
-export {
-  createExplorerPlugin,
-  createExplorerOutputs,
-  ExplorerView,
-  EXPLORER_PLUGIN_ID,
-} from "./plugins/explorerPlugin"
-export type {
-  CreateExplorerOutputsOptions,
-  CreateExplorerPluginOptions,
-  ExplorerCatalogConfig,
-  ExplorerContributionConfig,
-  ExplorerMode,
-  ExplorerSection,
-  ExplorerSectionFilter,
-  ExplorerViewProps,
-  SectionedExplorerAdapter,
-  SectionedExplorerFacetArgs,
-  SectionedExplorerProps,
-  SectionedExplorerSearchArgs,
-  SectionedExplorerSectionsArgs,
-} from "./plugins/explorerPlugin"
+
 export {
   appendDataCatalogOutputs,
   createDataCatalogOpenHandler,

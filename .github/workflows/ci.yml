@@ -158,6 +158,9 @@ jobs:
       - name: Build UI package
         run: pnpm --filter @boring/ui build
 
+      - name: Build agent package
+        run: pnpm --filter @boring/agent build
+
       - name: Run vitest suite
         run: pnpm test
 

@@ -2,10 +2,16 @@ import { mkdtemp, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createRequire } from "node:module"
+import { spawnSync } from "node:child_process"
 import { describe, expect, it } from "vitest"
 import { buildServer } from "../index"
 
 const require = createRequire(import.meta.url)
+
+const HAS_BWRAP = (() => {
+  const r = spawnSync("bwrap", ["--version"], { stdio: "ignore" })
+  return !r.error && r.status === 0
+})()
 
 describe("buildServer", () => {
   it("exposes workspace + agent server entries to CJS-style resolvers", () => {
@@ -13,7 +19,7 @@ describe("buildServer", () => {
     expect(() => require.resolve("@boring/agent/server")).not.toThrow()
   })
 
-  it("boots with workspace UI bridge routes wired", async () => {
+  it.skipIf(!HAS_BWRAP)("boots with workspace UI bridge routes wired", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "boring-macro-workspace-"))
     const { app } = await buildServer({
       logger: false,

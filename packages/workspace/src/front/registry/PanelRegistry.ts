@@ -18,9 +18,13 @@ export class PanelRegistry {
   }
 
   register(id: string, config: PanelRegistration): void {
-    // Auto-detect lazy: factories are zero-arg arrow functions (() => import(...));
-    // panel components always take a props argument, so .length >= 1.
-    const isFactory = typeof config.component === "function" && config.component.length === 0
+    // Auto-detect lazy: a real import factory is a zero-arg function whose
+    // source contains `import(` — a keyword that survives minification.
+    // Zero-arg React components like `() => <Panel />` don't match and stay eager.
+    const isFactory =
+      typeof config.component === "function" &&
+      config.component.length === 0 &&
+      /\bimport\s*\(/.test(config.component.toString())
     const existed = this.panels.has(id)
     this.panels.set(id, { ...config, id, lazy: config.lazy ?? isFactory } as PanelConfig)
     if (!existed) {

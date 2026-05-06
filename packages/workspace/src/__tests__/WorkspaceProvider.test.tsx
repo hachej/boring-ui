@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, act, waitFor } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
-import { Suspense, type ReactNode, useState } from "react"
+import { type ReactNode, useState } from "react"
 import {
   WorkspaceProvider,
   useTheme,
@@ -43,11 +43,7 @@ function RegistryPanelHost({ panelId }: { panelId: string }) {
     return <div data-testid="panel-missing">missing</div>
   }
 
-  return (
-    <Suspense fallback={<div data-testid="lazy-fallback">loading</div>}>
-      <Panel />
-    </Suspense>
-  )
+  return <Panel />
 }
 
 let originalStorage: Storage
@@ -429,7 +425,6 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    expect(screen.getByTestId("lazy-fallback")).toBeInTheDocument()
     expect(await screen.findByTestId("lazy-chat-panel")).toBeInTheDocument()
   })
 

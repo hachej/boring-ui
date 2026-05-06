@@ -133,7 +133,7 @@ describe("defineFrontPlugin", () => {
             } as any,
           ],
         }),
-      ).toThrow("must be a thunk when lazy:true")
+      ).toThrow("panels[0].component must be a ComponentType or lazy factory (got: string)")
     })
 
     it("accepts lazy panel with thunk component", () => {
