@@ -64,10 +64,6 @@ All methods use the flat `register*` naming style — consistent with pi's `regi
 interface BoringExtensionAPI {
   // ── Pi methods — boring-ui implements fully ──────────────────────────
 
-  // Pi's verbatim ToolDefinition shape (TypeBox parameters).
-  // Routes to the workspace agent tool registry.
-  registerTool(tool: ToolDefinition): void
-
   // Pi slash command (/name [args]). NOT a UI command palette entry.
   registerCommand(name: string, options: {
     description?: string
@@ -82,7 +78,11 @@ interface BoringExtensionAPI {
   // "load" and "unload" events are wired; all other events are no-ops.
   on(event: string, handler: (...args: unknown[]) => void): void
 
-  // ── Pi methods — boring-ui stubs (no-op + dev warning) ───────────────
+  // ── Pi methods — boring-ui stubs (no-op, pi handles natively) ─────────
+  // When pi loads front.tsx, pi registers the tool in its own registry.
+  // Boring-ui ignores it from the front — tools belong in plugin.server.ts.
+  registerTool(tool: ToolDefinition): void
+
   exec(...args: unknown[]): Promise<unknown>
   sendMessage(...args: unknown[]): void
   sendUserMessage(...args: unknown[]): void
@@ -763,7 +763,7 @@ The coordinator already calls factories today via `createCapturingAPI()`. The ca
 | `surfaceResolvers.register(reg)` | `registerSurfaceResolver?(reg)` | rename + flatten |
 | `providers.register(reg)` | `registerProvider?(reg)` | rename + flatten |
 | `slotFills.register(reg)` | `registerSlotFill?(reg)` | rename + flatten |
-| ❌ missing | `registerTool(tool)` | add — pi's ToolDefinition |
+| ❌ missing | `registerTool(tool)` | add — no-op stub (pi handles it; boring-ui tools go in plugin.server.ts) |
 | ❌ missing | `registerLeftTab?(reg)` | add |
 | ❌ missing | `registerCatalog?(reg)` | add |
 | ❌ missing | `registerCommand(name, opts)` | add — pi slash command |
@@ -857,13 +857,13 @@ All files in `packages/workspace/src/server/plugins/` unless noted. API routes i
 **`authoring.ts` rewrite:**
 - [ ] Replace namespaced `BoringPluginAPI` with flat `BoringExtensionAPI`
 - [ ] Pi methods boring-ui implements: `registerTool(ToolDefinition)`, `registerCommand(name, opts)`, `registerShortcut(key, opts)`, `on(event, handler)`
-- [ ] `registerTool` — import `ToolDefinition` from `@mariozechner/pi-coding-agent`; re-export from `@boring/workspace/plugin`; plugin authors use `defineTool()` helper
+- [ ] `registerTool` — **no-op stub** in `BoringExtensionAPI`. When pi loads `front.tsx` pi handles the tool natively. Boring-ui ignores it from the front — all boring-ui tools go in `plugin.server.ts`. Re-export `ToolDefinition` from `@boring/workspace/plugin` so plugin authors can import it.
 - [ ] `registerCommand` — pi slash command (`/name [args]`); boring-ui registers it as a front-side slash command handler (not available in `BoringServerPluginAPI`)
 - [ ] `on("load"/"unload", handler)` wired; all other events no-op with dev-mode warning
 - [ ] Pi stub methods (no-op + `console.warn` in dev): `exec`, `sendMessage`, `sendUserMessage`, `appendEntry`, `setSessionName`, `getActiveTools`, `setActiveTools`, `setModel`, `events`, `registerFlag`, `registerProvider`, etc.
 - [ ] Boring-ui optional flat methods: `registerPanel?`, `registerPanelCommand?`, `registerLeftTab?`, `registerSurfaceResolver?`, `registerCatalog?`, `registerProvider?`, `registerSlotFill?`
 - [ ] `export type BoringExtensionFactory = (api: BoringExtensionAPI) => void | Promise<void>`
-- [ ] Update `createCapturingAPI()` — implement `BoringExtensionAPI`; capture `registerTool` into `tools: ToolDefinition[]`; `flush()` returns `{ panels, panelCommands, leftTabs, surfaceResolvers, catalogs, tools, ... }`
+- [ ] Update `createCapturingAPI()` — implement `BoringExtensionAPI`; `registerTool` is a no-op (not captured); `flush()` returns `{ panels, panelCommands, leftTabs, surfaceResolvers, catalogs, slashCommands, ... }`
 - [ ] Keep `BoringPluginAPI` as deprecated alias
 - [ ] Export `BoringExtensionAPI`, `BoringExtensionFactory`, `ToolDefinition` (re-export) from `@boring/workspace/plugin`
 
