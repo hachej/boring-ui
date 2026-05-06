@@ -103,24 +103,30 @@ export default function factory(api: BoringExtensionAPI): void | Promise<void> {
     handler: async (_args, ctx) => { /* pi context action */ },
   })
 
-  // ── boring-ui extras (optional chaining — safe in pi context) ──────────
+  // ── boring-ui extras — flat register* style, optional chaining for pi safety ─
 
-  api.panels?.register({ id: "csv-viewer-panel", label: "CSV Viewer", component: CsvPane })
-  api.commands?.register({ id: "open-csv", title: "Open CSV Viewer", panelId: "csv-viewer-panel" })
-  api.leftTabs?.register({ id: "csv-tab", title: "CSV", panelId: "csv-viewer-panel" })
-  api.surfaceResolvers?.register({ kind: "csv.open", resolve: () => ({ panelId: "csv-viewer-panel" }) })
+  api.registerPanel?.({ id: "csv-viewer-panel", label: "CSV Viewer", component: CsvPane })
+  api.registerPanelCommand?.({ id: "open-csv", title: "Open CSV Viewer", panelId: "csv-viewer-panel" })
+  api.registerLeftTab?.({ id: "csv-tab", title: "CSV", panelId: "csv-viewer-panel" })
+  api.registerSurfaceResolver?.({ kind: "csv.open", resolve: () => ({ panelId: "csv-viewer-panel" }) })
 }
 ```
 
-### `BoringExtensionAPI` — pi methods boring-ui implements
+### `BoringExtensionAPI` — flat register* naming throughout
+
+All methods use the flat `register*` style — consistent with pi. No namespace objects.
 
 ```ts
 interface BoringExtensionAPI {
-  // ── pi methods — boring-ui implements these ───────────────────────────
+  // ── pi methods — boring-ui implements ────────────────────────────────
   registerTool(tool: ToolDefinition): void       // routes to workspace agent tool registry
-  registerCommand(name: string, options: {        // registers a /slash-command
+  registerCommand(name: string, options: {        // pi SLASH command (/name [args])
     description?: string
     handler: (args: string, ctx: unknown) => Promise<void>
+  }): void
+  registerShortcut(key: string, options: {
+    description?: string
+    handler: (ctx: unknown) => Promise<void> | void
   }): void
   on(event: string, handler: (...args: unknown[]) => void): void  // "load"/"unload" wired; others no-op
 
@@ -128,23 +134,32 @@ interface BoringExtensionAPI {
   exec(...): Promise<unknown>
   sendMessage(...): void
   sendUserMessage(...): void
-  events: { on(): void; off(): void; emit(): void }   // stub EventBus
+  events: { on(): void; off(): void; emit(): void }
   getActiveTools(): string[]
   setActiveTools(tools: string[]): void
   // ... remaining pi-specific methods stubbed
 
-  // ── boring-ui extras (absent in pi → always use optional chaining) ───
-  panels?:          { register(reg: BoringPluginPanelRegistration): void }
-  commands?:        { register(reg: BoringPluginCommandRegistration): void }  // palette entry that opens a panel
-  leftTabs?:        { register(reg: BoringPluginLeftTabRegistration): void }
-  surfaceResolvers?:{ register(reg: BoringPluginSurfaceResolverRegistration): void }
-  catalogs?:        { register(reg: BoringPluginCatalogRegistration): void }
+  // ── boring-ui extras — flat register* style, optional (absent in pi) ─
+  registerPanel?(reg: BoringPluginPanelRegistration): void
+  registerPanelCommand?(reg: BoringPluginCommandRegistration): void  // palette entry that opens a panel
+  registerLeftTab?(reg: BoringPluginLeftTabRegistration): void
+  registerSurfaceResolver?(reg: BoringPluginSurfaceResolverRegistration): void
+  registerCatalog?(reg: BoringPluginCatalogRegistration): void
 }
 ```
 
+**Naming rationale:**
+- `registerTool` / `registerCommand` / `registerShortcut` — pi's exact names, pi's exact signatures
+- `registerPanel?` / `registerLeftTab?` / `registerSurfaceResolver?` / `registerCatalog?` — boring-ui additions, same flat style, optional so pi context is safe
+- `registerPanelCommand?` — distinct from pi's `registerCommand` (slash cmd); this is a UI palette entry with a `panelId`
+
 **Two command concepts — genuinely distinct:**
-- `api.registerCommand("name", { handler })` — pi slash command (`/name`); boring-ui registers it as a slash command handler. No panel.
-- `api.commands?.register({ panelId })` — boring-ui command palette entry that opens a panel. Not a pi concept.
+- `api.registerCommand("csv.open", { handler })` — pi slash command (`/csv.open`); boring-ui registers it as a slash command. No panel association.
+- `api.registerPanelCommand?.({ id, title, panelId })` — boring-ui command palette entry that opens a panel. Not a pi concept.
+
+### A plugin without `"boring"` field — valid
+
+A package with only `"pi": { "extensions": [...] }` (no `"boring"` field) loads in boring-ui too. Boring-ui discovers it through its own scan of `.boring/plugins/*/package.json` and treats any package with `"pi"` OR `"boring"` as an extension. The factory's `registerTool` / `registerCommand` calls work. No UI contributions are registered (no panels/tabs/resolvers). This is the minimal pi-compatible plugin that runs identically in both runtimes.
 
 ### `plugin.server.ts` — boring-ui's addition (pi has no server concept)
 
@@ -878,7 +893,7 @@ Implement all shared infrastructure in V1. V2 only adds the three iframe-specifi
 - [ ] `registerCommand(name: string, options: { description?: string; handler(args: string, ctx: unknown): Promise<void> }): void` — pi's slash command registration (NOT UI palette); boring-ui registers it as `/name` slash command handler
 - [ ] `on(event: string, handler: (...args: unknown[]) => void): void` — `"load"` / `"unload"` wired; other events no-op with dev warning
 - [ ] Stub remaining pi methods as no-ops with dev warning: `exec`, `sendMessage`, `sendUserMessage`, `appendEntry`, `setSessionName`, `getActiveTools`, `setActiveTools`, `setModel`, `events`, `registerShortcut`, `registerFlag`, `registerProvider`, etc.
-- [ ] Mark boring-ui UI namespaces optional: `panels?`, `leftTabs?`, `surfaceResolvers?`, `catalogs?`, `commands?` (commands here = panel-opening palette entries, distinct from pi's slash commands)
+- [ ] Boring-ui extras as flat optional methods matching pi's naming style: `registerPanel?`, `registerPanelCommand?`, `registerLeftTab?`, `registerSurfaceResolver?`, `registerCatalog?` — all optional so pi context is safe without any changes
 - [ ] Factory type: `export type BoringExtensionFactory = (api: BoringExtensionAPI) => void | Promise<void>`
 - [ ] Update `createCapturingAPI()`: capture `registerTool` into `tools: ToolDefinition[]`; flush includes `tools`
 - [ ] Keep `BoringPluginAPI` as deprecated alias
