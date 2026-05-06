@@ -47,11 +47,11 @@ export interface PiResourceLoaderOptions {
 }
 
 const ALIAS_TO_PI_ID: Record<string, string> = {
-  sonnet: "claude-sonnet-4.6",
-  haiku: "claude-haiku-4.5",
-  opus: "claude-opus-4.7",
+  sonnet: "claude-sonnet-4-6",
+  haiku: "claude-haiku-4-5",
+  opus: "claude-opus-4-7",
   // Anthropic deprecated this legacy ID; map to current haiku family.
-  "claude-3-5-haiku-20241022": "claude-haiku-4.5",
+  "claude-3-5-haiku-20241022": "claude-haiku-4-5",
 };
 
 function extractAssistantMessageText(message: unknown): {
