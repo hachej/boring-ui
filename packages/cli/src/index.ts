@@ -3,6 +3,7 @@ import fastifyStatic from "@fastify/static"
 import { AuthStorage } from "@mariozechner/pi-coding-agent"
 import { execSync } from "node:child_process"
 import { existsSync } from "node:fs"
+import { createInterface } from "node:readline"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -17,20 +18,50 @@ if (!existsSync(publicDir)) {
   process.exit(1)
 }
 
-// Resolve API key: env var → pi credential store → error
+function openBrowser(url: string) {
+  try {
+    const opener =
+      process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
+    execSync(`${opener} ${url}`, { stdio: "ignore" })
+  } catch {}
+}
+
+function prompt(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise((resolve) => rl.question(question, (ans) => { rl.close(); resolve(ans.trim()) }))
+}
+
 async function resolveApiKey(): Promise<string> {
+  // 1. env var
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY
 
+  // 2. pi credential store
   const auth = AuthStorage.create()
   await auth.reload()
-  const key = await auth.getApiKey("anthropic")
-  if (key) return key
+  const stored = await auth.getApiKey("anthropic")
+  if (stored) return stored
 
-  console.error("\nNo Anthropic API key found.")
-  console.error("Either:")
-  console.error("  export ANTHROPIC_API_KEY=sk-ant-...")
-  console.error("  or log in with pi:  npx @mariozechner/pi-coding-agent  →  /login\n")
-  process.exit(1)
+  // 3. inline OAuth — same flow pi uses
+  console.log("\nNo API key found. Logging in with Anthropic (Claude Pro/Max)...\n")
+
+  await auth.login("anthropic", {
+    onAuth: (url: string) => {
+      console.log(`Opening browser: ${url}\n`)
+      openBrowser(url)
+    },
+    onPrompt: (msg: string) => process.stdout.write(msg),
+    onProgress: (msg: string) => process.stdout.write(msg),
+    onManualCodeInput: () => prompt("Paste the code from your browser: "),
+  })
+
+  const key = await auth.getApiKey("anthropic")
+  if (!key) {
+    console.error("\nLogin failed. Try setting ANTHROPIC_API_KEY manually.\n")
+    process.exit(1)
+  }
+
+  console.log("\nLogged in. Credentials saved to ~/.pi/agent/\n")
+  return key
 }
 
 const apiKey = await resolveApiKey()
@@ -62,12 +93,4 @@ app.setNotFoundHandler(async (req, reply) => {
 await app.listen({ port: PORT, host: "0.0.0.0" })
 console.log(`\n  http://localhost:${PORT}\n`)
 
-try {
-  const opener =
-    process.platform === "darwin"
-      ? "open"
-      : process.platform === "win32"
-        ? "start"
-        : "xdg-open"
-  execSync(`${opener} http://localhost:${PORT}`, { stdio: "ignore" })
-} catch {}
+openBrowser(`http://localhost:${PORT}`)
