@@ -172,6 +172,11 @@ jobs:
       - name: Build UI package
         run: pnpm --filter @hachej/boring-ui-kit build
 
+      - name: Build core package
+        run: pnpm --filter @hachej/boring-core build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
       - name: Build agent package
         run: pnpm --filter @hachej/boring-agent build
 
@@ -180,6 +185,8 @@ jobs:
 
       - name: Run vitest suite
         run: pnpm test
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
   invariants:
     name: Invariants
