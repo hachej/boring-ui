@@ -220,7 +220,7 @@ Pass the plugin to the shell:
 ### 1. Try it in seconds
 
 ```bash
-npx @hachej/boring-ui
+npx @hachej/boring-ui-cli
 ```
 
 Starts the full workspace — chat, panels, agent runtime — pointed at your current directory. No clone, no install, no config. Requires `ANTHROPIC_API_KEY` in your environment.
