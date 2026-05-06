@@ -277,7 +277,7 @@ export class DataService {
       return this.totalCache.value
     }
     const rows = await this.query<{ 'count()': string }>(
-      `SELECT count() FROM ${CATALOG_TABLE}`,
+      `SELECT count() FROM ${CATALOG_TABLE} WHERE series_id IN (SELECT DISTINCT series_id FROM timeseries)`,
     )
     const total = rows.length > 0 ? parseInt(String(rows[0]['count()']), 10) : 0
     this.totalCache = { value: total, ts: Date.now() }
@@ -304,8 +304,8 @@ export class DataService {
       return this.catalogCache.value
     }
 
-    // Build WHERE clause
-    const conditions: string[] = []
+    // Build WHERE clause (always exclude series with no observations)
+    const conditions: string[] = ['series_id IN (SELECT DISTINCT series_id FROM timeseries)']
     const params: Record<string, unknown> = { limit, offset }
 
     if (sourceType?.length) {
@@ -316,7 +316,7 @@ export class DataService {
       conditions.push(`frequency_short IN {freq:Array(String)}`)
       params.freq = frequency
     }
-    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
+    const whereClause = 'WHERE ' + conditions.join(' AND ')
 
     const rows = await this.query<CatalogItem>(
       `SELECT series_id, title, frequency, frequency_short,
@@ -440,7 +440,8 @@ export class DataService {
               popularity, source_type,
               count() OVER () AS _total
        FROM ${CATALOG_TABLE}
-       WHERE (series_id ILIKE {q:String}
+       WHERE series_id IN (SELECT DISTINCT series_id FROM timeseries)
+         AND (series_id ILIKE {q:String}
           OR title ILIKE {q:String}
           OR units ILIKE {q:String}
           OR frequency ILIKE {q:String}
