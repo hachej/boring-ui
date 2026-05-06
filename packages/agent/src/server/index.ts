@@ -40,6 +40,7 @@ export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWor
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export { applyCspHeaders } from './http/csp'
 export type {
   PiPackageSource,
   PiResourceLoaderOptions,

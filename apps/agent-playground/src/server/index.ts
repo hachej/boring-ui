@@ -4,8 +4,7 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
-import { applyCspHeaders } from '../../../../packages/agent/src/server/http/csp'
-import { createAgentApp } from '../../../../packages/agent/src/server/createAgentApp'
+import { applyCspHeaders, createAgentApp } from '@boring/agent/server'
 
 const app = await createAgentApp({
   mode: 'direct',
