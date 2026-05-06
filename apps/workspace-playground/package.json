@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @boring/workspace build && vite",
-    "build": "pnpm --filter @boring/workspace build && vite build",
-    "typecheck": "pnpm --filter @boring/workspace build && tsc --noEmit",
+    "dev": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && vite",
+    "dev:local": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && BORING_USE_LOCAL_PACKAGES=1 vite",
+    "build": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && vite build",
+    "typecheck": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && tsc --noEmit",
     "test:e2e": "playwright test"
   },
   "dependencies": {

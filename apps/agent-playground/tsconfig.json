@@ -15,13 +15,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
-    "paths": {
-      "@boring/agent/front": ["../../packages/agent/src/front/index.ts"],
-      "@boring/agent/shared": ["../../packages/agent/src/shared/index.ts"],
-      "@boring/agent/server": ["../../packages/agent/src/server/index.ts"],
-      "@/*": ["../../packages/agent/src/*"]
-    }
+    "baseUrl": "."
   },
   "include": ["src", "server.ts", "vite.config.ts"]
 }

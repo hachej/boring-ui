@@ -4,15 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @boring/workspace build && tsx src/server/dev.ts",
-    "build:web": "pnpm --filter @boring/workspace build && vite build",
+    "dev": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && tsx src/server/dev.ts",
+    "dev:local": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && BORING_USE_LOCAL_PACKAGES=1 tsx src/server/dev.ts",
+    "build:web": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && vite build",
     "eval": "tsx src/eval/run.ts",
-    "test": "pnpm --filter @boring/workspace build && vitest run",
+    "test": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:baseline": "node e2e/run-baseline.mjs",
     "test:e2e:headed": "playwright test -c e2e/playwright.config.ts --headed",
-    "typecheck": "pnpm --filter @boring/workspace build && tsc --noEmit"
+    "typecheck": "pnpm --filter @boring/agent build && pnpm --filter @boring/workspace build && tsc --noEmit"
   },
   "dependencies": {
     "@boring/agent": "workspace:*",

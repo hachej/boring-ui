@@ -4,6 +4,21 @@ import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
 
+const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
+const localWorkspaceAlias = useLocalPackages
+  ? {
+      "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
+      "@boring/workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
+      "@boring/workspace/app/front": resolve(__dirname, "../../packages/workspace/src/app/front/index.ts"),
+      "@boring/workspace/app/server": resolve(__dirname, "../../packages/workspace/src/app/server/index.ts"),
+      "@boring/workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
+      "@boring/workspace/testing": resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts"),
+      "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
+      "@/": resolve(__dirname, "../../packages/workspace/src") + "/",
+      "@": resolve(__dirname, "../../packages/workspace/src"),
+    }
+  : undefined
+
 // The playground is the standalone dev surface for @boring/workspace.
 // Backend is the agent package's Fastify app — same one production uses —
 // so the file tree, file editor, and agent chat all hit the SAME paths
@@ -29,25 +44,7 @@ export default defineConfig({
       },
     },
   ],
-  resolve: {
-    alias: {
-      "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
-      "@boring/workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
-      "@boring/workspace/app/front": resolve(__dirname, "../../packages/workspace/src/app/front/index.ts"),
-      "@boring/workspace/app/server": resolve(__dirname, "../../packages/workspace/src/app/server/index.ts"),
-      "@boring/workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
-      "@boring/workspace/testing": resolve(__dirname, "../../packages/workspace/src/testing/index.ts"),
-      "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
-      // Agent: consumed via package exports (dist). Live edits to agent
-      // require `pnpm --filter @boring/agent build` + restart. Tried
-      // aliasing to src here, but agent's source uses its OWN `@/` alias
-      // for internal imports (~23 files like `@/front/lib`) that
-      // conflicts with workspace's `@/` alias — vite has one global `@`,
-      // so they can't coexist. Stay on dist for now.
-      "@/": resolve(__dirname, "../../packages/workspace/src") + "/",
-      "@": resolve(__dirname, "../../packages/workspace/src"),
-    },
-  },
+  resolve: localWorkspaceAlias ? { alias: localWorkspaceAlias } : undefined,
   server: {
     port: VITE_PORT,
     host: true,

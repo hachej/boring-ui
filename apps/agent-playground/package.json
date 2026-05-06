@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Rich standalone playground for @boring/agent.",
   "scripts": {
-    "dev": "tsx src/server/index.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "pnpm --filter @boring/agent build && tsx src/server/index.ts",
+    "dev:local": "pnpm --filter @boring/agent build && BORING_USE_LOCAL_PACKAGES=1 tsx src/server/index.ts",
+    "typecheck": "pnpm --filter @boring/agent build && tsc --noEmit"
   },
   "dependencies": {
     "@boring/agent": "workspace:*",
