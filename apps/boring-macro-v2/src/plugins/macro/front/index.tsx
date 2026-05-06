@@ -6,14 +6,14 @@ import {
   defineFrontPlugin,
   type ExplorerRow,
   type WorkspaceFrontPlugin,
-} from "@boring/workspace"
+} from "@hachej/boring-workspace"
 import { LineChart, Search, TrendingUp, Presentation } from "lucide-react"
 import { chartCanvasPanel, deckPanel } from "./panels"
 import { createMacroSeriesExplorerOptions } from "./catalogs"
 import { macroSurfaceOutputs } from "./surfaceResolver"
 import { MACRO_PLUGIN_ID, MACRO_DECK_PANEL_ID } from "../shared/constants"
 import { openSeriesPane } from "./data/macroSeriesUi"
-import { postUiCommand } from "@boring/workspace"
+import { postUiCommand } from "@hachej/boring-workspace"
 export { MacroStandaloneDeckRoute } from "./routes/StandaloneDeckRoute"
 
 interface MacroChatSuggestion {

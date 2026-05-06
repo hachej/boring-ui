@@ -44,7 +44,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Input,
-} from "@boring/ui"
+} from "@hachej/boring-ui-kit"
 import { cn } from "../../../../front/lib/utils"
 import { toast } from "../../../../front/toast"
 import { events, userMeta } from "../../../../front/events"

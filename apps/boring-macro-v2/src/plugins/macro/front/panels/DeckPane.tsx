@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import type { PaneProps } from "@boring/workspace"
-import { onFilesystemChanged } from "@boring/workspace"
+import type { PaneProps } from "@hachej/boring-workspace"
+import { onFilesystemChanged } from "@hachej/boring-workspace"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import {
@@ -15,15 +15,15 @@ import {
   boringCartesianAxisProps,
   boringLineProps,
   getBoringChartColor,
-} from "@boring/workspace/charts"
-import { Button, ChipButton, SegmentedControl, SegmentedControlItem, Separator } from "@boring/ui"
+} from "@hachej/boring-workspace/charts"
+import { Button, ChipButton, SegmentedControl, SegmentedControlItem, Separator } from "@hachej/boring-ui-kit"
 import { ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2 } from "lucide-react"
 import type { Observation, SeriesPayload } from "../data/macroSeriesTypes"
 import { fetchMacroSeries } from "../data/macroSeriesData"
 import { formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
 
 const MarkdownEditor = lazy(() =>
-  import("@boring/workspace").then((m) => ({ default: m.MarkdownEditor })),
+  import("@hachej/boring-workspace").then((m) => ({ default: m.MarkdownEditor })),
 )
 
 interface DeckParams {

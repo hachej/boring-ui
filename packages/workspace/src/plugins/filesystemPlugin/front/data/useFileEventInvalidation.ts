@@ -12,7 +12,7 @@ import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
  * into React Query invalidation. Mounted once inside `DataProvider`.
  *
  * Why centralized:
- *   - Prior version had `useFileChangeStream` in `@boring/agent` doing
+ *   - Prior version had `useFileChangeStream` in `@hachej/boring-agent` doing
  *     its own invalidation with the wrong key shape (`['file', path]`
  *     vs the workspace's `[base, "files", path]`). Editor never
  *     refreshed on agent edits.

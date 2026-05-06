@@ -7,8 +7,8 @@ const agentServerMock = vi.hoisted(() => ({
   provisionRuntimeWorkspace: vi.fn(async () => {}),
 }))
 
-vi.mock("@boring/agent/server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@boring/agent/server")>()
+vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...actual,
     createAgentApp: agentServerMock.createAgentApp,

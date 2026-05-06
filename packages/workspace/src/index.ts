@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// @boring/workspace — Public API
+// @hachej/boring-workspace — Public API
 //
 // Every export here is deliberate. useWorkspaceStore is NOT exported.
 // Consumers should NEVER need deep imports.

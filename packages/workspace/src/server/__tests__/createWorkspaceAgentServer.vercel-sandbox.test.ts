@@ -23,8 +23,8 @@ import type { UiBridge } from "../../shared/ui-bridge"
 // Captures the workspaceRoot that createAgentApp receives so we can assert bash
 // tools are given the same base path as exec_ui.
 let capturedAgentWorkspaceRoot: string | undefined
-vi.mock("@boring/agent/server", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@boring/agent/server")>()
+vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...mod,
     createAgentApp: (opts: Parameters<typeof mod.createAgentApp>[0]) => {

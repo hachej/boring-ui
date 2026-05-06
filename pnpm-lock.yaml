@@ -47,7 +47,7 @@ importers:
 
   apps/agent-playground:
     dependencies:
-      '@boring/agent':
+      '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../../packages/agent
       react:
@@ -90,18 +90,18 @@ importers:
 
   apps/boring-macro-v2:
     dependencies:
-      '@boring/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@boring/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
-      '@boring/workspace':
-        specifier: workspace:*
-        version: link:../../packages/workspace
       '@clickhouse/client':
         specifier: ^1.18.2
         version: 1.18.3
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@hachej/boring-ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       fastify:
         specifier: ^5.8.4
         version: 5.8.5
@@ -163,7 +163,7 @@ importers:
 
   apps/full-app:
     dependencies:
-      '@boring/core':
+      '@hachej/boring-core':
         specifier: workspace:*
         version: link:../../packages/core
       '@vercel/sandbox':
@@ -215,15 +215,15 @@ importers:
 
   apps/workspace-playground:
     dependencies:
-      '@boring/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@boring/workspace':
-        specifier: workspace:*
-        version: link:../../packages/workspace
       '@duckdb/node-api':
         specifier: 1.5.2-r.1
         version: 1.5.2-r.1
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       react:
         specifier: ^19.0.0
         version: 19.2.5
@@ -261,7 +261,7 @@ importers:
       '@ai-sdk/react':
         specifier: ^3.0.170
         version: 3.0.170(react@19.2.5)(zod@3.25.76)
-      '@boring/ui':
+      '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
       '@mariozechner/pi-coding-agent':
@@ -433,15 +433,15 @@ importers:
 
   packages/cli:
     dependencies:
-      '@boring/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@boring/workspace':
-        specifier: workspace:*
-        version: link:../workspace
       '@fastify/static':
         specifier: ^8.0.0
         version: 8.3.0
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../workspace
     devDependencies:
       tsup:
         specifier: ^8.4.0
@@ -452,15 +452,6 @@ importers:
 
   packages/core:
     dependencies:
-      '@boring/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@boring/ui':
-        specifier: workspace:*
-        version: link:../ui
-      '@boring/workspace':
-        specifier: workspace:*
-        version: link:../workspace
       '@fastify/cors':
         specifier: ^11.0.0
         version: 11.2.0
@@ -470,6 +461,15 @@ importers:
       '@fastify/rate-limit':
         specifier: ^10.3.0
         version: 10.3.0
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@hachej/boring-ui-kit':
+        specifier: workspace:*
+        version: link:../ui
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../workspace
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.74.0(react@19.2.5))
@@ -664,12 +664,6 @@ importers:
 
   packages/workspace:
     dependencies:
-      '@boring/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@boring/ui':
-        specifier: workspace:*
-        version: link:../ui
       '@codemirror/commands':
         specifier: ^6.10.3
         version: 6.10.3
@@ -703,6 +697,12 @@ importers:
       '@codemirror/view':
         specifier: ^6.41.1
         version: 6.41.1
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@hachej/boring-ui-kit':
+        specifier: workspace:*
+        version: link:../ui
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3

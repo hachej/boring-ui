@@ -1,9 +1,9 @@
 import { DuckDBConnection, quotedIdentifier, quotedString } from "@duckdb/node-api"
-import type { AgentTool, ToolResult } from "@boring/workspace"
+import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import {
   defineServerPlugin,
   type WorkspaceServerPlugin,
-} from "@boring/workspace/app/server"
+} from "@hachej/boring-workspace/app/server"
 import { resolve } from "node:path"
 import { PLAYGROUND_CSV_DATASETS } from "../shared/fixtures"
 import { PLAYGROUND_DATA_PLUGIN_ID } from "../shared/constants"

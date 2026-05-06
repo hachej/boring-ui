@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import type { PaneProps } from "@boring/workspace"
+import type { PaneProps } from "@hachej/boring-workspace"
 import { DeckPane } from "../panels/DeckPane"
 
 function currentDeckPath(): string | null {

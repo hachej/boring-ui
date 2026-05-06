@@ -1,14 +1,14 @@
 /**
  * Standalone workspace + agent Fastify composition.
  *
- * This entry intentionally imports @boring/agent/server. Browser-facing
+ * This entry intentionally imports @hachej/boring-agent/server. Browser-facing
  * workspace entrypoints must not.
  */
 import {
   createAgentApp,
   provisionRuntimeWorkspace,
   type CreateAgentAppOptions,
-} from "@boring/agent/server"
+} from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
 import { join } from "node:path"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"

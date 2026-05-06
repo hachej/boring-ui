@@ -11,9 +11,9 @@
     "prefix": ""
   },
   "aliases": {
-    "components": "@boring/ui",
+    "components": "@hachej/boring-ui-kit",
     "utils": "@/front/lib",
-    "ui": "@boring/ui",
+    "ui": "@hachej/boring-ui-kit",
     "lib": "@/front/lib",
     "hooks": "@/front/hooks"
   }

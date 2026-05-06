@@ -1,4 +1,4 @@
-import { definePanel, type PaneProps } from "@boring/workspace"
+import { definePanel, type PaneProps } from "@hachej/boring-workspace"
 import type { SampleParams } from "../shared/types"
 
 function SamplePanel({ params }: PaneProps<SampleParams>) {

@@ -48,9 +48,9 @@ async function readVersion(): Promise<string> {
   )
   try {
     const pkg = JSON.parse(await readFile(pkgPath, 'utf8')) as { name?: string; version?: string }
-    return `${pkg.name ?? '@boring/agent'}@${pkg.version ?? '0.0.0'}`
+    return `${pkg.name ?? '@hachej/boring-agent'}@${pkg.version ?? '0.0.0'}`
   } catch {
-    return '@boring/agent@0.0.0'
+    return '@hachej/boring-agent@0.0.0'
   }
 }
 
@@ -77,12 +77,12 @@ async function startFrontend(apiPort: number): Promise<string> {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@boring/agent/front/styles.css': path.resolve(packageSrc, 'front/styles/globals.css'),
-        '@boring/agent/front': path.resolve(packageSrc, 'front/index.ts'),
-        '@boring/agent/shared': path.resolve(packageSrc, 'shared/index.ts'),
-        '@boring/agent/server': path.resolve(packageSrc, 'server/index.ts'),
-        // Resolve @boring/ui from source so E2E doesn't need a pre-built dist.
-        '@boring/ui': path.resolve(packageSrc, '..', '..', 'ui', 'src', 'index.ts'),
+        '@hachej/boring-agent/front/styles.css': path.resolve(packageSrc, 'front/styles/globals.css'),
+        '@hachej/boring-agent/front': path.resolve(packageSrc, 'front/index.ts'),
+        '@hachej/boring-agent/shared': path.resolve(packageSrc, 'shared/index.ts'),
+        '@hachej/boring-agent/server': path.resolve(packageSrc, 'server/index.ts'),
+        // Resolve @hachej/boring-ui-kit from source so E2E doesn't need a pre-built dist.
+        '@hachej/boring-ui-kit': path.resolve(packageSrc, '..', '..', 'ui', 'src', 'index.ts'),
         '@': packageSrc,
       },
     },

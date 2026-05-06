@@ -1,8 +1,8 @@
 import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
 import { ChevronRightIcon, ChevronDownIcon, FilterIcon, XIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { Button, Chip as UiChip, ChipButton, EmptyState, Input, Spinner, Toolbar as UiToolbar } from "@boring/ui"
-import { Popover, PopoverTrigger, PopoverContent } from "@boring/ui"
+import { Button, Chip as UiChip, ChipButton, EmptyState, Input, Spinner, Toolbar as UiToolbar } from "@hachej/boring-ui-kit"
+import { Popover, PopoverTrigger, PopoverContent } from "@hachej/boring-ui-kit"
 import { useExplorerState } from "./useExplorerState"
 import type {
   Badge as BadgeT,

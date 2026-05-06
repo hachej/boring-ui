@@ -13,7 +13,7 @@ import {
   type ComponentType,
 } from "react"
 import { ChevronLeft, PanelLeft, Search, X } from "lucide-react"
-import { IconButton, Input, Tabs, TabsList, TabsTrigger } from "@boring/ui"
+import { IconButton, Input, Tabs, TabsList, TabsTrigger } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import type { WorkspaceBridge } from "../../bridge/types"
 import { useRegistry } from "../../registry"

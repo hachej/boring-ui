@@ -7,19 +7,19 @@ import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/d
 const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
 const localWorkspaceAlias = useLocalPackages
   ? {
-      "@boring/workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
-      "@boring/workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
-      "@boring/workspace/app/front": resolve(__dirname, "../../packages/workspace/src/app/front/index.ts"),
-      "@boring/workspace/app/server": resolve(__dirname, "../../packages/workspace/src/app/server/index.ts"),
-      "@boring/workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
-      "@boring/workspace/testing": resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts"),
-      "@boring/workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
+      "@hachej/boring-workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
+      "@hachej/boring-workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
+      "@hachej/boring-workspace/app/front": resolve(__dirname, "../../packages/workspace/src/app/front/index.ts"),
+      "@hachej/boring-workspace/app/server": resolve(__dirname, "../../packages/workspace/src/app/server/index.ts"),
+      "@hachej/boring-workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
+      "@hachej/boring-workspace/testing": resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts"),
+      "@hachej/boring-workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
       "@/": resolve(__dirname, "../../packages/workspace/src") + "/",
       "@": resolve(__dirname, "../../packages/workspace/src"),
     }
   : undefined
 
-// The playground is the standalone dev surface for @boring/workspace.
+// The playground is the standalone dev surface for @hachej/boring-workspace.
 // Backend is the agent package's Fastify app — same one production uses —
 // so the file tree, file editor, and agent chat all hit the SAME paths
 // against the SAME filesystem. No mock API.

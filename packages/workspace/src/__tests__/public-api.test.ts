@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import * as api from "../index"
 
-describe("@boring/workspace public API", () => {
+describe("@hachej/boring-workspace public API", () => {
   describe("layout shells", () => {
     it("exports Tier 1, Tier 2, and Tier 3 layout entries", () => {
       expect(api.IdeLayout).toBeDefined()

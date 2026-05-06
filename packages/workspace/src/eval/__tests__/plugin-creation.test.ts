@@ -15,20 +15,20 @@
  *      real TypeScript that the workspace can consume, not just plausible text.
  *
  * The plugin is written into src/plugins/evalTaskListPlugin/ inside the actual
- * workspace package so the TypeScript compiler sees the real @boring/workspace
+ * workspace package so the TypeScript compiler sees the real @hachej/boring-workspace
  * types. It is deleted in afterAll regardless of pass/fail.
  *
  * Gated on OPENROUTER_API_KEY — skipped silently in CI without it.
  * Run manually:
- *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @boring/workspace test src/eval/__tests__/plugin-creation.test.ts
+ *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @hachej/boring-workspace test src/eval/__tests__/plugin-creation.test.ts
  */
 import { describe, test, expect, beforeAll, afterAll } from "vitest"
 import { existsSync, readFileSync, rmSync } from "node:fs"
 import { execSync } from "node:child_process"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { createAgentApp } from "@boring/agent/server"
-import { evalAgentPrompt, EvalRegex } from "@boring/agent/eval"
+import { createAgentApp } from "@hachej/boring-agent/server"
+import { evalAgentPrompt, EvalRegex } from "@hachej/boring-agent/eval"
 import type { FastifyInstance } from "fastify"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 
@@ -38,7 +38,7 @@ const HAS_KEY = !!process.env.OPENROUTER_API_KEY
 const describeIf = HAS_KEY ? describe : describe.skip
 
 // The workspace package root — agent writes plugin source here so tsc can
-// resolve @boring/workspace relative imports with real types.
+// resolve @hachej/boring-workspace relative imports with real types.
 const WORKSPACE_PKG_ROOT = join(
   dirname(fileURLToPath(import.meta.url)),
   "../../../",

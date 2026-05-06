@@ -1,4 +1,4 @@
-import { createWorkspaceAgentServer } from "@boring/workspace/app/server"
+import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import fastifyStatic from "@fastify/static"
 import { AuthStorage, LoginDialogComponent, OAuthSelectorComponent, initTheme } from "@mariozechner/pi-coding-agent"
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui"

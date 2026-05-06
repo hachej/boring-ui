@@ -54,8 +54,8 @@ vi.mock('../hooks/index', async () => {
   }
 })
 
-vi.mock('@boring/ui', async () => {
-  const actual = await vi.importActual<typeof import('@boring/ui')>('@boring/ui')
+vi.mock('@hachej/boring-ui-kit', async () => {
+  const actual = await vi.importActual<typeof import('@hachej/boring-ui-kit')>('@hachej/boring-ui-kit')
   return {
     ...actual,
     useToast: () => ({ toast: mockToast }),

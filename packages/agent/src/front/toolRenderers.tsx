@@ -1,5 +1,5 @@
 /**
- * Default shadcn-styled tool renderers for @boring/agent/front.
+ * Default shadcn-styled tool renderers for @hachej/boring-agent/front.
  *
  * These now build on the canonical ai-elements <Tool> primitive
  * (Collapsible + ToolHeader + ToolInput + ToolOutput) — same components
@@ -16,7 +16,7 @@ import {
 } from './bareToolRenderers'
 import type { defaultToolRenderers as bareDefaults } from './bareToolRenderers/renderers'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
-import { CollapsibleTrigger } from '@boring/ui'
+import { CollapsibleTrigger } from '@hachej/boring-ui-kit'
 import { ChevronDownIcon, ExternalLinkIcon, ZapIcon } from 'lucide-react'
 import { CodeBlock } from './primitives/code-block'
 import { useOpenArtifact } from './ArtifactOpenContext'
@@ -71,7 +71,7 @@ function toHeaderProps(part: ToolPart) {
 /**
  * Path label for the read/edit/write tool headers. When an
  * ArtifactOpenContext provider is mounted (i.e. a workbench host like
- * @boring/workspace is around), the path becomes clickable and opens
+ * @hachej/boring-workspace is around), the path becomes clickable and opens
  * the file in the host. Without a host, it falls back to plain text.
  *
  * Implementation note: the surrounding Tool header is itself a Radix

@@ -8,22 +8,22 @@ const PACKAGES = resolve(__dirname, "../../packages")
 const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
 const localPackageAlias = useLocalPackages
   ? {
-      // Order matters — most-specific subpaths first so `@boring/workspace`
-      // doesn't shadow `@boring/workspace/testing` etc.
-      "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
-      "@boring/agent/front/styles.css": resolve(PACKAGES, "agent/src/front/styles/globals.css"),
-      "@boring/workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
-      "@boring/workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),
-      "@boring/workspace/charts": resolve(PACKAGES, "workspace/src/front/charts/index.tsx"),
-      "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/front/testing/index.ts"),
-      "@boring/workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
-      "@boring/workspace": resolve(PACKAGES, "workspace/src/index.ts"),
+      // Order matters — most-specific subpaths first so `@hachej/boring-workspace`
+      // doesn't shadow `@hachej/boring-workspace/testing` etc.
+      "@hachej/boring-workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
+      "@hachej/boring-agent/front/styles.css": resolve(PACKAGES, "agent/src/front/styles/globals.css"),
+      "@hachej/boring-workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
+      "@hachej/boring-workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),
+      "@hachej/boring-workspace/charts": resolve(PACKAGES, "workspace/src/front/charts/index.tsx"),
+      "@hachej/boring-workspace/testing": resolve(PACKAGES, "workspace/src/front/testing/index.ts"),
+      "@hachej/boring-workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
+      "@hachej/boring-workspace": resolve(PACKAGES, "workspace/src/index.ts"),
       "@/": resolve(PACKAGES, "workspace/src") + "/",
       "@": resolve(PACKAGES, "workspace/src"),
     }
   : undefined
 
-// Default mode consumes @boring/* through package exports/dist, matching an npm
+// Default mode consumes @hachej/boring-* through package exports/dist, matching an npm
 // consumer. Set BORING_USE_LOCAL_PACKAGES=1 for local package source aliases and
 // fast HMR while developing workspace/agent internals.
 export default defineConfig({

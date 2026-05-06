@@ -36,10 +36,10 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     resume: true,
     onData: (part) => {
       // File-change invalidation is no longer done here. The host
-      // (e.g. @boring/workspace's ChatCenteredShell) wires onData to
+      // (e.g. @hachej/boring-workspace's ChatCenteredShell) wires onData to
       // its workspace event bus via `emitAgentFileChange`, and a
       // single subscriber handles React Query invalidation. See
-      // `useFileEventInvalidation` in @boring/workspace/data.
+      // `useFileEventInvalidation` in @hachej/boring-workspace/data.
       optsRef.current.onData?.(part)
     },
   })

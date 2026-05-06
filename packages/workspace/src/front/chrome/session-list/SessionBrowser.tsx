@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { ChevronLeft, Plus } from "lucide-react"
-import { IconButton } from "@boring/ui"
+import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import type { SessionItem } from "../../components/SessionList"
 

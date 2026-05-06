@@ -1,7 +1,7 @@
 // Adapter for the FRED macro catalog. Talks to /api/macro/catalog
 // (records-one-by-one, ~87k series, paginated, faceted by frequency + source).
 
-import type { ExplorerAdapter, ExplorerRow, Facets } from "@boring/workspace"
+import type { ExplorerAdapter, ExplorerRow, Facets } from "@hachej/boring-workspace"
 import { FREQ_LABELS } from "./macroSeriesUi"
 
 interface CatalogResponse {

@@ -1,5 +1,5 @@
-import type { WorkspaceFrontPlugin } from "@boring/workspace"
-import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "@boring/workspace"
+import type { WorkspaceFrontPlugin } from "@hachej/boring-workspace"
+import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "@hachej/boring-workspace"
 import {
   MACRO_CHART_PANEL_ID,
   MACRO_DECK_PANEL_ID,

@@ -1,4 +1,4 @@
-import type { CreateDataCatalogOutputsOptions } from "@boring/workspace"
+import type { CreateDataCatalogOutputsOptions } from "@hachej/boring-workspace"
 
 export function createSampleCatalogOptions(
   adapter: CreateDataCatalogOutputsOptions["adapter"],

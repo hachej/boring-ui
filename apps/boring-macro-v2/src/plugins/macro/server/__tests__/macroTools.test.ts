@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { AgentTool, ToolResult } from '@boring/workspace'
+import type { AgentTool, ToolResult } from '@hachej/boring-workspace'
 import { createMacroTools } from '../tools/macroTools'
 
 function findTool(tools: AgentTool[], name: string): AgentTool {

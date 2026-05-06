@@ -3,8 +3,8 @@ import { cpSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { runEvalSuite } from "@boring/agent/eval"
-import { createWorkspaceAgentServer } from "@boring/workspace/app/server"
+import { runEvalSuite } from "@hachej/boring-agent/eval"
+import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createPlaygroundDataServerPlugin } from "../plugins/playgroundDataCatalog/server"
 
 const __filename = fileURLToPath(import.meta.url)

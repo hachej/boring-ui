@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
-import { applyCspHeaders, createAgentApp } from '@boring/agent/server'
+import { applyCspHeaders, createAgentApp } from '@hachej/boring-agent/server'
 
 const app = await createAgentApp({
   mode: 'direct',
@@ -20,10 +20,10 @@ const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === '1'
 const packageSrc = path.resolve(playgroundRoot, '../../packages/agent/src')
 const localPackageAlias = useLocalPackages
   ? {
-      '@boring/agent/front/styles.css': path.resolve(packageSrc, 'front/styles/globals.css'),
-      '@boring/agent/front': path.resolve(packageSrc, 'front/index.ts'),
-      '@boring/agent/shared': path.resolve(packageSrc, 'shared/index.ts'),
-      '@boring/agent/server': path.resolve(packageSrc, 'server/index.ts'),
+      '@hachej/boring-agent/front/styles.css': path.resolve(packageSrc, 'front/styles/globals.css'),
+      '@hachej/boring-agent/front': path.resolve(packageSrc, 'front/index.ts'),
+      '@hachej/boring-agent/shared': path.resolve(packageSrc, 'shared/index.ts'),
+      '@hachej/boring-agent/server': path.resolve(packageSrc, 'server/index.ts'),
       '@': packageSrc,
     }
   : undefined
@@ -50,7 +50,7 @@ const vite = await createViteServer({
               '  <head>',
               '    <meta charset="UTF-8" />',
               '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
-              '    <title>playground — @boring/agent</title>',
+              '    <title>playground — @hachej/boring-agent</title>',
               '  </head>',
               '  <body class="bg-background text-foreground antialiased">',
               '    <div id="root" class="h-screen"></div>',

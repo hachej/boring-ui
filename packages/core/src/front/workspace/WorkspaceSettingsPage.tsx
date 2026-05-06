@@ -19,7 +19,7 @@ import {
   Input,
   Label,
   Notice,
-} from '@boring/ui'
+} from '@hachej/boring-ui-kit'
 import {
   AlertCircle,
   HardDrive,

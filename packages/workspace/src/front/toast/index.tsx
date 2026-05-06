@@ -12,4 +12,4 @@ export {
   type ToastRecord,
   type ToastVariant,
   type ToasterProps,
-} from "@boring/ui"
+} from "@hachej/boring-ui-kit"

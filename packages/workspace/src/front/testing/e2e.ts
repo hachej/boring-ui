@@ -1,5 +1,5 @@
 /**
- * Playwright helpers for any app built on @boring/workspace.
+ * Playwright helpers for any app built on @hachej/boring-workspace.
  *
  * Use these from app-side e2e suites instead of reimplementing
  * `bootClean`/`openWorkbench`/`openPaneViaBridge` in each repo. The
@@ -9,7 +9,7 @@
  * Imports `playwright/test` types only — no runtime dependency.
  *
  * ```ts
- * import { bootClean, openWorkbench, openPaneViaBridge } from "@boring/workspace/testing"
+ * import { bootClean, openWorkbench, openPaneViaBridge } from "@hachej/boring-workspace/testing"
  *
  * await bootClean(page, { shellKey: "boring-macro:shell" })
  * await openPaneViaBridge(page, { id: "chart:CPI", component: "chart-canvas", title: "CPI", params: {} })

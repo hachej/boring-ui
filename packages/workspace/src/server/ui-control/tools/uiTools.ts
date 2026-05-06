@@ -1,10 +1,10 @@
 /**
  * Workspace-side LLM tool factories that wrap the in-memory UiBridge.
  *
- * These tools used to live inside `@boring/agent`'s standardCatalog under
+ * These tools used to live inside `@hachej/boring-agent`'s standardCatalog under
  * a conditional `if (uiBridge) {...}` branch. They moved here because the
  * tools encode workspace-specific concerns (UI state shape, command kinds
- * like `openFile` / `openPanel`) — `@boring/agent` is now a pure tool
+ * like `openFile` / `openPanel`) — `@hachej/boring-agent` is now a pure tool
  * harness with no UI knowledge. Hosts that want UI-aware agent tools
  * use `createWorkspaceAgentServer` (which closes over a bridge instance and
  * registers these factories), or pass the result of `createWorkspaceUiTools`

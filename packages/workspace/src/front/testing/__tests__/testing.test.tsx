@@ -22,7 +22,7 @@ function FixtureProbe({ bridge }: { bridge?: WorkspaceBridge }) {
   )
 }
 
-describe("@boring/workspace/testing", () => {
+describe("@hachej/boring-workspace/testing", () => {
   it("exports the testing harness surface", () => {
     expect(testingApi.TestWorkspaceProvider).toBeDefined()
     expect(testingApi.createMockBridge).toBeDefined()

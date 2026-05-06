@@ -2,7 +2,7 @@
 
 import { lazy, Suspense } from "react"
 import type { ReactNode } from "react"
-import { EmptyState, ErrorState, Spinner } from "@boring/ui"
+import { EmptyState, ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { ConflictBanner } from "./ConflictBanner"
 import type { FileConflictError } from "./data/fetchClient"
 

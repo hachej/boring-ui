@@ -1,6 +1,6 @@
 // boring.macro server entry. The workspace server composer owns the agent,
 // UI bridge, plugin tools, plugin provisioning, and plugin routes.
-import { createWorkspaceAgentServer } from "@boring/workspace/app/server"
+import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createMacroServerPlugin } from "../plugins/macro/server"
 
 export interface MacroAppOptions {

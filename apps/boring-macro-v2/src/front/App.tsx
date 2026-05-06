@@ -1,6 +1,6 @@
-import { ChatPanel } from "@boring/agent"
-import type { SlashCommand } from "@boring/agent"
-import { WorkspaceAgentFront } from "@boring/workspace/app/front"
+import { ChatPanel } from "@hachej/boring-agent"
+import type { SlashCommand } from "@hachej/boring-agent"
+import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import {
   MacroStandaloneDeckRoute,
   macroPlugin,

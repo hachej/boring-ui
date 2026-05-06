@@ -37,7 +37,7 @@ const installFallbackCommand =
   "pnpm install --no-frozen-lockfile --lockfile=false"
 const prepCommand =
   process.env.BASELINE_PREP_CMD ??
-  "pnpm --filter @boring/agent --filter @boring/workspace --filter @boring/core run build"
+  "pnpm --filter @hachej/boring-agent --filter @hachej/boring-workspace --filter @hachej/boring-core run build"
 const baselineTimeoutMs = Number(process.env.BASELINE_TIMEOUT_MS ?? 900_000)
 const keepWorktree = process.env.BASELINE_KEEP_WORKTREE === "1"
 const e2ePort = process.env.E2E_PORT ?? String(15_000 + (process.pid % 10_000))

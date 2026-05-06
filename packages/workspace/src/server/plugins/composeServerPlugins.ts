@@ -1,4 +1,4 @@
-import type { RuntimeProvisioningContribution } from "@boring/agent/server"
+import type { RuntimeProvisioningContribution } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {

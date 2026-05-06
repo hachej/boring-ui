@@ -1,4 +1,4 @@
-import type { RuntimeProvisioningContribution } from "@boring/agent/server"
+import type { RuntimeProvisioningContribution } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {
@@ -11,7 +11,7 @@ export interface WorkspaceServerPlugin {
   label?: string
   /**
    * Native Pi package sources required by this workspace integration.
-   * Workspace declares them; @boring/agent applies them through Pi's native
+   * Workspace declares them; @hachej/boring-agent applies them through Pi's native
    * resource loader without asking Pi packages to export Boring adapters.
    */
   piPackages?: WorkspacePiPackageSource[]

@@ -36,7 +36,7 @@ export default defineConfig({
     video: 'off',
   },
   webServer: {
-    command: `pnpm --filter @boring/core exec tsup --no-dts && pnpm --filter @boring/core exec sh -c "cp src/front/theme.css dist/front/theme.css" && ${sharedEnv} pnpm build && NODE_ENV=production ${sharedEnv} pnpm start`,
+    command: `pnpm --filter @hachej/boring-core exec tsup --no-dts && pnpm --filter @hachej/boring-core exec sh -c "cp src/front/theme.css dist/front/theme.css" && ${sharedEnv} pnpm build && NODE_ENV=production ${sharedEnv} pnpm start`,
     url: apiOrigin,
     timeout: 360_000,
     reuseExistingServer: false,

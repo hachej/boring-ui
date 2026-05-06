@@ -1,7 +1,7 @@
 import './app.css'
 import { useEffect, useState } from 'react'
-import { ChatPanel, useSessions } from '@boring/agent/front'
-import type { SessionSummary } from '@boring/agent/shared'
+import { ChatPanel, useSessions } from '@hachej/boring-agent/front'
+import type { SessionSummary } from '@hachej/boring-agent/shared'
 import { Showcase } from '../Showcase'
 
 type Theme = 'light' | 'dark'
@@ -161,7 +161,7 @@ function SessionBar({
         system prompt
       </button>
       <span className="font-mono text-[11px] text-muted-foreground/70">
-        @boring/agent · playground
+        @hachej/boring-agent · playground
       </span>
     </div>
   )

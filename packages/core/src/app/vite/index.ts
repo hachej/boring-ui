@@ -17,15 +17,15 @@ export function createBoringAppViteAliases({
   const workspaceSrc = path.resolve(repoRoot, 'packages/workspace/src')
 
   return [
-    { find: '@boring/core/front/top-bar-slot', replacement: path.resolve(coreSrc, 'front/components/TopBarSlot.tsx') },
-    { find: '@boring/core/app/front/styles.css', replacement: path.resolve(coreSrc, 'app/front/styles.css') },
+    { find: '@hachej/boring-core/front/top-bar-slot', replacement: path.resolve(coreSrc, 'front/components/TopBarSlot.tsx') },
+    { find: '@hachej/boring-core/app/front/styles.css', replacement: path.resolve(coreSrc, 'app/front/styles.css') },
     { find: /^@boring\/core\/app\/front$/, replacement: path.resolve(coreSrc, 'app/front/index.ts') },
     { find: /^@boring\/core\/front$/, replacement: path.resolve(coreSrc, 'front/index.ts') },
-    { find: '@boring/core/theme.css', replacement: path.resolve(coreSrc, 'front/theme.css') },
-    { find: '@boring/agent/front/styles.css', replacement: path.resolve(agentSrc, 'front/styles/globals.css') },
+    { find: '@hachej/boring-core/theme.css', replacement: path.resolve(coreSrc, 'front/theme.css') },
+    { find: '@hachej/boring-agent/front/styles.css', replacement: path.resolve(agentSrc, 'front/styles/globals.css') },
     { find: /^@boring\/agent\/front$/, replacement: path.resolve(agentSrc, 'front/index.ts') },
     { find: /^@boring\/agent$/, replacement: path.resolve(agentSrc, 'front/index.ts') },
-    { find: '@boring/workspace/globals.css', replacement: path.resolve(workspaceSrc, 'globals.css') },
+    { find: '@hachej/boring-workspace/globals.css', replacement: path.resolve(workspaceSrc, 'globals.css') },
     { find: /^@boring\/workspace\/shared$/, replacement: path.resolve(workspaceSrc, 'shared/index.ts') },
     { find: /^@boring\/workspace\/app\/front$/, replacement: path.resolve(workspaceSrc, 'app/front/index.ts') },
     { find: /^@boring\/workspace\/testing$/, replacement: path.resolve(workspaceSrc, 'front/testing/index.ts') },

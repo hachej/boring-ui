@@ -1,6 +1,6 @@
 /**
  * Workspace event bus — single in-process, typed pubsub for cross-cutting
- * signals. Module-singleton: import `events` anywhere in `@boring/workspace`
+ * signals. Module-singleton: import `events` anywhere in `@hachej/boring-workspace`
  * (and downstream packages that depend on it). React consumers should use
  * `useEvent(name, handler)` to handle cleanup automatically.
  *

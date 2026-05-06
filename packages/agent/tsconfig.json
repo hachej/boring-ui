@@ -11,10 +11,10 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "@boring/agent": ["src/front/index.ts"],
-      "@boring/agent/front": ["src/front/index.ts"],
-      "@boring/agent/server": ["src/server/index.ts"],
-      "@boring/agent/shared": ["src/shared/index.ts"],
+      "@hachej/boring-agent": ["src/front/index.ts"],
+      "@hachej/boring-agent/front": ["src/front/index.ts"],
+      "@hachej/boring-agent/server": ["src/server/index.ts"],
+      "@hachej/boring-agent/shared": ["src/shared/index.ts"],
       "@/*": ["src/*"]
     },
     "allowJs": true,

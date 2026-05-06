@@ -111,7 +111,7 @@ async function probeHealthPort(port: number): Promise<boolean> {
       return false
     }
     const body = (await response.json()) as { version?: unknown }
-    return typeof body.version === 'string' && body.version.startsWith('@boring/agent@')
+    return typeof body.version === 'string' && body.version.startsWith('@hachej/boring-agent@')
   } catch {
     return false
   }

@@ -1,5 +1,5 @@
 /**
- * @boring/workspace/shared — shared contract layer.
+ * @hachej/boring-workspace/shared — shared contract layer.
  *
  * Code (types + runtime) that BOTH front and server bundles import.
  * This is the workspace's public SDK surface for plugin authors and

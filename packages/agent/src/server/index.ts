@@ -1,4 +1,4 @@
-// @boring/agent — server (Node-only) public API
+// @hachej/boring-agent — server (Node-only) public API
 export { createDirectSandbox } from './sandbox/direct/createDirectSandbox'
 export { createBwrapSandbox } from './sandbox/bwrap/createBwrapSandbox'
 export { FileHandleStore } from './sandbox/vercel-sandbox/FileHandleStore'

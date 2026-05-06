@@ -64,7 +64,7 @@ async function assertHealthEndpoint(
   const healthRes = await fetch(`${apiUrl}/health`)
   expect(healthRes.ok, `[${mode}] health check failed`).toBe(true)
   const healthBody = (await healthRes.json()) as { version?: string; status?: string }
-  expect(healthBody.version, `[${mode}] version missing`).toContain('@boring/agent@')
+  expect(healthBody.version, `[${mode}] version missing`).toContain('@hachej/boring-agent@')
   expect(healthBody.status, `[${mode}] status missing`).toBe('ok')
   log('health OK', { mode, version: healthBody.version })
 }

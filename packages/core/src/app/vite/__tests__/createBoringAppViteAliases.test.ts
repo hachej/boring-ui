@@ -19,10 +19,10 @@ describe('createBoringAppViteAliases', () => {
   it('does not let app/front entry alias swallow app/front/styles.css', () => {
     const aliases = createBoringAppViteAliases({ repoRoot: '/repo' })
 
-    expect(applyViteLikeAlias(aliases, '@boring/core/app/front/styles.css')).toBe(
+    expect(applyViteLikeAlias(aliases, '@hachej/boring-core/app/front/styles.css')).toBe(
       '/repo/packages/core/src/app/front/styles.css',
     )
-    expect(applyViteLikeAlias(aliases, '@boring/core/app/front')).toBe(
+    expect(applyViteLikeAlias(aliases, '@hachej/boring-core/app/front')).toBe(
       '/repo/packages/core/src/app/front/index.ts',
     )
   })
@@ -30,20 +30,20 @@ describe('createBoringAppViteAliases', () => {
   it('keeps package entry aliases exact while preserving explicit css aliases', () => {
     const aliases = createBoringAppViteAliases({ repoRoot: '/repo' })
 
-    expect(applyViteLikeAlias(aliases, '@boring/agent/front/styles.css')).toBe(
+    expect(applyViteLikeAlias(aliases, '@hachej/boring-agent/front/styles.css')).toBe(
       '/repo/packages/agent/src/front/styles/globals.css',
     )
-    expect(applyViteLikeAlias(aliases, '@boring/agent/front')).toBe(
+    expect(applyViteLikeAlias(aliases, '@hachej/boring-agent/front')).toBe(
       '/repo/packages/agent/src/front/index.ts',
     )
-    expect(applyViteLikeAlias(aliases, '@boring/agent/front/extra')).toBe(
-      '@boring/agent/front/extra',
+    expect(applyViteLikeAlias(aliases, '@hachej/boring-agent/front/extra')).toBe(
+      '@hachej/boring-agent/front/extra',
     )
-    expect(applyViteLikeAlias(aliases, '@boring/workspace/app/front')).toBe(
+    expect(applyViteLikeAlias(aliases, '@hachej/boring-workspace/app/front')).toBe(
       '/repo/packages/workspace/src/app/front/index.ts',
     )
-    expect(applyViteLikeAlias(aliases, '@boring/workspace/app/front/styles.css')).toBe(
-      '@boring/workspace/app/front/styles.css',
+    expect(applyViteLikeAlias(aliases, '@hachej/boring-workspace/app/front/styles.css')).toBe(
+      '@hachej/boring-workspace/app/front/styles.css',
     )
   })
 })

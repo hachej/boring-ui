@@ -8,7 +8,7 @@ import {
   type ExplorerAdapter,
   type ExplorerRow,
   type WorkspaceFrontPlugin,
-} from "@boring/workspace"
+} from "@hachej/boring-workspace"
 import { PLAYGROUND_DATA_PLUGIN_ID } from "../shared/constants"
 import { PLAYGROUND_CSV_DATASETS } from "../shared/fixtures"
 

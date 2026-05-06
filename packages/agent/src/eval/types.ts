@@ -1,5 +1,5 @@
 /**
- * Public types for @boring/agent/eval — the eval framework.
+ * Public types for @hachej/boring-agent/eval — the eval framework.
  *
  * See packages/agent/docs/plans/AGENT_EVAL_FRAMEWORK.md for the design
  * rationale and approved contract.
@@ -23,7 +23,7 @@ export interface ToolCall {
  *
  * In YAML fixtures: `id: !EvalAny`.
  */
-export const EvalAny = Symbol.for("@boring/agent/eval/EvalAny")
+export const EvalAny = Symbol.for("@hachej/boring-agent/eval/EvalAny")
 export type EvalAnyType = typeof EvalAny
 
 /**

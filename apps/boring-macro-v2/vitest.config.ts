@@ -5,13 +5,13 @@ const PACKAGES = resolve(__dirname, "../../packages")
 const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
 const localPackageAlias = useLocalPackages
   ? {
-      "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
-      "@boring/workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
-      "@boring/workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),
-      "@boring/workspace/charts": resolve(PACKAGES, "workspace/src/front/charts/index.tsx"),
-      "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/front/testing/index.ts"),
-      "@boring/workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
-      "@boring/workspace": resolve(PACKAGES, "workspace/src/index.ts"),
+      "@hachej/boring-workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
+      "@hachej/boring-workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
+      "@hachej/boring-workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),
+      "@hachej/boring-workspace/charts": resolve(PACKAGES, "workspace/src/front/charts/index.tsx"),
+      "@hachej/boring-workspace/testing": resolve(PACKAGES, "workspace/src/front/testing/index.ts"),
+      "@hachej/boring-workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
+      "@hachej/boring-workspace": resolve(PACKAGES, "workspace/src/index.ts"),
       "@/": resolve(PACKAGES, "workspace/src") + "/",
       "@": resolve(PACKAGES, "workspace/src"),
     }

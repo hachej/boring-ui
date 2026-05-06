@@ -68,7 +68,7 @@ describe('test helpers', () => {
     expect(sandbox.history).toEqual([{ cmd: 'echo hello', opts: { timeoutMs: 500 } }])
   })
 
-  // mockUiBridge moved to @boring/workspace alongside the UiBridge type
+  // mockUiBridge moved to @hachej/boring-workspace alongside the UiBridge type
   // (UI_BRIDGE_OWNERSHIP_REFACTOR). Tests that need a UI bridge in agent
   // are gone; workspace owns the bridge contract end-to-end.
 

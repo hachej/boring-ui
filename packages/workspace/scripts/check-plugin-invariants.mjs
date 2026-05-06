@@ -160,8 +160,8 @@ for (const file of files) {
     checkRegex(
       file,
       content,
-      /from\s+["']@boring\/agent(?:\/[^"']*)?["']|import\s*\(\s*["']@boring\/agent(?:\/[^"']*)?["']\s*\)/g,
-      "workspace shared plugin contracts must not import @boring/agent",
+      /from\s+["']@hachej\/boring-agent(?:\/[^"']*)?["']|import\s*\(\s*["']@hachej\/boring-agent(?:\/[^"']*)?["']\s*\)/g,
+      "workspace shared plugin contracts must not import @hachej/boring-agent",
     )
     if (!isTestPath(repoPath)) {
       checkRegex(
