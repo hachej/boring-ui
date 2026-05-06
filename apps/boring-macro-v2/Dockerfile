@@ -1,0 +1,64 @@
+FROM node:22-slim AS base
+WORKDIR /app
+RUN corepack enable
+
+FROM base AS deps
+COPY .npmrc pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/ui/package.json packages/ui/package.json
+COPY packages/workspace/package.json packages/workspace/package.json
+COPY packages/agent/package.json packages/agent/package.json
+COPY apps/boring-macro-v2/package.json apps/boring-macro-v2/package.json
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY packages/ packages/
+COPY apps/boring-macro-v2/ apps/boring-macro-v2/
+
+RUN pnpm --filter @boring/ui exec tsup
+
+RUN pnpm --filter @boring/agent exec tsup \
+  && cp packages/agent/src/front/styles/globals.css packages/agent/dist/front/styles.css
+
+RUN pnpm --filter @boring/workspace exec tsup --no-dts \
+  && pnpm --filter @boring/workspace exec vite build
+
+RUN pnpm --filter @boring/macro exec vite build
+
+FROM node:22-slim AS runtime
+WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends bubblewrap ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
+
+COPY --from=build /app/.npmrc /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=build /app/node_modules/ node_modules/
+
+COPY --from=build /app/packages/ui/dist/ packages/ui/dist/
+COPY --from=build /app/packages/ui/package.json packages/ui/package.json
+COPY --from=build /app/packages/ui/node_modules/ packages/ui/node_modules/
+
+COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
+COPY --from=build /app/packages/agent/package.json packages/agent/package.json
+COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
+
+COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
+COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
+COPY --from=build /app/packages/workspace/node_modules/ packages/workspace/node_modules/
+
+# Frontend dist (Vite build output)
+COPY --from=build /app/apps/boring-macro-v2/dist/ apps/boring-macro-v2/dist/
+# Server source (run with tsx)
+COPY --from=build /app/apps/boring-macro-v2/src/ apps/boring-macro-v2/src/
+COPY --from=build /app/apps/boring-macro-v2/package.json apps/boring-macro-v2/package.json
+COPY --from=build /app/apps/boring-macro-v2/tsconfig.json apps/boring-macro-v2/tsconfig.json
+COPY --from=build /app/apps/boring-macro-v2/node_modules/ apps/boring-macro-v2/node_modules/
+
+ENV NODE_ENV=production \
+    BORING_AGENT_WORKSPACE_ROOT=/data/workspace
+EXPOSE 5210
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://localhost:5210/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"
+
+CMD ["node_modules/.bin/tsx", "apps/boring-macro-v2/src/server/main.ts"]
