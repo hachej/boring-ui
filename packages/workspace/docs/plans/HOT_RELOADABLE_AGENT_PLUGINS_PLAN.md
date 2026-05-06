@@ -49,7 +49,7 @@ Pi uses `@mariozechner/jiti` to load extensions — TypeScript and TSX are handl
 Boring-ui mirrors this exactly for `.boring/plugins/<name>/`. Both fields point to the same factory file; both runtimes use jiti:
 
 ```json
-{ "boring": { "extensions": ["./front.tsx"], ... } }
+{ "boring": { "entry": "./front.tsx", ... } }
 ```
 
 A plugin with only `"pi"` (no `"boring"` field) also loads in boring-ui — `registerTool` and `registerCommand` work; no UI contributions are registered. This is the minimal pi-compatible plugin that runs identically in both runtimes.
@@ -208,7 +208,7 @@ Every inside plugin is an npm package. `package.json` is the **single manifest a
   "name": "boring-plugin-csv-viewer",
   "version": "1.0.0",
   "boring": {
-    "extensions":      ["./front.tsx"],
+    "entry":           "./front.tsx",
     "server":          "./plugin.server.ts",
     "label":           "CSV Viewer",
     "derivesFrom":     "macro",
@@ -224,20 +224,21 @@ Every inside plugin is an npm package. `package.json` is the **single manifest a
 ```
 
 - `"boring"` — boring-ui discovery + all contribution metadata.
-- `"pi"` — pi discovery (same entry point array). Omit if the plugin is boring-ui only.
+- `"pi"` — pi discovery (array, pi's native format). Omit if the plugin is boring-ui only.
 - Plugin `id` = directory name (e.g. `csv-viewer`). `version` = top-level `"version"`.
+- `"boring.entry"` is a single string — boring-ui always loads exactly one front entry. Pi supports multiple extensions per package; boring-ui does not.
 
 ### `"boring"` field schema (`BoringPackageField`)
 
 ```ts
 interface BoringPackageField {
-  extensions: string[]        // entry points — must have ≥ 1; boring-ui uses [0]
+  entry: string               // single front factory entry point e.g. "./front.tsx"
   server?: string             // path to plugin.server.ts (boring-ui only)
   label?: string
   description?: string
   derivesFrom?: string        // Path A — hard failure if referenced plugin not registered
 
-  // Contribution declarations (optional in V1, authoritative in V2):
+  // Contribution declarations — authoritative in both V1 and V2:
   panels?:           Array<{ id: string; title?: string }>
   commands?:         Array<{ id: string; title: string; panelId?: string; description?: string }>
   leftTabs?:         Array<{ id: string; title: string; panelId: string; icon?: string }>
@@ -246,23 +247,41 @@ interface BoringPackageField {
 }
 ```
 
+### Manifest-authority model
+
+`boring.panels[]`, `boring.commands[]`, `boring.leftTabs[]`, and `boring.surfaceResolvers[]` are the **authoritative declaration** of what a plugin contributes — in both V1 and V2. The factory is the **implementation**: it provides component references and slash-command handlers that the manifest ids reference.
+
+Validation at load time (V1):
+- Every `boring.panels[i].id` must have a matching `registerPanel?.({ id })` call in the factory
+- Any manifest-declared panel with no corresponding factory registration → `MANIFEST_IMPL_MISMATCH` error
+- This makes the manifest the contract and the factory the fulfilment — consistent across V1/V2
+
+In V2, the factory never runs in the browser, so manifest arrays are the sole source of truth.
+
 ### Validation rules
 
 - `command.panelId`, `leftTab.panelId`, `surfaceResolver.panelId` must reference an `id` in `panels[]`
 - No duplicate `id` within each array
-- `extensions[]` entries and `server` must pass `isSafePluginRelativePath` (no `..` escapes)
+- `entry` and `server` must pass `isSafePluginRelativePath` (no `..` escapes)
+- `entry` must exist on disk at load time — missing file → `MISSING_ENTRY_FILE` error with message: _"front.tsx declared in entry but not found. Write front.tsx before package.json."_
+- `server`, if declared, must also exist on disk before loading
 - `derivesFrom` must pass `isValidBoringPluginId`; absence of the referenced plugin is a hard load failure
 - Plugin id (directory name) must not collide with any registered outside plugin id
 
 ### Agent workflow
 
-`package.json` is the commit signal. The agent writes code files first, then writes `package.json` last to trigger reload — even if just bumping the version.
+`package.json` is the commit signal. The agent writes code files first, then writes `package.json` last to trigger reload.
 
 ```
-1. write front.tsx           (no reload)
-2. write plugin.server.ts    (no reload)
-3. write package.json        ← reload fires here
+1. write front.tsx             (no reload)
+2. write plugin.server.ts      (no reload)
+3. if new npm deps needed:
+     exec `pnpm install` in .boring/plugins/<name>/  (installs to plugin-local node_modules)
+     OR: pnpm add <pkg> at workspace root (simpler — always Vite-resolvable)
+4. write package.json          ← reload fires here
 ```
+
+**V1 dependency resolution:** Vite resolves bare imports from the workspace `node_modules`. For plugin-local dependencies, the workspace `vite.config.ts` must include `.boring/plugins` in `server.fs.allow`. The simplest approach for V1 is to install plugin deps at the workspace root — they're always resolvable without Vite config changes. Plugin-local `node_modules` require an additional `resolve.modules` config entry.
 
 ---
 
@@ -280,7 +299,7 @@ interface BoringPackageField {
 | Fix `pluginLoader.ts` | Replace native `import()` with jiti | Boring-ui's custom wrapper incorrectly restricts to `.js/.mjs`. Rewrite to use `createJiti` matching pi's real loader. |
 | Server plugins | Boring-ui only | Pi has no server plugin concept. `plugin.server.ts` is loaded by jiti into the Fastify process. |
 | Outside plugins | Stay declarative | `filesystemPlugin`, `macroPlugin`, etc. keep `WorkspaceFrontPlugin` shape. `bootstrap()` loads them. No forced migration. |
-| PluginCoordinator | Full replacement | `PluginCoordinator` deleted. New `BoringExtensionAPI`-based system handles both outside (bootstrap) and inside (agent) plugins. Bootstrap migrates to factory API. |
+| PluginCoordinator | Full replacement | `PluginCoordinator` deleted. `registerAgentPlugin` replaces it for inside plugins only. `bootstrap()` and outside plugin registration unchanged — no migration required. |
 | SSE for plugin events | Multiplex on `/api/v1/fs/events` | `boring.plugin.load`, `boring.plugin.unload`, `boring.plugin.error` are new event types on the existing stream. Browser SSE handler already connected — add filter. |
 | Rollback on failure | Restore old state | Stage → validate → commit/rollback on both server and browser. Old plugin stays live on any failure. |
 | Registries | Zustand stores | SSE updates go through `setState` — no Map mutation during React render cycle. |
@@ -295,7 +314,7 @@ Both server and browser use a **stage → validate → commit / rollback** patte
 
 ### Server
 
-`boring.extensions[0]` (`front.tsx`) is **never loaded by the server**. It is browser-only and may import React, `document`, CSS modules — any of which crash jiti in Node.js. Only `boring.server` (`plugin.server.ts`) runs server-side. All agent tools contributed by a plugin must live in `plugin.server.ts`.
+`boring.entry` (`front.tsx`) is **never loaded by the server**. It is browser-only and may import React, `document`, CSS modules — any of which crash jiti in Node.js. Only `boring.server` (`plugin.server.ts`) runs server-side. All agent tools contributed by a plugin must live in `plugin.server.ts`.
 
 ```
 1. Read + validate package.json["boring"]  →  fail: write .error, SSE error, return (no state change)
@@ -328,7 +347,7 @@ SSE boring.plugin.load { boring, version, revision } received:
 7. lastSeen[pluginId] = revision
 ```
 
-Unload: if `revision ≤ lastSeen[pluginId]` discard; else pop resolver stack, remove from all Zustand stores, set `lastSeen[pluginId] = revision`.
+Unload: if `revision ≤ lastSeen[pluginId]` discard; else pop resolver stack, remove from all Zustand stores, call `slashCommandRegistry.unregisterByPluginId(pluginId)`, set `lastSeen[pluginId] = revision`.
 
 ### Reconnect
 
@@ -378,15 +397,15 @@ Agent writes .boring/plugins/csv-viewer/package.json
   └─ (browser — stage → commit)
       revision ≤ lastSeen[pluginId]                    → discard stale
       Snapshot Zustand state for pluginId
-      import(`/.boring/plugins/${id}/${boring.extensions[0]}?v=${revision}`)  ← Vite transforms
+      import(`/.boring/plugins/${id}/${boring.entry}?v=${revision}`)  ← Vite transforms
       Run factory(capturingBoringExtensionAPI)          → captured registrations
       derivesFrom? check captured types vs extensionContract
       Any failure                                       → restore snapshot, toast, return
       Commit: setState on panel/command/tab/resolver stores
               pop old resolver stack entries for pluginId, push new (pluginId, revision)
       lastSeen[pluginId] = revision
-      AgentPluginPane mode="direct": factory module ref IS the component;
-        panel key includes revision to force remount on hot-reload
+      AgentPluginPane reads component from usePanelStore(panelId).component;
+        panel key={`${panelId}:${revision}`} forces React remount on hot-reload
 ```
 
 Unload: `package.json` deleted → server runs disposers → SSE `boring.plugin.unload` → browser pops resolver stack, removes from stores → open panels show "Plugin not loaded" placeholder.
@@ -461,16 +480,20 @@ Agent writes .boring/plugins/csv-viewer/package.json
 
 ```
 mode="direct" (V1):
-  unregisterByPluginId(pluginId)
-  await import(`/.boring/plugins/${id}/${entry}?v=${revision}`)
-  factory(createCapturingBoringExtensionAPI()) → captured registrations
-  Path A: check captured types vs extensionContract
-  Commit captured registrations to stores
+  unregisterByPluginId(pluginId) + slashCommandRegistry.unregisterByPluginId(pluginId)
+  await import(`/.boring/plugins/${id}/${boring.entry}?v=${revision}`)
+  await factory(createCapturingBoringExtensionAPI()) → captured registrations
+  Validate: every boring.panels[i].id has a matching registerPanel?() call → MANIFEST_IMPL_MISMATCH
+  Path A: check manifest contribution types vs extensionContract
+  Commit: build panel entries from manifest metadata + factory component refs;
+          register panelCommands, leftTabs, surfaceResolvers from manifest;
+          register slash commands from captured registerCommand() calls
 
 mode="iframe" (V2):
   unregisterByPluginId(pluginId)
   Path A: check boring.panels[], boring.commands[], etc. vs extensionContract
   Register from manifest arrays; component = AgentPluginPane mode="iframe"
+  (no factory runs in browser — manifest is sole source of truth)
 ```
 
 Mode determined at app startup from `window.__BORING_PLUGIN_MODE__` or build-time env var.
@@ -793,10 +816,14 @@ Implement V1 first. V2 adds only three pieces on top: esbuild route, iframe rend
 ### A — `manifest.ts`: parse `package.json["boring"]`
 
 - [ ] Remove `BoringPluginManifest`, `BoringPluginRuntime`, `BoringPluginPermissions` (old shapes)
-- [ ] Introduce `BoringPackageField` type — `extensions: string[]`, `server?`, `label?`, `description?`, `derivesFrom?`, `panels[]`, `commands[]`, `leftTabs[]`, `surfaceResolvers[]`, `catalogs[]`
+- [ ] Introduce `BoringPackageField` type — `entry: string`, `server?`, `label?`, `description?`, `derivesFrom?`, `panels[]`, `commands[]`, `leftTabs[]`, `surfaceResolvers[]`, `catalogs[]`
 - [ ] `readBoringPackage(dir)` — reads `package.json`, extracts `version` from top-level, id from directory name, contributions from `boring` field
-- [ ] Validation: `extensions[]` ≥ 1 entry, all paths pass `isSafePluginRelativePath`, `derivesFrom` passes `isValidBoringPluginId`, cross-references valid, no duplicate ids within arrays
-- [ ] Error codes: `INVALID_ID | INVALID_VERSION | INVALID_PATH | MISSING_REQUIRED_FIELD | UNKNOWN_FIELD | CROSS_REFERENCE | DUPLICATE_ID`
+- [ ] Validation:
+  - `entry` required, passes `isSafePluginRelativePath`
+  - `entry` and `server` (if declared) exist on disk — `MISSING_ENTRY_FILE` with actionable message
+  - `derivesFrom` passes `isValidBoringPluginId`; cross-references valid; no duplicate ids within arrays
+  - `AllowedContribution` is a strict union: `"panel" | "panelCommand" | "leftTab" | "surfaceResolver" | "catalog" | "agentTool"` — validated at registry time
+- [ ] Error codes: `INVALID_ID | INVALID_VERSION | INVALID_PATH | MISSING_REQUIRED_FIELD | MISSING_ENTRY_FILE | UNKNOWN_FIELD | CROSS_REFERENCE | DUPLICATE_ID | MANIFEST_IMPL_MISMATCH`
 - [ ] Export `BoringPackageField` from `plugin.ts` and `@boring/workspace/plugin` subpath
 - [ ] Rewrite `manifest.test.ts`
 
@@ -844,6 +871,7 @@ All files in `packages/workspace/src/server/plugins/` unless noted. API routes i
 - [ ] `pluginRegistry.register({ id })` called for each outside plugin id at startup (before SSE replay)
 - [ ] Update `createPiCodingAgentHarness` to accept `getExtraTools: () => ToolDefinition[]` (live getter); each `AgentSession` calls it at creation — plugin tools registered after startup are visible to new sessions without restart
 - [ ] Catalog handler snapshot pattern: `agentPluginRoutes.ts` captures handler reference at request entry (`const handler = registry.getCatalogHandler(id)`) so in-flight searches complete against the captured reference even if the plugin reloads mid-request
+- [ ] Running-session tool injection: `getExtraTools()` getter solves new sessions; investigate whether running sessions can pick up new plugin tools without full restart. Check if `piAgent.ctx.reload()` or equivalent triggers tool list refresh. If not, document the limitation: "tools added by a plugin after a session starts require starting a new session."
 
 ### E — TypeBox migration + `authoring.ts`: `BoringPluginAPI` → `BoringExtensionAPI`
 
@@ -883,10 +911,11 @@ All files in `packages/workspace/src/server/plugins/` unless noted. API routes i
   - On failure: restore snapshot, dispatch toast
   - On success: commit to Zustand stores; update resolver LIFO stack; set `lastSeen[pluginId] = revision`
 - [ ] Registries: update existing panel/command/surface-resolver Zustand stores to support `unregisterByPluginId(pluginId)` and LIFO stack tagging `(pluginId, revision)` for surface resolvers
+- [ ] Slash command unregistration: call `slashCommandRegistry.unregisterByPluginId(pluginId)` on both reload and unload — must run before the new factory registers updated slash commands, and on unload to fully clean up
 - [ ] `src/front/plugins/AgentPluginPane.tsx`:
-  - `mode="direct"` (V1): `React.lazy(() => import(url?v=revision))` where the module's default export IS the panel component; key includes revision to force remount on reload
+  - `mode="direct"` (V1): reads component from `usePanelStore(panelId).component` (set by `registerAgentPlugin` after factory runs); wraps in `React.Suspense`; `key={panelId + ":" + revision}` forces remount on hot-reload. The factory's default export is a factory function, NOT a React component — never `React.lazy(() => import(url))` directly.
   - `mode="iframe"` (V2 stub): renders placeholder `<div>V2 iframe — wired in TODO G</div>`
-  - When plugin absent from store: renders "Plugin not loaded" placeholder
+  - When panel absent from store: renders "Plugin not loaded" placeholder
 - [ ] Introduce `useWorkspaceEventStream` — a workspace-level shared `EventSource` to `/api/v1/fs/events` that fans out to type-specific subscribers. Both file-event and plugin-event listeners attach here. Replaces per-component `EventSource` creation in `useFileEventStream`. Eliminates duplicate connections.
 - [ ] SSE handler: subscribe via `useWorkspaceEventStream` — filter for `boring.plugin.*` event types → `registerAgentPlugin` / unregister / toast. Each `boring.plugin.load` event carries an `eventId: string` (UUID); check against a per-pluginId LRU before processing to deduplicate replay-then-live races.
 - [ ] `await factory(capturingAPI)` before calling `flush()` — async factories that register after an internal `await` are correctly captured
@@ -898,7 +927,7 @@ This PR ships the skeleton: the route exists and the iframe renders, but the pos
 
 - [ ] `GET /api/agent-plugins/:pluginId/front.js` (`packages/agent/src/server/http/routes/agentPluginFront.ts`):
   - Validate pluginId with `isValidBoringPluginId`; resolve and verify path stays within `workspaceRoot/.boring/plugins/` (no symlink escapes)
-  - Compile `boring.extensions[0]` via esbuild on demand; cache keyed by `(pluginId, mtime)` of the entry file; invalidate cache on watcher reload event
+  - Compile `boring.entry` via esbuild on demand; cache keyed by `(pluginId, mtime)` of the entry file; invalidate cache on watcher reload event
   - esbuild config: `format: "iife"`, `jsx: "automatic"`, `jsxImportSource: "react"`, `platform: "browser"`, `write: false`
   - `Cache-Control: no-store`; CSP: `default-src 'none'; script-src 'self'`
   - On esbuild error: write `.boring/plugins/<id>/.error`, serve last cached bundle or 500
@@ -917,13 +946,19 @@ This PR ships the skeleton: the route exists and the iframe renders, but the pos
 - [ ] Provisioning writes `.boring/plugins/.boring-vendor/bridge-client.js` from bridge-client source
 - [ ] Provisioning seeds `.boring/docs/` with `plugins.md`, `panels.md`, `bridge.md`
 
-### J — Plugin templates + docs
+### J — Plugin templates + docs + status panel
 
 - [ ] `packages/workspace/templates/plugin/` — V1 example: `package.json` + `front.tsx` (Path B from scratch)
 - [ ] Add Path A example: `package.json` with `derivesFrom`, `front.tsx` using `registerPanel?` + `registerSurfaceResolver?`
 - [ ] Add `plugin.server.ts` example with `registerTool` + `registerCatalogHandler`
 - [ ] Update `check-plugin-invariants.mjs` to allow `.boring/plugins/` location
 - [ ] Docs: `plugins.md` includes agent-facing walkthrough and worked examples
+- [ ] **Plugin Status Panel** — a first-party outside plugin registered via `bootstrap()` at startup:
+  - Panel id: `"boring-agent-plugins"`, title: "Agent Plugins"
+  - Renders a list of all currently active inside plugins: name, version, load time, status (loaded / error)
+  - Shows last error message inline when `.error` present; poll or subscribe via SSE `boring.plugin.*` events for live updates
+  - `GET /api/agent-plugins/:id/error` — returns the `.error` file content as plain text; 404 if none; used by the status panel for error display
+  - Left tab registration optional (low priority); command palette entry "Show Agent Plugins" opens it
 
 ---
 
