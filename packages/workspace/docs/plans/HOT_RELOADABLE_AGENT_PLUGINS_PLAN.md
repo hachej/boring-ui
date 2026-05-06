@@ -21,7 +21,7 @@ No parallel type system. The existing `WorkspaceFrontPlugin` / `defineFrontPlugi
 | Defined via | `defineFrontPlugin` / `composePlugins` | `boring.plugin.json` manifest |
 | UI | Direct React in host process | iframe (sandboxed) |
 | Server code | `defineServerPlugin` | `plugin.server.ts` via jiti |
-| Loaded | At app startup | At runtime via `exec_ui` trigger |
+| Loaded | At app startup | At runtime via file watcher |
 | Full plugin surface | ✅ all PluginOutput types | Restricted (see below) |
 
 ### Two authoring paths for inside plugins
@@ -60,7 +60,9 @@ extensionContract?: PluginExtensionContract
 }
 ```
 
-Load flow for derived plugin: manifest `derivesFrom` → browser looks up base plugin in registry → checks `extensionContract` exists → validates all contributions are in `allowedContributions` → registers contributions normally → iframe gets `boring.bridge.init { derivedFrom: "macro" }`.
+Load flow for derived plugin: manifest `derivesFrom` → browser looks up base plugin in the **plugin registry** (see below) → checks `extensionContract` exists → validates all contributions are in `allowedContributions` → registers contributions normally → iframe gets `boring.bridge.init { derivedFrom: "macro" }`.
+
+Server also validates: `agent-tool` contributions are server-side, so the server checks derivation against the manifest before loading `plugin.server.ts`.
 
 **Path B — Build from scratch**
 
@@ -253,6 +255,43 @@ async function loadServerPlugin(resolvedPath: string) {
 
 ---
 
+## Outside Plugin Registry (prerequisite for Path A)
+
+Outside plugins need a runtime registry keyed by plugin ID so the browser can resolve `derivesFrom` and check `extensionContract`. This is a thin map populated at workspace init alongside panel/command registration:
+
+```ts
+// Registered once per outside plugin at startup:
+pluginRegistry.register({ id: "macro", extensionContract: { allowedContributions: [...] } })
+
+// Path A lookup:
+const base = pluginRegistry.get(manifest.derivesFrom)
+if (!base?.extensionContract) throw new PluginDerivationError(...)
+```
+
+`pluginRegistry` is passed into `registerAgentPlugin` alongside the other registries.
+
+---
+
+## iframe: React Bundled Inline
+
+`front.tsx` uses React JSX. The iframe is a separate browsing context — it cannot share the host's React instance. esbuild bundles React inline into `front.js` (~40KB gzipped). No CDN dependency, no fixed external URL. The esbuild config:
+
+```ts
+esbuild.build({
+  entryPoints: [/* virtual entry */],
+  bundle: true,
+  jsx: 'automatic',
+  format: 'iife',
+  // React is bundled — NOT external
+})
+```
+
+The bridge client (`agentPluginBridgeClient.ts`) is resolved via an esbuild alias:
+`"@boring/workspace/bridge-client"` → the compiled bridge client source.
+`front.tsx` imports it as: `import { sendToHost } from "@boring/workspace/bridge-client"`.
+
+---
+
 ## Generic Iframe Panel
 
 One panel registered at workspace startup in `coreRegistrations.ts`:
@@ -280,7 +319,7 @@ Host → iframe: `{ type: "boring.bridge.init", theme: {...} }`
 Iframe → host: `{ type: "boring.bridge.openPanel", panelId: string }`  
 Iframe → host: `{ type: "boring.bridge.showNotification", message: string, level: "info"|"error" }`  
 
-Host validates origin before dispatching. v2 adds `host.query()` for data access.
+Host validates `event.source` (not `event.origin` — sandboxed iframes have `null` origin). Host checks `event.source === iframeRef.current.contentWindow` before dispatching. v2 adds `host.query()` for data access.
 
 ---
 
@@ -298,23 +337,24 @@ Host validates origin before dispatching. v2 adds `host.query()` for data access
 ## Implementation TODO
 
 ### A — Manifest redesign `manifest.ts`
-- [ ] Add `front?`, `server?`, `panels[]`, `leftTabs[]`, `commands[]`, `surfaceResolvers[]`, `catalogs[]` fields to `BoringPluginManifest`
+- [ ] Add `front?`, `server?`, `panels[]`, `leftTabs[]`, `commands[]`, `surfaceResolvers[]`, `catalogs[]`, `derivesFrom?` fields to `BoringPluginManifest`
 - [ ] Remove `runtime`, `permissions`, `entry` (replaced by `front`/`server` presence)
 - [ ] Update `validateBoringPluginManifest` — validate each array entry's required fields + path safety on `front`/`server`
+- [ ] Cross-reference validation: every `command.panelId` and `leftTab.panelId` must reference a declared panel; reject duplicate ids within each array
+- [ ] Enforce: directory name (derived from path) must equal `manifest.id` — validate at load time, not in the manifest itself
 - [ ] Update `KNOWN_FIELDS` + all validation branches
 - [ ] Rewrite `manifest.test.ts` to cover new shape
 
 ### B — Doc seeding + system prompt embedding
 - [ ] Add `packages/workspace/templates/workspace-base/.boring/docs/` with `plugins.md`, `panels.md`, `bridge.md`
-- [ ] Pre-build codegen `scripts/embed-docs.mjs` → emits `src/server/embeddedDocs.ts`; run before tsup in `package.json` build script
-- [ ] Update `boringSystemPrompt.ts`: use embedded strings as primary, `BORING_DOCS_PATH` as dev override
-- [ ] Add `src/server/embeddedDocs.ts` to `.gitignore`, add empty stub for cold checkouts
-- [ ] Rewrite `docs/plugins.md` to describe `.boring/plugins/` agent authoring path, two paths (derive vs scratch), exec_ui trigger
+- [ ] Docs ship as **static strings** in `src/server/boringSystemPrompt.ts` — no codegen, no `.gitignore` stubs. `BORING_DOCS_PATH` env var overrides for local dev editing.
+- [ ] Update `boringSystemPrompt.ts`: inline string constants as primary, `BORING_DOCS_PATH` as override
+- [ ] Rewrite `docs/plugins.md` to describe `.boring/plugins/` agent authoring path, two paths (derive vs scratch), file watcher trigger
 
 ### C — Plugin file serving routes
 - [ ] `src/server/plugins/agentPluginRoutes.ts`:
-  - `GET /api/agent-plugins/:pluginId/manifest` — `workspace.readFile()` + validate, return JSON
-  - `GET /api/agent-plugins/:pluginId/front.js` — `workspace.readFile()` front.tsx, esbuild-bundle with custom resolver plugin using `workspace.readFile()` for all relative imports, `Cache-Control: no-store`
+  - `GET /api/agent-plugins` — returns all currently active manifests (for browser reconnect state sync)
+  - `GET /api/agent-plugins/:pluginId/front.js` — `workspace.readFile()` front.tsx, esbuild-bundle: `bundle:true`, `jsx:'automatic'`, `format:'iife'`, React bundled inline, `@boring/workspace/bridge-client` alias → bridge client source, `Cache-Control: no-store`
   - `GET /api/agent-plugins/:pluginId/catalog/search?q=` — delegates to registered catalog handler from jiti-loaded server plugin
 - [ ] Register routes in `src/server/index.ts`
 - [ ] Add `esbuild` as server dependency to `packages/workspace/package.json`
@@ -328,25 +368,30 @@ Host validates origin before dispatching. v2 adds `host.query()` for data access
 - [ ] Core (app entry point) selects and passes the loader — workspace does not auto-detect environment
 
 ### E — Plugin watcher + SSE dispatch
-- [ ] `src/server/plugins/agentPluginWatcher.ts` — subscribe to `workspace.watch()` (already backed by chokidar for local, sandbox event emitter for Vercel — no new infrastructure needed)
+- [ ] `src/server/plugins/agentPluginWatcher.ts` — subscribe to `workspace.watch()` (chokidar local, sandbox emitter Vercel — no new infrastructure)
 - [ ] Filter: `event.path.startsWith('.boring/plugins/') && event.path.endsWith('boring.plugin.json')`
-- [ ] On `write`: validate manifest → (re)load via ServerPluginLoader → SSE `dispatchCommand("boring.plugin.load", { manifest })` to all connected browsers
-- [ ] On `unlink`: unload → SSE `dispatchCommand("boring.plugin.unload", { pluginId })` to all connected browsers
+- [ ] **Debounce per pluginId** (50ms): rapid successive writes to the same manifest trigger only one reload — avoids races when agent writes manifest + front.tsx + server.ts in quick succession
+- [ ] **Per-plugin serial queue**: if a reload is already in flight for a pluginId, queue the next one rather than running concurrently — prevents tool registration races
+- [ ] On `write`: extract pluginId from path segment, validate manifest → if `derivesFrom` present validate against server-side extension contract registry → (re)load via ServerPluginLoader → SSE `dispatchCommand("boring.plugin.load", { manifest })` to all connected browsers
+- [ ] On `unlink`: extract pluginId from path segment → unload → SSE `dispatchCommand("boring.plugin.unload", { pluginId })` to all connected browsers
 - [ ] Add `"boring.plugin.load"` and `"boring.plugin.unload"` to `CommandKind` in `src/front/bridge/client.ts`
+- [ ] Browser on connect: fetch `GET /api/agent-plugins` → register all active manifests (handles reconnect)
 - [ ] Browser `dispatchCommand` cases: call `registerAgentPlugin(manifest)` / `unregisterAgentPlugin(pluginId)`
 - [ ] `boring.bridge.reload` sent to open iframes after re-registration on hot reload
 
 ### F — Browser registration + generic iframe panel
+- [ ] `src/front/plugins/pluginRegistry.ts` — thin `Map<id, { extensionContract? }>` populated at workspace init when outside plugins register; used by Path A derivation lookup
 - [ ] `src/front/plugins/agentPluginRegistry.ts`:
-  - `registerAgentPlugin(manifest, registries)` — registers wrapper panel, commands, left-tabs, surface resolvers, catalog adapters from manifest
+  - `registerAgentPlugin(manifest, registries, pluginRegistry)` — if `derivesFrom`: look up in pluginRegistry, validate contract → then register wrapper panel, commands, left-tabs, surface resolvers, catalog adapters from manifest
   - `unregisterAgentPlugin(pluginId, registries)` — calls `unregisterByPluginId` on all registries
-- [ ] `src/front/plugins/AgentPluginPane.tsx` — iframe component, timestamp cache-bust on mount
+- [ ] `src/front/plugins/AgentPluginPane.tsx` — iframe component, timestamp cache-bust on mount; exposes `reload()` via ref so the bridge dispatcher can reach it; registers/unregisters itself in a module-level `Map<pluginId, reload fn>` on mount/unmount
 - [ ] Register `agent-plugin-frame` in `coreRegistrations.ts`
+- [ ] On connect: fetch `GET /api/agent-plugins`, call `registerAgentPlugin` for each manifest
 - [ ] Wire `registerAgentPlugin` into `WorkspaceProvider` bridge dispatch
 
 ### G — postMessage bridge (minimal)
-- [ ] `src/front/plugins/agentPluginBridge.ts` — host-side listener: `boring.bridge.openPanel`, `boring.bridge.showNotification`
-- [ ] `src/front/plugins/agentPluginBridgeClient.ts` (bundled into iframe via esbuild) — `sendToHost(type, payload)`
+- [ ] `src/front/plugins/agentPluginBridge.ts` — host-side listener: validate `event.source === iframeRef.current.contentWindow` (NOT `event.origin` — sandboxed iframes have `null` origin); handle `boring.bridge.openPanel`, `boring.bridge.showNotification`, `boring.bridge.reload` dispatch
+- [ ] `src/front/plugins/agentPluginBridgeClient.ts` — `sendToHost(type, payload)`; exported as `@boring/workspace/bridge-client` alias in esbuild config so `front.tsx` can import it
 - [ ] Theme tokens passed in `boring.bridge.init` message on iframe load
 
 ### H — Plugin template + invariant scanner
@@ -367,10 +412,13 @@ Host validates origin before dispatching. v2 adds `host.query()` for data access
 - [ ] Validate: if present, must be a valid plugin id string (reuse `isValidBoringPluginId`)
 - [ ] Add test cases: valid `derivesFrom`, invalid value, works alongside contributions
 
+**Server load path** (`agentPluginWatcher.ts`):
+- [ ] If `manifest.derivesFrom` is set: check a server-side extension contract registry (outside plugins register allowed agent-tool contributions at server init); reject if not found or `agent-tool` not in `allowedContributions`
+
 **Browser load path** (`agentPluginRegistry.ts`):
-- [ ] When `manifest.derivesFrom` is set: look up base plugin in the `PanelRegistry` / plugin registry by id
-- [ ] If base plugin has no `extensionContract`: throw `PluginDerivationError("plugin '${id}' does not expose an extensionContract")`
-- [ ] For each contribution in manifest: check its kind is in `extensionContract.allowedContributions`, throw if not
+- [ ] When `manifest.derivesFrom` is set: look up base plugin in `pluginRegistry` (the new module-level Map from TODO F)
+- [ ] If base plugin has no `extensionContract`: throw `PluginDerivationError`
+- [ ] For each contribution: check its kind is in `extensionContract.allowedContributions`, throw if not
 - [ ] Pass `derivedFrom: manifest.derivesFrom` through to `AgentPluginPane` / `boring.bridge.init`
 
 **Bridge** (`agentPluginBridge.ts`):
