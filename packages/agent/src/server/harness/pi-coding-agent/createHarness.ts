@@ -29,6 +29,7 @@ import {
 interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
+  sessionManager: SessionManager;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -198,6 +199,27 @@ export function createPiCodingAgentHarness(opts: {
     const modelRegistry = ModelRegistry.create(authStorage);
     registerConfiguredModelProviders(modelRegistry);
 
+    // Restore file-backed pi session so the agent remembers the conversation
+    // across server restarts. On first turn, create a new file-backed session
+    // and persist its path. On subsequent restarts, open the existing file.
+    // Synchronous read keeps this function free of async I/O before
+    // createAgentSession (required for test-timer compatibility).
+    const sessionCtx = { workspaceId: "default" };
+    const savedPiFile = sessionStore.loadPiSessionFileSync(sessionId);
+    let sessionManager: SessionManager;
+    let isNewPiSession = false;
+    if (savedPiFile) {
+      try {
+        sessionManager = SessionManager.open(savedPiFile, undefined, ctx.workdir);
+      } catch {
+        sessionManager = SessionManager.create(ctx.workdir);
+        isNewPiSession = true;
+      }
+    } else {
+      sessionManager = SessionManager.create(ctx.workdir);
+      isNewPiSession = true;
+    }
+
     const resolvedModel = resolveRequestedModel(modelRegistry, input);
     // Default: sonnet for anthropic if nothing resolved, preventing pi from
     // falling back to openai-codex when only ANTHROPIC_API_KEY is set.
@@ -259,13 +281,20 @@ export function createPiCodingAgentHarness(opts: {
       customTools: adaptToolsForPi(opts.tools),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
-      sessionManager: SessionManager.inMemory(),
+      sessionManager,
       authStorage,
       modelRegistry,
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    const handle: PiSessionHandle = { piSession, modelRegistry };
+    if (isNewPiSession) {
+      const piFile = sessionManager.getSessionFile();
+      if (piFile) {
+        sessionStore.savePiSessionFile(sessionCtx, sessionId, piFile).catch(() => {});
+      }
+    }
+
+    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager };
     piSessions.set(sessionId, handle);
     return handle;
   }

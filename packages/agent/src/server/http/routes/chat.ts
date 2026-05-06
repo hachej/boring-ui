@@ -275,7 +275,7 @@ export function chatRoutes(
       const { sessionId } = request.params as { sessionId: string }
       const body = request.body as { messages?: UIMessage[] }
       if (!Array.isArray(body?.messages)) {
-        return reply.code(400).send({ error: { code: 'validation_error', message: 'messages must be an array' } })
+        return reply.code(400).send({ error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'messages must be an array' } })
       }
       const ctx: SessionCtx = {
         workspaceId: request.workspaceContext?.workspaceId ?? 'default',

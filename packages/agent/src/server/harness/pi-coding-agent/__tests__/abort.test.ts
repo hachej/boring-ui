@@ -23,7 +23,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
       dispose: mockDispose,
     },
   }),
-  SessionManager: { inMemory: () => ({}) },
+  SessionManager: { inMemory: () => ({}), create: () => ({ getSessionFile: () => null }), open: () => ({ getSessionFile: () => null }) },
   AuthStorage: {
     inMemory: () => ({}),
     create: () => ({}),

@@ -1,7 +1,10 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 
 let capturedTransportOpts: Record<string, unknown> | undefined
+// Exposed as refStore so tests can mutate it to simulate fresh opt reads.
+// Points to the first ref created (optsRef inside useAgentChat).
 const refStore = { current: undefined as unknown }
+const allRefs: Array<{ current: unknown }> = []
 const mockSetMessages = vi.fn()
 const mockUseStateSetter = vi.fn()
 const mockFetch = vi.fn()
@@ -32,8 +35,18 @@ vi.mock('react', async () => {
     ...actual,
     useMemo: <T>(fn: () => T) => fn(),
     useRef: (initial: unknown) => {
-      refStore.current = initial
-      return refStore
+      const ref = { current: initial }
+      allRefs.push(ref)
+      if (allRefs.length === 1) {
+        // Keep refStore in sync with the first ref (optsRef) so tests that
+        // mutate refStore.current can still observe changes via the body fn.
+        Object.defineProperty(refStore, 'current', {
+          get: () => ref.current,
+          set: (v) => { ref.current = v },
+          configurable: true,
+        })
+      }
+      return ref
     },
     useState: <T,>(initial: T | (() => T)) => [
       typeof initial === 'function' ? (initial as () => T)() : initial,
@@ -58,6 +71,7 @@ async function flushPromises(iterations = 8): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks()
   capturedTransportOpts = undefined
+  allRefs.length = 0
   mockSetMessages.mockReset()
   mockUseStateSetter.mockReset()
   mockStorageGetItem.mockReset()

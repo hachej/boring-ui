@@ -9,6 +9,7 @@ import {
   appendFile,
   utimes,
 } from "node:fs/promises";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -145,6 +146,65 @@ export class PiSessionStore implements SessionStore {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
       messages,
+    });
+    await appendFile(filepath, entry + "\n");
+  }
+
+  // Synchronous variant used during session initialization so that no async
+  // I/O hop is introduced before createAgentSession (which would break test
+  // timing when fake timers are in use). The file is tiny (metadata only).
+  loadPiSessionFileSync(sessionId: string): string | null {
+    if (!SAFE_ID.test(sessionId)) return null;
+    try {
+      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
+      let content: string;
+      try {
+        content = readFileSync(direct, "utf-8");
+      } catch {
+        const files = readdirSync(this.sessionDir).filter((f) =>
+          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
+        );
+        if (files.length === 0) return null;
+        content = readFileSync(join(this.sessionDir, files[0]), "utf-8");
+      }
+      const entries = safeParseEntries(content);
+      let piFilePath: string | null = null;
+      for (const e of entries) {
+        const rec = e as { type?: string; path?: string };
+        if (rec.type === "pi_session_file" && typeof rec.path === "string") {
+          piFilePath = rec.path;
+        }
+      }
+      return piFilePath;
+    } catch {
+      return null;
+    }
+  }
+
+  async loadPiSessionFile(_ctx: SessionCtx, sessionId: string): Promise<string | null> {
+    try {
+      const filepath = await this.resolveSessionFile(sessionId);
+      const content = await readFile(filepath, "utf-8");
+      const entries = safeParseEntries(content);
+      let piFilePath: string | null = null;
+      for (const e of entries) {
+        const rec = e as { type?: string; path?: string };
+        if (rec.type === "pi_session_file" && typeof rec.path === "string") {
+          piFilePath = rec.path;
+        }
+      }
+      return piFilePath;
+    } catch {
+      return null;
+    }
+  }
+
+  async savePiSessionFile(_ctx: SessionCtx, sessionId: string, piFilePath: string): Promise<void> {
+    const filepath = await this.resolveSessionFile(sessionId);
+    const entry = JSON.stringify({
+      type: "pi_session_file",
+      timestamp: new Date().toISOString(),
+      path: piFilePath,
     });
     await appendFile(filepath, entry + "\n");
   }
