@@ -97,6 +97,58 @@ The example domain app (`boring-macro-v2`) shows what that looks like — a macr
 
 The reference app (`full-app`) is a working app you can start from today.
 
+### What a plugin ships — and how agent → panel works
+
+A plugin has three connected pieces. Here's how they fit together using the macro app as a concrete example:
+
+**1. A skill** — tells the agent what it can do and when to use it
+
+```markdown
+<!-- .agents/skills/macro-deck/SKILL.md -->
+Use this skill when the user asks for a briefing deck.
+
+1. Create a markdown file under deck/
+2. Embed charts with: {{TimeSeries ids="UNRATE" title="Unemployment rate"}}
+```
+
+The agent reads skills from the workspace at startup. When the user asks *"draft a labor market briefing"*, the agent finds this skill and knows exactly how to respond.
+
+**2. A surface resolver** — maps what the agent emits to a panel open
+
+```ts
+// plugin frontend
+{
+  type: "surface-resolver",
+  resolver: {
+    id: "macro-series-resolver",
+    resolve(request) {
+      if (request.kind !== "open-series") return undefined
+      return {
+        component: "macro-chart-panel",   // which panel to open
+        params: { seriesId: request.target }, // what to pass it
+      }
+    },
+  },
+}
+```
+
+When the agent calls `exec_ui({ kind: "open-series", target: "GDPC1" })`, the resolver catches it and opens the chart panel with the right data. The agent never references a panel ID directly — it emits a semantic request, the resolver decides what to show.
+
+**3. A panel** — the React view that renders the result
+
+```ts
+definePanel({
+  id: "macro-chart-panel",
+  component: () => import("./ChartPane").then(m => ({ default: m.ChartPane })),
+})
+```
+
+`ChartPane` receives `params.seriesId`, fetches the data, and renders. The agent triggered it; the panel owns the display.
+
+---
+
+This is the agent→UI contract: **skills tell the agent what to say, surface resolvers translate it into panel opens, panels render the result.** None of the pieces know about each other — they're connected by the workspace at runtime.
+
 ---
 
 ## Packages
