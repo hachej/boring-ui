@@ -1,9 +1,15 @@
+import { spawnSync } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAgentApp } from '../createAgentApp'
 import type { FastifyInstance } from 'fastify'
+
+const HAS_BWRAP = (() => {
+  const result = spawnSync('bwrap', ['--version'], { stdio: 'ignore' })
+  return !result.error && result.status === 0
+})()
 
 /**
  * Integration test that asserts the /api/v1/files/search HTTP route
@@ -41,7 +47,7 @@ afterAll(async () => {
   await rm(workspaceRoot, { recursive: true, force: true })
 })
 
-describe('GET /api/v1/files/search', () => {
+describe.skipIf(!HAS_BWRAP)('GET /api/v1/files/search', () => {
   test('basename glob (-iname) finds files at any depth', async () => {
     const res = await app.inject({
       method: 'GET',
