@@ -23,7 +23,7 @@ import type {
   SearchResult,
 } from "../../front/components/DataExplorer"
 import { cn } from "../../front/lib/utils"
-import { Input } from "../../front/components/ui/input"
+import { Input } from "@boring/ui"
 import { definePanel } from "../../front/registry/types"
 import type { PaneProps, PanelConfig } from "../../front/registry/types"
 import { defineFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
