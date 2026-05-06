@@ -106,7 +106,7 @@ function resolveDefaultModel(modelRegistry: ModelRegistry) {
     const model = modelRegistry.find(configured.provider, configured.id);
     if (model) return model;
   }
-  return modelRegistry.find("anthropic", "claude-sonnet-4-6");
+  return undefined;
 }
 
 export function createResourceSettingsManager(
