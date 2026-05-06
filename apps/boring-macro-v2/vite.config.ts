@@ -25,6 +25,7 @@ export default defineConfig({
       "@boring/agent/front/styles.css": resolve(PACKAGES, "agent/src/front/styles/globals.css"),
       "@boring/workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
       "@boring/workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),
+      "@boring/workspace/charts": resolve(PACKAGES, "workspace/src/front/charts/index.tsx"),
       "@boring/workspace/testing": resolve(PACKAGES, "workspace/src/testing/index.ts"),
       "@boring/workspace/shared": resolve(PACKAGES, "workspace/src/shared/index.ts"),
       "@boring/workspace": resolve(PACKAGES, "workspace/src/index.ts"),
