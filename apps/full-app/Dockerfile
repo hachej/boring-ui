@@ -15,14 +15,15 @@ FROM deps AS build
 COPY packages/ packages/
 COPY apps/full-app/ apps/full-app/
 
-# Build packages in dependency order. --no-dts skips declaration generation
-# which is unused at runtime and unstable under some peer resolution configs.
+# Build packages in dependency order.
+# ui and agent need dts so workspace's vite-plugin-dts can resolve their types.
+# workspace tsup skips dts (vite-plugin-dts covers the front entries instead).
 RUN pnpm --filter @boring/core exec tsup --no-dts \
   && cp packages/core/src/front/theme.css packages/core/dist/front/theme.css
 
-RUN pnpm --filter @boring/ui exec tsup --no-dts
+RUN pnpm --filter @boring/ui exec tsup
 
-RUN pnpm --filter @boring/agent exec tsup --no-dts \
+RUN pnpm --filter @boring/agent exec tsup \
   && cp packages/agent/src/front/styles/globals.css packages/agent/dist/front/styles.css
 
 RUN pnpm --filter @boring/workspace exec tsup --no-dts \
