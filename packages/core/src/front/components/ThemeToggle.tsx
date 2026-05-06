@@ -1,4 +1,4 @@
-import { Button } from '@hachej/boring-ui-kit'
+import { Button } from '@hachej/boring-ui'
 
 import { useTheme } from '../hooks/index.js'
 

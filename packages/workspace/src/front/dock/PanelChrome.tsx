@@ -1,7 +1,7 @@
 import { useMemo, type ComponentType, type ReactNode } from "react"
 import type { DockviewPanelApi } from "dockview-react"
 import type { PanelLifecycleApi } from "./types"
-import { IconButton } from "@hachej/boring-ui-kit"
+import { IconButton } from "@hachej/boring-ui"
 import { cn } from "../lib/utils"
 
 export interface PanelChromeProps {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@hachej/boring-ui-kit";
+import { Button } from "@hachej/boring-ui";
 import { cn } from "@/front/lib";
 import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";

@@ -2,7 +2,7 @@
 
 import { ArrowUpRight, BookOpen, Code2, FileSearch, Wand2 } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
-import { Button } from "@hachej/boring-ui-kit"
+import { Button } from "@hachej/boring-ui"
 import { cn } from "./lib"
 
 /**

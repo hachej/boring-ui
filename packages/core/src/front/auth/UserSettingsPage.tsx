@@ -21,7 +21,7 @@ import {
   SettingsActionRow as UiSettingsActionRow,
   SettingsNav as UiSettingsNav,
   SettingsPanel as UiSettingsPanel,
-} from '@hachej/boring-ui-kit'
+} from '@hachej/boring-ui'
 import {
   CalendarDays,
   CheckCircle2,

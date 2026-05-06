@@ -1,4 +1,4 @@
-import { Button, EmptyState, Kbd } from "@hachej/boring-ui-kit"
+import { Button, EmptyState, Kbd } from "@hachej/boring-ui"
 import { cn } from "../../lib/utils"
 
 export interface EmptyPaneProps {

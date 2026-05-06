@@ -11,7 +11,7 @@ import {
   CardTitle,
   LoadingState,
   Notice,
-} from '@hachej/boring-ui-kit'
+} from '@hachej/boring-ui'
 import { useSession } from './AuthProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail, routes } from '../utils.js'
 import { WORKSPACES_QUERY_KEY } from '../WorkspaceAuthProvider.js'

@@ -1,5 +1,5 @@
 import { AlertTriangleIcon } from "lucide-react"
-import { Notice } from "@hachej/boring-ui-kit"
+import { Notice } from "@hachej/boring-ui"
 
 export interface ErrorChipProps {
   pluginId: string

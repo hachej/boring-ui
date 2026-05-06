@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { PaneProps } from "@hachej/boring-workspace"
-import { Button, ChipButton, EmptyState, SegmentedControl, SegmentedControlItem, Spinner } from "@hachej/boring-ui-kit"
+import { Button, ChipButton, EmptyState, SegmentedControl, SegmentedControlItem, Spinner } from "@hachej/boring-ui"
 import {
   CartesianGrid,
   Legend,

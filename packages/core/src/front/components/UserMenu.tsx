@@ -7,7 +7,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@hachej/boring-ui-kit'
+} from '@hachej/boring-ui'
 import {
   ChevronDown,
   Check,

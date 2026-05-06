@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, HoverCard, HoverCardContent, HoverCardTrigger } from "@hachej/boring-ui-kit";
+import { Button, HoverCard, HoverCardContent, HoverCardTrigger } from "@hachej/boring-ui";
 import { cn } from "@/front/lib";
 import type { FileUIPart, SourceDocumentUIPart } from "ai";
 import {

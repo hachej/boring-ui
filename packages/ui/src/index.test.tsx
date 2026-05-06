@@ -49,7 +49,7 @@ import {
   cn,
 } from './index'
 
-describe('@hachej/boring-ui-kit primitives', () => {
+describe('@hachej/boring-ui primitives', () => {
   it('merges Tailwind classes predictably', () => {
     expect(cn('px-2 text-sm', false, 'px-4')).toBe('text-sm px-4')
   })

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
-import { Button, IconButton, Kbd } from "@hachej/boring-ui-kit"
+import { Button, IconButton, Kbd } from "@hachej/boring-ui"
 import { cn } from "../lib/utils"
 
 export interface TopBarProps {

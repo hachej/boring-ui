@@ -4,7 +4,7 @@
  * Copied: 2026-04-23. We own this file; upstream updates require re-port.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Button } from '@hachej/boring-ui-kit'
+import { Button } from '@hachej/boring-ui'
 import { cn } from '../lib'
 
 export type ToolState =

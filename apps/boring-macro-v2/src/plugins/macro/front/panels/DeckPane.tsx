@@ -16,7 +16,7 @@ import {
   boringLineProps,
   getBoringChartColor,
 } from "@hachej/boring-workspace/charts"
-import { Button, ChipButton, SegmentedControl, SegmentedControlItem, Separator } from "@hachej/boring-ui-kit"
+import { Button, ChipButton, SegmentedControl, SegmentedControlItem, Separator } from "@hachej/boring-ui"
 import { ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2 } from "lucide-react"
 import type { Observation, SeriesPayload } from "../data/macroSeriesTypes"
 import { fetchMacroSeries } from "../data/macroSeriesData"

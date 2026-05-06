@@ -1,13 +1,13 @@
 "use client";
 
-import { Button } from "@hachej/boring-ui-kit";
+import { Button } from "@hachej/boring-ui";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@hachej/boring-ui-kit";
+} from "@hachej/boring-ui";
 import { cn } from "@/front/lib";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";

@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
-import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
+import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui"
 import { cn } from "../lib/utils"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
 import { events, workspaceEvents } from "../events"

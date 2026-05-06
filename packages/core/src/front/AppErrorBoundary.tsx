@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { Button, ErrorState } from '@hachej/boring-ui-kit'
+import { Button, ErrorState } from '@hachej/boring-ui'
 import { ConfigFetchError } from '../shared/errors.js'
 
 interface AppErrorBoundaryProps {

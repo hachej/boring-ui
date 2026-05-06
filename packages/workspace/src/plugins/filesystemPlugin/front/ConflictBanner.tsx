@@ -1,6 +1,6 @@
 "use client"
 
-import { Button, Notice } from "@hachej/boring-ui-kit"
+import { Button, Notice } from "@hachej/boring-ui"
 import { FileConflictError } from "./data/fetchClient"
 
 export interface ConflictBannerProps {

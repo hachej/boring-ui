@@ -1,4 +1,4 @@
-import { EmptyState, Kbd } from "@hachej/boring-ui-kit"
+import { EmptyState, Kbd } from "@hachej/boring-ui"
 import type { PaneProps } from "../../../../front/registry/types"
 
 interface EmptyFilePanelParams {

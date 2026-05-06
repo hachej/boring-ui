@@ -16,7 +16,7 @@ import {
   Loader2Icon,
 } from "lucide-react"
 import { getFileIcon } from "../../../../front/registry/getFileIcon"
-import { Input } from "@hachej/boring-ui-kit"
+import { Input } from "@hachej/boring-ui"
 import { cn } from "../../../../front/lib/utils"
 
 export interface FileTreeNode {
