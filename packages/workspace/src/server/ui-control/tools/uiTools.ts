@@ -34,6 +34,21 @@ export interface ExecUiToolOptions {
    * filesystem access).
    */
   workspaceRoot?: string
+  /**
+   * After dispatching a state-changing command (openFile, openPanel,
+   * openSurface, closePanel), wait this many ms before the first state
+   * read. Set to 0 to disable verification entirely. Defaults to 200ms.
+   */
+  verifyDelayMs?: number
+  /**
+   * How many additional state reads to attempt after the first if the
+   * expected change hasn't appeared yet. Defaults to 2.
+   */
+  verifyRetries?: number
+  /**
+   * Milliseconds between retry state reads. Defaults to 200ms.
+   */
+  verifyIntervalMs?: number
 }
 
 const PATH_BEARING_KINDS = new Set(["openFile", "expandToFile", "navigateToLine"])
@@ -111,11 +126,42 @@ export function createGetUiStateTool(uiBridge: UiBridge): AgentTool {
   }
 }
 
+// Commands that mutate workbench tab state — verified via getState() after dispatch.
+const VERIFIABLE_KINDS = new Set(["openFile", "openPanel", "openSurface", "closePanel"])
+
+function isVerified(
+  kind: string,
+  params: Record<string, unknown>,
+  state: import("../../shared/ui-bridge").UiState | null,
+): boolean {
+  if (!state) return false
+  const tabs = state.openTabs ?? []
+  if (kind === "openFile") {
+    const path = typeof params.path === "string" ? params.path : null
+    return path !== null && tabs.some(
+      (t) => (t.params as Record<string, unknown> | undefined)?.path === path,
+    )
+  }
+  if (kind === "openPanel") {
+    const id = typeof params.id === "string" ? params.id : null
+    return id !== null && tabs.some((t) => t.id === id)
+  }
+  if (kind === "closePanel") {
+    const id = typeof params.id === "string" ? params.id : null
+    return id !== null && !tabs.some((t) => t.id === id)
+  }
+  // openSurface: tab id is resolver-dependent — treat any state as verified
+  return true
+}
+
 export function createExecUiTool(
   uiBridge: UiBridge,
   opts: ExecUiToolOptions = {},
 ): AgentTool {
   const { workspaceRoot } = opts
+  const verifyDelayMs = opts.verifyDelayMs ?? 200
+  const verifyRetries = opts.verifyRetries ?? 2
+  const verifyIntervalMs = opts.verifyIntervalMs ?? 200
   return {
     name: "exec_ui",
     description: [
@@ -182,13 +228,14 @@ export function createExecUiTool(
       "  expandToFile params: { path: string }",
       "  showNotification params: { msg: string, level?: 'info'|'warn'|'error' }",
       "",
-      "Returns { seq, status: 'ok' | 'error' }. The status is 'ok' as soon as",
-      "the command is queued; actual UI dispatch happens asynchronously on",
-      "the frontend. If openPanel's `component` isn't registered, the",
-      "frontend logs an error to the dev console and the panel does not",
-      "appear — call get_ui_state first to discover availablePanels and",
-      "avoid that path. To open a FILE, prefer openFile (path-aware) over",
-      "openPanel (which is for non-file panes like charts).",
+      "Returns { seq, status, uiState? }. For openFile / openPanel / openSurface /",
+      "closePanel the response includes a `uiState` snapshot taken ~400ms after",
+      "dispatch — check uiState.openTabs to confirm the action took effect.",
+      "If the expected tab is missing from openTabs the frontend silently",
+      "rejected the command (unknown panel component, unregistered surface",
+      "resolver, or surface not yet ready). For other kinds only { seq, status }",
+      "is returned. To open a FILE prefer openFile (path-aware) over openPanel",
+      "(which is for non-file panes like charts).",
     ].join("\n"),
     parameters: {
       type: "object",
@@ -263,9 +310,35 @@ export function createExecUiTool(
       try {
         const command: UiCommand = { kind, params: cmdParams }
         const result = await uiBridge.postCommand(command)
+        if (result.status === "error") {
+          return {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+            isError: true,
+            details: result,
+          }
+        }
+
+        // For state-changing commands, poll for the frontend's updated state
+        // (pushed back via PUT /api/v1/ui/state after dockview fires
+        // onDidAddPanel/onDidRemovePanel). Retry up to verifyRetries times so
+        // slow renders or network jitter don't produce stale snapshots.
+        if (verifyDelayMs > 0 && VERIFIABLE_KINDS.has(kind)) {
+          await new Promise<void>((r) => setTimeout(r, verifyDelayMs))
+          let uiState = await uiBridge.getState()
+          for (let i = 0; i < verifyRetries; i++) {
+            if (isVerified(kind, cmdParams, uiState)) break
+            await new Promise<void>((r) => setTimeout(r, verifyIntervalMs))
+            uiState = await uiBridge.getState()
+          }
+          const combined = { ...result, uiState }
+          return {
+            content: [{ type: "text", text: JSON.stringify(combined) }],
+            details: combined,
+          }
+        }
+
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
-          isError: result.status === "error",
           details: result,
         }
       } catch (error) {

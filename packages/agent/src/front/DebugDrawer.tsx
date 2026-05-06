@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { UIMessage } from 'ai'
 import { cn } from './lib'
-import { Button, IconButton, Tabs, TabsList, TabsTrigger } from '@boring/ui'
+import { Button, IconButton, Tabs, TabsContent, TabsList, TabsTrigger } from '@boring/ui'
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -45,7 +45,7 @@ function DebugValue({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-border/40 bg-muted/20 p-2">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/70">
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
           {label}
         </span>
         <CopyButton value={value} label={`Copy ${label}`} />
@@ -147,7 +147,7 @@ function SystemPromptTab({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="shrink-0 flex items-center justify-between px-3 pt-2 pb-1 border-b border-border/40">
-        <span className="text-[10px] text-muted-foreground/70 font-mono">
+        <span className="text-[10px] text-muted-foreground/80 font-mono">
           {state.kind === 'ok'
             ? `${state.text.length.toLocaleString()} chars`
             : state.kind === 'loading'
@@ -260,7 +260,7 @@ function MessagesTab({ messages }: { messages: UIMessage[] }) {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="shrink-0 px-3 pt-2 pb-1 text-[10px] text-muted-foreground/70 font-mono border-b border-border/40">
+      <div className="shrink-0 px-3 pt-2 pb-1 text-[10px] text-muted-foreground/80 font-mono border-b border-border/40">
         {messages.length} msg · {parts.length} parts
       </div>
       <div className="flex-1 overflow-auto">
@@ -368,9 +368,9 @@ export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidt
           "bg-[oklch(from_var(--background)_calc(l-0.01)_c_h)]",
         )}
       >
-        <header className="flex shrink-0 items-center gap-0 border-b border-border/60 px-1">
-          <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="w-full">
-            <TabsList variant="line" className="h-auto gap-0 p-0">
+        <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <header className="flex shrink-0 items-center gap-0 border-b border-border/60 px-1">
+            <TabsList variant="line" className="h-auto gap-0 p-0 w-full">
               {TABS.map(({ id, label }) => (
                 <TabsTrigger
                   key={id}
@@ -381,16 +381,18 @@ export function DebugDrawer({ sessionId, messages, requestHeaders, width, onWidt
                 </TabsTrigger>
               ))}
             </TabsList>
-          </Tabs>
-        </header>
+          </header>
 
-        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-          {tab === 'session' && <SessionTab sessionId={sessionId} />}
-          {tab === 'prompt' && (
+          <TabsContent value="session" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
+            <SessionTab sessionId={sessionId} />
+          </TabsContent>
+          <TabsContent value="prompt" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
             <SystemPromptTab sessionId={sessionId} requestHeaders={requestHeaders} />
-          )}
-          {tab === 'messages' && <MessagesTab messages={messages} />}
-        </div>
+          </TabsContent>
+          <TabsContent value="messages" forceMount className="flex flex-col flex-1 min-h-0 overflow-hidden data-[state=inactive]:hidden">
+            <MessagesTab messages={messages} />
+          </TabsContent>
+        </Tabs>
       </aside>
     </>
   )

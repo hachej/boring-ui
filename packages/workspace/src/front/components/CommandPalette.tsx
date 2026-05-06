@@ -34,6 +34,7 @@ import type { CommandConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 import type { ExplorerRow } from "./DataExplorer/types"
+import { useWorkspaceContext } from "../provider/WorkspaceProvider"
 import {
   loadRecent,
   addCatalogToRecent,
@@ -75,6 +76,14 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   const [catalogGroups, setCatalogGroups] = useState<CatalogSearchGroup[]>([])
   const catalogs = useCatalogs()
   const commands = useCommands()
+  const { registeredPlugins } = useWorkspaceContext()
+  const pluginLabelMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const plugin of registeredPlugins) {
+      if (plugin.label) map[plugin.id] = plugin.label
+    }
+    return map
+  }, [registeredPlugins])
   const inputRef = useRef<HTMLInputElement>(null)
   const priorFocusRef = useRef<HTMLElement | null>(null)
   const wasOpenRef = useRef(false)
@@ -462,6 +471,11 @@ export function CommandPalette(_props?: CommandPaletteProps) {
                   >
                     <TerminalIcon className="size-4 shrink-0 text-muted-foreground/70 group-aria-selected:text-[color:var(--accent)]" />
                     <span className="flex-1 truncate">{cmd.title}</span>
+                    {pluginLabelMap[cmd.pluginId ?? ""] && (
+                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {pluginLabelMap[cmd.pluginId ?? ""]}
+                      </span>
+                    )}
                     {cmd.shortcut && <CommandShortcut>{cmd.shortcut}</CommandShortcut>}
                   </CommandItem>
                 ))}

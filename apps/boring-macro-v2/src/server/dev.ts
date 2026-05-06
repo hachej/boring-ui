@@ -2,6 +2,9 @@
 // Vite proxies /api and /health to the backend.
 
 import { resolve } from "node:path"
+
+// Load .env before anything else (Node 22 native, no dotenv dep).
+try { process.loadEnvFile(new URL("../../.env", import.meta.url)) } catch { /* optional */ }
 import { createServer as createViteServer } from "vite"
 import { buildServer } from "./index.js"
 

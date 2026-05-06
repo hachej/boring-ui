@@ -64,6 +64,8 @@ export {
   useAutoOpenAgentFiles,
 } from "./plugins/filesystemPlugin/front"
 export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin/front"
+export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
+export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
 export {
   createExplorerPlugin,
   createExplorerOutputs,

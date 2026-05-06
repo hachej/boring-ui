@@ -466,11 +466,15 @@ export function WorkspaceProvider({
       registries: { panels: pr, commands: cr, catalogs: cat, surfaceResolvers: sr },
     })
 
-    const metas: RegisteredPluginMeta[] = allPlugins.map((p) => ({
-      id: p.id,
-      label: p.label,
-      systemPrompt: p.systemPrompt,
-    }))
+    const metas: RegisteredPluginMeta[] = [
+      { id: "workspace:chat-layout", label: "Layout" },
+      { id: "agent:chat-layout", label: "Layout" },
+      ...allPlugins.map((p) => ({
+        id: p.id,
+        label: p.label,
+        systemPrompt: p.systemPrompt,
+      })),
+    ]
 
     if (panels) {
       for (const panel of panels) {

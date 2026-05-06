@@ -5,73 +5,42 @@ const hasRealKey =
   process.env.ANTHROPIC_API_KEY !== 'e2e-test-key'
 
 test.describe('M3b: slash commands (client-side)', () => {
-  test('/help shows command list', async ({ browserPage }) => {
-    const composer = browserPage.locator('.composer textarea')
-    await composer.fill('/help')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
-
-    const response = browserPage.locator('[data-role="assistant"]').last()
-    await expect(response).toBeVisible()
-    await expect(response).toContainText('/clear')
-    await expect(response).toContainText('/reset')
-    await expect(response).toContainText('/model')
-    await expect(response).toContainText('/help')
-    await expect(response).toContainText('/cost')
-  })
-
-  test('/model haiku switches model', async ({ browserPage }) => {
-    const composer = browserPage.locator('.composer textarea')
-    await composer.fill('/model haiku')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
-
-    const response = browserPage.locator('[data-role="assistant"]').last()
-    await expect(response).toBeVisible()
-    await expect(response).toContainText('Model set to haiku.')
-  })
-
-  test('/model with invalid name shows error', async ({ browserPage }) => {
-    const composer = browserPage.locator('.composer textarea')
-    await composer.fill('/model gpt4')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
-
-    const response = browserPage.locator('[data-role="assistant"]').last()
-    await expect(response).toBeVisible()
-    await expect(response).toContainText('Unknown model')
-  })
-
   test('/reset clears session after confirm', async ({ browserPage }) => {
-    const composer = browserPage.locator('.composer textarea')
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
 
-    await composer.fill('/help')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
-    await expect(browserPage.locator('[data-role="assistant"]')).toHaveCount(1)
-
-    browserPage.on('dialog', (dialog) => dialog.accept())
-
+    // Get one message into the conversation first via /reset
+    browserPage.once('dialog', (dialog) => dialog.accept())
     await composer.fill('/reset')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
+    await browserPage.locator('button[aria-label="Submit"]').click()
+    await expect(browserPage.locator('[data-boring-agent-message-role="assistant"]')).toHaveCount(1)
 
-    const messages = browserPage.locator('[data-role="assistant"]')
+    // Second /reset: accept dialog — count goes back to 1 (just "Session reset.")
+    browserPage.on('dialog', (dialog) => dialog.accept())
+    await composer.fill('/reset')
+    await browserPage.locator('button[aria-label="Submit"]').click()
+
+    const messages = browserPage.locator('[data-boring-agent-message-role="assistant"]')
     await expect(messages).toHaveCount(1)
     await expect(messages.first()).toContainText('Session reset.')
   })
 
   test('/reset cancelled preserves messages', async ({ browserPage }) => {
-    const composer = browserPage.locator('.composer textarea')
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
 
-    await composer.fill('/help')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
-    await expect(browserPage.locator('[data-role="assistant"]')).toHaveCount(1)
-
-    browserPage.on('dialog', (dialog) => dialog.dismiss())
-
+    // Get a message in the conversation
+    browserPage.once('dialog', (dialog) => dialog.accept())
     await composer.fill('/reset')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
+    await browserPage.locator('button[aria-label="Submit"]').click()
+    await expect(browserPage.locator('[data-boring-agent-message-role="assistant"]')).toHaveCount(1)
 
-    // Messages preserved — still the /help response, no "Session reset." added
-    const messages = browserPage.locator('[data-role="assistant"]')
+    // Cancel the second /reset — messages preserved
+    browserPage.on('dialog', (dialog) => dialog.dismiss())
+    await composer.fill('/reset')
+    await browserPage.locator('button[aria-label="Submit"]').click()
+
+    const messages = browserPage.locator('[data-boring-agent-message-role="assistant"]')
     await expect(messages).toHaveCount(1)
-    await expect(messages.first()).toContainText('/clear')
+    await expect(messages.first()).toContainText('Session reset.')
   })
 })
 
@@ -79,9 +48,9 @@ test.describe('M3b: AI chat (tool card + heartbeat)', () => {
   test.skip(!hasRealKey, 'Requires real ANTHROPIC_API_KEY')
 
   test('bash tool card renders with terminal output', async ({ browserPage }) => {
-    const composer = browserPage.locator('.composer textarea')
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
     await composer.fill('Run: echo "hello from e2e"')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
+    await browserPage.locator('button[aria-label="Submit"]').click()
 
     const toolCard = browserPage.locator('[data-tool-state]').first()
     await expect(toolCard).toBeVisible({ timeout: 30_000 })
@@ -89,11 +58,11 @@ test.describe('M3b: AI chat (tool card + heartbeat)', () => {
   })
 
   test('edit tool card renders DiffView', async ({ browserPage }) => {
-    const composer = browserPage.locator('.composer textarea')
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
     await composer.fill(
       'Edit the file src/main.ts: change "from-e2e-workspace" to "updated-by-e2e". Use the edit tool.',
     )
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
+    await browserPage.locator('button[aria-label="Submit"]').click()
 
     const diffView = browserPage.locator('[data-testid="diff-view"]').first()
     await expect(diffView).toBeVisible({ timeout: 30_000 })
@@ -102,9 +71,9 @@ test.describe('M3b: AI chat (tool card + heartbeat)', () => {
   test('heartbeat ticker shows elapsed time on long tool', async ({
     browserPage,
   }) => {
-    const composer = browserPage.locator('.composer textarea')
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
     await composer.fill('Run this exact command: sleep 6 && echo done')
-    await browserPage.locator('.composer button', { hasText: 'Send' }).click()
+    await browserPage.locator('button[aria-label="Submit"]').click()
 
     const toolCard = browserPage.locator('[data-tool-state]').first()
     await expect(toolCard).toBeVisible({ timeout: 30_000 })

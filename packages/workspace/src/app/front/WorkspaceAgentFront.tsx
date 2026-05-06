@@ -406,7 +406,10 @@ export function WorkspaceAgentFront<
     onChange: handleSurfaceChange,
     onClose: () => {
       surfaceOpenRef.current = false
-      surfaceRef.current = null
+      // Do NOT clear surfaceRef here. SurfaceShell stays mounted (width=0) after
+      // close — dockview never re-fires onReady, so clearing the handle would
+      // prevent postUiCommand openSurface from finding the surface on the next
+      // open. The ref is invalidated naturally when the storage key changes.
       setSurfaceOpen(false)
     },
   }), [

@@ -1220,7 +1220,7 @@ function KbdHints() {
     <div
       aria-hidden="true"
       className={cn(
-        "hidden items-center gap-1.5 text-[11px] text-muted-foreground/70",
+        "hidden items-center gap-1.5 text-[11px] text-muted-foreground/80",
         "sm:flex",
       )}
     >

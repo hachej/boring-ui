@@ -82,6 +82,7 @@ async function startFrontend(apiPort: number): Promise<string> {
       port: 0,
       strictPort: false,
       host: '127.0.0.1',
+      hmr: false,
       proxy: {
         '/api': apiTarget,
         '/health': apiTarget,
@@ -109,6 +110,20 @@ const app = await createAgentApp({
   sessionId: 'e2e',
   version,
   logger: false,
+})
+
+// Allow cross-origin requests from the Vite dev server so that
+// browserPage.evaluate() calls to the raw API port work in E2E tests.
+// Set the header on reply.raw so it survives reply.hijack() for streaming.
+app.addHook('onRequest', async (request, reply) => {
+  reply.raw.setHeader('Access-Control-Allow-Origin', '*')
+  if (request.method === 'OPTIONS') {
+    reply.raw.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
+    reply.raw.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Turn-Id')
+    reply.hijack()
+    reply.raw.writeHead(204)
+    reply.raw.end()
+  }
 })
 
 const apiAddress = await app.listen({ port, host: '127.0.0.1' })

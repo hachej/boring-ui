@@ -76,6 +76,42 @@ export function makeMacroClientPlugin(
     outputs: [
       { type: "panel", panel: chartCanvasPanel },
       { type: "panel", panel: deckPanel },
+      {
+        type: "command",
+        command: {
+          id: "macro:open-gdp-chart",
+          title: "Open Real GDP Chart",
+          keywords: ["macro", "gdp", "gdpc1", "chart", "series"],
+          run: () => openSeriesPane("GDPC1", { title: "Real GDP" }),
+        },
+      },
+      {
+        type: "command",
+        command: {
+          id: "macro:open-unemployment-chart",
+          title: "Open Unemployment Rate Chart",
+          keywords: ["macro", "unemployment", "unrate", "chart", "series", "labor"],
+          run: () => openSeriesPane("UNRATE", { title: "Unemployment Rate" }),
+        },
+      },
+      {
+        type: "command",
+        command: {
+          id: "macro:open-cpi-chart",
+          title: "Open CPI Inflation Chart",
+          keywords: ["macro", "cpi", "inflation", "price", "chart", "series"],
+          run: () => openSeriesPane("CPIAUCSL", { title: "CPI Inflation" }),
+        },
+      },
+      {
+        type: "command",
+        command: {
+          id: "macro:open-fed-funds-chart",
+          title: "Open Fed Funds Rate Chart",
+          keywords: ["macro", "fed", "funds", "rate", "interest", "fomc", "fedfunds", "chart"],
+          run: () => openSeriesPane("FEDFUNDS", { title: "Fed Funds Rate" }),
+        },
+      },
     ],
   })
 

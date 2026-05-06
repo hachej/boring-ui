@@ -210,7 +210,10 @@ export function SurfaceShell({
 
   const openFileSync = useCallback((path: string) => {
     const api = apiRef.current
-    if (!api) return
+    if (!api) {
+      console.warn("[SurfaceShell] openFile: surface not ready (dockview not initialized)")
+      return
+    }
     const normalizedPath = normalizeWorkbenchPath(path)
     const existing = findOpenFilePanel(api, normalizedPath)
     if (existing) {
@@ -222,8 +225,14 @@ export function SurfaceShell({
       target: normalizedPath,
     }
     const resolved = surfaceResolverRegistryRef.current.resolve(request)
-    if (!resolved) return
-    if (!panelRegistryRef.current.has(resolved.component)) return
+    if (!resolved) {
+      console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
+      return
+    }
+    if (!panelRegistryRef.current.has(resolved.component)) {
+      console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
+      return
+    }
     const panelId = surfacePanelId(request, resolved)
     const existingByResolvedId = api.getPanel(panelId)
     if (existingByResolvedId) {
@@ -241,10 +250,16 @@ export function SurfaceShell({
 
   const openSurfaceSync = useCallback((request: SurfaceOpenRequest) => {
     const api = apiRef.current
-    if (!api) return
+    if (!api) {
+      console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
+      return
+    }
     const normalizedRequest = normalizeSurfaceOpenRequest(request)
     const resolved = surfaceResolverRegistryRef.current.resolve(normalizedRequest)
-    if (!resolved) return
+    if (!resolved) {
+      console.warn(`[SurfaceShell] openSurface: no resolver matched kind="${normalizedRequest.kind}" target="${normalizedRequest.target}"`)
+      return
+    }
     const panelId = surfacePanelId(normalizedRequest, resolved)
     const existing =
       normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND

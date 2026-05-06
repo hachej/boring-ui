@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { PaneProps } from "@boring/workspace"
+import { events, filesystemEvents } from "@boring/workspace"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import {
@@ -448,6 +449,7 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
   }, [api])
 
   // Load
+  const [reloadToken, setReloadToken] = useState(0)
   useEffect(() => {
     if (!path) return
     let cancelled = false
@@ -470,6 +472,15 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
     return () => {
       cancelled = true
     }
+  }, [path, reloadToken])
+
+  // Hot-reload: re-fetch when the workspace bus reports this file changed
+  // (e.g. the agent wrote it via the write tool).
+  useEffect(() => {
+    if (!path) return
+    return events.on(filesystemEvents.changed, (e) => {
+      if (e.path === path) setReloadToken((n) => n + 1)
+    })
   }, [path])
 
   const save = useCallback(async () => {

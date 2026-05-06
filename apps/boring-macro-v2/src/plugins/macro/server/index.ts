@@ -92,11 +92,25 @@ You have access to macro-economic timeseries tools and data.
 3. Always persist derived series with meaningful IDs
 4. To show a series chart, call exec_ui with kind "openSurface" and params
    { kind: "${MACRO_OPEN_SERIES_SURFACE_KIND}", target: series_id, meta: { title } }
+
+### Deck Slide Format Rules
+
+When writing a deck file (*.md in the deck/ directory), follow these rules strictly:
+
+- Separate slides with a line containing ONLY \`---\` (three dashes, nothing else on the line)
+- Each slide fits a fixed 16:9 viewport — keep content SHORT or it will be scaled down to unreadable size
+- Max 1 heading + 4–6 bullet points per slide, OR 1 heading + 1 short paragraph, OR a single chart embed
+- Headings should be ≤ 6 words. Bullets should be ≤ 12 words each
+- Do NOT write walls of text. No multi-paragraph prose inside a single slide
+- Use \`{{TimeSeries ids="ID1,ID2"}}\` on its own line to embed a chart — counts as most of the slide content
+- Frontmatter title sets the cover slide: start the file with \`---\\ntitle: My Title\\n---\` if you want a cover
+- Never use nested bullet lists deeper than one level
 `.trim()
 
   return defineServerPlugin({
     id: "boring-macro",
     label: "Macro",
+    piPackages: ["npm:pi-web-access"],
     agentTools: tools,
     provisioning: macroProvisioning,
     routes: macroRoutes,
