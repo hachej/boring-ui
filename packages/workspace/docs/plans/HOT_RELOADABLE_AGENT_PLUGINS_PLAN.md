@@ -38,6 +38,71 @@ Self-contained plugin with its own front + server code. No dependency on any exi
 
 ---
 
+## Design Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Reload trigger | Manifest write only | Agent writes code files, then writes `boring.plugin.json` as commit signal. No partial-write races. Follows pi's "explicit reload" philosophy. |
+| Rollback on failure | Restore old state | Stage new registrations, commit only on full success. Old plugin stays live on any failure. |
+| Registry/React integration | Zustand stores | Plugin registries are Zustand stores. SSE updates go through `setState` — no Map mutation during React render cycle. |
+| iframe handshake | Iframe sends `ready` first | Iframe signals it's ready; host responds with `init`. Eliminates lost-init race from `onLoad` timing. |
+| Revision scope | Monotonic per pluginId | Every SSE event (load, unload, error) and reconnect response carries revision. Browser drops events where `revision ≤ lastSeen[pluginId]`. |
+| pi alignment | Follow pi patterns | jiti loading via `createJiti(import.meta.url, { moduleCache: false })`, plugin API style, error surfacing all follow pi's conventions. |
+
+---
+
+## Atomicity Model
+
+Both server and browser use a **stage → validate → commit / rollback** pattern. Old state is never discarded until new state is proven good.
+
+### Server (both modes)
+
+```
+1. Read + validate manifest  →  fail: write .error, SSE error, return (no state change)
+2. ServerPluginLoader.stage(pluginId, serverPath, api)  →  staged tools in temp registry
+3. Stage fails (jiti throws, disposers not registered)  →  write .error, SSE error, return
+4. Commit: atomically swap temp registry into live registry (unload old tools, activate staged)
+5. activePlugins[pluginId] = { manifest, revision }  (updated BEFORE SSE dispatch)
+6. Delete .boring/plugins/<id>/.error if present
+7. SSE boring.plugin.load { manifest, revision }
+```
+
+Unload: reverse step 4, remove from activePlugins, SSE `boring.plugin.unload { pluginId, revision }`.
+
+### Browser (both modes)
+
+```
+SSE boring.plugin.load { manifest, revision } received:
+1. If revision ≤ lastSeen[pluginId]: discard stale
+2. Snapshot current Zustand state for pluginId (for rollback)
+3. Build staged registrations:
+     mode="direct": await import(url?v=revision) → run factory → capture
+     mode="iframe": read manifest arrays → build registration set
+4. Validate staged (Path A extensionContract check)
+5. Any step 3–4 throws: restore snapshot to Zustand, show toast, return
+6. Commit: usePanelStore.setState(...), useCommandStore.setState(...) etc.
+   — resolver LIFO stack: push new entries tagged (pluginId, revision);
+     pop all previous entries for this pluginId before pushing new ones
+7. lastSeen[pluginId] = revision
+```
+
+Unload SSE `{ pluginId, revision }`: if `revision ≤ lastSeen[pluginId]` discard; else pop all resolver stack entries for pluginId, remove from all Zustand stores, lastSeen[pluginId] = revision.
+
+### Reconnect ordering
+
+Server always updates `activePlugins` map **before** dispatching SSE. `GET /api/agent-plugins` therefore always returns state ≥ what SSE has announced. Browser on reconnect:
+
+```
+const plugins = await fetch('/api/agent-plugins')  // returns [{ manifest, revision }]
+for each { manifest, revision } in plugins:
+  if revision > lastSeen[manifest.id]:
+    registerAgentPlugin(manifest, revision, mode)  // only registers if newer
+```
+
+This is safe even if SSE already delivered a newer revision — the stale check in step 1 discards the reconnect registration.
+
+---
+
 ## Unified Load Architecture — Paves the Way for V2
 
 V1 and V2 share the same browser-side load infrastructure. The only thing that changes from V1 → V2 is **how the panel renders**:
@@ -85,42 +150,55 @@ server: { fs: { allow: [workspaceRoot] } }
 
 This lets the browser import `/.boring/plugins/<id>/front.tsx` — Vite transforms it on the fly. V1 is **not intended for production builds** — use V2 (esbuild + iframe) for any deployed environment.
 
+### Manifest-as-commit-signal
+
+The watcher only fires on `boring.plugin.json` writes/deletes — **not** on changes to `front.tsx` or `plugin.server.ts`. The agent workflow:
+
+```
+1. Write front.tsx          (no reload yet)
+2. Write plugin.server.ts   (no reload yet)
+3. Write boring.plugin.json ← reload triggers here
+```
+
+This eliminates partial-write races: by the time the manifest is written, all code files are already on disk. Aligns with pi's philosophy of explicit reload signals rather than continuous file watching.
+
 ### Load flow (v1)
 
 ```
-Agent writes .boring/plugins/csv-viewer/ files
+Agent writes boring.plugin.json
   │
   ▼
-workspace.watch() fires on boring.plugin.json (write/unlink)
+workspace.watch() fires on .boring/plugins/csv-viewer/boring.plugin.json
   │
-  ▼ (server)
-Read + validate boring.plugin.json
+  ▼ (server — stage → commit model)
+Read + validate boring.plugin.json  →  fail: write .error, SSE error, return
 Extract pluginId from path segment — must match manifest.id
-Bump monotonic revision[pluginId]++
-jiti.import(plugin.server.ts, { moduleCache: false }) → register server tools tagged pluginId
+revision[pluginId]++
+Stage: jiti.import(plugin.server.ts, { moduleCache: false }) into temp registry
+Stage fails (jiti throws)  →  write .error, SSE error, return (old tools untouched)
+Commit: swap temp registry → live registry
+activePlugins[pluginId] = { manifest, revision }  (before SSE)
 Delete .boring/plugins/<id>/.error if present
-SSE → dispatchCommand("boring.plugin.load", { manifest, revision: rev })
+SSE boring.plugin.load { manifest, revision }
   │
-  ▼ (browser — SSE handler)
-If revision ≤ lastSeenRevision[pluginId]: discard (stale event)
-lastSeenRevision[pluginId] = revision
-const { default: factory } = await import(
-  `/.boring/plugins/${id}/front.tsx?v=${revision}`
-)  ↑ Vite transforms TSX on the fly; ?v= busts module cache
-registerAgentPlugin(manifest, registries, pluginRegistry, mode="direct"):
-  unregisterByPluginId(pluginId)          ← removes panels, commands, tabs, resolvers, catalog
-  factory(capturingAPI) → captured registrations
-  If derivesFrom: validate captured contribution types against extensionContract
-    (Path A check is post-factory in v1 — manifest arrays are not used for this)
-  Apply captured registrations: panel, command, tab, resolver, catalog
+  ▼ (browser — stage → commit model)
+revision ≤ lastSeen[pluginId]: discard stale
+Snapshot current Zustand state for pluginId
+import(`/.boring/plugins/${id}/front.tsx?v=${revision}`)  ← Vite transforms on the fly
+Run factory(capturingAPI) → captured registrations
+Validate: if derivesFrom, check captured types against extensionContract
+Any failure → restore snapshot, toast error, return (old registrations stay)
+Commit:
+  pop all resolver stack entries for pluginId (remove old revision entries)
+  usePanelStore.setState / useCommandStore.setState / etc.
+  push new resolver stack entries tagged (pluginId, revision)
+lastSeen[pluginId] = revision
 AgentPluginPane mode="direct":
-  React.lazy(() => import(`/.boring/plugins/${id}/front.tsx?v=${revision}`))
-  Renders component directly in host React tree — no iframe
+  factory import IS the component — AgentPluginPane uses the already-imported
+  module ref, not a second React.lazy call; panel key includes revision to force remount
 ```
 
-Hot-reload: watcher fires → revision bumped → jiti re-imports fresh module → SSE with new revision → browser discards if stale, otherwise re-imports via Vite with new `?v=` param → registries update → React reconciles.
-
-Unload: `boring.plugin.json` deleted → jiti module discarded, server tools removed by pluginId → SSE `boring.plugin.unload` → browser `unregisterByPluginId` → any open panel shows "plugin not loaded" placeholder.
+Unload: `boring.plugin.json` deleted → server commits empty state → SSE `boring.plugin.unload { pluginId, revision }` → browser pops resolver stack, removes from Zustand stores → open panels show "plugin not loaded" placeholder.
 
 ### Contribution surface (v1)
 
@@ -334,28 +412,37 @@ const url = `/api/agent-plugins/${pluginId}/front.js?v=${reloadKey}`
 
 ### postMessage bridge — full spec (v2)
 
+**Handshake (ack-based, eliminates lost-init race):**
+```
+iframe loads → evaluates bundle → sends boring.bridge.ready
+host receives ready → responds with boring.bridge.init
+iframe receives init → renders with theme/derivedFrom → sends boring.bridge.rendered
+```
+
 **Host → iframe:**
 ```ts
 { type: "boring.bridge.init",
   theme: Record<string, string>,    // CSS custom property values
   derivedFrom?: string }            // base plugin id if Path A
-
-{ type: "boring.bridge.reload" }    // iframe should expect src to change
 ```
 
 **Iframe → host:**
 ```ts
+{ type: "boring.bridge.ready" }     // iframe bundle evaluated, ready for init
+
+{ type: "boring.bridge.rendered" }  // first render complete, host can hide loader
+
 { type: "boring.bridge.openPanel",
   panelId: string }                 // host calls openPanel(panelId)
 
 { type: "boring.bridge.showNotification",
   message: string,
   level: "info" | "warn" | "error" }
-
-{ type: "boring.bridge.ready" }     // iframe finished rendering, host can hide loader
 ```
 
-All messages validated: `event.source === iframeRef.current.contentWindow`. Unknown message types are silently ignored.
+Hot-reload: SSE fires with new revision → host increments `reloadKey` on `AgentPluginPane` → iframe `src` changes to `?v=newRevision` → new iframe load → handshake repeats. No explicit `boring.bridge.reload` message needed — iframe navigation IS the reload.
+
+All messages validated: `event.source === iframeRef.current.contentWindow`. Unknown types silently ignored.
 
 ### bridge-client vendor file (v2)
 
@@ -600,41 +687,44 @@ Implement all shared infrastructure in V1. V2 only adds the three iframe-specifi
 
 ### C — Plugin watcher + SSE dispatch (both)
 - [ ] `src/server/plugins/agentPluginWatcher.ts` — subscribe to `workspace.watch()`
-- [ ] Filter: `event.path.startsWith('.boring/plugins/') && event.path.endsWith('boring.plugin.json')`
+- [ ] Filter: `event.path.startsWith('.boring/plugins/') && event.path.endsWith('boring.plugin.json')` — manifest-only trigger; front.tsx/plugin.server.ts changes do not reload (agent writes manifest last as commit signal)
 - [ ] Enforce: directory name segment must match `manifest.id`
-- [ ] Debounce 50ms per pluginId; serialize concurrent reloads per pluginId
-- [ ] On `write`: validate manifest → load server plugin → dispatch SSE `boring.plugin.load { manifest }`
-- [ ] On `unlink`: extract pluginId from path → unload server plugin → dispatch SSE `boring.plugin.unload { pluginId }`
-- [ ] On load failure: write `.boring/plugins/<id>/.error` + dispatch SSE `boring.plugin.error`
-- [ ] On success: delete `.error` if present
+- [ ] Serialize concurrent reloads per pluginId (no debounce needed — manifest write IS the signal)
+- [ ] On `write`: stage → commit model (see Atomicity Model section); on commit success dispatch SSE `boring.plugin.load { manifest, revision }`; on any failure write `.boring/plugins/<id>/.error` + SSE `boring.plugin.error { pluginId, revision }`
+- [ ] On `unlink`: extract pluginId from path → unload server plugin → SSE `boring.plugin.unload { pluginId, revision }`
+- [ ] On success: delete `.boring/plugins/<id>/.error` if present (server-generated file, safe to delete)
 
 ### D — Server plugin loading: jiti + Path A registry + catalog route (both)
-- [ ] `src/server/plugins/serverPluginRegistry.ts` — server-side Map of pluginId → extensionContract; inside plugin ids checked for collision with registered outside plugin ids
-- [ ] `src/server/plugins/jitiPluginLoader.ts` — `loadServerPlugin(pluginId, serverPath, api)` via jiti `{ moduleCache: false }`; all registered tools + catalog handlers tagged by pluginId; `unloadServerPlugin(pluginId)` removes all atomically
-- [ ] `createWorkspaceServer` accepts `pluginLoader?: ServerPluginLoader`; defaults to `createJitiLoader()`; core injects alternative
-- [ ] `pluginRegistry.register({ id, extensionContract? })` called at workspace init for each outside plugin
-- [ ] `GET /api/agent-plugins/:pluginId/catalog/search?q=` — delegates to CatalogSearchHandler registered by plugin.server.ts; route exists in both v1 and v2
-- [ ] Active plugin state map: `Map<pluginId, { manifest, revision }>` — drives the reconnect endpoint
+- [ ] `src/server/plugins/serverPluginRegistry.ts` — server-side Map of pluginId → extensionContract; inside plugin IDs checked for collision with outside plugin IDs
+- [ ] `src/server/plugins/jitiPluginLoader.ts` — implements `ServerPluginLoader`; uses `createJiti(import.meta.url, { moduleCache: false })` (pi pattern); `BoringServerPluginAPI` includes `registerTool`, `registerCatalogHandler`, `registerDisposer(fn)` — disposers called before tools are removed on unload/reload; staging via temp Map, atomically swapped on commit
+- [ ] `createWorkspaceServer` accepts `pluginLoader?: ServerPluginLoader`; defaults to `createJitiLoader()`
+- [ ] `pluginRegistry.register({ id, extensionContract? })` called at workspace init for each outside plugin (before any inside plugin replay)
+- [ ] `GET /api/agent-plugins/:pluginId/catalog/search?q=` — delegates to registered CatalogSearchHandler; in-flight requests complete before handler removal on unload
+- [ ] Active plugin state map: `Map<pluginId, { manifest, revision }>` updated before SSE dispatch
 
 ### F — `GET /api/agent-plugins` reconnect endpoint (both) — implement alongside D
 - [ ] Returns `Array<{ manifest, revision }>` for all currently-loaded plugins
-- [ ] Browser fetches on connect/reconnect → calls `registerAgentPlugin` for each with its revision
+- [ ] Browser fetches on connect/reconnect → for each entry, calls `registerAgentPlugin` only if `revision > lastSeen[pluginId]`
 
 ### E — Browser: SSE handler + `registerAgentPlugin` + `AgentPluginPane` direct mode (v1)
-- [ ] `src/front/plugins/agentPluginRegistry.ts` — browser-side Map of pluginId → extensionContract; revision tracking Map: `Map<pluginId, number>`
-- [ ] `src/front/plugins/registerAgentPlugin.ts` — `registerAgentPlugin(manifest, registries, pluginRegistry, mode, revision)`:
-  - If `revision ≤ lastSeen[pluginId]`: return early (stale)
-  - `lastSeen[pluginId] = revision`
-  - `unregisterByPluginId(pluginId)` — removes panels, commands, tabs, resolvers, catalog, cleans lazy refs
-  - mode="direct": `await import(url?v=revision)` → run factory → Path A check on captured registrations
-  - mode="iframe": register from manifest arrays directly; Path A check on manifest contribution types
+- [ ] Registries are **Zustand stores** (`usePanelStore`, `useCommandStore`, `useTabStore`, `useResolverStore`) — SSE updates go through `setState`, never direct Map mutation
+- [ ] Resolver LIFO stack: each entry tagged `(pluginId, revision)`; on commit, pop all entries for pluginId before pushing new ones; `unregisterByPluginId` only removes entries matching that pluginId
+- [ ] `src/front/plugins/agentPluginRegistry.ts` — browser-side Map of outside pluginId → extensionContract; `lastSeen: Map<pluginId, revision>`
+- [ ] `src/front/plugins/registerAgentPlugin.ts` — `registerAgentPlugin(manifest, revision, mode)`:
+  - `revision ≤ lastSeen[manifest.id]` → return (stale)
+  - Snapshot current Zustand state for pluginId (for rollback)
+  - mode="direct": `await import(url?v=revision)` → run factory → capture; Path A: check captured types vs extensionContract
+  - mode="iframe": build registration set from manifest arrays; Path A: check manifest contribution types
+  - Any failure → restore snapshot via `setState`, show toast, return
+  - Commit: `usePanelStore.setState(...)` etc.; update resolver stack
+  - `lastSeen[manifest.id] = revision`
 - [ ] `src/front/plugins/AgentPluginPane.tsx`:
-  - mode="direct": `React.lazy(() => import(url))` in host tree
-  - mode="iframe": `<iframe sandbox="allow-scripts">` (stubbed for now, wired in G)
-  - On unload (plugin removed from registry): render "Plugin not loaded" placeholder instead of crashing
+  - mode="direct": use factory's exported component directly (no second lazy import); panel wrapper key includes revision to force remount
+  - mode="iframe": `<iframe sandbox="allow-scripts">` (stubbed; wired in G)
+  - When plugin missing from store: render "Plugin not loaded" placeholder
 - [ ] Register `agent-plugin-frame` panel wrapper in `coreRegistrations.ts`
-- [ ] Wire SSE handler: `boring.plugin.load` → `registerAgentPlugin`; `boring.plugin.unload` → `unregisterByPluginId`; `boring.plugin.error` → show toast
-- [ ] On browser connect: fetch `GET /api/agent-plugins` → `registerAgentPlugin` for each
+- [ ] SSE handler: `boring.plugin.load` → `registerAgentPlugin`; `boring.plugin.unload` → pop resolver stack + remove from stores; `boring.plugin.error` → show toast
+- [ ] On browser connect: fetch `GET /api/agent-plugins` → register each if revision newer
 
 ### G — V2: esbuild route + iframe render mode (v2)
 - [ ] `GET /api/agent-plugins/:pluginId/front.js` — esbuild on demand, `bundle:true jsx:'automatic' format:'iife'`, `nodePaths` + `alias` for bridge-client, `Cache-Control: no-store`
