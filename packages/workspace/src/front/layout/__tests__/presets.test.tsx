@@ -32,7 +32,7 @@ function setup(panels: string[]) {
 
   const panelRegistry = new PanelRegistry()
   for (const id of panels) {
-    panelRegistry.register(id, { title: id, component: DummyPanel })
+    panelRegistry.register(id, { title: id, lazy: false, component: DummyPanel })
   }
   const commandRegistry = new CommandRegistry()
   return { panelRegistry, commandRegistry }

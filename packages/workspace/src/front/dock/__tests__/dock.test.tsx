@@ -21,8 +21,8 @@ function setupStoreAndRegistry() {
   bindStore(store)
 
   const panelRegistry = new PanelRegistry()
-  panelRegistry.register("explorer", { title: "Explorer", component: DummyPanel })
-  panelRegistry.register("editor", { title: "Editor", component: DummyPanel })
+  panelRegistry.register("explorer", { title: "Explorer", lazy: false, component: DummyPanel })
+  panelRegistry.register("editor", { title: "Editor", lazy: false, component: DummyPanel })
   const commandRegistry = new CommandRegistry()
 
   return { store, panelRegistry, commandRegistry }
@@ -251,6 +251,7 @@ describe("DockviewShellApi via onReady", () => {
 
     panelRegistry.register("api-test", {
       title: "API Test",
+      lazy: false,
       component: function ApiTestPanel() {
         capturedApi = useDockviewApi()
         return <div>test</div>
@@ -281,7 +282,7 @@ describe("DockviewShellApi via onReady", () => {
 describe("DockviewShell — allowedPanels filtering", () => {
   it("allowedPanels excludes unallowed panels from components", () => {
     const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
-    panelRegistry.register("secret", { title: "Secret", component: DummyPanel })
+    panelRegistry.register("secret", { title: "Secret", lazy: false, component: DummyPanel })
 
     render(
       <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
