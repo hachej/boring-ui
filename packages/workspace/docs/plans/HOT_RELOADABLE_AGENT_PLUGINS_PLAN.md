@@ -55,12 +55,20 @@ export default function factory(api: BoringExtensionAPI): void | Promise<void> {
     execute: async ({ q }) => ({ content: [{ type: "text", text: `result: ${q}` }] }),
   })
 
+  // pi-style command (works in pi; boring-ui maps it to command palette with no panel):
+  api.registerCommand("my-plugin.open", { title: "Open My Panel", execute: () => {} })
+
   // boring-ui-only — optional chaining so pi context doesn't throw:
   api.panels?.register({ id: "my-panel", label: "My Panel", component: MyPanel })
+  api.commands?.register({ id: "open-my-panel", title: "Open My Panel", panelId: "my-panel" })
   api.leftTabs?.register({ id: "my-tab", title: "My Tab", panelId: "my-panel" })
-  api.surfaceResolvers?.register({ kind: "my.open", resolve: (req) => ({ panelId: "my-panel" }) })
+  api.surfaceResolvers?.register({ kind: "my.open", resolve: () => ({ panelId: "my-panel" }) })
 }
 ```
+
+**Two command registration paths:**
+- `api.registerCommand(name, { execute })` — pi's flat command API; boring-ui honours it as a command palette entry. No panel association.
+- `api.commands?.register({ panelId })` — boring-ui panel-opening command; absent in pi (optional chaining).
 
 ### `BoringExtensionAPI` — extends pi's `ExtensionAPI`
 
@@ -195,10 +203,26 @@ The agent runs locally. The workspace server runs locally. `plugin.server.ts` lo
 ```
 .boring/plugins/
   csv-viewer/
-    boring.plugin.json    ← manifest
-    front.tsx             ← React factory, imported by browser via Vite
+    package.json          ← npm package: pi discovers via "pi": { "extension": true }; declares plugin deps
+    boring.plugin.json    ← boring-ui manifest (commit signal — agent writes this last)
+    front.tsx             ← pi-compatible factory with boring-ui extras
     plugin.server.ts      ← server tools + catalog handlers, loaded via jiti
 ```
+
+**`package.json`** — makes the plugin a real npm package (pi-discoverable, TypeScript-resolvable):
+```json
+{
+  "name": "boring-plugin-csv-viewer",
+  "version": "1.0.0",
+  "main": "front.tsx",
+  "pi": { "extension": true },
+  "dependencies": {
+    "papaparse": "^5.0.0"
+  }
+}
+```
+
+`"main"` is the factory entry point pi loads. `"pi": { "extension": true }` is how pi's loader discovers the package. Boring-ui reads `boring.plugin.json` for its manifest; pi reads `package.json` + `main`.
 
 ### V1 constraint: dev mode only
 
@@ -212,12 +236,13 @@ This lets the browser import `/.boring/plugins/<id>/front.tsx` — Vite transfor
 
 ### Manifest-as-commit-signal
 
-The watcher only fires on `boring.plugin.json` writes/deletes — **not** on changes to `front.tsx` or `plugin.server.ts`. The agent workflow:
+The watcher only fires on `boring.plugin.json` writes/deletes — **not** on changes to `front.tsx`, `plugin.server.ts`, or `package.json`. The agent workflow:
 
 ```
-1. Write front.tsx          (no reload yet)
-2. Write plugin.server.ts   (no reload yet)
-3. Write boring.plugin.json ← reload triggers here
+1. Write package.json       (once at creation — discovery metadata, not a reload trigger)
+2. Write front.tsx          (no reload)
+3. Write plugin.server.ts   (no reload)
+4. Write boring.plugin.json ← reload triggers here
 ```
 
 This eliminates partial-write races: by the time the manifest is written, all code files are already on disk. Aligns with pi's philosophy of explicit reload signals rather than continuous file watching.
@@ -293,6 +318,7 @@ The agent runs in a sandboxed environment (bwrap, Vercel). Plugin code cannot ru
 ```
 .boring/plugins/
   csv-viewer/
+    package.json          ← npm package (pi compat + dep declarations)
     boring.plugin.json
     front.tsx             ← compiled by esbuild on demand, served to iframe
     plugin.server.ts      ← loaded by injected ServerPluginLoader
@@ -557,7 +583,24 @@ GET /api/agent-plugins/:pluginId/catalog/search?q=<query>
 
 ## Manifest Schema
 
-### Shape
+### Discovery — `package.json` as the primary entry point
+
+Each plugin is an npm package. Discovery uses `"boring": { "extension": true }` in `package.json` — same pattern as pi's `"pi": { "extension": true }`. This means the same package is discoverable by both runtimes.
+
+```json
+{
+  "name": "boring-plugin-csv-viewer",
+  "version": "1.0.0",
+  "main": "front.tsx",
+  "boring": { "extension": true },
+  "pi": { "extension": true },
+  "dependencies": {}
+}
+```
+
+The watcher uses `boring.plugin.json` as the **commit signal** (writes code first, manifest last). `package.json` carries the discovery metadata and is written once at plugin creation time — it is NOT the reload trigger.
+
+### `boring.plugin.json` shape
 
 ```ts
 interface BoringPluginManifest {
@@ -729,7 +772,7 @@ Implement all shared infrastructure in V1. V2 only adds the three iframe-specifi
 
 ---
 
-### A — Manifest redesign `manifest.ts` (both)
+### A — Manifest redesign `manifest.ts` + `package.json` discovery (both)
 - [ ] Replace `BoringPluginRuntime`, `BoringPluginPermissions` with new contribution declaration types
 - [ ] Add `front?`, `server?`, `derivesFrom?`, `panels[]`, `commands[]`, `leftTabs[]`, `surfaceResolvers[]`, `catalogs[]`
 - [ ] Remove `runtime`, `permissions`, `entry`
@@ -739,6 +782,8 @@ Implement all shared infrastructure in V1. V2 only adds the three iframe-specifi
 - [ ] Update `KNOWN_FIELDS` + all validation branches
 - [ ] Rewrite `manifest.test.ts`
 - [ ] Remove `BoringPluginRuntime` / `BoringPluginPermissions` exports from `plugin.ts` and `index.ts`
+- [ ] `package.json` discovery: validate that each plugin dir has a `package.json` with `"boring": { "extension": true }`; also write `"pi": { "extension": true }` so the same package is discoverable by pi's loader
+- [ ] Watcher reads `package.json` to confirm extension flag before processing any manifest in that dir
 
 ### B — Doc seeding + system prompt (both)
 - [ ] Add `packages/workspace/docs/` with `plugins.md`, `panels.md`, `bridge.md`
