@@ -1,5 +1,5 @@
 import type { FileUIPart, UIMessage } from 'ai'
-import { isToolUIPart, getToolName } from 'ai'
+import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
 
 const INLINE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml', 'application/yaml']
@@ -28,10 +28,9 @@ import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
 import { isModelId, type ModelId } from './components/ModelPicker'
 import {
-  resolveToolRenderer,
-  type ToolPart,
   type ToolRendererOverrides,
 } from './bareToolRenderers'
+import { ToolCallGroup, type GroupedToolEntry } from './primitives/tool-call-group'
 import { mergeShadcnToolRenderers } from './toolRenderers'
 import { ArtifactOpenProvider, type OpenArtifactHandler } from './ArtifactOpenContext'
 import {
@@ -339,15 +338,6 @@ function getReasoningPart(part: UIMessage['parts'][number]): ReasoningPartView |
   }
 }
 
-function ToolCard({ toolPart, mergedToolRenderers }: { toolPart: UIMessage['parts'][number]; mergedToolRenderers: ToolRendererOverrides }) {
-  const tp = toolPart as unknown as ToolPart
-  const name = getToolName(toolPart as any)
-  const render = resolveToolRenderer(name, mergedToolRenderers)
-  // Renderer owns its own container. No wrapping div — avoids the
-  // "nested box" feel when a consumer-supplied renderer already styles its
-  // outer element.
-  return <>{render({ ...tp, toolName: name })}</>
-}
 
 export function ChatPanel(props: ChatPanelProps) {
   const {
@@ -820,6 +810,26 @@ export function ChatPanel(props: ChatPanelProps) {
               }
               return items
             }, [])
+            // Group consecutive tool parts into a single collapsible block.
+            // This collapses N separate tool cards into one "Used bash · edit"
+            // line while the turn is idle, and auto-expands while tools run.
+            type FinalPart =
+              | (typeof orderedParts)[number]
+              | { kind: 'tool-group'; tools: GroupedToolEntry[]; key: string }
+            const finalParts = orderedParts.reduce<FinalPart[]>((acc, item) => {
+              if (item.kind === 'part' && isToolUIPart(item.part)) {
+                const prev = acc[acc.length - 1]
+                if (prev?.kind === 'tool-group') {
+                  prev.tools.push({ part: item.part, key: item.key })
+                } else {
+                  acc.push({ kind: 'tool-group', tools: [{ part: item.part, key: item.key }], key: item.key })
+                }
+              } else {
+                acc.push(item)
+              }
+              return acc
+            }, [])
+
             // Regenerate is only meaningful for the most recent assistant
             // reply — regenerating an older turn would fork history in
             // ways we don't support. Restricting visibility to the tail
@@ -876,10 +886,10 @@ export function ChatPanel(props: ChatPanelProps) {
                   )}
 
                   {/* Render reasoning + text + tool parts in the order the
-                      model emitted them. Grouping by type would put thoughts
-                      before every tool, hiding which thought caused which
-                      action. AI SDK guarantees `message.parts` is chronological. */}
-                  {orderedParts.map((item, index) => {
+                      model emitted them. Consecutive tool parts are grouped
+                      into a single collapsible block that auto-expands while
+                      tools run and collapses to a summary when they settle. */}
+                  {finalParts.map((item, index) => {
                     if (item.kind === 'reasoning') {
                       if (!showThoughts) return null
                       return (
@@ -891,6 +901,15 @@ export function ChatPanel(props: ChatPanelProps) {
                           <ReasoningTrigger />
                           <ReasoningContent>{item.text}</ReasoningContent>
                         </Reasoning>
+                      )
+                    }
+                    if (item.kind === 'tool-group') {
+                      return (
+                        <ToolCallGroup
+                          key={item.key}
+                          tools={item.tools}
+                          mergedToolRenderers={mergedToolRenderers}
+                        />
                       )
                     }
                     const { part } = item
@@ -925,15 +944,6 @@ export function ChatPanel(props: ChatPanelProps) {
                         >
                           {part.text}
                         </MessageResponse>
-                      )
-                    }
-                    if (isToolUIPart(part)) {
-                      return (
-                        <ToolCard
-                          key={(part as unknown as ToolPart).toolCallId}
-                          toolPart={part}
-                          mergedToolRenderers={mergedToolRenderers}
-                        />
                       )
                     }
                     return null
