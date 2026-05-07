@@ -36,6 +36,7 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      - run: sudo apt-get install -y ripgrep
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint && pnpm typecheck && pnpm test && pnpm lint:invariants
         env:
