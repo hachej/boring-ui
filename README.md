@@ -8,24 +8,12 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![npm version](https://img.shields.io/npm/v/@boring/core?style=flat-square&label=npm)
-![GitHub Stars](https://img.shields.io/github/stars/hachej/boring-ui?style=flat-square)
-![CI](https://img.shields.io/github/actions/workflow/status/hachej/boring-ui/ci.yml?style=flat-square)
 
-<img width="781" height="417" alt="grafik" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e" />
-
-<img width="726" height="645" alt="grafik" src="https://github.com/user-attachments/assets/5d1475e6-2235-4b7d-99b6-d4f9eca1cfe9" />
+/>
 
 **Your workflow. Your agent. Your UI.**
 
-</div>
-
-## Quickstart
-
-```bash
-npx @hachej/boring-ui-cli
-```
-
-Starts the full workspace — chat, panels, agent runtime — pointed at your current directory. No clone, no install, no config.
+An agentic UI fully customizable for your workflow.
 
 ## Why boring?
 
@@ -35,7 +23,19 @@ The UI is exactly three things:
 - one workbench that the agent can control
 - one command palette.
 
+<img width="781" height="417" alt="grafik" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e" 
+
 That's it. Make it fit your workflow by extending it: plug in custom agent skills and build your own workbench panes.
+
+<img width="726" height="645" alt="grafik" src="https://github.com/user-attachments/assets/5d1475e6-2235-4b7d-99b6-d4f9eca1cfe9" />
+
+## Quickstart
+
+```bash
+npx @hachej/boring-ui-cli
+```
+
+Starts the full workspace — chat, panels, agent runtime — pointed at your current directory. No clone, no install, no config.
 
 ---
 
