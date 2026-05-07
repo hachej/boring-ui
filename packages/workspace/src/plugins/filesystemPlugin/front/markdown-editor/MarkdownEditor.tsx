@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { ChangeEvent } from "react"
 import { useEditor, useEditorState, EditorContent } from "@tiptap/react"
 import type { Editor } from "@tiptap/core"
@@ -20,7 +20,7 @@ import { ResizableImage } from "./ResizableImage"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
 import { common, createLowlight } from "lowlight"
-import { Markdown } from "tiptap-markdown"
+import { Markdown } from "@tiptap/markdown"
 import {
   BoldIcon,
   ItalicIcon,
@@ -109,12 +109,11 @@ const extensions = [
   }),
   CodeBlockLowlight.configure({ lowlight }),
   Markdown.configure({
-    html: true,
-    tightLists: true,
-    bulletListMarker: "-",
-    linkify: true,
-    transformPastedText: true,
-    transformCopiedText: true,
+    markedOptions: {
+      gfm: true,
+      breaks: false,
+      pedantic: false,
+    },
   }),
 ]
 
@@ -414,6 +413,11 @@ export function MarkdownEditor({
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
 
+  const editorContent = content
+    ? content
+    : { type: "doc", content: [{ type: "paragraph" }] }
+  const editorContentType = content ? "markdown" : "json"
+
   const editor = useEditor({
     extensions: placeholder
       ? [
@@ -421,7 +425,8 @@ export function MarkdownEditor({
           Placeholder.configure({ placeholder }),
         ]
       : extensions,
-    content,
+    content: editorContent,
+    contentType: editorContentType,
     editable: !readOnly,
     editorProps: {
       attributes: {
@@ -431,7 +436,7 @@ export function MarkdownEditor({
     },
     onUpdate: ({ editor: e }) => {
       if (!suppressChangeRef.current) {
-        onChangeRef.current?.((e.storage as Record<string, any>).markdown?.getMarkdown?.() ?? e.getHTML())
+        onChangeRef.current?.(e.getMarkdown?.() ?? e.getHTML())
       }
     },
   })
@@ -443,10 +448,10 @@ export function MarkdownEditor({
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
-    const current = (editor.storage as Record<string, any>).markdown?.getMarkdown?.() ?? editor.getHTML()
+    const current = editor.getMarkdown?.() ?? editor.getHTML()
     if (current === content) return
     suppressChangeRef.current = true
-    editor.commands.setContent(content)
+    editor.commands.setContent(editorContent, { contentType: editorContentType })
     suppressChangeRef.current = false
   }, [editor, content])
 
