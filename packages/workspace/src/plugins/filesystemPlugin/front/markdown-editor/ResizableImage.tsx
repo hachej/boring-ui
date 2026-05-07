@@ -16,7 +16,7 @@ const MAX_WIDTH = 2000
  * Image extension with persisted width + a corner drag handle.
  *
  * The width is stored on the node as a plain numeric attribute so it
- * round-trips through tiptap-markdown's HTML serialization (`<img width=400>`).
+ * round-trips through Tiptap markdown/HTML serialization (`<img width=400>`).
  * The NodeView only kicks in inside the editor; serialized output is a plain
  * `<img>` so other markdown renderers don't need anything special.
  */
