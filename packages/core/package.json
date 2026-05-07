@@ -6,7 +6,7 @@
   "description": "Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, and frontend app shell.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hachej/boring-ui.git"
+    "url": "https://github.com/hachej/boring-ui"
   },
   "homepage": "https://github.com/hachej/boring-ui",
   "exports": {
