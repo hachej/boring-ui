@@ -48,6 +48,23 @@ describe("MarkdownEditor", () => {
     ).toBeInTheDocument()
     expect(screen.getByTitle("Highlight")).toBeInTheDocument()
     expect(screen.getByTitle("Horizontal rule")).toBeInTheDocument()
+    expect(screen.getByTitle("Raw markdown")).toBeInTheDocument()
+  })
+
+  it("toggles a discreet raw markdown editor", async () => {
+    const onChange = vi.fn()
+    render(<MarkdownEditor content={"# Hello\n\nWorld"} onChange={onChange} />)
+    await waitFor(() => {
+      expect(screen.getByTitle("Raw markdown")).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTitle("Raw markdown"))
+    const textarea = screen.getByTestId("markdown-raw-editor") as HTMLTextAreaElement
+    expect(textarea.value).toBe("# Hello\n\nWorld")
+    expect(screen.getByTitle("Rich text")).toBeInTheDocument()
+
+    fireEvent.change(textarea, { target: { value: "# Changed" } })
+    expect(onChange).toHaveBeenCalledWith("# Changed")
   })
 
   it("hides toolbar in readOnly mode", async () => {
