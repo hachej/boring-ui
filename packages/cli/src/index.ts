@@ -21,14 +21,22 @@ const { values: args } = parseArgs({
 const PORT = Number(args.port ?? process.env.PORT) || 5200
 const HOST = (args.host as string | undefined) ?? process.env.HOST ?? "0.0.0.0"
 
-const VALID_MODES = ["direct", "local", "vercel-sandbox"] as const
-type Mode = typeof VALID_MODES[number]
-const rawMode = (args.mode as string | undefined) ?? process.env.BORING_AGENT_MODE ?? "local"
-if (!VALID_MODES.includes(rawMode as Mode)) {
-  console.error(`\nError: invalid --mode "${rawMode}". Valid options: ${VALID_MODES.join(", ")}\n`)
+// CLI-facing mode names → internal runtime mode
+const MODE_MAP = {
+  "local":          "direct",         // local machine, no sandbox, full network
+  "local-sandbox":  "local",          // local machine, bwrap isolated, no network
+  "vercel-sandbox": "vercel-sandbox", // remote isolated sandbox
+} as const
+type CliMode = keyof typeof MODE_MAP
+type RuntimeMode = typeof MODE_MAP[CliMode]
+
+const rawMode = (args.mode as string | undefined) ?? process.env.BORING_MODE ?? "local-sandbox"
+if (!(rawMode in MODE_MAP)) {
+  console.error(`\nError: invalid --mode "${rawMode}". Valid options: ${Object.keys(MODE_MAP).join(", ")}\n`)
   process.exit(1)
 }
-const MODE = rawMode as Mode
+const CLI_MODE = rawMode as CliMode
+const MODE: RuntimeMode = MODE_MAP[CLI_MODE]
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const publicDir = resolve(__dirname, "..", "public")
 const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
@@ -120,7 +128,7 @@ process.env.ANTHROPIC_API_KEY = apiKey
 
 console.log(`\nboring-ui`)
 console.log(`  workspace  ${workspaceRoot}`)
-console.log(`  mode       ${MODE}`)
+console.log(`  mode       ${CLI_MODE}`)
 console.log(`  port       ${PORT}`)
 console.log(`  host       ${HOST}`)
 
