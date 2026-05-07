@@ -7,7 +7,7 @@ Your workflow. Your agent. Your UI.
 
 Build agent-centric apps without reinventing the shell.
 ﻿
-﻿<img width="509" height="469" alt="grafik" src="https://github.com/user-attachments/assets/382084d1-a78c-4374-b51c-fb33b25243e2" />
+<p align="center"><img width="400" alt="grafik" src="https://github.com/user-attachments/assets/382084d1-a78c-4374-b51c-fb33b25243e2" /></p>
 
 ## What it is
 
@@ -26,7 +26,7 @@ Plugins are how you make it yours. A plugin contributes:
 - **agent** skills and tools
 - **catalogs** — searchable data explorers, usable from chat
 
-<img width="537" height="307" alt="grafik" src="https://github.com/user-attachments/assets/29dfbee6-1f4e-448d-8eb5-d90b55bceb49" />
+<p align="center"><img width="537" alt="grafik" src="https://github.com/user-attachments/assets/29dfbee6-1f4e-448d-8eb5-d90b55bceb49" /></p>
 
 Enough to map any workflow.
 
