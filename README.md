@@ -7,6 +7,8 @@ Your workflow. Your agent. Your UI.
 
 An agentic UI fully customizable for your workflow.
 
+<img width="781" height="417" alt="grafik" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e" >
+
 ## Why boring?
 
 The UI is exactly three things:
@@ -17,9 +19,14 @@ The UI is exactly three things:
 
 That's it. 
 
-<img width="781" height="417" alt="grafik" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e" 
+Make it fit your workflow by extending it: 
 
-Make it fit your workflow by extending it: plug in custom agent skills and build your own workbench panes.
+plug in custom:
+- agent skills
+- agent prompts
+- workbench panes
+  
+and experience the experioence of agent at your tatst.
 
 <img width="726" height="645" alt="grafik" src="https://github.com/user-attachments/assets/5d1475e6-2235-4b7d-99b6-d4f9eca1cfe9" />
 
