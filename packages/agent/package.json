@@ -6,7 +6,7 @@
   "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hachej/boring-ui.git"
+    "url": "https://github.com/hachej/boring-ui"
   },
   "homepage": "https://github.com/hachej/boring-ui",
   "exports": {

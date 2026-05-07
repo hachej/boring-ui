@@ -6,7 +6,7 @@
   "description": "Shared shadcn-style UI primitives for Boring packages and app-generated panes.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hachej/boring-ui.git"
+    "url": "https://github.com/hachej/boring-ui"
   },
   "homepage": "https://github.com/hachej/boring-ui",
   "files": [
