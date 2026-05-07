@@ -26,7 +26,7 @@ Plugins are how you make it yours. A plugin contributes:
 - **agent** skills and tools
 - **catalogs** — searchable data explorers, usable from chat
 
-Enought to map any worfflow.
+Enough to map any workflow.
 
 ## Quickstart
 
