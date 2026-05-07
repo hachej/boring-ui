@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { ChangeEvent } from "react"
 import { useEditor, useEditorState, EditorContent } from "@tiptap/react"
 import type { Editor } from "@tiptap/core"
@@ -112,7 +112,6 @@ const extensions = [
     html: true,
     tightLists: true,
     bulletListMarker: "-",
-    breaks: true,
     linkify: true,
     transformPastedText: true,
     transformCopiedText: true,
@@ -201,11 +200,15 @@ function Toolbar({
   documentPath,
   apiBaseUrl,
   workspaceRequestId,
+  rawMode,
+  onToggleRawMode,
 }: {
   editor: Editor | null
   documentPath?: string
   apiBaseUrl?: string
   workspaceRequestId?: string | null
+  rawMode: boolean
+  onToggleRawMode: () => void
 }) {
   const setBlockAlign = (align: "left" | "center" | "right") => {
     if (!editor) return
@@ -380,6 +383,18 @@ function Toolbar({
       <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal rule">
         <MinusIcon className="h-4 w-4" />
       </ToolbarButton>
+
+      <ToolbarSeparator />
+
+      <ToolbarButton
+        onClick={onToggleRawMode}
+        active={rawMode}
+        title={rawMode ? "Rich text" : "Raw markdown"}
+      >
+        <span className="font-mono text-[10px] font-semibold leading-none tracking-[-0.02em]">
+          MD
+        </span>
+      </ToolbarButton>
     </UiToolbar>
   )
 }
@@ -394,6 +409,7 @@ export function MarkdownEditor({
 }: MarkdownEditorProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
+  const [rawMode, setRawMode] = useState(false)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
@@ -442,10 +458,24 @@ export function MarkdownEditor({
           documentPath={documentPath}
           apiBaseUrl={apiBaseUrl}
           workspaceRequestId={workspaceRequestId}
+          rawMode={rawMode}
+          onToggleRawMode={() => setRawMode((v) => !v)}
         />
       )}
       <div className="flex-1 overflow-auto">
-        <EditorContent editor={editor} />
+        {rawMode && !readOnly ? (
+          <textarea
+            aria-label="Raw markdown"
+            data-testid="markdown-raw-editor"
+            className="h-full min-h-[200px] w-full resize-none bg-background px-8 py-6 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/70"
+            value={content}
+            placeholder={placeholder}
+            spellCheck={false}
+            onChange={(e) => onChangeRef.current?.(e.target.value)}
+          />
+        ) : (
+          <EditorContent editor={editor} />
+        )}
       </div>
     </div>
   )
