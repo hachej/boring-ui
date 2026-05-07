@@ -45,6 +45,7 @@ jobs:
 
   publish:
     name: Publish to npm
+    needs: ci
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -64,8 +65,7 @@ jobs:
         run: pnpm --filter @hachej/boring-ui-cli build:full
       - name: Publish
         run: |
-          for pkg in packages/cli; do
+          for pkg in packages/core packages/workspace packages/agent packages/ui packages/cli; do
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
-            npm publish "$pkg/$tarball" --access public --provenance || \
-              (echo "--- npm debug log ---" && cat ~/.npm/_logs/*.log | tail -80 && exit 1)
+            npm publish "$pkg/$tarball" --access public --provenance
           done
