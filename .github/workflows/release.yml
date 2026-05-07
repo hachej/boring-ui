@@ -61,6 +61,12 @@ jobs:
         run: pnpm build
       - name: Build CLI frontend
         run: pnpm --filter @hachej/boring-ui-cli build:full
+      - name: Debug OIDC availability
+        run: |
+          echo "GITHUB_ACTIONS=$GITHUB_ACTIONS"
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL=${ACTIONS_ID_TOKEN_REQUEST_URL:+set}"
+          node --version && npm --version
+          npm whoami || true
       - name: Publish
         run: |
           for pkg in packages/core packages/workspace packages/agent packages/ui packages/cli; do
