@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist/server",
+    "rootDir": "src/server",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"]
+  },
+  "include": ["src/server/migrate.ts"],
+  "exclude": ["src/front", "node_modules", "dist"]
+}
