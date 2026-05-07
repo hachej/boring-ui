@@ -44,9 +44,6 @@ export const macroProvisioning: MacroProvisioningContribution = {
       id: "macro-sdk",
       projectFile: new URL("./sdk/pyproject.toml", import.meta.url),
       extraLibs: [],
-      env: {
-        BORING_MACRO_BUILTINS_ROOT: new URL("./transforms/builtins", import.meta.url),
-      },
     },
   ],
 }

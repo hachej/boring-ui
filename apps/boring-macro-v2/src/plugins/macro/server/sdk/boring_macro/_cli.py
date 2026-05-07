@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import os
 import re
 import sys
 from dataclasses import dataclass
@@ -15,7 +14,7 @@ from . import run_transform, _WORKSPACE_ROOT
 
 _TOOL_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 
-_BUILTINS_ROOT = Path(os.environ.get("BORING_MACRO_BUILTINS_ROOT", _WORKSPACE_ROOT / "transforms/builtins")).resolve()
+_BUILTINS_ROOT = (Path(__file__).resolve().parent / "transforms" / "builtins").resolve()
 _CUSTOM_ROOT = (_WORKSPACE_ROOT / "transforms/custom").resolve()
 
 

@@ -18,7 +18,7 @@ Use this skill when the task is: compute a derived macro series in Python, then 
 
 ## File locations
 
-- Builtins: shipped with the app — discoverable via `bm list`
+- Builtins: shipped inside the installed `boring_macro` SDK in the workspace `.venv` — discoverable via `bm list`
 - Workspace shims: raw `python`, `pip`, and `bm` commands resolve to the workspace `.venv`
 - Custom transforms: `transforms/custom/` in the workspace
 
