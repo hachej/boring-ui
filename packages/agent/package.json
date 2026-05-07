@@ -1,10 +1,13 @@
 {
   "name": "@hachej/boring-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "license": "MIT",
   "description": "Pane-embeddable coding agent. Ships direct/local/vercel-sandbox execution modes behind one interface.",
-  "repository": { "type": "git", "url": "https://github.com/hachej/boring-ui.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui.git"
+  },
   "homepage": "https://github.com/hachej/boring-ui",
   "exports": {
     ".": {

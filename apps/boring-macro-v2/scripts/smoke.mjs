@@ -86,6 +86,16 @@ async function waitForEmail(inboxId, { after, subject, timeoutMs = 20000, pollMs
   throw new Error(`no email matching "${subject}" arrived within ${timeoutMs}ms`)
 }
 
+async function fetchEmailBody(inboxId, messageId) {
+  const encoded = encodeURIComponent(messageId)
+  return agentmailGet(`/inboxes/${inboxId}/messages/${encoded}`)
+}
+
+function extractLink(text, pattern) {
+  const match = text?.match(pattern)
+  return match?.[0] ?? null
+}
+
 console.log(`\nSmoke testing ${base}\n`)
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
@@ -140,11 +150,17 @@ await check('POST /auth/sign-up/email with Origin → 200', async () => {
 })
 
 if (inboxId) {
-  await check('verification email delivered within 20s (agentmail)', async () => {
-    await waitForEmail(inboxId, { subject: 'verify', after: signupTime, timeoutMs: 20000 })
+  await check('verification email delivered + link works (agentmail)', async () => {
+    const msg = await waitForEmail(inboxId, { subject: 'verify', after: signupTime, timeoutMs: 20000 })
+    const body = await fetchEmailBody(inboxId, msg.message_id)
+    const link = extractLink(body.text ?? body.extracted_text ?? '', /https?:\/\/\S+verify-email\S+/)
+    if (!link) throw new Error('no verification link found in email body')
+    const res = await fetch(link, { redirect: 'follow' })
+    if (res.status !== 200) throw new Error(`verification link returned ${res.status}`)
   })
 }
 
+// Sign in AFTER email verification so the session reflects emailVerified: true
 await check('POST /auth/sign-in/email with Origin → 200', async () => {
   const res = await appPost('/auth/sign-in/email', { email, password })
   if (res.status !== 200) {
@@ -155,13 +171,14 @@ await check('POST /auth/sign-in/email with Origin → 200', async () => {
   if (setCookie) sessionCookie = setCookie.split(';')[0]
 })
 
-await check('GET /auth/get-session → 200 with user', async () => {
+await check('GET /auth/get-session → 200 with verified user', async () => {
   const res = await fetch(`${base}/auth/get-session`, {
     headers: { Origin: origin, ...(sessionCookie ? { Cookie: sessionCookie } : {}) },
   })
   if (res.status !== 200) throw new Error(`got ${res.status}`)
   const json = await res.json()
   if (!json?.user?.email) throw new Error(`no user in session: ${JSON.stringify(json).slice(0, 80)}`)
+  if (inboxId && !json.user.emailVerified) throw new Error('emailVerified is still false after clicking link')
 })
 
 await check('GET /api/v1/agent/catalog → 401 (auth guard)', async () => {
