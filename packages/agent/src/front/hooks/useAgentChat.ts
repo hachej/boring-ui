@@ -100,9 +100,12 @@ export function useAgentChat(opts: UseAgentChatOptions) {
 
   // Mirror messages → localStorage whenever they change. Gated on `hydrated`
   // so the initial empty state never overwrites a previously-cached history.
+  // Also skip empty messages: when sessionId changes, useChat resets to []
+  // before hydration runs, and saving [] would wipe the previous cache for the
+  // new session before we get a chance to read it.
   const messages = chat.messages
   useEffect(() => {
-    if (!hydrated || !cacheKey) return
+    if (!hydrated || !cacheKey || messages.length === 0) return
     try {
       globalThis.localStorage?.setItem(cacheKey, JSON.stringify(messages))
     } catch { /* quota exceeded: drop cache silently */ }

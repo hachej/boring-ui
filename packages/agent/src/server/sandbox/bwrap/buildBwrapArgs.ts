@@ -47,6 +47,7 @@ function validateWorkspaceRoot(workspaceRoot: string): void {
 
 export interface BwrapArgsOptions {
   extraArgs?: string[]
+  postWorkspaceArgs?: string[]
 }
 
 export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[] {
@@ -79,8 +80,13 @@ export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions
     '--setenv',
     'HOME',
     SANDBOX_HOME,
-    '--',
   )
+
+  if (options?.postWorkspaceArgs) {
+    args.push(...options.postWorkspaceArgs)
+  }
+
+  args.push('--')
 
   return args
 }

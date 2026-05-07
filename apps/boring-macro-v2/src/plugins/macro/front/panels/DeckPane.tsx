@@ -455,15 +455,26 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
     let cancelled = false
     setError(null)
     fetch(`/api/macro/deck?path=${encodeURIComponent(path)}`)
-      .then((r) => {
+      .then(async (r) => {
+        if (r.status === 404) {
+          const name = path.split("/").pop()?.replace(/\.md$/, "") ?? "New Deck"
+          const defaultContent = `## title: ${name}\n\n# Slide 1\n\nAdd your content here.\n`
+          await fetch(`/api/macro/deck?path=${encodeURIComponent(path)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: defaultContent }),
+          })
+          return { text: defaultContent, created: true }
+        }
         if (!r.ok) throw new Error(`deck ${path}: ${r.status}`)
-        return r.text()
+        return { text: await r.text(), created: false }
       })
-      .then((text) => {
+      .then(({ text, created }) => {
         if (!cancelled) {
           setSavedContent(text)
           setDraft(text)
           setActiveSlide(0)
+          if (created) setMode("edit")
         }
       })
       .catch((e: unknown) => {

@@ -1,5 +1,7 @@
+import { access } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { Workspace } from '../../../shared/workspace'
@@ -132,6 +134,28 @@ async function assertBwrapAvailable(): Promise<void> {
   })
 }
 
+async function dirAccessible(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.F_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function buildGlobalToolMounts(workspaceRoot: string): Promise<string[]> {
+  const globalRoot = dirname(workspaceRoot)
+  if (globalRoot === workspaceRoot) return []
+  const args: string[] = []
+  if (await dirAccessible(join(globalRoot, '.boring-agent'))) {
+    args.push('--ro-bind', join(globalRoot, '.boring-agent'), `${SANDBOX_HOME}/.boring-agent`)
+  }
+  if (await dirAccessible(join(globalRoot, '.venv'))) {
+    args.push('--ro-bind', join(globalRoot, '.venv'), `${SANDBOX_HOME}/.venv`)
+  }
+  return args
+}
+
 export function createBwrapSandbox(): Sandbox {
   let workspace: Workspace | null = null
 
@@ -154,7 +178,8 @@ export function createBwrapSandbox(): Sandbox {
       const maxOutputBytes = opts?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
       const workspaceRoot = workspace.root
       const sandboxCwd = computeSandboxCwd(workspaceRoot, opts?.cwd)
-      const baseArgs = buildBwrapArgs(workspaceRoot)
+      const postWorkspaceArgs = await buildGlobalToolMounts(workspaceRoot)
+      const baseArgs = buildBwrapArgs(workspaceRoot, { postWorkspaceArgs })
       const args = [
         ...withSandboxCwd(baseArgs, sandboxCwd),
         'bash',
