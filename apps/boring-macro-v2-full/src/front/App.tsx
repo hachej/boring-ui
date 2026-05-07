@@ -1,11 +1,7 @@
 import { ChatPanel } from "@hachej/boring-agent"
 import type { SlashCommand } from "@hachej/boring-agent"
-import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
-import {
-  MacroStandaloneDeckRoute,
-  macroPlugin,
-  macroShellOptions,
-} from "../plugins/macro/front"
+import { CoreWorkspaceAgentFront } from "@hachej/boring-core/app/front"
+import { macroPlugin, macroShellOptions } from "@boring/macro/plugin"
 
 const MACRO_SKILL_COMMANDS: SlashCommand[] = [
   {
@@ -22,17 +18,19 @@ const MACRO_SKILL_COMMANDS: SlashCommand[] = [
   },
 ]
 
+const { chatParams } = macroShellOptions
+
 export function App() {
   return (
-    <MacroStandaloneDeckRoute
-      fallback={
-        <WorkspaceAgentFront
-          chatPanel={ChatPanel}
-          plugins={[macroPlugin]}
-          extraCommands={MACRO_SKILL_COMMANDS}
-          {...macroShellOptions}
-        />
-      }
+    <CoreWorkspaceAgentFront
+      chatPanel={ChatPanel}
+      plugins={[macroPlugin]}
+      extraCommands={MACRO_SKILL_COMMANDS}
+      appTitle="boring.macro"
+      apiBaseUrl=""
+      apiTimeout={10000}
+      persistenceEnabled={true}
+      chatParams={chatParams}
     />
   )
 }

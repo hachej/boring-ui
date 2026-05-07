@@ -27,14 +27,15 @@ RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
 
 RUN BORING_USE_LOCAL_PACKAGES=1 pnpm --filter @boring/macro exec vite build
 
+# Compile migrate.ts → dist/server/migrate.js for the Fly release command
+RUN pnpm --filter @boring/macro exec tsc -p tsconfig.server.json --noCheck
+
 FROM node:22-slim AS runtime
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bubblewrap ca-certificates curl python3 python3-venv \
+  && apt-get install -y --no-install-recommends ca-certificates python3 python3-venv \
   && rm -rf /var/lib/apt/lists/* \
-  && curl -LsSf https://astral.sh/uv/install.sh | sh \
   && corepack enable
-ENV PATH="/root/.local/bin:$PATH"
 
 COPY --from=build /app/.npmrc /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
 COPY --from=build /app/node_modules/ node_modules/
@@ -56,16 +57,19 @@ COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
 COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
 COPY --from=build /app/packages/workspace/node_modules/ packages/workspace/node_modules/
 
-# Frontend dist (Vite build output)
+# Frontend dist (Vite build output) + compiled migrate.js
 COPY --from=build /app/apps/boring-macro-v2/dist/ apps/boring-macro-v2/dist/
-# Server source (run with tsx)
+# Server source (run with tsx — plugin assets live alongside .ts files)
 COPY --from=build /app/apps/boring-macro-v2/src/ apps/boring-macro-v2/src/
 COPY --from=build /app/apps/boring-macro-v2/package.json apps/boring-macro-v2/package.json
 COPY --from=build /app/apps/boring-macro-v2/tsconfig.json apps/boring-macro-v2/tsconfig.json
 COPY --from=build /app/apps/boring-macro-v2/node_modules/ apps/boring-macro-v2/node_modules/
 
+# BORING_AGENT_MODE defaults to "direct" (no sandbox) when unset and bwrap is absent.
+# Override via fly secrets: BORING_AGENT_MODE=vercel-sandbox + VERCEL_TOKEN if needed.
+# BORING_AGENT_WORKSPACE_ROOT and model config come from fly secrets.
 ENV NODE_ENV=production \
-    BORING_AGENT_WORKSPACE_ROOT=/data/workspace
+    BORING_AGENT_WORKSPACE_ROOT=/data/workspaces
 EXPOSE 5210
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

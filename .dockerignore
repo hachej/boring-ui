@@ -1,0 +1,29 @@
+# Git
+.git
+.github
+
+# Node modules (Docker installs from lockfile)
+node_modules
+**/node_modules
+
+# Build outputs (Docker builds these)
+**/dist
+storybook-static
+
+# Dev/test/tooling dirs
+.claude
+.beads
+.ntm
+.ui-review
+.storybook
+test-results
+docs
+scripts
+
+# Env files
+**/.env
+**/.env.*
+
+# OS / editor
+.DS_Store
+*.log

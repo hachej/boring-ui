@@ -27,6 +27,7 @@
     "version:minor": "node scripts/version.mjs minor",
     "version:major": "node scripts/version.mjs major"
   },
+  "packageManager": "pnpm@10.33.2",
   "engines": {
     "node": ">=20"
   },

@@ -1,13 +1,12 @@
-// boring.macro server entry. The workspace server composer owns the agent,
-// UI bridge, plugin tools, plugin provisioning, and plugin routes.
-import { createCoreWorkspaceAgentServer } from "@hachej/boring-core/app/server"
+import { join } from "node:path"
+import { readFile } from "node:fs/promises"
+import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createMacroServerPlugin } from "../plugins/macro/server"
 
 export interface MacroAppOptions {
   port?: number
   host?: string
   workspaceRoot?: string
-  logger?: boolean
   appRoot?: string
 }
 
@@ -20,11 +19,29 @@ export async function buildMacroServer(opts: MacroAppOptions = {}) {
 
   const macroPlugin = await createMacroServerPlugin()
 
-  const app = await createCoreWorkspaceAgentServer({
+  const app = await createWorkspaceAgentServer({
     workspaceRoot,
-    appRoot: opts.appRoot,
     plugins: [macroPlugin],
   })
+
+  if (opts.appRoot) {
+    const distDir = join(opts.appRoot, "dist")
+    const indexPath = join(distDir, "index.html")
+    const { default: fastifyStatic } = await import("@fastify/static")
+    await app.register(fastifyStatic, {
+      root: distDir,
+      prefix: "/",
+      wildcard: false,
+    })
+    // SPA catch-all: serve index.html for non-API GET requests
+    app.setNotFoundHandler(async (request, reply) => {
+      if (request.method === "GET" && !request.url.startsWith("/api/")) {
+        const html = await readFile(indexPath, "utf-8")
+        return reply.type("text/html; charset=utf-8").send(html)
+      }
+      reply.status(404).send({ error: "Not Found", statusCode: 404 })
+    })
+  }
 
   return { app, port, host }
 }
