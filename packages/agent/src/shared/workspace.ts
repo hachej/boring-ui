@@ -3,6 +3,11 @@ export interface Workspace {
   readFile(relPath: string): Promise<string>
   writeFile(relPath: string, data: string): Promise<void>
   /**
+   * Optional binary write operation for user-uploaded assets. Shared callers use
+   * Uint8Array so browser-safe workspace contracts do not depend on Node-only types.
+   */
+  writeBinaryFile?(relPath: string, data: Uint8Array): Promise<void>
+  /**
    * Optional optimized read+metadata operation. Remote workspaces should
    * implement this as one round trip when possible.
    */
@@ -12,6 +17,8 @@ export interface Workspace {
    * implement this as one round trip when possible.
    */
   writeFileWithStat?(relPath: string, data: string): Promise<Stat>
+  /** Optional optimized binary write+metadata operation. */
+  writeBinaryFileWithStat?(relPath: string, data: Uint8Array): Promise<Stat>
   unlink(relPath: string): Promise<void>
   readdir(relPath: string): Promise<Entry[]>
   stat(relPath: string): Promise<Stat>

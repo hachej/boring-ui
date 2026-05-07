@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { dirname, extname, relative } from 'node:path/posix'
 import type { Workspace } from '../../../shared/workspace'
 import {
   ERROR_CODE_INVALID_PATH,
@@ -13,6 +14,20 @@ import {
 interface PathValidationLike {
   reason?: string
   statusCode?: number
+}
+
+const BORING_SETTINGS_PATH = '.boring/settings'
+const DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR = 'assets/images'
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+interface BoringWorkspaceSettings {
+  markdown?: {
+    imageUploadDir?: string
+  }
+}
+
+function defaultWorkspaceSettings(): BoringWorkspaceSettings {
+  return { markdown: { imageUploadDir: DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR } }
 }
 
 function isPathValidationError(err: unknown): err is Error & PathValidationLike {
@@ -77,6 +92,70 @@ function requireStringParam(
     return null
   }
   return value
+}
+
+function parseWorkspaceSettings(raw: string): BoringWorkspaceSettings {
+  try {
+    const parsed = JSON.parse(raw) as BoringWorkspaceSettings
+    const dir = parsed?.markdown?.imageUploadDir
+    return {
+      ...parsed,
+      markdown: {
+        ...(parsed.markdown ?? {}),
+        imageUploadDir: typeof dir === 'string' && dir.trim()
+          ? dir.trim()
+          : DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR,
+      },
+    }
+  } catch {
+    return defaultWorkspaceSettings()
+  }
+}
+
+async function readWorkspaceSettings(workspace: Workspace): Promise<BoringWorkspaceSettings> {
+  try {
+    return parseWorkspaceSettings(await workspace.readFile(BORING_SETTINGS_PATH))
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code
+    if (code === 'ENOENT') return defaultWorkspaceSettings()
+    throw error
+  }
+}
+
+function normalizeUploadDir(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const dir = value.trim().replace(/^\.\/+/, '').replace(/\/+/g, '/')
+  if (!dir || dir.includes('\0') || dir.startsWith('/') || dir.split('/').includes('..')) return null
+  return dir.replace(/\/+$/, '')
+}
+
+function extForUpload(filename: string, contentType: string): string {
+  const fromName = extname(filename).toLowerCase().replace(/^\./, '')
+  if (/^[a-z0-9]{1,12}$/.test(fromName)) return fromName
+  if (contentType === 'image/jpeg') return 'jpg'
+  if (contentType === 'image/png') return 'png'
+  if (contentType === 'image/gif') return 'gif'
+  if (contentType === 'image/webp') return 'webp'
+  if (contentType === 'image/svg+xml') return 'svg'
+  return 'bin'
+}
+
+function basenameForUpload(filename: string): string {
+  const base = filename.split('/').pop()?.split('\\').pop() ?? 'image'
+  const withoutExt = base.replace(/\.[^.]*$/, '')
+  const safe = withoutExt
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+  return safe || 'image'
+}
+
+function markdownUrlFor(sourcePath: string | null, assetPath: string): string {
+  if (!sourcePath) return assetPath
+  const fromDir = dirname(sourcePath.replace(/\\/g, '/'))
+  const rel = relative(fromDir === '.' ? '' : fromDir, assetPath)
+  return rel && !rel.startsWith('.') ? rel : rel || assetPath
 }
 
 export function fileRoutes(
@@ -178,6 +257,96 @@ export function fileRoutes(
       return { ok: true, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
     } catch (err) {
       return classifyError(err, reply, 'file')
+    }
+  })
+
+  app.post('/api/v1/files/upload', async (request, reply) => {
+    const body = request.body as Record<string, unknown>
+    const filename = requireStringParam(body?.filename, 'filename', reply)
+    if (filename === null) return
+    const contentBase64 = requireStringParam(body?.contentBase64, 'contentBase64', reply)
+    if (contentBase64 === null) return
+    const contentType = typeof body.contentType === 'string' ? body.contentType.trim().toLowerCase() : ''
+    if (!contentType.startsWith('image/')) {
+      return reply.code(400).send({
+        error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'contentType must be an image/* MIME type', field: 'contentType' },
+      })
+    }
+
+    try {
+      const workspace = await resolveWorkspace(request)
+      const settings = await readWorkspaceSettings(workspace)
+      const dir = normalizeUploadDir(body.directory) ?? normalizeUploadDir(settings.markdown?.imageUploadDir) ?? DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR
+      const ext = extForUpload(filename, contentType)
+      const base = basenameForUpload(filename)
+      const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      const path = `${dir}/${base}-${unique}.${ext}`
+      const bytes = Buffer.from(contentBase64, 'base64')
+      if (bytes.byteLength === 0 || bytes.byteLength > MAX_UPLOAD_BYTES) {
+        return reply.code(400).send({
+          error: { code: ERROR_CODE_VALIDATION_ERROR, message: `upload must be 1 byte to ${MAX_UPLOAD_BYTES} bytes`, field: 'contentBase64' },
+        })
+      }
+
+      await workspace.mkdir(dir, { recursive: true })
+      const stat = workspace.writeBinaryFileWithStat
+        ? await workspace.writeBinaryFileWithStat(path, bytes)
+        : await (async () => {
+            if (!workspace.writeBinaryFile) {
+              throw new Error('workspace does not support binary uploads')
+            }
+            await workspace.writeBinaryFile(path, bytes)
+            return await workspace.stat(path)
+          })()
+      const sourcePath = typeof body.sourcePath === 'string' && !body.sourcePath.includes('\0')
+        ? body.sourcePath
+        : null
+      return {
+        ok: true,
+        path,
+        markdownUrl: markdownUrlFor(sourcePath, path),
+        mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined,
+      }
+    } catch (err) {
+      return classifyError(err, reply, 'upload')
+    }
+  })
+
+  app.get('/api/v1/workspace-settings', async (request, reply) => {
+    try {
+      const workspace = await resolveWorkspace(request)
+      return { settings: await readWorkspaceSettings(workspace) }
+    } catch (err) {
+      return classifyError(err, reply, 'settings')
+    }
+  })
+
+  app.put('/api/v1/workspace-settings', async (request, reply) => {
+    const body = request.body as Record<string, unknown>
+    const incoming = (body?.settings ?? body) as Record<string, unknown>
+    const markdown = (incoming.markdown ?? {}) as Record<string, unknown>
+    const imageUploadDir = normalizeUploadDir(markdown.imageUploadDir)
+    if (!imageUploadDir) {
+      return reply.code(400).send({
+        error: { code: ERROR_CODE_INVALID_PATH, message: 'markdown.imageUploadDir must be a relative workspace path', field: 'markdown.imageUploadDir' },
+      })
+    }
+
+    try {
+      const workspace = await resolveWorkspace(request)
+      const current = await readWorkspaceSettings(workspace)
+      const next: BoringWorkspaceSettings = {
+        ...current,
+        markdown: {
+          ...(current.markdown ?? {}),
+          imageUploadDir,
+        },
+      }
+      await workspace.mkdir('.boring', { recursive: true })
+      await workspace.writeFile(BORING_SETTINGS_PATH, `${JSON.stringify(next, null, 2)}\n`)
+      return { settings: next }
+    } catch (err) {
+      return classifyError(err, reply, 'settings')
     }
   })
 

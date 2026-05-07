@@ -44,7 +44,7 @@ export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPan
       onReload={onReloadFromServer}
       onOverwrite={onOverwrite}
       editorComponent={MarkdownEditor}
-      editorProps={{ className }}
+      editorProps={{ className, documentPath: path }}
     />
   )
 }

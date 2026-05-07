@@ -447,7 +447,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getHarness: async (request) => (await getBindingForRequest(request)).harness,
   })
   await app.register(modelsRoutes)
-  await app.register(skillsRoutes, { workspaceRoot })
+  await app.register(skillsRoutes, {
+    workspaceRoot,
+    additionalSkillPaths: opts.resourceLoaderOptions?.additionalSkillPaths,
+  })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, staticBinding
     ? { tools: staticBinding.tools }

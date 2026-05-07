@@ -172,7 +172,7 @@ function MiniTimeSeries({
         }}
       >
         <ResponsiveContainer>
-          <LineChart data={merged} margin={{ top: 8, right: 12, bottom: 0, left: -12 }}>
+          <LineChart data={merged} margin={{ top: 10, right: 20, bottom: 10, left: 4 }}>
             <CartesianGrid
               vertical={false}
               stroke="oklch(from var(--border) l c h / 0.48)"
@@ -188,7 +188,7 @@ function MiniTimeSeries({
               {...boringCartesianAxisProps}
               tickLine={false}
               axisLine={false}
-              width={48}
+              width={56}
             />
             {ids.map((id, i) => (
               <Line
@@ -306,32 +306,53 @@ interface ParsedDeck {
   body: string
 }
 
-// Deck title is encoded as a `## title: X` H2 inside the first slide. We
-// avoid YAML frontmatter on purpose: the markdown editor used in edit mode
-// doesn't understand `---\nkey: val\n---` and would mangle it on round-trip
-// through autosave. A plain H2 survives the rich-editor round trip cleanly.
 const TITLE_RX = /^##\s+title:\s*(.+)$/i
+const YAML_TITLE_RX = /^title:\s*(.+)$/i
+const YAML_KV_RX = /^[A-Za-z][\w-]*:\s*.*$/
+
+function stripYamlFrontmatter(lines: string[], start: number): string | null {
+  if (lines[start]?.trim() !== "---") return null
+  let end = -1
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === "---") {
+      end = i
+      break
+    }
+  }
+  if (end <= start + 1) return null
+
+  const fields = lines.slice(start + 1, end).filter((line) => line.trim() !== "")
+  if (fields.length === 0 || !fields.every((line) => YAML_KV_RX.test(line.trim()))) return null
+
+  const titleLine = fields.find((line) => YAML_TITLE_RX.test(line.trim()))
+  const title = titleLine?.trim().match(YAML_TITLE_RX)?.[1]?.trim().replace(/^['"]|['"]$/g, "") ?? null
+  lines.splice(start, end - start + 1)
+  while (start < lines.length && lines[start]?.trim() === "") lines.splice(start, 1)
+  return title || null
+}
 
 function parseFrontmatter(markdown: string): ParsedDeck {
-  // Pre-strip a leading `---` separator (the file convention puts a `---`
-  // at the very top, separating the cover from slide 1). Without this,
-  // the title sits in slide 0 and an empty slide is rendered first.
   const lines = markdown.split("\n")
   let start = 0
   while (start < lines.length && lines[start].trim() === "") start += 1
-  if (lines[start]?.trim() === "---") {
+
+  let title = stripYamlFrontmatter(lines, start)
+
+  // Pre-strip a leading slide delimiter for the legacy `---` + `## title:`
+  // convention. Do not do this for real YAML; stripYamlFrontmatter already
+  // removed that block.
+  if (!title && lines[start]?.trim() === "---") {
     lines.splice(start, 1)
   }
 
   // Find the first `## title: X` line in the first slide (i.e. before the
   // first `---` slide separator) and extract it.
-  let title: string | null = null
   for (let i = 0; i < lines.length; i += 1) {
     const t = lines[i].trim()
     if (t === "---") break
     const m = TITLE_RX.exec(t)
     if (m) {
-      title = m[1].trim().replace(/^['"]|['"]$/g, "") || null
+      title = title ?? (m[1].trim().replace(/^['"]|['"]$/g, "") || null)
       lines.splice(i, 1)
       // Eat one trailing blank so the slide doesn't open with whitespace.
       if (i < lines.length && lines[i].trim() === "") lines.splice(i, 1)
@@ -656,38 +677,23 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
             {padIndex(total)}
           </div>
 
-          <div className="absolute inset-0 overflow-auto">
-            <div
-              className={`mx-auto flex min-h-full w-full items-center justify-center ${
-                isFullscreen
-                  ? "max-w-[1600px] px-2 py-2"
-                  : "max-w-[1100px] px-3 py-4 sm:px-6 sm:py-6"
-              }`}
-            >
-              <article
-                key={activeSlide}
-                className="slide-canvas relative aspect-[16/9] w-full overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground shadow-[0_1px_0_oklch(from_var(--foreground)_l_c_h/0.04),0_24px_60px_-30px_oklch(from_var(--foreground)_l_c_h/0.45)]"
-                style={{ containerType: "inline-size", containerName: "deck" }}
-              >
-                {current?.kind === "cover" ? (
-                  <CoverSlideView
-                    title={current.title}
-                    fileName={fileName}
-                    total={total - 1}
-                  />
-                ) : (
-                  <BodySlideView
-                    markdown={current?.kind === "body" ? current.markdown : ""}
-                    eyebrow={deckTitle}
-                    // 1-indexed body slide number (skips the cover when present).
-                    slideNumber={
-                      slides[0]?.kind === "cover" ? activeSlide : activeSlide + 1
-                    }
-                  />
-                )}
-              </article>
-            </div>
-          </div>
+          <DeckSlideFrame activeSlide={activeSlide} isFullscreen={isFullscreen}>
+            {current?.kind === "cover" ? (
+              <CoverSlideView
+                title={current.title}
+                fileName={fileName}
+                total={total - 1}
+              />
+            ) : (
+              <BodySlideView
+                markdown={current?.kind === "body" ? current.markdown : ""}
+                eyebrow={deckTitle}
+                slideNumber={
+                  slides[0]?.kind === "cover" ? activeSlide : activeSlide + 1
+                }
+              />
+            )}
+          </DeckSlideFrame>
         </div>
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
@@ -703,6 +709,7 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
               onChange={(v: string) => setDraft(v)}
               placeholder={`# Slide 1\n\nUse --- on its own line to split slides.\n\nEmbed series with {{TimeSeries ids="..."}}.`}
               className="flex min-h-0 flex-1 flex-col"
+              documentPath={path}
             />
           </Suspense>
         </div>
@@ -809,6 +816,74 @@ export function DeckPane({ params: initial, api }: DeckPaneProps) {
 /* Slide views                                                                */
 /* -------------------------------------------------------------------------- */
 
+const DECK_LOGICAL_WIDTH = 1280
+const DECK_LOGICAL_HEIGHT = 720
+
+function DeckSlideFrame({
+  activeSlide,
+  isFullscreen,
+  children,
+}: {
+  activeSlide: number
+  isFullscreen: boolean
+  children: React.ReactNode
+}) {
+  const frameRef = useRef<HTMLDivElement | null>(null)
+  const [scale, setScale] = useState(1)
+
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    if (!frame) return
+
+    const measure = () => {
+      const padX = isFullscreen ? 16 : 48
+      const padY = isFullscreen ? 16 : 48
+      const availableWidth = Math.max(1, frame.clientWidth - padX)
+      const availableHeight = Math.max(1, frame.clientHeight - padY)
+      const maxScale = isFullscreen ? 1.25 : 1
+      const next = Math.max(
+        0.25,
+        Math.min(maxScale, availableWidth / DECK_LOGICAL_WIDTH, availableHeight / DECK_LOGICAL_HEIGHT),
+      )
+      setScale((prev) => (Math.abs(prev - next) < 0.005 ? prev : next))
+    }
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [isFullscreen])
+
+  return (
+    <div ref={frameRef} className="absolute inset-0 overflow-auto">
+      <div className="flex min-h-full min-w-full items-center justify-center p-3 sm:p-6">
+        <div
+          aria-label="Fixed 16:9 slide stage"
+          style={{
+            width: DECK_LOGICAL_WIDTH * scale,
+            height: DECK_LOGICAL_HEIGHT * scale,
+          }}
+        >
+          <article
+            key={activeSlide}
+            className="slide-canvas relative overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground shadow-[0_1px_0_oklch(from_var(--foreground)_l_c_h/0.04),0_24px_60px_-30px_oklch(from_var(--foreground)_l_c_h/0.45)]"
+            style={{
+              width: DECK_LOGICAL_WIDTH,
+              height: DECK_LOGICAL_HEIGHT,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+              containerType: "inline-size",
+              containerName: "deck",
+            }}
+          >
+            {children}
+          </article>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FitSlideContent({ children }: { children: React.ReactNode }) {
   const frameRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
@@ -901,6 +976,14 @@ function CoverSlideView({
   )
 }
 
+function bodyTextIsHeadingOnly(markdown: string): boolean {
+  const lines = markdown
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+  return lines.length > 0 && lines.every((line) => /^#{1,3}\s+/.test(line))
+}
+
 function BodySlideView({
   markdown,
   eyebrow,
@@ -911,6 +994,11 @@ function BodySlideView({
   slideNumber: number
 }) {
   const segments = useMemo(() => tokenize(markdown), [markdown])
+  const chartOnly =
+    segments.length === 2 &&
+    segments[0].type === "text" &&
+    bodyTextIsHeadingOnly(segments[0].value) &&
+    (segments[1].type === "timeseries" || segments[1].type === "timeseries-grid")
   return (
     <div className="relative flex h-full flex-col gap-5 px-6 py-6 sm:px-10 sm:py-8">
       <div className="flex items-center justify-between gap-4">
@@ -929,7 +1017,7 @@ function BodySlideView({
       </div>
 
       <FitSlideContent>
-        <div className="deck-prose pr-1">
+        <div className={`deck-prose pr-1 ${chartOnly ? "deck-prose-chart-only" : ""}`}>
           {segments.map((seg, i) =>
             seg.type === "text" ? (
               <ReactMarkdown key={i} remarkPlugins={[remarkGfm]}>
@@ -953,6 +1041,10 @@ function BodySlideView({
         .deck-prose { color: var(--foreground); }
         .deck-prose > * + * { margin-top: 1.05rem; }
         .deck-prose figure { max-width: none; width: 100%; }
+        .deck-prose-chart-only { height: 100%; }
+        .deck-prose-chart-only > * + * { margin-top: 0.75rem; }
+        .deck-prose-chart-only figure.not-prose { margin: 0; }
+        .deck-prose-chart-only figure.not-prose figcaption { margin-bottom: 0.75rem; }
         .deck-prose h1 {
           font-size: clamp(1.5rem, 6cqw, 3.5rem);
           font-weight: 300;
@@ -962,6 +1054,7 @@ function BodySlideView({
           max-width: 22ch;
           text-wrap: balance;
         }
+        .deck-prose-chart-only h1 { margin-bottom: 0.75rem; max-width: 28ch; }
         .deck-prose h2 {
           font-size: 1.5rem;
           font-weight: 500;

@@ -116,6 +116,8 @@ When writing a deck file (*.md in the deck/ directory), follow these rules stric
 - Headings should be ≤ 6 words. Bullets should be ≤ 12 words each
 - Do NOT write walls of text. No multi-paragraph prose inside a single slide
 - Use \`{{TimeSeries ids="ID1,ID2"}}\` on its own line to embed a chart — counts as most of the slide content
+- A \`size="lg"\` chart should usually be alone; put analysis bullets on the next slide
+- Never place two \`size="lg"\` charts plus prose on one slide; use \`TimeSeriesGrid\` for dashboards
 - Frontmatter title sets the cover slide: start the file with \`---\\ntitle: My Title\\n---\` if you want a cover
 - Never use nested bullet lists deeper than one level
 `.trim()
