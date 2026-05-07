@@ -121,6 +121,45 @@ Not right for you if:
 
 ---
 
+## What's under the hood
+
+```
+┌─────────────────────────────────────────────┐
+│                  Browser                    │
+│                                             │
+│  ┌──────────┐  ┌─────────────────────────┐  │
+│  │   Chat   │  │       Workbench         │  │
+│  │          │  │  ┌────┐ ┌────┐ ┌─────┐  │  │
+│  │ streaming│  │  │    │ │    │ │     │  │  │
+│  │ tool viz │  │  │pane│ │pane│ │pane │  │  │
+│  │          │  │  └────┘ └────┘ └─────┘  │  │
+│  └────┬─────┘  └──────────────────┬──────┘  │
+└───────┼──────────────────────────-┼─────────┘
+        │  WebSocket / REST          │ UI commands
+┌───────┼────────────────────────── ┼─────────┐
+│       ▼          Fastify           ▼         │
+│  ┌─────────┐              ┌──────────────┐   │
+│  │  Agent  │─────tools───▶│   Plugins    │   │
+│  │ runtime │              │ (your domain)│   │
+│  └────┬────┘              └──────────────┘   │
+│       │ bash / code                          │
+│  ┌────▼──────────┐   ┌──────────────────┐    │
+│  │   Sandbox     │   │    Postgres       │    │
+│  │ bwrap / FC    │   │  auth · workspaces│    │
+│  └───────────────┘   └──────────────────┘    │
+└─────────────────────────────────────────────-┘
+```
+
+**Frontend** — React + Vite. Dockview layout. Plugin panels are auto code-split.
+
+**Backend** — Fastify. Agent runtime with sandboxed bash and code execution. Plugin server-side tools registered at startup.
+
+**Database** — Postgres with Drizzle ORM. Users, sessions, workspaces, roles, invites — all managed.
+
+**Plugins** — the only thing you write. Front and server side. Contributes panels, tools, catalogs, commands.
+
+---
+
 ## Writing a plugin
 
 Boring-ui ships with its documentation embedded.
