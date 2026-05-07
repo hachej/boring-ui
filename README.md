@@ -8,6 +8,8 @@ Your workflow. Your agent. Your UI.
 Build agent-centric apps without reinventing the shell.
 
 Think Claude Code — agent + workbench, deeply integrated. boring-ui is how you build that for your domain.
+
+Give non-technical users the power to run agent workflows — without writing code.
 ﻿
 <p align="center"><img width="400" alt="grafik" src="https://github.com/user-attachments/assets/382084d1-a78c-4374-b51c-fb33b25243e2" /></p>
 
