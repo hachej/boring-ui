@@ -56,6 +56,7 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          registry-url: "https://registry.npmjs.org"
       - run: pnpm install --frozen-lockfile
       - name: Build packages
         run: pnpm build
@@ -63,3 +64,5 @@ jobs:
         run: pnpm --filter @hachej/boring-ui-cli build:full
       - name: Publish
         run: pnpm publish -r --access public --no-git-checks --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
