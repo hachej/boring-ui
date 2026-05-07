@@ -11,6 +11,10 @@
 ![GitHub Stars](https://img.shields.io/github/stars/hachej/boring-ui?style=flat-square)
 ![CI](https://img.shields.io/github/actions/workflow/status/hachej/boring-ui/ci.yml?style=flat-square)
 
+<img width="781" height="417" alt="grafik" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e" />
+
+<img width="726" height="645" alt="grafik" src="https://github.com/user-attachments/assets/5d1475e6-2235-4b7d-99b6-d4f9eca1cfe9" />
+
 **Your workflow. Your agent. Your UI.**
 
 </div>
