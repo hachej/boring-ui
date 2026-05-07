@@ -18,7 +18,7 @@ const { values: args } = parseArgs({
 })
 
 const PORT = Number(args.port ?? process.env.PORT) || 5200
-const HOST = args.host ?? process.env.HOST ?? "0.0.0.0"
+const HOST = (args.host as string | undefined) ?? process.env.HOST ?? "0.0.0.0"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const publicDir = resolve(__dirname, "..", "public")
 const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
