@@ -1,11 +1,5 @@
 # boring-ui
 
-<div align="center">
-  <img src="https://github.com/hachej/boring-ui/raw/main/docs/banner.png" alt="boring-ui banner" width="800" />
-</div>
-
-<div align="center">
-
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![npm version](https://img.shields.io/npm/v/@boring/core?style=flat-square&label=npm)
 
