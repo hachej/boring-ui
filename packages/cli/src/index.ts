@@ -23,9 +23,8 @@ const HOST = (args.host as string | undefined) ?? process.env.HOST ?? "0.0.0.0"
 
 // CLI-facing mode names → internal runtime mode
 const MODE_MAP = {
-  "local":          "direct",         // local machine, no sandbox, full network
-  "local-sandbox":  "local",          // local machine, bwrap isolated, no network
-  "vercel-sandbox": "vercel-sandbox", // remote isolated sandbox
+  "local":         "direct", // no sandbox, full network access
+  "local-sandbox": "local",  // bwrap isolated, no network (Linux only)
 } as const
 type CliMode = keyof typeof MODE_MAP
 type RuntimeMode = typeof MODE_MAP[CliMode]
