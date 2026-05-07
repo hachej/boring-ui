@@ -6,8 +6,8 @@
 Your workflow. Your agent. Your UI.
 
 Build agent-centric apps without reinventing the shell.
-
-<img width="781" height="417" alt="boring-ui workbench" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e">
+﻿
+﻿<img width="509" height="469" alt="grafik" src="https://github.com/user-attachments/assets/382084d1-a78c-4374-b51c-fb33b25243e2" />
 
 ## What it is
 
@@ -26,6 +26,8 @@ Plugins are how you make it yours. A plugin contributes:
 - **agent** skills and tools
 - **catalogs** — searchable data explorers, usable from chat
 
+<img width="537" height="307" alt="grafik" src="https://github.com/user-attachments/assets/29dfbee6-1f4e-448d-8eb5-d90b55bceb49" />
+
 Enough to map any workflow.
 
 ## Quickstart
@@ -33,8 +35,7 @@ Enough to map any workflow.
 ```bash
 npx @hachej/boring-ui-cli
 ```
-
-Full workspace — chat, panels, agent runtime — no clone, no config.
+Full workspace — chat, panels, agent runtime running on your local files.
 
 ## What people build
 
