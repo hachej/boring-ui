@@ -155,7 +155,7 @@ describe('createCoreApp', () => {
     app.addRedactionPaths(['myCustomSecret'])
   })
 
-  it('includes CSP nonce directives and blocks unsafe-inline defaults', async () => {
+  it('includes CSP nonce directives and allows layout style attributes only', async () => {
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
     app.get('/test', async () => ({ ok: true }))
     await app.ready()
@@ -165,11 +165,13 @@ describe('createCoreApp', () => {
 
     expect(csp).toContain("default-src 'self'")
     expect(csp).toMatch(/script-src 'self' .*'nonce-[^']+'/)
-    expect(csp).toMatch(/style-src 'self' 'nonce-[^']+'/)
+    expect(csp).toMatch(/style-src 'self' https:\/\/fonts\.googleapis\.com 'nonce-[^']+'/)
+    expect(csp).toContain("style-src-attr 'unsafe-inline'")
     expect(csp).toContain("connect-src 'self'")
+    expect(csp).toContain("font-src 'self' https://fonts.gstatic.com data:")
     expect(csp).toContain("frame-ancestors 'none'")
     expect(csp).not.toContain('upgrade-insecure-requests')
-    expect(csp).not.toContain("'unsafe-inline'")
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'")
     expect(csp).not.toContain("'unsafe-eval'")
   })
 

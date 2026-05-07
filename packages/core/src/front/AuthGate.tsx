@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { useSession } from './auth/AuthProvider.js'
 import { routes } from './utils.js'
 
-const DEFAULT_GRACE_MS = 30_000
+const DEFAULT_GRACE_MS = 1_000
 const UNSAFE_REDIRECT_RE = /[\0\r\n<>"'`]/
 
 export interface AuthGateLocation {
@@ -130,7 +130,12 @@ export function AuthGate({
       return
     }
 
-    if (session.isPending || isPublicPath(pathname, normalizedPublicPaths)) {
+    if (isPublicPath(pathname, normalizedPublicPaths)) {
+      nullSinceRef.current = null
+      return
+    }
+
+    if (session.isPending) {
       nullSinceRef.current = null
       return
     }
@@ -152,6 +157,9 @@ export function AuthGate({
     }, remainingMs)
     redirectTimerRef.current.unref?.()
   }, [currentLocation, goTo, graceMs, normalizedPublicPaths, readNow, session.data, session.isPending])
+
+  const pathname = normalizePath(currentLocation.pathname)
+  if (session.isPending && !isPublicPath(pathname, normalizedPublicPaths)) return null
 
   return <>{children}</>
 }
