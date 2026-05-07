@@ -471,11 +471,24 @@ export async function createCoreWorkspaceAgentServer(
     excludeDefaults: options.excludeDefaults,
   })
 
-  await provisionWorkspaceAgentServer({
-    workspaceRoot,
-    provisioningContributions: pluginCollection.provisioningContributions,
-    force: options.forceProvisioning,
-  })
+  const provisionedWorkspaceRoots = new Map<string, Promise<void>>()
+  const ensureWorkspaceProvisioned = (root: string): Promise<void> => {
+    if (pluginCollection.provisioningContributions.length === 0) return Promise.resolve()
+    const existing = provisionedWorkspaceRoots.get(root)
+    if (existing) return existing
+    const pending = provisionWorkspaceAgentServer({
+      workspaceRoot: root,
+      provisioningContributions: pluginCollection.provisioningContributions,
+      force: options.forceProvisioning,
+    }).catch((error) => {
+      provisionedWorkspaceRoots.delete(root)
+      throw error
+    })
+    provisionedWorkspaceRoots.set(root, pending)
+    return pending
+  }
+
+  await ensureWorkspaceProvisioned(workspaceRoot)
 
   const bridges = new Map<string, UiBridge>()
   const getUiBridge = (workspaceId: string): UiBridge => {
@@ -493,15 +506,19 @@ export async function createCoreWorkspaceAgentServer(
   const resolveRoot = async (
     workspaceId: string,
     request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceRoot']>>[1],
-  ) =>
-    options.getWorkspaceRoot
+  ) => {
+    const root = options.getWorkspaceRoot
       ? await options.getWorkspaceRoot(workspaceId, request)
       : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
+    await ensureWorkspaceProvisioned(root)
+    return root
+  }
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
     templatePath: options.templatePath,
+    getTemplatePath: options.getTemplatePath,
     mode: options.mode,
     version: options.version,
     extraTools: [
