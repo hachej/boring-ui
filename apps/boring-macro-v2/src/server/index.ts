@@ -9,6 +9,7 @@ export interface MacroAppOptions {
   host?: string
   workspaceRoot?: string
   appRoot?: string
+  logger?: boolean
 }
 
 export async function buildMacroServer(opts: MacroAppOptions = {}) {
