@@ -13,6 +13,41 @@ Give non-technical users the power to run agent workflows — without writing co
 ﻿
 <p align="center"><img width="400" alt="grafik" src="https://github.com/user-attachments/assets/382084d1-a78c-4374-b51c-fb33b25243e2" /></p>
 
+## Features
+
+<table>
+<tr>
+<td align="center" width="33%">
+<h3>🧩 Plugin system</h3>
+Panels, catalogs, commands, agent tools. One plugin wires your domain into the shell.
+</td>
+<td align="center" width="33%">
+<h3>🤖 Agent-controlled UI</h3>
+The agent opens panels and renders data — not just replies in chat.
+</td>
+<td align="center" width="33%">
+<h3>🔒 Sandboxed execution</h3>
+Bash and code run in isolation. bwrap locally, Firecracker in production.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>🏢 Multi-tenant workspaces</h3>
+Auth, roles, invites — built in. Teams get isolated workspaces out of the box.
+</td>
+<td align="center">
+<h3>⚡ Command palette</h3>
+Every panel, command, and catalog entry is searchable from one place.
+</td>
+<td align="center">
+<h3>🚀 Full-stack included</h3>
+Fastify · Postgres · React · Drizzle. No glue code, no config. Just extend.
+</td>
+</tr>
+</table>
+
+---
+
 ## What it is
 
 Two primitives, pre-wired:
