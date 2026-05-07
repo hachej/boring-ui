@@ -116,13 +116,16 @@ let email = `smoke-${Date.now()}@example.com`
 let signupTime = null
 
 if (AGENTMAIL_KEY) {
-  // Reuse the first available inbox (free tier caps at 3; no creation needed)
+  // Reuse the first available inbox (free tier caps at 3; no creation needed).
+  // Use email+tag addressing so each run gets a unique address — avoids
+  // "user already exists" errors while all mail still lands in the same inbox.
   const data = await agentmailGet('/inboxes')
   const inboxes = data.inboxes ?? data.data ?? []
   if (!inboxes.length) throw new Error('no agentmail inboxes available')
   inboxId = inboxes[0].inbox_id
-  email = inboxes[0].email
-  console.log(`  (using inbox: ${email})`)
+  const [local, domain] = inboxes[0].email.split('@')
+  email = `${local}+smoke-${Date.now()}@${domain}`
+  console.log(`  (using inbox: ${inboxId}, address: ${email})`)
 }
 
 await check('POST /auth/sign-up/email with Origin → 200', async () => {
