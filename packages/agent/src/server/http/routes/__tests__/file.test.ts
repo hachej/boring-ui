@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify'
-import { mkdtemp, rm } from 'fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
@@ -195,6 +195,56 @@ describe('file routes (NodeWorkspace integration)', () => {
     expect(writeB.statusCode).toBe(200)
     expect(writeB.json().ok).toBe(true)
     expect(typeof writeB.json().mtimeMs).toBe('number')
+  })
+
+  test('POST /api/v1/files/upload stores image bytes under configured path', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/dirs',
+      payload: { path: '.boring', recursive: true },
+    })
+    await writeFile(
+      join(workspaceRoot, '.boring', 'settings'),
+      JSON.stringify({ markdown: { imageUploadDir: 'media/md-images' } }),
+      'utf8',
+    )
+
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/upload',
+      payload: {
+        filename: 'My Chart.png',
+        contentType: 'image/png',
+        contentBase64: pngBytes.toString('base64'),
+        sourcePath: 'deck/briefing.md',
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.path).toMatch(/^media\/md-images\/My-Chart-[a-z0-9]+-[a-z0-9]+\.png$/)
+    expect(body.markdownUrl).toMatch(/^\.\.\/media\/md-images\/My-Chart-[a-z0-9]+-[a-z0-9]+\.png$/)
+    await expect(readFile(join(workspaceRoot, body.path))).resolves.toEqual(pngBytes)
+  })
+
+  test('GET/PUT /api/v1/workspace-settings round-trips markdown image path', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+
+    const initial = await app.inject({ method: 'GET', url: '/api/v1/workspace-settings' })
+    expect(initial.statusCode).toBe(200)
+    expect(initial.json().settings.markdown.imageUploadDir).toBe('assets/images')
+
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/workspace-settings',
+      payload: { settings: { markdown: { imageUploadDir: '.boring/uploads' } } },
+    })
+    expect(put.statusCode).toBe(200)
+    expect(put.json().settings.markdown.imageUploadDir).toBe('.boring/uploads')
+    await expect(readFile(join(workspaceRoot, '.boring', 'settings'), 'utf8')).resolves.toContain('.boring/uploads')
   })
 
   test('POST /api/v1/files/move renames files', async () => {

@@ -17,6 +17,7 @@ import { TableRow } from "@tiptap/extension-table-row"
 import { TableHeader } from "@tiptap/extension-table-header"
 import { TableCell } from "@tiptap/extension-table-cell"
 import { ResizableImage } from "./ResizableImage"
+import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
 import { common, createLowlight } from "lowlight"
 import { Markdown } from "tiptap-markdown"
@@ -69,6 +70,8 @@ export interface MarkdownEditorProps {
   readOnly?: boolean
   placeholder?: string
   className?: string
+  /** Workspace-relative markdown file path, used to make uploaded image links relative. */
+  documentPath?: string
 }
 
 const extensions = [
@@ -107,6 +110,10 @@ const extensions = [
   CodeBlockLowlight.configure({ lowlight }),
   Markdown.configure({
     html: true,
+    tightLists: true,
+    bulletListMarker: "-",
+    breaks: true,
+    linkify: true,
     transformPastedText: true,
     transformCopiedText: true,
   }),
@@ -157,7 +164,49 @@ export function readFileAsDataUrl(file: Blob): Promise<string> {
   })
 }
 
-function Toolbar({ editor }: { editor: Editor | null }) {
+function apiUrl(base: string, path: string): string {
+  const normalizedBase = base.replace(/\/$/, "")
+  return `${normalizedBase}${path}`
+}
+
+async function uploadMarkdownImage(
+  file: File,
+  documentPath?: string,
+  options: { apiBaseUrl?: string; workspaceRequestId?: string | null } = {},
+): Promise<string> {
+  if (!documentPath) return await readFileAsDataUrl(file)
+  const dataUrl = await readFileAsDataUrl(file)
+  const comma = dataUrl.indexOf(",")
+  const contentBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : ""
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (options.workspaceRequestId) headers["x-boring-workspace-id"] = options.workspaceRequestId
+  const res = await fetch(apiUrl(options.apiBaseUrl ?? "", "/api/v1/files/upload"), {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type,
+      contentBase64,
+      sourcePath: documentPath,
+    }),
+  })
+  if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+  const body = await res.json() as { markdownUrl?: string; path?: string }
+  return body.markdownUrl ?? body.path ?? dataUrl
+}
+
+function Toolbar({
+  editor,
+  documentPath,
+  apiBaseUrl,
+  workspaceRequestId,
+}: {
+  editor: Editor | null
+  documentPath?: string
+  apiBaseUrl?: string
+  workspaceRequestId?: string | null
+}) {
   const setBlockAlign = (align: "left" | "center" | "right") => {
     if (!editor) return
     if (editor.isActive("image")) {
@@ -233,10 +282,16 @@ function Toolbar({ editor }: { editor: Editor | null }) {
     e.target.value = "" // allow picking the same file twice in a row
     if (!file || !file.type.startsWith("image/")) return
     try {
-      const dataUrl = await readFileAsDataUrl(file)
-      editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run()
+      const src = await uploadMarkdownImage(file, documentPath, { apiBaseUrl, workspaceRequestId })
+      editor.chain().focus().setImage({ src, alt: file.name }).run()
     } catch {
-      // FileReader rejected — silently ignore; the user can retry.
+      // Upload/FileReader rejected — fall back to inline data URL so the edit is not lost.
+      try {
+        const dataUrl = await readFileAsDataUrl(file)
+        editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run()
+      } catch {
+        // The user can retry.
+      }
     }
   }
 
@@ -335,7 +390,10 @@ export function MarkdownEditor({
   readOnly = false,
   placeholder,
   className,
+  documentPath,
 }: MarkdownEditorProps) {
+  const apiBaseUrl = useApiBaseUrl()
+  const workspaceRequestId = useWorkspaceRequestId()
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
@@ -378,7 +436,14 @@ export function MarkdownEditor({
 
   return (
     <div className={cn("flex h-full flex-col overflow-hidden", className)}>
-      {!readOnly && <Toolbar editor={editor} />}
+      {!readOnly && (
+        <Toolbar
+          editor={editor}
+          documentPath={documentPath}
+          apiBaseUrl={apiBaseUrl}
+          workspaceRequestId={workspaceRequestId}
+        />
+      )}
       <div className="flex-1 overflow-auto">
         <EditorContent editor={editor} />
       </div>

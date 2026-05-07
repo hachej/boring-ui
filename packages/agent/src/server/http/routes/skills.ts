@@ -21,7 +21,7 @@ const CACHE_TTL_MS = 30_000
 
 export function skillsRoutes(
   app: FastifyInstance,
-  opts: { workspaceRoot: string },
+  opts: { workspaceRoot: string; additionalSkillPaths?: string[] },
   done: (err?: Error) => void,
 ): void {
   let cached: { skills: SkillSummary[]; expiresAt: number } | null = null
@@ -33,7 +33,11 @@ export function skillsRoutes(
     }
 
     try {
-      const result = loadSkills({ cwd: opts.workspaceRoot, includeDefaults: true })
+      const result = loadSkills({
+        cwd: opts.workspaceRoot,
+        skillPaths: opts.additionalSkillPaths ?? [],
+        includeDefaults: true,
+      })
       const skills: SkillSummary[] = result.skills.map((s) => ({
         name: s.name,
         description: s.description,

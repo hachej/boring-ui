@@ -151,7 +151,10 @@ export async function createAgentApp(
   })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)
-  await app.register(skillsRoutes, { workspaceRoot })
+  await app.register(skillsRoutes, {
+    workspaceRoot,
+    additionalSkillPaths: opts.resourceLoaderOptions?.additionalSkillPaths,
+  })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
   await app.register(readyStatusRoutes, { tracker: readyTracker })

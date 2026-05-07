@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -22,6 +22,7 @@ import {
 } from '@hachej/boring-ui-kit'
 import {
   AlertCircle,
+  FileImage,
   HardDrive,
   RefreshCw,
   Settings2,
@@ -131,8 +132,13 @@ function roleLabel(role: string | null): string {
 const WORKSPACE_NAV_ITEMS = [
   { href: '#general', label: 'General', description: 'Name and access' },
   { href: '#runtime', label: 'Runtime', description: 'Provisioning state' },
+  { href: '#files', label: 'Files', description: 'Markdown assets' },
   { href: '#danger-zone', label: 'Danger zone', description: 'Permanent actions' },
 ]
+
+type WorkspaceFileSettings = {
+  markdown?: { imageUploadDir?: string }
+}
 
 export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {}) {
   const workspace = useCurrentWorkspace()
@@ -148,9 +154,13 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [imageUploadDirValue, setImageUploadDirValue] = useState<string | null>(null)
+  const [fileSettingsError, setFileSettingsError] = useState<string | null>(null)
 
   const displayName = nameValue ?? workspace?.name ?? ''
   const encodedWorkspaceId = encodeURIComponent(workspaceId)
+
+  const requestHeaders = workspaceId ? { 'x-boring-workspace-id': workspaceId } : undefined
 
   const runtimeQuery = useQuery({
     queryKey: ['runtime', workspaceId],
@@ -167,6 +177,53 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
       }
     },
     enabled: workspaceId.length > 0,
+  })
+
+  const fileSettingsQuery = useQuery({
+    queryKey: ['workspace-file-settings', workspaceId],
+    queryFn: async () => {
+      try {
+        const data = await apiFetchJson<{ settings: WorkspaceFileSettings }>(
+          '/api/v1/workspace-settings',
+          { headers: requestHeaders },
+        )
+        return data.settings
+      } catch (err: unknown) {
+        const detail = getHttpErrorDetail(err)
+        if (detail.status === 404) return null
+        throw err
+      }
+    },
+    enabled: workspaceId.length > 0,
+    retry: false,
+  })
+
+  useEffect(() => {
+    const next = fileSettingsQuery.data?.markdown?.imageUploadDir
+    if (typeof next === 'string') setImageUploadDirValue(next)
+  }, [fileSettingsQuery.data?.markdown?.imageUploadDir])
+
+  const fileSettingsMutation = useMutation({
+    mutationFn: async (imageUploadDir: string) => {
+      const data = await apiFetchJson<{ settings: WorkspaceFileSettings }>(
+        '/api/v1/workspace-settings',
+        {
+          method: 'PUT',
+          headers: { ...requestHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: { markdown: { imageUploadDir } } }),
+        },
+      )
+      return data.settings
+    },
+    onSuccess: (settings) => {
+      setFileSettingsError(null)
+      setImageUploadDirValue(settings.markdown?.imageUploadDir ?? 'assets/images')
+      queryClient.invalidateQueries({ queryKey: ['workspace-file-settings', workspaceId] })
+    },
+    onError: (err: unknown) => {
+      const detail = getHttpErrorDetail(err)
+      setFileSettingsError(detail.message)
+    },
   })
 
   const renameMutation = useMutation({
@@ -240,8 +297,18 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
     deleteMutation.mutate()
   }, [deleteMutation])
 
+  const handleSaveFileSettings = useCallback(() => {
+    const trimmed = (imageUploadDirValue ?? '').trim()
+    if (!trimmed) return
+    fileSettingsMutation.mutate(trimmed)
+  }, [fileSettingsMutation, imageUploadDirValue])
+
   const runtime = runtimeQuery.data ?? null
   const hasRuntime = runtime !== null && runtimeQuery.isSuccess
+  const fileSettings = fileSettingsQuery.data ?? null
+  const hasFileSettings = fileSettings !== null && fileSettingsQuery.isSuccess
+  const currentImageUploadDir = fileSettings?.markdown?.imageUploadDir ?? 'assets/images'
+  const fileSettingsChanged = imageUploadDirValue !== null && imageUploadDirValue.trim() !== currentImageUploadDir
   const nameChanged = nameValue !== null && nameValue.trim() !== workspace?.name
   const canEditName = role !== 'viewer'
   const canDeleteWorkspace = role === 'owner' || role === null
@@ -250,9 +317,11 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
   const topBarNode = topBar === undefined
     ? <SettingsTopBar workspaceId={workspaceId} workspaceName={workspaceName} />
     : topBar
-  const navItems = hasRuntime
-    ? WORKSPACE_NAV_ITEMS
-    : WORKSPACE_NAV_ITEMS.filter((item) => item.href !== '#runtime')
+  const navItems = WORKSPACE_NAV_ITEMS.filter((item) => {
+    if (item.href === '#runtime') return hasRuntime
+    if (item.href === '#files') return hasFileSettings
+    return true
+  })
 
   return (
     <main className="boring-settings-shell">
@@ -381,6 +450,44 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
                     Destroy failed. Use the Delete button below to re-issue the delete.
                   </p>
                 )}
+              </div>
+            </UiSettingsPanel>
+          )}
+
+          {hasFileSettings && (
+            <UiSettingsPanel
+              id="files"
+              testId="file-settings-card"
+              icon={<FileImage className="h-3.5 w-3.5" aria-hidden="true" />}
+              title="Files"
+              description="Configure where markdown editor image uploads are stored. Direct/local workspaces can also edit .boring/settings."
+              footer={(
+                <Button
+                  data-testid="save-file-settings"
+                  size="sm"
+                  disabled={!fileSettingsChanged || fileSettingsMutation.isPending || !canEditName}
+                  onClick={handleSaveFileSettings}
+                >
+                  {fileSettingsMutation.isPending ? 'Saving...' : 'Save file settings'}
+                </Button>
+              )}
+            >
+              <div className="space-y-4">
+                {fileSettingsError && <Notice data-testid="file-settings-error" role="alert" tone="error" description={fileSettingsError} />}
+                <div className="space-y-2">
+                  <Label htmlFor="markdown-image-upload-dir" className="text-[12px]">Markdown image upload path</Label>
+                  <Input
+                    id="markdown-image-upload-dir"
+                    data-testid="markdown-image-upload-dir-input"
+                    className="h-8 font-mono text-[13px]"
+                    value={imageUploadDirValue ?? currentImageUploadDir}
+                    onChange={(e) => setImageUploadDirValue(e.target.value)}
+                    disabled={!canEditName}
+                  />
+                  <FieldNote>
+                    Relative workspace path used by markdown image uploads. Stored in <code>.boring/settings</code>.
+                  </FieldNote>
+                </div>
               </div>
             </UiSettingsPanel>
           )}

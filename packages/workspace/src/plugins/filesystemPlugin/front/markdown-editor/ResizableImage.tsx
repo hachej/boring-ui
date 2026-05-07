@@ -24,6 +24,24 @@ export const ResizableImage = Image.extend({
   name: "image",
   draggable: true,
 
+  addStorage() {
+    return {
+      ...(this.parent?.() ?? {}),
+      markdown: {
+        serialize(stateOrArgs: any, maybeNode?: any) {
+          const state = maybeNode ? stateOrArgs : stateOrArgs.state
+          const node = maybeNode ?? stateOrArgs.node
+          const src: string = node.attrs.src ?? ""
+          const alt: string = node.attrs.alt ?? ""
+          const title: string | undefined = node.attrs.title || undefined
+          state.write(`![${alt}](${src}${title ? ` "${title}"` : ""})`)
+          state.closeBlock(node)
+        },
+        parse: {},
+      },
+    }
+  },
+
   addAttributes() {
     const parent = (this.parent?.() as Record<string, unknown>) ?? {}
     return {

@@ -414,6 +414,28 @@ describe("MarkdownEditor", () => {
       })
     })
 
+    it("Image upload: stores through upload API when documentPath is supplied", async () => {
+      const onChange = vi.fn()
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ markdownUrl: "../assets/images/shot.png" }),
+      })
+      vi.stubGlobal("fetch", fetchSpy)
+      render(<MarkdownEditor content="Hello" onChange={onChange} documentPath="deck/briefing.md" />)
+      await ready()
+      const input = document.querySelector(
+        "[data-testid='image-file-input']",
+      ) as HTMLInputElement
+      const file = new File([new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })], "shot.png", { type: "image/png" })
+      Object.defineProperty(input, "files", { value: [file], configurable: true })
+      fireEvent.change(input)
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledWith("/api/v1/files/upload", expect.objectContaining({ method: "POST" }))
+        expect(lastCall(onChange)).toMatch(/!\[shot\.png\]\(\.\.\/assets\/images\/shot\.png\)/)
+      })
+      vi.unstubAllGlobals()
+    })
+
     it("Image upload: ignores non-image files (no setImage call)", async () => {
       const onChange = vi.fn()
       render(<MarkdownEditor content="Hello" onChange={onChange} />)

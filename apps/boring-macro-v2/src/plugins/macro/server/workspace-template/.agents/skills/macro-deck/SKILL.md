@@ -18,13 +18,15 @@ If the user asks for a slide deck or deck edits:
 ## File format
 
 - Deck files live under `deck/` and end in `.md`
-- Put the deck title near the top as:
+- Prefer YAML frontmatter for the cover title:
 
 ```md
 ---
-## title: Labor market snapshot
+title: Labor market snapshot
+---
 ```
 
+- Legacy `---` + `## title: ...` files are still supported, but do not mix both formats.
 - Split slides with a line containing only:
 
 ```md
@@ -70,7 +72,10 @@ Rules:
 - one idea per slide
 - short headline first
 - 2–5 bullets max when using bullets
-- do not overload a slide with too many charts and long prose together
+- a `size="lg"` chart should usually be alone, with analysis on the next slide
+- never put two `size="lg"` charts plus bullets on one slide
+- do not overload a slide with long prose, big tables, and charts together
+- split dense tables or risk lists into separate slides
 - prefer a chart grid for “dashboard” slides
 - prefer one large chart for a narrative slide
 

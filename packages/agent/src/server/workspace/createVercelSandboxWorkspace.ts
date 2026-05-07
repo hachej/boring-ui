@@ -242,6 +242,18 @@ export function createVercelSandboxWorkspace(
       workspaceOpts.onMutation?.()
       emitChange({ op: 'write', path: relPath })
     },
+    async writeBinaryFile(relPath, data) {
+      const sandboxPath = toSandboxPath(relPath)
+      await sandbox.writeFiles([
+        {
+          path: sandboxPath,
+          content: Buffer.from(data),
+        },
+      ])
+      invalidateMetadataCache()
+      workspaceOpts.onMutation?.()
+      emitChange({ op: 'write', path: relPath })
+    },
     async readFileWithStat(relPath) {
       const sandboxPath = toSandboxPath(relPath)
       const cachedStat = statCache.get(sandboxPath)
@@ -283,6 +295,48 @@ export function createVercelSandboxWorkspace(
     async writeFileWithStat(relPath, data) {
       const sandboxPath = toSandboxPath(relPath)
       const payload = Buffer.from(data, 'utf-8')
+
+      if (payload.byteLength > MAX_INLINE_WRITE_BYTES) {
+        await sandbox.writeFiles([
+          {
+            path: sandboxPath,
+            content: payload,
+          },
+        ])
+        invalidateMetadataCache()
+        workspaceOpts.onMutation?.()
+        const writtenStat = remote.fs?.stat
+          ? await (async (): Promise<Stat> => {
+              const fileStat = await remote.fs!.stat(sandboxPath)
+              return {
+                size: fileStat.size,
+                mtimeMs: fileStat.mtimeMs,
+                kind: fileStat.isDirectory() ? 'dir' : 'file',
+              }
+            })()
+          : await runJson<Stat>(
+              remote,
+              `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)}`,
+            )
+        statCache.set(sandboxPath, writtenStat)
+        emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
+        return cloneStat(writtenStat)
+      }
+
+      const encoded = payload.toString('base64')
+      const writtenStat = await runJson<Stat>(
+        remote,
+        `node -e ${shellQuote(`const fs=require('fs'); const p=process.argv[1]; const data=Buffer.from(process.argv[2],'base64'); fs.writeFileSync(p,data); const s=fs.statSync(p); process.stdout.write(JSON.stringify({size:s.size,mtimeMs:s.mtimeMs,kind:s.isDirectory()?'dir':'file'}))`)} ${shellQuote(sandboxPath)} ${shellQuote(encoded)}`,
+      )
+      invalidateMetadataCache()
+      statCache.set(sandboxPath, writtenStat)
+      workspaceOpts.onMutation?.()
+      emitChange({ op: 'write', path: relPath, mtimeMs: writtenStat.mtimeMs })
+      return cloneStat(writtenStat)
+    },
+    async writeBinaryFileWithStat(relPath, data) {
+      const sandboxPath = toSandboxPath(relPath)
+      const payload = Buffer.from(data)
 
       if (payload.byteLength > MAX_INLINE_WRITE_BYTES) {
         await sandbox.writeFiles([
