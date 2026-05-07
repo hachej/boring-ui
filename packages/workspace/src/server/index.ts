@@ -37,6 +37,21 @@ export type {
   WorkspaceRouteContribution,
   WorkspaceServerPlugin,
 } from "./plugins/bootstrapServer"
+export { buildBoringSystemPrompt } from "./boringSystemPrompt"
+export { BoringPluginAssetManager } from "./agentPlugins/manager"
+export { boringPluginRoutes } from "./agentPlugins/routes"
+export { createBoringPiExtension } from "./agentPlugins/boringPiExtension"
+export { preflightBoringPlugins, readBoringPlugins } from "./agentPlugins/scan"
+export type {
+  BoringPackageField,
+  BoringPluginEvent,
+  BoringPluginListEntry,
+  BoringPluginManifest,
+  BoringServerAPI,
+  BoringServerFactory,
+  BoringServerRouteHandler,
+} from "./agentPlugins/types"
+
 export {
   createDataCatalogAgentTool,
   createDataCatalogServerPlugin,

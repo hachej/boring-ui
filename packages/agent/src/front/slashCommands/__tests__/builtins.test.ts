@@ -9,6 +9,7 @@ function makeContext(overrides?: Partial<SlashCommandContext>): SlashCommandCont
     resetSession: vi.fn(),
     setModel: vi.fn().mockReturnValue(true),
     listCommands: vi.fn().mockReturnValue(builtinCommands),
+    reloadAgentPlugins: vi.fn().mockResolvedValue('Agent plugins reloaded.'),
     ...overrides,
   }
 }
@@ -85,6 +86,7 @@ describe('/help', () => {
     expect(result).toContain('/clear')
     expect(result).toContain('/model')
     expect(result).toContain('/help')
+    expect(result).toContain('/reload')
     expect(result).toContain('/cost')
     expect(result).toContain('/reset')
   })
@@ -96,6 +98,15 @@ describe('/help', () => {
   })
 })
 
+describe('/reload', () => {
+  test('reloads agent plugins', async () => {
+    const ctx = makeContext()
+    const result = await getBuiltin('reload').handler('', ctx)
+    expect(ctx.reloadAgentPlugins).toHaveBeenCalledOnce()
+    expect(result).toBe('Agent plugins reloaded.')
+  })
+})
+
 describe('/cost', () => {
   test('returns coming soon', () => {
     const ctx = makeContext()
@@ -104,12 +115,12 @@ describe('/cost', () => {
   })
 })
 
-describe('all 5 builtins are registered', () => {
-  test('has exactly 5 commands', () => {
-    expect(builtinCommands).toHaveLength(5)
+describe('all 6 builtins are registered', () => {
+  test('has exactly 6 commands', () => {
+    expect(builtinCommands).toHaveLength(6)
   })
 
-  test.each(['clear', 'reset', 'model', 'help', 'cost'])('includes /%s', (name) => {
+  test.each(['clear', 'reset', 'model', 'reload', 'help', 'cost'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 })

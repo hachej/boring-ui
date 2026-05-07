@@ -3,8 +3,8 @@
  *
  * Three properties verified end-to-end:
  *
- *   1. Doc access — agent reads plugins.md / bridge.md when asked domain
- *      questions (proves the boring-ui system prompt is live and paths resolve).
+ *   1. Doc access — agent reads boring-ui package docs when asked domain
+ *      questions (proves the boring-ui system prompt points at readable docs).
  *
  *   2. Comprehensive plugin creation — agent builds a plugin covering every
  *      boring-ui output type: panel, command, left-tab, surface-resolver, and
@@ -133,7 +133,7 @@ Plugins follow a 4-layer structure:
   server/  — Trusted Node.js host logic — skip for now
   shared/  — Platform-neutral types — skip for now
 
-Read docs/plugins.md and docs/panels.md before writing any code.
+Read the boring-ui Plugin authoring and Panel/front API docs from the system prompt before writing any code.
 
 The plugin must include ALL of the following:
 1. A center panel (id: "task-list-panel", component: TaskListPane) that renders a basic task list
@@ -148,6 +148,7 @@ To reach workspace internals use THREE levels up (../../../), not two:
   - ../../../shared/plugins/defineFrontPlugin → for defineFrontPlugin
   - ../../../shared/plugins/types   → for PluginOutput
 Export the plugin as a named export: export const taskListPlugin.
+After writing the plugin, tell me to run /reload so POST /api/v1/agent/reload reloads agent plugins.
         `.trim(),
         expect: [
           { tool: "read", params: { path: EvalRegex("plugins\\.md$") } },
@@ -166,6 +167,7 @@ Export the plugin as a named export: export const taskListPlugin.
       })
 
       expect(result.ok, formatFailure(result)).toBe(true)
+      expect(result.text).toContain("/reload")
 
       // Step 2 — verify the file was written under front/
       const pluginFile = join(EVAL_PLUGIN_DIR, "front", "index.tsx")

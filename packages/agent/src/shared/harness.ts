@@ -21,6 +21,9 @@ export interface AgentHarness {
    * `sendMessage`). Optional so non-pi harnesses can opt out cleanly.
    */
   getSystemPrompt?: (sessionId: string) => string | undefined
+
+  /** Reload native agent resources/extensions for an existing session. */
+  reloadSession?: (sessionId: string) => Promise<boolean>
 }
 
 /* Resume is NOT a harness concern — see Stream resumption section.

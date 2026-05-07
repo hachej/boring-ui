@@ -35,6 +35,7 @@ export {
   type RuntimeProvisioningContribution,
   type RuntimeTemplateContribution,
   type RuntimePythonSpec,
+  type RuntimeNodePackageSpec,
 } from './workspace/provisionRuntime'
 export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'

@@ -10,6 +10,7 @@ const PACKAGES = resolve(__dirname, "../../packages")
 export default defineConfig({
   resolve: {
     alias: {
+      "@boring/agent/server": resolve(PACKAGES, "agent/src/server/index.ts"),
       "@boring/workspace/globals.css": resolve(PACKAGES, "workspace/src/globals.css"),
       "@boring/workspace/app/front": resolve(PACKAGES, "workspace/src/app/front/index.ts"),
       "@boring/workspace/app/server": resolve(PACKAGES, "workspace/src/app/server/index.ts"),

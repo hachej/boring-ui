@@ -99,6 +99,12 @@ importers:
       '@clickhouse/client':
         specifier: ^1.18.2
         version: 1.18.3
+      '@mariozechner/pi-coding-agent':
+        specifier: 0.67.68
+        version: 0.67.68(ws@8.20.0)(zod@3.25.76)
+      '@sinclair/typebox':
+        specifier: ^0.34.49
+        version: 0.34.49
       fastify:
         specifier: ^5.8.4
         version: 5.8.5

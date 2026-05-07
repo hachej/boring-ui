@@ -9,6 +9,7 @@ import {
   SettingsManager,
   getAgentDir,
   loadSkills,
+  type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, SendMessageInput, RunContext } from "../../../shared/harness.js";
 import type { AgentTool } from "../../../shared/tool.js";
@@ -44,6 +45,14 @@ export interface PiResourceLoaderOptions {
    * declarations do not mutate .pi/settings.json.
    */
   piPackages?: PiPackageSource[];
+  /**
+   * Additional native pi extension entrypoints. Pi loads these through jiti and
+   * re-imports them on ctx.reload(), which is required for hot-reloadable
+   * boring agent plugins.
+   */
+  additionalExtensionPaths?: string[];
+  /** In-process host extensions. Use only for trusted built-ins; hot plugin code should use paths. */
+  extensionFactories?: ExtensionFactory[];
 }
 
 const ALIAS_TO_PI_ID: Record<string, string> = {
@@ -178,12 +187,18 @@ export function createPiCodingAgentHarness(opts: {
       opts.resourceLoaderOptions?.noContextFiles ||
       opts.resourceLoaderOptions?.noSkills ||
       (opts.resourceLoaderOptions?.additionalSkillPaths?.length ?? 0) > 0 ||
-      (opts.resourceLoaderOptions?.piPackages?.length ?? 0) > 0
+      (opts.resourceLoaderOptions?.piPackages?.length ?? 0) > 0 ||
+      (opts.resourceLoaderOptions?.additionalExtensionPaths?.length ?? 0) > 0 ||
+      (opts.resourceLoaderOptions?.extensionFactories?.length ?? 0) > 0
         ? (() => {
             const agentDir = getAgentDir()
             const additionalSkillPaths =
               opts.resourceLoaderOptions?.additionalSkillPaths ?? []
             const piPackages = opts.resourceLoaderOptions?.piPackages ?? []
+            const additionalExtensionPaths =
+              opts.resourceLoaderOptions?.additionalExtensionPaths ?? []
+            const extensionFactories =
+              opts.resourceLoaderOptions?.extensionFactories ?? []
             const settingsManager = createResourceSettingsManager(
               ctx.workdir,
               agentDir,
@@ -193,6 +208,8 @@ export function createPiCodingAgentHarness(opts: {
               cwd: ctx.workdir,
               agentDir,
               settingsManager,
+              ...(additionalExtensionPaths.length ? { additionalExtensionPaths } : {}),
+              ...(extensionFactories.length ? { extensionFactories } : {}),
               ...(opts.systemPromptAppend
                 ? { appendSystemPrompt: [opts.systemPromptAppend] }
                 : {}),
@@ -237,6 +254,13 @@ export function createPiCodingAgentHarness(opts: {
     return handle;
   }
 
+  async function reloadPiSession(sessionId: string): Promise<boolean> {
+    const handle = piSessions.get(sessionId);
+    if (!handle) return false;
+    await handle.piSession.reload();
+    return true;
+  }
+
   function disposePiSession(sessionId: string): void {
     const handle = piSessions.get(sessionId);
     if (!handle) return;
@@ -264,6 +288,8 @@ export function createPiCodingAgentHarness(opts: {
     getSystemPrompt(sessionId: string): string | undefined {
       return piSessions.get(sessionId)?.piSession.systemPrompt;
     },
+
+    reloadSession: reloadPiSession,
 
     async *sendMessage(
       input: SendMessageInput,

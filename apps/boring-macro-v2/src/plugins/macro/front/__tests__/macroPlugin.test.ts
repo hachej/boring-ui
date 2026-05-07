@@ -182,19 +182,10 @@ describe("makeMacroServerPlugin", () => {
     expect(plugin.label).toBe("Macro")
   })
 
-  it("documents the macro openSurface chart contract", () => {
-    expect(plugin.systemPrompt).toContain("openSurface")
-    expect(plugin.systemPrompt).toContain(MACRO_OPEN_SERIES_SURFACE_KIND)
-  })
-
-  it("includes all 4 agent tools", () => {
-    expect(plugin.agentTools).toHaveLength(4)
-    const names = plugin.agentTools!.map((t) => t.name).sort()
-    expect(names).toEqual([
-      "execute_sql",
-      "get_series_data",
-      "macro_search",
-      "persist_derived_series",
-    ])
+  it("registers a native pi extension path instead of legacy agentTools", () => {
+    expect(plugin.agentTools).toBeUndefined()
+    expect(plugin.systemPrompt).toBeUndefined()
+    expect(plugin.extensionPaths).toHaveLength(1)
+    expect(plugin.extensionPaths![0]).toMatch(/macro\/agent\/index\.ts$/)
   })
 })

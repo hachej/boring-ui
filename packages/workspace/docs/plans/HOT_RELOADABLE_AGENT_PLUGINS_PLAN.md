@@ -1,295 +1,739 @@
-# Boring Plugins — Hot Reload
+# Boring Plugins — Agent Extension System
 
 **Last updated:** 2026-05-07  
-**Status:** Rewrite in progress — build on pi
+**Status:** Active — two-phase rewrite
 
 ---
 
-## Core concept
-
-**A boring inside plugin mirrors the same 4-layer structure as first-party plugins** (`front/`, `agent/`, `server/`, `shared/`), just under `.boring/plugins/<name>/` instead of `src/plugins/<name>/`.
-
-Each layer has a single runtime context — no dual-runtime constraints:
-
-- **`agent/index.ts`** — pure pi `ExtensionFactory`; loaded by jiti in Node.js only. `api.registerTool()` and `api.registerCommand()` go to pi's native registry. No browser code, no React, no UI extras.
-- **`front/index.tsx`** — boring-ui UI factory; loaded by Vite (V1) or esbuild (V2) in the **browser only**. Registers panels, commands, left tabs, surface resolvers. No jiti, no Node.js.
-- **`server/index.ts`** — optional Node.js-only hooks (streams, native modules). Called with restricted api.
-- **`shared/`** — optional platform-neutral types shared between layers.
-
-**UI metadata flows via the manifest, not via jiti-loading `front/`.** The server reads `package.json["boring"].panels[]` etc. to build the SSE payload — it never runs `front/index.tsx`. This eliminates CSS-module and browser-global constraints on `front/` entirely.
-
----
-
-## Plugin tiers
-
-| | Outside plugin | Inside plugin |
-|---|---|---|
-| Authored by | App developer | Agent at runtime |
-| Defined via | `defineFrontPlugin` / `composePlugins` | `package.json` (`"boring"` + `"pi"` fields) + factory |
-| Loaded | At app startup via `bootstrap()` | Via explicit reload (`/boring.reload` or `/reload`) + SSE |
-| Migration required | No — stays declarative | N/A — new system |
-
-**Outside plugins** keep their current shape. `bootstrap()` is unchanged.
-
-**Inside plugins** are self-contained pi extensions that also register workspace UI. `PluginCoordinator` is deleted and replaced by `registerAgentPlugin` (inside plugins only).
-
----
-
-## File layout
+## System overview
 
 ```
-.boring/plugins/<name>/
-  package.json          ← manifest: "boring" metadata + "pi" extension declaration
-  front/
-    index.tsx           ← BoringFrontFactory: panels, commands, left tabs, resolvers (browser only)
+                        BORING-UI PLUGIN SYSTEM
+                        ═══════════════════════
+
+  pluginDirs[]  —  one shared list for all plugin roots
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  first-party (monorepo)               inside (.pi/extensions/)       │
+  │  · boring-macro                       · csv-viewer  (agent-created)  │
+  │  · filesystemPlugin                   · my-custom-plugin             │
+  │  · dataCatalogPlugin                  pi auto-discovers natively     │
+  │                                                                      │
+  │  Each plugin root:  agent/   front/   server/   sdk/   shared/      │
+  └──────────┬────────────────────────────┬─────────────────────────────┘
+             │                            │
+    agent/index.ts                 front/index.tsx  ← BoringFrontFactory
+    agent/skills/*.md              server/index.ts
+    agent/prompts/*.md                    │
+             │                            │
+             │              ┌─────────────┴──────────────────────────────┐
+  additionalExtensionPaths  │   Mode A — Bootstrap  (first-party, sync)  │
+             │              │   boringFrontFactoryToPlugin(id, factory)   │
+             │              │   → WorkspaceFrontPlugin → stores (no flash)│
+             │              └────────────────────────────────────────────┘
+             │
+             ▼
+  ┌────────────────────────────────────────────────────────────────────┐
+  │                         Pi runtime                                 │
+  │  ┌────────────────────────────────┐  ┌──────────────────────────┐ │
+  │  │   plugin agent/index.ts × N    │  │   boring-pi-extension    │ │
+  │  │   · registerTool(TypeBox)      │  │   · exec_ui, open_panel  │ │
+  │  │   · resources_discover         │  │   · /boring.reload cmd   │ │
+  │  │     → skills + prompts         │  │   on session_start:      │ │
+  │  └────────────────────────────────┘  │     loadBoringAssets()   │ │
+  │                                      │     emit SSE ────────────┼─┼──┐
+  │                                      └──────────────────────────┘ │  │
+  └────────────────────────────────────────────────────────────────────┘  │
+                                                                           │ SSE boring.plugin.*
+                                                                           │ Mode B — all plugins
+                                                                           ▼
+                                                            ┌──────────────────────────┐
+                                                            │         Browser          │
+                                                            │  registerAgentPlugin()   │
+                                                            │  import front/index.tsx  │
+                                                            │  factory(capturingApi)   │
+                                                            │  → panels/resolvers/tabs │
+                                                            └──────────────────────────┘
+
+  LOADING FLOWS
+  ────────────────────────────────────────────────────────────────────────
+  Cold start
+    1. bootstrap()   Mode A: boringFrontFactoryToPlugin() → stores (sync)
+    2. Pi starts     loads agent/index.ts × N → tools + skills + prompts
+    3. session_start Mode B: loadBoringAssets() → SSE → browser commits
+       revision 1 > lastSeen 0; same front/index.tsx re-imports (no flash)
+
+  /boring.reload  (full — agent + front + server)
+    preflight → ctx.reload() → pi restarts → session_start
+    → loadBoringAssets() → SSE → browser re-imports front?v=N
+    tools + skills + panels ALL refreshed atomically
+
+  POST /api/boring.reload  (front + server only — no pi restart)
+    preflight → loadBoringAssets() → SSE → browser re-imports
+    panels refreshed; agent tools NOT re-registered
+
+  OWNERSHIP SPLIT
+    Pi     → tools (TypeBox) · skills (agent/skills/) · prompts (agent/prompts/)
+    Boring → panels · left tabs · resolvers · server routes · SSE ↔ browser flow
+```
+
+---
+
+## Goal
+
+Make every boring plugin a **native pi extension** for agent behaviour (tools, skills, prompts), while boring-ui adds a thin orchestration layer on top for UI assets (panels, resolvers) and server assets (routes, SDKs) that pi doesn't know about.
+
+Two phases:
+
+1. **Phase 1 — First-party plugin migration.** Each plugin's agent layer becomes a real pi `ExtensionFactory` with TypeBox tools, native skills, and prompt templates. SDK/CLI tooling moves to a dedicated `sdk/` folder at plugin root. The existing adapter layer (`AgentTool`, `adaptToolsForPi`, `agentTools`) is deleted. `systemPrompt` moves from `defineServerPlugin` to the `"boring"` manifest field and is injected by `boring-pi-extension` via pi's `before_agent_start` event.
+
+2. **Phase 2 — Additional assets loading mechanism.** `boring-pi-extension.ts` (boring-ui's own pi extension) scans `pluginDirs[]` for the `"boring"` field and emits SSE to the browser on every `session_start`. A second HTTP entry point enables boring-only reload without pi. First-party plugins get hot-reload for free via the same path.
+
+---
+
+## Universal plugin layout
+
+Every plugin — first-party and inside — uses the same file structure. Only the layers that are needed are populated.
+
+```
+<plugin-root>/
+  package.json          ← "pi": { "extensions": ["./agent/index.ts"] }
+                           "boring": { "front": "./front/index.tsx", label, panels[], ... }
   agent/
-    index.ts            ← pi ExtensionFactory: tools, slash commands (Node.js only)   OPTIONAL
+    index.ts            ← pi ExtensionFactory: tools + resources_discover
+    skills/             ← .md files; pi picks up via resources_discover
+      macro-deck.md           → /skill:macro-deck (reference material injected into turn)
+      macro-transform.md      → /skill:macro-transform
+    prompts/            ← .md files; pi picks up via resources_discover
+      draft-deck.md           → /draft-deck <topic> (pre-written message shortcut)
+      analyze-series.md       → /analyze-series <id>
+  front/
+    index.tsx           ← BoringFrontFactory (panels, left tabs, surface resolvers)
   server/
-    index.ts            ← Node.js-only hooks: streams, native modules, child_process   OPTIONAL
+    index.ts            ← Fastify routes only (no tools)
+    template/           ← workspace init assets (provisioned at workspace creation)
+  sdk/
+    pyproject.toml      ← language SDK / CLI (e.g. boring_macro Python pkg + bm CLI)
+    boring_macro/
   shared/
-    types.ts            ← platform-neutral types shared across layers                  OPTIONAL
+    types.ts
+    constants.ts
 ```
 
-Mirrors the structure of first-party plugins (`filesystemPlugin/front/`, `dataCatalogPlugin/agent/`, etc.).
+### Skills vs Prompts
 
-**No cross-layer constraints:** `front/` is pure browser code — CSS modules, browser globals, heavy React deps all fine. `agent/` is pure Node.js — native modules, streams all fine. The layers never load each other.
+| | Skill (`/skill:name`) | Prompt (`/name args`) |
+|---|---|---|
+| Invocation | `/skill:macro-deck` | `/draft-deck labor market` |
+| Pi behaviour | `<skill>` XML block injected alongside user message | Template body with `$1`/`$@` substituted; **replaces** user message |
+| Purpose | Reference material: API docs, workflow rules, syntax | Message shortcut: pre-written prompt for common requests |
 
----
+Skills and prompts are **not declared in `package.json`**. They are returned by each plugin's own `resources_discover` handler inside `agent/index.ts`. Pi wires them directly.
 
-## `package.json` shape
+### `package.json` fields
 
 ```json
 {
-  "name": "boring-plugin-csv-viewer",
-  "version": "1.0.0",
+  "name": "boring-plugin-macro",
   "boring": {
-    "front":           "./front/index.tsx",
-    "agent":           "./agent/index.ts",
-    "server":          "./server/index.ts",
-    "label":           "CSV Viewer",
-    "derivesFrom":     "macro",
-    "panels":          [{ "id": "csv-panel",  "title": "CSV Viewer" }],
-    "commands":        [{ "id": "open-csv",   "title": "Open CSV Viewer", "panelId": "csv-panel" }],
-    "leftTabs":        [{ "id": "csv-tab",    "title": "CSV",             "panelId": "csv-panel" }],
-    "surfaceResolvers":[{ "id": "csv-open",   "surfaceKind": "csv.open",  "panelId": "csv-panel" }]
+    "front":    "./front/index.tsx",
+    "label":    "Macro",
+    "panels":   [{ "id": "chart-canvas", "title": "Chart" }, { "id": "deck", "title": "Deck" }],
+    "surfaceResolvers": [{ "id": "macro-open", "surfaceKind": "macro.open", "panelId": "chart-canvas" }]
   },
-  "pi": { "extensions": ["./agent/index.ts"] }
+  "pi": {
+    "extensions": ["./agent/index.ts"]
+  }
 }
 ```
 
-- `"boring"` — boring-ui manifest (discovery + UI metadata + commit signal trigger source)
-- `"pi"` — points at `agent/index.ts`; standalone pi users load it as a standard pi extension
-- Plugin `id` = directory name. `version` = top-level `"version"`.
-- `"boring.panels[]"` etc. are **authoritative declarations** — server reads them for SSE; never loads `front/` in Node.js.
-- `"boring.agent"` and `"boring.server"` are optional. A UI-only plugin omits `agent`; a tools-only plugin omits `front`.
+- `"pi"` — pi natively loads `agent/index.ts`. Standalone pi users use this without boring-ui.
+- `"boring"` — boring-ui reads this for `front/index.tsx` loading and UI metadata.
+- `agent` and `server` paths are **not in `"boring"`**. `server/index.ts` is discovered by convention (existence check).
 
 ### `BoringPackageField` type
 
 ```ts
 interface BoringPackageField {
-  front?: string              // browser UI factory entry e.g. "./front/index.tsx"
-  agent?: string              // pi ExtensionFactory entry e.g. "./agent/index.ts"
-  server?: string             // Node.js-only hooks entry e.g. "./server/index.ts"
-  label?: string
-  description?: string
-  derivesFrom?: string        // Path A — hard failure if base plugin not registered
-
+  front?:            string   // "./front/index.tsx" — browser UI factory
+  label?:            string
   panels?:           Array<{ id: string; title?: string }>
-  commands?:         Array<{ id: string; title: string; panelId?: string; description?: string }>
-  leftTabs?:         Array<{ id: string; title: string; panelId: string; icon?: string }>
+  commands?:         Array<{ id: string; title: string; panelId?: string }>
+  leftTabs?:         Array<{ id: string; title: string; panelId: string }>
   surfaceResolvers?: Array<{ id: string; surfaceKind: string; panelId: string }>
+  systemPrompt?:     string   // optional extra context injected before every agent turn
+  derivesFrom?:      string   // Path A — see PLUGIN_DERIVATION_PATH_A_PLAN.md
 }
 ```
-
-At least one of `front` or `agent` must be present.
-
-### Validation rules
-
-- At least one of `front` or `agent` required → `MISSING_REQUIRED_FIELD` if both absent
-- `front` (if declared) must exist on disk → `MISSING_ENTRY_FILE`
-- `agent` (if declared) must exist on disk → `MISSING_ENTRY_FILE`
-- `server` (if declared) must also exist on disk
-- All paths pass `isSafePluginRelativePath` (no `..` escapes)
-- `command.panelId`, `leftTab.panelId`, `surfaceResolver.panelId` must reference a declared `panels[]` id
-- No duplicate ids within each array
-- `derivesFrom` must pass `isValidBoringPluginId`; missing base plugin = hard load failure
-- Plugin id (directory name) must not collide with any registered outside plugin id
-- Error codes (parse-time): `INVALID_ID | INVALID_VERSION | INVALID_PATH | MISSING_REQUIRED_FIELD | MISSING_ENTRY_FILE | CROSS_REFERENCE | DUPLICATE_ID`
-- `MANIFEST_IMPL_MISMATCH` lives in `registerAgentPlugin` (V1 only, post-factory) — not in manifest parsing
 
 ---
 
-## APIs per layer
+## `BoringFrontFactory` — the universal front shape
 
-### `agent/index.ts` — standard pi `ExtensionAPI`
+`front/index.tsx` exports the **same default** for all plugins, all modes:
 
-`agent/index.ts` is a first-class pi extension. It receives pi's standard `ExtensionAPI` — no boring-ui extras, no adapters. Standalone pi users load it with zero modifications.
-
-```ts
-import { defineTool, Type } from "@mariozechner/pi-coding-agent"
-import type { ExtensionAPI }  from "@mariozechner/pi-coding-agent"
-
-export default function csvAgent(api: ExtensionAPI): void {
-  api.registerTool(defineTool({
-    name: "search_csv",
-    description: "Full-text search over a CSV file",
-    parameters: Type.Object({ q: Type.String() }),
-    execute: async (_id, { q }) => ({ content: [{ type: "text", text: `results: ${q}` }] }),
-  }))
-  api.registerCommand("csv.open", {
-    description: "Open CSV viewer",
-    handler: async (_args, ctx) => { /* optionally call exec_ui */ },
-  })
+```tsx
+// macro/front/index.tsx
+const macroFront: BoringFrontFactory = (api) => {
+  api.registerPanel({ id: "chart-canvas", component: ChartCanvasPane, label: "Chart" })
+  api.registerPanel({ id: "deck",         component: DeckPane,        label: "Deck" })
+  api.registerLeftTab({ id: "macro-tab",  title: "Macro", panelId: "chart-canvas", icon: TrendingUp })
+  api.registerSurfaceResolver({ kind: "macro.open", resolve: macroSurfaceResolver })
 }
+export default macroFront
 ```
 
-### `front/index.tsx` — `BoringFrontAPI` (browser only)
-
-`front/index.tsx` receives `BoringFrontAPI` — boring-ui UI registration methods only. No pi methods, no Node.js concerns. Full browser environment: CSS modules, browser globals, heavy React deps all fine.
-
 ```ts
+// BoringFrontAPI — browser-only; no pi methods
 interface BoringFrontAPI {
   registerPanel(reg: { id: string; component: React.ComponentType<PaneProps>; label?: string }): void
-  registerPanelCommand(reg: { id: string; title: string; panelId: string; description?: string }): void
+  registerPanelCommand(reg: { id: string; title: string; panelId: string }): void
   registerLeftTab(reg: { id: string; title: string; panelId: string; icon?: React.ReactNode }): void
   registerSurfaceResolver(reg: { kind: string; resolve: (ctx: unknown) => { panelId: string } | null }): void
 }
-
 export type BoringFrontFactory = (api: BoringFrontAPI) => void | Promise<void>
 ```
 
-**One capturing context: browser only.** `registerAgentPlugin` (V1) calls `front/index.tsx` in the browser and captures component refs. The server never loads `front/` — it reads UI metadata directly from the manifest.
+### Mode A — Bootstrap adapter (`boringFrontFactoryToPlugin`)
 
----
-
-## Factory examples
+Used at app startup for first-party plugins. Runs the factory synchronously with a capturing API and produces a `WorkspaceFrontPlugin` for the standard bootstrap path.
 
 ```ts
-// agent/index.ts — pure pi ExtensionFactory; works unchanged in standalone pi
-import { defineTool, Type } from "@mariozechner/pi-coding-agent"
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"
+function boringFrontFactoryToPlugin(id: string, factory: BoringFrontFactory): WorkspaceFrontPlugin {
+  const api = createCapturingBoringFrontAPI()
+  factory(api)  // must be sync — bootstrap runs before React mounts
+  const { panels, panelCommands, leftTabs, surfaceResolvers } = api.flush()
 
-export default function csvAgent(api: ExtensionAPI): void {
-  api.registerTool(defineTool({
-    name: "search_csv",
-    label: "Search CSV",
-    description: "Full-text search over a CSV file",
-    parameters: Type.Object({ q: Type.String() }),
-    execute: async (_id, { q }) => ({ content: [{ type: "text", text: `results: ${q}` }] }),
-  }))
-  api.registerCommand("csv.open", {
-    description: "Open CSV viewer",
-    handler: async (_args, ctx) => { /* optionally call exec_ui */ },
+  return defineFrontPlugin({
+    id,
+    outputs: [
+      ...panels.map(p => ({
+        type: "panel",
+        panel: { id: p.id, component: p.component, title: p.label, placement: "center", source: "plugin" }
+      })),
+      ...leftTabs.map(t => ({ type: "left-tab", id: t.id, title: t.title, panelId: t.panelId, icon: t.icon })),
+      ...panelCommands.map(c => ({ type: "panel-command", id: c.id, title: c.title, panelId: c.panelId })),
+      ...surfaceResolvers.map(r => ({ type: "surface-resolver", resolver: { kind: r.kind, resolve: r.resolve } })),
+    ],
   })
 }
 ```
 
-```tsx
-// front/index.tsx — boring-ui UI factory; browser only; no pi concerns
-import type { BoringFrontFactory } from "@boring/workspace/plugin"
-import { CsvPane } from "./CsvPane"       // CSS modules fine here
-import styles from "./CsvPane.module.css" // fine — browser only
+```ts
+// bootstrap.ts
+import macroFront from "macro/front/index.tsx"
+import { filesystemPlugin } from "filesystemPlugin/front/index.ts"  // named export
 
-const csvFront: BoringFrontFactory = (api) => {
-  api.registerPanel({ id: "csv-panel", component: CsvPane, label: "CSV Viewer" })
-  api.registerPanelCommand({ id: "open-csv", title: "Open CSV Viewer", panelId: "csv-panel" })
-  api.registerLeftTab({ id: "csv-tab", title: "CSV", panelId: "csv-panel" })
-  api.registerSurfaceResolver({ kind: "csv.open", resolve: () => ({ panelId: "csv-panel" }) })
-}
-export default csvFront
+bootstrap([
+  boringFrontFactoryToPlugin("macro", macroFront),
+  boringFrontFactoryToPlugin("dataCatalog", dataCatalogFront),
+  filesystemPlugin,  // named export — providers/bindings need full WorkspaceFrontPlugin
+])
 ```
+
+### Mode B — SSE dynamic import
+
+Used at hot-reload for all plugins (first-party and inside). Browser imports the same `front/index.tsx` default.
+
+```ts
+const { default: factory } = await import(`${pluginFrontUrl}?v=${revision}`)
+const api = createCapturingBoringFrontAPI()
+await factory(api)
+commitToStores(id, api.flush(), revision)
+```
+
+### `createCapturingBoringFrontAPI()`
+
+Shared by both modes. Implements `BoringFrontAPI` by accumulating registrations into arrays; `flush()` returns them.
+
+```ts
+function createCapturingBoringFrontAPI(): BoringFrontAPI & { flush(): CapturedRegistrations } {
+  const panels: PanelReg[] = []
+  const panelCommands: PanelCommandReg[] = []
+  const leftTabs: LeftTabReg[] = []
+  const surfaceResolvers: SurfaceResolverReg[] = []
+  return {
+    registerPanel: (r) => panels.push(r),
+    registerPanelCommand: (r) => panelCommands.push(r),
+    registerLeftTab: (r) => leftTabs.push(r),
+    registerSurfaceResolver: (r) => surfaceResolvers.push(r),
+    flush: () => ({ panels, panelCommands, leftTabs, surfaceResolvers }),
+  }
+}
+```
+
+### Capability matrix
+
+| Feature | `BoringFrontFactory` (all plugins, hot-reloadable) | `WorkspaceFrontPlugin` (bootstrap only) |
+|---|---|---|
+| Panels | ✅ | ✅ |
+| Left tabs | ✅ | ✅ |
+| Panel commands | ✅ | ✅ |
+| Surface resolvers | ✅ | ✅ |
+| Providers / bindings | ❌ | ✅ |
+| Catalog registration | ❌ | ✅ |
+| Hot-reload | ✅ | ❌ |
+
+### Filesystem dual-export pattern
+
+`filesystemPlugin` needs providers, bindings, and catalogs — not expressible via `BoringFrontFactory`. It exports both shapes:
+
+```ts
+// filesystemPlugin/front/index.ts
+
+// Default export: BoringFrontFactory — panels + resolvers (hot-reloadable)
+const filesystemFront: BoringFrontFactory = (api) => {
+  api.registerPanel({ id: "code-editor",     component: CodeEditorPane })
+  api.registerPanel({ id: "markdown-editor", component: MarkdownEditorPane })
+  api.registerSurfaceResolver({ kind: "file.open", resolve: filesystemSurfaceResolver })
+  api.registerLeftTab({ id: "files", title: "Files", panelId: "code-editor", icon: FolderTree })
+}
+export default filesystemFront
+
+// Named export: full WorkspaceFrontPlugin — bootstrap only (providers/bindings/catalogs)
+export const filesystemPlugin = defineFrontPlugin({
+  id: FILESYSTEM_PLUGIN_ID,
+  outputs: filesystemOutputs,  // includes providers, bindings, catalogs
+  bindings: [FilesystemCatalogBinding, FilesystemFilePanelBinding, FilesystemAgentFileBridge],
+})
+```
+
+Bootstrap uses the named export. SSE hot-reload re-imports the default export (panels + resolvers subset only). Providers and bindings stay from cold start — they don't change during a session.
 
 ---
 
-## boring-pi-extension.ts — the plugin runner
+## Unified plugin directory list (`pluginDirs[]`)
 
-Boring-ui's own pi extension, wired via `extensionFactories[]` in `DefaultResourceLoader`. On load/reload it:
-1. Scans `.boring/plugins/*/package.json` for valid `"boring"` entries
-2. For each plugin: jiti-loads `agent/index.ts` (if declared), calls factory with **real pi api** — tools and commands go to pi natively
-3. Reads UI metadata directly from manifest (`boring.panels[]`, `boring.commands[]`, etc.) — **never loads `front/` in Node.js**
-4. Emits SSE `boring.plugin.load` with manifest metadata per plugin
-5. If `server/index.ts` declared: jiti-loads it, calls factory with a restricted server api
+All plugins — first-party and inside — are registered in **one shared list of plugin directories**. Both pi and `boring-pi-extension` consume this same list.
 
 ```ts
-// boring-pi-extension.ts
+// workspace startup — single source of truth
+const pluginDirs: string[] = [
+  // First-party (monorepo source dirs)
+  resolve(pkgs, "workspace/src/plugins/filesystemPlugin"),
+  resolve(pkgs, "workspace/src/plugins/dataCatalogPlugin"),
+  resolve(apps, "boring-macro-v2/src/plugins/macro"),
+  // Inside plugins discovered at runtime
+  ...glob(".pi/extensions/*/"),
+]
+```
+
+**Pi** gets agent paths as `additionalExtensionPaths`:
+
+```ts
+additionalExtensionPaths: pluginDirs
+  .map(d => join(d, "agent/index.ts"))
+  .filter(existsSync)
+```
+
+**`boring-pi-extension`** gets the full list to scan for the `"boring"` field and emit SSE for all plugins that have a `front/index.tsx` — both first-party and inside. On every `/boring.reload` or `/reload`, first-party plugins hot-reload with zero extra infrastructure.
+
+---
+
+## Inside plugin location — `.pi/extensions/`
+
+Agent-created (inside) plugins live in `.pi/extensions/`. Pi auto-discovers and loads everything under `.pi/extensions/` at startup and on `/reload`. `boring-pi-extension` scans the same directory for the `"boring"` field.
+
+```
+.pi/
+  extensions/
+    csv-viewer/              ← inside plugin (agent-created)
+      package.json           "pi" + "boring" fields
+      agent/
+        index.ts             ← pi loads natively: tools + resources_discover
+        skills/
+          csv-usage.md       → /skill:csv-usage
+        prompts/
+          analyze-csv.md     → /analyze-csv <file>
+      front/
+        index.tsx            ← boring loads via SSE (Mode B): BoringFrontFactory
+      server/
+        index.ts             ← boring jiti-loads at reload: Fastify routes
+  skills/                    ← user-level skills (pi standard; unchanged)
+  prompts/                   ← user-level prompts (pi standard; unchanged)
+```
+
+**Why this works:**
+- Pi loads `agent/index.ts` as a first-class extension — no jiti-wrapping by boring-ui
+- Skills and prompts register through each plugin's own `resources_discover` — no aggregation needed
+- `/reload` rescans `.pi/extensions/` natively — `boring-pi-extension` just observes `session_start`
+- Standalone pi users get the full agent layer without boring-ui installed
+
+---
+
+## Loading lifecycle
+
+### Cold start (app startup)
+
+```
+1. Bootstrap runs first — synchronous, before pi starts
+   boringFrontFactoryToPlugin("macro", macroFront) → WorkspaceFrontPlugin → stores
+   boringFrontFactoryToPlugin("dataCatalog", ...) → stores
+   filesystemPlugin (named export, providers/bindings) → stores
+   lastSeen["macro"] = 0, lastSeen["filesystem"] = 0, lastSeen["dataCatalog"] = 0
+
+2. Pi starts — loads all agent/index.ts from pluginDirs via additionalExtensionPaths
+                + inside plugin agent/index.ts from .pi/extensions/ natively
+   → tools, skills, prompts registered natively
+
+3. boring-pi-extension session_start fires
+   → loadBoringAssets(pluginDirs) → emits SSE boring.plugin.load for each plugin
+   → browser: revision 1 > lastSeen 0 → import front/index.tsx → commit to stores
+   lastSeen["macro"] = 1, lastSeen["filesystem"] = 1, lastSeen["dataCatalog"] = 1
+```
+
+Stores are seeded twice: synchronously at bootstrap (no flash), then via SSE (establishes hot-reload baseline). The SSE re-import is visually a no-op since the same components load.
+
+### Hot-reload (`/boring.reload`)
+
+```
+/boring.reload
+  → preflightBoringPlugins(pluginDirs)   validate manifests (no pi touch)
+  → ctx.reload()                         pi tears down + restarts extension runtime
+  → session_start { reason: "reload" }
+       pi: rescans additionalExtensionPaths + .pi/extensions/ natively
+           each agent/index.ts factory(api) called fresh
+           each factory's resources_discover → skills + prompts re-registered
+       boring-pi-extension session_start handler:
+           loadBoringAssets(pluginDirs)
+               → revision++ per plugin
+               → emit SSE boring.plugin.load
+  → browser: revision N > lastSeen → import front/index.tsx?v=N → hot-reload panels
+```
+
+Works identically for first-party and inside plugins.
+
+### Reload without pi (`POST /api/boring.reload`)
+
+Same as hot-reload but skips `ctx.reload()`. Rescans front/server assets only. Agent tools are **not** re-registered. Use when only `front/index.tsx` or `server/index.ts` changed.
+
+| | `/boring.reload` (pi command) | `POST /api/boring.reload` (HTTP) |
+|---|---|---|
+| Manifest preflight | ✅ | ✅ |
+| `loadBoringAssets` → SSE | ✅ | ✅ |
+| `ctx.reload()` (tools/skills re-registration) | ✅ | ❌ |
+
+---
+
+## Rendering modes — V1 (local) vs V2 (remote)
+
+The SSE infrastructure, `loadBoringAssets`, and the manifest format are **identical** in both modes. The only variable is **whether the browser can directly import `front/index.tsx`**. Trust is not the variable — agent code is trusted in both modes. The iframe in V2 is a delivery mechanism, not a sandbox.
+
+### V1 — Local hot-reload (implemented first)
+
+Applies when boring-ui and the plugin files are reachable by the browser (local dev, self-hosted). Vite serves `front/index.tsx` directly.
+
+```
+boring.plugin.load SSE arrives
+  → browser: await import(`/plugin-path/front/index.tsx?v=${revision}`)
+             Vite resolves + transpiles on demand
+             factory(createCapturingBoringFrontAPI())
+             flush() → panels (React components), resolvers, tabs
+             commit to stores
+```
+
+**Characteristics:**
+- Full React components live in the store — `ChartCanvasPane`, `DeckPane`, etc.
+- Vite handles transpilation; no build step
+- `AgentPluginPane mode="direct"`: renders `usePanelStore(panelId).component` in host tree
+- `key={pluginId}:{revision}` on the pane → React remount on every reload
+- Stack traces point directly to source files
+
+**Server side (same for both modes):**
+- `loadBoringAssets` jiti-loads `server/index.ts` from local filesystem
+- Pi loads `agent/index.ts` from local filesystem via `additionalExtensionPaths`
+
+---
+
+### V2 — Remote front (paved, not implemented in this phase)
+
+Applies when the plugin files live on a remote server the browser cannot import from directly (Vercel, cloud). The iframe is **not a security boundary** — it is the only practical way to execute remote-origin JS in a browser without a full-page navigation. Agent code is trusted; the iframe is just the loader.
+
+```
+boring.plugin.load SSE arrives
+  → browser: fetch GET /api/agent-plugins/:id/front.js?v=${revision}
+             server: esbuild bundles front/index.tsx → IIFE
+             browser: <iframe src="frame.html?v=N">
+             postMessage bridge: ready → init { theme, pluginId } → rendered
+```
+
+**Characteristics:**
+- `front/index.tsx` is bundled server-side (esbuild IIFE) because the browser has no path to import it
+- `AgentPluginPane mode="iframe"`: renders `<iframe src={frameHtmlUrl} />`
+- `frame.html` shell wraps `front.js` (iframe src cannot be a bare JS file)
+- postMessage bridge (`@boring/workspace/bridge-client`) replaces direct store access
+- Panel metadata (id, title) comes from SSE payload `boring.panels[]` — no dynamic import
+- `GET /api/agent-plugins/:id/front.js` — esbuild IIFE bundle; cached by `(id, mtime)`
+
+**What is the same as V1:**
+- `loadBoringAssets` / SSE events / `BoringPackageField` — identical
+- `POST /api/boring.reload` — identical
+- `agent/index.ts` pi loading — identical (pi runs on same server in both modes)
+- `server/index.ts` jiti loading — identical
+- Revision-gated browser update and error handling — identical
+
+### Pi's pluggable FS operations
+
+Pi ships with explicit FS operation interfaces on every tool — designed exactly for remote filesystem delegation (JSDoc says "Override these to delegate file reading to remote systems, for example SSH"):
+
+```ts
+// All tools accept an optional operations override
+createReadTool(cwd, {
+  operations: {
+    readFile:  (path) => remoteFs.read(path),
+    access:    (path) => remoteFs.access(path),
+  }
+})
+createWriteTool(cwd, { operations: { writeFile, mkdir } })
+createLsTool(cwd,   { operations: { exists, stat, readdir } })
+createEditTool(cwd, { operations: { readFile, writeFile } })
+createGrepTool(cwd, { operations: { ... } })
+createFindTool(cwd, { operations: { ... } })
+```
+
+In **V2 remote sandbox mode**, boring-ui creates pi's tools with remote-aware operations that proxy reads/writes to the remote workspace FS API. The agent then transparently reads and writes files on the remote sandbox.
+
+**Extension loading is pull-based, not watch-based.** Pi has no file watcher on `.pi/extensions/`. `ResourceLoader.reload()` is what triggers a rescan — and it is only called when `/reload` or `ctx.reload()` is invoked explicitly:
+
+```
+ctx.reload()  (or user types /reload)
+  → resourceLoader.reload()
+      → packageManager.resolve()         re-scans .pi/extensions/ via existsSync/readdir
+      → resolveExtensionSources(         re-resolves additionalExtensionPaths
+          additionalExtensionPaths)
+      → loadExtensions(allPaths)         jiti.import() each path fresh
+  → new ExtensionRunner(extensions)
+  → emit session_start { reason: "reload" }
+```
+
+Nothing triggers this automatically. Pi rescans on demand, every time reload is called.
+
+This is correct because **pi always co-locates with boring-ui**. `.pi/extensions/` is always a local OS path from pi's perspective, and `jiti.import()` needs a local path to load `agent/index.ts`. The "remote" is only ever the user's browser — pi and boring-ui live on the same host in both local dev and remote sandbox.
+
+```
+Local dev                            Remote sandbox (V2)
+──────────────────────────────       ──────────────────────────────────
+Agent tools: local OS fs             Agent tools: remoteOps (HTTP proxy)
+Extension loading: jiti local        Extension loading: jiti local ✅
+.pi/extensions/: ~/workspace/.pi     .pi/extensions/: /srv/boring/.pi
+    (pi process on same machine)         (pi process on same machine)
+```
+
+`boring-pi-extension` is unaware of the mode — it calls `ctx.reload()` to trigger the rescan, then observes `session_start`. No changes needed.
+
+### V2 path — remote agent loading (future, not designed yet)
+
+Phase 1 constraint: **pi always co-locates with boring-ui**. `jiti.import()` always has local paths. The "remote" is only ever the browser.
+
+When the topology changes (pi on user's machine, boring-ui on a remote server), `jiti.import()` can no longer reach inside plugin `agent/index.ts` files. The escape hatch follows the same pattern already used for `front/index.tsx` and `server/index.ts`: **boring-pi-extension fetches the source via `remoteFs.readFile()` and loads it itself**, bypassing pi's jiti loader. `ctx.reload()` still drives the reload; `session_start` calls `loadRemoteAgentPlugins()` alongside `loadBoringAssets()`. Reload contract is identical — only the loader differs.
+
+The open design questions (esbuild bundling vs transform for import resolution, `createSubApi` surface coverage, tool identity across modes) are deferred until this topology is a real target.
+
+**V1 constraints that V2 must not break:**
+- Server never jiti-loads `front/index.tsx` — `boring.panels[]` in the manifest is authoritative for metadata. V1 ignores manifest arrays (reads components directly); V2 depends on them. Keep both in sync.
+- `BoringFrontFactory` must not import `WorkspaceFrontPlugin`-only APIs — in V2 it runs in a separate esbuild bundle without host imports.
+- `boring.plugin.load` SSE payload must always include the full `boring` field — V2 browser reads panel titles/ids from it, not from a dynamic import.
+
+### Mode comparison
+
+| | V1 — local | V2 — remote |
+|---|---|---|
+| `front/index.tsx` loaded by | Browser (Vite dynamic import) | Server (esbuild → `front.js` bundle) |
+| Panel components | React in host tree | JS in iframe (iframe = remote code loader, not sandbox) |
+| `AgentPluginPane` | `mode="direct"` (component from store) | `mode="iframe"` (`<iframe>` with bridge) |
+| postMessage bridge | ❌ not needed | ✅ required |
+| `server/index.ts` | jiti local | jiti local (same) |
+| `agent/index.ts` | pi local | pi local (same) |
+| SSE / `loadBoringAssets` | ✅ | ✅ (identical) |
+| `POST /api/boring.reload` | ✅ | ✅ (identical) |
+| Panel metadata source | `flush()` from factory | SSE `boring.panels[]` |
+
+---
+
+## Phase 2 infrastructure
+
+### `agent/index.ts` shape (target for all plugins)
+
+```ts
+import { defineTool, Type } from "@mariozechner/pi-coding-agent"
+import type { ExtensionAPI, ExtensionFactory } from "@mariozechner/pi-coding-agent"
+import { join, dirname } from "path"
+import { fileURLToPath } from "url"
+
+const __dir = dirname(fileURLToPath(import.meta.url))
+
+const macroExtension: ExtensionFactory = (api: ExtensionAPI) => {
+  // Skills + prompts: pi picks them up natively
+  api.on("resources_discover", () => ({
+    skillPaths:  [join(__dir, "skills")],
+    promptPaths: [join(__dir, "prompts")],
+  }))
+
+  // Tools: TypeBox schema, native pi execute signature
+  api.registerTool(defineTool({
+    name: "execute_sql",
+    label: "SQL",
+    description: "Run read-only SQL on ClickHouse (87k+ FRED series)",
+    parameters: Type.Object({
+      query: Type.String({ description: "SELECT / WITH / EXPLAIN only" }),
+    }),
+    async execute(_id, { query }, signal) {
+      return { content: [{ type: "text", text: await runQuery(query, signal) }] }
+    },
+  }))
+}
+
+export default macroExtension
+```
+
+### Prompt template format
+
+```md
+---
+description: Draft a briefing deck on a macro topic
+argument-hint: <topic>
+---
+
+Draft a briefing deck under `deck/$1.md` covering $ARGUMENTS.
+Use relevant FRED series. Apply the macro-deck skill for format and widget syntax.
+```
+
+Invoked as `/draft-deck labor market` → pi substitutes args and sends expanded text as the user message.
+
+### `boring-pi-extension.ts`
+
+Boring-ui's own pi extension — the only one boring ships. Wired into pi startup once.
+
+```ts
 export function createBoringPiExtension(opts: {
-  pluginsDir: string
-  emit: (event: BoringPluginEvent) => void
+  pluginDirs: string[]
+  emit: (e: BoringPluginEvent) => void
 }): ExtensionFactory {
-  return async (api) => {
-    // boring-ui's own tools (exec_ui, open_panel)
-    api.registerTool(defineTool({ name: "exec_ui", ... }))
+  return async (api: ExtensionAPI) => {
+    // UI bridge tools for agent use
+    api.registerTool(defineTool({ name: "exec_ui",    ... }))
     api.registerTool(defineTool({ name: "open_panel", ... }))
 
-    const scan = () => loadBoringPlugins(api, opts)
+    // Load front + server assets after every pi session start (cold start + reload)
+    api.on("session_start", async () => {
+      await loadBoringAssets(opts)
+    })
 
+    // Inject each plugin's systemPrompt (if declared) before every agent turn
+    api.on("before_agent_start", async (event) => {
+      const snippets = [...loaded.values()]
+        .map(p => p.boring.systemPrompt?.trim())
+        .filter(Boolean)
+      if (snippets.length === 0) return
+      return { systemPrompt: event.systemPrompt + "\n\n" + snippets.join("\n\n") }
+    })
+
+    // /boring.reload: re-glob inside plugins, preflight, pi reload → session_start fires
     api.registerCommand("boring.reload", {
-      description: "Reload boring-ui plugins from .boring/plugins/",
+      description: "Reload boring-ui plugins",
       handler: async (_args, ctx) => {
-        // Preflight all manifests before touching pi runtime
-        const preflight = preflightBoringPlugins(opts.pluginsDir)
+        opts.pluginDirs = resolvePluginDirs()  // re-glob .pi/extensions/*/ for new plugins
+        const preflight = preflightBoringPlugins(opts.pluginDirs)
         if (preflight.errors.length) {
           for (const e of preflight.errors) opts.emit({ type: "boring.plugin.error", ...e })
           return
         }
-        await ctx.reload()  // pi reloads all extensions; session_start fires with reason: "reload"
+        await ctx.reload()
+        // session_start fires → loadBoringAssets runs with updated pluginDirs
       },
     })
-    api.on("session_start", async (event) => {
-      if (event.reason === "reload") await scan()
-    })
-
-    await scan()
+    // No initial load here — session_start fires on cold start too
   }
 }
+```
 
-async function loadBoringPlugins(api: ExtensionAPI, opts: Opts): Promise<void> {
-  const plugins = readBoringPluginsDir(opts.pluginsDir)   // validates package.json["boring"]
-  const removed = findRemovedPlugins(plugins, loaded)
-  for (const id of removed) {
-    unloadPlugin(id)
+No `resources_discover` in `boring-pi-extension.ts` — each inside plugin's `agent/index.ts` handles its own skills/prompts.
+
+### `loadBoringAssets` — the shared reload function
+
+Called from `session_start` (cold start + every reload) and `POST /api/boring.reload`. Scans all plugin dirs, loads server routes, emits SSE. **Never touches `agent/index.ts`** — pi owns that.
+
+#### Server route hot-reload — `BoringServerAPI` capturing pattern
+
+`server/index.ts` receives a `BoringServerAPI` — a capturing abstraction, never a real Fastify instance. Routes are collected and swapped into a **generation dispatch map**. One permanent Fastify route (`/api/boring-plugins/*`) dispatches to the current generation's handlers. Fastify never sees duplicate registrations.
+
+```ts
+// BoringServerFactory — server equivalent of BoringFrontFactory
+type BoringServerFactory = (api: BoringServerAPI) => void | Promise<void>
+
+interface BoringServerAPI {
+  get(path: string, handler: RouteHandler): void
+  post(path: string, handler: RouteHandler): void
+  // ... other methods
+}
+
+// Generation dispatch — registered once at Fastify startup
+const serverHandlers = new Map<string, Map<string, RouteHandler>>()  // pluginId → path → handler
+
+app.all('/api/boring-plugins/:pluginId/*', (req, reply) => {
+  const handlers = serverHandlers.get(req.params.pluginId)
+  const handler = handlers?.get(`${req.method} ${req.params['*']}`)
+  return handler ? handler(req, reply) : reply.status(404).send()
+})
+
+// In loadBoringAssets — swap handlers atomically per plugin
+if (plugin.serverPath && existsSync(plugin.serverPath)) {
+  const mod = await jiti({ moduleCache: false }).import(plugin.serverPath)
+  const capturing = createCapturingBoringServerAPI()
+  await (mod.default as BoringServerFactory)(capturing)
+  serverHandlers.set(plugin.id, capturing.flush())  // atomic swap
+}
+```
+
+This mirrors the `BoringFrontAPI` capturing pattern exactly. Server routes for a plugin are replaced atomically on every reload — no collision, no restart.
+
+```ts
+async function loadBoringAssets(opts: { pluginDirs: string[]; emit: (e: BoringPluginEvent) => void }): Promise<void> {
+  const plugins = readBoringPlugins(opts.pluginDirs)  // re-reads from disk
+
+  for (const id of findRemoved(plugins, loaded)) {
+    loaded.delete(id)
+    serverHandlers.delete(id)  // drop old routes
     opts.emit({ type: "boring.plugin.unload", id, revision: ++revisions[id] })
   }
 
   for (const plugin of plugins) {
     try {
-      // Load agent/index.ts with real pi api — tools/commands go to pi natively
-      if (plugin.agentPath) {
-        const agentFactory = jiti({ moduleCache: false }).import(plugin.agentPath)
-        await agentFactory.default(api)
+      if (plugin.serverPath && existsSync(plugin.serverPath)) {
+        const mod = await jiti({ moduleCache: false }).import(plugin.serverPath)
+        const capturing = createCapturingBoringServerAPI()
+        await (mod.default as BoringServerFactory)(capturing)
+        serverHandlers.set(plugin.id, capturing.flush())
       }
 
-      // Optional: load server/index.ts with restricted server api
-      if (plugin.serverPath) {
-        const serverFactory = jiti({ moduleCache: false }).import(plugin.serverPath)
-        await serverFactory.default(createServerApi(api))
-      }
-
-      // UI metadata comes from manifest — no front/ load needed server-side
       revisions[plugin.id] = (revisions[plugin.id] ?? 0) + 1
       loaded.set(plugin.id, plugin)
-      clearErrorFile(plugin.id)
 
       opts.emit({
         type: "boring.plugin.load",
-        id: plugin.id, version: plugin.version, revision: revisions[plugin.id],
-        boring: plugin.boring,   // manifest arrays are the authoritative source
+        id: plugin.id,
+        version: plugin.version,
+        revision: revisions[plugin.id],
+        boring: plugin.boring,
       })
     } catch (err) {
-      writeErrorFile(plugin.id, String(err))
-      opts.emit({ type: "boring.plugin.error", id: plugin.id, revision: revisions[plugin.id] ?? 0, message: String(err) })
+      opts.emit({ type: "boring.plugin.error", id: plugin.id, message: String(err) })
     }
   }
 }
 ```
 
-**`/boring.reload` flow:** preflight validates all manifests → on success calls `ctx.reload()` → pi restarts extension runtime → `session_start { reason: "reload" }` fires → `loadBoringPlugins` runs fresh with clean pi api. No stale tool registrations possible — pi's own reload boundary handles atomicity.
+### HTTP second entry point
 
-**Standalone pi users:** `"pi": { "extensions": ["./agent/index.ts"] }` loads the plugin directly. No boring-ui infrastructure needed.
+```ts
+app.post("/api/boring.reload", async (_req, reply) => {
+  const preflight = preflightBoringPlugins(opts.pluginDirs)
+  if (preflight.errors.length) return reply.status(422).send({ errors: preflight.errors })
+  await loadBoringAssets(opts)
+  reply.send({ ok: true })
+})
+```
 
----
-
-## SSE event types
+### SSE event types
 
 ```ts
 type BoringPluginEvent =
@@ -298,449 +742,245 @@ type BoringPluginEvent =
   | { type: "boring.plugin.error";  id: string; revision: number; message: string }
 ```
 
-Multiplexed on the existing `/api/v1/fs/events` stream alongside `event: "change"` file events. Browser filters by event type.
+Multiplexed on the existing `/api/v1/fs/events` SSE stream.
 
----
+### Browser — `registerAgentPlugin`
 
-## Agent workflow
+On `boring.plugin.load` SSE event:
 
 ```
-1. write front/index.tsx        (no reload — browser UI factory)
-2. write package.json           (no reload — plain metadata)
-3. if agent tools needed:
-     write agent/index.ts       (no reload — pure pi ExtensionFactory)
-4. if Node.js-only hooks needed:
-     write server/index.ts      (no reload)
-5. if new npm deps needed:
-     pnpm --dir .boring/plugins add <pkg>   (never mutate app root package.json)
-6. /boring.reload               ← preflight + ctx.reload() → pi restarts extensions + SSE to browser
-   OR /reload                   ← native pi reload; Boring plugin runtime observes session_start
+1. revision ≤ lastSeen[id]               → discard (stale)
+2. Snapshot current Zustand state for id  (rollback target on failure)
+
+── V1 (local): ─────────────────────────────────────────────────────────
+3. const { default: factory } =
+     await import(`/plugin-root/${id}/front/index.tsx?v=${revision}`)
+   const api = createCapturingBoringFrontAPI()
+   await factory(api)
+   const { panels, panelCommands, leftTabs, surfaceResolvers } = api.flush()
+4. Commit React components + metadata to stores
+   LIFO resolver stack update
+
+── V2 (sandbox): ───────────────────────────────────────────────────────
+3. Read boring.panels[], boring.commands[], boring.leftTabs[],
+   boring.surfaceResolvers[] from SSE payload (no dynamic import)
+4. Commit metadata (no React components) to stores
+   Create iframe slot entry; bridge handshake happens when pane mounts
+
+─────────────────────────────────────────────────────────────────────────
+5. lastSeen[id] = revision
+On failure: restore snapshot; toast error
 ```
 
-**Why explicit reload:**
-- No partial-write races — all files on disk before reload fires
-- No chokidar/inotify infrastructure
-- Reload fires between agent turns, never mid-message
+On `boring.plugin.unload`: call `unregisterByPluginId(id)` on all stores.
 
 ---
 
 ## Atomicity model
 
-### Server (boring-pi-extension.ts)
+**Tools / skills / prompts:** `ctx.reload()` restarts the pi extension runtime from scratch. All prior registrations are gone before new factories run. No stale tools.
 
-**`/boring.reload` command handler (pre-reload):**
-```
-1. preflightBoringPlugins(pluginsDir)        → validate all manifests
-   Any manifest error                        → .error file + SSE error; ctx.reload() NOT called
-2. ctx.reload()                              → pi restarts extension runtime (clean slate)
-3. session_start { reason: "reload" } fires → loadBoringPlugins runs
-```
+**Front assets:** `revision` counter increments on every `loadBoringAssets` call. Browser discards events with `revision ≤ lastSeen[id]`. Snapshot-restore on failure.
 
-**`loadBoringPlugins` (post-reload, per plugin):**
-```
-1. readBoringPackage(dir)                   → fail: .error file + SSE error (nothing else changes)
-2. jiti.import(agent/index.ts) → factory(api)   (if declared; real pi api)
-   jiti.import(server/index.ts) → factory(serverApi)  (if declared)
-   Any throw                                → .error file + SSE error
-3. UI metadata read directly from manifest  (no jiti-load of front/)
-4. revision[id]++
-5. loaded.set(id, plugin)
-6. delete .error if present
-7. SSE boring.plugin.load { id, boring, version, revision }
-```
-
-Pi atomicity: `ctx.reload()` restarts the extension runtime from scratch. Agent tools from a failed previous load are gone. No stale registrations.
-
-### Browser
-
-```
-SSE boring.plugin.load { id, boring, version, revision } received:
-1. revision ≤ lastSeen[id]                  → discard stale
-2. Snapshot current Zustand state for id    (rollback target)
-3. V1: await import(`/.boring/plugins/${id}/${boring.front}?v=${revision}`)
-        → factory(createCapturingBoringFrontAPI())
-        → captured: { panels (with components), commands, leftTabs, surfaceResolvers }
-   V2: read boring.panels[], boring.commands[], etc. from SSE payload (no dynamic import)
-4. Path A: if boring.derivesFrom, check captured contribution types vs extensionContract
-5. V1: MANIFEST_IMPL_MISMATCH check — every boring.panels[i].id must have a matching registerPanel() call
-6. Any failure                              → restore snapshot, toast, return
-7. Commit: usePanelStore.setState, useCommandStore.setState, useTabStore.setState
-           LIFO resolver stack: pop old entries for id, push new (id, revision)
-8. lastSeen[id] = revision
-```
-
-Unload: pop resolver stack, remove from all Zustand stores, `lastSeen[id] = revision`. Slash commands are pi's concern — pi's extension runner handles cleanup on reload.
-
-### Reconnect
-
-Server updates `loaded` **before** dispatching SSE.
-
-```
-plugins = await fetch('/api/agent-plugins')   // → [{ id, boring, version, revision }]
-for each { id, boring, version, revision }:
-  if revision > lastSeen[id]:
-    registerAgentPlugin(id, boring, version, revision, mode)
-```
-
----
-
-## V1 — Local Mode
-
-`front.tsx` → Vite dev server imports it directly in browser. React component runs in host tree. No iframe, no esbuild.
-
-Requires `vite.config.ts`: `server: { fs: { allow: [workspaceRoot] } }`
-
-### Load flow
-
-```
-Agent → /boring.reload
-  │
-  ├─ (Node.js — boring-pi-extension.ts)
-  │   preflightBoringPlugins()                → fail: SSE errors, stop
-  │   ctx.reload()                            → pi restarts extension runtime
-  │   session_start { reason: "reload" }
-  │   jiti.import(agent/index.ts) → factory(api)   ← tools/commands to pi native
-  │   jiti.import(server/index.ts) → factory(serverApi)  ← if declared
-  │   UI metadata read from manifest (no front/ load)
-  │   revision[id]++; loaded.set(id)
-  │   SSE boring.plugin.load { id, boring, version, revision }
-  │
-  └─ (Browser)
-      revision ≤ lastSeen[id]                    → discard
-      Snapshot Zustand state
-      import(`/.boring/plugins/${id}/${boring.front}?v=${revision}`)
-      factory(capturingBoringFrontAPI)            → captured panels+components, commands, ...
-      MANIFEST_IMPL_MISMATCH check + Path A check
-      Commit stores + resolver stack
-      lastSeen[id] = revision
-      AgentPluginPane key={id}:{revision} → React remounts on hot-reload
-```
-
-### Contribution surface (V1)
-
-| Contribution | V1 |
-|---|---|
-| `panel` | ✅ React component in host tree |
-| `panelCommand` | ✅ |
-| `leftTab` | ✅ |
-| `surfaceResolver` | ✅ |
-| `agentTool` | ✅ via `api.registerTool()` → pi native (agent/index.ts and server/index.ts) |
-| `binding` | ❌ not in API surface; deferred |
-| `provider` | ⚠️ possible but not recommended |
-| `slotFill` | ✅ |
-
----
-
-## V2 — Hosted / Sandbox Mode
-
-The agent runs sandboxed. `front/index.tsx` is compiled to an IIFE bundle served to a sandboxed iframe. `agent/index.ts` and `server/index.ts` load via jiti in the host Fastify process (same as V1 — server side is identical).
-
-**Server side: identical to V1.** boring-pi-extension.ts scan + SSE.
-
-**Browser side:** registers from manifest arrays only (no dynamic import). Component = `AgentPluginPane mode="iframe"`.
-
-### `AgentPluginPane` iframe
-
-```tsx
-const url = `/api/agent-plugins/${id}/front.js?v=${revision}`
-<iframe ref={iframeRef} src={url} sandbox="allow-scripts"
-  style={{ border: "none", width: "100%", height: "100%" }} />
-```
-
-### postMessage bridge
-
-```
-iframe → boring.bridge.ready
-host  → boring.bridge.init { theme, derivedFrom? }
-iframe → boring.bridge.rendered
-```
-
-Bridge client (`@boring/workspace/bridge-client`, aliased by esbuild):
-```ts
-export function openPanel(panelId: string): void
-export function showNotification(message: string, level?: string): void
-export function onInit(cb: (data: { theme: Record<string, string>; derivedFrom?: string }) => void): void
-```
-
-### esbuild config
-
-```ts
-await esbuild.build({
-  entryPoints: [plugin.frontPath],  // front/index.tsx — full browser code, CSS modules fine
-  bundle: true, format: "iife",
-  jsx: "automatic", jsxImportSource: "react", platform: "browser",
-  nodePaths: [join(workspaceRoot, ".boring/plugins/node_modules")],
-  alias: { "@boring/workspace/bridge-client": join(workspaceRoot, ".boring/plugins/.boring-vendor/bridge-client.js") },
-  write: false, define: { "process.env.NODE_ENV": '"production"' }, logLevel: "silent",
-})
-```
-
-Cache keyed by `(id, front.tsx mtime)`. On esbuild error: `.error` file + SSE error. Serve last cached bundle or 500.
-
-### Provisioning
-
-Seeds at workspace init:
-- `.boring/plugins/package.json` → `{ react, react-dom }` + `npm install`
-- `.boring/plugins/.boring-vendor/bridge-client.js` from bridge-client source
-- `.boring/docs/` with `plugins.md`, `panels.md`, `bridge.md`
-
-**Root package guard:** `.boring/plugins/package.json` is the shared dependency root, NOT a plugin. Scanner only reads directories one level under `.boring/plugins/` — the root is never passed to `readBoringPackage`.
-
----
-
-## Path A — Derivation
-
-### Contract
-
-Derived plugin is **purely additive** — adds contributions on top of base. Base plugin stays active and is unaware of the derived plugin.
-
-Surface resolvers: LIFO stack per `surfaceKind`. Derived plugin shadows base while loaded; base becomes active again on unload.
-
-### `extensionContract`
-
-```ts
-extensionContract: { allowedContributions: ["panel", "panelCommand", "leftTab", "surfaceResolver"] }
-```
-
-Agent tools (`registerTool`, `registerCommand`) are always allowed for derived plugins — they go through pi's extension mechanism and are not gateable at the boring-ui manifest level.
-
-### Validation
-
-- **V1:** post-factory, on captured registrations
-- **V2:** pre-registration, on manifest arrays
-
-### Surface resolver LIFO
-
-```
-bootstrap():  outside-a → [outside-a]   outside-b → [outside-a, outside-b]
-active → outside-b
-
-plugin load:  derived-a → [..., derived-a]   derived-b → [..., derived-b]
-active → derived-b
-
-derived-b unloads → [..., derived-a]   active → derived-a
-derived-a unloads → [outside-a, outside-b]   active → outside-b
-```
-
----
-
-## Doc embedding
-
-**Layer 1 — file-based** (all modes): `.boring/docs/plugins.md`, `panels.md`, `bridge.md` seeded by provisioning. Agent reads via normal `read` tool.
-
-**Layer 2 — inline system prompt** (Vercel fallback): `boringSystemPrompt.ts` embeds same docs as static strings. `BORING_DOCS_PATH` env var overrides for local dev.
+**Server routes:** jiti with `moduleCache: false` ensures fresh import on every `loadBoringAssets`. Previous Fastify plugin scope is removed before re-registration.
 
 ---
 
 ## Error surfacing
 
-- `.boring/plugins/<id>/.error` — written on any failure; agent reads with `read` tool
+- `.pi/extensions/<id>/.error` — written on any failure; cleared on next successful load
 - SSE `boring.plugin.error` → workspace toast
-- `GET /api/agent-plugins/:id/error` → `.error` content as plain text; 404 if none
-
-Cleared automatically on next successful load.
-
----
-
-## Implementation TODOs
-
-Implement V1 first (TODOs A–F). V2 adds three pieces: esbuild route, iframe render, provisioning.
+- `GET /api/agent-plugins/:id/error` → `.error` file content; 404 if none
+- `GET /api/agent-plugins` → `[{ id, boring, version, revision }]` — browser uses on reconnect
 
 ---
 
-### A — `manifest.ts`: `readBoringPackage`
+## Phase 1 — First-party plugin migration
 
-- [ ] Remove old `BoringPluginManifest`, `BoringPluginRuntime`, `BoringPluginPermissions`
-- [ ] `BoringPackageField` type — `front?`, `agent?`, `server?` (at least one of front/agent required)
-- [ ] `readBoringPackage(dir)` — reads `package.json`, extracts `id` (dir name), `version`, `boring` field
-- [ ] Validation: at least one of front/agent required; each declared path exists on disk; panelId cross-refs; no duplicate ids; derivesFrom valid id
-- [ ] Error codes: `INVALID_ID | INVALID_VERSION | INVALID_PATH | MISSING_REQUIRED_FIELD | MISSING_ENTRY_FILE | CROSS_REFERENCE | DUPLICATE_ID`
-- [ ] `MANIFEST_IMPL_MISMATCH` is a runtime check in `registerAgentPlugin` V1 only — not here
-- [ ] Export `BoringPackageField` from `@boring/workspace/plugin` subpath
-- [ ] Rewrite `manifest.test.ts`
+### What changes
 
----
-
-### B — `boring-pi-extension.ts` + SSE types
-
-**`packages/agent/src/server/boring-pi-extension.ts`:**
-
-- [ ] `BoringPluginEvent` discriminated union (as above)
-- [ ] `preflightBoringPlugins(pluginsDir)` — validate all manifests without touching pi runtime; returns `{ errors }` per plugin
-- [ ] `readBoringPluginsDir(pluginsDir)` — scans `<pluginsDir>/*/package.json`, calls `readBoringPackage`, collects valid entries
-- [ ] `loadBoringPlugins(api, { pluginsDir, emit, revisions, loaded })`:
-  - Detect removed plugins (in `loaded` but not in scan) → unload → SSE unload
-  - For each plugin: jiti (moduleCache: false) loads `agent/index.ts` (if declared) → `factory(api)` — tools/commands to pi
-  - If `server` declared: jiti loads `server/index.ts` → `factory(serverApi)`
-  - UI metadata read from `plugin.boring` manifest (no front/ load server-side)
-  - Write `.error` on any throw; SSE error
-  - On success: clear `.error`, update `loaded`, `revision++`, SSE load with manifest
-- [ ] `createBoringPiExtension({ pluginsDir, emit }): ExtensionFactory`:
-  - registers `exec_ui`, `open_panel` tools
-  - registers `boring.reload` command (preflight → `ctx.reload()` on success)
-  - hooks `session_start { reason: "reload" }` → `loadBoringPlugins`
-  - calls `loadBoringPlugins` on init
-- [ ] Wire into `createHarness.ts`: `extensionFactories: [createBoringPiExtension({ pluginsDir, emit })]`
-
-**Fix `pluginLoader.ts`** (`packages/agent/src/server/harness/pi-coding-agent/pluginLoader.ts`):
-- [ ] Replace `import(url)` with `createJiti(import.meta.url, { moduleCache: false })`
-- [ ] Widen `VALID_EXTENSIONS` to `{".ts", ".tsx", ".js", ".mjs"}` (for `agent/index.ts` and `server/index.ts`)
-
-**SSE multiplexing** (`packages/agent/src/server/http/fsEvents.ts`):
-- [ ] Add `emitPlugin(event: BoringPluginEvent): void` to `FsEventBroadcaster`
-- [ ] Browser clients filter by `event.type`; no new endpoint needed
-
----
-
-### C — API routes
-
-**`packages/agent/src/server/http/routes/agentPlugins.ts`:**
-
-- [ ] `GET /api/agent-plugins` → `[{ id, boring, version, revision }]` from `loaded` map; used by browser on connect/reconnect
-- [ ] `GET /api/agent-plugins/:id/error` → `.error` file content; 404 if none
-- [ ] Register outside plugin ids at startup (collision guard for inside plugin id validation)
-
----
-
-### D — `authoring.ts`: `BoringFrontAPI`
-
-**`packages/workspace/src/shared/plugins/authoring.ts`:**
-
-- [ ] Replace namespaced `BoringPluginAPI` with flat `BoringFrontAPI` (browser-only; no pi methods)
-- [ ] `createCapturingBoringFrontAPI()` — browser-side capturing: captures full registrations including React components; `flush()` returns `{ panels, panelCommands, leftTabs, surfaceResolvers }`
-- [ ] No server-side capturing API needed — server reads UI metadata from manifest
-- [ ] Boring-ui extras: `registerPanel`, `registerPanelCommand`, `registerLeftTab`, `registerSurfaceResolver` (all required, not optional — capturing API always provides them)
-- [ ] `export type BoringFrontFactory = (api: BoringFrontAPI) => void | Promise<void>`
-- [ ] Keep `BoringPluginAPI` as deprecated alias; keep `BoringExtensionAPI` as alias pointing at `BoringFrontAPI`
-- [ ] Export `BoringFrontAPI`, `BoringFrontFactory` from `@boring/workspace/plugin`
-- [ ] Refactor `PluginCoordinator` into `AgentPluginTransactionCoordinator` — preserve per-id locks, atomic apply, unload, and rollback. `CapturedRegistrations` type moves into `authoring.ts`. Update exports.
-- [ ] Adapt (not delete) `coordinator.test.ts`, `hotReload.test.ts` to new flat API
-
----
-
-### E — Browser: `registerAgentPlugin` + stores
-
-**`packages/workspace/src/front/plugins/`:**
-
-- [ ] `agentPluginRegistry.ts` — `lastSeen: Map<id, revision>`; outside plugin `extensionContracts` populated at bootstrap
-- [ ] `registerAgentPlugin(id, boring, version, revision, mode)` — stage/commit/rollback:
-  - Stale check: `revision ≤ lastSeen[id]` → discard
-  - Snapshot current store state (rollback target)
-  - V1: `await import(url?v=revision)` → `factory(createCapturingBoringFrontAPI())` → captured registrations with React components
-  - V2: read from `boring.panels[]`, `boring.commands[]`, etc. (no dynamic import)
-  - MANIFEST_IMPL_MISMATCH (V1 only): every `boring.panels[i].id` must have a matching `registerPanel()` call
-  - Path A: check contribution types vs `extensionContract.allowedContributions`
-  - Failure: restore snapshot, toast
-  - Success: commit to Zustand stores; LIFO resolver stack update; `lastSeen[id] = revision`
-- [ ] Zustand stores: add `unregisterByPluginId(id)` to panel/command/tab/resolver stores
-- [ ] Resolver LIFO stack: pop entries tagged `id`, push new entries tagged `(id, revision)`
-- [ ] Slash commands: `registerCommand` calls in factory are no-ops in capturing API — pi handles them natively
-
----
-
-### F — `AgentPluginPane` + SSE handler
-
-**`packages/workspace/src/front/plugins/`:**
-
-- [ ] `AgentPluginPane.tsx`:
-  - `mode="direct"` (V1): `usePanelStore(panelId).component`; `React.Suspense`; `key={panelId}:{revision}` → remount on reload
-  - `mode="iframe"` (V2 stub): `<div>V2 — TODO G</div>`
-  - Missing panel: "Plugin not loaded" placeholder
-- [ ] `useWorkspaceEventStream` — workspace-level shared `EventSource` to `/api/v1/fs/events`; fans out by event type; replaces per-component EventSource in `useFileEventStream`
-- [ ] SSE handler: filter `boring.plugin.*` → `registerAgentPlugin` / unregister / toast; stale events discarded via `revision ≤ lastSeen[id]`
-- [ ] Reconnect: `GET /api/agent-plugins` on connect → for each `revision > lastSeen[id]`, call `registerAgentPlugin`
-
----
-
-### G — Doc seeding + system prompt
-
-- [ ] `packages/workspace/docs/plugins.md` — file layout (`front/`, `agent/`, `server/`, `shared/`), package.json schema, authoring guide, hot-reload flow, Path A
-- [ ] `packages/workspace/docs/panels.md` — panel registration, `AgentPluginPane`, V1 vs V2
-- [ ] `packages/workspace/docs/bridge.md` — postMessage bridge API
-- [ ] `boringSystemPrompt.ts` — embed all three; `BORING_DOCS_PATH` env var for local dev
-
----
-
-### H — V2: esbuild route + iframe render (skeleton)
-
-- [ ] `GET /api/agent-plugins/:id/front.js` — validate id; esbuild on demand; cache by `(id, mtime)`; `Cache-Control: no-store`; CSP `default-src 'none'; script-src 'self'`; on error: write `.error`, serve last cache or 500
-- [ ] Wire `AgentPluginPane mode="iframe"` — real `<iframe sandbox="allow-scripts" src={url} />`; bridge messages TODO I
-
-### I — V2: postMessage bridge + provisioning
-
-- [ ] `agentPluginBridge.ts` — validate `event.source === iframeRef.contentWindow`; dispatch `openPanel`, `showNotification`
-- [ ] Handshake: wait for `boring.bridge.ready` → send `boring.bridge.init { theme, derivedFrom? }`
-- [ ] `bridge-client.ts` — shipped as `.boring-vendor/bridge-client.js`
-- [ ] Provisioning: seed `.boring/plugins/package.json`, bridge-client, docs
-
-### J — Plugin status panel + templates
-
-- [ ] Plugin status panel: first-party outside plugin; panel id `"boring-agent-plugins"`; lists active inside plugins, versions, load times, errors; subscribes via SSE `boring.plugin.*`
-- [ ] `packages/workspace/templates/plugin/` — example `front/index.tsx` + `agent/index.ts` + `package.json`
-- [ ] `server/index.ts` example with Node.js-specific hooks
-- [ ] Update `check-plugin-invariants.mjs` to allow `.boring/plugins/`
-
----
-
-## Existing Plugins — No Migration Required
-
-All current first-party plugins (`filesystemPlugin`, `explorerPlugin`, `dataCatalogPlugin`, `macroPlugin`, `playgroundDataCatalogPlugin`) keep their declarative `WorkspaceFrontPlugin` shape. `bootstrap()` is unchanged. No migration.
-
-`authoring.ts` is the one file that changes — the capturing API expands to the new flat `BoringExtensionAPI` surface.
-
-### What DOES change: `authoring.ts`
-
-| Current `BoringPluginAPI` | New `BoringFrontAPI` | Delta |
+| Layer | Current | Target |
 |---|---|---|
-| `panels.register(reg)` | `registerPanel(reg)` | rename + flatten |
-| `commands.register(reg)` | `registerPanelCommand(reg)` | rename + flatten |
-| `surfaceResolvers.register(reg)` | `registerSurfaceResolver(reg)` | rename + flatten |
-| `providers.register(reg)` | `registerProvider(reg)` | rename + flatten |
-| `slotFills.register(reg)` | `registerSlotFill(reg)` | rename + flatten |
-| ❌ missing | `registerLeftTab(reg)` | add |
-| `registerTool`, `registerCommand`, `on`, pi stubs | ❌ removed from front API | agent/ uses standard pi `ExtensionAPI` directly |
+| Agent tools | `AgentTool[]` in `server/index.ts` via `adaptToolsForPi()` | `api.registerTool(defineTool({...}))` in `agent/index.ts` with TypeBox |
+| Skills | Provisioned to workspace at init from `workspace-template/.agents/skills/` | `agent/skills/*.md`; pi-native via `resources_discover` |
+| Prompts | None | `agent/prompts/*.md`; pi-native via `resources_discover` |
+| SDK / CLI | `agent/sdk/` (nested inside agent folder) | `sdk/` at plugin root |
+| Server | Routes + `agentTools` + `systemPrompt` | Routes only |
+| System prompt injection | `systemPrompt` in `defineServerPlugin` (server-side) | Moved to `"boring".systemPrompt` in `package.json`; injected by `boring-pi-extension` via `before_agent_start`. Skills preferred but `systemPrompt` remains a valid option. |
 
-### Agent-tool split — current state and desired direction
+### P1-A: `boring-macro` — `agent/index.ts`
 
-**Current state:** First-party plugin agent tools (`buildFilesystemAgentTools()`, harness tools, etc.) are static `AgentTool[]` arrays in `createAgentApp.ts`, passed to pi via `adaptToolsForPi()`.
+- [ ] Create `apps/boring-macro-v2/src/plugins/macro/agent/index.ts` as `ExtensionFactory`
+- [ ] Rewrite `execute_sql`, `macro_search`, `get_series_data`, `persist_derived_series` as `ToolDefinition` with TypeBox schemas
+- [ ] Add `api.on("resources_discover", ...)` returning `skillPaths` + `promptPaths`
+- [ ] Delete `agent/tools/macroTools.ts`
 
-**`AgentTool` vs `ToolDefinition` — two differences:**
-- execute signature: `execute(params, { abortSignal, toolCallId, onUpdate })` vs pi's `execute(toolCallId, params, signal, onUpdate, ctx)`
-- parameters: `JSONSchema` (plain object) vs pi's `TSchema` (TypeBox)
+### P1-B: `boring-macro` — skills + prompts
 
-**Desired direction:** All first-party plugin tools should migrate to `agent/extension.ts` pi extensions:
+- [ ] Move `workspace-template/.agents/skills/macro-deck/SKILL.md` → `agent/skills/macro-deck.md`
+- [ ] Move `workspace-template/.agents/skills/macro-transform/SKILL.md` → `agent/skills/macro-transform.md`
+- [ ] Create `agent/prompts/draft-deck.md` → `/draft-deck <topic>`
+- [ ] Create `agent/prompts/analyze-series.md` → `/analyze-series <id>`
+- [ ] Create `agent/prompts/plot-series.md` → `/plot-series <id>`
 
-```
-filesystemPlugin/
-  front/index.ts        ← UI: WorkspaceFrontPlugin (unchanged)
-  agent/extension.ts    ← NEW: ExtensionFactory — api.registerTool(defineTool({...}))
-```
+### P1-C: `boring-macro` — SDK + template relocation
 
-**This is one unified follow-up PR — not two separate items:**
+- [ ] Move `agent/sdk/` → `sdk/` (plugin root)
+- [ ] Move `agent/workspace-template/` (deck/, transforms/) → `server/template/`
+- [ ] Update `macroProvisioning` URL references in `server/index.ts`
 
-| Step | What changes |
-|---|---|
-| Rewrite first-party tools as `ToolDefinition` | TypeBox parameters + pi execute signature |
-| Move to `agent/extension.ts` per plugin | `ExtensionFactory` wired via `extensionFactories[]` |
-| Refactor `catalogRoutes` | works with `ToolDefinition[]` instead of `AgentTool[]` |
-| Delete `AgentTool` type | fully replaced by `ToolDefinition` |
-| Delete `adaptToolsForPi()` | no longer needed |
-| Delete `customTools` from `createAgentApp` | tools flow through `extensionFactories[]` only |
+### P1-D: `boring-macro` — server cleanup
 
-This follow-up also closes the TypeBox migration (`parameters: tool.parameters as any`). They are the same work.
+- [ ] Remove `agentTools: tools` from `defineServerPlugin` call
+- [ ] Remove `systemPrompt` string from `makeMacroServerPlugin`; if still needed, move it to `"boring".systemPrompt` in `package.json`
+- [ ] Remove `createDataCatalogSkillPrompt()` import and usage
+- [ ] Delete `readMacroAppPrompt()` (reads `.pi/APPEND_SYSTEM.md`) — obsolete
 
-**This PR:** `AgentTool`, `adaptToolsForPi()`, and `customTools` stay untouched.
+### P1-E: `boring-macro` — `front/index.tsx` to `BoringFrontFactory`
+
+- [ ] Rewrite `front/index.tsx` default export as `BoringFrontFactory` (panels, left tabs, resolvers only)
+- [ ] Update `bootstrap.ts` to wrap with `boringFrontFactoryToPlugin("macro", macroFront)`
+
+### P1-F: `filesystemPlugin` — `agent/index.ts`
+
+- [ ] Create `packages/workspace/src/plugins/filesystemPlugin/agent/index.ts` as `ExtensionFactory`
+- [ ] Move `buildFilesystemAgentTools()` logic into it with TypeBox schemas
+- [ ] Add `resources_discover` returning skills/prompts paths (empty initially; add as needed)
+
+### P1-G: `filesystemPlugin` — `front/index.ts` dual-export
+
+- [ ] Add `BoringFrontFactory` as default export (panels + resolvers subset)
+- [ ] Keep named `filesystemPlugin` export (`WorkspaceFrontPlugin` with providers/bindings/catalogs) for bootstrap
+- [ ] Update `bootstrap.ts`: use named export for bootstrap, default export handled by boring-pi-extension for hot-reload
+
+### P1-H: `dataCatalogPlugin` — `agent/index.ts`
+
+- [ ] Rewrite `createDataCatalogAgentTool` as `ToolDefinition` with TypeBox
+- [ ] Delete `createDataCatalogSkillPrompt()` — replace with `agent/skills/data-catalog.md`
+
+### P1-I: Delete adapter layer
+
+- [ ] Delete `packages/agent/src/shared/tool.ts` (`AgentTool` type) and all imports
+- [ ] Delete `adaptToolsForPi()` and all call sites
+- [ ] Remove `customTools` / `extraTools` params from `createAgentApp.ts`
+- [ ] Remove `agentTools` and `systemPrompt` fields from `WorkspaceServerPlugin` / `defineServerPlugin`
+- [ ] Wire first-party `agent/index.ts` files into `additionalExtensionPaths[]` in pi startup
 
 ---
 
-## Out of Scope
+## Phase 2 — Additional assets loading mechanism
 
-- Outside plugin **front** migration to factory pattern — `bootstrap()` stays
-- **Unified tool migration follow-up** — first-party tools → `ToolDefinition` + `agent/extension.ts`; deletes `AgentTool` + `adaptToolsForPi()`. Also the TypeBox migration. One PR.
-- `binding` / `provider` / `slotFill` in V2 — require host React tree; incompatible with iframe sandbox
-- `host.query()` bridge for V2 derived plugins — deferred until Path A + full bridge land
-- Vite HMR for outside plugins — separate concern
-- postMessage bridge wiring (TODO I) and provisioning — follow-up after H skeleton ships
-- `registerShortcut` implementation — accepted by `BoringExtensionAPI` but no-op in V1
-- Catalog handlers — complexity not yet justified
-- `eventId` UUID dedup — `revision ≤ lastSeen[id]` is sufficient
+### P2-A: `boring-pi-extension.ts`
+
+- [ ] `preflightBoringPlugins(pluginDirs)` — validate all manifests without touching pi runtime
+- [ ] `readBoringPlugins(pluginDirs)` — scan each dir's `package.json` for `"boring"` field; discover `server/index.ts` by convention (exists check)
+- [ ] `loadBoringAssets({ pluginDirs, emit })` — detect removed plugins; jiti-load `server/index.ts`; emit SSE
+- [ ] `createBoringPiExtension({ pluginDirs, emit })`:
+  - `exec_ui`, `open_panel` tools
+  - `session_start` handler → `loadBoringAssets`
+  - `boring.reload` command → preflight → `ctx.reload()`
+  - Initial `loadBoringAssets` on factory run
+- [ ] Wire `createBoringPiExtension` into pi startup alongside first-party extension paths; pass same `pluginDirs` to pi's `additionalExtensionPaths`
+- [ ] Error file path: `.pi/extensions/<id>/.error`
+- [ ] **Remote mode — agent tools:** in V2, create pi's coding tools with `operations` implementations that proxy to the remote workspace FS API (`createReadTool(cwd, { operations: remoteOps })`, etc.). Extension watcher/loader stays local — no change needed there.
+
+### P2-B: HTTP second entry point
+
+- [ ] `POST /api/boring.reload` — preflight → `loadBoringAssets` → `{ ok: true }`
+- [ ] Returns `{ errors: [...] }` with 422 on preflight failure
+- [ ] No `ctx.reload()` — front/server changes only
+
+### P2-C: SSE multiplexing
+
+- [ ] `emitPlugin(event: BoringPluginEvent)` on `FsEventBroadcaster`
+- [ ] Browser filters `boring.plugin.*` events on existing `/api/v1/fs/events` stream
+
+### P2-D: API routes
+
+- [ ] `GET /api/agent-plugins` → `[{ id, boring, version, revision }]` from `loaded` map
+- [ ] `GET /api/agent-plugins/:id/error` → `.pi/extensions/<id>/.error` content; 404 if none
+
+### P2-E: `BoringFrontAPI` + `createCapturingBoringFrontAPI` + `boringFrontFactoryToPlugin`
+
+- [ ] Define `BoringFrontAPI` interface and `BoringFrontFactory` type
+- [ ] `createCapturingBoringFrontAPI()` — capturing implementation with `flush()`
+- [ ] `boringFrontFactoryToPlugin(id, factory)` — Mode A adapter; factory must be synchronous
+- [ ] Export all from `@boring/workspace/plugin` subpath
+
+### P2-F: `registerAgentPlugin` browser  _(V1 + V2 shared shell, V1 import path)_
+
+- [ ] Stale check: `revision ≤ lastSeen[id]` → discard
+- [ ] Snapshot current store state (rollback target on failure)
+- [ ] **V1:** `await import(pluginFrontUrl?v=revision)` → `factory(capturingApi)` → `flush()` → commit React components + metadata
+- [ ] **V2 (future):** read `boring.panels[]` etc. from SSE payload; commit metadata only; iframe slot created
+- [ ] Commit: panel/command/tab stores + LIFO resolver stack update
+- [ ] `unregisterByPluginId(id)` on stores for unload event
+
+### P2-G: `AgentPluginPane`  _(V1 direct render; V2 iframe shell prepared)_
+
+- [ ] **V1 — `mode="direct"`:** render `usePanelStore(panelId).component`; `key={pluginId}:{revision}` → React remount on each reload
+- [ ] **V2 — `mode="iframe"` (future):** render `<iframe sandbox="allow-scripts" src={frameHtmlUrl} />`; no React component in store
+- [ ] Mode is determined at registration time from SSE payload (V1 if `front/index.tsx` importable locally, V2 otherwise)
+
+### P2-H: V2 esbuild + iframe bundle  _(future — not in this phase)_
+
+- [ ] `GET /api/agent-plugins/:id/front.js` — esbuild IIFE bundle on demand; cache by `(id, mtime)`
+- [ ] `frame.html` shell wraps `front.js` (iframe `src` must be HTML, not bare JS)
+- [ ] Alias `@boring/workspace/bridge-client` → `.boring-vendor/bridge-client.js` in esbuild config
+- [ ] Bridge handshake: `boring.bridge.ready` → `boring.bridge.init { theme, pluginId, panelId }` → `boring.bridge.rendered`
+
+---
+
+## Code to delete
+
+### Adapter layer (Phase 1)
+
+| File / symbol | Replacement |
+|---|---|
+| `packages/agent/src/shared/tool.ts` (`AgentTool` type) | Pi's `ToolDefinition` |
+| `adaptToolsForPi()` | Tools are native `ToolDefinition` — no adapter needed |
+| `customTools` / `extraTools` params in `createAgentApp.ts` | Tools flow through native pi `additionalExtensionPaths[]` / plugin `agent/index.ts` files |
+| `agentTools` field in `WorkspaceServerPlugin` / `defineServerPlugin` | Tools live in `agent/index.ts` |
+| `systemPrompt` field in `defineServerPlugin` / `WorkspaceServerPlugin` | Moved to `"boring".systemPrompt` in `package.json`; injected via `before_agent_start` in `boring-pi-extension` |
+| `createDataCatalogSkillPrompt()` | `agent/skills/data-catalog.md` |
+| `agent/tools/macroTools.ts` | Logic moves into `agent/index.ts` as `ToolDefinition` |
+| `buildFilesystemAgentTools()` in `createAgentApp.ts` | Moves to `filesystemPlugin/agent/index.ts` |
+
+### Skills provisioning (Phase 1)
+
+| File / symbol | Replacement |
+|---|---|
+| `workspace-template/.agents/skills/macro-deck/SKILL.md` | `agent/skills/macro-deck.md` |
+| `workspace-template/.agents/skills/macro-transform/SKILL.md` | `agent/skills/macro-transform.md` |
+| Skill provisioning logic in `macroProvisioning` | No longer needed — skills live with the plugin |
+| `.pi/APPEND_SYSTEM.md` pattern | Skills replace system prompt appending |
+
+---
+
+## Code to add
+
+| File / symbol | Purpose |
+|---|---|
+| `BoringFrontAPI` interface + `BoringFrontFactory` type | Universal browser-side front shape |
+| `createCapturingBoringFrontAPI()` | Shared by Mode A (sync) and Mode B (async) |
+| `boringFrontFactoryToPlugin(id, factory)` | Mode A adapter: `BoringFrontFactory` → `WorkspaceFrontPlugin` |
+| `boring-pi-extension.ts` | Boring-ui's pi extension: `exec_ui`/`open_panel`, SSE emit, `/boring.reload` |
+| `loadBoringAssets(opts)` | Shared scan + SSE emit function |
+| `POST /api/boring.reload` | HTTP entry for front/server-only reload |
+| `GET /api/agent-plugins` | Browser reconnect snapshot |
+| `GET /api/agent-plugins/:id/error` | Error diagnostics |
+| `registerAgentPlugin` (browser) | SSE handler: revision-gated dynamic import + store commit |
+| `AgentPluginPane` | Panel component for plugin-registered panels (V1 direct / V2 iframe) |
+
+---
+
+## Out of scope
+
+- **V2 esbuild bundle + iframe rendering** (P2-H) — architecture is specified and V1 must not break it, but implementation is deferred. P2-F and P2-G include the V2 mode detection stubs so the switch is a drop-in later.
+- Path A (plugin derivation) — separate plan: `PLUGIN_DERIVATION_PATH_A_PLAN.md`
+- Doc embedding in system prompt — separate plan: `AGENT_DOC_EMBEDDING_PLAN.md`
+- `registerShortcut`, `registerFlag` in `BoringFrontFactory` — deferred
+- Provider / binding registration in V2 iframe — incompatible with sandbox model
+- `host.query()` bridge for V2 derived plugins — deferred until full bridge lands
+- Vite HMR for first-party plugin fronts — separate concern
+- `serverEpoch` + `contentHash` on SSE events for cross-restart revision robustness — deferred

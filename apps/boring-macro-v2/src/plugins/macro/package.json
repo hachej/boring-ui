@@ -1,0 +1,21 @@
+{
+  "name": "boring-plugin-macro",
+  "version": "0.2.0",
+  "type": "module",
+  "private": true,
+  "pi": {
+    "extensions": ["./agent/index.ts"]
+  },
+  "boring": {
+    "front": "./front/index.tsx",
+    "label": "Macro",
+    "panels": [
+      { "id": "chart-canvas", "title": "Chart" },
+      { "id": "deck", "title": "Deck" }
+    ],
+    "surfaceResolvers": [
+      { "id": "boring-macro-series", "surfaceKind": "macro.open-series", "panelId": "chart-canvas" },
+      { "id": "boring-macro-deck-path", "surfaceKind": "workspace.open.path", "panelId": "deck" }
+    ]
+  }
+}

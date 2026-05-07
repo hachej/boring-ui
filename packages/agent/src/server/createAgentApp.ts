@@ -22,6 +22,7 @@ import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
+import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
@@ -56,6 +57,7 @@ export interface CreateAgentAppOptions {
   systemPromptAppend?: string
   /** Optional pi resource-loader isolation knobs. */
   resourceLoaderOptions?: PiResourceLoaderOptions
+  beforeReload?: () => void | Promise<void>
 }
 
 export async function createAgentApp(
@@ -152,6 +154,7 @@ export async function createAgentApp(
   await app.register(modelsRoutes)
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
+  await app.register(reloadRoutes, { harness, defaultSessionId: sessionId, beforeReload: opts.beforeReload })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app

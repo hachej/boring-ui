@@ -36,12 +36,18 @@ import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugi
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
+import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function NullChatPanel(_props: WorkspaceChatPanelProps) {
+  return null
+}
+
+function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string }) {
+  useAgentPluginHotReload({ apiBaseUrl: props.apiBaseUrl, workspaceId: props.workspaceId })
   return null
 }
 
@@ -350,6 +356,7 @@ export interface WorkspaceProviderProps {
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
   onOpenFile?: (path: string) => void
+  debug?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -551,6 +558,7 @@ export function WorkspaceProvider({
                 apiTimeout={apiTimeout}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
+                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} />
                 <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings

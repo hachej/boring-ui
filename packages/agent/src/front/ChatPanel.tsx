@@ -62,11 +62,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-<<<<<<< Updated upstream
 } from './ui/select'
-=======
-} from '@boring/ui'
->>>>>>> Stashed changes
 import { cn } from './lib'
 
 const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
@@ -435,6 +431,27 @@ export function ChatPanel(props: ChatPanelProps) {
     })
   }, [slashSuggestions.length])
 
+  const reloadAgentPlugins = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/agent/reload', {
+        method: 'POST',
+        headers: {
+          ...(requestHeaders ?? {}),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(payload.error || `reload failed (${res.status})`)
+      }
+      const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
+      return payload.reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Agent plugin reload failed.'
+    }
+  }, [requestHeaders, sessionId])
+
   const setTextareaValue = useCallback((next: string, textarea?: HTMLTextAreaElement | null) => {
     const target = textarea ?? composerRootRef.current?.querySelector('textarea')
     if (!target) return
@@ -517,21 +534,6 @@ export function ChatPanel(props: ChatPanelProps) {
     const parsed = parseSlashCommand(text)
     if (parsed) {
       const cmd = registry.get(parsed.name)
-<<<<<<< Updated upstream
-=======
-      if (cmd?.kind === 'skill') {
-        const skillMessage = parsed.args
-          ? `skill: ${parsed.name}\n\n${parsed.args}`
-          : `skill: ${parsed.name}`
-        setComposerText('')
-        setTextareaValue('')
-        void sendMessage(
-          { text, files },
-          { body: { sessionId, message: skillMessage, model, attachments: [] } },
-        )
-        return
-      }
->>>>>>> Stashed changes
       if (cmd) {
         const ctx: SlashCommandContext = {
           sessionId,
@@ -553,8 +555,9 @@ export function ChatPanel(props: ChatPanelProps) {
             return true
           },
           listCommands: () => registry.list(),
+          reloadAgentPlugins,
         }
-        const result = cmd.handler(parsed.args, ctx)
+        const result = await cmd.handler(parsed.args, ctx)
         setComposerText('')
         setTextareaValue('')
         if (typeof result === 'string') {
@@ -1041,8 +1044,6 @@ export function ChatPanel(props: ChatPanelProps) {
             <AttachmentsList />
             <PromptInputTextarea
               placeholder="Ask anything…"
-<<<<<<< Updated upstream
-=======
               onChange={(event) => {
                 setComposerText(event.currentTarget.value)
                 setDismissedSlashText(null)
@@ -1069,7 +1070,6 @@ export function ChatPanel(props: ChatPanelProps) {
                   setDismissedSlashText(composerText)
                 }
               }}
->>>>>>> Stashed changes
               className={cn(
                 "min-h-[52px] resize-none border-0 bg-transparent shadow-none",
                 "px-5 pt-3.5 pb-1 text-[13px] leading-[1.55] placeholder:text-muted-foreground/60",
@@ -1238,11 +1238,8 @@ function ModelSelect({
       disabled={disabled}
     >
       <SelectTrigger
-<<<<<<< Updated upstream
-=======
         data-boring-agent-part="model-select"
         data-boring-state={disabled ? "disabled" : undefined}
->>>>>>> Stashed changes
         className={cn(
           composerActionClass,
           "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
@@ -1259,12 +1256,7 @@ function ModelSelect({
         </span>
       </SelectTrigger>
       <SelectContent
-<<<<<<< Updated upstream
-        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
-        style={{ maxHeight: 'min(340px, var(--radix-select-content-available-height))' }}
-=======
         className="max-h-[min(340px,var(--radix-select-content-available-height))] w-[min(92vw,360px)] rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
->>>>>>> Stashed changes
       >
         {[...groups.entries()].map(([provider, list]) => (
           <div key={provider} className="py-1">

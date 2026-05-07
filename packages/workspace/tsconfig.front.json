@@ -19,5 +19,5 @@
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/server/**", "src/app/server/**", "src/plugins/**/server/**"]
+  "exclude": ["node_modules", "dist", "src/server/**", "src/app/server/**", "src/eval/**", "src/plugins/**/server/**"]
 }

@@ -54,7 +54,7 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "tsup && vite build && node ./scripts/assert-build-artifacts.mjs",
+    "build": "tsup && rm -rf dist/docs && mkdir -p dist && cp -R src/server/docs dist/docs && vite build && node ./scripts/assert-build-artifacts.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",

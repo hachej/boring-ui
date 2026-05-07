@@ -82,6 +82,25 @@ test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
   await expect(readFile(join(workspaceRoot, 'FROM_ENV.txt'), 'utf-8')).resolves.toBe('env-template\n')
 })
 
+test('POST /api/v1/agent/reload awaits beforeReload and aborts on failure', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-reload-hook-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    beforeReload: async () => {
+      throw new Error('before reload failed')
+    },
+  })
+  try {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'missing' } })
+    expect(res.statusCode).toBe(422)
+    expect(res.json()).toEqual({ ok: false, error: 'before reload failed' })
+  } finally {
+    await app.close()
+  }
+})
+
 test('createAgentApp option templatePath takes precedence over env fallback', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')
@@ -332,6 +351,29 @@ test('standalone /api/v1/ui/state does NOT exist (404)', async () => {
       payload: { kind: 'openFile', params: { path: 'x.ts' } },
     })
     expect(post.statusCode).toBe(404)
+  } finally {
+    await app.close()
+  }
+})
+
+
+test('POST /api/v1/agent/reload is available before first turn', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-reload-route-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+  })
+
+  try {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/reload',
+      payload: { sessionId: 'default' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true, sessionId: 'default', reloaded: false })
   } finally {
     await app.close()
   }

@@ -1,4 +1,4 @@
-export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => string | void
+export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => string | void | Promise<string | void>
 
 export interface SlashCommand {
   name: string
@@ -12,6 +12,7 @@ export interface SlashCommandContext {
   resetSession: () => void
   setModel: (model: string) => boolean
   listCommands: () => SlashCommand[]
+  reloadAgentPlugins: () => Promise<string>
 }
 
 export interface CommandRegistry {

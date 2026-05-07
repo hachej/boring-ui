@@ -17,6 +17,8 @@
   "dependencies": {
     "@boring/agent": "workspace:*",
     "@boring/workspace": "workspace:*",
+    "@mariozechner/pi-coding-agent": "0.67.68",
+    "@sinclair/typebox": "^0.34.49",
     "@clickhouse/client": "^1.18.2",
     "fastify": "^5.8.4",
     "lucide-react": "^0.460.0",

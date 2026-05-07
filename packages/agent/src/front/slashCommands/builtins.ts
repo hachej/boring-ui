@@ -28,6 +28,13 @@ export const builtinCommands: SlashCommand[] = [
     },
   },
   {
+    name: 'reload',
+    description: 'Reload agent plugins',
+    handler(_, ctx) {
+      return ctx.reloadAgentPlugins()
+    },
+  },
+  {
     name: 'help',
     description: 'Show available commands',
     handler(_, ctx) {

@@ -40,6 +40,7 @@ export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
   piPackages: WorkspacePiPackageSource[]
+  extensionPaths: string[]
   agentTools: AgentTool[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
@@ -79,6 +80,8 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
 
   const piPackages = collectPiPackages(finalPlugins)
 
+  const extensionPaths = finalPlugins.flatMap((p) => p.extensionPaths ?? [])
+
   const provisioningContributions = finalPlugins
     .filter((p) => p.provisioning)
     .map((p) => ({ id: p.id, provisioning: p.provisioning! }))
@@ -91,6 +94,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     registered: finalPlugins.map((p) => p.id),
     systemPromptAppend,
     piPackages,
+    extensionPaths,
     agentTools,
     provisioningContributions,
     routeContributions,
