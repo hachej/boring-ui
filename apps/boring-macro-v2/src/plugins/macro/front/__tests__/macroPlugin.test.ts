@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import { events } from "@boring/workspace"
-import { makeMacroClientPlugin, macroChatSuggestions } from "../index"
+import { createCapturingBoringFrontAPI } from "@boring/workspace/plugin"
+import macroFront, { makeMacroClientPlugin, macroChatSuggestions } from "../index"
 import { makeMacroServerPlugin } from "../../server"
 import { MACRO_OPEN_SERIES_SURFACE_KIND } from "../../shared/constants"
 import { openSeriesPane } from "../data/macroSeriesUi"
@@ -147,6 +148,30 @@ describe("makeMacroClientPlugin", () => {
 
   it("has no agentTools (client-only)", () => {
     expect(plugin.agentTools).toBeUndefined()
+  })
+})
+
+describe("macroFront", () => {
+  it("default-exports a BoringFrontFactory for dynamic hot reload", () => {
+    const api = createCapturingBoringFrontAPI()
+    macroFront(api)
+    const captured = api.flush()
+
+    expect(captured.panels.map((panel) => panel.id)).toEqual(["chart-canvas", "deck"])
+    expect(captured.surfaceResolvers.map((resolver) => resolver.id)).toEqual([
+      "boring-macro-series",
+      "boring-macro-deck-path",
+    ])
+    expect(captured.surfaceResolvers[0].resolve({
+      kind: MACRO_OPEN_SERIES_SURFACE_KIND,
+      target: "GDPC1",
+    })).toEqual({
+      id: "chart:GDPC1",
+      component: "chart-canvas",
+      title: "GDPC1",
+      params: { seriesId: "GDPC1" },
+      score: 0,
+    })
   })
 })
 

@@ -1,5 +1,6 @@
 "use client"
 import type { ComponentType } from "react"
+import type { BoringFrontFactory } from "@boring/workspace/plugin"
 import {
   composePlugins,
   createExplorerPlugin,
@@ -11,7 +12,12 @@ import { LineChart, Search, TrendingUp, Presentation } from "lucide-react"
 import { chartCanvasPanel, deckPanel } from "./panels"
 import { createMacroSeriesExplorerOptions } from "./catalogs"
 import { macroSurfaceOutputs } from "./surfaceResolver"
-import { MACRO_PLUGIN_ID } from "../shared/constants"
+import {
+  MACRO_CHART_PANEL_ID,
+  MACRO_DECK_PANEL_ID,
+  MACRO_PLUGIN_ID,
+  MACRO_OPEN_SERIES_SURFACE_KIND,
+} from "../shared/constants"
 import { openSeriesPane } from "./data/macroSeriesUi"
 export { MacroStandaloneDeckRoute } from "./routes/StandaloneDeckRoute"
 
@@ -96,3 +102,55 @@ export function makeMacroClientPlugin(
 }
 
 export const macroPlugin = makeMacroClientPlugin()
+
+const macroFront: BoringFrontFactory = (api) => {
+  api.registerPanel({
+    id: MACRO_CHART_PANEL_ID,
+    label: "Chart",
+    component: chartCanvasPanel.component,
+    lazy: chartCanvasPanel.lazy,
+    chromeless: chartCanvasPanel.chromeless,
+  })
+  api.registerPanel({
+    id: MACRO_DECK_PANEL_ID,
+    label: "Deck",
+    component: deckPanel.component,
+    lazy: deckPanel.lazy,
+    chromeless: deckPanel.chromeless,
+  })
+  api.registerSurfaceResolver({
+    id: "boring-macro-series",
+    kind: MACRO_OPEN_SERIES_SURFACE_KIND,
+    resolve(request) {
+      const seriesId = request.target.trim()
+      if (!seriesId) return null
+      const meta = request.meta as { title?: string } | undefined
+      return {
+        id: `chart:${seriesId}`,
+        component: MACRO_CHART_PANEL_ID,
+        title: meta?.title || seriesId,
+        params: { seriesId },
+        score: 0,
+      }
+    },
+  })
+  api.registerSurfaceResolver({
+    id: "boring-macro-deck-path",
+    kind: "workspace.open.path",
+    resolve(request) {
+      const path = request.target.trim().replace(/\\/g, "/").replace(/^\.\//, "")
+      if (!path.startsWith("deck/") || !path.endsWith(".md")) return null
+      const rest = path.slice("deck/".length)
+      if (!rest || rest.includes("/")) return null
+      return {
+        id: `file:${path}`,
+        component: MACRO_DECK_PANEL_ID,
+        title: path.split("/").pop() ?? path,
+        params: { path },
+        score: 10,
+      }
+    },
+  })
+}
+
+export default macroFront
