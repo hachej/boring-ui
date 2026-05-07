@@ -96,6 +96,18 @@ Full workspace — chat, panels, agent runtime running on your local files.
 
 ---
 
+## Problems boring-ui solves
+
+| Without boring-ui | With boring-ui |
+|---|---|
+| ❌ You wire up auth, a database, workspaces, and an agent runtime from scratch — every time. | ✅ It's all included. Clone the reference app, add plugins for your domain, ship. |
+| ❌ Your agent replies in chat. Users read walls of text instead of seeing data. | ✅ The agent opens panels. Charts, tables, viewers — rendered directly, no copy-paste. |
+| ❌ You build a chat UI and a separate dashboard and keep them in sync by hand. | ✅ One shell. The agent controls the workbench. Chat and UI are the same product. |
+| ❌ Running code in a multi-tenant context is a security nightmare you defer indefinitely. | ✅ Sandboxed execution built in — bwrap locally, Firecracker in production. |
+| ❌ Non-technical teammates can't use your agent tools without asking you to run them. | ✅ Deploy once. Give them a workspace. They run workflows themselves. |
+
+---
+
 ## Right for you if
 
 - ✅ You want the agent to open panels and render data — not just chat
