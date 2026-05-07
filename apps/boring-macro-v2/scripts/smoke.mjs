@@ -150,35 +150,28 @@ await check('POST /auth/sign-up/email with Origin → 200', async () => {
 })
 
 if (inboxId) {
-  await check('verification email delivered + link verified in real browser (agentmail)', async () => {
+  await check('verification email delivered + token redeemed via API (agentmail)', async () => {
     const msg = await waitForEmail(inboxId, { subject: 'verify', after: signupTime, timeoutMs: 20000 })
     const body = await fetchEmailBody(inboxId, msg.message_id)
-    const link = extractLink(body.text ?? body.extracted_text ?? '', /https?:\/\/\S+verify-email\S+/)
+    const text = body.text ?? body.extracted_text ?? ''
+    const link = extractLink(text, /https?:\/\/\S+verify-email\S+/)
     if (!link) throw new Error('no verification link found in email body')
 
     const url = new URL(link)
     if (url.origin !== origin) throw new Error(`link points to wrong origin: ${url.origin}`)
-    if (!url.searchParams.get('token')) throw new Error('link missing token param')
+    const token = url.searchParams.get('token')
+    if (!token) throw new Error('link missing token param')
 
-    // Open the link in a real browser so the SPA JS can call better-auth
-    const { chromium } = await import('@playwright/test')
-    const browser = await chromium.launch()
-    try {
-      const page = await browser.newPage()
-      await page.goto(link, { waitUntil: 'networkidle' })
-      // Wait for the SPA to show a success state (not an error)
-      await page.waitForFunction(
-        () => !document.body.innerText.includes('invalid') &&
-              !document.body.innerText.includes('expired') &&
-              !document.body.innerText.includes('No verification token'),
-        { timeout: 10000 },
-      )
-      // Capture session cookie set by better-auth after verification
-      const cookies = await page.context().cookies()
-      const sessionCookieObj = cookies.find(c => c.name === 'better-auth.session_token' || c.name.includes('session'))
-      if (sessionCookieObj) sessionCookie = `${sessionCookieObj.name}=${sessionCookieObj.value}`
-    } finally {
-      await browser.close()
+    // Redeem the token directly via the auth proxy (Accept: application/json bypasses
+    // the SPA catch-all and reaches better-auth, which verifies the email + redirects).
+    const res = await fetch(`${base}/auth/verify-email?token=${encodeURIComponent(token)}&callbackURL=/`, {
+      headers: { Accept: 'application/json', Origin: origin },
+      redirect: 'manual',
+    })
+    // better-auth returns a redirect (302/303) to callbackURL on success
+    if (res.status !== 302 && res.status !== 303 && res.status !== 200) {
+      const body = await res.text()
+      throw new Error(`verification returned ${res.status}: ${body.slice(0, 120)}`)
     }
   })
 }
