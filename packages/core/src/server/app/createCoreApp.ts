@@ -231,11 +231,16 @@ export async function createCoreApp(
             ],
             styleSrc: [
               "'self'",
+              'https://fonts.googleapis.com',
               (request) => `'nonce-${(request as IncomingMessageWithNonce).cspNonce ?? ''}'`,
             ],
+            // React/DockView use style attributes for runtime layout sizing.
+            // Keep stylesheet loading nonce/domain-bound, but allow attributes
+            // so production CSP does not collapse workspace/workbench panes.
+            styleSrcAttr: ["'unsafe-inline'"],
             imgSrc: ["'self'", 'data:', 'blob:'],
             connectSrc: ["'self'"],
-            fontSrc: ["'self'"],
+            fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
             objectSrc: ["'none'"],
             frameAncestors: ["'none'"],
             baseUri: ["'self'"],
