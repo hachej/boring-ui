@@ -7,8 +7,18 @@ import { existsSync } from "node:fs"
 import { createInterface } from "node:readline"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { parseArgs } from "node:util"
 
-const PORT = Number(process.env.PORT) || 5200
+const { values: args } = parseArgs({
+  options: {
+    port: { type: "string", short: "p" },
+    host: { type: "string" },
+  },
+  strict: false,
+})
+
+const PORT = Number(args.port ?? process.env.PORT) || 5200
+const HOST = args.host ?? process.env.HOST ?? "0.0.0.0"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const publicDir = resolve(__dirname, "..", "public")
 const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
@@ -101,6 +111,7 @@ process.env.ANTHROPIC_API_KEY = apiKey
 console.log(`\nboring-ui`)
 console.log(`  workspace  ${workspaceRoot}`)
 console.log(`  port       ${PORT}`)
+console.log(`  host       ${HOST}`)
 
 const app = await createWorkspaceAgentServer({
   workspaceRoot,
@@ -121,7 +132,7 @@ app.setNotFoundHandler(async (req, reply) => {
   return reply.sendFile("index.html", publicDir)
 })
 
-await app.listen({ port: PORT, host: "0.0.0.0" })
+await app.listen({ port: PORT, host: HOST })
 console.log(`\n  http://localhost:${PORT}\n`)
 
 openBrowser(`http://localhost:${PORT}`)
