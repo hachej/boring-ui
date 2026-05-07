@@ -7,15 +7,11 @@
   <a href="https://github.com/hachej/boring-ui/actions"><img src="https://img.shields.io/github/actions/workflow/status/hachej/boring-ui/ci.yml?style=flat-square" alt="CI" /></a>
 </p>
 
-**Turn an agent into an app.**
+**Your workflow. Your agent. Your UI.**
 
-Most agents ship behind a bare chat window — outputs arrive as text, users copy-paste results, nothing persists. boring-ui gives your agent a real app: a dynamic workspace that opens the right view for whatever it produces — a chart, a document, a data explorer, a code file — alongside the full backend you'd have to build anyway.
+A self-modifiable agentic workspace you extend through plugins, not forks.
 
-The frontend gives the agent a persistent chat and a workspace where outputs appear as purpose-built views, not walls of text. The backend gives it auth with workspaces, a database, and a runtime that executes real tools. You extend everything through plugins — add your views, your commands, your data sources — and ship something that feels built for your users, not borrowed from a general-purpose tool.
-
-One decision it makes easy: **local vs. remote execution**. Tools like Claude Code run the agent on the user's machine — fine for a solo developer, a security and collaboration nightmare the moment you're shipping to a team or to customers. boring-ui's sandbox mode gives every user an isolated remote environment: no local setup, no shared state, no blast radius. Auth and workspaces are built in, so collaboration is first-class from day one. Same codebase as local mode, config change only.
-
-Skip the scaffolding. Build something worth using.
+**Why boring?** The UI is exactly three things: one chat, one workbench, one command palette. Nothing domain-specific. Nothing to rip out. The agent does the rest.
 
 ---
 
