@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
@@ -397,5 +400,68 @@ test('mode recreates a stopped sandbox from snapshot without losing workspace fi
   } finally {
     await adapter.dispose?.()
     await Promise.all(createdHarnesses.map((harness) => harness.cleanup()))
+  }
+})
+
+test('mode seeds template files into an existing persistent sandbox', async () => {
+  const templateRoot = await mkdtemp(join(tmpdir(), 'boring-ui-vercel-template-'))
+  await mkdir(join(templateRoot, '.agents', 'skills', 'macro-transform'), { recursive: true })
+  await mkdir(join(templateRoot, 'transforms', 'custom'), { recursive: true })
+  await writeFile(
+    join(templateRoot, '.agents', 'skills', 'macro-transform', 'SKILL.md'),
+    'name: macro-transform\n',
+    'utf-8',
+  )
+  await writeFile(join(templateRoot, 'transforms', 'custom', '.gitkeep'), '', 'utf-8')
+
+  const harness = await createMockVercelSandboxHarness()
+  const sandbox = addSandboxMeta(harness.sandbox, {
+    sandboxId: 'sb-existing-template',
+    status: 'running',
+  }) as VercelSandbox & { persistent: boolean }
+  sandbox.persistent = true
+  const store = createStore([{
+    workspaceId: 'workspace-template-existing',
+    sandboxId: 'sb-existing-template',
+    createdAt: '2026-05-07T00:00:00.000Z',
+    lastUsedAt: '2026-05-07T00:00:00.000Z',
+  }])
+  const client: VercelSandboxClient = {
+    create: vi.fn(),
+    get: vi.fn(async () => sandbox),
+  }
+  const logger = { info: vi.fn(), warn: vi.fn() }
+  const adapter = createVercelSandboxModeAdapter({
+    store,
+    vercelClient: client,
+    orphanGuardMaxIdleMs: null,
+    packageTemplateOpts: { uploadFn: vi.fn(async () => 'https://blob.test/template.tar.gz') },
+    getEnvVar(name) {
+      if (name === 'VERCEL_TOKEN') return 'token-1'
+      if (name === 'VERCEL_TEAM_ID') return 'team-1'
+      return undefined
+    },
+    logger,
+  })
+
+  try {
+    const bundle = await adapter.create({
+      workspaceRoot: 'workspace-template-existing',
+      workspaceId: 'workspace-template-existing',
+      sessionId: 'session-template-existing',
+      templatePath: templateRoot,
+    })
+
+    await expect(bundle.workspace.readFile('.agents/skills/macro-transform/SKILL.md'))
+      .resolves.toBe('name: macro-transform\n')
+    await expect(bundle.workspace.stat('transforms/custom/.gitkeep'))
+      .resolves.toMatchObject({ kind: 'file' })
+    expect(client.create).not.toHaveBeenCalled()
+    expect(logger.info).toHaveBeenCalledWith(
+      '[vercel-sandbox:mode] template seeded into workspace',
+      expect.objectContaining({ fileCount: 2 }),
+    )
+  } finally {
+    await harness.cleanup()
   }
 })

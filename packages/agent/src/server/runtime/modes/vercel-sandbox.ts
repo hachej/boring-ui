@@ -6,6 +6,7 @@ import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVerc
 import { FileHandleStore } from '../../sandbox/vercel-sandbox/FileHandleStore'
 import {
   collectFiles,
+  computeTemplateHash,
   packageTemplate,
   type PackageTemplateOptions,
 } from '../../sandbox/vercel-sandbox/packageTemplate'
@@ -123,6 +124,45 @@ async function ensureVercelWorkspaceRoot(sandbox: VercelSandbox & {
   if ((result.exitCode ?? 1) !== 0) {
     throw new Error(`failed to initialize ${VERCEL_SANDBOX_REMOTE_ROOT} (exit ${result.exitCode ?? 'unknown'})`)
   }
+}
+
+async function seedTemplateIntoVercelWorkspace(
+  workspace: {
+    stat(path: string): Promise<unknown>
+    writeFile(path: string, data: string): Promise<void>
+    writeBinaryFile?: (path: string, data: Uint8Array) => Promise<void>
+  },
+  templatePath: string,
+  logger: ModeLogger,
+): Promise<void> {
+  const files = await collectFiles(templatePath)
+  const hash = computeTemplateHash(files)
+  const markerPath = `.boring-agent/templates/${hash}.json`
+
+  try {
+    await workspace.stat(markerPath)
+    logger.info('[vercel-sandbox:mode] template already seeded', {
+      hash,
+      fileCount: files.length,
+    })
+    return
+  } catch {
+    // Missing marker means this sandbox predates the template or was created
+    // from an empty handle. Seed below without deleting user files.
+  }
+
+  for (const file of files) {
+    if (workspace.writeBinaryFile) {
+      await workspace.writeBinaryFile(file.rel, new Uint8Array(file.content))
+    } else {
+      await workspace.writeFile(file.rel, file.content.toString('utf-8'))
+    }
+  }
+  await workspace.writeFile(markerPath, JSON.stringify({ hash, seededAt: new Date().toISOString() }, null, 2))
+  logger.info('[vercel-sandbox:mode] template seeded into workspace', {
+    hash,
+    fileCount: files.length,
+  })
 }
 
 const DEFAULT_MODE_LOGGER: ModeLogger = {
@@ -268,17 +308,13 @@ export function createVercelSandboxModeAdapter(
       // filesystem dirty or emit a fake mkdir event.
       await ensureVercelWorkspaceRoot(sandboxHandle)
 
-      if (ctx.templatePath && !tarballUrl) {
-        logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {
-          templatePath: ctx.templatePath,
-        })
-        const files = await collectFiles(ctx.templatePath)
-        for (const file of files) {
-          await workspace.writeFile(file.rel, file.content.toString('utf-8'))
+      if (ctx.templatePath) {
+        if (!tarballUrl) {
+          logger.info('[vercel-sandbox:mode] falling back to writeFiles for template', {
+            templatePath: ctx.templatePath,
+          })
         }
-        logger.info('[vercel-sandbox:mode] writeFiles fallback complete', {
-          fileCount: files.length,
-        })
+        await seedTemplateIntoVercelWorkspace(workspace, ctx.templatePath, logger)
       }
 
       const sandbox = createVercelSandboxExec(sandboxHandle, {

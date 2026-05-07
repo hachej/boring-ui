@@ -126,6 +126,11 @@ export interface RegisterAgentRoutesOptions {
   workspaceRoot?: string
   sessionId?: string
   templatePath?: string
+  getTemplatePath?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+  }) => string | undefined | Promise<string | undefined>
   mode?: RuntimeModeId
   version?: string
   extraTools?: AgentTool[]
@@ -181,12 +186,16 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   async function createRuntimeBinding(
     workspaceId: string,
     root: string,
+    request?: FastifyRequest,
   ): Promise<RuntimeBinding> {
+    const scopedTemplatePath = opts.getTemplatePath
+      ? await opts.getTemplatePath({ workspaceId, workspaceRoot: root, request })
+      : templatePath
     const runtimeBundle = await modeAdapter.create({
       workspaceRoot: root,
       sessionId: workspaceId,
       workspaceId,
-      templatePath,
+      templatePath: scopedTemplatePath,
     })
 
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
@@ -269,7 +278,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       )
     }
 
-    const created = createRuntimeBinding(workspaceId, scope.root)
+    const created = createRuntimeBinding(workspaceId, scope.root, request)
     runtimeBindings.set(scope.key, created)
     try {
       return await ensureRuntimeBindingReady(
