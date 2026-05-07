@@ -19,7 +19,7 @@ import { runConcurrent } from './_concurrency'
 import { withBeadId } from './_setup'
 
 const BEAD_ID = 'boring-ui-v2-mo58'
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const APP_ID = 'race-conditions-app'
 const PASSWORD = 'Zk8$mN!qR2xFgWpJ'
 

@@ -10,7 +10,7 @@ import { PostgresUserStore } from '../../db/stores/PostgresUserStore'
 import { PostgresWorkspaceStore } from '../../db/stores/PostgresWorkspaceStore'
 import { deleteUserCompletely } from '../deleteUserCompletely'
 
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const APP_ID = 'delete-user-orchestrator-app'
 
 const BASE_CONFIG: CoreConfig = {

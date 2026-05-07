@@ -8,7 +8,7 @@ import { withBeadId } from '../../../__tests__/_setup'
 import { runMigrations } from '../../migrate'
 import { PostgresWorkspaceStore } from '../PostgresWorkspaceStore'
 
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const APP_ID = 'iozo-crypto-app'
 const BEAD_ID = 'boring-ui-v2-iozo'
 const ENCRYPTION_KEY_A = 'a'.repeat(64)

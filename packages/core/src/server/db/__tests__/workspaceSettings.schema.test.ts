@@ -4,7 +4,7 @@ import postgres from 'postgres'
 import { runMigrations } from '../migrate'
 import type { CoreConfig } from '../../../shared/types'
 
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 
 const BASE_CONFIG: CoreConfig = {
   appId: 'test-app',

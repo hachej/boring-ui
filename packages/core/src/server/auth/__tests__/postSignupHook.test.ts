@@ -11,7 +11,7 @@ import { PostgresWorkspaceStore } from '../../db/stores/PostgresWorkspaceStore'
 import { PostgresUserStore } from '../../db/stores/PostgresUserStore'
 import type { CoreConfig } from '../../../shared/types'
 
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const MAIL_CAPTURE_PATH = `/tmp/post-signup-test-mail-${process.pid}.log`
 
 function makeConfig(overrides?: Partial<CoreConfig>): CoreConfig {

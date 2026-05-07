@@ -9,7 +9,7 @@ import { ERROR_CODES, HttpError } from '../../../../shared/errors'
 import { runMigrations } from '../../migrate'
 import { PostgresWorkspaceStore } from '../PostgresWorkspaceStore'
 
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 
 const BASE_CONFIG: CoreConfig = {
   appId: 'test-app',

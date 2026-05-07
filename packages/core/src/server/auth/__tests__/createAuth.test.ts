@@ -8,7 +8,7 @@ import type { Database } from '../../db/connection'
 import postgres from 'postgres'
 import { readFileSync, unlinkSync, existsSync } from 'node:fs'
 
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const MAIL_CAPTURE_PATH = `/tmp/auth-test-mail-${process.pid}.log`
 
 function makeConfig(overrides?: Partial<CoreConfig>): CoreConfig {

@@ -13,7 +13,7 @@ import { PostgresWorkspaceStore } from '../../db/stores/PostgresWorkspaceStore'
 import type { CoreConfig } from '../../../shared/types'
 import postgres from 'postgres'
 
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const MAIL_CAPTURE_PATH = `/tmp/routes-test-mail-${process.pid}.log`
 
 function makeConfig(): CoreConfig {

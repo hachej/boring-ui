@@ -10,7 +10,7 @@ import { ERROR_CODES } from '../../../../shared/errors'
 import type { CoreConfig } from '../../../../shared/types'
 import { describeWorkspaceStoreConformance } from '../../__tests__/storeConformance'
 
-const TEST_DB_URL = 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const ENCRYPTION_KEY_A = 'a'.repeat(64)
 const ENCRYPTION_KEY_B = 'b'.repeat(64)
 
