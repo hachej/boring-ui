@@ -197,7 +197,9 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       },
     },
     emailVerification: emailVerificationConfig,
-    socialProviders: {},
+    socialProviders: config.auth.github
+      ? { github: { clientId: config.auth.github.clientId, clientSecret: config.auth.github.clientSecret } }
+      : {},
     plugins,
   })
 }

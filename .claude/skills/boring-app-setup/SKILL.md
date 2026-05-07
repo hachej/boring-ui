@@ -211,41 +211,44 @@ For a brand-new app on top of `@boring/core`:
 
 ### 2.2 — Production env var checklist
 
-For **boring-ui-v2 specifically**, source from vault:
+**⚠️ These three are the most commonly missed — without them, browser signup fails with "Invalid origin" even though curl smoke tests pass (curl sends no Origin header):**
+
+```
+BETTER_AUTH_URL=https://your-app.fly.dev    # exact deployed URL, https, no trailing slash
+CORS_ORIGINS=https://your-app.fly.dev       # same value; comma-separate if multiple
+BETTER_AUTH_SECRET=<32-byte hex>            # sessions are invalid if this changes
+```
+
+For **boring-macro-v2 specifically**, source from vault:
 
 ```bash
 fly secrets set \
-  DATABASE_URL=$(vault kv get -field=database_url secret/agent/app/boring-ui/prod) \
-  BETTER_AUTH_SECRET=$(vault kv get -field=session_secret secret/agent/app/boring-ui/prod) \
-  WORKSPACE_SETTINGS_ENCRYPTION_KEY=$(vault kv get -field=settings_key secret/agent/app/boring-ui/prod) \
-  BETTER_AUTH_URL=https://boring-ui-v2.fly.dev \
-  MAIL_FROM=onboarding@resend.dev \
-  MAIL_TRANSPORT_URL=resend://$(vault kv get -field=api_key secret/agent/services/resend) \
-  CORS_ORIGINS=https://boring-ui-v2.fly.dev \
-  NODE_ENV=production \
-  LOG_LEVEL=info \
-  --app boring-ui-v2
+  DATABASE_URL=$(vault kv get -field=database_url secret/agent/app/boring-macro/prod) \
+  BETTER_AUTH_SECRET=$(vault kv get -field=session_secret secret/agent/app/boring-macro/prod) \
+  WORKSPACE_SETTINGS_ENCRYPTION_KEY=$(vault kv get -field=settings_key secret/agent/app/boring-macro/prod) \
+  BETTER_AUTH_URL=https://boring-macro.fly.dev \
+  CORS_ORIGINS=https://boring-macro.fly.dev \
+  --app boring-macro
 ```
 
-Note: the existing Neon DB at `secret/agent/app/boring-ui/prod.database_url` was previously used by v1; v2 deploys a fresh schema there (drop public schema first, then run migrations — see §2.3 below).
-
-For **a generic child app** (not boring-ui-v2):
+For **a generic child app**:
 
 ```bash
 DATABASE_URL=postgres://...                # your Postgres (Neon, Supabase, RDS, …)
 BETTER_AUTH_SECRET=<32-byte hex>           # generated
-BETTER_AUTH_URL=https://app.example.com    # your URL — must be https
+BETTER_AUTH_URL=https://app.example.com    # your URL — must be https, no trailing slash
 WORKSPACE_SETTINGS_ENCRYPTION_KEY=<32-byte hex>
+CORS_ORIGINS=https://app.example.com       # exact match to browser Origin; no trailing slash
 MAIL_FROM=onboarding@resend.dev            # sandbox; flip to your domain when verified
 MAIL_TRANSPORT_URL=resend://re_xxxxxx
-CORS_ORIGINS=https://app.example.com       # comma-separated allowlist; no trailing slash
 PORT=3000                                  # platform sets this automatically
 NODE_ENV=production
 LOG_LEVEL=info
 
-# v1.x (skip for v1):
+# GitHub OAuth (optional — set GITHUB_OAUTH=true to enable the sign-in button):
 # GITHUB_CLIENT_ID=<from github>
 # GITHUB_CLIENT_SECRET=<from github>
+# GITHUB_OAUTH=true
 ```
 
 ### 2.3a — First-deploy schema reset (boring-ui-v2 only)
@@ -349,37 +352,39 @@ Returns `200 { ok: true }` when DB is reachable; `503 { error, code: 'db_unavail
 
 ### 2.7 — Post-deploy smoke
 
-After first deploy:
+After first deploy, run the smoke test script:
 
 ```bash
-# 1. Hit health
-curl https://app.example.com/health
-# → {"ok":true}
-
-# 2. Hit redacted config (verify branding loaded)
-curl https://app.example.com/api/v1/config
-# → {"appId":"acme-prod","appName":"Acme",...}
-
-# 3. Sign up via UI
-open https://app.example.com/auth/signup
-# Verify the verification email actually arrives (check Resend dashboard for delivery)
-
-# 4. Sign in, create a workspace, invite a teammate
-# Verify the invite email arrives
+# from repo root — pass the deployed URL
+APP_URL=https://boring-macro.fly.dev pnpm --filter @boring/macro run smoke
+# or directly:
+node scripts/smoke.mjs https://boring-macro.fly.dev
 ```
 
-If any step fails, check `pino` logs in your PaaS dashboard. Search for `event:` to navigate.
+The script tests:
+- `/health` → 200
+- `/ready` → 200
+- `/` → 200 (SPA shell)
+- `POST /auth/sign-up/email` WITH `Origin: <url>` header → 200 (catches CORS misconfiguration that bare curl misses)
+- `POST /auth/sign-in/email` WITH `Origin: <url>` header → 200
+- `GET /auth/get-session` with session cookie → 200 with user object
+- `GET /api/v1/agent/catalog` → 401 (auth guard active)
+
+**⚠️ The Origin header is critical.** Browsers always send it; curl does not. A smoke test without it will pass even when real signups return "Invalid origin".
 
 ### 2.8 — Common deployment issues
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| "Invalid origin" on signup in browser (curl works fine) | `BETTER_AUTH_URL` or `CORS_ORIGINS` not set / wrong | Set both to the exact deployed URL (`https://app.fly.dev`, no trailing slash). Curl has no Origin header so it bypasses the check — always smoke test with `-H "Origin: https://app.fly.dev"` |
+| 500 on signup, logs say `relation "users" does not exist` | DB missing auth tables — migrations never ran | `main.ts` must call `runCoreMigrationsFromEnv()` before `app.listen()`, or use Fly `release_command` |
 | 503 from `/health` immediately after deploy | Migration didn't finish | Increase initial-delay to 60s; check release-phase logs |
 | Verification emails not arriving | Domain not verified in Resend | Add DKIM/SPF DNS records; wait for verification |
 | 401 on every request | `BETTER_AUTH_URL` ≠ deployed URL | Cookies are scoped by URL; must match exactly (incl. https://) |
 | 500 on signup | Mail transport failure | Check Resend dashboard for the failed send; rotate API key if needed |
 | CSP violations in browser console | Strict CSP blocked an inline script/style | Read core's CSP rules in CORE.md §M6; extend via `CoreConfig.helmet` |
 | CORS failures | `CORS_ORIGINS` mismatch | Must match the browser's origin EXACTLY (no trailing slash, exact protocol) |
+| GitHub OAuth: "Provider not found" | `GITHUB_OAUTH=true` not set | Set env var `GITHUB_OAUTH=true` alongside `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` |
 
 ### 2.9 — Backups + secrets rotation
 
