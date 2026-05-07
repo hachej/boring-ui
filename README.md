@@ -3,9 +3,7 @@
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![npm version](https://img.shields.io/npm/v/@boring/core?style=flat-square&label=npm)
 
-/>
-
-**Your workflow. Your agent. Your UI.**
+Your workflow. Your agent. Your UI.
 
 An agentic UI fully customizable for your workflow.
 
@@ -17,9 +15,11 @@ The UI is exactly three things:
 - one workbench that the agent can control
 - one command palette.
 
+That's it. 
+
 <img width="781" height="417" alt="grafik" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e" 
 
-That's it. Make it fit your workflow by extending it: plug in custom agent skills and build your own workbench panes.
+Make it fit your workflow by extending it: plug in custom agent skills and build your own workbench panes.
 
 <img width="726" height="645" alt="grafik" src="https://github.com/user-attachments/assets/5d1475e6-2235-4b7d-99b6-d4f9eca1cfe9" />
 
