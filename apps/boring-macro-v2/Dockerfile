@@ -30,9 +30,11 @@ RUN BORING_USE_LOCAL_PACKAGES=1 pnpm --filter @boring/macro exec vite build
 FROM node:22-slim AS runtime
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bubblewrap ca-certificates python3 python3-venv \
+  && apt-get install -y --no-install-recommends bubblewrap ca-certificates curl python3 python3-venv \
   && rm -rf /var/lib/apt/lists/* \
+  && curl -LsSf https://astral.sh/uv/install.sh | sh \
   && corepack enable
+ENV PATH="/root/.local/bin:$PATH"
 
 COPY --from=build /app/.npmrc /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
 COPY --from=build /app/node_modules/ node_modules/
