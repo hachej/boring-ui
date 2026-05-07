@@ -56,13 +56,14 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-          registry-url: "https://registry.npmjs.org"
       - run: pnpm install --frozen-lockfile
       - name: Build packages
         run: pnpm build
       - name: Build CLI frontend
         run: pnpm --filter @hachej/boring-ui-cli build:full
       - name: Publish
-        run: pnpm publish -r --access public --no-git-checks --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for pkg in packages/core packages/workspace packages/agent packages/ui packages/cli; do
+            tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
+            npm publish "$pkg/$tarball" --access public --provenance
+          done
