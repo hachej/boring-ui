@@ -68,13 +68,22 @@ const AUTH_PROXY_BLOCKED_RESPONSE_HEADERS = new Set([
   'transfer-encoding',
 ])
 
+// Pages that are served as the SPA shell (catch-all) AND get explicit GET routes
+// so the browser can navigate directly to them without hitting the auth proxy.
+// /auth/verify-email is intentionally excluded: the auth proxy's text/html guard
+// already falls through to the catch-all for browser navigation, and the explicit
+// route would shadow the proxy for API calls (breaking headless token redemption).
 const FRONTEND_AUTH_PAGES = new Set([
   '/auth/signin',
   '/auth/signup',
   '/auth/forgot-password',
   '/auth/reset-password',
-  '/auth/verify-email',
   '/auth/callback/github',
+])
+
+// Pages served as SPA but NOT needing an explicit GET route (auth proxy handles them).
+const FRONTEND_AUTH_PAGES_SPA_ONLY = new Set([
+  '/auth/verify-email',
 ])
 
 export type CoreWorkspaceAgentServer = FastifyInstance & {
@@ -252,6 +261,7 @@ function shouldServeFrontend(pathname: string): boolean {
   if (pathname === '/health') return false
   if (pathname.startsWith('/api/')) return false
   if (FRONTEND_AUTH_PAGES.has(pathname)) return true
+  if (FRONTEND_AUTH_PAGES_SPA_ONLY.has(pathname)) return true
   if (pathname === '/auth') return false
   if (pathname.startsWith('/auth/')) return false
   return true
