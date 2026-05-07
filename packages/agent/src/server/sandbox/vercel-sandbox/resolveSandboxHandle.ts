@@ -274,6 +274,12 @@ function logSandboxStop(
   })
 }
 
+function isSandboxAlreadyExistsError(error: unknown): boolean {
+  const code = (error as { json?: { error?: { code?: unknown } } } | null)?.json?.error?.code
+  const message = (error as { json?: { error?: { message?: unknown } } } | null)?.json?.error?.message
+  return code === 'bad_request' && typeof message === 'string' && message.includes('already exists')
+}
+
 async function createFresh(
   workspaceId: string,
   snapshotId: string | undefined,
@@ -290,21 +296,28 @@ async function createFresh(
     persistent: true,
     snapshotExpiration: 0,
   }
-  if (snapshotId) {
-    sourceType = 'snapshot'
-    sandbox = await vercel.create({
-      ...base,
-      source: { type: 'snapshot', snapshotId },
-    })
-  } else if (tarballUrl) {
-    sourceType = 'tarball'
-    sandbox = await vercel.create({
-      ...base,
-      source: { type: 'tarball', url: tarballUrl },
-    })
-  } else {
-    sandbox = await vercel.create(base)
+
+  const tryCreate = async (): Promise<VercelSandboxHandle> => {
+    try {
+      if (snapshotId) {
+        sourceType = 'snapshot'
+        return await vercel.create({ ...base, source: { type: 'snapshot', snapshotId } })
+      } else if (tarballUrl) {
+        sourceType = 'tarball'
+        return await vercel.create({ ...base, source: { type: 'tarball', url: tarballUrl } })
+      } else {
+        return await vercel.create(base)
+      }
+    } catch (error) {
+      if (isSandboxAlreadyExistsError(error)) {
+        // Sandbox persisted on Vercel from a previous server instance — resume it.
+        return await vercel.get({ name: base.name, sandboxId: base.name, resume: true })
+      }
+      throw error
+    }
   }
+
+  sandbox = await tryCreate()
 
   logSandboxCreate(logger, {
     workspaceId,
