@@ -5,30 +5,28 @@
 
 Your workflow. Your agent. Your UI.
 
-An agentic UI fully customizable for your workflow.
+Build agent-centric apps without reinventing the shell.
 
-<img width="781" height="417" alt="grafik" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e" >
+<img width="781" height="417" alt="boring-ui workbench" src="https://github.com/user-attachments/assets/31ba4b15-21db-468f-862d-52538fb0dc7e">
 
-## Why boring?
+## What it is
 
-The UI is exactly three things:
+Two primitives, pre-wired:
 
-- one agent
-- one workbench that the agent can control
-- one command palette.
+- one agent chat
+- one workbench (panels + command palette) that the agent can control
 
-That's it. 
+Plus everything you don't want to build: auth, database, workspaces, multi-tenancy.
 
-Make it fit your workflow by extending it: 
+## Extend with plugins
 
-plug in custom:
-- agent skills
-- agent prompts
-- workbench panes
-  
-and experience the experioence of agent at your tatst.
+Plugins are how you make it yours. A plugin contributes:
 
-<img width="726" height="645" alt="grafik" src="https://github.com/user-attachments/assets/5d1475e6-2235-4b7d-99b6-d4f9eca1cfe9" />
+- **panels** — custom panes the agent or user can open (charts, tables, viewers, forms)
+- **agent** skills and tools
+- **catalogs** — searchable data explorers, usable from chat
+
+Enought to map any worfflow.
 
 ## Quickstart
 
@@ -36,29 +34,39 @@ and experience the experioence of agent at your tatst.
 npx @hachej/boring-ui-cli
 ```
 
-Starts the full workspace — chat, panels, agent runtime — pointed at your current directory. No clone, no install, no config.
+Full workspace — chat, panels, agent runtime — no clone, no config.
+
+## What people build
+
+**Data exploration tools** — agent searches a 87k-series catalog, plots results, drafts a briefing deck. All from chat.
+
+**Internal ops tools** — agent runs bash in a sandbox. Panels show logs, metrics, status. Teams get isolated workspaces.
+
+**Research assistants** — catalog of papers or data. Agent fetches and summarizes. Panels show the full content. Markdown editor for notes.
 
 ---
 
-## boring-ui is right for you if
+## Right for you if
 
-- ✅ You have an agent and want to give it a real interface — not just a chat box
-- ✅ You're building something domain-specific: a research tool, an internal tool, a data app, a coding assistant
-- ✅ You want users to see charts, documents, or data explorers — not walls of text
-- ✅ You're shipping to a team or customers and need sandboxed remote execution, not local installs
+- ✅ You want the agent to open panels and render data — not just chat
+- ✅ You're building domain-specific: research tool, internal tool, data app
+- ✅ You need sandboxed execution and multi-tenant workspaces
 
-**boring-ui is not right for you if:**
+Not right for you if:
 
-- ❌ You just need a chat widget to embed in an existing app
-- ❌ You already have auth, a backend, and just want a UI component
-- ❌ You need Next.js, Remix, or a specific stack — boring-ui is opinionated (Fastify, Postgres, React)
+- ❌ You just need a chat widget to embed somewhere
+- ❌ You need to drop an agent into an existing app or custom frontend
 
 ---
 
-## What it is
+## Writing a plugin
 
-boring-ui is not a library you drop into an existing app. It's an opinionated full-stack foundation you build on — start from the reference app, add plugins for your domain, and ship without ever touching the core.
+Boring-ui ships with its documentation embedded.
 
-boring-ui is aggressively extensible so it doesn't have to dictate your domain.
+Just ask the agent to build it for you.
 
-The core owns the bare minimum: a chat, a workspace shell, auth, a database, an agent runtime.
+Done.
+
+---
+
+MIT
