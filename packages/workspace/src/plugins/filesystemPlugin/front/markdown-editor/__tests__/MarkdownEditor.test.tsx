@@ -489,6 +489,40 @@ describe("MarkdownEditor", () => {
         })
       })
 
+      it("keeps plain images as GitHub-compatible markdown", async () => {
+        const onChange = vi.fn()
+        render(
+          <MarkdownEditor
+            content='![Chart](https://example.com/x.png)'
+            onChange={onChange}
+          />,
+        )
+        await ready()
+        fireEvent.click(screen.getByTitle("Horizontal rule"))
+        await waitFor(() => {
+          expect(lastCall(onChange)).toContain(
+            '![Chart](https://example.com/x.png)',
+          )
+        })
+      })
+
+      it("serializes resized images as GitHub-compatible HTML", async () => {
+        const onChange = vi.fn()
+        render(
+          <MarkdownEditor
+            content='<img src="https://example.com/x.png" alt="Chart" width="240" />'
+            onChange={onChange}
+          />,
+        )
+        await ready()
+        fireEvent.click(screen.getByTitle("Horizontal rule"))
+        await waitFor(() => {
+          expect(lastCall(onChange)).toContain(
+            '<img src="https://example.com/x.png" alt="Chart" width="240" />',
+          )
+        })
+      })
+
       it("renders a draggable resize handle on the image NodeView", async () => {
         render(
           <MarkdownEditor content='<img src="https://example.com/x.png" />' />,

@@ -12,34 +12,71 @@ import { cn } from "../../../../front/lib/utils"
 const MIN_WIDTH = 64
 const MAX_WIDTH = 2000
 
+function escapeMarkdownImageText(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/]/g, "\\]")
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+}
+
+function numericAttribute(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return null
+}
+
 /**
  * Image extension with persisted width + a corner drag handle.
  *
- * The width is stored on the node as a plain numeric attribute so it
- * round-trips through Tiptap markdown/HTML serialization (`<img width=400>`).
- * The NodeView only kicks in inside the editor; serialized output is a plain
- * `<img>` so other markdown renderers don't need anything special.
+ * The width is stored on the node as a plain numeric attribute. Plain images
+ * serialize as GitHub-compatible markdown (`![alt](src)`). Resized/aligned
+ * images serialize as GitHub-compatible HTML so width/alignment survives.
+ * The NodeView only kicks in inside the editor.
  */
 export const ResizableImage = Image.extend({
   name: "image",
   draggable: true,
 
-  addStorage() {
-    return {
-      ...(this.parent?.() ?? {}),
-      markdown: {
-        serialize(stateOrArgs: any, maybeNode?: any) {
-          const state = maybeNode ? stateOrArgs : stateOrArgs.state
-          const node = maybeNode ?? stateOrArgs.node
-          const src: string = node.attrs.src ?? ""
-          const alt: string = node.attrs.alt ?? ""
-          const title: string | undefined = node.attrs.title || undefined
-          state.write(`![${alt}](${src}${title ? ` "${title}"` : ""})`)
-          state.closeBlock(node)
-        },
-        parse: {},
-      },
+  parseMarkdown: (token: { href?: string; title?: string | null; text?: string }, helpers: any) => {
+    return helpers.createNode("image", {
+      src: token.href,
+      title: token.title,
+      alt: token.text,
+    })
+  },
+
+  renderMarkdown: (node: { attrs?: Record<string, unknown> }) => {
+    const src = typeof node.attrs?.src === "string" ? node.attrs.src : ""
+    const alt = typeof node.attrs?.alt === "string" ? node.attrs.alt : ""
+    const title = typeof node.attrs?.title === "string" ? node.attrs.title : ""
+    const width = numericAttribute(node.attrs?.width)
+    const height = numericAttribute(node.attrs?.height)
+    const align = node.attrs?.align === "center" || node.attrs?.align === "right" ? node.attrs.align : "left"
+
+    if (!width && !height && align === "left") {
+      const escapedAlt = escapeMarkdownImageText(alt)
+      return title
+        ? `![${escapedAlt}](${src} "${title.replace(/"/g, "\\\"")}")`
+        : `![${escapedAlt}](${src})`
     }
+
+    const attrs = [
+      `src="${escapeHtmlAttribute(src)}"`,
+      alt ? `alt="${escapeHtmlAttribute(alt)}"` : null,
+      title ? `title="${escapeHtmlAttribute(title)}"` : null,
+      width ? `width="${width}"` : null,
+      height ? `height="${height}"` : null,
+    ].filter(Boolean).join(" ")
+    const img = `<img ${attrs} />`
+    return align === "center" || align === "right" ? `<p align="${align}">${img}</p>` : img
   },
 
   addAttributes() {
