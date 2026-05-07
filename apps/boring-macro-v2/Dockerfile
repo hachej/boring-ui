@@ -46,6 +46,7 @@ COPY --from=build /app/packages/agent/package.json packages/agent/package.json
 COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
 
 COPY --from=build /app/packages/core/dist/ packages/core/dist/
+COPY --from=build /app/packages/core/drizzle/ packages/core/drizzle/
 COPY --from=build /app/packages/core/package.json packages/core/package.json
 COPY --from=build /app/packages/core/node_modules/ packages/core/node_modules/
 
