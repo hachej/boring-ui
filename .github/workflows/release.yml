@@ -45,6 +45,7 @@ jobs:
     name: Publish to npm
     needs: ci
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -59,6 +60,6 @@ jobs:
       - name: Build packages
         run: pnpm build
       - name: Build CLI frontend
-        run: pnpm --filter @hachej/boring-ui build:full
+        run: pnpm --filter @hachej/boring-ui-cli build:full
       - name: Publish
         run: pnpm publish -r --access public --no-git-checks --provenance
