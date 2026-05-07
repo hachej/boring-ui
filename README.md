@@ -37,6 +37,16 @@ npx @hachej/boring-ui-cli
 ```
 Full workspace — chat, panels, agent runtime running on your local files.
 
+## How to use it
+
+**Run it locally.** Your own agent app, on your own machine. No server, no deploy. Point it at your files and go.
+
+**Ship a SaaS.** Deploy it, add your domain logic via plugins, charge users. Auth, workspaces, and multi-tenancy are already there.
+
+**Deploy inside a company.** Let non-technical users build and run their own agent workflows — without writing code. You manage the stack, they own their workspaces.
+
+---
+
 ## What people build
 
 **Data exploration tools** — agent searches a 87k-series catalog, plots results, drafts a briefing deck. All from chat.
