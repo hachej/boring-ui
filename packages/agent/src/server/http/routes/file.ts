@@ -167,6 +167,11 @@ function contentTypeForPath(path: string): string {
     case '.png': return 'image/png'
     case '.svg': return 'image/svg+xml'
     case '.webp': return 'image/webp'
+    case '.css': return 'text/css; charset=utf-8'
+    case '.html':
+    case '.htm': return 'text/html; charset=utf-8'
+    case '.js': return 'text/javascript; charset=utf-8'
+    case '.mjs': return 'text/javascript; charset=utf-8'
     case '.pdf': return 'application/pdf'
     default: return 'application/octet-stream'
   }
