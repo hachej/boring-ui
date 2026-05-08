@@ -176,13 +176,16 @@ const captureScreenshot = async (): Promise<File | null> => {
 // Provider Context & Types
 // ============================================================================
 
+export type AttachmentEntry = FileUIPart & { id: string; status?: 'uploading' | 'ready' | 'error' }
+
 export interface AttachmentsContext {
-  files: (FileUIPart & { id: string })[];
+  files: AttachmentEntry[];
   add: (files: File[] | FileList) => void;
   remove: (id: string) => void;
   clear: () => void;
   openFileDialog: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  setFileUrl: (id: string, url: string, status: 'ready' | 'error') => void;
 }
 
 export interface TextInputContext {
@@ -237,6 +240,7 @@ const useOptionalProviderAttachments = () =>
 
 export type PromptInputProviderProps = PropsWithChildren<{
   initialInput?: string;
+  onUploadFile?: (file: File) => Promise<{ url: string }>;
 }>;
 
 /**
@@ -245,6 +249,7 @@ export type PromptInputProviderProps = PropsWithChildren<{
  */
 export const PromptInputProvider = ({
   initialInput: initialTextInput = "",
+  onUploadFile,
   children,
 }: PromptInputProviderProps) => {
   // ----- textInput state
@@ -252,35 +257,48 @@ export const PromptInputProvider = ({
   const clearInput = useCallback(() => setTextInput(""), []);
 
   // ----- attachments state (global when wrapped)
-  const [attachmentFiles, setAttachmentFiles] = useState<
-    (FileUIPart & { id: string })[]
-  >([]);
+  const [attachmentFiles, setAttachmentFiles] = useState<AttachmentEntry[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // oxlint-disable-next-line eslint(no-empty-function)
   const openRef = useRef<() => void>(() => {});
 
+  const setFileUrl = useCallback((id: string, url: string, status: 'ready' | 'error') => {
+    setAttachmentFiles((prev) => prev.map((f) => {
+      if (f.id !== id) return f;
+      if (f.url !== url && f.url.startsWith('blob:')) URL.revokeObjectURL(f.url);
+      return { ...f, url, status };
+    }));
+  }, []);
+
   const add = useCallback((files: File[] | FileList) => {
     const incoming = [...files];
-    if (incoming.length === 0) {
-      return;
-    }
+    if (incoming.length === 0) return;
 
-    setAttachmentFiles((prev) => [
-      ...prev,
-      ...incoming.map((file) => ({
-        filename: file.name,
-        id: nanoid(),
-        mediaType: file.type,
-        type: "file" as const,
-        url: URL.createObjectURL(file),
-      })),
-    ]);
-  }, []);
+    const entries: AttachmentEntry[] = incoming.map((file) => ({
+      filename: file.name,
+      id: nanoid(),
+      mediaType: file.type,
+      type: "file" as const,
+      url: URL.createObjectURL(file),
+      status: onUploadFile ? 'uploading' as const : 'ready' as const,
+    }));
+
+    setAttachmentFiles((prev) => [...prev, ...entries]);
+
+    if (onUploadFile) {
+      for (const entry of entries) {
+        const file = incoming[entries.indexOf(entry)];
+        onUploadFile(file)
+          .then(({ url }) => setFileUrl(entry.id, url, 'ready'))
+          .catch(() => setFileUrl(entry.id, entry.url, 'error'));
+      }
+    }
+  }, [onUploadFile, setFileUrl]);
 
   const remove = useCallback((id: string) => {
     setAttachmentFiles((prev) => {
       const found = prev.find((f) => f.id === id);
-      if (found?.url) {
+      if (found?.url.startsWith('blob:')) {
         URL.revokeObjectURL(found.url);
       }
       return prev.filter((f) => f.id !== id);
@@ -290,7 +308,7 @@ export const PromptInputProvider = ({
   const clear = useCallback(() => {
     setAttachmentFiles((prev) => {
       for (const f of prev) {
-        if (f.url) {
+        if (f.url.startsWith('blob:')) {
           URL.revokeObjectURL(f.url);
         }
       }
@@ -329,8 +347,9 @@ export const PromptInputProvider = ({
       files: attachmentFiles,
       openFileDialog,
       remove,
+      setFileUrl,
     }),
-    [attachmentFiles, add, remove, clear, openFileDialog]
+    [attachmentFiles, add, remove, clear, openFileDialog, setFileUrl]
   );
 
   const __registerFileInput = useCallback(
@@ -507,6 +526,9 @@ export type PromptInputProps = Omit<
     message: PromptInputMessage,
     event: FormEvent<HTMLFormElement>
   ) => void | Promise<void>;
+  /** When provided, files are uploaded to the server immediately on add and the
+   * attachment URL is replaced with the stable server path before submit. */
+  onUploadFile?: (file: File) => Promise<{ url: string }>;
 };
 
 export const PromptInput = ({
@@ -519,6 +541,7 @@ export const PromptInput = ({
   maxFileSize,
   onError,
   onSubmit,
+  onUploadFile,
   children,
   ...props
 }: PromptInputProps) => {
@@ -531,7 +554,15 @@ export const PromptInput = ({
   const formRef = useRef<HTMLFormElement | null>(null);
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);
+  const [items, setItems] = useState<AttachmentEntry[]>([]);
+
+  const setFileUrlLocal = useCallback((id: string, url: string, status: 'ready' | 'error') => {
+    setItems((prev) => prev.map((f) => {
+      if (f.id !== id) return f;
+      if (f.url !== url && f.url.startsWith('blob:')) URL.revokeObjectURL(f.url);
+      return { ...f, url, status };
+    }));
+  }, []);
   const files = usingProvider ? controller.attachments.files : items;
 
   // ----- Local referenced sources (always local to PromptInput)
@@ -595,40 +626,48 @@ export const PromptInput = ({
         return;
       }
 
-      setItems((prev) => {
-        const capacity =
-          typeof maxFiles === "number"
-            ? Math.max(0, maxFiles - prev.length)
-            : undefined;
-        const capped =
-          typeof capacity === "number" ? sized.slice(0, capacity) : sized;
-        if (typeof capacity === "number" && sized.length > capacity) {
-          onError?.({
-            code: "max_files",
-            message: "Too many files. Some were not added.",
-          });
+      const capacity =
+        typeof maxFiles === "number"
+          ? Math.max(0, maxFiles - items.length)
+          : undefined;
+      const capped =
+        typeof capacity === "number" ? sized.slice(0, capacity) : sized;
+      if (typeof capacity === "number" && sized.length > capacity) {
+        onError?.({
+          code: "max_files",
+          message: "Too many files. Some were not added.",
+        });
+      }
+
+      const entries: AttachmentEntry[] = capped.map((file) => ({
+        filename: file.name,
+        id: nanoid(),
+        mediaType: file.type,
+        type: "file" as const,
+        url: URL.createObjectURL(file),
+        status: onUploadFile ? 'uploading' as const : 'ready' as const,
+      }));
+
+      setItems((prev) => [...prev, ...entries]);
+
+      if (onUploadFile) {
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          const file = capped[i];
+          onUploadFile(file)
+            .then(({ url }) => setFileUrlLocal(entry.id, url, 'ready'))
+            .catch(() => setFileUrlLocal(entry.id, entry.url, 'error'));
         }
-        const next: (FileUIPart & { id: string })[] = [];
-        for (const file of capped) {
-          next.push({
-            filename: file.name,
-            id: nanoid(),
-            mediaType: file.type,
-            type: "file",
-            url: URL.createObjectURL(file),
-          });
-        }
-        return [...prev, ...next];
-      });
+      }
     },
-    [matchesAccept, maxFiles, maxFileSize, onError]
+    [matchesAccept, maxFiles, maxFileSize, onError, items.length, onUploadFile, setFileUrlLocal]
   );
 
   const removeLocal = useCallback(
     (id: string) =>
       setItems((prev) => {
         const found = prev.find((file) => file.id === id);
-        if (found?.url) {
+        if (found?.url.startsWith('blob:')) {
           URL.revokeObjectURL(found.url);
         }
         return prev.filter((file) => file.id !== id);
@@ -686,7 +725,7 @@ export const PromptInput = ({
         ? controller?.attachments.clear()
         : setItems((prev) => {
             for (const file of prev) {
-              if (file.url) {
+              if (file.url.startsWith('blob:')) {
                 URL.revokeObjectURL(file.url);
               }
             }
@@ -809,6 +848,10 @@ export const PromptInput = ({
     [add]
   );
 
+  const setFileUrl = usingProvider
+    ? controller.attachments.setFileUrl
+    : setFileUrlLocal;
+
   const attachmentsCtx = useMemo<AttachmentsContext>(
     () => ({
       add,
@@ -817,8 +860,9 @@ export const PromptInput = ({
       files: files.map((item) => ({ ...item, id: item.id })),
       openFileDialog,
       remove,
+      setFileUrl,
     }),
-    [files, add, remove, clearAttachments, openFileDialog]
+    [files, add, remove, clearAttachments, openFileDialog, setFileUrl]
   );
 
   const refsCtx = useMemo<ReferencedSourcesContext>(
@@ -851,6 +895,9 @@ export const PromptInput = ({
             return (formData.get("message") as string) || "";
           })();
 
+      // Block submit while any attachment is still uploading to the server.
+      if (files.some((f) => f.status === 'uploading')) return;
+
       // Reset form immediately after capturing text to avoid race condition
       // where user input during async blob conversion would be lost
       if (!usingProvider) {
@@ -858,16 +905,13 @@ export const PromptInput = ({
       }
 
       try {
-        // Convert blob URLs to data URLs asynchronously
+        // Convert remaining blob URLs to data URLs (fallback for files without
+        // onUploadFile, or files whose upload failed and kept the blob URL).
         const convertedFiles: FileUIPart[] = await Promise.all(
-          files.map(async ({ id: _id, ...item }) => {
+          files.map(async ({ id: _id, status: _status, ...item }) => {
             if (item.url?.startsWith("blob:")) {
               const dataUrl = await convertBlobUrlToDataUrl(item.url);
-              // If conversion failed, keep the original blob URL
-              return {
-                ...item,
-                url: dataUrl ?? item.url,
-              };
+              return { ...item, url: dataUrl ?? item.url };
             }
             return item;
           })

@@ -65,7 +65,7 @@ export async function createAgentApp(
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
-  const app = Fastify({ logger: opts.logger ?? true })
+  const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
 
   const resolvedMode = opts.mode ?? autoDetectMode()
   const runtimeBundle = await resolveMode(resolvedMode).create({

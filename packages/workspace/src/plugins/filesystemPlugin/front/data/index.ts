@@ -21,3 +21,5 @@ export {
   setPreloadedTreeEntries,
 } from "./treePreloadCache"
 export type { FileEntry, FileContent, FileStat, FetchClientOptions } from "./types"
+export { useFileUpload } from "./useFileUpload"
+export type { UseFileUploadOptions, UseFileUploadResult } from "./useFileUpload"

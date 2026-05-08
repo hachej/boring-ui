@@ -6,6 +6,7 @@ import { emitAgentData } from "../../events"
 import { dispatchUiCommand, startUiCommandStream } from "../../bridge"
 import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
 import type { WorkspaceChatPanelProps } from "./types"
+import { useFileUpload } from "../../../plugins/filesystemPlugin/front/data/useFileUpload"
 
 export interface ChatPanelHostShellProps {
   /** Headers forwarded to the embedded ChatPanel's agent API requests. */
@@ -33,6 +34,7 @@ function streamEndpointFromBridgeEndpoint(endpoint: string | null | undefined): 
 
 export function ChatPanelHost(props: ChatPanelHostProps) {
   const ChatPanelImpl = useWorkspaceChatPanel()
+  const { upload } = useFileUpload()
   const {
     getSurface,
     isWorkbenchOpen,
@@ -83,6 +85,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       {...chatPanelProps}
       onOpenArtifact={openArtifact}
       onData={handleData}
+      onUploadFile={upload}
     />
   )
 }

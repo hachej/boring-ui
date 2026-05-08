@@ -1,5 +1,8 @@
 // @hachej/boring-agent/front — Tailwind + shadcn styled ChatPanel, primitives, hooks, and slash commands.
 
+export { uploadFile } from './upload/uploadFile'
+export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
+
 export { ChatPanel } from './ChatPanel'
 export type { ChatPanelProps } from './ChatPanel'
 export { DebugDrawer } from './DebugDrawer'
