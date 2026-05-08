@@ -17,6 +17,7 @@ import { createServer as createViteServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { createAgentApp } from '../server/createAgentApp'
 import type { RuntimeModeId } from '../server/runtime/mode'
+import { projectNameFromWorkspaceRoot } from './projectName'
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
@@ -111,6 +112,7 @@ async function startFrontend(apiPort: number): Promise<string> {
 
 const { port, mode, workspaceRoot } = parseArgs(process.argv.slice(2))
 const version = await readVersion()
+const projectName = projectNameFromWorkspaceRoot(workspaceRoot)
 
 const app = await createAgentApp({
   mode,
@@ -145,7 +147,7 @@ try {
   await fetch(`http://127.0.0.1:${apiPort}/api/v1/agent/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: 'e2e' }),
+    body: JSON.stringify({ title: projectName }),
   })
 } catch {
   // Non-fatal — tests that don't need a pre-existing session still work.
