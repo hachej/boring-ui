@@ -148,6 +148,16 @@ describe('vercelReadOps', () => {
     expect(workspace.readFile).toHaveBeenNthCalledWith(1, 'deck/labor.md')
     expect(workspace.readFile).toHaveBeenNthCalledWith(2, '.agents/skills/macro-deck/SKILL.md')
   })
+
+  test('rejects traversal in host-rendered skill paths', async () => {
+    const workspace = mockWorkspace({ root: '/workspace' })
+    const ops = vercelReadOps(workspace)
+
+    await expect(
+      ops.readFile('/data/workspaces/.agents/skills/../../../etc/passwd'),
+    ).rejects.toThrow('escapes the workspace skills directory')
+    expect(workspace.readFile).not.toHaveBeenCalled()
+  })
 })
 
 describe('vercelWriteOps', () => {
@@ -278,6 +288,15 @@ describe('vercelFindOps', () => {
     const ops = vercelFindOps(sandbox)
 
     await expect(ops.glob('*', '/cwd', { ignore: [], limit: 10 })).rejects.toThrow('file search failed (exit 2)')
+  })
+
+  test('glob does not fallback for unrelated command-not-found text', async () => {
+    const stderr = Buffer.from('custom helper not found')
+    const sandbox = mockSandbox({ exitCode: 127, stderr: new Uint8Array(stderr) })
+    const ops = vercelFindOps(sandbox)
+
+    await expect(ops.glob('*', '/cwd', { ignore: [], limit: 10 })).rejects.toThrow('file search failed (exit 127)')
+    expect(sandbox.exec).toHaveBeenCalledTimes(1)
   })
 })
 
