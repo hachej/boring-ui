@@ -4,9 +4,7 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-<img width="1500" height="900" alt="grafik" src="https://github.com/user-attachments/assets/cca97680-1e44-40d0-b214-be176c161a6a" />
-
-## Your workflow. Your agent. Your UI.
+<img width="1818" height="865" alt="grafik" src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" />
 
 Traditional SaaS apps assume workflows are fixed.
 
