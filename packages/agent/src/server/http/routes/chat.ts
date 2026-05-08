@@ -11,6 +11,7 @@ import {
   ERROR_CODE_INTERNAL,
   ERROR_CODE_VALIDATION_ERROR,
   ERROR_CODE_RANGE_NOT_SATISFIABLE,
+  ERROR_CODE_CONFLICT,
 } from '../middleware'
 import { StreamBufferStore } from '../streamBuffer'
 import {
@@ -68,6 +69,7 @@ export function chatRoutes(
   const { sessionChangesTracker } = opts
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
+  const lastFollowUpSeqBySession = new Map<string, number>()
 
   async function resolveRuntime(request: FastifyRequest): Promise<{
     harness: AgentHarness
@@ -285,6 +287,18 @@ export function chatRoutes(
         return reply.code(400).send({
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'attachments is invalid' },
         })
+      }
+      const clientSeq = typeof body.clientSeq === 'number' && Number.isFinite(body.clientSeq)
+        ? body.clientSeq
+        : undefined
+      if (clientSeq !== undefined) {
+        const lastSeq = lastFollowUpSeqBySession.get(sessionId)
+        if (lastSeq !== undefined && clientSeq <= lastSeq) {
+          return reply.code(409).send({
+            error: { code: ERROR_CODE_CONFLICT, message: 'followup_out_of_order' },
+          })
+        }
+        lastFollowUpSeqBySession.set(sessionId, clientSeq)
       }
       const runtime = await resolveRuntime(request)
       await runtime.harness.followUp?.(

@@ -628,28 +628,6 @@ export function createPiCodingAgentHarness(opts: {
         }
         chunks.push(...converted);
 
-        // Some model/provider paths emit only final message snapshots (no
-        // message_update deltas). Synthesize text chunks so SSE consumers still
-        // receive assistant text.
-        if (false && event.type === "message_end" && !sawTextChunk && inlineTurnIndex === 0) {
-          const { role, text, errorText } = extractAssistantMessageText(
-            (event as unknown as { message?: unknown }).message,
-          );
-          if (role === "assistant" && errorText.length > 0) {
-            chunks.push({ type: "error", errorText } as UIMessageChunk);
-            sawTextChunk = true;
-          } else if (role === "assistant" && text.length > 0) {
-            const id = inlineTurnIndex === 0 ? "0" : `turn-${inlineTurnIndex}:0`;
-            chunks.push(
-              { type: "text-start", id } as UIMessageChunk,
-              { type: "text-delta", id, delta: text } as UIMessageChunk,
-              { type: "text-end", id } as UIMessageChunk,
-            );
-            sawTextChunk = true;
-            assistantText += text;
-          }
-        }
-
         if (event.type === "agent_end") {
           if (!sawTextChunk && inlineTurnIndex === 0) {
             const { role, text, errorText } = extractAssistantMessageText(
