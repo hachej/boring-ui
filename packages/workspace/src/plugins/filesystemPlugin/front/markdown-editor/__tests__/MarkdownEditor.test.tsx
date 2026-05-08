@@ -453,6 +453,31 @@ describe("MarkdownEditor", () => {
       vi.unstubAllGlobals()
     })
 
+    it("Image paste: stores clipboard images through upload API when documentPath is supplied", async () => {
+      const onChange = vi.fn()
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ markdownUrl: "../assets/images/pasted.png" }),
+      })
+      vi.stubGlobal("fetch", fetchSpy)
+      render(<MarkdownEditor content="Hello" onChange={onChange} documentPath="deck/briefing.md" />)
+      await ready()
+      const editorEl = document.querySelector("[contenteditable='true']") as HTMLElement
+      const file = new File([new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })], "pasted.png", { type: "image/png" })
+      fireEvent.paste(editorEl, {
+        clipboardData: {
+          files: [file],
+          items: [],
+          getData: vi.fn(() => ""),
+        },
+      })
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledWith("/api/v1/files/upload", expect.objectContaining({ method: "POST" }))
+        expect(lastCall(onChange)).toMatch(/!\[pasted\.png\]\(\.\.\/assets\/images\/pasted\.png\)/)
+      })
+      vi.unstubAllGlobals()
+    })
+
     it("Image upload: ignores non-image files (no setImage call)", async () => {
       const onChange = vi.fn()
       render(<MarkdownEditor content="Hello" onChange={onChange} />)
