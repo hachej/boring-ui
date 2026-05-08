@@ -17,7 +17,7 @@ import type {
   SeriesPayload,
 } from "../data/macroSeriesTypes"
 import { fetchMacroSeries } from "../data/macroSeriesData"
-import { SERIES_COLORS, formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
+import { formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
 
 interface ChartParams {
   seriesId?: string
@@ -39,7 +39,19 @@ function normalizeChartParams(value: unknown): ChartParams {
   return {}
 }
 
-const COLORS = SERIES_COLORS
+const DEFAULT_SERIES_COLORS = [
+  "#FFA500", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444",
+  "#f59e0b", "#06b6d4", "#ec4899", "#84cc16", "#6366f1",
+]
+
+async function loadLiveSeriesColors(): Promise<string[] | null> {
+  const res = await fetch(`/api/macro/ui/series-colors?t=${Date.now()}`, {
+    cache: "no-store",
+  })
+  if (!res.ok) return null
+  const payload = await res.json() as { colors?: string[] }
+  return Array.isArray(payload.colors) && payload.colors.length > 0 ? payload.colors : null
+}
 
 type TabId = "chart" | "table" | "metadata" | "lineage"
 
@@ -158,7 +170,24 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
   const [zoomStart, setZoomStart] = useState<string | null>(null)
   const [zoomEnd, setZoomEnd] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [seriesColors, setSeriesColors] = useState(DEFAULT_SERIES_COLORS)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const refreshSeriesColors = useCallback(() => {
+    void loadLiveSeriesColors()
+      .then((colors) => {
+        if (colors?.length) setSeriesColors(colors)
+      })
+      .catch((error) => console.warn("failed to refresh macro series colors", error))
+  }, [])
+
+  useEffect(() => {
+    refreshSeriesColors()
+    window.addEventListener("boring-ui:agent-plugins-reloaded", refreshSeriesColors)
+    return () => {
+      window.removeEventListener("boring-ui:agent-plugins-reloaded", refreshSeriesColors)
+    }
+  }, [refreshSeriesColors])
 
   useEffect(() => {
     if (!api) return
@@ -262,9 +291,9 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
 
   const allIds = [seriesId, ...overlays.map((o) => o.id)]
   const colorFor = (id: string) => {
-    if (id === seriesId) return COLORS[0]
+    if (id === seriesId) return seriesColors[0] ?? DEFAULT_SERIES_COLORS[0]
     const index = Math.max(0, allIds.indexOf(id))
-    return COLORS[index % COLORS.length]
+    return seriesColors[index % seriesColors.length] ?? DEFAULT_SERIES_COLORS[index % DEFAULT_SERIES_COLORS.length]
   }
 
   // Map each series id to its yAxisId for dual-axis mode.

@@ -446,6 +446,9 @@ export function ChatPanel(props: ChatPanelProps) {
         throw new Error(payload.error || `reload failed (${res.status})`)
       }
       const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('boring-ui:agent-plugins-reloaded', { detail: payload }))
+      }
       return payload.reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
     } catch (err) {
       return err instanceof Error ? err.message : 'Agent plugin reload failed.'

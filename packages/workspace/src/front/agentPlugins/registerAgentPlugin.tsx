@@ -183,6 +183,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           if (captured) commitCapturedFrontFactory(event.id, captured, registries)
           else commitMetadataOnly(event.id, event.boring, registries)
           lastSeenRef.current.set(event.id, event.revision)
+          window.dispatchEvent(new CustomEvent("boring-ui:agent-plugins-reloaded", { detail: event }))
         } catch (error) {
           console.error(`[boring-ui] failed to load plugin ${event.id}; keeping previous version`, error)
         }
@@ -197,6 +198,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       latestRequestedRef.current.set(event.id, event.revision)
       unregisterPlugin(event.id, registries)
       lastSeenRef.current.set(event.id, event.revision)
+      window.dispatchEvent(new CustomEvent("boring-ui:agent-plugins-reloaded", { detail: event }))
     }
 
     const handleError = (raw: MessageEvent) => {

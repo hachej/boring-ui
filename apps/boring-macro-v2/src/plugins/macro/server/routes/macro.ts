@@ -31,6 +31,24 @@ function optionalInt(val: unknown, min?: number, max?: number): number | null {
   return result
 }
 
+const DEFAULT_SERIES_COLORS = [
+  '#FFA500', '#3b82f6', '#10b981', '#8b5cf6', '#ef4444',
+  '#f59e0b', '#06b6d4', '#ec4899', '#84cc16', '#6366f1',
+]
+
+function parseSeriesColorsSource(source: string): string[] | null {
+  const match = /SERIES_COLORS\s*=\s*\[([\s\S]*?)\]/m.exec(source)
+  if (!match) return null
+  const colors = [...match[1].matchAll(/["'](#[0-9a-fA-F]{3,8})["']/g)].map((item) => item[1])
+  return colors.length > 0 ? colors : null
+}
+
+async function loadSeriesColors(): Promise<string[]> {
+  const sourceUrl = new URL('../../front/data/macroSeriesUi.ts', import.meta.url)
+  const source = await readFile(sourceUrl, 'utf8')
+  return parseSeriesColorsSource(source) ?? DEFAULT_SERIES_COLORS
+}
+
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
@@ -74,6 +92,16 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
       reply.code(503).send({ error: 'Macro data backend is not configured' })
       return false
     }
+
+    // ---- UI config -------------------------------------------------------
+
+    scoped.get('/ui/series-colors', async (_req: FastifyRequest, _reply: FastifyReply) => {
+      try {
+        return { colors: await loadSeriesColors() }
+      } catch {
+        return { colors: DEFAULT_SERIES_COLORS }
+      }
+    })
 
     // ---- Catalog ---------------------------------------------------------
 
