@@ -17,6 +17,7 @@ import { registerConfiguredModelProviders } from './models/modelConfig'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
+import { buildUploadAgentTools } from './tools/upload'
 import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
@@ -204,6 +205,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const standardTools = [
       ...buildHarnessAgentTools(runtimeBundle),
       ...buildFilesystemAgentTools(runtimeBundle),
+      ...buildUploadAgentTools(runtimeBundle),
     ]
     const pluginTools: PluginToolRegistration[] = []
 

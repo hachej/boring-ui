@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { extname, join } from "node:path";
 import {
   createAgentSession,
   type AgentSession,
@@ -163,6 +165,30 @@ async function applyRequestedSessionOptions(
   if (input.thinkingLevel) {
     handle.piSession.setThinkingLevel(input.thinkingLevel);
   }
+}
+
+const DEFAULT_ATTACHMENT_DIR = "assets/images";
+
+function extForAttachment(filename: string, contentType: string): string {
+  const fromName = extname(filename).toLowerCase().replace(/^\./, "");
+  if (/^[a-z0-9]{1,12}$/.test(fromName)) return fromName;
+  if (contentType === "image/jpeg") return "jpg";
+  if (contentType === "image/png") return "png";
+  if (contentType === "image/gif") return "gif";
+  if (contentType === "image/webp") return "webp";
+  if (contentType === "image/svg+xml") return "svg";
+  return "bin";
+}
+
+function basenameForAttachment(filename: string): string {
+  const base = filename.split("/").pop()?.split("\\").pop() ?? "image";
+  const withoutExt = base.replace(/\.[^.]*$/, "");
+  const safe = withoutExt
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return safe || "image";
 }
 
 export function createPiCodingAgentHarness(opts: {
@@ -577,14 +603,34 @@ export function createPiCodingAgentHarness(opts: {
             if (wake) wake();
           });
       }
-      const initialImages = (input.attachments ?? [])
-        .flatMap((a) => {
-          const match = a.url.match(/^data:(image\/[^;]+);base64,(.+)$/);
-          if (!match) return [];
-          return [{ type: "image" as const, mimeType: match[1], data: match[2] }];
-        });
+      // Process image attachments: pass as vision AND write to workspace.
+      const initialImages: NonNullable<PromptOptions["images"]> = [];
+      const savedPaths: string[] = [];
+      for (const a of input.attachments ?? []) {
+        const match = a.url.match(/^data:(image\/[^;]+);base64,(.+)$/);
+        if (!match) continue;
+        const [, contentType, b64] = match;
+        initialImages.push({ type: "image", mimeType: contentType, data: b64 });
+        // Write to workspace so the agent can reference the file by path.
+        try {
+          const bytes = Buffer.from(b64, "base64");
+          const ext = extForAttachment(a.filename ?? "image", contentType);
+          const base = basenameForAttachment(a.filename ?? "image");
+          const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+          const relPath = `${DEFAULT_ATTACHMENT_DIR}/${base}-${unique}.${ext}`;
+          await mkdir(join(ctx.workdir, DEFAULT_ATTACHMENT_DIR), { recursive: true });
+          await writeFile(join(ctx.workdir, relPath), bytes);
+          savedPaths.push(relPath);
+        } catch {
+          // best-effort: file write failure doesn't abort the turn
+        }
+      }
+      const effectiveMessage =
+        savedPaths.length > 0
+          ? `${input.message}\n\n[Attached file(s) saved to workspace:\n${savedPaths.map((p) => `- ${p}`).join("\n")}]`
+          : input.message;
       promptPromise = startTurn(
-        input.message,
+        effectiveMessage,
         initialImages.length > 0 ? { images: initialImages } : undefined,
       );
 
