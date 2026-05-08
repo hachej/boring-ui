@@ -17,7 +17,7 @@ import { TableRow } from "@tiptap/extension-table-row"
 import { TableHeader } from "@tiptap/extension-table-header"
 import { TableCell } from "@tiptap/extension-table-cell"
 import { ResizableImage } from "./ResizableImage"
-import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
+import { useFileUpload } from "../data/useFileUpload"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
 import { common, createLowlight } from "lowlight"
 import { Markdown } from "@tiptap/markdown"
@@ -162,38 +162,6 @@ export function readFileAsDataUrl(file: Blob): Promise<string> {
   })
 }
 
-function apiUrl(base: string, path: string): string {
-  const normalizedBase = base.replace(/\/$/, "")
-  return `${normalizedBase}${path}`
-}
-
-async function uploadMarkdownImage(
-  file: File,
-  documentPath?: string,
-  options: { apiBaseUrl?: string; workspaceRequestId?: string | null } = {},
-): Promise<string> {
-  if (!documentPath) return await readFileAsDataUrl(file)
-  const dataUrl = await readFileAsDataUrl(file)
-  const comma = dataUrl.indexOf(",")
-  const contentBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : ""
-  const headers: Record<string, string> = { "Content-Type": "application/json" }
-  if (options.workspaceRequestId) headers["x-boring-workspace-id"] = options.workspaceRequestId
-  const res = await fetch(apiUrl(options.apiBaseUrl ?? "", "/api/v1/files/upload"), {
-    method: "POST",
-    headers,
-    credentials: "include",
-    body: JSON.stringify({
-      filename: file.name,
-      contentType: file.type,
-      contentBase64,
-      sourcePath: documentPath,
-    }),
-  })
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
-  const body = await res.json() as { markdownUrl?: string; path?: string }
-  return body.markdownUrl ?? body.path ?? dataUrl
-}
-
 function imageFileFromClipboard(data: DataTransfer | null): File | null {
   if (!data) return null
   for (const file of Array.from(data.files ?? [])) {
@@ -207,38 +175,14 @@ function imageFileFromClipboard(data: DataTransfer | null): File | null {
   return null
 }
 
-async function insertMarkdownImage(
-  editor: Editor,
-  file: File,
-  documentPath: string | undefined,
-  options: { apiBaseUrl?: string; workspaceRequestId?: string | null } = {},
-) {
-  try {
-    const src = await uploadMarkdownImage(file, documentPath, options)
-    editor.chain().focus().setImage({ src, alt: file.name }).run()
-  } catch {
-    // Upload/FileReader rejected — fall back to inline data URL so the edit is not lost.
-    try {
-      const dataUrl = await readFileAsDataUrl(file)
-      editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run()
-    } catch {
-      // The user can retry.
-    }
-  }
-}
-
 function Toolbar({
   editor,
-  documentPath,
-  apiBaseUrl,
-  workspaceRequestId,
+  onInsertImage,
   rawMode,
   onToggleRawMode,
 }: {
   editor: Editor | null
-  documentPath?: string
-  apiBaseUrl?: string
-  workspaceRequestId?: string | null
+  onInsertImage: (file: File) => Promise<void>
   rawMode: boolean
   onToggleRawMode: () => void
 }) {
@@ -316,7 +260,7 @@ function Toolbar({
     const file = e.target.files?.[0]
     e.target.value = "" // allow picking the same file twice in a row
     if (!file || !file.type.startsWith("image/")) return
-    await insertMarkdownImage(editor, file, documentPath, { apiBaseUrl, workspaceRequestId })
+    await onInsertImage(file)
   }
 
   return (
@@ -428,13 +372,29 @@ export function MarkdownEditor({
   className,
   documentPath,
 }: MarkdownEditorProps) {
-  const apiBaseUrl = useApiBaseUrl()
-  const workspaceRequestId = useWorkspaceRequestId()
+  const { upload } = useFileUpload()
   const [rawMode, setRawMode] = useState(false)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
   const editorRef = useRef<Editor | null>(null)
+
+  // Stable ref so handlePaste (created once in useEditor) always calls the latest version.
+  const insertImageRef = useRef<(file: File) => Promise<void>>(async () => {})
+  insertImageRef.current = async (file: File) => {
+    const editor = editorRef.current
+    if (!editor) return
+    try {
+      const { url } = await upload(file, { sourcePath: documentPath })
+      editor.chain().focus().setImage({ src: url, alt: file.name }).run()
+    } catch {
+      // Upload failed — fall back to inline data URL so the edit is not lost.
+      try {
+        const dataUrl = await readFileAsDataUrl(file)
+        editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run()
+      } catch { /* user can retry */ }
+    }
+  }
 
   const editorContent = content
     ? content
@@ -459,10 +419,9 @@ export function MarkdownEditor({
       handlePaste: (_view, event) => {
         if (readOnly) return false
         const file = imageFileFromClipboard(event.clipboardData)
-        const currentEditor = editorRef.current
-        if (!file || !currentEditor) return false
+        if (!file) return false
         event.preventDefault()
-        void insertMarkdownImage(currentEditor, file, documentPath, { apiBaseUrl, workspaceRequestId })
+        void insertImageRef.current(file)
         return true
       },
     },
@@ -493,9 +452,7 @@ export function MarkdownEditor({
       {!readOnly && (
         <Toolbar
           editor={editor}
-          documentPath={documentPath}
-          apiBaseUrl={apiBaseUrl}
-          workspaceRequestId={workspaceRequestId}
+          onInsertImage={(file) => insertImageRef.current(file)}
           rawMode={rawMode}
           onToggleRawMode={() => setRawMode((v) => !v)}
         />

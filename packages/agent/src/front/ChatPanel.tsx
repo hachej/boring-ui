@@ -302,6 +302,10 @@ export interface ChatPanelProps {
    */
   debug?: boolean
   className?: string
+  /** When provided, files are uploaded immediately on attach and sent as stable
+   * server URLs rather than base64 data URLs. Supply via useFileUpload() from
+   * @hachej/boring-workspace's DataProvider context. */
+  onUploadFile?: (file: File) => Promise<{ url: string }>
 }
 
 function isTextPart(part: UIMessage['parts'][number]): part is Extract<UIMessage['parts'][number], { type: 'text' }> {
@@ -356,6 +360,7 @@ export function ChatPanel(props: ChatPanelProps) {
     onData,
     requestHeaders,
     onOpenArtifact,
+    onUploadFile,
     debug = false,
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
@@ -1178,6 +1183,7 @@ export function ChatPanel(props: ChatPanelProps) {
           <PromptInput
             data-boring-state={status}
             onSubmit={handleSubmit}
+            onUploadFile={onUploadFile}
             multiple
             // Guard rails for the attachments pipeline. The server schema
             // caps `attachments` at 20 entries; we match that client-side and
