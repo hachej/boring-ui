@@ -956,7 +956,7 @@ export function ChatPanel(props: ChatPanelProps) {
         <div
           ref={composerRootRef}
           className={cn(
-            "relative mx-auto w-full overflow-hidden",
+            "relative mx-auto w-full overflow-visible",
             chrome ? "max-w-3xl" : "max-w-[680px]",
             // Workspace-aligned composer surface: a flat card with an
             // inset 1px border at rest, then a focus-within swap that
