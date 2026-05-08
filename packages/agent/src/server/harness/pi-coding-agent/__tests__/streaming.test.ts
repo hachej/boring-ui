@@ -156,8 +156,10 @@ describe("streaming concurrency", () => {
     emitPiEvent({ type: "agent_end" });
     promptHandle.resolve!();
 
-    const final = await reader.next();
-    expect(final.done).toBe(true);
+    for (;;) {
+      const final = await reader.next();
+      if (final.done) break;
+    }
   });
 
   it("does not buffer chunks until prompt() resolves", async () => {
@@ -254,11 +256,10 @@ describe("streaming concurrency", () => {
       chunks.push(next.value);
     }
 
-    expect(chunks).toContainEqual({
-      type: "text-delta",
-      id: "0",
-      delta: "final-only text",
-    });
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-text-end",
+      data: expect.objectContaining({ text: "final-only text" }),
+    }));
   });
 
   it("emits a text delta when pi only provides final text on agent_end", async () => {
@@ -302,11 +303,10 @@ describe("streaming concurrency", () => {
       chunks.push(next.value);
     }
 
-    expect(chunks).toContainEqual({
-      type: "text-delta",
-      id: "0",
-      delta: "agent-end text",
-    });
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-message-end",
+      data: expect.objectContaining({ text: "agent-end text" }),
+    }));
   });
 });
 

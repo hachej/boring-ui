@@ -428,6 +428,8 @@ export function ChatPanel(props: ChatPanelProps) {
   const pendingMessagesRef = useRef<PendingFollowUp[]>([])
   const [projectedFollowUps, setProjectedFollowUps] = useState<ProjectedFollowUpMessage[]>([])
   const projectedFollowUpsRef = useRef<ProjectedFollowUpMessage[]>([])
+  const [piMessages, setPiMessages] = useState<UIMessage[]>([])
+  const piMessagesRef = useRef<UIMessage[]>([])
   const activeProjectedAssistantRef = useRef<string | null>(null)
   const lastConsumedProjectedUserRef = useRef<string | null>(null)
   const followUpPostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -446,6 +448,11 @@ export function ChatPanel(props: ChatPanelProps) {
     projectedFollowUpsRef.current = next
     setProjectedFollowUps(next)
   }, [])
+  const updatePiMessages = useCallback((updater: (items: UIMessage[]) => UIMessage[]) => {
+    const next = updater(piMessagesRef.current)
+    piMessagesRef.current = next
+    setPiMessages(next)
+  }, [])
 
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
@@ -453,6 +460,63 @@ export function ChatPanel(props: ChatPanelProps) {
     sessionId,
     onData: (part) => {
       const typed = part as { type?: string; data?: Record<string, unknown> }
+      const data = typed.data ?? {}
+      const piMessageId = typeof data.messageId === 'string' ? data.messageId : undefined
+      if (typed.type === 'data-pi-message-start' && piMessageId && (data.role === 'user' || data.role === 'assistant')) {
+        const role = data.role as 'user' | 'assistant'
+        const text = typeof data.text === 'string' ? data.text : ''
+        updatePiMessages((items) => {
+          if (items.some((item) => item.id === piMessageId)) return items
+          return [...items, { id: piMessageId, role, parts: text ? [{ type: 'text' as const, text }] : [] }]
+        })
+      } else if (typed.type === 'data-pi-text-start' && piMessageId) {
+        const partId = typeof data.partId === 'string' ? data.partId : '0'
+        updatePiMessages((items) => {
+          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
+          return existing.map((item) => item.id === piMessageId
+            ? { ...item, parts: item.parts?.some((p) => p.type === 'text' && (p as { id?: string }).id === partId) ? item.parts : [...(item.parts ?? []), { type: 'text' as const, id: partId, text: '' }] }
+            : item)
+        })
+      } else if (typed.type === 'data-pi-text-delta' && piMessageId) {
+        const partId = typeof data.partId === 'string' ? data.partId : '0'
+        const delta = typeof data.delta === 'string' ? data.delta : ''
+        if (delta) updatePiMessages((items) => items.map((item) => item.id === piMessageId
+          ? { ...item, parts: (item.parts?.length ? item.parts : [{ type: 'text' as const, id: partId, text: '' }]).map((p) => p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId ? { ...p, text: `${p.text}${delta}` } : p) }
+          : item))
+      } else if (typed.type === 'data-pi-text-end' && piMessageId) {
+        const partId = typeof data.partId === 'string' ? data.partId : '0'
+        const text = typeof data.text === 'string' ? data.text : ''
+        if (text) updatePiMessages((items) => items.map((item) => item.id === piMessageId
+          ? { ...item, parts: (item.parts?.length ? item.parts : [{ type: 'text' as const, id: partId, text: '' }]).map((p) => p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId && !p.text ? { ...p, text } : p) }
+          : item))
+      } else if (typed.type === 'data-pi-reasoning-start' && piMessageId) {
+        const partId = typeof data.partId === 'string' ? data.partId : '0'
+        updatePiMessages((items) => items.map((item) => item.id === piMessageId
+          ? { ...item, parts: item.parts?.some((p) => p.type === 'reasoning' && (p as { id?: string }).id === partId) ? item.parts : [...(item.parts ?? []), { type: 'reasoning' as const, id: partId, text: '' }] }
+          : item))
+      } else if (typed.type === 'data-pi-reasoning-delta' && piMessageId) {
+        const partId = typeof data.partId === 'string' ? data.partId : '0'
+        const delta = typeof data.delta === 'string' ? data.delta : ''
+        if (delta) updatePiMessages((items) => items.map((item) => item.id === piMessageId
+          ? { ...item, parts: (item.parts ?? []).map((p) => p.type === 'reasoning' && (p as { id?: string }).id === partId ? { ...p, text: `${p.text}${delta}` } : p) }
+          : item))
+      } else if (typed.type === 'data-pi-tool-call-end' && piMessageId) {
+        const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+        const toolName = typeof data.toolName === 'string' ? data.toolName : undefined
+        if (toolCallId && toolName) updatePiMessages((items) => items.map((item) => item.id === piMessageId
+          ? { ...item, parts: [...(item.parts ?? []).filter((p) => (p as { toolCallId?: string }).toolCallId !== toolCallId), { type: `tool-${toolName}`, toolCallId, state: 'input-available', input: data.input }] as UIMessage['parts'] }
+          : item))
+      } else if (typed.type === 'data-pi-tool-result' && piMessageId) {
+        const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+        if (toolCallId) updatePiMessages((items) => items.map((item) => item.id === piMessageId
+          ? { ...item, parts: (item.parts ?? []).map((p) => (p as { toolCallId?: string }).toolCallId === toolCallId ? { ...p, state: data.isError ? 'output-error' : 'output-available', output: data.output } : p) as UIMessage['parts'] }
+          : item))
+      } else if (typed.type === 'data-pi-message-end' && piMessageId) {
+        const text = typeof data.text === 'string' ? data.text : ''
+        if (text) updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && p.text)
+          ? { ...item, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
+          : item))
+      }
       if (typed.type === 'data-followup-consumed') {
         const serverText = typeof typed.data?.text === 'string' ? typed.data.text : ''
         const pending = pendingMessagesRef.current.find((item) => !item.consumed && (item.serverMessage === serverText || item.text === serverText))
@@ -504,6 +568,36 @@ export function ChatPanel(props: ChatPanelProps) {
     },
     requestHeaders,
   })
+
+  useEffect(() => {
+    if (status !== 'ready' || piMessagesRef.current.length > 0 || messages.length === 0) return
+    updatePiMessages(() => messages)
+  }, [messages, status, updatePiMessages])
+
+  const prevPiPersistStatusRef = useRef(status)
+  useEffect(() => {
+    const prev = prevPiPersistStatusRef.current
+    prevPiPersistStatusRef.current = status
+    if (status !== 'ready') return
+    if (prev !== 'streaming' && prev !== 'submitted') return
+    if (!sessionId || piMessages.length === 0) return
+    const stripped = piMessages.map((msg) => ({
+      ...msg,
+      parts: msg.parts?.map((part: unknown) => {
+        const p = part as Record<string, unknown>
+        if (p.type === 'file' && typeof p.url === 'string' && p.url.startsWith('data:')) return { ...p, url: '' }
+        return part
+      }),
+    }))
+    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...requestHeaders },
+      body: JSON.stringify({ messages: stripped }),
+    }).catch(() => {})
+    try {
+      globalThis.localStorage?.setItem(`boring-agent:messages:${sessionId}`, JSON.stringify(stripped))
+    } catch { /* ignore */ }
+  }, [sessionId, status, piMessages, requestHeaders])
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
@@ -652,16 +746,18 @@ export function ChatPanel(props: ChatPanelProps) {
     })),
   [projectedFollowUps])
 
-  const displayMessages = useMemo(() => [
-    ...messages,
-    ...projectedTailMessages,
-  ], [messages, projectedTailMessages])
-
   const projectedStatusById = useMemo(() => {
     const map = new Map<string, ProjectedFollowUpMessage['status']>()
     for (const item of projectedFollowUps) map.set(item.id, item.status)
     return map
   }, [projectedFollowUps])
+
+  const displayMessages = useMemo(() => {
+    const waitingTail = projectedTailMessages.filter((message) => projectedStatusById.get(message.id) === 'queued')
+    return piMessages.length > 0
+      ? [...piMessages, ...waitingTail]
+      : [...messages, ...projectedTailMessages]
+  }, [messages, piMessages, projectedTailMessages, projectedStatusById])
 
   const postPendingFollowUps = useCallback(() => {
     if (followUpPostInFlightRef.current) return
