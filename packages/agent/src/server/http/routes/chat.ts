@@ -274,14 +274,20 @@ export function chatRoutes(
     '/api/v1/agent/chat/:sessionId/followup',
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
-      const body = request.body as { message?: unknown }
+      const body = request.body as { message?: unknown; attachments?: unknown }
       if (typeof body?.message !== 'string' || body.message.length === 0) {
         return reply.code(400).send({
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'message is required' },
         })
       }
+      const parsedAttachments = chatBodySchema.shape.attachments.safeParse(body.attachments)
+      if (!parsedAttachments.success) {
+        return reply.code(400).send({
+          error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'attachments is invalid' },
+        })
+      }
       const runtime = await resolveRuntime(request)
-      runtime.harness.followUp?.(sessionId, body.message)
+      runtime.harness.followUp?.(sessionId, body.message, parsedAttachments.data)
       return reply.code(202).send({ queued: true })
     },
   )
