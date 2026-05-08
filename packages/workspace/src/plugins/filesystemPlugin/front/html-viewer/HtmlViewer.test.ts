@@ -26,7 +26,7 @@ describe("HtmlViewer asset rewriting", () => {
 
     const controller = new AbortController()
     const html = await prepareHtmlPreviewDocument({
-      html: '<html><head><link rel="stylesheet" href="styles/site.css"></head><body><img src="assets/logo.png"></body></html>',
+      html: '<html><head><link rel="stylesheet" href="styles/site.css"></head><body><img src="assets/logo.png"><script src="scripts/book.js"></script></body></html>',
       path: "pages/index.html",
       apiBaseUrl: "",
       headers: {},
@@ -36,5 +36,6 @@ describe("HtmlViewer asset rewriting", () => {
     expect(html).toContain('<style data-boring-html-viewer-href="styles/site.css">')
     expect(html).toContain("url('/api/v1/files/raw?path=pages%2Fassets%2Fhero.png')")
     expect(html).toContain('src="/api/v1/files/raw?path=pages%2Fassets%2Flogo.png"')
+    expect(html).toContain('src="/api/v1/files/raw?path=pages%2Fscripts%2Fbook.js"')
   })
 })

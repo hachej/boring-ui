@@ -159,6 +159,7 @@ export async function prepareHtmlPreviewDocument(options: {
     ["audio", "src"],
     ["track", "src"],
     ["iframe", "src"],
+    ["script", "src"],
     ["object", "data"],
     ["embed", "src"],
     ["link", "href"],
@@ -264,7 +265,7 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
       <iframe
         srcDoc={html}
         title={filename(path)}
-        sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox"
+        sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
         className="min-h-0 flex-1 border-0 bg-white"
       />
     </div>
