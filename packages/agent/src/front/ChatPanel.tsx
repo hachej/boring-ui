@@ -499,6 +499,21 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
+  // Escape stops the current run when streaming.
+  // Guard: skip if the event target is an input/textarea so Escape can still
+  // clear/dismiss those fields without also stopping the agent.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !isStreaming) return
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      e.preventDefault()
+      stop()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isStreaming, stop])
+
   // Compose-history navigation (↑/↓ like a terminal)
   const userHistory = useMemo(() =>
     messages
