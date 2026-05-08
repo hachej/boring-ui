@@ -706,6 +706,45 @@ describe('ChatPanel (shadcn)', () => {
       vi.unstubAllGlobals()
     })
 
+    test('consecutive tools stay in one collapsed group across non-rendered data parts', () => {
+      mockUseAgentChat.mockReturnValue({
+        messages: [
+          {
+            id: 'a1',
+            role: 'assistant',
+            parts: [
+              {
+                type: 'tool-bash',
+                toolCallId: 'CMD1',
+                state: 'output-available',
+                input: { command: 'ls' },
+                output: { text: 'ok' },
+              },
+              {
+                type: 'data-status',
+                data: { toolCallId: 'CMD1', elapsedMs: 100 },
+              } as any,
+              {
+                type: 'tool-read',
+                toolCallId: 'CMD2',
+                state: 'output-available',
+                input: { path: 'README.md' },
+                output: { text: 'ok' },
+              },
+            ],
+          },
+        ],
+        sendMessage: mockSendMessage,
+        setMessages: mockSetMessages,
+        status: 'ready',
+        error: undefined,
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s-tool-group-data" />)
+      expect(html).toContain('Used command · read')
+      expect((html.match(/Used /g) ?? []).length).toBe(1)
+    })
+
     test('tools are NOT pushed to the end when they appear before text in parts', () => {
       // Regression guard: the previous renderer grouped by type and rendered
       // all texts first then all tools. With that bug, a tool-then-text

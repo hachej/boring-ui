@@ -158,6 +158,20 @@ function markdownUrlFor(sourcePath: string | null, assetPath: string): string {
   return rel && !rel.startsWith('.') ? rel : rel || assetPath
 }
 
+function contentTypeForPath(path: string): string {
+  switch (extname(path).toLowerCase()) {
+    case '.avif': return 'image/avif'
+    case '.gif': return 'image/gif'
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg'
+    case '.png': return 'image/png'
+    case '.svg': return 'image/svg+xml'
+    case '.webp': return 'image/webp'
+    case '.pdf': return 'application/pdf'
+    default: return 'application/octet-stream'
+  }
+}
+
 export function fileRoutes(
   app: FastifyInstance,
   opts: {
@@ -171,6 +185,35 @@ export function fileRoutes(
     if (opts.workspace) return opts.workspace
     throw new Error('file route requires workspace or getWorkspace')
   }
+
+  app.get('/api/v1/files/raw', async (request, reply) => {
+    const query = request.query as Record<string, unknown>
+    const path = requireStringParam(query.path, 'path', reply)
+    if (path === null) return
+
+    try {
+      const workspace = await resolveWorkspace(request)
+      if (!workspace.readBinaryFile) {
+        return reply.code(501).send({
+          error: { code: ERROR_CODE_INTERNAL, message: 'workspace does not support binary reads' },
+        })
+      }
+      const stat = await workspace.stat(path)
+      if (stat.kind !== 'file') {
+        return reply.code(400).send({
+          error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'path is not a file', field: 'path' },
+        })
+      }
+      const bytes = await workspace.readBinaryFile(path)
+      return reply
+        .header('content-type', contentTypeForPath(path))
+        .header('content-length', String(bytes.byteLength))
+        .header('cache-control', 'no-store')
+        .send(Buffer.from(bytes))
+    } catch (err) {
+      return classifyError(err, reply, 'file')
+    }
+  })
 
   app.get('/api/v1/files', async (request, reply) => {
     const query = request.query as Record<string, unknown>

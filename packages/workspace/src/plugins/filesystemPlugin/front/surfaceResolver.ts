@@ -9,7 +9,9 @@ import {
   CSV_VIEWER_PANEL_ID,
   EMPTY_FILE_PANEL_ID,
   FILESYSTEM_SURFACE_RESOLVER_ID,
+  IMAGE_VIEWER_PANEL_ID,
   MARKDOWN_EDITOR_PANEL_ID,
+  PDF_VIEWER_PANEL_ID,
 } from "../shared/constants"
 
 interface FilesystemSurfaceHandler {
@@ -36,6 +38,14 @@ const handlers: FilesystemSurfaceHandler[] = [
   {
     component: MARKDOWN_EDITOR_PANEL_ID,
     patterns: ["**/*.md", "**/*.mdx"],
+  },
+  {
+    component: IMAGE_VIEWER_PANEL_ID,
+    patterns: ["**/*.avif", "**/*.gif", "**/*.jpeg", "**/*.jpg", "**/*.png", "**/*.svg", "**/*.webp"],
+  },
+  {
+    component: PDF_VIEWER_PANEL_ID,
+    patterns: ["**/*.pdf"],
   },
   {
     component: EMPTY_FILE_PANEL_ID,

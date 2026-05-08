@@ -197,6 +197,21 @@ describe('file routes (NodeWorkspace integration)', () => {
     expect(typeof writeB.json().mtimeMs).toBe('number')
   })
 
+  test('GET /api/v1/files/raw streams binary media with content type', async () => {
+    const { app, workspaceRoot } = await createTestApp()
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+    await writeFile(join(workspaceRoot, 'chart.png'), pngBytes)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/raw?path=chart.png',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('image/png')
+    expect(res.rawPayload).toEqual(pngBytes)
+  })
+
   test('POST /api/v1/files/upload stores image bytes under configured path', async () => {
     const { app, workspaceRoot } = await createTestApp()
 
