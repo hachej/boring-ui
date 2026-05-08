@@ -14,6 +14,7 @@ import {
   loadSkills,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, SendMessageInput, RunContext } from "../../../shared/harness.js";
+import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { UIMessageChunk } from "../../../shared/message.js";
 import { adaptToolsForPi } from "./tool-adapter.js";
@@ -167,6 +168,7 @@ async function applyRequestedSessionOptions(
   }
 }
 
+const log = createLogger("pi-harness");
 const DEFAULT_ATTACHMENT_DIR = "assets/images";
 
 function extForAttachment(filename: string, contentType: string): string {
@@ -606,12 +608,16 @@ export function createPiCodingAgentHarness(opts: {
       // Process image attachments: pass as vision AND write to workspace.
       const initialImages: NonNullable<PromptOptions["images"]> = [];
       const savedPaths: string[] = [];
+      const writeErrors: string[] = [];
       for (const a of input.attachments ?? []) {
         const match = a.url.match(/^data:(image\/[^;]+);base64,(.+)$/);
         if (!match) continue;
         const [, contentType, b64] = match;
         initialImages.push({ type: "image", mimeType: contentType, data: b64 });
-        // Write to workspace so the agent can reference the file by path.
+        if (!ctx.workdir) {
+          writeErrors.push(`${a.filename ?? "image"}: no workdir`);
+          continue;
+        }
         try {
           const bytes = Buffer.from(b64, "base64");
           const ext = extForAttachment(a.filename ?? "image", contentType);
@@ -621,13 +627,22 @@ export function createPiCodingAgentHarness(opts: {
           await mkdir(join(ctx.workdir, DEFAULT_ATTACHMENT_DIR), { recursive: true });
           await writeFile(join(ctx.workdir, relPath), bytes);
           savedPaths.push(relPath);
-        } catch {
-          // best-effort: file write failure doesn't abort the turn
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          log.error("attachment write failed", { workdir: ctx.workdir, error: msg });
+          writeErrors.push(`${a.filename ?? "image"}: ${msg}`);
         }
       }
+      const attachmentNotes: string[] = [];
+      if (savedPaths.length > 0) {
+        attachmentNotes.push(`[Attached file(s) saved to workspace:\n${savedPaths.map((p) => `- ${p}`).join("\n")}]`);
+      }
+      if (writeErrors.length > 0) {
+        attachmentNotes.push(`[Warning: failed to save attachment(s) to workspace — ${writeErrors.join("; ")}. The image is available via vision only.]`);
+      }
       const effectiveMessage =
-        savedPaths.length > 0
-          ? `${input.message}\n\n[Attached file(s) saved to workspace:\n${savedPaths.map((p) => `- ${p}`).join("\n")}]`
+        attachmentNotes.length > 0
+          ? `${input.message}\n\n${attachmentNotes.join("\n")}`
           : input.message;
       promptPromise = startTurn(
         effectiveMessage,
