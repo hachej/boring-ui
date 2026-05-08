@@ -102,15 +102,11 @@ describe("native pi follow-up integration", () => {
     });
     chunks.push((await markerNext).value);
 
-    const textStartNext = reader.next();
-    emit({
-      type: "message_update",
-      assistantMessageEvent: { type: "text_start", contentIndex: 0 },
-    });
-    chunks.push((await textStartNext).value);
+    const piUserStartNext = reader.next();
+    chunks.push((await piUserStartNext).value);
 
     expect(chunks[1]).toMatchObject({ type: "data-followup-consumed", data: { text: "queued question" } });
-    expect(chunks[2]).toMatchObject({ type: "text-start", id: "turn-1:0" });
+    expect(chunks[2]).toMatchObject({ type: "data-pi-message-start", data: { role: "user", text: "queued question" } });
 
     promptHandle.resolve?.();
     await reader.return?.();
