@@ -1,6 +1,0 @@
-export const MACRO_PLUGIN_ID = "boring-macro"
-export const MACRO_CHART_PANEL_ID = "chart-canvas"
-export const MACRO_DECK_PANEL_ID = "deck"
-export const MACRO_SERIES_SURFACE_RESOLVER_ID = "boring-macro-series"
-export const MACRO_DECK_SURFACE_RESOLVER_ID = "boring-macro-deck-path"
-export const MACRO_OPEN_SERIES_SURFACE_KIND = "macro.open-series"

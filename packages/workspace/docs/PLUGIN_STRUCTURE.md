@@ -134,8 +134,8 @@ slash commands.
 
 - `packages/workspace/src/plugins/filesystemPlugin`
 - `packages/workspace/src/plugins/dataCatalogPlugin`
-- `apps/boring-macro-v2/src/plugins/macro`
 - `apps/workspace-playground/src/plugins/playgroundDataCatalog`
+- Macro plugin example: `hachej/boring-macro` (`src/plugins/macro`)
 
 ## Invariants
 

@@ -20,7 +20,6 @@ const sourceRoots = [
   "packages/workspace/src",
   "packages/workspace/stories",
   "packages/workspace/templates/plugin",
-  "apps/boring-macro-v2/src",
   "apps/workspace-playground/src",
 ]
   .map((path) => join(repoRoot, path))

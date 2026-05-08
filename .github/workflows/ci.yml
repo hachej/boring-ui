@@ -299,5 +299,4 @@ jobs:
 
       # boring-macro is deployed from its canonical standalone repository:
       # https://github.com/hachej/boring-macro
-      # Do not deploy it from this monorepo; the old apps/boring-macro-v2
-      # config points at archived paths and can overwrite production with a bad image.
+      # Do not deploy it from this monorepo.
