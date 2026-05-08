@@ -236,6 +236,52 @@ jobs:
       - name: Run e2e
         run: pnpm e2e
 
+  publish-ci:
+    name: Publish CI packages to npm
+    needs: [lint, typecheck, bundle-budget, core-bundle-budget, unit, invariants, e2e]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Set unique CI package version
+        id: version
+        run: node scripts/set-ci-package-version.mjs
+
+      - name: Build packages
+        run: pnpm build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Build CLI frontend
+        run: pnpm --filter @hachej/boring-ui-cli build:full
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Publish packages with ci dist-tag
+        run: |
+          for pkg in packages/core packages/workspace packages/agent packages/ui packages/cli; do
+            tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
+            npm publish "$pkg/$tarball" --access public --tag ci --provenance
+          done
+
   deploy:
     name: Deploy to Fly.io
     needs: [lint, typecheck, unit, invariants, e2e]
