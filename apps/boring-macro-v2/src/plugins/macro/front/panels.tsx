@@ -5,6 +5,7 @@ export const chartCanvasPanel: PanelConfig = definePanel({
   id: MACRO_CHART_PANEL_ID,
   title: "Chart",
   component: () => import("./panels/ChartCanvasPane").then((m) => ({ default: m.ChartCanvasPane })),
+  lazy: true,
   placement: "center",
   source: "app",
 })
@@ -13,6 +14,7 @@ export const deckPanel: PanelConfig = definePanel({
   id: MACRO_DECK_PANEL_ID,
   title: "Deck",
   component: () => import("./panels/DeckPane").then((m) => ({ default: m.DeckPane })),
+  lazy: true,
   placement: "center",
   source: "app",
 })

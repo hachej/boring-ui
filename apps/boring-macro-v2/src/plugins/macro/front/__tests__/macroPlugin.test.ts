@@ -158,6 +158,8 @@ describe("macroFront", () => {
     const captured = api.flush()
 
     expect(captured.panels.map((panel) => panel.id)).toEqual(["chart-canvas", "deck"])
+    expect(captured.leftTabs.map((tab) => tab.id)).toEqual(["macro-series"])
+    expect(captured.catalogs.map((catalog) => catalog.id)).toEqual(["macro-series"])
     expect(captured.surfaceResolvers.map((resolver) => resolver.id)).toEqual([
       "boring-macro-series",
       "boring-macro-deck-path",

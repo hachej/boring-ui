@@ -261,7 +261,11 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
   }
 
   const allIds = [seriesId, ...overlays.map((o) => o.id)]
-  const colorFor = (id: string) => COLORS[allIds.indexOf(id) % COLORS.length]
+  const colorFor = (id: string) => {
+    if (id === seriesId) return COLORS[0]
+    const index = Math.max(0, allIds.indexOf(id))
+    return COLORS[index % COLORS.length]
+  }
 
   // Map each series id to its yAxisId for dual-axis mode.
   const axisIdFor = (id: string): string | undefined => {

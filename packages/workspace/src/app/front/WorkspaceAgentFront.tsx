@@ -57,6 +57,8 @@ export interface WorkspaceAgentFrontProps<
   afterShell?: ReactNode
   appTitle?: string
   defaultSessionTitle?: string
+  defaultSurfaceOpen?: boolean
+  defaultWorkbenchLeftTab?: string
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number }>
@@ -212,6 +214,8 @@ export function WorkspaceAgentFront<
   onActiveSessionIdChange,
   appTitle = "Boring",
   defaultSessionTitle = "New session",
+  defaultSurfaceOpen,
+  defaultWorkbenchLeftTab,
   topBarLeft,
   topBarRight,
   chatParams,
@@ -279,7 +283,7 @@ export function WorkspaceAgentFront<
   )
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     `${shellStorageKey}:surface`,
-    false,
+    defaultSurfaceOpen ?? false,
     shellPersistenceEnabled,
   )
   const autoCreateSessionRef = useRef(false)
@@ -381,6 +385,7 @@ export function WorkspaceAgentFront<
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
+    defaultLeftTab: defaultWorkbenchLeftTab,
     extraPanels: shellExtraPanels,
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
@@ -389,6 +394,7 @@ export function WorkspaceAgentFront<
       setSurfaceOpen(false)
     },
   }), [
+    defaultWorkbenchLeftTab,
     handleSurfaceChange,
     handleSurfaceReady,
     resolvedSurfaceStorageKey,
@@ -461,6 +467,7 @@ export function WorkspaceAgentFront<
             surface={surfaceOpen ? "artifact-surface" : null}
             surfaceParams={surfaceParams as Record<string, unknown>}
             sidebar={surfaceOpen && hasLeftTabs ? "workbench-left" : null}
+            sidebarParams={surfaceOpen && hasLeftTabs && defaultWorkbenchLeftTab ? { defaultTab: defaultWorkbenchLeftTab } : undefined}
             storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
             onOpenNav={() => {
               setNavOpen(true)

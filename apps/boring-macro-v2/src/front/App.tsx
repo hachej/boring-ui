@@ -1,4 +1,4 @@
-import { ChatPanel } from "@boring/agent"
+import { ChatPanel, useSessions } from "@boring/agent"
 import { WorkspaceAgentFront } from "@boring/workspace/app/front"
 import {
   MacroStandaloneDeckRoute,
@@ -12,6 +12,7 @@ export function App() {
       fallback={
         <WorkspaceAgentFront
           chatPanel={ChatPanel}
+          useSessions={useSessions}
           plugins={[macroPlugin]}
           {...macroShellOptions}
         />

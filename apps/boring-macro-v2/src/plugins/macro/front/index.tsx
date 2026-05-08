@@ -3,6 +3,7 @@ import type { ComponentType } from "react"
 import type { BoringFrontFactory } from "@boring/workspace/plugin"
 import {
   composePlugins,
+  createExplorerOutputs,
   createExplorerPlugin,
   defineFrontPlugin,
   type ExplorerRow,
@@ -62,7 +63,9 @@ export const macroShellOptions = {
   workspaceId: "boring-macro",
   appTitle: "boring.macro",
   sessionStorageKey: "boring-macro:sessions",
-  surfaceStorageKey: "boring-macro:shell:surface",
+  surfaceStorageKey: "boring-macro:shell:v2:surface",
+  defaultSurfaceOpen: true,
+  defaultWorkbenchLeftTab: "macro-series",
   providerStorageKey: "boring-macro:layout",
   apiBaseUrl: "",
   apiTimeout: 10000,
@@ -118,6 +121,22 @@ const macroFront: BoringFrontFactory = (api) => {
     lazy: deckPanel.lazy,
     chromeless: deckPanel.chromeless,
   })
+  for (const output of createExplorerOutputs(createMacroSeriesExplorerOptions((row) => openSeriesPane(row.id)))) {
+    if (output.type === "left-tab") {
+      api.registerLeftTab({
+        id: output.id,
+        title: output.title,
+        panelId: output.id,
+        component: output.component,
+        icon: output.icon,
+        chromeless: output.chromeless,
+        source: output.source,
+      })
+    } else if (output.type === "catalog") {
+      api.registerCatalog(output.catalog)
+    }
+  }
+
   api.registerSurfaceResolver({
     id: "boring-macro-series",
     kind: MACRO_OPEN_SERIES_SURFACE_KIND,

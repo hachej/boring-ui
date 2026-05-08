@@ -61,6 +61,9 @@ export function WorkbenchLeftPane({
     return next
   }, [leftTabPanels])
   const [tab, setTab] = useState<WorkbenchLeftTabId>(defaultTab ?? "")
+  // Default tab is only a boot preference; once the user picks a source,
+  // async plugin tab registration must not steal focus back.
+  const userSelectedTabRef = useRef(false)
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "")
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -79,10 +82,19 @@ export function WorkbenchLeftPane({
   }, [searchOpen])
 
   useEffect(() => {
+    if (
+      defaultTab &&
+      !userSelectedTabRef.current &&
+      tabs.some((entry) => entry.id === defaultTab) &&
+      tab !== defaultTab
+    ) {
+      setTab(defaultTab)
+      return
+    }
     if (tabs.length > 0 && !tabs.some((entry) => entry.id === tab)) {
       setTab(tabs[0]!.id)
     }
-  }, [tab, tabs])
+  }, [defaultTab, tab, tabs])
 
   const toggleSearch = useCallback(() => {
     setSearchOpen((s) => {
@@ -123,7 +135,10 @@ export function WorkbenchLeftPane({
             <SegmentedTab
               key={entry.id}
               active={activeTab === entry.id}
-              onClick={() => setTab(entry.id)}
+              onClick={() => {
+                userSelectedTabRef.current = true
+                setTab(entry.id)
+              }}
               icon={entry.icon}
             >
               {entry.title}
