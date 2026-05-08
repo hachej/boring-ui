@@ -499,6 +499,37 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
+  // Message queue: one pending message held while agent is streaming.
+  const [pendingMessage, setPendingMessage] = useState<{
+    text: string
+    files: FileUIPart[]
+    serverMessage: string
+    attachments: Array<{ filename?: string; mediaType?: string; url?: string }>
+  } | null>(null)
+
+  // Auto-send the queued message when the current stream completes.
+  const prevStatusForQueue = useRef(status)
+  useEffect(() => {
+    const prev = prevStatusForQueue.current
+    prevStatusForQueue.current = status
+    if (status !== 'ready') return
+    if (prev !== 'streaming' && prev !== 'submitted') return
+    setPendingMessage((pending) => {
+      if (!pending) return null
+      void sendMessage(
+        { text: pending.text, files: pending.files },
+        { body: { sessionId, message: pending.serverMessage, model, attachments: pending.attachments } },
+      )
+      return null
+    })
+  }, [status, sessionId, model, sendMessage])
+
+  // Stop clears both the stream and any queued message.
+  const handleStop = useCallback(() => {
+    stop()
+    setPendingMessage(null)
+  }, [stop])
+
   // Escape stops the current run when streaming.
   // Guard: skip if the event target is an input/textarea so Escape can still
   // clear/dismiss those fields without also stopping the agent.
@@ -508,11 +539,11 @@ export function ChatPanel(props: ChatPanelProps) {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       e.preventDefault()
-      stop()
+      handleStop()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isStreaming, stop])
+  }, [isStreaming, handleStop])
 
   // Compose-history navigation (↑/↓ like a terminal)
   const userHistory = useMemo(() =>
@@ -689,6 +720,23 @@ export function ChatPanel(props: ChatPanelProps) {
       ...(mentionNote ? [mentionNote] : []),
     ].filter(Boolean).join('\n\n') || text
     setMentionedFiles([])
+
+    // Queue the message if the agent is currently streaming.
+    if (isStreaming) {
+      if (!pendingMessage) {
+        setPendingMessage({
+          text,
+          files: files ?? [],
+          serverMessage,
+          attachments: files?.map((f) => ({
+            filename: f.filename,
+            mediaType: f.mediaType,
+            url: f.url,
+          })) ?? [],
+        })
+      }
+      return
+    }
 
     // Fire-and-forget the send so handleSubmit returns as soon as the
     // payload is built. PromptInput clears attachments + text only after
@@ -995,6 +1043,14 @@ export function ChatPanel(props: ChatPanelProps) {
               </Message>
             )
           })}
+          {pendingMessage && (
+            <Message from="user">
+              <MessageContent className="opacity-50">
+                <div className="text-[11px] font-medium text-muted-foreground mb-1">Follow-up</div>
+                <div className="text-sm whitespace-pre-wrap">{pendingMessage.text}</div>
+              </MessageContent>
+            </Message>
+          )}
           {(() => {
             if (!error) return null
             const friendly = friendlyError(error)
@@ -1190,7 +1246,7 @@ export function ChatPanel(props: ChatPanelProps) {
                   <KbdHints />
                   <PromptInputSubmit
                     status={status}
-                  onStop={stop}
+                  onStop={handleStop}
                   className={cn(
                     // Primary action. Uses the warm accent (not `primary`,
                     // which is a neutral foreground tone) — this is the one
