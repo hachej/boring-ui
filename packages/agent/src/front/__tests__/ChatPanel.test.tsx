@@ -38,6 +38,8 @@ vi.mock('../primitives/attachments', () => ({
 
 let capturedOnSubmit: ((input: { text: string; files: unknown[] }) => void) | undefined
 
+const mockUseAttachments = vi.fn()
+
 vi.mock('../primitives/prompt-input', () => ({
   PromptInput: ({ children, onSubmit }: any) => {
     capturedOnSubmit = onSubmit
@@ -46,11 +48,7 @@ vi.mock('../primitives/prompt-input', () => ({
   PromptInputTextarea: () => <div data-testid="prompt-textarea" />,
   PromptInputFooter: ({ children }: any) => <div data-testid="prompt-footer">{children}</div>,
   PromptInputSubmit: ({ status }: any) => <div data-testid="prompt-submit" data-status={status} />,
-  usePromptInputAttachments: () => ({
-    files: [],
-    openFileDialog: vi.fn(),
-    remove: vi.fn(),
-  }),
+  usePromptInputAttachments: (...args: unknown[]) => mockUseAttachments(...args),
 }))
 
 import { ChatPanel } from '../ChatPanel'
@@ -80,6 +78,12 @@ beforeEach(() => {
   mockSendMessage.mockReset()
   mockSetMessages.mockReset()
   mockUseAgentChat.mockReset()
+  mockUseAttachments.mockReset()
+  mockUseAttachments.mockReturnValue({
+    files: [],
+    openFileDialog: vi.fn(),
+    remove: vi.fn(),
+  })
   mockUseAgentChat.mockReturnValue({
     messages: [],
     sendMessage: mockSendMessage,
@@ -782,6 +786,50 @@ describe('ChatPanel (shadcn)', () => {
       const idxText = html.indexOf('AFTER_TOOL')
       expect(idxTool).toBeGreaterThan(-1)
       expect(idxText).toBeGreaterThan(idxTool)
+    })
+  })
+
+  describe('AttachmentsList upload status', () => {
+    test('shows spinner overlay while file is uploading', () => {
+      mockUseAttachments.mockReturnValue({
+        files: [
+          {
+            id: 'f1',
+            type: 'file',
+            mediaType: 'image/png',
+            url: 'blob:fake',
+            filename: 'screenshot.png',
+            status: 'uploading',
+          },
+        ],
+        openFileDialog: vi.fn(),
+        remove: vi.fn(),
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).toContain('animate-spin')
+      expect(html).not.toContain('lucide-circle-alert')
+    })
+
+    test('shows error indicator when upload fails', () => {
+      mockUseAttachments.mockReturnValue({
+        files: [
+          {
+            id: 'f1',
+            type: 'file',
+            mediaType: 'image/png',
+            url: 'blob:fake',
+            filename: 'screenshot.png',
+            status: 'error',
+          },
+        ],
+        openFileDialog: vi.fn(),
+        remove: vi.fn(),
+      })
+
+      const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
+      expect(html).toContain('bg-destructive/20')
+      expect(html).not.toContain('animate-spin')
     })
   })
 })

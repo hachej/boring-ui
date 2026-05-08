@@ -1,0 +1,139 @@
+// @vitest-environment jsdom
+import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import {
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputSubmit,
+  usePromptInputAttachments,
+} from '../prompt-input'
+
+vi.mock('nanoid', () => ({ nanoid: vi.fn(() => 'test-id') }))
+
+URL.createObjectURL = vi.fn(() => 'blob:fake')
+URL.revokeObjectURL = vi.fn()
+
+// ----------------------------------------------------------------------------
+// Harness helpers
+// ----------------------------------------------------------------------------
+
+function AttachmentStatus() {
+  const { files } = usePromptInputAttachments()
+  return (
+    <>
+      <span data-testid="status">{files[0]?.status ?? 'none'}</span>
+      <span data-testid="count">{files.length}</span>
+    </>
+  )
+}
+
+interface HarnessProps {
+  onUploadFile?: (f: File) => Promise<{ url: string }>
+  onSubmit?: (v: { text: string; files: unknown[] }) => void
+}
+
+function Harness({ onUploadFile, onSubmit }: HarnessProps) {
+  return (
+    <PromptInput onUploadFile={onUploadFile} onSubmit={onSubmit ?? (() => {})}>
+      <PromptInputTextarea />
+      <PromptInputSubmit />
+      <AttachmentStatus />
+    </PromptInput>
+  )
+}
+
+function pasteFile(textarea: HTMLElement, file: File) {
+  fireEvent.paste(textarea, {
+    clipboardData: {
+      items: [{ kind: 'file', getAsFile: () => file }],
+    },
+  })
+}
+
+// ----------------------------------------------------------------------------
+// Tests
+// ----------------------------------------------------------------------------
+
+describe('PromptInput — upload flow', () => {
+  beforeEach(() => {
+    vi.mocked(URL.createObjectURL).mockReturnValue('blob:fake')
+  })
+
+  it('starts as uploading when onUploadFile is provided', async () => {
+    const onUploadFile = vi.fn(() => new Promise<{ url: string }>(() => {}))
+
+    render(<Harness onUploadFile={onUploadFile} />)
+
+    const textarea = screen.getByRole('textbox')
+    const file = new File(['x'], 'img.png', { type: 'image/png' })
+
+    act(() => {
+      pasteFile(textarea, file)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('count').textContent).toBe('1')
+    })
+    expect(screen.getByTestId('status').textContent).toBe('uploading')
+  })
+
+  it('status becomes ready after upload resolves', async () => {
+    const onUploadFile = vi.fn(() =>
+      Promise.resolve({ url: 'https://example.com/img.png' }),
+    )
+
+    render(<Harness onUploadFile={onUploadFile} />)
+
+    const textarea = screen.getByRole('textbox')
+    const file = new File(['x'], 'img.png', { type: 'image/png' })
+
+    act(() => {
+      pasteFile(textarea, file)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('ready')
+    })
+  })
+
+  it('status becomes error when upload rejects', async () => {
+    const onUploadFile = vi.fn(() => Promise.reject(new Error('upload failed')))
+
+    render(<Harness onUploadFile={onUploadFile} />)
+
+    const textarea = screen.getByRole('textbox')
+    const file = new File(['x'], 'img.png', { type: 'image/png' })
+
+    act(() => {
+      pasteFile(textarea, file)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('error')
+    })
+  })
+
+  it('submit is blocked while a file is still uploading', async () => {
+    const onUploadFile = vi.fn(() => new Promise<{ url: string }>(() => {}))
+    const onSubmit = vi.fn()
+
+    render(<Harness onUploadFile={onUploadFile} onSubmit={onSubmit} />)
+
+    const textarea = screen.getByRole('textbox')
+    const file = new File(['x'], 'img.png', { type: 'image/png' })
+
+    act(() => {
+      pasteFile(textarea, file)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('uploading')
+    })
+
+    // Attempt to submit the form while an upload is in progress.
+    const form = textarea.closest('form')!
+    fireEvent.submit(form)
+
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
