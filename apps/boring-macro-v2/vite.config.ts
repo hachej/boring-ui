@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
 
 const API_PORT = Number(process.env.API_PORT) || 5210
+const FRONTEND_PORT = Number(process.env.FRONTEND_PORT) || 5200
 const PACKAGES = resolve(__dirname, "../../packages")
 
 // Alias @boring/workspace → its src/ so vite HMR picks up workspace edits
@@ -38,7 +39,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5200,
+    port: FRONTEND_PORT,
     host: true,
     proxy: {
       "/api": `http://127.0.0.1:${API_PORT}`,
@@ -53,6 +54,7 @@ export default defineConfig({
       ignored: [
         "**/deck/**",
         "**/*.md",
+        "**/src/plugins/**/front/**",
         "**/test-results/**",
         "**/.tsbuildinfo*",
         "**/.vite/**",

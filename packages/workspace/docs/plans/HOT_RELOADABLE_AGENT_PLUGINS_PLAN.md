@@ -812,36 +812,36 @@ On `boring.plugin.unload`: call `unregisterByPluginId(id)` on all stores.
 
 ### P1-A: `boring-macro` — `agent/index.ts`
 
-- [ ] Create `apps/boring-macro-v2/src/plugins/macro/agent/index.ts` as `ExtensionFactory`
-- [ ] Rewrite `execute_sql`, `macro_search`, `get_series_data`, `persist_derived_series` as `ToolDefinition` with TypeBox schemas
-- [ ] Add `api.on("resources_discover", ...)` returning `skillPaths` + `promptPaths`
-- [ ] Delete `agent/tools/macroTools.ts`
+- [x] Create `apps/boring-macro-v2/src/plugins/macro/agent/index.ts` as `ExtensionFactory`
+- [x] Rewrite `execute_sql`, `macro_search`, `get_series_data`, `persist_derived_series` as `ToolDefinition` with TypeBox schemas
+- [x] Add `api.on("resources_discover", ...)` returning `skillPaths` + `promptPaths`
+- [x] Delete `agent/tools/macroTools.ts`
 
 ### P1-B: `boring-macro` — skills + prompts
 
-- [ ] Move `workspace-template/.agents/skills/macro-deck/SKILL.md` → `agent/skills/macro-deck.md`
-- [ ] Move `workspace-template/.agents/skills/macro-transform/SKILL.md` → `agent/skills/macro-transform.md`
-- [ ] Create `agent/prompts/draft-deck.md` → `/draft-deck <topic>`
-- [ ] Create `agent/prompts/analyze-series.md` → `/analyze-series <id>`
-- [ ] Create `agent/prompts/plot-series.md` → `/plot-series <id>`
+- [x] Move `workspace-template/.agents/skills/macro-deck/SKILL.md` → `agent/skills/macro-deck.md`
+- [x] Move `workspace-template/.agents/skills/macro-transform/SKILL.md` → `agent/skills/macro-transform.md`
+- [x] Create `agent/prompts/draft-deck.md` → `/draft-deck <topic>`
+- [x] Create `agent/prompts/analyze-series.md` → `/analyze-series <id>`
+- [x] Create `agent/prompts/plot-series.md` → `/plot-series <id>`
 
 ### P1-C: `boring-macro` — SDK + template relocation
 
-- [ ] Move `agent/sdk/` → `sdk/` (plugin root)
-- [ ] Move `agent/workspace-template/` (deck/, transforms/) → `server/template/`
-- [ ] Update `macroProvisioning` URL references in `server/index.ts`
+- [x] Move `agent/sdk/` → `sdk/` (plugin root)
+- [x] Move `agent/workspace-template/` (deck/, transforms/) → `server/template/`
+- [x] Update `macroProvisioning` URL references in `server/index.ts`
 
 ### P1-D: `boring-macro` — server cleanup
 
-- [ ] Remove `agentTools: tools` from `defineServerPlugin` call
-- [ ] Remove `systemPrompt` string from `makeMacroServerPlugin`; if still needed, move it to `"boring".systemPrompt` in `package.json`
-- [ ] Remove `createDataCatalogSkillPrompt()` import and usage
-- [ ] Delete `readMacroAppPrompt()` (reads `.pi/APPEND_SYSTEM.md`) — obsolete
+- [x] Remove `agentTools: tools` from `defineServerPlugin` call
+- [x] Remove `systemPrompt` string from `makeMacroServerPlugin`; if still needed, move it to `"boring".systemPrompt` in `package.json`
+- [x] Remove `createDataCatalogSkillPrompt()` import and usage
+- [x] Delete `readMacroAppPrompt()` (reads `.pi/APPEND_SYSTEM.md`) — obsolete
 
 ### P1-E: `boring-macro` — `front/index.tsx` to `BoringFrontFactory`
 
-- [ ] Rewrite `front/index.tsx` default export as `BoringFrontFactory` (panels, left tabs, resolvers only)
-- [ ] Update `bootstrap.ts` to wrap with `boringFrontFactoryToPlugin("macro", macroFront)`
+- [x] Rewrite `front/index.tsx` default export as `BoringFrontFactory` (panels, left tabs, resolvers only)
+- [ ] Update `bootstrap.ts` to wrap with `boringFrontFactoryToPlugin("macro", macroFront)` — deferred; app still statically composes named `macroPlugin` while dynamic reload consumes the default factory
 
 ### P1-F/P1-G: `filesystemPlugin` — keep as core workspace infrastructure
 
@@ -852,12 +852,13 @@ Decision update: do **not** migrate `filesystemPlugin` to a pi extension or hot-
 - [x] Exclude `filesystemPlugin` from generated/plugin hot-reload scope
 - [ ] Revisit only if external shells need a separately consumable filesystem front factory
 
-### P1-H: `dataCatalogPlugin` — defer native pi migration while it depends on `ExplorerAdapter`
+### P1-H: `dataCatalogPlugin` — pi-native injected factory, partial hot reload
 
-Decision update: do **not** migrate `dataCatalogPlugin` to a path-loaded pi extension in this phase. Its agent tool depends on an injected `ExplorerAdapter` supplied by the host/plugin at runtime. That violates the runtime dependency rule for path-hot-reloadable plugins.
+Decision update: migrate `dataCatalogPlugin` to a native pi tool, but accept **partial** hot reload while it depends on an injected `ExplorerAdapter`. The server plugin contributes an in-process `extensionFactory` that closes over the adapter. Pi reload re-runs the factory and re-registers the native tool/prompt, but source changes to the closed-over factory/adapter require the host app/dev server to refresh that closure. A future HTTP catalog boundary can make this path-loaded and fully hot-reloadable.
 
-- [x] Keep `createDataCatalogAgentTool({ adapter })` on the static/injected `agentTools` path for now
-- [x] Keep `createDataCatalogSkillPrompt()` paired with that injected tool for now
+- [x] Rewrite data catalog agent execution as a pi-native tool definition
+- [x] Add `extensionFactories` to workspace server plugin bootstrap
+- [x] Wire `createDataCatalogServerPlugin()` to contribute `createDataCatalogPiExtension({ adapter })`
 - [ ] Revisit after catalog search is exposed through a stable boundary, preferably an HTTP route such as `/api/catalog/search`
 - [ ] Then rewrite the data catalog agent layer as a path-loaded pi `ToolDefinition` that calls the stable boundary
 

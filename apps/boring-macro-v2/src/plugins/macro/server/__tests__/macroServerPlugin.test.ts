@@ -1,12 +1,14 @@
 import { existsSync } from "node:fs"
 import { describe, it, expect, vi } from "vitest"
-import { makeMacroServerPlugin, createMacroServerPlugin } from "../index"
+import macroBoringServer, { makeMacroServerPlugin, createMacroServerPlugin } from "../index"
 import type { MacroConfig } from "../config"
 
 // Mock the workspace server entrypoint to avoid pulling in @boring/agent/server
 vi.mock("@boring/workspace/app/server", () => ({
   defineServerPlugin: vi.fn((plugin: unknown) => ({ ...plugin as object })),
 }))
+
+vi.mock("@boring/workspace/server", () => ({}))
 
 vi.mock("../config", () => ({
   loadMacroConfig: vi.fn().mockResolvedValue({
@@ -65,6 +67,14 @@ describe("makeMacroServerPlugin", () => {
 
   it("routes is a function", () => {
     expect(typeof plugin.routes).toBe("function")
+  })
+})
+
+describe("macro boring server factory", () => {
+  it("default-exports a BoringServerFactory for asset hot reload", async () => {
+    const api = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() }
+    await macroBoringServer(api as any)
+    expect(api.get).toHaveBeenCalledWith("/info", expect.any(Function))
   })
 })
 

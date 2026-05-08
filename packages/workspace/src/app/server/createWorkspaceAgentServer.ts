@@ -32,11 +32,12 @@ import {
   type ComposeServerPluginsOptions,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
+  type WorkspaceExtensionFactory,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
 
-type HostExtensionFactory = (api: unknown) => void | Promise<void>
+type HostExtensionFactory = WorkspaceExtensionFactory
 
 export interface WorkspaceAgentResourceLoaderOptions {
   noContextFiles?: boolean
@@ -157,7 +158,7 @@ export function collectWorkspaceAgentServerPlugins(
         additionalSkillPaths: [workspaceSkillsDir, ...callerAdditional],
         piPackages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
         additionalExtensionPaths: [...result.extensionPaths, ...callerExtensionPaths],
-        extensionFactories: callerExtensionFactories,
+        extensionFactories: [...result.extensionFactories, ...callerExtensionFactories],
       },
     },
   }

@@ -34,6 +34,39 @@ function errorResult(text: string): ToolResult {
   return { content: [{ type: "text", text }], isError: true }
 }
 
+interface PiToolUpdate {
+  content: Array<{ type: "text"; text: string }>
+  details?: unknown
+}
+
+interface PiToolDefinition {
+  name: string
+  label: string
+  description: string
+  parameters: Record<string, unknown>
+  promptSnippet?: string
+  execute(
+    toolCallId: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+    onUpdate?: (update: PiToolUpdate) => void,
+    ctx?: unknown,
+  ): Promise<{ content: Array<{ type: "text"; text: string }>; details?: unknown }>
+}
+
+type DataCatalogExtensionFactory = (api: unknown) => void | Promise<void>
+
+interface DataCatalogPiExtensionAPI {
+  registerTool(tool: PiToolDefinition): void
+  on(
+    event: "before_agent_start",
+    handler: (event: { systemPrompt: string }) =>
+      | void
+      | { systemPrompt: string }
+      | Promise<void | { systemPrompt: string }>,
+  ): void
+}
+
 function clampLimit(value: unknown, fallback: number, max: number): number {
   const numeric =
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN
@@ -83,15 +116,19 @@ export function formatDataCatalogSearchResult(
   return `Found ${total} results (showing ${result.items.length}):\n\n${lines.join("\n")}`
 }
 
-export function createDataCatalogAgentTool(
-  options: DataCatalogAgentToolOptions,
-): AgentTool {
+function createDataCatalogToolCore(options: DataCatalogAgentToolOptions): {
+  name: string
+  label: string
+  description: string
+  parameters: Record<string, unknown>
+  search(params: Record<string, unknown>, signal?: AbortSignal): Promise<{ text: string; details: SearchResult }>
+} {
   const name = options.name ?? DATA_CATALOG_DEFAULT_TOOL_NAME
   const label = options.label ?? "data catalog"
   const { defaultLimit, maxLimit } = normalizeLimitOptions(options)
-
   return {
     name,
+    label,
     description: `Search the ${label}. Use this before opening data visualizations or asking for a specific dataset.`,
     parameters: {
       type: "object",
@@ -110,24 +147,76 @@ export function createDataCatalogAgentTool(
       required: ["query"],
       additionalProperties: false,
     },
-    async execute(params, ctx) {
+    async search(params, signal) {
       const query = String(params.query ?? "").trim()
-      if (!query) return errorResult("query is required")
+      if (!query) throw new Error("query is required")
       const limit = clampLimit(params.limit, defaultLimit, maxLimit)
+      const result = await options.adapter.search({
+        query,
+        filters: {},
+        limit,
+        offset: 0,
+        signal,
+      })
+      return { text: formatDataCatalogSearchResult(query, result), details: result }
+    },
+  }
+}
 
+export function createDataCatalogAgentTool(
+  options: DataCatalogAgentToolOptions,
+): AgentTool {
+  const core = createDataCatalogToolCore(options)
+
+  return {
+    name: core.name,
+    description: core.description,
+    parameters: core.parameters,
+    async execute(params, ctx) {
       try {
-        const result = await options.adapter.search({
-          query,
-          filters: {},
-          limit,
-          offset: 0,
-          signal: ctx.abortSignal,
-        })
-        return textResult(formatDataCatalogSearchResult(query, result), result)
+        const result = await core.search(params, ctx.abortSignal)
+        return textResult(result.text, result.details)
       } catch (error) {
         return errorResult(error instanceof Error ? error.message : String(error))
       }
     },
+  }
+}
+
+export function createDataCatalogPiTool(
+  options: DataCatalogAgentToolOptions,
+): PiToolDefinition {
+  const core = createDataCatalogToolCore(options)
+  return {
+    name: core.name,
+    label: core.label,
+    description: core.description,
+    parameters: core.parameters,
+    async execute(_toolCallId, params, signal) {
+      const result = await core.search(params, signal)
+      return {
+        content: [{ type: "text", text: result.text }],
+        details: result.details,
+      }
+    },
+  }
+}
+
+export function createDataCatalogPiExtension(
+  options: DataCatalogAgentPluginOptions,
+): DataCatalogExtensionFactory {
+  return (api) => {
+    const pi = api as DataCatalogPiExtensionAPI
+    const tool = createDataCatalogPiTool(options)
+    pi.registerTool(tool)
+    pi.on("before_agent_start", (event) => ({
+      systemPrompt: `${event.systemPrompt}\n\n${createDataCatalogSkillPrompt({
+        label: options.label,
+        toolName: tool.name,
+        surfaceKind: options.surfaceKind,
+        guidance: options.guidance,
+      })}`,
+    }))
   }
 }
 

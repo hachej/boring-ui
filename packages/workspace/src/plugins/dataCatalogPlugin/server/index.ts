@@ -1,8 +1,8 @@
 /**
  * dataCatalogPlugin — server composition layer.
  *
- * Wraps the agent-side tool and skill prompt (defined in `../agent/`) with
- * `defineServerPlugin` so that workspace server bootstrapping can pick them up
+ * Wraps the agent-side pi extension factory (defined in `../agent/`) with
+ * `defineServerPlugin` so that workspace server bootstrapping can pick it up
  * automatically.  HTTP routes are intentionally absent: the data catalog does
  * not expose any server endpoints of its own.
  */
@@ -10,16 +10,16 @@ import {
   defineServerPlugin,
   type WorkspaceServerPlugin,
 } from "../../../server/plugins/bootstrapServer"
-import type { AgentTool } from "../../../shared/types/agent-tool"
 import { DATA_CATALOG_PLUGIN_ID } from "../shared/constants"
 import {
-  createDataCatalogAgentTool,
-  createDataCatalogSkillPrompt,
+  createDataCatalogPiExtension,
   type DataCatalogAgentPluginOptions,
 } from "../agent"
 
 export {
   createDataCatalogAgentTool,
+  createDataCatalogPiExtension,
+  createDataCatalogPiTool,
   createDataCatalogSkillPrompt,
   formatDataCatalogSearchResult,
 } from "../agent"
@@ -37,17 +37,10 @@ export type DataCatalogServerPluginOptions = DataCatalogAgentPluginOptions
 
 export function createDataCatalogServerPlugin(
   options: DataCatalogAgentPluginOptions,
-): WorkspaceServerPlugin & { agentTools: AgentTool[]; systemPrompt: string } {
-  const tool = createDataCatalogAgentTool(options)
+): WorkspaceServerPlugin {
   return defineServerPlugin({
     id: options.id ?? DATA_CATALOG_PLUGIN_ID,
     label: options.label ?? "Data Catalog",
-    agentTools: [tool],
-    systemPrompt: createDataCatalogSkillPrompt({
-      label: options.label,
-      toolName: tool.name,
-      surfaceKind: options.surfaceKind,
-      guidance: options.guidance,
-    }),
+    extensionFactories: [createDataCatalogPiExtension(options)],
   })
 }

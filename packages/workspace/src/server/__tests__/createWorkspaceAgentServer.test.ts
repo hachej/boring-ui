@@ -50,6 +50,8 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
         return { content: [{ type: "text" as const, text: "ok" }] }
       },
     }
+    const hostFactory = () => undefined
+    const pluginFactory = () => undefined
     const result = collectWorkspaceAgentServerPlugins({
       workspaceRoot,
       systemPromptAppend: "Host prompt",
@@ -57,6 +59,7 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
         additionalSkillPaths: ["custom-skills"],
         piPackages: ["npm:host-pi", { source: "npm:plugin-pi" }],
         additionalExtensionPaths: ["/host/agent/index.ts"],
+        extensionFactories: [hostFactory],
       },
       plugins: [
         {
@@ -65,6 +68,7 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
           agentTools: [domainTool],
           piPackages: ["npm:plugin-pi"],
           extensionPaths: ["/plugin/agent/index.ts"],
+          extensionFactories: [pluginFactory],
         },
       ],
     })
@@ -83,6 +87,10 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
     expect(result.agentOptions.resourceLoaderOptions?.additionalExtensionPaths).toEqual([
       "/plugin/agent/index.ts",
       "/host/agent/index.ts",
+    ])
+    expect(result.agentOptions.resourceLoaderOptions?.extensionFactories).toEqual([
+      pluginFactory,
+      hostFactory,
     ])
   })
 

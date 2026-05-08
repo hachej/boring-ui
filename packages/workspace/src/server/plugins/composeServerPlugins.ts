@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {
   defineServerPlugin,
+  type WorkspaceExtensionFactory,
   type WorkspaceServerPlugin,
 } from "./defineServerPlugin"
 import {
@@ -16,6 +17,7 @@ export interface ComposeServerPluginsOptions {
   plugins: WorkspaceServerPlugin[]
   piPackages?: WorkspacePiPackageSource[]
   extensionPaths?: string[]
+  extensionFactories?: WorkspaceExtensionFactory[]
   systemPrompt?: string
   agentTools?: AgentTool[]
   provisioning?: RuntimeProvisioningContribution
@@ -77,6 +79,10 @@ export function composeServerPlugins(
     ...options.plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
     ...(options.extensionPaths ?? []),
   ]
+  const extensionFactories = [
+    ...options.plugins.flatMap((plugin) => plugin.extensionFactories ?? []),
+    ...(options.extensionFactories ?? []),
+  ]
   const agentTools = [
     ...options.plugins.flatMap((plugin) => plugin.agentTools ?? []),
     ...(options.agentTools ?? []),
@@ -99,6 +105,7 @@ export function composeServerPlugins(
     ...(options.label !== undefined ? { label: options.label } : {}),
     ...(piPackages.length > 0 ? { piPackages } : {}),
     ...(extensionPaths.length > 0 ? { extensionPaths } : {}),
+    ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
     ...(agentTools.length > 0 ? { agentTools } : {}),
     ...(provisioning ? { provisioning } : {}),

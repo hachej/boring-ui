@@ -1,6 +1,8 @@
 import type { RuntimeProvisioningContribution } from "@boring/agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
+
+export type WorkspaceExtensionFactory = (api: unknown) => void | Promise<void>
 import {
   PI_PACKAGE_RESOURCE_FILTERS,
   type WorkspacePiPackageSource,
@@ -21,6 +23,13 @@ export interface WorkspaceServerPlugin {
    * loading and ctx.reload() re-imports fresh source.
    */
   extensionPaths?: string[]
+  /**
+   * In-process native pi extensions for plugins that need host-created
+   * runtime dependencies. These are pi-native but only partially hot-reloadable:
+   * pi reload re-runs the factory, but source changes to the closure require
+   * the host app/dev server to refresh the factory.
+   */
+  extensionFactories?: WorkspaceExtensionFactory[]
   systemPrompt?: string
   agentTools?: AgentTool[]
   provisioning?: RuntimeProvisioningContribution
@@ -204,6 +213,16 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
     plugin.extensionPaths.forEach((path, index) => {
       if (typeof path !== "string" || path.length === 0) {
         fail(plugin.id, `extensionPaths[${index}] must be a non-empty string`)
+      }
+    })
+  }
+  if (plugin.extensionFactories !== undefined) {
+    if (!Array.isArray(plugin.extensionFactories)) {
+      fail(plugin.id, "extensionFactories must be an array when provided")
+    }
+    plugin.extensionFactories.forEach((factory, index) => {
+      if (typeof factory !== "function") {
+        fail(plugin.id, `extensionFactories[${index}] must be a function`)
       }
     })
   }
