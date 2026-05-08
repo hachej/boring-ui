@@ -198,7 +198,7 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     const ids = screen.getByTestId("ids").textContent!.split(",")
-    // 4 core panels (chat overwritten by prop's chat) + 7 filesystem outputs/panels + testPanel
+    // 4 core panels (chat overwritten by prop's chat) + 8 filesystem outputs/panels + testPanel
     expect(ids).toContain("chat")
     expect(ids).toContain("session-list")
     expect(ids).toContain("workbench-left")
@@ -206,7 +206,7 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(ids).toContain("empty-file-panel")
     expect(ids).toContain("files")
     expect(ids).toContain("test-panel")
-    expect(ids).toHaveLength(12)
+    expect(ids).toHaveLength(13)
   })
 
   it("excludeDefaults removes default plugin panels but not core panels", () => {
@@ -349,10 +349,10 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    // 4 core + 7 filesystem + testPanel = 12 (prop's chat filtered by capabilities,
+    // 4 core + 8 filesystem + testPanel = 13 (prop's chat filtered by capabilities,
     // but core's chat has no requiresCapabilities so stays — prop's chat overwrites
-    // core's, so chat is filtered). Result: 4-1 core + 7 filesystem + testPanel = 11
-    expect(screen.getByTestId("count").textContent).toBe("11")
+    // core's, so chat is filtered). Result: 4-1 core + 8 filesystem + testPanel = 12
+    expect(screen.getByTestId("count").textContent).toBe("12")
   })
 
   it("custom panel with same ID as another overrides it", () => {
@@ -472,8 +472,8 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    // 4 core + 7 filesystem default outputs/panels = 11
-    expect(screen.getByTestId("count").textContent).toBe("11")
+    // 4 core + 8 filesystem default outputs/panels = 12
+    expect(screen.getByTestId("count").textContent).toBe("12")
 
     render(
       <WorkspaceProvider
@@ -483,7 +483,7 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("11")
+    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("12")
   })
 })
 
