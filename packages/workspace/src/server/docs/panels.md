@@ -5,11 +5,14 @@ Use panels for plugin UI.
 ## BoringFrontFactory panel registration
 
 ```tsx
+api.registerProvider({ id: "my-runtime", component: MyProvider })
+api.registerBinding({ id: "my-listener", component: MyBinding })
 api.registerPanel({ id: "my-panel", label: "My Panel", component: MyPanel })
 api.registerLeftTab({ id: "my-tab", title: "My Plugin", panelId: "my-panel", component: MyPanel })
+api.registerCatalog({ id: "my-catalog", label: "My Catalog", adapter, onSelect })
 ```
 
-Panel ids must match `package.json["boring"].panels[].id`.
+Panel ids must match `package.json["boring"].panels[].id`. Providers, bindings, and catalogs are supported for statically composed app/core plugins; dynamic hot reload currently uses panels, left tabs, commands, and surface resolvers.
 
 ## Pane props
 

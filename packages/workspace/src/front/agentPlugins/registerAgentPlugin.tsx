@@ -91,20 +91,25 @@ async function defaultImportFront(frontUrl: string, revision: number): Promise<{
 async function captureFrontFactory(pluginId: string, frontUrl: string, revision: number, importFront: RegisterAgentPluginOptions["importFront"] = defaultImportFront): Promise<CapturedBoringFrontRegistrations> {
   const mod = await importFront(frontUrl, revision)
   if (typeof mod.default !== "function") throw new Error(`plugin ${pluginId} front module must default-export a BoringFrontFactory`)
-  const api = createCapturingBoringFrontAPI()
+  const api = createCapturingBoringFrontAPI({ pluginId })
   await mod.default(api)
   return api.flush()
 }
 
 function commitCapturedFrontFactory(pluginId: string, captured: CapturedBoringFrontRegistrations, registries: ReturnType<typeof getRegistries>): void {
+  // Dynamic hot reload can atomically replace registry-owned contributions.
+  // Providers, bindings, and catalogs need a React render boundary and remain
+  // static-composition-only until the front asset loader grows that support.
   for (const panel of captured.panels) {
     registries.panels.register(panel.id, {
       title: panel.label ?? panel.id,
       component: panel.component,
-      placement: "center",
-      source: "plugin",
+      placement: panel.placement ?? "center",
+      source: panel.source ?? "plugin",
       pluginId,
       ...(panel.icon ? { icon: panel.icon } : {}),
+      ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
+      ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
       ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
       ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
     })
@@ -114,9 +119,10 @@ function commitCapturedFrontFactory(pluginId: string, captured: CapturedBoringFr
       title: tab.title,
       component: tab.component ?? (() => null),
       placement: "left-tab",
-      source: "plugin",
+      source: tab.source ?? "plugin",
       pluginId,
       ...(tab.icon ? { icon: tab.icon } : {}),
+      ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
       ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
       ...(tab.chromeless !== undefined ? { chromeless: tab.chromeless } : {}),
     })
@@ -131,7 +137,7 @@ function commitCapturedFrontFactory(pluginId: string, captured: CapturedBoringFr
   }
   for (const resolver of captured.surfaceResolvers) {
     registries.surfaceResolvers.register(resolver.id ?? `${pluginId}:${resolver.kind}`, {
-      source: "plugin",
+      source: resolver.source ?? "plugin",
       pluginId,
       resolve(request: SurfaceOpenRequest) {
         if (request.kind !== resolver.kind) return undefined

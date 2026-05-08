@@ -271,35 +271,34 @@ function createCapturingBoringFrontAPI(): BoringFrontAPI & { flush(): CapturedRe
 | Left tabs | ✅ | ✅ |
 | Panel commands | ✅ | ✅ |
 | Surface resolvers | ✅ | ✅ |
-| Providers / bindings | ❌ | ✅ |
-| Catalog registration | ❌ | ✅ |
+| Providers / bindings | ✅ for static composition; dynamic mounting deferred | ✅ |
+| Catalog registration | ✅ for static composition; dynamic mounting deferred | ✅ |
 | Hot-reload | ✅ | ❌ |
 
 ### Filesystem dual-export pattern
 
-`filesystemPlugin` needs providers, bindings, and catalogs — not expressible via `BoringFrontFactory`. It exports both shapes:
+`filesystemPlugin` needs providers, bindings, and catalogs. `BoringFrontFactory` now expresses those for static composition, so filesystem exports a default factory and derives the legacy object shape from it:
 
 ```ts
 // filesystemPlugin/front/index.ts
 
-// Default export: BoringFrontFactory — panels + resolvers (hot-reloadable)
 const filesystemFront: BoringFrontFactory = (api) => {
-  api.registerPanel({ id: "code-editor",     component: CodeEditorPane })
-  api.registerPanel({ id: "markdown-editor", component: MarkdownEditorPane })
-  api.registerSurfaceResolver({ kind: "file.open", resolve: filesystemSurfaceResolver })
-  api.registerLeftTab({ id: "files", title: "Files", panelId: "code-editor", icon: FolderTree })
+  api.registerProvider({ id: "filesystem-data", component: FilesystemDataProvider })
+  api.registerBinding({ id: "filesystem-tree-preload", component: FilesystemTreePreloadBinding })
+  api.registerLeftTab({ id: "files", title: "Files", panelId: "files", component: FileTreePane })
+  api.registerPanel({ id: "code-editor", component: CodeEditorPane, label: "Code" })
+  api.registerPanel({ id: "markdown-editor", component: MarkdownEditorPane, label: "Markdown" })
+  api.registerSurfaceResolver({ kind: "workspace.open.path", resolve: filesystemSurfaceResolver.resolve })
+  api.registerBinding({ id: "filesystem-catalog", component: FilesystemCatalogBinding })
 }
 export default filesystemFront
 
-// Named export: full WorkspaceFrontPlugin — bootstrap only (providers/bindings/catalogs)
-export const filesystemPlugin = defineFrontPlugin({
-  id: FILESYSTEM_PLUGIN_ID,
-  outputs: filesystemOutputs,  // includes providers, bindings, catalogs
-  bindings: [FilesystemCatalogBinding, FilesystemFilePanelBinding, FilesystemAgentFileBridge],
+export const filesystemPlugin = boringFrontFactoryToPlugin(FILESYSTEM_PLUGIN_ID, filesystemFront, {
+  label: "Filesystem",
 })
 ```
 
-Bootstrap uses the named export. SSE hot-reload re-imports the default export (panels + resolvers subset only). Providers and bindings stay from cold start — they don't change during a session.
+Bootstrap uses the named export. Filesystem remains excluded from path-loaded hot reload; the default factory exists for API parity and for external shells that want the same authoring shape.
 
 ---
 
@@ -845,12 +844,12 @@ On `boring.plugin.unload`: call `unregisterByPluginId(id)` on all stores.
 
 ### P1-F/P1-G: `filesystemPlugin` — keep as core workspace infrastructure
 
-Decision update: do **not** migrate `filesystemPlugin` to a pi extension or hot-reloadable `BoringFrontFactory` in this phase. It owns core workspace infrastructure — file tree, editor panes, file-event invalidation, data providers, open-path behavior, and bridge bindings — not agent-authored app/plugin behavior.
+Decision update: do **not** migrate `filesystemPlugin` to a pi extension or hot-reloadable plugin asset in this phase. It owns core workspace infrastructure — file tree, editor panes, file-event invalidation, data providers, open-path behavior, and bridge bindings — not agent-authored app/plugin behavior. Its front shape is still aligned with `BoringFrontFactory` now that the factory API supports providers, bindings, and catalogs for static composition.
 
 - [x] Keep `packages/workspace/src/plugins/filesystemPlugin/**` statically composed by workspace bootstrap
 - [x] Keep filesystem agent tools in `@boring/agent`/pi harness, not in `filesystemPlugin`
 - [x] Exclude `filesystemPlugin` from generated/plugin hot-reload scope
-- [ ] Revisit only if external shells need a separately consumable filesystem front factory
+- [x] Export a default filesystem `BoringFrontFactory` and derive the legacy `filesystemPlugin` object from it
 
 ### P1-H: `dataCatalogPlugin` — pi-native injected factory, partial hot reload
 

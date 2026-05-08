@@ -1,7 +1,10 @@
 import { createElement, useEffect } from "react"
 import { FolderTree } from "lucide-react"
 import "./events"
-import { defineFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
+import {
+  boringFrontFactoryToPlugin,
+  type BoringFrontFactory,
+} from "../../../shared/plugins/frontFactory"
 import { postUiCommand } from "../../../front/bridge"
 import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
@@ -16,7 +19,6 @@ import { filesystemSurfaceResolver } from "./surfaceResolver"
 import type {
   PluginProviderProps,
 } from "../../../shared/plugins/types"
-import type { WorkspaceFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
 import {
   CODE_EDITOR_PANEL_ID,
   CSV_VIEWER_PANEL_ID,
@@ -65,66 +67,6 @@ function FilesystemTreePreloadBinding() {
   return null
 }
 
-const filesystemOutputs: WorkspaceFrontPlugin["outputs"] = [
-  {
-    type: "provider",
-    id: "filesystem-data",
-    component: FilesystemDataProvider,
-  },
-  {
-    type: "binding",
-    id: "filesystem-tree-preload",
-    component: FilesystemTreePreloadBinding,
-  },
-  {
-    type: "left-tab",
-    id: FILES_LEFT_TAB_ID,
-    title: "Files",
-    component: FileTreePane,
-    source: "builtin",
-    icon: FolderTree,
-  },
-  {
-    type: "panel",
-    panel: emptyFilePanelDef,
-  },
-  {
-    type: "panel",
-    panel: {
-      id: CODE_EDITOR_PANEL_ID,
-      title: "Code",
-      component: CodeEditorPane,
-      placement: "center",
-      source: "builtin",
-    },
-  },
-  {
-    type: "panel",
-    panel: {
-      id: CSV_VIEWER_PANEL_ID,
-      title: "CSV",
-      // CSV currently uses the text editor shell; a tabular viewer can replace
-      // this panel without changing the filesystem resolver contract.
-      component: CodeEditorPane,
-      placement: "center",
-      source: "builtin",
-    },
-  },
-  {
-    type: "panel",
-    panel: {
-      id: MARKDOWN_EDITOR_PANEL_ID,
-      title: "Markdown",
-      component: MarkdownEditorPane,
-      placement: "center",
-      source: "builtin",
-    },
-  },
-  {
-    type: "surface-resolver",
-    resolver: filesystemSurfaceResolver,
-  },
-]
 
 function FilesystemCatalogBinding() {
   const client = useDataClient()
@@ -153,16 +95,78 @@ function FilesystemCatalogBinding() {
   return null
 }
 
-export function createFilesystemPlugin(): WorkspaceFrontPlugin {
-  return defineFrontPlugin({
-    id: FILESYSTEM_PLUGIN_ID,
+const filesystemFront: BoringFrontFactory = (api) => {
+  api.registerProvider({
+    id: "filesystem-data",
+    component: FilesystemDataProvider,
+  })
+  api.registerBinding({
+    id: "filesystem-tree-preload",
+    component: FilesystemTreePreloadBinding,
+  })
+  api.registerLeftTab({
+    id: FILES_LEFT_TAB_ID,
+    title: "Files",
+    panelId: FILES_LEFT_TAB_ID,
+    component: FileTreePane,
+    source: "builtin",
+    icon: FolderTree,
+  })
+  api.registerPanel({
+    id: emptyFilePanelDef.id,
+    label: emptyFilePanelDef.title,
+    component: emptyFilePanelDef.component,
+    placement: emptyFilePanelDef.placement,
+    source: emptyFilePanelDef.source,
+  })
+  api.registerPanel({
+    id: CODE_EDITOR_PANEL_ID,
+    label: "Code",
+    component: CodeEditorPane,
+    placement: "center",
+    source: "builtin",
+  })
+  api.registerPanel({
+    id: CSV_VIEWER_PANEL_ID,
+    label: "CSV",
+    // CSV currently uses the text editor shell; a tabular viewer can replace
+    // this panel without changing the filesystem resolver contract.
+    component: CodeEditorPane,
+    placement: "center",
+    source: "builtin",
+  })
+  api.registerPanel({
+    id: MARKDOWN_EDITOR_PANEL_ID,
+    label: "Markdown",
+    component: MarkdownEditorPane,
+    placement: "center",
+    source: "builtin",
+  })
+  api.registerSurfaceResolver({
+    id: filesystemSurfaceResolver.id,
+    kind: "workspace.open.path",
+    source: filesystemSurfaceResolver.source,
+    resolve: filesystemSurfaceResolver.resolve,
+  })
+  api.registerBinding({
+    id: "filesystem-catalog",
+    component: FilesystemCatalogBinding,
+  })
+  api.registerBinding({
+    id: "filesystem-file-panel",
+    component: FilesystemFilePanelBinding,
+  })
+  api.registerBinding({
+    id: "filesystem-agent-file-bridge",
+    component: FilesystemAgentFileBridge,
+  })
+}
+
+export default filesystemFront
+
+export function createFilesystemPlugin() {
+  return boringFrontFactoryToPlugin(FILESYSTEM_PLUGIN_ID, filesystemFront, {
     label: "Filesystem",
-    outputs: filesystemOutputs,
-    bindings: [
-      FilesystemCatalogBinding,
-      FilesystemFilePanelBinding,
-      FilesystemAgentFileBridge,
-    ],
   })
 }
 

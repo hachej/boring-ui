@@ -42,7 +42,7 @@ A plugin root can contain these layers:
 
 ## front/index.tsx
 
-Export a default `BoringFrontFactory` from `@boring/workspace/plugin`:
+Export a default `BoringFrontFactory` from `@boring/workspace/plugin`. The factory is the shared front authoring shape for both app-composed plugins and dynamically loaded plugin assets:
 
 ```tsx
 import type { BoringFrontFactory } from "@boring/workspace/plugin"
@@ -52,6 +52,8 @@ function MyPanel() {
 }
 
 const front: BoringFrontFactory = (api) => {
+  api.registerProvider({ id: "my-runtime", component: MyProvider })
+  api.registerBinding({ id: "my-listener", component: MyBinding })
   api.registerPanel({ id: "my-panel", label: "My Panel", component: MyPanel })
   api.registerLeftTab({ id: "my-tab", title: "My Plugin", panelId: "my-panel", component: MyPanel })
   api.registerSurfaceResolver({
@@ -62,6 +64,8 @@ const front: BoringFrontFactory = (api) => {
 
 export default front
 ```
+
+`registerProvider`, `registerBinding`, and `registerCatalog` are available for statically composed app/core plugins. Hot-reloaded plugin assets currently commit panels, left tabs, commands, and surface resolvers; provider/binding/catalog hot reload needs a host render boundary and is intentionally not promised yet.
 
 ## agent/index.ts
 

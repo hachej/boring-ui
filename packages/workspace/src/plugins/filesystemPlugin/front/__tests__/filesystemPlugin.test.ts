@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { createFilesystemPlugin, filesystemPlugin } from "../index"
+import filesystemFront, { createFilesystemPlugin, filesystemPlugin } from "../index"
 import { createFilesCatalog } from "../catalogs"
 
 describe("filesystemPlugin", () => {
@@ -16,7 +16,7 @@ describe("filesystemPlugin", () => {
   })
 
   it("registers provider, files left-tab output, surface resolver, and editor panels", () => {
-    expect(filesystemPlugin.outputs).toHaveLength(8)
+    expect(filesystemPlugin.outputs).toHaveLength(11)
     expect(filesystemPlugin.outputs![0]).toEqual(
       expect.objectContaining({
         type: "provider",
@@ -95,9 +95,21 @@ describe("filesystemPlugin", () => {
     expect(filesystemPlugin.catalogs).toBeUndefined()
   })
 
-  it("ships runtime bindings for catalog, file-panel events, and agent-created file opens", () => {
-    expect(filesystemPlugin.bindings).toHaveLength(3)
-    expect(createFilesystemPlugin().bindings).toHaveLength(3)
+  it("ships runtime bindings as factory outputs", () => {
+    const bindingIds = filesystemPlugin.outputs!
+      .filter((output) => output.type === "binding")
+      .map((output) => output.id)
+    expect(bindingIds).toEqual([
+      "filesystem-tree-preload",
+      "filesystem-catalog",
+      "filesystem-file-panel",
+      "filesystem-agent-file-bridge",
+    ])
+    expect(createFilesystemPlugin().bindings).toBeUndefined()
+  })
+
+  it("default-exports a BoringFrontFactory for shape parity", () => {
+    expect(typeof filesystemFront).toBe("function")
   })
 
   it("creates a case-insensitive files catalog adapter", async () => {
