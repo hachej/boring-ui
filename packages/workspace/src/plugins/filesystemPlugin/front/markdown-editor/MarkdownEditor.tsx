@@ -194,6 +194,39 @@ async function uploadMarkdownImage(
   return body.markdownUrl ?? body.path ?? dataUrl
 }
 
+function imageFileFromClipboard(data: DataTransfer | null): File | null {
+  if (!data) return null
+  for (const file of Array.from(data.files ?? [])) {
+    if (file.type.startsWith("image/")) return file
+  }
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) continue
+    const file = item.getAsFile()
+    if (file) return file
+  }
+  return null
+}
+
+async function insertMarkdownImage(
+  editor: Editor,
+  file: File,
+  documentPath: string | undefined,
+  options: { apiBaseUrl?: string; workspaceRequestId?: string | null } = {},
+) {
+  try {
+    const src = await uploadMarkdownImage(file, documentPath, options)
+    editor.chain().focus().setImage({ src, alt: file.name }).run()
+  } catch {
+    // Upload/FileReader rejected — fall back to inline data URL so the edit is not lost.
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run()
+    } catch {
+      // The user can retry.
+    }
+  }
+}
+
 function Toolbar({
   editor,
   documentPath,
@@ -283,18 +316,7 @@ function Toolbar({
     const file = e.target.files?.[0]
     e.target.value = "" // allow picking the same file twice in a row
     if (!file || !file.type.startsWith("image/")) return
-    try {
-      const src = await uploadMarkdownImage(file, documentPath, { apiBaseUrl, workspaceRequestId })
-      editor.chain().focus().setImage({ src, alt: file.name }).run()
-    } catch {
-      // Upload/FileReader rejected — fall back to inline data URL so the edit is not lost.
-      try {
-        const dataUrl = await readFileAsDataUrl(file)
-        editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run()
-      } catch {
-        // The user can retry.
-      }
-    }
+    await insertMarkdownImage(editor, file, documentPath, { apiBaseUrl, workspaceRequestId })
   }
 
   return (
@@ -412,6 +434,7 @@ export function MarkdownEditor({
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
+  const editorRef = useRef<Editor | null>(null)
 
   const editorContent = content
     ? content
@@ -433,6 +456,15 @@ export function MarkdownEditor({
         class: "tiptap-prose max-w-[68ch] px-8 py-6 focus:outline-none min-h-[200px]",
       },
       transformPastedHTML: sanitizeHtml,
+      handlePaste: (_view, event) => {
+        if (readOnly) return false
+        const file = imageFileFromClipboard(event.clipboardData)
+        const currentEditor = editorRef.current
+        if (!file || !currentEditor) return false
+        event.preventDefault()
+        void insertMarkdownImage(currentEditor, file, documentPath, { apiBaseUrl, workspaceRequestId })
+        return true
+      },
     },
     onUpdate: ({ editor: e }) => {
       if (!suppressChangeRef.current) {
@@ -440,6 +472,7 @@ export function MarkdownEditor({
       }
     },
   })
+  editorRef.current = editor
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
