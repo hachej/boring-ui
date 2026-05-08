@@ -55,7 +55,7 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon, BotIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon, BotIcon, Loader2, AlertCircleIcon } from 'lucide-react'
 import {
   Button,
   IconButton,
@@ -1584,12 +1584,25 @@ function AttachmentsList() {
             // thumbnail + name + remove action.
             "!h-9 !gap-2 !rounded-full !border-input/80 !bg-muted/40 !pl-1 !pr-2",
             "transition-colors hover:!bg-muted/70 hover:!text-foreground",
+            file.status === 'error' && "!border-destructive/50 !bg-destructive/10",
           )}
         >
-          <AttachmentPreview
-            // Fixed thumbnail slot; <img> fills via object-cover.
-            className="!size-7 shrink-0 overflow-hidden !rounded-full bg-background/60"
-          />
+          <div className="relative shrink-0">
+            <AttachmentPreview
+              // Fixed thumbnail slot; <img> fills via object-cover.
+              className="!size-7 overflow-hidden !rounded-full bg-background/60"
+            />
+            {file.status === 'uploading' && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/70">
+                <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {file.status === 'error' && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-destructive/20">
+                <AlertCircleIcon className="size-3.5 text-destructive" />
+              </div>
+            )}
+          </div>
           <AttachmentInfo
             className="min-w-0 !max-w-[180px] truncate text-[13px] font-medium"
           />
