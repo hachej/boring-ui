@@ -16,7 +16,7 @@ describe("filesystemPlugin", () => {
   })
 
   it("registers provider, preload binding, files left-tab output, surface resolver, and editor/viewer panels", () => {
-    expect(filesystemPlugin.outputs).toHaveLength(10)
+    expect(filesystemPlugin.outputs).toHaveLength(11)
     expect(filesystemPlugin.outputs![0]).toEqual(
       expect.objectContaining({
         type: "provider",
@@ -37,7 +37,7 @@ describe("filesystemPlugin", () => {
         source: "builtin",
       }),
     )
-    expect(filesystemPlugin.outputs![9]).toEqual(
+    expect(filesystemPlugin.outputs![10]).toEqual(
       expect.objectContaining({
         type: "surface-resolver",
         resolver: expect.objectContaining({ id: "filesystem-path" }),
@@ -47,7 +47,7 @@ describe("filesystemPlugin", () => {
     const ids = filesystemPlugin.outputs!
       .filter((output) => output.type === "panel")
       .map((output) => output.panel.id)
-    expect(ids).toEqual(["empty-file-panel", "code-editor", "csv-viewer", "markdown-editor", "image-viewer", "pdf-viewer"])
+    expect(ids).toEqual(["empty-file-panel", "code-editor", "csv-viewer", "markdown-editor", "image-viewer", "pdf-viewer", "html-viewer"])
   })
 
   it("all panels have source 'builtin'", () => {
@@ -83,7 +83,7 @@ describe("filesystemPlugin", () => {
     )
   })
 
-  it("surface resolver routes image and PDF previews", () => {
+  it("surface resolver routes image, PDF, and HTML previews", () => {
     const resolver = filesystemPlugin.outputs!.find((output) => output.type === "surface-resolver")!
     expect(resolver.type).toBe("surface-resolver")
     expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "assets/chart.png" })).toEqual(
@@ -91,6 +91,9 @@ describe("filesystemPlugin", () => {
     )
     expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "docs/report.pdf" })).toEqual(
       expect.objectContaining({ component: "pdf-viewer" }),
+    )
+    expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "public/index.html" })).toEqual(
+      expect.objectContaining({ component: "html-viewer" }),
     )
   })
 
