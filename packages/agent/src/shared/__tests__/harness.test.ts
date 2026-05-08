@@ -1,6 +1,6 @@
 import { expectTypeOf, test } from 'vitest'
 
-import type { AgentHarness, RunContext, SendMessageInput } from '../harness'
+import type { AgentHarness, RunContext, SendMessageInput, MessageAttachment } from '../harness'
 import type { UIMessageChunk } from '../message'
 import type { SessionStore } from '../session'
 
@@ -26,6 +26,7 @@ test('SendMessageInput contract', () => {
       provider: string
       id: string
     }
+    attachments?: MessageAttachment[]
   }>()
 
   expectTypeOf<SendMessageInput['thinkingLevel']>().toEqualTypeOf<
@@ -35,6 +36,7 @@ test('SendMessageInput contract', () => {
     provider: string
     id: string
   }>()
+  expectTypeOf<SendMessageInput['attachments']>().toEqualTypeOf<MessageAttachment[] | undefined>()
 })
 
 test('RunContext contract', () => {

@@ -84,7 +84,7 @@ export function chatRoutes(
     '/api/v1/agent/chat',
     { preHandler: validateBody },
     async (request, reply) => {
-      const { sessionId, message, model, thinkingLevel } =
+      const { sessionId, message, model, thinkingLevel, attachments } =
         request.body as ChatBody
       const turnId = randomUUID()
 
@@ -112,7 +112,7 @@ export function chatRoutes(
 
       try {
         const chunks = runtime.harness.sendMessage(
-          { sessionId, message, model, thinkingLevel },
+          { sessionId, message, model, thinkingLevel, attachments },
           ctx,
         )
 
@@ -263,6 +263,37 @@ export function chatRoutes(
         // console 404 during first-load auto session creation.
         return reply.code(200).send({ messages: [] })
       }
+    },
+  )
+
+  // Queue a follow-up message to be delivered after the current streaming
+  // turn completes. The harness keeps the HTTP stream open and processes it
+  // as a second pi turn, emitting data-followup-consumed before it starts so
+  // the client knows to clear its pending-message bubble.
+  app.post(
+    '/api/v1/agent/chat/:sessionId/followup',
+    async (request, reply) => {
+      const { sessionId } = request.params as { sessionId: string }
+      const body = request.body as { message?: unknown }
+      if (typeof body?.message !== 'string' || body.message.length === 0) {
+        return reply.code(400).send({
+          error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'message is required' },
+        })
+      }
+      const runtime = await resolveRuntime(request)
+      runtime.harness.followUp?.(sessionId, body.message)
+      return reply.code(202).send({ queued: true })
+    },
+  )
+
+  // Discard any queued follow-up (Stop button path).
+  app.delete(
+    '/api/v1/agent/chat/:sessionId/followup',
+    async (request, reply) => {
+      const { sessionId } = request.params as { sessionId: string }
+      const runtime = await resolveRuntime(request)
+      runtime.harness.clearFollowUp?.(sessionId)
+      return reply.code(204).send()
     },
   )
 

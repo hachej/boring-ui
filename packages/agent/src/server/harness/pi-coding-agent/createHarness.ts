@@ -2,6 +2,7 @@ import {
   createAgentSession,
   type AgentSession,
   type AgentSessionEvent,
+  type PromptOptions,
   SessionManager,
   AuthStorage,
   ModelRegistry,
@@ -312,10 +313,25 @@ export function createPiCodingAgentHarness(opts: {
     disposePiSession(sessionId);
   };
 
+  // Harness-level follow-up queue: one pending message per session.
+  // When the client calls followUp() during a streaming turn, we store the
+  // message here. After agent_end, if the queue is non-empty we emit a
+  // data-followup-consumed chunk (so the client can clear its bubble) and
+  // continue the HTTP stream with a second pi turn — no extra round-trip.
+  const harnessFollowUpQueues = new Map<string, string>();
+
   return {
     id: "pi-coding-agent",
     placement: "server",
     sessions: sessionStore,
+
+    followUp(sessionId: string, text: string): void {
+      harnessFollowUpQueues.set(sessionId, text);
+    },
+
+    clearFollowUp(sessionId: string): void {
+      harnessFollowUpQueues.delete(sessionId);
+    },
 
     /**
      * Pi exposes the resolved system prompt as a getter on AgentSession.
@@ -336,6 +352,11 @@ export function createPiCodingAgentHarness(opts: {
         input,
         ctx,
       );
+
+      // Consume any queued follow-up immediately when a new sendMessage call
+      // arrives — the client is explicitly sending a message (e.g. after an
+      // Escape-interrupted turn), so the server queue is no longer needed.
+      harnessFollowUpQueues.delete(input.sessionId);
 
       const chunks: UIMessageChunk[] = [];
       let done = false;
@@ -399,6 +420,16 @@ export function createPiCodingAgentHarness(opts: {
       }
 
       let sawTextChunk = false;
+      // pendingFollowUpMsg is set by the agent_end handler when a follow-up
+      // is queued. The actual piSession.prompt() call is deferred to the
+      // promptPromise .then() chain — pi's agent must be fully idle before
+      // a new prompt() call is legal ("already processing" otherwise).
+      let pendingFollowUpMsg: string | undefined;
+      // promptPromise tracks the most recently started pi turn so the
+      // finally block can await full settlement before cleanup.
+      let promptSettled = false;
+      let promptPromise: Promise<void> = Promise.resolve();
+
       const unsubscribe = piSession.subscribe((event: AgentSessionEvent) => {
         if (event.type === "message_update") {
           const ame = event.assistantMessageEvent;
@@ -490,8 +521,29 @@ export function createPiCodingAgentHarness(opts: {
               assistantText += text;
             }
           }
-          done = true;
-          stopHeartbeat();
+
+          // Check the harness queue for a follow-up message. If one is
+          // waiting, keep the HTTP stream open. We can't call piSession.prompt()
+          // here — pi's internal agent is still cleaning up after agent_end and
+          // would throw "already processing". Instead, set pendingFollowUpMsg
+          // so the promptPromise .then() chain (which runs after pi is idle)
+          // picks it up and starts the follow-up turn.
+          const followUpMsg = harnessFollowUpQueues.get(input.sessionId);
+          if (followUpMsg !== undefined && !ctx.abortSignal.aborted) {
+            harnessFollowUpQueues.delete(input.sessionId);
+            chunks.push({ type: "data-followup-consumed" } as unknown as UIMessageChunk);
+            // Reset per-turn accumulators for the incoming follow-up turn.
+            sawTextChunk = false;
+            textStartSeen.clear();
+            textDeltaSeen.clear();
+            startedMessageIds.clear();
+            assistantText = "";
+            pendingFollowUpMsg = followUpMsg;
+            // Don't set done = true — the stream stays open for the follow-up.
+          } else {
+            done = true;
+            stopHeartbeat();
+          }
         }
         if (wake) wake();
       });
@@ -500,19 +552,41 @@ export function createPiCodingAgentHarness(opts: {
       // block this generator from yielding until the entire turn completes,
       // collapsing the response into a single end-of-turn flush. Kick it
       // off concurrently and drain `chunks` as the subscriber fills it.
-      let promptSettled = false;
-      const promptPromise = piSession
-        .prompt(input.message)
-        .then(() => {
-          promptSettled = true;
-        })
-        .catch((err) => {
-          promptSettled = true;
-          streamError = err;
-          done = true;
-          stopHeartbeat();
-          if (wake) wake();
+      //
+      // After each turn resolves we check pendingFollowUpMsg (set by the
+      // agent_end subscriber). If present, pi is now idle and we can safely
+      // call prompt() for the follow-up — keeping the HTTP stream open for
+      // a second turn with no extra round-trip from the client.
+      function startTurn(message: string, promptOpts?: PromptOptions): Promise<void> {
+        promptSettled = false;
+        return piSession
+          .prompt(message, promptOpts)
+          .then(() => {
+            promptSettled = true;
+            if (pendingFollowUpMsg !== undefined && !ctx.abortSignal.aborted) {
+              const next = pendingFollowUpMsg;
+              pendingFollowUpMsg = undefined;
+              promptPromise = startTurn(next);
+            }
+          })
+          .catch((err) => {
+            promptSettled = true;
+            streamError = err;
+            done = true;
+            stopHeartbeat();
+            if (wake) wake();
+          });
+      }
+      const initialImages = (input.attachments ?? [])
+        .flatMap((a) => {
+          const match = a.url.match(/^data:(image\/[^;]+);base64,(.+)$/);
+          if (!match) return [];
+          return [{ type: "image" as const, mimeType: match[1], data: match[2] }];
         });
+      promptPromise = startTurn(
+        input.message,
+        initialImages.length > 0 ? { images: initialImages } : undefined,
+      );
 
       const onAbort = () => {
         // While prompt() is still running, treat abort as a graceful stop:
