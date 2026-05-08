@@ -21,10 +21,32 @@ export interface AgentHarness {
    * `sendMessage`). Optional so non-pi harnesses can opt out cleanly.
    */
   getSystemPrompt?: (sessionId: string) => string | undefined
+
+  /**
+   * Queue a follow-up message for delivery after the current streaming turn.
+   * When called while a `sendMessage` stream is active, the harness keeps
+   * the HTTP stream open after `agent_end` and processes the follow-up as a
+   * second turn in the same response — no extra round-trip needed.
+   * A `data-followup-consumed` chunk is emitted before the follow-up turn so
+   * the client can clear its pending-message bubble immediately.
+   */
+  followUp?(sessionId: string, text: string): void
+
+  /**
+   * Discard any queued follow-up for this session (called by the Stop button).
+   */
+  clearFollowUp?(sessionId: string): void
 }
 
 /* Resume is NOT a harness concern — see Stream resumption section.
    The HTTP route owns cursor buffering + replay; harness stays reconnect-unaware. */
+
+export interface MessageAttachment {
+  filename?: string
+  mediaType?: string
+  /** data: URL (base64) or remote URL */
+  url: string
+}
 
 export interface SendMessageInput {
   sessionId: string
@@ -34,6 +56,7 @@ export interface SendMessageInput {
     provider: string
     id: string
   }
+  attachments?: MessageAttachment[]
 }
 
 export interface RunContext {
