@@ -274,7 +274,7 @@ export function chatRoutes(
     '/api/v1/agent/chat/:sessionId/followup',
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
-      const body = request.body as { message?: unknown; attachments?: unknown; displayText?: unknown }
+      const body = request.body as { message?: unknown; attachments?: unknown; displayText?: unknown; clientNonce?: unknown; clientSeq?: unknown }
       if (typeof body?.message !== 'string' || body.message.length === 0) {
         return reply.code(400).send({
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'message is required' },
