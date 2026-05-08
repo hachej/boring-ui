@@ -529,26 +529,31 @@ export function ChatPanel(props: ChatPanelProps) {
     })
   }, [status, sessionId, model, sendMessage])
 
-  // Stop clears both the stream and any queued message.
+  // Stop button: cancels stream AND clears the queue.
   const handleStop = useCallback(() => {
     stop()
     setPendingMessage(null)
   }, [stop])
 
-  // Escape stops the current run when streaming.
-  // Guard: skip if the event target is an input/textarea so Escape can still
-  // clear/dismiss those fields without also stopping the agent.
+  // Escape: interrupts the stream but keeps the queued message — it auto-sends next.
+  // Same behaviour as pi's keyboard interrupt: "stop this, do my follow-up instead."
+  const handleInterrupt = useCallback(() => {
+    stop()
+  }, [stop])
+
+  // Wire Escape to interrupt (not full stop) so the queue survives.
+  // Guard: skip if focus is inside an input/textarea so Escape can still clear those.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isStreaming) return
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       e.preventDefault()
-      handleStop()
+      handleInterrupt()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isStreaming, handleStop])
+  }, [isStreaming, handleInterrupt])
 
   // Compose-history navigation (↑/↓ like a terminal)
   const userHistory = useMemo(() =>
