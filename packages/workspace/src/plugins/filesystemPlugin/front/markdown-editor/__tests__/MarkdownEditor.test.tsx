@@ -531,6 +531,27 @@ describe("MarkdownEditor", () => {
         })
       })
 
+      it("round-trips relative README image links without mangling", async () => {
+        const onChange = vi.fn()
+        render(
+          <MarkdownEditor
+            content='![Boring-UI banner](doc/assets/header.png)'
+            onChange={onChange}
+          />,
+        )
+        await waitFor(() => {
+          const img = document.querySelector("[data-resizable-image] img") as HTMLImageElement | null
+          expect(img?.getAttribute("src")).toBe("doc/assets/header.png")
+          expect(img?.getAttribute("alt")).toBe("Boring-UI banner")
+        })
+        fireEvent.click(screen.getByTitle("Horizontal rule"))
+        await waitFor(() => {
+          expect(lastCall(onChange)).toContain(
+            '![Boring-UI banner](doc/assets/header.png)',
+          )
+        })
+      })
+
       it("serializes resized images as GitHub-compatible HTML", async () => {
         const onChange = vi.fn()
         render(
