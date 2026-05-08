@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "boring-macro-sdk"
 version = "0.1.0"
 description = "Python SDK for the boring.macro API"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = ["pandas", "requests"]
 
 [project.scripts]
