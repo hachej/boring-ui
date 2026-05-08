@@ -534,7 +534,7 @@ export function createPiCodingAgentHarness(opts: {
           const role = eventMessage.role;
           if (role === "assistant") currentPiAssistantMessageId = messageId;
           const text = role === "user" ? extractUserMessageText(eventMessage) : undefined;
-          if ((role === "user" && text && text !== input.message) || (role === "assistant" && inlineTurnIndex > 0)) {
+          if ((role === "user" && text) || role === "assistant") {
             piHistoryChunks.push({
               type: "data-pi-message-start",
               data: { seq: nextPiSeq(), messageId, role, ...(text ? { text } : {}) },
@@ -548,7 +548,7 @@ export function createPiCodingAgentHarness(opts: {
             : typeof (event as unknown as { message?: { id?: unknown } }).message?.id === "string"
               ? (event as unknown as { message: { id: string } }).message.id
               : currentPiAssistantMessageId ?? "assistant-streaming";
-          if (inlineTurnIndex > 0) {
+          if (true) {
             if (ame.type === "text_start") {
               piHistoryChunks.push({
                 type: "data-pi-text-start",
@@ -596,7 +596,7 @@ export function createPiCodingAgentHarness(opts: {
             }
           }
         }
-        if (event.type === "message_end" && (eventMessage?.role === "user" || (eventMessage?.role === "assistant" && inlineTurnIndex > 0))) {
+        if (event.type === "message_end" && (eventMessage?.role === "user" || eventMessage?.role === "assistant")) {
           const messageId = typeof eventMessage.id === "string" ? eventMessage.id : `${eventMessage.role}-${Date.now()}`;
           const role = eventMessage.role;
           const text = role === "user"
@@ -608,7 +608,7 @@ export function createPiCodingAgentHarness(opts: {
           } as unknown as UIMessageChunk);
         }
 
-        if (inlineTurnIndex > 0 && event.type === "tool_execution_end" && currentPiAssistantMessageId) {
+        if (event.type === "tool_execution_end" && currentPiAssistantMessageId) {
           piHistoryChunks.push({
             type: "data-pi-tool-result",
             data: { seq: nextPiSeq(), messageId: currentPiAssistantMessageId, toolCallId: event.toolCallId, output: event.result, isError: event.isError },
@@ -628,38 +628,19 @@ export function createPiCodingAgentHarness(opts: {
           converted = piHistoryChunks;
         } else {
           const sdkChunks = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
-          const sdkChunksForTurn = inlineTurnIndex > 0
-            ? sdkChunks.filter((chunk) => {
-                const t = (chunk as { type?: string }).type;
-                return t !== "text-start" && t !== "text-delta" && t !== "text-end"
-                  && t !== "reasoning-start" && t !== "reasoning-delta" && t !== "reasoning-end";
-              })
-            : sdkChunks;
+          const sdkChunksForTurn = sdkChunks.filter((chunk) => {
+            const t = (chunk as { type?: string }).type;
+            return t !== "text-start" && t !== "text-delta" && t !== "text-end"
+              && t !== "reasoning-start" && t !== "reasoning-delta" && t !== "reasoning-end";
+          });
           converted = [...piHistoryChunks, ...sdkChunksForTurn];
-        }
-        if (event.type === "message_update") {
-          const ame = event.assistantMessageEvent;
-          if (
-            ame.type === "text_end"
-            && typeof ame.content === "string"
-            && ame.content.length > 0
-            && !textDeltaSeen.has(ame.contentIndex)
-          ) {
-            const id = inlineTurnIndex === 0 ? String(ame.contentIndex) : `turn-${inlineTurnIndex}:${ame.contentIndex}`;
-            converted = [
-              ...(textStartSeen.has(ame.contentIndex)
-                ? []
-                : [{ type: "text-start", id } as UIMessageChunk]),
-              { type: "text-delta", id, delta: ame.content } as UIMessageChunk,
-              ...converted,
-            ];
-            textDeltaSeen.add(ame.contentIndex);
-            assistantText += ame.content;
-          }
         }
         for (const chunk of converted) {
           const t = (chunk as { type?: string }).type;
-          if (t === "text-delta") {
+          if (t === "text-delta" || t === "data-pi-text-delta" || t === "data-pi-text-end") {
+            sawTextChunk = true;
+          }
+          if (t === "data-pi-message-end" && typeof (chunk as { data?: { text?: unknown } }).data?.text === "string") {
             sawTextChunk = true;
           }
         }
@@ -668,7 +649,7 @@ export function createPiCodingAgentHarness(opts: {
         // Some model/provider paths emit only final message snapshots (no
         // message_update deltas). Synthesize text chunks so SSE consumers still
         // receive assistant text.
-        if (event.type === "message_end" && !sawTextChunk && inlineTurnIndex === 0) {
+        if (false && event.type === "message_end" && !sawTextChunk && inlineTurnIndex === 0) {
           const { role, text, errorText } = extractAssistantMessageText(
             (event as unknown as { message?: unknown }).message,
           );
@@ -698,11 +679,10 @@ export function createPiCodingAgentHarness(opts: {
               chunks.push({ type: "error", errorText } as UIMessageChunk);
               sawTextChunk = true;
             } else if (role === "assistant" && text.length > 0) {
-              const id = inlineTurnIndex === 0 ? "0" : `turn-${inlineTurnIndex}:0`;
+              const messageId = currentPiAssistantMessageId ?? "assistant-streaming";
               chunks.push(
-                { type: "text-start", id } as UIMessageChunk,
-                { type: "text-delta", id, delta: text } as UIMessageChunk,
-                { type: "text-end", id } as UIMessageChunk,
+                { type: "data-pi-message-start", data: { seq: nextPiSeq(), messageId, role } } as unknown as UIMessageChunk,
+                { type: "data-pi-message-end", data: { seq: nextPiSeq(), messageId, role, text } } as unknown as UIMessageChunk,
               );
               sawTextChunk = true;
               assistantText += text;
