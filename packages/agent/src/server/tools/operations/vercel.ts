@@ -32,7 +32,11 @@ function toRelPath(workspace: Workspace, absolutePath: string): string {
   const skillMarker = '/.agents/skills/'
   const skillIndex = absolutePath.indexOf(skillMarker)
   if (skillIndex >= 0) {
-    return `.agents/skills/${absolutePath.slice(skillIndex + skillMarker.length)}`
+    const skillPath = absolutePath.slice(skillIndex + skillMarker.length)
+    if (skillPath.includes('\0') || skillPath.split(/[\\/]+/).includes('..')) {
+      throw new Error(`path "${absolutePath}" escapes the workspace skills directory`)
+    }
+    return `.agents/skills/${skillPath}`
   }
 
   throw new Error(
@@ -141,7 +145,7 @@ function fallbackFindCommand(pattern: string, cwd: string, options: { ignore: st
 function isFdMissing(result: ExecResultLike): boolean {
   if (result.exitCode !== 127) return false
   const stderr = Buffer.from(result.stderr).toString('utf-8')
-  return /fd: not found|fd: command not found|not found/i.test(stderr)
+  return /\bfd: (?:not found|command not found)\b/i.test(stderr)
 }
 
 interface ExecResultLike {
