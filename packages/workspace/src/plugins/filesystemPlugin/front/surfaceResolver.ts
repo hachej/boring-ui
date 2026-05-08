@@ -9,6 +9,7 @@ import {
   CSV_VIEWER_PANEL_ID,
   EMPTY_FILE_PANEL_ID,
   FILESYSTEM_SURFACE_RESOLVER_ID,
+  HTML_VIEWER_PANEL_ID,
   IMAGE_VIEWER_PANEL_ID,
   MARKDOWN_EDITOR_PANEL_ID,
   PDF_VIEWER_PANEL_ID,
@@ -27,7 +28,7 @@ const handlers: FilesystemSurfaceHandler[] = [
       "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx",
       "**/*.py", "**/*.rs", "**/*.go",
       "**/*.json", "**/*.yml", "**/*.yaml",
-      "**/*.toml", "**/*.css", "**/*.html", "**/*.svg",
+      "**/*.toml", "**/*.css", "**/*.svg",
       "**/*.sh", "**/*.sql", "**/*.graphql",
     ],
   },
@@ -46,6 +47,10 @@ const handlers: FilesystemSurfaceHandler[] = [
   {
     component: PDF_VIEWER_PANEL_ID,
     patterns: ["**/*.pdf"],
+  },
+  {
+    component: HTML_VIEWER_PANEL_ID,
+    patterns: ["**/*.html", "**/*.htm"],
   },
   {
     component: EMPTY_FILE_PANEL_ID,

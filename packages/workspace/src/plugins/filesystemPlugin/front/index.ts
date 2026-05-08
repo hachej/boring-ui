@@ -12,6 +12,7 @@ import { FilesystemAgentFileBridge } from "./agentFileBridge"
 import { CodeEditorPane } from "./code-editor/CodeEditorPane"
 import { MarkdownEditorPane } from "./markdown-editor/MarkdownEditorPane"
 import { MediaViewerPane } from "./media-viewer/MediaViewerPane"
+import { HtmlViewerPane } from "./html-viewer/HtmlViewerPane"
 import { emptyFilePanelDef } from "./empty-file-panel/definition"
 import { filesystemSurfaceResolver } from "./surfaceResolver"
 import type {
@@ -24,6 +25,7 @@ import {
   FILES_CATALOG_ID,
   FILES_LEFT_TAB_ID,
   FILESYSTEM_PLUGIN_ID,
+  HTML_VIEWER_PANEL_ID,
   IMAGE_VIEWER_PANEL_ID,
   MARKDOWN_EDITOR_PANEL_ID,
   PDF_VIEWER_PANEL_ID,
@@ -140,6 +142,16 @@ const filesystemOutputs: WorkspaceFrontPlugin["outputs"] = [
       id: PDF_VIEWER_PANEL_ID,
       title: "PDF",
       component: MediaViewerPane,
+      placement: "center",
+      source: "builtin",
+    },
+  },
+  {
+    type: "panel",
+    panel: {
+      id: HTML_VIEWER_PANEL_ID,
+      title: "HTML",
+      component: HtmlViewerPane,
       placement: "center",
       source: "builtin",
     },

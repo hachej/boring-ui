@@ -5,7 +5,7 @@ import { ProcessTerminal, TUI } from "@mariozechner/pi-tui"
 import { execSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { createInterface } from "node:readline"
-import { dirname, resolve } from "node:path"
+import { basename, dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 
@@ -39,6 +39,7 @@ const MODE: RuntimeMode = MODE_MAP[CLI_MODE]
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const publicDir = resolve(__dirname, "..", "public")
 const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
+const projectName = basename(resolve(workspaceRoot)) || "workspace"
 
 if (!existsSync(publicDir)) {
   console.error("\nError: boring-ui frontend not found.")
@@ -125,7 +126,7 @@ async function resolveApiKey(): Promise<string> {
 const apiKey = await resolveApiKey()
 process.env.ANTHROPIC_API_KEY = apiKey
 
-console.log(`\nboring-ui`)
+console.log(`\n${projectName}`)
 console.log(`  workspace  ${workspaceRoot}`)
 console.log(`  mode       ${CLI_MODE}`)
 console.log(`  port       ${PORT}`)
@@ -136,6 +137,11 @@ const app = await createWorkspaceAgentServer({
   mode: MODE,
   logger: false,
 })
+
+app.get("/api/v1/workspace/meta", async () => ({
+  workspaceRoot,
+  projectName,
+}))
 
 await app.register(fastifyStatic, {
   root: publicDir,
