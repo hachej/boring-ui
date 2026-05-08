@@ -27,10 +27,10 @@ package or plugin. Standalone workspace app wiring belongs in
 - playground-specific data behavior lives under
   `src/plugins/playgroundDataCatalog`
 
-`apps/boring-macro-v2` is in the desired pluginized standalone shape:
+`hachej/boring-macro` is the canonical pluginized standalone macro app:
 
-- front code only supplies `ChatPanel` to `MacroWorkspaceApp`
-- server code uses `createWorkspaceAgentServer` and registers macro routes
+- front code composes the core workspace-agent app shell
+- server code uses the core/workspace/agent app factories and registers macro routes
 - macro panels, catalogs, and front data live under `src/plugins/macro/front`
 - macro routes, tools, provisioning templates, Python SDK source, and transforms
   live under `src/plugins/macro/server`
@@ -335,8 +335,7 @@ DB, or membership.
    `collectWorkspaceAgentServerPlugins`, workspace UI bridge tools/routes, and
    `createAgentApp`.
 10. Done: update first-party consumers of the workspace app names and subpaths:
-   workspace tests, `apps/workspace-playground`, `apps/boring-macro-v2`, and any
-   root workspace re-exports.
+   workspace tests, `apps/workspace-playground`, and any root workspace re-exports.
 11. Done: update workspace-playground front code to use `WorkspaceAgentFront` from
     `@boring/workspace/app/front`.
 12. Done: update workspace-playground server/Vite config to use
