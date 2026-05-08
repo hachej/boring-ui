@@ -4,7 +4,7 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-<img width="1684" height="934" alt="grafik" src="https://github.com/user-attachments/assets/cca97680-1e44-40d0-b214-be176c161a6a" />
+<img width="1500" height="900" alt="grafik" src="https://github.com/user-attachments/assets/cca97680-1e44-40d0-b214-be176c161a6a" />
 
 ## Your workflow. Your agent. Your UI.
 
