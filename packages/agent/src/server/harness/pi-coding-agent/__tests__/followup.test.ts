@@ -105,8 +105,28 @@ describe("native pi follow-up integration", () => {
     const piUserStartNext = reader.next();
     chunks.push((await piUserStartNext).value);
 
+    const assistantStartNext = reader.next();
+    emit({ type: "message_start", message: { id: "a2", role: "assistant" } });
+    chunks.push((await assistantStartNext).value);
+
+    const sdkAssistantStartNext = reader.next();
+    chunks.push((await sdkAssistantStartNext).value);
+
+    const textStartNext = reader.next();
+    emit({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
+    chunks.push((await textStartNext).value);
+
+    const textDeltaNext = reader.next();
+    emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hello" } });
+    chunks.push((await textDeltaNext).value);
+
     expect(chunks[1]).toMatchObject({ type: "data-followup-consumed", data: { text: "queued question" } });
     expect(chunks[2]).toMatchObject({ type: "data-pi-message-start", data: { role: "user", text: "queued question" } });
+    expect(chunks[3]).toMatchObject({ type: "data-pi-message-start", data: { role: "assistant", messageId: "a2" } });
+    expect(chunks[4]).toMatchObject({ type: "start", messageId: "a2" });
+    expect(chunks[5]).toMatchObject({ type: "data-pi-text-start", data: { messageId: "a2", partId: "0" } });
+    expect(chunks[6]).toMatchObject({ type: "data-pi-text-delta", data: { messageId: "a2", partId: "0", delta: "hello" } });
+    expect(chunks.map((chunk) => chunk.data?.seq).filter(Boolean)).toEqual([1, 2, 3, 4]);
 
     promptHandle.resolve?.();
     await reader.return?.();
