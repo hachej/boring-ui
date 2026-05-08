@@ -152,7 +152,8 @@ describe("DataExplorer", () => {
 
     await screen.findByText("Real GDP")
 
-    const input = screen.getByPlaceholderText(/search/i)
+    await user.click(screen.getByRole("button", { name: /search/i }))
+    const input = await screen.findByPlaceholderText(/search/i)
     await user.type(input, "CPI")
 
     await waitFor(
