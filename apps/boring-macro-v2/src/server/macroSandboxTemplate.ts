@@ -19,7 +19,7 @@ VENV_BIN="$WORKSPACE_ROOT/.venv/bin"
 SDK_ROOT="$WORKSPACE_ROOT/.boring-agent/sdk/boring-macro-sdk"
 ensure_venv() {
   if [[ ! -x "$VENV_BIN/python" ]]; then
-    python3 -m venv "$WORKSPACE_ROOT/.venv"
+    /usr/bin/python3 -m venv "$WORKSPACE_ROOT/.venv"
   fi
   if ! "$VENV_BIN/python" -c 'import boring_macro' >/dev/null 2>&1; then
     "$VENV_BIN/python" -m pip install -q "$SDK_ROOT"
