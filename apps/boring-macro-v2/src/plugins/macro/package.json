@@ -8,6 +8,7 @@
   },
   "boring": {
     "front": "./front/index.tsx",
+    "server": false,
     "label": "Macro",
     "panels": [
       { "id": "chart-canvas", "title": "Chart" },

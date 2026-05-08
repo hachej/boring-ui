@@ -70,9 +70,10 @@ export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPrefli
     }
     const boring = normalizeBoringField(pkg.boring)
     if (!boring) continue
-    for (const [label, value] of Object.entries({ front: boring.front })) {
-      if (value !== undefined && (typeof value !== "string" || !safeRelativePath(value))) {
-        errors.push({ pluginDir: rootDir, code: "UNSAFE_PLUGIN_PATH", message: `${label} must be a safe relative path` })
+    for (const [label, value] of Object.entries({ front: boring.front, server: boring.server })) {
+      if (value === undefined || value === false) continue
+      if (typeof value !== "string" || !safeRelativePath(value)) {
+        errors.push({ pluginDir: rootDir, code: "UNSAFE_PLUGIN_PATH", message: `${label} must be a safe relative path or false` })
       }
     }
   }
@@ -88,11 +89,15 @@ export function readBoringPlugins(pluginDirs: string[]): BoringPluginManifest[] 
     const frontPath = typeof boring.front === "string" && safeRelativePath(boring.front)
       ? resolve(rootDir, boring.front)
       : undefined
-    const serverPath = existsSync(join(rootDir, "server", "index.ts"))
-      ? join(rootDir, "server", "index.ts")
-      : existsSync(join(rootDir, "server", "index.js"))
-        ? join(rootDir, "server", "index.js")
-        : undefined
+    const serverPath = boring.server === false
+      ? undefined
+      : typeof boring.server === "string" && safeRelativePath(boring.server)
+        ? resolve(rootDir, boring.server)
+        : existsSync(join(rootDir, "server", "index.ts"))
+          ? join(rootDir, "server", "index.ts")
+          : existsSync(join(rootDir, "server", "index.js"))
+            ? join(rootDir, "server", "index.js")
+            : undefined
     const version = typeof pkg.version === "string" ? pkg.version : "0.0.0"
     plugins.push({
       id: pluginIdFromPackageJson(pkg, rootDir),

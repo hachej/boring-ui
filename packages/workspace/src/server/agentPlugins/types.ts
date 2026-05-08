@@ -2,6 +2,12 @@ import type { FastifyReply, FastifyRequest } from "fastify"
 
 export interface BoringPackageField {
   front?: string
+  /**
+   * Optional dynamic boring server asset entry. Omit for convention-based
+   * server/index.{ts,js}; set false when a package has static Fastify routes
+   * that are not compatible with the dynamic exact-route API yet.
+   */
+  server?: string | false
   label?: string
   panels?: Array<{ id: string; title?: string }>
   commands?: Array<{ id: string; title: string; panelId?: string }>

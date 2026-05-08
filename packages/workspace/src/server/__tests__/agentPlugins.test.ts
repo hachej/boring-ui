@@ -30,6 +30,7 @@ async function writePlugin(root: string, body?: string): Promise<void> {
       label: "Test",
       panels: [{ id: "test-panel", title: "Test Panel" }],
       systemPrompt: "Test plugin context",
+      server: "./server/index.js",
     },
   }), "utf8")
   await writeFile(join(root, "front", "index.tsx"), "export default () => {}\n", "utf8")
@@ -53,7 +54,20 @@ describe("boring agent plugin assets", () => {
     expect(plugins[0].serverPath).toBe(join(root, "server", "index.js"))
   })
 
-  test("loads server routes, emits load events, and dispatches hot routes", async () => {
+  test("allows manifest server opt-out while still loading front assets", async () => {
+    const root = await tmp("boring-plugin-server-optout-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.server = false
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    expect(preflightBoringPlugins([root]).ok).toBe(true)
+    const [plugin] = readBoringPlugins([root])
+    expect(plugin.frontUrl).toContain("/@fs/")
+    expect(plugin.serverPath).toBeUndefined()
+  })
+
+  test("loads explicit server routes, emits load events, and dispatches hot routes", async () => {
     const root = await tmp("boring-plugin-manager-")
     await writePlugin(root)
     const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
