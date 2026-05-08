@@ -1,5 +1,4 @@
 import { DuckDBConnection, quotedIdentifier, quotedString } from "@duckdb/node-api"
-import type { AgentTool, ToolResult } from "@boring/workspace"
 import {
   defineServerPlugin,
   type WorkspaceServerPlugin,
@@ -18,12 +17,43 @@ interface QueryResultDetails {
   truncated: boolean
 }
 
-function textResult(text: string, details?: unknown): ToolResult {
-  return { content: [{ type: "text", text }], details }
+interface ExecuteSqlResult {
+  text: string
+  details?: unknown
+  isError?: boolean
 }
 
-function errorResult(text: string): ToolResult {
-  return { content: [{ type: "text", text }], isError: true }
+interface PlaygroundPiToolDefinition {
+  name: string
+  label: string
+  description: string
+  parameters: Record<string, unknown>
+  execute(
+    toolCallId: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<{ content: Array<{ type: "text"; text: string }>; details?: unknown }>
+}
+
+type PlaygroundPiExtensionFactory = (api: unknown) => void | Promise<void>
+
+interface PlaygroundPiExtensionAPI {
+  registerTool(tool: PlaygroundPiToolDefinition): void
+  on(
+    event: "before_agent_start",
+    handler: (event: { systemPrompt: string }) =>
+      | void
+      | { systemPrompt: string }
+      | Promise<void | { systemPrompt: string }>,
+  ): void
+}
+
+function textResult(text: string, details?: unknown): ExecuteSqlResult {
+  return { text, details }
+}
+
+function errorResult(text: string): ExecuteSqlResult {
+  return { text, isError: true }
 }
 
 function clampLimit(value: unknown): number {
@@ -85,7 +115,7 @@ function tableList(): string {
   ).join("\n")
 }
 
-function createExecuteSqlTool(workspaceRoot: string): AgentTool {
+function createExecuteSqlRunner(workspaceRoot: string): (params: Record<string, unknown>) => Promise<ExecuteSqlResult> {
   let connectionPromise: Promise<DuckDBConnection> | null = null
 
   async function getConnection(): Promise<DuckDBConnection> {
@@ -108,27 +138,7 @@ function createExecuteSqlTool(workspaceRoot: string): AgentTool {
     }
   }
 
-  return {
-    name: "execute_sql",
-    description: "Run read-only DuckDB SQL against the playground CSV data catalog.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: `Read-only DuckDB SQL. Available tables:\n${tableList()}`,
-        },
-        limit: {
-          type: "number",
-          description: "Maximum rows to return. Default 50, max 100.",
-          minimum: 1,
-          maximum: 100,
-        },
-      },
-      required: ["query"],
-      additionalProperties: false,
-    },
-    async execute(params) {
+  return async function executeSql(params) {
       const query = String(params.query ?? "").trim()
       if (!query) return errorResult("query is required")
       if (!isReadOnlySql(query)) {
@@ -161,28 +171,77 @@ function createExecuteSqlTool(workspaceRoot: string): AgentTool {
       } catch (error) {
         return errorResult(error instanceof Error ? error.message : String(error))
       }
+  }
+}
+
+function executeSqlParameters(): Record<string, unknown> {
+  return {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: `Read-only DuckDB SQL. Available tables:\n${tableList()}`,
+      },
+      limit: {
+        type: "number",
+        description: "Maximum rows to return. Default 50, max 100.",
+        minimum: 1,
+        maximum: 100,
+      },
+    },
+    required: ["query"],
+    additionalProperties: false,
+  }
+}
+
+export function createPlaygroundExecuteSqlPiTool(workspaceRoot: string): PlaygroundPiToolDefinition {
+  const executeSql = createExecuteSqlRunner(workspaceRoot)
+  return {
+    name: "execute_sql",
+    label: "Execute SQL",
+    description: "Run read-only DuckDB SQL against the playground CSV data catalog.",
+    parameters: executeSqlParameters(),
+    async execute(_toolCallId, params) {
+      const result = await executeSql(params)
+      if (result.isError) throw new Error(result.text)
+      return {
+        content: [{ type: "text", text: result.text }],
+        details: result.details,
+      }
     },
   }
+}
+
+export function createPlaygroundDataPiExtension(workspaceRoot: string): PlaygroundPiExtensionFactory {
+  return (api) => {
+    const pi = api as PlaygroundPiExtensionAPI
+    pi.registerTool(createPlaygroundExecuteSqlPiTool(workspaceRoot))
+    pi.on("before_agent_start", (event) => ({
+      systemPrompt: `${event.systemPrompt}\n\n${playgroundDataPrompt()}`,
+    }))
+  }
+}
+
+function playgroundDataPrompt(): string {
+  return [
+    "## Playground Data Catalog",
+    "",
+    "The playground installs the data catalog plugin with DuckDB-backed CSV fixtures.",
+    "Use `execute_sql` for read-only SQL and discovery over these tables:",
+    tableList(),
+    "",
+    "When you need to show a playground CSV fixture, call `exec_ui` with",
+    '`kind: "openSurface"` and params',
+    '`{ kind: "workspace.open.path", target: "<csv path>" }`.',
+  ].join("\n")
 }
 
 export function createPlaygroundDataServerPlugin(
   options: CreatePlaygroundDataServerPluginOptions,
 ): WorkspaceServerPlugin {
-  const sqlTool = createExecuteSqlTool(options.workspaceRoot)
   return defineServerPlugin({
     id: PLAYGROUND_DATA_PLUGIN_ID,
     label: "Playground Data",
-    agentTools: [sqlTool],
-    systemPrompt: [
-      "## Playground Data Catalog",
-      "",
-      "The playground installs the data catalog plugin with DuckDB-backed CSV fixtures.",
-      "Use `execute_sql` for read-only SQL and discovery over these tables:",
-      tableList(),
-      "",
-      "When you need to show a playground CSV fixture, call `exec_ui` with",
-      '`kind: "openSurface"` and params',
-      '`{ kind: "workspace.open.path", target: "<csv path>" }`.',
-    ].join("\n"),
+    extensionFactories: [createPlaygroundDataPiExtension(options.workspaceRoot)],
   })
 }

@@ -54,6 +54,32 @@ describe("boring agent plugin assets", () => {
     expect(plugins[0].serverPath).toBe(join(root, "server", "index.js"))
   })
 
+  test("prefers explicit boring.id over package name", async () => {
+    const root = await tmp("boring-plugin-explicit-id-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.id = "test-plugin"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const [plugin] = readBoringPlugins([root])
+    expect(plugin.id).toBe("test-plugin")
+  })
+
+  test("rejects unsafe explicit boring.id values", async () => {
+    const root = await tmp("boring-plugin-unsafe-id-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.id = ".."
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      code: "INVALID_BORING_FIELD",
+      message: expect.stringContaining("id must start with a letter or number"),
+    })
+  })
+
   test("allows manifest server opt-out while still loading front assets", async () => {
     const root = await tmp("boring-plugin-server-optout-")
     await writePlugin(root)

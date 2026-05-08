@@ -23,10 +23,14 @@ function safeRelativePath(value: string): boolean {
   )
 }
 
+function safePluginId(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)
+}
+
 function pluginIdFromPackageJson(pkg: Record<string, unknown>, rootDir: string): string {
   const boring = pkg.boring as { id?: unknown } | undefined
   const explicit = boring?.id
-  if (typeof explicit === "string" && explicit.trim()) return explicit.trim()
+  if (typeof explicit === "string" && explicit.trim() && safePluginId(explicit.trim())) return explicit.trim()
   const name = typeof pkg.name === "string" && pkg.name.trim() ? pkg.name.trim() : undefined
   return (name ?? rootDir.split(/[\\/]/).at(-1) ?? "plugin").replace(/^@/, "").replaceAll("/", "-")
 }
@@ -70,6 +74,11 @@ export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPrefli
     }
     const boring = normalizeBoringField(pkg.boring)
     if (!boring) continue
+    if (boring.id !== undefined) {
+      if (typeof boring.id !== "string" || !boring.id.trim() || !safePluginId(boring.id.trim())) {
+        errors.push({ pluginDir: rootDir, code: "INVALID_BORING_FIELD", message: "id must start with a letter or number and use only letters, numbers, dot, underscore, colon, or dash" })
+      }
+    }
     for (const [label, value] of Object.entries({ front: boring.front, server: boring.server })) {
       if (value === undefined || value === false) continue
       if (typeof value !== "string" || !safeRelativePath(value)) {

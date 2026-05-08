@@ -25,6 +25,7 @@ A plugin root can contain these layers:
 {
   "pi": { "extensions": ["./agent/index.ts"] },
   "boring": {
+    "id": "my-plugin",
     "front": "./front/index.tsx",
     "server": "./server/index.ts",
     "label": "My Plugin",
@@ -37,6 +38,7 @@ A plugin root can contain these layers:
 ```
 
 - `pi.extensions` is loaded by pi through `additionalExtensionPaths`; do not pass imported factories for hot reload.
+- `boring.id` is the stable runtime plugin id. It must start with a letter or number and may then use letters, numbers, `.`, `_`, `:`, or `-`. If omitted, boring-ui falls back to the package name.
 - `boring.front` points at the browser factory loaded by boring-ui.
 - `boring.server` is optional. Omit it to use `server/index.{ts,js}` by convention, set a safe relative path for a custom dynamic server factory, or set `false` when the plugin has static host-composed Fastify routes that are not compatible with the dynamic exact-route API yet.
 

@@ -1,6 +1,8 @@
 import type { FastifyReply, FastifyRequest } from "fastify"
 
 export interface BoringPackageField {
+  /** Stable runtime id. Defaults to package name when omitted. */
+  id?: string
   front?: string
   /**
    * Optional dynamic boring server asset entry. Omit for convention-based

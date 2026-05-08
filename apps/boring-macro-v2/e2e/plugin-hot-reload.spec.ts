@@ -43,7 +43,7 @@ test("/api/boring.reload exposes edited macro front factory through real Vite /@
     const reload = await request.post("/api/boring.reload")
     expect(reload.status(), await reload.text()).toBe(200)
     const body = await reload.json() as { plugins: Array<{ id: string; revision: number; frontUrl?: string }> }
-    const plugin = body.plugins.find((entry) => entry.id === "boring-plugin-macro")
+    const plugin = body.plugins.find((entry) => entry.id === "boring-macro")
     expect(plugin?.frontUrl).toBeTruthy()
 
     const resolved = await page.evaluate(async ({ frontUrl, revision, marker }) => {
