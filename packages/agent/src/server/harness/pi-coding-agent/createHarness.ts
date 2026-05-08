@@ -13,7 +13,7 @@ import {
   getAgentDir,
   loadSkills,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentHarness, SendMessageInput, RunContext } from "../../../shared/harness.js";
+import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { UIMessageChunk } from "../../../shared/message.js";
@@ -346,15 +346,15 @@ export function createPiCodingAgentHarness(opts: {
   // message here. After agent_end, if the queue is non-empty we emit a
   // data-followup-consumed chunk (so the client can clear its bubble) and
   // continue the HTTP stream with a second pi turn — no extra round-trip.
-  const harnessFollowUpQueues = new Map<string, string>();
+  const harnessFollowUpQueues = new Map<string, { message: string; attachments?: MessageAttachment[] }>();
 
   return {
     id: "pi-coding-agent",
     placement: "server",
     sessions: sessionStore,
 
-    followUp(sessionId: string, text: string): void {
-      harnessFollowUpQueues.set(sessionId, text);
+    followUp(sessionId: string, text: string, attachments?: MessageAttachment[]): void {
+      harnessFollowUpQueues.set(sessionId, { message: text, attachments });
     },
 
     clearFollowUp(sessionId: string): void {
@@ -448,11 +448,28 @@ export function createPiCodingAgentHarness(opts: {
       }
 
       let sawTextChunk = false;
+      let inlineTurnIndex = 0;
+
+      function namespaceInlinePartIds(input: UIMessageChunk[]): UIMessageChunk[] {
+        if (inlineTurnIndex === 0) return input;
+        return input.map((chunk) => {
+          const rec = chunk as unknown as { type?: string; id?: string };
+          if (
+            (rec.type === "text-start" || rec.type === "text-delta" || rec.type === "text-end" ||
+              rec.type === "reasoning-start" || rec.type === "reasoning-delta" || rec.type === "reasoning-end") &&
+            typeof rec.id === "string"
+          ) {
+            return { ...rec, id: `turn-${inlineTurnIndex}:${rec.id}` } as unknown as UIMessageChunk;
+          }
+          return chunk;
+        });
+      }
+
       // pendingFollowUpMsg is set by the agent_end handler when a follow-up
       // is queued. The actual piSession.prompt() call is deferred to the
       // promptPromise .then() chain — pi's agent must be fully idle before
       // a new prompt() call is legal ("already processing" otherwise).
-      let pendingFollowUpMsg: string | undefined;
+      let pendingFollowUp: { message: string; attachments?: MessageAttachment[] } | undefined;
       // promptPromise tracks the most recently started pi turn so the
       // finally block can await full settlement before cleanup.
       let promptSettled = false;
@@ -479,7 +496,7 @@ export function createPiCodingAgentHarness(opts: {
           if (activeTools.size === 0) stopHeartbeat();
         }
 
-        let converted = dedupStartChunks(piEventToChunks(event));
+        let converted = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
         if (event.type === "message_update") {
           const ame = event.assistantMessageEvent;
           if (
@@ -488,7 +505,7 @@ export function createPiCodingAgentHarness(opts: {
             && ame.content.length > 0
             && !textDeltaSeen.has(ame.contentIndex)
           ) {
-            const id = String(ame.contentIndex);
+            const id = inlineTurnIndex === 0 ? String(ame.contentIndex) : `turn-${inlineTurnIndex}:${ame.contentIndex}`;
             converted = [
               ...(textStartSeen.has(ame.contentIndex)
                 ? []
@@ -519,10 +536,11 @@ export function createPiCodingAgentHarness(opts: {
             chunks.push({ type: "error", errorText } as UIMessageChunk);
             sawTextChunk = true;
           } else if (role === "assistant" && text.length > 0) {
+            const id = inlineTurnIndex === 0 ? "0" : `turn-${inlineTurnIndex}:0`;
             chunks.push(
-              { type: "text-start", id: "0" } as UIMessageChunk,
-              { type: "text-delta", id: "0", delta: text } as UIMessageChunk,
-              { type: "text-end", id: "0" } as UIMessageChunk,
+              { type: "text-start", id } as UIMessageChunk,
+              { type: "text-delta", id, delta: text } as UIMessageChunk,
+              { type: "text-end", id } as UIMessageChunk,
             );
             sawTextChunk = true;
             assistantText += text;
@@ -540,10 +558,11 @@ export function createPiCodingAgentHarness(opts: {
               chunks.push({ type: "error", errorText } as UIMessageChunk);
               sawTextChunk = true;
             } else if (role === "assistant" && text.length > 0) {
+              const id = inlineTurnIndex === 0 ? "0" : `turn-${inlineTurnIndex}:0`;
               chunks.push(
-                { type: "text-start", id: "0" } as UIMessageChunk,
-                { type: "text-delta", id: "0", delta: text } as UIMessageChunk,
-                { type: "text-end", id: "0" } as UIMessageChunk,
+                { type: "text-start", id } as UIMessageChunk,
+                { type: "text-delta", id, delta: text } as UIMessageChunk,
+                { type: "text-end", id } as UIMessageChunk,
               );
               sawTextChunk = true;
               assistantText += text;
@@ -556,17 +575,23 @@ export function createPiCodingAgentHarness(opts: {
           // would throw "already processing". Instead, set pendingFollowUpMsg
           // so the promptPromise .then() chain (which runs after pi is idle)
           // picks it up and starts the follow-up turn.
-          const followUpMsg = harnessFollowUpQueues.get(input.sessionId);
-          if (followUpMsg !== undefined && !ctx.abortSignal.aborted) {
+          const followUp = harnessFollowUpQueues.get(input.sessionId);
+          if (followUp !== undefined && !ctx.abortSignal.aborted) {
             harnessFollowUpQueues.delete(input.sessionId);
             chunks.push({ type: "data-followup-consumed" } as unknown as UIMessageChunk);
+            inlineTurnIndex += 1;
             // Reset per-turn accumulators for the incoming follow-up turn.
             sawTextChunk = false;
             textStartSeen.clear();
             textDeltaSeen.clear();
-            startedMessageIds.clear();
+            // Keep startedMessageIds across inline follow-up turns. pi may reuse
+            // the same assistant message id for the next prompt in a session;
+            // emitting a second `start` with that id inside one AI SDK stream
+            // can make the client restart/merge the previous assistant message.
+            // The follow-up marker plus subsequent text chunks are enough: the
+            // client splits the combined assistant message at the marker.
             assistantText = "";
-            pendingFollowUpMsg = followUpMsg;
+            pendingFollowUp = followUp;
             // Don't set done = true — the stream stays open for the follow-up.
           } else {
             done = true;
@@ -585,16 +610,59 @@ export function createPiCodingAgentHarness(opts: {
       // agent_end subscriber). If present, pi is now idle and we can safely
       // call prompt() for the follow-up — keeping the HTTP stream open for
       // a second turn with no extra round-trip from the client.
-      function startTurn(message: string, promptOpts?: PromptOptions): Promise<void> {
+      async function prepareTurn(message: string, attachments?: MessageAttachment[]): Promise<{ message: string; promptOpts?: PromptOptions }> {
+        // Process image attachments: pass as vision AND write to workspace.
+        const initialImages: NonNullable<PromptOptions["images"]> = [];
+        const savedPaths: string[] = [];
+        const writeErrors: string[] = [];
+        for (const a of attachments ?? []) {
+          const match = a.url.match(/^data:(image\/[^;]+);base64,(.+)$/);
+          if (!match) continue;
+          const [, contentType, b64] = match;
+          initialImages.push({ type: "image", mimeType: contentType, data: b64 });
+          if (!ctx.workdir) {
+            writeErrors.push(`${a.filename ?? "image"}: no workdir`);
+            continue;
+          }
+          try {
+            const bytes = Buffer.from(b64, "base64");
+            const ext = extForAttachment(a.filename ?? "image", contentType);
+            const base = basenameForAttachment(a.filename ?? "image");
+            const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+            const relPath = `${DEFAULT_ATTACHMENT_DIR}/${base}-${unique}.${ext}`;
+            await mkdir(join(ctx.workdir, DEFAULT_ATTACHMENT_DIR), { recursive: true });
+            await writeFile(join(ctx.workdir, relPath), bytes);
+            savedPaths.push(relPath);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log.error("attachment write failed", { workdir: ctx.workdir, error: msg });
+            writeErrors.push(`${a.filename ?? "image"}: ${msg}`);
+          }
+        }
+        const attachmentNotes: string[] = [];
+        if (savedPaths.length > 0) {
+          attachmentNotes.push(`[Attached file(s) saved to workspace:\n${savedPaths.map((p) => `- ${p}`).join("\n")}]`);
+        }
+        if (writeErrors.length > 0) {
+          attachmentNotes.push(`[Warning: failed to save attachment(s) to workspace — ${writeErrors.join("; ")}. The image is available via vision only.]`);
+        }
+        return {
+          message: attachmentNotes.length > 0 ? `${message}\n\n${attachmentNotes.join("\n")}` : message,
+          promptOpts: initialImages.length > 0 ? { images: initialImages } : undefined,
+        };
+      }
+
+      async function startTurn(message: string, attachments?: MessageAttachment[]): Promise<void> {
         promptSettled = false;
+        const prepared = await prepareTurn(message, attachments);
         return piSession
-          .prompt(message, promptOpts)
+          .prompt(prepared.message, prepared.promptOpts)
           .then(() => {
             promptSettled = true;
-            if (pendingFollowUpMsg !== undefined && !ctx.abortSignal.aborted) {
-              const next = pendingFollowUpMsg;
-              pendingFollowUpMsg = undefined;
-              promptPromise = startTurn(next);
+            if (pendingFollowUp !== undefined && !ctx.abortSignal.aborted) {
+              const next = pendingFollowUp;
+              pendingFollowUp = undefined;
+              promptPromise = startTurn(next.message, next.attachments);
             }
           })
           .catch((err) => {
@@ -605,49 +673,7 @@ export function createPiCodingAgentHarness(opts: {
             if (wake) wake();
           });
       }
-      // Process image attachments: pass as vision AND write to workspace.
-      const initialImages: NonNullable<PromptOptions["images"]> = [];
-      const savedPaths: string[] = [];
-      const writeErrors: string[] = [];
-      for (const a of input.attachments ?? []) {
-        const match = a.url.match(/^data:(image\/[^;]+);base64,(.+)$/);
-        if (!match) continue;
-        const [, contentType, b64] = match;
-        initialImages.push({ type: "image", mimeType: contentType, data: b64 });
-        if (!ctx.workdir) {
-          writeErrors.push(`${a.filename ?? "image"}: no workdir`);
-          continue;
-        }
-        try {
-          const bytes = Buffer.from(b64, "base64");
-          const ext = extForAttachment(a.filename ?? "image", contentType);
-          const base = basenameForAttachment(a.filename ?? "image");
-          const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-          const relPath = `${DEFAULT_ATTACHMENT_DIR}/${base}-${unique}.${ext}`;
-          await mkdir(join(ctx.workdir, DEFAULT_ATTACHMENT_DIR), { recursive: true });
-          await writeFile(join(ctx.workdir, relPath), bytes);
-          savedPaths.push(relPath);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          log.error("attachment write failed", { workdir: ctx.workdir, error: msg });
-          writeErrors.push(`${a.filename ?? "image"}: ${msg}`);
-        }
-      }
-      const attachmentNotes: string[] = [];
-      if (savedPaths.length > 0) {
-        attachmentNotes.push(`[Attached file(s) saved to workspace:\n${savedPaths.map((p) => `- ${p}`).join("\n")}]`);
-      }
-      if (writeErrors.length > 0) {
-        attachmentNotes.push(`[Warning: failed to save attachment(s) to workspace — ${writeErrors.join("; ")}. The image is available via vision only.]`);
-      }
-      const effectiveMessage =
-        attachmentNotes.length > 0
-          ? `${input.message}\n\n${attachmentNotes.join("\n")}`
-          : input.message;
-      promptPromise = startTurn(
-        effectiveMessage,
-        initialImages.length > 0 ? { images: initialImages } : undefined,
-      );
+      promptPromise = startTurn(input.message, input.attachments);
 
       const onAbort = () => {
         // While prompt() is still running, treat abort as a graceful stop:

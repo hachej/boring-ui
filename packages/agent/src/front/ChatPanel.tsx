@@ -4,6 +4,17 @@ import { motion } from 'motion/react'
 
 const INLINE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml', 'application/yaml']
 
+async function resolveAttachmentUrls(files: FileUIPart[] | undefined) {
+  if (!files) return []
+  return Promise.all(files.map(async (file) => ({
+    filename: file.filename,
+    mediaType: file.mediaType,
+    url: file.url.startsWith('blob:')
+      ? (await convertBlobUrlToDataUrl(file.url)) ?? file.url
+      : file.url,
+  })))
+}
+
 /** Best-effort fetch of a FileUIPart's bytes as UTF-8 text. */
 async function readFileAsText(file: FileUIPart): Promise<string | null> {
   const looksText =
@@ -22,6 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MentionPicker, detectMention, type MentionState } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
+import { splitFollowUp } from './splitFollowUp'
 import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
@@ -46,6 +58,7 @@ import {
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
+  convertBlobUrlToDataUrl,
   usePromptInputAttachments,
 } from './primitives/prompt-input'
 import {
@@ -364,9 +377,42 @@ export function ChatPanel(props: ChatPanelProps) {
     debug = false,
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
+  const [pendingMessage, setPendingMessage] = useState<{
+    text: string
+    files: FileUIPart[]
+    serverMessage: string
+    attachments: Array<{ filename?: string; mediaType?: string; url?: string }>
+  } | null>(null)
+  const pendingMessageRef = useRef<typeof pendingMessage>(null)
+
+  const consumedFollowUpRef = useRef<{ text: string; files: FileUIPart[] } | null>(null)
+  const followUpSplitIdsRef = useRef<{ userId: string; assistantId: string } | null>(null)
+
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
-  } = useAgentChat({ sessionId, onData, requestHeaders })
+  } = useAgentChat({
+    sessionId,
+    onData: (part) => {
+      if ((part as { type?: string })?.type === 'data-followup-consumed') {
+        const pending = pendingMessageRef.current
+        consumedFollowUpRef.current = pending
+          ? { text: pending.text, files: pending.files }
+          : null
+        followUpSplitIdsRef.current = {
+          userId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-followup-user`,
+          assistantId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-followup-assistant`,
+        }
+        // Keep pendingMessageRef until the stream settles. Some AI SDK paths
+        // deliver the data chunk to onData without retaining the marker in
+        // messages; the ready-transition splitter uses this ref as the durable
+        // source for the injected user turn.
+        setPendingMessage(null)
+      }
+      onData?.(part)
+    },
+    requestHeaders,
+  })
+
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
   const registry = useMemo(
@@ -504,36 +550,66 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
-  // Message queue: one pending message held while agent is streaming.
-  const [pendingMessage, setPendingMessage] = useState<{
-    text: string
-    files: FileUIPart[]
-    serverMessage: string
-    attachments: Array<{ filename?: string; mediaType?: string; url?: string }>
-  } | null>(null)
+  const displayMessages = useMemo(() => {
+    const consumed = consumedFollowUpRef.current ?? pendingMessageRef.current
+    const ids = followUpSplitIdsRef.current
+    if (!consumed || !ids) return messages
+    // Avoid moving the queued bubble before the follow-up turn has actually
+    // started streaming. Once we see a namespaced follow-up part, split the
+    // live assistant message and inject the queued user turn before it.
+    const hasFollowUpPart = messages.some((m) =>
+      m.role === 'assistant' && m.parts?.some((p) => (p as { id?: string }).id?.startsWith('turn-')),
+    )
+    if (!hasFollowUpPart) return messages
+    let n = 0
+    return splitFollowUp(messages, consumed, () => (n++ === 0 ? ids.userId : ids.assistantId))
+  }, [messages])
 
-  // Auto-send the queued message when the current stream completes.
+  // Server-side inline follow-ups keep the same HTTP stream open. The AI SDK
+  // naturally appends both assistant turns into one assistant message, so when
+  // the stream settles we split at the server's data-followup-consumed marker
+  // and inject the queued user message between the two assistant turns.
   const prevStatusForQueue = useRef(status)
   useEffect(() => {
     const prev = prevStatusForQueue.current
     prevStatusForQueue.current = status
     if (status !== 'ready') return
     if (prev !== 'streaming' && prev !== 'submitted') return
-    setPendingMessage((pending) => {
-      if (!pending) return null
-      void sendMessage(
-        { text: pending.text, files: pending.files },
-        { body: { sessionId, message: pending.serverMessage, model, attachments: pending.attachments } },
-      )
-      return null
-    })
-  }, [status, sessionId, model, sendMessage])
+    const consumed = consumedFollowUpRef.current ?? pendingMessageRef.current
+    if (!consumed) return
+    const ids = followUpSplitIdsRef.current
+    consumedFollowUpRef.current = null
+    followUpSplitIdsRef.current = null
+    pendingMessageRef.current = null
+    setPendingMessage(null)
+    let n = 0
+    const genId = () => ids ? (n++ === 0 ? ids.userId : ids.assistantId) : (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)
+    const nextMessages = splitFollowUp(messages, consumed, genId)
+    setMessages(nextMessages)
+    // useAgentChat's save effect may have already persisted the unsplit stream
+    // snapshot for this ready transition. Persist the corrected shape too.
+    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...requestHeaders,
+      },
+      body: JSON.stringify({ messages: nextMessages }),
+    }).catch(() => {})
+  }, [status, messages, sessionId, requestHeaders, setMessages])
 
-  // Stop button: cancels stream AND clears the queue.
+  // Stop button: cancels stream AND clears the queued follow-up.
   const handleStop = useCallback(() => {
     stop()
+    consumedFollowUpRef.current = null
+    followUpSplitIdsRef.current = null
+    pendingMessageRef.current = null
     setPendingMessage(null)
-  }, [stop])
+    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
+      method: 'DELETE',
+      headers: requestHeaders,
+    }).catch(() => {})
+  }, [stop, sessionId, requestHeaders])
 
   // Escape: interrupts the stream but keeps the queued message — it auto-sends next.
   // Same behaviour as pi's keyboard interrupt: "stop this, do my follow-up instead."
@@ -731,19 +807,31 @@ export function ChatPanel(props: ChatPanelProps) {
     ].filter(Boolean).join('\n\n') || text
     setMentionedFiles([])
 
-    // Queue the message if the agent is currently streaming.
+    // Queue the message if the agent is currently streaming. The server-side
+    // harness will consume this after agent_end and run the follow-up as the
+    // next pi turn in the same HTTP stream. This avoids a second AI SDK
+    // sendMessage() call while the previous assistant message is still last in
+    // client state — that was the source of duplicated assistant text.
+    const resolvedAttachments = await resolveAttachmentUrls(files)
+
     if (isStreaming) {
       if (!pendingMessage) {
-        setPendingMessage({
+        const nextPending = {
           text,
           files: files ?? [],
           serverMessage,
-          attachments: files?.map((f) => ({
-            filename: f.filename,
-            mediaType: f.mediaType,
-            url: f.url,
-          })) ?? [],
-        })
+          attachments: resolvedAttachments,
+        }
+        pendingMessageRef.current = nextPending
+        setPendingMessage(nextPending)
+        fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...requestHeaders,
+          },
+          body: JSON.stringify({ message: serverMessage, attachments: resolvedAttachments }),
+        }).catch(() => {})
       }
       return
     }
@@ -770,13 +858,7 @@ export function ChatPanel(props: ChatPanelProps) {
           // schema treats it as optional; omitting it keeps the existing
           // 'off' default behaviour for hosts that don't expose the toggle.
           ...(thinkingControl ? { thinkingLevel } : {}),
-          attachments: files?.map((f) => ({
-            filename: f.filename,
-            mediaType: f.mediaType,
-            // Keep the data URL so the server could later forward images
-            // to multimodal-capable providers.
-            url: f.url,
-          })) ?? [],
+          attachments: resolvedAttachments,
         },
       },
     )
@@ -831,7 +913,7 @@ export function ChatPanel(props: ChatPanelProps) {
           "mx-auto flex w-full flex-col gap-6",
           chrome ? "max-w-3xl px-6 py-8" : "max-w-[680px] px-4 py-4",
         )}>
-          {messages.length === 0 && (
+          {displayMessages.length === 0 && (
             <ChatEmptyState
               eyebrow={emptyEyebrow}
               title={emptyTitle}
@@ -854,7 +936,7 @@ export function ChatPanel(props: ChatPanelProps) {
               }}
             />
           )}
-          {messages.map((message, messageIndex) => {
+          {displayMessages.map((message, messageIndex) => {
             const role = message.role === 'user' || message.role === 'assistant' ? message.role : 'assistant'
             const textParts = message.parts.filter(isTextPart)
             const fileParts = message.parts.filter(isFilePart)
