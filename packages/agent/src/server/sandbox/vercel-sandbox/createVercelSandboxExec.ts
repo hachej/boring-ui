@@ -65,13 +65,28 @@ function timeoutResult(durationMs: number): ExecResult {
   }
 }
 
+function toRemotePath(value: string): string {
+  if (value === VERCEL_SANDBOX_WORKSPACE_ROOT) return VERCEL_SANDBOX_REMOTE_ROOT
+  if (value.startsWith(`${VERCEL_SANDBOX_WORKSPACE_ROOT}/`)) {
+    return `${VERCEL_SANDBOX_REMOTE_ROOT}${value.slice(VERCEL_SANDBOX_WORKSPACE_ROOT.length)}`
+  }
+  return value
+}
+
 function toRemoteCwd(cwd: string | undefined): string | undefined {
   if (!cwd) return cwd
-  if (cwd === VERCEL_SANDBOX_WORKSPACE_ROOT) return VERCEL_SANDBOX_REMOTE_ROOT
-  if (cwd.startsWith(`${VERCEL_SANDBOX_WORKSPACE_ROOT}/`)) {
-    return `${VERCEL_SANDBOX_REMOTE_ROOT}${cwd.slice(VERCEL_SANDBOX_WORKSPACE_ROOT.length)}`
-  }
-  return cwd
+  return toRemotePath(cwd)
+}
+
+function toRemoteCommand(command: string): string {
+  return command.replaceAll(VERCEL_SANDBOX_WORKSPACE_ROOT, VERCEL_SANDBOX_REMOTE_ROOT)
+}
+
+function toRemoteEnv(env: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!env) return undefined
+  return Object.fromEntries(
+    Object.entries(env).map(([key, value]) => [key, toRemotePath(value)]),
+  )
 }
 
 export function createVercelSandboxExec(
@@ -129,9 +144,9 @@ export function createVercelSandboxExec(
 
         const result = await sandbox.runCommand({
           cmd: 'sh',
-          args: ['-c', cmd],
+          args: ['-c', toRemoteCommand(cmd)],
           cwd: toRemoteCwd(opts?.cwd),
-          env: opts?.env,
+          env: toRemoteEnv(opts?.env),
           signal: controller.signal,
           stdout: createStreamWritable(stdoutCollector, captureState, opts?.onStdout),
           stderr: createStreamWritable(stderrCollector, captureState, opts?.onStderr),

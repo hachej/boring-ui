@@ -11,13 +11,33 @@ import type {
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { Workspace } from '../../../shared/workspace'
+import {
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from '../../workspace/createVercelSandboxWorkspace'
+
+function rootAliases(workspace: Workspace): string[] {
+  const aliases = [workspace.root]
+  if (workspace.root === VERCEL_SANDBOX_WORKSPACE_ROOT) aliases.push(VERCEL_SANDBOX_REMOTE_ROOT)
+  if (workspace.root === VERCEL_SANDBOX_REMOTE_ROOT) aliases.push(VERCEL_SANDBOX_WORKSPACE_ROOT)
+  return aliases
+}
 
 function toRelPath(workspace: Workspace, absolutePath: string): string {
-  const rel = relative(workspace.root, absolutePath)
-  if (rel.startsWith('..') || rel.startsWith('/')) {
-    throw new Error(`path "${absolutePath}" is outside workspace`)
+  for (const root of rootAliases(workspace)) {
+    const rel = relative(root, absolutePath)
+    if (!rel.startsWith('..') && !rel.startsWith('/')) return rel
   }
-  return rel
+
+  const skillMarker = '/.agents/skills/'
+  const skillIndex = absolutePath.indexOf(skillMarker)
+  if (skillIndex >= 0) {
+    return `.agents/skills/${absolutePath.slice(skillIndex + skillMarker.length)}`
+  }
+
+  throw new Error(
+    `path "${absolutePath}" is outside workspace; use a path relative to the workspace root or under ${rootAliases(workspace).join(' / ')}`,
+  )
 }
 
 export function vercelBashOps(sandbox: Sandbox): BashOperations {
@@ -83,6 +103,53 @@ export function vercelEditOps(workspace: Workspace): EditOperations {
   }
 }
 
+function toRemotePath(value: string): string {
+  if (value === VERCEL_SANDBOX_WORKSPACE_ROOT) return VERCEL_SANDBOX_REMOTE_ROOT
+  if (value.startsWith(`${VERCEL_SANDBOX_WORKSPACE_ROOT}/`)) {
+    return `${VERCEL_SANDBOX_REMOTE_ROOT}${value.slice(VERCEL_SANDBOX_WORKSPACE_ROOT.length)}`
+  }
+  return value
+}
+
+function findPredicate(pattern: string): string {
+  const isPathShaped = pattern.includes('/') || pattern.includes('**')
+  if (!isPathShaped) return `-name ${shellEscape(pattern)}`
+
+  let translated = pattern.replaceAll('**', '*').replace(/^\/+/, '')
+  if (!translated.startsWith('*')) translated = `*${translated}`
+  return `-path ${shellEscape(translated)}`
+}
+
+function findIgnoreArgs(cwd: string, ignore: string[]): string {
+  return ignore
+    .map((pattern) => `! -path ${shellEscape(`${cwd}/${pattern.replace(/^\/+/, '')}/*`)}`)
+    .join(' ')
+}
+
+function fallbackFindCommand(pattern: string, cwd: string, options: { ignore: string[]; limit: number }): string {
+  return [
+    'find',
+    shellEscape(cwd),
+    '-maxdepth 20',
+    '-type f',
+    findIgnoreArgs(cwd, options.ignore),
+    findPredicate(pattern),
+    `| head -n ${Math.max(1, Math.trunc(options.limit))}`,
+  ].filter(Boolean).join(' ')
+}
+
+function isFdMissing(result: ExecResultLike): boolean {
+  if (result.exitCode !== 127) return false
+  const stderr = Buffer.from(result.stderr).toString('utf-8')
+  return /fd: not found|fd: command not found|not found/i.test(stderr)
+}
+
+interface ExecResultLike {
+  stdout: Uint8Array
+  stderr: Uint8Array
+  exitCode: number
+}
+
 export function vercelFindOps(sandbox: Sandbox, workspace?: Workspace): FindOperations {
   return {
     async exists(absolutePath: string): Promise<boolean> {
@@ -101,20 +168,28 @@ export function vercelFindOps(sandbox: Sandbox, workspace?: Workspace): FindOper
       return result.exitCode === 0
     },
     async glob(pattern: string, cwd: string, options: { ignore: string[]; limit: number }): Promise<string[]> {
+      const remoteCwd = toRemotePath(cwd)
       const args = ['fd', '--glob', '--no-require-git', '--max-results', String(options.limit)]
       for (const ig of options.ignore) {
         args.push('--exclude', ig)
       }
-      args.push(pattern, cwd)
+      args.push(pattern, remoteCwd)
 
-      const result = await sandbox.exec(args.map(shellEscape).join(' '), {
+      let result = await sandbox.exec(args.map(shellEscape).join(' '), {
         timeoutMs: 30_000,
         maxOutputBytes: 1_048_576,
       })
 
+      if (isFdMissing(result)) {
+        result = await sandbox.exec(fallbackFindCommand(pattern, remoteCwd, options), {
+          timeoutMs: 30_000,
+          maxOutputBytes: 1_048_576,
+        })
+      }
+
       if (result.exitCode !== 0 && result.exitCode !== 1) {
         const stderr = Buffer.from(result.stderr).toString('utf-8').trim()
-        throw new Error(`fd failed (exit ${result.exitCode}): ${stderr}`)
+        throw new Error(`file search failed (exit ${result.exitCode}): ${stderr}`)
       }
 
       const stdout = Buffer.from(result.stdout).toString('utf-8')

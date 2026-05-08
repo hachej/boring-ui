@@ -58,16 +58,35 @@ function getPathParam(kind: string, params: Record<string, unknown>): string | u
   return typeof raw === "string" && raw.length > 0 ? raw : undefined
 }
 
+function validatePathSyntax(
+  relPath: string,
+  workspaceRoot?: string,
+): { ok: true } | { ok: false; reason: string } {
+  const rootHint = workspaceRoot ? ` (${workspaceRoot})` : ''
+  if (isAbsolute(relPath)) {
+    return {
+      ok: false,
+      reason: `path "${relPath}" is absolute — pass a path relative to the workspace root${rootHint}.`,
+    }
+  }
+  if (relPath.includes('\0')) {
+    return { ok: false, reason: `path "${relPath}" contains a null byte.` }
+  }
+  if (relPath.split(/[\\/]+/).includes('..')) {
+    return {
+      ok: false,
+      reason: `path "${relPath}" escapes the workspace root${rootHint}.`,
+    }
+  }
+  return { ok: true }
+}
+
 async function validatePath(
   workspaceRoot: string,
   relPath: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (isAbsolute(relPath)) {
-    return {
-      ok: false,
-      reason: `path "${relPath}" is absolute — pass a path relative to the workspace root (${workspaceRoot}).`,
-    }
-  }
+  const syntax = validatePathSyntax(relPath, workspaceRoot)
+  if (!syntax.ok) return syntax
   const resolved = resolve(workspaceRoot, relPath)
   const rel = relative(workspaceRoot, resolved)
   if (rel.startsWith("..") || isAbsolute(rel)) {
@@ -291,19 +310,25 @@ export function createExecUiTool(
         }
       }
 
-      // Validate path-bearing kinds against the workspace root so the agent
-      // gets immediate feedback when a path is wrong, rather than the
-      // frontend silently no-op'ing on a missing file.
-      if (workspaceRoot && PATH_BEARING_KINDS.has(kind)) {
+      // Validate path-bearing kinds before queueing so the agent gets
+      // immediate feedback rather than the frontend silently no-op'ing on a
+      // malformed path. In remote modes workspaceRoot may be omitted because
+      // the host cannot stat the microVM filesystem; still enforce relative,
+      // non-traversing paths, and only stat-check when a local root is known.
+      if (PATH_BEARING_KINDS.has(kind)) {
         const relPath = getPathParam(kind, cmdParams)
         if (!relPath) {
           return makeError(
             `${kind}: ${kind === "navigateToLine" ? "file" : "path"} param is required`,
           )
         }
-        const check = await validatePath(workspaceRoot, relPath)
-        if (!check.ok) {
-          return makeError(check.reason)
+        const syntax = validatePathSyntax(relPath, workspaceRoot)
+        if (!syntax.ok) return makeError(syntax.reason)
+        if (workspaceRoot) {
+          const check = await validatePath(workspaceRoot, relPath)
+          if (!check.ok) {
+            return makeError(check.reason)
+          }
         }
       }
 

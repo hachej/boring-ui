@@ -274,7 +274,7 @@ export function chatRoutes(
     '/api/v1/agent/chat/:sessionId/followup',
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
-      const body = request.body as { message?: unknown; attachments?: unknown }
+      const body = request.body as { message?: unknown; attachments?: unknown; displayText?: unknown }
       if (typeof body?.message !== 'string' || body.message.length === 0) {
         return reply.code(400).send({
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'message is required' },
@@ -287,7 +287,12 @@ export function chatRoutes(
         })
       }
       const runtime = await resolveRuntime(request)
-      runtime.harness.followUp?.(sessionId, body.message, parsedAttachments.data)
+      await runtime.harness.followUp?.(
+        sessionId,
+        body.message,
+        parsedAttachments.data,
+        typeof body.displayText === 'string' && body.displayText.length > 0 ? body.displayText : body.message,
+      )
       return reply.code(202).send({ queued: true })
     },
   )

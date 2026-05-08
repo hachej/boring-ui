@@ -137,7 +137,40 @@ Your override receives `{ onSubmit, error, isPending, inviteToken? }` via React 
 
 `<AuthGate>` (inside `BoringApp`) redirects unauthenticated users to `/auth/signin` for any non-public route — no extra wiring needed.
 
-### 1.5 — Custom panes (workspace customization)
+### 1.5 — Core workspace-agent app shell
+
+For a child app that uses core auth/workspaces plus the agent/workspace UI, use
+`CoreWorkspaceAgentFront` from `@boring/core/app/front` as the app shell. If you
+inject a concrete agent `ChatPanel`, also inject the matching server-backed
+`useSessions` hook from `@boring/agent`; otherwise `WorkspaceAgentFront` treats
+sessions as app-owned and can fall back to local-only session state that does not
+rehydrate from `/api/v1/agent/sessions` after refresh/deploy.
+
+```tsx
+import { ChatPanel, useSessions } from '@boring/agent/front'
+import { CoreWorkspaceAgentFront } from '@boring/core/app/front'
+import { myPlugin, myShellOptions } from './plugin'
+
+const { chatParams, ...workspaceOptions } = myShellOptions
+
+export function App() {
+  return (
+    <CoreWorkspaceAgentFront
+      {...workspaceOptions}
+      chatPanel={ChatPanel}
+      useSessions={useSessions}
+      plugins={[myPlugin]}
+      chatParams={chatParams}
+    />
+  )
+}
+```
+
+Rule: **custom `chatPanel` + persistent agent sessions = pass `useSessions` too**.
+Keep auth, routing, workspace identity, and boot gate in the core shell; only
+inject the app/plugin-specific front pieces.
+
+### 1.6 — Custom panes (workspace customization)
 
 `@boring/workspace` ships an `IdeLayout` with built-in panes (FileTree, ChatPanel from agent, MarkdownEditor, CodeEditor). Add your own:
 
@@ -163,7 +196,7 @@ function WorkspaceRoute() {
 
 Your panel component receives the standard pane props (workspaceId, store hooks). See `packages/workspace/docs/plans/WORKSPACE_V2_PLAN.md` for the full pane registry contract.
 
-### 1.6 — Capabilities contributor (advanced — feature flags for your app)
+### 1.7 — Capabilities contributor (advanced — feature flags for your app)
 
 If your app has feature flags or capability gates that the frontend should respect, register a contributor at boot:
 

@@ -453,6 +453,13 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const binding = await getBindingForRequest(request)
       return binding.harness.sessions as unknown as SessionStore
     },
+    getRuntime: async (request) => {
+      const binding = await getBindingForRequest(request)
+      return {
+        harness: binding.harness,
+        workdir: binding.runtimeBundle.workspace.root,
+      }
+    },
   })
   await app.register(systemPromptRoutes, {
     getHarness: async (request) => (await getBindingForRequest(request)).harness,

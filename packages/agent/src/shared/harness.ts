@@ -30,7 +30,7 @@ export interface AgentHarness {
    * A `data-followup-consumed` chunk is emitted before the follow-up turn so
    * the client can clear its pending-message bubble immediately.
    */
-  followUp?(sessionId: string, text: string, attachments?: MessageAttachment[]): void
+  followUp?(sessionId: string, text: string, attachments?: MessageAttachment[], displayText?: string): void | Promise<void>
 
   /**
    * Discard any queued follow-up for this session (called by the Stop button).
