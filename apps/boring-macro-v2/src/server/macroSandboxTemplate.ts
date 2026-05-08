@@ -42,6 +42,10 @@ ensure_venv
 exec "$VENV_BIN/python" -m pip "$@"
 `
 
+function shouldCopySdkPath(source: string): boolean {
+  return !source.split(/[\\/]/).includes("__pycache__") && !source.endsWith(".pyc")
+}
+
 export async function prepareMacroSandboxTemplate(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "boring-macro-sandbox-template-"))
   await cp(workspaceTemplatePath, root, { recursive: true, force: true })
@@ -52,6 +56,7 @@ export async function prepareMacroSandboxTemplate(): Promise<string> {
   await cp(join(sdkProjectPath, "boring_macro"), join(sdkTarget, "boring_macro"), {
     recursive: true,
     force: true,
+    filter: shouldCopySdkPath,
   })
 
   const binDir = join(root, ".boring-agent", "bin")
