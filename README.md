@@ -2,7 +2,8 @@
 
 ---
 
-![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square) ![npm version](https://img.shields.io/npm/v/@boring/core?style=flat-square&label=npm)
+![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+![npm version](https://img.shields.io/npm/v/@boring/core?style=flat-square&label=npm)
 
 ![Boring-UI banner](doc/assets/header.png)
 
@@ -36,20 +37,35 @@ AI agents already know how to generate code — boring-ui gives them a place to 
 
 ## Features
 
-<table style="min-width: 75px;">
-<colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup>
-<tbody>
+<table>
 <tr>
-<td colspan="1" rowspan="1" style="text-align: center;"><h3>🧩 Plugin system</h3><p>Panels, catalogs, commands, agent tools. One plugin wires your domain in.</p></td>
-<td colspan="1" rowspan="1" style="text-align: center;"><h3>🤖 Agent-controlled UI</h3><p>The agent opens panels and renders data — not just replies in chat.</p></td>
-<td colspan="1" rowspan="1" style="text-align: center;"><h3>🔒 Sandboxed execution</h3><p>Bash and code run in isolation. bwrap locally, Firecracker in production.</p></td>
+<td align="center" width="33%">
+<h3>🧩 Plugin system</h3>
+Panels, catalogs, commands, agent tools. One plugin wires your domain in.
+</td>
+<td align="center" width="33%">
+<h3>🤖 Agent-controlled UI</h3>
+The agent opens panels and renders data — not just replies in chat.
+</td>
+<td align="center" width="33%">
+<h3>🔒 Sandboxed execution</h3>
+Bash and code run in isolation. bwrap locally, Firecracker in production.
+</td>
 </tr>
 <tr>
-<td colspan="1" rowspan="1" style="text-align: center;"><h3>🏢 Multi-tenant workspaces</h3><p>Auth, roles, invites built in. Teams get isolated workspaces out of the box.</p></td>
-<td colspan="1" rowspan="1" style="text-align: center;"><h3>⚡ Command palette</h3><p>Every panel, command, and catalog entry searchable from one place.</p></td>
-<td colspan="1" rowspan="1" style="text-align: center;"><h3>🚀 Full-stack included</h3><p>Fastify · Postgres · React · Drizzle. No glue code. Just extend.</p></td>
+<td align="center">
+<h3>🏢 Multi-tenant workspaces</h3>
+Auth, roles, invites built in. Teams get isolated workspaces out of the box.
+</td>
+<td align="center">
+<h3>⚡ Command palette</h3>
+Every panel, command, and catalog entry searchable from one place.
+</td>
+<td align="center">
+<h3>🚀 Full-stack included</h3>
+Fastify · Postgres · React · Drizzle. No glue code. Just extend.
+</td>
 </tr>
-</tbody>
 </table>
 
 ## What people build
