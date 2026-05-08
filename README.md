@@ -4,7 +4,9 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-![npm version](https://img.shields.io/npm/v/@boring/core?style=flat-square&label=npm)![Boring-UI banner](doc/assets/header.png)## Your workflow. Your agent. Your UI.
+<img width="1684" height="934" alt="grafik" src="https://github.com/user-attachments/assets/cca97680-1e44-40d0-b214-be176c161a6a" />
+
+## Your workflow. Your agent. Your UI.
 
 Traditional SaaS apps assume workflows are fixed.
 
