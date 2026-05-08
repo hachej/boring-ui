@@ -1,4 +1,5 @@
 """Year-over-year percent change transform."""
+from __future__ import annotations
 
 import pandas as pd
 
