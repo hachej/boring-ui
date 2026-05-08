@@ -1,8 +1,8 @@
 import { join } from "node:path"
 import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createMacroServerPlugin } from "../plugins/macro/server"
+import { prepareMacroSandboxTemplate } from "./macroSandboxTemplate"
 
 export interface MacroAppOptions {
   port?: number
@@ -20,9 +20,7 @@ export async function buildMacroServer(opts: MacroAppOptions = {}) {
     (process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd())
 
   const macroPlugin = await createMacroServerPlugin()
-  const macroTemplatePath = fileURLToPath(
-    new URL("../plugins/macro/server/workspace-template", import.meta.url),
-  )
+  const macroTemplatePath = await prepareMacroSandboxTemplate()
 
   const app = await createWorkspaceAgentServer({
     workspaceRoot,

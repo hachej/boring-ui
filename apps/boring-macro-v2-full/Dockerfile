@@ -71,8 +71,9 @@ COPY --from=build /app/apps/boring-macro-v2-full/tsconfig.json apps/boring-macro
 COPY --from=build /app/apps/boring-macro-v2-full/tsconfig.server.json apps/boring-macro-v2-full/tsconfig.server.json
 COPY --from=build /app/apps/boring-macro-v2-full/node_modules/ apps/boring-macro-v2-full/node_modules/
 
-# boring-macro-v2 plugin source — referenced by relative import in boring-macro-v2-full
+# boring-macro-v2 plugin + sandbox-template helper — referenced by relative imports in boring-macro-v2-full
 COPY --from=build /app/apps/boring-macro-v2/src/plugins/ apps/boring-macro-v2/src/plugins/
+COPY --from=build /app/apps/boring-macro-v2/src/server/macroSandboxTemplate.ts apps/boring-macro-v2/src/server/macroSandboxTemplate.ts
 COPY --from=build /app/apps/boring-macro-v2/package.json apps/boring-macro-v2/package.json
 COPY --from=build /app/apps/boring-macro-v2/node_modules/ apps/boring-macro-v2/node_modules/
 
