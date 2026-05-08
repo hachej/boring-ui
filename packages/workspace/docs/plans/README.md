@@ -3,6 +3,7 @@
 Active ownership records live in this folder.
 
 - `ASK_USER_QUESTIONS_PLUGIN_SPEC.md` - blocking ask-user tool + Questions workspace plugin spec.
+- `PANE_TO_AGENT_CHAT_ACTIONS_SPEC.md` - pane/plugin to active agent chat action bridge spec.
 - `GENERIC_EXPLORER_PLUGIN_PLAN.md` - generic explorer plugin shape and front/plugin ownership audit.
 - `MACRO_PLUGIN_GENERIC_HELPERS_AUDIT.md` - macro plugin audit for reusable explorer/surface/event helper extraction.
 - `PLUGIN_OUTPUTS_ISOLATION_PLAN.md` - plugin ownership and isolation plan.
