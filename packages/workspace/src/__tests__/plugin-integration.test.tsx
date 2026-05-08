@@ -491,7 +491,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
       </WorkspaceProvider>,
     )
 
-    // 4 core + 7 filesystem outputs/panels + 1 test = 12
-    expect(screen.getByTestId("count").textContent).toBe("12")
+    // 4 core + 8 filesystem outputs/panels + 1 test = 13
+    expect(screen.getByTestId("count").textContent).toBe("13")
   })
 })
