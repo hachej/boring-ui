@@ -9,6 +9,8 @@ import {
 import Image from "@tiptap/extension-image"
 import { cn } from "../../../../front/lib/utils"
 
+type ImageSrcResolver = (src: string) => string
+
 const MIN_WIDTH = 64
 const MAX_WIDTH = 2000
 
@@ -41,9 +43,16 @@ function numericAttribute(value: unknown): number | null {
  * images serialize as GitHub-compatible HTML so width/alignment survives.
  * The NodeView only kicks in inside the editor.
  */
-export const ResizableImage = Image.extend({
+export const ResizableImage = Image.extend<any>({
   name: "image",
   draggable: true,
+
+  addOptions() {
+    return {
+      ...this.parent?.(),
+      resolveSrc: (src: string) => src,
+    }
+  },
 
   parseMarkdown: (token: { href?: string; title?: string | null; text?: string }, helpers: any) => {
     return helpers.createNode("image", {
@@ -128,12 +137,14 @@ export const ResizableImage = Image.extend({
   },
 })
 
-function ResizableImageView({ node, updateAttributes, selected }: NodeViewProps) {
+function ResizableImageView({ node, updateAttributes, selected, extension }: NodeViewProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const startRef = useRef<{ x: number; width: number } | null>(null)
   const [dragging, setDragging] = useState(false)
 
-  const src = (node.attrs.src as string | undefined) ?? ""
+  const storedSrc = (node.attrs.src as string | undefined) ?? ""
+  const resolveSrc = (extension.options as { resolveSrc?: ImageSrcResolver }).resolveSrc ?? ((value: string) => value)
+  const src = resolveSrc(storedSrc)
   const alt = (node.attrs.alt as string | undefined) ?? ""
   const title = (node.attrs.title as string | undefined) ?? undefined
   const width = node.attrs.width as number | null | undefined
