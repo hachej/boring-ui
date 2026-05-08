@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { dirname, join, relative } from "node:path"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
 import { createCapturingBoringServerAPI } from "./serverApi"
@@ -65,14 +65,43 @@ function fileSignature(path: string | undefined): string {
   return hash.digest("hex")
 }
 
+function directorySignature(root: string | undefined): string {
+  if (!root || !existsSync(root)) return "missing"
+  const hash = createHash("sha256")
+  const visit = (dir: string) => {
+    const entries = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules")
+      .sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      const rel = relative(root, path)
+      const stat = lstatSync(path)
+      if (stat.isSymbolicLink()) continue
+      hash.update(rel)
+      hash.update(String(stat.mtimeMs))
+      hash.update(String(stat.size))
+      if (stat.isDirectory()) {
+        visit(path)
+      } else if (stat.isFile()) {
+        hash.update(readFileSync(path))
+      }
+    }
+  }
+  visit(root)
+  return hash.digest("hex")
+}
+
 function pluginSignature(plugin: BoringPluginManifest): string {
   return createHash("sha256")
     .update(JSON.stringify(plugin.boring))
     .update(plugin.version)
     .update(plugin.frontPath ?? "")
     .update(fileSignature(plugin.frontPath))
+    .update(directorySignature(plugin.frontPath ? dirname(plugin.frontPath) : undefined))
+    .update(directorySignature(join(plugin.rootDir, "shared")))
     .update(plugin.serverPath ?? "")
     .update(fileSignature(plugin.serverPath))
+    .update(directorySignature(plugin.serverPath ? dirname(plugin.serverPath) : undefined))
     .digest("hex")
 }
 

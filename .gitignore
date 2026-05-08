@@ -21,7 +21,10 @@ apps/boring-macro-v2/src/plugins/macro/agent/sdk/*.egg-info/
 apps/boring-macro-v2/src/plugins/macro/agent/sdk/build/
 apps/boring-macro-v2/src/plugins/macro/agent/transforms/**/__pycache__/
 apps/boring-macro-v2/src/plugins/macro/agent/transforms/**/*.py[cod]
-# Stale untracked root-level duplicates (generated artifacts, not in git)
+# Stale untracked root-level duplicates/provisioning artifacts (generated, not in git)
+/.boring-agent/
+/deck/
+/transforms/
 apps/boring-macro-v2/src/plugins/macro/sdk/
 apps/boring-macro-v2/src/plugins/macro/transforms/
 packages/agent/fixtures/provisioning/test-sdk/**/__pycache__/

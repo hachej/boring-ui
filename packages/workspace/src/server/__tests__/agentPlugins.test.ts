@@ -93,6 +93,29 @@ describe("boring agent plugin assets", () => {
     expect(plugin.serverPath).toBeUndefined()
   })
 
+  test("reloads when front/shared dependencies change, not only the front entrypoint", async () => {
+    const root = await tmp("boring-plugin-front-dep-")
+    await writePlugin(root)
+    await mkdir(join(root, "shared"), { recursive: true })
+    await writeFile(join(root, "front", "panel.tsx"), "export const label = 'one'\n", "utf8")
+    await writeFile(join(root, "shared", "constants.ts"), "export const label = 'one'\n", "utf8")
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+
+    await manager.load()
+    expect(manager.list()[0].revision).toBe(1)
+    expect((await manager.load()).events).toEqual([])
+
+    await writeFile(join(root, "front", "panel.tsx"), "export const label = 'two'\n", "utf8")
+    const frontChanged = await manager.load()
+    expect(frontChanged.events.map((event) => event.type)).toEqual(["boring.plugin.load"])
+    expect(manager.list()[0].revision).toBe(2)
+
+    await writeFile(join(root, "shared", "constants.ts"), "export const label = 'three'\n", "utf8")
+    const sharedChanged = await manager.load()
+    expect(sharedChanged.events.map((event) => event.type)).toEqual(["boring.plugin.load"])
+    expect(manager.list()[0].revision).toBe(3)
+  })
+
   test("loads explicit server routes, emits load events, and dispatches hot routes", async () => {
     const root = await tmp("boring-plugin-manager-")
     await writePlugin(root)
