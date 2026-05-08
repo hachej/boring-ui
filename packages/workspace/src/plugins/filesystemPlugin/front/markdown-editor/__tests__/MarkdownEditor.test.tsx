@@ -541,7 +541,7 @@ describe("MarkdownEditor", () => {
         )
         await waitFor(() => {
           const img = document.querySelector("[data-resizable-image] img") as HTMLImageElement | null
-          expect(img?.getAttribute("src")).toBe("doc/assets/header.png")
+          expect(img?.getAttribute("src")).toBe("/api/v1/files/raw?path=doc%2Fassets%2Fheader.png")
           expect(img?.getAttribute("alt")).toBe("Boring-UI banner")
         })
         fireEvent.click(screen.getByTitle("Horizontal rule"))

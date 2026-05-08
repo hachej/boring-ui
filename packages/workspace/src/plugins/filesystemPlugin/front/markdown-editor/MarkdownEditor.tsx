@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { ChangeEvent } from "react"
 import { useEditor, useEditorState, EditorContent } from "@tiptap/react"
 import type { Editor } from "@tiptap/core"
@@ -17,6 +17,7 @@ import { TableRow } from "@tiptap/extension-table-row"
 import { TableHeader } from "@tiptap/extension-table-header"
 import { TableCell } from "@tiptap/extension-table-cell"
 import { ResizableImage } from "./ResizableImage"
+import { useApiBaseUrl } from "../data/DataProvider"
 import { useFileUpload } from "../data/useFileUpload"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
 import { common, createLowlight } from "lowlight"
@@ -74,7 +75,33 @@ export interface MarkdownEditorProps {
   documentPath?: string
 }
 
-const extensions = [
+function isExternalImageSrc(src: string): boolean {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(src)
+}
+
+function normalizeRelativeImagePath(src: string, documentPath?: string): string {
+  const match = src.match(/^([^?#]*)([?#].*)?$/)
+  const pathPart = match?.[1] ?? src
+  const suffix = match?.[2] ?? ""
+  const docDir = documentPath?.includes("/") ? documentPath.slice(0, documentPath.lastIndexOf("/")) : ""
+  const parts = `${docDir ? `${docDir}/` : ""}${pathPart}`.split("/")
+  const out: string[] = []
+  for (const part of parts) {
+    if (!part || part === ".") continue
+    if (part === "..") out.pop()
+    else out.push(part)
+  }
+  return `${out.join("/")}${suffix}`
+}
+
+function rawFileUrlForMarkdownImage(src: string, documentPath: string | undefined, apiBaseUrl: string): string {
+  if (!src || isExternalImageSrc(src)) return src
+  const path = normalizeRelativeImagePath(src, documentPath)
+  const base = apiBaseUrl.replace(/\/$/, "")
+  return `${base}/api/v1/files/raw?path=${encodeURIComponent(path)}`
+}
+
+const baseExtensions = [
   StarterKit.configure({
     codeBlock: false,
     link: false,
@@ -372,8 +399,23 @@ export function MarkdownEditor({
   className,
   documentPath,
 }: MarkdownEditorProps) {
+  const apiBaseUrl = useApiBaseUrl()
   const { upload } = useFileUpload()
   const [rawMode, setRawMode] = useState(false)
+  const editorExtensions = useMemo(() => {
+    const imageExtension = ResizableImage.configure({
+      inline: false,
+      allowBase64: true,
+      resolveSrc: (src: string) => rawFileUrlForMarkdownImage(src, documentPath, apiBaseUrl),
+    })
+    const configured = baseExtensions.map((extension) => extension.name === "image" ? imageExtension : extension)
+    return placeholder
+      ? [
+          ...configured.filter((e) => e.name !== "placeholder"),
+          Placeholder.configure({ placeholder }),
+        ]
+      : configured
+  }, [apiBaseUrl, documentPath, placeholder])
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
@@ -402,12 +444,7 @@ export function MarkdownEditor({
   const editorContentType = content ? "markdown" : "json"
 
   const editor = useEditor({
-    extensions: placeholder
-      ? [
-          ...extensions.filter((e) => e.name !== "placeholder"),
-          Placeholder.configure({ placeholder }),
-        ]
-      : extensions,
+    extensions: editorExtensions,
     content: editorContent,
     contentType: editorContentType,
     editable: !readOnly,
