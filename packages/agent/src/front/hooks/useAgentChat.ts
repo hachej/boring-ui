@@ -104,6 +104,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   // before hydration runs, and saving [] would wipe the previous cache for the
   // new session before we get a chance to read it.
   const messages = chat.messages
+  const status = chat.status
   useEffect(() => {
     if (!hydrated || !cacheKey || messages.length === 0) return
     try {
@@ -111,11 +112,45 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     } catch { /* quota exceeded: drop cache silently */ }
   }, [hydrated, cacheKey, messages])
 
+  // When the stream ends (stop or natural completion), settle any tool parts
+  // still stuck in a non-settled state so the UI doesn't shimmer forever.
+  const SETTLED_STATES = new Set([
+    'output-available',
+    'output-error',
+    'output-denied',
+    'approval-responded',
+  ])
+  const prevSettleRef = useRef(status)
+  useEffect(() => {
+    const prev = prevSettleRef.current
+    prevSettleRef.current = status
+    if (status !== 'ready') return
+    if (prev !== 'streaming' && prev !== 'submitted') return
+    const hasUnsettled = messages.some((msg) =>
+      msg.parts?.some((p) => {
+        const part = p as Record<string, unknown>
+        return typeof part.type === 'string' && part.type.startsWith('tool-') && !SETTLED_STATES.has(part.state as string)
+      })
+    )
+    if (!hasUnsettled) return
+    setMessages((prev) =>
+      prev.map((msg) => ({
+        ...msg,
+        parts: msg.parts?.map((p) => {
+          const part = p as Record<string, unknown>
+          if (typeof part.type === 'string' && part.type.startsWith('tool-') && !SETTLED_STATES.has(part.state as string)) {
+            return { ...part, state: 'output-error' }
+          }
+          return p
+        }),
+      })) as typeof prev
+    )
+  }, [status, setMessages])
+
   // Push a server-side snapshot after each completed turn. Fires only when
   // status transitions from streaming → ready, not on every message change,
   // so we don't spam the server during hydration or between turns.
-  const status = chat.status
-  const prevStatusRef = useRef(status)
+  const prevStatusRef = useRef<typeof status>(status)
   useEffect(() => {
     const prev = prevStatusRef.current
     prevStatusRef.current = status
@@ -124,13 +159,26 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     if (prev !== 'streaming' && prev !== 'submitted') return
     if (!sessionId || messages.length === 0) return
     const url = `/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`
+    // Strip data URLs from attachment parts before persisting — they can be
+    // several MB each and bloat the JSONL session file. The UI already
+    // rendered the image; history only needs provenance (filename, mediaType).
+    const stripped = messages.map((msg) => ({
+      ...msg,
+      parts: msg.parts?.map((part: unknown) => {
+        const p = part as Record<string, unknown>
+        if (p.type === 'file' && typeof p.url === 'string' && p.url.startsWith('data:')) {
+          return { ...p, url: '' }
+        }
+        return part
+      }),
+    }))
     fetch(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         ...optsRef.current.requestHeaders,
       },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages: stripped }),
     }).catch(() => { /* best-effort, ignore failures */ })
   }, [sessionId, status, messages])
 
