@@ -96,11 +96,13 @@ function createDefaultVercelClient(
   }
 }
 
-async function ensureVercelWorkspaceRoot(sandbox: VercelSandbox & {
+type VercelSandboxWithRunCommand = VercelSandbox & {
   fs?: { mkdir(path: string, opts?: { recursive?: boolean }): Promise<unknown> }
   mkDir?: (path: string) => Promise<void>
   runCommand?: (params: { cmd: string; args?: string[] }) => Promise<{ exitCode?: number }>
-}): Promise<void> {
+}
+
+async function ensureVercelWorkspaceRoot(sandbox: VercelSandboxWithRunCommand): Promise<void> {
   let rootCreated = false
   if (sandbox.fs?.mkdir) {
     await sandbox.fs.mkdir(VERCEL_SANDBOX_REMOTE_ROOT, { recursive: true })
@@ -162,6 +164,14 @@ async function seedTemplateIntoVercelWorkspace(
   logger.info('[vercel-sandbox:mode] template seeded into workspace', {
     hash,
     fileCount: files.length,
+  })
+}
+
+async function ensureTemplateExecutables(sandbox: VercelSandboxWithRunCommand): Promise<void> {
+  if (!sandbox.runCommand) return
+  await sandbox.runCommand({
+    cmd: 'sh',
+    args: ['-c', `chmod +x ${VERCEL_SANDBOX_REMOTE_ROOT}/.boring-agent/bin/* 2>/dev/null || true`],
   })
 }
 
@@ -315,6 +325,7 @@ export function createVercelSandboxModeAdapter(
           })
         }
         await seedTemplateIntoVercelWorkspace(workspace, ctx.templatePath, logger)
+        await ensureTemplateExecutables(sandboxHandle)
       }
 
       const sandbox = createVercelSandboxExec(sandboxHandle, {
