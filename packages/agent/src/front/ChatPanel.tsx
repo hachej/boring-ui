@@ -92,6 +92,19 @@ const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
 const STORAGE_MODEL_USER_KEY = 'boring-agent:composer:model:user-selected'
 const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
 const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
+const STORAGE_FOLLOWUP_SEQ_PREFIX = 'boring-agent:followup-seq:'
+
+function nextStoredFollowUpSeq(sessionId: string): number {
+  const key = `${STORAGE_FOLLOWUP_SEQ_PREFIX}${sessionId}`
+  try {
+    const current = Number(globalThis.localStorage?.getItem(key) ?? '0')
+    const next = Number.isFinite(current) ? current + 1 : 1
+    globalThis.localStorage?.setItem(key, String(next))
+    return next
+  } catch {
+    return Date.now()
+  }
+}
 
 /**
  * Extended-thinking budget. Sent through to pi-coding-agent which forwards
@@ -401,6 +414,8 @@ export function ChatPanel(props: ChatPanelProps) {
     attachments: Array<{ filename?: string; mediaType?: string; url?: string }>
     posted: boolean
     consumed: boolean
+    clientNonce: string
+    clientSeq: number
   }
   type ProjectedFollowUpMessage = {
     id: string
@@ -416,6 +431,7 @@ export function ChatPanel(props: ChatPanelProps) {
   const activeProjectedAssistantRef = useRef<string | null>(null)
   const lastConsumedProjectedUserRef = useRef<string | null>(null)
   const followUpPostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const followUpPostInFlightRef = useRef(false)
 
   const consumedFollowUpRef = useRef<{ text: string; files: FileUIPart[] } | null>(null)
   const followUpSplitIdsRef = useRef<{ userId: string; assistantId: string } | null>(null)
@@ -648,21 +664,42 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [projectedFollowUps])
 
   const postPendingFollowUps = useCallback(() => {
-    const unposted = pendingMessagesRef.current.filter((item) => !item.posted)
-    if (unposted.length === 0) return
-    updatePendingMessages((items) => items.map((item) => unposted.some((pending) => pending.id === item.id) ? { ...item, posted: true } : item))
-    for (const pending of unposted) {
-      fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...requestHeaders,
-        },
-        body: JSON.stringify({ message: pending.serverMessage, displayText: pending.text, attachments: pending.attachments }),
-      }).catch(() => {
-        updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, posted: false } : item))
-      })
-    }
+    if (followUpPostInFlightRef.current) return
+    followUpPostInFlightRef.current = true
+    void (async () => {
+      let shouldContinue = true
+      try {
+        while (true) {
+          const pending = pendingMessagesRef.current.find((item) => !item.posted)
+          if (!pending) return
+          updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, posted: true } : item))
+          try {
+            const res = await fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...requestHeaders,
+              },
+              body: JSON.stringify({
+                message: pending.serverMessage,
+                displayText: pending.text,
+                attachments: pending.attachments,
+                clientNonce: pending.clientNonce,
+                clientSeq: pending.clientSeq,
+              }),
+            })
+            if (!res.ok) throw new Error(`follow-up rejected: ${res.status}`)
+          } catch {
+            shouldContinue = false
+            updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, posted: false } : item))
+            return
+          }
+        }
+      } finally {
+        followUpPostInFlightRef.current = false
+        if (shouldContinue && pendingMessagesRef.current.some((item) => !item.posted)) postPendingFollowUps()
+      }
+    })()
   }, [sessionId, requestHeaders, updatePendingMessages])
 
   // Wait until the active request is genuinely streaming before handing the
@@ -949,6 +986,8 @@ export function ChatPanel(props: ChatPanelProps) {
         attachments: resolvedAttachments,
         posted: false,
         consumed: false,
+        clientNonce: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}-nonce`,
+        clientSeq: nextStoredFollowUpSeq(sessionId),
       }
       updatePendingMessages((items) => [...items, nextPending])
       updateProjectedFollowUps((items) => [...items, {
