@@ -80,11 +80,13 @@
 
 ## Goal
 
-Make every boring plugin a **native pi extension** for agent behaviour (tools, skills, prompts), while boring-ui adds a thin orchestration layer on top for UI assets (panels, resolvers) and server assets (routes, SDKs) that pi doesn't know about.
+Make boring plugins that own their runtime dependencies **native pi extensions** for agent behaviour (tools, skills, prompts), while boring-ui adds a thin orchestration layer on top for UI assets (panels, resolvers) and server assets (routes, SDKs) that pi doesn't know about.
+
+Runtime dependency rule: path-loaded hot-reloadable plugins may import code/packages/files, read env/config, and call stable boundaries such as HTTP routes or workspace bridge commands. They must not depend on host-created in-memory JS objects or another plugin's live singleton instance. Plugins that need those injected runtime objects remain statically composed until their dependency is moved behind a stable boundary.
 
 Two phases:
 
-1. **Phase 1 — First-party plugin migration.** Each plugin's agent layer becomes a real pi `ExtensionFactory` with TypeBox tools, native skills, and prompt templates. SDK/CLI tooling moves to a dedicated `sdk/` folder at plugin root. The existing adapter layer (`AgentTool`, `adaptToolsForPi`, `agentTools`) is deleted. `systemPrompt` moves from `defineServerPlugin` to the `"boring"` manifest field and is injected by `boring-pi-extension` via pi's `before_agent_start` event.
+1. **Phase 1 — First-party plugin migration.** App/domain plugins whose dependencies are importable or reachable through stable boundaries become real pi `ExtensionFactory` files with TypeBox tools, native skills, and prompt templates. SDK/CLI tooling moves to a dedicated `sdk/` folder at plugin root. The existing adapter layer (`AgentTool`, `adaptToolsForPi`, `agentTools`) remains only for static/injected host tools until those tools move behind stable boundaries. `systemPrompt` moves from `defineServerPlugin` to the `"boring"` manifest field for hot-reloadable plugins and is injected by `boring-pi-extension` via pi's `before_agent_start` event.
 
 2. **Phase 2 — Additional assets loading mechanism.** `boring-pi-extension.ts` (boring-ui's own pi extension) scans `pluginDirs[]` for the `"boring"` field and emits SSE to the browser on every `session_start`. A second HTTP entry point enables boring-only reload without pi. First-party plugins get hot-reload for free via the same path.
 
@@ -841,22 +843,23 @@ On `boring.plugin.unload`: call `unregisterByPluginId(id)` on all stores.
 - [ ] Rewrite `front/index.tsx` default export as `BoringFrontFactory` (panels, left tabs, resolvers only)
 - [ ] Update `bootstrap.ts` to wrap with `boringFrontFactoryToPlugin("macro", macroFront)`
 
-### P1-F: `filesystemPlugin` — `agent/index.ts`
+### P1-F/P1-G: `filesystemPlugin` — keep as core workspace infrastructure
 
-- [ ] Create `packages/workspace/src/plugins/filesystemPlugin/agent/index.ts` as `ExtensionFactory`
-- [ ] Move `buildFilesystemAgentTools()` logic into it with TypeBox schemas
-- [ ] Add `resources_discover` returning skills/prompts paths (empty initially; add as needed)
+Decision update: do **not** migrate `filesystemPlugin` to a pi extension or hot-reloadable `BoringFrontFactory` in this phase. It owns core workspace infrastructure — file tree, editor panes, file-event invalidation, data providers, open-path behavior, and bridge bindings — not agent-authored app/plugin behavior.
 
-### P1-G: `filesystemPlugin` — `front/index.ts` dual-export
+- [x] Keep `packages/workspace/src/plugins/filesystemPlugin/**` statically composed by workspace bootstrap
+- [x] Keep filesystem agent tools in `@boring/agent`/pi harness, not in `filesystemPlugin`
+- [x] Exclude `filesystemPlugin` from generated/plugin hot-reload scope
+- [ ] Revisit only if external shells need a separately consumable filesystem front factory
 
-- [ ] Add `BoringFrontFactory` as default export (panels + resolvers subset)
-- [ ] Keep named `filesystemPlugin` export (`WorkspaceFrontPlugin` with providers/bindings/catalogs) for bootstrap
-- [ ] Update `bootstrap.ts`: use named export for bootstrap, default export handled by boring-pi-extension for hot-reload
+### P1-H: `dataCatalogPlugin` — defer native pi migration while it depends on `ExplorerAdapter`
 
-### P1-H: `dataCatalogPlugin` — `agent/index.ts`
+Decision update: do **not** migrate `dataCatalogPlugin` to a path-loaded pi extension in this phase. Its agent tool depends on an injected `ExplorerAdapter` supplied by the host/plugin at runtime. That violates the runtime dependency rule for path-hot-reloadable plugins.
 
-- [ ] Rewrite `createDataCatalogAgentTool` as `ToolDefinition` with TypeBox
-- [ ] Delete `createDataCatalogSkillPrompt()` — replace with `agent/skills/data-catalog.md`
+- [x] Keep `createDataCatalogAgentTool({ adapter })` on the static/injected `agentTools` path for now
+- [x] Keep `createDataCatalogSkillPrompt()` paired with that injected tool for now
+- [ ] Revisit after catalog search is exposed through a stable boundary, preferably an HTTP route such as `/api/catalog/search`
+- [ ] Then rewrite the data catalog agent layer as a path-loaded pi `ToolDefinition` that calls the stable boundary
 
 ### P1-I: Delete adapter layer
 
