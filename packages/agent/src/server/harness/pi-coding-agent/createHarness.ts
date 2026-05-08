@@ -52,6 +52,19 @@ export interface PiResourceLoaderOptions {
 }
 
 
+function extractUserMessageText(message: unknown): string {
+  const record = message as { role?: unknown; content?: unknown } | null;
+  if (record?.role !== "user") return "";
+  if (typeof record.content === "string") return record.content;
+  if (!Array.isArray(record.content)) return "";
+  return record.content
+    .map((part) => {
+      const p = part as { type?: unknown; text?: unknown };
+      return p.type === "text" && typeof p.text === "string" ? p.text : "";
+    })
+    .join("");
+}
+
 function extractAssistantMessageText(message: unknown): {
   role?: string;
   text: string;
@@ -341,24 +354,23 @@ export function createPiCodingAgentHarness(opts: {
     disposePiSession(sessionId);
   };
 
-  // Harness-level follow-up queue: one pending message per session.
-  // When the client calls followUp() during a streaming turn, we store the
-  // message here. After agent_end, if the queue is non-empty we emit a
-  // data-followup-consumed chunk (so the client can clear its bubble) and
-  // continue the HTTP stream with a second pi turn — no extra round-trip.
-  const harnessFollowUpQueues = new Map<string, { message: string; attachments?: MessageAttachment[] }>();
+  const nativeFollowUpPending = new Set<string>();
 
   return {
     id: "pi-coding-agent",
     placement: "server",
     sessions: sessionStore,
 
-    followUp(sessionId: string, text: string, attachments?: MessageAttachment[]): void {
-      harnessFollowUpQueues.set(sessionId, { message: text, attachments });
+    async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], _displayText = text): Promise<void> {
+      const handle = piSessions.get(sessionId);
+      if (!handle) return;
+      nativeFollowUpPending.add(sessionId);
+      await handle.piSession.followUp(text);
     },
 
-    clearFollowUp(sessionId: string): void {
-      harnessFollowUpQueues.delete(sessionId);
+    clearFollowUp(_sessionId: string): void {
+      // pi owns the follow-up queue. There is no public clear API; Stop aborts
+      // the active session, which prevents queued work from continuing.
     },
 
     /**
@@ -381,10 +393,11 @@ export function createPiCodingAgentHarness(opts: {
         ctx,
       );
 
-      // Consume any queued follow-up immediately when a new sendMessage call
-      // arrives — the client is explicitly sending a message (e.g. after an
-      // Escape-interrupted turn), so the server queue is no longer needed.
-      harnessFollowUpQueues.delete(input.sessionId);
+      // Do NOT clear the follow-up queue here. The browser can submit a
+      // follow-up while the first request is still in AI SDK `submitted` state,
+      // before this generator reaches its setup path. Clearing here races that
+      // legitimate POST and makes the queued message disappear. Stale queues are
+      // cleared explicitly through clearFollowUp() on the Stop path.
 
       const chunks: UIMessageChunk[] = [];
       let done = false;
@@ -465,12 +478,8 @@ export function createPiCodingAgentHarness(opts: {
         });
       }
 
-      // pendingFollowUpMsg is set by the agent_end handler when a follow-up
-      // is queued. The actual piSession.prompt() call is deferred to the
-      // promptPromise .then() chain — pi's agent must be fully idle before
-      // a new prompt() call is legal ("already processing" otherwise).
-      let pendingFollowUp: { message: string; attachments?: MessageAttachment[] } | undefined;
-      // promptPromise tracks the most recently started pi turn so the
+      // promptPromise tracks the active pi run. Native pi follow-up queuing
+      // keeps this promise open until queued follow-ups finish.
       // finally block can await full settlement before cleanup.
       let promptSettled = false;
       let promptPromise: Promise<void> = Promise.resolve();
@@ -496,7 +505,21 @@ export function createPiCodingAgentHarness(opts: {
           if (activeTools.size === 0) stopHeartbeat();
         }
 
-        let converted = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
+        let converted: UIMessageChunk[];
+        if (event.type === "message_start" && (event as any).message?.role === "user") {
+          const text = extractUserMessageText((event as any).message);
+          converted = text && text !== input.message
+            ? [{ type: "data-followup-consumed", data: { text } } as unknown as UIMessageChunk]
+            : [];
+          if (text && text !== input.message) {
+            inlineTurnIndex += 1;
+            nativeFollowUpPending.delete(input.sessionId);
+          }
+        } else if (event.type === "message_end" && (event as any).message?.role === "user") {
+          converted = [];
+        } else {
+          converted = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
+        }
         if (event.type === "message_update") {
           const ame = event.assistantMessageEvent;
           if (
@@ -569,30 +592,11 @@ export function createPiCodingAgentHarness(opts: {
             }
           }
 
-          // Check the harness queue for a follow-up message. If one is
-          // waiting, keep the HTTP stream open. We can't call piSession.prompt()
-          // here — pi's internal agent is still cleaning up after agent_end and
-          // would throw "already processing". Instead, set pendingFollowUpMsg
-          // so the promptPromise .then() chain (which runs after pi is idle)
-          // picks it up and starts the follow-up turn.
-          const followUp = harnessFollowUpQueues.get(input.sessionId);
-          if (followUp !== undefined && !ctx.abortSignal.aborted) {
-            harnessFollowUpQueues.delete(input.sessionId);
-            chunks.push({ type: "data-followup-consumed" } as unknown as UIMessageChunk);
-            inlineTurnIndex += 1;
-            // Reset per-turn accumulators for the incoming follow-up turn.
-            sawTextChunk = false;
-            textStartSeen.clear();
-            textDeltaSeen.clear();
-            // Keep startedMessageIds across inline follow-up turns. pi may reuse
-            // the same assistant message id for the next prompt in a session;
-            // emitting a second `start` with that id inside one AI SDK stream
-            // can make the client restart/merge the previous assistant message.
-            // The follow-up marker plus subsequent text chunks are enough: the
-            // client splits the combined assistant message at the marker.
-            assistantText = "";
-            pendingFollowUp = followUp;
-            // Don't set done = true — the stream stays open for the follow-up.
+          if (nativeFollowUpPending.has(input.sessionId) && !ctx.abortSignal.aborted) {
+            // Pi native follow-up was queued but its user message has not been
+            // emitted yet. Keep this HTTP stream open; the queued user
+            // message_start will clear the pending flag and produce the
+            // data-followup-consumed marker, followed by the next assistant.
           } else {
             done = true;
             stopHeartbeat();
@@ -606,10 +610,8 @@ export function createPiCodingAgentHarness(opts: {
       // collapsing the response into a single end-of-turn flush. Kick it
       // off concurrently and drain `chunks` as the subscriber fills it.
       //
-      // After each turn resolves we check pendingFollowUpMsg (set by the
-      // agent_end subscriber). If present, pi is now idle and we can safely
-      // call prompt() for the follow-up — keeping the HTTP stream open for
-      // a second turn with no extra round-trip from the client.
+      // Native pi follow-up queuing keeps prompt() alive until queued follow-up
+      // turns complete, so there is no harness-side second prompt chain.
       async function prepareTurn(message: string, attachments?: MessageAttachment[]): Promise<{ message: string; promptOpts?: PromptOptions }> {
         // Process image attachments: pass as vision AND write to workspace.
         const initialImages: NonNullable<PromptOptions["images"]> = [];
@@ -659,11 +661,6 @@ export function createPiCodingAgentHarness(opts: {
           .prompt(prepared.message, prepared.promptOpts)
           .then(() => {
             promptSettled = true;
-            if (pendingFollowUp !== undefined && !ctx.abortSignal.aborted) {
-              const next = pendingFollowUp;
-              pendingFollowUp = undefined;
-              promptPromise = startTurn(next.message, next.attachments);
-            }
           })
           .catch((err) => {
             promptSettled = true;

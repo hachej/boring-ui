@@ -3,11 +3,8 @@
 ---
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
-![npm version](https://img.shields.io/npm/v/@boring/core?style=flat-square&label=npm)
 
-![Boring-UI banner](doc/assets/header.png)
-
-## Your workflow. Your agent. Your UI.
+![npm version](https://img.shields.io/npm/v/@boring/core?style=flat-square&label=npm)![Boring-UI banner](doc/assets/header.png)## Your workflow. Your agent. Your UI.
 
 Traditional SaaS apps assume workflows are fixed.
 
@@ -17,17 +14,13 @@ Instead of hardcoding every screen and interaction, boring-ui gives you a flexib
 
 Start with the core: one chat + one workbench (mini IDE):
 
-![Workbench](https://github.com/user-attachments/assets/382084d1-a78c-4374-b51c-fb33b25243e2)
-
-And let your agent customize panes and how to visualize reports, data, files.
+![Workbench](https://github.com/user-attachments/assets/382084d1-a78c-4374-b51c-fb33b25243e2)And let your agent customize panes and how to visualize reports, data, files.
 
 Think **Claude Co-op** — but for your domain, your workflow, your visuals.
 
 AI agents already know how to generate code — boring-ui gives them a place to live inside your product.
 
-![Agent modifying UI](https://github.com/user-attachments/assets/29dfbee6-1f4e-448d-8eb5-d90b55bceb49)
-
-## Problems it solves
+![Agent modifying UI](https://github.com/user-attachments/assets/29dfbee6-1f4e-448d-8eb5-d90b55bceb49)## Problems it solves
 
 | Without boring-ui | With boring-ui |
 | --- | --- |
@@ -37,35 +30,8 @@ AI agents already know how to generate code — boring-ui gives them a place to 
 
 ## Features
 
-<table>
-<tr>
-<td align="center" width="33%">
-<h3>🧩 Plugin system</h3>
-Panels, catalogs, commands, agent tools. One plugin wires your domain in.
-</td>
-<td align="center" width="33%">
-<h3>🤖 Agent-controlled UI</h3>
-The agent opens panels and renders data — not just replies in chat.
-</td>
-<td align="center" width="33%">
-<h3>🔒 Sandboxed execution</h3>
-Bash and code run in isolation. bwrap locally, Firecracker in production.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🏢 Multi-tenant workspaces</h3>
-Auth, roles, invites built in. Teams get isolated workspaces out of the box.
-</td>
-<td align="center">
-<h3>⚡ Command palette</h3>
-Every panel, command, and catalog entry searchable from one place.
-</td>
-<td align="center">
-<h3>🚀 Full-stack included</h3>
-Fastify · Postgres · React · Drizzle. No glue code. Just extend.
-</td>
-</tr>
+<table style="min-width: 75px;">
+<colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><td colspan="1" rowspan="1" style="text-align: center;"><h3>🧩 Plugin system</h3><p>Panels, catalogs, commands, agent tools. One plugin wires your domain in.</p></td><td colspan="1" rowspan="1" style="text-align: center;"><h3>🤖 Agent-controlled UI</h3><p>The agent opens panels and renders data — not just replies in chat.</p></td><td colspan="1" rowspan="1" style="text-align: center;"><h3>🔒 Sandboxed execution</h3><p>Bash and code run in isolation. bwrap locally, Firecracker in production.</p></td></tr><tr><td colspan="1" rowspan="1" style="text-align: center;"><h3>🏢 Multi-tenant workspaces</h3><p>Auth, roles, invites built in. Teams get isolated workspaces out of the box.</p></td><td colspan="1" rowspan="1" style="text-align: center;"><h3>⚡ Command palette</h3><p>Every panel, command, and catalog entry searchable from one place.</p></td><td colspan="1" rowspan="1" style="text-align: center;"><h3>🚀 Full-stack included</h3><p>Fastify · Postgres · React · Drizzle. No glue code. Just extend.</p></td></tr></tbody>
 </table>
 
 ## What people build

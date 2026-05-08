@@ -1,5 +1,5 @@
 import { useMemo, type KeyboardEvent, type DragEvent, type ReactNode } from "react"
-import { ChevronRightIcon, ChevronDownIcon, FilterIcon, XIcon } from "lucide-react"
+import { ChevronRightIcon, ChevronDownIcon, FilterIcon, SearchIcon, XIcon } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { Button, Chip as UiChip, ChipButton, EmptyState, Input, Spinner, Toolbar as UiToolbar } from "@hachej/boring-ui-kit"
 import { Popover, PopoverTrigger, PopoverContent } from "@hachej/boring-ui-kit"
@@ -33,6 +33,8 @@ export type DataExplorerProps = {
    * Useful when an outer chrome already owns a search box.
    */
   query?: string
+  /** Called when the toolbar search changes. Use with `query` for controlled per-tab search. */
+  onQueryChange?: (query: string) => void
   /** Page size and debounce — passed through to useExplorerState. */
   pageSize?: number
   debounceMs?: number
@@ -49,6 +51,7 @@ export function DataExplorer({
   searchPlaceholder = "Search…",
   searchable = true,
   query,
+  onQueryChange,
   pageSize,
   debounceMs,
   className,
@@ -62,14 +65,15 @@ export function DataExplorer({
     query,
   })
   const isControlled = query !== undefined
-  const showSearch = searchable && !isControlled
+  const showSearch = searchable && (!isControlled || !!onQueryChange)
+  const setToolbarQuery = isControlled && onQueryChange ? onQueryChange : state.setQuery
 
-  // While a query is active, force flat mode even if groupBy is set —
-  // group counts come from facets which don't reflect the query, so trees
-  // would hide matches behind unrelated group headers.
+  // While a query or explicit filter is active, force flat mode even if groupBy
+  // is set — facet group counts are global and would otherwise hide filtered
+  // matches behind unrelated group headers.
   const hasQuery = (query ?? state.query ?? "").length > 0
-  const treeMode = !!groupBy && !hasQuery
   const hasFilters = Object.values(state.filters).some((v) => v.length > 0)
+  const treeMode = !!groupBy && !hasQuery && !hasFilters
   const filterCount = Object.values(state.filters).reduce((n, v) => n + v.length, 0)
 
   // Group entries from facets (canonical for tree mode).
@@ -106,7 +110,7 @@ export function DataExplorer({
           searchable={showSearch}
           searchPlaceholder={searchPlaceholder}
           query={state.query}
-          onQueryChange={state.setQuery}
+          onQueryChange={setToolbarQuery}
           facetConfigs={facetConfigs}
           facets={state.facets}
           filters={state.filters}
@@ -181,19 +185,40 @@ function Toolbar({
 }: ToolbarProps) {
   return (
     <UiToolbar className="border-b border-border/60 px-2 py-1.5">
-      {searchable ? (
-        <Input
-          aria-label="Search"
-          placeholder={searchPlaceholder}
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          className="h-7 flex-1 rounded-sm border-transparent bg-muted/40 px-2 text-[12.5px] shadow-none focus-visible:bg-background focus-visible:ring-1"
-        />
-      ) : null}
       {total != null ? (
         <span className="px-1 font-mono text-[10.5px] uppercase tracking-[0.05em] text-muted-foreground/80">
           {total.toLocaleString()}
         </span>
+      ) : null}
+      <div className="flex-1" />
+      {searchable ? (
+        <Popover>
+          <PopoverTrigger
+            aria-label="Search"
+            className={cn(
+              "inline-flex h-7 items-center gap-1 rounded-sm px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+              query.length > 0 && "bg-muted text-foreground",
+            )}
+          >
+            <SearchIcon size={12} />
+            {query.length > 0 ? <span className="max-w-20 truncate text-[11px]">{query}</span> : null}
+          </PopoverTrigger>
+          <PopoverContent side="right" align="start" sideOffset={8} className="w-64 p-3">
+            <Input
+              aria-label="Search"
+              autoFocus
+              placeholder={searchPlaceholder}
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              className="h-8 rounded-sm text-[12.5px]"
+            />
+            {query.length > 0 ? (
+              <Button type="button" variant="ghost" size="xs" onClick={() => onQueryChange("")} className="mt-2 gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+                <XIcon size={11} /> Clear search
+              </Button>
+            ) : null}
+          </PopoverContent>
+        </Popover>
       ) : null}
       {facetConfigs?.length ? (
         <Popover>
@@ -208,8 +233,9 @@ function Toolbar({
             {filterCount > 0 ? <span className="font-mono text-[10px]">{filterCount}</span> : null}
           </PopoverTrigger>
           <PopoverContent
-            align="end"
-            sideOffset={6}
+            side="right"
+            align="start"
+            sideOffset={8}
             className="w-64 space-y-3 p-3 text-[12px]"
           >
             {facetConfigs.map((config) => (

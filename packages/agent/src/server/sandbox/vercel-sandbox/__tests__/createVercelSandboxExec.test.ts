@@ -63,15 +63,28 @@ test('workspace writes are visible through exec on same sandbox handle', async (
   }
 })
 
-test('maps display /workspace cwd to Vercel remote root', async () => {
+test('maps display /workspace cwd, command paths, and env to Vercel remote root', async () => {
   const runCommand = mockRunCommand('', '')
   const sandbox = { runCommand } as unknown as VercelSandbox
   const adapter = createVercelSandboxExec(sandbox)
 
-  await adapter.exec('pwd', { cwd: '/workspace/nested' })
+  await adapter.exec('mkdir -p /workspace/deck && echo ok', {
+    cwd: '/workspace/nested',
+    env: {
+      BORING_AGENT_WORKSPACE_ROOT: '/workspace',
+      PATH: '/workspace/.venv/bin:/usr/bin',
+    },
+  })
 
   expect(runCommand).toHaveBeenCalledWith(
-    expect.objectContaining({ cwd: '/vercel/sandbox/nested' }),
+    expect.objectContaining({
+      args: ['-c', 'mkdir -p /vercel/sandbox/deck && echo ok'],
+      cwd: '/vercel/sandbox/nested',
+      env: {
+        BORING_AGENT_WORKSPACE_ROOT: '/vercel/sandbox',
+        PATH: '/vercel/sandbox/.venv/bin:/usr/bin',
+      },
+    }),
   )
 })
 

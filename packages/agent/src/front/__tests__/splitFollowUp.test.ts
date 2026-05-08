@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { UIMessage } from 'ai'
-import { splitFollowUp } from '../splitFollowUp'
+import { splitFollowUp, splitFollowUpForDisplay } from '../splitFollowUp'
 
 let idSeq = 0
 const nextId = () => `id-${++idSeq}`
@@ -67,7 +67,7 @@ describe('splitFollowUp', () => {
     expect(result[3].parts).toEqual([{ ...text('turn2'), id: 'turn-1:0' }])
   })
 
-  it('fallback: appends user message at end when marker is not found', () => {
+  it('fallback: prints user message before the last assistant when no boundary is retained', () => {
     const msgs: UIMessage[] = [
       user('u1', 'q'),
       assistant('a1', [text('response without marker')]),
@@ -75,8 +75,22 @@ describe('splitFollowUp', () => {
     const result = splitFollowUp(msgs, { text: 'follow-up', files: [] }, nextId)
 
     expect(result).toHaveLength(3)
-    expect(result[2]).toMatchObject({ role: 'user' })
+    expect(result[1]).toMatchObject({ role: 'user' })
+    expect(result[1].parts[0]).toMatchObject({ type: 'text', text: 'follow-up' })
+    expect(result[2]).toMatchObject({ role: 'assistant', id: 'a1' })
+  })
+
+  it('splits before the last text part when AI SDK drops marker and ids', () => {
+    const msgs: UIMessage[] = [
+      user('u1', 'q'),
+      assistant('a1', [text('first answer'), text('follow-up answer')]),
+    ]
+    const result = splitFollowUp(msgs, { text: 'follow-up', files: [] }, nextId)
+
+    expect(result.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(result[1].parts).toEqual([text('first answer')])
     expect(result[2].parts[0]).toMatchObject({ type: 'text', text: 'follow-up' })
+    expect(result[3].parts).toEqual([text('follow-up answer')])
   })
 
   it('preserves messages before and after the target when multiple messages exist', () => {
@@ -130,6 +144,39 @@ describe('splitFollowUp', () => {
     const injectedUser = result[2]
     expect(injectedUser.parts.some((p: unknown) => (p as { type?: string }).type === 'file')).toBe(true)
     expect(injectedUser.parts.some((p: unknown) => (p as { text?: string }).text === 'with file')).toBe(true)
+  })
+
+  it('live display uses pending draft when consumed marker callback state was lost', () => {
+    const msgs: UIMessage[] = [
+      user('u1', 'hi'),
+      assistant('a1', [text('hello'), { ...text('files listed'), id: 'turn-1:0' }]),
+    ]
+    const result = splitFollowUpForDisplay(
+      msgs,
+      null,
+      { text: 'list file', files: [] },
+      { userId: 'queued-user', assistantId: 'followup-assistant' },
+    )
+
+    expect(result.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(result[2]).toMatchObject({ id: 'queued-user', role: 'user' })
+    expect(result[2].parts.some((p: unknown) => (p as { text?: string }).text === 'list file')).toBe(true)
+    expect(result[3]).toMatchObject({ id: 'followup-assistant', role: 'assistant' })
+  })
+
+  it('live display does not move pending bubble before follow-up text starts streaming', () => {
+    const msgs: UIMessage[] = [
+      user('u1', 'hi'),
+      assistant('a1', [text('hello')]),
+    ]
+    const result = splitFollowUpForDisplay(
+      msgs,
+      null,
+      { text: 'list file', files: [] },
+      { userId: 'queued-user', assistantId: 'followup-assistant' },
+    )
+
+    expect(result).toBe(msgs)
   })
 
   it('assigns distinct ids to asst1 (original), user message, and asst2 (new)', () => {

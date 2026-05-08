@@ -101,6 +101,8 @@ export function WorkbenchLeftPane({
   }, [])
 
   const activeEntry = tabs.find((entry) => entry.id === activeTab)
+  const activeOwnsSearch = Boolean((activeEntry?.panel as { chromeless?: boolean } | undefined)?.chromeless)
+  const showChromeSearch = !activeOwnsSearch
   const leftTabParams = useMemo<LeftTabParams>(
     () => ({
       rootDir,
@@ -130,17 +132,19 @@ export function WorkbenchLeftPane({
           </TabsList>
         </Tabs>
 
-        <IconButton
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={toggleSearch}
-          className={cn(searchOpen && "bg-foreground/5 text-foreground")}
-          aria-label="Search"
-          title="Search"
-        >
-          <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
-        </IconButton>
+        {showChromeSearch && (
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={toggleSearch}
+            className={cn(searchOpen && "bg-foreground/5 text-foreground")}
+            aria-label="Search"
+            title="Search"
+          >
+            <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
+          </IconButton>
+        )}
         {onCollapse && (
           <IconButton
             type="button"
@@ -155,7 +159,7 @@ export function WorkbenchLeftPane({
         )}
       </div>
 
-      {searchOpen && (
+      {showChromeSearch && searchOpen && (
         <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1.5">
           <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <Input

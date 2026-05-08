@@ -88,7 +88,77 @@ importers:
         specifier: ^6.3.3
         version: 6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
 
-  apps/boring-macro-v2:
+  apps/boring-macro:
+    dependencies:
+      '@clickhouse/client':
+        specifier: ^1.18.2
+        version: 1.18.3
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@hachej/boring-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@hachej/boring-ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
+      fastify:
+        specifier: ^5.8.4
+        version: 5.8.5
+      lucide-react:
+        specifier: ^0.460.0
+        version: 0.460.0(react@19.2.5)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.5(react@19.2.5)
+      react-markdown:
+        specifier: ^9.0.1
+        version: 9.1.0(@types/react@19.2.14)(react@19.2.5)
+      recharts:
+        specifier: ^2.15.0
+        version: 2.15.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      remark-gfm:
+        specifier: ^4.0.0
+        version: 4.0.1
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.0.0
+        version: 4.2.4(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
+      '@types/node':
+        specifier: ^22.19.15
+        version: 22.19.17
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-react':
+        specifier: ^4.0.0
+        version: 4.7.0(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
+      tailwindcss:
+        specifier: ^4.0.0
+        version: 4.2.4
+      tsx:
+        specifier: ^4.19.4
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
+
+  apps/boring-macro-v0:
     dependencies:
       '@clickhouse/client':
         specifier: ^1.18.2
@@ -167,11 +237,11 @@ importers:
         specifier: ^4.1.2
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
 
-  apps/boring-macro-v2-full:
+  apps/boring-macro-v1:
     dependencies:
-      '@boring/macro':
+      '@boring/macro-v0':
         specifier: workspace:*
-        version: link:../boring-macro-v2
+        version: link:../boring-macro-v0
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../../packages/agent

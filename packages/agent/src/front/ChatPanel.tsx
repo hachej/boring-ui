@@ -33,7 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MentionPicker, detectMention, type MentionState } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
-import { splitFollowUp } from './splitFollowUp'
+import { splitFollowUp, splitFollowUpForDisplay } from './splitFollowUp'
 import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
@@ -384,6 +384,8 @@ export function ChatPanel(props: ChatPanelProps) {
     attachments: Array<{ filename?: string; mediaType?: string; url?: string }>
   } | null>(null)
   const pendingMessageRef = useRef<typeof pendingMessage>(null)
+  const followUpPostedRef = useRef(false)
+  const followUpPostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const consumedFollowUpRef = useRef<{ text: string; files: FileUIPart[] } | null>(null)
   const followUpSplitIdsRef = useRef<{ userId: string; assistantId: string } | null>(null)
@@ -395,9 +397,12 @@ export function ChatPanel(props: ChatPanelProps) {
     onData: (part) => {
       if ((part as { type?: string })?.type === 'data-followup-consumed') {
         const pending = pendingMessageRef.current
+        const serverText = (part as { data?: { text?: unknown } })?.data?.text
         consumedFollowUpRef.current = pending
           ? { text: pending.text, files: pending.files }
-          : null
+          : typeof serverText === 'string'
+            ? { text: serverText, files: [] }
+            : null
         followUpSplitIdsRef.current = {
           userId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-followup-user`,
           assistantId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-followup-assistant`,
@@ -550,20 +555,39 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
-  const displayMessages = useMemo(() => {
-    const consumed = consumedFollowUpRef.current ?? pendingMessageRef.current
-    const ids = followUpSplitIdsRef.current
-    if (!consumed || !ids) return messages
-    // Avoid moving the queued bubble before the follow-up turn has actually
-    // started streaming. Once we see a namespaced follow-up part, split the
-    // live assistant message and inject the queued user turn before it.
-    const hasFollowUpPart = messages.some((m) =>
-      m.role === 'assistant' && m.parts?.some((p) => (p as { id?: string }).id?.startsWith('turn-')),
-    )
-    if (!hasFollowUpPart) return messages
-    let n = 0
-    return splitFollowUp(messages, consumed, () => (n++ === 0 ? ids.userId : ids.assistantId))
-  }, [messages])
+  const displayMessages = useMemo(() =>
+    splitFollowUpForDisplay(
+      messages,
+      consumedFollowUpRef.current,
+      pendingMessageRef.current,
+      followUpSplitIdsRef.current,
+    ),
+  [messages])
+
+  const postPendingFollowUp = useCallback((pending: NonNullable<typeof pendingMessage>) => {
+    if (followUpPostedRef.current) return
+    followUpPostedRef.current = true
+    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...requestHeaders,
+      },
+      body: JSON.stringify({ message: pending.serverMessage, displayText: pending.text, attachments: pending.attachments }),
+    }).catch(() => {
+      followUpPostedRef.current = false
+    })
+  }, [sessionId, requestHeaders])
+
+  // Wait until the active request is genuinely streaming before handing the
+  // queued follow-up to pi. During AI SDK `submitted`, pi may not be in its
+  // running state yet; pi-native followUp() is reliable once streaming starts.
+  useEffect(() => {
+    if (status !== 'streaming') return
+    const pending = pendingMessageRef.current
+    if (!pending) return
+    postPendingFollowUp(pending)
+  }, [status, postPendingFollowUp])
 
   // Server-side inline follow-ups keep the same HTTP stream open. The AI SDK
   // naturally appends both assistant turns into one assistant message, so when
@@ -581,6 +605,9 @@ export function ChatPanel(props: ChatPanelProps) {
     consumedFollowUpRef.current = null
     followUpSplitIdsRef.current = null
     pendingMessageRef.current = null
+    followUpPostedRef.current = false
+    if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
+    followUpPostTimerRef.current = null
     setPendingMessage(null)
     let n = 0
     const genId = () => ids ? (n++ === 0 ? ids.userId : ids.assistantId) : (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)
@@ -604,6 +631,9 @@ export function ChatPanel(props: ChatPanelProps) {
     consumedFollowUpRef.current = null
     followUpSplitIdsRef.current = null
     pendingMessageRef.current = null
+    followUpPostedRef.current = false
+    if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
+    followUpPostTimerRef.current = null
     setPendingMessage(null)
     fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
       method: 'DELETE',
@@ -823,15 +853,17 @@ export function ChatPanel(props: ChatPanelProps) {
           attachments: resolvedAttachments,
         }
         pendingMessageRef.current = nextPending
+        followUpPostedRef.current = false
         setPendingMessage(nextPending)
-        fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...requestHeaders,
-          },
-          body: JSON.stringify({ message: serverMessage, attachments: resolvedAttachments }),
-        }).catch(() => {})
+        if (status === 'streaming') {
+          postPendingFollowUp(nextPending)
+        } else {
+          if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
+          followUpPostTimerRef.current = setTimeout(() => {
+            const pending = pendingMessageRef.current
+            if (pending) postPendingFollowUp(pending)
+          }, 1000)
+        }
       }
       return
     }

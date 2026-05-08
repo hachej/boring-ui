@@ -148,6 +148,8 @@ export async function createAgentApp(
   })
   await app.register(sessionRoutes, {
     sessionStore: harness.sessions as unknown as SessionStore,
+    harness,
+    workdir: runtimeBundle.workspace.root,
   })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)

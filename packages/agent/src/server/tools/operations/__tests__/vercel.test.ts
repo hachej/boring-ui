@@ -137,6 +137,17 @@ describe('vercelReadOps', () => {
 
     expect(workspace.stat).toHaveBeenCalledWith('file.txt')
   })
+
+  test('accepts display /workspace aliases and host-rendered skill paths', async () => {
+    const workspace = mockWorkspace({ root: '/workspace' })
+    const ops = vercelReadOps(workspace)
+
+    await ops.readFile('/vercel/sandbox/deck/labor.md')
+    await ops.readFile('/data/workspaces/.agents/skills/macro-deck/SKILL.md')
+
+    expect(workspace.readFile).toHaveBeenNthCalledWith(1, 'deck/labor.md')
+    expect(workspace.readFile).toHaveBeenNthCalledWith(2, '.agents/skills/macro-deck/SKILL.md')
+  })
 })
 
 describe('vercelWriteOps', () => {
@@ -233,12 +244,40 @@ describe('vercelFindOps', () => {
     expect(files).toEqual([])
   })
 
+  test('glob falls back to POSIX find when fd is unavailable', async () => {
+    const sandbox = mockSandbox()
+    ;(sandbox.exec as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        stdout: new Uint8Array(),
+        stderr: new Uint8Array(Buffer.from('sh: 1: fd: not found')),
+        exitCode: 127,
+        durationMs: 5,
+        truncated: false,
+      })
+      .mockResolvedValueOnce({
+        stdout: new Uint8Array(Buffer.from('/vercel/sandbox/deck/labor.md\n')),
+        stderr: new Uint8Array(),
+        exitCode: 0,
+        durationMs: 5,
+        truncated: false,
+      })
+    const ops = vercelFindOps(sandbox)
+
+    const files = await ops.glob('**/labor.md', '/workspace', { ignore: ['node_modules'], limit: 10 })
+
+    expect(files).toEqual(['/vercel/sandbox/deck/labor.md'])
+    const calls = (sandbox.exec as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls[0][0]).toContain('/vercel/sandbox')
+    expect(calls[1][0]).toContain('find')
+    expect(calls[1][0]).toContain('/vercel/sandbox')
+  })
+
   test('glob throws on unexpected exit code', async () => {
     const stderr = Buffer.from('fd: error')
     const sandbox = mockSandbox({ exitCode: 2, stderr: new Uint8Array(stderr) })
     const ops = vercelFindOps(sandbox)
 
-    await expect(ops.glob('*', '/cwd', { ignore: [], limit: 10 })).rejects.toThrow('fd failed (exit 2)')
+    await expect(ops.glob('*', '/cwd', { ignore: [], limit: 10 })).rejects.toThrow('file search failed (exit 2)')
   })
 })
 

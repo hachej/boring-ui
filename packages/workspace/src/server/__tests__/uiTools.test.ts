@@ -197,13 +197,24 @@ describe("createExecUiTool — path validation", () => {
     expect(badMeta.isError).toBe(true)
   })
 
-  test("opts omitted: paths pass through without validation (back-compat)", async () => {
+  test("opts omitted: relative paths pass through without stat validation", async () => {
     const tool = createExecUiTool(bridge) // no workspaceRoot
     const result = await tool.execute(
       { kind: "openFile", params: { path: "definitely-does-not-exist.md" } },
       FAKE_CTX,
     )
     expect(result.isError).toBeFalsy()
+  })
+
+  test("opts omitted: absolute paths are still rejected", async () => {
+    const tool = createExecUiTool(bridge) // no workspaceRoot
+    const result = await tool.execute(
+      { kind: "openFile", params: { path: "/data/workspaces/ws/deck/labor.md" } },
+      FAKE_CTX,
+    )
+    expect(result.isError).toBe(true)
+    const text = result.content[0]
+    if (text?.type === "text") expect(text.text).toMatch(/absolute/)
   })
 
   test("createWorkspaceUiTools forwards workspaceRoot to exec_ui", async () => {
