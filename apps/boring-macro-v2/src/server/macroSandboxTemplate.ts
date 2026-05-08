@@ -22,7 +22,7 @@ ensure_venv() {
     /usr/bin/python3 -m venv "$WORKSPACE_ROOT/.venv"
   fi
   if ! "$VENV_BIN/python" -c 'import boring_macro' >/dev/null 2>&1; then
-    "$VENV_BIN/python" -m pip install -q "$SDK_ROOT"
+    "$VENV_BIN/python" -m pip install --progress-bar off "$SDK_ROOT" >&2
   fi
 }
 `

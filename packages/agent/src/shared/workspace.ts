@@ -1,6 +1,8 @@
 export interface Workspace {
   readonly root: string
   readFile(relPath: string): Promise<string>
+  /** Optional binary read operation for media/document previews. */
+  readBinaryFile?(relPath: string): Promise<Uint8Array>
   writeFile(relPath: string, data: string): Promise<void>
   /**
    * Optional binary write operation for user-uploaded assets. Shared callers use

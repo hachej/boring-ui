@@ -115,6 +115,10 @@ export function createNodeWorkspace(root: string): Workspace {
       const absPath = await ensureExistingWorkspacePath(root, relPath)
       return await readFile(absPath, 'utf-8')
     },
+    async readBinaryFile(relPath) {
+      const absPath = await ensureExistingWorkspacePath(root, relPath)
+      return new Uint8Array(await readFile(absPath))
+    },
     async writeFile(relPath, data) {
       const absPath = await ensureWritableWorkspacePath(root, relPath)
       await writeFile(absPath, data, 'utf-8')

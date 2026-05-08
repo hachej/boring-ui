@@ -824,6 +824,11 @@ export function ChatPanel(props: ChatPanelProps) {
                 } else {
                   acc.push({ kind: 'tool-group', tools: [{ part: item.part, key: item.key }], key: item.key })
                 }
+              } else if (item.kind === 'part' && !isTextPart(item.part)) {
+                // Non-rendered data parts (heartbeat/status/file-change chunks)
+                // often arrive between consecutive tool calls. They should not
+                // split one visual "Used command · read" group into multiple
+                // dropdowns.
               } else {
                 acc.push(item)
               }

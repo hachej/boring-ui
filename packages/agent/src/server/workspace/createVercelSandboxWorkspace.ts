@@ -230,6 +230,20 @@ export function createVercelSandboxWorkspace(
       }
       return Buffer.from(content).toString('utf-8')
     },
+    async readBinaryFile(relPath) {
+      const sandboxPath = toSandboxPath(relPath)
+      if (remote.fs?.readFile) {
+        const content = await remote.fs.readFile(sandboxPath)
+        return new Uint8Array(Buffer.from(content))
+      }
+      const content = await remote.readFileToBuffer?.({ path: sandboxPath })
+      if (!content) {
+        const err = new Error(`ENOENT: file not found, open '${sandboxPath}'`) as NodeJS.ErrnoException
+        err.code = 'ENOENT'
+        throw err
+      }
+      return new Uint8Array(Buffer.from(content))
+    },
     async writeFile(relPath, data) {
       const sandboxPath = toSandboxPath(relPath)
       await sandbox.writeFiles([

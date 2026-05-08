@@ -15,8 +15,8 @@ describe("filesystemPlugin", () => {
     expect(filesystemPlugin.agentTools).toBeUndefined()
   })
 
-  it("registers provider, preload binding, files left-tab output, surface resolver, and editor panels", () => {
-    expect(filesystemPlugin.outputs).toHaveLength(8)
+  it("registers provider, preload binding, files left-tab output, surface resolver, and editor/viewer panels", () => {
+    expect(filesystemPlugin.outputs).toHaveLength(10)
     expect(filesystemPlugin.outputs![0]).toEqual(
       expect.objectContaining({
         type: "provider",
@@ -37,7 +37,7 @@ describe("filesystemPlugin", () => {
         source: "builtin",
       }),
     )
-    expect(filesystemPlugin.outputs![7]).toEqual(
+    expect(filesystemPlugin.outputs![9]).toEqual(
       expect.objectContaining({
         type: "surface-resolver",
         resolver: expect.objectContaining({ id: "filesystem-path" }),
@@ -47,7 +47,7 @@ describe("filesystemPlugin", () => {
     const ids = filesystemPlugin.outputs!
       .filter((output) => output.type === "panel")
       .map((output) => output.panel.id)
-    expect(ids).toEqual(["empty-file-panel", "code-editor", "csv-viewer", "markdown-editor"])
+    expect(ids).toEqual(["empty-file-panel", "code-editor", "csv-viewer", "markdown-editor", "image-viewer", "pdf-viewer"])
   })
 
   it("all panels have source 'builtin'", () => {
@@ -80,6 +80,17 @@ describe("filesystemPlugin", () => {
     expect(resolver.type).toBe("surface-resolver")
     expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "data/status.csv" })).toEqual(
       expect.objectContaining({ component: "csv-viewer" }),
+    )
+  })
+
+  it("surface resolver routes image and PDF previews", () => {
+    const resolver = filesystemPlugin.outputs!.find((output) => output.type === "surface-resolver")!
+    expect(resolver.type).toBe("surface-resolver")
+    expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "assets/chart.png" })).toEqual(
+      expect.objectContaining({ component: "image-viewer" }),
+    )
+    expect(resolver.resolver.resolve({ kind: "workspace.open.path", target: "docs/report.pdf" })).toEqual(
+      expect.objectContaining({ component: "pdf-viewer" }),
     )
   })
 
