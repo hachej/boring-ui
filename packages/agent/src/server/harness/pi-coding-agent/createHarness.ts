@@ -481,6 +481,8 @@ export function createPiCodingAgentHarness(opts: {
       let sawTextChunk = false;
       let inlineTurnIndex = 0;
       let currentPiAssistantMessageId: string | null = null;
+      let piSeq = 0;
+      const nextPiSeq = () => ++piSeq;
 
       function namespaceInlinePartIds(input: UIMessageChunk[]): UIMessageChunk[] {
         if (inlineTurnIndex === 0) return input;
@@ -535,7 +537,7 @@ export function createPiCodingAgentHarness(opts: {
           if ((role === "user" && text && text !== input.message) || (role === "assistant" && inlineTurnIndex > 0)) {
             piHistoryChunks.push({
               type: "data-pi-message-start",
-              data: { messageId, role, ...(text ? { text } : {}) },
+              data: { seq: nextPiSeq(), messageId, role, ...(text ? { text } : {}) },
             } as unknown as UIMessageChunk);
           }
         }
@@ -546,11 +548,52 @@ export function createPiCodingAgentHarness(opts: {
             : typeof (event as unknown as { message?: { id?: unknown } }).message?.id === "string"
               ? (event as unknown as { message: { id: string } }).message.id
               : currentPiAssistantMessageId ?? "assistant-streaming";
-          if (inlineTurnIndex > 0 && ame.type === "text_delta" && ame.delta) {
-            piHistoryChunks.push({
-              type: "data-pi-message-delta",
-              data: { messageId, role: "assistant", delta: ame.delta },
-            } as unknown as UIMessageChunk);
+          if (inlineTurnIndex > 0) {
+            if (ame.type === "text_start") {
+              piHistoryChunks.push({
+                type: "data-pi-text-start",
+                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+              } as unknown as UIMessageChunk);
+            } else if (ame.type === "text_delta" && ame.delta) {
+              const seq = nextPiSeq();
+              piHistoryChunks.push(
+                {
+                  type: "data-pi-text-delta",
+                  data: { seq, messageId, partId: String(ame.contentIndex), delta: ame.delta },
+                } as unknown as UIMessageChunk,
+                // Back-compat for the current client projection. Remove once
+                // ChatPanel consumes the stable data-pi-text-* DTOs directly.
+                {
+                  type: "data-pi-message-delta",
+                  data: { seq, messageId, role: "assistant", delta: ame.delta },
+                } as unknown as UIMessageChunk,
+              );
+            } else if (ame.type === "text_end") {
+              piHistoryChunks.push({
+                type: "data-pi-text-end",
+                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), ...(typeof ame.content === "string" ? { text: ame.content } : {}) },
+              } as unknown as UIMessageChunk);
+            } else if (ame.type === "thinking_start") {
+              piHistoryChunks.push({
+                type: "data-pi-reasoning-start",
+                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+              } as unknown as UIMessageChunk);
+            } else if (ame.type === "thinking_delta") {
+              piHistoryChunks.push({
+                type: "data-pi-reasoning-delta",
+                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), delta: ame.delta },
+              } as unknown as UIMessageChunk);
+            } else if (ame.type === "thinking_end") {
+              piHistoryChunks.push({
+                type: "data-pi-reasoning-end",
+                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+              } as unknown as UIMessageChunk);
+            } else if (ame.type === "toolcall_end") {
+              piHistoryChunks.push({
+                type: "data-pi-tool-call-end",
+                data: { seq: nextPiSeq(), messageId, toolCallId: ame.toolCall.id, toolName: ame.toolCall.name, input: ame.toolCall.arguments },
+              } as unknown as UIMessageChunk);
+            }
           }
         }
         if (event.type === "message_end" && (eventMessage?.role === "user" || (eventMessage?.role === "assistant" && inlineTurnIndex > 0))) {
@@ -561,7 +604,14 @@ export function createPiCodingAgentHarness(opts: {
             : extractAssistantMessageText(eventMessage).text;
           piHistoryChunks.push({
             type: "data-pi-message-end",
-            data: { messageId, role, ...(text ? { text } : {}) },
+            data: { seq: nextPiSeq(), messageId, role, ...(text ? { text } : {}) },
+          } as unknown as UIMessageChunk);
+        }
+
+        if (inlineTurnIndex > 0 && event.type === "tool_execution_end" && currentPiAssistantMessageId) {
+          piHistoryChunks.push({
+            type: "data-pi-tool-result",
+            data: { seq: nextPiSeq(), messageId: currentPiAssistantMessageId, toolCallId: event.toolCallId, output: event.result, isError: event.isError },
           } as unknown as UIMessageChunk);
         }
 
