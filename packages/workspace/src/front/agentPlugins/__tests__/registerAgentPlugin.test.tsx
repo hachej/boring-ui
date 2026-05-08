@@ -184,6 +184,69 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
   })
 
+  test("ignores stale slow imports when a newer revision has already landed", async () => {
+    let resolveRev1: ((mod: { default: BoringFrontFactory }) => void) | undefined
+    let resolveRev2: ((mod: { default: BoringFrontFactory }) => void) | undefined
+    const importFront = async (_url: string, revision: number) => {
+      return await new Promise<{ default: BoringFrontFactory }>((resolve) => {
+        if (revision === 1) resolveRev1 = resolve
+        else if (revision === 2) resolveRev2 = resolve
+        else throw new Error(`unexpected revision ${revision}`)
+      })
+    }
+    const moduleFor = (text: string): { default: BoringFrontFactory } => ({
+      default(api) {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, text)
+          },
+        })
+      },
+    })
+
+    function RacingHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<RacingHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/slow-one.mjs",
+      boring: { front: "./front.mjs", panels: [{ id: "hot-pane", title: "Hot Pane" }] },
+    })
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      frontUrl: "/@fs/fast-two.mjs",
+      boring: { front: "./front.mjs", panels: [{ id: "hot-pane", title: "Hot Pane" }] },
+    })
+
+    resolveRev2?.(moduleFor("version two"))
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
+    resolveRev1?.(moduleFor("version one"))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
+  })
+
   test("keeps the current pane live when generated plugin code has no valid default factory", async () => {
     const dir = await makeTempDir("boring-front-fail-keeps-old-")
     const frontPath = join(dir, "front.mjs")

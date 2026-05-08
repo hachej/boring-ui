@@ -158,6 +158,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
   const commands = useCommandRegistry()
   const surfaceResolvers = useSurfaceResolverRegistry()
   const lastSeenRef = useRef(new Map<string, number>())
+  const latestRequestedRef = useRef(new Map<string, number>())
 
   useEffect(() => {
     if (options.enabled === false || typeof EventSource === "undefined") return
@@ -169,11 +170,15 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       void (async () => {
         const event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.load" }>
         const lastSeen = lastSeenRef.current.get(event.id) ?? 0
-        if (event.revision <= lastSeen) return
+        const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
+        if (event.revision <= Math.max(lastSeen, latestRequested)) return
+        latestRequestedRef.current.set(event.id, event.revision)
         try {
           const captured = event.frontUrl
             ? await captureFrontFactory(event.id, event.frontUrl, event.revision, options.importFront)
             : null
+          if (latestRequestedRef.current.get(event.id) !== event.revision) return
+          if (event.revision <= (lastSeenRef.current.get(event.id) ?? 0)) return
           unregisterPlugin(event.id, registries)
           if (captured) commitCapturedFrontFactory(event.id, captured, registries)
           else commitMetadataOnly(event.id, event.boring, registries)
@@ -187,7 +192,9 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     const handleUnload = (raw: MessageEvent) => {
       const event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.unload" }>
       const lastSeen = lastSeenRef.current.get(event.id) ?? 0
-      if (event.revision <= lastSeen) return
+      const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
+      if (event.revision <= Math.max(lastSeen, latestRequested)) return
+      latestRequestedRef.current.set(event.id, event.revision)
       unregisterPlugin(event.id, registries)
       lastSeenRef.current.set(event.id, event.revision)
     }
