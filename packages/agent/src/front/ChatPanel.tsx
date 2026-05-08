@@ -377,41 +377,96 @@ export function ChatPanel(props: ChatPanelProps) {
     debug = false,
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
-  const [pendingMessage, setPendingMessage] = useState<{
+  type PendingFollowUp = {
+    id: string
     text: string
     files: FileUIPart[]
     serverMessage: string
     attachments: Array<{ filename?: string; mediaType?: string; url?: string }>
-  } | null>(null)
-  const pendingMessageRef = useRef<typeof pendingMessage>(null)
-  const followUpPostedRef = useRef(false)
+    posted: boolean
+    consumed: boolean
+  }
+  type ProjectedFollowUpMessage = {
+    id: string
+    role: 'user' | 'assistant'
+    text: string
+    files?: FileUIPart[]
+    status: 'queued' | 'streaming' | 'done'
+  }
+  const [pendingMessages, setPendingMessages] = useState<PendingFollowUp[]>([])
+  const pendingMessagesRef = useRef<PendingFollowUp[]>([])
+  const [projectedFollowUps, setProjectedFollowUps] = useState<ProjectedFollowUpMessage[]>([])
+  const projectedFollowUpsRef = useRef<ProjectedFollowUpMessage[]>([])
+  const activeProjectedAssistantRef = useRef<string | null>(null)
+  const lastConsumedProjectedUserRef = useRef<string | null>(null)
   const followUpPostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const consumedFollowUpRef = useRef<{ text: string; files: FileUIPart[] } | null>(null)
   const followUpSplitIdsRef = useRef<{ userId: string; assistantId: string } | null>(null)
+
+  const updatePendingMessages = useCallback((updater: (items: PendingFollowUp[]) => PendingFollowUp[]) => {
+    const next = updater(pendingMessagesRef.current)
+    pendingMessagesRef.current = next
+    setPendingMessages(next)
+  }, [])
+  const updateProjectedFollowUps = useCallback((updater: (items: ProjectedFollowUpMessage[]) => ProjectedFollowUpMessage[]) => {
+    const next = updater(projectedFollowUpsRef.current)
+    projectedFollowUpsRef.current = next
+    setProjectedFollowUps(next)
+  }, [])
 
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
   } = useAgentChat({
     sessionId,
     onData: (part) => {
-      if ((part as { type?: string })?.type === 'data-followup-consumed') {
-        const pending = pendingMessageRef.current
-        const serverText = (part as { data?: { text?: unknown } })?.data?.text
+      const typed = part as { type?: string; data?: Record<string, unknown> }
+      if (typed.type === 'data-followup-consumed') {
+        const serverText = typeof typed.data?.text === 'string' ? typed.data.text : ''
+        const pending = pendingMessagesRef.current.find((item) => !item.consumed && (item.serverMessage === serverText || item.text === serverText))
+          ?? pendingMessagesRef.current.find((item) => !item.consumed)
         consumedFollowUpRef.current = pending
           ? { text: pending.text, files: pending.files }
-          : typeof serverText === 'string'
+          : serverText
             ? { text: serverText, files: [] }
             : null
         followUpSplitIdsRef.current = {
           userId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-followup-user`,
           assistantId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-followup-assistant`,
         }
-        // Keep pendingMessageRef until the stream settles. Some AI SDK paths
-        // deliver the data chunk to onData without retaining the marker in
-        // messages; the ready-transition splitter uses this ref as the durable
-        // source for the injected user turn.
-        setPendingMessage(null)
+        if (pending) {
+          lastConsumedProjectedUserRef.current = pending.id
+          updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, consumed: true } : item))
+          updateProjectedFollowUps((items) => items.map((item) => item.id === pending.id ? { ...item, status: 'done' } : item))
+        }
+      } else if (typed.type === 'data-pi-message-start') {
+        const role = typed.data?.role
+        const messageId = typeof typed.data?.messageId === 'string' ? typed.data.messageId : undefined
+        if (role === 'assistant' && messageId && pendingMessagesRef.current.some((item) => item.consumed)) {
+          activeProjectedAssistantRef.current = messageId
+          updateProjectedFollowUps((items) => {
+            if (items.some((item) => item.id === messageId)) return items
+            const nextAssistant: ProjectedFollowUpMessage = { id: messageId, role: 'assistant', text: '', status: 'streaming' }
+            const afterUserId = lastConsumedProjectedUserRef.current
+            const userIndex = afterUserId ? items.findIndex((item) => item.id === afterUserId) : -1
+            if (userIndex < 0) return [...items, nextAssistant]
+            return [...items.slice(0, userIndex + 1), nextAssistant, ...items.slice(userIndex + 1)]
+          })
+        }
+      } else if (typed.type === 'data-pi-message-delta') {
+        const messageId = typeof typed.data?.messageId === 'string' ? typed.data.messageId : activeProjectedAssistantRef.current
+        const delta = typeof typed.data?.delta === 'string' ? typed.data.delta : ''
+        if (messageId && delta && projectedFollowUpsRef.current.some((item) => item.id === messageId)) {
+          updateProjectedFollowUps((items) => items.map((item) => item.id === messageId ? { ...item, text: item.text + delta } : item))
+        }
+      } else if (typed.type === 'data-pi-message-end') {
+        const role = typed.data?.role
+        const messageId = typeof typed.data?.messageId === 'string' ? typed.data.messageId : activeProjectedAssistantRef.current
+        const text = typeof typed.data?.text === 'string' ? typed.data.text : ''
+        if (role === 'assistant' && messageId && projectedFollowUpsRef.current.some((item) => item.id === messageId)) {
+          updateProjectedFollowUps((items) => items.map((item) => item.id === messageId ? { ...item, text: item.text || text, status: 'done' } : item))
+          if (activeProjectedAssistantRef.current === messageId) activeProjectedAssistantRef.current = null
+        }
       }
       onData?.(part)
     },
@@ -555,39 +610,54 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
-  const displayMessages = useMemo(() =>
-    splitFollowUpForDisplay(
-      messages,
-      consumedFollowUpRef.current,
-      pendingMessageRef.current,
-      followUpSplitIdsRef.current,
-    ),
-  [messages])
+  const projectedTailMessages = useMemo<UIMessage[]>(() =>
+    projectedFollowUps.map((item) => ({
+      id: item.id,
+      role: item.role,
+      parts: [
+        ...(item.files ?? []),
+        { type: 'text' as const, text: item.text },
+      ],
+    })),
+  [projectedFollowUps])
 
-  const postPendingFollowUp = useCallback((pending: NonNullable<typeof pendingMessage>) => {
-    if (followUpPostedRef.current) return
-    followUpPostedRef.current = true
-    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...requestHeaders,
-      },
-      body: JSON.stringify({ message: pending.serverMessage, displayText: pending.text, attachments: pending.attachments }),
-    }).catch(() => {
-      followUpPostedRef.current = false
-    })
-  }, [sessionId, requestHeaders])
+  const displayMessages = useMemo(() => [
+    ...messages,
+    ...projectedTailMessages,
+  ], [messages, projectedTailMessages])
+
+  const projectedStatusById = useMemo(() => {
+    const map = new Map<string, ProjectedFollowUpMessage['status']>()
+    for (const item of projectedFollowUps) map.set(item.id, item.status)
+    return map
+  }, [projectedFollowUps])
+
+  const postPendingFollowUps = useCallback(() => {
+    const unposted = pendingMessagesRef.current.filter((item) => !item.posted)
+    if (unposted.length === 0) return
+    updatePendingMessages((items) => items.map((item) => unposted.some((pending) => pending.id === item.id) ? { ...item, posted: true } : item))
+    for (const pending of unposted) {
+      fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ message: pending.serverMessage, displayText: pending.text, attachments: pending.attachments }),
+      }).catch(() => {
+        updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, posted: false } : item))
+      })
+    }
+  }, [sessionId, requestHeaders, updatePendingMessages])
 
   // Wait until the active request is genuinely streaming before handing the
   // queued follow-up to pi. During AI SDK `submitted`, pi may not be in its
   // running state yet; pi-native followUp() is reliable once streaming starts.
   useEffect(() => {
     if (status !== 'streaming') return
-    const pending = pendingMessageRef.current
-    if (!pending) return
-    postPendingFollowUp(pending)
-  }, [status, postPendingFollowUp])
+    if (!pendingMessagesRef.current.some((item) => !item.posted)) return
+    postPendingFollowUps()
+  }, [status, postPendingFollowUps])
 
   // Server-side inline follow-ups keep the same HTTP stream open. The AI SDK
   // naturally appends both assistant turns into one assistant message, so when
@@ -599,20 +669,24 @@ export function ChatPanel(props: ChatPanelProps) {
     prevStatusForQueue.current = status
     if (status !== 'ready') return
     if (prev !== 'streaming' && prev !== 'submitted') return
-    const consumed = consumedFollowUpRef.current ?? pendingMessageRef.current
+    const consumed = consumedFollowUpRef.current
     if (!consumed) return
     const ids = followUpSplitIdsRef.current
     consumedFollowUpRef.current = null
     followUpSplitIdsRef.current = null
-    pendingMessageRef.current = null
-    followUpPostedRef.current = false
     if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
     followUpPostTimerRef.current = null
-    setPendingMessage(null)
+    updatePendingMessages((items) => items.filter((item) => !item.consumed))
     let n = 0
     const genId = () => ids ? (n++ === 0 ? ids.userId : ids.assistantId) : (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)
-    const nextMessages = splitFollowUp(messages, consumed, genId)
+    const nextMessages = projectedFollowUps.length > 0 ? [...messages, ...projectedTailMessages] : splitFollowUp(messages, consumed, genId)
     setMessages(nextMessages)
+    if (projectedFollowUps.length > 0) {
+      projectedFollowUpsRef.current = []
+      activeProjectedAssistantRef.current = null
+      lastConsumedProjectedUserRef.current = null
+      setProjectedFollowUps([])
+    }
     // useAgentChat's save effect may have already persisted the unsplit stream
     // snapshot for this ready transition. Persist the corrected shape too.
     fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`, {
@@ -623,18 +697,21 @@ export function ChatPanel(props: ChatPanelProps) {
       },
       body: JSON.stringify({ messages: nextMessages }),
     }).catch(() => {})
-  }, [status, messages, sessionId, requestHeaders, setMessages])
+  }, [status, messages, projectedFollowUps.length, projectedTailMessages, sessionId, requestHeaders, setMessages, updatePendingMessages])
 
   // Stop button: cancels stream AND clears the queued follow-up.
   const handleStop = useCallback(() => {
     stop()
     consumedFollowUpRef.current = null
     followUpSplitIdsRef.current = null
-    pendingMessageRef.current = null
-    followUpPostedRef.current = false
+    pendingMessagesRef.current = []
+    projectedFollowUpsRef.current = []
+    activeProjectedAssistantRef.current = null
+    lastConsumedProjectedUserRef.current = null
     if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
     followUpPostTimerRef.current = null
-    setPendingMessage(null)
+    setPendingMessages([])
+    setProjectedFollowUps([])
     fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
       method: 'DELETE',
       headers: requestHeaders,
@@ -845,25 +922,30 @@ export function ChatPanel(props: ChatPanelProps) {
     const resolvedAttachments = await resolveAttachmentUrls(files)
 
     if (isStreaming) {
-      if (!pendingMessage) {
-        const nextPending = {
-          text,
-          files: files ?? [],
-          serverMessage,
-          attachments: resolvedAttachments,
-        }
-        pendingMessageRef.current = nextPending
-        followUpPostedRef.current = false
-        setPendingMessage(nextPending)
-        if (status === 'streaming') {
-          postPendingFollowUp(nextPending)
-        } else {
-          if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
-          followUpPostTimerRef.current = setTimeout(() => {
-            const pending = pendingMessageRef.current
-            if (pending) postPendingFollowUp(pending)
-          }, 1000)
-        }
+      const nextPending: PendingFollowUp = {
+        id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+        text,
+        files: files ?? [],
+        serverMessage,
+        attachments: resolvedAttachments,
+        posted: false,
+        consumed: false,
+      }
+      updatePendingMessages((items) => [...items, nextPending])
+      updateProjectedFollowUps((items) => [...items, {
+        id: nextPending.id,
+        role: 'user',
+        text: nextPending.text,
+        files: nextPending.files,
+        status: 'queued',
+      }])
+      if (status === 'streaming') {
+        queueMicrotask(() => postPendingFollowUps())
+      } else {
+        if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
+        followUpPostTimerRef.current = setTimeout(() => {
+          postPendingFollowUps()
+        }, 1000)
       }
       return
     }
@@ -970,6 +1052,8 @@ export function ChatPanel(props: ChatPanelProps) {
           )}
           {displayMessages.map((message, messageIndex) => {
             const role = message.role === 'user' || message.role === 'assistant' ? message.role : 'assistant'
+            const projectedStatus = projectedStatusById.get(message.id)
+            const isWaitingFollowUp = role === 'user' && projectedStatus === 'queued'
             const textParts = message.parts.filter(isTextPart)
             const fileParts = message.parts.filter(isFilePart)
             const orderedParts = message.parts.reduce<Array<
@@ -1049,11 +1133,20 @@ export function ChatPanel(props: ChatPanelProps) {
                     role === 'user'
                       ? cn(
                           "!ml-auto !max-w-[80%] !rounded-[var(--radius-lg)]",
-                          "!bg-secondary !text-secondary-foreground !px-4 !py-2.5",
+                          "!px-4 !py-2.5",
+                          isWaitingFollowUp
+                            ? "!border !border-dashed !border-border/70 !bg-muted/45 !text-muted-foreground italic shadow-none"
+                            : "!bg-secondary !text-secondary-foreground",
                         )
                       : "!w-full !bg-transparent !p-0",
                   )}
+                  data-waiting-follow-up={isWaitingFollowUp ? 'true' : undefined}
                 >
+                  {isWaitingFollowUp && (
+                    <div className="mb-1 text-[10px] font-medium not-italic uppercase tracking-[0.16em] text-muted-foreground/70">
+                      Waiting…
+                    </div>
+                  )}
                   {fileParts.length > 0 && (
                     <Attachments
                       variant="list"
@@ -1167,14 +1260,6 @@ export function ChatPanel(props: ChatPanelProps) {
               </Message>
             )
           })}
-          {pendingMessage && (
-            <Message from="user">
-              <MessageContent className="opacity-50">
-                <div className="text-[11px] font-medium text-muted-foreground mb-1">Follow-up</div>
-                <div className="text-sm whitespace-pre-wrap">{pendingMessage.text}</div>
-              </MessageContent>
-            </Message>
-          )}
           {(() => {
             if (!error) return null
             const friendly = friendlyError(error)
