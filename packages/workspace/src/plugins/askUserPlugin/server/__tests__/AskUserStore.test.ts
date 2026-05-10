@@ -138,6 +138,13 @@ describe("FileAskUserStore", () => {
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ reason: "clear", questionId: "q1" }))
   })
 
+  it("does not let listener failures roll back mutations", async () => {
+    store.subscribe(() => { throw new Error("listener failed") })
+    store.subscribe((() => Promise.reject(new Error("async listener failed"))) as never)
+    await expect(store.createPending(question())).resolves.toBeUndefined()
+    await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: "q1" })
+  })
+
   it("appends, lists, filters, and persists transcript events", async () => {
     await store.createPending(question())
     await store.appendTranscriptEvent({ type: "created", question: question(), at: new Date(0).toISOString() })
