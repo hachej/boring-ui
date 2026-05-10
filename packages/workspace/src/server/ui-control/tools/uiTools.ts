@@ -11,7 +11,7 @@
  * via `createAgentApp({ extraTools })` if they prefer hand-wiring.
  */
 import { access } from "node:fs/promises"
-import { resolve, isAbsolute, relative } from "node:path"
+import { resolve, isAbsolute, relative, win32 } from "node:path"
 import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
 import type { UiBridge, UiCommand, UiState } from "../../../shared/ui-bridge"
 
@@ -58,12 +58,20 @@ function getPathParam(kind: string, params: Record<string, unknown>): string | u
   return typeof raw === "string" && raw.length > 0 ? raw : undefined
 }
 
+function isPathAbsolute(filePath: string): boolean {
+  return isAbsolute(filePath) || win32.isAbsolute(filePath)
+}
+
+function isOutsideWorkspaceRel(rel: string): boolean {
+  return rel === ".." || rel.startsWith("../") || rel.startsWith("..\\") || isPathAbsolute(rel)
+}
+
 function validatePathSyntax(
   relPath: string,
   workspaceRoot?: string,
 ): { ok: true } | { ok: false; reason: string } {
   const rootHint = workspaceRoot ? ` (${workspaceRoot})` : ""
-  if (isAbsolute(relPath)) {
+  if (isPathAbsolute(relPath)) {
     return {
       ok: false,
       reason: `path "${relPath}" is absolute — pass a path relative to the workspace root${rootHint}.`,
@@ -89,7 +97,7 @@ async function validatePath(
   if (!syntax.ok) return syntax
   const resolved = resolve(workspaceRoot, relPath)
   const rel = relative(workspaceRoot, resolved)
-  if (rel.startsWith("..") || isAbsolute(rel)) {
+  if (isOutsideWorkspaceRel(rel)) {
     return {
       ok: false,
       reason: `path "${relPath}" escapes the workspace root (${workspaceRoot}).`,
