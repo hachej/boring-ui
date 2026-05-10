@@ -27,6 +27,7 @@ describe("createExecUiTool — path validation", () => {
     workspaceRoot = await mkdtemp(join(tmpdir(), "uitools-pathval-"))
     await mkdir(join(workspaceRoot, "src"), { recursive: true })
     await writeFile(join(workspaceRoot, "src", "README.md"), "# nested\n")
+    await writeFile(join(workspaceRoot, "..notes.md"), "# dotdot prefix is not traversal\n")
     await writeFile(join(workspaceRoot, "package.json"), '{"name":"x"}\n')
     bridge = createInMemoryBridge()
   })
@@ -71,16 +72,27 @@ describe("createExecUiTool — path validation", () => {
     }
   })
 
-  test("openFile rejects absolute paths", async () => {
+  test("openFile accepts in-workspace filenames that merely start with dotdot", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const result = await tool.execute(
-      { kind: "openFile", params: { path: "/etc/passwd" } },
+      { kind: "openFile", params: { path: "..notes.md" } },
       FAKE_CTX,
     )
-    expect(result.isError).toBe(true)
-    const text = result.content[0]
-    if (text?.type === "text") {
-      expect(text.text).toMatch(/absolute/)
+    expect(result.isError).toBeFalsy()
+  })
+
+  test("openFile rejects absolute paths", async () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+    for (const path of ["/etc/passwd", "C:\\Users\\me\\secret.txt", "\\\\server\\share\\secret.txt"]) {
+      const result = await tool.execute(
+        { kind: "openFile", params: { path } },
+        FAKE_CTX,
+      )
+      expect(result.isError).toBe(true)
+      const text = result.content[0]
+      if (text?.type === "text") {
+        expect(text.text).toMatch(/absolute/)
+      }
     }
   })
 
@@ -208,13 +220,15 @@ describe("createExecUiTool — path validation", () => {
 
   test("opts omitted: absolute paths are still rejected", async () => {
     const tool = createExecUiTool(bridge) // no workspaceRoot
-    const result = await tool.execute(
-      { kind: "openFile", params: { path: "/data/workspaces/ws/deck/labor.md" } },
-      FAKE_CTX,
-    )
-    expect(result.isError).toBe(true)
-    const text = result.content[0]
-    if (text?.type === "text") expect(text.text).toMatch(/absolute/)
+    for (const path of ["/data/workspaces/ws/deck/labor.md", "C:\\deck\\labor.md"]) {
+      const result = await tool.execute(
+        { kind: "openFile", params: { path } },
+        FAKE_CTX,
+      )
+      expect(result.isError).toBe(true)
+      const text = result.content[0]
+      if (text?.type === "text") expect(text.text).toMatch(/absolute/)
+    }
   })
 
   test("createWorkspaceUiTools forwards workspaceRoot to exec_ui", async () => {

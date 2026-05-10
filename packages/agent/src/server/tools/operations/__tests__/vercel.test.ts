@@ -129,6 +129,15 @@ describe('vercelReadOps', () => {
     await expect(ops.readFile('/etc/passwd')).rejects.toThrow('is outside workspace')
   })
 
+  test('accepts in-workspace filenames that merely start with dotdot', async () => {
+    const workspace = mockWorkspace()
+    const ops = vercelReadOps(workspace)
+
+    await ops.readFile('/vercel/sandbox/..notes.md')
+
+    expect(workspace.readFile).toHaveBeenCalledWith('..notes.md')
+  })
+
   test('access checks via stat', async () => {
     const workspace = mockWorkspace()
     const ops = vercelReadOps(workspace)

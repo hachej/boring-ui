@@ -513,8 +513,6 @@ export async function createCoreWorkspaceAgentServer(
     await ensureWorkspaceProvisioned(root)
     return root
   }
-  const validateUiPaths = (options.mode ?? process.env.BORING_AGENT_MODE) !== 'vercel-sandbox'
-
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
@@ -533,7 +531,7 @@ export async function createCoreWorkspaceAgentServer(
       return [
         ...callerTools,
         ...createWorkspaceUiTools(getUiBridge(ctx.workspaceId), {
-          workspaceRoot: validateUiPaths ? ctx.workspaceRoot : undefined,
+          workspaceRoot: ctx.runtimeMode === 'vercel-sandbox' ? undefined : ctx.workspaceRoot,
         }),
       ]
     },

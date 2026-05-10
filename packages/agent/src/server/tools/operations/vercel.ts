@@ -1,4 +1,4 @@
-import { relative } from 'node:path'
+import { isAbsolute, relative } from 'node:path'
 
 import type {
   BashOperations,
@@ -23,10 +23,14 @@ function rootAliases(workspace: Workspace): string[] {
   return aliases
 }
 
+function isOutsideWorkspaceRel(rel: string): boolean {
+  return rel === '..' || rel.startsWith('../') || rel.startsWith('..\\') || isAbsolute(rel)
+}
+
 function toRelPath(workspace: Workspace, absolutePath: string): string {
   for (const root of rootAliases(workspace)) {
     const rel = relative(root, absolutePath)
-    if (!rel.startsWith('..') && !rel.startsWith('/')) return rel
+    if (!isOutsideWorkspaceRel(rel)) return rel
   }
 
   const skillMarker = '/.agents/skills/'
