@@ -106,6 +106,17 @@ describe("ask-user UI open ack", () => {
     await expect(store.getPending("s1")).resolves.toBeNull()
   })
 
+  it("returns abort without waiting for opened ack timeout", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 60_000 })
+    const controller = new AbortController()
+    const pending = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
+    await vi.waitFor(async () => expect(await store.getPending("s1")).not.toBeNull())
+    controller.abort()
+    await expect(pending).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
+  })
+
   it("cancels with ui_unavailable when openSurface dispatch fails", async () => {
     const store = await makeStore()
     const ui = bridge()
