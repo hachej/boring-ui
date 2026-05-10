@@ -77,8 +77,10 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+const WORKSPACE_ALIAS_PREFIX_BOUNDARY = String.raw`(^|[\s"'=:;,\[({<>&|])`
+const WORKSPACE_ALIAS_SUFFIX_BOUNDARY = String.raw`(?=/|$|[\s"'=:;,)\]}> &|])`
 const WORKSPACE_ALIAS_PATTERN = new RegExp(
-  `(^|[^A-Za-z0-9._/-])${escapeRegExp(VERCEL_SANDBOX_WORKSPACE_ROOT)}(?=/|$|[^A-Za-z0-9._/-])`,
+  `${WORKSPACE_ALIAS_PREFIX_BOUNDARY}${escapeRegExp(VERCEL_SANDBOX_WORKSPACE_ROOT)}${WORKSPACE_ALIAS_SUFFIX_BOUNDARY}`,
   'g',
 )
 
