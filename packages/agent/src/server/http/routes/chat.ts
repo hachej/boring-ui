@@ -51,6 +51,61 @@ const chatBodySchema = z.object({
 
 type ChatBody = z.infer<typeof chatBodySchema>
 
+type PiDataPart = { type?: string; data?: Record<string, unknown> }
+
+function projectPiDataMessages(messages: UIMessage[]): UIMessage[] {
+  const dataParts = messages.flatMap((message) => message.parts ?? []).filter((part) => {
+    const type = (part as { type?: unknown }).type
+    return typeof type === 'string' && type.startsWith('data-pi-')
+  }) as PiDataPart[]
+  if (dataParts.length === 0) return messages
+  const projected: UIMessage[] = []
+  const ensureMessage = (id: string, role: 'user' | 'assistant', text = ''): UIMessage => {
+    let msg = projected.find((item) => item.id === id)
+    if (!msg) {
+      msg = { id, role, parts: text ? [{ type: 'text' as const, text }] : [] }
+      projected.push(msg)
+    } else if (text && !(msg.parts ?? []).some((part) => part.type === 'text' && part.text)) {
+      msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
+    }
+    return msg
+  }
+  for (const part of dataParts) {
+    const data = part.data ?? {}
+    const messageId = typeof data.messageId === 'string' ? data.messageId : undefined
+    if (!messageId) continue
+    if (part.type === 'data-pi-message-start' && (data.role === 'user' || data.role === 'assistant')) {
+      ensureMessage(messageId, data.role, typeof data.text === 'string' ? data.text : '')
+    } else if (part.type === 'data-pi-text-start') {
+      const msg = ensureMessage(messageId, 'assistant')
+      if (!msg.parts?.some((p) => p.type === 'text')) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text: '' }]
+    } else if (part.type === 'data-pi-text-delta') {
+      const msg = ensureMessage(messageId, 'assistant')
+      const delta = typeof data.delta === 'string' ? data.delta : ''
+      const index = (msg.parts ?? []).findIndex((p) => p.type === 'text')
+      if (index >= 0) {
+        msg.parts = (msg.parts ?? []).map((p, i) => i === index && p.type === 'text' ? { ...p, text: `${p.text}${delta}` } : p)
+      } else {
+        msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text: delta }]
+      }
+    } else if (part.type === 'data-pi-text-end' || (part.type === 'data-pi-message-end' && data.role === 'assistant')) {
+      const msg = ensureMessage(messageId, 'assistant')
+      const text = typeof data.text === 'string' ? data.text : ''
+      if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && p.text)) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
+    }
+  }
+  if (projected.length === 0) return messages
+  const projectedIds = new Set(projected.map((message) => message.id))
+  const preserved = messages.filter((message) => {
+    if (projectedIds.has(message.id)) return false
+    return !(message.parts ?? []).some((part) => {
+      const type = (part as { type?: unknown }).type
+      return typeof type === 'string' && type.startsWith('data-pi-')
+    })
+  })
+  return [...preserved, ...projected]
+}
+
 export interface ChatRouteOptions {
   harness?: AgentHarness
   workdir?: string
@@ -69,7 +124,7 @@ export function chatRoutes(
   const { sessionChangesTracker } = opts
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
-  const lastFollowUpSeqBySession = new Map<string, number>()
+  const lastFollowUpBySession = new Map<string, { seq: number; nonce?: string }>()
 
   async function resolveRuntime(request: FastifyRequest): Promise<{
     harness: AgentHarness
@@ -292,13 +347,17 @@ export function chatRoutes(
         ? body.clientSeq
         : undefined
       if (clientSeq !== undefined) {
-        const lastSeq = lastFollowUpSeqBySession.get(sessionId)
-        if (lastSeq !== undefined && clientSeq <= lastSeq) {
+        const clientNonce = typeof body.clientNonce === 'string' && body.clientNonce.length > 0 ? body.clientNonce : undefined
+        const last = lastFollowUpBySession.get(sessionId)
+        if (last !== undefined && clientSeq <= last.seq) {
+          if (clientSeq === last.seq && clientNonce && clientNonce === last.nonce) {
+            return reply.code(202).send({ queued: true, duplicate: true })
+          }
           return reply.code(409).send({
             error: { code: ERROR_CODE_CONFLICT, message: 'followup_out_of_order' },
           })
         }
-        lastFollowUpSeqBySession.set(sessionId, clientSeq)
+        lastFollowUpBySession.set(sessionId, { seq: clientSeq, nonce: clientNonce })
       }
       const runtime = await resolveRuntime(request)
       await runtime.harness.followUp?.(
@@ -339,7 +398,7 @@ export function chatRoutes(
       try {
         const runtime = await resolveRuntime(request)
         if (runtime.harness.sessions.saveMessages) {
-          await runtime.harness.sessions.saveMessages(ctx, sessionId, body.messages)
+          await runtime.harness.sessions.saveMessages(ctx, sessionId, projectPiDataMessages(body.messages))
         }
         return reply.code(204).send()
       } catch {
