@@ -68,21 +68,21 @@ test('maps display /workspace cwd, command paths, and env to Vercel remote root'
   const sandbox = { runCommand } as unknown as VercelSandbox
   const adapter = createVercelSandboxExec(sandbox)
 
-  await adapter.exec('mkdir -p /workspace/deck && echo /workspace2 /workspace-old /workspace', {
+  await adapter.exec('mkdir -p /workspace/deck && echo /workspace2 /workspace-old /workspace.backup /workspace@tmp /workspace', {
     cwd: '/workspace/nested',
     env: {
       BORING_AGENT_WORKSPACE_ROOT: '/workspace',
-      PATH: '/usr/bin:/workspace/.venv/bin',
+      PATH: '/workspace:/usr/bin:/workspace/.venv/bin:/workspace@tmp',
     },
   })
 
   expect(runCommand).toHaveBeenCalledWith(
     expect.objectContaining({
-      args: ['-c', 'mkdir -p /vercel/sandbox/deck && echo /workspace2 /workspace-old /vercel/sandbox'],
+      args: ['-c', 'mkdir -p /vercel/sandbox/deck && echo /workspace2 /workspace-old /workspace.backup /workspace@tmp /vercel/sandbox'],
       cwd: '/vercel/sandbox/nested',
       env: {
         BORING_AGENT_WORKSPACE_ROOT: '/vercel/sandbox',
-        PATH: '/usr/bin:/vercel/sandbox/.venv/bin',
+        PATH: '/vercel/sandbox:/usr/bin:/vercel/sandbox/.venv/bin:/workspace@tmp',
       },
     }),
   )
