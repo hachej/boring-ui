@@ -9,6 +9,7 @@ export type UseAgentChatOptions = Pick<
 > & {
   onData?: (part: unknown) => void
   requestHeaders?: Record<string, string>
+  persistMessages?: boolean
 }
 
 export function useAgentChat(opts: UseAgentChatOptions) {
@@ -106,11 +107,12 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const messages = chat.messages
   const status = chat.status
   useEffect(() => {
+    if (opts.persistMessages === false) return
     if (!hydrated || !cacheKey || messages.length === 0) return
     try {
       globalThis.localStorage?.setItem(cacheKey, JSON.stringify(messages))
     } catch { /* quota exceeded: drop cache silently */ }
-  }, [hydrated, cacheKey, messages])
+  }, [opts.persistMessages, hydrated, cacheKey, messages])
 
   // When the stream ends (stop or natural completion), settle any tool parts
   // still stuck in a non-settled state so the UI doesn't shimmer forever.
@@ -154,6 +156,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   useEffect(() => {
     const prev = prevStatusRef.current
     prevStatusRef.current = status
+    if (opts.persistMessages === false) return
     if (status !== 'ready') return
     // Only save when we're settling from an active streaming turn.
     if (prev !== 'streaming' && prev !== 'submitted') return
@@ -180,7 +183,7 @@ export function useAgentChat(opts: UseAgentChatOptions) {
       },
       body: JSON.stringify({ messages: stripped }),
     }).catch(() => { /* best-effort, ignore failures */ })
-  }, [sessionId, status, messages])
+  }, [opts.persistMessages, sessionId, status, messages])
 
   return chat
 }

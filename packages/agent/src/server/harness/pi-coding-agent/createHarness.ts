@@ -530,57 +530,59 @@ export function createPiCodingAgentHarness(opts: {
             : typeof (event as unknown as { message?: { id?: unknown } }).message?.id === "string"
               ? (event as unknown as { message: { id: string } }).message.id
               : currentPiAssistantMessageId ?? "assistant-streaming";
-          if (true) {
-            if (ame.type === "text_start") {
-              piHistoryChunks.push({
-                type: "data-pi-text-start",
-                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
-              } as unknown as UIMessageChunk);
-            } else if (ame.type === "text_delta" && ame.delta) {
-              const seq = nextPiSeq();
-              piHistoryChunks.push(
-                {
-                  type: "data-pi-text-delta",
-                  data: { seq, messageId, partId: String(ame.contentIndex), delta: ame.delta },
-                } as unknown as UIMessageChunk,
-                // Back-compat for the current client projection. Remove once
-                // ChatPanel consumes the stable data-pi-text-* DTOs directly.
-                {
-                  type: "data-pi-message-delta",
-                  data: { seq, messageId, role: "assistant", delta: ame.delta },
-                } as unknown as UIMessageChunk,
-              );
-            } else if (ame.type === "text_end") {
-              piHistoryChunks.push({
-                type: "data-pi-text-end",
-                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), ...(typeof ame.content === "string" ? { text: ame.content } : {}) },
-              } as unknown as UIMessageChunk);
-            } else if (ame.type === "thinking_start") {
-              piHistoryChunks.push({
-                type: "data-pi-reasoning-start",
-                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
-              } as unknown as UIMessageChunk);
-            } else if (ame.type === "thinking_delta") {
-              piHistoryChunks.push({
-                type: "data-pi-reasoning-delta",
-                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), delta: ame.delta },
-              } as unknown as UIMessageChunk);
-            } else if (ame.type === "thinking_end") {
-              piHistoryChunks.push({
-                type: "data-pi-reasoning-end",
-                data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
-              } as unknown as UIMessageChunk);
-            } else if (ame.type === "toolcall_end") {
-              piHistoryChunks.push({
-                type: "data-pi-tool-call-end",
-                data: { seq: nextPiSeq(), messageId, toolCallId: ame.toolCall.id, toolName: ame.toolCall.name, input: ame.toolCall.arguments },
-              } as unknown as UIMessageChunk);
-            }
+          if (ame.type === "text_start") {
+            piHistoryChunks.push({
+              type: "data-pi-text-start",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "text_delta" && ame.delta) {
+            const seq = nextPiSeq();
+            piHistoryChunks.push(
+              {
+                type: "data-pi-text-delta",
+                data: { seq, messageId, partId: String(ame.contentIndex), delta: ame.delta },
+              } as unknown as UIMessageChunk,
+              // Back-compat for the current client projection. Remove once
+              // ChatPanel consumes the stable data-pi-text-* DTOs directly.
+              {
+                type: "data-pi-message-delta",
+                data: { seq, messageId, role: "assistant", delta: ame.delta },
+              } as unknown as UIMessageChunk,
+            );
+          } else if (ame.type === "text_end") {
+            piHistoryChunks.push({
+              type: "data-pi-text-end",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), ...(typeof ame.content === "string" ? { text: ame.content } : {}) },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "thinking_start") {
+            piHistoryChunks.push({
+              type: "data-pi-reasoning-start",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "thinking_delta") {
+            piHistoryChunks.push({
+              type: "data-pi-reasoning-delta",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), delta: ame.delta },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "thinking_end") {
+            piHistoryChunks.push({
+              type: "data-pi-reasoning-end",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "toolcall_end") {
+            piHistoryChunks.push({
+              type: "data-pi-tool-call-end",
+              data: { seq: nextPiSeq(), messageId, toolCallId: ame.toolCall.id, toolName: ame.toolCall.name, input: ame.toolCall.arguments },
+            } as unknown as UIMessageChunk);
           }
         }
         if (event.type === "message_end" && (eventMessage?.role === "user" || eventMessage?.role === "assistant")) {
-          const messageId = typeof eventMessage.id === "string" ? eventMessage.id : `${eventMessage.role}-${Date.now()}`;
           const role = eventMessage.role;
+          const messageId = typeof eventMessage.id === "string"
+            ? eventMessage.id
+            : role === "assistant" && currentPiAssistantMessageId
+              ? currentPiAssistantMessageId
+              : `${role}-${Date.now()}`;
           const text = role === "user"
             ? extractUserMessageText(eventMessage)
             : extractAssistantMessageText(eventMessage).text;
