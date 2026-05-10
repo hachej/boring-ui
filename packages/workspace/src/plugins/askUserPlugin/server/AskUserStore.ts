@@ -256,8 +256,19 @@ export class FileAskUserStore implements AskUserStore {
   }
 
   private emit(change: AskUserStoreChange): void {
-    for (const listener of this.listeners) listener(change)
+    for (const listener of this.listeners) {
+      try {
+        const result = listener(change) as unknown
+        if (isPromiseLike(result)) result.catch(() => undefined)
+      } catch {
+        // Store mutations must not be rolled back because an observer failed.
+      }
+    }
   }
+}
+
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+  return !!value && typeof value === "object" && "catch" in value && typeof value.catch === "function"
 }
 
 function isPending(question: AskUserQuestion | undefined): question is AskUserQuestion {
