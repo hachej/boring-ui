@@ -29,9 +29,9 @@ export interface ExecUiToolOptions {
    * tool stat-checks the resolved path before queueing the UI command and
    * returns an error to the agent if the file is missing or escapes the
    * root — so the model gets immediate feedback instead of the frontend
-   * silently no-op'ing on a wrong path. When omitted, paths are passed
-   * through unvalidated (back-compat for callers without server-side
-   * filesystem access).
+   * silently no-op'ing on a wrong path. When omitted (for example, remote
+   * sandbox filesystems the host cannot stat), path syntax is still validated
+   * but existence is left to the frontend/remote filesystem.
    */
   workspaceRoot?: string
   /**
@@ -62,17 +62,17 @@ function validatePathSyntax(
   relPath: string,
   workspaceRoot?: string,
 ): { ok: true } | { ok: false; reason: string } {
-  const rootHint = workspaceRoot ? ` (${workspaceRoot})` : ''
+  const rootHint = workspaceRoot ? ` (${workspaceRoot})` : ""
   if (isAbsolute(relPath)) {
     return {
       ok: false,
       reason: `path "${relPath}" is absolute — pass a path relative to the workspace root${rootHint}.`,
     }
   }
-  if (relPath.includes('\0')) {
+  if (relPath.includes("\0")) {
     return { ok: false, reason: `path "${relPath}" contains a null byte.` }
   }
-  if (relPath.split(/[\\/]+/).includes('..')) {
+  if (relPath.split(/[\\/]+/).includes("..")) {
     return {
       ok: false,
       reason: `path "${relPath}" escapes the workspace root${rootHint}.`,
@@ -208,13 +208,14 @@ export function createExecUiTool(
       "                 auto-opens if collapsed. Path must be relative to the",
       "                 workspace root (e.g. `src/foo.ts`, not `foo.ts` if it",
       "                 lives under src/).",
-      "                 Recovery on file-not-found: this tool stat-checks the",
-      "                 path server-side and returns an error if it doesn't",
-      "                 exist. On that error, immediately call find (or",
-      "                 grep) to locate the file, then call exec_ui",
-      "                 openFile AGAIN using the EXACT path returned — don't",
-      "                 give up and don't switch to the read tool. Repeat",
-      "                 until openFile succeeds or no candidate is found.",
+      "                 Recovery on file-not-found: when the server has local",
+      "                 filesystem access, this tool stat-checks the path and",
+      "                 returns an error if it doesn't exist. On that error,",
+      "                 immediately call find (or grep) to locate the file,",
+      "                 then call exec_ui openFile AGAIN using the EXACT path",
+      "                 returned — don't give up and don't switch to the read",
+      "                 tool. Repeat until openFile succeeds or no candidate",
+      "                 is found.",
       "                 Example: {kind:'openFile', params:{path:'README.md'}}",
       "",
       "  openPanel    params: { id: string, component: string,",

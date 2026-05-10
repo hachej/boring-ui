@@ -73,19 +73,35 @@ function toRemotePath(value: string): string {
   return value
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+const WORKSPACE_ALIAS_PATTERN = new RegExp(
+  `(^|[^A-Za-z0-9._/-])${escapeRegExp(VERCEL_SANDBOX_WORKSPACE_ROOT)}(?=/|$|[^A-Za-z0-9._/-])`,
+  'g',
+)
+
+function replaceWorkspaceAliases(value: string): string {
+  return value.replace(
+    WORKSPACE_ALIAS_PATTERN,
+    (_match, prefix: string) => `${prefix}${VERCEL_SANDBOX_REMOTE_ROOT}`,
+  )
+}
+
 function toRemoteCwd(cwd: string | undefined): string | undefined {
   if (!cwd) return cwd
   return toRemotePath(cwd)
 }
 
 function toRemoteCommand(command: string): string {
-  return command.replaceAll(VERCEL_SANDBOX_WORKSPACE_ROOT, VERCEL_SANDBOX_REMOTE_ROOT)
+  return replaceWorkspaceAliases(command)
 }
 
 function toRemoteEnv(env: Record<string, string> | undefined): Record<string, string> | undefined {
   if (!env) return undefined
   return Object.fromEntries(
-    Object.entries(env).map(([key, value]) => [key, toRemotePath(value)]),
+    Object.entries(env).map(([key, value]) => [key, replaceWorkspaceAliases(toRemotePath(value))]),
   )
 }
 
