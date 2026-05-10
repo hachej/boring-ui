@@ -19,6 +19,8 @@
     "src/app/server/**/*",
     "src/shared/**/*",
     "src/plugins/**/server/**/*",
+    "src/plugins/**/agent/**/*",
+    "src/plugins/**/shared/**/*",
     "src/plugins/**/constants.ts"
   ],
   "exclude": ["node_modules", "dist", "src/app/front/**", "src/shared/plugins/**"]
