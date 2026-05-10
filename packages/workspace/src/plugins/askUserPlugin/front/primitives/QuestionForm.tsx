@@ -1,0 +1,212 @@
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import type { AskUserAnswerValue, AskUserField, AskUserFormSchema } from "../../shared/types"
+
+export type QuestionFormValues = Record<string, AskUserAnswerValue>
+export type QuestionValidationResult = { valid: boolean; errors: Record<string, string> }
+export type QuestionFormStatus = "draft" | "ready" | "answered" | "cancelled" | "abandoned"
+export type QuestionFormState = {
+  schema?: AskUserFormSchema
+  status: QuestionFormStatus
+  values: QuestionFormValues
+  touched: Record<string, boolean>
+  errors: Record<string, string>
+  submitting: boolean
+  disabled: boolean
+  dirtyHints: Record<string, string>
+}
+
+export type QuestionFieldRendererProps = {
+  field: AskUserField
+  value: AskUserAnswerValue | undefined
+  error?: string
+  disabled: boolean
+  describedBy: string
+  onChange(value: AskUserAnswerValue): void
+  onBlur(): void
+}
+export type QuestionFieldRenderer = (props: QuestionFieldRendererProps) => React.ReactNode
+export type QuestionFieldRendererRegistry = Partial<Record<AskUserField["type"], QuestionFieldRenderer>> & {
+  unsupported?: QuestionFieldRenderer
+}
+
+type ContextValue = QuestionFormState & {
+  setValue(name: string, value: AskUserAnswerValue): void
+  touch(name: string): void
+  submit(): Promise<void>
+  cancel(): void
+  rendererRegistry: QuestionFieldRendererRegistry
+}
+
+const QuestionFormContext = createContext<ContextValue | null>(null)
+
+export function useQuestionForm(): ContextValue {
+  const ctx = useContext(QuestionFormContext)
+  if (!ctx) throw new Error("useQuestionForm must be used inside QuestionFormProvider")
+  return ctx
+}
+
+export type QuestionFormProviderProps = {
+  schema?: AskUserFormSchema
+  status?: QuestionFormStatus
+  disabled?: boolean
+  submitting?: boolean
+  initialValues?: QuestionFormValues
+  rendererRegistry?: QuestionFieldRendererRegistry
+  onSubmit?(values: QuestionFormValues): void | Promise<void>
+  onCancel?(): void
+  children: React.ReactNode
+}
+
+export function QuestionFormProvider({
+  schema,
+  status = schema ? "ready" : "draft",
+  disabled = false,
+  submitting: controlledSubmitting,
+  initialValues,
+  rendererRegistry = {},
+  onSubmit,
+  onCancel,
+  children,
+}: QuestionFormProviderProps) {
+  const [values, setValues] = useState<QuestionFormValues>(() => defaultsFor(schema, initialValues))
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [dirtyHints, setDirtyHints] = useState<Record<string, string>>({})
+  const previousSchema = useRef<AskUserFormSchema | undefined>(schema)
+
+  useEffect(() => {
+    setValues((current) => {
+      const next = defaultsFor(schema, initialValues)
+      for (const field of schema?.fields ?? []) {
+        if (touched[field.name] && current[field.name] !== undefined) {
+          next[field.name] = current[field.name]
+          const oldField = previousSchema.current?.fields.find((candidate) => candidate.name === field.name)
+          if (oldField && JSON.stringify(oldField) !== JSON.stringify(field)) {
+            setDirtyHints((hints) => ({ ...hints, [field.name]: "Agent updated this field; your value was preserved." }))
+          }
+        }
+      }
+      previousSchema.current = schema
+      return next
+    })
+  }, [schema, initialValues, touched])
+
+  const errors = useMemo(() => (schema ? validateQuestionValues(schema, values).errors : {}), [schema, values])
+  const setValue = useCallback((name: string, value: AskUserAnswerValue) => {
+    setTouched((current) => ({ ...current, [name]: true }))
+    setValues((current) => ({ ...current, [name]: value }))
+  }, [])
+  const touch = useCallback((name: string) => setTouched((current) => ({ ...current, [name]: true })), [])
+  const submit = useCallback(async () => {
+    if (!schema || status !== "ready" || disabled) return
+    const result = validateQuestionValues(schema, values)
+    if (!result.valid) {
+      const first = Object.keys(result.errors)[0]
+      document.querySelector<HTMLElement>(`[name="${cssEscape(first)}"]`)?.focus()
+      return
+    }
+    setSubmitting(true)
+    try { await onSubmit?.(values) } finally { setSubmitting(false) }
+  }, [schema, status, disabled, values, onSubmit])
+  const cancel = useCallback(() => {
+    if (Object.keys(touched).length > 0 && !window.confirm("Discard your answer?")) return
+    onCancel?.()
+  }, [onCancel, touched])
+
+  const value: ContextValue = { schema, status, values, touched, errors, submitting: controlledSubmitting ?? submitting, disabled, dirtyHints, setValue, touch, submit, cancel, rendererRegistry }
+  return <QuestionFormContext.Provider value={value}>{children}</QuestionFormContext.Provider>
+}
+
+export function QuestionForm({ children, "aria-label": ariaLabel = "Question form" }: React.PropsWithChildren<{ "aria-label"?: string }>) {
+  const { submit, cancel, status } = useQuestionForm()
+  return <form data-question-form aria-label={ariaLabel} onSubmit={(event) => { event.preventDefault(); void submit() }} onKeyDown={(event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); void submit() }
+    if (event.key === "Escape") { event.preventDefault(); cancel() }
+  }}>
+    <div aria-live="polite" className="sr-only">{status === "ready" ? "Question ready" : `Question ${status}`}</div>
+    {children}
+  </form>
+}
+
+export function QuestionFields() {
+  const { schema, status } = useQuestionForm()
+  useEffect(() => { if (status === "ready") document.querySelector<HTMLElement>("[data-question-form] [name]")?.focus() }, [status, schema])
+  if (!schema) return <p role="status">Waiting for question…</p>
+  return <>{schema.fields.map((field) => <QuestionField key={field.name} field={field} />)}</>
+}
+
+export function QuestionField({ field }: { field: AskUserField }) {
+  const { values, errors, disabled, submitting, setValue, touch, rendererRegistry, dirtyHints } = useQuestionForm()
+  const error = errors[field.name]
+  const helpId = `${field.name}-help`
+  const errorId = `${field.name}-error`
+  const hintId = `${field.name}-hint`
+  const describedBy = [field.helpText ? helpId : undefined, error ? errorId : undefined, dirtyHints[field.name] ? hintId : undefined].filter(Boolean).join(" ")
+  const renderer = rendererRegistry[field.type] ?? defaultRenderers[field.type] ?? rendererRegistry.unsupported ?? UnsupportedFieldRenderer
+  return <div data-field={field.name}>
+    {renderer({ field, value: values[field.name], error, disabled: disabled || submitting, describedBy, onChange: (value) => setValue(field.name, value), onBlur: () => touch(field.name) })}
+    {field.helpText ? <p id={helpId}>{field.helpText}</p> : null}
+    {dirtyHints[field.name] ? <p id={hintId}>{dirtyHints[field.name]}</p> : null}
+    {error ? <p id={errorId} role="alert">{error}</p> : null}
+  </div>
+}
+
+export function QuestionSubmitButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const { schema, status, errors, submitting, disabled } = useQuestionForm()
+  const invalid = !!schema && Object.keys(errors).length > 0
+  return <button type="submit" disabled={disabled || submitting || status !== "ready" || invalid} {...props}>{props.children ?? "Submit"}</button>
+}
+
+export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const { cancel, disabled, submitting } = useQuestionForm()
+  return <button type="button" disabled={disabled || submitting} onClick={cancel} {...props}>{props.children ?? "Cancel"}</button>
+}
+
+const defaultRenderers: QuestionFieldRendererRegistry = {
+  text: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "text" && <label>{label(field)}<input name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} pattern={field.pattern} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} /></label>,
+  textarea: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "textarea" && <label>{label(field)}<textarea name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} /></label>,
+  select: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => (field.type === "select" || field.type === "radio") && <fieldset aria-describedby={field.type === "radio" ? describedBy || undefined : undefined} aria-invalid={field.type === "radio" ? !!error : undefined} aria-errormessage={field.type === "radio" && error ? `${field.name}-error` : undefined}><legend>{label(field)}</legend>{field.options.map((option) => field.type === "select" ? null : <label key={option.value}><input type="radio" name={field.name} checked={value === option.value} disabled={disabled} onChange={() => onChange(option.value)} onBlur={onBlur} />{option.label}{option.description ? <small>{option.description}</small> : null}</label>)}{field.type === "select" ? <select name={field.name} value={typeof value === "string" ? value : ""} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur}><option value="">Select…</option>{field.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select> : null}</fieldset>,
+  radio: (props) => defaultRenderers.select?.(props),
+  multiselect: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "multiselect" && <fieldset aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined}><legend>{label(field)}</legend>{field.options.map((option) => { const list = Array.isArray(value) ? value : []; return <label key={option.value}><input type="checkbox" name={field.name} checked={list.includes(option.value)} disabled={disabled} onChange={(e) => onChange(e.target.checked ? [...list, option.value] : list.filter((item) => item !== option.value))} onBlur={onBlur} />{option.label}{option.description ? <small>{option.description}</small> : null}</label> })}</fieldset>,
+  checkbox: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "checkbox" && <label><input type="checkbox" name={field.name} checked={value === true} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.checked)} onBlur={onBlur} />{field.label}</label>,
+  number: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "number" && <label>{label(field)}<input type="number" name={field.name} value={typeof value === "number" ? String(value) : ""} min={field.min} max={field.max} step={field.integer ? 1 : field.step} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} onBlur={onBlur} /></label>,
+  unsupported: UnsupportedFieldRenderer,
+}
+
+function UnsupportedFieldRenderer({ field }: QuestionFieldRendererProps) { return <p role="note">Unsupported question field: {field.type}</p> }
+function label(field: AskUserField): React.ReactNode { return <>{field.label}{"required" in field && field.required ? <span aria-hidden="true"> *</span> : null}</> }
+function defaultsFor(schema?: AskUserFormSchema, initial?: QuestionFormValues): QuestionFormValues {
+  const values: QuestionFormValues = { ...(initial ?? {}) }
+  for (const field of schema?.fields ?? []) if (values[field.name] === undefined && "defaultValue" in field) values[field.name] = field.defaultValue as AskUserAnswerValue
+  return values
+}
+
+export function validateQuestionValues(schema: AskUserFormSchema, values: QuestionFormValues): QuestionValidationResult {
+  const errors: Record<string, string> = {}
+  for (const field of schema.fields) {
+    const value = values[field.name]
+    const empty = value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)
+    if ("required" in field && field.required && empty) { errors[field.name] = "This field is required."; continue }
+    if (empty) continue
+    if ((field.type === "text" || field.type === "textarea") && typeof value === "string") {
+      if (field.minLength !== undefined && value.length < field.minLength) errors[field.name] = `Must be at least ${field.minLength} characters.`
+      else if (field.maxLength !== undefined && value.length > field.maxLength) errors[field.name] = `Must be at most ${field.maxLength} characters.`
+      else if (field.type === "text" && field.pattern && !new RegExp(field.pattern).test(value)) errors[field.name] = "Invalid format."
+    } else if ((field.type === "select" || field.type === "radio") && (typeof value !== "string" || !field.options.some((o) => o.value === value))) errors[field.name] = "Choose a valid option."
+    else if (field.type === "multiselect") {
+      if (!Array.isArray(value)) errors[field.name] = "Choose valid options."
+      else if (field.minSelections !== undefined && value.length < field.minSelections) errors[field.name] = `Choose at least ${field.minSelections}.`
+      else if (field.maxSelections !== undefined && value.length > field.maxSelections) errors[field.name] = `Choose at most ${field.maxSelections}.`
+      else if (value.some((item) => !field.options.some((o) => o.value === item))) errors[field.name] = "Choose valid options."
+    } else if (field.type === "checkbox" && typeof value !== "boolean") errors[field.name] = "Must be checked or unchecked."
+    else if (field.type === "number") {
+      if (typeof value !== "number" || !Number.isFinite(value)) errors[field.name] = "Enter a number."
+      else if (field.integer && !Number.isInteger(value)) errors[field.name] = "Enter a whole number."
+      else if (field.min !== undefined && value < field.min) errors[field.name] = `Must be at least ${field.min}.`
+      else if (field.max !== undefined && value > field.max) errors[field.name] = `Must be at most ${field.max}.`
+    }
+  }
+  return { valid: Object.keys(errors).length === 0, errors }
+}
+
+function cssEscape(value: string): string { return globalThis.CSS?.escape?.(value) ?? value.replace(/[^A-Za-z0-9_-]/g, "\\$&") }
