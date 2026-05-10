@@ -35,6 +35,7 @@ type ContextValue = QuestionFormState & {
   submit(): Promise<void>
   cancel(): void
   rendererRegistry: QuestionFieldRendererRegistry
+  formRef: React.RefObject<HTMLFormElement | null>
 }
 
 const QuestionFormContext = createContext<ContextValue | null>(null)
@@ -73,6 +74,7 @@ export function QuestionFormProvider({
   const [submitting, setSubmitting] = useState(false)
   const [dirtyHints, setDirtyHints] = useState<Record<string, string>>({})
   const previousSchema = useRef<AskUserFormSchema | undefined>(schema)
+  const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
     setValues((current) => {
@@ -102,7 +104,7 @@ export function QuestionFormProvider({
     const result = validateQuestionValues(schema, values)
     if (!result.valid) {
       const first = Object.keys(result.errors)[0]
-      document.querySelector<HTMLElement>(`[name="${cssEscape(first)}"]`)?.focus()
+      formRef.current?.querySelector<HTMLElement>(`[name="${cssEscape(first)}"]`)?.focus()
       return
     }
     setSubmitting(true)
@@ -113,13 +115,13 @@ export function QuestionFormProvider({
     onCancel?.()
   }, [onCancel, touched])
 
-  const value: ContextValue = { schema, status, values, touched, errors, submitting: controlledSubmitting ?? submitting, disabled, dirtyHints, setValue, touch, submit, cancel, rendererRegistry }
+  const value: ContextValue = { schema, status, values, touched, errors, submitting: controlledSubmitting ?? submitting, disabled, dirtyHints, setValue, touch, submit, cancel, rendererRegistry, formRef }
   return <QuestionFormContext.Provider value={value}>{children}</QuestionFormContext.Provider>
 }
 
 export function QuestionForm({ children, "aria-label": ariaLabel = "Question form" }: React.PropsWithChildren<{ "aria-label"?: string }>) {
-  const { submit, cancel, status } = useQuestionForm()
-  return <form data-question-form aria-label={ariaLabel} onSubmit={(event) => { event.preventDefault(); void submit() }} onKeyDown={(event) => {
+  const { submit, cancel, status, formRef } = useQuestionForm()
+  return <form ref={formRef} data-question-form aria-label={ariaLabel} onSubmit={(event) => { event.preventDefault(); void submit() }} onKeyDown={(event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); void submit() }
     if (event.key === "Escape") { event.preventDefault(); cancel() }
   }}>
@@ -129,8 +131,8 @@ export function QuestionForm({ children, "aria-label": ariaLabel = "Question for
 }
 
 export function QuestionFields() {
-  const { schema, status } = useQuestionForm()
-  useEffect(() => { if (status === "ready") document.querySelector<HTMLElement>("[data-question-form] [name]")?.focus() }, [status, schema])
+  const { schema, status, formRef } = useQuestionForm()
+  useEffect(() => { if (status === "ready") formRef.current?.querySelector<HTMLElement>("[name]")?.focus() }, [status, schema, formRef])
   if (!schema) return <p role="status">Waiting for question…</p>
   return <>{schema.fields.map((field) => <QuestionField key={field.name} field={field} />)}</>
 }
@@ -154,12 +156,12 @@ export function QuestionField({ field }: { field: AskUserField }) {
 export function QuestionSubmitButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { schema, status, errors, submitting, disabled } = useQuestionForm()
   const invalid = !!schema && Object.keys(errors).length > 0
-  return <button type="submit" disabled={disabled || submitting || status !== "ready" || invalid} {...props}>{props.children ?? "Submit"}</button>
+  return <button {...props} type="submit" disabled={disabled || submitting || status !== "ready" || invalid}>{props.children ?? "Submit"}</button>
 }
 
 export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { cancel, disabled, submitting } = useQuestionForm()
-  return <button type="button" disabled={disabled || submitting} onClick={cancel} {...props}>{props.children ?? "Cancel"}</button>
+  return <button {...props} type="button" disabled={disabled || submitting} onClick={(event) => { props.onClick?.(event); if (!event.defaultPrevented) cancel() }}>{props.children ?? "Cancel"}</button>
 }
 
 const defaultRenderers: QuestionFieldRendererRegistry = {

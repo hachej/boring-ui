@@ -55,9 +55,18 @@ describe("QuestionForm primitives", () => {
     expect(cancel).toHaveBeenCalled()
   })
 
-  it("disables submit until ready and valid", () => {
-    render(<QuestionFormProvider status="draft"><QuestionForm><QuestionSubmitButton /></QuestionForm></QuestionFormProvider>)
+  it("disables submit until ready and valid even when props try to override", () => {
+    render(<QuestionFormProvider status="draft"><QuestionForm><QuestionSubmitButton disabled={false} /></QuestionForm></QuestionFormProvider>)
     expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled()
+  })
+
+  it("cancel button composes caller onClick without losing default cancel", () => {
+    const cancel = vi.fn()
+    const click = vi.fn()
+    render(<QuestionFormProvider onCancel={cancel}><QuestionForm><QuestionCancelButton onClick={click} /></QuestionForm></QuestionFormProvider>)
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(click).toHaveBeenCalled()
+    expect(cancel).toHaveBeenCalled()
   })
 
   it("supports unsupported fields and renderer override", () => {
