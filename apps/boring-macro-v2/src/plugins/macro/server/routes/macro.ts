@@ -39,7 +39,7 @@ const DEFAULT_SERIES_COLORS = [
 function parseSeriesColorsSource(source: string): string[] | null {
   const match = /SERIES_COLORS\s*=\s*\[([\s\S]*?)\]/m.exec(source)
   if (!match) return null
-  const colors = [...match[1].matchAll(/["'](#[0-9a-fA-F]{3,8})["']/g)].map((item) => item[1])
+  const colors = [...match[1].matchAll(/["'](#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8}))["']/g)].map((item) => item[1])
   return colors.length > 0 ? colors : null
 }
 
@@ -81,7 +81,7 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
     : null
 
   // -----------------------------------------------------------------------
-  // Scoped plugin with auth + /api/v1/macro prefix
+  // Scoped plugin with auth + /api/macro prefix
   // -----------------------------------------------------------------------
   app.register(async (scoped: FastifyInstance) => {
     if (localhostBypass) scoped.addHook('onRequest', localhostBypass)

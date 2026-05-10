@@ -162,6 +162,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
 
   useEffect(() => {
     if (options.enabled === false || typeof EventSource === "undefined") return
+    let disposed = false
     const registries = getRegistries(panels, commands, surfaceResolvers)
     const url = withWorkspaceId(joinUrl(options.apiBaseUrl ?? "", "/api/v1/agent-plugins/events"), options.workspaceId)
     const es = new EventSource(url, { withCredentials: true })
@@ -169,6 +170,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     const handleLoad = (raw: MessageEvent) => {
       void (async () => {
         const event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.load" }>
+        if (disposed) return
         const lastSeen = lastSeenRef.current.get(event.id) ?? 0
         const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
         if (event.revision <= Math.max(lastSeen, latestRequested)) return
@@ -177,6 +179,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           const captured = event.frontUrl
             ? await captureFrontFactory(event.id, event.frontUrl, event.revision, options.importFront)
             : null
+          if (disposed) return
           if (latestRequestedRef.current.get(event.id) !== event.revision) return
           if (event.revision <= (lastSeenRef.current.get(event.id) ?? 0)) return
           unregisterPlugin(event.id, registries)
@@ -191,6 +194,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     }
 
     const handleUnload = (raw: MessageEvent) => {
+      if (disposed) return
       const event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.unload" }>
       const lastSeen = lastSeenRef.current.get(event.id) ?? 0
       const latestRequested = latestRequestedRef.current.get(event.id) ?? 0
@@ -202,6 +206,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     }
 
     const handleError = (raw: MessageEvent) => {
+      if (disposed) return
       const event = JSON.parse(raw.data) as Extract<BoringPluginEvent, { type: "boring.plugin.error" }>
       console.error(`[boring-ui] plugin ${event.id} failed to reload: ${event.message}`)
     }
@@ -209,6 +214,9 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     es.addEventListener("boring.plugin.load", handleLoad as EventListener)
     es.addEventListener("boring.plugin.unload", handleUnload as EventListener)
     es.addEventListener("boring.plugin.error", handleError as EventListener)
-    return () => es.close()
+    return () => {
+      disposed = true
+      es.close()
+    }
   }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.importFront, panels, commands, surfaceResolvers])
 }

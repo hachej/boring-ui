@@ -44,13 +44,18 @@ const DEFAULT_SERIES_COLORS = [
   "#f59e0b", "#06b6d4", "#ec4899", "#84cc16", "#6366f1",
 ]
 
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value)
+}
+
 async function loadLiveSeriesColors(): Promise<string[] | null> {
   const res = await fetch(`/api/macro/ui/series-colors?t=${Date.now()}`, {
     cache: "no-store",
   })
   if (!res.ok) return null
-  const payload = await res.json() as { colors?: string[] }
-  return Array.isArray(payload.colors) && payload.colors.length > 0 ? payload.colors : null
+  const payload = await res.json() as { colors?: unknown[] }
+  const colors = Array.isArray(payload.colors) ? payload.colors.filter(isHexColor) : []
+  return colors.length > 0 ? colors : null
 }
 
 type TabId = "chart" | "table" | "metadata" | "lineage"
@@ -172,11 +177,13 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
   const [dragOver, setDragOver] = useState(false)
   const [seriesColors, setSeriesColors] = useState(DEFAULT_SERIES_COLORS)
   const containerRef = useRef<HTMLDivElement>(null)
+  const colorRefreshSeqRef = useRef(0)
 
   const refreshSeriesColors = useCallback(() => {
+    const seq = ++colorRefreshSeqRef.current
     void loadLiveSeriesColors()
       .then((colors) => {
-        if (colors?.length) setSeriesColors(colors)
+        if (seq === colorRefreshSeqRef.current && colors?.length) setSeriesColors(colors)
       })
       .catch((error) => console.warn("failed to refresh macro series colors", error))
   }, [])
