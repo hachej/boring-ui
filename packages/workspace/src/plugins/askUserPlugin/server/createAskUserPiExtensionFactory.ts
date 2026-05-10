@@ -53,8 +53,16 @@ export function createAskUserPiTool(options: AskUserPiExtensionOptions): AskUser
         }
       }
       const input = parsed.data as AskUserToolInput
-      const result = await options.runtime.ask({ ...input, sessionId: resolveSessionId(options.sessionId) }, signal)
-      return formatAskUserResult(result)
+      try {
+        const result = await options.runtime.ask({ ...input, sessionId: resolveSessionId(options.sessionId) }, signal)
+        return formatAskUserResult(result)
+      } catch (error) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `ask_user failed: ${error instanceof Error ? error.message : String(error)}` }],
+          details: error && typeof error === "object" && "code" in error ? { code: error.code } : undefined,
+        }
+      }
     },
   }
 }
