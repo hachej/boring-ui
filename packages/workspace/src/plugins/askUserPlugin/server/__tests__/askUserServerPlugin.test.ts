@@ -35,6 +35,18 @@ describe("ask-user Pi extension", () => {
     await expect(tool.execute("call", {}, undefined)).resolves.toMatchObject({ isError: true })
   })
 
+  it("returns cancelled tool results as tool errors", async () => {
+    const { runtime } = await fixture()
+    const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))
+    await expect(tool.execute("call", { title: "Need input", schema }, AbortSignal.timeout(1))).resolves.toMatchObject({ isError: true })
+  })
+
+  it("returns thrown runtime failures as tool errors", async () => {
+    const { runtime } = await fixture()
+    const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: () => { throw new Error("session missing") } }))
+    await expect(tool.execute("call", { title: "Need input", schema }, undefined)).resolves.toMatchObject({ isError: true })
+  })
+
   it("valid input creates pending question and waits for runtime answer", async () => {
     const { store, runtime } = await fixture()
     const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))

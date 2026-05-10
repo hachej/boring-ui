@@ -68,6 +68,23 @@ describe("ask-user UI open ack", () => {
     await expect(pending).resolves.toMatchObject({ status: "answered" })
   })
 
+  it("does not miss questions.opened ack while openSurface dispatch is still resolving", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 1000 })
+    ui.postCommand = async (cmd) => {
+      ui.commands.push(cmd)
+      const question = await store.getPending("s1")
+      runtime.markOpened(question!.questionId)
+      return { seq: ui.commands.length, status: "ok" }
+    }
+    const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
+    await vi.waitFor(() => expect(ui.commands).toHaveLength(1))
+    const question = await store.getPending("s1")
+    await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
+    await expect(pending).resolves.toMatchObject({ status: "answered" })
+  })
+
   it("questions.opened route acknowledges rehydrated question", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })

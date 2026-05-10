@@ -116,7 +116,7 @@ export class AskUserRuntime {
   private readonly perPrincipalPerHour: number
   private readonly uiBridge?: UiBridge
   private readonly openAckTimeoutMs: number
-  private readonly openWaiters = new Map<string, () => void>()
+  private readonly openWaiters = new Map<string, { ack: () => void; cancel: () => void }>()
   private readonly sessionBuckets = new Map<string, RateLimitBucket>()
   private readonly principalBuckets = new Map<string, RateLimitBucket>()
 
@@ -142,10 +142,10 @@ export class AskUserRuntime {
   }
 
   markOpened(questionId: string): void {
-    const resolve = this.openWaiters.get(questionId)
-    if (!resolve) return
+    const waiter = this.openWaiters.get(questionId)
+    if (!waiter) return
     this.openWaiters.delete(questionId)
-    resolve()
+    waiter.ack()
   }
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
@@ -207,11 +207,13 @@ export class AskUserRuntime {
 
   private async openQuestionSurface(question: AskUserQuestion): Promise<AskUserToolResult | null> {
     if (!this.uiBridge) return null
+    const openedPromise = this.waitForOpened(question.questionId)
     try {
       await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId } })
-      const opened = await this.waitForOpened(question.questionId)
+      const opened = await openedPromise
       if (opened) return null
     } catch {
+      this.openWaiters.get(question.questionId)?.cancel()
       this.openWaiters.delete(question.questionId)
     }
     return this.cancelUiUnavailable(question)
@@ -237,9 +239,15 @@ export class AskUserRuntime {
         this.openWaiters.delete(questionId)
         resolve(false)
       }, this.openAckTimeoutMs)
-      this.openWaiters.set(questionId, () => {
-        clearTimeout(timer)
-        resolve(true)
+      this.openWaiters.set(questionId, {
+        ack: () => {
+          clearTimeout(timer)
+          resolve(true)
+        },
+        cancel: () => {
+          clearTimeout(timer)
+          resolve(false)
+        },
       })
     })
   }
