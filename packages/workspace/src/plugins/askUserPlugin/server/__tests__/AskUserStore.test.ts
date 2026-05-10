@@ -100,6 +100,16 @@ describe("FileAskUserStore", () => {
     await expect(store.finalize("q1")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.SCHEMA_INVALID })
   })
 
+  it("rejects answers that do not match the question/session", async () => {
+    await store.createPending(question({ status: "ready", schema: { wireVersion: 1, fields: [{ type: "text", name: "a", label: "A" }] } }))
+    await expect(store.answer("q1", { questionId: "other", sessionId: "s1", values: {}, submittedAt: new Date().toISOString() })).rejects.toMatchObject({
+      code: ASK_USER_ERROR_CODES.SESSION_MISMATCH,
+    })
+    await expect(store.answer("q1", { questionId: "q1", sessionId: "other", values: {}, submittedAt: new Date().toISOString() })).rejects.toMatchObject({
+      code: ASK_USER_ERROR_CODES.SESSION_MISMATCH,
+    })
+  })
+
   it("answers, cancels, and abandons with terminal state guards", async () => {
     await store.createPending(question({ status: "ready", schema: { wireVersion: 1, fields: [{ type: "text", name: "a", label: "A" }] } }))
     await store.answer("q1", { questionId: "q1", sessionId: "s1", values: { a: "ok" }, submittedAt: new Date().toISOString() })

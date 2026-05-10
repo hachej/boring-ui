@@ -151,6 +151,9 @@ export class FileAskUserStore implements AskUserStore {
   async answer(questionId: string, answer: AskUserAnswer): Promise<void> {
     await this.mutate(async (state) => {
       const question = requireQuestion(state, questionId)
+      if (answer.questionId !== questionId || answer.sessionId !== question.sessionId) {
+        throw new AskUserStoreError(ASK_USER_ERROR_CODES.SESSION_MISMATCH, "answer does not match question/session")
+      }
       if (question.status === "cancelled") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ALREADY_CANCELLED, "question already cancelled")
       if (question.status === "answered") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ALREADY_ANSWERED, "question already answered")
       if (question.status !== "ready") throw new AskUserStoreError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not ready")
