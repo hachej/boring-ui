@@ -56,7 +56,7 @@ describe("AskUserStatePublisher", () => {
 })
 
 describe("ask-user UI open ack", () => {
-  it("dispatches openSurface and waits for questions.opened ack", async () => {
+  it("dispatches openSurface and accepts answers immediately after questions.opened ack", async () => {
     const store = await makeStore()
     const ui = bridge()
     const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 1000 })
@@ -85,6 +85,15 @@ describe("ask-user UI open ack", () => {
     const store = await makeStore()
     const ui = bridge()
     const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 1 })
+    await expect(runtime.ask({ sessionId: "s1", title: "T", schema })).resolves.toMatchObject({ status: "cancelled", reason: "ui_unavailable" })
+    await expect(store.getPending("s1")).resolves.toBeNull()
+  })
+
+  it("cancels with ui_unavailable when openSurface dispatch fails", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    ui.postCommand = async () => { throw new Error("disconnected") }
+    const runtime = new AskUserRuntime({ store, uiBridge: ui })
     await expect(runtime.ask({ sessionId: "s1", title: "T", schema })).resolves.toMatchObject({ status: "cancelled", reason: "ui_unavailable" })
     await expect(store.getPending("s1")).resolves.toBeNull()
   })

@@ -188,8 +188,9 @@ export function validateQuestionValues(schema: AskUserFormSchema, values: Questi
     const empty = value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)
     if ("required" in field && field.required && empty) { errors[field.name] = "This field is required."; continue }
     if (empty) continue
-    if ((field.type === "text" || field.type === "textarea") && typeof value === "string") {
-      if (field.minLength !== undefined && value.length < field.minLength) errors[field.name] = `Must be at least ${field.minLength} characters.`
+    if (field.type === "text" || field.type === "textarea") {
+      if (typeof value !== "string") errors[field.name] = "Enter text."
+      else if (field.minLength !== undefined && value.length < field.minLength) errors[field.name] = `Must be at least ${field.minLength} characters.`
       else if (field.maxLength !== undefined && value.length > field.maxLength) errors[field.name] = `Must be at most ${field.maxLength} characters.`
       else if (field.type === "text" && field.pattern && !new RegExp(field.pattern).test(value)) errors[field.name] = "Invalid format."
     } else if ((field.type === "select" || field.type === "radio") && (typeof value !== "string" || !field.options.some((o) => o.value === value))) errors[field.name] = "Choose a valid option."

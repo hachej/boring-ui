@@ -159,9 +159,7 @@ export class AskUserRuntime {
     await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
     this.emitEvent({ type: "created", questionId: question.questionId, sessionId: question.sessionId, ownerPrincipalId: question.ownerPrincipalId })
     this.emitEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId })
-    const unavailable = await this.openQuestionSurface(question)
-    if (unavailable) return unavailable
-    return this.waitForAnswer(question, request.timeoutMs, signal)
+    return this.waitForAnswerWithOpen(question, request.timeoutMs, signal)
   }
 
   async beginAskUserStream(request: Omit<AskUserRequest, "schema">, signal?: AbortSignal): Promise<{ question: AskUserQuestion; result: Promise<AskUserToolResult> }> {
@@ -170,7 +168,7 @@ export class AskUserRuntime {
     await this.store.createPending(question)
     await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
     this.emitEvent({ type: "created", questionId: question.questionId, sessionId: question.sessionId, ownerPrincipalId: question.ownerPrincipalId })
-    return { question, result: this.openThenWait(question, request.timeoutMs, signal) }
+    return { question, result: this.waitForAnswerWithOpen(question, request.timeoutMs, signal) }
   }
 
   async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<void> {
@@ -200,21 +198,37 @@ export class AskUserRuntime {
     this.emitEvent({ type: "cancelled", questionId, sessionId, reason })
   }
 
-  private async openThenWait(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
+  private async waitForAnswerWithOpen(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
+    const answer = this.waitForAnswer(question, timeoutMs, signal)
     const unavailable = await this.openQuestionSurface(question)
     if (unavailable) return unavailable
-    return this.waitForAnswer(question, timeoutMs, signal)
+    return answer
   }
 
   private async openQuestionSurface(question: AskUserQuestion): Promise<AskUserToolResult | null> {
     if (!this.uiBridge) return null
-    await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId } })
-    const opened = await this.waitForOpened(question.questionId)
-    if (opened) return null
-    await this.store.cancel(question.questionId)
-    await this.store.appendTranscriptEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable", at: this.isoNow() })
-    this.emitEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable" })
-    return { status: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable" }
+    try {
+      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId } })
+      const opened = await this.waitForOpened(question.questionId)
+      if (opened) return null
+    } catch {
+      this.openWaiters.delete(question.questionId)
+    }
+    return this.cancelUiUnavailable(question)
+  }
+
+  private async cancelUiUnavailable(question: AskUserQuestion): Promise<AskUserToolResult | null> {
+    try {
+      await this.store.cancel(question.questionId)
+      await this.store.appendTranscriptEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable", at: this.isoNow() })
+      this.coordinator.resolveCancelled(question.questionId, "ui_unavailable")
+      this.emitEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable" })
+      return { status: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable" }
+    } catch {
+      // A submit/cancel may have won the race while the open acknowledgement timed out.
+      // Let the already-registered waiter deliver that terminal result instead.
+      return null
+    }
   }
 
   private waitForOpened(questionId: string): Promise<boolean> {
