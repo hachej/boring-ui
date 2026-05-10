@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { AskUserFormSchemaSchema } from "../shared/schema"
+import { ASK_USER_SCHEMA_LIMITS, ASK_USER_SURFACE_KIND } from "../shared/constants"
+import type { UiBridge } from "../../../shared/ui-bridge"
 import type {
   AskUserAnswer,
   AskUserCancelReason,
@@ -100,6 +102,8 @@ export type AskUserRuntimeOptions = {
     perSessionPerMinute?: number
     perPrincipalPerHour?: number
   }
+  uiBridge?: UiBridge
+  askUserOpenAckTimeoutMs?: number
 }
 
 export class AskUserRuntime {
@@ -110,6 +114,9 @@ export class AskUserRuntime {
   private readonly emitEvent: (event: AskUserRuntimeEvent) => void
   private readonly perSessionPerMinute: number
   private readonly perPrincipalPerHour: number
+  private readonly uiBridge?: UiBridge
+  private readonly openAckTimeoutMs: number
+  private readonly openWaiters = new Map<string, () => void>()
   private readonly sessionBuckets = new Map<string, RateLimitBucket>()
   private readonly principalBuckets = new Map<string, RateLimitBucket>()
 
@@ -121,6 +128,8 @@ export class AskUserRuntime {
     this.emitEvent = options.emitEvent ?? (() => undefined)
     this.perSessionPerMinute = options.limits?.perSessionPerMinute ?? 6
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
+    this.uiBridge = options.uiBridge
+    this.openAckTimeoutMs = clampOpenAckTimeout(options.askUserOpenAckTimeoutMs)
   }
 
   async abandonOrphanedPending(sessionIds: string[]): Promise<void> {
@@ -130,6 +139,13 @@ export class AskUserRuntime {
         await this.abandon(pending.questionId, pending.sessionId)
       }
     }
+  }
+
+  markOpened(questionId: string): void {
+    const resolve = this.openWaiters.get(questionId)
+    if (!resolve) return
+    this.openWaiters.delete(questionId)
+    resolve()
   }
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
@@ -143,6 +159,8 @@ export class AskUserRuntime {
     await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
     this.emitEvent({ type: "created", questionId: question.questionId, sessionId: question.sessionId, ownerPrincipalId: question.ownerPrincipalId })
     this.emitEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId })
+    const unavailable = await this.openQuestionSurface(question)
+    if (unavailable) return unavailable
     return this.waitForAnswer(question, request.timeoutMs, signal)
   }
 
@@ -152,7 +170,7 @@ export class AskUserRuntime {
     await this.store.createPending(question)
     await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
     this.emitEvent({ type: "created", questionId: question.questionId, sessionId: question.sessionId, ownerPrincipalId: question.ownerPrincipalId })
-    return { question, result: this.waitForAnswer(question, request.timeoutMs, signal) }
+    return { question, result: this.openThenWait(question, request.timeoutMs, signal) }
   }
 
   async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<void> {
@@ -180,6 +198,36 @@ export class AskUserRuntime {
     await this.store.appendTranscriptEvent({ type: "cancelled", questionId, sessionId, reason, at: this.isoNow() })
     this.coordinator.resolveCancelled(questionId, reason)
     this.emitEvent({ type: "cancelled", questionId, sessionId, reason })
+  }
+
+  private async openThenWait(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
+    const unavailable = await this.openQuestionSurface(question)
+    if (unavailable) return unavailable
+    return this.waitForAnswer(question, timeoutMs, signal)
+  }
+
+  private async openQuestionSurface(question: AskUserQuestion): Promise<AskUserToolResult | null> {
+    if (!this.uiBridge) return null
+    await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId } })
+    const opened = await this.waitForOpened(question.questionId)
+    if (opened) return null
+    await this.store.cancel(question.questionId)
+    await this.store.appendTranscriptEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable", at: this.isoNow() })
+    this.emitEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable" })
+    return { status: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable" }
+  }
+
+  private waitForOpened(questionId: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.openWaiters.delete(questionId)
+        resolve(false)
+      }, this.openAckTimeoutMs)
+      this.openWaiters.set(questionId, () => {
+        clearTimeout(timer)
+        resolve(true)
+      })
+    })
   }
 
   private async waitForAnswer(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
@@ -258,4 +306,9 @@ export class AskUserRuntime {
 export function requireAskUserRuntime(runtime: AskUserRuntime | null | undefined): AskUserRuntime {
   if (!runtime) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.RUNTIME_UNAVAILABLE, "ask_user runtime unavailable")
   return runtime
+}
+
+function clampOpenAckTimeout(value: number | undefined): number {
+  const raw = value ?? 8_000
+  return Math.max(ASK_USER_SCHEMA_LIMITS.minTimeoutMs, Math.min(60_000, Math.floor(raw)))
 }

@@ -29,7 +29,7 @@ export function questionsRoutes(app: FastifyInstance, opts: QuestionsRoutesOptio
       store: opts.store,
       runtime: opts.runtime,
       getAuthContext: opts.getAuthContext ? () => opts.getAuthContext!(request) : undefined,
-      recordOpened: opts.recordOpened,
+      recordOpened: opts.recordOpened ?? ((question) => opts.runtime.markOpened(question.questionId)),
     })
 
     try {
