@@ -200,8 +200,13 @@ export class AskUserRuntime {
 
   private async waitForAnswerWithOpen(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
     const answer = this.waitForAnswer(question, timeoutMs, signal)
-    const unavailable = await this.openQuestionSurface(question)
-    if (unavailable) return unavailable
+    const opened = this.openQuestionSurface(question)
+    const first = await Promise.race([answer, opened])
+    if (first) {
+      this.openWaiters.get(question.questionId)?.cancel()
+      this.openWaiters.delete(question.questionId)
+      return first
+    }
     return answer
   }
 
