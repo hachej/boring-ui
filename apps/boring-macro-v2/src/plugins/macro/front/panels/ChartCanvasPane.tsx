@@ -192,6 +192,7 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
     refreshSeriesColors()
     window.addEventListener("boring-ui:agent-plugins-reloaded", refreshSeriesColors)
     return () => {
+      colorRefreshSeqRef.current += 1
       window.removeEventListener("boring-ui:agent-plugins-reloaded", refreshSeriesColors)
     }
   }, [refreshSeriesColors])

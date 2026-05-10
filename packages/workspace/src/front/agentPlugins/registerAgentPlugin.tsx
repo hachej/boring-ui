@@ -216,6 +216,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
     es.addEventListener("boring.plugin.error", handleError as EventListener)
     return () => {
       disposed = true
+      latestRequestedRef.current.clear()
       es.close()
     }
   }, [options.apiBaseUrl, options.workspaceId, options.enabled, options.importFront, panels, commands, surfaceResolvers])
