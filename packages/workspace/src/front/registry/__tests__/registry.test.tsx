@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { act, render, screen } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
-import type { ReactNode } from "react"
+import { Suspense, type ReactNode } from "react"
 import { PanelRegistry } from "../PanelRegistry"
 import { CommandRegistry } from "../CommandRegistry"
 import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
@@ -26,6 +26,14 @@ function DummyPanel() {
 
 function AnotherPanel() {
   return <div>another</div>
+}
+
+function LazyPanelOne() {
+  return <div>lazy-one</div>
+}
+
+function LazyPanelTwo() {
+  return <div>lazy-two</div>
 }
 
 // --- PanelRegistry ---
@@ -94,8 +102,37 @@ describe("PanelRegistry", () => {
     render(<HotPanel />)
     expect(screen.getByText("dummy")).toBeInTheDocument()
 
-    reg.register("hot", { title: "Hot", component: AnotherPanel })
+    act(() => {
+      reg.register("hot", { title: "Hot", component: AnotherPanel })
+    })
     expect(await screen.findByText("another")).toBeInTheDocument()
+    expect(screen.queryByText("dummy")).not.toBeInTheDocument()
+  })
+
+  it("rendered lazy wrapped panels switch to replacement lazy importers", async () => {
+    const reg = new PanelRegistry()
+    reg.register("hot-lazy", {
+      title: "Hot Lazy",
+      component: () => Promise.resolve({ default: LazyPanelOne }),
+      lazy: true,
+    })
+    const HotLazyPanel = reg.getComponents()["hot-lazy"]
+    render(
+      <Suspense fallback={<div>loading lazy</div>}>
+        <HotLazyPanel />
+      </Suspense>,
+    )
+    expect(await screen.findByText("lazy-one")).toBeInTheDocument()
+
+    act(() => {
+      reg.register("hot-lazy", {
+        title: "Hot Lazy",
+        component: () => Promise.resolve({ default: LazyPanelTwo }),
+        lazy: true,
+      })
+    })
+    expect(await screen.findByText("lazy-two")).toBeInTheDocument()
+    expect(screen.queryByText("lazy-one")).not.toBeInTheDocument()
   })
 })
 
