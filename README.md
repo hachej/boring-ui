@@ -8,34 +8,15 @@
 
 From a single prompt, an agent can open panels, inspect files, run tools, and render results directly in your UI.
 
-<img width="1818" height="865" alt="boring-ui-v2 banner" src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" />
+<img width="1200" alt="Boring UI banner" src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" />
 
 </div>
 
+<p align="center"><em>Demo video coming soon.</em></p>
+
 MIT-licensed monorepo for building production-grade agent, workspace, and app-shell packages.
 
-**What you can build:**
-- browser-based coding agents
-- internal tools with agent-driven workflows
-- copilots inside custom workspaces
-- apps whose interface adapts to the task
-
-### Chat in → workspace out
-
-Boring UI provides the building blocks for software where chat is the control layer, the command palette is the action layer, and the workspace is where work appears.
-
-The primary publishable packages are:
-
-- `@hachej/boring-core` — app shell, auth, config, database, Fastify app factory, and frontend providers
-- `@hachej/boring-agent` — pane-embeddable coding agent with `direct`, `local`, and `vercel-sandbox` runtime modes
-- `@hachej/boring-workspace` — workspace UI, plugin system, layouts, catalogs, editors, and UI bridge
-
-Supporting packages include:
-
-- `@hachej/boring-ui-kit` (`packages/ui`) — shared UI primitives
-- `@hachej/boring-ui-cli` (`packages/cli`) — CLI packaging entrypoint
-
-## Manifesto
+## A different belief
 
 Most AI products stop at chat: you ask, the model replies, and the real work still happens somewhere else.
 
@@ -54,6 +35,32 @@ So the agent does not just answer. It opens panels, edits files, runs commands, 
 The goal is not a smarter chatbot.
 
 The goal is software whose interface can adapt to the work.
+
+## In one line
+
+**Chat in → workspace out**
+
+Boring UI provides the building blocks for software where chat is the control layer, the command palette is the action layer, and the workspace is where work appears.
+
+## What you can build
+
+- browser-based coding agents
+- internal tools with agent-driven workflows
+- copilots inside custom workspaces
+- apps whose interface adapts to the task
+
+## Packages at a glance
+
+### Primary packages
+
+- `@hachej/boring-core` — app shell, auth, config, database, Fastify app factory, and frontend providers
+- `@hachej/boring-agent` — pane-embeddable coding agent with `direct`, `local`, and `vercel-sandbox` runtime modes
+- `@hachej/boring-workspace` — workspace UI, plugin system, layouts, catalogs, editors, and UI bridge
+
+### Supporting packages
+
+- `@hachej/boring-ui-kit` (`packages/ui`) — shared UI primitives
+- `@hachej/boring-ui-cli` (`packages/cli`) — CLI packaging entrypoint
 
 ## What are artifacts?
 
@@ -148,6 +155,26 @@ Notes:
 
 ## Quickstart
 
+### Fastest way to try Boring UI
+
+```bash
+npx @hachej/boring-ui-cli
+```
+
+This starts a full agent workspace against your current directory: chat, panels, file tree, and command palette.
+
+No clone. No database. No app setup.
+
+You can also provide an API key directly:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... npx @hachej/boring-ui-cli
+```
+
+See `packages/cli/README.md` for CLI usage details.
+
+### Run the full reference app
+
 ```bash
 pnpm install
 cp apps/full-app/.env.example apps/full-app/.env
@@ -168,9 +195,10 @@ pnpm --filter full-app dev
 ```
 
 Frontend runs at `http://localhost:5173`.
+
 See `apps/full-app/README.md` for full setup and deployment details.
 
-### Repo checks
+### Verify the repo
 
 ```bash
 pnpm lint
@@ -178,7 +206,7 @@ pnpm typecheck
 pnpm test
 ```
 
-Full CI-equivalent check:
+For the full CI-equivalent check:
 
 ```bash
 pnpm ci
@@ -186,7 +214,7 @@ pnpm ci
 
 ## Common scripts
 
-From repo root:
+From the repo root:
 
 ```bash
 pnpm build
@@ -198,9 +226,9 @@ pnpm e2e
 pnpm storybook
 ```
 
-## Packages
+## Package details
 
-> Start with the outcome above. Use the package details below when you need implementation boundaries.
+> Start with the outcome above. Use the details below when you need implementation boundaries.
 
 ### `@hachej/boring-core`
 
@@ -258,9 +286,9 @@ pnpm --filter full-app e2e:smoke
 
 More: `apps/full-app/README.md`
 
-## Status
+## Specs
 
-This repo is an active v2 monorepo. Specs live in:
+Canonical docs live in:
 
 - `packages/core/docs/CORE.md`
 - `packages/workspace/docs/INTERFACES.md`
