@@ -1,15 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { WorkspaceProvider } from "../../../provider"
+import { useEffect } from "react"
+import { WorkspaceProvider, useWorkspaceAttention } from "../../../provider"
 import { events } from "../../../events"
 import { filesystemEvents } from "../../../../plugins/filesystemPlugin/shared/events"
 import type { SurfaceShellApi } from "../../artifact-surface/SurfaceShell"
 import { ChatPanelHost } from "../ChatPanelHost"
 import type { WorkspaceChatPanelProps } from "../types"
 
-function FakeChatPanel({ onData, onOpenArtifact }: WorkspaceChatPanelProps) {
+function FakeChatPanel({ onData, onOpenArtifact, composerBlockers }: WorkspaceChatPanelProps) {
   return (
     <div>
+      <div data-testid="blocker-count">{composerBlockers?.length ?? 0}</div>
       <button
         type="button"
         onClick={() =>
@@ -30,6 +32,15 @@ function FakeChatPanel({ onData, onOpenArtifact }: WorkspaceChatPanelProps) {
       </button>
     </div>
   )
+}
+
+function Blocker({ sessionId = "s1" }: { sessionId?: string }) {
+  const { addBlocker, removeBlocker } = useWorkspaceAttention()
+  useEffect(() => {
+    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked" })
+    return () => removeBlocker(`test:${sessionId}`)
+  }, [addBlocker, removeBlocker, sessionId])
+  return null
 }
 
 describe("ChatPanelHost", () => {
@@ -64,6 +75,18 @@ describe("ChatPanelHost", () => {
     expect(onData).toHaveBeenCalledWith(
       expect.objectContaining({ type: "data-file-changed" }),
     )
+  })
+
+  it("passes generic session-scoped composer blockers to the chat implementation", async () => {
+    render(
+      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <Blocker sessionId="s1" />
+        <Blocker sessionId="other" />
+        <ChatPanelHost sessionId="s1" />
+      </WorkspaceProvider>,
+    )
+
+    expect(await screen.findByTestId("blocker-count")).toHaveTextContent("1")
   })
 
   it("composes workspace artifact opening with caller onOpenArtifact", () => {

@@ -2,6 +2,7 @@
 
 import { CheckCircle2, HelpCircle, Loader2, Sparkles, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
+import { useWorkspaceAttention } from "../../../front/provider"
 import { definePanel } from "../../../front/registry/types"
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../front/components/ui"
 import { defineFrontPlugin, type WorkspaceFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
@@ -42,6 +43,11 @@ function createQuestionsStore(): QuestionsStore {
 
 const QuestionsRuntimeContext = createContext<QuestionsRuntime | null>(null)
 
+function pendingQuestionSnapshot(store: QuestionsStore): string {
+  const pending = store.getPending()
+  return pending ? `${pending.sessionId}:${pending.questionId}:${pending.status}` : "none"
+}
+
 function useQuestionsRuntime(): QuestionsRuntime {
   const ctx = useContext(QuestionsRuntimeContext)
   if (!ctx) throw new Error("askUserPlugin QuestionsPane must be rendered under AskUserProvider")
@@ -49,9 +55,20 @@ function useQuestionsRuntime(): QuestionsRuntime {
 }
 
 function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderProps) {
+  const attention = useWorkspaceAttention()
   const storeRef = useRef<QuestionsStore | null>(null)
   if (!storeRef.current) storeRef.current = createQuestionsStore()
   const runtime = useMemo<QuestionsRuntime>(() => ({ ...storeRef.current!, apiBaseUrl, authHeaders }), [apiBaseUrl, authHeaders])
+  const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
+  useEffect(() => {
+    const pending = runtime.getPending()
+    const blockerId = pending ? `${ASK_USER_PLUGIN_ID}:${pending.sessionId}:${pending.questionId}` : null
+    if (pending?.status === "ready" && blockerId) {
+      attention.addBlocker({ id: blockerId, reason: "waiting_for_user_input", surfaceKind: ASK_USER_SURFACE_KIND, label: "Answer the question in Questions to continue", sessionId: pending.sessionId })
+    }
+    return () => { if (blockerId) attention.removeBlocker(blockerId) }
+  }, [attention, runtime, pendingSnapshot])
+
   useEffect(() => {
     let stopped = false
     async function poll() {
@@ -64,7 +81,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
     void poll()
     const id = setInterval(poll, 500)
     return () => { stopped = true; clearInterval(id) }
-  }, [apiBaseUrl, authHeaders])
+  }, [apiBaseUrl, authHeaders, runtime])
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 

@@ -269,6 +269,14 @@ function displayProviderLabel(provider: string): string {
     .join(' ')
 }
 
+export type ComposerBlocker = {
+  id: string
+  reason: string
+  surfaceKind?: string
+  label?: string
+  sessionId?: string
+}
+
 export interface ChatPanelProps {
   sessionId: string
   toolRenderers?: ToolRendererOverrides
@@ -332,6 +340,8 @@ export interface ChatPanelProps {
    * in production consumer UIs.
    */
   debug?: boolean
+  /** Generic host-provided blockers that prevent starting a new user turn. */
+  composerBlockers?: ComposerBlocker[]
   className?: string
   /** When provided, files are uploaded immediately on attach and sent as stable
    * server URLs rather than base64 data URLs. Supply via useFileUpload() from
@@ -393,6 +403,7 @@ export function ChatPanel(props: ChatPanelProps) {
     onOpenArtifact,
     onUploadFile,
     debug = false,
+    composerBlockers = [],
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
   const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
@@ -440,6 +451,8 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [handleFollowUpData])
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
+  const composerBlocked = composerBlockers.length > 0
+  const composerBlockerLabel = composerBlockers[0]?.label ?? 'Complete the pending workspace action to continue.'
 
   const registry = useMemo(
     () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
@@ -702,6 +715,7 @@ export function ChatPanel(props: ChatPanelProps) {
     // and no attachment). The server schema requires message.length >= 1,
     // so an empty POST returns 400 — we catch it here and keep the
     // composer in place with focus for the user to type.
+    if (composerBlocked) return
     const trimmed = text.trim()
     if (trimmed.length === 0 && (!files || files.length === 0)) {
       return
@@ -1193,6 +1207,18 @@ export function ChatPanel(props: ChatPanelProps) {
             <span>Working…</span>
           </div>
         </div>
+        {composerBlocked && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "mx-auto mb-2 w-full max-w-3xl rounded-[var(--radius-md)] border border-primary/30 bg-primary/10",
+              "px-3 py-2 text-xs text-foreground",
+            )}
+          >
+            {composerBlockerLabel}
+          </div>
+        )}
         {attachmentNotice && (
           <div
             role="status"
@@ -1276,7 +1302,8 @@ export function ChatPanel(props: ChatPanelProps) {
           >
             <AttachmentsList />
             <PromptInputTextarea
-              placeholder="Ask anything…"
+              placeholder={composerBlocked ? composerBlockerLabel : "Ask anything…"}
+              disabled={composerBlocked}
               onChange={handleComposerChange}
               onKeyDown={handleComposerKeyDown}
               className={cn(
@@ -1322,6 +1349,7 @@ export function ChatPanel(props: ChatPanelProps) {
                   <PromptInputSubmit
                     status={status}
                   onStop={handleStop}
+                  disabled={composerBlocked && !isStreaming}
                   className={cn(
                     // Primary action. Uses the warm accent (not `primary`,
                     // which is a neutral foreground tone) — this is the one

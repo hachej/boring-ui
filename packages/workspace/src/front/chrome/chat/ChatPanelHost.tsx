@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect } from "react"
-import { useWorkspaceChatPanel } from "../../provider"
+import { useWorkspaceAttention, useWorkspaceChatPanel } from "../../provider"
 import { emitAgentData } from "../../events"
 import { dispatchUiCommand, startUiCommandStream } from "../../bridge"
 import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
@@ -34,6 +34,7 @@ function streamEndpointFromBridgeEndpoint(endpoint: string | null | undefined): 
 
 export function ChatPanelHost(props: ChatPanelHostProps) {
   const ChatPanelImpl = useWorkspaceChatPanel()
+  const { blockers } = useWorkspaceAttention()
   const {
     getSurface,
     isWorkbenchOpen,
@@ -57,6 +58,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   )
 
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
+  const composerBlockers = blockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === chatPanelProps.sessionId)
 
   useEffect(() => {
     if (bridgeEndpoint === null || !getSurface || !isWorkbenchOpen || !openWorkbench) return
@@ -86,6 +88,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       {...chatPanelProps}
       onOpenArtifact={openArtifact}
       onData={handleData}
+      composerBlockers={composerBlockers}
     />
   )
 }
