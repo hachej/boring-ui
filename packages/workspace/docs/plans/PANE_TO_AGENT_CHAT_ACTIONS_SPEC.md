@@ -150,9 +150,15 @@ Lifecycle rules:
 - `ChatPanel` re-registers when `sessionId`, request headers, model,
   thinking-level, or the underlying send callback changes.
 - The controller method delegates to the same path as user composer submit.
-- If chat is submitted/streaming, v1 rejects with `AGENT_CHAT_BUSY` and
-  `canSendAgentMessage()` returns false. V1 does not invent a hidden follow-up
-  queue.
+- If chat is submitted/streaming, default v1 behavior rejects with
+  `AGENT_CHAT_BUSY` and `canSendAgentMessage()` returns false. Runtimes with an
+  explicit native follow-up capability may route busy-time user messages through
+  their documented follow-up path instead of rejecting.
+- Workspace attention blockers override native follow-up. If a pending
+  `ask_user`/Questions blocker exists for the active session,
+  `canSendAgentMessage()` returns false and `sendAgentMessage()` rejects/blocks;
+  the message must not be converted into a hidden follow-up because the active
+  tool expects a structured form answer.
 - It must not create a separate hidden chat stream.
 
 ### Promise semantics
