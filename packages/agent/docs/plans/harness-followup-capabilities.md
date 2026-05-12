@@ -63,48 +63,49 @@ The common ChatPanel must not assume `data-pi-*` for every harness.
 Add frontend-visible runtime capabilities, fetched or embedded with session/runtime metadata. Prefer **not** to mutate the minimal `AgentHarness` interface unless implementation proves it is necessary; keep capabilities at the app/session/route metadata layer so the harness seam remains small and stable.
 
 ```ts
-export type FollowUpMode = 'native' | 'client-drain' | 'none'
+export interface AgentRuntimeCapabilities {
+  /**
+   * Runtime can accept a user follow-up while the current response is busy.
+   * If false, composer send is disabled while busy.
+   */
+  nativeFollowUp: boolean
 
-export interface AgentHarnessCapabilities {
-  followUpMode?: FollowUpMode
-  historyMode?: 'ai-sdk' | 'pi-native-projection'
+  /**
+   * AI SDK `useChat().messages` is the canonical history source.
+   * If false, the harness/adapter owns canonical history projection.
+   */
+  aiSdkOwnsHistory: boolean
 }
 ```
 
 Initial defaults come from runtime/session metadata, not from inspecting the harness interface:
 
 ```ts
-followUpMode = runtimeCapabilities.followUpMode ?? 'none'
-historyMode = runtimeCapabilities.historyMode ?? 'ai-sdk'
+nativeFollowUp = runtimeCapabilities.nativeFollowUp ?? false
+aiSdkOwnsHistory = runtimeCapabilities.aiSdkOwnsHistory ?? true
 ```
 
 Pi runtime metadata can opt into:
 
 ```ts
 {
-  followUpMode: 'native',
-  historyMode: 'pi-native-projection' // temporary, pi-scoped compatibility only
+  nativeFollowUp: true,
+  aiSdkOwnsHistory: false, // temporary: pi adapter owns history projection
 }
 ```
 
-`pi-native-projection` is not a new shared protocol. It is explicitly session/harness-scoped temporary debt for the current pi adapter while we verify whether pi can emit fully transparent AI SDK `UIMessageChunk`s for inline native follow-up.
+`aiSdkOwnsHistory: false` is not a new shared protocol. It is an explicit session/harness-scoped escape hatch for adapters where AI SDK message reconstruction is not the canonical source. In the current implementation, only pi uses this path, via temporary `data-pi-*` projection, while we verify whether pi can emit fully transparent AI SDK `UIMessageChunk`s for inline native follow-up.
 
 DeepAgent / AI SDK Agent harness should use:
 
 ```ts
 {
-  followUpMode: 'none', // at first
-  historyMode: 'ai-sdk'
+  nativeFollowUp: false,
+  aiSdkOwnsHistory: true,
 }
 ```
 
-Optional later mode:
-
-```ts
-followUpMode: 'client-drain'
-```
-
-This means frontend displays queued bubbles and waits until ready, then calls normal `sendMessage()`.
+A future frontend-owned queue/drain mode can be added later if needed, but it is not part of this first-pass capability surface.
 
 ## Composer behavior
 
@@ -112,24 +113,21 @@ Let:
 
 ```ts
 const isBusy = status === 'submitted' || status === 'streaming'
-const followUpMode = capabilities.followUpMode ?? 'none'
-const canSubmitWhileBusy = followUpMode === 'native' || followUpMode === 'client-drain'
-const sendDisabled = !hasMessage || (isBusy && !canSubmitWhileBusy)
+const sendDisabled = !hasMessage || (isBusy && !capabilities.nativeFollowUp)
 ```
 
 Behavior:
 
-| Mode | Busy send button | Busy Enter | Action |
+| Capability | Busy send button | Busy Enter | Action |
 |---|---:|---:|---|
-| `none` | disabled | no-op | Composer may stay editable; show hint: `Wait for the current response to finish.` |
-| `native` | enabled | queues | Show waiting bubble, POST `/followup`, harness owns queue. |
-| `client-drain` | enabled | queues | Show waiting bubble, do not POST `/followup`; on ready call `sendMessage(next)`. |
+| `nativeFollowUp: false` | disabled | no-op | Composer may stay editable; show hint: `Wait for the current response to finish.` |
+| `nativeFollowUp: true` | enabled | queues | Show waiting bubble, POST `/followup`, harness owns queue. |
 
-For this branch, implement only `none` and `native`. Defer `client-drain` unless required.
+For this branch, do not implement frontend queue/drain for non-native runtimes.
 
 ## Pi-native behavior
 
-When `followUpMode === 'native'` and user sends while busy:
+When `nativeFollowUp === true` and user sends while busy:
 
 1. Frontend appends an optimistic queued user bubble.
 2. Frontend POSTs `/api/v1/agent/chat/:sessionId/followup` with `clientSeq` + `clientNonce`.
@@ -142,7 +140,7 @@ Important: the UI should treat waiting bubbles as display-only; it should not mu
 
 ## Non-pi behavior
 
-When `followUpMode === 'none'` and user sends while busy:
+When `nativeFollowUp === false` and user sends while busy:
 
 - Do not POST `/followup`.
 - Do not call `sendMessage()`.
@@ -156,11 +154,11 @@ DeepAgent and AI SDK Agent harnesses therefore remain protocol-transparent.
 
 ### Short-term
 
-Keep pi projection isolated behind `historyMode === 'pi-native-projection'`.
+Keep adapter-owned projection isolated behind `aiSdkOwnsHistory === false`.
 
-- `ChatPanel` only runs `data-pi-*` reducer when history mode is pi projection.
+- `ChatPanel` only runs the temporary `data-pi-*` reducer when AI SDK does not own history and the active runtime is the pi projection path.
 - Otherwise, `useChat().messages` remains canonical and existing AI SDK persistence stays enabled.
-- `/messages` pi projection helper should only be applied for pi projection sessions, not globally.
+- `/messages` pi projection helper should only be applied for adapter-owned/pi-projection sessions, not globally.
 
 ### Long-term
 
@@ -175,22 +173,22 @@ Prefer transparent AI SDK messages for pi too:
 Locked implementation choices for the first pass:
 
 - Adapt the current `followup-pi-history` implementation in place by capability-gating it. Do not pause for a full transparent-AI-SDK rewrite.
-- Non-pi / DeepAgent / AI SDK Agent mode blocks send while busy. Do **not** implement `client-drain` yet.
+- Non-pi / DeepAgent / AI SDK Agent mode blocks send while busy. Do **not** implement frontend queue/drain yet.
 - Capabilities should come from runtime/session metadata exposed to the frontend, preferably a dedicated `GET /api/v1/agent/capabilities` route.
-- Keep current pi projection as temporary, pi-scoped compatibility behind `historyMode === 'pi-native-projection'`.
-- Add a stable unsupported-follow-up error code: `followup_unsupported`.
+- Keep current pi projection as temporary, adapter-owned compatibility behind `aiSdkOwnsHistory === false`.
+- Add a stable unsupported-follow-up error code: `FOLLOWUP_UNSUPPORTED`.
 
 This means the next implementation bead should transform the already-working pi follow-up branch into a pluggable design:
 
 ```txt
 pi runtime:
-  followUpMode = native
-  historyMode = pi-native-projection
+  nativeFollowUp = true
+  aiSdkOwnsHistory = false
   current waiting bubble + /followup + pi reducer remains active
 
 DeepAgent / AI SDK Agent runtime:
-  followUpMode = none
-  historyMode = ai-sdk
+  nativeFollowUp = false
+  aiSdkOwnsHistory = true
   send blocked while busy
   normal useChat messages/persistence
   no data-pi reducer
@@ -202,18 +200,14 @@ DeepAgent / AI SDK Agent runtime:
 Add a shared type near existing shared contracts, e.g. `packages/agent/src/shared/capabilities.ts`:
 
 ```ts
-export type FollowUpMode = 'native' | 'none'
-export type DeferredFollowUpMode = 'client-drain' // documented future extension only
-export type HistoryMode = 'ai-sdk' | 'pi-native-projection'
-
 export interface AgentRuntimeCapabilities {
-  followUpMode: FollowUpMode
-  historyMode: HistoryMode
+  nativeFollowUp: boolean
+  aiSdkOwnsHistory: boolean
 }
 
 export const DEFAULT_AGENT_RUNTIME_CAPABILITIES: AgentRuntimeCapabilities = {
-  followUpMode: 'none',
-  historyMode: 'ai-sdk',
+  nativeFollowUp: false,
+  aiSdkOwnsHistory: true,
 }
 ```
 
@@ -231,8 +225,8 @@ Response:
 
 ```json
 {
-  "followUpMode": "native",
-  "historyMode": "pi-native-projection"
+  "nativeFollowUp": true,
+  "aiSdkOwnsHistory": false
 }
 ```
 
@@ -240,8 +234,8 @@ For current pi-only `registerAgentRoutes()` runtime binding, return pi capabilit
 
 ```ts
 {
-  followUpMode: 'native',
-  historyMode: 'pi-native-projection',
+  nativeFollowUp: true,
+  aiSdkOwnsHistory: false,
 }
 ```
 
@@ -249,8 +243,8 @@ For future DeepAgent / AI SDK Agent route registration, return defaults:
 
 ```ts
 {
-  followUpMode: 'none',
-  historyMode: 'ai-sdk',
+  nativeFollowUp: false,
+  aiSdkOwnsHistory: true,
 }
 ```
 
@@ -261,15 +255,14 @@ Capability scope invariant: the capabilities consumed by `ChatPanel`, `/followup
 Add capability loading to the frontend hook/panel layer. Initial default before fetch should be safe:
 
 ```ts
-followUpMode = 'none'
-historyMode = 'ai-sdk'
-capabilitiesLoaded = false
+nativeFollowUp = false
+aiSdkOwnsHistory = true
 ```
 
 Interaction while capabilities load:
 
 - Existing history may render using the safe AI SDK path until capabilities arrive.
-- Sending while busy remains blocked because the default is `followUpMode: 'none'`.
+- Sending while busy remains blocked because the default is `nativeFollowUp: false`.
 - First non-busy submit may proceed with defaults if capability fetch is still pending; this is acceptable because the normal AI SDK path is the safe baseline.
 - Once capabilities load for a pi runtime, subsequent busy sends can use native follow-up and pi projection activates.
 - Optional polish: disable only the send button until capabilities load if the implementation wants to avoid this temporary downgrade, but this is not required for correctness.
@@ -278,27 +271,26 @@ Then compute busy-send policy:
 
 ```ts
 const isBusy = status === 'submitted' || status === 'streaming'
-const canSubmitWhileBusy = followUpMode === 'native' // client-drain deferred
-const sendDisabled = !hasMessage || (isBusy && !canSubmitWhileBusy)
+const sendDisabled = !hasMessage || (isBusy && !capabilities.nativeFollowUp)
 ```
 
 Behavior:
 
-- `followUpMode === 'none'`:
+- `nativeFollowUp === false`:
   - composer remains editable;
   - send button disabled while busy;
   - Enter submit is a no-op while busy;
   - no queued bubble;
   - no `/followup` request;
   - optional helper copy: `Wait for the current response to finish.`
-- `followUpMode === 'native'`:
+- `nativeFollowUp === true`:
   - current pi waiting-bubble behavior is enabled;
   - busy send creates optimistic queued bubble;
   - POST `/api/v1/agent/chat/:sessionId/followup`;
   - pi harness owns actual queueing/ordering.
-- `client-drain`:
+- frontend queue/drain:
   - deferred future extension only;
-  - do not expose as an active returned mode in the first pass;
+  - do not expose an active queue/drain mode in the first pass;
   - do not implement local drain queue in this branch.
 
 ### 4. Gate pi projection in `ChatPanel`
@@ -306,7 +298,7 @@ Behavior:
 All of the following must run only when:
 
 ```ts
-historyMode === 'pi-native-projection'
+aiSdkOwnsHistory === false
 ```
 
 - `data-pi-*` reducer into `piMessages`;
@@ -316,7 +308,7 @@ historyMode === 'pi-native-projection'
 - pi-specific persistence that strips/projects `data-pi-*`;
 - `persistMessages: false` for `useAgentChat`.
 
-When `historyMode === 'ai-sdk'`:
+When `aiSdkOwnsHistory === true`:
 
 - pass `persistMessages: true` / omit `persistMessages: false`;
 - render `messages` from `useChat` directly;
@@ -345,29 +337,29 @@ If supported, keep existing `clientSeq`/`clientNonce` idempotency and pi `harnes
 
 ### 6. Gate server history projection
 
-`projectPiDataMessages()` should only run for `historyMode === 'pi-native-projection'` sessions/runtimes.
+`projectPiDataMessages()` should only run for sessions/runtimes where `aiSdkOwnsHistory === false` and the active adapter is the current pi projection path.
 
-For `historyMode === 'ai-sdk'`, `/messages` should save the incoming `UIMessage[]` normally, only applying generic safe stripping such as removing large `data:` file URLs.
+For `aiSdkOwnsHistory === true`, `/messages` should save the incoming `UIMessage[]` normally, only applying generic safe stripping such as removing large `data:` file URLs.
 
 ### 7. Tests
 
 Required tests for the first pass:
 
 - Capabilities route:
-  - pi runtime returns `native` + `pi-native-projection`;
-  - default/non-pi test fixture returns `none` + `ai-sdk`.
+  - pi runtime returns `nativeFollowUp: true` + `aiSdkOwnsHistory: false`;
+  - default/non-pi test fixture returns `nativeFollowUp: false` + `aiSdkOwnsHistory: true`.
 - Composer behavior:
-  - `followUpMode: 'none'` disables send while busy;
+  - `nativeFollowUp: false` disables send while busy;
   - Enter while busy does not submit;
   - no waiting bubble is created;
   - no `/followup` request is made.
 - Pi native behavior:
-  - `followUpMode: 'native'` preserves current busy-send waiting bubble;
+  - `nativeFollowUp: true` preserves current busy-send waiting bubble;
   - POST `/followup` still includes `clientSeq` + `clientNonce`;
   - consumed marker clears waiting state.
-- History modes:
-  - `historyMode: 'ai-sdk'` uses normal `useChat().messages` and normal persistence;
-  - `historyMode: 'pi-native-projection'` keeps existing pi follow-up ordering and canonical persistence tests green.
+- History ownership:
+  - `aiSdkOwnsHistory: true` uses normal `useChat().messages` and normal persistence;
+  - `aiSdkOwnsHistory: false` keeps existing pi follow-up ordering and canonical persistence tests green for the current pi adapter.
 - Server route:
   - unsupported `/followup` returns stable `FOLLOWUP_UNSUPPORTED`;
   - supported duplicate `{ clientSeq, clientNonce }` remains idempotent;
@@ -386,14 +378,13 @@ The existing branch already contains working pieces:
 Do not throw this away. Refactor it as follows:
 
 ```ts
-const isPiProjection = capabilities.historyMode === 'pi-native-projection'
-const canNativeFollowUp = capabilities.followUpMode === 'native'
+const adapterOwnsHistory = !capabilities.aiSdkOwnsHistory
 ```
 
 Then gate current behavior:
 
-- if `isPiProjection`, enable current `data-pi-*` reducer/persistence;
-- if not `isPiProjection`, leave `useChat().messages` canonical and keep normal AI SDK persistence;
+- if `adapterOwnsHistory` for the current pi adapter, enable current `data-pi-*` reducer/persistence;
+- if not `adapterOwnsHistory`, leave `useChat().messages` canonical and keep normal AI SDK persistence;
 - if `canNativeFollowUp && isBusy`, use current queued bubble + `/followup` posting path;
 - if `!canNativeFollowUp && isBusy`, block send and keep composer text/files intact;
 - keep pi browser smoke tests as regression coverage;
@@ -407,8 +398,8 @@ Document follow-up modes in `packages/agent/docs/plans/agent-package-spec.md` or
 
 State explicitly:
 
-- DeepAgent / AI SDK Agent uses `followUpMode: 'none'` initially.
-- DeepAgent / AI SDK Agent uses normal AI SDK UI Message Stream Protocol.
+- DeepAgent / AI SDK Agent uses `nativeFollowUp: false` initially.
+- DeepAgent / AI SDK Agent uses `aiSdkOwnsHistory: true` and the normal AI SDK UI Message Stream Protocol.
 - Pi native follow-up is an optimization/adapter behavior, not a shared chat protocol.
 
 ## Harness-specific tools and plugin UI
@@ -524,17 +515,17 @@ For this follow-up capability plan, tool UI is adjacent but not required for imp
 ## Open questions
 
 1. Where should capabilities be resolved for frontend: session metadata, `/models`, `/capabilities`, or `createAgentApp` injected config? Current recommendation: session/runtime metadata or `/capabilities`, not a required `AgentHarness` field.
-2. What exact release should pick up the deferred `client-drain` mode, if ever?
+2. Should a future release add frontend-owned queue/drain for non-native runtimes, or should unsupported runtimes always block send while busy?
 3. Can pi adapter emit fully transparent AI SDK multi-message streams without custom `data-pi-*` history projection?
 4. Should tool capability metadata include renderer hints (`rendererId`, display group, icon), or should renderers remain keyed only by tool name for now?
 
 ## Recommendation
 
-Do not merge current `data-pi-*` behavior as unconditional ChatPanel logic. First isolate it behind `historyMode === 'pi-native-projection'` and gate busy-send follow-up behind `followUpMode === 'native'`. Treat `pi-native-projection` as temporary pi-only compatibility, not a shared frontend protocol.
+Do not merge current `data-pi-*` behavior as unconditional ChatPanel logic. First isolate it behind `aiSdkOwnsHistory === false` and gate busy-send follow-up behind `nativeFollowUp === true`. Treat adapter-owned projection as temporary pi-only compatibility for the current implementation, not a shared frontend protocol.
 
 This gives us:
 
 - Pi: native follow-up works.
 - DeepAgent / Agent SDK: normal AI SDK protocol remains clean.
 - Other harnesses: composer safely blocks send while busy.
-- Future: optional client-drain queue can be added without touching harnesses.
+- Future: optional frontend-owned queue/drain can be added without touching harnesses.
