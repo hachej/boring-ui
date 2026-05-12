@@ -4,63 +4,55 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-<p><strong>Chat in. Workspace out.</strong></p>
-<p><strong>Your Workflow. Your Agent. Your UI.</strong></p>
-<p>Build apps where chat controls a real workspace — not just a reply box.</p>
+**Build agent-native apps where chat controls a real workspace.**
+
+From a single prompt, an agent can open panels, inspect files, run tools, and render results directly in your UI.
 
 <img width="1818" height="865" alt="boring-ui-v2 banner" src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" />
 
 </div>
 
-MIT-licensed monorepo for building agent-native apps.
+MIT-licensed monorepo for building production-grade agent, workspace, and app-shell packages.
 
-boring-ui-v2 gives you the building blocks for products where an agent can:
-
-- open panels and editors
-- inspect and edit files
-- run tools and commands
-- show logs, previews, charts, and results in the UI
-
-Use it to build things like:
-
+**What you can build:**
 - browser-based coding agents
 - internal tools with agent-driven workflows
-- copilots that operate inside a custom workspace
-- apps where the UI changes based on the task
+- copilots inside custom workspaces
+- apps whose interface adapts to the task
 
-<p align="center"><strong>user asks → agent opens the right UI, runs tools, and shows the result</strong></p>
+### Chat in → workspace out
 
-- `@hachej/boring-core` — app shell, auth, config, DB, Fastify app factory, frontend providers
+boring-ui-v2 provides the building blocks for software where chat is the control layer, the command palette is the action layer, and the workspace is where work appears.
+
+The primary publishable packages are:
+
+- `@hachej/boring-core` — app shell, auth, config, database, Fastify app factory, and frontend providers
 - `@hachej/boring-agent` — pane-embeddable coding agent with `direct`, `local`, and `vercel-sandbox` runtime modes
 - `@hachej/boring-workspace` — workspace UI, plugin system, layouts, catalogs, editors, and UI bridge
 
+Supporting packages include:
+
+- `@hachej/boring-ui-kit` (`packages/ui`) — shared UI primitives
+- `@hachej/boring-ui-cli` (`packages/cli`) — CLI packaging entrypoint
+
 ## Manifesto
 
-Most AI products stop at chat.
-
-You ask.
-The model replies.
-You read.
-Then you do the real work somewhere else.
+Most AI products stop at chat: you ask, the model replies, and the real work still happens somewhere else.
 
 boring-ui-v2 is built on a different belief:
 
-**chat should not be the destination. chat should be the control layer.**
+> **Chat should be the control layer — not the destination.**
 
-A workflow can be interfaced through three things:
+A workflow can be expressed through three connected surfaces:
 
-- an agent chat
-- a command palette
-- artifacts visualized in a workbench
+- agent chat
+- command palette
+- workbench artifacts
 
-That means the agent does not just answer.
-It opens panels.
-It edits files.
-It runs commands.
-It renders outputs.
-It gives the user something to inspect, manipulate, and continue from.
+So the agent does not just answer. It opens panels, edits files, runs commands, and renders outputs the user can inspect, manipulate, and continue from.
 
 The goal is not a smarter chatbot.
+
 The goal is software whose interface can adapt to the work.
 
 ## What are artifacts?
@@ -80,9 +72,11 @@ The point is simple: the agent should not only talk about work. It should surfac
 
 ## Design principles
 
+> **Opinionated at the center. Extensible at the edges.**
+
 ### Opinionated core
 
-boring-ui-v2 is opinionated.
+boring-ui-v2 has a strong default point of view:
 
 - chat is a first-class control surface
 - the workspace is the main output surface
@@ -105,7 +99,7 @@ You customize the system through plugins and composition points:
 
 The framework has a point of view. Your product still gets to have its own.
 
-## What it is
+## How the stack is composed
 
 boring-ui-v2 is the monorepo that provides that stack.
 
@@ -117,7 +111,9 @@ It is composed from:
 
 Together they let you build apps where agents can inspect files, run tools, create outputs, and render those outputs directly in the interface.
 
-## Package graph
+## Package composition
+
+Architectural composition (not literal package-manager dependencies):
 
 ```text
 apps/*  ->  @hachej/boring-workspace  ->  @hachej/boring-core
@@ -133,11 +129,11 @@ Notes:
 
 ## Highlights
 
-- Agent-controlled UI via workspace bridge commands
-- Sandboxed execution modes for local and remote runtimes
-- Workspace plugin system for panels, catalogs, commands, bindings, and tools
-- Auth, workspaces, invites, and config in the core layer
-- Standalone agent app or fully composed multi-package app
+- **Agent-controlled UI** — agents open panels and render outputs, not just text replies
+- **Sandboxed execution** — run in `direct`, `local`, or `vercel-sandbox` modes
+- **Plugin extensibility** — add panels, catalogs, commands, bindings, and tools
+- **Core product scaffolding** — auth, workspaces, config, and app shell already wired
+- **Composable deployment model** — use the agent standalone or compose the full stack
 
 ## Repo layout
 
@@ -145,19 +141,36 @@ Notes:
 - `packages/agent` — agent package
 - `packages/workspace` — workspace package
 - `packages/ui` — shared UI kit
+- `packages/cli` — CLI package
 - `apps/full-app` — reference production app
 - `apps/agent-playground` — agent-focused playground
 - `apps/workspace-playground` — workspace-focused playground
 
 ## Quickstart
 
-Install deps:
-
 ```bash
 pnpm install
+cp apps/full-app/.env.example apps/full-app/.env
 ```
 
-Run the monorepo checks:
+Fill in the required values in `apps/full-app/.env`:
+
+- `DATABASE_URL`
+- `BETTER_AUTH_SECRET`
+- `WORKSPACE_SETTINGS_ENCRYPTION_KEY`
+- `BETTER_AUTH_URL`
+
+Then run:
+
+```bash
+pnpm --filter full-app migrate
+pnpm --filter full-app dev
+```
+
+Frontend runs at `http://localhost:5173`.
+See `apps/full-app/README.md` for full setup and deployment details.
+
+### Repo checks
 
 ```bash
 pnpm lint
@@ -165,15 +178,11 @@ pnpm typecheck
 pnpm test
 ```
 
-Run the reference app:
+Full CI-equivalent check:
 
 ```bash
-cp apps/full-app/.env.example apps/full-app/.env
-pnpm --filter full-app migrate
-pnpm --filter full-app dev
+pnpm ci
 ```
-
-Frontend runs at `http://localhost:5173`.
 
 ## Common scripts
 
@@ -190,6 +199,8 @@ pnpm storybook
 ```
 
 ## Packages
+
+> Start with the outcome above. Use the package details below when you need implementation boundaries.
 
 ### `@hachej/boring-core`
 
