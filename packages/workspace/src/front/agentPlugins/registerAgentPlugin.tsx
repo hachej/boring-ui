@@ -190,7 +190,7 @@ function pruneMissingPluginContributions(
   keep: ReturnType<typeof capturedIds>,
   registries: ReturnType<typeof getRegistries>,
 ): void {
-  for (const panel of registries.panels.list()) {
+  for (const panel of registries.panels.listAll()) {
     if (panel.pluginId === pluginId && !keep.panels.has(panel.id)) registries.panels.unregister(panel.id)
   }
   for (const command of registries.commands.getCommands()) {

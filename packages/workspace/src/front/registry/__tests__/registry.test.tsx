@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { act, render, screen } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
 import { Suspense, type ReactNode } from "react"
 import { PanelRegistry } from "../PanelRegistry"
@@ -107,6 +107,24 @@ describe("PanelRegistry", () => {
     })
     expect(await screen.findByText("another")).toBeInTheDocument()
     expect(screen.queryByText("dummy")).not.toBeInTheDocument()
+  })
+
+  it("rendered wrapped panels stop rendering after replacement requires missing capabilities", async () => {
+    const reg = new PanelRegistry()
+    reg.register("cap", { title: "Cap", component: DummyPanel })
+    const CapPanel = reg.getComponents().cap
+    render(<CapPanel />)
+    expect(screen.getByText("dummy")).toBeInTheDocument()
+
+    act(() => {
+      reg.register("cap", {
+        title: "Cap",
+        component: AnotherPanel,
+        requiresCapabilities: ["missing-capability"],
+      })
+    })
+    await waitFor(() => expect(screen.queryByText("dummy")).not.toBeInTheDocument())
+    expect(screen.queryByText("another")).not.toBeInTheDocument()
   })
 
   it("keeps lazy component identity stable across initial Suspense retries", async () => {

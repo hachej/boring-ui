@@ -68,6 +68,10 @@ export class PanelRegistry {
     return this.filteredPanels()
   }
 
+  listAll(): PanelConfig[] {
+    return this.registrationOrder.map((id) => this.panels.get(id)!)
+  }
+
   // Loose return type: shells render panels via different paths (dockview
   // hands a typed envelope, sidebar layouts mount them naked). Type-safe
   // wiring happens at registration time via `definePanel<T>` — once a
@@ -105,10 +109,10 @@ export class PanelRegistry {
       const current = registry.get(panelId)
       // biome-ignore lint/suspicious/noExplicitAny: see comment above
       const Inner: ComponentType<any> = useMemo(() => {
-        if (!current) return () => null
+        if (!current || !registry.satisfiesCapabilities(current)) return () => null
         if (current.lazy) return registry.getLazyComponent(panelId, current.component)
         return current.component as ComponentType<any>
-      }, [current?.component, current?.lazy])
+      }, [current?.component, current?.lazy, current?.requiresCapabilities])
       const pluginId = current?.pluginId ?? current?.id ?? panelId
       return createElement(
         PluginErrorBoundary,

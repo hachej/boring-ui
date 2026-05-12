@@ -124,6 +124,12 @@ function PanelIds() {
   return <div data-testid="panel-ids">{panels.map((panel) => panel.id).join(",")}</div>
 }
 
+function AllPanelIds() {
+  const registry = useRegistry()
+  useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+  return <div data-testid="all-panel-ids">{registry.listAll().map((panel) => panel.id).join(",")}</div>
+}
+
 function Harness({ apiBaseUrl = "" }: { apiBaseUrl?: string }) {
   const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
   const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
@@ -208,6 +214,14 @@ describe("useAgentPluginHotReload", () => {
               return React.createElement("div", null, "removed")
             },
           })
+          api.registerPanel({
+            id: "hidden-removed-pane",
+            label: "Hidden Removed Pane",
+            requiresCapabilities: ["missing-capability"],
+            component: function HiddenRemovedPane() {
+              return React.createElement("div", null, "hidden removed")
+            },
+          })
         }
       },
     })
@@ -225,6 +239,7 @@ describe("useAgentPluginHotReload", () => {
           <Listener />
           <PaneRenderer id="hot-pane" />
           <PanelIds />
+          <AllPanelIds />
         </RegistryProvider>
       )
     }
@@ -240,6 +255,8 @@ describe("useAgentPluginHotReload", () => {
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 1"))
     expect(screen.getByTestId("panel-ids")).toHaveTextContent("removed-pane")
+    expect(screen.getByTestId("panel-ids")).not.toHaveTextContent("hidden-removed-pane")
+    expect(screen.getByTestId("all-panel-ids")).toHaveTextContent("hidden-removed-pane")
 
     MockEventSource.instances[0].dispatch("boring.plugin.load", {
       type: "boring.plugin.load",
@@ -251,6 +268,7 @@ describe("useAgentPluginHotReload", () => {
     })
     await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 2"))
     expect(screen.getByTestId("panel-ids")).not.toHaveTextContent("removed-pane")
+    expect(screen.getByTestId("all-panel-ids")).not.toHaveTextContent("hidden-removed-pane")
   })
 
   test("ignores stale slow imports when a newer revision has already landed", async () => {
