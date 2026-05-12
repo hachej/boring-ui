@@ -20,6 +20,9 @@ jobs:
     env:
       DEPLOY_URL: ${{ inputs.deploy_url || github.event.client_payload.deploy_url }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+      AGENTMAIL_INBOX_ID: ${{ vars.AGENTMAIL_INBOX_ID }}
+      AGENTMAIL_EMAIL: ${{ vars.AGENTMAIL_EMAIL }}
       SMOKE_EMAIL_DOMAIN: ${{ vars.SMOKE_EMAIL_DOMAIN }}
       SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
     steps:
