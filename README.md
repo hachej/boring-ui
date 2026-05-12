@@ -90,7 +90,7 @@ The framework has a point of view. Your product still keeps its own.
 | Package | Role | Use it when |
 |---|---|---|
 | `@hachej/boring-core` | Auth, config, database, app shell, and backend foundation | You want a full app shell |
-| `@hachej/boring-agent` | Embeddable coding agent with `direct`, `local`, and `vercel-sandbox` runtime modes | You want agent execution and chat |
+| `@hachej/boring-agent` | Embeddable coding agent with a Pi-native harness and `direct`, `local`, and `vercel-sandbox` runtime modes | You want agent execution and chat |
 | `@hachej/boring-workspace` | Workspace UI, plugins, layouts, editors, and UI bridge | You want agent-controlled UI |
 | `@hachej/boring-ui-cli` | Zero-setup entrypoint for running a full agent workspace | You want to try Boring UI immediately |
 
@@ -114,6 +114,7 @@ Notes:
 
 - **Agent-controlled UI** — agents open panels and render outputs, not just text replies
 - **Visible work** — the result lives in the workspace, not only in chat
+- **Pi-native harness** — Boring UI uses Pi as its first harness and extends Pi through its plugin system
 - **Sandboxed execution** — run in `direct`, `local`, or `vercel-sandbox` modes
 - **Plugin extensibility** — add panels, catalogs, commands, bindings, and tools
 - **Core product scaffolding** — auth, workspaces, config, and app shell already wired
@@ -223,7 +224,7 @@ Docs: `packages/core/docs/CORE.md`
 
 ### `@hachej/boring-agent`
 
-Embeddable coding agent and standalone app.
+Embeddable coding agent and standalone app with a Pi-native harness.
 
 It ships three runtime modes behind one interface:
 
