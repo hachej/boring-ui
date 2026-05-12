@@ -382,6 +382,59 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("hot-pane")).toHaveTextContent("fresh listener")
   })
 
+  test("retries the same revision after a failed front import", async () => {
+    let failOnce = true
+    const importFront = async (): Promise<{ default?: BoringFrontFactory }> => {
+      if (failOnce) {
+        failOnce = false
+        return {}
+      }
+      return {
+        default(api) {
+          api.registerPanel({
+            id: "hot-pane",
+            label: "Hot Pane",
+            component: function HotPane() {
+              return React.createElement("div", { "data-testid": "hot-pane" }, "retry recovered")
+            },
+          })
+        },
+      }
+    }
+
+    function RetryHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<RetryHarness />)
+    const event = {
+      type: "boring.plugin.load" as const,
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/flaky.mjs",
+      boring: { front: "./front.mjs", panels: [{ id: "hot-pane", title: "Hot Pane" }] },
+    }
+    MockEventSource.instances[0].dispatch("boring.plugin.load", event)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", event)
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("retry recovered"))
+  })
+
   test("keeps the current pane live when generated plugin code has no valid default factory", async () => {
     const dir = await makeTempDir("boring-front-fail-keeps-old-")
     const frontPath = join(dir, "front.mjs")

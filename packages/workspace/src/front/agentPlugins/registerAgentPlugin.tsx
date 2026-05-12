@@ -244,6 +244,9 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           lastSeenRef.current.set(event.id, event.revision)
           window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
         } catch (error) {
+          if (latestRequestedRef.current.get(event.id) === event.revision) {
+            latestRequestedRef.current.delete(event.id)
+          }
           console.error(`[boring-ui] failed to load plugin ${event.id}; keeping previous version`, error)
         }
       })()
