@@ -135,11 +135,25 @@ function normalizeJsonSchemaRequired(params: Record<string, unknown>): Record<st
 
   const schemaRecord = schema as Record<string, unknown>
   const { required, ...schemaWithoutRequired } = schemaRecord
-  if (!Array.isArray(required) || !Array.isArray(schemaRecord.fields)) {
+  const requiredNames = new Set(Array.isArray(required) ? required.filter((value): value is string => typeof value === "string") : [])
+
+  if (!Array.isArray(schemaRecord.fields) && schemaRecord.properties && typeof schemaRecord.properties === "object" && !Array.isArray(schemaRecord.properties)) {
+    return {
+      ...withoutTopLevelRequired,
+      schema: {
+        wireVersion: schemaRecord.wireVersion === 1 ? 1 : 1,
+        submitLabel: typeof schemaRecord.submitLabel === "string" ? schemaRecord.submitLabel : undefined,
+        fields: Object.entries(schemaRecord.properties as Record<string, unknown>).map(([name, property]) =>
+          normalizeJsonSchemaProperty(name, property, requiredNames.has(name)),
+        ),
+      },
+    }
+  }
+
+  if (!Array.isArray(schemaRecord.fields)) {
     return schemaRecord === schema ? withoutTopLevelRequired : { ...withoutTopLevelRequired, schema: schemaWithoutRequired }
   }
 
-  const requiredNames = new Set(required.filter((value): value is string => typeof value === "string"))
   return {
     ...withoutTopLevelRequired,
     schema: {
@@ -147,12 +161,35 @@ function normalizeJsonSchemaRequired(params: Record<string, unknown>): Record<st
       fields: schemaRecord.fields.map((field) => {
         if (!field || typeof field !== "object" || Array.isArray(field)) return field
         const fieldRecord = field as Record<string, unknown>
+        const { required: fieldRequired, ...fieldWithoutRequired } = fieldRecord
+        const explicitRequired = typeof fieldRequired === "boolean" ? fieldRequired : undefined
         return typeof fieldRecord.name === "string" && requiredNames.has(fieldRecord.name)
-          ? { ...fieldRecord, required: fieldRecord.required ?? true }
-          : fieldRecord
+          ? { ...fieldWithoutRequired, required: explicitRequired ?? true }
+          : explicitRequired === undefined
+            ? fieldWithoutRequired
+            : { ...fieldWithoutRequired, required: explicitRequired }
       }),
     },
   }
+}
+
+function normalizeJsonSchemaProperty(name: string, property: unknown, required: boolean): Record<string, unknown> {
+  const source = property && typeof property === "object" && !Array.isArray(property) ? (property as Record<string, unknown>) : {}
+  const enumValues = Array.isArray(source.enum) ? source.enum.filter((value): value is string => typeof value === "string") : []
+  const label = typeof source.title === "string" ? source.title : toLabel(name)
+  const helpText = typeof source.description === "string" ? source.description : undefined
+  const base = { name, label, ...(required ? { required: true } : {}), ...(helpText ? { helpText } : {}) }
+  if (enumValues.length >= 2) {
+    return { ...base, type: "select", options: enumValues.map((value) => ({ value, label: toLabel(value) })) }
+  }
+  if (source.type === "boolean") return { ...base, type: "checkbox" }
+  if (source.type === "number" || source.type === "integer") return { ...base, type: "number", ...(source.type === "integer" ? { integer: true } : {}) }
+  return { ...base, type: source.format === "textarea" ? "textarea" : "text" }
+}
+
+function toLabel(value: string): string {
+  const spaced = value.replace(/[_-]+/g, " ").trim()
+  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : value
 }
 
 function isObviousBinaryChoice(params: Record<string, unknown>): boolean {
