@@ -49,6 +49,22 @@ async function loadSeriesColors(): Promise<string[]> {
   return parseSeriesColorsSource(source) ?? DEFAULT_SERIES_COLORS
 }
 
+const CATALOG_QUERY_TIMEOUT_MS = 5_000
+
+async function withCatalogTimeout<T>(work: Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('macro catalog query timed out')), CATALOG_QUERY_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
@@ -122,15 +138,15 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
       const queryStr = typeof q.q === 'string' ? q.q.trim() : ''
 
       try {
-        const result = queryStr
-          ? await svc.search(queryStr, { limit, offset, frequency, sourceType: source })
-          : await svc.catalog({
+        const result = await withCatalogTimeout(queryStr
+          ? svc.search(queryStr, { limit, offset, frequency, sourceType: source })
+          : svc.catalog({
               limit,
               offset,
               frequency,
               sourceType: source,
               includeTotal: true,
-            })
+            }))
         const items = result.results.map((r) => ({
           id: r.series_id,
           title: r.title,
@@ -155,9 +171,9 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
       const q = req.query as Record<string, string | undefined>
       if (svc === null) return { frequency: [], source: [] }
       try {
-        const facets = await svc.catalogFacets({
+        const facets = await withCatalogTimeout(svc.catalogFacets({
           sourceType: parseCommaSep(q.source),
-        })
+        }))
         return {
           frequency: facets.frequency,
           source: facets.source_type,
@@ -175,12 +191,12 @@ export async function registerMacroRoutes(app: FastifyInstance): Promise<void> {
       }
       if (svc === null) return { results: [], total: 0 }
       try {
-        return await svc.search(q.q, {
+        return await withCatalogTimeout(svc.search(q.q, {
           limit: clampInt(q.limit, 1, 1000, 100),
           offset: clampInt(q.offset, 0, Infinity, 0),
           sourceType: parseCommaSep(q.source_type),
           frequency: parseCommaSep(q.frequency),
-        })
+        }))
       } catch {
         return { results: [], total: 0 }
       }

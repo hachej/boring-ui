@@ -16,6 +16,7 @@ import type { SeriesPayload } from "./macroSeriesTypes"
 
 const SERIES_CACHE = new Map<string, SeriesPayload>()
 const SERIES_REQUESTS = new Map<string, Promise<SeriesPayload>>()
+const SERIES_FETCH_TIMEOUT_MS = 10_000
 
 export async function fetchMacroSeries(seriesId: string): Promise<SeriesPayload> {
   const cached = SERIES_CACHE.get(seriesId)
@@ -24,11 +25,19 @@ export async function fetchMacroSeries(seriesId: string): Promise<SeriesPayload>
   let pending = SERIES_REQUESTS.get(seriesId)
   if (!pending) {
     pending = (async () => {
-      const res = await fetch(`/api/macro/series/${encodeURIComponent(seriesId)}`)
-      if (!res.ok) throw new Error(`series ${seriesId}: ${res.status}`)
-      const data = (await res.json()) as SeriesPayload
-      SERIES_CACHE.set(seriesId, data)
-      return data
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), SERIES_FETCH_TIMEOUT_MS)
+      try {
+        const res = await fetch(`/api/macro/series/${encodeURIComponent(seriesId)}`, {
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`series ${seriesId}: ${res.status}`)
+        const data = (await res.json()) as SeriesPayload
+        SERIES_CACHE.set(seriesId, data)
+        return data
+      } finally {
+        clearTimeout(timeout)
+      }
     })().finally(() => {
       SERIES_REQUESTS.delete(seriesId)
     })

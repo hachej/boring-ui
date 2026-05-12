@@ -171,6 +171,7 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
   const [primary, setPrimary] = useState<SeriesPayload | null>(null)
   const [overlays, setOverlays] = useState<Array<{ id: string; payload: SeriesPayload }>>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabId>("chart")
   const [zoomRange, setZoomRange] = useState<{ start: string; end: string } | null>(null)
   const [zoomStart, setZoomStart] = useState<string | null>(null)
@@ -214,11 +215,15 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
     }
     let cancelled = false
     setLoading(true)
+    setError(null)
     fetchMacroSeries(seriesId)
       .then((p) => {
         if (!cancelled) setPrimary(p)
       })
-      .catch((err) => console.error("series fetch failed", err))
+      .catch((err) => {
+        console.error("series fetch failed", err)
+        if (!cancelled) setError(err instanceof Error ? err.message : "series fetch failed")
+      })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
@@ -389,6 +394,10 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
       <div className="min-h-0 flex-1">
         {loading && !primary ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>
+        ) : !primary ? (
+          <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
+            {error ? `Could not load ${seriesId ?? "series"}: ${error}` : "No series selected."}
+          </div>
         ) : activeTab === "chart" ? (
           <div className="flex h-full min-h-0 flex-col">
             <div className="h-1/2 min-h-[260px] px-2 pb-2 pt-1">
