@@ -402,122 +402,15 @@ State explicitly:
 - DeepAgent / AI SDK Agent uses `aiSdkOwnsHistory: true` and the normal AI SDK UI Message Stream Protocol.
 - Pi native follow-up is an optimization/adapter behavior, not a shared chat protocol.
 
-## Harness-specific tools and plugin UI
+## Related tool UI plan
 
-Tool activation should follow the same capability-scoped pattern as follow-ups.
-
-Current tool flow:
-
-- `AgentTool` is the shared server-side tool contract.
-- `registerAgentRoutes()` builds core tools from the runtime bundle:
-  - harness/shell tools (`bash`, `execute_isolated_code` when available),
-  - filesystem tools (`read`, `write`, `edit`, `find`, `grep`, `ls`),
-  - upload tools.
-- Hosts can add tools with `extraTools` / `getExtraTools`.
-- Plugins can add tools through the pi plugin loader.
-- `mergeTools()` combines standard, host, scoped, and plugin tools; later registrations can override by name.
-- The active harness receives the final tool list. The pi harness currently adapts that list into pi `customTools`.
-- The frontend catalog endpoint exposes active tool names/descriptions/schemas.
-- `ChatPanel` renders tool parts generically, with optional custom renderers via `toolRenderers`.
-
-This means a harness may activate additional harness-specific tools without making them core. Example:
-
-```txt
-pi runtime only:
-  pi.subagent / subagent
-
-deepagent runtime only:
-  deepagent.handoff / memory / etc.
-```
-
-Guidelines:
-
-1. Core tools should be the portable workspace/tooling baseline.
-2. Harness-specific tools should be contributed by the harness/runtime binding, not assumed by the shared frontend.
-3. Tool names should be stable and collision-aware. Prefer namespacing for harness-only semantics if the tool is not portable (`pi.subagent`, `deepagent.handoff`) unless compatibility with an existing tool name is intentional.
-4. Prompt snippets/system prompt entries must be derived from the active tool list only.
-5. The catalog must reflect the current runtime/session tool list; the UI must not assume every harness has every tool.
-
-Plugin-owned tool UI:
-
-- Today, plugins can bring server-side agent tools.
-- Today, the host/app shell can provide matching frontend renderers through `ChatPanel.toolRenderers`.
-- There is not yet a formal automatic plugin contract for bundling `server tool + frontend tool renderer` as one unit.
-
-Future plugin shape could be explicit app-shell composition, for example:
-
-```ts
-// server side
-export const tools = [myTool]
-
-// frontend side, bundled by the host app
-export const toolRenderers = {
-  my_tool: MyToolRenderer,
-}
-```
-
-Do not dynamically load arbitrary plugin frontend code from the server at runtime. Frontend renderers should be explicit imports/registrations in the host/app shell so bundling, trust, and versioning remain clear.
-
-### Pi subagent overlay example
-
-A pi subagent tool should reuse the original pi subagent package/tool for execution. Boring should not fork or reimplement subagent orchestration just to get UI.
-
-Preferred shape:
-
-```txt
-original pi subagent package
-  = execution behavior, prompts, tool semantics
-
-boring pi-subagent overlay plugin
-  = wraps/adapts the original tool
-  = adds Boring-specific structured UI details/events
-  = exports/registers a frontend tool renderer through app-shell composition
-```
-
-Server overlay responsibilities:
-
-- import or construct the original pi subagent tool;
-- expose it as an `AgentTool` under a stable tool name, e.g. `pi.subagent` or the upstream-compatible `subagent` if intentional;
-- preserve upstream behavior and prompt semantics;
-- enrich tool output with structured UI metadata when available.
-
-Example result shape:
-
-```ts
-return {
-  content: [{ type: 'text', text: finalSummary }],
-  details: {
-    uiKind: 'pi-subagent',
-    task,
-    agent,
-    status: 'done',
-    transcript,
-    steps,
-  },
-}
-```
-
-Frontend overlay responsibilities:
-
-```ts
-export const toolRenderers = {
-  'pi.subagent': PiSubagentToolRenderer,
-  subagent: PiSubagentToolRenderer, // optional upstream-compatible alias
-}
-```
-
-The renderer should consume structured `input`, `output`, and UI details/events from the tool part. If the upstream tool only returns plain text, the renderer can fall back to a basic summary UI. Rich display requires the overlay to surface structured details or streaming updates.
-
-Open implementation note: today tool parts reliably expose `input`/`output`; verify whether `ToolResult.details` is preserved into frontend tool parts. If not, add an explicit, typed tool UI metadata path before relying on rich renderers. Do not encode rich UI state only as untyped human text.
-
-For this follow-up capability plan, tool UI is adjacent but not required for implementation. The key invariant is that harness/plugin-specific tools and renderers must remain additive and capability/catalog-driven, not hardcoded into shared chat assumptions.
+Harness/plugin-specific tool activation and plugin-owned tool UI are adjacent but independently shippable. See [`harness-tool-ui-capabilities.md`](./harness-tool-ui-capabilities.md).
 
 ## Open questions
 
 1. Where should capabilities be resolved for frontend: session metadata, `/models`, `/capabilities`, or `createAgentApp` injected config? Current recommendation: session/runtime metadata or `/capabilities`, not a required `AgentHarness` field.
 2. Should a future release add frontend-owned queue/drain for non-native runtimes, or should unsupported runtimes always block send while busy?
 3. Can pi adapter emit fully transparent AI SDK multi-message streams without custom `data-pi-*` history projection?
-4. Should tool capability metadata include renderer hints (`rendererId`, display group, icon), or should renderers remain keyed only by tool name for now?
 
 ## Recommendation
 
