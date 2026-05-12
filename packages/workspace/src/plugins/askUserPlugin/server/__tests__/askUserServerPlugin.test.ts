@@ -41,6 +41,30 @@ describe("ask-user Pi extension", () => {
     await expect(tool.execute("call", { title: "Need input", schema }, AbortSignal.timeout(1))).resolves.toMatchObject({ isError: true })
   })
 
+  it("accepts JSON-schema style required arrays from model tool calls", async () => {
+    const { store, runtime } = await fixture()
+    const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))
+    const pendingResult = tool.execute("call", {
+      title: "Project details",
+      required: ["title"],
+      schema: {
+        wireVersion: 1,
+        required: ["project"],
+        fields: [
+          { type: "text", name: "project", label: "Project" },
+          { type: "checkbox", name: "confirmed", label: "Confirmed" },
+        ],
+      },
+    }, undefined)
+    let pending = await store.getPending("s1")
+    await vi.waitFor(async () => {
+      pending = await store.getPending("s1")
+      expect(pending?.schema?.fields[0]).toMatchObject({ name: "project", required: true })
+    })
+    await runtime.submitAnswer(pending!.questionId, "s1", { project: "demo", confirmed: true })
+    await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
+  })
+
   it("requires schema for non-obvious multi-field requests instead of making a fake A/B form", async () => {
     const { store, runtime } = await fixture()
     const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))

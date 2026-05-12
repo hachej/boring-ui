@@ -105,10 +105,11 @@ export function createAskUserPiExtensionFactory(options: AskUserPiExtensionOptio
 }
 
 function normalizeAskUserToolParams(params: Record<string, unknown>): Record<string, unknown> {
-  if (params.schema && typeof params.schema === "object" && "wireVersion" in params.schema) return params
-  if (!isObviousBinaryChoice(params)) return params
+  const normalized = normalizeJsonSchemaRequired(params)
+  if (normalized.schema && typeof normalized.schema === "object" && "wireVersion" in normalized.schema) return normalized
+  if (!isObviousBinaryChoice(normalized)) return normalized
   return {
-    ...params,
+    ...normalized,
     schema: {
       wireVersion: 1,
       fields: [
@@ -123,6 +124,33 @@ function normalizeAskUserToolParams(params: Record<string, unknown>): Record<str
           ],
         },
       ],
+    },
+  }
+}
+
+function normalizeJsonSchemaRequired(params: Record<string, unknown>): Record<string, unknown> {
+  const { required: topLevelRequired, ...withoutTopLevelRequired } = params
+  const schema = withoutTopLevelRequired.schema
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return withoutTopLevelRequired
+
+  const schemaRecord = schema as Record<string, unknown>
+  const { required, ...schemaWithoutRequired } = schemaRecord
+  if (!Array.isArray(required) || !Array.isArray(schemaRecord.fields)) {
+    return schemaRecord === schema ? withoutTopLevelRequired : { ...withoutTopLevelRequired, schema: schemaWithoutRequired }
+  }
+
+  const requiredNames = new Set(required.filter((value): value is string => typeof value === "string"))
+  return {
+    ...withoutTopLevelRequired,
+    schema: {
+      ...schemaWithoutRequired,
+      fields: schemaRecord.fields.map((field) => {
+        if (!field || typeof field !== "object" || Array.isArray(field)) return field
+        const fieldRecord = field as Record<string, unknown>
+        return typeof fieldRecord.name === "string" && requiredNames.has(fieldRecord.name)
+          ? { ...fieldRecord, required: fieldRecord.required ?? true }
+          : fieldRecord
+      }),
     },
   }
 }
