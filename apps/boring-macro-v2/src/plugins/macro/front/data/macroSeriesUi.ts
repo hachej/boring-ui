@@ -21,8 +21,8 @@ export const FREQ_LABELS: Record<string, string> = {
  * highest-contrast set; the chart canvas uses the full 10 for overlays.
  */
 export const SERIES_COLORS = [
-  "#FFA500", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444",
-  "#f59e0b", "#06b6d4", "#ec4899", "#84cc16", "#6366f1",
+  "#10b981", "#3b82f6", "#8b5cf6", "#ef4444", "#f59e0b",
+  "#06b6d4", "#ec4899", "#84cc16", "#6366f1", "#22c55e",
 ]
 
 interface FormatOptions {

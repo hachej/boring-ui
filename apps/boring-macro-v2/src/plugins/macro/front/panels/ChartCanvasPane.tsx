@@ -40,8 +40,8 @@ function normalizeChartParams(value: unknown): ChartParams {
 }
 
 const DEFAULT_SERIES_COLORS = [
-  "#FFA500", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444",
-  "#f59e0b", "#06b6d4", "#ec4899", "#84cc16", "#6366f1",
+  "#10b981", "#3b82f6", "#8b5cf6", "#ef4444", "#f59e0b",
+  "#06b6d4", "#ec4899", "#84cc16", "#6366f1", "#22c55e",
 ]
 
 function isHexColor(value: unknown): value is string {
@@ -58,7 +58,7 @@ async function loadLiveSeriesColors(): Promise<string[] | null> {
   return colors.length > 0 ? colors : null
 }
 
-type TabId = "chart" | "table" | "metadata" | "lineage"
+type TabId = "chart" | "metadata" | "lineage"
 
 const formatValue = (v: number | null | undefined): string =>
   formatSeriesValue(v, { scaledPrecision: 1 })
@@ -158,7 +158,6 @@ async function loadLineage(seriesId: string): Promise<LineagePayload | null> {
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "chart", label: "Chart" },
-  { id: "table", label: "Table" },
   { id: "metadata", label: "Metadata" },
   { id: "lineage", label: "Lineage" },
 ]
@@ -389,71 +388,74 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
         {loading && !primary ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>
         ) : activeTab === "chart" ? (
-          <div className="h-full px-2 pb-2 pt-1">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={visibleData}
-                onMouseDown={(e) => {
-                  const lbl = e?.activeLabel as string | undefined
-                  if (!lbl) return
-                  setZoomStart(lbl)
-                  setZoomEnd(lbl)
-                }}
-                onMouseMove={(e) => {
-                  if (!zoomStart) return
-                  const lbl = e?.activeLabel as string | undefined
-                  if (!lbl) return
-                  setZoomEnd(lbl)
-                }}
-                onMouseUp={() => {
-                  if (!zoomStart || !zoomEnd) {
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="h-1/2 min-h-[260px] px-2 pb-2 pt-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={visibleData}
+                  onMouseDown={(e) => {
+                    const lbl = e?.activeLabel as string | undefined
+                    if (!lbl) return
+                    setZoomStart(lbl)
+                    setZoomEnd(lbl)
+                  }}
+                  onMouseMove={(e) => {
+                    if (!zoomStart) return
+                    const lbl = e?.activeLabel as string | undefined
+                    if (!lbl) return
+                    setZoomEnd(lbl)
+                  }}
+                  onMouseUp={() => {
+                    if (!zoomStart || !zoomEnd) {
+                      setZoomStart(null)
+                      setZoomEnd(null)
+                      return
+                    }
+                    const start = zoomStart <= zoomEnd ? zoomStart : zoomEnd
+                    const end = zoomStart <= zoomEnd ? zoomEnd : zoomStart
+                    if (start !== end) setZoomRange({ start, end })
                     setZoomStart(null)
                     setZoomEnd(null)
-                    return
-                  }
-                  const start = zoomStart <= zoomEnd ? zoomStart : zoomEnd
-                  const end = zoomStart <= zoomEnd ? zoomEnd : zoomStart
-                  if (start !== end) setZoomRange({ start, end })
-                  setZoomStart(null)
-                  setZoomEnd(null)
-                }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                {axisStrategy.mode === "dual" ? (
-                  <>
-                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={formatValue} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={formatValue} />
-                  </>
-                ) : (
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={formatValue} />
-                )}
-                <Tooltip formatter={(v) => formatValue(Number(v))} />
-                {allIds.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
-                {allIds.map((id) => {
-                  const axisId = axisIdFor(id)
-                  const axisProps = axisId ? { yAxisId: axisId } : {}
-                  return (
-                    <Line
-                      key={id}
-                      type="monotone"
-                      dataKey={id}
-                      stroke={colorFor(id)}
-                      {...axisProps}
-                      dot={false}
-                      isAnimationActive={false}
-                      connectNulls
-                    />
-                  )
-                })}
-                {zoomStart && zoomEnd && zoomStart !== zoomEnd && (
-                  <ReferenceArea x1={zoomStart} x2={zoomEnd} fill="#ff660033" />
-                )}
-              </LineChart>
-            </ResponsiveContainer>
+                  }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  {axisStrategy.mode === "dual" ? (
+                    <>
+                      <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={formatValue} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={formatValue} />
+                    </>
+                  ) : (
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={formatValue} />
+                  )}
+                  <Tooltip formatter={(v) => formatValue(Number(v))} />
+                  {allIds.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+                  {allIds.map((id) => {
+                    const axisId = axisIdFor(id)
+                    const axisProps = axisId ? { yAxisId: axisId } : {}
+                    return (
+                      <Line
+                        key={id}
+                        type="monotone"
+                        dataKey={id}
+                        stroke={colorFor(id)}
+                        {...axisProps}
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls
+                      />
+                    )
+                  })}
+                  {zoomStart && zoomEnd && zoomStart !== zoomEnd && (
+                    <ReferenceArea x1={zoomStart} x2={zoomEnd} fill="#ff660033" />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="min-h-0 flex-1 border-t border-border">
+              <TableTab rows={visibleData} ids={allIds} colorFor={colorFor} />
+            </div>
           </div>
-        ) : activeTab === "table" ? (
-          <TableTab rows={visibleData} ids={allIds} colorFor={colorFor} />
         ) : activeTab === "metadata" ? (
           <MetadataTab primary={primary?.metadata ?? null} overlays={overlays} />
         ) : (
