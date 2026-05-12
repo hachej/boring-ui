@@ -6,6 +6,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useSyncExternalStore,
   type ReactNode,
 } from "react"
 import {
@@ -313,6 +314,7 @@ export function DockviewShell({
   watermarkComponent,
 }: DockviewShellProps) {
   const registry = useRegistry()
+  const registrySnapshot = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
   const hydrationComplete = useHydrationComplete()
   const apiRef = useRef<DockviewApi | null>(null)
   const pendingOnReady = useRef<DockviewReadyEvent | null>(null)
@@ -324,7 +326,7 @@ export function DockviewShell({
     return Object.fromEntries(
       Object.entries(all).filter(([id]) => allowedPanels.includes(id)),
     )
-  }, [registry, allowedPanels])
+  }, [registry, registrySnapshot, allowedPanels])
 
   const shellApi = useMemo(() => createShellApi(apiRef), [])
 

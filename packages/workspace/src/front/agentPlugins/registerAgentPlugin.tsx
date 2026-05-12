@@ -6,6 +6,7 @@ import {
 } from "../../shared/plugins/frontFactory"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
 import { useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
 
 interface BoringPackageField {
   front?: string
@@ -186,7 +187,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           if (captured) commitCapturedFrontFactory(event.id, captured, registries)
           else commitMetadataOnly(event.id, event.boring, registries)
           lastSeenRef.current.set(event.id, event.revision)
-          window.dispatchEvent(new CustomEvent("boring-ui:agent-plugins-reloaded", { detail: event }))
+          window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
         } catch (error) {
           console.error(`[boring-ui] failed to load plugin ${event.id}; keeping previous version`, error)
         }
@@ -202,7 +203,7 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
       latestRequestedRef.current.set(event.id, event.revision)
       unregisterPlugin(event.id, registries)
       lastSeenRef.current.set(event.id, event.revision)
-      window.dispatchEvent(new CustomEvent("boring-ui:agent-plugins-reloaded", { detail: event }))
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
     }
 
     const handleError = (raw: MessageEvent) => {

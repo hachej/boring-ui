@@ -1,4 +1,4 @@
-import { createElement, lazy, type ComponentType } from "react"
+import { createElement, lazy, useMemo, useSyncExternalStore, type ComponentType } from "react"
 import type { PanelConfig, PanelRegistration } from "./types"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 
@@ -60,19 +60,23 @@ export class PanelRegistry {
     // biome-ignore lint/suspicious/noExplicitAny: see comment above
     const result: Record<string, ComponentType<any>> = {}
     for (const panel of this.filteredPanels()) {
-      // biome-ignore lint/suspicious/noExplicitAny: see comment above
-      let Inner: ComponentType<any>
-      if (panel.lazy) {
-        Inner = lazy(
-          panel.component as () => Promise<{ default: ComponentType<unknown> }>,
-        )
-      } else {
-        Inner = panel.component as ComponentType<any>
-      }
-      const pluginId = panel.pluginId ?? panel.id
       const panelId = panel.id
+      const registry = this
       // biome-ignore lint/suspicious/noExplicitAny: dockview props passthrough
       result[panel.id] = function WrappedPanel(props: any) {
+        useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+        const current = registry.get(panelId)
+        // biome-ignore lint/suspicious/noExplicitAny: see comment above
+        const Inner: ComponentType<any> = useMemo(() => {
+          if (!current) return () => null
+          if (current.lazy) {
+            return lazy(
+              current.component as () => Promise<{ default: ComponentType<unknown> }>,
+            )
+          }
+          return current.component as ComponentType<any>
+        }, [current?.component, current?.lazy])
+        const pluginId = current?.pluginId ?? current?.id ?? panelId
         return createElement(
           PluginErrorBoundary,
           { pluginId, contributionKind: "panel" as const, contributionId: panelId, children: createElement(Inner, props) },

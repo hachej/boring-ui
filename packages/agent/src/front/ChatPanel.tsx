@@ -3,6 +3,7 @@ import { isToolUIPart, getToolName } from 'ai'
 import { motion } from 'motion/react'
 
 const INLINE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml', 'application/yaml']
+const AGENT_PLUGINS_RELOADED_EVENT = 'boring-ui:agent-plugins-reloaded'
 
 /** Best-effort fetch of a FileUIPart's bytes as UTF-8 text. */
 async function readFileAsText(file: FileUIPart): Promise<string | null> {
@@ -447,7 +448,7 @@ export function ChatPanel(props: ChatPanelProps) {
       }
       const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('boring-ui:agent-plugins-reloaded', { detail: payload }))
+        window.dispatchEvent(new CustomEvent(AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
       }
       return payload.reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
     } catch (err) {

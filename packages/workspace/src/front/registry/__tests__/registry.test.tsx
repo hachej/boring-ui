@@ -86,6 +86,17 @@ describe("PanelRegistry", () => {
     expect(comps.sync).not.toBe(DummyPanel)
     expect(comps.sync.name).toBe("WrappedPanel")
   })
+
+  it("rendered wrapped panels switch to replacement registrations", async () => {
+    const reg = new PanelRegistry()
+    reg.register("hot", { title: "Hot", component: DummyPanel })
+    const HotPanel = reg.getComponents().hot
+    render(<HotPanel />)
+    expect(screen.getByText("dummy")).toBeInTheDocument()
+
+    reg.register("hot", { title: "Hot", component: AnotherPanel })
+    expect(await screen.findByText("another")).toBeInTheDocument()
+  })
 })
 
 // --- Surface resolver routing ---

@@ -19,6 +19,8 @@ import type {
 import { fetchMacroSeries } from "../data/macroSeriesData"
 import { formatSeriesValue, openSeriesPane } from "../data/macroSeriesUi"
 
+const AGENT_PLUGINS_RELOADED_EVENT = "boring-ui:agent-plugins-reloaded"
+
 interface ChartParams {
   seriesId?: string
 }
@@ -189,10 +191,10 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
 
   useEffect(() => {
     refreshSeriesColors()
-    window.addEventListener("boring-ui:agent-plugins-reloaded", refreshSeriesColors)
+    window.addEventListener(AGENT_PLUGINS_RELOADED_EVENT, refreshSeriesColors)
     return () => {
       colorRefreshSeqRef.current += 1
-      window.removeEventListener("boring-ui:agent-plugins-reloaded", refreshSeriesColors)
+      window.removeEventListener(AGENT_PLUGINS_RELOADED_EVENT, refreshSeriesColors)
     }
   }, [refreshSeriesColors])
 
