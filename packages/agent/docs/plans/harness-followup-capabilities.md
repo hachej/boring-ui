@@ -259,6 +259,58 @@ export const toolRenderers = {
 
 Do not dynamically load arbitrary plugin frontend code from the server at runtime. Frontend renderers should be explicit imports/registrations in the host/app shell so bundling, trust, and versioning remain clear.
 
+### Pi subagent overlay example
+
+A pi subagent tool should reuse the original pi subagent package/tool for execution. Boring should not fork or reimplement subagent orchestration just to get UI.
+
+Preferred shape:
+
+```txt
+original pi subagent package
+  = execution behavior, prompts, tool semantics
+
+boring pi-subagent overlay plugin
+  = wraps/adapts the original tool
+  = adds Boring-specific structured UI details/events
+  = exports/registers a frontend tool renderer through app-shell composition
+```
+
+Server overlay responsibilities:
+
+- import or construct the original pi subagent tool;
+- expose it as an `AgentTool` under a stable tool name, e.g. `pi.subagent` or the upstream-compatible `subagent` if intentional;
+- preserve upstream behavior and prompt semantics;
+- enrich tool output with structured UI metadata when available.
+
+Example result shape:
+
+```ts
+return {
+  content: [{ type: 'text', text: finalSummary }],
+  details: {
+    uiKind: 'pi-subagent',
+    task,
+    agent,
+    status: 'done',
+    transcript,
+    steps,
+  },
+}
+```
+
+Frontend overlay responsibilities:
+
+```ts
+export const toolRenderers = {
+  'pi.subagent': PiSubagentToolRenderer,
+  subagent: PiSubagentToolRenderer, // optional upstream-compatible alias
+}
+```
+
+The renderer should consume structured `input`, `output`, and UI details/events from the tool part. If the upstream tool only returns plain text, the renderer can fall back to a basic summary UI. Rich display requires the overlay to surface structured details or streaming updates.
+
+Open implementation note: today tool parts reliably expose `input`/`output`; verify whether `ToolResult.details` is preserved into frontend tool parts. If not, add an explicit, typed tool UI metadata path before relying on rich renderers. Do not encode rich UI state only as untyped human text.
+
 For this follow-up capability plan, tool UI is adjacent but not required for implementation. The key invariant is that harness/plugin-specific tools and renderers must remain additive and capability/catalog-driven, not hardcoded into shared chat assumptions.
 
 ## Open questions
