@@ -7,6 +7,7 @@ const AGENT_SMOKE_MODEL_PROVIDER = process.env.SMOKE_AGENT_MODEL_PROVIDER ?? 'op
 const AGENT_SMOKE_MODEL_ID = process.env.SMOKE_AGENT_MODEL_ID ?? 'qwen/qwen3.6-plus'
 
 const VERIFY_LINK_PATTERN = /https?:\/\/[^\s"'<>]+\/auth\/verify-email\?[^\s"'<>]+/i
+const RESET_LINK_PATTERN = /https?:\/\/[^\s"'<>]+\/auth\/reset-password(?:\/[^\s"'<>?]+|\?)[^\s"'<>]*/i
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -42,6 +43,37 @@ interface RetrievedEmailResponse {
   subject?: string
   html?: string | null
   text?: string | null
+}
+
+interface AgentMailInbox {
+  inboxId: string
+  email: string
+}
+
+interface AgentMailInboxResponse {
+  inbox_id?: string
+  inboxId?: string
+  email?: string
+}
+
+interface AgentMailMessageSummary {
+  message_id?: string
+  messageId?: string
+  to?: string[]
+  subject?: string | null
+  timestamp?: string
+  created_at?: string
+}
+
+interface AgentMailListMessagesResponse {
+  messages?: AgentMailMessageSummary[]
+}
+
+interface AgentMailMessageResponse extends AgentMailMessageSummary {
+  html?: string | null
+  text?: string | null
+  extracted_html?: string | null
+  extracted_text?: string | null
 }
 
 function log(level: 'info' | 'warn' | 'error', event: string, fields: LogFields = {}): void {
@@ -129,14 +161,22 @@ function collectStrings(value: unknown, acc: string[] = []): string[] {
   return acc
 }
 
-function extractVerifyLink(value: unknown): string | null {
+function extractLink(value: unknown, pattern: RegExp): string | null {
   const strings = collectStrings(value)
   for (const chunk of strings) {
     const normalized = chunk.replaceAll('&amp;', '&')
-    const match = normalized.match(VERIFY_LINK_PATTERN)
+    const match = normalized.match(pattern)
     if (match?.[0]) return match[0]
   }
   return null
+}
+
+function extractVerifyLink(value: unknown): string | null {
+  return extractLink(value, VERIFY_LINK_PATTERN)
+}
+
+function extractResetLink(value: unknown): string | null {
+  return extractLink(value, RESET_LINK_PATTERN)
 }
 
 async function requestText(
@@ -285,10 +325,11 @@ async function retrieveEmail(apiKey: string, id: string): Promise<RetrievedEmail
   return (await res.json()) as RetrievedEmailResponse
 }
 
-async function findVerifyLinkViaResend(
+async function findLinkViaResend(
   apiKey: string,
   recipient: string,
   notBeforeMs: number,
+  extract: (value: unknown) => string | null,
 ): Promise<string | null> {
   const deadline = Date.now() + RESEND_POLL_TIMEOUT_MS
 
@@ -302,9 +343,9 @@ async function findVerifyLinkViaResend(
 
     for (const candidate of candidates) {
       const details = await retrieveEmail(apiKey, candidate.id)
-      const verifyLink = extractVerifyLink(details)
-      if (verifyLink) {
-        return verifyLink
+      const link = extract(details)
+      if (link) {
+        return link
       }
     }
 
@@ -314,16 +355,109 @@ async function findVerifyLinkViaResend(
   return null
 }
 
-async function stepSignup(baseUrl: string): Promise<{ email: string; cookie: string | null; verifyLink: string }> {
+async function findVerifyLinkViaResend(
+  apiKey: string,
+  recipient: string,
+  notBeforeMs: number,
+): Promise<string | null> {
+  return findLinkViaResend(apiKey, recipient, notBeforeMs, extractVerifyLink)
+}
+
+async function findResetLinkViaResend(
+  apiKey: string,
+  recipient: string,
+  notBeforeMs: number,
+): Promise<string | null> {
+  return findLinkViaResend(apiKey, recipient, notBeforeMs, extractResetLink)
+}
+
+async function listAgentMailInboxes(apiKey: string): Promise<AgentMailInbox[]> {
+  const res = await fetch('https://api.agentmail.to/v0/inboxes?limit=20', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`list AgentMail inboxes failed (${res.status}): ${text}`)
+  }
+  const payload = (await res.json()) as { inboxes?: AgentMailInboxResponse[] }
+  return (payload.inboxes ?? [])
+    .map((inbox) => ({ inboxId: inbox.inbox_id ?? inbox.inboxId ?? '', email: inbox.email ?? '' }))
+    .filter((inbox) => inbox.inboxId && inbox.email)
+}
+
+async function createAgentMailInbox(apiKey: string, timestamp: number): Promise<AgentMailInbox> {
+  const body = {
+    client_id: process.env.AGENTMAIL_CLIENT_ID ?? `boring-smoke-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+    display_name: 'Boring Smoke Test',
+    ...(process.env.AGENTMAIL_USERNAME ? { username: process.env.AGENTMAIL_USERNAME } : {}),
+    ...(process.env.AGENTMAIL_DOMAIN ? { domain: process.env.AGENTMAIL_DOMAIN } : {}),
+  }
+
+  const res = await fetch('https://api.agentmail.to/v0/inboxes', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    if (res.status === 403 && /LimitExceededError|Inbox limit exceeded/i.test(text)) {
+      const existing = await listAgentMailInboxes(apiKey)
+      if (existing[0]) {
+        log('warn', 'smoke.agentmail.inbox.reusing_existing', {
+          inboxId: existing[0].inboxId,
+          reason: 'create limit exceeded',
+        })
+        return existing[0]
+      }
+    }
+    throw new Error(`create AgentMail inbox failed (${res.status}): ${text}`)
+  }
+
+  const payload = (await res.json()) as AgentMailInboxResponse
+  const inboxId = payload.inbox_id ?? payload.inboxId
+  if (!inboxId || !payload.email) {
+    throw new Error(`create AgentMail inbox returned incomplete payload: ${JSON.stringify(payload)}`)
+  }
+  return { inboxId, email: payload.email }
+}
+
+async function prepareAgentMailInbox(timestamp: number): Promise<AgentMailInbox | null> {
+  const apiKey = process.env.AGENTMAIL_API_KEY
+  if (!apiKey) return null
+
+  const configuredInboxId = process.env.AGENTMAIL_INBOX_ID
+  const configuredEmail = process.env.AGENTMAIL_EMAIL ?? process.env.SMOKE_EMAIL
+  if (configuredInboxId && configuredEmail) {
+    return { inboxId: configuredInboxId, email: configuredEmail }
+  }
+
+  const inbox = await createAgentMailInbox(apiKey, timestamp)
+  log('info', 'smoke.agentmail.inbox.created', { inboxId: inbox.inboxId, email: inbox.email })
+  return inbox
+}
+
+async function stepSignup(baseUrl: string): Promise<{ email: string; cookie: string | null; verifyLink: string; agentMail: AgentMailInbox | null }> {
   const step = 'signup'
   const timestamp = Date.now()
+  const agentMail = !process.env.SMOKE_EMAIL && process.env.AGENTMAIL_API_KEY
+    ? await prepareAgentMailInbox(timestamp)
+    : (process.env.AGENTMAIL_API_KEY && process.env.AGENTMAIL_INBOX_ID
+        ? await prepareAgentMailInbox(timestamp)
+        : null)
   const emailDomain = process.env.SMOKE_EMAIL_DOMAIN ?? 'example.com'
-  const email = process.env.SMOKE_EMAIL ?? `smoke-${timestamp}@${emailDomain}`
+  const email = process.env.SMOKE_EMAIL ?? agentMail?.email ?? `smoke-${timestamp}@${emailDomain}`
 
-  if (!process.env.SMOKE_EMAIL && !process.env.SMOKE_EMAIL_DOMAIN) {
+  if (!process.env.SMOKE_EMAIL && !process.env.SMOKE_EMAIL_DOMAIN && !agentMail) {
     log('warn', 'smoke.signup.email_domain.default', {
       defaultDomain: emailDomain,
-      detail: 'set SMOKE_EMAIL or SMOKE_EMAIL_DOMAIN for deterministic email delivery',
+      detail: 'set SMOKE_EMAIL, SMOKE_EMAIL_DOMAIN, or AGENTMAIL_API_KEY for deterministic email delivery',
     })
   }
 
@@ -369,7 +503,89 @@ async function stepSignup(baseUrl: string): Promise<{ email: string; cookie: str
     verifyLinkHost: verifyLink ? new URL(verifyLink).host : null,
   })
 
-  return { email, cookie, verifyLink }
+  return { email, cookie, verifyLink, agentMail }
+}
+
+async function listAgentMailMessages(apiKey: string, inboxId: string): Promise<AgentMailMessageSummary[]> {
+  const res = await fetch(`https://api.agentmail.to/v0/inboxes/${encodeURIComponent(inboxId)}/messages`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`list AgentMail messages failed (${res.status}): ${body}`)
+  }
+  const payload = (await res.json()) as AgentMailListMessagesResponse
+  return payload.messages ?? []
+}
+
+async function retrieveAgentMailMessage(
+  apiKey: string,
+  inboxId: string,
+  messageId: string,
+): Promise<AgentMailMessageResponse> {
+  const res = await fetch(
+    `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    },
+  )
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`retrieve AgentMail message failed (${res.status}): ${body}`)
+  }
+  return (await res.json()) as AgentMailMessageResponse
+}
+
+async function findResetLinkViaAgentMail(
+  apiKey: string,
+  inbox: AgentMailInbox,
+  notBeforeMs: number,
+): Promise<string | null> {
+  const deadline = Date.now() + RESEND_POLL_TIMEOUT_MS
+
+  while (Date.now() < deadline) {
+    const messages = await listAgentMailMessages(apiKey, inbox.inboxId)
+    const candidates = messages.filter((message) => {
+      const createdAt = Date.parse(message.timestamp ?? message.created_at ?? '')
+      const toList = message.to ?? []
+      return createdAt >= notBeforeMs && toList.some((to) => to.toLowerCase() === inbox.email.toLowerCase())
+    })
+
+    for (const candidate of candidates) {
+      const messageId = candidate.message_id ?? candidate.messageId
+      if (!messageId) continue
+      const details = await retrieveAgentMailMessage(apiKey, inbox.inboxId, messageId)
+      const resetLink = extractResetLink(details)
+      if (resetLink) return resetLink
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, RESEND_POLL_INTERVAL_MS))
+  }
+
+  return null
+}
+
+async function stepVerifyEmail(verifyLink: string): Promise<void> {
+  const step = 'verify-email'
+  if (!verifyLink) {
+    log('warn', 'smoke.step.skipped', { step, reason: 'no verify link available' })
+    return
+  }
+
+  log('info', 'smoke.step.start', { step, host: new URL(verifyLink).host })
+  const { status, text } = await requestText(
+    verifyLink,
+    { method: 'GET', redirect: 'follow' },
+    step,
+  )
+  if (status < 200 || status >= 400) {
+    fail(step, `expected verify link to return <400, got ${status} (${text.slice(0, 500)})`)
+  }
+  log('info', 'smoke.step.ok', { step, status })
 }
 
 async function stepCapabilities(baseUrl: string, cookie: string | null): Promise<SmokeResult> {
@@ -436,6 +652,158 @@ async function stepSignin(
 
   const summary = attempts.map((a) => `${a.path}=${a.status}`).join(', ')
   fail('signin', `all signin paths failed (${summary}); payload=${JSON.stringify(attempts)}`)
+}
+
+async function requestPasswordReset(baseUrl: string, email: string): Promise<unknown> {
+  const step = 'password-reset.request'
+  const paths = (process.env.SMOKE_FORGOT_PASSWORD_PATHS ?? '/auth/forget-password,/auth/request-password-reset,/api/auth/forget-password,/api/auth/request-password-reset')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  const attempts: Array<{ path: string; status: number; body: unknown }> = []
+
+  for (const path of paths) {
+    log('info', 'smoke.password_reset.request.attempt', { step, path, email })
+    const { status, json } = await requestJson(
+      `${baseUrl}${path}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: baseUrl },
+        body: JSON.stringify({ email, redirectTo: '/auth/reset-password' }),
+      },
+      step,
+    )
+    attempts.push({ path, status, body: json })
+    if (status >= 200 && status < 300) return json
+  }
+
+  const summary = attempts.map((a) => `${a.path}=${a.status}`).join(', ')
+  fail(step, `all forgot-password paths failed (${summary}); payload=${JSON.stringify(attempts)}`)
+}
+
+async function resetPasswordWithToken(
+  baseUrl: string,
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  const step = 'password-reset.consume'
+  const paths = (process.env.SMOKE_RESET_PASSWORD_PATHS ?? '/auth/reset-password,/api/auth/reset-password')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  const attempts: Array<{ path: string; status: number; body: unknown }> = []
+
+  for (const path of paths) {
+    log('info', 'smoke.password_reset.consume.attempt', { step, path })
+    const { status, json } = await requestJson(
+      `${baseUrl}${path}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: baseUrl },
+        body: JSON.stringify({ token, newPassword }),
+      },
+      step,
+    )
+    attempts.push({ path, status, body: json })
+    if (status >= 200 && status < 300) {
+      log('info', 'smoke.step.ok', { step, path, status })
+      return
+    }
+  }
+
+  const summary = attempts.map((a) => `${a.path}=${a.status}`).join(', ')
+  fail(step, `all reset-password paths failed (${summary}); payload=${JSON.stringify(attempts)}`)
+}
+
+async function trySigninOnce(
+  baseUrl: string,
+  email: string,
+  password: string,
+): Promise<{ ok: boolean; status: number; cookie: string | null; body: unknown; path: string }> {
+  const path = (process.env.SMOKE_SIGNIN_PATHS ?? '/auth/sign-in/email,/api/auth/sign-in/email')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)[0] ?? '/auth/sign-in/email'
+  const { status, json, headers } = await requestJson(
+    `${baseUrl}${path}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: baseUrl },
+      body: JSON.stringify({ email, password }),
+    },
+    'signin.probe',
+  )
+  return { ok: status >= 200 && status < 300, status, cookie: parseSetCookie(headers), body: json, path }
+}
+
+async function stepPasswordReset(
+  baseUrl: string,
+  email: string,
+  oldPassword: string,
+  agentMail: AgentMailInbox | null,
+): Promise<{ cookie: string; newPassword: string }> {
+  const step = 'password-reset'
+  if (process.env.SMOKE_SKIP_PASSWORD_RESET === '1') {
+    log('warn', 'smoke.password_reset.skipped', { step, reason: 'SMOKE_SKIP_PASSWORD_RESET=1' })
+    const signedIn = await stepSignin(baseUrl, email, oldPassword)
+    return { cookie: signedIn.cookie, newPassword: oldPassword }
+  }
+
+  log('info', 'smoke.step.start', { step, email, agentMail: Boolean(agentMail), resend: Boolean(process.env.RESEND_API_KEY) })
+  const startedAt = Date.now()
+  const payload = await requestPasswordReset(baseUrl, email)
+  let resetLink = extractResetLink(payload)
+  let resendLink: string | null = null
+  let agentMailLink: string | null = null
+
+  const resendApiKey = process.env.RESEND_API_KEY
+  if (resendApiKey) {
+    log('info', 'smoke.password_reset.email_poll.start', { provider: 'resend', timeoutMs: RESEND_POLL_TIMEOUT_MS })
+    resendLink = await findResetLinkViaResend(resendApiKey, email, startedAt - 1_000)
+    resetLink = resetLink ?? resendLink
+  }
+
+  const agentMailApiKey = process.env.AGENTMAIL_API_KEY
+  if (agentMailApiKey && agentMail) {
+    log('info', 'smoke.password_reset.email_poll.start', { provider: 'agentmail', inboxId: agentMail.inboxId, timeoutMs: RESEND_POLL_TIMEOUT_MS })
+    agentMailLink = await findResetLinkViaAgentMail(agentMailApiKey, agentMail, startedAt - 1_000)
+    resetLink = agentMailLink ?? resetLink
+  }
+
+  if (resendApiKey && !resendLink) {
+    fail(step, 'reset email was not found in Resend sent mail')
+  }
+  if (agentMailApiKey && agentMail && !agentMailLink) {
+    fail(step, 'reset email was not received in AgentMail inbox')
+  }
+  if (!resetLink) {
+    fail(step, 'forgot-password succeeded but no reset-password link was found (set RESEND_API_KEY and/or AGENTMAIL_API_KEY, or SMOKE_SKIP_PASSWORD_RESET=1)')
+  }
+
+  const resetUrl = new URL(resetLink)
+  const pathToken = resetUrl.pathname.match(/\/auth\/reset-password\/([^/]+)$/)?.[1]
+  const token = resetUrl.searchParams.get('token') ?? (pathToken ? decodeURIComponent(pathToken) : null)
+  if (!token) fail(step, `reset link did not include token: ${resetLink}`)
+
+  const newPassword = process.env.SMOKE_RESET_PASSWORD ?? `${oldPassword}!Reset1`
+  await resetPasswordWithToken(baseUrl, token, newPassword)
+
+  const signedIn = await stepSignin(baseUrl, email, newPassword)
+  if (process.env.SMOKE_ASSERT_OLD_PASSWORD_REJECTED !== '0' && oldPassword !== newPassword) {
+    const oldSignin = await trySigninOnce(baseUrl, email, oldPassword)
+    if (oldSignin.ok) {
+      fail(step, `old password still signs in after reset via ${oldSignin.path}`)
+    }
+    log('info', 'smoke.password_reset.old_password_rejected', { status: oldSignin.status, path: oldSignin.path })
+  }
+
+  log('info', 'smoke.step.ok', {
+    step,
+    email,
+    viaResend: Boolean(resendLink),
+    viaAgentMail: Boolean(agentMailLink),
+  })
+  return { cookie: signedIn.cookie, newPassword }
 }
 
 async function stepCreateWorkspace(
@@ -772,6 +1140,7 @@ async function main(): Promise<void> {
 
   await stepHealth(baseUrl)
   const signup = await stepSignup(baseUrl)
+  await stepVerifyEmail(signup.verifyLink)
   await stepCapabilities(baseUrl, signup.cookie)
 
   // Auth flow continuation: signup already authenticates the user (signup
@@ -793,17 +1162,13 @@ async function main(): Promise<void> {
   await stepListWorkspaces(baseUrl, workspaceCookie, workspace.id)
   await stepAgentSmoke(baseUrl, workspaceCookie, workspace.id)
 
-  if (signup.cookie) {
-    // We had an authenticated session from signup — double-check the
-    // /auth/sign-in/email path also works, since deployments often disable
-    // signup-auto-login but keep signin enabled.
-    const signedIn = await stepSignin(baseUrl, signup.email, password)
-    await stepListWorkspaces(baseUrl, signedIn.cookie, workspace.id)
-    await stepSignout(baseUrl, signedIn.cookie)
-    if (signedIn.cookie !== workspaceCookie) {
-      await stepSignout(baseUrl, workspaceCookie)
-    }
-  } else {
+  // Exercise the full forgot/reset-password email loop with the same real
+  // mailbox used for signup. When RESEND_API_KEY and AGENTMAIL_API_KEY are
+  // both present this proves both provider-side send and mailbox delivery.
+  const reset = await stepPasswordReset(baseUrl, signup.email, password, signup.agentMail)
+  await stepListWorkspaces(baseUrl, reset.cookie, workspace.id)
+  await stepSignout(baseUrl, reset.cookie)
+  if (reset.cookie !== workspaceCookie) {
     await stepSignout(baseUrl, workspaceCookie)
   }
 

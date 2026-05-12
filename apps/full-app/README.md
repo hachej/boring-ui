@@ -70,17 +70,25 @@ DEPLOY_URL=https://<your-app>.fly.dev \
 pnpm --filter full-app smoke:post-deploy
 ```
 
-Recommended env for reliable email verification polling:
+Recommended env for reliable email verification + password reset polling:
 
 ```bash
-SMOKE_EMAIL_DOMAIN=<resend-verified-domain>   # or set SMOKE_EMAIL explicitly
-RESEND_API_KEY=<resend-api-key>
+RESEND_API_KEY=<resend-api-key>      # proves the real Resend send happened
+AGENTMAIL_API_KEY=<agentmail-key>    # creates/uses a real @agentmail.to inbox and proves delivery
+# Optional when reusing an inbox instead of creating one per run:
+AGENTMAIL_INBOX_ID=<inbox-id>
+AGENTMAIL_EMAIL=<inbox-address>
+# Or bypass AgentMail and target a known verified recipient/domain:
+SMOKE_EMAIL_DOMAIN=<resend-verified-domain>   # ignored when AGENTMAIL_API_KEY is set and SMOKE_EMAIL is unset
+SMOKE_EMAIL=<recipient@example.com>            # explicit recipient override
 ```
 
 Checks:
 - `GET /health` returns `200` + `{ ok: true }` within 10s
 - signup endpoint succeeds (`/api/auth/sign-up/email` or `/auth/sign-up/email`)
-- verification link is found (signup response payload or Resend inbox polling when `RESEND_API_KEY` is set)
+- verification link is found (signup response payload or Resend polling when `RESEND_API_KEY` is set)
+- forgot-password sends a real reset email; when both `RESEND_API_KEY` and `AGENTMAIL_API_KEY` are set, smoke requires both Resend sent-mail visibility and AgentMail inbox receipt
+- reset token is consumed, new password signs in, and old password is rejected
 - `GET /api/v1/capabilities` returns `200` and includes `agent` key
 
 This is also wired into GitHub Actions via `.github/workflows/post-deploy-smoke.yml` (workflow_dispatch or repository_dispatch).
