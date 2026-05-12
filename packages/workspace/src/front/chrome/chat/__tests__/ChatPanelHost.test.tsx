@@ -8,7 +8,7 @@ import type { SurfaceShellApi } from "../../artifact-surface/SurfaceShell"
 import { ChatPanelHost } from "../ChatPanelHost"
 import type { WorkspaceChatPanelProps } from "../types"
 
-function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerStop }: WorkspaceChatPanelProps) {
+function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerStop, onComposerBlockerAction }: WorkspaceChatPanelProps) {
   return (
     <div>
       <div data-testid="blocker-count">{composerBlockers?.length ?? 0}</div>
@@ -33,6 +33,9 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
       <button type="button" onClick={() => onComposerStop?.()}>
         stop composer
       </button>
+      <button type="button" onClick={() => composerBlockers?.[0] && onComposerBlockerAction?.(composerBlockers[0], "open")}>
+        open blocker
+      </button>
     </div>
   )
 }
@@ -40,7 +43,7 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
 function Blocker({ sessionId = "s1" }: { sessionId?: string }) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   useEffect(() => {
-    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked" })
+    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1" })
     return () => removeBlocker(`test:${sessionId}`)
   }, [addBlocker, removeBlocker, sessionId])
   return null
@@ -108,6 +111,25 @@ describe("ChatPanelHost", () => {
     } finally {
       window.removeEventListener("boring:workspace-composer-stop", observed)
     }
+  })
+
+  it("opens blocker surfaces through the workbench", () => {
+    const openSurface = vi.fn()
+    const surface: SurfaceShellApi = {
+      openFile: vi.fn(),
+      openSurface,
+      openPanel: vi.fn(),
+      closeWorkbenchLeftPane: vi.fn(),
+      getSnapshot: () => ({ openTabs: [], activeTab: null }),
+    }
+    render(
+      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <Blocker sessionId="s1" />
+        <ChatPanelHost sessionId="s1" getSurface={() => surface} isWorkbenchOpen={() => true} openWorkbench={vi.fn()} />
+      </WorkspaceProvider>,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "open blocker" }))
+    expect(openSurface).toHaveBeenCalledWith(expect.objectContaining({ kind: "questions", target: "q1" }))
   })
 
   it("composes workspace artifact opening with caller onOpenArtifact", () => {

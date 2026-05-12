@@ -64,10 +64,22 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
     const pending = runtime.getPending()
     const blockerId = pending ? `${ASK_USER_PLUGIN_ID}:${pending.sessionId}:${pending.questionId}` : null
     if (pending?.status === "ready" && blockerId) {
-      attention.addBlocker({ id: blockerId, reason: "waiting_for_user_input", surfaceKind: ASK_USER_SURFACE_KIND, label: "Answer the question in Questions to continue", sessionId: pending.sessionId })
+      attention.addBlocker({ id: blockerId, reason: "waiting_for_user_input", surfaceKind: ASK_USER_SURFACE_KIND, target: pending.questionId, label: "Answer the question in Questions to continue", sessionId: pending.sessionId })
     }
     return () => { if (blockerId) attention.removeBlocker(blockerId) }
   }, [attention, runtime, pendingSnapshot])
+
+  useEffect(() => {
+    const onStop = (event: Event) => {
+      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
+      const pending = runtime.getPending()
+      if (!pending || (sessionId && sessionId !== pending.sessionId)) return
+      runtime.setPending(null)
+      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending).catch(() => undefined)
+    }
+    window.addEventListener("boring:workspace-composer-stop", onStop)
+    return () => window.removeEventListener("boring:workspace-composer-stop", onStop)
+  }, [runtime])
 
   useEffect(() => {
     let stopped = false

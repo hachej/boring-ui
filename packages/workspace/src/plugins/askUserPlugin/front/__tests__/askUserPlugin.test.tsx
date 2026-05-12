@@ -42,7 +42,10 @@ describe("askUserPlugin front shell", () => {
 
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
     expect(screen.queryByText(/^Questions$/)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole("radio", { name: "A" }))
+    const choice = screen.getByRole("radio", { name: "A" })
+    fireEvent.click(choice)
+    fireEvent.change(choice, { target: { checked: true } })
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit" })).not.toBeDisabled())
     fireEvent.click(screen.getByRole("button", { name: "Submit" }))
 
     await waitFor(() => expect(close).toHaveBeenCalled())
@@ -67,6 +70,20 @@ describe("askUserPlugin front shell", () => {
 
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/questions/commands") && String(init?.body).includes("questions.opened"))).toBe(true))
+  })
+
+  it("composer stop cancels pending question even when pane is closed", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json({ [ASK_USER_UI_STATE_SLOTS.PENDING]: { question } })
+      if (String(url).endsWith("/api/v1/questions/commands")) return Response.json({ ok: true, status: "cancelled" })
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    render(<Provider apiBaseUrl=""><div>child</div></Provider>)
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/v1/ui/state"))).toBe(true))
+    window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: "default" } }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/questions/commands") && String(init?.body).includes("questions.cancel"))).toBe(true))
   })
 
   it("registers surface resolver and no-topbar panel output", () => {

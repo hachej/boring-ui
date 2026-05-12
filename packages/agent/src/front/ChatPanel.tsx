@@ -273,6 +273,7 @@ export type ComposerBlocker = {
   id: string
   reason: string
   surfaceKind?: string
+  target?: string
   label?: string
   sessionId?: string
 }
@@ -344,6 +345,7 @@ export interface ChatPanelProps {
   composerBlockers?: ComposerBlocker[]
   /** Called when the user presses Stop in the composer. */
   onComposerStop?: () => void
+  onComposerBlockerAction?: (blocker: ComposerBlocker, action: 'open' | 'cancel') => void
   className?: string
   /** When provided, files are uploaded immediately on attach and sent as stable
    * server URLs rather than base64 data URLs. Supply via useFileUpload() from
@@ -407,6 +409,7 @@ export function ChatPanel(props: ChatPanelProps) {
     debug = false,
     composerBlockers = [],
     onComposerStop,
+    onComposerBlockerAction,
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
   const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
@@ -455,7 +458,8 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
   const composerBlocked = composerBlockers.length > 0
-  const composerBlockerLabel = composerBlockers[0]?.label ?? 'Complete the pending workspace action to continue.'
+  const primaryComposerBlocker = composerBlockers[0]
+  const composerBlockerLabel = primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
 
   const registry = useMemo(
     () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
@@ -1221,7 +1225,16 @@ export function ChatPanel(props: ChatPanelProps) {
               "px-3 py-2 text-xs text-foreground",
             )}
           >
-            {composerBlockerLabel}
+            <span>{composerBlockerLabel}</span>
+            {primaryComposerBlocker ? (
+              <button
+                type="button"
+                className="ml-2 rounded border border-primary/30 px-2 py-0.5 text-[11px] font-medium hover:bg-primary/10"
+                onClick={() => onComposerBlockerAction?.(primaryComposerBlocker, 'open')}
+              >
+                Open Questions
+              </button>
+            ) : null}
           </div>
         )}
         {attachmentNotice && (
