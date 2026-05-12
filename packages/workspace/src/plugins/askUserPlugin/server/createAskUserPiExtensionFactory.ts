@@ -105,7 +105,7 @@ export function createAskUserPiExtensionFactory(options: AskUserPiExtensionOptio
 }
 
 function normalizeAskUserToolParams(params: Record<string, unknown>): Record<string, unknown> {
-  const normalized = normalizeJsonSchemaRequired(params)
+  const normalized = stripRequiredArraysDeep(normalizeJsonSchemaRequired(params)) as Record<string, unknown>
   if (normalized.schema && typeof normalized.schema === "object" && "wireVersion" in normalized.schema) return normalized
   if (!isObviousBinaryChoice(normalized)) return normalized
   return {
@@ -129,12 +129,13 @@ function normalizeAskUserToolParams(params: Record<string, unknown>): Record<str
 }
 
 function normalizeJsonSchemaRequired(params: Record<string, unknown>): Record<string, unknown> {
-  const { required: topLevelRequired, ...withoutTopLevelRequired } = params
+  const withoutTopLevelRequired = stripObjectKey(params, "required")
   const schema = withoutTopLevelRequired.schema
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return withoutTopLevelRequired
 
   const schemaRecord = schema as Record<string, unknown>
-  const { required, ...schemaWithoutRequired } = schemaRecord
+  const required = schemaRecord.required
+  const schemaWithoutRequired = stripObjectKey(schemaRecord, "required")
   const requiredNames = new Set(Array.isArray(required) ? required.filter((value): value is string => typeof value === "string") : [])
 
   if (!Array.isArray(schemaRecord.fields) && schemaRecord.properties && typeof schemaRecord.properties === "object" && !Array.isArray(schemaRecord.properties)) {
@@ -161,7 +162,8 @@ function normalizeJsonSchemaRequired(params: Record<string, unknown>): Record<st
       fields: schemaRecord.fields.map((field) => {
         if (!field || typeof field !== "object" || Array.isArray(field)) return field
         const fieldRecord = field as Record<string, unknown>
-        const { required: fieldRequired, ...fieldWithoutRequired } = fieldRecord
+        const fieldRequired = fieldRecord.required
+        const fieldWithoutRequired = typeof fieldRequired === "boolean" ? fieldRecord : stripObjectKey(fieldRecord, "required")
         const explicitRequired = typeof fieldRequired === "boolean" ? fieldRequired : undefined
         return typeof fieldRecord.name === "string" && requiredNames.has(fieldRecord.name)
           ? { ...fieldWithoutRequired, required: explicitRequired ?? true }
@@ -171,6 +173,26 @@ function normalizeJsonSchemaRequired(params: Record<string, unknown>): Record<st
       }),
     },
   }
+}
+
+function stripRequiredArraysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripRequiredArraysDeep)
+  if (!value || typeof value !== "object") return value
+  const source = value as Record<string, unknown>
+  const next: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(source)) {
+    if (key === "required" && typeof child !== "boolean") continue
+    next[key] = stripRequiredArraysDeep(child)
+  }
+  return next
+}
+
+function stripObjectKey(source: Record<string, unknown>, key: string): Record<string, unknown> {
+  const next: Record<string, unknown> = {}
+  for (const [entryKey, value] of Object.entries(source)) {
+    if (entryKey !== key) next[entryKey] = value
+  }
+  return next
 }
 
 function normalizeJsonSchemaProperty(name: string, property: unknown, required: boolean): Record<string, unknown> {
