@@ -4,39 +4,39 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-**Build agent-native software where chat triggers actions and the real work shows up in the workspace.**
+**Turn chat into work.**
 
-Boring UI turns agent skills into an inspectable product surface: panels, files, tools, outputs, and workflow state living together in one app.
+Boring UI turns agent skills into a real app: panels, files, tools, outputs, and state in one workspace.
 
 <img width="980" alt="Boring UI banner" src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" />
 
 </div>
 
-MIT-licensed monorepo for building production-grade agent, workspace, and app-shell packages.
+MIT-licensed monorepo for building agent, workspace, and app-shell packages.
 
 ## In one line
 
-**Chat in → actions happen → workspace artifacts appear**
+**Chat in → work appears**
 
 ## Why it exists
 
-Most AI products stop at chat: you ask, the model replies, and the real work still happens somewhere else.
+Most AI products stop at chat: you ask, it replies, and the work happens somewhere else.
 
-Boring UI is built on a different idea:
+Boring UI starts from a different idea:
 
 > **Chat should be the control layer — not the destination.**
 
-The agent should not just answer. It should open panels, inspect files, run tools, render outputs, and leave behind work the user can inspect, manipulate, and continue from.
+The agent should not just answer. It should open panels, inspect files, run tools, render outputs, and leave behind work the user can inspect and keep going with.
 
 That is the core model:
 
 - **chat** drives intent
 - **commands** trigger actions
-- **workspace artifacts** hold the work
+- **artifacts** hold the work
 
 ## What are workspace artifacts?
 
-Artifacts are the visible outputs the agent creates or manipulates while working.
+Artifacts are the visible outputs the agent creates or changes while working.
 
 Depending on your product, an artifact might be:
 
@@ -47,7 +47,7 @@ Depending on your product, an artifact might be:
 - a log stream or command output
 - a custom panel for a domain object in your app
 
-The point is simple: the agent should not only talk about work. It should surface the work itself.
+The point is simple: the agent should not only talk about work. It should show the work itself.
 
 ## What you can build
 
@@ -69,13 +69,13 @@ Boring UI has a strong default point of view:
 - agents open UI, not just text
 - auth, config, and workspaces are part of the default shape
 
-This is not a blank-canvas UI kit. It is a framework for building agent-native software.
+This is not a blank-canvas UI kit. It is a framework for agent-first software.
 
 ### Extensible by design
 
-The core is deliberately expandable.
+The core is built to expand.
 
-You customize the system through plugins and composition points:
+You customize it through plugins and composition points:
 
 - add panels for your domain
 - add catalogs, commands, and bindings
@@ -83,23 +83,20 @@ You customize the system through plugins and composition points:
 - add surface resolvers that map actions to UI
 - swap runtime modes depending on deployment model
 
-The framework has a point of view. Your product still gets to have its own.
+The framework has a point of view. Your product still keeps its own.
 
 ## How the stack is packaged
 
-Boring UI is the monorepo that provides that stack.
-
-It is composed from:
-
-- a canonical backend and auth layer from `@hachej/boring-core`
-- an embeddable coding agent from `@hachej/boring-agent`
-- a customizable workspace shell from `@hachej/boring-workspace`
-
-Together they let you build apps where agents can inspect files, run tools, create outputs, and render those outputs directly in the interface.
+| Package | Role | Use it when |
+|---|---|---|
+| `@hachej/boring-core` | Auth, config, database, app shell, and backend foundation | You want a full app shell |
+| `@hachej/boring-agent` | Embeddable coding agent with `direct`, `local`, and `vercel-sandbox` runtime modes | You want agent execution and chat |
+| `@hachej/boring-workspace` | Workspace UI, plugins, layouts, editors, and UI bridge | You want agent-controlled UI |
+| `@hachej/boring-ui-cli` | Zero-setup entrypoint for running a full agent workspace | You want to try Boring UI immediately |
 
 ## Package composition
 
-Architectural composition (not literal package-manager dependencies):
+Architecture only, not literal package dependencies:
 
 ```text
 apps/*  ->  @hachej/boring-workspace  ->  @hachej/boring-core
@@ -116,7 +113,7 @@ Notes:
 ## Why Boring UI
 
 - **Agent-controlled UI** — agents open panels and render outputs, not just text replies
-- **Visible work products** — the result of the agent's work lives in the workspace, not only in chat
+- **Visible work** — the result lives in the workspace, not only in chat
 - **Sandboxed execution** — run in `direct`, `local`, or `vercel-sandbox` modes
 - **Plugin extensibility** — add panels, catalogs, commands, bindings, and tools
 - **Core product scaffolding** — auth, workspaces, config, and app shell already wired
@@ -140,7 +137,7 @@ Notes:
 npx @hachej/boring-ui-cli
 ```
 
-This starts a full agent workspace against your current directory: chat, panels, file tree, and command palette.
+This starts a full agent workspace in your current directory: chat, panels, file tree, and command palette.
 
 No clone. No database. No app setup.
 
@@ -150,7 +147,7 @@ You can also provide an API key directly:
 ANTHROPIC_API_KEY=sk-ant-... npx @hachej/boring-ui-cli
 ```
 
-See `packages/cli/README.md` for CLI usage details.
+See `packages/cli/README.md` for CLI details.
 
 ### Run the full reference app
 
@@ -175,7 +172,7 @@ pnpm --filter full-app dev
 
 Frontend runs at `http://localhost:5173`.
 
-See `apps/full-app/README.md` for full setup and deployment details.
+See `apps/full-app/README.md` for full setup and deploy steps.
 
 ### Verify the repo
 
@@ -185,7 +182,7 @@ pnpm typecheck
 pnpm test
 ```
 
-For the full CI-equivalent check:
+For the full CI check:
 
 ```bash
 pnpm ci
