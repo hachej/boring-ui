@@ -7,6 +7,7 @@ export {
   ThemeProvider,
   useTheme,
   useWorkspaceBridge,
+  useWorkspaceAttention,
   useWorkspaceContext,
   useWorkspaceContextOptional,
   useWorkspaceChatPanel,
@@ -15,6 +16,8 @@ export type {
   WorkspaceProviderProps,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
+  WorkspaceAttentionBlocker,
+  WorkspaceAttentionContextValue,
   WorkspaceContextValue,
 } from "./WorkspaceProvider"
 export type {
