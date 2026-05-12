@@ -98,12 +98,20 @@ describe("ask-user UI open ack", () => {
     await app.close()
   })
 
-  it("cancels with ui_unavailable when opened ack times out", async () => {
+  it("keeps pending question alive when opened ack times out", async () => {
     const store = await makeStore()
     const ui = bridge()
     const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 1 })
-    await expect(runtime.ask({ sessionId: "s1", title: "T", schema })).resolves.toMatchObject({ status: "cancelled", reason: "ui_unavailable" })
-    await expect(store.getPending("s1")).resolves.toBeNull()
+    const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
+    let question = await store.getPending("s1")
+    await vi.waitFor(async () => {
+      question = await store.getPending("s1")
+      expect(question).not.toBeNull()
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await expect(store.getPending("s1")).resolves.not.toBeNull()
+    await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
+    await expect(pending).resolves.toMatchObject({ status: "answered" })
   })
 
   it("returns abort without waiting for opened ack timeout", async () => {
@@ -117,12 +125,18 @@ describe("ask-user UI open ack", () => {
     await expect(pending).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
   })
 
-  it("cancels with ui_unavailable when openSurface dispatch fails", async () => {
+  it("keeps pending question alive when openSurface dispatch fails", async () => {
     const store = await makeStore()
     const ui = bridge()
     ui.postCommand = async () => { throw new Error("disconnected") }
     const runtime = new AskUserRuntime({ store, uiBridge: ui })
-    await expect(runtime.ask({ sessionId: "s1", title: "T", schema })).resolves.toMatchObject({ status: "cancelled", reason: "ui_unavailable" })
-    await expect(store.getPending("s1")).resolves.toBeNull()
+    const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
+    let question = await store.getPending("s1")
+    await vi.waitFor(async () => {
+      question = await store.getPending("s1")
+      expect(question).not.toBeNull()
+    })
+    await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
+    await expect(pending).resolves.toMatchObject({ status: "answered" })
   })
 })

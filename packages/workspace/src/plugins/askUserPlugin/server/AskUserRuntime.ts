@@ -221,21 +221,10 @@ export class AskUserRuntime {
       this.openWaiters.get(question.questionId)?.cancel()
       this.openWaiters.delete(question.questionId)
     }
-    return this.cancelUiUnavailable(question)
-  }
-
-  private async cancelUiUnavailable(question: AskUserQuestion): Promise<AskUserToolResult | null> {
-    try {
-      await this.store.cancel(question.questionId)
-      await this.store.appendTranscriptEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable", at: this.isoNow() })
-      this.coordinator.resolveCancelled(question.questionId, "ui_unavailable")
-      this.emitEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable" })
-      return { status: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason: "ui_unavailable" }
-    } catch {
-      // A submit/cancel may have won the race while the open acknowledgement timed out.
-      // Let the already-registered waiter deliver that terminal result instead.
-      return null
-    }
+    // Opening the pane is best-effort. The pending question is already persisted and
+    // published via UI state, so do not convert a missed ack into a terminal tool
+    // cancellation. This lets a stale/disconnected browser refresh and still answer.
+    return null
   }
 
   private waitForOpened(questionId: string): Promise<boolean> {

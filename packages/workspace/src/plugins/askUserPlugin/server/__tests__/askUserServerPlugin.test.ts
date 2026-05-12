@@ -65,6 +65,34 @@ describe("ask-user Pi extension", () => {
     await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
   })
 
+  it("accepts JSON-schema properties from model tool calls", async () => {
+    const { store, runtime } = await fixture()
+    const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))
+    const pendingResult = tool.execute("call", {
+      title: "Project details",
+      schema: {
+        type: "object",
+        required: ["project", "priority"],
+        properties: {
+          project: { type: "string", title: "Project" },
+          priority: { type: "string", enum: ["low", "medium", "high"] },
+          confirmed: { type: "boolean", title: "Confirmed" },
+        },
+      },
+    }, undefined)
+    let pending = await store.getPending("s1")
+    await vi.waitFor(async () => {
+      pending = await store.getPending("s1")
+      expect(pending?.schema?.fields).toEqual([
+        expect.objectContaining({ name: "project", type: "text", required: true }),
+        expect.objectContaining({ name: "priority", type: "select", required: true }),
+        expect.objectContaining({ name: "confirmed", type: "checkbox" }),
+      ])
+    })
+    await runtime.submitAnswer(pending!.questionId, "s1", { project: "demo", priority: "medium", confirmed: true })
+    await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
+  })
+
   it("requires schema for non-obvious multi-field requests instead of making a fake A/B form", async () => {
     const { store, runtime } = await fixture()
     const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))
