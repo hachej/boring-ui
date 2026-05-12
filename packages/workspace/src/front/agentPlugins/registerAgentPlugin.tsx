@@ -154,6 +154,55 @@ function unregisterPlugin(pluginId: string, registries: ReturnType<typeof getReg
   registries.surfaceResolvers.unregisterByPluginId(pluginId)
 }
 
+function capturedIds(pluginId: string, captured: CapturedBoringFrontRegistrations): {
+  panels: Set<string>
+  commands: Set<string>
+  surfaceResolvers: Set<string>
+} {
+  return {
+    panels: new Set([...captured.panels, ...captured.leftTabs].map((entry) => entry.id)),
+    commands: new Set(captured.panelCommands.map((entry) => entry.id)),
+    surfaceResolvers: new Set(
+      captured.surfaceResolvers.map((entry) => entry.id ?? `${pluginId}:${entry.kind}`),
+    ),
+  }
+}
+
+function metadataIds(pluginId: string, boring: BoringPackageField): {
+  panels: Set<string>
+  commands: Set<string>
+  surfaceResolvers: Set<string>
+} {
+  return {
+    panels: new Set([
+      ...(boring.panels ?? []).map((entry) => entry.id),
+      ...(boring.leftTabs ?? []).map((entry) => entry.id),
+    ]),
+    commands: new Set((boring.commands ?? []).map((entry) => entry.id)),
+    surfaceResolvers: new Set(
+      (boring.surfaceResolvers ?? []).map((entry) => entry.id ?? `${pluginId}:${entry.surfaceKind}`),
+    ),
+  }
+}
+
+function pruneMissingPluginContributions(
+  pluginId: string,
+  keep: ReturnType<typeof capturedIds>,
+  registries: ReturnType<typeof getRegistries>,
+): void {
+  for (const panel of registries.panels.list()) {
+    if (panel.pluginId === pluginId && !keep.panels.has(panel.id)) registries.panels.unregister(panel.id)
+  }
+  for (const command of registries.commands.getCommands()) {
+    if (command.pluginId === pluginId && !keep.commands.has(command.id)) registries.commands.unregisterCommand(command.id)
+  }
+  for (const resolver of registries.surfaceResolvers.list()) {
+    if (resolver.pluginId === pluginId && !keep.surfaceResolvers.has(resolver.id)) {
+      registries.surfaceResolvers.unregister(resolver.id)
+    }
+  }
+}
+
 export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): void {
   const panels = useRegistry()
   const commands = useCommandRegistry()
@@ -183,9 +232,15 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
           if (disposed) return
           if (latestRequestedRef.current.get(event.id) !== event.revision) return
           if (event.revision <= (lastSeenRef.current.get(event.id) ?? 0)) return
-          unregisterPlugin(event.id, registries)
+          // Replace contributions in-place. A transient unregister makes
+          // already-mounted panes briefly resolve to null; DockView may then
+          // discard the tab before the replacement registration arrives.
+          // Registering over the same ids is atomic for mounted wrappers and
+          // preserves old state until the new component is ready.
+          const keep = captured ? capturedIds(event.id, captured) : metadataIds(event.id, event.boring)
           if (captured) commitCapturedFrontFactory(event.id, captured, registries)
           else commitMetadataOnly(event.id, event.boring, registries)
+          pruneMissingPluginContributions(event.id, keep, registries)
           lastSeenRef.current.set(event.id, event.revision)
           window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
         } catch (error) {

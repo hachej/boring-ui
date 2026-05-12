@@ -106,19 +106,45 @@ export function makeMacroClientPlugin(
 
 export const macroPlugin = makeMacroClientPlugin()
 
+const isViteDev = (): boolean =>
+  Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV)
+
+// The reload loader imports this front entry as `index.tsx?v=<revision>`, but
+// Vite does not automatically cache-bust static child imports like `./panels`.
+// Give dynamically registered panel importers their own per-front-evaluation
+// token so every boring reload can replace mounted lazy panes with fresh code.
+const frontFactoryPanelToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+const frontFactoryCacheBust = (): string => `t=${frontFactoryPanelToken}`
+
+async function loadHotChartCanvasPane() {
+  if (isViteDev()) {
+    return await import(/* @vite-ignore */ `./panels/ChartCanvasPane.tsx?${frontFactoryCacheBust()}`)
+      .then((m) => ({ default: m.ChartCanvasPane }))
+  }
+  return await import("./panels/ChartCanvasPane").then((m) => ({ default: m.ChartCanvasPane }))
+}
+
+async function loadHotDeckPane() {
+  if (isViteDev()) {
+    return await import(/* @vite-ignore */ `./panels/DeckPane.tsx?${frontFactoryCacheBust()}`)
+      .then((m) => ({ default: m.DeckPane }))
+  }
+  return await import("./panels/DeckPane").then((m) => ({ default: m.DeckPane }))
+}
+
 const macroFront: BoringFrontFactory = (api) => {
   api.registerPanel({
     id: MACRO_CHART_PANEL_ID,
     label: "Chart",
-    component: chartCanvasPanel.component,
-    lazy: chartCanvasPanel.lazy,
+    component: loadHotChartCanvasPane,
+    lazy: true,
     chromeless: chartCanvasPanel.chromeless,
   })
   api.registerPanel({
     id: MACRO_DECK_PANEL_ID,
     label: "Deck",
-    component: deckPanel.component,
-    lazy: deckPanel.lazy,
+    component: loadHotDeckPane,
+    lazy: true,
     chromeless: deckPanel.chromeless,
   })
   for (const output of createExplorerOutputs(createMacroSeriesExplorerOptions((row) => openSeriesPane(row.id)))) {

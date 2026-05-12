@@ -8,7 +8,7 @@ const isViteDev = (): boolean =>
 // an importer more than once while Suspense retries; using Date.now() per call
 // creates a fresh module identity every retry and can leave the pane stuck in
 // Loading. Reloaded front factories get a fresh module evaluation/revision.
-const panelImportToken = Date.now()
+const panelImportToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const cacheBust = (): string => `t=${panelImportToken}`
 
 async function loadChartCanvasPane() {

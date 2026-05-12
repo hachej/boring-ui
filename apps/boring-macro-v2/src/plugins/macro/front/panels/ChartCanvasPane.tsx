@@ -211,9 +211,12 @@ export function ChartCanvasPane({ params: initial, api }: ChartCanvasPaneProps) 
   useEffect(() => {
     if (!seriesId) {
       setPrimary(null)
+      setError(null)
+      setLoading(false)
       return
     }
     let cancelled = false
+    setPrimary(null)
     setLoading(true)
     setError(null)
     fetchMacroSeries(seriesId)

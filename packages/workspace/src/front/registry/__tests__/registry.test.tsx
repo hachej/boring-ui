@@ -83,7 +83,7 @@ describe("PanelRegistry", () => {
     reg.register("lazy", { title: "Lazy", component: importer, lazy: true })
     const comps = reg.getComponents()
     expect(comps.lazy).toBeDefined()
-    expect(comps.lazy.name).toBe("WrappedPanel")
+    expect(comps.lazy.name).toMatch(/^WrappedPanel/)
   })
 
   it("getComponents wraps sync components in an error boundary", () => {
@@ -92,7 +92,7 @@ describe("PanelRegistry", () => {
     const comps = reg.getComponents()
     expect(comps.sync).toBeDefined()
     expect(comps.sync).not.toBe(DummyPanel)
-    expect(comps.sync.name).toBe("WrappedPanel")
+    expect(comps.sync.name).toMatch(/^WrappedPanel/)
   })
 
   it("rendered wrapped panels switch to replacement registrations", async () => {
@@ -107,6 +107,40 @@ describe("PanelRegistry", () => {
     })
     expect(await screen.findByText("another")).toBeInTheDocument()
     expect(screen.queryByText("dummy")).not.toBeInTheDocument()
+  })
+
+  it("keeps lazy component identity stable across initial Suspense retries", async () => {
+    const reg = new PanelRegistry()
+    let resolveImport: (value: { default: typeof LazyPanelOne }) => void = () => {}
+    const importer = vi.fn(
+      () => new Promise<{ default: typeof LazyPanelOne }>((resolve) => {
+        resolveImport = resolve
+      }),
+    )
+    reg.register("stable-lazy", {
+      title: "Stable Lazy",
+      component: importer,
+      lazy: true,
+    })
+    const StableLazyPanel = reg.getComponents()["stable-lazy"]
+    const view = render(
+      <Suspense fallback={<div>loading stable lazy</div>}>
+        <StableLazyPanel tick={0} />
+      </Suspense>,
+    )
+    expect(screen.getByText("Loading…")).toBeInTheDocument()
+
+    view.rerender(
+      <Suspense fallback={<div>loading stable lazy</div>}>
+        <StableLazyPanel tick={1} />
+      </Suspense>,
+    )
+    expect(importer).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveImport({ default: LazyPanelOne })
+    })
+    expect(await screen.findByText("lazy-one")).toBeInTheDocument()
   })
 
   it("rendered lazy wrapped panels switch to replacement lazy importers", async () => {

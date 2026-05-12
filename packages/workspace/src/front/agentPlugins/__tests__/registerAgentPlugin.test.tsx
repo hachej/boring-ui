@@ -118,6 +118,12 @@ function PaneRenderer({ id }: { id: string }) {
   return <Component />
 }
 
+function PanelIds() {
+  const registry = useRegistry()
+  const panels = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+  return <div data-testid="panel-ids">{panels.map((panel) => panel.id).join(",")}</div>
+}
+
 function Harness({ apiBaseUrl = "" }: { apiBaseUrl?: string }) {
   const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
   const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
@@ -182,6 +188,69 @@ describe("useAgentPluginHotReload", () => {
     })
 
     expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
+  })
+
+  test("prunes contributions removed by a successful replacement without blanking kept panes", async () => {
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactory }> => ({
+      default(api) {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, `version ${revision}`)
+          },
+        })
+        if (revision === 1) {
+          api.registerPanel({
+            id: "removed-pane",
+            label: "Removed Pane",
+            component: function RemovedPane() {
+              return React.createElement("div", null, "removed")
+            },
+          })
+        }
+      },
+    })
+
+    function PruneHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+          <PanelIds />
+        </RegistryProvider>
+      )
+    }
+
+    render(<PruneHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs", panels: [{ id: "hot-pane", title: "Hot Pane" }, { id: "removed-pane", title: "Removed Pane" }] },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 1"))
+    expect(screen.getByTestId("panel-ids")).toHaveTextContent("removed-pane")
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs", panels: [{ id: "hot-pane", title: "Hot Pane" }] },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 2"))
+    expect(screen.getByTestId("panel-ids")).not.toHaveTextContent("removed-pane")
   })
 
   test("ignores stale slow imports when a newer revision has already landed", async () => {
