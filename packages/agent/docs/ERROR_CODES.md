@@ -45,6 +45,7 @@ All API failures must use the response envelope:
 | `SESSION_LOCKED` | Session currently locked by concurrent writer | 409 | retry | warn | stable (public API) |
 | `STREAM_BUFFER_EVICTED` | Resume cursor evicted from in-memory stream buffer | 410 | retry | warn | stable (public API) |
 | `CURSOR_OUT_OF_RANGE` | Resume cursor invalid/out of range | 416 | user-fix | warn | stable (public API) |
+| `FOLLOWUP_UNSUPPORTED` | Runtime does not support native mid-stream follow-up | 409 | user-fix | warn | stable (public API) |
 | `BRIDGE_COMMAND_INVALID` | UI bridge command kind/params invalid | 400 | user-fix | warn | stable (public API) |
 | `TOOL_NOT_FOUND` | Requested tool name not present in catalog | 404 | user-fix | warn | stable (public API) |
 | `TOOL_INVALID_INPUT` | Tool input fails schema validation | 400 | user-fix | warn | stable (public API) |

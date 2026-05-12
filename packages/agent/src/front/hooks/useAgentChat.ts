@@ -1,7 +1,14 @@
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { AgentRuntimeCapabilities } from '../../shared/capabilities'
+import { DEFAULT_AGENT_RUNTIME_CAPABILITIES } from '../../shared/capabilities'
 import type { SendMessageInput } from '../../shared/harness'
+
+function normalizeCapabilities(payload: unknown): AgentRuntimeCapabilities | null {
+  const protocol = (payload as { protocol?: unknown } | null | undefined)?.protocol
+  return protocol === 'ai-sdk' || protocol === 'pi-native' ? { protocol } : null
+}
 
 export type UseAgentChatOptions = Pick<
   SendMessageInput,
@@ -10,6 +17,7 @@ export type UseAgentChatOptions = Pick<
   onData?: (part: unknown) => void
   requestHeaders?: Record<string, string>
   persistMessages?: boolean
+  onCapabilities?: (capabilities: AgentRuntimeCapabilities) => void
 }
 
 export function useAgentChat(opts: UseAgentChatOptions) {
@@ -57,6 +65,26 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
+    if (!optsRef.current.onCapabilities) return
+    let aborted = false
+    const fetchOpts = optsRef.current.requestHeaders
+      ? { headers: optsRef.current.requestHeaders }
+      : undefined
+    const request = fetchOpts ? fetch('/api/v1/agent/capabilities', fetchOpts) : fetch('/api/v1/agent/capabilities')
+    request
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload: unknown) => {
+        if (aborted) return
+        optsRef.current.onCapabilities?.(normalizeCapabilities(payload) ?? DEFAULT_AGENT_RUNTIME_CAPABILITIES)
+      })
+      .catch(() => {
+        if (aborted) return
+        optsRef.current.onCapabilities?.(DEFAULT_AGENT_RUNTIME_CAPABILITIES)
+      })
+    return () => { aborted = true }
+  }, [sessionId, opts.requestHeaders])
+
+  useEffect(() => {
     if (!sessionId || !cacheKey) return
     let aborted = false
     setHydrated(false)
@@ -79,8 +107,10 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     const request = fetchOpts ? fetch(messagesUrl, fetchOpts) : fetch(messagesUrl)
     request
       .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { messages?: UIMessage[] } | null) => {
+      .then((payload: { messages?: UIMessage[]; capabilities?: unknown } | null) => {
         if (aborted) return
+        const capabilities = normalizeCapabilities(payload?.capabilities)
+        if (capabilities) optsRef.current.onCapabilities?.(capabilities)
         const serverMessages = payload?.messages
         if (Array.isArray(serverMessages) && serverMessages.length > 0) {
           setMessages(serverMessages)
@@ -149,17 +179,22 @@ export function useAgentChat(opts: UseAgentChatOptions) {
     )
   }, [status, setMessages])
 
-  // Push a server-side snapshot after each completed turn. Fires only when
-  // status transitions from streaming → ready, not on every message change,
-  // so we don't spam the server during hydration or between turns.
+  // Push a server-side snapshot after each completed turn. Usually fires only
+  // when status transitions from streaming → ready. If persistence was held
+  // while runtime capabilities loaded, also save once when it becomes enabled
+  // so a very fast first AI-SDK turn is not lost.
   const prevStatusRef = useRef<typeof status>(status)
+  const prevPersistMessagesRef = useRef(opts.persistMessages)
   useEffect(() => {
     const prev = prevStatusRef.current
+    const prevPersistMessages = prevPersistMessagesRef.current
     prevStatusRef.current = status
+    prevPersistMessagesRef.current = opts.persistMessages
     if (opts.persistMessages === false) return
     if (status !== 'ready') return
-    // Only save when we're settling from an active streaming turn.
-    if (prev !== 'streaming' && prev !== 'submitted') return
+    const settledActiveTurn = prev === 'streaming' || prev === 'submitted'
+    const persistenceJustEnabled = prevPersistMessages === false
+    if (!settledActiveTurn && !persistenceJustEnabled) return
     if (!sessionId || messages.length === 0) return
     const url = `/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`
     // Strip data URLs from attachment parts before persisting — they can be

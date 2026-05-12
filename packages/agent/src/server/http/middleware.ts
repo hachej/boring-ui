@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ERROR_CODE_FOLLOWUP_UNSUPPORTED } from '../../shared/error-codes'
 
 export const ERROR_CODE_AUTH_REQUIRED = 'auth_required'
 export const ERROR_CODE_AUTH_INVALID = 'auth_invalid'
@@ -9,6 +10,7 @@ export const ERROR_CODE_PATH_REJECTED = 'path_rejected'
 export const ERROR_CODE_NOT_FOUND = 'not_found'
 export const ERROR_CODE_ALREADY_EXISTS = 'already_exists'
 export const ERROR_CODE_CONFLICT = 'conflict'
+export { ERROR_CODE_FOLLOWUP_UNSUPPORTED }
 export const ERROR_CODE_RANGE_NOT_SATISFIABLE = 'range_not_satisfiable'
 export const ERROR_CODE_INTERNAL = 'internal'
 export const ERROR_CODE_NOT_IMPLEMENTED = 'not_implemented'

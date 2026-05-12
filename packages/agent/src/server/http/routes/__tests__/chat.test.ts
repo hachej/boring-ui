@@ -8,6 +8,7 @@ import {
   ERROR_CODE_VALIDATION_ERROR,
   ERROR_CODE_INTERNAL,
   ERROR_CODE_RANGE_NOT_SATISFIABLE,
+  ERROR_CODE_FOLLOWUP_UNSUPPORTED,
 } from '../../middleware'
 
 function createMockHarness(
@@ -53,6 +54,27 @@ const validBody = {
   sessionId: 'sess-1',
   message: 'hello',
 }
+
+describe('GET /api/v1/agent/capabilities', () => {
+  test('reports ai-sdk by default and pi-native only when explicitly configured', async () => {
+    const aiSdkHarness = createMockHarness()
+    aiSdkHarness.followUp = vi.fn().mockResolvedValue(undefined)
+    const aiSdkApp = await buildApp({ harness: aiSdkHarness })
+    const aiSdk = await aiSdkApp.inject({ method: 'GET', url: '/api/v1/agent/capabilities' })
+    expect(aiSdk.statusCode).toBe(200)
+    expect(aiSdk.json()).toEqual({ protocol: 'ai-sdk' })
+    await aiSdkApp.close()
+
+    const piHarness = createMockHarness()
+    piHarness.followUp = vi.fn().mockResolvedValue(undefined)
+    ;(piHarness as any).capabilities = { protocol: 'pi-native' }
+    const piApp = await buildApp({ harness: piHarness })
+    const pi = await piApp.inject({ method: 'GET', url: '/api/v1/agent/capabilities' })
+    expect(pi.statusCode).toBe(200)
+    expect(pi.json()).toEqual({ protocol: 'pi-native' })
+    await piApp.close()
+  })
+})
 
 describe('POST /api/v1/agent/chat', () => {
   test('streams SSE response with correct headers', async () => {
@@ -508,10 +530,28 @@ describe('GET /api/v1/agent/chat/:sessionId/stream (resume)', () => {
 })
 
 describe('POST /api/v1/agent/chat/:sessionId/followup', () => {
+  test('returns FOLLOWUP_UNSUPPORTED when runtime does not provide native follow-up', async () => {
+    const app = await buildApp({ harness: createMockHarness() })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat/sess-ai-sdk/followup',
+      payload: { message: 'next', clientSeq: 1, clientNonce: 'nonce-1' },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({
+      error: { code: ERROR_CODE_FOLLOWUP_UNSUPPORTED, message: 'follow-up is not supported by this runtime' },
+    })
+
+    await app.close()
+  })
+
   test('accepts idempotent retry with matching client nonce and rejects stale different nonce', async () => {
     const followUp = vi.fn().mockResolvedValue(undefined)
     const harness = createMockHarness()
     harness.followUp = followUp
+    ;(harness as any).capabilities = { protocol: 'pi-native' }
     const app = await buildApp({ harness })
 
     const first = await app.inject({
@@ -538,6 +578,35 @@ describe('POST /api/v1/agent/chat/:sessionId/followup', () => {
     })
     expect(stale.statusCode).toBe(409)
     expect(followUp).toHaveBeenCalledTimes(1)
+
+    await app.close()
+  })
+
+  test('does not burn a follow-up sequence when the runtime rejects queueing', async () => {
+    const followUp = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('runtime busy'))
+      .mockResolvedValueOnce(undefined)
+    const harness = createMockHarness()
+    harness.followUp = followUp
+    ;(harness as any).capabilities = { protocol: 'pi-native' }
+    const app = await buildApp({ harness })
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat/sess-rollback/followup',
+      payload: { message: 'next', clientSeq: 1, clientNonce: 'nonce-1' },
+    })
+    expect(first.statusCode).toBe(500)
+
+    const retry = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat/sess-rollback/followup',
+      payload: { message: 'next', clientSeq: 1, clientNonce: 'nonce-1' },
+    })
+    expect(retry.statusCode).toBe(202)
+    expect(retry.json()).toEqual({ queued: true })
+    expect(followUp).toHaveBeenCalledTimes(2)
 
     await app.close()
   })
@@ -574,7 +643,7 @@ describe('GET /api/v1/agent/chat/:sessionId/messages', () => {
       url: '/api/v1/agent/chat/sess-history/messages',
     })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ messages })
+    expect(res.json()).toEqual({ messages, capabilities: { protocol: 'ai-sdk' } })
     expect(mockLoad).toHaveBeenCalledWith(
       { workspaceId: 'default' },
       'sess-history',
@@ -601,7 +670,7 @@ describe('GET /api/v1/agent/chat/:sessionId/messages', () => {
       url: '/api/v1/agent/chat/sess-empty/messages',
     })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ messages: [] })
+    expect(res.json()).toEqual({ messages: [], capabilities: { protocol: 'ai-sdk' } })
 
     await app.close()
   })
@@ -617,7 +686,7 @@ describe('GET /api/v1/agent/chat/:sessionId/messages', () => {
       url: '/api/v1/agent/chat/sess-missing/messages',
     })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ messages: [] })
+    expect(res.json()).toEqual({ messages: [], capabilities: { protocol: 'ai-sdk' } })
 
     await app.close()
   })

@@ -1,4 +1,6 @@
 import type { FileUIPart, UIMessage } from 'ai'
+import type { AgentRuntimeCapabilities } from '../shared/capabilities'
+import { DEFAULT_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
 
@@ -412,6 +414,11 @@ export function ChatPanel(props: ChatPanelProps) {
   const pendingMessagesRef = useRef<PendingFollowUp[]>([])
   const [projectedFollowUps, setProjectedFollowUps] = useState<ProjectedFollowUpMessage[]>([])
   const projectedFollowUpsRef = useRef<ProjectedFollowUpMessage[]>([])
+  const [runtimeCapabilities, setRuntimeCapabilities] = useState<AgentRuntimeCapabilities>(DEFAULT_AGENT_RUNTIME_CAPABILITIES)
+  const [capabilitiesReady, setCapabilitiesReady] = useState(false)
+  const runtimeCapabilitiesRef = useRef<AgentRuntimeCapabilities>(DEFAULT_AGENT_RUNTIME_CAPABILITIES)
+  const adapterOwnsHistory = runtimeCapabilities.protocol === 'pi-native'
+  const nativeFollowUp = runtimeCapabilities.protocol === 'pi-native'
   const [piMessages, setPiMessages] = useState<UIMessage[]>([])
   const piMessagesRef = useRef<UIMessage[]>([])
   const activeProjectedAssistantRef = useRef<string | null>(null)
@@ -451,6 +458,9 @@ export function ChatPanel(props: ChatPanelProps) {
     if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
     followUpPostTimerRef.current = null
     followUpPostInFlightRef.current = false
+    runtimeCapabilitiesRef.current = DEFAULT_AGENT_RUNTIME_CAPABILITIES
+    setRuntimeCapabilities(DEFAULT_AGENT_RUNTIME_CAPABILITIES)
+    setCapabilitiesReady(false)
     setPendingMessages([])
     setProjectedFollowUps([])
     setPiMessages([])
@@ -462,6 +472,10 @@ export function ChatPanel(props: ChatPanelProps) {
     sessionId,
     onData: (part) => {
       const typed = part as { type?: string; data?: Record<string, unknown> }
+      if (runtimeCapabilitiesRef.current.protocol !== 'pi-native') {
+        onData?.(part)
+        return
+      }
       const data = typed.data ?? {}
       const piMessageId = typeof data.messageId === 'string' ? data.messageId : undefined
       if (typed.type === 'data-pi-message-start' && piMessageId && (data.role === 'user' || data.role === 'assistant')) {
@@ -611,7 +625,12 @@ export function ChatPanel(props: ChatPanelProps) {
       onData?.(part)
     },
     requestHeaders,
-    persistMessages: false,
+    persistMessages: capabilitiesReady && runtimeCapabilities.protocol !== 'pi-native',
+    onCapabilities: (capabilities) => {
+      runtimeCapabilitiesRef.current = capabilities
+      setRuntimeCapabilities(capabilities)
+      setCapabilitiesReady(true)
+    },
   })
 
   const rebuildPiMessagesFromDataParts = useCallback((sourceMessages: UIMessage[]): UIMessage[] => {
@@ -665,10 +684,11 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [])
 
   useEffect(() => {
+    if (!adapterOwnsHistory) return
     if (status !== 'ready' || piMessagesRef.current.length > 0 || messages.length === 0) return
     if (rebuildPiMessagesFromDataParts(messages).length > 0) return
     updatePiMessages(() => messages)
-  }, [messages, status, rebuildPiMessagesFromDataParts, updatePiMessages])
+  }, [adapterOwnsHistory, messages, status, rebuildPiMessagesFromDataParts, updatePiMessages])
 
   const mergeRebuiltPiMessages = useCallback((existing: UIMessage[], rebuilt: UIMessage[]): UIMessage[] => {
     if (rebuilt.length === 0) return existing
@@ -681,14 +701,16 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [])
 
   useEffect(() => {
+    if (!adapterOwnsHistory) return
     const rebuilt = rebuildPiMessagesFromDataParts(messages)
     if (rebuilt.length > 0) updatePiMessages((current) => mergeRebuiltPiMessages(current, rebuilt))
-  }, [messages, rebuildPiMessagesFromDataParts, mergeRebuiltPiMessages, updatePiMessages])
+  }, [adapterOwnsHistory, messages, rebuildPiMessagesFromDataParts, mergeRebuiltPiMessages, updatePiMessages])
 
   const prevPiPersistStatusRef = useRef(status)
   useEffect(() => {
     const prev = prevPiPersistStatusRef.current
     prevPiPersistStatusRef.current = status
+    if (!adapterOwnsHistory) return
     if (status !== 'ready') return
     if (prev !== 'streaming' && prev !== 'submitted') return
     if (!sessionId || piMessages.length === 0) return
@@ -718,7 +740,7 @@ export function ChatPanel(props: ChatPanelProps) {
     try {
       globalThis.localStorage?.setItem(`boring-agent:messages:${sessionId}`, JSON.stringify(stripped))
     } catch { /* ignore */ }
-  }, [sessionId, status, piMessages, requestHeaders, rebuildPiMessagesFromDataParts, mergeRebuiltPiMessages])
+  }, [adapterOwnsHistory, sessionId, status, piMessages, requestHeaders, rebuildPiMessagesFromDataParts, mergeRebuiltPiMessages])
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
@@ -875,11 +897,12 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [projectedFollowUps])
 
   const displayMessages = useMemo(() => {
+    if (!adapterOwnsHistory) return messages
     const waitingTail = projectedTailMessages.filter((message) => projectedStatusById.get(message.id) === 'queued')
     return piMessages.length > 0
       ? [...piMessages, ...waitingTail]
       : [...messages, ...projectedTailMessages]
-  }, [messages, piMessages, projectedTailMessages, projectedStatusById])
+  }, [adapterOwnsHistory, messages, piMessages, projectedTailMessages, projectedStatusById])
 
   const postPendingFollowUps = useCallback(() => {
     if (followUpPostInFlightRef.current) return
@@ -929,10 +952,11 @@ export function ChatPanel(props: ChatPanelProps) {
   // queued follow-up to pi. During AI SDK `submitted`, pi may not be in its
   // running state yet; pi-native followUp() is reliable once streaming starts.
   useEffect(() => {
+    if (!nativeFollowUp) return
     if (status !== 'streaming') return
     if (!pendingMessagesRef.current.some((item) => !item.posted)) return
     postPendingFollowUps()
-  }, [status, postPendingFollowUps])
+  }, [nativeFollowUp, status, postPendingFollowUps])
 
   // Server-side inline follow-ups keep the same HTTP stream open. Pi DTOs are
   // already reduced into canonical messages while streaming; when the stream
@@ -941,6 +965,7 @@ export function ChatPanel(props: ChatPanelProps) {
   useEffect(() => {
     const prev = prevStatusForQueue.current
     prevStatusForQueue.current = status
+    if (!adapterOwnsHistory) return
     if (status !== 'ready') return
     if (prev !== 'streaming' && prev !== 'submitted') return
     const consumed = consumedFollowUpRef.current
@@ -953,7 +978,7 @@ export function ChatPanel(props: ChatPanelProps) {
     activeProjectedAssistantRef.current = null
     lastConsumedProjectedUserRef.current = null
     setProjectedFollowUps([])
-  }, [status, updatePendingMessages])
+  }, [adapterOwnsHistory, status, updatePendingMessages])
 
   // Stop button: cancels stream AND clears the queued follow-up.
   const handleStop = useCallback(() => {
@@ -1054,6 +1079,10 @@ export function ChatPanel(props: ChatPanelProps) {
   const handleComposerKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const ta = e.currentTarget
     textareaRef.current = ta
+    if (isStreaming && !nativeFollowUp && e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      return
+    }
     if (mentionState !== null || slashQuery !== null) return
     if (e.key === 'ArrowUp') {
       if (ta.selectionStart !== 0 || ta.selectionEnd !== 0) return
@@ -1080,7 +1109,7 @@ export function ChatPanel(props: ChatPanelProps) {
     } else if (!['Shift', 'Meta', 'Control', 'Alt', 'CapsLock'].includes(e.key)) {
       historyIdxRef.current = -1
     }
-  }, [userHistory, mentionState, slashQuery])
+  }, [userHistory, mentionState, slashQuery, isStreaming, nativeFollowUp])
 
   async function handleSubmit({ text, files }: { text: string; files: FileUIPart[] }): Promise<void> {
     // Guard against pointless empty submits (just Enter with nothing typed
@@ -1177,6 +1206,7 @@ export function ChatPanel(props: ChatPanelProps) {
     const resolvedAttachments = await resolveAttachmentUrls(files)
 
     if (isStreaming) {
+      if (!nativeFollowUp) return
       const nextPending: PendingFollowUp = {
         id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
         sessionId,
@@ -1714,7 +1744,7 @@ export function ChatPanel(props: ChatPanelProps) {
                   <KbdHints />
                   <PromptInputSubmit
                     status={status}
-                  onStop={handleStop}
+                    onStop={handleStop}
                   className={cn(
                     // Primary action. Uses the warm accent (not `primary`,
                     // which is a neutral foreground tone) — this is the one

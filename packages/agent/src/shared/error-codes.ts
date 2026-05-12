@@ -32,6 +32,7 @@ export const ErrorCode = z.enum([
   'SESSION_LOCKED',
   'STREAM_BUFFER_EVICTED',
   'CURSOR_OUT_OF_RANGE',
+  'FOLLOWUP_UNSUPPORTED',
   'BRIDGE_COMMAND_INVALID',
 
   // Tool
@@ -50,6 +51,7 @@ export const ErrorCode = z.enum([
 export type ErrorCode = z.infer<typeof ErrorCode>
 
 export const ERROR_CODES = ErrorCode.options
+export const ERROR_CODE_FOLLOWUP_UNSUPPORTED = 'FOLLOWUP_UNSUPPORTED' satisfies ErrorCode
 
 export const ApiErrorPayloadSchema = z.object({
   code: ErrorCode,

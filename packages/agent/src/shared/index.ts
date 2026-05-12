@@ -19,6 +19,8 @@ export type {
   SessionDetail,
 } from './session'
 export type { UIMessage, UIMessageChunk } from './message'
+export type { AgentRuntimeCapabilities, AgentRuntimeProtocol } from './capabilities'
+export { DEFAULT_AGENT_RUNTIME_CAPABILITIES } from './capabilities'
 export type { FileSearch } from './file-search'
 export type {
   SandboxHandleRecord,

@@ -359,6 +359,7 @@ export function createPiCodingAgentHarness(opts: {
   return {
     id: "pi-coding-agent",
     placement: "server",
+    capabilities: { protocol: "pi-native" },
     sessions: sessionStore,
 
     async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], _displayText = text): Promise<void> {

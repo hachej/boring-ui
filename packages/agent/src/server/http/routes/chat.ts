@@ -6,12 +6,14 @@ import type { UIMessageChunk } from '../sse'
 import type { AgentHarness, RunContext } from '../../../shared/harness'
 import type { SessionCtx } from '../../../shared/session'
 import type { UIMessage } from '../../../shared/message'
+import { DEFAULT_AGENT_RUNTIME_CAPABILITIES, type AgentRuntimeCapabilities } from '../../../shared/capabilities'
 import {
   createBodyValidator,
   ERROR_CODE_INTERNAL,
   ERROR_CODE_VALIDATION_ERROR,
   ERROR_CODE_RANGE_NOT_SATISFIABLE,
   ERROR_CODE_CONFLICT,
+  ERROR_CODE_FOLLOWUP_UNSUPPORTED,
 } from '../middleware'
 import { StreamBufferStore } from '../streamBuffer'
 import {
@@ -52,6 +54,10 @@ const chatBodySchema = z.object({
 type ChatBody = z.infer<typeof chatBodySchema>
 
 type PiDataPart = { type?: string; data?: Record<string, unknown> }
+
+function capabilitiesForHarness(harness: AgentHarness): AgentRuntimeCapabilities {
+  return harness.capabilities ?? DEFAULT_AGENT_RUNTIME_CAPABILITIES
+}
 
 function projectPiDataMessages(messages: UIMessage[]): UIMessage[] {
   const dataParts = messages.flatMap((message) => message.parts ?? []).filter((part) => {
@@ -126,6 +132,10 @@ export function chatRoutes(
   const buffers = new StreamBufferStore()
   const lastFollowUpBySession = new Map<string, { seq: number; nonce?: string }>()
 
+  function followUpStateKey(request: FastifyRequest, sessionId: string): string {
+    return `${request.workspaceContext?.workspaceId ?? 'default'}\0${sessionId}`
+  }
+
   async function resolveRuntime(request: FastifyRequest): Promise<{
     harness: AgentHarness
     workdir: string
@@ -136,6 +146,11 @@ export function chatRoutes(
     }
     throw new Error('chat route requires harness/workdir or getRuntime')
   }
+
+  app.get('/api/v1/agent/capabilities', async (request, reply) => {
+    const runtime = await resolveRuntime(request)
+    return reply.code(200).send(capabilitiesForHarness(runtime.harness))
+  })
 
   app.post(
     '/api/v1/agent/chat',
@@ -313,12 +328,17 @@ export function chatRoutes(
         const runtime = await resolveRuntime(request)
         const detail = await runtime.harness.sessions.load(ctx, sessionId)
         const messages = Array.isArray(detail?.messages) ? detail.messages : []
-        return reply.code(200).send({ messages })
+        return reply.code(200).send({ messages, capabilities: capabilitiesForHarness(runtime.harness) })
       } catch {
         // History hydration is best-effort: a missing session has no persisted
         // messages yet. Return an empty history without surfacing a browser
         // console 404 during first-load auto session creation.
-        return reply.code(200).send({ messages: [] })
+        try {
+          const runtime = await resolveRuntime(request)
+          return reply.code(200).send({ messages: [], capabilities: capabilitiesForHarness(runtime.harness) })
+        } catch {
+          return reply.code(200).send({ messages: [], capabilities: { protocol: 'ai-sdk' } satisfies AgentRuntimeCapabilities })
+        }
       }
     },
   )
@@ -343,12 +363,20 @@ export function chatRoutes(
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'attachments is invalid' },
         })
       }
+      const runtime = await resolveRuntime(request)
+      const capabilities = capabilitiesForHarness(runtime.harness)
+      if (capabilities.protocol !== 'pi-native' || !runtime.harness.followUp) {
+        return reply.code(409).send({
+          error: { code: ERROR_CODE_FOLLOWUP_UNSUPPORTED, message: 'follow-up is not supported by this runtime' },
+        })
+      }
       const clientSeq = typeof body.clientSeq === 'number' && Number.isFinite(body.clientSeq)
         ? body.clientSeq
         : undefined
+      const clientNonce = typeof body.clientNonce === 'string' && body.clientNonce.length > 0 ? body.clientNonce : undefined
+      const followUpKey = followUpStateKey(request, sessionId)
       if (clientSeq !== undefined) {
-        const clientNonce = typeof body.clientNonce === 'string' && body.clientNonce.length > 0 ? body.clientNonce : undefined
-        const last = lastFollowUpBySession.get(sessionId)
+        const last = lastFollowUpBySession.get(followUpKey)
         if (last !== undefined && clientSeq <= last.seq) {
           if (clientSeq === last.seq && clientNonce && clientNonce === last.nonce) {
             return reply.code(202).send({ queued: true, duplicate: true })
@@ -357,15 +385,25 @@ export function chatRoutes(
             error: { code: ERROR_CODE_CONFLICT, message: 'followup_out_of_order' },
           })
         }
-        lastFollowUpBySession.set(sessionId, { seq: clientSeq, nonce: clientNonce })
+        // Reserve the sequence before awaiting the runtime so duplicate
+        // retries racing this request are idempotent, but roll it back if the
+        // runtime rejects and no later request has advanced the sequence.
+        lastFollowUpBySession.set(followUpKey, { seq: clientSeq, nonce: clientNonce })
       }
-      const runtime = await resolveRuntime(request)
-      await runtime.harness.followUp?.(
-        sessionId,
-        body.message,
-        parsedAttachments.data,
-        typeof body.displayText === 'string' && body.displayText.length > 0 ? body.displayText : body.message,
-      )
+      try {
+        await runtime.harness.followUp(
+          sessionId,
+          body.message,
+          parsedAttachments.data,
+          typeof body.displayText === 'string' && body.displayText.length > 0 ? body.displayText : body.message,
+        )
+      } catch (err) {
+        if (clientSeq !== undefined) {
+          const last = lastFollowUpBySession.get(followUpKey)
+          if (last?.seq === clientSeq && last.nonce === clientNonce) lastFollowUpBySession.delete(followUpKey)
+        }
+        throw err
+      }
       return reply.code(202).send({ queued: true })
     },
   )
@@ -398,7 +436,11 @@ export function chatRoutes(
       try {
         const runtime = await resolveRuntime(request)
         if (runtime.harness.sessions.saveMessages) {
-          await runtime.harness.sessions.saveMessages(ctx, sessionId, projectPiDataMessages(body.messages))
+          const capabilities = capabilitiesForHarness(runtime.harness)
+          const messages = capabilities.protocol === 'pi-native'
+            ? projectPiDataMessages(body.messages)
+            : body.messages
+          await runtime.harness.sessions.saveMessages(ctx, sessionId, messages)
         }
         return reply.code(204).send()
       } catch {

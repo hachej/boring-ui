@@ -1,9 +1,13 @@
+import type { AgentRuntimeCapabilities } from './capabilities'
 import type { UIMessageChunk } from './message'
 import type { SessionStore } from './session'
 
 export interface AgentHarness {
   readonly id: string
   readonly placement: 'server' | 'browser'
+
+  /** Runtime protocol capabilities. Defaults to normal AI SDK semantics. */
+  readonly capabilities?: AgentRuntimeCapabilities
 
   /** Send a user message. Yields AI SDK UIMessage stream chunks. */
   sendMessage(
