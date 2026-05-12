@@ -3,7 +3,7 @@ import { basename } from 'node:path'
 import type { AgentTool } from '../shared/tool'
 import type { SessionStore } from '../shared/session'
 import { getEnv } from './config/env'
-import type { RuntimeModeId } from './runtime/mode'
+import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
 import type { PiResourceLoaderOptions } from './harness/pi-coding-agent/createHarness'
@@ -42,6 +42,8 @@ export interface CreateAgentAppOptions {
   sessionId?: string
   templatePath?: string
   mode?: RuntimeModeId
+  /** Supply a custom runtime adapter to plug in non-built-in sandbox/workspace modes. */
+  runtimeModeAdapter?: RuntimeModeAdapter
   authToken?: string
   version?: string
   logger?: boolean
@@ -67,8 +69,9 @@ export async function createAgentApp(
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
 
-  const resolvedMode = opts.mode ?? autoDetectMode()
-  const runtimeBundle = await resolveMode(resolvedMode).create({
+  const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
+  const runtimeBundle = await modeAdapter.create({
     workspaceRoot,
     sessionId,
     templatePath,
@@ -80,7 +83,7 @@ export async function createAgentApp(
   // createAgentApp() directly. Standalone agent (CLI, no workspace)
   // ships zero UI surface — smaller bundle, honest contract.
   const pluginTools: AgentTool[] = []
-  if (resolvedMode !== 'vercel-sandbox') {
+  if (modeAdapter.workspaceFsCapability === 'strong') {
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
     if (pluginResult.errors.length > 0) {
       for (const e of pluginResult.errors) {

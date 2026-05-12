@@ -8,6 +8,7 @@ import { copyTemplate } from '../../workspace/provision'
 
 export const localModeAdapter: RuntimeModeAdapter = {
   id: 'local',
+  workspaceFsCapability: 'strong',
   async create(ctx) {
     if (process.platform !== 'linux') {
       throw new Error('local mode requires Linux with bubblewrap')

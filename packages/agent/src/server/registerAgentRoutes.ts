@@ -6,6 +6,7 @@ import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
@@ -133,12 +134,15 @@ export interface RegisterAgentRoutesOptions {
     request?: FastifyRequest
   }) => string | undefined | Promise<string | undefined>
   mode?: RuntimeModeId
+  /** Supply a custom runtime adapter to plug in non-built-in sandbox/workspace modes. */
+  runtimeModeAdapter?: RuntimeModeAdapter
   version?: string
   extraTools?: AgentTool[]
   getExtraTools?: (ctx: {
     workspaceId: string
     workspaceRoot: string
     runtimeMode: RuntimeModeId
+    workspaceFsCapability?: Workspace['fsCapability']
   }) => AgentTool[] | Promise<AgentTool[]>
   systemPromptAppend?: string
   resourceLoaderOptions?: PiResourceLoaderOptions
@@ -160,8 +164,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const sessionId = opts.sessionId ?? DEFAULT_WORKSPACE_ID
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
 
-  const resolvedMode = opts.mode ?? autoDetectMode()
-  const modeAdapter = selectRuntimeModeAdapter(resolvedMode, opts.sandboxHandleStore)
+  const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+  const modeAdapter = opts.runtimeModeAdapter ?? selectRuntimeModeAdapter(resolvedMode, opts.sandboxHandleStore)
   app.addHook('onClose', async () => {
     await modeAdapter.dispose?.()
   })
@@ -209,7 +213,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     ]
     const pluginTools: PluginToolRegistration[] = []
 
-    if (resolvedMode !== 'vercel-sandbox') {
+    if (modeAdapter.workspaceFsCapability === 'strong') {
       const pluginResult = await loadPlugins({ cwd: root })
       if (pluginResult.errors.length > 0) {
         for (const e of pluginResult.errors) {
@@ -229,6 +233,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           workspaceId,
           workspaceRoot: root,
           runtimeMode: resolvedMode,
+          workspaceFsCapability: runtimeBundle.workspace.fsCapability,
         })
       : []
     const tools = mergeTools({

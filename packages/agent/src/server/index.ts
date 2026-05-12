@@ -56,6 +56,7 @@ export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
 export { createLogger } from './logging'
 export type { Logger, LogFields } from './logging'
 export type {
+  BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBundle,
   RuntimeModeAdapter,

@@ -5,8 +5,10 @@
  * workspace entrypoints must not.
  */
 import {
+  autoDetectMode,
   createAgentApp,
   provisionRuntimeWorkspace,
+  resolveMode,
   type CreateAgentAppOptions,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
@@ -50,9 +52,9 @@ export interface CreateWorkspaceAgentServerOptions
   workspaceProvisioning?: { force?: boolean }
   /**
    * Whether exec_ui should stat-check file paths against the workspaceRoot
-   * before queueing the command. Defaults to true in direct/local mode and
-   * false in vercel-sandbox (where workspace files live inside the microVM,
-   * not on the host server running this Fastify process).
+   * before queueing the command. Defaults to true only for local host-backed
+   * modes (direct/local). Remote sandbox modes should leave this false because
+   * workspace files may not exist on the host server running Fastify.
    */
   validateUiPaths?: boolean
 }
@@ -145,7 +147,11 @@ export async function createWorkspaceAgentServer(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
-  const validateUiPaths = opts.validateUiPaths ?? opts.mode !== "vercel-sandbox"
+  const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+  const workspaceFsCapability = opts.runtimeModeAdapter
+    ? opts.runtimeModeAdapter.workspaceFsCapability ?? 'best-effort'
+    : resolveMode(resolvedMode).workspaceFsCapability ?? 'best-effort'
+  const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === 'strong'
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
@@ -161,6 +167,7 @@ export async function createWorkspaceAgentServer(
 
   const app = await createAgentApp({
     ...opts,
+    mode: resolvedMode,
     workspaceRoot,
     extraTools: [
       ...(opts.extraTools ?? []),
@@ -168,7 +175,7 @@ export async function createWorkspaceAgentServer(
       ...(pluginCollection.agentOptions.extraTools ?? []),
     ],
     systemPromptAppend: [
-      opts.mode !== 'vercel-sandbox' ? buildWorkspaceContextPrompt() : undefined,
+      workspaceFsCapability === 'strong' ? buildWorkspaceContextPrompt() : undefined,
       pluginCollection.agentOptions.systemPromptAppend,
     ].filter(Boolean).join('\n\n') || undefined,
     resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,

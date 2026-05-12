@@ -2,10 +2,17 @@ import type { FileSearch } from '../../shared/file-search'
 import type { Sandbox } from '../../shared/sandbox'
 import type { Workspace } from '../../shared/workspace'
 
-export type RuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
+export type BuiltinRuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
+export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
 
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
+  /**
+   * Declares whether the workspace files are strongly available on the host
+   * path before create() runs. Composition layers use this to decide whether
+   * host-side fs checks/prompts are safe without hard-coding sandbox IDs.
+   */
+  readonly workspaceFsCapability?: Workspace['fsCapability']
   create(ctx: ModeContext): Promise<RuntimeBundle>
   dispose?(): Promise<void>
 }
