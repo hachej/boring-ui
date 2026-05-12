@@ -839,6 +839,40 @@ chat transcript. Chat/tool rendering may show only a compact status card such as
 Any streamed chat data is display-only and must not become the answer source of
 truth.
 
+### Composer, follow-up, and pending-question policy
+
+A pending `ask_user` question is a stronger block than ordinary chat busy state.
+While a draft/ready question exists for the active session, the Workspace
+attention/blocker state MUST disable the chat composer input and send action,
+regardless of the agent runtime's normal follow-up capability.
+
+Default chat behavior is blocked while busy unless the runtime explicitly
+advertises native follow-up support (for example Pi with `nativeFollowUp: true`).
+When native follow-up is available, new busy-time messages are routed as harness
+follow-ups. However, that capability does **not** bypass `ask_user`: freeform
+follow-up text is ambiguous while a structured form is waiting, so the composer
+remains blocked until the user answers, cancels, or stops the current turn.
+
+Effective send policy:
+
+```ts
+const blockedByWorkspace = attentionBlockers.some((b) => b.sessionId === activeSessionId)
+const busyBlockedByRuntime = isBusy && !runtimeCapabilities.nativeFollowUp
+const sendDisabled = blockedByWorkspace || busyBlockedByRuntime
+```
+
+Required UX while `ask_user` is pending:
+
+- composer textarea is disabled/read-only and Enter is a no-op
+- send is disabled, except the streaming Stop affordance remains available
+- a compact banner explains: "Answer the question in Questions to continue"
+- chat/tool status includes an `Open Questions` action that reopens/focuses the
+  pane from persisted pending state if the user closed the pane/tab
+- Stop cancels/aborts the pending question for that session, closes the Questions
+  pane, clears the blocker, and then aborts the chat stream
+- sending a normal new message is not allowed while pending; it must not become a
+  hidden follow-up, because the blocked tool expects a structured answer
+
 Chat/tool status lifecycle should be explicit and compact:
 
 - `draft`: "Preparing question in Questions..."
