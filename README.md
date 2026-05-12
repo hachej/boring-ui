@@ -4,67 +4,39 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-**Build agent-native apps where chat controls a real workspace.**
+**Build agent-native software where chat triggers actions and the real work shows up in the workspace.**
 
-From a single prompt, an agent can open panels, inspect files, run tools, and render results directly in your UI.
+Boring UI turns agent skills into an inspectable product surface: panels, files, tools, outputs, and workflow state living together in one app.
 
-<img width="1200" alt="Boring UI banner" src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" />
+<img width="980" alt="Boring UI banner" src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" />
 
 </div>
 
-<p align="center"><em>Demo video coming soon.</em></p>
-
 MIT-licensed monorepo for building production-grade agent, workspace, and app-shell packages.
-
-## A different belief
-
-Most AI products stop at chat: you ask, the model replies, and the real work still happens somewhere else.
-
-Boring UI is built on a different belief:
-
-> **Chat should be the control layer — not the destination.**
-
-A workflow can be expressed through three connected surfaces:
-
-- agent chat
-- command palette
-- workbench artifacts
-
-So the agent does not just answer. It opens panels, edits files, runs commands, and renders outputs the user can inspect, manipulate, and continue from.
-
-The goal is not a smarter chatbot.
-
-The goal is software whose interface can adapt to the work.
 
 ## In one line
 
-**Chat in → workspace out**
+**Chat in → actions happen → workspace artifacts appear**
 
-Boring UI provides the building blocks for software where chat is the control layer, the command palette is the action layer, and the workspace is where work appears.
+## Why it exists
 
-## What you can build
+Most AI products stop at chat: you ask, the model replies, and the real work still happens somewhere else.
 
-- browser-based coding agents
-- internal tools with agent-driven workflows
-- copilots inside custom workspaces
-- apps whose interface adapts to the task
+Boring UI is built on a different idea:
 
-## Packages at a glance
+> **Chat should be the control layer — not the destination.**
 
-### Primary packages
+The agent should not just answer. It should open panels, inspect files, run tools, render outputs, and leave behind work the user can inspect, manipulate, and continue from.
 
-- `@hachej/boring-core` — app shell, auth, config, database, Fastify app factory, and frontend providers
-- `@hachej/boring-agent` — pane-embeddable coding agent with `direct`, `local`, and `vercel-sandbox` runtime modes
-- `@hachej/boring-workspace` — workspace UI, plugin system, layouts, catalogs, editors, and UI bridge
+That is the core model:
 
-### Supporting packages
+- **chat** drives intent
+- **commands** trigger actions
+- **workspace artifacts** hold the work
 
-- `@hachej/boring-ui-kit` (`packages/ui`) — shared UI primitives
-- `@hachej/boring-ui-cli` (`packages/cli`) — CLI packaging entrypoint
+## What are workspace artifacts?
 
-## What are artifacts?
-
-Artifacts are the things the agent produces or manipulates while doing work.
+Artifacts are the visible outputs the agent creates or manipulates while working.
 
 Depending on your product, an artifact might be:
 
@@ -76,6 +48,13 @@ Depending on your product, an artifact might be:
 - a custom panel for a domain object in your app
 
 The point is simple: the agent should not only talk about work. It should surface the work itself.
+
+## What you can build
+
+- browser-based coding agents
+- agent workspaces for internal teams
+- domain-specific copilots with inspectable outputs
+- software where the interface adapts to the task
 
 ## Design principles
 
@@ -106,7 +85,7 @@ You customize the system through plugins and composition points:
 
 The framework has a point of view. Your product still gets to have its own.
 
-## How the stack is composed
+## How the stack is packaged
 
 Boring UI is the monorepo that provides that stack.
 
@@ -134,13 +113,13 @@ Notes:
 - `@hachej/boring-agent` can run standalone with zero core dependency at runtime
 - `@hachej/boring-workspace` owns workspace UI contracts and app composition helpers
 
-## Highlights
+## Why Boring UI
 
 - **Agent-controlled UI** — agents open panels and render outputs, not just text replies
+- **Visible work products** — the result of the agent's work lives in the workspace, not only in chat
 - **Sandboxed execution** — run in `direct`, `local`, or `vercel-sandbox` modes
 - **Plugin extensibility** — add panels, catalogs, commands, bindings, and tools
 - **Core product scaffolding** — auth, workspaces, config, and app shell already wired
-- **Composable deployment model** — use the agent standalone or compose the full stack
 
 ## Repo layout
 
@@ -155,7 +134,7 @@ Notes:
 
 ## Quickstart
 
-### Fastest way to try Boring UI
+### Fastest way to try it
 
 ```bash
 npx @hachej/boring-ui-cli
@@ -228,7 +207,7 @@ pnpm storybook
 
 ## Package details
 
-> Start with the outcome above. Use the details below when you need implementation boundaries.
+> Start with the product model above. Use the details below when you need implementation boundaries.
 
 ### `@hachej/boring-core`
 
