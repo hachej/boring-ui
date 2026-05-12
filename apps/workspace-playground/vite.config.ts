@@ -11,6 +11,7 @@ const localWorkspaceAlias = useLocalPackages
       "@hachej/boring-workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
       "@hachej/boring-workspace/app/front": resolve(__dirname, "../../packages/workspace/src/app/front/index.ts"),
       "@hachej/boring-workspace/app/server": resolve(__dirname, "../../packages/workspace/src/app/server/index.ts"),
+      "@hachej/boring-workspace/plugins/askUserPlugin/front": resolve(__dirname, "../../packages/workspace/src/plugins/askUserPlugin/front/index.tsx"),
       "@hachej/boring-workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
       "@hachej/boring-workspace/testing": resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts"),
       "@hachej/boring-workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),

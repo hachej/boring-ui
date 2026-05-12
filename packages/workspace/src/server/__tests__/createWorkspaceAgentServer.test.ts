@@ -36,6 +36,23 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
+describe("createWorkspaceAgentServer — ask-user default wiring", () => {
+  test("registers ask-user routes and tool by default", async () => {
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: tmpdir(),
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      disableDefaultFileTools: true,
+    })
+    const badCommand = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
+    expect(badCommand.statusCode).toBe(400)
+    const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).toContain("ask_user")
+    await app.close()
+  })
+})
+
 describe("createWorkspaceAgentServer — UI bridge wiring", () => {
   test("is exported from the app entry, not the server entry", () => {
     expect(appServerApi.createWorkspaceAgentServer).toBe(createWorkspaceAgentServer)

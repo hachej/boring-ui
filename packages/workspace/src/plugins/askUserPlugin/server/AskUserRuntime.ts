@@ -214,7 +214,7 @@ export class AskUserRuntime {
     if (!this.uiBridge) return null
     const openedPromise = this.waitForOpened(question.questionId)
     try {
-      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId } })
+      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { question } } })
       const opened = await openedPromise
       if (opened) return null
     } catch {

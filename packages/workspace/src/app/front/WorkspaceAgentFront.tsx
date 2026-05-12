@@ -347,6 +347,10 @@ export function WorkspaceAgentFront<
     surfaceOpenRef.current = true
     setSurfaceOpen(true)
   }, [setSurfaceOpen])
+  const closeWorkbench = useCallback(() => {
+    surfaceOpenRef.current = false
+    setSurfaceOpen(false)
+  }, [setSurfaceOpen])
   const pluginOutputs = useMemo(
     () => plugins?.flatMap((plugin: WorkspaceFrontPlugin) => plugin.outputs ?? []) ?? [],
     [plugins],
@@ -394,9 +398,10 @@ export function WorkspaceAgentFront<
       getSurface,
       isWorkbenchOpen,
       openWorkbench,
+      closeWorkbench,
       extraCommands,
     }),
-    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, extraCommands],
+    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands],
   )
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
@@ -404,15 +409,9 @@ export function WorkspaceAgentFront<
     extraPanels: shellExtraPanels,
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
-    onClose: () => {
-      surfaceOpenRef.current = false
-      // Do NOT clear surfaceRef here. SurfaceShell stays mounted (width=0) after
-      // close — dockview never re-fires onReady, so clearing the handle would
-      // prevent postUiCommand openSurface from finding the surface on the next
-      // open. The ref is invalidated naturally when the storage key changes.
-      setSurfaceOpen(false)
-    },
+    onClose: closeWorkbench,
   }), [
+    closeWorkbench,
     handleSurfaceChange,
     handleSurfaceReady,
     resolvedSurfaceStorageKey,

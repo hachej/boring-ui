@@ -15,6 +15,7 @@ export interface ChatPanelHostShellProps {
   getSurface?: () => SurfaceShellApi | null
   isWorkbenchOpen?: () => boolean
   openWorkbench?: () => void
+  closeWorkbench?: () => void
 }
 
 export type ChatPanelHostProps = WorkspaceChatPanelProps & ChatPanelHostShellProps
@@ -37,6 +38,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
     getSurface,
     isWorkbenchOpen,
     openWorkbench,
+    closeWorkbench,
     bridgeEndpoint,
     ...chatPanelProps
   } = props
@@ -46,12 +48,12 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       if (getSurface && isWorkbenchOpen && openWorkbench) {
         dispatchUiCommand(
           { kind: "openFile", params: { path } },
-          { surface: getSurface, isWorkbenchOpen, openWorkbench },
+          { surface: getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench },
         )
       }
       props.onOpenArtifact?.(path)
     },
-    [getSurface, isWorkbenchOpen, openWorkbench, props.onOpenArtifact],
+    [getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, props.onOpenArtifact],
   )
 
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
@@ -65,9 +67,10 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
         surface: getSurface,
         isWorkbenchOpen,
         openWorkbench,
+        closeWorkbench,
       },
     })
-  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, uiWorkspaceId])
+  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, uiWorkspaceId])
 
   const handleData = useCallback(
     (part: unknown) => {

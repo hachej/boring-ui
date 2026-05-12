@@ -3,7 +3,7 @@ import { defineServerPlugin, type WorkspaceServerPlugin } from "../../../server/
 import { ASK_USER_PLUGIN_ID } from "../shared/constants"
 import type { AskUserRuntime } from "./AskUserRuntime"
 import type { AskUserStore } from "./AskUserStore"
-import { createAskUserPiExtensionFactory } from "./createAskUserPiExtensionFactory"
+import { createAskUserPiExtensionFactory, createAskUserPiTool } from "./createAskUserPiExtensionFactory"
 import { questionsRoutes, type QuestionsRoutesOptions } from "./questionsRoutes"
 
 export type AskUserServerPluginOptions = {
@@ -17,9 +17,18 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   const routes: FastifyPluginAsync = async (app) => {
     await app.register(questionsRoutes, { ...options.routes, runtime: options.runtime, store: options.store })
   }
+  const askUserTool = createAskUserPiTool({ runtime: options.runtime, sessionId: options.sessionId })
   return defineServerPlugin({
     id: ASK_USER_PLUGIN_ID,
     label: "Questions",
+    systemPrompt: "When you need a blocking decision from the user, call the `ask_user` tool. Do not roleplay or simulate the form in chat; the active form appears in the Workspace Questions pane.",
+    agentTools: [{
+      name: askUserTool.name,
+      description: askUserTool.description,
+      promptSnippet: askUserTool.promptSnippet,
+      parameters: askUserTool.parameters,
+      execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal) },
+    }],
     routes,
     extensionFactories: [createAskUserPiExtensionFactory({ runtime: options.runtime, sessionId: options.sessionId })],
   })

@@ -20,6 +20,8 @@ export interface DispatchContext {
   isWorkbenchOpen: () => boolean
   /** Toggle the workbench pane open. Must be a no-op when already open. */
   openWorkbench: () => void
+  /** Close the workbench pane when a command opened it only for an ephemeral task. */
+  closeWorkbench?: () => void
 }
 
 const KNOWN_KINDS = new Set([
@@ -116,7 +118,10 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       const request = surfaceRequestParam(cmd.params)
       if (!request) return
       const wasClosed = !ctx.isWorkbenchOpen()
-      if (wasClosed) ctx.openWorkbench()
+      if (wasClosed) {
+        request.meta = { ...(request.meta ?? {}), closeWorkbenchOnDone: true }
+        ctx.openWorkbench()
+      }
       const run = (surface: SurfaceShellApi) => {
         try {
           surface.openSurface(request)

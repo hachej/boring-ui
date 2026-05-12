@@ -131,8 +131,7 @@ export function QuestionForm({ children, "aria-label": ariaLabel = "Question for
 }
 
 export function QuestionFields() {
-  const { schema, status, formRef } = useQuestionForm()
-  useEffect(() => { if (status === "ready") formRef.current?.querySelector<HTMLElement>("[name]")?.focus() }, [status, schema, formRef])
+  const { schema } = useQuestionForm()
   if (!schema) return <p role="status">Waiting for question…</p>
   return <>{schema.fields.map((field) => <QuestionField key={field.name} field={field} />)}</>
 }
@@ -153,13 +152,13 @@ export function QuestionField({ field }: { field: AskUserField }) {
   </div>
 }
 
-export function QuestionSubmitButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function QuestionSubmitButton(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) {
   const { schema, status, errors, submitting, disabled } = useQuestionForm()
   const invalid = !!schema && Object.keys(errors).length > 0
   return <button {...props} type="submit" disabled={disabled || submitting || status !== "ready" || invalid}>{props.children ?? "Submit"}</button>
 }
 
-export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) {
   const { cancel, disabled, submitting } = useQuestionForm()
   return <button {...props} type="button" disabled={disabled || submitting} onClick={(event) => { props.onClick?.(event); if (!event.defaultPrevented) cancel() }}>{props.children ?? "Cancel"}</button>
 }
