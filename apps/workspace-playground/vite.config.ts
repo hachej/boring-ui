@@ -7,6 +7,9 @@ import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/d
 const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
 const localWorkspaceAlias = useLocalPackages
   ? {
+      react: resolve(__dirname, "node_modules/react"),
+      "react-dom": resolve(__dirname, "node_modules/react-dom"),
+      "react/jsx-runtime": resolve(__dirname, "node_modules/react/jsx-runtime.js"),
       "@hachej/boring-workspace/globals.css": resolve(__dirname, "../../packages/workspace/src/globals.css"),
       "@hachej/boring-workspace/shared": resolve(__dirname, "../../packages/workspace/src/shared/index.ts"),
       "@hachej/boring-workspace/app/front": resolve(__dirname, "../../packages/workspace/src/app/front/index.ts"),
