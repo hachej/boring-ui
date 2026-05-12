@@ -126,6 +126,7 @@ export type WorkspaceAttentionBlocker = {
   id: string
   reason: string
   surfaceKind?: string
+  target?: string
   label?: string
   sessionId?: string
 }
