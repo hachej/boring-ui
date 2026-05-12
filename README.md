@@ -1,6 +1,6 @@
 <div align="center">
 
-# boring-ui-v2
+# Boring UI
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
@@ -22,7 +22,7 @@ MIT-licensed monorepo for building production-grade agent, workspace, and app-sh
 
 ### Chat in → workspace out
 
-boring-ui-v2 provides the building blocks for software where chat is the control layer, the command palette is the action layer, and the workspace is where work appears.
+Boring UI provides the building blocks for software where chat is the control layer, the command palette is the action layer, and the workspace is where work appears.
 
 The primary publishable packages are:
 
@@ -39,7 +39,7 @@ Supporting packages include:
 
 Most AI products stop at chat: you ask, the model replies, and the real work still happens somewhere else.
 
-boring-ui-v2 is built on a different belief:
+Boring UI is built on a different belief:
 
 > **Chat should be the control layer — not the destination.**
 
@@ -76,7 +76,7 @@ The point is simple: the agent should not only talk about work. It should surfac
 
 ### Opinionated core
 
-boring-ui-v2 has a strong default point of view:
+Boring UI has a strong default point of view:
 
 - chat is a first-class control surface
 - the workspace is the main output surface
@@ -101,7 +101,7 @@ The framework has a point of view. Your product still gets to have its own.
 
 ## How the stack is composed
 
-boring-ui-v2 is the monorepo that provides that stack.
+Boring UI is the monorepo that provides that stack.
 
 It is composed from:
 
@@ -204,7 +204,7 @@ pnpm storybook
 
 ### `@hachej/boring-core`
 
-Foundation package for boring-ui-v2 apps.
+Foundation package for Boring UI apps.
 
 It provides:
 
