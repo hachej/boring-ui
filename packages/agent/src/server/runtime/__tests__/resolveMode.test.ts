@@ -91,6 +91,10 @@ test('autoDetectMode rejects invalid BORING_AGENT_MODE values', () => {
   expect(() => autoDetectMode()).toThrow('Invalid BORING_AGENT_MODE')
 })
 
+test('resolveMode explains that custom modes require an adapter', () => {
+  expect(() => resolveMode('custom-sandbox')).toThrow('runtimeModeAdapter')
+})
+
 test('autoDetectMode defaults to linux+bwrap -> local, else direct', () => {
   setEnvForTest('BORING_AGENT_MODE', undefined)
 

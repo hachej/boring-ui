@@ -531,7 +531,7 @@ export async function createCoreWorkspaceAgentServer(
       return [
         ...callerTools,
         ...createWorkspaceUiTools(getUiBridge(ctx.workspaceId), {
-          workspaceRoot: ctx.runtimeMode === 'vercel-sandbox' ? undefined : ctx.workspaceRoot,
+          workspaceRoot: ctx.workspaceFsCapability === 'strong' ? ctx.workspaceRoot : undefined,
         }),
       ]
     },

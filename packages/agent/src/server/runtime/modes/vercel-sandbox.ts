@@ -234,6 +234,7 @@ export function createVercelSandboxModeAdapter(
 
   return {
     id: 'vercel-sandbox',
+    workspaceFsCapability: 'best-effort',
     async dispose() {
       await snapshotScheduler?.shutdown()
     },

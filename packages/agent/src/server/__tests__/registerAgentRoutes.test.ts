@@ -5,6 +5,7 @@ import { afterEach, expect, test } from 'vitest'
 import Fastify from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
+import type { RuntimeModeAdapter } from '../runtime/mode'
 
 const tempDirs: string[] = []
 
@@ -283,7 +284,7 @@ test('request-scoped catalog includes standard tools', async () => {
 test('request-scoped catalog includes getExtraTools for workspace binding', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-dynamic-extra-')
   const app = Fastify({ logger: false })
-  const seen: string[] = []
+  const seen: Array<{ workspaceId: string; runtimeMode: string; fsCapability: string | undefined }> = []
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
@@ -293,8 +294,8 @@ test('request-scoped catalog includes getExtraTools for workspace binding', asyn
       return typeof value === 'string' ? value : 'workspace-dynamic'
     },
     getWorkspaceRoot: () => workspaceRoot,
-    getExtraTools: ({ workspaceId }) => {
-      seen.push(workspaceId)
+    getExtraTools: ({ workspaceId, runtimeMode, workspaceFsCapability }) => {
+      seen.push({ workspaceId, runtimeMode, fsCapability: workspaceFsCapability })
       return [
         {
           name: `ui_state_${workspaceId.replace(/-/g, '_')}`,
@@ -321,7 +322,42 @@ test('request-scoped catalog includes getExtraTools for workspace binding', asyn
   expect(res.statusCode).toBe(200)
   const names: string[] = res.json().tools.map((t: { name: string }) => t.name)
   expect(names).toContain('ui_state_workspace_dynamic')
-  expect(seen).toEqual(['workspace-dynamic'])
+  expect(seen).toEqual([{ workspaceId: 'workspace-dynamic', runtimeMode: 'direct', fsCapability: 'strong' }])
+
+  await app.close()
+})
+
+test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox modes', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-custom-adapter-')
+  const app = Fastify({ logger: false })
+  const customAdapter: RuntimeModeAdapter = {
+    id: 'custom-sandbox',
+    async create(ctx) {
+      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
+      const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+      const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
+      const workspace = createNodeWorkspace(ctx.workspaceRoot)
+      const sandbox = createDirectSandbox()
+      await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
+      return { workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox) }
+    },
+  }
+  const seen: string[] = []
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter: customAdapter,
+    getExtraTools: ({ runtimeMode, workspaceFsCapability }) => {
+      seen.push(`${runtimeMode}:${workspaceFsCapability ?? 'none'}`)
+      return []
+    },
+  })
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+
+  expect(res.statusCode).toBe(200)
+  expect(seen).toEqual(['custom-sandbox:strong'])
 
   await app.close()
 })

@@ -8,6 +8,7 @@ import { copyTemplate } from '../../workspace/provision'
 
 export const directModeAdapter: RuntimeModeAdapter = {
   id: 'direct',
+  workspaceFsCapability: 'strong',
   async create(ctx) {
     await mkdir(ctx.workspaceRoot, { recursive: true })
     await copyTemplate(ctx.templatePath, ctx.workspaceRoot)
