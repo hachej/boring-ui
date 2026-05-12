@@ -100,6 +100,23 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   useEffect(() => {
     if (question?.status === "ready") void client.opened(question).catch(() => undefined)
   }, [client, question?.questionId, question?.status])
+  useEffect(() => {
+    const onStop = (event: Event) => {
+      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
+      if (!question || (sessionId && sessionId !== question.sessionId)) return
+      setQuestion(null)
+      runtime.setPending(null)
+      api.close()
+    }
+    window.addEventListener("boring:workspace-composer-stop", onStop)
+    return () => window.removeEventListener("boring:workspace-composer-stop", onStop)
+  }, [api, question, runtime])
+  useEffect(() => {
+    if (question && pending === null && !params?.question) {
+      setQuestion(null)
+      api.close()
+    }
+  }, [api, pending, params?.question, question])
 
   return <div className={className ?? "h-full"}>
     <div className="h-full overflow-auto bg-[radial-gradient(circle_at_top_left,color-mix(in_oklch,var(--primary)_12%,transparent),transparent_34%),linear-gradient(180deg,color-mix(in_oklch,var(--muted)_62%,transparent),transparent_52%)] p-5 text-sm">
