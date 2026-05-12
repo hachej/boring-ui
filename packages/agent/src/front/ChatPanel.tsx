@@ -342,6 +342,8 @@ export interface ChatPanelProps {
   debug?: boolean
   /** Generic host-provided blockers that prevent starting a new user turn. */
   composerBlockers?: ComposerBlocker[]
+  /** Called when the user presses Stop in the composer. */
+  onComposerStop?: () => void
   className?: string
   /** When provided, files are uploaded immediately on attach and sent as stable
    * server URLs rather than base64 data URLs. Supply via useFileUpload() from
@@ -404,6 +406,7 @@ export function ChatPanel(props: ChatPanelProps) {
     onUploadFile,
     debug = false,
     composerBlockers = [],
+    onComposerStop,
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
   const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
@@ -596,10 +599,12 @@ export function ChatPanel(props: ChatPanelProps) {
       : [...messages, ...projectedTailMessages]
   }, [messages, piMessages, projectedTailMessages, projectedStatusById])
 
-  // Stop button: cancels stream AND clears the queued follow-up.
+  // Stop button: cancels stream, clears the queued follow-up, and lets host UI
+  // cancel any workspace-level blockers such as a pending Questions form.
   const handleStop = useCallback(() => {
+    onComposerStop?.()
     stopAndClearFollowUps()
-  }, [stopAndClearFollowUps])
+  }, [onComposerStop, stopAndClearFollowUps])
 
   // Escape: interrupts the stream but keeps the queued message — it auto-sends next.
   // Same behaviour as pi's keyboard interrupt: "stop this, do my follow-up instead."
@@ -1304,6 +1309,7 @@ export function ChatPanel(props: ChatPanelProps) {
             <PromptInputTextarea
               placeholder={composerBlocked ? composerBlockerLabel : "Ask anything…"}
               disabled={composerBlocked}
+              readOnly={composerBlocked}
               onChange={handleComposerChange}
               onKeyDown={handleComposerKeyDown}
               className={cn(

@@ -22,6 +22,8 @@ export interface WorkspaceChatPanelProps {
   closeWorkbench?: () => void
   /** Generic workspace blockers that should prevent submitting new chat turns. */
   composerBlockers?: WorkspaceAttentionBlocker[]
+  /** Called when the user presses Stop in the composer. */
+  onComposerStop?: () => void
   [key: string]: unknown
 }
 

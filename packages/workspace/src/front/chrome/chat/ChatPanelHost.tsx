@@ -74,6 +74,11 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
     })
   }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, uiWorkspaceId])
 
+  const handleComposerStop = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
+    props.onComposerStop?.()
+  }, [chatPanelProps.sessionId, props.onComposerStop])
+
   const handleData = useCallback(
     (part: unknown) => {
       emitAgentData(part)
@@ -89,6 +94,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       onOpenArtifact={openArtifact}
       onData={handleData}
       composerBlockers={composerBlockers}
+      onComposerStop={handleComposerStop}
     />
   )
 }

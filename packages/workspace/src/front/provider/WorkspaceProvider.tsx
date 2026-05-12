@@ -136,12 +136,16 @@ export interface WorkspaceAttentionContextValue {
   removeBlocker: (id: string) => void
 }
 
+const noopAttention: WorkspaceAttentionContextValue = {
+  blockers: [],
+  addBlocker: () => undefined,
+  removeBlocker: () => undefined,
+}
+
 const WorkspaceAttentionContext = createContext<WorkspaceAttentionContextValue | null>(null)
 
 export function useWorkspaceAttention(): WorkspaceAttentionContextValue {
-  const ctx = useContext(WorkspaceAttentionContext)
-  if (!ctx) throw new Error("useWorkspaceAttention must be used within a WorkspaceProvider")
-  return ctx
+  return useContext(WorkspaceAttentionContext) ?? noopAttention
 }
 
 export interface WorkspaceBridgeContextValue {

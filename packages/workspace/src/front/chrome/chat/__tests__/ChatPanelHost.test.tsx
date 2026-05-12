@@ -8,7 +8,7 @@ import type { SurfaceShellApi } from "../../artifact-surface/SurfaceShell"
 import { ChatPanelHost } from "../ChatPanelHost"
 import type { WorkspaceChatPanelProps } from "../types"
 
-function FakeChatPanel({ onData, onOpenArtifact, composerBlockers }: WorkspaceChatPanelProps) {
+function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerStop }: WorkspaceChatPanelProps) {
   return (
     <div>
       <div data-testid="blocker-count">{composerBlockers?.length ?? 0}</div>
@@ -29,6 +29,9 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers }: WorkspaceCh
       </button>
       <button type="button" onClick={() => onOpenArtifact?.("src/example.ts")}>
         open artifact
+      </button>
+      <button type="button" onClick={() => onComposerStop?.()}>
+        stop composer
       </button>
     </div>
   )
@@ -87,6 +90,24 @@ describe("ChatPanelHost", () => {
     )
 
     expect(await screen.findByTestId("blocker-count")).toHaveTextContent("1")
+  })
+
+  it("emits a generic composer stop event", () => {
+    const onStop = vi.fn()
+    const observed = vi.fn()
+    window.addEventListener("boring:workspace-composer-stop", observed)
+    try {
+      render(
+        <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+          <ChatPanelHost sessionId="s1" onComposerStop={onStop} />
+        </WorkspaceProvider>,
+      )
+      fireEvent.click(screen.getByRole("button", { name: "stop composer" }))
+      expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))
+      expect(onStop).toHaveBeenCalled()
+    } finally {
+      window.removeEventListener("boring:workspace-composer-stop", observed)
+    }
   })
 
   it("composes workspace artifact opening with caller onOpenArtifact", () => {
