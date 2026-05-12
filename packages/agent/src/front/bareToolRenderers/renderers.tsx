@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { ToolUiMetadata } from '../../shared/tool-ui'
 import { Tool, type ToolState } from '../barePrimitives/Tool'
 import { Terminal } from '../barePrimitives/Terminal'
 import { CodeBlock } from '../barePrimitives/CodeBlock'
@@ -14,6 +15,7 @@ export interface ToolPart {
   input?: unknown
   output?: unknown
   errorText?: string
+  ui?: ToolUiMetadata
 }
 
 export type ToolRenderer = (part: ToolPart) => ReactNode

@@ -5,6 +5,7 @@ import type { UIMessage } from 'ai'
 import { ChevronRightIcon } from 'lucide-react'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@hachej/boring-ui-kit'
+import { extractToolUiMetadata } from '../../shared/tool-ui'
 import { resolveToolRenderer, type ToolPart, type ToolRendererOverrides } from '../bareToolRenderers'
 import { cn } from '../lib'
 import { Shimmer } from './shimmer'
@@ -109,8 +110,9 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
               if (!isToolUIPart(part)) return null
               const tp = part as unknown as ToolPart
               const name = getToolName(part as Parameters<typeof getToolName>[0])
-              const render = resolveToolRenderer(name, mergedToolRenderers)
-              return <div key={key} className="min-w-0">{render({ ...tp, toolName: name })}</div>
+              const ui = extractToolUiMetadata(tp.output)
+              const render = resolveToolRenderer(ui?.rendererId ?? name, mergedToolRenderers)
+              return <div key={key} className="min-w-0">{render({ ...tp, toolName: name, ui })}</div>
             })}
           </div>
         </div>
