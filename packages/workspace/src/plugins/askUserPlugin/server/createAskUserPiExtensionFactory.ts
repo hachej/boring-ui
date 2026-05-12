@@ -14,6 +14,7 @@ export type AskUserPiToolDefinition = {
   label: string
   description: string
   parameters: Record<string, unknown>
+  promptSnippet?: string
   execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<AskUserPiToolResult>
 }
 
@@ -32,24 +33,51 @@ export function createAskUserPiTool(options: AskUserPiExtensionOptions): AskUser
   return {
     name: "ask_user",
     label: "Ask user",
-    description: "Ask the user a blocking structured question in the Workspace Questions pane.",
+    description: "Ask the user a blocking structured question in the Workspace Questions pane. Supports true multi-field forms via schema.fields (text, textarea, select, radio, multiselect, checkbox, number).",
+    promptSnippet: "Use `ask_user` whenever you need a missing user decision before continuing. It opens a blocking form in the Workspace Questions pane; do not simulate the question in chat. It supports true multi-field forms: pass `schema: { wireVersion: 1, fields: [...] }` with field types `text`, `textarea`, `select`, `radio`, `multiselect`, `checkbox`, or `number`. Do not describe fields only in `context`; put every requested input in `schema.fields`. Omitting schema is accepted only for an obvious simple A/B choice.",
     parameters: {
       type: "object",
       properties: {
         title: { type: "string", description: "Short question title." },
         context: { type: "string", description: "Optional context shown above the form." },
-        schema: { type: "object", description: "Structured form schema." },
+        schema: {
+          type: "object",
+          description: "Structured multi-field form schema. Use { wireVersion: 1, fields: [...] }. Supported field types: text, textarea, select, radio, multiselect, checkbox, number.",
+          properties: {
+            wireVersion: { type: "number", enum: [1] },
+            submitLabel: { type: "string" },
+            fields: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  type: { type: "string", enum: ["text", "textarea", "select", "radio", "multiselect", "checkbox", "number"] },
+                  name: { type: "string" },
+                  label: { type: "string" },
+                  required: { type: "boolean" },
+                  helpText: { type: "string" },
+                  placeholder: { type: "string" },
+                  options: { type: "array", items: { type: "object", properties: { value: { type: "string" }, label: { type: "string" }, description: { type: "string" } }, required: ["value", "label"] } },
+                },
+                required: ["type", "name", "label"],
+                additionalProperties: true,
+              },
+            },
+          },
+          required: ["wireVersion", "fields"],
+          additionalProperties: true,
+        },
         timeoutMs: { type: "number", description: "Optional timeout in milliseconds." },
       },
-      required: ["title", "schema"],
+      required: ["title"],
       additionalProperties: false,
     },
     async execute(_toolCallId, params, signal) {
-      const parsed = validateAskUserToolInput(params)
+      const parsed = validateAskUserToolInput(normalizeAskUserToolParams(params))
       if (!parsed.success) {
         return {
           isError: true,
-          content: [{ type: "text", text: `Invalid ask_user input: ${parsed.error.issues[0]?.message ?? parsed.error.message}` }],
+          content: [{ type: "text", text: `Invalid ask_user input: ${parsed.error.issues[0]?.message ?? parsed.error.message}. For multi-field forms, pass schema: { wireVersion: 1, fields: [{ type, name, label, ... }] }; do not list fields only in context.` }],
         }
       }
       const input = parsed.data as AskUserToolInput
@@ -74,6 +102,34 @@ export function createAskUserPiExtensionFactory(options: AskUserPiExtensionOptio
     // persisted React form state, and a browser->server command channel instead of Pi-only UI.
     ;(api as AskUserPiExtensionApi).registerTool(createAskUserPiTool(options))
   }
+}
+
+function normalizeAskUserToolParams(params: Record<string, unknown>): Record<string, unknown> {
+  if (params.schema && typeof params.schema === "object" && "wireVersion" in params.schema) return params
+  if (!isObviousBinaryChoice(params)) return params
+  return {
+    ...params,
+    schema: {
+      wireVersion: 1,
+      fields: [
+        {
+          type: "radio",
+          name: "choice",
+          label: "Choose one",
+          required: true,
+          options: [
+            { value: "A", label: "A" },
+            { value: "B", label: "B" },
+          ],
+        },
+      ],
+    },
+  }
+}
+
+function isObviousBinaryChoice(params: Record<string, unknown>): boolean {
+  const text = `${typeof params.title === "string" ? params.title : ""} ${typeof params.context === "string" ? params.context : ""}`.toLowerCase()
+  return /\b(a\s*or\s*b|choose\s+(?:one\s+)?(?:between\s+)?a\s*(?:\/|or)\s*b|pick\s+(?:either\s+)?a\s*(?:\/|or)\s*b)\b/.test(text)
 }
 
 function resolveSessionId(sessionId: string | (() => string)): string {

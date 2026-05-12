@@ -17,6 +17,8 @@ export interface WorkspaceChatPanelProps {
   isWorkbenchOpen?: () => boolean
   /** Opens the visible workbench surface before dispatching a command. */
   openWorkbench?: () => void
+  /** Closes the visible workbench surface after an ephemeral command finishes. */
+  closeWorkbench?: () => void
   [key: string]: unknown
 }
 

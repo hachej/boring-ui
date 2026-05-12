@@ -26,9 +26,8 @@ describe("QuestionForm primitives", () => {
     expect(result.errors).toMatchObject({ text: "Must be at least 2 characters.", select: "Choose a valid option.", multi: "This field is required.", num: "Must be at most 5." })
   })
 
-  it("renders every default field with accessible descriptions", async () => {
+  it("renders every default field with accessible descriptions", () => {
     render(<Form schema={allFields} />)
-    await waitFor(() => expect(screen.getByLabelText(/Text/)).toHaveFocus())
     expect(screen.getByLabelText(/Area/)).toBeInTheDocument()
     expect(screen.getByRole("combobox")).toBeInTheDocument()
     expect(screen.getByLabelText(/X/)).toBeInTheDocument()
@@ -38,13 +37,14 @@ describe("QuestionForm primitives", () => {
     expect(screen.getByLabelText(/Text/)).toHaveAttribute("aria-describedby", expect.stringContaining("text-help"))
   })
 
-  it("focuses first invalid field and supports keyboard submit/cancel", async () => {
+  it("keeps focus stable on open and supports keyboard submit/cancel", async () => {
     const submit = vi.fn()
     const cancel = vi.fn()
     vi.spyOn(window, "confirm").mockReturnValue(true)
     render(<Form schema={allFields} onSubmit={submit} onCancel={cancel} />)
+    screen.getByRole("form", { name: "Question form" }).focus()
     fireEvent.click(screen.getByRole("button", { name: "Submit" }))
-    await waitFor(() => expect(screen.getByLabelText(/Text/)).toHaveFocus())
+    expect(screen.getByLabelText(/Text/)).not.toHaveFocus()
     fireEvent.change(screen.getByLabelText(/Text/), { target: { value: "ok" } })
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "a" } })
     fireEvent.click(screen.getByLabelText(/X/))

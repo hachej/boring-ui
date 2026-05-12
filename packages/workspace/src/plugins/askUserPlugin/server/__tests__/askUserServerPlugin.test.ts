@@ -41,6 +41,28 @@ describe("ask-user Pi extension", () => {
     await expect(tool.execute("call", { title: "Need input", schema }, AbortSignal.timeout(1))).resolves.toMatchObject({ isError: true })
   })
 
+  it("requires schema for non-obvious multi-field requests instead of making a fake A/B form", async () => {
+    const { store, runtime } = await fixture()
+    const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))
+    const result = await tool.execute("call", { title: "Details needed", context: "Need name, priority, and notes." }, undefined)
+    expect(result).toMatchObject({ isError: true })
+    expect(result.content[0]?.text).toContain("schema")
+    await expect(store.getPending("s1")).resolves.toBeNull()
+  })
+
+  it("keeps simple A/B fallback for obvious binary choices", async () => {
+    const { store, runtime } = await fixture()
+    const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))
+    const pendingResult = tool.execute("call", { title: "Choose A or B", context: "Please pick either A or B.", timeoutMs: 60_000 }, undefined)
+    let pending = await store.getPending("s1")
+    await vi.waitFor(async () => {
+      pending = await store.getPending("s1")
+      expect(pending?.schema?.fields).toHaveLength(1)
+    })
+    await runtime.submitAnswer(pending!.questionId, "s1", { choice: "A" })
+    await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
+  })
+
   it("returns thrown runtime failures as tool errors", async () => {
     const { runtime } = await fixture()
     const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: () => { throw new Error("session missing") } }))
@@ -50,18 +72,16 @@ describe("ask-user Pi extension", () => {
   it("valid input creates pending question and waits for runtime answer", async () => {
     const { store, runtime } = await fixture()
     const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))
-    const pendingResult = tool.execute("call", { title: "Need input", schema }, undefined)
+    const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined)
     let pending = await store.getPending("s1")
-    for (let i = 0; !pending && i < 10; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1))
+    await vi.waitFor(async () => {
       pending = await store.getPending("s1")
-    }
-    expect(pending).toMatchObject({ status: "ready", title: "Need input" })
-    for (let i = 0; !runtime.coordinator.hasWaiter(pending!.questionId) && i < 10; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1))
-    }
-    await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
-    await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
+      expect(pending).toMatchObject({ status: "ready", title: "Need input" })
+    })
+    await vi.waitFor(async () => {
+      await runtime.submitAnswer(pending!.questionId, "s1", { answer: "ok" })
+      await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
+    })
   })
 })
 

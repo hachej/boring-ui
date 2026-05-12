@@ -3,6 +3,7 @@ import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog/front"
+import { askUserPlugin } from "../../../../packages/workspace/src/plugins/askUserPlugin/front"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -68,7 +69,7 @@ export function WorkspaceShell() {
     <WorkspaceAgentFront
       chatPanel={ChatPanel}
       workspaceId={showcase ? "playground" : projectName}
-      plugins={[playgroundDataCatalogPlugin]}
+      plugins={[playgroundDataCatalogPlugin, askUserPlugin]}
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey={`boring-ui-v2:layout:${showcase ? "playground" : projectName}`}

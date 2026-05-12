@@ -53,4 +53,25 @@ describe("uiRoutes", () => {
 
     await app.close()
   })
+
+  test("PUT /ui/state merges with server-published slots", async () => {
+    const app = Fastify({ logger: false })
+    const bridge = createInMemoryBridge()
+    await bridge.setState({ "questions.pending": { question: { questionId: "q1" } }, staleBrowserKey: true })
+    await app.register(uiRoutes, { bridge, preserveStateKeys: ["questions.pending"] })
+    await app.ready()
+
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/v1/ui/state",
+      payload: { state: { activeFile: "a.ts" }, causedBy: "user" },
+    })
+    expect(put.statusCode).toBe(204)
+    await expect(bridge.getState()).resolves.toMatchObject({
+      "questions.pending": { question: { questionId: "q1" } },
+      activeFile: "a.ts",
+    })
+    expect((await bridge.getState())?.staleBrowserKey).toBeUndefined()
+    await app.close()
+  })
 })

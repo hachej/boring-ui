@@ -62,7 +62,7 @@ describe("ask-user full workflow", () => {
 
     await vi.waitFor(() => {
       expect(bridge.commands).toEqual([
-        { kind: "openSurface", params: { kind: "questions", target: pending.questionId } },
+        { kind: "openSurface", params: { kind: "questions", target: pending.questionId, meta: { question: expect.objectContaining({ questionId: pending.questionId, status: "ready" }) } } },
       ])
     })
     await vi.waitFor(async () => {
