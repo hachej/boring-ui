@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileUIPart, UIMessage } from 'ai'
 
 const STORAGE_FOLLOWUP_SEQ_PREFIX = 'boring-agent:followup-seq:'
+const MAX_FOLLOWUP_POST_ATTEMPTS = 5
 
 function nextStoredFollowUpSeq(sessionId: string): number {
   const key = `${STORAGE_FOLLOWUP_SEQ_PREFIX}${sessionId}`
@@ -26,6 +27,7 @@ export type PendingFollowUp = {
   consumed: boolean
   clientNonce: string
   clientSeq: number
+  postAttempts: number
 }
 
 export type ProjectedFollowUpMessage = {
@@ -118,7 +120,15 @@ export function useNativeFollowUpQueue({
             if (!res.ok) throw new Error(`follow-up rejected: ${res.status}`)
           } catch {
             shouldContinue = false
-            updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, posted: false } : item))
+            const nextAttempts = pending.postAttempts + 1
+            updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, posted: false, postAttempts: nextAttempts } : item))
+            if (nextAttempts < MAX_FOLLOWUP_POST_ATTEMPTS) {
+              const delayMs = Math.min(1000 * 2 ** (nextAttempts - 1), 8000)
+              if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
+              followUpPostTimerRef.current = setTimeout(() => {
+                postPendingFollowUpsRef.current()
+              }, delayMs)
+            }
             return
           }
         }
@@ -126,8 +136,6 @@ export function useNativeFollowUpQueue({
         followUpPostInFlightRef.current = false
         if (shouldContinue && pendingMessagesRef.current.some((item) => item.sessionId === sessionId && !item.posted)) {
           postPendingFollowUps()
-        } else if (pendingMessagesRef.current.some((item) => !item.posted)) {
-          queueMicrotask(() => postPendingFollowUpsRef.current())
         }
       }
     })()
@@ -151,6 +159,7 @@ export function useNativeFollowUpQueue({
       consumed: false,
       clientNonce: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}-nonce`,
       clientSeq: nextStoredFollowUpSeq(sessionId),
+      postAttempts: 0,
     }
     updatePendingMessages((items) => [...items, nextPending])
     updateProjectedFollowUps((items) => [...items, {
