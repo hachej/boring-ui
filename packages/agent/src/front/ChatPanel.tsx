@@ -608,7 +608,7 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [messages, piMessages, projectedTailMessages, projectedStatusById])
 
   // Stop button: cancels stream, clears the queued follow-up, and lets host UI
-  // cancel any workspace-level blockers such as a pending Questions form.
+  // cancel any host-level blocker that is waiting for user attention.
   const handleStop = useCallback(() => {
     onComposerStop?.()
     stopAndClearFollowUps()

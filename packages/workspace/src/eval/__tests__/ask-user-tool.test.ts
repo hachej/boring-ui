@@ -13,7 +13,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FileAskUserStore } from "../../plugins/askUserPlugin/server/AskUserStore"
 import { AskUserRuntime } from "../../plugins/askUserPlugin/server/AskUserRuntime"
-import { createAskUserPiTool } from "../../plugins/askUserPlugin/server/createAskUserPiTool"
+import { createAskUserTool } from "../../plugins/askUserPlugin/server/createAskUserTool"
 
 const HAS_KEY = !!process.env.OPENROUTER_API_KEY
 const describeIf = HAS_KEY ? describe : describe.skip
@@ -24,7 +24,7 @@ describeIf("ask-user eval (live LLM)", () => {
     const dir = await mkdtemp(join(tmpdir(), "ask-user-eval-"))
     const store = new FileAskUserStore(join(dir, "questions.json"))
     const runtime = new AskUserRuntime({ store, ownerPrincipalId: "anonymous" })
-    const tool = createAskUserPiTool({ runtime, sessionId: SESSION_ID })
+    const tool = createAskUserTool({ runtime, sessionId: SESSION_ID })
     const toolCall = await callOpenRouterWithAskUserTool(tool.parameters)
     expect(toolCall.function.name).toBe("ask_user")
     const input = JSON.parse(toolCall.function.arguments || "{}") as Record<string, unknown>
