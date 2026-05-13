@@ -10,15 +10,14 @@ import {
 } from '@hachej/boring-agent/server'
 import {
   collectWorkspaceAgentServerPlugins,
-  createWorkspaceBridgeRegistry,
-  createWorkspaceProvisioningCache,
   provisionWorkspaceAgentServer,
-  resolveWorkspaceIdFromRequest,
   type CreateWorkspaceAgentServerOptions,
 } from '@hachej/boring-workspace/app/server'
 import {
+  createInMemoryBridge,
   createWorkspaceUiTools,
   uiRoutes,
+  type UiBridge,
 } from '@hachej/boring-workspace/server'
 import type { FastifyInstance } from 'fastify'
 import type postgres from 'postgres'
@@ -230,6 +229,35 @@ function httpError(message: string, statusCode: number): Error & { statusCode: n
   const error = new Error(message) as Error & { statusCode: number }
   error.statusCode = statusCode
   return error
+}
+
+function firstString(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (!Array.isArray(value)) return undefined
+  return value.find((item): item is string => typeof item === 'string')
+}
+
+function validateWorkspaceIdSegment(value: string): string {
+  const workspaceId = value.trim()
+  if (!workspaceId) throw httpError('workspace id is required', 400)
+  if (
+    workspaceId.includes('\0') ||
+    workspaceId.includes('/') ||
+    workspaceId.includes('\\') ||
+    workspaceId.includes('..') ||
+    path.isAbsolute(workspaceId)
+  ) {
+    throw httpError('invalid workspace id', 400)
+  }
+  return workspaceId
+}
+
+function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unknown>; query?: unknown }): string {
+  const headers = request.headers ?? {}
+  const headerValue = headers['x-boring-workspace-id']
+    ?? Object.entries(headers).find(([key]) => key.toLowerCase() === 'x-boring-workspace-id')?.[1]
+  const query = request.query as Record<string, unknown> | undefined
+  return validateWorkspaceIdSegment(firstString(headerValue) ?? firstString(query?.workspaceId) ?? '')
 }
 
 async function resolveAuthorizedWorkspaceId(
@@ -475,20 +503,36 @@ export async function createCoreWorkspaceAgentServer(
     excludeDefaults: options.excludeDefaults,
   })
 
-  const provisioningCache = createWorkspaceProvisioningCache(async (root) => {
-    if (pluginCollection.provisioningContributions.length === 0) return
-    await provisionWorkspaceAgentServer({
-      workspaceRoot: root,
+  const provisionedWorkspaceRoots = new Map<string, Promise<void>>()
+  const ensureWorkspaceProvisioned = (root: string): Promise<void> => {
+    if (pluginCollection.provisioningContributions.length === 0) return Promise.resolve()
+    const resolvedRoot = path.resolve(root)
+    const existing = provisionedWorkspaceRoots.get(resolvedRoot)
+    if (existing) return existing
+    const pending = provisionWorkspaceAgentServer({
+      workspaceRoot: resolvedRoot,
       provisioningContributions: pluginCollection.provisioningContributions,
       force: options.forceProvisioning,
+    }).catch((error) => {
+      provisionedWorkspaceRoots.delete(resolvedRoot)
+      throw error
     })
-  })
-  const ensureWorkspaceProvisioned = (root: string): Promise<void> => provisioningCache.ensure(root)
+    provisionedWorkspaceRoots.set(resolvedRoot, pending)
+    return pending
+  }
 
   await ensureWorkspaceProvisioned(workspaceRoot)
 
-  const bridges = createWorkspaceBridgeRegistry()
-  const getUiBridge = (workspaceId: string) => bridges.get(workspaceId)
+  const bridges = new Map<string, UiBridge>()
+  const getUiBridge = (workspaceId: string): UiBridge => {
+    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
+    let bridge = bridges.get(safeWorkspaceId)
+    if (!bridge) {
+      bridge = createInMemoryBridge()
+      bridges.set(safeWorkspaceId, bridge)
+    }
+    return bridge
+  }
   const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
     options.getWorkspaceId
       ? await options.getWorkspaceId(request)

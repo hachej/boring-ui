@@ -1,15 +1,4 @@
 export {
-  createWorkspaceBridgeRegistry,
-  createWorkspaceProvisioningCache,
-  resolveWorkspaceIdFromRequest,
-  validateWorkspaceIdSegment,
-  WorkspaceRuntimeError,
-  type ResolveWorkspaceIdFromRequestOptions,
-  type WorkspaceBridgeRegistry,
-  type WorkspaceProvisioningCache,
-} from "./workspaceRuntime"
-
-export {
   buildWorkspaceContextPrompt,
   collectWorkspaceAgentServerPlugins,
   composeServerPlugins,
