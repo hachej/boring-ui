@@ -2,7 +2,7 @@ import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MentionPicker, detectMention, type MentionState } from './primitives/mention-picker'
+import { MentionPicker } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
 import { usePiChatProjection } from './pi/piChatProjection'
@@ -65,6 +65,7 @@ import { friendlyError } from './chatErrors'
 import { displayModelLabel, displayProviderLabel } from './chatModelLabels'
 import { getReasoningPart, isBlankTextPart, isFilePart, isTextPart, type ReasoningPartView } from './chatMessageParts'
 import { useComposerHistory } from './useComposerHistory'
+import { useComposerPickers } from './useComposerPickers'
 import {
   clearStoredModelSelection,
   DEFAULT_THINKING,
@@ -390,52 +391,17 @@ export function ChatPanel(props: ChatPanelProps) {
     [messages],
   )
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const [mentionState, setMentionState] = useState<MentionState | null>(null)
-  const [slashQuery, setSlashQuery] = useState<string | null>(null)
-  const [mentionedFiles, setMentionedFiles] = useState<string[]>([])
-
-  const handleComposerChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const ta = e.currentTarget
-    textareaRef.current = ta
-    const cursor = ta.selectionStart ?? ta.value.length
-    const before = ta.value.slice(0, cursor)
-    const slashMatch = before.match(/^\/(\S*)$/)
-    if (slashMatch) {
-      setSlashQuery(slashMatch[1])
-      setMentionState(null)
-    } else {
-      setSlashQuery(null)
-      setMentionState(detectMention(ta.value, cursor))
-    }
-  }, [])
-
-  const selectMention = useCallback((path: string) => {
-    const ta = textareaRef.current
-    if (!ta || !mentionState) return
-    const { anchorStart, anchorEnd } = mentionState
-    const token = `@${path.split('/').pop() ?? path}`
-    const newValue = ta.value.slice(0, anchorStart) + token + ta.value.slice(anchorEnd)
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-    setter?.call(ta, newValue)
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
-    const newCursor = anchorStart + token.length
-    ta.setSelectionRange(newCursor, newCursor)
-    ta.focus()
-    setMentionState(null)
-    setMentionedFiles((prev) => prev.includes(path) ? prev : [...prev, path])
-  }, [mentionState])
-
-  const selectSlashCommand = useCallback((name: string) => {
-    const ta = textareaRef.current
-    if (!ta) return
-    const newValue = `/${name} `
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-    setter?.call(ta, newValue)
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
-    ta.setSelectionRange(newValue.length, newValue.length)
-    ta.focus()
-    setSlashQuery(null)
-  }, [])
+  const {
+    mentionState,
+    slashQuery,
+    mentionedFiles,
+    clearMentionedFiles,
+    dismissMention,
+    dismissSlash,
+    handleComposerChange,
+    selectMention,
+    selectSlashCommand,
+  } = useComposerPickers({ textareaRef })
 
   const handleComposerKeyDown = useComposerHistory({
     userHistory,
@@ -529,7 +495,7 @@ export function ChatPanel(props: ChatPanelProps) {
       ...(attachmentSummaries.length > 0 ? [attachmentSummaries.join('\n\n')] : []),
       ...(mentionNote ? [mentionNote] : []),
     ].filter(Boolean).join('\n\n') || text
-    setMentionedFiles([])
+    clearMentionedFiles()
 
     // Queue the message if the agent is currently streaming. The server-side
     // harness will consume this after agent_end and run the follow-up as the
@@ -953,7 +919,7 @@ export function ChatPanel(props: ChatPanelProps) {
             <MentionPicker
               mention={mentionState}
               onSelect={selectMention}
-              onDismiss={() => setMentionState(null)}
+              onDismiss={dismissMention}
             />
           )}
           {slashQuery !== null && (
@@ -961,7 +927,7 @@ export function ChatPanel(props: ChatPanelProps) {
               query={slashQuery}
               commands={allCommands}
               onSelect={selectSlashCommand}
-              onDismiss={() => setSlashQuery(null)}
+              onDismiss={dismissSlash}
             />
           )}
         </div>
