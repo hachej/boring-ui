@@ -366,12 +366,18 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
+      '@hachej/boring-ui-kit':
+        specifier: workspace:*
+        version: link:../ui
       '@hachej/boring-workspace':
         specifier: workspace:*
         version: link:../workspace
       fastify:
         specifier: ^5.4.0
         version: 5.8.5
+      lucide-react:
+        specifier: ^1.8.0
+        version: 1.8.0(react@19.2.5)
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.0.0

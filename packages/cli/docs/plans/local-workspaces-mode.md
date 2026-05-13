@@ -215,8 +215,7 @@ Instead, build a CLI workspaces server on the lower-level route seams and reusab
   - use `getSessionNamespace(ctx)` to force collision-proof session storage keyed by registry id/hash
   - use `getResourceLoaderOptions(ctx)` for per-workspace `.agents/skills` and other resource paths
   - use `getExtraTools(ctx)` to add workspace UI tools for that workspace
-- `resolveWorkspaceIdFromRequest()` / `createWorkspaceBridgeRegistry()` from `@hachej/boring-workspace/app/server`
-  - same safe id parsing and per-workspace bridge pattern core uses
+- local CLI helpers for safe `x-boring-workspace-id` parsing and `workspaceId -> UiBridge` caching
 - `uiRoutes()` from `@hachej/boring-workspace/server`
   - use `getBridge(request)` to resolve the per-workspace UI bridge
 - CLI-local registry routes for `/api/v1/local-workspaces`
@@ -224,10 +223,10 @@ Instead, build a CLI workspaces server on the lower-level route seams and reusab
 Sketch:
 
 ```ts
-const bridges = createWorkspaceBridgeRegistry()
+const bridges = new Map<string, UiBridge>()
 
 async function getWorkspaceEntryFromRequest(request: FastifyRequest) {
-  const workspaceId = resolveWorkspaceIdFromRequest(request)
+  const workspaceId = resolveWorkspaceIdFromRequest(request) // local CLI helper
   const entry = await registry.get(workspaceId)
   if (!entry) throw new WorkspaceUnavailableError('unknown workspace')
   if (!entry.available) throw new WorkspaceUnavailableError('workspace folder unavailable')

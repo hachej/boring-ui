@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
-import { WorkspaceAgentFront, WorkspaceSwitcherControl } from "@hachej/boring-workspace/app/front"
+import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
+import { WorkspaceSwitcherControl } from "./WorkspaceSwitcherControl"
 
 interface WorkspaceMeta {
   projectName?: string

@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup"
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/localWorkspaces.ts"],
+  entry: ["src/index.ts", "src/server/cli.ts", "src/server/localWorkspaces.ts"],
   format: ["esm"],
   target: "node20",
   bundle: false,
