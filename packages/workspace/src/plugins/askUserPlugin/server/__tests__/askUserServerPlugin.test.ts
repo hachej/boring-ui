@@ -138,11 +138,11 @@ describe("ask-user Pi extension", () => {
 })
 
 describe("createAskUserServerPlugin", () => {
-  it("exports routes and extensionFactories without @boring/agent ask-user APIs", async () => {
+  it("exports routes and agent tool without @hachej/boring-agent ask-user APIs", async () => {
     const { store, runtime } = await fixture()
     const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "s1" })
     expect(plugin.id).toBe("ask-user")
     expect(plugin.routes).toEqual(expect.any(Function))
-    expect(plugin.extensionFactories).toHaveLength(1)
+    expect(plugin.agentTools).toHaveLength(1)
   })
 })

@@ -3,7 +3,7 @@ import { defineServerPlugin, type WorkspaceServerPlugin } from "../../../server/
 import { ASK_USER_PLUGIN_ID } from "../shared/constants"
 import type { AskUserRuntime } from "./AskUserRuntime"
 import type { AskUserStore } from "./AskUserStore"
-import { createAskUserPiExtensionFactory, createAskUserPiTool } from "./createAskUserPiExtensionFactory"
+import { createAskUserPiTool } from "./createAskUserPiExtensionFactory"
 import { questionsRoutes, type QuestionsRoutesOptions } from "./questionsRoutes"
 
 export type AskUserServerPluginOptions = {
@@ -30,6 +30,5 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal) },
     }],
     routes,
-    extensionFactories: [createAskUserPiExtensionFactory({ runtime: options.runtime, sessionId: options.sessionId })],
   })
 }
