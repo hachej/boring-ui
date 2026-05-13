@@ -6,11 +6,23 @@ node_modules/
 
 # Build output
 dist/
+**/.vite/
 *.tsbuildinfo
+.tsbuildinfo.*
+
+# Generated app/API bundles and sourcemaps
+apps/full-app/api/generated-index.*
+apps/full-app/api/index.ts.map
+apps/*/api/*.map
+packages/cli/public/
+
+# Local harness/package installs copied into package work dirs
+packages/*/lib/node_modules/
 
 # Environment
 .env
 .env.*
+!**/.env.example
 
 # Playwright output
 apps/boring-macro-v2/workspace/
@@ -43,7 +55,6 @@ storybook-static/
 .ui-review/
 *_review.patch
 packages/agent/bench-results/
-.tsbuildinfo.*
 
 # Vitest transient transpiled-config artifacts (leaked when a run is interrupted)
 **/vitest.config.ts.timestamp-*.mjs
