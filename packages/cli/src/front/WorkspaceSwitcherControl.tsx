@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef } from "react"
 import {
   Button,
+  Kbd,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -58,7 +59,7 @@ export function WorkspaceSwitcherControl({
   onCreateWorkspace,
   onOpenWorkspaceSettings,
 }: WorkspaceSwitcherControlProps) {
-  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const currentWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
   const switcherLabel = currentWorkspace?.name ?? "Select workspace"
 
@@ -70,7 +71,8 @@ export function WorkspaceSwitcherControl({
       if (event.key.toLowerCase() !== "k") return
       if (isEditableTarget(event.target)) return
       event.preventDefault()
-      setOpen(true)
+      triggerRef.current?.focus()
+      triggerRef.current?.click()
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
@@ -99,9 +101,10 @@ export function WorkspaceSwitcherControl({
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
+          ref={triggerRef}
           type="button"
           variant="ghost"
           aria-label={`Workspace menu: ${switcherLabel}`}
@@ -122,13 +125,15 @@ export function WorkspaceSwitcherControl({
               {switcherLabel}
             </span>
           </span>
+          <Kbd className="ml-1 border-0 bg-transparent p-0 text-[10px] text-muted-foreground/50 shadow-none">⌘⇧K</Kbd>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
+        side="bottom"
         sideOffset={8}
-        className="w-80 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
+        className="w-80 rounded-lg border-border/70 bg-popover p-2 text-popover-foreground shadow-2xl"
       >
         <DropdownMenuLabel className="px-2 pb-2 pt-1">
           <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
