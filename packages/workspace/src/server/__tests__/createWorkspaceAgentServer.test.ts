@@ -36,14 +36,15 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-describe("createWorkspaceAgentServer — ask-user default wiring", () => {
-  test("registers ask-user routes and tool by default", async () => {
+describe("createWorkspaceAgentServer — ask-user plugin wiring", () => {
+  test("registers ask-user routes and tool when installed by the host app", async () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot: tmpdir(),
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
       disableDefaultFileTools: true,
+      pluginFactories: [({ bridge }) => appServerApi.createAskUserPluginBundle({ workspaceRoot: tmpdir(), bridge })],
     })
     const badCommand = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
     expect(badCommand.statusCode).toBe(400)
@@ -52,14 +53,13 @@ describe("createWorkspaceAgentServer — ask-user default wiring", () => {
     await app.close()
   })
 
-  test("excludeDefaults disables ask-user routes and tool", async () => {
+  test("does not register ask-user routes or tool unless installed", async () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot: tmpdir(),
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
       disableDefaultFileTools: true,
-      excludeDefaults: ["ask-user"],
     })
     const command = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
     expect(command.statusCode).toBe(404)

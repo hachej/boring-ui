@@ -1,4 +1,12 @@
 export {
+  ASK_USER_PLUGIN_ID,
+  AskUserRuntime,
+  createAskUserPluginBundle,
+  createAskUserTool,
+  FileAskUserStore,
+} from "../../plugins/askUserPlugin/server"
+
+export {
   buildWorkspaceContextPrompt,
   collectWorkspaceAgentServerPlugins,
   composeServerPlugins,
@@ -11,6 +19,8 @@ export {
   type WorkspaceAgentResourceLoaderOptions,
   type WorkspacePiPackageSource,
   type WorkspaceAgentServerPluginCollection,
+  type WorkspaceAgentServerPluginContext,
+  type WorkspaceAgentServerPluginFactory,
   type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
