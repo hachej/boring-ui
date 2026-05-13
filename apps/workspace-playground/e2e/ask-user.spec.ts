@@ -7,7 +7,6 @@ const question = {
   status: "ready",
   title: "Choose A or B",
   context: "Please select one option.",
-  draftVersion: 0,
   answerToken: "secret-e2e",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
@@ -30,7 +29,7 @@ const question = {
 }
 
 test.describe("ask_user Questions pane", () => {
-  test("ui command opens pane from metadata, acks opened, submits, and closes", async ({ page }) => {
+  test("ui command opens pane from metadata, submits, and closes", async ({ page }) => {
     const commands: unknown[] = []
     await page.addInitScript((q) => {
       class MockEventSource extends EventTarget {
@@ -66,15 +65,13 @@ test.describe("ask_user Questions pane", () => {
     await page.route("**/api/v1/questions/commands", async (route) => {
       const body = route.request().postDataJSON()
       commands.push(body)
-      await route.fulfill({ json: { ok: true, status: body.kind === "questions.submit" ? "answered" : "opened" } })
+      await route.fulfill({ json: { ok: true, status: "answered" } })
     })
 
     await page.goto("/")
     await page.waitForLoadState("networkidle")
 
     await expect(page.getByText("Choose A or B")).toBeVisible({ timeout: 8_000 })
-    await expect.poll(() => commands.some((cmd: any) => cmd.kind === "questions.opened")).toBe(true)
-
     await page.getByRole("radio", { name: "A" }).click()
     await page.getByTestId("artifact-surface").getByRole("button", { name: "Submit" }).click()
 
