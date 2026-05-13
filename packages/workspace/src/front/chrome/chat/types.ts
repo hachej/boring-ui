@@ -25,7 +25,7 @@ export interface WorkspaceChatPanelProps {
   /** Called when the user presses Stop in the composer. */
   onComposerStop?: () => void
   /** Called when the chat implementation wants to run an action exposed by a blocker. */
-  onComposerBlockerAction?: (blocker: WorkspaceAttentionBlocker, action: "open" | "cancel") => void
+  onComposerBlockerAction?: (blocker: WorkspaceAttentionBlocker, action: string) => void
   [key: string]: unknown
 }
 

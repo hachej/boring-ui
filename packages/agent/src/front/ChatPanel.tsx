@@ -269,6 +269,11 @@ function displayProviderLabel(provider: string): string {
     .join(' ')
 }
 
+export type ComposerBlockerAction = {
+  id: string
+  label: string
+}
+
 export type ComposerBlocker = {
   id: string
   reason: string
@@ -276,6 +281,7 @@ export type ComposerBlocker = {
   target?: string
   label?: string
   sessionId?: string
+  actions?: ComposerBlockerAction[]
 }
 
 export interface ChatPanelProps {
@@ -345,7 +351,7 @@ export interface ChatPanelProps {
   composerBlockers?: ComposerBlocker[]
   /** Called when the user presses Stop in the composer. */
   onComposerStop?: () => void
-  onComposerBlockerAction?: (blocker: ComposerBlocker, action: 'open' | 'cancel') => void
+  onComposerBlockerAction?: (blocker: ComposerBlocker, action: string) => void
   className?: string
   /** When provided, files are uploaded immediately on attach and sent as stable
    * server URLs rather than base64 data URLs. Supply via useFileUpload() from
@@ -1226,15 +1232,16 @@ export function ChatPanel(props: ChatPanelProps) {
             )}
           >
             <span>{composerBlockerLabel}</span>
-            {primaryComposerBlocker ? (
+            {primaryComposerBlocker?.actions?.map((action) => (
               <button
+                key={action.id}
                 type="button"
                 className="ml-2 rounded border border-primary/30 px-2 py-0.5 text-[11px] font-medium hover:bg-primary/10"
-                onClick={() => onComposerBlockerAction?.(primaryComposerBlocker, 'open')}
+                onClick={() => onComposerBlockerAction?.(primaryComposerBlocker, action.id)}
               >
-                Open Questions
+                {action.label}
               </button>
-            ) : null}
+            ))}
           </div>
         )}
         {attachmentNotice && (

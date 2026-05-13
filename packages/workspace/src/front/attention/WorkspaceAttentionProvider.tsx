@@ -2,6 +2,11 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
 
+export type WorkspaceAttentionBlockerAction = {
+  id: string
+  label: string
+}
+
 export type WorkspaceAttentionBlocker = {
   id: string
   reason: string
@@ -9,6 +14,7 @@ export type WorkspaceAttentionBlocker = {
   target?: string
   label?: string
   sessionId?: string
+  actions?: WorkspaceAttentionBlockerAction[]
 }
 
 export interface WorkspaceAttentionContextValue {
