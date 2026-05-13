@@ -64,7 +64,15 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
     const pending = runtime.getPending()
     const blockerId = pending ? `${ASK_USER_PLUGIN_ID}:${pending.sessionId}:${pending.questionId}` : null
     if (pending?.status === "ready" && blockerId) {
-      attention.addBlocker({ id: blockerId, reason: "waiting_for_user_input", surfaceKind: ASK_USER_SURFACE_KIND, target: pending.questionId, label: "Answer the question in Questions to continue", sessionId: pending.sessionId })
+      attention.addBlocker({
+        id: blockerId,
+        reason: "waiting_for_user_input",
+        surfaceKind: ASK_USER_SURFACE_KIND,
+        target: pending.questionId,
+        label: "Answer the question in Questions to continue",
+        sessionId: pending.sessionId,
+        actions: [{ id: "open", label: "Open Questions" }],
+      })
     }
     return () => { if (blockerId) attention.removeBlocker(blockerId) }
   }, [attention, runtime, pendingSnapshot])

@@ -80,19 +80,17 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   }, [chatPanelProps.sessionId, props.onComposerStop])
 
   const handleComposerBlockerAction = useCallback(
-    (blocker: NonNullable<WorkspaceChatPanelProps["composerBlockers"]>[number], action: "open" | "cancel") => {
+    (blocker: NonNullable<WorkspaceChatPanelProps["composerBlockers"]>[number], action: string) => {
       if (action === "cancel") {
         window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
         return
       }
-      if (blocker.surfaceKind) {
-        if (getSurface && isWorkbenchOpen && openWorkbench) {
-          dispatchUiCommand(
-            { kind: "openSurface", params: { kind: blocker.surfaceKind, target: blocker.target, meta: {} } },
-            { surface: getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench },
-          )
-        }
-        window.dispatchEvent(new CustomEvent("boring:ask-user-open", { detail: { sessionId: blocker.sessionId, questionId: blocker.target } }))
+      if (action !== "open" || !blocker.surfaceKind) return
+      if (getSurface && isWorkbenchOpen && openWorkbench) {
+        dispatchUiCommand(
+          { kind: "openSurface", params: { kind: blocker.surfaceKind, target: blocker.target, meta: {} } },
+          { surface: getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench },
+        )
       }
     },
     [chatPanelProps.sessionId, closeWorkbench, getSurface, isWorkbenchOpen, openWorkbench],

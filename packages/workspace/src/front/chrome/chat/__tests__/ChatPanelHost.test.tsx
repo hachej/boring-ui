@@ -43,7 +43,7 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
 function Blocker({ sessionId = "s1" }: { sessionId?: string }) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   useEffect(() => {
-    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1" })
+    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", actions: [{ id: "open", label: "Open Questions" }] })
     return () => removeBlocker(`test:${sessionId}`)
   }, [addBlocker, removeBlocker, sessionId])
   return null
