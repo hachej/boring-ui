@@ -146,13 +146,13 @@ export function QuestionField({ field }: { field: AskUserField }) {
   </div>
 }
 
-export function QuestionSubmitButton(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) {
+export function QuestionSubmitButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { schema, status, errors, submitting, disabled } = useQuestionForm()
   const invalid = !!schema && Object.keys(errors).length > 0
   return <button {...props} type="submit" disabled={disabled || submitting || status !== "ready" || invalid}>{props.children ?? "Submit"}</button>
 }
 
-export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) {
+export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { cancel, disabled, submitting } = useQuestionForm()
   return <button {...props} type="button" disabled={disabled || submitting} onClick={(event) => { props.onClick?.(event); if (!event.defaultPrevented) cancel() }}>{props.children ?? "Cancel"}</button>
 }
