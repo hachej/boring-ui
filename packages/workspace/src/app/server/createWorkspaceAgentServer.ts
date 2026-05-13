@@ -113,7 +113,7 @@ export function collectWorkspaceAgentServerPlugins(
     routeContributions: result.routeContributions,
     agentOptions: {
       extraTools: result.agentTools,
-      systemPromptAppend: [buildBoringSystemPrompt({ workspaceRoot }), opts.systemPromptAppend, result.systemPromptAppend]
+      systemPromptAppend: [buildBoringSystemPrompt(), opts.systemPromptAppend, result.systemPromptAppend]
         .filter(Boolean)
         .join("\n\n") || undefined,
       resourceLoaderOptions: {
