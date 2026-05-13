@@ -1,5 +1,5 @@
 import type { FileUIPart } from 'ai'
-import { convertBlobUrlToDataUrl } from './primitives/prompt-input'
+import { convertBlobUrlToDataUrl } from './browserFiles'
 
 const INLINE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml', 'application/yaml']
 
