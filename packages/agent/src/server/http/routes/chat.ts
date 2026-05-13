@@ -11,12 +11,14 @@ import {
   ERROR_CODE_INTERNAL,
   ERROR_CODE_VALIDATION_ERROR,
   ERROR_CODE_RANGE_NOT_SATISFIABLE,
+  ERROR_CODE_CONFLICT,
 } from '../middleware'
 import { StreamBufferStore } from '../streamBuffer'
 import {
   parseFileChangeChunk,
   type SessionChangesTracker,
 } from '../sessionChangesTracker'
+import { projectPiDataMessages } from '../../harness/pi-coding-agent/projectPiDataMessages'
 
 function c(data: Record<string, unknown>): UIMessageChunk {
   return data as unknown as UIMessageChunk
@@ -68,6 +70,7 @@ export function chatRoutes(
   const { sessionChangesTracker } = opts
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
+  const lastFollowUpBySession = new Map<string, { seq: number; nonce?: string }>()
 
   async function resolveRuntime(request: FastifyRequest): Promise<{
     harness: AgentHarness
@@ -274,7 +277,7 @@ export function chatRoutes(
     '/api/v1/agent/chat/:sessionId/followup',
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
-      const body = request.body as { message?: unknown; attachments?: unknown; displayText?: unknown }
+      const body = request.body as { message?: unknown; attachments?: unknown; displayText?: unknown; clientNonce?: unknown; clientSeq?: unknown }
       if (typeof body?.message !== 'string' || body.message.length === 0) {
         return reply.code(400).send({
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'message is required' },
@@ -286,13 +289,46 @@ export function chatRoutes(
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'attachments is invalid' },
         })
       }
+      const clientSeq = typeof body.clientSeq === 'number' && Number.isFinite(body.clientSeq)
+        ? body.clientSeq
+        : undefined
+      const clientNonce = typeof body.clientNonce === 'string' && body.clientNonce.length > 0 ? body.clientNonce : undefined
+      if (clientSeq !== undefined) {
+        const last = lastFollowUpBySession.get(sessionId)
+        if (last !== undefined && clientSeq <= last.seq) {
+          if (clientSeq === last.seq && clientNonce && clientNonce === last.nonce) {
+            return reply.code(202).send({ queued: true, duplicate: true })
+          }
+          return reply.code(409).send({
+            error: { code: ERROR_CODE_CONFLICT, message: 'followup_out_of_order' },
+          })
+        }
+      }
       const runtime = await resolveRuntime(request)
-      await runtime.harness.followUp?.(
-        sessionId,
-        body.message,
-        parsedAttachments.data,
-        typeof body.displayText === 'string' && body.displayText.length > 0 ? body.displayText : body.message,
-      )
+      if (!runtime.harness.followUp) {
+        return reply.code(409).send({
+          error: { code: ERROR_CODE_CONFLICT, message: 'followup_unsupported' },
+        })
+      }
+      try {
+        await runtime.harness.followUp(
+          sessionId,
+          body.message,
+          parsedAttachments.data,
+          typeof body.displayText === 'string' && body.displayText.length > 0 ? body.displayText : body.message,
+        )
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (message === 'followup_session_not_ready') {
+          return reply.code(409).send({
+            error: { code: ERROR_CODE_CONFLICT, message: 'followup_session_not_ready' },
+          })
+        }
+        throw err
+      }
+      if (clientSeq !== undefined) {
+        lastFollowUpBySession.set(sessionId, { seq: clientSeq, nonce: clientNonce })
+      }
       return reply.code(202).send({ queued: true })
     },
   )
@@ -325,7 +361,7 @@ export function chatRoutes(
       try {
         const runtime = await resolveRuntime(request)
         if (runtime.harness.sessions.saveMessages) {
-          await runtime.harness.sessions.saveMessages(ctx, sessionId, body.messages)
+          await runtime.harness.sessions.saveMessages(ctx, sessionId, projectPiDataMessages(body.messages))
         }
         return reply.code(204).send()
       } catch {

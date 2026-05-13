@@ -100,6 +100,17 @@ function findLastAssistantMessage(messages: unknown): unknown {
   return undefined;
 }
 
+function extractAssistantReasoningTexts(message: unknown): string[] {
+  const content = (message as { content?: unknown } | null)?.content;
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((part) => {
+    const item = part as { type?: unknown; thinking?: unknown; text?: unknown; content?: unknown };
+    if (item.type !== "thinking" && item.type !== "reasoning") return [];
+    const text = item.thinking ?? item.text ?? item.content;
+    return typeof text === "string" && text.length > 0 ? [text] : [];
+  });
+}
+
 function resolveRequestedModel(
   modelRegistry: ModelRegistry,
   input: SendMessageInput,
@@ -381,7 +392,7 @@ export function createPiCodingAgentHarness(opts: {
 
     async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], _displayText = text): Promise<void> {
       const handle = piSessions.get(sessionId);
-      if (!handle) return;
+      if (!handle) throw new Error("followup_session_not_ready");
       nativeFollowUpPending.add(sessionId);
       await handle.piSession.followUp(text);
     },
@@ -480,6 +491,9 @@ export function createPiCodingAgentHarness(opts: {
 
       let sawTextChunk = false;
       let inlineTurnIndex = 0;
+      let currentPiAssistantMessageId: string | null = null;
+      let piSeq = 0;
+      const nextPiSeq = () => ++piSeq;
 
       function namespaceInlinePartIds(input: UIMessageChunk[]): UIMessageChunk[] {
         if (inlineTurnIndex === 0) return input;
@@ -524,69 +538,146 @@ export function createPiCodingAgentHarness(opts: {
         }
 
         let converted: UIMessageChunk[];
-        if (event.type === "message_start" && (event as any).message?.role === "user") {
-          const text = extractUserMessageText((event as any).message);
-          converted = text && text !== input.message
-            ? [{ type: "data-followup-consumed", data: { text } } as unknown as UIMessageChunk]
-            : [];
-          if (text && text !== input.message) {
-            inlineTurnIndex += 1;
-            nativeFollowUpPending.delete(input.sessionId);
+        const piHistoryChunks: UIMessageChunk[] = [];
+        const eventMessage = (event as unknown as { message?: { id?: unknown; role?: unknown } }).message;
+        if (event.type === "message_start" && (eventMessage?.role === "user" || eventMessage?.role === "assistant")) {
+          const messageId = typeof eventMessage.id === "string" ? eventMessage.id : `${eventMessage.role}-${Date.now()}`;
+          const role = eventMessage.role;
+          if (role === "assistant") currentPiAssistantMessageId = messageId;
+          const text = role === "user" ? extractUserMessageText(eventMessage) : undefined;
+          if ((role === "user" && text) || role === "assistant") {
+            piHistoryChunks.push({
+              type: "data-pi-message-start",
+              data: { seq: nextPiSeq(), messageId, role, ...(text ? { text } : {}) },
+            } as unknown as UIMessageChunk);
           }
-        } else if (event.type === "message_end" && (event as any).message?.role === "user") {
-          converted = [];
-        } else {
-          converted = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
         }
         if (event.type === "message_update") {
           const ame = event.assistantMessageEvent;
-          if (
-            ame.type === "text_end"
-            && typeof ame.content === "string"
-            && ame.content.length > 0
-            && !textDeltaSeen.has(ame.contentIndex)
-          ) {
-            const id = inlineTurnIndex === 0 ? String(ame.contentIndex) : `turn-${inlineTurnIndex}:${ame.contentIndex}`;
-            converted = [
-              ...(textStartSeen.has(ame.contentIndex)
-                ? []
-                : [{ type: "text-start", id } as UIMessageChunk]),
-              { type: "text-delta", id, delta: ame.content } as UIMessageChunk,
-              ...converted,
-            ];
-            textDeltaSeen.add(ame.contentIndex);
-            assistantText += ame.content;
+          const messageId = typeof (event as unknown as { messageId?: unknown }).messageId === "string"
+            ? (event as unknown as { messageId: string }).messageId
+            : typeof (event as unknown as { message?: { id?: unknown } }).message?.id === "string"
+              ? (event as unknown as { message: { id: string } }).message.id
+              : currentPiAssistantMessageId ?? "assistant-streaming";
+          if (ame.type === "text_start") {
+            piHistoryChunks.push({
+              type: "data-pi-text-start",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "text_delta" && ame.delta) {
+            const seq = nextPiSeq();
+            piHistoryChunks.push(
+              {
+                type: "data-pi-text-delta",
+                data: { seq, messageId, partId: String(ame.contentIndex), delta: ame.delta },
+              } as unknown as UIMessageChunk,
+              // Back-compat for the current client projection. Remove once
+              // ChatPanel consumes the stable data-pi-text-* DTOs directly.
+              {
+                type: "data-pi-message-delta",
+                data: { seq, messageId, role: "assistant", delta: ame.delta },
+              } as unknown as UIMessageChunk,
+            );
+          } else if (ame.type === "text_end") {
+            piHistoryChunks.push({
+              type: "data-pi-text-end",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), ...(typeof ame.content === "string" ? { text: ame.content } : {}) },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "thinking_start") {
+            piHistoryChunks.push({
+              type: "data-pi-reasoning-start",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "thinking_delta") {
+            piHistoryChunks.push({
+              type: "data-pi-reasoning-delta",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), delta: ame.delta },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "thinking_end") {
+            piHistoryChunks.push({
+              type: "data-pi-reasoning-end",
+              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
+            } as unknown as UIMessageChunk);
+          } else if (ame.type === "toolcall_end") {
+            piHistoryChunks.push({
+              type: "data-pi-tool-call-end",
+              data: { seq: nextPiSeq(), messageId, toolCallId: ame.toolCall.id, toolName: ame.toolCall.name, input: ame.toolCall.arguments },
+            } as unknown as UIMessageChunk);
           }
+        }
+        if (event.type === "message_end" && (eventMessage?.role === "user" || eventMessage?.role === "assistant")) {
+          const role = eventMessage.role;
+          const messageId = typeof eventMessage.id === "string"
+            ? eventMessage.id
+            : role === "assistant" && currentPiAssistantMessageId
+              ? currentPiAssistantMessageId
+              : `${role}-${Date.now()}`;
+          const text = role === "user"
+            ? extractUserMessageText(eventMessage)
+            : extractAssistantMessageText(eventMessage).text;
+          if (role === "assistant") {
+            for (const reasoningText of extractAssistantReasoningTexts(eventMessage)) {
+              const partId = `reasoning-${nextPiSeq()}`;
+              piHistoryChunks.push(
+                { type: "data-pi-reasoning-start", data: { seq: nextPiSeq(), messageId, partId } } as unknown as UIMessageChunk,
+                { type: "data-pi-reasoning-delta", data: { seq: nextPiSeq(), messageId, partId, delta: reasoningText } } as unknown as UIMessageChunk,
+                { type: "data-pi-reasoning-end", data: { seq: nextPiSeq(), messageId, partId } } as unknown as UIMessageChunk,
+              );
+            }
+          }
+          piHistoryChunks.push({
+            type: "data-pi-message-end",
+            data: { seq: nextPiSeq(), messageId, role, ...(text ? { text } : {}) },
+          } as unknown as UIMessageChunk);
+        }
+
+        if (event.type === "tool_execution_start" && currentPiAssistantMessageId) {
+          piHistoryChunks.push({
+            type: "data-pi-tool-call-end",
+            data: { seq: nextPiSeq(), messageId: currentPiAssistantMessageId, toolCallId: event.toolCallId, toolName: event.toolName, input: event.args },
+          } as unknown as UIMessageChunk);
+        }
+
+        if (event.type === "tool_execution_end" && currentPiAssistantMessageId) {
+          piHistoryChunks.push({
+            type: "data-pi-tool-result",
+            data: { seq: nextPiSeq(), messageId: currentPiAssistantMessageId, toolCallId: event.toolCallId, output: event.result, isError: event.isError },
+          } as unknown as UIMessageChunk);
+        }
+
+        if (event.type === "message_start" && (event as any).message?.role === "user") {
+          const text = extractUserMessageText((event as any).message);
+          converted = text && text !== input.message
+            ? [{ type: "data-followup-consumed", data: { text } } as unknown as UIMessageChunk, ...piHistoryChunks]
+            : piHistoryChunks;
+          if (text && text !== input.message) {
+            inlineTurnIndex += 1;
+            sawTextChunk = false;
+            currentPiAssistantMessageId = null;
+            nativeFollowUpPending.delete(input.sessionId);
+          }
+        } else if (event.type === "message_end" && (event as any).message?.role === "user") {
+          converted = piHistoryChunks;
+        } else {
+          const sdkChunks = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
+          const sdkChunksForTurn = sdkChunks.filter((chunk) => {
+            const t = (chunk as { type?: string }).type;
+            return t !== "text-start" && t !== "text-delta" && t !== "text-end"
+              && t !== "reasoning-start" && t !== "reasoning-delta" && t !== "reasoning-end";
+          });
+          converted = [...piHistoryChunks, ...sdkChunksForTurn];
         }
         for (const chunk of converted) {
           const t = (chunk as { type?: string }).type;
-          if (t === "text-delta") {
+          if (t === "text-delta" || t === "data-pi-text-delta" || t === "data-pi-text-end") {
+            sawTextChunk = true;
+          }
+          const piEndData = (chunk as { data?: { role?: unknown; text?: unknown } }).data;
+          if (t === "data-pi-message-end" && piEndData?.role === "assistant" && typeof piEndData.text === "string" && piEndData.text.length > 0) {
             sawTextChunk = true;
           }
         }
         chunks.push(...converted);
-
-        // Some model/provider paths emit only final message snapshots (no
-        // message_update deltas). Synthesize text chunks so SSE consumers still
-        // receive assistant text.
-        if (event.type === "message_end" && !sawTextChunk) {
-          const { role, text, errorText } = extractAssistantMessageText(
-            (event as unknown as { message?: unknown }).message,
-          );
-          if (role === "assistant" && errorText.length > 0) {
-            chunks.push({ type: "error", errorText } as UIMessageChunk);
-            sawTextChunk = true;
-          } else if (role === "assistant" && text.length > 0) {
-            const id = inlineTurnIndex === 0 ? "0" : `turn-${inlineTurnIndex}:0`;
-            chunks.push(
-              { type: "text-start", id } as UIMessageChunk,
-              { type: "text-delta", id, delta: text } as UIMessageChunk,
-              { type: "text-end", id } as UIMessageChunk,
-            );
-            sawTextChunk = true;
-            assistantText += text;
-          }
-        }
 
         if (event.type === "agent_end") {
           if (!sawTextChunk) {
@@ -599,11 +690,10 @@ export function createPiCodingAgentHarness(opts: {
               chunks.push({ type: "error", errorText } as UIMessageChunk);
               sawTextChunk = true;
             } else if (role === "assistant" && text.length > 0) {
-              const id = inlineTurnIndex === 0 ? "0" : `turn-${inlineTurnIndex}:0`;
+              const messageId = currentPiAssistantMessageId ?? "assistant-streaming";
               chunks.push(
-                { type: "text-start", id } as UIMessageChunk,
-                { type: "text-delta", id, delta: text } as UIMessageChunk,
-                { type: "text-end", id } as UIMessageChunk,
+                { type: "data-pi-message-start", data: { seq: nextPiSeq(), messageId, role } } as unknown as UIMessageChunk,
+                { type: "data-pi-message-end", data: { seq: nextPiSeq(), messageId, role, text } } as unknown as UIMessageChunk,
               );
               sawTextChunk = true;
               assistantText += text;
@@ -679,6 +769,17 @@ export function createPiCodingAgentHarness(opts: {
           .prompt(prepared.message, prepared.promptOpts)
           .then(() => {
             promptSettled = true;
+            // Defensive escape hatch: native followUp normally keeps prompt()
+            // alive until the queued turn is consumed and emits its own user
+            // message_start. If pi resolves without that consumption event,
+            // do not keep the HTTP stream open forever waiting for chunks that
+            // will never arrive.
+            if (!done && nativeFollowUpPending.has(input.sessionId)) {
+              nativeFollowUpPending.delete(input.sessionId);
+              done = true;
+              stopHeartbeat();
+              if (wake) wake();
+            }
           })
           .catch((err) => {
             promptSettled = true;
