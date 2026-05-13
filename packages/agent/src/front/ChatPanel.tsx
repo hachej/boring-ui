@@ -34,7 +34,7 @@ import { MentionPicker, detectMention, type MentionState } from './primitives/me
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
 import { usePiChatProjection } from './piChatProjection'
-import { useNativeFollowUpQueue } from './useNativeFollowUpQueue'
+import { usePiNativeFollowUpQueue } from './piNativeFollowUpQueue'
 import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
@@ -429,7 +429,7 @@ export function ChatPanel(props: ChatPanelProps) {
     queueFollowUp,
     handleData: handleFollowUpData,
     stopAndClearFollowUps,
-  } = useNativeFollowUpQueue({
+  } = usePiNativeFollowUpQueue({
     sessionId,
     status,
     requestHeaders,

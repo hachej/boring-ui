@@ -38,7 +38,7 @@ export type ProjectedFollowUpMessage = {
   status: 'queued' | 'streaming' | 'done'
 }
 
-export function useNativeFollowUpQueue({
+export function usePiNativeFollowUpQueue({
   sessionId,
   status,
   requestHeaders,
