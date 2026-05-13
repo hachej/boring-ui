@@ -30,6 +30,10 @@ export function filterIgnoredEntries(
   return entries?.filter((entry) => !matchesAny(entry.name, ignoreNames))
 }
 
+// Keep semantics in sync with @hachej/boring-agent's mention file-search
+// helper. This is intentionally duplicated rather than imported across
+// package boundaries so @hachej/boring-agent remains standalone and workspace
+// base/plugin code stays agent-neutral.
 export function toFileSearchGlob(query: string): string {
   const trimmed = query.trim()
   if (!trimmed) return trimmed

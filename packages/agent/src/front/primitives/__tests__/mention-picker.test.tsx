@@ -12,10 +12,11 @@ describe('MentionPicker', () => {
     })))
   })
 
-  it('wraps typed mention queries as basename globs so server search filters by partial typing', () => {
-    expect(mentionSearchGlob('read')).toBe('*read*')
+  it('uses the shared file-search glob semantics and ignores case', () => {
+    expect(mentionSearchGlob('read')).toBe('*[Rr][Ee][Aa][Dd]*')
+    expect(mentionSearchGlob('README')).toBe('*[Rr][Ee][Aa][Dd][Mm][Ee]*')
+    expect(mentionSearchGlob('src/*.tsx')).toBe('[Ss][Rr][Cc]/*.[Tt][Ss][Xx]')
     expect(mentionSearchGlob('')).toBe('*')
-    expect(mentionSearchGlob('*?')).toBe('*')
   })
 
   it('requests filtered file results as the user types after @', async () => {
@@ -29,7 +30,7 @@ describe('MentionPicker', () => {
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        '/api/v1/files/search?q=*read*&limit=8',
+        '/api/v1/files/search?q=*%5BRr%5D%5BEe%5D%5BAa%5D%5BDd%5D*&limit=8',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })

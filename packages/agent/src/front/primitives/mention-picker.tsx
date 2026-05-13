@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { cn } from '../lib'
+import { toFileSearchGlob } from '../fileSearchGlob'
 import { usePickerKeyboard } from './use-picker-keyboard'
 
 export interface MentionState {
@@ -17,11 +18,7 @@ interface MentionPickerProps {
   apiBaseUrl?: string
 }
 
-export function mentionSearchGlob(query: string): string {
-  const trimmed = query.trim().replaceAll('*', '').replaceAll('?', '')
-  if (!trimmed) return '*'
-  return `*${trimmed}*`
-}
+export const mentionSearchGlob = toFileSearchGlob
 
 function highlight(text: string, query: string): { before: string; match: string; after: string } | null {
   if (!query) return null
