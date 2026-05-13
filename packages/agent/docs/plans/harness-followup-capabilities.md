@@ -402,6 +402,22 @@ State explicitly:
 - DeepAgent / AI SDK Agent uses `aiSdkOwnsHistory: true` and the normal AI SDK UI Message Stream Protocol.
 - Pi native follow-up is an optimization/adapter behavior, not a shared chat protocol.
 
+## PR review: chat cleanup issues
+
+Plan file path: `packages/agent/docs/plans/harness-followup-capabilities.md`.
+
+The current PR proves the pi follow-up/history behavior, but it still leaves cleanup work before this can be a stable shared chat surface:
+
+1. **`ChatPanel` still owns pi protocol details.** `packages/agent/src/front/ChatPanel.tsx` directly reduces `data-pi-*`, tracks pending follow-ups, rebuilds persisted pi history, and renders projected assistant tails. Extract this into a pi projection/transport helper or gate every path behind `aiSdkOwnsHistory === false`; the common panel should not become the pi adapter.
+2. **Capabilities are not wired through the runtime boundary yet.** The current code still behaves as if every runtime has pi semantics: `persistMessages: false` is unconditional, busy submit always queues `/followup`, and there is no frontend-visible capabilities route/default. Add the shared capability type and route before exposing this to non-pi harnesses.
+3. **Busy-send behavior is unsafe for non-native runtimes.** `handleSubmit()` queues a follow-up whenever `status` is busy. For DeepAgent / AI SDK Agent runtimes, busy send must be disabled/no-op with composer contents preserved; it must not create waiting bubbles or POST `/followup`.
+4. **`/followup` currently reports success even when unsupported.** `packages/agent/src/server/http/routes/chat.ts` calls `runtime.harness.followUp?.(...)` and returns `202` even if the harness has no `followUp`. It should resolve capabilities first and return stable `FOLLOWUP_UNSUPPORTED` before sequence/idempotency state is mutated.
+5. **Server history projection is global instead of capability-gated.** `projectPiDataMessages()` is applied from the generic `/messages` route. That projection must only run for the pi adapter-owned-history path; normal AI SDK runtimes should persist their `UIMessage[]` with only generic safe stripping.
+6. **Client and server duplicate pi projection logic.** `rebuildPiMessagesFromDataParts()` in `ChatPanel` and `projectPiDataMessages()` in `chat.ts` can drift on text parts, reasoning, tool parts, and message ordering. Move shared projection logic into a tested helper or make one side authoritative.
+7. **In-flight follow-up posting can outlive a session switch.** `postPendingFollowUps()` has no abort/generation guard. If `sessionId` changes while a POST loop is running, stale queued work can still retry or mutate refs. Add a per-session generation token or abort controller.
+8. **Display state and canonical state can disagree.** `displayMessages` may use `piMessages`/projected tails while actions such as regenerate use `messages` for last-message checks. Once projection is gated/extracted, action eligibility should be computed from the same canonical display/history source.
+9. **Test coverage should lock the cleanup, not just pi success.** Add non-pi tests proving: busy submit does not POST `/followup`; `persistMessages` stays enabled when `aiSdkOwnsHistory === true`; `/followup` returns `FOLLOWUP_UNSUPPORTED`; and `/messages` does not run pi projection for default runtimes.
+
 ## Related tool UI plan
 
 Harness/plugin-specific tool activation and plugin-owned tool UI are adjacent but independently shippable. See [`harness-tool-ui-capabilities.md`](./harness-tool-ui-capabilities.md).
