@@ -114,25 +114,50 @@ export function WorkspaceSwitcherControl({
     setOpen(false)
   }, [activeIndex, onSelectWorkspace, workspaces])
 
-  const handleMenuKeyDown = useCallback((event: ReactKeyboardEvent) => {
+  const moveActiveWorkspace = useCallback((direction: 1 | -1) => {
+    setActiveIndex((index) => {
+      const base = index >= 0 ? index : (currentIndex >= 0 ? currentIndex : firstAvailableIndex)
+      const next = nextAvailableIndex(workspaces, base, direction)
+      window.setTimeout(() => itemRefs.current[next]?.focus(), 0)
+      return next
+    })
+  }, [currentIndex, firstAvailableIndex, workspaces])
+
+  const handlePickerNavigationKey = useCallback((event: KeyboardEvent | ReactKeyboardEvent) => {
+    if (!open) return
+    if (event.metaKey || event.altKey || event.ctrlKey) return
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault()
       event.stopPropagation()
-      const direction = event.key === "ArrowDown" ? 1 : -1
-      setActiveIndex((index) => {
-        const base = index >= 0 ? index : (currentIndex >= 0 ? currentIndex : firstAvailableIndex)
-        const next = nextAvailableIndex(workspaces, base, direction)
-        window.setTimeout(() => itemRefs.current[next]?.focus(), 0)
-        return next
-      })
+      moveActiveWorkspace(event.key === "ArrowDown" ? 1 : -1)
       return
     }
     if (event.key === "Enter") {
       event.preventDefault()
       event.stopPropagation()
       selectActiveWorkspace()
+      return
     }
-  }, [currentIndex, firstAvailableIndex, selectActiveWorkspace, workspaces])
+    if (event.key === "Escape") {
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
+  }, [moveActiveWorkspace, open, selectActiveWorkspace])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => handlePickerNavigationKey(event)
+    // Capture globally so navigation still works if the chat composer/browser
+    // focus does not land on the menu after the shortcut opens it.
+    document.addEventListener("keydown", onKeyDown, true)
+    return () => document.removeEventListener("keydown", onKeyDown, true)
+  }, [handlePickerNavigationKey, open])
+
+  const handleMenuKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    handlePickerNavigationKey(event)
+  }, [handlePickerNavigationKey])
 
   if (workspaces.length === 0) {
     return (
