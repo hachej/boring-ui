@@ -49,6 +49,10 @@ const config: StorybookConfig = {
             replacement: path.resolve(rootDir, "packages/workspace/src/front/components/ui/index.ts"),
           },
           {
+            find: "@hachej/boring-ui-kit",
+            replacement: path.resolve(rootDir, "packages/ui/src/index.ts"),
+          },
+          {
             find: "@hachej/boring-workspace",
             replacement: path.resolve(rootDir, "packages/workspace/src/index.ts"),
           },

@@ -102,17 +102,122 @@ describe("native pi follow-up integration", () => {
     });
     chunks.push((await markerNext).value);
 
+    const piUserStartNext = reader.next();
+    chunks.push((await piUserStartNext).value);
+
+    const assistantStartNext = reader.next();
+    emit({ type: "message_start", message: { id: "a2", role: "assistant" } });
+    chunks.push((await assistantStartNext).value);
+
+    const sdkAssistantStartNext = reader.next();
+    chunks.push((await sdkAssistantStartNext).value);
+
     const textStartNext = reader.next();
-    emit({
-      type: "message_update",
-      assistantMessageEvent: { type: "text_start", contentIndex: 0 },
-    });
+    emit({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
     chunks.push((await textStartNext).value);
 
-    expect(chunks[1]).toMatchObject({ type: "data-followup-consumed", data: { text: "queued question" } });
-    expect(chunks[2]).toMatchObject({ type: "text-start", id: "turn-1:0" });
+    const textDeltaNext = reader.next();
+    emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hello" } });
+    chunks.push((await textDeltaNext).value);
+    chunks.push((await reader.next()).value);
+
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-followup-consumed", data: { text: "queued question" } }));
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-message-start", data: expect.objectContaining({ role: "user", text: "queued question" }) }));
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-message-start", data: expect.objectContaining({ role: "assistant", messageId: "a2" }) }));
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "start", messageId: "a2" }));
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-text-start", data: expect.objectContaining({ messageId: "a2", partId: "0" }) }));
+    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-text-delta", data: expect.objectContaining({ messageId: "a2", partId: "0", delta: "hello" }) }));
+    const seqs = chunks.map((chunk) => chunk.data?.seq).filter(Boolean);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
 
     promptHandle.resolve?.();
     await reader.return?.();
+  });
+
+  it("preserves snapshot-only assistant fallback after a consumed follow-up", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-snapshot" });
+    const iter = harness.sendMessage({ sessionId: "sess-snapshot-followup", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: any[] = [];
+
+    const first = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    chunks.push((await first).value);
+
+    await harness.followUp!("sess-snapshot-followup", "queued question");
+
+    const consumed = reader.next();
+    emit({
+      type: "message_start",
+      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
+    });
+    chunks.push((await consumed).value);
+
+    const userStart = reader.next();
+    chunks.push((await userStart).value);
+
+    const userEnd = reader.next();
+    emit({
+      type: "message_end",
+      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
+    });
+    chunks.push((await userEnd).value);
+
+    emit({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "first" }] },
+        { role: "assistant", content: [{ type: "text", text: "first answer" }] },
+        { role: "user", content: [{ type: "text", text: "queued question" }] },
+        { role: "assistant", content: [{ type: "text", text: "follow-up answer" }] },
+      ],
+    });
+    promptHandle.resolve?.();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-message-end",
+      data: expect.objectContaining({ role: "assistant", text: "follow-up answer" }),
+    }));
+  });
+
+  it("closes the stream if pi resolves before consuming a queued follow-up", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-settle" });
+    const iter = harness.sendMessage({ sessionId: "sess-settle-followup", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const first = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await first;
+
+    await harness.followUp!("sess-settle-followup", "queued question");
+
+    const next = reader.next();
+    emit({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "first" }] },
+        { role: "assistant", content: [{ type: "text", text: "first answer" }] },
+      ],
+    });
+    promptHandle.resolve?.();
+
+    await expect(next).resolves.toMatchObject({ done: false });
+    let closed = false;
+    for (let i = 0; i < 5; i++) {
+      const item = await reader.next();
+      if (item.done) {
+        closed = true;
+        break;
+      }
+    }
+    expect(closed).toBe(true);
   });
 });
