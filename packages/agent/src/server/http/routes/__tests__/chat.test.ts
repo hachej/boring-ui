@@ -541,6 +541,42 @@ describe('POST /api/v1/agent/chat/:sessionId/followup', () => {
 
     await app.close()
   })
+
+  test('returns retryable conflict when harness has no active follow-up session', async () => {
+    const followUp = vi.fn().mockRejectedValue(new Error('followup_session_not_ready'))
+    const harness = createMockHarness()
+    harness.followUp = followUp
+    const app = await buildApp({ harness })
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat/sess-not-ready/followup',
+      payload: { message: 'next', clientSeq: 1, clientNonce: 'nonce-1' },
+    })
+    expect(first.statusCode).toBe(409)
+    expect(first.json().error.message).toBe('followup_session_not_ready')
+
+    followUp.mockResolvedValueOnce(undefined)
+    const retry = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat/sess-not-ready/followup',
+      payload: { message: 'next', clientSeq: 1, clientNonce: 'nonce-1' },
+    })
+    expect(retry.statusCode).toBe(202)
+    expect(retry.json()).toEqual({ queued: true })
+    expect(followUp).toHaveBeenCalledTimes(2)
+
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/chat/sess-not-ready/followup',
+      payload: { message: 'next', clientSeq: 1, clientNonce: 'nonce-1' },
+    })
+    expect(duplicate.statusCode).toBe(202)
+    expect(duplicate.json()).toEqual({ queued: true, duplicate: true })
+    expect(followUp).toHaveBeenCalledTimes(2)
+
+    await app.close()
+  })
 })
 
 describe('GET /api/v1/agent/chat/:sessionId/messages', () => {
