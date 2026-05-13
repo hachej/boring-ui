@@ -13,6 +13,7 @@ import type { WorkspaceFrontPlugin } from "../../shared/plugins"
 import type { PanelOutput, PluginOutput } from "../../shared/plugins/types"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
+import { askUserPlugin } from "../../plugins/askUserPlugin/front"
 import {
   createLocalStorageSessions,
   useLocalStorageSessions,
@@ -419,6 +420,12 @@ export function WorkspaceAgentFront<
     setSurfaceOpen,
   ])
 
+  const workspaceAgentPlugins = useMemo(() => {
+    const excluded = new Set(excludeDefaults ?? [])
+    const defaults = excluded.has(askUserPlugin.id) ? [] : [askUserPlugin]
+    return [...defaults, ...(plugins ?? [])]
+  }, [excludeDefaults, plugins])
+
   const openCommandPalette = () => {
     document.dispatchEvent(new KeyboardEvent("keydown", {
       key: "k",
@@ -436,7 +443,7 @@ export function WorkspaceAgentFront<
         panels={panels}
         commands={commands}
         catalogs={catalogs}
-        plugins={plugins}
+        plugins={workspaceAgentPlugins}
         excludeDefaults={excludeDefaults}
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}

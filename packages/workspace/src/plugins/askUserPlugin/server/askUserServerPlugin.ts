@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "../../../server/plugins/bootstrapServer"
-import { ASK_USER_PLUGIN_ID } from "../shared/constants"
+import { ASK_USER_PLUGIN_ID, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserRuntime } from "./AskUserRuntime"
 import type { AskUserStore } from "./AskUserStore"
 import { createAskUserPiTool } from "./createAskUserPiExtensionFactory"
@@ -11,10 +11,12 @@ export type AskUserServerPluginOptions = {
   store: AskUserStore
   sessionId: string | (() => string)
   routes?: Omit<QuestionsRoutesOptions, "runtime" | "store">
+  onClose?: () => void
 }
 
 export function createAskUserServerPlugin(options: AskUserServerPluginOptions): WorkspaceServerPlugin {
   const routes: FastifyPluginAsync = async (app) => {
+    if (options.onClose) app.addHook("onClose", async () => options.onClose?.())
     await app.register(questionsRoutes, { ...options.routes, runtime: options.runtime, store: options.store })
   }
   const askUserTool = createAskUserPiTool({ runtime: options.runtime, sessionId: options.sessionId })
@@ -30,5 +32,6 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal) },
     }],
     routes,
+    preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
   })
 }

@@ -16,11 +16,12 @@ export type AskUserPluginBundleOptions = {
 export function createAskUserPluginBundle(options: AskUserPluginBundleOptions): WorkspaceServerPlugin {
   const store = options.store ?? new FileAskUserStore(join(options.workspaceRoot, ".boring", "ask-user.json"))
   const runtime = new AskUserRuntime({ store, uiBridge: options.bridge })
-  new AskUserStatePublisher(store, options.bridge).start()
+  const stopPublisher = new AskUserStatePublisher(store, options.bridge).start()
   return createAskUserServerPlugin({
     store,
     runtime,
     sessionId: options.sessionId ?? (() => "default"),
+    onClose: stopPublisher,
     routes: {
       // No-auth playground/default shells still need the browser command channel to
       // bind to the question's owning session. The answerToken remains the terminal
