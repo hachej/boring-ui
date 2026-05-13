@@ -236,8 +236,20 @@ export function WorkspaceSwitcherControl({
                   onFocus={() => setActiveIndex(index)}
                   onPointerMove={() => { if (available) setActiveIndex(index) }}
                   onSelect={() => onSelectWorkspace(workspace.id)}
-                  className="gap-3 rounded-lg px-2.5 py-2.5 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground data-[active=true]:bg-foreground/[0.06] data-[active=true]:text-foreground data-[current=true]:bg-foreground/[0.08] data-[current=true]:text-foreground"
+                  style={{
+                    backgroundColor: isActive
+                      ? "color-mix(in oklch, var(--foreground) 10%, transparent)"
+                      : isCurrent
+                        ? "color-mix(in oklch, var(--foreground) 5%, transparent)"
+                        : undefined,
+                  }}
+                  className="relative gap-3 rounded-lg px-2.5 py-2.5 pl-3 text-[13px] focus:text-foreground data-[active=true]:text-foreground data-[current=true]:text-foreground"
                 >
+                  <span
+                    aria-hidden="true"
+                    style={{ backgroundColor: isActive ? "var(--foreground)" : "transparent" }}
+                    className="absolute bottom-2 left-1 top-2 w-0.5 rounded-full"
+                  />
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
                     {workspaceInitial(workspace.name)}
                   </span>
