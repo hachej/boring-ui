@@ -25,8 +25,16 @@ then delete the files the plugin does not need.
     data/                # plugin-owned client data API/hooks/cache
   server/
     index.ts             # server plugin factory and public server exports
-    tools.ts             # agent tools, if needed
-    routes.ts            # server routes, if needed
+    routes.ts            # trusted server routes, if needed
+    services/            # Node.js services (DB clients, etc.), if needed
+    config.ts            # server-side config loading, if needed
+  agent/
+    index.ts             # native Pi ExtensionFactory, if needed
+    sdk/                 # Python SDK installed into agent sandbox, if needed
+    transforms/          # Executable/user-editable transforms, if needed
+    workspace-template/  # Workspace scaffold copied at provision time, if needed
+    skills/              # Agent skill .md files, if needed
+    prompts/             # Pi prompt templates, if needed
   shared/
     constants.ts         # plugin id, catalog ids, surface kinds
     types.ts             # platform-neutral shared types, if needed
@@ -34,6 +42,18 @@ then delete the files the plugin does not need.
 
 Use only the files a plugin actually needs. Large component families may live
 in subfolders such as `file-tree/`, `code-editor/`, or `empty-file-panel/`.
+
+### Layer Boundaries
+
+The four layers have strict ownership rules:
+
+- **`front/`** — React only. Never imports `server/` or `agent/`.
+- **`server/`** — Trusted Node.js host. Never imports `front/`. Hosts optional
+  workspace/UI support routes and references provisioning assets when needed.
+- **`agent/`** — Pi/sandbox runtime assets. Keep free of Node.js server
+  infrastructure. Native tools live in Pi extension files declared through
+  `package.json#pi.extensions`. Prefer moving shared types to `shared/`.
+- **`shared/`** — Platform-neutral. Never imports `front/`, `server/`, or `agent/`.
 
 ## Ownership Rules
 
@@ -46,14 +66,17 @@ in subfolders such as `file-tree/`, `code-editor/`, or `empty-file-panel/`.
 - Domain event names live in `shared/events.ts` when both layers need the
   contract; event names must be keyed by plugin id.
 - Plugin data clients/hooks live in `front/data/`, not package `front/data`.
-- Server prompts/tools/routes/provisioning live under `server/`, not mixed
+- Server routes, DB services, and config live under `server/`, not mixed
   with client code.
+- Agent tools, Python SDKs, transforms, workspace seeds, and skills live under
+  `agent/`, not under `server/` or front plugins. Hot-reloadable agent tools
+  are Pi extension contributions declared through `package.json#pi`.
 - Workspace core may host registries, providers, event transport, and bridge
   dispatch only. It must not hardcode plugin panel ids or plugin domain rules.
 - Catalog selection and plugin-owned routing should prefer `openSurface`.
   `openPanel` remains available for explicit app-level panel opens.
-- Executable agent tools should be server plugin contributions. The legacy
-  front `agentTools` field remains for migration only.
+- Executable agent tools are never front plugin contributions; front plugins
+  only register UI through `BoringFrontFactory`.
 
 ## Composed Plugins
 
@@ -73,9 +96,9 @@ const macroPlugin = composePlugins({
 })
 ```
 
-Use `composeServerPlugins()` for the matching server side. It concatenates
-child tools, prompt text, pi package declarations, provisioning, and routes
-into one normal `WorkspaceServerPlugin`.
+Use `composeServerPlugins()` for the matching server side when statically
+composing host integrations. Hot-reloadable package plugins should declare Pi
+assets in `package.json#pi` and UI discovery in `package.json#boring`.
 
 ```ts
 const macroServerPlugin = composeServerPlugins({
@@ -105,7 +128,7 @@ defineServerPlugin({
 })
 ```
 
-Workspace passes these declarations to `@boring/agent` as in-memory Pi
+Workspace passes these declarations to `@hachej/boring-agent` as in-memory Pi
 settings. This enables Pi's native package loader without mutating
 `.pi/settings.json`.
 
@@ -142,7 +165,7 @@ slash commands.
 Run:
 
 ```sh
-pnpm --filter @boring/workspace run lint:plugin-invariants
+pnpm --filter @hachej/boring-workspace run lint:plugin-invariants
 ```
 
 The scan rejects:
@@ -150,12 +173,14 @@ The scan rejects:
 - `filePatterns`, `fileFallback`, `PanelRegistry.resolve`, and file-handler
   routing metadata in source.
 - `front/data` imports or path references in source.
-- `@boring/agent` imports from `workspace/src/shared/plugins`.
+- `@hachej/boring-agent` imports from `workspace/src/shared/plugins`.
 - `front`/`server` imports from production `workspace/src/shared/plugins`.
 - Production plugin `front/`, `server/`, and `shared/` layers importing across
   the wrong layer boundary.
+- `server/sdk`, `server/transforms`, `server/workspace-template` paths inside
+  plugin directories (these are agent assets and must live under `agent/`).
 - TypeScript source files directly under a plugin root instead of
-  `front/`, `server/`, or `shared/`.
+  `front/`, `server/`, `agent/`, or `shared/`.
 - Plugin-domain imports from production `workspace/src/front/chrome`, `events`,
   and `hooks`.
 - Legacy plugin file names such as `catalog.ts`, `surfaceTargets.ts`,

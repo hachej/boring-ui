@@ -37,7 +37,8 @@
     "**/*.css"
   ],
   "files": [
-    "dist"
+    "dist",
+    "docs"
   ],
   "scripts": {
     "build": "pnpm --filter @hachej/boring-ui-kit build && tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",

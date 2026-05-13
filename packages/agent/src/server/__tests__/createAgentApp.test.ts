@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import { createAgentApp } from '../createAgentApp'
@@ -80,6 +80,73 @@ test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
   await app.close()
 
   await expect(readFile(join(workspaceRoot, 'FROM_ENV.txt'), 'utf-8')).resolves.toBe('env-template\n')
+})
+
+test('createAgentApp can use a custom harness factory for non-pi runtimes', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-custom-harness-')
+  const reloadSession = vi.fn(async () => true)
+  const harnessFactory = vi.fn(async (input) => ({
+    id: 'custom-test-harness',
+    placement: 'server' as const,
+    sessions: {
+      async list() { return [] },
+      async create() {
+        const now = new Date().toISOString()
+        return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+      },
+      async load() {
+        const now = new Date().toISOString()
+        return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+      },
+      async delete() {},
+    },
+    reloadSession,
+    async *sendMessage() {},
+  }))
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    harnessFactory,
+    extraTools: [{
+      name: 'custom_runtime_tool',
+      description: 'Provided to harness factory.',
+      parameters: { type: 'object' as const, properties: {} },
+      async execute() { return { content: [{ type: 'text' as const, text: 'ok' }] } },
+    }],
+  })
+  try {
+    expect(harnessFactory).toHaveBeenCalledTimes(1)
+    expect(harnessFactory.mock.calls[0]?.[0].cwd).toBe(workspaceRoot)
+    expect(harnessFactory.mock.calls[0]?.[0].tools.map((tool: { name: string }) => tool.name)).toContain('custom_runtime_tool')
+
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true, sessionId: 'custom', reloaded: true })
+    expect(reloadSession).toHaveBeenCalledWith('custom')
+  } finally {
+    await app.close()
+  }
+})
+
+test('POST /api/v1/agent/reload awaits beforeReload and aborts on failure', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-reload-hook-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    beforeReload: async () => {
+      throw new Error('before reload failed')
+    },
+  })
+  try {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'missing' } })
+    expect(res.statusCode).toBe(422)
+    expect(res.json()).toEqual({ ok: false, error: 'before reload failed' })
+  } finally {
+    await app.close()
+  }
 })
 
 test('createAgentApp option templatePath takes precedence over env fallback', async () => {
@@ -332,6 +399,29 @@ test('standalone /api/v1/ui/state does NOT exist (404)', async () => {
       payload: { kind: 'openFile', params: { path: 'x.ts' } },
     })
     expect(post.statusCode).toBe(404)
+  } finally {
+    await app.close()
+  }
+})
+
+
+test('POST /api/v1/agent/reload is available before first turn', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-reload-route-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+  })
+
+  try {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/reload',
+      payload: { sessionId: 'default' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true, sessionId: 'default', reloaded: false })
   } finally {
     await app.close()
   }

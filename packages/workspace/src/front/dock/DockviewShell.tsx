@@ -6,6 +6,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useSyncExternalStore,
   type ReactNode,
 } from "react"
 import {
@@ -314,18 +315,32 @@ export function DockviewShell({
   watermarkComponent,
 }: DockviewShellProps) {
   const registry = useRegistry()
+  const registrySnapshot = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
   const hydrationComplete = useHydrationComplete()
   const apiRef = useRef<DockviewApi | null>(null)
   const pendingOnReady = useRef<DockviewReadyEvent | null>(null)
   const disposeRef = useRef<(() => void) | undefined>(undefined)
+  const componentsCacheRef = useRef<Record<string, React.FunctionComponent<IDockviewPanelProps>> | null>(null)
 
   const components = useMemo(() => {
     const all = registry.getComponents()
-    if (!allowedPanels) return all
-    return Object.fromEntries(
-      Object.entries(all).filter(([id]) => allowedPanels.includes(id)),
-    )
-  }, [registry, allowedPanels])
+    const next = (allowedPanels
+      ? Object.fromEntries(Object.entries(all).filter(([id]) => allowedPanels.includes(id)))
+      : all) as Record<string, React.FunctionComponent<IDockviewPanelProps>>
+    const previous = componentsCacheRef.current
+    if (previous) {
+      const previousKeys = Object.keys(previous)
+      const nextKeys = Object.keys(next)
+      if (
+        previousKeys.length === nextKeys.length &&
+        nextKeys.every((key) => previous[key] === next[key])
+      ) {
+        return previous
+      }
+    }
+    componentsCacheRef.current = next
+    return next
+  }, [registry, registrySnapshot, allowedPanels])
 
   const shellApi = useMemo(() => createShellApi(apiRef), [])
 

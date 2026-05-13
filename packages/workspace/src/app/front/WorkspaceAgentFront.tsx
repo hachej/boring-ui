@@ -58,6 +58,8 @@ export interface WorkspaceAgentFrontProps<
   afterShell?: ReactNode
   appTitle?: string
   defaultSessionTitle?: string
+  defaultSurfaceOpen?: boolean
+  defaultWorkbenchLeftTab?: string
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number }>
@@ -213,6 +215,8 @@ export function WorkspaceAgentFront<
   onActiveSessionIdChange,
   appTitle = "Boring",
   defaultSessionTitle = "New session",
+  defaultSurfaceOpen,
+  defaultWorkbenchLeftTab,
   topBarLeft,
   topBarRight,
   chatParams,
@@ -289,7 +293,7 @@ export function WorkspaceAgentFront<
     // layout JSON at the same ":surface" suffix). Writing "1"/"0" to the same
     // key corrupts the JSON and drops the persisted workbench layout on reload.
     `${shellStorageKey}:workbenchOpen`,
-    false,
+    defaultSurfaceOpen ?? false,
     shellPersistenceEnabled,
   )
   const [workbenchLeftOpen, setWorkbenchLeftOpen] = useStoredBooleanState(
@@ -417,12 +421,14 @@ export function WorkspaceAgentFront<
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
+    defaultLeftTab: defaultWorkbenchLeftTab,
     extraPanels: shellExtraPanels,
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
     onClose: closeWorkbench,
   }), [
     closeWorkbench,
+    defaultWorkbenchLeftTab,
     handleSurfaceChange,
     handleSurfaceReady,
     resolvedSurfaceStorageKey,
@@ -496,9 +502,11 @@ export function WorkspaceAgentFront<
             surface={surfaceOpen ? "artifact-surface" : null}
             surfaceParams={surfaceParams as Record<string, unknown>}
             sidebar={surfaceOpen && hasLeftTabs && workbenchLeftOpen ? "workbench-left" : null}
-            sidebarParams={{
+            sidebarParams={surfaceOpen && hasLeftTabs ? {
+              ...(defaultWorkbenchLeftTab ? { defaultTab: defaultWorkbenchLeftTab } : {}),
               onClose: () => setWorkbenchLeftOpen(false),
-            }}
+              onCollapse: () => setWorkbenchLeftOpen(false),
+            } : undefined}
             storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
             onOpenNav={() => {
               setNavOpen(true)

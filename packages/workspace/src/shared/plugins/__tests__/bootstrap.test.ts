@@ -3,10 +3,9 @@ import { CommandRegistry } from "../../../front/registry/CommandRegistry"
 import { PanelRegistry } from "../../../front/registry/PanelRegistry"
 import { SurfaceResolverRegistry } from "../../../front/registry/SurfaceResolverRegistry"
 import type { CommandConfig, PanelConfig } from "../../../front/registry/types"
-import { bootstrap, type AgentToolRegistry } from "../bootstrap"
+import { bootstrap } from "../bootstrap"
 import { CatalogRegistry } from "../../../front/plugin/CatalogRegistry"
 import { PluginError } from "../defineFrontPlugin"
-import type { WorkspaceFrontPlugin } from "../defineFrontPlugin"
 import type { CatalogConfig } from "../types"
 
 const DummyPanel = () => null
@@ -49,15 +48,6 @@ function makeCatalog(overrides: Partial<CatalogConfig> = {}): CatalogConfig {
   }
 }
 
-function makeAgentTool(name = "tool") {
-  return {
-    name,
-    description: "Tool",
-    parameters: { type: "object", properties: {} },
-    execute: vi.fn(async () => ({ content: [{ type: "text" as const, text: "ok" }] })),
-  }
-}
-
 describe("bootstrap", () => {
   it("requires an injected chat panel", () => {
     expect(() =>
@@ -80,10 +70,8 @@ describe("bootstrap", () => {
     ).toEqual({ registered: [], systemPromptAppend: "" })
   })
 
-  it("fans panels, commands, catalogs, and agent tools into registries", () => {
+  it("fans panels, commands, and catalogs into registries", () => {
     const registries = makeRegistries()
-    const agentTools: AgentToolRegistry = { register: vi.fn() }
-    const tool = makeAgentTool()
 
     bootstrap({
       chatPanel: DummyChatPanel,
@@ -93,11 +81,10 @@ describe("bootstrap", () => {
           panels: [makePanel({ id: "files", pluginId: "author-supplied" })],
           commands: [makeCommand({ id: "open", pluginId: "author-supplied" })],
           catalogs: [makeCatalog({ id: "catalog", pluginId: "author-supplied" })],
-          agentTools: [tool],
         },
       ],
       defaults: [],
-      registries: { ...registries, agentTools },
+      registries,
     })
 
     expect(registries.panels.get("files")).toEqual(
@@ -109,13 +96,10 @@ describe("bootstrap", () => {
     expect(registries.catalogs.get("catalog")).toEqual(
       expect.objectContaining({ id: "catalog", pluginId: "host" }),
     )
-    expect(agentTools.register).toHaveBeenCalledWith(tool, "host")
   })
 
   it("normalizes plugin outputs into registries", () => {
     const registries = makeRegistries()
-    const agentTools: AgentToolRegistry = { register: vi.fn() }
-    const tool = makeAgentTool("output-tool")
 
     bootstrap({
       chatPanel: DummyChatPanel,
@@ -140,12 +124,11 @@ describe("bootstrap", () => {
                 resolve: () => ({ component: "files" }),
               },
             },
-            { type: "agent-tool", id: "output-tool", tool },
           ],
         },
       ],
       defaults: [],
-      registries: { ...registries, agentTools },
+      registries,
     })
 
     expect(registries.panels.get("files")).toEqual(
@@ -165,7 +148,6 @@ describe("bootstrap", () => {
     expect(registries.surfaceResolvers.get("surface")).toEqual(
       expect.objectContaining({ id: "surface", pluginId: "host" }),
     )
-    expect(agentTools.register).toHaveBeenCalledWith(tool, "host")
   })
 
   it("registers defaults before host plugins and returns the final order", () => {
@@ -273,19 +255,6 @@ describe("bootstrap", () => {
     })
 
     expect(result).not.toBeInstanceOf(Promise)
-  })
-
-  it("does not require an agent tool registry on the client", () => {
-    const plugin: WorkspaceFrontPlugin = { id: "host", agentTools: [makeAgentTool()] }
-
-    expect(() =>
-      bootstrap({
-        chatPanel: DummyChatPanel,
-        defaults: [],
-        plugins: [plugin],
-        registries: makeRegistries(),
-      }),
-    ).not.toThrow()
   })
 
   describe("systemPromptAppend", () => {

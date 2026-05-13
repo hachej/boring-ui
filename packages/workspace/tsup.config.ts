@@ -8,6 +8,7 @@ export default defineConfig({
     server: "src/server/index.ts",
     shared: "src/shared/index.ts",
     events: "src/front/events/index.ts",
+    plugin: "src/plugin.ts",
   },
   format: ["esm"],
   dts: {
@@ -17,6 +18,7 @@ export default defineConfig({
       server: "src/server/index.ts",
       shared: "src/shared/index.ts",
       events: "src/front/events/index.ts",
+      plugin: "src/plugin.ts",
     },
   },
   tsconfig: "tsconfig.tsup.json",

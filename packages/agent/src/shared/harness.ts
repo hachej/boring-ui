@@ -1,5 +1,16 @@
 import type { UIMessageChunk } from './message'
 import type { SessionStore } from './session'
+import type { AgentTool } from './tool'
+
+export interface AgentHarnessFactoryInput {
+  tools: AgentTool[]
+  cwd: string
+  systemPromptAppend?: string
+  sessionNamespace?: string
+  sessionDir?: string
+}
+
+export type AgentHarnessFactory = (input: AgentHarnessFactoryInput) => AgentHarness | Promise<AgentHarness>
 
 export interface AgentHarness {
   readonly id: string
@@ -44,6 +55,9 @@ export interface AgentHarness {
    * client message, implementations should remove only that item if possible.
    */
   clearFollowUp?(sessionId: string, options?: FollowUpOptions): void
+
+  /** Reload native agent resources/extensions for an existing session. */
+  reloadSession?: (sessionId: string) => Promise<boolean>
 }
 
 export interface FollowUpOptions {

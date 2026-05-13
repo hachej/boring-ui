@@ -12,6 +12,8 @@ import {
   DefaultResourceLoader,
   SettingsManager,
   getAgentDir,
+  loadSkills,
+  type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment, FollowUpOptions } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
@@ -75,7 +77,7 @@ function composeSystemPromptAppend(hostAppend: string | undefined): string {
   return [WORKSPACE_PATHS_GUIDELINE, hostAppend?.trim()].filter(Boolean).join("\n\n");
 }
 
-export interface PiResourceLoaderOptions {
+export interface PiHarnessOptions {
   noContextFiles?: boolean;
   noSkills?: boolean;
   additionalSkillPaths?: string[];
@@ -84,8 +86,18 @@ export interface PiResourceLoaderOptions {
    * These are applied as in-memory SettingsManager overrides, so host/plugin
    * declarations do not mutate .pi/settings.json.
    */
-  piPackages?: PiPackageSource[];
+  packages?: PiPackageSource[];
+  /**
+   * Additional native pi extension entrypoints. Pi loads these through jiti and
+   * re-imports them on ctx.reload(), which is required for hot-reloadable
+   * boring agent plugins.
+   */
+  extensionPaths?: string[];
+  /** In-process host extensions. Use only for trusted built-ins; hot plugin code should use paths. */
+  extensionFactories?: ExtensionFactory[];
 }
+
+export type PiExtensionFactory = ExtensionFactory;
 
 
 function extractUserMessageText(message: unknown): string {
@@ -278,8 +290,8 @@ export function createPiCodingAgentHarness(opts: {
   cwd: string;
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
-  /** Optional pi resource-loader isolation knobs. */
-  resourceLoaderOptions?: PiResourceLoaderOptions;
+  /** Optional pi adapter/runtime knobs. */
+  pi?: PiHarnessOptions;
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
@@ -348,12 +360,14 @@ export function createPiCodingAgentHarness(opts: {
     // guideline (relative-paths only) on top of whatever the host supplied —
     // pi's cwd line otherwise lures the model into passing absolute paths
     // that fail the workspace bounds check. Hosts can also disable ambient
-    // AGENTS.md / global skill discovery while injecting explicit skill paths.
+    // AGENTS.md / global skill discovery while injecting explicit skill paths,
+    // packages, and hot-reloadable extension entrypoints.
     const composedSystemPromptAppend = composeSystemPromptAppend(opts.systemPromptAppend)
     const agentDir = getAgentDir()
-    const additionalSkillPaths =
-      opts.resourceLoaderOptions?.additionalSkillPaths ?? []
-    const piPackages = opts.resourceLoaderOptions?.piPackages ?? []
+    const additionalSkillPaths = opts.pi?.additionalSkillPaths ?? []
+    const piPackages = opts.pi?.packages ?? []
+    const additionalExtensionPaths = opts.pi?.extensionPaths ?? []
+    const extensionFactories = opts.pi?.extensionFactories ?? []
     const settingsManager = createResourceSettingsManager(
       ctx.workdir,
       agentDir,
@@ -364,11 +378,22 @@ export function createPiCodingAgentHarness(opts: {
       agentDir,
       settingsManager,
       appendSystemPromptOverride: (base: string[]) => [...base, composedSystemPromptAppend],
-      ...(opts.resourceLoaderOptions?.noContextFiles
-        ? { noContextFiles: true }
-        : {}),
-      ...(opts.resourceLoaderOptions?.noSkills ? { noSkills: true } : {}),
+      ...(additionalExtensionPaths.length ? { additionalExtensionPaths } : {}),
+      ...(extensionFactories.length ? { extensionFactories } : {}),
+      ...(opts.pi?.noContextFiles ? { noContextFiles: true } : {}),
+      ...(opts.pi?.noSkills ? { noSkills: true } : {}),
       ...(additionalSkillPaths.length ? { additionalSkillPaths } : {}),
+      ...(opts.pi?.noSkills || additionalSkillPaths.length
+        ? {
+            skillsOverride: () =>
+              loadSkills({
+                cwd: ctx.workdir,
+                agentDir,
+                skillPaths: additionalSkillPaths,
+                includeDefaults: false,
+              }),
+          }
+        : {}),
     })
 
     await resourceLoader?.reload()
@@ -395,6 +420,13 @@ export function createPiCodingAgentHarness(opts: {
     const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager };
     piSessions.set(sessionId, handle);
     return handle;
+  }
+
+  async function reloadPiSession(sessionId: string): Promise<boolean> {
+    const handle = piSessions.get(sessionId);
+    if (!handle) return false;
+    await handle.piSession.reload();
+    return true;
   }
 
   function disposePiSession(sessionId: string): void {
@@ -534,6 +566,8 @@ export function createPiCodingAgentHarness(opts: {
     getSystemPrompt(sessionId: string): string | undefined {
       return piSessions.get(sessionId)?.piSession.systemPrompt;
     },
+
+    reloadSession: reloadPiSession,
 
     async *sendMessage(
       input: SendMessageInput,

@@ -139,16 +139,6 @@ export interface SurfaceResolverOutput {
   resolver: SurfaceResolverConfig
 }
 
-export interface AgentToolOutput {
-  /**
-   * @deprecated Executable agent tools should be contributed by server
-   * plugins. This output remains for migration only.
-   */
-  type: "agent-tool"
-  id: string
-  tool: AgentTool
-}
-
 export type PluginOutput =
   | LeftTabOutput
   | PanelOutput
@@ -157,6 +147,5 @@ export type PluginOutput =
   | BindingOutput
   | ProviderOutput
   | SurfaceResolverOutput
-  | AgentToolOutput
 
 export type LeftTabComponent = ComponentType<PaneProps<LeftTabParams>>
