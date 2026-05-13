@@ -1,60 +1,53 @@
-<div align="center">
+
 
 # Boring UI
 
+<img src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" alt="Boring UI banner" width="350" />
+
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-**Turn chat into work.**
+Bring your agent skills. Get a UI.
 
-Boring UI turns agent skills into a real app: panels, files, tools, outputs, and state in one workspace.
+Boring UI is an agent-centric web app framework built around a simple idea: in agent-first software, chat should drive the work, and the interface should show the work.
 
-<img width="980" alt="Boring UI banner" src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" />
+Why “Boring”?
 
-</div>
+Because we think agent-first apps only need two core surfaces:
 
-MIT-licensed monorepo for building agent, workspace, and app-shell packages.
+- **one chat** for user intent
+- **one workbench** the agent can control to display results
 
-## In one line
+Everything else should support those two surfaces, not compete with them.
 
-**Chat in → work appears**
+Boring UI gives you that foundation out of the box. If you want to build an agent app, you should mostly need to bring:
+
+- the agent skills and tools
+- the domain-specific panels or visualizations
 
 ## Why it exists
 
-Most AI products stop at chat: you ask, it replies, and the work happens somewhere else.
+Most AI products stop at chat.
 
-Boring UI starts from a different idea:
+Boring UI is built around a different idea: **chat starts the work, but the workspace should show the work.**
 
-> **Chat should be the control layer — not the destination.**
+An agent should not only respond. It should open panels, inspect files, run tools, and leave behind outputs the user can review and continue from.
 
-The agent should not just answer. It should open panels, inspect files, run tools, render outputs, and leave behind work the user can inspect and keep going with.
 
-That is the core model:
-
-- **chat** drives intent
-- **commands** trigger actions
-- **artifacts** hold the work
 
 ## What are workspace artifacts?
 
-Artifacts are the visible outputs the agent creates or changes while working.
+Workspace artifacts are the visible outputs the agent creates while it works.
 
-Depending on your product, an artifact might be:
+They can be:
 
 - a file or code diff
 - a chart, report, or table
-- a generated document or note
+- a generated note or document
 - a query result or dataset preview
 - a log stream or command output
-- a custom panel for a domain object in your app
+- a custom panel for your domain
 
-The point is simple: the agent should not only talk about work. It should show the work itself.
 
-## What you can build
-
-- browser-based coding agents
-- agent workspaces for internal teams
-- domain-specific copilots with inspectable outputs
-- software where the interface adapts to the task
 
 ## Design principles
 
@@ -87,28 +80,14 @@ The framework has a point of view. Your product still keeps its own.
 
 ## How the stack is packaged
 
-| Package | Role | Use it when |
-|---|---|---|
-| `@hachej/boring-core` | Auth, config, database, app shell, and backend foundation | You want a full app shell |
-| `@hachej/boring-agent` | Embeddable coding agent with a Pi-native harness and `direct`, `local`, and `vercel-sandbox` runtime modes | You want agent execution and chat |
-| `@hachej/boring-workspace` | Workspace UI, plugins, layouts, editors, and UI bridge | You want agent-controlled UI |
-| `@hachej/boring-ui-cli` | Zero-setup entrypoint for running a full agent workspace | You want to try Boring UI immediately |
 
-## Package composition
+| Package                    | Role                                                                                                                                                                 | Use it when                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `@hachej/boring-core`      | Auth, config, database, app shell, and backend foundation. Owns persistence and identity.                                                                            | You want a full app shell             |
+| `@hachej/boring-agent`     | Embeddable coding agent with a Pi-native harness and `direct`, `local`, and `vercel-sandbox` runtime modes. Can run standalone with zero core dependency at runtime. | You want agent execution and chat     |
+| `@hachej/boring-workspace` | Workspace UI, plugins, layouts, editors, and UI bridge. Owns workspace UI contracts and app composition helpers.                                                     | You want agent-controlled UI          |
+| `@hachej/boring-ui-cli`    | Zero-setup entrypoint for running a full agent workspace.                                                                                                            | You want to try Boring UI immediately |
 
-Architecture only, not literal package dependencies:
-
-```text
-apps/*  ->  @hachej/boring-workspace  ->  @hachej/boring-core
-   \            ^
-    \------->  @hachej/boring-agent
-```
-
-Notes:
-
-- `@hachej/boring-core` owns persistence and identity
-- `@hachej/boring-agent` can run standalone with zero core dependency at runtime
-- `@hachej/boring-workspace` owns workspace UI contracts and app composition helpers
 
 ## Why Boring UI
 
