@@ -7,7 +7,7 @@ import { ASK_USER_COMMAND_KINDS, ASK_USER_UI_STATE_SLOTS } from "../../shared/co
 import { FileAskUserStore } from "../AskUserStore"
 import { AskUserRuntime } from "../AskUserRuntime"
 import { AskUserStatePublisher } from "../AskUserStatePublisher"
-import { createAskUserPiTool } from "../createAskUserPiExtensionFactory"
+import { createAskUserPiTool } from "../createAskUserPiTool"
 import { questionsRoutes } from "../questionsRoutes"
 import type { UiBridge, UiCommand, UiState } from "../../../../shared/ui-bridge"
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckCircle2, HelpCircle, Loader2, Sparkles, XCircle } from "lucide-react"
+import { CheckCircle2, HelpCircle, Sparkles, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
 import { UI_COMMAND_EVENT } from "../../../front/bridge"
 import { useWorkspaceAttention } from "../../../front/provider"
@@ -155,7 +155,6 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   return <div className={className ?? "h-full"}>
     <div className="h-full overflow-auto bg-[radial-gradient(circle_at_top_left,color-mix(in_oklch,var(--primary)_12%,transparent),transparent_34%),linear-gradient(180deg,color-mix(in_oklch,var(--muted)_62%,transparent),transparent_52%)] p-5 text-sm">
       {!question ? <Card className="border-dashed bg-background/85 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-muted-foreground" /> No pending questions</CardTitle><CardDescription>When the agent needs a decision, the form will appear here.</CardDescription></CardHeader></Card> : null}
-      {question?.status === "draft" ? <Card className="bg-background/90 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Loader2 className="h-4 w-4 animate-spin text-primary" /> Preparing question…</CardTitle><CardDescription>The agent is building the form.</CardDescription></CardHeader></Card> : null}
       {question?.status === "ready" && question.schema ? (
         <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
@@ -190,7 +189,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
           </Card>
         </QuestionFormProvider>
       ) : null}
-      {question && !["draft", "ready"].includes(question.status) ? <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><XCircle className="h-4 w-4 text-muted-foreground" />Question {question.status}</CardTitle></CardHeader></Card> : null}
+      {question && question.status !== "ready" ? <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><XCircle className="h-4 w-4 text-muted-foreground" />Question {question.status}</CardTitle></CardHeader></Card> : null}
     </div>
   </div>
 }

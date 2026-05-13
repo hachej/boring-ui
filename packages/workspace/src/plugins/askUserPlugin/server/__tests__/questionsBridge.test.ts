@@ -15,10 +15,13 @@ async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "ask-user-routes-"))
   const store = new FileAskUserStore(join(dir, "questions.json"))
   const runtime = new AskUserRuntime({ store, ownerPrincipalId: "p1" })
-  const { question, result } = await runtime.beginAskUserStream({ sessionId: "s1", title: "T" })
-  await store.applyPatch(question.questionId, { patchId: "p1", type: "add_field", field: schema.fields[0] }, 0)
-  await store.finalize(question.questionId, undefined, 1)
-  return { store, runtime, question: (await store.getByQuestionId(question.questionId))!, result }
+  const result = runtime.ask({ sessionId: "s1", title: "T", schema })
+  const question = await vi.waitFor(async () => {
+    const pending = await store.getPending("s1")
+    expect(pending).not.toBeNull()
+    return pending!
+  })
+  return { store, runtime, question, result }
 }
 
 describe("QuestionsBridge", () => {

@@ -55,11 +55,6 @@ describe("QuestionForm primitives", () => {
     expect(cancel).toHaveBeenCalled()
   })
 
-  it("disables submit until ready and valid even when props try to override", () => {
-    render(<QuestionFormProvider status="draft"><QuestionForm><QuestionSubmitButton disabled={false} /></QuestionForm></QuestionFormProvider>)
-    expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled()
-  })
-
   it("cancel button composes caller onClick without losing default cancel", () => {
     const cancel = vi.fn()
     const click = vi.fn()
@@ -80,13 +75,4 @@ describe("QuestionForm primitives", () => {
     expect(screen.getByText("Custom text renderer")).toBeInTheDocument()
   })
 
-  it("preserves dirty values across patches and shows hint", () => {
-    const initial = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "text", label: "Old" }] }
-    const patched = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "text", label: "New" }] }
-    const { rerender } = render(<Form schema={initial} />)
-    fireEvent.change(screen.getByLabelText(/Old/), { target: { value: "mine" } })
-    rerender(<Form schema={patched} />)
-    expect(screen.getByDisplayValue("mine")).toBeInTheDocument()
-    expect(screen.getByText(/Agent updated/)).toBeInTheDocument()
-  })
 })

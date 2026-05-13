@@ -101,7 +101,7 @@ export type AskUserToolInput = {
   timeoutMs?: number
 }
 
-export type AskUserQuestionStatus = "draft" | "ready" | "answered" | "cancelled" | "abandoned"
+export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abandoned"
 
 export type AskUserQuestion = {
   questionId: string
@@ -110,9 +110,7 @@ export type AskUserQuestion = {
   status: AskUserQuestionStatus
   title?: string
   context?: string
-  draftFields?: AskUserField[]
   schema?: AskUserFormSchema
-  draftVersion: number
   answerToken: string
   createdAt: string
   updatedAt: string
@@ -144,14 +142,6 @@ export type AskUserToolResult =
       sessionId: string
       reason: AskUserCancelReason
     }
-
-export type AskUserFormPatch =
-  | ({ patchId: string } & { type: "set_title"; title: string })
-  | ({ patchId: string } & { type: "set_context"; context: string })
-  | ({ patchId: string } & { type: "add_field"; field: AskUserField })
-  | ({ patchId: string } & { type: "update_field"; name: string; patch: Partial<AskUserField> })
-  | ({ patchId: string } & { type: "remove_field"; name: string })
-  | ({ patchId: string } & { type: "finalize"; submitLabel?: string })
 
 export type QuestionsSubmitCommand = {
   kind: typeof ASK_USER_COMMAND_KINDS.SUBMIT
@@ -186,14 +176,6 @@ export type AskUserTranscriptEvent =
   | {
       type: "created"
       question: AskUserQuestion
-      at: string
-    }
-  | {
-      type: "patched"
-      questionId: string
-      sessionId: string
-      patch: AskUserFormPatch
-      draftVersion: number
       at: string
     }
   | {

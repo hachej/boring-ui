@@ -3,7 +3,7 @@ import type { AskUserAnswerValue, AskUserField, AskUserFormSchema } from "../../
 
 export type QuestionFormValues = Record<string, AskUserAnswerValue>
 export type QuestionValidationResult = { valid: boolean; errors: Record<string, string> }
-export type QuestionFormStatus = "draft" | "ready" | "answered" | "cancelled" | "abandoned"
+export type QuestionFormStatus = "ready" | "answered" | "cancelled" | "abandoned"
 export type QuestionFormState = {
   schema?: AskUserFormSchema
   status: QuestionFormStatus
@@ -60,7 +60,7 @@ export type QuestionFormProviderProps = {
 
 export function QuestionFormProvider({
   schema,
-  status = schema ? "ready" : "draft",
+  status = "ready",
   disabled = false,
   submitting: controlledSubmitting,
   initialValues,
@@ -73,7 +73,6 @@ export function QuestionFormProvider({
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [submitting, setSubmitting] = useState(false)
   const [dirtyHints, setDirtyHints] = useState<Record<string, string>>({})
-  const previousSchema = useRef<AskUserFormSchema | undefined>(schema)
   const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
@@ -82,13 +81,8 @@ export function QuestionFormProvider({
       for (const field of schema?.fields ?? []) {
         if (touched[field.name] && current[field.name] !== undefined) {
           next[field.name] = current[field.name]
-          const oldField = previousSchema.current?.fields.find((candidate) => candidate.name === field.name)
-          if (oldField && JSON.stringify(oldField) !== JSON.stringify(field)) {
-            setDirtyHints((hints) => ({ ...hints, [field.name]: "Agent updated this field; your value was preserved." }))
-          }
         }
       }
-      previousSchema.current = schema
       return next
     })
   }, [schema, initialValues, touched])
@@ -132,7 +126,7 @@ export function QuestionForm({ children, "aria-label": ariaLabel = "Question for
 
 export function QuestionFields() {
   const { schema } = useQuestionForm()
-  if (!schema) return <p role="status">Waiting for question…</p>
+  if (!schema) return null
   return <>{schema.fields.map((field) => <QuestionField key={field.name} field={field} />)}</>
 }
 

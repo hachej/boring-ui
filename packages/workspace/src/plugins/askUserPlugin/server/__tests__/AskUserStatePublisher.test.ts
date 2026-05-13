@@ -30,26 +30,38 @@ async function makeStore() {
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 
 describe("AskUserStatePublisher", () => {
-  it("publishes pending slot on create, patch, finalize, answer, cancel, and abandon", async () => {
+  it("publishes pending slot on create, answer, cancel, and abandon", async () => {
     const store = await makeStore()
     const ui = bridge()
     const publisher = new AskUserStatePublisher(store, ui)
     publisher.start()
     const runtime = new AskUserRuntime({ store })
-    const { question } = await runtime.beginAskUserStream({ sessionId: "s1", title: "T" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ question: { status: "draft" } }))
-    await store.applyPatch(question.questionId, { patchId: "p1", type: "add_field", field: schema.fields[0] }, 0)
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ question: { draftVersion: 1 } }))
-    await store.finalize(question.questionId, undefined, 1)
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ question: { status: "ready" } }))
+    const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
+    const question = await vi.waitFor(async () => {
+      const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+      expect(slot).toMatchObject({ question: { status: "ready" } })
+      return (slot as { question: { questionId: string } }).question
+    })
     await runtime.submitAnswer(question.questionId, "s1", { answer: "ok" })
+    await expect(pending).resolves.toMatchObject({ status: "answered" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
 
-    const { question: q2 } = await runtime.beginAskUserStream({ sessionId: "s1" })
+    const cancelPending = runtime.ask({ sessionId: "s1", schema })
+    const q2 = await vi.waitFor(async () => {
+      const pending = await store.getPending("s1")
+      expect(pending).not.toBeNull()
+      return pending!
+    })
     await runtime.cancelQuestion(q2.questionId, "s1")
+    await expect(cancelPending).resolves.toMatchObject({ status: "cancelled" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
 
-    const { question: q3 } = await runtime.beginAskUserStream({ sessionId: "s1" })
+    void runtime.ask({ sessionId: "s1", schema })
+    const q3 = await vi.waitFor(async () => {
+      const pending = await store.getPending("s1")
+      expect(pending).not.toBeNull()
+      return pending!
+    })
     await store.markAbandoned(q3.questionId)
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
   })
@@ -88,7 +100,12 @@ describe("ask-user UI open ack", () => {
   it("questions.opened route acknowledges rehydrated question", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })
-    const { question } = await runtime.beginAskUserStream({ sessionId: "s1" })
+    void runtime.ask({ sessionId: "s1", schema })
+    const question = await vi.waitFor(async () => {
+      const pending = await store.getPending("s1")
+      expect(pending).not.toBeNull()
+      return pending!
+    })
     const opened = vi.fn()
     const app = Fastify()
     app.register(questionsRoutes, { store, runtime, recordOpened: opened, getAuthContext: () => ({ sessionId: "s1", principalId: "anonymous" }) })
