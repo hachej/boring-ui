@@ -36,6 +36,8 @@ import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugi
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
+import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
+import { WorkspaceAttentionProvider } from "../attention"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -121,33 +123,6 @@ export function ThemeProvider({ children, defaultTheme, onThemeChange }: ThemePr
 // ---------------------------------------------------------------------------
 // Bridge context
 // ---------------------------------------------------------------------------
-
-export type WorkspaceAttentionBlocker = {
-  id: string
-  reason: string
-  surfaceKind?: string
-  target?: string
-  label?: string
-  sessionId?: string
-}
-
-export interface WorkspaceAttentionContextValue {
-  blockers: WorkspaceAttentionBlocker[]
-  addBlocker: (blocker: WorkspaceAttentionBlocker) => void
-  removeBlocker: (id: string) => void
-}
-
-const noopAttention: WorkspaceAttentionContextValue = {
-  blockers: [],
-  addBlocker: () => undefined,
-  removeBlocker: () => undefined,
-}
-
-const WorkspaceAttentionContext = createContext<WorkspaceAttentionContextValue | null>(null)
-
-export function useWorkspaceAttention(): WorkspaceAttentionContextValue {
-  return useContext(WorkspaceAttentionContext) ?? noopAttention
-}
 
 export interface WorkspaceBridgeContextValue {
   connected: boolean
@@ -555,17 +530,6 @@ export function WorkspaceProvider({
   )
 
   const [bridgeConnected, setBridgeConnected] = useState(false)
-  const [attentionBlockers, setAttentionBlockers] = useState<WorkspaceAttentionBlocker[]>([])
-  const addBlocker = useCallback((blocker: WorkspaceAttentionBlocker) => {
-    setAttentionBlockers((current) => [...current.filter((item) => item.id !== blocker.id), blocker])
-  }, [])
-  const removeBlocker = useCallback((id: string) => {
-    setAttentionBlockers((current) => current.filter((item) => item.id !== id))
-  }, [])
-  const attentionValue = useMemo<WorkspaceAttentionContextValue>(
-    () => ({ blockers: attentionBlockers, addBlocker, removeBlocker }),
-    [attentionBlockers, addBlocker, removeBlocker],
-  )
 
   const bridgeValue = useMemo<WorkspaceBridgeContextValue>(
     () => ({ connected: bridgeConnected }),
@@ -580,7 +544,7 @@ export function WorkspaceProvider({
     <WorkspaceContext.Provider value={workspaceValue}>
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
-          <WorkspaceAttentionContext.Provider value={attentionValue}>
+          <WorkspaceAttentionProvider>
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}
@@ -609,7 +573,7 @@ export function WorkspaceProvider({
               </WorkspacePluginProviders>
             </RegistryProvider>
           </PluginErrorProvider>
-          </WorkspaceAttentionContext.Provider>
+          </WorkspaceAttentionProvider>
         </WorkspaceBridgeContext.Provider>
       </ThemeContext.Provider>
     </WorkspaceContext.Provider>
