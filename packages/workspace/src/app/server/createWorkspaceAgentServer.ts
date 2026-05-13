@@ -17,8 +17,6 @@ import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
-import { createAskUserPluginBundle } from "../../plugins/askUserPlugin/server"
-import { ASK_USER_PLUGIN_ID } from "../../plugins/askUserPlugin/shared"
 import {
   ServerPluginError,
   bootstrapServer,
@@ -48,9 +46,17 @@ type WorkspaceAgentCreateOptions = Omit<
   resourceLoaderOptions?: WorkspaceAgentResourceLoaderOptions
 }
 
+export interface WorkspaceAgentServerPluginContext {
+  workspaceRoot: string
+  bridge: ReturnType<typeof createInMemoryBridge>
+}
+
+export type WorkspaceAgentServerPluginFactory = (context: WorkspaceAgentServerPluginContext) => WorkspaceServerPlugin
+
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
     Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
+  pluginFactories?: WorkspaceAgentServerPluginFactory[]
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
@@ -154,12 +160,10 @@ export async function createWorkspaceAgentServer(
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
-  const defaultPlugins = opts.excludeDefaults?.includes(ASK_USER_PLUGIN_ID)
-    ? opts.defaults
-    : [createAskUserPluginBundle({ workspaceRoot, bridge }), ...(opts.defaults ?? [])]
+  const factoryPlugins = opts.pluginFactories?.map((factory) => factory({ workspaceRoot, bridge })) ?? []
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
-    defaults: defaultPlugins,
+    plugins: [...(opts.plugins ?? []), ...factoryPlugins],
   })
 
   if (opts.provisionWorkspace !== false) {

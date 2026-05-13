@@ -11,9 +11,7 @@ import { describe, expect, test } from "vitest"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { FileAskUserStore } from "../../plugins/askUserPlugin/server/AskUserStore"
-import { AskUserRuntime } from "../../plugins/askUserPlugin/server/AskUserRuntime"
-import { createAskUserTool } from "../../plugins/askUserPlugin/server/createAskUserTool"
+import { AskUserRuntime, createAskUserTool, FileAskUserStore } from "../../app/server"
 
 const HAS_KEY = !!process.env.OPENROUTER_API_KEY
 const describeIf = HAS_KEY ? describe : describe.skip
