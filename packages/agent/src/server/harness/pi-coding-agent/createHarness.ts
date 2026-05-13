@@ -100,6 +100,17 @@ function findLastAssistantMessage(messages: unknown): unknown {
   return undefined;
 }
 
+function extractAssistantReasoningTexts(message: unknown): string[] {
+  const content = (message as { content?: unknown } | null)?.content;
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((part) => {
+    const item = part as { type?: unknown; thinking?: unknown; text?: unknown; content?: unknown };
+    if (item.type !== "thinking" && item.type !== "reasoning") return [];
+    const text = item.thinking ?? item.text ?? item.content;
+    return typeof text === "string" && text.length > 0 ? [text] : [];
+  });
+}
+
 function resolveRequestedModel(
   modelRegistry: ModelRegistry,
   input: SendMessageInput,
@@ -604,9 +615,26 @@ export function createPiCodingAgentHarness(opts: {
           const text = role === "user"
             ? extractUserMessageText(eventMessage)
             : extractAssistantMessageText(eventMessage).text;
+          if (role === "assistant") {
+            for (const reasoningText of extractAssistantReasoningTexts(eventMessage)) {
+              const partId = `reasoning-${nextPiSeq()}`;
+              piHistoryChunks.push(
+                { type: "data-pi-reasoning-start", data: { seq: nextPiSeq(), messageId, partId } } as unknown as UIMessageChunk,
+                { type: "data-pi-reasoning-delta", data: { seq: nextPiSeq(), messageId, partId, delta: reasoningText } } as unknown as UIMessageChunk,
+                { type: "data-pi-reasoning-end", data: { seq: nextPiSeq(), messageId, partId } } as unknown as UIMessageChunk,
+              );
+            }
+          }
           piHistoryChunks.push({
             type: "data-pi-message-end",
             data: { seq: nextPiSeq(), messageId, role, ...(text ? { text } : {}) },
+          } as unknown as UIMessageChunk);
+        }
+
+        if (event.type === "tool_execution_start" && currentPiAssistantMessageId) {
+          piHistoryChunks.push({
+            type: "data-pi-tool-call-end",
+            data: { seq: nextPiSeq(), messageId: currentPiAssistantMessageId, toolCallId: event.toolCallId, toolName: event.toolName, input: event.args },
           } as unknown as UIMessageChunk);
         }
 

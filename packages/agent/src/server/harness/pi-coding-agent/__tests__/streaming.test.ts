@@ -262,6 +262,109 @@ describe("streaming concurrency", () => {
     }));
   });
 
+  it("emits pi tool UI chunks from tool execution events", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-tool-ui",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-tool-ui",
+    };
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-stream-tool-ui", message: "list files" },
+      ctx,
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: unknown[] = [];
+
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({ type: "message_start", message: { id: "assistant-tools", role: "assistant" } });
+    chunks.push((await firstRead).value);
+
+    const toolStart = reader.next();
+    emitPiEvent({ type: "tool_execution_start", toolCallId: "tool-1", toolName: "bash", args: { command: "ls" } });
+    chunks.push((await toolStart).value);
+
+    const toolResult = reader.next();
+    emitPiEvent({ type: "tool_execution_end", toolCallId: "tool-1", result: { content: [{ type: "text", text: "ok" }] }, isError: false });
+    chunks.push((await toolResult).value);
+
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve!();
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-tool-call-end",
+      data: expect.objectContaining({ messageId: "assistant-tools", toolCallId: "tool-1", toolName: "bash", input: { command: "ls" } }),
+    }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-tool-result",
+      data: expect.objectContaining({ messageId: "assistant-tools", toolCallId: "tool-1", output: { content: [{ type: "text", text: "ok" }] } }),
+    }));
+  });
+
+  it("emits pi reasoning chunks when final assistant snapshot includes thinking", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-reasoning-snapshot",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-reasoning-snapshot",
+    };
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-stream-reasoning-snapshot", message: "think" },
+      ctx,
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: unknown[] = [];
+
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({ type: "message_start", message: { id: "assistant-reasoning", role: "assistant" } });
+    chunks.push((await firstRead).value);
+    emitPiEvent({
+      type: "message_end",
+      message: {
+        id: "assistant-reasoning",
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "I should inspect the files." },
+          { type: "text", text: "Done." },
+        ],
+      },
+    });
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve!();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-reasoning-delta",
+      data: expect.objectContaining({ messageId: "assistant-reasoning", delta: "I should inspect the files." }),
+    }));
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-message-end",
+      data: expect.objectContaining({ messageId: "assistant-reasoning", role: "assistant", text: "Done." }),
+    }));
+  });
+
   it("emits a text delta when pi only provides final text on agent_end", async () => {
     const harness = createPiCodingAgentHarness({
       tools: [],
