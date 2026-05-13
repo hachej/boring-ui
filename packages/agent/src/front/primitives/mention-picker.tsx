@@ -17,6 +17,12 @@ interface MentionPickerProps {
   apiBaseUrl?: string
 }
 
+export function mentionSearchGlob(query: string): string {
+  const trimmed = query.trim().replaceAll('*', '').replaceAll('?', '')
+  if (!trimmed) return '*'
+  return `*${trimmed}*`
+}
+
 function highlight(text: string, query: string): { before: string; match: string; after: string } | null {
   if (!query) return null
   const idx = text.toLowerCase().indexOf(query.toLowerCase())
@@ -33,7 +39,7 @@ export function MentionPicker({ mention, onSelect, onDismiss, apiBaseUrl = '' }:
     setActiveIdx(0)
     const ctrl = new AbortController()
     const t = setTimeout(() => {
-      fetch(`${apiBaseUrl}/api/v1/files/search?q=${encodeURIComponent(mention.query || '*')}&limit=8`, { signal: ctrl.signal })
+      fetch(`${apiBaseUrl}/api/v1/files/search?q=${encodeURIComponent(mentionSearchGlob(mention.query))}&limit=8`, { signal: ctrl.signal })
         .then((r) => r.ok ? r.json() : null)
         .then((data: { results?: string[] } | null) => {
           if (data?.results) setResults(data.results.slice(0, 8))
