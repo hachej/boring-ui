@@ -33,7 +33,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MentionPicker, detectMention, type MentionState } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
-import { splitFollowUp, splitFollowUpForDisplay } from './splitFollowUp'
+import { usePiChatProjection } from './pi/piChatProjection'
+import { usePiNativeFollowUpQueue } from './pi/piNativeFollowUpQueue'
+import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
@@ -393,46 +395,49 @@ export function ChatPanel(props: ChatPanelProps) {
     debug = false,
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
-  const [pendingMessage, setPendingMessage] = useState<{
-    text: string
-    files: FileUIPart[]
-    serverMessage: string
-    attachments: Array<{ filename?: string; mediaType?: string; url?: string }>
-  } | null>(null)
-  const pendingMessageRef = useRef<typeof pendingMessage>(null)
-  const followUpPostedRef = useRef(false)
-  const followUpPostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const consumedFollowUpRef = useRef<{ text: string; files: FileUIPart[] } | null>(null)
-  const followUpSplitIdsRef = useRef<{ userId: string; assistantId: string } | null>(null)
+  const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
+  const piDataHandlerRef = useRef<(part: unknown) => void>(() => {})
+  const followUpDataHandlerRef = useRef<(part: unknown) => void>(() => {})
 
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
   } = useAgentChat({
     sessionId,
     onData: (part) => {
-      if ((part as { type?: string })?.type === 'data-followup-consumed') {
-        const pending = pendingMessageRef.current
-        const serverText = (part as { data?: { text?: unknown } })?.data?.text
-        consumedFollowUpRef.current = pending
-          ? { text: pending.text, files: pending.files }
-          : typeof serverText === 'string'
-            ? { text: serverText, files: [] }
-            : null
-        followUpSplitIdsRef.current = {
-          userId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-followup-user`,
-          assistantId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-followup-assistant`,
-        }
-        // Keep pendingMessageRef until the stream settles. Some AI SDK paths
-        // deliver the data chunk to onData without retaining the marker in
-        // messages; the ready-transition splitter uses this ref as the durable
-        // source for the injected user turn.
-        setPendingMessage(null)
-      }
+      piDataHandlerRef.current(part)
+      followUpDataHandlerRef.current(part)
       onData?.(part)
     },
     requestHeaders,
+    persistMessages: capabilities.aiSdkOwnsHistory,
   })
+
+  const { piMessages, handleData: handlePiData } = usePiChatProjection({
+    messages,
+    status,
+    sessionId,
+    requestHeaders,
+  })
+  useEffect(() => {
+    piDataHandlerRef.current = handlePiData
+  }, [handlePiData])
+
+  const {
+    pendingMessages,
+    projectedTailMessages,
+    projectedStatusById,
+    queueFollowUp,
+    handleData: handleFollowUpData,
+    stopAndClearFollowUps,
+  } = usePiNativeFollowUpQueue({
+    sessionId,
+    status,
+    requestHeaders,
+    stop,
+  })
+  useEffect(() => {
+    followUpDataHandlerRef.current = handleFollowUpData
+  }, [handleFollowUpData])
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
@@ -569,92 +574,19 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [setModel])
 
   const isStreaming = status === 'submitted' || status === 'streaming'
+  const attachmentsDisabled = isStreaming || pendingMessages.length > 0
 
-  const displayMessages = useMemo(() =>
-    splitFollowUpForDisplay(
-      messages,
-      consumedFollowUpRef.current,
-      pendingMessageRef.current,
-      followUpSplitIdsRef.current,
-    ),
-  [messages])
-
-  const postPendingFollowUp = useCallback((pending: NonNullable<typeof pendingMessage>) => {
-    if (followUpPostedRef.current) return
-    followUpPostedRef.current = true
-    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...requestHeaders,
-      },
-      body: JSON.stringify({ message: pending.serverMessage, displayText: pending.text, attachments: pending.attachments }),
-    }).catch(() => {
-      followUpPostedRef.current = false
-    })
-  }, [sessionId, requestHeaders])
-
-  // Wait until the active request is genuinely streaming before handing the
-  // queued follow-up to pi. During AI SDK `submitted`, pi may not be in its
-  // running state yet; pi-native followUp() is reliable once streaming starts.
-  useEffect(() => {
-    if (status !== 'streaming') return
-    const pending = pendingMessageRef.current
-    if (!pending) return
-    postPendingFollowUp(pending)
-  }, [status, postPendingFollowUp])
-
-  // Server-side inline follow-ups keep the same HTTP stream open. The AI SDK
-  // naturally appends both assistant turns into one assistant message, so when
-  // the stream settles we split at the server's data-followup-consumed marker
-  // and inject the queued user message between the two assistant turns.
-  const prevStatusForQueue = useRef(status)
-  useEffect(() => {
-    const prev = prevStatusForQueue.current
-    prevStatusForQueue.current = status
-    if (status !== 'ready') return
-    if (prev !== 'streaming' && prev !== 'submitted') return
-    const consumed = consumedFollowUpRef.current ?? pendingMessageRef.current
-    if (!consumed) return
-    const ids = followUpSplitIdsRef.current
-    consumedFollowUpRef.current = null
-    followUpSplitIdsRef.current = null
-    pendingMessageRef.current = null
-    followUpPostedRef.current = false
-    if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
-    followUpPostTimerRef.current = null
-    setPendingMessage(null)
-    let n = 0
-    const genId = () => ids ? (n++ === 0 ? ids.userId : ids.assistantId) : (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)
-    const nextMessages = splitFollowUp(messages, consumed, genId)
-    setMessages(nextMessages)
-    // useAgentChat's save effect may have already persisted the unsplit stream
-    // snapshot for this ready transition. Persist the corrected shape too.
-    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...requestHeaders,
-      },
-      body: JSON.stringify({ messages: nextMessages }),
-    }).catch(() => {})
-  }, [status, messages, sessionId, requestHeaders, setMessages])
+  const displayMessages = useMemo(() => {
+    const waitingTail = projectedTailMessages.filter((message) => projectedStatusById.get(message.id) === 'queued')
+    return piMessages.length > 0
+      ? [...piMessages, ...waitingTail]
+      : [...messages, ...projectedTailMessages]
+  }, [messages, piMessages, projectedTailMessages, projectedStatusById])
 
   // Stop button: cancels stream AND clears the queued follow-up.
   const handleStop = useCallback(() => {
-    stop()
-    consumedFollowUpRef.current = null
-    followUpSplitIdsRef.current = null
-    pendingMessageRef.current = null
-    followUpPostedRef.current = false
-    if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
-    followUpPostTimerRef.current = null
-    setPendingMessage(null)
-    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
-      method: 'DELETE',
-      headers: requestHeaders,
-    }).catch(() => {})
-  }, [stop, sessionId, requestHeaders])
+    stopAndClearFollowUps()
+  }, [stopAndClearFollowUps])
 
   // Escape: interrupts the stream but keeps the queued message — it auto-sends next.
   // Same behaviour as pi's keyboard interrupt: "stop this, do my follow-up instead."
@@ -861,29 +793,20 @@ export function ChatPanel(props: ChatPanelProps) {
     // next pi turn in the same HTTP stream. This avoids a second AI SDK
     // sendMessage() call while the previous assistant message is still last in
     // client state — that was the source of duplicated assistant text.
+    if (isStreaming && files.length > 0) {
+      setAttachmentNotice('Attachments can be sent after the current response finishes.')
+      throw new Error('attachments_disabled_while_streaming')
+    }
+
     const resolvedAttachments = await resolveAttachmentUrls(files)
 
-    if (isStreaming) {
-      if (!pendingMessage) {
-        const nextPending = {
-          text,
-          files: files ?? [],
-          serverMessage,
-          attachments: resolvedAttachments,
-        }
-        pendingMessageRef.current = nextPending
-        followUpPostedRef.current = false
-        setPendingMessage(nextPending)
-        if (status === 'streaming') {
-          postPendingFollowUp(nextPending)
-        } else {
-          if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
-          followUpPostTimerRef.current = setTimeout(() => {
-            const pending = pendingMessageRef.current
-            if (pending) postPendingFollowUp(pending)
-          }, 1000)
-        }
-      }
+    if (isStreaming && capabilities.nativeFollowUp) {
+      queueFollowUp({
+        text,
+        files: files ?? [],
+        serverMessage,
+        attachments: resolvedAttachments,
+      })
       return
     }
 
@@ -989,6 +912,8 @@ export function ChatPanel(props: ChatPanelProps) {
           )}
           {displayMessages.map((message, messageIndex) => {
             const role = message.role === 'user' || message.role === 'assistant' ? message.role : 'assistant'
+            const projectedStatus = projectedStatusById.get(message.id)
+            const isWaitingFollowUp = role === 'user' && projectedStatus === 'queued'
             const textParts = message.parts.filter(isTextPart)
             const fileParts = message.parts.filter(isFilePart)
             const orderedParts = message.parts.reduce<Array<
@@ -1068,11 +993,20 @@ export function ChatPanel(props: ChatPanelProps) {
                     role === 'user'
                       ? cn(
                           "!ml-auto !max-w-[80%] !rounded-[var(--radius-lg)]",
-                          "!bg-secondary !text-secondary-foreground !px-4 !py-2.5",
+                          "!px-4 !py-2.5",
+                          isWaitingFollowUp
+                            ? "!border !border-dashed !border-border/70 !bg-muted/45 !text-muted-foreground italic shadow-none"
+                            : "!bg-secondary !text-secondary-foreground",
                         )
                       : "!w-full !bg-transparent !p-0",
                   )}
+                  data-waiting-follow-up={isWaitingFollowUp ? 'true' : undefined}
                 >
+                  {isWaitingFollowUp && (
+                    <div className="mb-1 text-[10px] font-medium not-italic uppercase tracking-[0.16em] text-muted-foreground/70">
+                      Waiting…
+                    </div>
+                  )}
                   {fileParts.length > 0 && (
                     <Attachments
                       variant="list"
@@ -1109,7 +1043,12 @@ export function ChatPanel(props: ChatPanelProps) {
                           isStreaming={item.state === 'streaming'}
                           defaultOpen={item.state === 'streaming'}
                         >
-                          <ReasoningTrigger />
+                          <ReasoningTrigger
+                            className="mb-1 w-fit rounded-[var(--radius-sm)] px-0 py-0 !text-xs !font-normal !text-muted-foreground/75 hover:bg-transparent hover:!text-muted-foreground/75 [&_svg]:!text-muted-foreground/75"
+                            getThinkingMessage={(streaming) => (
+                              <span>{streaming ? 'thinking' : 'thoughts'}</span>
+                            )}
+                          />
                           <ReasoningContent>{item.text}</ReasoningContent>
                         </Reasoning>
                       )
@@ -1186,14 +1125,6 @@ export function ChatPanel(props: ChatPanelProps) {
               </Message>
             )
           })}
-          {pendingMessage && (
-            <Message from="user">
-              <MessageContent className="opacity-50">
-                <div className="text-[11px] font-medium text-muted-foreground mb-1">Follow-up</div>
-                <div className="text-sm whitespace-pre-wrap">{pendingMessage.text}</div>
-              </MessageContent>
-            </Message>
-          )}
           {(() => {
             if (!error) return null
             const friendly = friendlyError(error)
@@ -1327,7 +1258,7 @@ export function ChatPanel(props: ChatPanelProps) {
             // caps `attachments` at 20 entries; we match that client-side and
             // add a 5 MB-per-file limit so a giant drag-drop doesn't blow
             // localStorage's ~5 MB origin quota when the cached history grows.
-            maxFiles={20}
+            maxFiles={attachmentsDisabled ? 0 : 20}
             maxFileSize={5 * 1024 * 1024}
             onError={(err) => {
               const e = err as { code: string; message?: string; max?: number }
@@ -1363,7 +1294,7 @@ export function ChatPanel(props: ChatPanelProps) {
               {/* Left-side actions cluster so attach + model feel like one
                * group rather than two disconnected controls. */}
               <div className="flex items-center gap-1">
-                <AttachmentButton />
+                <AttachmentButton disabled={attachmentsDisabled} />
                 <ModelSelect
                   value={model}
                   onChange={setModel}
@@ -1684,16 +1615,20 @@ function ThoughtVisibilityButton({
   )
 }
 
-function AttachmentButton() {
+function AttachmentButton({ disabled }: { disabled?: boolean }) {
   const attachments = usePromptInputAttachments()
   return (
     <IconButton
       type="button"
       variant="ghost"
       size="icon-sm"
-      onClick={() => attachments.openFileDialog()}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) attachments.openFileDialog()
+      }}
       className={cn(composerActionClass, "w-8")}
       aria-label="Attach files"
+      title={disabled ? 'Attachments are available after the current response finishes.' : 'Attach files'}
     >
       <PaperclipIcon className="h-4 w-4" />
     </IconButton>
@@ -1887,10 +1822,10 @@ function MessageActionsBar({
       document.body.removeChild(ta)
     }
   }
-  const actionBtnClass = cn(
-    "inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] px-1.5",
-    "text-[11.5px] font-medium text-muted-foreground/55 transition-colors",
-    "hover:bg-foreground/[0.04] hover:text-foreground",
+  const iconActionBtnClass = cn(
+    "inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]",
+    "text-muted-foreground/35 transition-colors",
+    "hover:bg-foreground/[0.04] hover:text-muted-foreground/80",
     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40",
   )
   return (
@@ -1902,14 +1837,12 @@ function MessageActionsBar({
         "flex items-center gap-0.5 -mt-1",
       )}
     >
-      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>
+      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={iconActionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'} title={copied ? 'Copied' : 'Copy'}>
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
-        <span>{copied ? 'Copied' : 'Copy'}</span>
       </Button>
       {canRegenerate && (
-        <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={actionBtnClass} aria-label="Regenerate">
+        <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={iconActionBtnClass} aria-label="Regenerate" title="Regenerate">
           <RefreshCwIcon className="h-3.5 w-3.5" />
-          <span>Regenerate</span>
         </Button>
       )}
     </div>
