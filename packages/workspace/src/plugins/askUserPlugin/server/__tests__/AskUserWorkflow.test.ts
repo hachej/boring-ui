@@ -7,7 +7,7 @@ import { ASK_USER_COMMAND_KINDS, ASK_USER_UI_STATE_SLOTS } from "../../shared/co
 import { FileAskUserStore } from "../AskUserStore"
 import { AskUserRuntime } from "../AskUserRuntime"
 import { AskUserStatePublisher } from "../AskUserStatePublisher"
-import { createAskUserPiTool } from "../createAskUserPiTool"
+import { createAskUserTool } from "../createAskUserTool"
 import { questionsRoutes } from "../questionsRoutes"
 import type { UiBridge, UiCommand, UiState } from "../../../../shared/ui-bridge"
 
@@ -42,7 +42,7 @@ describe("ask-user full workflow", () => {
       getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }),
     })
 
-    const tool = createAskUserPiTool({ runtime, sessionId: "s1" })
+    const tool = createAskUserTool({ runtime, sessionId: "s1" })
     const toolResult = tool.execute("call-1", {
       title: "Pick a deployment region",
       context: "We need a region before continuing.",

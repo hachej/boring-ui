@@ -2,27 +2,27 @@ import { validateAskUserToolInput } from "../shared/schema"
 import type { AskUserToolInput, AskUserToolResult } from "../shared/types"
 import type { AskUserRuntime } from "./AskUserRuntime"
 
-export type AskUserPiToolResult = {
+export type AskUserToolResultPayload = {
   content: Array<{ type: "text"; text: string }>
   details?: unknown
   isError?: boolean
 }
 
-export type AskUserPiToolDefinition = {
+export type AskUserToolDefinition = {
   name: "ask_user"
   label: string
   description: string
   parameters: Record<string, unknown>
   promptSnippet?: string
-  execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, sessionId?: string): Promise<AskUserPiToolResult>
+  execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, sessionId?: string): Promise<AskUserToolResultPayload>
 }
 
-export type AskUserPiToolOptions = {
+export type AskUserToolOptions = {
   runtime: AskUserRuntime
   sessionId: string | (() => string)
 }
 
-export function createAskUserPiTool(options: AskUserPiToolOptions): AskUserPiToolDefinition {
+export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefinition {
   return {
     name: "ask_user",
     label: "Ask user",
@@ -92,7 +92,7 @@ function resolveSessionId(sessionId: string | (() => string)): string {
   return typeof sessionId === "function" ? sessionId() : sessionId
 }
 
-function formatAskUserResult(result: AskUserToolResult): AskUserPiToolResult {
+function formatAskUserResult(result: AskUserToolResult): AskUserToolResultPayload {
   if (result.status === "answered") {
     return {
       content: [{ type: "text", text: `User answered: ${JSON.stringify(result.answer.values)}` }],

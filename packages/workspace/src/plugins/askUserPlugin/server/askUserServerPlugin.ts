@@ -3,7 +3,7 @@ import { defineServerPlugin, type WorkspaceServerPlugin } from "../../../server/
 import { ASK_USER_PLUGIN_ID, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserRuntime } from "./AskUserRuntime"
 import type { AskUserStore } from "./AskUserStore"
-import { createAskUserPiTool } from "./createAskUserPiTool"
+import { createAskUserTool } from "./createAskUserTool"
 import { questionsRoutes, type QuestionsRoutesOptions } from "./questionsRoutes"
 
 export type AskUserServerPluginOptions = {
@@ -19,7 +19,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     if (options.onClose) app.addHook("onClose", async () => options.onClose?.())
     await app.register(questionsRoutes, { ...options.routes, runtime: options.runtime, store: options.store })
   }
-  const askUserTool = createAskUserPiTool({ runtime: options.runtime, sessionId: options.sessionId })
+  const askUserTool = createAskUserTool({ runtime: options.runtime, sessionId: options.sessionId })
   return defineServerPlugin({
     id: ASK_USER_PLUGIN_ID,
     label: "Questions",

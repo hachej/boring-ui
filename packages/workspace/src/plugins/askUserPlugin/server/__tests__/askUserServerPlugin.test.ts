@@ -8,7 +8,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { FileAskUserStore } from "../AskUserStore"
 import { AskUserRuntime } from "../AskUserRuntime"
-import { createAskUserPiTool } from "../createAskUserPiTool"
+import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
@@ -23,20 +23,20 @@ async function fixture() {
 describe("ask-user Pi tool", () => {
   it("registers one ask_user tool and rejects invalid input immediately", async () => {
     const { runtime } = await fixture()
-    const tool = createAskUserPiTool({ runtime, sessionId: "s1" })
+    const tool = createAskUserTool({ runtime, sessionId: "s1" })
     expect(tool.name).toBe("ask_user")
     await expect(tool.execute("call", {}, undefined)).resolves.toMatchObject({ isError: true })
   })
 
   it("returns cancelled tool results as tool errors", async () => {
     const { runtime } = await fixture()
-    const tool = createAskUserPiTool({ runtime, sessionId: "s1" })
+    const tool = createAskUserTool({ runtime, sessionId: "s1" })
     await expect(tool.execute("call", { title: "Need input", schema }, AbortSignal.timeout(1))).resolves.toMatchObject({ isError: true })
   })
 
   it("requires schema for non-obvious multi-field requests instead of making a fake A/B form", async () => {
     const { store, runtime } = await fixture()
-    const tool = createAskUserPiTool({ runtime, sessionId: "s1" })
+    const tool = createAskUserTool({ runtime, sessionId: "s1" })
     const result = await tool.execute("call", { title: "Details needed", context: "Need name, priority, and notes." }, undefined)
     expect(result).toMatchObject({ isError: true })
     expect(result.content[0]?.text).toContain("schema")
@@ -45,13 +45,13 @@ describe("ask-user Pi tool", () => {
 
   it("returns thrown runtime failures as tool errors", async () => {
     const { runtime } = await fixture()
-    const tool = createAskUserPiTool({ runtime, sessionId: () => { throw new Error("session missing") } })
+    const tool = createAskUserTool({ runtime, sessionId: () => { throw new Error("session missing") } })
     await expect(tool.execute("call", { title: "Need input", schema }, undefined)).resolves.toMatchObject({ isError: true })
   })
 
   it("uses tool execution session id when the harness provides one", async () => {
     const { store, runtime } = await fixture()
-    const tool = createAskUserPiTool({ runtime, sessionId: "fallback" })
+    const tool = createAskUserTool({ runtime, sessionId: "fallback" })
     const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined, "chat-session")
     let pending = await store.getPending("chat-session")
     await vi.waitFor(async () => {
@@ -65,7 +65,7 @@ describe("ask-user Pi tool", () => {
 
   it("valid input creates pending question and waits for runtime answer", async () => {
     const { store, runtime } = await fixture()
-    const tool = createAskUserPiTool({ runtime, sessionId: "s1" })
+    const tool = createAskUserTool({ runtime, sessionId: "s1" })
     const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined)
     let pending = await store.getPending("s1")
     await vi.waitFor(async () => {
