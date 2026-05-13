@@ -17,7 +17,6 @@ export type {
   PluginErrorKind,
   BootstrapOptions,
   BootstrapResult,
-  AgentToolRegistry,
   PanelRegistryLike,
   CommandRegistryLike,
   CatalogRegistryLike,
@@ -52,7 +51,6 @@ export type {
   JSONSchema,
   ToolExecContext,
   ToolResult,
-  AgentToolOutput,
 } from "./shared/plugins"
 export {
   CatalogRegistry,
@@ -301,6 +299,7 @@ export {
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
+  FrontPluginHotReloadMode,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,

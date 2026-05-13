@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {
   defineServerPlugin,
+  type WorkspaceExtensionFactory,
   type WorkspaceServerPlugin,
 } from "./defineServerPlugin"
 import {
@@ -15,6 +16,8 @@ export interface ComposeServerPluginsOptions {
   label?: string
   plugins: WorkspaceServerPlugin[]
   piPackages?: WorkspacePiPackageSource[]
+  extensionPaths?: string[]
+  extensionFactories?: WorkspaceExtensionFactory[]
   systemPrompt?: string
   agentTools?: AgentTool[]
   provisioning?: RuntimeProvisioningContribution
@@ -37,10 +40,12 @@ function mergeProvisioning(
 ): RuntimeProvisioningContribution | undefined {
   const templateDirs = contributions.flatMap((entry) => entry?.templateDirs ?? [])
   const python = contributions.flatMap((entry) => entry?.python ?? [])
-  if (templateDirs.length === 0 && python.length === 0) return undefined
+  const nodePackages = contributions.flatMap((entry) => entry?.nodePackages ?? [])
+  if (templateDirs.length === 0 && python.length === 0 && nodePackages.length === 0) return undefined
   return {
     ...(templateDirs.length > 0 ? { templateDirs } : {}),
     ...(python.length > 0 ? { python } : {}),
+    ...(nodePackages.length > 0 ? { nodePackages } : {}),
   }
 }
 
@@ -52,8 +57,8 @@ function composeRoutes(
   )
   if (routePlugins.length === 0) return undefined
   return async (app) => {
-    for (const routes of routePlugins) {
-      await app.register(routes)
+    for (const routePlugin of routePlugins) {
+      await app.register(routePlugin)
     }
   }
 }
@@ -71,6 +76,14 @@ export function composeServerPlugins(
     ...options.plugins.flatMap((plugin) => plugin.piPackages ?? []),
     ...(options.piPackages ?? []),
   ])
+  const extensionPaths = [
+    ...options.plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
+    ...(options.extensionPaths ?? []),
+  ]
+  const extensionFactories = [
+    ...options.plugins.flatMap((plugin) => plugin.extensionFactories ?? []),
+    ...(options.extensionFactories ?? []),
+  ]
   const agentTools = [
     ...options.plugins.flatMap((plugin) => plugin.agentTools ?? []),
     ...(options.agentTools ?? []),
@@ -96,6 +109,8 @@ export function composeServerPlugins(
     id: options.id,
     ...(options.label !== undefined ? { label: options.label } : {}),
     ...(piPackages.length > 0 ? { piPackages } : {}),
+    ...(extensionPaths.length > 0 ? { extensionPaths } : {}),
+    ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
     ...(agentTools.length > 0 ? { agentTools } : {}),
     ...(provisioning ? { provisioning } : {}),

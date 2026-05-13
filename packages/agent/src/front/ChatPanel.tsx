@@ -1,6 +1,8 @@
 import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
+const AGENT_PLUGINS_RELOADED_EVENT = 'boring-ui:agent-plugins-reloaded'
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MentionPicker } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
@@ -227,6 +229,32 @@ export function ChatPanel(props: ChatPanelProps) {
   const { thinkingLevel, setThinkingLevel, showThoughts, setShowThoughts } =
     useThinkingSettings(thinkingControl)
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
+
+  const reloadAgentPlugins = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/agent/reload', {
+        method: 'POST',
+        headers: {
+          ...(requestHeaders ?? {}),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(payload.error || `reload failed (${res.status})`)
+      }
+      const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+      }
+      return payload.reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Agent plugin reload failed.'
+    }
+  }, [requestHeaders, sessionId])
+
+
   const isStreaming = status === 'submitted' || status === 'streaming'
   const attachmentsDisabled = isStreaming || pendingMessages.length > 0
 
@@ -337,8 +365,9 @@ export function ChatPanel(props: ChatPanelProps) {
             return true
           },
           listCommands: () => registry.list(),
+          reloadAgentPlugins,
         }
-        const result = cmd.handler(parsed.args, ctx)
+        const result = await Promise.resolve(cmd.handler(parsed.args, ctx))
         if (typeof result === 'string') {
           setMessages((prev) => [
             ...prev,

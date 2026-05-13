@@ -1,4 +1,4 @@
-export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => string | void
+export type SlashCommandHandler = (args: string, ctx: SlashCommandContext) => string | void | Promise<string | void>
 
 export interface SlashCommand {
   name: string
@@ -15,6 +15,7 @@ export interface SlashCommandContext {
   /** Explicit provider-qualified model selection (`provider:id` or `{ provider, id }`). */
   setModel: (model: string | { provider: string; id: string }) => boolean
   listCommands: () => SlashCommand[]
+  reloadAgentPlugins: () => Promise<string>
 }
 
 export interface CommandRegistry {

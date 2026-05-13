@@ -10,10 +10,18 @@ import {
   provisionRuntimeWorkspace,
   resolveMode,
   type CreateAgentAppOptions,
+  type PiExtensionFactory,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
-import { join } from "node:path"
+import { existsSync, readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
+import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
+import { boringPluginRoutes } from "../../server/agentPlugins/routes"
+import { createBoringPiExtension } from "../../server/agentPlugins/boringPiExtension"
+import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
+import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
@@ -28,22 +36,27 @@ import {
   type ComposeServerPluginsOptions,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
+  type WorkspaceExtensionFactory,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
 
-export interface WorkspaceAgentResourceLoaderOptions {
+type HostExtensionFactory = PiExtensionFactory
+
+export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
   noSkills?: boolean
   additionalSkillPaths?: string[]
-  piPackages?: WorkspacePiPackageSource[]
+  packages?: WorkspacePiPackageSource[]
+  extensionPaths?: string[]
+  extensionFactories?: HostExtensionFactory[]
 }
 
 type WorkspaceAgentCreateOptions = Omit<
   CreateAgentAppOptions,
-  "resourceLoaderOptions"
+  "pi"
 > & {
-  resourceLoaderOptions?: WorkspaceAgentResourceLoaderOptions
+  pi?: WorkspaceAgentPiOptions
 }
 
 export interface WorkspaceAgentServerPluginContext {
@@ -60,6 +73,18 @@ export interface CreateWorkspaceAgentServerOptions
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
+  /**
+   * Whether /reload refreshes Boring package plugin UI/server assets.
+   * Initial plugin discovery still runs so statically configured plugins load.
+   * Defaults to true.
+   */
+  boringPluginReload?: boolean
+  /**
+   * Whether package.json#pi contributions from Boring package plugins are
+   * forwarded to Pi and refreshed by /reload. Host-supplied opts.pi values are
+   * unaffected. Defaults to true.
+   */
+  piPluginReload?: boolean
 }
 
 export {
@@ -76,13 +101,48 @@ export type {
   WorkspaceRouteContribution,
 }
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+function resolveWorkspacePackageRoot(): string {
+  const candidates = [
+    join(__dirname, ".."),
+    join(__dirname, "../../.."),
+  ]
+  for (const candidate of candidates) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
+      if (pkg.name === "@hachej/boring-workspace") return candidate
+    } catch {
+      // try next layout
+    }
+  }
+  return join(__dirname, "../../..")
+}
+
+function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
+  const packageRoot = resolveWorkspacePackageRoot()
+  if (!existsSync(join(packageRoot, "package.json"))) return null
+  return {
+    id: "boring-workspace-package",
+    provisioning: {
+      nodePackages: [
+        {
+          id: "boring-workspace",
+          packageName: "@hachej/boring-workspace",
+          packageRoot,
+        },
+      ],
+    },
+  }
+}
+
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
   preservedUiStateKeys: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
-    "extraTools" | "systemPromptAppend" | "resourceLoaderOptions"
+    "extraTools" | "systemPromptAppend" | "pi"
   >
 }
 
@@ -90,7 +150,7 @@ export interface CollectWorkspaceAgentServerPluginsOptions
   extends Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
   workspaceRoot?: string
   systemPromptAppend?: string
-  resourceLoaderOptions?: WorkspaceAgentResourceLoaderOptions
+  pi?: WorkspaceAgentPiOptions
 }
 
 export function buildWorkspaceContextPrompt(): string {
@@ -112,11 +172,16 @@ export function collectWorkspaceAgentServerPlugins(
     excludeDefaults: opts.excludeDefaults,
   })
   const workspaceSkillsDir = join(workspaceRoot, ".agents", "skills")
-  const callerAdditional = opts.resourceLoaderOptions?.additionalSkillPaths ?? []
-  const callerPiPackages = opts.resourceLoaderOptions?.piPackages ?? []
+  const callerAdditional = opts.pi?.additionalSkillPaths ?? []
+  const callerPiPackages = opts.pi?.packages ?? []
+  const callerExtensionPaths = opts.pi?.extensionPaths ?? []
+  const callerExtensionFactories = opts.pi?.extensionFactories ?? []
 
   return {
-    provisioningContributions: result.provisioningContributions,
+    provisioningContributions: [
+      createWorkspacePackageProvisioningContribution(),
+      ...result.provisioningContributions,
+    ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry)),
     routeContributions: result.routeContributions,
     preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
@@ -124,10 +189,12 @@ export function collectWorkspaceAgentServerPlugins(
       systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
         .filter(Boolean)
         .join("\n\n") || undefined,
-      resourceLoaderOptions: {
-        ...opts.resourceLoaderOptions,
+      pi: {
+        ...opts.pi,
         additionalSkillPaths: [workspaceSkillsDir, ...callerAdditional],
-        piPackages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
+        packages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
+        extensionPaths: [...result.extensionPaths, ...callerExtensionPaths],
+        extensionFactories: [...result.extensionFactories, ...callerExtensionFactories],
       },
     },
   }
@@ -145,6 +212,49 @@ export async function provisionWorkspaceAgentServer(opts: {
     contributions: opts.provisioningContributions,
     force: opts.force,
   })
+}
+
+function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: WorkspaceAgentServerPluginCollection): string[] {
+  const extensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
+  const pluginRoots = extensionPaths.flatMap((path) => {
+    try {
+      return [pluginRootFromExtensionPath(path)]
+    } catch {
+      return []
+    }
+  })
+  return [
+    join(workspaceRoot, ".pi", "extensions"),
+    ...pluginRoots,
+  ]
+}
+
+function emptyPackageJsonPiOptions(): Required<Pick<WorkspaceAgentPiOptions, "additionalSkillPaths" | "packages" | "extensionPaths">> {
+  return { additionalSkillPaths: [], packages: [], extensionPaths: [] }
+}
+
+function collectPackageJsonPiOptions(pluginDirs: string[]): Required<Pick<WorkspaceAgentPiOptions, "additionalSkillPaths" | "packages" | "extensionPaths">> {
+  if (!preflightBoringPlugins(pluginDirs).ok) return emptyPackageJsonPiOptions()
+  try {
+    const plugins = readBoringPlugins(pluginDirs)
+    return {
+      additionalSkillPaths: plugins.flatMap((plugin) => plugin.skillPaths ?? []),
+      packages: compactPiPackages(normalizeBoringPluginPiPackages(plugins)),
+      extensionPaths: plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
+    }
+  } catch {
+    return emptyPackageJsonPiOptions()
+  }
+}
+
+function refreshPackageJsonPiOptions(
+  target: Required<Pick<WorkspaceAgentPiOptions, "additionalSkillPaths" | "packages" | "extensionPaths">>,
+  pluginDirs: string[],
+): void {
+  const next = collectPackageJsonPiOptions(pluginDirs)
+  target.additionalSkillPaths.splice(0, target.additionalSkillPaths.length, ...next.additionalSkillPaths)
+  target.packages.splice(0, target.packages.length, ...next.packages)
+  target.extensionPaths.splice(0, target.extensionPaths.length, ...next.extensionPaths)
 }
 
 export async function createWorkspaceAgentServer(
@@ -165,6 +275,9 @@ export async function createWorkspaceAgentServer(
     ...opts,
     plugins: [...(opts.plugins ?? []), ...factoryPlugins],
   })
+  const boringPluginDirs = collectBoringPluginDirs(workspaceRoot, pluginCollection)
+  const boringPluginReload = opts.boringPluginReload ?? true
+  const piPluginReload = opts.piPluginReload ?? true
 
   if (opts.provisionWorkspace !== false) {
     await provisionWorkspaceAgentServer({
@@ -173,6 +286,45 @@ export async function createWorkspaceAgentServer(
       force: opts.workspaceProvisioning?.force,
     })
   }
+
+  const packageJsonPi = piPluginReload ? collectPackageJsonPiOptions(boringPluginDirs) : emptyPackageJsonPiOptions()
+  const piAdditionalSkillPaths = [
+    ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
+    ...packageJsonPi.additionalSkillPaths,
+  ]
+  const piPackages = compactPiPackages([
+    ...(pluginCollection.agentOptions.pi?.packages ?? []),
+    ...packageJsonPi.packages,
+  ])
+  const piExtensionPaths = [
+    ...(pluginCollection.agentOptions.pi?.extensionPaths ?? []),
+    ...packageJsonPi.extensionPaths,
+  ]
+  const syncPackageJsonPiOptions = () => {
+    if (!piPluginReload) return
+    refreshPackageJsonPiOptions(packageJsonPi, boringPluginDirs)
+    piAdditionalSkillPaths.splice(
+      0,
+      piAdditionalSkillPaths.length,
+      ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
+      ...packageJsonPi.additionalSkillPaths,
+    )
+    piPackages.splice(
+      0,
+      piPackages.length,
+      ...compactPiPackages([...(pluginCollection.agentOptions.pi?.packages ?? []), ...packageJsonPi.packages]),
+    )
+    piExtensionPaths.splice(
+      0,
+      piExtensionPaths.length,
+      ...(pluginCollection.agentOptions.pi?.extensionPaths ?? []),
+      ...packageJsonPi.extensionPaths,
+    )
+  }
+  const boringAssetManager = new BoringPluginAssetManager({
+    pluginDirs: boringPluginDirs,
+    errorRoot: join(workspaceRoot, ".pi", "extensions"),
+  })
 
   const app = await createAgentApp({
     ...opts,
@@ -188,9 +340,33 @@ export async function createWorkspaceAgentServer(
       buildBoringSystemPrompt(),
       pluginCollection.agentOptions.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
-    resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
+    beforeReload: async () => {
+      syncPackageJsonPiOptions()
+      if (boringPluginReload) {
+        const result = await boringAssetManager.load()
+        if (result.errors.length > 0) {
+          const details = result.errors
+            .map((error) => `${error.id}#${error.revision}: ${error.message}`)
+            .join("\n\n")
+          throw new Error(`Boring plugin reload failed:\n\n${details}`)
+        }
+      }
+      await opts.beforeReload?.()
+    },
+    pi: {
+      ...pluginCollection.agentOptions.pi,
+      additionalSkillPaths: piAdditionalSkillPaths,
+      packages: piPackages,
+      extensionPaths: piExtensionPaths,
+      extensionFactories: [
+        ...(piPluginReload ? [createBoringPiExtension({ manager: boringAssetManager })] : []),
+        ...(pluginCollection.agentOptions.pi?.extensionFactories ?? []),
+      ],
+    },
   })
+  await boringAssetManager.load()
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
+  await app.register(boringPluginRoutes, { manager: boringAssetManager })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }

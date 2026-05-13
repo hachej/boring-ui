@@ -112,16 +112,16 @@ export interface CreateCoreWorkspaceAgentServerOptions
   serveFrontend?: boolean
 }
 
-type AgentResourceLoaderOptions = RegisterAgentRoutesOptions['resourceLoaderOptions']
+type AgentPiOptions = RegisterAgentRoutesOptions['pi']
 
 function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values))
 }
 
-function mergeResourceLoaderOptions(
-  base?: AgentResourceLoaderOptions,
-  override?: AgentResourceLoaderOptions,
-): AgentResourceLoaderOptions {
+function mergePiOptions(
+  base?: AgentPiOptions,
+  override?: AgentPiOptions,
+): AgentPiOptions {
   if (!base && !override) return undefined
   return {
     ...base,
@@ -130,10 +130,18 @@ function mergeResourceLoaderOptions(
       ...(base?.additionalSkillPaths ?? []),
       ...(override?.additionalSkillPaths ?? []),
     ]),
-    piPackages: compactPiPackages([
-      ...(base?.piPackages ?? []),
-      ...(override?.piPackages ?? []),
+    packages: compactPiPackages([
+      ...(base?.packages ?? []),
+      ...(override?.packages ?? []),
     ]),
+    extensionPaths: dedupeStrings([
+      ...(base?.extensionPaths ?? []),
+      ...(override?.extensionPaths ?? []),
+    ]),
+    extensionFactories: [
+      ...(base?.extensionFactories ?? []),
+      ...(override?.extensionFactories ?? []),
+    ],
   }
 }
 
@@ -498,7 +506,7 @@ export async function createCoreWorkspaceAgentServer(
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     workspaceRoot,
     systemPromptAppend: options.systemPromptAppend,
-    resourceLoaderOptions: options.resourceLoaderOptions,
+    pi: options.pi,
     plugins: options.plugins,
     excludeDefaults: options.excludeDefaults,
   })
@@ -547,31 +555,31 @@ export async function createCoreWorkspaceAgentServer(
     await ensureWorkspaceProvisioned(root)
     return root
   }
-  const resourceLoaderOptionsByRoot = new Map<string, AgentResourceLoaderOptions>()
-  const getPluginResourceLoaderOptions = (root: string): AgentResourceLoaderOptions => {
+  const piOptionsByRoot = new Map<string, AgentPiOptions>()
+  const getPluginPiOptions = (root: string): AgentPiOptions => {
     const resolvedRoot = path.resolve(root)
-    if (resourceLoaderOptionsByRoot.has(resolvedRoot)) {
-      return resourceLoaderOptionsByRoot.get(resolvedRoot)
+    if (piOptionsByRoot.has(resolvedRoot)) {
+      return piOptionsByRoot.get(resolvedRoot)
     }
     const scopedPluginCollection = collectWorkspaceAgentServerPlugins({
       workspaceRoot: resolvedRoot,
       systemPromptAppend: options.systemPromptAppend,
-      resourceLoaderOptions: options.resourceLoaderOptions,
+      pi: options.pi,
       plugins: options.plugins,
       excludeDefaults: options.excludeDefaults,
     })
-    resourceLoaderOptionsByRoot.set(
+    piOptionsByRoot.set(
       resolvedRoot,
-      scopedPluginCollection.agentOptions.resourceLoaderOptions,
+      scopedPluginCollection.agentOptions.pi,
     )
-    return scopedPluginCollection.agentOptions.resourceLoaderOptions
+    return scopedPluginCollection.agentOptions.pi
   }
-  const resolveResourceLoaderOptions: NonNullable<RegisterAgentRoutesOptions['getResourceLoaderOptions']> = async (ctx) => {
-    const pluginOptions = getPluginResourceLoaderOptions(ctx.workspaceRoot)
-    const callerOptions = options.getResourceLoaderOptions
-      ? await options.getResourceLoaderOptions(ctx)
+  const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
+    const pluginOptions = getPluginPiOptions(ctx.workspaceRoot)
+    const callerOptions = options.getPi
+      ? await options.getPi(ctx)
       : undefined
-    return mergeResourceLoaderOptions(pluginOptions, callerOptions)
+    return mergePiOptions(pluginOptions, callerOptions)
   }
   await app.register(registerAgentRoutes, {
     workspaceRoot,
@@ -585,8 +593,8 @@ export async function createCoreWorkspaceAgentServer(
       ...(pluginCollection.agentOptions.extraTools ?? []),
     ],
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
-    resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
-    getResourceLoaderOptions: resolveResourceLoaderOptions,
+    pi: pluginCollection.agentOptions.pi,
+    getPi: resolvePiOptions,
     sessionNamespace: options.sessionNamespace,
     getSessionNamespace: options.getSessionNamespace,
     getExtraTools: async (ctx) => {

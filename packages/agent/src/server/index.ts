@@ -35,15 +35,18 @@ export {
   type RuntimeProvisioningContribution,
   type RuntimeTemplateContribution,
   type RuntimePythonSpec,
+  type RuntimeNodePackageSpec,
 } from './workspace/provisionRuntime'
 export { createVercelSandboxWorkspace } from './workspace/createVercelSandboxWorkspace'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
 export type {
+  PiExtensionFactory,
+  PiHarnessOptions,
   PiPackageSource,
-  PiResourceLoaderOptions,
 } from './harness/pi-coding-agent/createHarness'
 export {
   compactPiPackages,

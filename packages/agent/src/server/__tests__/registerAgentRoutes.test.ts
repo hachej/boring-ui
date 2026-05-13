@@ -591,7 +591,7 @@ test('skills endpoint mirrors noSkills while preserving explicit additional skil
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     mode: 'direct',
-    resourceLoaderOptions: {
+    pi: {
       noSkills: true,
       additionalSkillPaths: [extraSkillDir],
     },

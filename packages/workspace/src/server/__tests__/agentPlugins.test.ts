@@ -1,0 +1,438 @@
+import Fastify from "fastify"
+import { mkdtemp, mkdir, rm, symlink, writeFile, readFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterEach, describe, expect, test } from "vitest"
+import { BoringPluginAssetManager } from "../agentPlugins/manager"
+import { createBoringPiExtension } from "../agentPlugins/boringPiExtension"
+import { boringPluginRoutes } from "../agentPlugins/routes"
+import { preflightBoringPlugins, readBoringPlugins } from "../agentPlugins/scan"
+
+const tempDirs: string[] = []
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+
+async function tmp(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix))
+  tempDirs.push(dir)
+  return dir
+}
+
+async function writePlugin(root: string, body?: string): Promise<void> {
+  await mkdir(join(root, "front"), { recursive: true })
+  await mkdir(join(root, "server"), { recursive: true })
+  await writeFile(join(root, "package.json"), JSON.stringify({
+    name: "boring-plugin-test",
+    version: "1.0.0",
+    boring: {
+      front: "./front/index.tsx",
+      label: "Test",
+      server: "./server/index.js",
+    },
+    pi: {
+      systemPrompt: "Test plugin context",
+    },
+  }), "utf8")
+  await writeFile(join(root, "front", "index.tsx"), "export default () => {}\n", "utf8")
+  await writeFile(join(root, "server", "index.js"), body ?? `
+export default function(api) {
+  api.get('/ping', async () => ({ ok: true }))
+}
+`, "utf8")
+}
+
+describe("boring agent plugin assets", () => {
+  test("scans package manifests with boring fields", async () => {
+    const root = await tmp("boring-plugin-scan-")
+    await writePlugin(root)
+
+    expect(preflightBoringPlugins([root]).ok).toBe(true)
+    const plugins = readBoringPlugins([root])
+    expect(plugins).toHaveLength(1)
+    expect(plugins[0].id).toBe("boring-plugin-test")
+    expect(plugins[0].frontUrl).toContain("/@fs/")
+    expect(plugins[0].serverPath).toBe(join(root, "server", "index.js"))
+  })
+
+  test("scans package manifests with pi fields for agent contributions", async () => {
+    const root = await tmp("boring-plugin-pi-scan-")
+    await writePlugin(root)
+    await mkdir(join(root, "agent", "skills"), { recursive: true })
+    await writeFile(join(root, "agent", "index.ts"), "export default function() {}\n", "utf8")
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.pi.extensions = ["agent/index.ts"]
+    pkg.pi.skills = ["agent/skills"]
+    pkg.pi.packages = [{ source: "file:.", extensions: ["agent/index.ts"] }]
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    expect(preflightBoringPlugins([root]).ok).toBe(true)
+    const [plugin] = readBoringPlugins([root])
+    expect(plugin.extensionPaths).toEqual([join(root, "agent", "index.ts")])
+    expect(plugin.skillPaths).toEqual([join(root, "agent", "skills")])
+    expect(plugin.pi?.packages).toEqual([{ source: "file:.", extensions: ["agent/index.ts"] }])
+    expect(plugin.pi?.systemPrompt).toBe("Test plugin context")
+  })
+
+  test("rejects boring.id because package.json name is the plugin id", async () => {
+    const root = await tmp("boring-plugin-explicit-id-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.id = "test-plugin"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginId: "boring-plugin-test",
+      code: "INVALID_PLUGIN_METADATA",
+      message: expect.stringContaining("boring.id is not supported"),
+    })
+  })
+
+  test("rejects invalid effective ids derived from package name", async () => {
+    const root = await tmp("boring-plugin-invalid-derived-id-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.name = "bad plugin name"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      code: "INVALID_PLUGIN_METADATA",
+      message: expect.stringContaining("effective plugin id"),
+    })
+    expect(readBoringPlugins([root])).toEqual([])
+  })
+
+  test("reports explicitly supplied plugin dirs without package.json", async () => {
+    const root = await tmp("boring-plugin-missing-package-")
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginDir: root,
+      code: "MISSING_PACKAGE_JSON",
+    })
+  })
+
+  test("rejects duplicate effective plugin ids", async () => {
+    const a = await tmp("boring-plugin-duplicate-a-")
+    const b = await tmp("boring-plugin-duplicate-b-")
+    await writePlugin(a)
+    await writePlugin(b)
+
+    const result = preflightBoringPlugins([a, b])
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        pluginDir: b,
+        pluginId: "boring-plugin-test",
+        code: "INVALID_PLUGIN_METADATA",
+        message: expect.stringContaining("duplicate plugin id"),
+      }),
+    ]))
+    expect(readBoringPlugins([a, b])).toEqual([])
+  })
+
+  test("allows empty collection directories without package.json", async () => {
+    const root = await tmp("boring-plugin-empty-collection-")
+    const collection = join(root, "extensions")
+    await mkdir(collection, { recursive: true })
+
+    expect(preflightBoringPlugins([collection])).toEqual({ ok: true, errors: [] })
+    expect(readBoringPlugins([collection])).toEqual([])
+  })
+
+  test("rejects conventional server entries that resolve outside the plugin root", async () => {
+    const root = await tmp("boring-plugin-conventional-server-symlink-escape-")
+    const outside = await tmp("boring-plugin-outside-server-target-")
+    await writePlugin(root)
+    await writeFile(join(outside, "server.js"), "export default function() {}\n", "utf8")
+    await rm(join(root, "server", "index.js"), { force: true })
+    await symlink(join(outside, "server.js"), join(root, "server", "index.js"))
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    delete pkg.boring.server
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginId: "boring-plugin-test",
+      code: "INVALID_PLUGIN_METADATA",
+      message: expect.stringContaining("boring.server: resolved path escapes plugin root"),
+    })
+    expect(readBoringPlugins([root])).toEqual([])
+  })
+
+  test("rejects existing package paths that resolve outside the plugin root", async () => {
+    const root = await tmp("boring-plugin-symlink-escape-")
+    const outside = await tmp("boring-plugin-outside-target-")
+    await writePlugin(root)
+    await writeFile(join(outside, "escape.tsx"), "export default function() {}\n", "utf8")
+    await symlink(join(outside, "escape.tsx"), join(root, "front", "escape.tsx"))
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.front = "front/escape.tsx"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginId: "boring-plugin-test",
+      code: "INVALID_PLUGIN_METADATA",
+      message: expect.stringContaining("boring.front: resolved path escapes plugin root"),
+    })
+    expect(readBoringPlugins([root])).toEqual([])
+  })
+
+  test("rejects missing package paths under symlinked ancestors", async () => {
+    const root = await tmp("boring-plugin-symlink-ancestor-")
+    const outside = await tmp("boring-plugin-outside-ancestor-")
+    await writePlugin(root)
+    await rm(join(root, "front"), { recursive: true, force: true })
+    await symlink(outside, join(root, "front"))
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.front = "front/missing.tsx"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const result = preflightBoringPlugins([root])
+    expect(result.ok).toBe(false)
+    expect(result.errors[0]).toMatchObject({
+      pluginId: "boring-plugin-test",
+      code: "INVALID_PLUGIN_METADATA",
+      message: expect.stringContaining("boring.front: resolved path escapes plugin root"),
+    })
+    expect(readBoringPlugins([root])).toEqual([])
+  })
+
+  test("allows manifest server opt-out while still loading front assets", async () => {
+    const root = await tmp("boring-plugin-server-optout-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.server = false
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+
+    expect(preflightBoringPlugins([root]).ok).toBe(true)
+    const [plugin] = readBoringPlugins([root])
+    expect(plugin.frontUrl).toContain("/@fs/")
+    expect(plugin.serverPath).toBeUndefined()
+  })
+
+  test("reloads when front/shared dependencies change, not only the front entrypoint", async () => {
+    const root = await tmp("boring-plugin-front-dep-")
+    await writePlugin(root)
+    await mkdir(join(root, "shared"), { recursive: true })
+    await writeFile(join(root, "front", "panel.tsx"), "export const label = 'one'\n", "utf8")
+    await writeFile(join(root, "shared", "constants.ts"), "export const label = 'one'\n", "utf8")
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+
+    await manager.load()
+    expect(manager.list()[0].revision).toBe(1)
+    expect((await manager.load()).events).toEqual([])
+
+    await writeFile(join(root, "front", "panel.tsx"), "export const label = 'two'\n", "utf8")
+    const frontChanged = await manager.load()
+    expect(frontChanged.events.map((event) => event.type)).toEqual(["boring.plugin.load"])
+    expect(manager.list()[0].revision).toBe(2)
+
+    await writeFile(join(root, "shared", "constants.ts"), "export const label = 'three'\n", "utf8")
+    const sharedChanged = await manager.load()
+    expect(sharedChanged.events.map((event) => event.type)).toEqual(["boring.plugin.load"])
+    expect(manager.list()[0].revision).toBe(3)
+  })
+
+  test("reloads changed agent prompt context from package pi metadata", async () => {
+    const root = await tmp("boring-plugin-agent-context-reload-")
+    await writePlugin(root)
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    await manager.load()
+
+    let beforeAgentStart: ((event: { systemPrompt: string }) => Promise<void | { systemPrompt: string }>) | undefined
+    const extension = createBoringPiExtension({ manager })
+    extension({
+      on(event: string, handler: unknown) {
+        if (event === "before_agent_start") {
+          beforeAgentStart = handler as typeof beforeAgentStart
+        }
+      },
+      registerCommand() {},
+    } as never)
+
+    await expect(beforeAgentStart?.({ systemPrompt: "Base" })).resolves.toEqual({
+      systemPrompt: expect.stringContaining("Test plugin context"),
+    })
+
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.pi.systemPrompt = "Updated plugin context"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+    await manager.load()
+
+    const updated = await beforeAgentStart?.({ systemPrompt: "Base" })
+    expect(updated?.systemPrompt).toContain("Updated plugin context")
+    expect(updated?.systemPrompt).not.toContain("Test plugin context")
+  })
+
+  test("loads explicit server routes, emits load events, and dispatches hot routes", async () => {
+    const root = await tmp("boring-plugin-manager-")
+    await writePlugin(root)
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    const events: string[] = []
+    manager.subscribe((event) => events.push(event.type))
+
+    const result = await manager.load()
+    expect(result.loaded[0].revision).toBe(1)
+    expect(events).toEqual(["boring.plugin.load"])
+    const unchanged = await manager.load()
+    expect(unchanged.events).toEqual([])
+    expect(manager.list()[0].revision).toBe(1)
+
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager })
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      expect(list.json()[0].id).toBe("boring-plugin-test")
+
+      const ping = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
+      expect(ping.json()).toEqual({ ok: true })
+
+      await writePlugin(root, `
+export default function(api) {
+  api.get('/status', async () => ({ ok: 'updated-route' }))
+}
+`)
+      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
+      expect(reload.statusCode).toBe(200)
+      expect(reload.json().plugins[0].revision).toBe(2)
+      const removedPing = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
+      expect(removedPing.statusCode).toBe(404)
+      const status = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/status" })
+      expect(status.json()).toEqual({ ok: "updated-route" })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("queues one successor load when reload is requested during an inflight load", async () => {
+    const root = await tmp("boring-plugin-queued-")
+    await writePlugin(root, `
+await new Promise((resolve) => setTimeout(resolve, 25))
+export default function(api) {
+  api.get('/ping', async () => ({ ok: 'slow' }))
+}
+`)
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+
+    const first = manager.load()
+    await writePlugin(root, `
+export default function(api) {
+  api.get('/ping', async () => ({ ok: 'queued' }))
+}
+`)
+    const second = manager.load()
+    const result = await second
+    await first
+
+    expect(result.loaded[0].revision).toBe(2)
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager })
+    try {
+      const ping = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
+      expect(ping.json()).toEqual({ ok: "queued" })
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("writes preflight errors under a stable fallback id when plugin id cannot be derived", async () => {
+    const root = await tmp("boring-plugin-preflight-fallback-id-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.name = "bad plugin name"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+    const errorRoot = join(root, ".errors")
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot })
+    const events: string[] = []
+    manager.subscribe((event) => events.push(`${event.type}:${event.id}`))
+
+    const result = await manager.load()
+
+    expect(result.loaded).toEqual([])
+    expect(result.errors[0].id).toMatch(/^preflight-[a-f0-9]{12}$/)
+    expect(result.errors[0].message).toContain("effective plugin id")
+    expect(events).toEqual([`boring.plugin.error:${result.errors[0].id}`])
+    await expect(readFile(join(errorRoot, result.errors[0].id, ".error"), "utf8")).resolves.toContain("effective plugin id")
+  })
+
+  test("rejects escaped plugin ids when reading error files", async () => {
+    const root = await tmp("boring-plugin-error-id-containment-")
+    const errorRoot = join(root, "errors")
+    await mkdir(join(root, "outside"), { recursive: true })
+    await writeFile(join(root, "outside", ".error"), "secret", "utf8")
+    const manager = new BoringPluginAssetManager({ pluginDirs: [], errorRoot })
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager })
+    try {
+      const response = await app.inject({ method: "GET", url: "/api/agent-plugins/..%2Foutside/error" })
+      expect(response.statusCode).toBe(404)
+      expect(response.body).not.toContain("secret")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("emits and writes manifest preflight errors during load", async () => {
+    const root = await tmp("boring-plugin-preflight-error-")
+    await writePlugin(root)
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.front = "../escape.tsx"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+    const errorRoot = join(root, ".errors")
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot })
+    const events: string[] = []
+    manager.subscribe((event) => events.push(`${event.type}:${event.id}`))
+
+    const result = await manager.load()
+
+    expect(result.loaded).toEqual([])
+    expect(result.errors[0]).toMatchObject({
+      id: "boring-plugin-test",
+      message: expect.stringContaining("INVALID_PLUGIN_METADATA"),
+    })
+    expect(events).toEqual(["boring.plugin.error:boring-plugin-test"])
+    await expect(readFile(join(errorRoot, "boring-plugin-test", ".error"), "utf8")).resolves.toContain("boring.front")
+  })
+
+  test("reports full reload errors and keeps previous server handlers live", async () => {
+    const root = await tmp("boring-plugin-error-rollback-")
+    await writePlugin(root, `
+export default function(api) {
+  api.get('/ping', async () => ({ ok: 'stable' }))
+}
+`)
+    const errorRoot = join(root, ".pi", "extensions")
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot })
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager })
+
+    try {
+      const first = await manager.load()
+      expect(first.errors).toEqual([])
+      const ping = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
+      expect(ping.json()).toEqual({ ok: "stable" })
+
+      await writePlugin(root, "export const nope = true\n")
+      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
+      expect(reload.statusCode).toBe(422)
+      expect(reload.json().errors[0].id).toBe("boring-plugin-test")
+      expect(reload.json().errors[0].message).toContain("default-export")
+      await expect(readFile(join(errorRoot, "boring-plugin-test", ".error"), "utf8")).resolves.toContain("default-export")
+
+      const stillStable = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
+      expect(stillStable.json()).toEqual({ ok: "stable" })
+    } finally {
+      await app.close()
+    }
+  })
+})

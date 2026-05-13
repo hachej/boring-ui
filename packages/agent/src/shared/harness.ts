@@ -1,5 +1,16 @@
 import type { UIMessageChunk } from './message'
 import type { SessionStore } from './session'
+import type { AgentTool } from './tool'
+
+export interface AgentHarnessFactoryInput {
+  tools: AgentTool[]
+  cwd: string
+  systemPromptAppend?: string
+  sessionNamespace?: string
+  sessionDir?: string
+}
+
+export type AgentHarnessFactory = (input: AgentHarnessFactoryInput) => AgentHarness | Promise<AgentHarness>
 
 export interface AgentHarness {
   readonly id: string
@@ -36,6 +47,9 @@ export interface AgentHarness {
    * Discard any queued follow-up for this session (called by the Stop button).
    */
   clearFollowUp?(sessionId: string): void
+
+  /** Reload native agent resources/extensions for an existing session. */
+  reloadSession?: (sessionId: string) => Promise<boolean>
 }
 
 /* Resume is NOT a harness concern — see Stream resumption section.

@@ -17,7 +17,7 @@ Panels are React components rendered inside the workspace dockview layout. They 
 ## Defining a panel
 
 ```ts
-import { definePanel } from '@boring/workspace'
+import { definePanel } from '@hachej/boring-workspace'
 
 export const myPanel = definePanel({
   id: 'my-panel',
@@ -35,7 +35,7 @@ export const myPanel = definePanel({
 Panel components receive `PaneProps<T>`:
 
 ```ts
-import type { PaneProps } from '@boring/workspace'
+import type { PaneProps } from '@hachej/boring-workspace'
 
 interface Params { id?: string; query?: string }
 

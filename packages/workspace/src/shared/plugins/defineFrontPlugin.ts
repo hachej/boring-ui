@@ -1,5 +1,4 @@
 import type {
-  AgentTool,
   CatalogConfig,
   LeftTabOutput,
   PluginBinding,
@@ -20,11 +19,6 @@ export interface WorkspaceFrontPlugin {
   commands?: CommandConfig[]
   catalogs?: CatalogConfig[]
   bindings?: PluginBinding[]
-  /**
-   * @deprecated Executable agent tools should be contributed by server
-   * plugins. This field remains for migration only.
-   */
-  agentTools?: AgentTool[]
   outputs?: PluginOutput[]
 }
 
@@ -59,7 +53,6 @@ const VALID_OUTPUT_TYPES = new Set([
   "binding",
   "provider",
   "surface-resolver",
-  "agent-tool",
 ])
 
 function fail(pluginId: string, msg: string): never {
@@ -155,28 +148,6 @@ function validateCatalogs(pluginId: string, catalogs: CatalogConfig[]): void {
   }
 }
 
-function validateAgentTools(pluginId: string, tools: unknown[]): void {
-  for (let i = 0; i < tools.length; i++) {
-    const valid = validateAgentTool(tools[i])
-    if (!valid) {
-      fail(
-        pluginId,
-        `agentTools[${i}] is not a valid AgentTool (missing required fields: name, description, parameters, execute)`,
-      )
-    }
-  }
-}
-
-function validateAgentTool(tool: unknown): AgentTool | null {
-  if (!tool || typeof tool !== "object") return null
-  const candidate = tool as Record<string, unknown>
-  if (typeof candidate.name !== "string" || candidate.name.length === 0) return null
-  if (typeof candidate.description !== "string") return null
-  if (!candidate.parameters || typeof candidate.parameters !== "object") return null
-  if (typeof candidate.execute !== "function") return null
-  return candidate as unknown as AgentTool
-}
-
 function validateBindings(pluginId: string, bindings: unknown[]): void {
   for (let i = 0; i < bindings.length; i++) {
     if (typeof bindings[i] !== "function") {
@@ -236,8 +207,6 @@ function outputIdentity(output: PluginOutput, index: number): string {
       return `${output.type}:${output.id}`
     case "surface-resolver":
       return `${output.type}:${output.resolver?.id ?? `<missing:${index}>`}`
-    case "agent-tool":
-      return `${output.type}:${output.id}`
     default:
       return `<unknown:${index}>`
   }
@@ -299,12 +268,6 @@ function validateOutputs(pluginId: string, outputs: PluginOutput[]): void {
       case "surface-resolver":
         validateSurfaceResolverOutput(pluginId, output, i)
         break
-      case "agent-tool":
-        if (!output.id || typeof output.id !== "string") {
-          fail(pluginId, `outputs[${i}].id must be a non-empty string`)
-        }
-        validateAgentTools(pluginId, [output.tool])
-        break
     }
   }
 }
@@ -317,7 +280,6 @@ function validatePlugin(spec: WorkspaceFrontPlugin): void {
   if (spec.commands) validateCommands(spec.id, spec.commands)
   if (spec.catalogs) validateCatalogs(spec.id, spec.catalogs)
   if (spec.bindings) validateBindings(spec.id, spec.bindings)
-  if (spec.agentTools) validateAgentTools(spec.id, spec.agentTools)
   if (spec.outputs) validateOutputs(spec.id, spec.outputs)
 }
 

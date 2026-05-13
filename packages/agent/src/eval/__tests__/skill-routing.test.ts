@@ -61,7 +61,7 @@ describeIf("eval: skill routing", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      resourceLoaderOptions: {
+      pi: {
         additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
       },
     })

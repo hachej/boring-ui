@@ -10,6 +10,7 @@ import { useCommandRegistry, useRegistry } from "../registry"
 import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
+import { useWorkspaceContext } from "../provider"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -474,6 +475,7 @@ function scheduleComposerFocus(): void {
 
 function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown> }) {
   const registry = useRegistry()
+  const { debug } = useWorkspaceContext()
   const components = useMemo(() => registry.getComponents(), [registry])
   const Component = components[id] as ComponentType<PaneProps<Record<string, unknown> | undefined>> | undefined
   const api = useMemo(() => createPanelApi(id), [id])
@@ -481,7 +483,7 @@ function PanelSlot({ id, params }: { id: string; params?: Record<string, unknown
   return (
     <Suspense fallback={<LoadingState centered />}>
       <Component
-        params={params}
+        params={{ ...params, debug }}
         api={api as PaneProps["api"]}
         containerApi={{} as PaneProps["containerApi"]}
       />
