@@ -381,7 +381,7 @@ export function createPiCodingAgentHarness(opts: {
 
     async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], _displayText = text): Promise<void> {
       const handle = piSessions.get(sessionId);
-      if (!handle) return;
+      if (!handle) throw new Error("followup_session_not_ready");
       nativeFollowUpPending.add(sessionId);
       await handle.piSession.followUp(text);
     },

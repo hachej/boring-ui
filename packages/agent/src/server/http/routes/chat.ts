@@ -346,8 +346,8 @@ export function chatRoutes(
       const clientSeq = typeof body.clientSeq === 'number' && Number.isFinite(body.clientSeq)
         ? body.clientSeq
         : undefined
+      const clientNonce = typeof body.clientNonce === 'string' && body.clientNonce.length > 0 ? body.clientNonce : undefined
       if (clientSeq !== undefined) {
-        const clientNonce = typeof body.clientNonce === 'string' && body.clientNonce.length > 0 ? body.clientNonce : undefined
         const last = lastFollowUpBySession.get(sessionId)
         if (last !== undefined && clientSeq <= last.seq) {
           if (clientSeq === last.seq && clientNonce && clientNonce === last.nonce) {
@@ -357,15 +357,32 @@ export function chatRoutes(
             error: { code: ERROR_CODE_CONFLICT, message: 'followup_out_of_order' },
           })
         }
-        lastFollowUpBySession.set(sessionId, { seq: clientSeq, nonce: clientNonce })
       }
       const runtime = await resolveRuntime(request)
-      await runtime.harness.followUp?.(
-        sessionId,
-        body.message,
-        parsedAttachments.data,
-        typeof body.displayText === 'string' && body.displayText.length > 0 ? body.displayText : body.message,
-      )
+      if (!runtime.harness.followUp) {
+        return reply.code(409).send({
+          error: { code: ERROR_CODE_CONFLICT, message: 'followup_unsupported' },
+        })
+      }
+      try {
+        await runtime.harness.followUp(
+          sessionId,
+          body.message,
+          parsedAttachments.data,
+          typeof body.displayText === 'string' && body.displayText.length > 0 ? body.displayText : body.message,
+        )
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (message === 'followup_session_not_ready') {
+          return reply.code(409).send({
+            error: { code: ERROR_CODE_CONFLICT, message: 'followup_session_not_ready' },
+          })
+        }
+        throw err
+      }
+      if (clientSeq !== undefined) {
+        lastFollowUpBySession.set(sessionId, { seq: clientSeq, nonce: clientNonce })
+      }
       return reply.code(202).send({ queued: true })
     },
   )
