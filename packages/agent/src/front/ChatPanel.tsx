@@ -1044,12 +1044,11 @@ export function ChatPanel(props: ChatPanelProps) {
                           defaultOpen={item.state === 'streaming'}
                         >
                           <ReasoningTrigger
-                            aria-label={item.state === 'streaming' ? 'Thinking' : 'Thoughts'}
-                            title={item.state === 'streaming' ? 'Thinking' : 'Thoughts'}
-                            className="mb-1 w-fit rounded-[var(--radius-sm)] p-1 text-muted-foreground/35 hover:bg-foreground/[0.04] hover:text-muted-foreground/75"
-                          >
-                            <BrainIcon className="h-3.5 w-3.5" />
-                          </ReasoningTrigger>
+                            className="mb-1 w-fit rounded-[var(--radius-sm)] px-1.5 py-1 text-muted-foreground/45 hover:bg-foreground/[0.04] hover:text-muted-foreground/75"
+                            getThinkingMessage={(streaming) => (
+                              <span>{streaming ? 'thinking' : 'thoughts'}</span>
+                            )}
+                          />
                           <ReasoningContent>{item.text}</ReasoningContent>
                         </Reasoning>
                       )
