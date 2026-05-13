@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 import { ASK_USER_COMMAND_KINDS, ASK_USER_SCHEMA_LIMITS } from "../constants"
 import { ASK_USER_ERROR_CODES, ASK_USER_ERROR_CODE_VALUES } from "../error-codes"
 import {
-  AskUserFormPatchSchema,
   AskUserFormSchemaSchema,
   AskUserToolInputSchema,
   QuestionsCommandSchema,
@@ -153,18 +152,6 @@ describe("ask-user shared schema", () => {
       AskUserFormSchemaSchema.safeParse({
         wireVersion: 1,
         fields: [{ type: "text", name: "value", label: "Value", minLength: 5, maxLength: 2 }],
-      }).success,
-    ).toBe(false)
-  })
-
-  it("validates patch payloads and forbids type mutation", () => {
-    expect(AskUserFormPatchSchema.safeParse({ patchId: "p1", type: "set_title", title: "Hi" }).success).toBe(true)
-    expect(
-      AskUserFormPatchSchema.safeParse({
-        patchId: "p2",
-        type: "update_field",
-        name: "field",
-        patch: { type: "number" },
       }).success,
     ).toBe(false)
   })

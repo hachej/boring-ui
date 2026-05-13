@@ -150,7 +150,7 @@ export class AskUserRuntime {
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
     this.assertAllowed(request.sessionId)
-    const question = this.createQuestion(request, "ready")
+    const question = this.createQuestion(request)
     const parsed = AskUserFormSchemaSchema.safeParse(request.schema)
     if (!parsed.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsed.error.message)
     question.schema = parsed.data
@@ -160,15 +160,6 @@ export class AskUserRuntime {
     this.emitEvent({ type: "created", questionId: question.questionId, sessionId: question.sessionId, ownerPrincipalId: question.ownerPrincipalId })
     this.emitEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId })
     return this.waitForAnswerWithOpen(question, request.timeoutMs, signal)
-  }
-
-  async beginAskUserStream(request: Omit<AskUserRequest, "schema">, signal?: AbortSignal): Promise<{ question: AskUserQuestion; result: Promise<AskUserToolResult> }> {
-    this.assertAllowed(request.sessionId)
-    const question = this.createQuestion(request, "draft")
-    await this.store.createPending(question)
-    await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
-    this.emitEvent({ type: "created", questionId: question.questionId, sessionId: question.sessionId, ownerPrincipalId: question.ownerPrincipalId })
-    return { question, result: this.waitForAnswerWithOpen(question, request.timeoutMs, signal) }
   }
 
   async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered" | "abandoned"> {
@@ -278,17 +269,15 @@ export class AskUserRuntime {
     this.emitEvent({ type: "abandoned", questionId, sessionId })
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context">, status: "draft" | "ready"): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
       sessionId: request.sessionId,
       ownerPrincipalId: this.ownerPrincipalId,
-      status,
+      status: "ready",
       title: request.title,
       context: request.context,
-      draftFields: [],
-      draftVersion: 0,
       answerToken: randomBytes(32).toString("base64url"),
       createdAt: at,
       updatedAt: at,

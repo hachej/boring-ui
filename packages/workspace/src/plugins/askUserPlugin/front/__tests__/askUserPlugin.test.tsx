@@ -11,7 +11,6 @@ const question: AskUserQuestion = {
   status: "ready",
   title: "Choose A or B",
   context: "Pick one.",
-  draftVersion: 0,
   answerToken: "secret",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),

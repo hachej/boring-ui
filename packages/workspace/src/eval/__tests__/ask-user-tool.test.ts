@@ -13,7 +13,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { FileAskUserStore } from "../../plugins/askUserPlugin/server/AskUserStore"
 import { AskUserRuntime } from "../../plugins/askUserPlugin/server/AskUserRuntime"
-import { createAskUserPiTool } from "../../plugins/askUserPlugin/server/createAskUserPiExtensionFactory"
+import { createAskUserPiTool } from "../../plugins/askUserPlugin/server/createAskUserPiTool"
 
 const HAS_KEY = !!process.env.OPENROUTER_API_KEY
 const describeIf = HAS_KEY ? describe : describe.skip

@@ -5,8 +5,6 @@ import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { AskUserFormSchemaSchema } from "../shared/schema"
 import type {
   AskUserAnswer,
-  AskUserFormPatch,
-  AskUserFormSchema,
   AskUserQuestion,
   AskUserTranscriptEvent,
 } from "../shared/types"
@@ -23,7 +21,7 @@ export class AskUserStoreError extends Error {
 export type AskUserStoreChange = {
   sessionId: string
   questionId?: string
-  reason: "create" | "patch" | "finalize" | "answer" | "cancel" | "abandon" | "clear" | "transcript"
+  reason: "create" | "answer" | "cancel" | "abandon" | "clear" | "transcript"
 }
 
 export type AskUserStoreListener = (change: AskUserStoreChange) => void
@@ -32,8 +30,6 @@ export interface AskUserStore {
   getPending(sessionId: string): Promise<AskUserQuestion | null>
   getByQuestionId(questionId: string): Promise<AskUserQuestion | null>
   createPending(question: AskUserQuestion): Promise<void>
-  applyPatch(questionId: string, patch: AskUserFormPatch, expectedVersion?: number): Promise<AskUserQuestion>
-  finalize(questionId: string, submitLabel?: string, expectedVersion?: number): Promise<AskUserQuestion>
   answer(questionId: string, answer: AskUserAnswer): Promise<void>
   cancel(questionId: string): Promise<void>
   markAbandoned(questionId: string): Promise<void>
@@ -47,7 +43,6 @@ export interface AskUserStore {
 type StoredAskUserState = {
   questions: Record<string, AskUserQuestion>
   pendingBySession: Record<string, string>
-  appliedPatchIds: Record<string, string[]>
   answers: Record<string, AskUserAnswer>
   transcriptsBySession: Record<string, AskUserTranscriptEvent[]>
 }
@@ -55,7 +50,6 @@ type StoredAskUserState = {
 const EMPTY_STATE: StoredAskUserState = {
   questions: {},
   pendingBySession: {},
-  appliedPatchIds: {},
   answers: {},
   transcriptsBySession: {},
 }
@@ -65,10 +59,7 @@ export class FileAskUserStore implements AskUserStore {
   private writeChain = Promise.resolve()
   private readonly listeners = new Set<AskUserStoreListener>()
 
-  constructor(
-    private readonly filePath: string,
-    private readonly options: { retainedPatchIds?: number } = {},
-  ) {}
+  constructor(private readonly filePath: string) {}
 
   async getPending(sessionId: string): Promise<AskUserQuestion | null> {
     const state = await this.load()
@@ -92,60 +83,8 @@ export class FileAskUserStore implements AskUserStore {
       }
       state.questions[question.questionId] = clone(question)
       if (isPending(question)) state.pendingBySession[question.sessionId] = question.questionId
-      state.appliedPatchIds[question.questionId] = []
       this.emit({ sessionId: question.sessionId, questionId: question.questionId, reason: "create" })
     })
-  }
-
-  async applyPatch(questionId: string, patch: AskUserFormPatch, expectedVersion?: number): Promise<AskUserQuestion> {
-    let result: AskUserQuestion | null = null
-    await this.mutate(async (state) => {
-      const question = requireQuestion(state, questionId)
-      if (question.status !== "draft") {
-        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PATCH_INVALID, "patches are only allowed while question is draft")
-      }
-      const applied = state.appliedPatchIds[questionId] ?? []
-      if (applied.includes(patch.patchId)) {
-        result = clone(question)
-        return
-      }
-      assertExpectedVersion(question, expectedVersion)
-      applyPatchToQuestion(question, patch)
-      question.draftVersion += 1
-      question.updatedAt = nowIso()
-      state.appliedPatchIds[questionId] = [...applied, patch.patchId].slice(-this.retainedPatchIds)
-      result = clone(question)
-      this.emit({ sessionId: question.sessionId, questionId, reason: "patch" })
-    })
-    return result!
-  }
-
-  async finalize(questionId: string, submitLabel?: string, expectedVersion?: number): Promise<AskUserQuestion> {
-    let result: AskUserQuestion | null = null
-    await this.mutate(async (state) => {
-      const question = requireQuestion(state, questionId)
-      if (question.status !== "draft") {
-        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PATCH_INVALID, "finalize is only allowed while question is draft")
-      }
-      assertExpectedVersion(question, expectedVersion)
-      const schema: AskUserFormSchema = {
-        wireVersion: 1,
-        fields: question.draftFields ?? [],
-        ...(submitLabel !== undefined ? { submitLabel } : {}),
-      }
-      const parsed = AskUserFormSchemaSchema.safeParse(schema)
-      if (!parsed.success) {
-        throw new AskUserStoreError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsed.error.message)
-      }
-      question.schema = parsed.data
-      question.status = "ready"
-      question.updatedAt = nowIso()
-      question.draftVersion += 1
-      state.pendingBySession[question.sessionId] = questionId
-      result = clone(question)
-      this.emit({ sessionId: question.sessionId, questionId, reason: "finalize" })
-    })
-    return result!
   }
 
   async answer(questionId: string, answer: AskUserAnswer): Promise<void> {
@@ -222,10 +161,6 @@ export class FileAskUserStore implements AskUserStore {
     return () => this.listeners.delete(listener)
   }
 
-  private get retainedPatchIds(): number {
-    return this.options.retainedPatchIds ?? 32
-  }
-
   private async mutate(fn: (state: StoredAskUserState) => Promise<void> | void): Promise<void> {
     const run = this.writeChain.then(async () => {
       const state = await this.load()
@@ -272,58 +207,13 @@ function isPromiseLike(value: unknown): value is Promise<unknown> {
 }
 
 function isPending(question: AskUserQuestion | undefined): question is AskUserQuestion {
-  return question?.status === "draft" || question?.status === "ready"
+  return question?.status === "ready"
 }
 
 function requireQuestion(state: StoredAskUserState, questionId: string): AskUserQuestion {
   const question = state.questions[questionId]
   if (!question) throw new AskUserStoreError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, `question ${questionId} not found`)
   return question
-}
-
-function assertExpectedVersion(question: AskUserQuestion, expectedVersion: number | undefined): void {
-  if (expectedVersion !== undefined && expectedVersion !== question.draftVersion) {
-    throw new AskUserStoreError(ASK_USER_ERROR_CODES.PATCH_STALE, `expected draftVersion ${expectedVersion}, got ${question.draftVersion}`)
-  }
-}
-
-function applyPatchToQuestion(question: AskUserQuestion, patch: AskUserFormPatch): void {
-  switch (patch.type) {
-    case "set_title":
-      question.title = patch.title
-      return
-    case "set_context":
-      question.context = patch.context
-      return
-    case "add_field": {
-      const fields = question.draftFields ?? []
-      if (fields.some((field) => field.name === patch.field.name)) {
-        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PATCH_INVALID, `field ${patch.field.name} already exists`)
-      }
-      question.draftFields = [...fields, clone(patch.field)]
-      return
-    }
-    case "update_field": {
-      if (Object.prototype.hasOwnProperty.call(patch.patch, "type")) {
-        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PATCH_INVALID, "update_field.patch.type is forbidden")
-      }
-      const fields = question.draftFields ?? []
-      const index = fields.findIndex((field) => field.name === patch.name)
-      if (index === -1) throw new AskUserStoreError(ASK_USER_ERROR_CODES.PATCH_INVALID, `field ${patch.name} not found`)
-      question.draftFields = fields.map((field, i) => (i === index ? ({ ...field, ...patch.patch } as typeof field) : field))
-      return
-    }
-    case "remove_field": {
-      const fields = question.draftFields ?? []
-      if (!fields.some((field) => field.name === patch.name)) {
-        throw new AskUserStoreError(ASK_USER_ERROR_CODES.PATCH_INVALID, `field ${patch.name} not found`)
-      }
-      question.draftFields = fields.filter((field) => field.name !== patch.name)
-      return
-    }
-    case "finalize":
-      return
-  }
 }
 
 function transcriptSessionId(event: AskUserTranscriptEvent): string {

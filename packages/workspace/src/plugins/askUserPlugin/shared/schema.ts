@@ -267,20 +267,6 @@ export const AskUserAnswerSchema = z
   })
   .strict()
 
-export const AskUserFormPatchSchema: z.ZodTypeAny = z.discriminatedUnion("type", [
-  z.object({ patchId: z.string().min(1), type: z.literal("set_title"), title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength) }).strict(),
-  z.object({ patchId: z.string().min(1), type: z.literal("set_context"), context: boundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength) }).strict(),
-  z.object({ patchId: z.string().min(1), type: z.literal("add_field"), field: AskUserFieldSchema }).strict(),
-  z.object({
-    patchId: z.string().min(1),
-    type: z.literal("update_field"),
-    name: fieldNameSchema,
-    patch: z.record(z.string(), z.unknown()).refine((patch) => !("type" in patch), "update_field.patch.type is forbidden"),
-  }).strict(),
-  z.object({ patchId: z.string().min(1), type: z.literal("remove_field"), name: fieldNameSchema }).strict(),
-  z.object({ patchId: z.string().min(1), type: z.literal("finalize"), submitLabel: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxLabelLength) }).strict(),
-])
-
 const commandParamsBase = {
   questionId: z.string().min(1),
   sessionId: z.string().min(1),
