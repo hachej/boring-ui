@@ -741,6 +741,17 @@ export function createPiCodingAgentHarness(opts: {
           .prompt(prepared.message, prepared.promptOpts)
           .then(() => {
             promptSettled = true;
+            // Defensive escape hatch: native followUp normally keeps prompt()
+            // alive until the queued turn is consumed and emits its own user
+            // message_start. If pi resolves without that consumption event,
+            // do not keep the HTTP stream open forever waiting for chunks that
+            // will never arrive.
+            if (!done) {
+              nativeFollowUpPending.delete(input.sessionId);
+              done = true;
+              stopHeartbeat();
+              if (wake) wake();
+            }
           })
           .catch((err) => {
             promptSettled = true;

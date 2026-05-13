@@ -186,4 +186,38 @@ describe("native pi follow-up integration", () => {
       data: expect.objectContaining({ role: "assistant", text: "follow-up answer" }),
     }));
   });
+
+  it("closes the stream if pi resolves before consuming a queued follow-up", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-settle" });
+    const iter = harness.sendMessage({ sessionId: "sess-settle-followup", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+
+    const first = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    await first;
+
+    await harness.followUp!("sess-settle-followup", "queued question");
+
+    const next = reader.next();
+    emit({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "first" }] },
+        { role: "assistant", content: [{ type: "text", text: "first answer" }] },
+      ],
+    });
+    promptHandle.resolve?.();
+
+    await expect(next).resolves.toMatchObject({ done: false });
+    let closed = false;
+    for (let i = 0; i < 5; i++) {
+      const item = await reader.next();
+      if (item.done) {
+        closed = true;
+        break;
+      }
+    }
+    expect(closed).toBe(true);
+  });
 });
