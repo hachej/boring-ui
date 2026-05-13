@@ -93,4 +93,25 @@ Updated root `.gitignore` to centrally cover the known generated/build outputs:
 
 Existing package-level ignores already covered many of these, but the root ignore now documents and reinforces the policy.
 
+## CI guard
+
+The repo now has a generated-artifact guard:
+
+```bash
+pnpm check:generated-artifacts
+```
+
+This runs `scripts/check-generated-artifacts.ts`, which inspects `git ls-files` and fails if build/test/generated outputs are tracked, including:
+
+- any `dist/` directory
+- Vite `.vite` dependency caches
+- `storybook-static/`
+- `packages/cli/public/`
+- generated full-app API bundles and app API sourcemaps
+- `test-results/` and `e2e-artifacts/`
+- TypeScript build info files
+- package-local `lib/node_modules/`
+
+The root `ci` script runs this check after lint and before typecheck. If it fails, remove the generated file from git and keep the corresponding ignore rule in place.
+
 No files were deleted in this pass.
