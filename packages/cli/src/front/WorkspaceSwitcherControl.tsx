@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import {
   Button,
   DropdownMenu,
@@ -35,13 +35,17 @@ function workspaceInitial(name: string): string {
   return (name.trim()[0] ?? "W").toUpperCase()
 }
 
-function focusCurrentMenuItem() {
-  window.setTimeout(() => {
-    const content = document.querySelector<HTMLElement>('[data-slot="dropdown-menu-content"]')
-    const current = content?.querySelector<HTMLElement>('[data-current="true"]:not([data-disabled])')
-    const first = content?.querySelector<HTMLElement>('[data-slot="dropdown-menu-item"]:not([data-disabled])')
-    ;(current ?? first)?.focus()
-  }, 0)
+function nextAvailableIndex(
+  workspaces: WorkspaceSwitcherControlItem[],
+  currentIndex: number,
+  direction: 1 | -1,
+): number {
+  if (workspaces.length === 0) return -1
+  for (let step = 1; step <= workspaces.length; step++) {
+    const index = (currentIndex + direction * step + workspaces.length) % workspaces.length
+    if (workspaces[index]?.available !== false) return index
+  }
+  return -1
 }
 
 export function WorkspaceSwitcherControl({
@@ -58,9 +62,19 @@ export function WorkspaceSwitcherControl({
   onOpenWorkspaceSettings,
 }: WorkspaceSwitcherControlProps) {
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const itemRefs = useRef<Array<HTMLDivElement | null>>([])
   const [open, setOpen] = useState(false)
   const currentWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
   const switcherLabel = currentWorkspace?.name ?? "Select workspace"
+  const currentIndex = useMemo(
+    () => workspaces.findIndex((workspace) => workspace.id === activeWorkspaceId && workspace.available !== false),
+    [activeWorkspaceId, workspaces],
+  )
+  const firstAvailableIndex = useMemo(
+    () => workspaces.findIndex((workspace) => workspace.available !== false),
+    [workspaces],
+  )
+  const [activeIndex, setActiveIndex] = useState(() => currentIndex >= 0 ? currentIndex : firstAvailableIndex)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -74,12 +88,51 @@ export function WorkspaceSwitcherControl({
       event.preventDefault()
       event.stopPropagation()
       triggerRef.current?.focus()
+      setActiveIndex(currentIndex >= 0 ? currentIndex : firstAvailableIndex)
       setOpen(true)
-      focusCurrentMenuItem()
     }
     document.addEventListener("keydown", onKeyDown, true)
     return () => document.removeEventListener("keydown", onKeyDown, true)
-  }, [])
+  }, [currentIndex, firstAvailableIndex])
+
+  useEffect(() => {
+    if (!open) return
+    const next = currentIndex >= 0 ? currentIndex : firstAvailableIndex
+    setActiveIndex(next)
+    window.setTimeout(() => itemRefs.current[next]?.focus(), 0)
+  }, [currentIndex, firstAvailableIndex, open])
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen) setActiveIndex(currentIndex >= 0 ? currentIndex : firstAvailableIndex)
+    setOpen(nextOpen)
+  }, [currentIndex, firstAvailableIndex])
+
+  const selectActiveWorkspace = useCallback(() => {
+    const workspace = workspaces[activeIndex]
+    if (!workspace || workspace.available === false) return
+    onSelectWorkspace(workspace.id)
+    setOpen(false)
+  }, [activeIndex, onSelectWorkspace, workspaces])
+
+  const handleMenuKeyDown = useCallback((event: ReactKeyboardEvent) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      event.stopPropagation()
+      const direction = event.key === "ArrowDown" ? 1 : -1
+      setActiveIndex((index) => {
+        const base = index >= 0 ? index : (currentIndex >= 0 ? currentIndex : firstAvailableIndex)
+        const next = nextAvailableIndex(workspaces, base, direction)
+        window.setTimeout(() => itemRefs.current[next]?.focus(), 0)
+        return next
+      })
+      return
+    }
+    if (event.key === "Enter") {
+      event.preventDefault()
+      event.stopPropagation()
+      selectActiveWorkspace()
+    }
+  }, [currentIndex, firstAvailableIndex, selectActiveWorkspace, workspaces])
 
   if (workspaces.length === 0) {
     return (
@@ -88,11 +141,12 @@ export function WorkspaceSwitcherControl({
         variant="ghost"
         onClick={onCreateWorkspace}
         disabled={!onCreateWorkspace}
-        className="-ml-1 h-8 gap-2 rounded-md px-1 pr-2.5 hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
+        className="-ml-1 h-8 gap-2 rounded-md px-1 pr-2.5 hover:bg-muted/60 focus-visible:ring-1 focus-visible:ring-ring"
       >
         <span
           aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+          style={{ width: 28, height: 28 }}
+          className="flex shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
         >
           {appTitle.charAt(0).toUpperCase()}
         </span>
@@ -107,7 +161,8 @@ export function WorkspaceSwitcherControl({
     <div className="-ml-1 flex h-8 min-w-0 items-center gap-1.5">
       <span
         aria-hidden="true"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+        style={{ width: 28, height: 28 }}
+        className="flex shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
       >
         {appTitle.charAt(0).toUpperCase()}
       </span>
@@ -116,7 +171,7 @@ export function WorkspaceSwitcherControl({
       </span>
       <span aria-hidden="true" className="text-muted-foreground/30">/</span>
 
-      <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenu open={open} onOpenChange={handleOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button
             ref={triggerRef}
@@ -124,12 +179,12 @@ export function WorkspaceSwitcherControl({
             variant="ghost"
             aria-label={`Workspace menu: ${switcherLabel}`}
             title="Workspace picker (⌘⇧K)"
-            className="h-8 min-w-0 justify-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-foreground/[0.04] focus-visible:ring-1 focus-visible:ring-ring"
+            className="group h-8 min-w-0 justify-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-muted/60 focus-visible:ring-1 focus-visible:ring-ring"
           >
             <span className="max-w-[15rem] truncate text-[13px] font-normal text-muted-foreground">
               {switcherLabel}
             </span>
-            <Kbd className="ml-1 border-0 bg-transparent p-0 text-[11px] text-muted-foreground/75 shadow-none">⌘⇧K</Kbd>
+            <Kbd className="ml-1 border-0 bg-transparent p-0 text-[10px] leading-none text-muted-foreground/60 shadow-none group-hover:text-muted-foreground">⌘⇧K</Kbd>
             <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
@@ -137,20 +192,26 @@ export function WorkspaceSwitcherControl({
           align="start"
           side="bottom"
           sideOffset={6}
+          onKeyDownCapture={handleMenuKeyDown}
           className="w-[21rem] rounded-xl border-border/70 bg-popover p-1.5 text-popover-foreground shadow-2xl"
         >
           <div className="max-h-80 overflow-y-auto">
-            {workspaces.map((workspace) => {
+            {workspaces.map((workspace, index) => {
               const isCurrent = currentWorkspace?.id === workspace.id
+              const isActive = activeIndex === index
               const available = workspace.available !== false
               return (
                 <DropdownMenuItem
+                  ref={(node) => { itemRefs.current[index] = node }}
                   key={workspace.id}
                   aria-label={workspace.name}
                   data-current={isCurrent ? "true" : "false"}
+                  data-active={isActive ? "true" : "false"}
                   disabled={!available}
+                  onFocus={() => setActiveIndex(index)}
+                  onPointerMove={() => { if (available) setActiveIndex(index) }}
                   onSelect={() => onSelectWorkspace(workspace.id)}
-                  className="gap-3 rounded-lg px-2.5 py-2.5 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground data-[current=true]:bg-foreground/[0.08] data-[current=true]:text-foreground"
+                  className="gap-3 rounded-lg px-2.5 py-2.5 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground data-[active=true]:bg-foreground/[0.06] data-[active=true]:text-foreground data-[current=true]:bg-foreground/[0.08] data-[current=true]:text-foreground"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
                     {workspaceInitial(workspace.name)}

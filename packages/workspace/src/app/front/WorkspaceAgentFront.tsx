@@ -286,6 +286,11 @@ export function WorkspaceAgentFront<
     false,
     shellPersistenceEnabled,
   )
+  const [workbenchLeftOpen, setWorkbenchLeftOpen] = useStoredBooleanState(
+    `${shellStorageKey}:workbenchLeftOpen`,
+    true,
+    shellPersistenceEnabled,
+  )
   const autoCreateSessionRef = useRef(false)
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
@@ -483,7 +488,10 @@ export function WorkspaceAgentFront<
             centerParams={centerParams}
             surface={surfaceOpen ? "artifact-surface" : null}
             surfaceParams={surfaceParams as Record<string, unknown>}
-            sidebar={surfaceOpen && hasLeftTabs ? "workbench-left" : null}
+            sidebar={surfaceOpen && hasLeftTabs && workbenchLeftOpen ? "workbench-left" : null}
+            sidebarParams={{
+              onClose: () => setWorkbenchLeftOpen(false),
+            }}
             storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
             onOpenNav={() => {
               setNavOpen(true)
@@ -494,6 +502,11 @@ export function WorkspaceAgentFront<
               setSurfaceOpen(true)
               onOpenSurface?.()
             }}
+            onOpenSidebar={hasLeftTabs ? () => {
+              surfaceOpenRef.current = true
+              setSurfaceOpen(true)
+              setWorkbenchLeftOpen(true)
+            } : undefined}
           />
         </div>
         {afterShell}

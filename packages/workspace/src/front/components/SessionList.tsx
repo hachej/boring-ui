@@ -7,8 +7,10 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
 } from "react"
 import { IconButton } from "@hachej/boring-ui-kit"
+import { CheckIcon, CopyIcon } from "lucide-react"
 import { cn } from "../lib/utils"
 
 export interface SessionItem {
@@ -165,6 +167,17 @@ function SessionRow({
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>, id: string) => void
   rowRef: (node: HTMLDivElement | null) => void
 }) {
+  const [copied, setCopied] = useState(false)
+  const copySessionId = useCallback((event: MouseEvent) => {
+    event.stopPropagation()
+    const writeText = navigator.clipboard?.writeText?.bind(navigator.clipboard)
+    if (!writeText) return
+    void writeText(session.id).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    })
+  }, [session.id])
+
   return (
     <div
       ref={rowRef}
@@ -186,6 +199,18 @@ function SessionRow({
       aria-current={isActive ? "true" : undefined}
     >
       <span className="flex-1 truncate">{session.title}</span>
+      <IconButton
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="shrink-0 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-data-[focused=true]:opacity-100"
+        onClick={copySessionId}
+        tabIndex={isFocused ? 0 : -1}
+        aria-label={`Copy Pi session id for ${session.title}`}
+        title="Copy Pi session id"
+      >
+        {copied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
+      </IconButton>
       {isActive && (
         <span
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
