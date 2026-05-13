@@ -642,7 +642,8 @@ export function createPiCodingAgentHarness(opts: {
           if (t === "text-delta" || t === "data-pi-text-delta" || t === "data-pi-text-end") {
             sawTextChunk = true;
           }
-          if (t === "data-pi-message-end" && typeof (chunk as { data?: { text?: unknown } }).data?.text === "string") {
+          const piEndData = (chunk as { data?: { role?: unknown; text?: unknown } }).data;
+          if (t === "data-pi-message-end" && piEndData?.role === "assistant" && typeof piEndData.text === "string" && piEndData.text.length > 0) {
             sawTextChunk = true;
           }
         }
