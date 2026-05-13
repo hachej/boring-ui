@@ -62,7 +62,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
         },
         timeoutMs: { type: "number", description: "Optional timeout in milliseconds." },
       },
-      required: ["title"],
+      required: ["title", "schema"],
       additionalProperties: false,
     },
     async execute(_toolCallId, params, signal, sessionId) {

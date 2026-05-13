@@ -133,7 +133,6 @@ Pending state shape:
 ```ts
 type AskUserPendingState = {
   question: AskUserQuestion | null
-  bySession?: Record<string, AskUserQuestion | null>
 }
 ```
 

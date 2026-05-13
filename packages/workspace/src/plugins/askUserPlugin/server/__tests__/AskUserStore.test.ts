@@ -44,9 +44,12 @@ describe("FileAskUserStore", () => {
     await expect(reloaded.getByQuestionId("q1")).resolves.toMatchObject({ questionId: "q1", sessionId: "s1" })
   })
 
-  it("enforces one pending question per session", async () => {
+  it("enforces one pending question globally", async () => {
     await store.createPending(question())
     await expect(store.createPending(question({ questionId: "q2" }))).rejects.toMatchObject({
+      code: ASK_USER_ERROR_CODES.PENDING_EXISTS,
+    })
+    await expect(store.createPending(question({ questionId: "q3", sessionId: "s2" }))).rejects.toMatchObject({
       code: ASK_USER_ERROR_CODES.PENDING_EXISTS,
     })
   })
