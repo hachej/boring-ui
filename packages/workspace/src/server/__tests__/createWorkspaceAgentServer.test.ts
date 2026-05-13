@@ -51,6 +51,22 @@ describe("createWorkspaceAgentServer — ask-user default wiring", () => {
     expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).toContain("ask_user")
     await app.close()
   })
+
+  test("excludeDefaults disables ask-user routes and tool", async () => {
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: tmpdir(),
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      disableDefaultFileTools: true,
+      excludeDefaults: ["ask-user"],
+    })
+    const command = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
+    expect(command.statusCode).toBe(404)
+    const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).not.toContain("ask_user")
+    await app.close()
+  })
 })
 
 describe("createWorkspaceAgentServer — UI bridge wiring", () => {

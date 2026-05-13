@@ -43,15 +43,15 @@ describe("AskUserStatePublisher", () => {
     await store.finalize(question.questionId, undefined, 1)
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ question: { status: "ready" } }))
     await runtime.submitAnswer(question.questionId, "s1", { answer: "ok" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
 
     const { question: q2 } = await runtime.beginAskUserStream({ sessionId: "s1" })
     await runtime.cancelQuestion(q2.questionId, "s1")
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
 
     const { question: q3 } = await runtime.beginAskUserStream({ sessionId: "s1" })
     await store.markAbandoned(q3.questionId)
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
   })
 })
 

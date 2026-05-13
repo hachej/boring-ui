@@ -121,6 +121,20 @@ describe("ask-user Pi extension", () => {
     await expect(tool.execute("call", { title: "Need input", schema }, undefined)).resolves.toMatchObject({ isError: true })
   })
 
+  it("uses tool execution session id when the harness provides one", async () => {
+    const { store, runtime } = await fixture()
+    const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "fallback" }))
+    const pendingResult = tool.execute("call", { title: "Need input", schema, timeoutMs: 60_000 }, undefined, "chat-session")
+    let pending = await store.getPending("chat-session")
+    await vi.waitFor(async () => {
+      pending = await store.getPending("chat-session")
+      expect(pending).toMatchObject({ status: "ready", title: "Need input" })
+    })
+    await runtime.submitAnswer(pending!.questionId, "chat-session", { answer: "ok" })
+    await expect(pendingResult).resolves.toMatchObject({ details: { status: "answered" } })
+    await expect(store.getPending("fallback")).resolves.toBeNull()
+  })
+
   it("valid input creates pending question and waits for runtime answer", async () => {
     const { store, runtime } = await fixture()
     const tool = register(createAskUserPiExtensionFactory({ runtime, sessionId: "s1" }))

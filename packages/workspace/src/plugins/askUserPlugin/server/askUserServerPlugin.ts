@@ -29,7 +29,7 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       description: askUserTool.description,
       promptSnippet: askUserTool.promptSnippet,
       parameters: askUserTool.parameters,
-      execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal) },
+      execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId) },
     }],
     routes,
     preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
