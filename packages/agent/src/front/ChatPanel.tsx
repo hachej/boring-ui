@@ -1043,7 +1043,13 @@ export function ChatPanel(props: ChatPanelProps) {
                           isStreaming={item.state === 'streaming'}
                           defaultOpen={item.state === 'streaming'}
                         >
-                          <ReasoningTrigger />
+                          <ReasoningTrigger
+                            aria-label={item.state === 'streaming' ? 'Thinking' : 'Thoughts'}
+                            title={item.state === 'streaming' ? 'Thinking' : 'Thoughts'}
+                            className="mb-1 w-fit rounded-[var(--radius-sm)] p-1 text-muted-foreground/35 hover:bg-foreground/[0.04] hover:text-muted-foreground/75"
+                          >
+                            <BrainIcon className="h-3.5 w-3.5" />
+                          </ReasoningTrigger>
                           <ReasoningContent>{item.text}</ReasoningContent>
                         </Reasoning>
                       )
@@ -1817,12 +1823,6 @@ function MessageActionsBar({
       document.body.removeChild(ta)
     }
   }
-  const actionBtnClass = cn(
-    "inline-flex h-6 items-center gap-1 rounded-[var(--radius-sm)] px-1.5",
-    "text-[11.5px] font-medium text-muted-foreground/55 transition-colors",
-    "hover:bg-foreground/[0.04] hover:text-foreground",
-    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40",
-  )
   const iconActionBtnClass = cn(
     "inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]",
     "text-muted-foreground/35 transition-colors",
@@ -1842,9 +1842,8 @@ function MessageActionsBar({
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
       </Button>
       {canRegenerate && (
-        <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={actionBtnClass} aria-label="Regenerate">
+        <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={iconActionBtnClass} aria-label="Regenerate" title="Regenerate">
           <RefreshCwIcon className="h-3.5 w-3.5" />
-          <span>Regenerate</span>
         </Button>
       )}
     </div>
