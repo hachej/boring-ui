@@ -266,7 +266,7 @@ describe('ChatPanel (shadcn)', () => {
     expect(html).toContain('role="alert"')
   })
 
-  test('sends message through useAgentChat', async () => {
+  test('sends message without hardcoded model so Pi can choose the default', async () => {
     renderToStaticMarkup(<ChatPanel sessionId="sess-send" />)
 
     expect(capturedOnSubmit).toBeDefined()
@@ -278,7 +278,6 @@ describe('ChatPanel (shadcn)', () => {
         body: {
           sessionId: 'sess-send',
           message: 'Run tests',
-          model: { provider: 'qwen', id: 'qwen3.5' },
           attachments: [],
         },
       },
@@ -399,7 +398,6 @@ describe('ChatPanel (shadcn)', () => {
         body: {
           sessionId: 'sess-unk',
           message: '/unknown hello',
-          model: { provider: 'qwen', id: 'qwen3.5' },
           attachments: [],
         },
       },
@@ -445,7 +443,6 @@ describe('ChatPanel (shadcn)', () => {
           body: {
             sessionId: 'sess-skill',
             message: 'skill: macro-deck\n\ncreate a labor market deck',
-            model: { provider: 'qwen', id: 'qwen3.5' },
             attachments: [],
           },
         },

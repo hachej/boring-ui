@@ -38,7 +38,6 @@ import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
-import { isModelId, type ModelId } from './components/ModelPicker'
 import {
   type ToolRendererOverrides,
 } from './bareToolRenderers'
@@ -126,8 +125,8 @@ function readStoredShowThoughts(): boolean {
 /**
  * Selected model, stored as { provider, id } so the composer can speak
  * pi-coding-agent's real registered IDs (claude-sonnet-4-6, gpt-5.2-codex,
- * …) rather than a 3-alias shorthand. Legacy single-string values
- * (sonnet/haiku/opus) are still honoured for back-compat.
+ * …) rather than a 3-alias shorthand. Unqualified legacy aliases are ignored:
+ * Boring must not infer a provider when Pi owns model selection.
  */
 export interface ModelSelection {
   provider: string
@@ -139,19 +138,36 @@ interface AvailableModel extends ModelSelection {
   available: boolean
 }
 
-const DEFAULT_MODEL: ModelSelection = { provider: 'qwen', id: 'qwen3.5' }
+function modelPayload(model: ModelSelection | null): { model?: ModelSelection } {
+  return model ? { model } : {}
+}
+
+function parseModelSelection(value: unknown): ModelSelection | null {
+  if (typeof value === 'object' && value !== null) {
+    const parsed = value as Partial<ModelSelection>
+    return typeof parsed.provider === 'string' && typeof parsed.id === 'string'
+      ? { provider: parsed.provider, id: parsed.id }
+      : null
+  }
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('{')) {
+    try {
+      return parseModelSelection(JSON.parse(trimmed))
+    } catch {
+      return null
+    }
+  }
+  const idx = trimmed.indexOf(':')
+  return idx > 0 && idx < trimmed.length - 1
+    ? { provider: trimmed.slice(0, idx), id: trimmed.slice(idx + 1) }
+    : null
+}
 
 function readStoredModel(): ModelSelection | null {
   try {
-    const raw = globalThis.localStorage?.getItem(STORAGE_MODEL_KEY)
-    if (!raw) return null
-    if (raw.startsWith('{')) {
-      const parsed = JSON.parse(raw) as Partial<ModelSelection>
-      if (typeof parsed?.provider === 'string' && typeof parsed?.id === 'string') {
-        return { provider: parsed.provider, id: parsed.id }
-      }
-    }
-    if (isModelId(raw)) return { provider: 'anthropic', id: raw }
+    return parseModelSelection(globalThis.localStorage?.getItem(STORAGE_MODEL_KEY))
   } catch { /* storage unavailable */ }
   return null
 }
@@ -429,8 +445,8 @@ export function ChatPanel(props: ChatPanelProps) {
   const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
 
   const initialModelState = useMemo(readStoredModelState, [])
-  const [model, setModelState] = useState<ModelSelection>(
-    () => initialModelState.model ?? defaultModel ?? DEFAULT_MODEL,
+  const [model, setModelState] = useState<ModelSelection | null>(
+    () => initialModelState.model ?? defaultModel ?? null,
   )
   const [userSelectedModel, setUserSelectedModel] = useState<boolean>(
     () => initialModelState.userSelected,
@@ -473,7 +489,7 @@ export function ChatPanel(props: ChatPanelProps) {
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
 
   useEffect(() => {
-    if (!userSelectedModel) return
+    if (!userSelectedModel || !model) return
     try {
       globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(model))
       globalThis.localStorage?.setItem(STORAGE_MODEL_USER_KEY, '1')
@@ -495,24 +511,23 @@ export function ChatPanel(props: ChatPanelProps) {
         if (aborted || !payload?.models) return
         setAvailableModels(payload.models)
         const available = payload.models.filter((m) => m.available)
-        const fallbackModel = payload.defaultModel ?? available[0]
-        if (fallbackModel) {
-          setModelState((current) => {
-            const currentAvailable = available.some(
-              (m) => m.provider === current.provider && m.id === current.id,
-            )
-            if (currentAvailable) return current
-            userSelectedModelRef.current = false
-            setUserSelectedModel(false)
-            try {
-              globalThis.localStorage?.removeItem(STORAGE_MODEL_KEY)
-              globalThis.localStorage?.removeItem(STORAGE_MODEL_USER_KEY)
-            } catch { /* noop */ }
-            return { provider: fallbackModel.provider, id: fallbackModel.id }
-          })
-        } else if (payload.defaultModel && !userSelectedModelRef.current) {
-          setModelState(payload.defaultModel)
-        }
+        setModelState((current) => {
+          const currentAvailable = current
+            ? available.some((m) => m.provider === current.provider && m.id === current.id)
+            : false
+          if (currentAvailable) return current
+
+          userSelectedModelRef.current = false
+          setUserSelectedModel(false)
+          try {
+            globalThis.localStorage?.removeItem(STORAGE_MODEL_KEY)
+            globalThis.localStorage?.removeItem(STORAGE_MODEL_USER_KEY)
+          } catch { /* noop */ }
+
+          return payload.defaultModel
+            ? { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
+            : null
+        })
       })
       .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
     return () => { aborted = true }
@@ -540,18 +555,18 @@ export function ChatPanel(props: ChatPanelProps) {
     return () => { aborted = true }
   }, [requestHeaders, registry])
 
-  // Legacy single-string event payload (used by the /model slash command)
-  // still works — treat it as an anthropic short alias.
+  // Optional integration hook for host slash commands. Accepts explicit
+  // provider-qualified selections only ({ provider, id } or "provider:id");
+  // unqualified legacy aliases are intentionally ignored so Boring never
+  // guesses a model provider on Pi's behalf.
   useEffect(() => {
     const onChange = (event: Event) => {
-      const detail = (event as CustomEvent).detail
-      if (typeof detail === 'string' && isModelId(detail)) {
-        setModel({ provider: 'anthropic', id: detail })
-      }
+      const next = parseModelSelection((event as CustomEvent).detail)
+      if (next) setModel(next)
     }
     globalThis.addEventListener?.('boring:model-change', onChange)
     return () => globalThis.removeEventListener?.('boring:model-change', onChange)
-  }, [])
+  }, [setModel])
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
@@ -769,7 +784,7 @@ export function ChatPanel(props: ChatPanelProps) {
           : `skill: ${parsed.name}`
         void sendMessage(
           { text, files },
-          { body: { sessionId, message: skillMessage, model, attachments: [] } },
+          { body: { sessionId, message: skillMessage, ...modelPayload(model), attachments: [] } },
         )
         return
       }
@@ -788,9 +803,13 @@ export function ChatPanel(props: ChatPanelProps) {
             void onSessionReset?.()
           },
           setModel: (model) => {
-            if (!isModelId(model)) return false
-            try { globalThis.localStorage?.setItem('boring-agent:composer:model', model) } catch {}
-            globalThis.dispatchEvent?.(new CustomEvent('boring:model-change', { detail: model }))
+            const next = parseModelSelection(model)
+            if (!next) return false
+            try {
+              globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(next))
+              globalThis.localStorage?.setItem(STORAGE_MODEL_USER_KEY, '1')
+            } catch {}
+            globalThis.dispatchEvent?.(new CustomEvent('boring:model-change', { detail: next }))
             return true
           },
           listCommands: () => registry.list(),
@@ -885,7 +904,7 @@ export function ChatPanel(props: ChatPanelProps) {
           sessionId,
           // Payload actually sent to the agent (inlined text attachments).
           message: serverMessage,
-          model,
+          ...modelPayload(model),
           // Only forward thinkingLevel when the host opted in. The server
           // schema treats it as optional; omitting it keeps the existing
           // 'off' default behaviour for hosts that don't expose the toggle.
@@ -960,7 +979,7 @@ export function ChatPanel(props: ChatPanelProps) {
                     body: {
                       sessionId,
                       message: text,
-                      model,
+                      ...modelPayload(model),
                       attachments: [],
                     },
                   },
@@ -1453,21 +1472,26 @@ function ModelSelect({
   options,
   disabled,
 }: {
-  value: ModelSelection
+  value: ModelSelection | null
   onChange: (next: ModelSelection) => void
   options: AvailableModel[]
   disabled?: boolean
 }) {
-  const currentKey = encodeModelKey(value)
+  const currentKey = value ? encodeModelKey(value) : null
   // Trigger label prefers a live entry, falls back to raw id for offline /
-  // legacy short-alias sessions so the label never goes blank.
-  const current = options.find((m) => m.provider === value.provider && m.id === value.id)
-  const triggerLabel = current?.label ?? displayModelLabel(value.id)
-  const triggerProviderLabel = displayProviderLabel(value.provider)
+  // legacy short-alias sessions. With no selected/default model, show the
+  // honest state: Pi will choose its configured/session fallback server-side.
+  const current = value
+    ? options.find((m) => m.provider === value.provider && m.id === value.id)
+    : undefined
+  const triggerLabel = value ? current?.label ?? displayModelLabel(value.id) : 'Pi default'
+  const triggerProviderLabel = value ? displayProviderLabel(value.provider) : 'Auto'
 
   const availableOptions = options.filter((m) => m.available)
-  const hasCurrentOption = availableOptions.some((m) => encodeModelKey(m) === currentKey)
-  const menuOptions = hasCurrentOption
+  const hasCurrentOption = currentKey
+    ? availableOptions.some((m) => encodeModelKey(m) === currentKey)
+    : true
+  const menuOptions = hasCurrentOption || !value
     ? availableOptions
     : [
         {
@@ -1761,7 +1785,7 @@ function regenerateLastTurn({
   setMessages: (m: UIMessage[]) => void
   sendMessage: ReturnType<typeof useAgentChat>['sendMessage']
   sessionId: string
-  model: ModelSelection
+  model: ModelSelection | null
 }): Promise<void> | void {
   if (messages.length === 0) return
   const tail = messages[messages.length - 1]
@@ -1795,7 +1819,7 @@ function regenerateLastTurn({
       body: {
         sessionId,
         message: text || '(regenerate)',
-        model,
+        ...modelPayload(model),
         attachments: files?.map((f) => ({
           filename: f.filename,
           mediaType: f.mediaType,

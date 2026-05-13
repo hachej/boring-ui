@@ -170,8 +170,10 @@ export function createSessionTitleScheduler(
       if (hasCustomTitle(detail.title)) return;
 
       const fallbackTitle = formatFallbackTitle(getNow());
-      const apiKey =
-        opts.getApiKey?.()?.trim() || getEnv("ANTHROPIC_API_KEY")?.trim() || "";
+      // Do not inspect provider environment variables here. Chat model/auth
+      // is Pi-owned; this optional legacy Anthropic title helper only runs
+      // when a caller explicitly injects a title API key.
+      const apiKey = opts.getApiKey?.()?.trim() || "";
       if (!apiKey || !fetchImpl) {
         opts.writeTitle(input.sessionId, fallbackTitle);
         return;
