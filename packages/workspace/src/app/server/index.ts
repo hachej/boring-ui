@@ -1,4 +1,5 @@
 export {
+  buildWorkspaceContextPrompt,
   collectWorkspaceAgentServerPlugins,
   composeServerPlugins,
   createWorkspaceAgentServer,

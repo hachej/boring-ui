@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import {
@@ -11,7 +12,6 @@ import {
   DefaultResourceLoader,
   SettingsManager,
   getAgentDir,
-  loadSkills,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
@@ -127,33 +127,53 @@ function resolveDefaultModel(modelRegistry: ModelRegistry) {
   return undefined;
 }
 
+function readSettingsFileIfPresent(path: string): string | undefined {
+  return existsSync(path) ? readFileSync(path, "utf-8") : undefined;
+}
+
+function mergeInjectedProjectPackages(
+  settingsJson: string | undefined,
+  piPackages: PiPackageSource[],
+): string {
+  const settings = settingsJson ? JSON.parse(settingsJson) : {};
+  const configuredPackages = Array.isArray(settings.packages)
+    ? settings.packages
+    : [];
+  return JSON.stringify({
+    ...settings,
+    packages: mergePiPackageSources(configuredPackages, piPackages),
+  });
+}
+
 export function createResourceSettingsManager(
   cwd: string,
   agentDir: string,
   piPackages: PiPackageSource[],
 ): SettingsManager {
-  const fileSettingsManager = SettingsManager.create(cwd, agentDir);
-  if (piPackages.length === 0) return fileSettingsManager;
+  if (piPackages.length === 0) return SettingsManager.create(cwd, agentDir);
 
-  const projectSettings = fileSettingsManager.getProjectSettings();
-  let globalSettingsJson: string | undefined = JSON.stringify(
-    fileSettingsManager.getGlobalSettings(),
-  );
-  let projectSettingsJson: string | undefined = JSON.stringify({
-    ...projectSettings,
-    packages: mergePiPackageSources(projectSettings.packages ?? [], piPackages),
-  });
-  // Pi settings writes stay visible to this SettingsManager instance, but do
-  // not mutate host/project files while workspace-owned packages are injected.
-  // SettingsManager also uses `undefined` as the callback result for reads, so
-  // preserve the current JSON whenever a callback does not produce a new value.
+  const globalSettingsPath = join(agentDir, "settings.json");
+  const projectSettingsPath = join(cwd, ".pi", "settings.json");
+  let globalSettingsOverrideJson: string | undefined;
+  let projectSettingsOverrideJson: string | undefined;
+
+  // Host-declared Pi packages are an in-memory project overlay. Normal reads
+  // still come from Pi's real settings files so `resourceLoader.reload()` sees
+  // user edits to workspace/.pi/settings.json; writes performed through this
+  // SettingsManager stay in-memory and do not mutate host/project files.
   const storage: Parameters<typeof SettingsManager.fromStorage>[0] = {
     withLock(scope, fn) {
       if (scope === "global") {
-        globalSettingsJson = fn(globalSettingsJson) ?? globalSettingsJson;
-      } else {
-        projectSettingsJson = fn(projectSettingsJson) ?? projectSettingsJson;
+        const current = globalSettingsOverrideJson ?? readSettingsFileIfPresent(globalSettingsPath);
+        const next = fn(current);
+        if (next !== undefined) globalSettingsOverrideJson = next;
+        return;
       }
+
+      const current = projectSettingsOverrideJson
+        ?? mergeInjectedProjectPackages(readSettingsFileIfPresent(projectSettingsPath), piPackages);
+      const next = fn(current);
+      if (next !== undefined) projectSettingsOverrideJson = next;
     },
   };
 
@@ -213,8 +233,15 @@ export function createPiCodingAgentHarness(opts: {
   systemPromptAppend?: string;
   /** Optional pi resource-loader isolation knobs. */
   resourceLoaderOptions?: PiResourceLoaderOptions;
+  /** Optional stable namespace for file-backed session storage. */
+  sessionNamespace?: string;
+  /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
+  sessionDir?: string;
 }): AgentHarness {
-  const sessionStore = new PiSessionStore(opts.cwd);
+  const sessionStore = new PiSessionStore(opts.cwd, {
+    sessionNamespace: opts.sessionNamespace,
+    sessionDir: opts.sessionDir,
+  });
   const piSessions = new Map<string, PiSessionHandle>();
   const scheduleSessionTitle = createSessionTitleScheduler({
     loadSession: (sessionId) =>
@@ -235,8 +262,9 @@ export function createPiCodingAgentHarness(opts: {
       return existing;
     }
 
-    // AuthStorage.create() reads env vars (ANTHROPIC_API_KEY etc.) + ~/.pi/agent/auth.json.
-    // AuthStorage.inMemory() would not pick up credentials.
+    // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
+    // its normal environment/settings/auth sources; Boring does not pick a
+    // provider credential itself.
     const authStorage = AuthStorage.create();
     const modelRegistry = ModelRegistry.create(authStorage);
     registerConfiguredModelProviders(modelRegistry);
@@ -263,8 +291,9 @@ export function createPiCodingAgentHarness(opts: {
     }
 
     const resolvedModel = resolveRequestedModel(modelRegistry, input);
-    // Default: sonnet for anthropic if nothing resolved, preventing pi from
-    // falling back to openai-codex when only ANTHROPIC_API_KEY is set.
+    // Prefer an explicit available UI selection; otherwise use configured
+    // Boring/Pi default if present. Undefined is intentional: Pi/session owns
+    // the final fallback model selection.
     const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
 
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
@@ -291,7 +320,7 @@ export function createPiCodingAgentHarness(opts: {
               agentDir,
               settingsManager,
               ...(opts.systemPromptAppend
-                ? { appendSystemPrompt: [opts.systemPromptAppend] }
+                ? { appendSystemPromptOverride: (base: string[]) => [...base, opts.systemPromptAppend!] }
                 : {}),
               ...(opts.resourceLoaderOptions?.noContextFiles
                 ? { noContextFiles: true }
@@ -299,17 +328,6 @@ export function createPiCodingAgentHarness(opts: {
               ...(opts.resourceLoaderOptions?.noSkills ? { noSkills: true } : {}),
               ...(additionalSkillPaths.length
                 ? { additionalSkillPaths }
-                : {}),
-              ...(opts.resourceLoaderOptions?.noSkills || additionalSkillPaths.length
-                ? {
-                    skillsOverride: () =>
-                      loadSkills({
-                        cwd: ctx.workdir,
-                        agentDir,
-                        skillPaths: additionalSkillPaths,
-                        includeDefaults: false,
-                      }),
-                  }
                 : {}),
             })
           })()

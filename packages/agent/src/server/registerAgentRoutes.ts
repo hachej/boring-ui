@@ -80,6 +80,19 @@ interface RuntimeBinding {
   lastHealthCheckMs?: number
 }
 
+interface RuntimeScope {
+  root: string
+  key: string
+  templatePath?: string
+  resourceLoaderOptions?: PiResourceLoaderOptions
+  sessionNamespace?: string
+}
+
+interface SkillScope {
+  root: string
+  resourceLoaderOptions?: PiResourceLoaderOptions
+}
+
 function selectRuntimeModeAdapter(
   mode: RuntimeModeId,
   sandboxHandleStore: SandboxHandleStore | undefined,
@@ -99,7 +112,7 @@ function getRequestWorkspaceId(request: FastifyRequest): string {
 
 function isWorkspaceAgnosticAgentRequest(request: FastifyRequest): boolean {
   const pathname = request.url.split('?')[0] ?? request.url
-  return pathname === '/api/v1/agent/models' || pathname === '/api/v1/agent/skills' || pathname === '/api/v1/ready-status'
+  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models' || pathname === '/api/v1/ready-status'
 }
 
 function extractHttpStatus(error: unknown): number | null {
@@ -111,6 +124,12 @@ function extractHttpStatus(error: unknown): number | null {
 
   const responseStatus = (error as { response?: { status?: unknown } } | null)?.response?.status
   return typeof responseStatus === 'number' ? responseStatus : null
+}
+
+function normalizeSessionNamespace(value: string | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
 }
 
 function isExpiredSandboxRuntimeError(error: unknown): boolean {
@@ -146,6 +165,17 @@ export interface RegisterAgentRoutesOptions {
   }) => AgentTool[] | Promise<AgentTool[]>
   systemPromptAppend?: string
   resourceLoaderOptions?: PiResourceLoaderOptions
+  getResourceLoaderOptions?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+  }) => PiResourceLoaderOptions | undefined | Promise<PiResourceLoaderOptions | undefined>
+  sessionNamespace?: string
+  getSessionNamespace?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+  }) => string | undefined | Promise<string | undefined>
   registerHealthRoute?: boolean
   sandboxHandleStore?: SandboxHandleStore
   getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
@@ -171,36 +201,69 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   const requestScopedRuntime =
     typeof opts.getWorkspaceId === 'function' ||
-    typeof opts.getWorkspaceRoot === 'function'
+    typeof opts.getWorkspaceRoot === 'function' ||
+    typeof opts.getTemplatePath === 'function' ||
+    typeof opts.getResourceLoaderOptions === 'function' ||
+    typeof opts.getSessionNamespace === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
   const runtimeBindings = new Map<string, Promise<RuntimeBinding>>()
 
   async function resolveRuntimeScope(
     workspaceId: string,
     request?: FastifyRequest,
-  ): Promise<{ root: string; key: string }> {
+  ): Promise<RuntimeScope> {
     const root = request && opts.getWorkspaceRoot
       ? await opts.getWorkspaceRoot(workspaceId, request)
       : workspaceRoot
+    const scopedTemplatePath = opts.getTemplatePath
+      ? await opts.getTemplatePath({ workspaceId, workspaceRoot: root, request })
+      : templatePath
+    const resourceLoaderOptions = opts.getResourceLoaderOptions
+      ? await opts.getResourceLoaderOptions({ workspaceId, workspaceRoot: root, request })
+      : opts.resourceLoaderOptions
+    const sessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace
+      ? await opts.getSessionNamespace({ workspaceId, workspaceRoot: root, request })
+      : opts.sessionNamespace)
     return {
       root,
-      key: `${resolvedMode}:${workspaceId}:${root}`,
+      templatePath: scopedTemplatePath,
+      resourceLoaderOptions,
+      sessionNamespace,
+      key: JSON.stringify([
+        resolvedMode,
+        workspaceId,
+        root,
+        scopedTemplatePath ?? null,
+        resourceLoaderOptions ?? null,
+        sessionNamespace ?? null,
+      ]),
     }
+  }
+
+  async function resolveSkillScope(
+    workspaceId: string,
+    request?: FastifyRequest,
+  ): Promise<SkillScope> {
+    const root = request && opts.getWorkspaceRoot
+      ? await opts.getWorkspaceRoot(workspaceId, request)
+      : workspaceRoot
+    const resourceLoaderOptions = opts.getResourceLoaderOptions
+      ? await opts.getResourceLoaderOptions({ workspaceId, workspaceRoot: root, request })
+      : opts.resourceLoaderOptions
+    return { root, resourceLoaderOptions }
   }
 
   async function createRuntimeBinding(
     workspaceId: string,
-    root: string,
+    scope: RuntimeScope,
     request?: FastifyRequest,
   ): Promise<RuntimeBinding> {
-    const scopedTemplatePath = opts.getTemplatePath
-      ? await opts.getTemplatePath({ workspaceId, workspaceRoot: root, request })
-      : templatePath
+    const root = scope.root
     const runtimeBundle = await modeAdapter.create({
       workspaceRoot: root,
       sessionId: workspaceId,
       workspaceId,
-      templatePath: scopedTemplatePath,
+      templatePath: scope.templatePath,
     })
 
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
@@ -248,12 +311,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const harness = createPiCodingAgentHarness({
       tools,
       cwd: root,
+      sessionNamespace: scope.sessionNamespace,
       systemPromptAppend: opts.systemPromptAppend,
-      resourceLoaderOptions: {
-        noContextFiles: true,
-        noSkills: true,
-        ...opts.resourceLoaderOptions,
-      },
+      resourceLoaderOptions: scope.resourceLoaderOptions,
     })
     const readyTracker = new ReadyStatusTracker({
       sandboxReady: resolvedMode !== 'vercel-sandbox',
@@ -285,7 +345,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       )
     }
 
-    const created = createRuntimeBinding(workspaceId, scope.root, request)
+    const created = createRuntimeBinding(workspaceId, scope, request)
     runtimeBindings.set(scope.key, created)
     try {
       return await ensureRuntimeBindingReady(
@@ -301,12 +361,12 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
   async function recreateRuntimeBinding(
     workspaceId: string,
-    scope: { root: string; key: string },
+    scope: RuntimeScope,
   ): Promise<RuntimeBinding> {
     runtimeBindings.delete(scope.key)
     evictSandboxHandleCacheForWorkspace(workspaceId)
 
-    const created = createRuntimeBinding(workspaceId, scope.root)
+    const created = createRuntimeBinding(workspaceId, scope)
     runtimeBindings.set(scope.key, created)
     try {
       const binding = await created
@@ -320,7 +380,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
   async function ensureRuntimeBindingReady(
     workspaceId: string,
-    scope: { root: string; key: string },
+    scope: RuntimeScope,
     binding: RuntimeBinding,
   ): Promise<RuntimeBinding> {
     if (resolvedMode !== 'vercel-sandbox') return binding
@@ -352,6 +412,16 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const staticBinding = requestScopedRuntime
     ? null
     : await getOrCreateRuntimeBinding(sessionId)
+  const skillsScopeByRequest = new WeakMap<FastifyRequest, Promise<SkillScope>>()
+
+  function getSkillsScopeForRequest(request: FastifyRequest): Promise<SkillScope> {
+    let promise = skillsScopeByRequest.get(request)
+    if (!promise) {
+      promise = resolveSkillScope(getRequestWorkspaceId(request), request)
+      skillsScopeByRequest.set(request, promise)
+    }
+    return promise
+  }
 
   async function getBindingForRequest(request: FastifyRequest): Promise<RuntimeBinding> {
     if (staticBinding) return staticBinding
@@ -473,6 +543,20 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(skillsRoutes, {
     workspaceRoot,
     additionalSkillPaths: opts.resourceLoaderOptions?.additionalSkillPaths,
+    piPackages: opts.resourceLoaderOptions?.piPackages,
+    noSkills: opts.resourceLoaderOptions?.noSkills,
+    getWorkspaceRoot: staticBinding
+      ? undefined
+      : async (request) => (await getSkillsScopeForRequest(request)).root,
+    getAdditionalSkillPaths: staticBinding
+      ? undefined
+      : async (request) => (await getSkillsScopeForRequest(request)).resourceLoaderOptions?.additionalSkillPaths,
+    getPiPackages: staticBinding
+      ? undefined
+      : async (request) => (await getSkillsScopeForRequest(request)).resourceLoaderOptions?.piPackages,
+    getNoSkills: staticBinding
+      ? undefined
+      : async (request) => (await getSkillsScopeForRequest(request)).resourceLoaderOptions?.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, staticBinding
