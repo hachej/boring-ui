@@ -1044,7 +1044,7 @@ export function ChatPanel(props: ChatPanelProps) {
                           defaultOpen={item.state === 'streaming'}
                         >
                           <ReasoningTrigger
-                            className="mb-1 w-fit rounded-[var(--radius-sm)] px-1.5 py-1 text-muted-foreground/45 hover:bg-foreground/[0.04] hover:text-muted-foreground/75"
+                            className="mb-1 w-fit rounded-[var(--radius-sm)] px-0 py-0 !text-xs !font-normal !text-muted-foreground/75 hover:bg-transparent hover:!text-muted-foreground/75 [&_svg]:!text-muted-foreground/75"
                             getThinkingMessage={(streaming) => (
                               <span>{streaming ? 'thinking' : 'thoughts'}</span>
                             )}
