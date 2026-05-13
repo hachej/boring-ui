@@ -12,7 +12,6 @@ export interface ComposePluginsOptions {
   panels?: WorkspaceFrontPlugin["panels"]
   commands?: WorkspaceFrontPlugin["commands"]
   catalogs?: WorkspaceFrontPlugin["catalogs"]
-  agentTools?: WorkspaceFrontPlugin["agentTools"]
   systemPrompt?: string
   /**
    * When true (default), child contributions are registered as owned by the
@@ -45,11 +44,6 @@ function pluginToOutputs(
   }
   for (const catalog of plugin.catalogs ?? []) {
     outputs.push(withOwner({ type: "catalog", catalog }, ownerPluginId))
-  }
-  for (const tool of plugin.agentTools ?? []) {
-    outputs.push(
-      withOwner({ type: "agent-tool", id: tool.name, tool }, ownerPluginId),
-    )
   }
   for (const output of plugin.outputs ?? []) {
     outputs.push(withOwner(output, ownerPluginId))
@@ -84,7 +78,6 @@ export function composePlugins(options: ComposePluginsOptions): WorkspaceFrontPl
       panels: options.panels,
       commands: options.commands,
       catalogs: options.catalogs,
-      agentTools: options.agentTools,
       outputs: options.outputs,
     },
     undefined,

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { basename } from 'node:path'
 import type { AgentTool } from '../shared/tool'
+import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
@@ -12,7 +13,7 @@ import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 import { evictSandboxHandleCacheForWorkspace } from './sandbox/vercel-sandbox/resolveSandboxHandle'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
-import type { PiResourceLoaderOptions } from './harness/pi-coding-agent/createHarness'
+import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
@@ -84,13 +85,13 @@ interface RuntimeScope {
   root: string
   key: string
   templatePath?: string
-  resourceLoaderOptions?: PiResourceLoaderOptions
+  pi?: PiHarnessOptions
   sessionNamespace?: string
 }
 
 interface SkillScope {
   root: string
-  resourceLoaderOptions?: PiResourceLoaderOptions
+  pi?: PiHarnessOptions
 }
 
 function selectRuntimeModeAdapter(
@@ -164,12 +165,15 @@ export interface RegisterAgentRoutesOptions {
     workspaceFsCapability?: Workspace['fsCapability']
   }) => AgentTool[] | Promise<AgentTool[]>
   systemPromptAppend?: string
-  resourceLoaderOptions?: PiResourceLoaderOptions
-  getResourceLoaderOptions?: (ctx: {
+  /** Override the default pi-backed harness with a custom agent runtime. */
+  harnessFactory?: AgentHarnessFactory
+  /** Optional pi adapter/runtime knobs used by the default harness. */
+  pi?: PiHarnessOptions
+  getPi?: (ctx: {
     workspaceId: string
     workspaceRoot: string
     request?: FastifyRequest
-  }) => PiResourceLoaderOptions | undefined | Promise<PiResourceLoaderOptions | undefined>
+  }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
   sessionNamespace?: string
   getSessionNamespace?: (ctx: {
     workspaceId: string
@@ -203,7 +207,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getWorkspaceId === 'function' ||
     typeof opts.getWorkspaceRoot === 'function' ||
     typeof opts.getTemplatePath === 'function' ||
-    typeof opts.getResourceLoaderOptions === 'function' ||
+    typeof opts.getPi === 'function' ||
     typeof opts.getSessionNamespace === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
   const runtimeBindings = new Map<string, Promise<RuntimeBinding>>()
@@ -226,23 +230,23 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const scopedTemplatePath = opts.getTemplatePath
       ? await opts.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : templatePath
-    const resourceLoaderOptions = opts.getResourceLoaderOptions
-      ? await opts.getResourceLoaderOptions({ workspaceId, workspaceRoot: root, request })
-      : opts.resourceLoaderOptions
+    const pi = opts.getPi
+      ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
+      : opts.pi
     const sessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace
       ? await opts.getSessionNamespace({ workspaceId, workspaceRoot: root, request })
       : opts.sessionNamespace)
     return {
       root,
       templatePath: scopedTemplatePath,
-      resourceLoaderOptions,
+      pi,
       sessionNamespace,
       key: JSON.stringify([
         resolvedMode,
         workspaceId,
         root,
         scopedTemplatePath ?? null,
-        resourceLoaderOptions ?? null,
+        pi ?? null,
         sessionNamespace ?? null,
       ]),
     }
@@ -255,10 +259,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const root = request && opts.getWorkspaceRoot
       ? await opts.getWorkspaceRoot(workspaceId, request)
       : workspaceRoot
-    const resourceLoaderOptions = opts.getResourceLoaderOptions
-      ? await opts.getResourceLoaderOptions({ workspaceId, workspaceRoot: root, request })
-      : opts.resourceLoaderOptions
-    return { root, resourceLoaderOptions }
+    const pi = opts.getPi
+      ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
+      : opts.pi
+    return { root, pi }
   }
 
   async function createRuntimeBinding(
@@ -316,12 +320,19 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       pluginTools,
       logger: app.log,
     })
-    const harness = createPiCodingAgentHarness({
+    const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
+      ...input,
+      pi: {
+        noContextFiles: true,
+        noSkills: true,
+        ...scope.pi,
+      },
+    }))
+    const harness = await harnessFactory({
       tools,
       cwd: root,
       sessionNamespace: scope.sessionNamespace,
       systemPromptAppend: opts.systemPromptAppend,
-      resourceLoaderOptions: scope.resourceLoaderOptions,
     })
     const readyTracker = new ReadyStatusTracker({
       sandboxReady: resolvedMode !== 'vercel-sandbox',
@@ -552,21 +563,21 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
     workspaceRoot,
-    additionalSkillPaths: opts.resourceLoaderOptions?.additionalSkillPaths,
-    piPackages: opts.resourceLoaderOptions?.piPackages,
-    noSkills: opts.resourceLoaderOptions?.noSkills,
+    additionalSkillPaths: opts.pi?.additionalSkillPaths,
+    piPackages: opts.pi?.packages,
+    noSkills: opts.pi?.noSkills,
     getWorkspaceRoot: staticBinding
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).root,
     getAdditionalSkillPaths: staticBinding
       ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).resourceLoaderOptions?.additionalSkillPaths,
+      : async (request) => (await getSkillsScopeForRequest(request)).pi?.additionalSkillPaths,
     getPiPackages: staticBinding
       ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).resourceLoaderOptions?.piPackages,
+      : async (request) => (await getSkillsScopeForRequest(request)).pi?.packages,
     getNoSkills: staticBinding
       ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).resourceLoaderOptions?.noSkills,
+      : async (request) => (await getSkillsScopeForRequest(request)).pi?.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, staticBinding

@@ -83,7 +83,7 @@ Use `get_ui_state` before `openPanel` to discover which panel components are reg
 Register a surface resolver in your plugin to map `SurfaceOpenRequest` kinds to panel opens:
 
 ```ts
-import { defineFrontPlugin, type SurfacePanelResolution } from '@boring/workspace'
+import { defineFrontPlugin, type SurfacePanelResolution } from '@hachej/boring-workspace'
 
 defineFrontPlugin({
   outputs: [
@@ -110,7 +110,7 @@ defineFrontPlugin({
 From a Fastify route or server plugin:
 
 ```ts
-import { postUiCommand } from '@boring/workspace/server'
+import { postUiCommand } from '@hachej/boring-workspace/server'
 
 await postUiCommand(workspaceId, {
   kind: 'openSurface',
@@ -125,7 +125,7 @@ await postUiCommand(workspaceId, {
 Subscribe to workspace events on the frontend:
 
 ```ts
-import { events, workspaceEvents } from '@boring/workspace'
+import { events, workspaceEvents } from '@hachej/boring-workspace'
 
 events.on(workspaceEvents.panelOpened, (panel) => {
   console.log('panel opened', panel.id)

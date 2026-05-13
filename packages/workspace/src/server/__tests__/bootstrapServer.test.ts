@@ -22,6 +22,8 @@ describe("bootstrapServer", () => {
       registered: [],
       systemPromptAppend: "",
       piPackages: [],
+      extensionPaths: [],
+      extensionFactories: [],
       agentTools: [],
       provisioningContributions: [],
       routeContributions: [],
@@ -309,6 +311,15 @@ describe("bootstrapServer", () => {
         },
       }),
     ).toThrow("provisioning.python[0].projectFile must be a string or URL")
+
+    expect(() =>
+      defineServerPlugin({
+        id: "empty-node-package-root",
+        provisioning: {
+          nodePackages: [{ id: "workspace", packageName: "@boring/workspace", packageRoot: "" }],
+        },
+      }),
+    ).toThrow("provisioning.nodePackages[0].packageRoot must be a string or URL")
   })
 
   it("defineServerPlugin accepts valid route and provisioning contributions", () => {
@@ -328,11 +339,19 @@ describe("bootstrapServer", () => {
             env: { EXAMPLE_ROOT: new URL("file:///tmp/sdk") },
           },
         ],
+        nodePackages: [
+          {
+            id: "workspace",
+            packageName: "@boring/workspace",
+            packageRoot: new URL("file:///tmp/workspace/"),
+          },
+        ],
       },
     })
 
     expect(plugin.routes).toBe(routes)
     expect(plugin.provisioning?.templateDirs).toHaveLength(1)
+    expect(plugin.provisioning?.nodePackages).toHaveLength(1)
   })
 
   it("composeServerPlugins omits empty optional contributions", () => {
@@ -344,6 +363,56 @@ describe("bootstrapServer", () => {
     expect(plugin).toEqual({ id: "empty-parent" })
     expect("piPackages" in plugin).toBe(false)
     expect("agentTools" in plugin).toBe(false)
+  })
+
+  describe("extensionFactories", () => {
+    it("defaults to empty array when no plugins", () => {
+      const result = bootstrapServer({})
+      expect(result.extensionFactories).toEqual([])
+    })
+
+    it("collects extensionFactories from plugins", () => {
+      const factory = vi.fn()
+      const result = bootstrapServer({
+        plugins: [{ id: "factory-plugin", extensionFactories: [factory] }],
+      })
+      expect(result.extensionFactories).toEqual([factory])
+    })
+
+    it("rejects invalid extensionFactories", () => {
+      expect(() =>
+        bootstrapServer({
+          plugins: [{ id: "bad-factory", extensionFactories: [123 as any] }],
+        }),
+      ).toThrow(ServerPluginError)
+    })
+  })
+
+  describe("extensionPaths", () => {
+    it("defaults to empty array when no plugins", () => {
+      const result = bootstrapServer({})
+      expect(result.extensionPaths).toEqual([])
+    })
+
+    it("collects extensionPaths from plugins", () => {
+      const result = bootstrapServer({
+        plugins: [{ id: "ext-plugin", extensionPaths: ["/plugins/ext/agent/index.ts"] }],
+      })
+      expect(result.extensionPaths).toEqual(["/plugins/ext/agent/index.ts"])
+    })
+
+    it("collects extensionPaths from multiple plugins in order", () => {
+      const result = bootstrapServer({
+        plugins: [
+          { id: "plugin-a", extensionPaths: ["/plugins/a/agent/index.ts"] },
+          { id: "plugin-b", extensionPaths: ["/plugins/b/agent/index.ts"] },
+        ],
+      })
+      expect(result.extensionPaths).toEqual([
+        "/plugins/a/agent/index.ts",
+        "/plugins/b/agent/index.ts",
+      ])
+    })
   })
 
   it("composeServerPlugins combines child plugins before parent contributions", async () => {
@@ -363,14 +432,24 @@ describe("bootstrapServer", () => {
       expect(app).toBe(routeApp)
       routeCalls.push("parent")
     })
+    const childFactory = vi.fn()
+    const parentFactory = vi.fn()
     const child = defineServerPlugin({
       id: "child",
       piPackages: ["npm:child-pi"],
       systemPrompt: "Child prompt",
       agentTools: [childTool],
       routes: childRoutes,
+      extensionFactories: [childFactory],
       provisioning: {
         templateDirs: [{ id: "child-template", path: new URL("file:///tmp/child/") }],
+        nodePackages: [
+          {
+            id: "child-node",
+            packageName: "child-node",
+            packageRoot: new URL("file:///tmp/child-node/"),
+          },
+        ],
       },
     })
 
@@ -382,6 +461,7 @@ describe("bootstrapServer", () => {
       systemPrompt: "Parent prompt",
       agentTools: [parentTool],
       routes: parentRoutes,
+      extensionFactories: [parentFactory],
       provisioning: {
         python: [{ id: "parent-sdk", projectFile: new URL("file:///tmp/sdk/pyproject.toml") }],
       },
@@ -395,11 +475,15 @@ describe("bootstrapServer", () => {
       "child_tool",
       "parent_tool",
     ])
+    expect(plugin.extensionFactories).toEqual([childFactory, parentFactory])
     expect(plugin.provisioning?.templateDirs?.map((entry) => entry.id)).toEqual([
       "child-template",
     ])
     expect(plugin.provisioning?.python?.map((entry) => entry.id)).toEqual([
       "parent-sdk",
+    ])
+    expect(plugin.provisioning?.nodePackages?.map((entry) => entry.id)).toEqual([
+      "child-node",
     ])
 
     await plugin.routes?.(routeApp as any, {})

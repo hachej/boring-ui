@@ -37,12 +37,24 @@ import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
 import { WorkspaceAttentionProvider } from "../attention"
+import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function NullChatPanel(_props: WorkspaceChatPanelProps) {
+  return null
+}
+
+export type FrontPluginHotReloadMode = "vite" | false
+
+function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string; mode: FrontPluginHotReloadMode }) {
+  useAgentPluginHotReload({
+    apiBaseUrl: props.apiBaseUrl,
+    workspaceId: props.workspaceId,
+    enabled: props.mode === "vite",
+  })
   return null
 }
 
@@ -148,6 +160,7 @@ export interface RegisteredPluginMeta {
 export interface WorkspaceContextValue {
   chatPanel: WorkspaceChatPanelComponent | null
   registeredPlugins: RegisteredPluginMeta[]
+  debug: boolean
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
@@ -354,6 +367,14 @@ export interface WorkspaceProviderProps {
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
   onOpenFile?: (path: string) => void
+  debug?: boolean
+  /**
+   * Hot-load dynamically discovered front plugin modules. The current
+   * implementation relies on Vite's /@fs transform endpoint, so it defaults to
+   * dev-only. Production hosts should keep this false until they provide their
+   * own module asset endpoint.
+   */
+  frontPluginHotReload?: FrontPluginHotReloadMode
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +401,8 @@ export function WorkspaceProvider({
   bridgeEndpoint,
   onAuthError,
   onOpenFile,
+  debug = false,
+  frontPluginHotReload = import.meta.env.DEV ? "vite" : false,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -535,8 +558,8 @@ export function WorkspaceProvider({
     [bridgeConnected],
   )
   const workspaceValue = useMemo<WorkspaceContextValue>(
-    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas }),
-    [chatPanel, pluginMetas],
+    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas, debug }),
+    [chatPanel, pluginMetas, debug],
   )
 
   return (
@@ -559,6 +582,7 @@ export function WorkspaceProvider({
                 apiTimeout={apiTimeout}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
+                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} />
                 <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings

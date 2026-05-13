@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
@@ -30,6 +31,16 @@ describe("createPiCodingAgentHarness", () => {
     expect(harness.placement).toBe("server");
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
     expect(typeof harness.sendMessage).toBe("function");
+    expect(typeof harness.reloadSession).toBe("function");
+  });
+
+  it("returns false when reloading a session that has not been created yet", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [noopTool],
+      cwd: "/tmp/test-harness",
+    });
+
+    await expect(harness.reloadSession?.("missing-session")).resolves.toBe(false);
   });
 
   it("merges host-declared Pi packages without mutating package filters", () => {
@@ -70,6 +81,27 @@ describe("createPiCodingAgentHarness", () => {
         [{ source: "npm:pi-markdown-preview@0.9.7" }],
       ),
     ).toEqual(["npm:pi-markdown-preview@0.9.7"]);
+  });
+
+  it("injects Pi packages when project settings do not exist yet", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-settings-missing-project-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-settings-missing-agent-"));
+    try {
+      const manager = createResourceSettingsManager(cwd, agentDir, [
+        "npm:plugin-pi",
+      ]);
+
+      expect(manager.getProjectSettings().packages).toEqual([
+        "npm:plugin-pi",
+      ]);
+
+      await manager.flush();
+      await expect(readFile(join(cwd, ".pi", "settings.json"), "utf8"))
+        .rejects.toMatchObject({ ["code"]: "ENOENT" });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
   });
 
   it("injects Pi packages into in-memory project settings only", async () => {
@@ -167,6 +199,57 @@ describe("createPiCodingAgentHarness", () => {
         "npm:edited-pi",
         "npm:plugin-pi",
       ]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("pi extension path hot reload", () => {
+  it("reloads changed extension source from Pi extension paths instead of using inline factories", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-extension-cwd-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-extension-agent-"));
+    const extensionPath = join(cwd, "plugin-agent.ts");
+
+    const writeExtension = (version: string) => writeFile(
+      extensionPath,
+      `export default function(pi) {\n` +
+        `  pi.registerTool({\n` +
+        `    name: "hot_reload_probe",\n` +
+        `    label: "Probe",\n` +
+        `    description: "${version}",\n` +
+        `    parameters: { type: "object", properties: {} },\n` +
+        `    async execute() { return { content: [{ type: "text", text: "${version}" }], details: undefined } }\n` +
+        `  })\n` +
+        `}\n`,
+      "utf8",
+    );
+
+    try {
+      await writeExtension("version-one");
+      const loader = new DefaultResourceLoader({
+        cwd,
+        agentDir,
+        additionalExtensionPaths: [extensionPath],
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        noContextFiles: true,
+      });
+
+      await loader.reload();
+      const first = loader.getExtensions().extensions[0];
+      expect(first).toBeDefined();
+      expect(first!.path).toBe(extensionPath);
+      expect(first!.tools.get("hot_reload_probe")?.definition.description).toBe("version-one");
+
+      await writeExtension("version-two");
+      await loader.reload();
+      const second = loader.getExtensions().extensions[0];
+      expect(second).toBeDefined();
+      expect(second!.path).toBe(extensionPath);
+      expect(second!.tools.get("hot_reload_probe")?.definition.description).toBe("version-two");
     } finally {
       await rm(cwd, { recursive: true, force: true });
       await rm(agentDir, { recursive: true, force: true });

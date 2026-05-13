@@ -84,6 +84,7 @@ export interface SurfaceShellProps {
    * inside THIS surface (so a host can gate panels per shell instance).
    */
   extraPanels?: string[]
+  defaultLeftTab?: string
   className?: string
 }
 
@@ -107,6 +108,7 @@ export function SurfaceShell({
   onChange,
   onClose,
   extraPanels,
+  defaultLeftTab,
   className,
 }: SurfaceShellProps) {
   // Lazy initializers read persisted state SYNCHRONOUSLY on first mount so
@@ -300,6 +302,14 @@ export function SurfaceShell({
     return { openTabs, activeTab: api.activePanel?.id ?? null }
   }, [])
 
+  const localSurfaceApi = useMemo<SurfaceShellApi>(() => ({
+    openFile: openFileSync,
+    openSurface: openSurfaceSync,
+    openPanel: openPanelSync,
+    closeWorkbenchLeftPane: () => setCollapsed(true),
+    getSnapshot,
+  }), [getSnapshot, openFileSync, openPanelSync, openSurfaceSync])
+
   const getBridgeState = useCallback((): WorkspaceState => {
     const api = apiRef.current
     const panels: PanelState[] = api
@@ -339,13 +349,7 @@ export function SurfaceShell({
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
-    onReadyRef.current?.({
-      openFile: openFileSync,
-      openSurface: openSurfaceSync,
-      openPanel: openPanelSync,
-      closeWorkbenchLeftPane: () => setCollapsed(true),
-      getSnapshot,
-    })
+    onReadyRef.current?.(localSurfaceApi)
     // Subscribe to dockview events so the parent gets a snapshot push on
     // every panel mutation. Disposers are intentionally not stored — the
     // dockview instance lives for the SurfaceShell's entire lifetime, and
@@ -359,7 +363,7 @@ export function SurfaceShell({
     ready.onDidActivePanelChange(emit)
     // Initial snapshot once everyone's wired up.
     emit()
-  }, [openFileSync, openSurfaceSync, openPanelSync, getSnapshot, emitBridgeState])
+  }, [localSurfaceApi, getSnapshot, emitBridgeState])
 
 
   const openFile = useCallback(
@@ -525,6 +529,7 @@ export function SurfaceShell({
             <WorkbenchLeftPane
               rootDir={rootDir}
               bridge={bridge}
+              defaultTab={defaultLeftTab}
               onCollapse={() => setCollapsed(true)}
             />
           </aside>

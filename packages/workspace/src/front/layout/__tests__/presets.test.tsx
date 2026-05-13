@@ -10,6 +10,7 @@ import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
+import { WorkspaceProvider } from "../../provider"
 import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
 
 // Verify barrel exports work
@@ -44,9 +45,11 @@ function renderWithRegistry(
 ) {
   const { panelRegistry, commandRegistry } = setup(panels)
   return render(
-    <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
-      {ui}
-    </RegistryProvider>,
+    <WorkspaceProvider persistenceEnabled={false}>
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        {ui}
+      </RegistryProvider>
+    </WorkspaceProvider>,
   )
 }
 

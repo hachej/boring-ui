@@ -1,12 +1,13 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import { basename } from 'node:path'
 import type { AgentTool } from '../shared/tool'
+import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import { getEnv } from './config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
-import type { PiResourceLoaderOptions } from './harness/pi-coding-agent/createHarness'
+import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
@@ -23,6 +24,7 @@ import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
+import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
@@ -57,12 +59,15 @@ export interface CreateAgentAppOptions {
    * via DefaultResourceLoader's `appendSystemPromptSource`.
    */
   systemPromptAppend?: string
-  /** Optional pi resource-loader isolation knobs. */
-  resourceLoaderOptions?: PiResourceLoaderOptions
+  /** Override the default pi-backed harness with a custom agent runtime. */
+  harnessFactory?: AgentHarnessFactory
+  /** Optional pi adapter/runtime knobs used by the default harness. */
+  pi?: PiHarnessOptions
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
+  beforeReload?: () => void | Promise<void>
 }
 
 export async function createAgentApp(
@@ -106,13 +111,20 @@ export async function createAgentApp(
     ...pluginTools,
   ]
 
-  const harness = createPiCodingAgentHarness({
+  const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
+    ...input,
+    pi: {
+      noContextFiles: true,
+      noSkills: true,
+      ...opts.pi,
+    },
+  }))
+  const harness = await harnessFactory({
     tools,
     cwd: workspaceRoot,
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
     systemPromptAppend: opts.systemPromptAppend,
-    resourceLoaderOptions: opts.resourceLoaderOptions,
   })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
@@ -160,10 +172,11 @@ export async function createAgentApp(
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
     workspaceRoot,
-    additionalSkillPaths: opts.resourceLoaderOptions?.additionalSkillPaths,
+    additionalSkillPaths: opts.pi?.additionalSkillPaths,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
+  await app.register(reloadRoutes, { harness, defaultSessionId: sessionId, beforeReload: opts.beforeReload })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app

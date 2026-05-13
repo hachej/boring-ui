@@ -2,157 +2,126 @@
 
 # Plugins
 
-Plugins are the primary extension point. A plugin contributes panels, commands, catalogs, left-tabs, and surface resolvers to the workspace shell.
+Plugins are package directories with `package.json` metadata. One package can contribute to two runtimes:
 
-**Key capabilities:**
-- **Panels** — center/right/bottom panes opened programmatically by the agent or user
-- **Commands** — entries in the command palette (`cmd+k`)
-- **Left tabs** — persistent tabs in the left sidebar
-- **Catalogs** — data explorer tabs with search + row selection
-- **Surface resolvers** — map agent-emitted `openSurface` requests to concrete panel opens
-- **Bindings / providers** — React components mounted in the provider tree
+- `package.json#boring` — workspace/UI discovery: label plus front and support-server entrypoints.
+- `package.json#pi` — agent/Pi assets: native Pi extensions, skills, Pi packages, short prompt context.
 
-## Table of Contents
+## Minimal package
 
-- [Minimal plugin](#minimal-plugin)
-- [Output types](#output-types)
-- [System prompt](#system-prompt)
-- [Composing plugins](#composing-plugins)
-- [Server plugins](#server-plugins)
-- [Registering with the shell](#registering-with-the-shell)
-- [Plugin folder layout](#plugin-folder-layout)
-- [Invariants](#invariants)
-
----
-
-## Minimal plugin
-
-```ts
-import { defineFrontPlugin, definePanel } from '@boring/workspace'
-
-export const myPlugin = defineFrontPlugin({
-  id: 'my-plugin',
-  label: 'My Plugin',
-  systemPrompt: "You can open the widget panel with the 'open-panel' tool.",
-  outputs: [
-    {
-      type: 'panel',
-      panel: definePanel({
-        id: 'my-widget',
-        title: 'Widget',
-        placement: 'center',
-        component: () => import('./WidgetPane').then(m => ({ default: m.WidgetPane })),
-      }),
-    },
-  ],
-})
+```jsonc
+{
+  "name": "@hachej/boring-plugin-widget",
+  "version": "1.0.0",
+  "boring": {
+    "label": "Widget",
+    "front": "front/index.tsx",
+    "server": "server/index.ts"
+  },
+  "pi": {
+    "extensions": ["agent/index.ts"],
+    "skills": ["agent/skills"],
+    "systemPrompt": "Use the widget UI when the user asks for widget details."
+  }
+}
 ```
 
----
+The plugin id is `package.json#name` (`@scope/name` becomes `scope-name`). There is no separate `boring.id` field.
 
-## Output types
+`boring` does not register panels, commands, left tabs, or surface resolvers. Those runtime UI contributions are registered by the `BoringFrontFactory` exported from `boring.front`. Agent-facing context belongs under `pi.systemPrompt` or, preferably for larger docs, `pi.skills`.
 
-| type | contributes |
-|---|---|
-| `panel` | a center/right/bottom pane opened programmatically |
-| `left-tab` | a persistent tab in the left sidebar |
-| `command` | an entry in the command palette |
-| `catalog` | a data explorer tab with search + row selection |
-| `surface-resolver` | maps a `SurfaceOpenRequest` kind → panel id |
-| `binding` | a React component mounted in the provider tree |
-| `provider` | same as binding but receives `apiBaseUrl`, `authHeaders`, etc. |
+## Front entry
 
----
-
-## System prompt
-
-The `systemPrompt` field on a plugin is injected into the agent's context. Use it to teach the agent what panels exist and when to open them.
-
-```ts
-defineFrontPlugin({
-  id: 'contract-review',
-  systemPrompt: `
-    You can open the contract review panel when the user asks to review a contract.
-    Use exec_ui with kind "openSurface" and kind "contract-review.open".
-  `,
-  ...
-})
-```
-
-All plugin `systemPrompt` strings are concatenated and passed as `systemPromptAppend` to the agent harness.
-
----
-
-## Composing plugins
-
-```ts
-import { composePlugins } from '@boring/workspace'
-
-export const myPlugin = composePlugins({
-  id: 'my-plugin',
-  plugins: [panelsPlugin, catalogPlugin, surfacePlugin],
-})
-```
-
-`composePlugins` flattens child panels, commands, catalogs, bindings, and outputs into one `WorkspaceFrontPlugin`. Child ownership adopts to the parent plugin id by default.
-
----
-
-## Server plugins
-
-Server plugins contribute agent tools, routes, and pi package declarations:
-
-```ts
-import { defineServerPlugin } from '@boring/workspace/server'
-
-export const myServerPlugin = defineServerPlugin({
-  id: 'my-plugin',
-  tools: [myAgentTool],
-  promptText: 'You have access to the my_tool tool.',
-})
-```
-
-Compose server plugins with `composeServerPlugins()`.
-
----
-
-## Registering with the shell
+`boring.front` default-exports a `BoringFrontFactory`:
 
 ```tsx
-import { WorkspaceAgentFront } from '@boring/workspace'
+import type { BoringFrontFactory } from "@hachej/boring-workspace/plugin"
 
-<WorkspaceAgentFront plugins={[myPlugin]} />
+const plugin: BoringFrontFactory = (api) => {
+  api.registerPanel({
+    id: "widget-panel",
+    label: "Widget",
+    component: () => import("./WidgetPane"),
+  })
+  api.registerPanelCommand({
+    id: "open-widget",
+    title: "Open widget",
+    panelId: "widget-panel",
+  })
+}
+
+export default plugin
 ```
 
----
+## Server entry
 
-## Plugin folder layout
+`boring.server` is for workspace/UI support routes only:
 
-```
-src/plugins/myPlugin/
-  front/
-    index.tsx          ← defineFrontPlugin(), public front exports
-    panels.tsx         ← panel definitions
-    surfaceResolver.ts ← openSurface kind → panel resolution
-  server/
-    index.ts           ← defineServerPlugin(), public server exports
-    tools.ts           ← agent tools
-  shared/
-    constants.ts       ← plugin id, surface kinds
-    types.ts           ← platform-neutral shared types
+```ts
+import type { BoringServerFactory } from "@hachej/boring-workspace/server"
+
+const server: BoringServerFactory = (api) => {
+  api.get("/health", async () => ({ ok: true }))
+}
+
+export default server
 ```
 
-Use only the files the plugin needs.
+Agent tools, skills, and prompt additions belong under `pi`, not `boring.server`.
 
----
+## Pi entry
+
+`pi.extensions` points at native Pi extension factories:
+
+```ts
+export default function extension(api: { registerTool(tool: unknown): void }) {
+  api.registerTool({
+    name: "widget_lookup",
+    description: "Look up widget data.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() {
+      return { content: [{ type: "text", text: "widget data" }] }
+    },
+  })
+}
+```
+
+## Folder layout
+
+```txt
+my-plugin/
+  package.json         # boring + pi metadata
+  front/index.tsx      # BoringFrontFactory
+  server/index.ts      # optional BoringServerFactory for UI support routes
+  agent/index.ts       # optional native Pi extension
+  agent/skills/        # optional Pi skills
+  shared/constants.ts  # platform-neutral constants
+```
+
+## Hot front asset scope
+
+Hot-loaded front plugins currently use the Vite dev server's `/@fs/` module
+transform path. `WorkspaceProvider` therefore defaults front plugin hot-reload to
+`frontPluginHotReload="vite"` only in dev and `false` in production. Production
+Fastify-only hosts need a workspace-owned module asset endpoint before loading
+TS/TSX front plugin entries without Vite.
+
+Server-side reload is separately switchable in `createWorkspaceAgentServer`:
+
+```ts
+createWorkspaceAgentServer({
+  boringPluginReload: true, // /reload refreshes Boring UI/server package assets
+  piPluginReload: true,      // package.json#pi contributions are forwarded/refreshed
+})
+```
+
+Set either to `false` to keep that side static/disabled while preserving explicit
+host-supplied plugin options.
 
 ## Invariants
 
 ```bash
-pnpm --filter @boring/workspace run lint:plugin-invariants
+pnpm --filter @hachej/boring-workspace run lint:plugin-invariants
 ```
 
 Rejects cross-layer imports, legacy file names, and plugin-domain imports from workspace chrome.
-
-See [panels.md](./panels.md) for panel component API.
-See [bridge.md](./bridge.md) for how to open panels from the agent.

@@ -1,4 +1,7 @@
-import { describe, expect, test, vi } from "vitest"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const agentServerMock = vi.hoisted(() => ({
   createAgentApp: vi.fn(async () => ({
@@ -18,14 +21,173 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 
 import { createWorkspaceAgentServer } from "../createWorkspaceAgentServer"
 
+const tempDirs: string[] = []
+
+beforeEach(() => {
+  agentServerMock.createAgentApp.mockClear()
+  agentServerMock.provisionRuntimeWorkspace.mockClear()
+})
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+
+async function makeTempDir(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix))
+  tempDirs.push(dir)
+  return dir
+}
+
+async function writeHotPlugin(root: string, extension: string): Promise<void> {
+  const pluginRoot = join(root, ".pi", "extensions", "hot-plugin")
+  await mkdir(join(pluginRoot, "front"), { recursive: true })
+  await mkdir(join(pluginRoot, "agent", "skills"), { recursive: true })
+  await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() {}\n", "utf8")
+  await writeFile(join(pluginRoot, "agent", extension), "export default function() {}\n", "utf8")
+  await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+    name: "hot-plugin",
+    version: "1.0.0",
+    boring: { front: "front/index.tsx" },
+    pi: { extensions: [`agent/${extension}`], skills: ["agent/skills"] },
+  }), "utf8")
+}
+
 describe("createWorkspaceAgentServer plugin runtime options", () => {
+  test("refreshes package.json pi entries before agent reload", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-package-pi-reload-")
+    await writeHotPlugin(workspaceRoot, "one.ts")
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void>; pi?: { extensionPaths?: string[]; additionalSkillPaths?: string[] } },
+    ]
+    expect(agentOptions.pi?.extensionPaths).toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "one.ts"))
+    expect(agentOptions.pi?.additionalSkillPaths).toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "skills"))
+
+    await writeHotPlugin(workspaceRoot, "two.ts")
+    await agentOptions.beforeReload?.()
+
+    expect(agentOptions.pi?.extensionPaths).not.toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "one.ts"))
+    expect(agentOptions.pi?.extensionPaths).toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "two.ts"))
+  })
+
+  test("piPluginReload=false disables package.json Pi contributions while preserving host Pi options", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-agent-plugin-reload-off-")
+    await writeHotPlugin(workspaceRoot, "one.ts")
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      piPluginReload: false,
+      pi: {
+        extensionPaths: [join(workspaceRoot, "host-extension.ts")],
+        additionalSkillPaths: [join(workspaceRoot, "host-skills")],
+      },
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { pi?: { extensionPaths?: string[]; additionalSkillPaths?: string[]; extensionFactories?: unknown[] } },
+    ]
+    expect(agentOptions.pi?.extensionPaths).toEqual([join(workspaceRoot, "host-extension.ts")])
+    expect(agentOptions.pi?.additionalSkillPaths).toContain(join(workspaceRoot, "host-skills"))
+    expect(agentOptions.pi?.additionalSkillPaths).not.toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "skills"))
+    expect(agentOptions.pi?.extensionFactories).toEqual([])
+  })
+
+  test("boringPluginReload=false skips Boring asset refresh during agent reload", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-boring-reload-off-")
+    await writeHotPlugin(workspaceRoot, "one.ts")
+    const beforeReload = vi.fn(async () => {})
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      boringPluginReload: false,
+      beforeReload,
+    })
+
+    const pluginRoot = join(workspaceRoot, ".pi", "extensions", "hot-plugin")
+    await writeFile(join(pluginRoot, "server.js"), "export const broken = true\n", "utf8")
+    const pkg = JSON.parse(await readFile(join(pluginRoot, "package.json"), "utf8"))
+    pkg.boring.server = "server.js"
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify(pkg), "utf8")
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void> },
+    ]
+    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+    expect(beforeReload).toHaveBeenCalledTimes(1)
+  })
+
+  test("does not crash while collecting Pi entries from invalid package.json plugins", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-invalid-package-pi-")
+    const pluginRoot = join(workspaceRoot, ".pi", "extensions", "invalid-plugin")
+    await mkdir(pluginRoot, { recursive: true })
+    await writeFile(join(pluginRoot, "package.json"), "{ not json", "utf8")
+
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+    })).resolves.toBeTruthy()
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { pi?: { extensionPaths?: string[]; additionalSkillPaths?: string[]; packages?: unknown[] } },
+    ]
+    expect(agentOptions.pi?.extensionPaths).not.toContain(join(pluginRoot, "agent", "index.ts"))
+    expect(agentOptions.pi?.additionalSkillPaths).not.toContain(join(pluginRoot, "agent", "skills"))
+    expect(agentOptions.pi?.packages).toEqual([])
+  })
+
+  test("normalizes package.json Pi packages relative to the plugin root", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-package-pi-root-")
+    const pluginRoot = join(workspaceRoot, ".pi", "extensions", "package-plugin")
+    await mkdir(join(pluginRoot, "front"), { recursive: true })
+    await mkdir(join(pluginRoot, "agent"), { recursive: true })
+    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "package-plugin",
+      version: "1.0.0",
+      boring: { front: "front/index.tsx" },
+      pi: {
+        packages: [
+          "file:.",
+          { source: "./agent", extensions: ["index.ts"] },
+          "npm:remote-plugin",
+        ],
+      },
+    }), "utf8")
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { pi?: { packages?: unknown[] } },
+    ]
+    expect(agentOptions.pi?.packages).toEqual([
+      join(pluginRoot),
+      { source: join(pluginRoot, "agent"), extensions: ["index.ts"] },
+      "npm:remote-plugin",
+    ])
+  })
+
   test("forwards plugin Pi packages to the agent runtime", async () => {
     await createWorkspaceAgentServer({
       workspaceRoot: "/tmp/workspace-pi-forwarding",
       logger: false,
       provisionWorkspace: false,
-      resourceLoaderOptions: {
-        piPackages: [
+      pi: {
+        packages: [
           "npm:host-pi",
           {
             source: "npm:plugin-pi",
@@ -49,9 +211,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentServerMock.createAgentApp).toHaveBeenCalledTimes(1)
     const [agentOptions] = agentServerMock.createAgentApp.mock
       .calls[0] as unknown as [
-      { resourceLoaderOptions?: { piPackages?: unknown[] } },
+      { pi?: { packages?: unknown[] } },
     ]
-    expect(agentOptions.resourceLoaderOptions?.piPackages).toEqual([
+    expect(agentOptions.pi?.packages).toEqual([
       {
         source: "npm:plugin-pi",
         extensions: ["./a.ts", "./b.ts"],

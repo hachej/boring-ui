@@ -1,16 +1,11 @@
 import { PluginError } from "./defineFrontPlugin"
 import type { WorkspaceFrontPlugin } from "./defineFrontPlugin"
 import type {
-  AgentTool,
   CatalogConfig,
   PluginOutput,
 } from "./types"
 import type { CommandConfig, PanelRegistration } from "../types/panel"
 import type { SurfaceResolverRegistration } from "../types/surface"
-
-export interface AgentToolRegistry {
-  register(tool: AgentTool, pluginId: string): void
-}
 
 export interface PanelRegistryLike {
   register(id: string, config: PanelRegistration): void
@@ -38,7 +33,6 @@ export interface BootstrapOptions {
     commands: CommandRegistryLike
     catalogs: CatalogRegistryLike
     surfaceResolvers?: SurfaceResolverRegistryLike
-    agentTools?: AgentToolRegistry
   }
 }
 
@@ -92,9 +86,6 @@ function registerOutput(
       })
       return
     }
-    case "agent-tool":
-      registries.agentTools?.register(output.tool, ownerPluginId)
-      return
     case "binding":
     case "provider":
       return
@@ -141,11 +132,6 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
     }
     for (const catalog of plugin.catalogs ?? []) {
       options.registries.catalogs.register(catalog, plugin.id)
-    }
-    if (options.registries.agentTools) {
-      for (const tool of plugin.agentTools ?? []) {
-        options.registries.agentTools.register(tool, plugin.id)
-      }
     }
     for (const output of plugin.outputs ?? []) {
       registerOutput(output, plugin, options.registries)

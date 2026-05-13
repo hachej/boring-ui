@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest"
 import type { ExplorerDataSource, ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import {
   createDataCatalogAgentTool,
+  createDataCatalogPiExtension,
+  createDataCatalogPiTool,
   createDataCatalogServerPlugin,
   createDataCatalogSkillPrompt,
   formatDataCatalogSearchResult,
@@ -130,7 +132,57 @@ describe("data catalog server helpers", () => {
     expect(result.content[0]?.text).toBe("query is required")
   })
 
-  it("creates server plugin metadata with skill text and a tool", () => {
+  it("creates a pi-native tool backed by the catalog adapter", async () => {
+    const tool = createDataCatalogPiTool({
+      name: "catalog_search",
+      label: "workspace data catalog",
+      adapter,
+      defaultLimit: 5,
+      maxLimit: 10,
+    })
+
+    const result = await tool.execute(
+      "tool-1",
+      { query: "orders", limit: 50 },
+      new AbortController().signal,
+    )
+
+    expect(result.content[0]?.text).toContain("orders_daily: Daily Orders")
+    expect((result.details as { items: ExplorerRow[] }).items).toHaveLength(1)
+  })
+
+  it("throws validation errors from the pi-native tool", async () => {
+    const tool = createDataCatalogPiTool({ adapter })
+    await expect(
+      tool.execute("tool-1", { query: "" }, new AbortController().signal),
+    ).rejects.toThrow("query is required")
+  })
+
+  it("creates an injected pi extension factory with tool and prompt registration", () => {
+    const extension = createDataCatalogPiExtension({
+      id: "warehouse-catalog",
+      label: "warehouse catalog",
+      adapter,
+      name: "catalog_search",
+      guidance: "Prefer exact ids.",
+    })
+    const pi = {
+      registerTool: vi.fn(),
+      on: vi.fn(),
+    }
+
+    extension(pi)
+
+    expect(pi.registerTool).toHaveBeenCalledWith(expect.objectContaining({
+      name: "catalog_search",
+      label: "warehouse catalog",
+    }))
+    expect(pi.on).toHaveBeenCalledWith("before_agent_start", expect.any(Function))
+    const handler = pi.on.mock.calls[0]![1]
+    expect(handler({ systemPrompt: "Base" }).systemPrompt).toContain("Prefer exact ids.")
+  })
+
+  it("creates server plugin metadata with an injected pi extension factory", () => {
     const plugin = createDataCatalogServerPlugin({
       id: "warehouse-catalog",
       label: "warehouse catalog",
@@ -139,9 +191,9 @@ describe("data catalog server helpers", () => {
     })
 
     expect(plugin.id).toBe("warehouse-catalog")
-    expect(plugin.agentTools.map((tool) => tool.name)).toEqual(["catalog_search"])
-    expect(plugin.systemPrompt).toContain("## Data Catalog Plugin")
-    expect(plugin.systemPrompt).toContain("catalog_search")
+    expect(plugin.agentTools).toBeUndefined()
+    expect(plugin.systemPrompt).toBeUndefined()
+    expect(plugin.extensionFactories).toHaveLength(1)
   })
 
   it("builds a standalone skill prompt", () => {

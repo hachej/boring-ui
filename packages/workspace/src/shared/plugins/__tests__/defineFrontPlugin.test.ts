@@ -38,15 +38,6 @@ function makeCatalog(overrides?: Partial<CatalogConfig>): CatalogConfig {
   }
 }
 
-function makeAgentTool() {
-  return {
-    name: "test-tool",
-    description: "A tool",
-    parameters: { type: "object", properties: {} },
-    execute: async () => ({ content: [{ type: "text" as const, text: "ok" }] }),
-  }
-}
-
 describe("defineFrontPlugin", () => {
   it("returns a shallow clone of valid input", () => {
     const spec: WorkspaceFrontPlugin = { id: "foo" }
@@ -358,31 +349,6 @@ describe("defineFrontPlugin", () => {
           catalogs: [makeCatalog({ onSelect: "bad" as any })],
         }),
       ).toThrow("catalogs[0].onSelect must be a function")
-    })
-  })
-
-  describe("agentTools validation", () => {
-    it("accepts valid agent tools", () => {
-      const result = defineFrontPlugin({
-        id: "test",
-        agentTools: [makeAgentTool()],
-      })
-      expect(result.agentTools).toHaveLength(1)
-    })
-
-    it("throws on malformed agent tool (no execute)", () => {
-      const bad = { name: "x", description: "x", parameters: {} }
-      expect(() =>
-        defineFrontPlugin({ id: "test", agentTools: [bad as any] }),
-      ).toThrow("agentTools[0] is not a valid AgentTool")
-    })
-
-    it("throws with index reference for bad tool", () => {
-      const good = makeAgentTool()
-      const bad = { name: "", description: "x", parameters: {}, execute: async () => ({}) }
-      expect(() =>
-        defineFrontPlugin({ id: "test", agentTools: [good, bad as any] }),
-      ).toThrow("agentTools[1]")
     })
   })
 

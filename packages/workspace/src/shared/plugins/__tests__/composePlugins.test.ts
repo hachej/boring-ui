@@ -162,15 +162,8 @@ describe("composePlugins", () => {
     )
   })
 
-  it("preserves child ownership for surface resolvers and agent tools", () => {
+  it("preserves child ownership for surface resolvers", () => {
     const registries = makeRegistries()
-    const agentTools = { register: vi.fn() }
-    const tool = {
-      name: "tool",
-      description: "Tool",
-      parameters: { type: "object", properties: {} },
-      execute: vi.fn(async () => ({ content: [{ type: "text" as const, text: "ok" }] })),
-    }
     const plugin = composePlugins({
       id: "macro",
       adoptOutputs: false,
@@ -182,7 +175,6 @@ describe("composePlugins", () => {
               type: "surface-resolver",
               resolver: { id: "surface", resolve: () => ({ component: "chart" }) },
             },
-            { type: "agent-tool", id: tool.name, tool },
           ],
         },
       ],
@@ -192,13 +184,12 @@ describe("composePlugins", () => {
       chatPanel: DummyChatPanel,
       plugins: [plugin],
       defaults: [],
-      registries: { ...registries, agentTools },
+      registries,
     })
 
     expect(registries.surfaceResolvers.get("surface")).toEqual(
       expect.objectContaining({ pluginId: "surfaces" }),
     )
-    expect(agentTools.register).toHaveBeenCalledWith(tool, "surfaces")
   })
 
   it("creates a valid empty composed plugin", () => {

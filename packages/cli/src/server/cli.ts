@@ -244,7 +244,7 @@ async function startWorkspacesMode(opts: {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
     getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
-    getResourceLoaderOptions: async ({ workspaceRoot }) => ({
+    getPi: async ({ workspaceRoot }) => ({
       additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
     }),
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [

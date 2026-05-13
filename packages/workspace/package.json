@@ -53,6 +53,10 @@
       "types": "./dist/events.d.ts",
       "import": "./dist/events.js"
     },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
     "./globals.css": "./dist/workspace.css"
   },
   "sideEffects": [
@@ -128,6 +132,7 @@
     "cmdk": "^1.1.1",
     "dockview-react": "^4.13.1",
     "fastify": "^5.3.3",
+    "jiti": "^2.6.1",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.8.0",
     "react-arborist": "^3.4.0",

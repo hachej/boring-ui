@@ -1,6 +1,8 @@
 import type { RuntimeProvisioningContribution } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
+
+export type WorkspaceExtensionFactory = (api: unknown) => void | Promise<void>
 import {
   PI_PACKAGE_RESOURCE_FILTERS,
   type WorkspacePiPackageSource,
@@ -15,6 +17,19 @@ export interface WorkspaceServerPlugin {
    * resource loader without asking Pi packages to export Boring adapters.
    */
   piPackages?: WorkspacePiPackageSource[]
+  /**
+   * Native pi extension entrypoints contributed by this plugin.
+   * Passed to DefaultResourceLoader.additionalExtensionPaths so pi owns jiti
+   * loading and ctx.reload() re-imports fresh source.
+   */
+  extensionPaths?: string[]
+  /**
+   * In-process native pi extensions for plugins that need host-created
+   * runtime dependencies. These are pi-native but only partially hot-reloadable:
+   * pi reload re-runs the factory, but source changes to the closure require
+   * the host app/dev server to refresh the factory.
+   */
+  extensionFactories?: WorkspaceExtensionFactory[]
   systemPrompt?: string
   agentTools?: AgentTool[]
   provisioning?: RuntimeProvisioningContribution
@@ -120,6 +135,27 @@ function validateProvisioning(
     }
   }
 
+  if (provisioning.nodePackages !== undefined) {
+    if (!Array.isArray(provisioning.nodePackages)) {
+      fail(pluginId, "provisioning.nodePackages must be an array when provided")
+    }
+    for (let i = 0; i < provisioning.nodePackages.length; i++) {
+      const spec = provisioning.nodePackages[i]
+      if (!spec || typeof spec !== "object") {
+        fail(pluginId, `provisioning.nodePackages[${i}] must be an object`)
+      }
+      if (!spec.id || typeof spec.id !== "string") {
+        fail(pluginId, `provisioning.nodePackages[${i}].id must be a non-empty string`)
+      }
+      if (!spec.packageName || typeof spec.packageName !== "string") {
+        fail(pluginId, `provisioning.nodePackages[${i}].packageName must be a non-empty string`)
+      }
+      if (!isPathLike(spec.packageRoot)) {
+        fail(pluginId, `provisioning.nodePackages[${i}].packageRoot must be a string or URL`)
+      }
+    }
+  }
+
   if (provisioning.python !== undefined) {
     if (!Array.isArray(provisioning.python)) {
       fail(pluginId, "provisioning.python must be an array when provided")
@@ -171,6 +207,26 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
       fail(plugin.id, "piPackages must be an array when provided")
     }
     validatePiPackages(plugin.id, plugin.piPackages)
+  }
+  if (plugin.extensionPaths !== undefined) {
+    if (!Array.isArray(plugin.extensionPaths)) {
+      fail(plugin.id, "extensionPaths must be an array when provided")
+    }
+    plugin.extensionPaths.forEach((path, index) => {
+      if (typeof path !== "string" || path.length === 0) {
+        fail(plugin.id, `extensionPaths[${index}] must be a non-empty string`)
+      }
+    })
+  }
+  if (plugin.extensionFactories !== undefined) {
+    if (!Array.isArray(plugin.extensionFactories)) {
+      fail(plugin.id, "extensionFactories must be an array when provided")
+    }
+    plugin.extensionFactories.forEach((factory, index) => {
+      if (typeof factory !== "function") {
+        fail(plugin.id, `extensionFactories[${index}] must be a function`)
+      }
+    })
   }
   if (plugin.agentTools !== undefined) {
     if (!Array.isArray(plugin.agentTools)) {

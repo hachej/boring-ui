@@ -30,6 +30,12 @@ export class SurfaceResolverRegistry {
     if (changed) this.emit()
   }
 
+  unregister(id: string): void {
+    if (!this.resolvers.delete(id)) return
+    this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)
+    this.emit()
+  }
+
   get(id: string): SurfaceResolverConfig | undefined {
     return this.resolvers.get(id)
   }

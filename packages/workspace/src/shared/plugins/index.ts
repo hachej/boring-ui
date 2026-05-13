@@ -30,15 +30,48 @@ export type {
   JSONSchema,
   ToolExecContext,
   ToolResult,
-  AgentToolOutput,
 } from "./types"
 export { bootstrap } from "./bootstrap"
 export type {
   BootstrapOptions,
   BootstrapResult,
-  AgentToolRegistry,
   PanelRegistryLike,
   CommandRegistryLike,
   CatalogRegistryLike,
   SurfaceResolverRegistryLike,
 } from "./bootstrap"
+
+export {
+  createCapturingBoringFrontAPI,
+  boringFrontFactoryToPlugin,
+} from "./frontFactory"
+export type {
+  BoringFrontAPI,
+  BoringFrontFactory,
+  BoringFrontPanelRegistration,
+  BoringFrontPanelCommandRegistration,
+  BoringFrontLeftTabRegistration,
+  BoringFrontSurfaceResolverRegistration,
+  CapturedBoringFrontRegistrations,
+  CapturingBoringFrontAPIHandle,
+} from "./frontFactory"
+
+export {
+  validateBoringPluginManifest,
+  validateBoringPluginPackageJson,
+  isSafePluginRelativePath,
+  isSafePluginRelativeGlob,
+  isValidBoringPluginId,
+  BORING_PLUGIN_MANIFEST_ERROR_CODES,
+} from "./manifest"
+export type {
+  BoringPackageBoringField,
+  BoringPackagePiField,
+  BoringPackagePiSource,
+  BoringPackagePiSourceObject,
+  BoringPluginManifestErrorCode,
+  BoringPluginManifestIssue,
+  BoringPluginManifestValidationResult,
+  BoringPluginPackageJson,
+  BoringPluginPackageJsonValidationResult,
+} from "./manifest"

@@ -190,6 +190,16 @@ for (const file of files) {
     )
   }
 
+  // Reject server/sdk, server/transforms, server/workspace-template — these
+  // are agent sandbox assets and must live under agent/ instead.
+  if (/\/plugins\/[^/]+\/server\/(?:sdk|transforms|workspace-template)\//.test(repoPath)) {
+    addFailure(
+      file,
+      1,
+      "agent sandbox assets (sdk, transforms, workspace-template) must live under agent/, not server/",
+    )
+  }
+
   const layer = pluginLayer(repoPath)
   if (layer && !isTestPath(repoPath)) {
     if (layer === "front") {
@@ -199,6 +209,12 @@ for (const file of files) {
         /from\s+["'](?:\.\.\/)+server(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+server(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+server(?:\/|["'])/g,
         "plugin front layer must not import plugin server layer",
       )
+      checkRegex(
+        file,
+        content,
+        /from\s+["'](?:\.\.\/)+agent(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+agent(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+agent(?:\/|["'])/g,
+        "plugin front layer must not import plugin agent layer",
+      )
     } else if (layer === "server") {
       checkRegex(
         file,
@@ -206,19 +222,26 @@ for (const file of files) {
         /from\s+["'](?:\.\.\/)+front(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+front(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+front(?:\/|["'])/g,
         "plugin server layer must not import plugin front layer",
       )
+    } else if (layer === "agent") {
+      checkRegex(
+        file,
+        content,
+        /from\s+["'](?:\.\.\/)+front(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+front(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+front(?:\/|["'])/g,
+        "plugin agent layer must not import plugin front layer",
+      )
     } else if (layer === "shared") {
       checkRegex(
         file,
         content,
-        /from\s+["'](?:\.\.\/)+(?:front|server)(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+(?:front|server)(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+(?:front|server)(?:\/|["'])/g,
-        "plugin shared layer must not import plugin front/server layers",
+        /from\s+["'](?:\.\.\/)+(?:front|server|agent)(?:\/|["'])|import\s*\(\s*["'](?:\.\.\/)+(?:front|server|agent)(?:\/|["'])|declare\s+module\s+["'](?:\.\.\/)+(?:front|server|agent)(?:\/|["'])/g,
+        "plugin shared layer must not import plugin front/server/agent layers",
       )
     }
   }
 
   if (!isPluginRootFile(repoPath)) continue
 
-  addFailure(file, 1, "plugin source files must live under front/, server/, or shared/")
+  addFailure(file, 1, "plugin source files must live under front/, server/, agent/, or shared/")
 
   if (basename === "catalog.ts") {
     addFailure(file, 1, "plugin catalog files must be named catalogs.ts")

@@ -8,7 +8,7 @@ export {
   type CollectWorkspaceAgentServerPluginsOptions,
   type ComposeServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
-  type WorkspaceAgentResourceLoaderOptions,
+  type WorkspaceAgentPiOptions,
   type WorkspacePiPackageSource,
   type WorkspaceAgentServerPluginCollection,
   type WorkspaceAgentServerPluginContext,
