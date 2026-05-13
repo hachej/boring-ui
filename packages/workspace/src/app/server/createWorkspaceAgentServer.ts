@@ -18,6 +18,7 @@ import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import { createAskUserPluginBundle } from "../../plugins/askUserPlugin/server"
+import { ASK_USER_PLUGIN_ID } from "../../plugins/askUserPlugin/shared"
 import {
   ServerPluginError,
   bootstrapServer,
@@ -114,7 +115,7 @@ export function collectWorkspaceAgentServerPlugins(
     preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
       extraTools: result.agentTools,
-      systemPromptAppend: [buildBoringSystemPrompt(), opts.systemPromptAppend, result.systemPromptAppend]
+      systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
         .filter(Boolean)
         .join("\n\n") || undefined,
       resourceLoaderOptions: {
@@ -153,10 +154,12 @@ export async function createWorkspaceAgentServer(
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
-  const askUserPlugin = createAskUserPluginBundle({ workspaceRoot, bridge })
+  const defaultPlugins = opts.excludeDefaults?.includes(ASK_USER_PLUGIN_ID)
+    ? opts.defaults
+    : [createAskUserPluginBundle({ workspaceRoot, bridge }), ...(opts.defaults ?? [])]
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
-    defaults: [askUserPlugin, ...(opts.defaults ?? [])],
+    defaults: defaultPlugins,
   })
 
   if (opts.provisionWorkspace !== false) {
@@ -178,6 +181,7 @@ export async function createWorkspaceAgentServer(
     ],
     systemPromptAppend: [
       workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt() : undefined,
+      buildBoringSystemPrompt(),
       pluginCollection.agentOptions.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
     resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,

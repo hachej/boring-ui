@@ -2,6 +2,7 @@
 
 import { CheckCircle2, HelpCircle, Loader2, Sparkles, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
+import { UI_COMMAND_EVENT } from "../../../front/bridge"
 import { useWorkspaceAttention } from "../../../front/provider"
 import { definePanel } from "../../../front/registry/types"
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../front/components/ui"
@@ -95,16 +96,25 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
 
   useEffect(() => {
     let stopped = false
-    async function poll() {
+    async function refreshPending() {
       try {
         const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
         const state = await response.json().catch(() => null) as Record<string, unknown> | null
         if (!stopped) runtime.setPending(readPendingQuestionFromState(state))
       } catch { /* best effort */ }
     }
-    void poll()
-    const id = setInterval(poll, 500)
-    return () => { stopped = true; clearInterval(id) }
+    const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
+    const onUiCommand = () => { void refreshPending() }
+    void refreshPending()
+    window.addEventListener("focus", refreshPending)
+    document.addEventListener("visibilitychange", onVisibility)
+    window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
+    return () => {
+      stopped = true
+      window.removeEventListener("focus", refreshPending)
+      document.removeEventListener("visibilitychange", onVisibility)
+      window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
+    }
   }, [apiBaseUrl, authHeaders, runtime])
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }

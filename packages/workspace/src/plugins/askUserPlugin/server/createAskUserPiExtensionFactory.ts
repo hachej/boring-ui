@@ -15,7 +15,7 @@ export type AskUserPiToolDefinition = {
   description: string
   parameters: Record<string, unknown>
   promptSnippet?: string
-  execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<AskUserPiToolResult>
+  execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, sessionId?: string): Promise<AskUserPiToolResult>
 }
 
 export type AskUserPiExtensionApi = {
@@ -72,7 +72,7 @@ export function createAskUserPiTool(options: AskUserPiExtensionOptions): AskUser
       required: ["title"],
       additionalProperties: false,
     },
-    async execute(_toolCallId, params, signal) {
+    async execute(_toolCallId, params, signal, sessionId) {
       const parsed = validateAskUserToolInput(normalizeAskUserToolParams(params))
       if (!parsed.success) {
         return {
@@ -82,7 +82,7 @@ export function createAskUserPiTool(options: AskUserPiExtensionOptions): AskUser
       }
       const input = parsed.data as AskUserToolInput
       try {
-        const result = await options.runtime.ask({ ...input, sessionId: resolveSessionId(options.sessionId) }, signal)
+        const result = await options.runtime.ask({ ...input, sessionId: sessionId ?? resolveSessionId(options.sessionId) }, signal)
         return formatAskUserResult(result)
       } catch (error) {
         return {

@@ -277,8 +277,6 @@ export type ComposerBlockerAction = {
 export type ComposerBlocker = {
   id: string
   reason: string
-  surfaceKind?: string
-  target?: string
   label?: string
   sessionId?: string
   actions?: ComposerBlockerAction[]

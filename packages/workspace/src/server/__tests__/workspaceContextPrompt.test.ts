@@ -157,7 +157,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     expect(contextIdx).toBeLessThan(pluginIdx)
   })
 
-  test("systemPromptAppend is undefined when vercel-sandbox mode and no plugin prompts", async () => {
+  test("vercel-sandbox omits workspace context even with default app prompts", async () => {
     const workspaceRoot = await makeTempDir("boring-wcp-vs-undef-")
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
@@ -165,6 +165,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       logger: false,
     })
     await app.close()
-    expect(capturedSystemPromptAppend).toBeUndefined()
+    expect(capturedSystemPromptAppend).toBeDefined()
+    expect(capturedSystemPromptAppend).not.toContain(buildWorkspaceContextPrompt())
   })
 })

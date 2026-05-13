@@ -349,7 +349,7 @@ export function createPiCodingAgentHarness(opts: {
     const { session: piSession } = await createAgentSession({
       cwd: ctx.workdir,
       tools: [],
-      customTools: adaptToolsForPi(opts.tools),
+      customTools: adaptToolsForPi(opts.tools, input.sessionId),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
