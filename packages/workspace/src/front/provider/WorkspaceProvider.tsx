@@ -36,7 +36,6 @@ import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugi
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
-import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
 import { WorkspaceAttentionProvider } from "../attention"
 
 // ---------------------------------------------------------------------------
