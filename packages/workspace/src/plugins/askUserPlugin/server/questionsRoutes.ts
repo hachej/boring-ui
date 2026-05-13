@@ -12,7 +12,6 @@ export type QuestionsRoutesOptions = {
   allowedOrigins?: string[]
   csrfHeaderName?: string
   csrfToken?: string | ((request: FastifyRequest) => string | undefined | Promise<string | undefined>)
-  recordOpened?: ConstructorParameters<typeof QuestionsBridge>[0]["recordOpened"]
 }
 
 export function questionsRoutes(app: FastifyInstance, opts: QuestionsRoutesOptions, done: (err?: Error) => void): void {
@@ -29,7 +28,6 @@ export function questionsRoutes(app: FastifyInstance, opts: QuestionsRoutesOptio
       store: opts.store,
       runtime: opts.runtime,
       getAuthContext: opts.getAuthContext ? () => opts.getAuthContext!(request) : undefined,
-      recordOpened: opts.recordOpened ?? ((question) => opts.runtime.markOpened(question.questionId)),
     })
 
     try {

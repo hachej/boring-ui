@@ -292,17 +292,10 @@ export const QuestionsCancelCommandSchema = z
   })
   .strict()
 
-export const QuestionsOpenedCommandSchema = z
-  .object({
-    kind: z.literal(ASK_USER_COMMAND_KINDS.OPENED),
-    params: z.object(commandParamsBase).strict(),
-  })
-  .strict()
 
 export const QuestionsCommandSchema = z.discriminatedUnion("kind", [
   QuestionsSubmitCommandSchema,
   QuestionsCancelCommandSchema,
-  QuestionsOpenedCommandSchema,
 ])
 
 export function serializedSize(value: unknown): number {

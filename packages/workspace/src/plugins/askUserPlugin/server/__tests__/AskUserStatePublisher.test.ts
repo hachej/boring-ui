@@ -67,58 +67,11 @@ describe("AskUserStatePublisher", () => {
   })
 })
 
-describe("ask-user UI open ack", () => {
-  it("dispatches openSurface and accepts answers immediately after questions.opened ack", async () => {
+describe("ask-user UI open", () => {
+  it("keeps pending question alive when openSurface is not acknowledged", async () => {
     const store = await makeStore()
     const ui = bridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 1000 })
-    const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
-    await vi.waitFor(() => expect(ui.commands).toEqual([expect.objectContaining({ kind: "openSurface" })]))
-    const question = await store.getPending("s1")
-    runtime.markOpened(question!.questionId)
-    await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
-    await expect(pending).resolves.toMatchObject({ status: "answered" })
-  })
-
-  it("does not miss questions.opened ack while openSurface dispatch is still resolving", async () => {
-    const store = await makeStore()
-    const ui = bridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 1000 })
-    ui.postCommand = async (cmd) => {
-      ui.commands.push(cmd)
-      const question = await store.getPending("s1")
-      runtime.markOpened(question!.questionId)
-      return { seq: ui.commands.length, status: "ok" }
-    }
-    const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
-    await vi.waitFor(() => expect(ui.commands).toHaveLength(1))
-    const question = await store.getPending("s1")
-    await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
-    await expect(pending).resolves.toMatchObject({ status: "answered" })
-  })
-
-  it("questions.opened route acknowledges rehydrated question", async () => {
-    const store = await makeStore()
-    const runtime = new AskUserRuntime({ store })
-    void runtime.ask({ sessionId: "s1", schema })
-    const question = await vi.waitFor(async () => {
-      const pending = await store.getPending("s1")
-      expect(pending).not.toBeNull()
-      return pending!
-    })
-    const opened = vi.fn()
-    const app = Fastify()
-    app.register(questionsRoutes, { store, runtime, recordOpened: opened, getAuthContext: () => ({ sessionId: "s1", principalId: "anonymous" }) })
-    const res = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: { kind: "questions.opened", params: { questionId: question.questionId, sessionId: "s1" } } })
-    expect(res.statusCode).toBe(200)
-    expect(opened).toHaveBeenCalledWith(expect.objectContaining({ questionId: question.questionId }))
-    await app.close()
-  })
-
-  it("keeps pending question alive when opened ack times out", async () => {
-    const store = await makeStore()
-    const ui = bridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 1 })
+    const runtime = new AskUserRuntime({ store, uiBridge: ui })
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
     let question = await store.getPending("s1")
     await vi.waitFor(async () => {
@@ -131,10 +84,10 @@ describe("ask-user UI open ack", () => {
     await expect(pending).resolves.toMatchObject({ status: "answered" })
   })
 
-  it("returns abort without waiting for opened ack timeout", async () => {
+  it("returns abort without waiting for openSurface acknowledgement", async () => {
     const store = await makeStore()
     const ui = bridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: ui, askUserOpenAckTimeoutMs: 60_000 })
+    const runtime = new AskUserRuntime({ store, uiBridge: ui })
     const controller = new AbortController()
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
     await vi.waitFor(async () => expect(await store.getPending("s1")).not.toBeNull())

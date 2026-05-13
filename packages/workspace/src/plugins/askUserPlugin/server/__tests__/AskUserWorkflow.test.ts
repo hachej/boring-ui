@@ -29,10 +29,10 @@ async function makeStore() {
 }
 
 describe("ask-user full workflow", () => {
-  it("runs tool -> pending state -> opened route -> submit route -> tool result", async () => {
+  it("runs tool -> pending state -> submit route -> tool result", async () => {
     const store = await makeStore()
     const bridge = createBridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: bridge, ownerPrincipalId: "p1", askUserOpenAckTimeoutMs: 1000 })
+    const runtime = new AskUserRuntime({ store, uiBridge: bridge, ownerPrincipalId: "p1" })
     new AskUserStatePublisher(store, bridge).start()
 
     const app = Fastify()
@@ -69,37 +69,30 @@ describe("ask-user full workflow", () => {
       expect((await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ question: { questionId: pending.questionId, status: "ready" } })
     })
 
-    const opened = await app.inject({
-      method: "POST",
-      url: "/api/v1/questions/commands",
-      payload: { kind: ASK_USER_COMMAND_KINDS.OPENED, params: { questionId: pending.questionId, sessionId: "s1" } },
-    })
-    expect(opened.statusCode).toBe(200)
 
-    const submitted = await app.inject({
+    const submit = await app.inject({
       method: "POST",
       url: "/api/v1/questions/commands",
       payload: {
         kind: ASK_USER_COMMAND_KINDS.SUBMIT,
-        params: { questionId: pending.questionId, sessionId: "s1", answerToken: pending.answerToken, values: { region: "iad", confirm: true } },
+        params: {
+          questionId: pending.questionId,
+          sessionId: "s1",
+          answerToken: pending.answerToken,
+          values: { region: "iad", confirm: true },
+        },
       },
     })
-    expect(submitted.statusCode).toBe(200)
-
-    const resolvedToolResult = await toolResult
-    expect(resolvedToolResult.isError).toBeUndefined()
-    expect(resolvedToolResult).toMatchObject({
+    expect(submit.statusCode).toBe(200)
+    await expect(toolResult).resolves.toMatchObject({
       details: { status: "answered", answer: { values: { region: "iad", confirm: true } } },
     })
-    await expect(store.getPending("s1")).resolves.toBeNull()
-    await expect(store.getTranscriptEventsForQuestion(pending.questionId)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "created" }),
-        expect.objectContaining({ type: "ready" }),
-        expect.objectContaining({ type: "answered" }),
-      ]),
-    )
-
+    await vi.waitFor(async () => expect((await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({ question: null }))
+    await expect(store.getTranscriptEventsForQuestion(pending.questionId)).resolves.toEqual([
+      expect.objectContaining({ type: "created" }),
+      expect.objectContaining({ type: "ready" }),
+      expect.objectContaining({ type: "answered" }),
+    ])
     await app.close()
   })
 })
