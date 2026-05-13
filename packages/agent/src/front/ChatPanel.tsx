@@ -1823,6 +1823,12 @@ function MessageActionsBar({
     "hover:bg-foreground/[0.04] hover:text-foreground",
     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40",
   )
+  const iconActionBtnClass = cn(
+    "inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)]",
+    "text-muted-foreground/35 transition-colors",
+    "hover:bg-foreground/[0.04] hover:text-muted-foreground/80",
+    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40",
+  )
   return (
     <div
       className={cn(
@@ -1832,9 +1838,8 @@ function MessageActionsBar({
         "flex items-center gap-0.5 -mt-1",
       )}
     >
-      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={actionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'}>
+      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={iconActionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'} title={copied ? 'Copied' : 'Copy'}>
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
-        <span>{copied ? 'Copied' : 'Copy'}</span>
       </Button>
       {canRegenerate && (
         <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={actionBtnClass} aria-label="Regenerate">
