@@ -308,6 +308,60 @@ describe("streaming concurrency", () => {
       data: expect.objectContaining({ text: "agent-end text" }),
     }));
   });
+
+  it("does not treat user pi history text as assistant output", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-agent-end-after-user",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-agent-end-after-user",
+    };
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-stream-agent-end-after-user", message: "hi" },
+      ctx,
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: unknown[] = [];
+
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({
+      type: "message_start",
+      message: { id: "user-1", role: "user", content: [{ type: "text", text: "hi" }] },
+    });
+    chunks.push((await firstRead).value);
+    emitPiEvent({
+      type: "message_end",
+      message: { id: "user-1", role: "user", content: [{ type: "text", text: "hi" }] },
+    });
+    emitPiEvent({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "hi" }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "hello from fallback" }],
+        },
+      ],
+    });
+    promptHandle.resolve!();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-message-end",
+      data: expect.objectContaining({ role: "assistant", text: "hello from fallback" }),
+    }));
+  });
 });
 
 describe("getSystemPrompt", () => {
