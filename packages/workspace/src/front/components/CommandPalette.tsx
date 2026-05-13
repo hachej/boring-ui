@@ -30,13 +30,11 @@ import {
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
-import type { CommandConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import {
   CATALOG_MODE_LABEL,
   MAX_RESULTS,
   errorMessage,
-  filterAvailableRecentEntries,
   searchCommands,
   type CatalogSearchGroup,
   type PaletteMode,
@@ -44,12 +42,7 @@ import {
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 import type { ExplorerRow } from "./DataExplorer/types"
 import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
-import {
-  loadRecent,
-  addCatalogToRecent,
-  addCommandToRecent,
-} from "./recent"
-import type { RecentEntry } from "./recent"
+import { useCommandPaletteSelection } from "./useCommandPaletteSelection"
 
 export type CommandPaletteProps = Record<string, never>
 
@@ -255,42 +248,18 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     return searchCommands(commands, searchQuery)
   }, [commands, isCommandMode, searchQuery])
 
-  const recentEntries = useMemo((): RecentEntry[] => {
-    if (isCommandMode || searchQuery) return []
-    return filterAvailableRecentEntries(loadRecent(), catalogs, commands)
-  }, [isCommandMode, searchQuery, catalogs, commands])
-
-  const handleCatalogSelect = useCallback((catalog: CatalogConfig, row: ExplorerRow) => {
-    addCatalogToRecent(catalog.id, row)
-    catalog.onSelect(row)
-    setOpen(false)
-  }, [])
-
-  const handleCommandSelect = useCallback(
-    (cmd: CommandConfig) => {
-      addCommandToRecent(cmd.id, cmd.title)
-      cmd.run()
-      setOpen(false)
-    },
-    [],
-  )
-
-  const handleRecentSelect = useCallback((entry: RecentEntry) => {
-    if (entry.type === "catalog") {
-      const catalog = catalogs.find((c) => c.id === entry.catalogId)
-      if (catalog) {
-        addCatalogToRecent(catalog.id, entry.rowSnapshot)
-        catalog.onSelect(entry.rowSnapshot)
-      }
-    } else {
-      const cmd = commands.find((c) => c.id === entry.commandId)
-      if (cmd) {
-        addCommandToRecent(cmd.id, cmd.title)
-        cmd.run()
-      }
-    }
-    setOpen(false)
-  }, [catalogs, commands])
+  const {
+    recentEntries,
+    handleCatalogSelect,
+    handleCommandSelect,
+    handleRecentSelect,
+  } = useCommandPaletteSelection({
+    catalogs,
+    commands,
+    isCommandMode,
+    searchQuery,
+    close: () => setOpen(false),
+  })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
