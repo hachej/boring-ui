@@ -36,6 +36,7 @@ pnpm test:e2e -- --headed
 | `m3b-chat.spec.ts` | Slash commands, bash/edit tool cards, heartbeat |
 | `tool-rendering.spec.ts` | Tool card rendering for read/write/find/grep + state transitions |
 | `streaming-bash.spec.ts` | Bash streaming: multi-line output, error exit, heartbeat, SSE protocol |
+| `pi-projection-ui.spec.ts` | Deterministic pi projection UI regression + real-LLM smoke for tool/reasoning visibility |
 
 ## Regression Tests
 

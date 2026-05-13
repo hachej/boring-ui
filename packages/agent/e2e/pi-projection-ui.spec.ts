@@ -1,5 +1,9 @@
 import { expect, test } from './fixtures'
 
+const hasRealKey =
+  !!process.env.ANTHROPIC_API_KEY &&
+  process.env.ANTHROPIC_API_KEY !== 'e2e-test-key'
+
 function encodeUiStream(chunks: unknown[]): string {
   return `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`
 }
@@ -47,5 +51,32 @@ test.describe('pi projection UI regressions', () => {
     await expect(thoughtsTrigger).toBeVisible({ timeout: 10_000 })
     await thoughtsTrigger.click()
     await expect(browserPage.getByText('Need to inspect files first.')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('smoke: real LLM renders pi-projected tool UI', async ({ browserPage }) => {
+    test.skip(!hasRealKey, 'Requires real ANTHROPIC_API_KEY')
+
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
+    await composer.fill('Run this exact command with the bash tool: printf "pi-tool-ui-smoke\\n"')
+    await browserPage.locator('button[aria-label="Submit"]').click()
+
+    await expect(browserPage.getByText(/Used command|Using command/)).toBeVisible({ timeout: 45_000 })
+    await expect(browserPage.getByText('pi-tool-ui-smoke')).toBeVisible({ timeout: 45_000 })
+  })
+
+  test('smoke: real LLM renders pi-projected reasoning UI when enabled', async ({ browserPage }) => {
+    test.skip(!hasRealKey, 'Requires real ANTHROPIC_API_KEY')
+
+    await browserPage.evaluate(() => {
+      localStorage.setItem('boring-agent:composer:show-thoughts', '1')
+    })
+    await browserPage.reload()
+
+    const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
+    await composer.fill('Think briefly, then answer with exactly: pi-reasoning-ui-smoke')
+    await browserPage.locator('button[aria-label="Submit"]').click()
+
+    await expect(browserPage.getByText('pi-reasoning-ui-smoke')).toBeVisible({ timeout: 45_000 })
+    await expect(browserPage.getByText(/thoughts|thinking/).first()).toBeVisible({ timeout: 45_000 })
   })
 })
