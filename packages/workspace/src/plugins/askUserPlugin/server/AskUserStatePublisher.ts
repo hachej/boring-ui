@@ -5,6 +5,7 @@ import type { AskUserStore, AskUserStoreChange } from "./AskUserStore"
 
 export type AskUserPendingState = {
   question: AskUserQuestion | null
+  bySession?: Record<string, AskUserQuestion | null>
 }
 
 export class AskUserStatePublisher {
@@ -31,9 +32,16 @@ export class AskUserStatePublisher {
   async publishSession(sessionId: string): Promise<void> {
     const question = await this.store.getPending(sessionId)
     const current = (await this.bridge.getState()) ?? {}
+    const previousSlot = current[ASK_USER_UI_STATE_SLOTS.PENDING]
+    const previousBySession = previousSlot && typeof previousSlot === "object" && "bySession" in previousSlot
+      ? (previousSlot as { bySession?: Record<string, AskUserQuestion | null> }).bySession ?? {}
+      : {}
     const next: UiState = {
       ...current,
-      [ASK_USER_UI_STATE_SLOTS.PENDING]: { question } satisfies AskUserPendingState,
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: {
+        question,
+        bySession: { ...previousBySession, [sessionId]: question },
+      } satisfies AskUserPendingState,
     }
     await this.bridge.setState(next)
   }
