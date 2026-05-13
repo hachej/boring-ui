@@ -1,16 +1,14 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   Button,
-  Kbd,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
+  Kbd,
 } from "@hachej/boring-ui-kit"
-import { Check, ChevronsUpDown, LayoutGrid, Plus, Settings } from "lucide-react"
+import { Check, ChevronsUpDown, Plus, Settings } from "lucide-react"
 
 export interface WorkspaceSwitcherControlItem {
   id: string
@@ -37,13 +35,13 @@ function workspaceInitial(name: string): string {
   return (name.trim()[0] ?? "W").toUpperCase()
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  const tagName = target.tagName.toLowerCase()
-  return target.isContentEditable
-    || tagName === "input"
-    || tagName === "textarea"
-    || tagName === "select"
+function focusCurrentMenuItem() {
+  window.setTimeout(() => {
+    const content = document.querySelector<HTMLElement>('[data-slot="dropdown-menu-content"]')
+    const current = content?.querySelector<HTMLElement>('[data-current="true"]:not([data-disabled])')
+    const first = content?.querySelector<HTMLElement>('[data-slot="dropdown-menu-item"]:not([data-disabled])')
+    ;(current ?? first)?.focus()
+  }, 0)
 }
 
 export function WorkspaceSwitcherControl({
@@ -60,22 +58,27 @@ export function WorkspaceSwitcherControl({
   onOpenWorkspaceSettings,
 }: WorkspaceSwitcherControlProps) {
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const [open, setOpen] = useState(false)
   const currentWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
   const switcherLabel = currentWorkspace?.name ?? "Select workspace"
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // Low-collision Mac shortcut. Avoid common browser/app shortcuts like
-      // Cmd+K, Cmd+P, Cmd+O, Cmd+W, Cmd+L, Cmd+F, Cmd+R, Cmd+S.
+      // Cmd+K, Cmd+P, Cmd+O, Cmd+W, Cmd+L, Cmd+F, Cmd+R, Cmd+S. Do not ignore
+      // editable targets: the chat composer is usually focused, and Cmd+Shift+K
+      // does not insert text.
+      if (event.isComposing) return
       if (!event.metaKey || !event.shiftKey || event.altKey || event.ctrlKey) return
-      if (event.key.toLowerCase() !== "k") return
-      if (isEditableTarget(event.target)) return
+      if (event.key.toLowerCase() !== "k" && event.code !== "KeyK") return
       event.preventDefault()
+      event.stopPropagation()
       triggerRef.current?.focus()
-      triggerRef.current?.click()
+      setOpen(true)
+      focusCurrentMenuItem()
     }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
+    document.addEventListener("keydown", onKeyDown, true)
+    return () => document.removeEventListener("keydown", onKeyDown, true)
   }, [])
 
   if (workspaces.length === 0) {
@@ -101,108 +104,105 @@ export function WorkspaceSwitcherControl({
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          ref={triggerRef}
-          type="button"
-          variant="ghost"
-          aria-label={`Workspace menu: ${switcherLabel}`}
-          className="-ml-1 h-8 min-w-0 justify-start gap-2.5 border border-transparent px-1 py-1 text-left"
-        >
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+    <div className="-ml-1 flex h-8 min-w-0 items-center gap-1.5">
+      <span
+        aria-hidden="true"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+      >
+        {appTitle.charAt(0).toUpperCase()}
+      </span>
+      <span className="truncate text-[13px] font-medium text-foreground">
+        {appTitle}
+      </span>
+      <span aria-hidden="true" className="text-muted-foreground/30">/</span>
+
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            ref={triggerRef}
+            type="button"
+            variant="ghost"
+            aria-label={`Workspace menu: ${switcherLabel}`}
+            title="Workspace picker (⌘⇧K)"
+            className="h-8 min-w-0 justify-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-foreground/[0.04] focus-visible:ring-1 focus-visible:ring-ring"
           >
-            {appTitle.charAt(0).toUpperCase()}
-          </span>
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[13px] font-medium text-foreground">
-              {appTitle}
-            </span>
-            <span aria-hidden="true" className="text-muted-foreground/30">/</span>
-            <span className="truncate text-[13px] font-normal text-muted-foreground">
+            <span className="max-w-[15rem] truncate text-[13px] font-normal text-muted-foreground">
               {switcherLabel}
             </span>
-          </span>
-          <Kbd className="ml-1 border-0 bg-transparent p-0 text-[10px] text-muted-foreground/50 shadow-none">⌘⇧K</Kbd>
-          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={8}
-        className="w-80 rounded-lg border-border/70 bg-popover p-2 text-popover-foreground shadow-2xl"
-      >
-        <DropdownMenuLabel className="px-2 pb-2 pt-1">
-          <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
-            Workspaces
-            <DropdownMenuShortcut>⌘⇧K</DropdownMenuShortcut>
-          </span>
-        </DropdownMenuLabel>
-        <div className="max-h-72 overflow-y-auto pr-1">
-          {workspaces.map((workspace) => {
-            const isCurrent = currentWorkspace?.id === workspace.id
-            const available = workspace.available !== false
-            return (
-              <DropdownMenuItem
-                key={workspace.id}
-                aria-label={workspace.name}
-                data-current={isCurrent ? "true" : "false"}
-                disabled={!available}
-                onSelect={() => onSelectWorkspace(workspace.id)}
-                className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
-                  {workspaceInitial(workspace.name)}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm">{workspace.name}</span>
-                  {available ? null : (
-                    <span className="truncate text-xs text-destructive">Folder unavailable</span>
-                  )}
-                </span>
-                {isCurrent ? <Check className="h-4 w-4 text-foreground" aria-hidden="true" /> : null}
-              </DropdownMenuItem>
-            )
-          })}
-        </div>
+            <Kbd className="ml-1 border-0 bg-transparent p-0 text-[11px] text-muted-foreground/75 shadow-none">⌘⇧K</Kbd>
+            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          side="bottom"
+          sideOffset={6}
+          className="w-[21rem] rounded-xl border-border/70 bg-popover p-1.5 text-popover-foreground shadow-2xl"
+        >
+          <div className="max-h-80 overflow-y-auto">
+            {workspaces.map((workspace) => {
+              const isCurrent = currentWorkspace?.id === workspace.id
+              const available = workspace.available !== false
+              return (
+                <DropdownMenuItem
+                  key={workspace.id}
+                  aria-label={workspace.name}
+                  data-current={isCurrent ? "true" : "false"}
+                  disabled={!available}
+                  onSelect={() => onSelectWorkspace(workspace.id)}
+                  className="gap-3 rounded-lg px-2.5 py-2.5 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground data-[current=true]:bg-foreground/[0.08] data-[current=true]:text-foreground"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
+                    {workspaceInitial(workspace.name)}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-sm font-medium">{workspace.name}</span>
+                    {available ? (
+                      workspace.path ? <span className="truncate text-xs text-muted-foreground">{workspace.path}</span> : null
+                    ) : (
+                      <span className="truncate text-xs text-destructive">Folder unavailable</span>
+                    )}
+                  </span>
+                  {isCurrent ? <Check className="h-4 w-4 text-foreground" aria-hidden="true" /> : null}
+                </DropdownMenuItem>
+              )
+            })}
+          </div>
 
-        {(onCreateWorkspace || (currentWorkspace && onOpenWorkspaceSettings)) ? <DropdownMenuSeparator className="-mx-2" /> : null}
+          {(onCreateWorkspace || (currentWorkspace && onOpenWorkspaceSettings)) ? <DropdownMenuSeparator className="-mx-1.5 my-1" /> : null}
 
-        {onCreateWorkspace ? (
-          <DropdownMenuItem
-            aria-label={createLabel}
-            onSelect={(event: Event) => {
-              event.preventDefault()
-              onCreateWorkspace()
-            }}
-            className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            <span className="flex min-w-0 flex-col">
-              <span>{createLabel}</span>
-              <span className="text-xs text-muted-foreground">{createDescription}</span>
-            </span>
-          </DropdownMenuItem>
-        ) : null}
+          {onCreateWorkspace ? (
+            <DropdownMenuItem
+              aria-label={createLabel}
+              onSelect={(event: Event) => {
+                event.preventDefault()
+                onCreateWorkspace()
+              }}
+              className="gap-3 rounded-lg px-2.5 py-2.5 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              <span className="flex min-w-0 flex-col">
+                <span>{createLabel}</span>
+                <span className="text-xs text-muted-foreground">{createDescription}</span>
+              </span>
+            </DropdownMenuItem>
+          ) : null}
 
-        {currentWorkspace && onOpenWorkspaceSettings ? (
-          <DropdownMenuItem
-            aria-label={settingsLabel}
-            onSelect={() => onOpenWorkspaceSettings(currentWorkspace.id)}
-            className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
-          >
-            <Settings className="h-4 w-4" aria-hidden="true" />
-            <span className="flex min-w-0 flex-col">
-              <span>{settingsLabel}</span>
-              <span className="text-xs text-muted-foreground">{settingsDescription}</span>
-            </span>
-          </DropdownMenuItem>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {currentWorkspace && onOpenWorkspaceSettings ? (
+            <DropdownMenuItem
+              aria-label={settingsLabel}
+              onSelect={() => onOpenWorkspaceSettings(currentWorkspace.id)}
+              className="gap-3 rounded-lg px-2.5 py-2.5 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
+            >
+              <Settings className="h-4 w-4" aria-hidden="true" />
+              <span className="flex min-w-0 flex-col">
+                <span>{settingsLabel}</span>
+                <span className="text-xs text-muted-foreground">{settingsDescription}</span>
+              </span>
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
