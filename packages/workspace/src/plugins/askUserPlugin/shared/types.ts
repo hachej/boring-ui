@@ -162,15 +162,8 @@ export type QuestionsCancelCommand = {
   }
 }
 
-export type QuestionsOpenedCommand = {
-  kind: typeof ASK_USER_COMMAND_KINDS.OPENED
-  params: {
-    questionId: string
-    sessionId: string
-  }
-}
 
-export type QuestionsCommand = QuestionsSubmitCommand | QuestionsCancelCommand | QuestionsOpenedCommand
+export type QuestionsCommand = QuestionsSubmitCommand | QuestionsCancelCommand
 
 export type AskUserTranscriptEvent =
   | {

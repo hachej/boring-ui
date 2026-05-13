@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { AskUserFormSchemaSchema } from "../shared/schema"
-import { ASK_USER_SCHEMA_LIMITS, ASK_USER_SURFACE_KIND } from "../shared/constants"
+import { ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { UiBridge } from "../../../shared/ui-bridge"
 import type {
   AskUserAnswer,
@@ -103,7 +103,6 @@ export type AskUserRuntimeOptions = {
     perPrincipalPerHour?: number
   }
   uiBridge?: UiBridge
-  askUserOpenAckTimeoutMs?: number
 }
 
 export class AskUserRuntime {
@@ -115,8 +114,6 @@ export class AskUserRuntime {
   private readonly perSessionPerMinute: number
   private readonly perPrincipalPerHour: number
   private readonly uiBridge?: UiBridge
-  private readonly openAckTimeoutMs: number
-  private readonly openWaiters = new Map<string, { ack: () => void; cancel: () => void }>()
   private readonly sessionBuckets = new Map<string, RateLimitBucket>()
   private readonly principalBuckets = new Map<string, RateLimitBucket>()
 
@@ -129,7 +126,6 @@ export class AskUserRuntime {
     this.perSessionPerMinute = options.limits?.perSessionPerMinute ?? 6
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
     this.uiBridge = options.uiBridge
-    this.openAckTimeoutMs = clampOpenAckTimeout(options.askUserOpenAckTimeoutMs)
   }
 
   async abandonOrphanedPending(sessionIds: string[]): Promise<void> {
@@ -141,12 +137,6 @@ export class AskUserRuntime {
     }
   }
 
-  markOpened(questionId: string): void {
-    const waiter = this.openWaiters.get(questionId)
-    if (!waiter) return
-    this.openWaiters.delete(questionId)
-    waiter.ack()
-  }
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
     this.assertAllowed(request.sessionId)
@@ -191,51 +181,18 @@ export class AskUserRuntime {
   }
 
   private async waitForAnswerWithOpen(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
-    const answer = this.waitForAnswer(question, timeoutMs, signal)
-    const opened = this.openQuestionSurface(question)
-    const first = await Promise.race([answer, opened])
-    if (first) {
-      this.openWaiters.get(question.questionId)?.cancel()
-      this.openWaiters.delete(question.questionId)
-      return first
-    }
-    return answer
+    void this.openQuestionSurface(question)
+    return this.waitForAnswer(question, timeoutMs, signal)
   }
 
-  private async openQuestionSurface(question: AskUserQuestion): Promise<AskUserToolResult | null> {
-    if (!this.uiBridge) return null
-    const openedPromise = this.waitForOpened(question.questionId)
+  private async openQuestionSurface(question: AskUserQuestion): Promise<void> {
+    if (!this.uiBridge) return
     try {
       await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { question } } })
-      const opened = await openedPromise
-      if (opened) return null
     } catch {
-      this.openWaiters.get(question.questionId)?.cancel()
-      this.openWaiters.delete(question.questionId)
+      // Opening the pane is best-effort. The pending question is already persisted
+      // and published via UI state, so a stale/disconnected browser can refresh and answer.
     }
-    // Opening the pane is best-effort. The pending question is already persisted and
-    // published via UI state, so do not convert a missed ack into a terminal tool
-    // cancellation. This lets a stale/disconnected browser refresh and still answer.
-    return null
-  }
-
-  private waitForOpened(questionId: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.openWaiters.delete(questionId)
-        resolve(false)
-      }, this.openAckTimeoutMs)
-      this.openWaiters.set(questionId, {
-        ack: () => {
-          clearTimeout(timer)
-          resolve(true)
-        },
-        cancel: () => {
-          clearTimeout(timer)
-          resolve(false)
-        },
-      })
-    })
   }
 
   private async waitForAnswer(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
@@ -312,9 +269,4 @@ export class AskUserRuntime {
 export function requireAskUserRuntime(runtime: AskUserRuntime | null | undefined): AskUserRuntime {
   if (!runtime) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.RUNTIME_UNAVAILABLE, "ask_user runtime unavailable")
   return runtime
-}
-
-function clampOpenAckTimeout(value: number | undefined): number {
-  const raw = value ?? 8_000
-  return Math.max(ASK_USER_SCHEMA_LIMITS.minTimeoutMs, Math.min(60_000, Math.floor(raw)))
 }

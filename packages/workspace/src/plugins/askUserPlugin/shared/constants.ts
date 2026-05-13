@@ -6,7 +6,6 @@ export const ASK_USER_SURFACE_KIND = "questions" as const
 export const ASK_USER_COMMAND_KINDS = {
   SUBMIT: "questions.submit",
   CANCEL: "questions.cancel",
-  OPENED: "questions.opened",
 } as const
 
 export const ASK_USER_UI_STATE_SLOTS = {

@@ -59,7 +59,6 @@ describe("askUserPlugin front shell", () => {
   it("renders question from openSurface metadata even before pending-state poll catches up", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
-      if (String(url).endsWith("/api/v1/questions/commands")) return Response.json({ ok: true, status: "opened" })
       return Response.json({})
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -68,7 +67,6 @@ describe("askUserPlugin front shell", () => {
     render(<Provider apiBaseUrl=""><Panel params={{ questionId: "q1", question }} api={{ close: vi.fn() }} className="h-full" /></Provider>)
 
     expect(await screen.findByText("Choose A or B")).toBeInTheDocument()
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/questions/commands") && String(init?.body).includes("questions.opened"))).toBe(true))
   })
 
   it("composer stop cancels pending question even when pane is closed", async () => {

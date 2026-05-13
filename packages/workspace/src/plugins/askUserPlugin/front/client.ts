@@ -31,9 +31,6 @@ export function createQuestionsClient(options: QuestionsClientOptions = {}) {
 
   return {
     dispatch,
-    opened(question: AskUserQuestion) {
-      return dispatch({ kind: ASK_USER_COMMAND_KINDS.OPENED, params: { questionId: question.questionId, sessionId: question.sessionId } })
-    },
     cancel(question: AskUserQuestion) {
       return dispatch({ kind: ASK_USER_COMMAND_KINDS.CANCEL, params: { questionId: question.questionId, sessionId: question.sessionId, answerToken: question.answerToken } })
     },

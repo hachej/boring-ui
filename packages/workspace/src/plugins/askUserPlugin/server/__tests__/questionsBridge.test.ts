@@ -84,13 +84,6 @@ describe("QuestionsBridge", () => {
     expect(answers.filter((event) => event.type === "answered")).toHaveLength(1)
   })
 
-  it("records opened ack", async () => {
-    const { store, runtime, question } = await fixture()
-    const recordOpened = vi.fn()
-    const bridge = new QuestionsBridge({ store, runtime, recordOpened, getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }) })
-    await bridge.handle({ kind: "questions.opened", params: { questionId: question.questionId, sessionId: "s1" } })
-    expect(recordOpened).toHaveBeenCalledWith(expect.objectContaining({ questionId: question.questionId }))
-  })
 })
 
 describe("questionsRoutes", () => {
@@ -104,11 +97,11 @@ describe("questionsRoutes", () => {
       csrfToken: "token",
       getAuthContext: () => ({ sessionId: "s1", principalId: "p1" }),
     })
-    const body = { kind: "questions.opened", params: { questionId: question.questionId, sessionId: "s1" } }
+    const body = { kind: "questions.cancel", params: { questionId: question.questionId, sessionId: "s1", answerToken: question.answerToken } }
     expect((await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: body })).statusCode).toBe(403)
     const res = await app.inject({ method: "POST", url: "/api/v1/questions/commands", headers: { origin: "https://app.test", "x-csrf-token": "token" }, payload: body })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, status: "opened" })
+    expect(res.json()).toEqual({ ok: true, status: "cancelled" })
     await app.close()
   })
 })

@@ -23,7 +23,6 @@ export type QuestionsBridgeOptions = {
   store: AskUserStore
   runtime: AskUserRuntime
   getAuthContext?: () => QuestionsAuthContext | Promise<QuestionsAuthContext>
-  recordOpened?: (question: AskUserQuestion) => void | Promise<void>
 }
 
 export class QuestionsBridge {
@@ -33,13 +32,6 @@ export class QuestionsBridge {
     const auth = await this.resolveAuth()
     const question = await this.requireQuestion(command.params.questionId)
     this.assertSession(question, command.params.sessionId, auth)
-
-    if (command.kind === "questions.opened") {
-      // Opened is an authenticated UI-availability ack, not an answer/cancel authority.
-      // It intentionally does not require answerToken, which is reserved for terminal mutations.
-      await this.options.recordOpened?.(question)
-      return { ok: true, status: "opened" }
-    }
 
     this.assertToken(question.answerToken, command.params.answerToken)
 

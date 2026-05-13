@@ -132,9 +132,6 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   }, [pending, params?.question])
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
-    if (question?.status === "ready") void client.opened(question).catch(() => undefined)
-  }, [client, question?.questionId, question?.status])
-  useEffect(() => {
     const onStop = (event: Event) => {
       const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
       if (!question || (sessionId && sessionScopedBlockerId(question.sessionId) && sessionId !== question.sessionId)) return
