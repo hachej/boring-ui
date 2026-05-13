@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import {
   Button,
   DropdownMenu,
@@ -5,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@hachej/boring-ui-kit"
 import { Check, ChevronsUpDown, LayoutGrid, Plus, Settings } from "lucide-react"
@@ -34,6 +36,15 @@ function workspaceInitial(name: string): string {
   return (name.trim()[0] ?? "W").toUpperCase()
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tagName = target.tagName.toLowerCase()
+  return target.isContentEditable
+    || tagName === "input"
+    || tagName === "textarea"
+    || tagName === "select"
+}
+
 export function WorkspaceSwitcherControl({
   appTitle = "Boring",
   workspaces,
@@ -47,8 +58,23 @@ export function WorkspaceSwitcherControl({
   onCreateWorkspace,
   onOpenWorkspaceSettings,
 }: WorkspaceSwitcherControlProps) {
+  const [open, setOpen] = useState(false)
   const currentWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null
   const switcherLabel = currentWorkspace?.name ?? "Select workspace"
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Low-collision Mac shortcut. Avoid common browser/app shortcuts like
+      // Cmd+K, Cmd+P, Cmd+O, Cmd+W, Cmd+L, Cmd+F, Cmd+R, Cmd+S.
+      if (!event.metaKey || !event.shiftKey || event.altKey || event.ctrlKey) return
+      if (event.key.toLowerCase() !== "k") return
+      if (isEditableTarget(event.target)) return
+      event.preventDefault()
+      setOpen(true)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
 
   if (workspaces.length === 0) {
     return (
@@ -73,7 +99,7 @@ export function WorkspaceSwitcherControl({
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -108,6 +134,7 @@ export function WorkspaceSwitcherControl({
           <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
             Workspaces
+            <DropdownMenuShortcut>⌘⇧K</DropdownMenuShortcut>
           </span>
         </DropdownMenuLabel>
         <div className="max-h-72 overflow-y-auto pr-1">
