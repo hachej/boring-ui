@@ -1,20 +1,19 @@
-import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import fastifyStatic from "@fastify/static"
-import { AuthStorage, LoginDialogComponent, OAuthSelectorComponent, initTheme } from "@mariozechner/pi-coding-agent"
-import { ProcessTerminal, TUI } from "@mariozechner/pi-tui"
+import type { FastifyInstance } from "fastify"
 import { execSync } from "node:child_process"
 import { existsSync } from "node:fs"
-import { createInterface } from "node:readline"
-import { basename, dirname, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
+import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 
-const { values: args } = parseArgs({
+const { values: args, positionals } = parseArgs({
   options: {
     port: { type: "string", short: "p" },
     host: { type: "string" },
     mode: { type: "string", short: "m" },
+    name: { type: "string", short: "n" },
   },
+  allowPositionals: true,
   strict: false,
 })
 
@@ -23,8 +22,8 @@ const HOST = (args.host as string | undefined) ?? process.env.HOST ?? "0.0.0.0"
 
 // CLI-facing mode names → internal runtime mode
 const MODE_MAP = {
-  "local":         "direct", // no sandbox, full network access
-  "local-sandbox": "local",  // bwrap isolated, no network (Linux only)
+  "local": "direct", // no sandbox, full network access
+  "local-sandbox": "local", // bwrap isolated, no network (Linux only)
 } as const
 type CliMode = keyof typeof MODE_MAP
 type RuntimeMode = typeof MODE_MAP[CliMode]
@@ -38,10 +37,9 @@ const CLI_MODE = rawMode as CliMode
 const MODE: RuntimeMode = MODE_MAP[CLI_MODE]
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const publicDir = resolve(__dirname, "..", "public")
-const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
-const projectName = basename(resolve(workspaceRoot)) || "workspace"
 
-if (!existsSync(publicDir)) {
+function ensureFrontendBuilt() {
+  if (existsSync(join(publicDir, "index.html"))) return
   console.error("\nError: boring-ui frontend not found.")
   console.error("Run `pnpm build:full` in packages/cli to build it first.\n")
   process.exit(1)
@@ -55,108 +53,211 @@ function openBrowser(url: string) {
   } catch {}
 }
 
-async function loginWithPi(auth: AuthStorage): Promise<void> {
-  const term = new ProcessTerminal()
-  const tui = new TUI(term, false)
-  initTheme("dark")
+function httpError(message: string, statusCode: number): Error & { statusCode: number } {
+  const error = new Error(message) as Error & { statusCode: number }
+  error.statusCode = statusCode
+  return error
+}
 
-  tui.start()
+function toCoreWorkspace(workspace: LocalWorkspace) {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    slug: workspace.id,
+    isDefault: false,
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+    unavailable: !workspace.available,
+    path: workspace.path,
+  }
+}
 
-  // Step 1: provider selector — same UI as pi
-  const providerId = await new Promise<string>((resolve, reject) => {
-    const selector = new OAuthSelectorComponent("login", auth, resolve, () =>
-      reject(new Error("Login cancelled")),
-    )
-    tui.addChild(selector)
-    tui.setFocus(selector)
-    tui.requestRender()
+async function registerStatic(app: FastifyInstance) {
+  ensureFrontendBuilt()
+  const { default: fastifyStatic } = await import("@fastify/static")
+  await app.register(fastifyStatic, {
+    root: publicDir,
+    prefix: "/",
+    wildcard: false,
   })
 
-  // Step 2: login dialog for the chosen provider
-  await new Promise<void>((resolve, reject) => {
-    const dialog = new LoginDialogComponent(tui, providerId, (success: unknown) => {
-      success !== false ? resolve() : reject(new Error("Login cancelled"))
-    })
+  app.setNotFoundHandler(async (req, reply) => {
+    if (req.url.startsWith("/api/")) {
+      return reply.code(404).send({ error: "Not found" })
+    }
+    return reply.sendFile("index.html", publicDir)
+  })
+}
 
-    tui.addChild(dialog)
-    tui.setFocus(dialog)
-    tui.requestRender()
+async function startFolderMode(folderArg?: string) {
+  const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? resolve(folderArg ?? process.cwd())
+  const projectName = basename(resolve(workspaceRoot)) || "workspace"
 
-    auth
-      .login(providerId, {
-        onAuth: ({ url }) => {
-          openBrowser(url)
-          dialog.showAuth(url, "Your browser should open automatically. Waiting for login…")
-        },
-        onProgress: (msg: string) => dialog.showProgress(msg),
-        onPrompt: ({ message }) =>
-          new Promise<string>((res) => {
-            dialog.showManualInput(message)
-            const rl = createInterface({ input: process.stdin, output: process.stdout })
-            rl.question("", (code) => { rl.close(); res(code.trim()) })
-          }),
+  console.log(`\n${projectName}`)
+  console.log(`  workspace  ${workspaceRoot}`)
+  console.log(`  mode       ${CLI_MODE}`)
+  console.log(`  port       ${PORT}`)
+  console.log(`  host       ${HOST}`)
+
+  const { createWorkspaceAgentServer } = await import("@hachej/boring-workspace/app/server")
+  const app = await createWorkspaceAgentServer({
+    workspaceRoot,
+    mode: MODE,
+    logger: false,
+  })
+
+  app.get("/api/v1/workspace/meta", async () => ({
+    workspaceRoot,
+    projectName,
+  }))
+
+  await registerStatic(app as FastifyInstance)
+  await app.listen({ port: PORT, host: HOST })
+  console.log(`\n  http://localhost:${PORT}\n`)
+  openBrowser(`http://localhost:${PORT}`)
+}
+
+async function startWorkspacesMode() {
+  const [workspaceAppServer, workspaceServer, agentServer, fastifyModule] = await Promise.all([
+    import("@hachej/boring-workspace/app/server"),
+    import("@hachej/boring-workspace/server"),
+    import("@hachej/boring-agent/server"),
+    import("fastify"),
+  ])
+  const registry = createLocalWorkspaceRegistry()
+  const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
+  const bridges = workspaceAppServer.createWorkspaceBridgeRegistry()
+
+  async function requireWorkspace(workspaceId: string): Promise<LocalWorkspace> {
+    const workspace = await registry.get(workspaceId)
+    if (!workspace) throw httpError("unknown workspace", 404)
+    if (!workspace.available) throw httpError("workspace folder unavailable", 409)
+    return workspace
+  }
+
+  async function workspaceFromRequest(request: Parameters<typeof workspaceAppServer.resolveWorkspaceIdFromRequest>[0]) {
+    return await requireWorkspace(workspaceAppServer.resolveWorkspaceIdFromRequest(request))
+  }
+
+  app.get("/api/v1/local-workspaces", async () => ({
+    workspaces: await registry.list(),
+  }))
+  app.post("/api/v1/local-workspaces", async (request, reply) => {
+    const body = request.body as { path?: unknown; name?: unknown }
+    if (typeof body?.path !== "string" || !body.path.trim()) {
+      return reply.code(400).send({ error: "workspace path is required" })
+    }
+    try {
+      const workspace = await registry.add(body.path, {
+        name: typeof body.name === "string" ? body.name : undefined,
       })
-      .catch(reject)
+      return { workspace }
+    } catch (error) {
+      return reply.code(400).send({
+        error: error instanceof Error ? error.message : "unable to add workspace",
+      })
+    }
+  })
+  app.delete("/api/v1/local-workspaces/:id", async (request) => {
+    const { id } = request.params as { id: string }
+    await registry.remove(id)
+    return { ok: true }
   })
 
-  tui.stop()
-  term.stop()
+  // Core-compatible read endpoints so the shared/core switcher data shape is available locally.
+  app.get("/api/v1/workspaces", async () => ({
+    workspaces: (await registry.list()).map(toCoreWorkspace),
+  }))
+  app.get("/api/v1/workspaces/:id", async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const workspace = await registry.get(id)
+    if (!workspace) return reply.code(404).send({ error: "workspace not found" })
+    return { workspace: toCoreWorkspace(workspace), role: "owner" }
+  })
+
+  await app.register(agentServer.registerAgentRoutes, {
+    mode: MODE,
+    systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
+    getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
+    getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
+    getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
+    getResourceLoaderOptions: async ({ workspaceRoot }) => ({
+      additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
+    }),
+    getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
+      ...workspaceServer.createWorkspaceUiTools(bridges.get(workspaceId), {
+        workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
+      }),
+    ],
+  })
+
+  await app.register(workspaceServer.uiRoutes, {
+    getBridge: async (request) => bridges.get((await workspaceFromRequest(request)).id),
+  })
+
+  app.get("/api/v1/workspace/meta", async () => ({
+    projectName: "Boring UI",
+    workspacesMode: true,
+  }))
+
+  await registerStatic(app)
+  await app.listen({ port: PORT, host: HOST })
+
+  console.log(`\nBoring UI`)
+  console.log(`  workspaces ${registry.path}`)
+  console.log(`  mode       ${CLI_MODE}`)
+  console.log(`  port       ${PORT}`)
+  console.log(`  host       ${HOST}`)
+  console.log(`\n  http://localhost:${PORT}\n`)
+  openBrowser(`http://localhost:${PORT}`)
 }
 
-async function resolveApiKey(): Promise<string> {
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY
-
-  const auth = AuthStorage.create()
-  await auth.reload()
-
-  const stored = await auth.getApiKey("anthropic")
-  if (stored) return stored
-
-  console.log("\nNo API key found — launching login…\n")
-  await loginWithPi(auth)
-
-  const key = await auth.getApiKey("anthropic")
-  if (!key) {
-    console.error("\nLogin failed. Set ANTHROPIC_API_KEY manually.\n")
-    process.exit(1)
+async function handleWorkspacesCommand() {
+  const registry = createLocalWorkspaceRegistry()
+  const subcommand = positionals[1]
+  if (subcommand === "add") {
+    const target = positionals[2]
+    if (!target) throw new Error("usage: boring-ui workspaces add <folder>")
+    const workspace = await registry.add(target, { name: args.name as string | undefined })
+    console.log(`${workspace.name}\n  id    ${workspace.id}\n  path  ${workspace.path}`)
+    return
   }
-  return key
+  if (subcommand === "list") {
+    const workspaces = await registry.list()
+    if (workspaces.length === 0) {
+      console.log("No workspaces. Add one with `boring-ui workspaces add <folder>`.")
+      return
+    }
+    for (const workspace of workspaces) {
+      console.log(`${workspace.available ? "✓" : "!"} ${workspace.name}  ${workspace.id}\n  ${workspace.path}`)
+    }
+    return
+  }
+  if (subcommand === "remove") {
+    const id = positionals[2]
+    if (!id) throw new Error("usage: boring-ui workspaces remove <id>")
+    await registry.remove(id)
+    console.log(`removed ${id}`)
+    return
+  }
+  if (subcommand === "rename") {
+    const id = positionals[2]
+    const name = positionals.slice(3).join(" ")
+    if (!id || !name) throw new Error("usage: boring-ui workspaces rename <id> <name>")
+    const workspace = await registry.rename(id, name)
+    console.log(`renamed ${workspace.id} -> ${workspace.name}`)
+    return
+  }
+  await startWorkspacesMode()
 }
 
-const apiKey = await resolveApiKey()
-process.env.ANTHROPIC_API_KEY = apiKey
-
-console.log(`\n${projectName}`)
-console.log(`  workspace  ${workspaceRoot}`)
-console.log(`  mode       ${CLI_MODE}`)
-console.log(`  port       ${PORT}`)
-console.log(`  host       ${HOST}`)
-
-const app = await createWorkspaceAgentServer({
-  workspaceRoot,
-  mode: MODE,
-  logger: false,
-})
-
-app.get("/api/v1/workspace/meta", async () => ({
-  workspaceRoot,
-  projectName,
-}))
-
-await app.register(fastifyStatic, {
-  root: publicDir,
-  prefix: "/",
-  wildcard: false,
-})
-
-app.setNotFoundHandler(async (req, reply) => {
-  if (req.url.startsWith("/api/")) {
-    return reply.code(404).send({ error: "Not found" })
+try {
+  if (positionals[0] === "workspaces") {
+    await handleWorkspacesCommand()
+  } else {
+    await startFolderMode(positionals[0])
   }
-  return reply.sendFile("index.html", publicDir)
-})
-
-await app.listen({ port: PORT, host: HOST })
-console.log(`\n  http://localhost:${PORT}\n`)
-
-openBrowser(`http://localhost:${PORT}`)
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error))
+  process.exit(1)
+}

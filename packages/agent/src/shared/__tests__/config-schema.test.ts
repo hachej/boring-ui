@@ -60,18 +60,12 @@ describe("ConfigSchema", () => {
 })
 
 describe("EnvSchema", () => {
-  it("requires ANTHROPIC_API_KEY", () => {
-    expect(() => EnvSchema.parse({})).toThrow(/ANTHROPIC_API_KEY/)
-  })
-
-  it("accepts minimal valid env", () => {
-    const result = EnvSchema.parse({ ANTHROPIC_API_KEY: "sk-test" })
-    expect(result.ANTHROPIC_API_KEY).toBe("sk-test")
+  it("accepts empty env because provider credentials are owned by Pi", () => {
+    expect(EnvSchema.parse({})).toEqual({})
   })
 
   it("coerces BORING_AGENT_PORT to number", () => {
     const result = EnvSchema.parse({
-      ANTHROPIC_API_KEY: "sk-test",
       BORING_AGENT_PORT: "8080",
     })
     expect(result.BORING_AGENT_PORT).toBe(8080)
@@ -80,7 +74,6 @@ describe("EnvSchema", () => {
   it("rejects invalid port string", () => {
     expect(() =>
       EnvSchema.parse({
-        ANTHROPIC_API_KEY: "sk-test",
         BORING_AGENT_PORT: "not-a-number",
       }),
     ).toThrow()
@@ -88,7 +81,6 @@ describe("EnvSchema", () => {
 
   it("validates BORING_AGENT_MODE", () => {
     const result = EnvSchema.parse({
-      ANTHROPIC_API_KEY: "sk-test",
       BORING_AGENT_MODE: "local",
     })
     expect(result.BORING_AGENT_MODE).toBe("local")
@@ -97,7 +89,6 @@ describe("EnvSchema", () => {
   it("rejects invalid BORING_AGENT_MODE", () => {
     expect(() =>
       EnvSchema.parse({
-        ANTHROPIC_API_KEY: "sk-test",
         BORING_AGENT_MODE: "kubernetes",
       }),
     ).toThrow()
@@ -105,7 +96,6 @@ describe("EnvSchema", () => {
 
   it("accepts all optional Vercel fields", () => {
     const result = EnvSchema.parse({
-      ANTHROPIC_API_KEY: "sk-test",
       VERCEL_OIDC_TOKEN: "oidc-123",
       VERCEL_ACCESS_TOKEN: "access-123",
       VERCEL_TOKEN: "token-123",
@@ -123,14 +113,9 @@ describe("EnvSchema", () => {
 
   it("coerces BORING_AGENT_SNAPSHOT_KEEP to number", () => {
     const result = EnvSchema.parse({
-      ANTHROPIC_API_KEY: "sk-test",
       BORING_AGENT_SNAPSHOT_KEEP: "5",
     })
     expect(result.BORING_AGENT_SNAPSHOT_KEEP).toBe(5)
-  })
-
-  it("rejects empty ANTHROPIC_API_KEY", () => {
-    expect(() => EnvSchema.parse({ ANTHROPIC_API_KEY: "" })).toThrow()
   })
 })
 

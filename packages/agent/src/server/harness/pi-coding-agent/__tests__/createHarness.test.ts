@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import {
   createResourceSettingsManager,
   createPiCodingAgentHarness,
@@ -109,6 +109,69 @@ describe("createPiCodingAgentHarness", () => {
       await rm(agentDir, { recursive: true, force: true });
     }
   });
+
+  it("ignores malformed package fields when injecting Pi packages", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-settings-project-bad-packages-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-settings-agent-bad-packages-"));
+    try {
+      const settingsPath = join(cwd, ".pi", "settings.json");
+      await mkdir(join(cwd, ".pi"), { recursive: true });
+      await writeFile(
+        settingsPath,
+        JSON.stringify({ packages: "npm:not-an-array" }),
+        "utf8",
+      );
+
+      const manager = createResourceSettingsManager(cwd, agentDir, [
+        "npm:plugin-pi",
+      ]);
+
+      expect(manager.getProjectSettings().packages).toEqual(["npm:plugin-pi"]);
+      expect(JSON.parse(await readFile(settingsPath, "utf8"))).toEqual({
+        packages: "npm:not-an-array",
+      });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps injected Pi packages while seeing later project settings edits on reload", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-settings-project-reload-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pi-settings-agent-reload-"));
+    try {
+      const settingsPath = join(cwd, ".pi", "settings.json");
+      await mkdir(join(cwd, ".pi"), { recursive: true });
+      await writeFile(
+        settingsPath,
+        JSON.stringify({ packages: ["npm:base-pi"] }),
+        "utf8",
+      );
+
+      const manager = createResourceSettingsManager(cwd, agentDir, [
+        "npm:plugin-pi",
+      ]);
+      expect(manager.getProjectSettings().packages).toEqual([
+        "npm:base-pi",
+        "npm:plugin-pi",
+      ]);
+
+      await writeFile(
+        settingsPath,
+        JSON.stringify({ packages: ["npm:edited-pi"] }),
+        "utf8",
+      );
+      await manager.reload();
+
+      expect(manager.getProjectSettings().packages).toEqual([
+        "npm:edited-pi",
+        "npm:plugin-pi",
+      ]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("adaptToolsForPi", () => {
@@ -196,6 +259,28 @@ describe("PiSessionStore", () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("uses a collision-proof explicit session namespace when provided", async () => {
+    const namespace = `test-namespace-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const namespacedDir = join(homedir(), ".pi", "agent", "sessions", namespace);
+    try {
+      const first = new PiSessionStore("/tmp/a-b", { sessionNamespace: namespace });
+      const second = new PiSessionStore("/tmp/a/b", { sessionNamespace: `${namespace}-other` });
+      const firstSession = await first.create(ctx, { title: "First" });
+      const secondSession = await second.create(ctx, { title: "Second" });
+
+      expect(await first.list(ctx)).toEqual([expect.objectContaining({ id: firstSession.id })]);
+      expect(await second.list(ctx)).toEqual([expect.objectContaining({ id: secondSession.id })]);
+      await expect(first.load(ctx, secondSession.id)).rejects.toThrow("Session not found");
+    } finally {
+      await rm(namespacedDir, { recursive: true, force: true });
+      await rm(`${namespacedDir}-other`, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unsafe session namespaces", () => {
+    expect(() => new PiSessionStore("/tmp", { sessionNamespace: "../bad" })).toThrow("session namespace");
   });
 
   it("creates and lists sessions", async () => {

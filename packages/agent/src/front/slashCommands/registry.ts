@@ -12,7 +12,8 @@ export interface SlashCommandContext {
   sessionId: string
   clearMessages: () => void
   resetSession: () => void
-  setModel: (model: string) => boolean
+  /** Explicit provider-qualified model selection (`provider:id` or `{ provider, id }`). */
+  setModel: (model: string | { provider: string; id: string }) => boolean
   listCommands: () => SlashCommand[]
 }
 

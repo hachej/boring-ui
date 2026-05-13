@@ -10,6 +10,11 @@ export {
   type WorkspaceBootGateProps,
 } from "./WorkspaceBootGate"
 export {
+  WorkspaceSwitcherControl,
+  type WorkspaceSwitcherControlItem,
+  type WorkspaceSwitcherControlProps,
+} from "./WorkspaceSwitcherControl"
+export {
   createLocalStorageSessions,
   useLocalStorageSessions,
   type CreateLocalStorageSessionsOptions,

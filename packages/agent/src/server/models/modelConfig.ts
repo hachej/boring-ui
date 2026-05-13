@@ -1,4 +1,4 @@
-import type { ModelRegistry } from '@mariozechner/pi-coding-agent'
+import { getAgentDir, SettingsManager, type ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from '../config/env.js'
 
 export interface AgentModelSelection {
@@ -171,6 +171,17 @@ export function registerConfiguredModelProviders(
   return registered
 }
 
+function readPiSettingsDefaultModel(): AgentModelSelection | undefined {
+  try {
+    const settings = SettingsManager.create(process.cwd(), getAgentDir())
+    const provider = clean(settings.getDefaultProvider())
+    const id = clean(settings.getDefaultModel())
+    return provider && id ? { provider, id } : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function readConfiguredDefaultModel(): AgentModelSelection | undefined {
   const encoded = clean(getEnv('BORING_AGENT_DEFAULT_MODEL'))
   if (encoded) {
@@ -186,5 +197,7 @@ export function readConfiguredDefaultModel(): AgentModelSelection | undefined {
     return { provider: explicitProvider, id: explicitId }
   }
 
-  return readInfomaniakProvider()?.model ?? readCustomProvider()?.model
+  return readPiSettingsDefaultModel()
+    ?? readInfomaniakProvider()?.model
+    ?? readCustomProvider()?.model
 }

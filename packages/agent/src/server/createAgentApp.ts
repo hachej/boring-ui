@@ -59,6 +59,10 @@ export interface CreateAgentAppOptions {
   systemPromptAppend?: string
   /** Optional pi resource-loader isolation knobs. */
   resourceLoaderOptions?: PiResourceLoaderOptions
+  /** Optional stable namespace for file-backed session storage. */
+  sessionNamespace?: string
+  /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
+  sessionDir?: string
 }
 
 export async function createAgentApp(
@@ -105,12 +109,10 @@ export async function createAgentApp(
   const harness = createPiCodingAgentHarness({
     tools,
     cwd: workspaceRoot,
+    sessionNamespace: opts.sessionNamespace,
+    sessionDir: opts.sessionDir,
     systemPromptAppend: opts.systemPromptAppend,
-    resourceLoaderOptions: {
-      noContextFiles: true,
-      noSkills: true,
-      ...opts.resourceLoaderOptions,
-    },
+    resourceLoaderOptions: opts.resourceLoaderOptions,
   })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 

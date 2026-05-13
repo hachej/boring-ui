@@ -1,5 +1,5 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 import Fastify from 'fastify'
@@ -58,6 +58,93 @@ test('registerAgentRoutes mounts health endpoint', async () => {
   expect(res.json().version).toBe('1.2.3-test')
 
   await app.close()
+})
+
+test('registerAgentRoutes isolates same-root sessions with getSessionNamespace', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-session-namespace-')
+  const unique = `test-agent-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const namespaceDir = (workspaceId: string) => join(homedir(), '.pi', 'agent', 'sessions', `${unique}-${workspaceId}`)
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: async () => workspaceRoot,
+    getSessionNamespace: async ({ workspaceId }) => `${unique}-${workspaceId}`,
+  })
+  await app.ready()
+
+  try {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/sessions',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+      payload: { title: 'Workspace A' },
+    })
+    expect(created.statusCode).toBe(200)
+
+    const workspaceA = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/sessions',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+    })
+    expect(workspaceA.json()).toHaveLength(1)
+
+    const workspaceB = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/sessions',
+      headers: { 'x-boring-workspace-id': 'workspace-b' },
+    })
+    expect(workspaceB.json()).toHaveLength(0)
+  } finally {
+    await app.close()
+    await rm(namespaceDir('workspace-a'), { recursive: true, force: true })
+    await rm(namespaceDir('workspace-b'), { recursive: true, force: true })
+  }
+})
+
+test('registerAgentRoutes treats dynamic session namespace as request scoped', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-session-cache-')
+  const unique = `test-agent-cache-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const namespaceDir = (name: string) => join(homedir(), '.pi', 'agent', 'sessions', `${unique}-${name}`)
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getSessionNamespace: async ({ request }) => `${unique}-${String(request?.headers['x-session-namespace'] ?? 'default')}`,
+  })
+  await app.ready()
+
+  try {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/sessions',
+      headers: { 'x-session-namespace': 'namespace-a' },
+      payload: { title: 'Namespace A' },
+    })
+    expect(created.statusCode).toBe(200)
+
+    const namespaceA = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/sessions',
+      headers: { 'x-session-namespace': 'namespace-a' },
+    })
+    expect(namespaceA.json()).toHaveLength(1)
+
+    const namespaceB = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/sessions',
+      headers: { 'x-session-namespace': 'namespace-b' },
+    })
+    expect(namespaceB.json()).toHaveLength(0)
+  } finally {
+    await app.close()
+    await rm(namespaceDir('namespace-a'), { recursive: true, force: true })
+    await rm(namespaceDir('namespace-b'), { recursive: true, force: true })
+    await rm(namespaceDir('default'), { recursive: true, force: true })
+  }
 })
 
 test('registerAgentRoutes mounts sessions endpoint', async () => {
@@ -362,6 +449,34 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
   await app.close()
 })
 
+test('request-scoped health endpoints do not require workspace header', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-health-scoped-')
+  const app = Fastify({ logger: false })
+  let scopeChecks = 0
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: () => {
+      scopeChecks += 1
+      const error = new Error('workspace id is required') as Error & { statusCode: number }
+      error.statusCode = 400
+      throw error
+    },
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const healthRes = await app.inject({ method: 'GET', url: '/health' })
+  expect(healthRes.statusCode).toBe(200)
+
+  const readyRes = await app.inject({ method: 'GET', url: '/ready' })
+  expect(readyRes.statusCode).toBe(200)
+  expect(scopeChecks).toBe(0)
+
+  await app.close()
+})
+
 test('request-scoped models endpoint does not require workspace header', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-models-')
   const app = Fastify({ logger: false })
@@ -398,6 +513,96 @@ test('request-scoped models endpoint does not require workspace header', async (
   expect(treeRes.statusCode).toBe(400)
   expect(treeRes.json().error.message).toBe('workspace id is required')
   expect(scopeChecks).toBe(1)
+
+  await app.close()
+})
+
+test('skills endpoint lists Pi-resolved project skills', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-project-')
+  const projectSkillDir = join(workspaceRoot, '.pi', 'skills', 'project-skill')
+  await mkdir(projectSkillDir, { recursive: true })
+  await writeFile(
+    join(projectSkillDir, 'SKILL.md'),
+    '---\nname: project-skill\ndescription: Project skill visible through Pi resolver.\n---\n',
+    'utf-8',
+  )
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+  })
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+  expect(res.statusCode).toBe(200)
+  const names: string[] = res.json().skills.map((skill: { name: string }) => skill.name)
+  expect(names).toContain('project-skill')
+
+  await app.close()
+})
+
+test('skills endpoint does not require unrelated runtime-only dynamic hooks', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-runtime-hooks-')
+  const projectSkillDir = join(workspaceRoot, '.pi', 'skills', 'project-skill')
+  await mkdir(projectSkillDir, { recursive: true })
+  await writeFile(
+    join(projectSkillDir, 'SKILL.md'),
+    '---\nname: project-skill\ndescription: Project skill visible even when session namespace is unavailable.\n---\n',
+    'utf-8',
+  )
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getSessionNamespace: () => {
+      throw new Error('session namespace should not be needed for skill listing')
+    },
+  })
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+  expect(res.statusCode).toBe(200)
+  const names: string[] = res.json().skills.map((skill: { name: string }) => skill.name)
+  expect(names).toContain('project-skill')
+
+  await app.close()
+})
+
+test('skills endpoint mirrors noSkills while preserving explicit additional skill paths', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-')
+  const projectSkillDir = join(workspaceRoot, '.pi', 'skills', 'project-skill')
+  const extraSkillDir = join(workspaceRoot, 'extra-skills', 'extra-skill')
+  await mkdir(projectSkillDir, { recursive: true })
+  await mkdir(extraSkillDir, { recursive: true })
+  await writeFile(
+    join(projectSkillDir, 'SKILL.md'),
+    '---\nname: project-skill\ndescription: Project skill hidden by noSkills.\n---\n',
+    'utf-8',
+  )
+  await writeFile(
+    join(extraSkillDir, 'SKILL.md'),
+    '---\nname: extra-skill\ndescription: Explicit extra skill remains visible.\n---\n',
+    'utf-8',
+  )
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    resourceLoaderOptions: {
+      noSkills: true,
+      additionalSkillPaths: [extraSkillDir],
+    },
+  })
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+  expect(res.statusCode).toBe(200)
+  const names: string[] = res.json().skills.map((skill: { name: string }) => skill.name)
+  expect(names).toContain('extra-skill')
+  expect(names).not.toContain('project-skill')
 
   await app.close()
 })

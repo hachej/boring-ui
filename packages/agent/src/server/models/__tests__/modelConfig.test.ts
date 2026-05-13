@@ -1,3 +1,7 @@
+import { mkdtempSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   readConfiguredDefaultModel,
@@ -21,19 +25,29 @@ const ENV_KEYS = [
   'BORING_AGENT_CUSTOM_MODEL_API_KEY_ENV',
   'BORING_AGENT_CUSTOM_MODEL_API_KEY',
   'INFOMANIAK_API_TOKEN',
+  'HOME',
 ]
 
 let previousEnv: Record<string, string | undefined>
+let previousCwd: string
+let tempDirs: string[] = []
 
 beforeEach(() => {
+  previousCwd = process.cwd()
+  tempDirs = []
   previousEnv = {}
   for (const key of ENV_KEYS) {
     previousEnv[key] = process.env[key]
     delete process.env[key]
   }
+  const home = mkdtempSync(join(tmpdir(), 'boring-model-config-home-'))
+  tempDirs.push(home)
+  process.env.HOME = home
 })
 
-afterEach(() => {
+afterEach(async () => {
+  process.chdir(previousCwd)
+  await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })))
   for (const key of ENV_KEYS) {
     const previous = previousEnv[key]
     if (typeof previous === 'string') process.env[key] = previous
@@ -87,6 +101,24 @@ describe('agent model env config', () => {
     expect(readConfiguredDefaultModel()).toEqual({
       provider: 'amazon-bedrock',
       id: 'anthropic.claude-sonnet-4-6:0',
+    })
+  })
+
+  it('uses Pi default provider/model settings when env defaults are absent', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'boring-model-config-cwd-'))
+    tempDirs.push(cwd)
+    process.chdir(cwd)
+    const home = process.env.HOME!
+    await mkdir(join(home, '.pi', 'agent'), { recursive: true })
+    await writeFile(
+      join(home, '.pi', 'agent', 'settings.json'),
+      JSON.stringify({ defaultProvider: 'openai-codex', defaultModel: 'gpt-5.4' }),
+      'utf-8',
+    )
+
+    expect(readConfiguredDefaultModel()).toEqual({
+      provider: 'openai-codex',
+      id: 'gpt-5.4',
     })
   })
 
