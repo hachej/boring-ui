@@ -43,6 +43,10 @@ function createQuestionsStore(): QuestionsStore {
 
 const QuestionsRuntimeContext = createContext<QuestionsRuntime | null>(null)
 
+function sessionScopedBlockerId(sessionId: string): string | undefined {
+  return sessionId === "default" || sessionId === "anonymous" ? undefined : sessionId
+}
+
 function pendingQuestionSnapshot(store: QuestionsStore): string {
   const pending = store.getPending()
   return pending ? `${pending.sessionId}:${pending.questionId}:${pending.status}` : "none"
@@ -70,7 +74,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
         surfaceKind: ASK_USER_SURFACE_KIND,
         target: pending.questionId,
         label: "Answer the question in Questions to continue",
-        sessionId: pending.sessionId,
+        sessionId: sessionScopedBlockerId(pending.sessionId),
         actions: [{ id: "open", label: "Open Questions" }],
       })
     }
@@ -81,7 +85,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
     const onStop = (event: Event) => {
       const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
       const pending = runtime.getPending()
-      if (!pending || (sessionId && sessionId !== pending.sessionId)) return
+      if (!pending || (sessionId && sessionScopedBlockerId(pending.sessionId) && sessionId !== pending.sessionId)) return
       runtime.setPending(null)
       void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending).catch(() => undefined)
     }
@@ -123,7 +127,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   useEffect(() => {
     const onStop = (event: Event) => {
       const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
-      if (!question || (sessionId && sessionId !== question.sessionId)) return
+      if (!question || (sessionId && sessionScopedBlockerId(question.sessionId) && sessionId !== question.sessionId)) return
       setQuestion(null)
       runtime.setPending(null)
       api.close()

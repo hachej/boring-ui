@@ -171,18 +171,19 @@ export class AskUserRuntime {
     return { question, result: this.waitForAnswerWithOpen(question, request.timeoutMs, signal) }
   }
 
-  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<void> {
+  async submitAnswer(questionId: string, sessionId: string, values: AskUserAnswer["values"]): Promise<"answered" | "abandoned"> {
     const question = await this.store.getByQuestionId(questionId)
     if (!question || question.sessionId !== sessionId) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question not found")
     if (!this.coordinator.hasWaiter(questionId)) {
       await this.abandon(questionId, sessionId)
-      return
+      return "abandoned"
     }
     const answer: AskUserAnswer = { questionId, sessionId, values, submittedAt: this.isoNow() }
     await this.store.answer(questionId, answer)
     await this.store.appendTranscriptEvent({ type: "answered", answer, at: this.isoNow() })
     this.coordinator.resolveAnswered(questionId, answer)
     this.emitEvent({ type: "answered", questionId, sessionId })
+    return "answered"
   }
 
   async cancelQuestion(questionId: string, sessionId: string, reason: AskUserCancelReason = "user_cancelled"): Promise<void> {

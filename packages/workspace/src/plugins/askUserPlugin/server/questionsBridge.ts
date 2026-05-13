@@ -56,7 +56,8 @@ export class QuestionsBridge {
     if (question.status !== "ready" || !question.schema) throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.ANSWER_INVALID, "question is not ready", 409)
     validateAnswerValues(question.schema.fields, command.params.values)
     try {
-      await this.options.runtime.submitAnswer(question.questionId, question.sessionId, command.params.values)
+      const status = await this.options.runtime.submitAnswer(question.questionId, question.sessionId, command.params.values)
+      if (status === "abandoned") throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.QUESTION_NOT_FOUND, "question waiter is no longer available", 409)
     } catch (error) {
       if (isCode(error, ASK_USER_ERROR_CODES.ALREADY_ANSWERED)) return { ok: true, status: "answered" }
       throw error
