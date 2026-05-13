@@ -11,8 +11,8 @@ Process: implement one task at a time, run focused checks, get subagent review w
 | NLH-01 | done | Document `check-generated-artifacts` usage/policy. | reviewer: ship | `40eacdc0` |
 | NLH-02 | done | Extract `CommandPalette` recent/select handlers into a focused helper/hook. | reviewer: ship | `88bb454e` |
 | NLH-03 | done | Move `convertBlobUrlToDataUrl` into a browser file utility while preserving prompt-input re-export. | reviewer: ship | `d6626992` |
-| NLH-04 | done | Split `prompt-input.tsx` constants/context only, with no JSX movement. | reviewer: ship after one revise round | pending |
-| NLH-05 | pending | Extract ChatPanel composer history hook. | pending | pending |
+| NLH-04 | done | Split `prompt-input.tsx` constants/context only, with no JSX movement. | reviewer: ship after one revise round | `cc3d85ca` |
+| NLH-05 | done | Extract ChatPanel composer history hook. | reviewer: ship | pending |
 | NLH-06 | pending | Extract ChatPanel slash/mention handlers. | pending | pending |
 
 ## Notes

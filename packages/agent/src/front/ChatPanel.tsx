@@ -64,6 +64,7 @@ import { resolveAttachmentUrls, readFileAsText } from './chatAttachments'
 import { friendlyError } from './chatErrors'
 import { displayModelLabel, displayProviderLabel } from './chatModelLabels'
 import { getReasoningPart, isBlankTextPart, isFilePart, isTextPart, type ReasoningPartView } from './chatMessageParts'
+import { useComposerHistory } from './useComposerHistory'
 import {
   clearStoredModelSelection,
   DEFAULT_THINKING,
@@ -388,8 +389,6 @@ export function ChatPanel(props: ChatPanelProps) {
       .filter(Boolean),
     [messages],
   )
-  const historyIdxRef = useRef(-1)
-  const draftRef = useRef('')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [mentionState, setMentionState] = useState<MentionState | null>(null)
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
@@ -438,36 +437,11 @@ export function ChatPanel(props: ChatPanelProps) {
     setSlashQuery(null)
   }, [])
 
-  const handleComposerKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const ta = e.currentTarget
-    textareaRef.current = ta
-    if (mentionState !== null || slashQuery !== null) return
-    if (e.key === 'ArrowUp') {
-      if (ta.selectionStart !== 0 || ta.selectionEnd !== 0) return
-      if (userHistory.length === 0) return
-      e.preventDefault()
-      if (historyIdxRef.current === -1) draftRef.current = ta.value
-      const next = Math.min(historyIdxRef.current + 1, userHistory.length - 1)
-      historyIdxRef.current = next
-      const text = userHistory[userHistory.length - 1 - next]
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-      setter?.call(ta, text)
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
-      ta.setSelectionRange(0, 0)
-    } else if (e.key === 'ArrowDown') {
-      if (historyIdxRef.current === -1) return
-      e.preventDefault()
-      const next = historyIdxRef.current - 1
-      historyIdxRef.current = next
-      const text = next === -1 ? draftRef.current : userHistory[userHistory.length - 1 - next]
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-      setter?.call(ta, text)
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
-      ta.setSelectionRange(text.length, text.length)
-    } else if (!['Shift', 'Meta', 'Control', 'Alt', 'CapsLock'].includes(e.key)) {
-      historyIdxRef.current = -1
-    }
-  }, [userHistory, mentionState, slashQuery])
+  const handleComposerKeyDown = useComposerHistory({
+    userHistory,
+    textareaRef,
+    disabled: mentionState !== null || slashQuery !== null,
+  })
 
   async function handleSubmit({ text, files }: { text: string; files: FileUIPart[] }): Promise<void> {
     // Guard against pointless empty submits (just Enter with nothing typed
