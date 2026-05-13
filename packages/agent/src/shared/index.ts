@@ -43,4 +43,9 @@ export type {
   ApiErrorResponse,
   ErrorLogFields,
 } from './error-codes'
+export {
+  DEFAULT_AGENT_RUNTIME_CAPABILITIES,
+  PI_AGENT_RUNTIME_CAPABILITIES,
+} from './capabilities'
+export type { AgentRuntimeCapabilities } from './capabilities'
 export { validateTool } from './validateTool'
