@@ -7,7 +7,6 @@ export {
   ThemeProvider,
   useTheme,
   useWorkspaceBridge,
-  useWorkspaceAttention,
   useWorkspaceContext,
   useWorkspaceContextOptional,
   useWorkspaceChatPanel,
@@ -16,10 +15,16 @@ export type {
   WorkspaceProviderProps,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
-  WorkspaceAttentionBlocker,
-  WorkspaceAttentionContextValue,
   WorkspaceContextValue,
 } from "./WorkspaceProvider"
+export {
+  WorkspaceAttentionProvider,
+  useWorkspaceAttention,
+} from "../attention"
+export type {
+  WorkspaceAttentionBlocker,
+  WorkspaceAttentionContextValue,
+} from "../attention"
 export type {
   OpenArtifactHandler,
   WorkspaceChatPanelComponent,
