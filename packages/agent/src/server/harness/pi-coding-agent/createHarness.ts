@@ -774,7 +774,7 @@ export function createPiCodingAgentHarness(opts: {
             // message_start. If pi resolves without that consumption event,
             // do not keep the HTTP stream open forever waiting for chunks that
             // will never arrive.
-            if (!done) {
+            if (!done && nativeFollowUpPending.has(input.sessionId)) {
               nativeFollowUpPending.delete(input.sessionId);
               done = true;
               stopHeartbeat();
