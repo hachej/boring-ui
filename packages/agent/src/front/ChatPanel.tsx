@@ -418,7 +418,9 @@ export function ChatPanel(props: ChatPanelProps) {
     sessionId,
     requestHeaders,
   })
-  piDataHandlerRef.current = handlePiData
+  useEffect(() => {
+    piDataHandlerRef.current = handlePiData
+  }, [handlePiData])
 
   const {
     projectedTailMessages,
@@ -432,7 +434,9 @@ export function ChatPanel(props: ChatPanelProps) {
     requestHeaders,
     stop,
   })
-  followUpDataHandlerRef.current = handleFollowUpData
+  useEffect(() => {
+    followUpDataHandlerRef.current = handleFollowUpData
+  }, [handleFollowUpData])
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
@@ -789,7 +793,7 @@ export function ChatPanel(props: ChatPanelProps) {
     // client state — that was the source of duplicated assistant text.
     const resolvedAttachments = await resolveAttachmentUrls(files)
 
-    if (isStreaming) {
+    if (isStreaming && capabilities.nativeFollowUp) {
       queueFollowUp({
         text,
         files: files ?? [],

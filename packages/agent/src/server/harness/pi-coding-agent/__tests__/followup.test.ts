@@ -133,4 +133,57 @@ describe("native pi follow-up integration", () => {
     promptHandle.resolve?.();
     await reader.return?.();
   });
+
+  it("preserves snapshot-only assistant fallback after a consumed follow-up", async () => {
+    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-snapshot" });
+    const iter = harness.sendMessage({ sessionId: "sess-snapshot-followup", message: "first" }, makeCtx());
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: any[] = [];
+
+    const first = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
+    chunks.push((await first).value);
+
+    await harness.followUp!("sess-snapshot-followup", "queued question");
+
+    const consumed = reader.next();
+    emit({
+      type: "message_start",
+      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
+    });
+    chunks.push((await consumed).value);
+
+    const userStart = reader.next();
+    chunks.push((await userStart).value);
+
+    const userEnd = reader.next();
+    emit({
+      type: "message_end",
+      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
+    });
+    chunks.push((await userEnd).value);
+
+    emit({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "first" }] },
+        { role: "assistant", content: [{ type: "text", text: "first answer" }] },
+        { role: "user", content: [{ type: "text", text: "queued question" }] },
+        { role: "assistant", content: [{ type: "text", text: "follow-up answer" }] },
+      ],
+    });
+    promptHandle.resolve?.();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    expect(chunks).toContainEqual(expect.objectContaining({
+      type: "data-pi-message-end",
+      data: expect.objectContaining({ role: "assistant", text: "follow-up answer" }),
+    }));
+  });
 });

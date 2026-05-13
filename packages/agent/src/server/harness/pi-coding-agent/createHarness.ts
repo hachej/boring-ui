@@ -624,6 +624,8 @@ export function createPiCodingAgentHarness(opts: {
             : piHistoryChunks;
           if (text && text !== input.message) {
             inlineTurnIndex += 1;
+            sawTextChunk = false;
+            currentPiAssistantMessageId = null;
             nativeFollowUpPending.delete(input.sessionId);
           }
         } else if (event.type === "message_end" && (event as any).message?.role === "user") {
@@ -650,7 +652,7 @@ export function createPiCodingAgentHarness(opts: {
         chunks.push(...converted);
 
         if (event.type === "agent_end") {
-          if (!sawTextChunk && inlineTurnIndex === 0) {
+          if (!sawTextChunk) {
             const { role, text, errorText } = extractAssistantMessageText(
               findLastAssistantMessage(
                 (event as unknown as { messages?: unknown }).messages,
