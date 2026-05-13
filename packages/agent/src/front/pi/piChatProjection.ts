@@ -51,6 +51,36 @@ export function rebuildPiMessagesFromDataParts(sourceMessages: UIMessage[]): UIM
       const msg = ensureMessage(messageId, 'assistant')
       const text = typeof data.text === 'string' ? data.text : ''
       if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && p.text)) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
+    } else if (part.type === 'data-pi-reasoning-start') {
+      const msg = ensureMessage(messageId, 'assistant')
+      const partId = typeof data.partId === 'string' ? data.partId : '0'
+      if (!msg.parts?.some((p) => p.type === 'reasoning' && (p as { id?: string }).id === partId)) msg.parts = [...(msg.parts ?? []), { type: 'reasoning' as const, id: partId, text: '' } as UIMessage['parts'][number]]
+    } else if (part.type === 'data-pi-reasoning-delta') {
+      const msg = ensureMessage(messageId, 'assistant')
+      const partId = typeof data.partId === 'string' ? data.partId : '0'
+      const delta = typeof data.delta === 'string' ? data.delta : ''
+      let found = false
+      msg.parts = (msg.parts ?? []).map((p) => {
+        if (p.type === 'reasoning' && (p as { id?: string }).id === partId) {
+          found = true
+          return { ...p, text: `${(p as { text?: string }).text ?? ''}${delta}` }
+        }
+        return p
+      })
+      if (!found) msg.parts = [...(msg.parts ?? []), { type: 'reasoning' as const, id: partId, text: delta } as UIMessage['parts'][number]]
+    } else if (part.type === 'data-pi-tool-call-end') {
+      const msg = ensureMessage(messageId, 'assistant')
+      const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+      const toolName = typeof data.toolName === 'string' ? data.toolName : undefined
+      if (toolCallId && toolName) {
+        msg.parts = [...(msg.parts ?? []).filter((p) => (p as { toolCallId?: string }).toolCallId !== toolCallId), { type: `tool-${toolName}`, toolCallId, state: 'input-available', input: data.input }] as UIMessage['parts']
+      }
+    } else if (part.type === 'data-pi-tool-result') {
+      const msg = ensureMessage(messageId, 'assistant')
+      const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
+      if (toolCallId) {
+        msg.parts = (msg.parts ?? []).map((p) => (p as { toolCallId?: string }).toolCallId === toolCallId ? { ...p, state: data.isError ? 'output-error' : 'output-available', output: data.output } : p) as UIMessage['parts']
+      }
     } else if (part.type === 'data-pi-message-end' && data.role === 'assistant') {
       const msg = ensureMessage(messageId, 'assistant')
       const text = typeof data.text === 'string' ? data.text : ''
