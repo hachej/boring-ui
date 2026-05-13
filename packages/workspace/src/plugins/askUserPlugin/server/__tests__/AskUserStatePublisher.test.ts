@@ -44,7 +44,7 @@ describe("AskUserStatePublisher", () => {
     })
     await runtime.submitAnswer(question.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
 
     const cancelPending = runtime.ask({ sessionId: "s1", schema })
     const q2 = await vi.waitFor(async () => {
@@ -54,7 +54,7 @@ describe("AskUserStatePublisher", () => {
     })
     await runtime.cancelQuestion(q2.questionId, "s1")
     await expect(cancelPending).resolves.toMatchObject({ status: "cancelled" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
 
     void runtime.ask({ sessionId: "s1", schema })
     const q3 = await vi.waitFor(async () => {
@@ -63,7 +63,7 @@ describe("AskUserStatePublisher", () => {
       return pending!
     })
     await store.markAbandoned(q3.questionId)
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null, bySession: { s1: null } }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
   })
 })
 

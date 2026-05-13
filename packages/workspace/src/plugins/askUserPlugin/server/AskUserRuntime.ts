@@ -84,20 +84,12 @@ export class InProcessAskUserCoordinator implements AskUserCoordinator {
 
 type RateLimitBucket = { count: number; resetAt: number }
 
-export type AskUserRuntimeEvent =
-  | { type: "created"; questionId: string; sessionId: string; ownerPrincipalId: string }
-  | { type: "ready"; questionId: string; sessionId: string }
-  | { type: "answered"; questionId: string; sessionId: string }
-  | { type: "cancelled"; questionId: string; sessionId: string; reason: AskUserCancelReason }
-  | { type: "abandoned"; questionId: string; sessionId: string }
-  | { type: "rate_limited"; sessionId: string; ownerPrincipalId: string }
 
 export type AskUserRuntimeOptions = {
   store: AskUserStore
   coordinator?: AskUserCoordinator
   ownerPrincipalId?: string
   now?: () => Date
-  emitEvent?: (event: AskUserRuntimeEvent) => void
   limits?: {
     perSessionPerMinute?: number
     perPrincipalPerHour?: number
@@ -110,7 +102,6 @@ export class AskUserRuntime {
   private readonly store: AskUserStore
   private readonly ownerPrincipalId: string
   private readonly now: () => Date
-  private readonly emitEvent: (event: AskUserRuntimeEvent) => void
   private readonly perSessionPerMinute: number
   private readonly perPrincipalPerHour: number
   private readonly uiBridge?: UiBridge
@@ -122,7 +113,6 @@ export class AskUserRuntime {
     this.coordinator = options.coordinator ?? new InProcessAskUserCoordinator()
     this.ownerPrincipalId = options.ownerPrincipalId ?? "anonymous"
     this.now = options.now ?? (() => new Date())
-    this.emitEvent = options.emitEvent ?? (() => undefined)
     this.perSessionPerMinute = options.limits?.perSessionPerMinute ?? 6
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
     this.uiBridge = options.uiBridge
@@ -147,8 +137,6 @@ export class AskUserRuntime {
     await this.store.createPending(question)
     await this.store.appendTranscriptEvent({ type: "created", question, at: this.isoNow() })
     await this.store.appendTranscriptEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId, schema: parsed.data, at: this.isoNow() })
-    this.emitEvent({ type: "created", questionId: question.questionId, sessionId: question.sessionId, ownerPrincipalId: question.ownerPrincipalId })
-    this.emitEvent({ type: "ready", questionId: question.questionId, sessionId: question.sessionId })
     return this.waitForAnswerWithOpen(question, request.timeoutMs, signal)
   }
 
@@ -163,7 +151,6 @@ export class AskUserRuntime {
     await this.store.answer(questionId, answer)
     await this.store.appendTranscriptEvent({ type: "answered", answer, at: this.isoNow() })
     this.coordinator.resolveAnswered(questionId, answer)
-    this.emitEvent({ type: "answered", questionId, sessionId })
     return "answered"
   }
 
@@ -177,7 +164,6 @@ export class AskUserRuntime {
     await this.store.cancel(questionId)
     await this.store.appendTranscriptEvent({ type: "cancelled", questionId, sessionId, reason, at: this.isoNow() })
     this.coordinator.resolveCancelled(questionId, reason)
-    this.emitEvent({ type: "cancelled", questionId, sessionId, reason })
   }
 
   private async waitForAnswerWithOpen(question: AskUserQuestion, timeoutMs?: number, signal?: AbortSignal): Promise<AskUserToolResult> {
@@ -209,7 +195,6 @@ export class AskUserRuntime {
       try {
         await this.store.cancel(question.questionId)
         await this.store.appendTranscriptEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason, at: this.isoNow() })
-        this.emitEvent({ type: "cancelled", questionId: question.questionId, sessionId: question.sessionId, reason })
       } catch {
         // The browser may have submitted/cancelled or another startup path may have abandoned the
         // question in the small window after the waiter settled but before the store transition.
@@ -223,7 +208,6 @@ export class AskUserRuntime {
     await this.store.markAbandoned(questionId)
     await this.store.appendTranscriptEvent({ type: "abandoned", questionId, sessionId, at: this.isoNow() })
     this.coordinator.resolveCancelled(questionId, "abandoned")
-    this.emitEvent({ type: "abandoned", questionId, sessionId })
   }
 
   private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context">): AskUserQuestion {
@@ -244,7 +228,6 @@ export class AskUserRuntime {
   private assertAllowed(sessionId: string): void {
     const principalId = this.ownerPrincipalId
     if (!this.consume(this.sessionBuckets, sessionId, 60_000, this.perSessionPerMinute) || !this.consume(this.principalBuckets, principalId, 3_600_000, this.perPrincipalPerHour)) {
-      this.emitEvent({ type: "rate_limited", sessionId, ownerPrincipalId: principalId })
       throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.RATE_LIMITED, "ask_user rate limit exceeded")
     }
   }

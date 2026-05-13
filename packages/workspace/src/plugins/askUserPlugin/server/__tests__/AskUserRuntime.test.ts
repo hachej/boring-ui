@@ -45,17 +45,13 @@ describe("AskUserRuntime", () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })
     const first = runtime.ask({ sessionId: "s1", title: "A", schema })
-    const second = runtime.ask({ sessionId: "s2", title: "B", schema })
     const q1 = await pendingQuestion(store, "s1")
-    const q2 = await pendingQuestion(store, "s2")
     expect(q1.ownerPrincipalId).toBe("anonymous")
     expect(q1.status).toBe("ready")
-    expect(q1.answerToken).not.toBe(q2.answerToken)
     expect(q1.answerToken.length).toBeGreaterThanOrEqual(22)
+    await expect(runtime.ask({ sessionId: "s2", title: "B", schema })).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.PENDING_EXISTS })
     await runtime.cancelQuestion(q1.questionId, "s1")
-    await runtime.cancelQuestion(q2.questionId, "s2")
     await expect(first).resolves.toMatchObject({ status: "cancelled" })
-    await expect(second).resolves.toMatchObject({ status: "cancelled" })
   })
 
   it("delivers submitted answers to the waiting ask call", async () => {
@@ -112,14 +108,4 @@ describe("AskUserRuntime", () => {
     expect(() => requireAskUserRuntime(undefined)).toThrow(expect.objectContaining({ code: ASK_USER_ERROR_CODES.RUNTIME_UNAVAILABLE }))
   })
 
-  it("emits operational events without answer values", async () => {
-    const emitEvent = vi.fn()
-    const store = await makeStore()
-    const runtime = new AskUserRuntime({ store, emitEvent })
-    const result = runtime.ask({ sessionId: "s1", schema })
-    const question = await pendingQuestion(store, "s1")
-    await runtime.submitAnswer(question.questionId, "s1", { answer: "secret" })
-    await result
-    expect(JSON.stringify(emitEvent.mock.calls)).not.toContain("secret")
-  })
 })
