@@ -33,6 +33,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MentionPicker, detectMention, type MentionState } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
+import { usePiChatProjection } from './piChatProjection'
+import { useNativeFollowUpQueue } from './useNativeFollowUpQueue'
+import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
@@ -91,19 +94,6 @@ const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
 const STORAGE_MODEL_USER_KEY = 'boring-agent:composer:model:user-selected'
 const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
 const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
-const STORAGE_FOLLOWUP_SEQ_PREFIX = 'boring-agent:followup-seq:'
-
-function nextStoredFollowUpSeq(sessionId: string): number {
-  const key = `${STORAGE_FOLLOWUP_SEQ_PREFIX}${sessionId}`
-  try {
-    const current = Number(globalThis.localStorage?.getItem(key) ?? '0')
-    const next = Number.isFinite(current) ? current + 1 : 1
-    globalThis.localStorage?.setItem(key, String(next))
-    return next
-  } catch {
-    return Date.now()
-  }
-}
 
 /**
  * Extended-thinking budget. Sent through to pi-coding-agent which forwards
@@ -405,336 +395,44 @@ export function ChatPanel(props: ChatPanelProps) {
     debug = false,
   } = props
   const [debugWidth, setDebugWidth] = useState(440)
-  type PendingFollowUp = {
-    id: string
-    sessionId: string
-    text: string
-    files: FileUIPart[]
-    serverMessage: string
-    attachments: Array<{ filename?: string; mediaType?: string; url?: string }>
-    posted: boolean
-    consumed: boolean
-    clientNonce: string
-    clientSeq: number
-  }
-  type ProjectedFollowUpMessage = {
-    id: string
-    role: 'user' | 'assistant'
-    text: string
-    files?: FileUIPart[]
-    status: 'queued' | 'streaming' | 'done'
-  }
-  const [pendingMessages, setPendingMessages] = useState<PendingFollowUp[]>([])
-  const pendingMessagesRef = useRef<PendingFollowUp[]>([])
-  const [projectedFollowUps, setProjectedFollowUps] = useState<ProjectedFollowUpMessage[]>([])
-  const projectedFollowUpsRef = useRef<ProjectedFollowUpMessage[]>([])
-  const [piMessages, setPiMessages] = useState<UIMessage[]>([])
-  const piMessagesRef = useRef<UIMessage[]>([])
-  const activeProjectedAssistantRef = useRef<string | null>(null)
-  const lastConsumedProjectedUserRef = useRef<string | null>(null)
-  const followUpPostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const followUpPostInFlightRef = useRef(false)
-  const postPendingFollowUpsRef = useRef<() => void>(() => {})
-
-  const consumedFollowUpRef = useRef<{ text: string; files: FileUIPart[] } | null>(null)
-
-  const updatePendingMessages = useCallback((updater: (items: PendingFollowUp[]) => PendingFollowUp[]) => {
-    const next = updater(pendingMessagesRef.current)
-    pendingMessagesRef.current = next
-    setPendingMessages(next)
-  }, [])
-  const updateProjectedFollowUps = useCallback((updater: (items: ProjectedFollowUpMessage[]) => ProjectedFollowUpMessage[]) => {
-    const next = updater(projectedFollowUpsRef.current)
-    projectedFollowUpsRef.current = next
-    setProjectedFollowUps(next)
-  }, [])
-  const updatePiMessages = useCallback((updater: (items: UIMessage[]) => UIMessage[]) => {
-    const next = updater(piMessagesRef.current)
-    piMessagesRef.current = next
-    setPiMessages(next)
-  }, [])
-
-  const previousSessionIdRef = useRef(sessionId)
-  useEffect(() => {
-    if (previousSessionIdRef.current === sessionId) return
-    previousSessionIdRef.current = sessionId
-    consumedFollowUpRef.current = null
-    pendingMessagesRef.current = []
-    projectedFollowUpsRef.current = []
-    piMessagesRef.current = []
-    activeProjectedAssistantRef.current = null
-    lastConsumedProjectedUserRef.current = null
-    if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
-    followUpPostTimerRef.current = null
-    followUpPostInFlightRef.current = false
-    setPendingMessages([])
-    setProjectedFollowUps([])
-    setPiMessages([])
-  }, [sessionId])
+  const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
+  const piDataHandlerRef = useRef<(part: unknown) => void>(() => {})
+  const followUpDataHandlerRef = useRef<(part: unknown) => void>(() => {})
 
   const {
     messages, sendMessage, setMessages, status, error, stop, clearError,
   } = useAgentChat({
     sessionId,
     onData: (part) => {
-      const typed = part as { type?: string; data?: Record<string, unknown> }
-      const data = typed.data ?? {}
-      const piMessageId = typeof data.messageId === 'string' ? data.messageId : undefined
-      if (typed.type === 'data-pi-message-start' && piMessageId && (data.role === 'user' || data.role === 'assistant')) {
-        const role = data.role as 'user' | 'assistant'
-        const text = typeof data.text === 'string' ? data.text : ''
-        updatePiMessages((items) => {
-          const existing = items.find((item) => item.id === piMessageId)
-          if (!existing) return [...items, { id: piMessageId, role, parts: text ? [{ type: 'text' as const, text }] : [] }]
-          if (!text || (existing.parts ?? []).some((part) => part.type === 'text' && part.text)) return items
-          return items.map((item) => item.id === piMessageId
-            ? { ...item, role, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
-            : item)
-        })
-      } else if (typed.type === 'data-pi-text-start' && piMessageId) {
-        const partId = typeof data.partId === 'string' ? data.partId : '0'
-        updatePiMessages((items) => {
-          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-          return existing.map((item) => item.id === piMessageId
-            ? { ...item, parts: item.parts?.some((p) => p.type === 'text' && (p as { id?: string }).id === partId) ? item.parts : [...(item.parts ?? []), { type: 'text' as const, id: partId, text: '' }] }
-            : item)
-        })
-      } else if (typed.type === 'data-pi-text-delta' && piMessageId) {
-        const partId = typeof data.partId === 'string' ? data.partId : '0'
-        const delta = typeof data.delta === 'string' ? data.delta : ''
-        if (delta) updatePiMessages((items) => {
-          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-          return existing.map((item) => {
-            if (item.id !== piMessageId) return item
-            let found = false
-            const parts = (item.parts ?? []).map((p) => {
-              if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
-                found = true
-                return { ...p, text: `${p.text}${delta}` }
-              }
-              return p
-            })
-            return { ...item, parts: (found ? parts : [...parts, { type: 'text' as const, id: partId, text: delta }]) as UIMessage['parts'] }
-          })
-        })
-      } else if (typed.type === 'data-pi-text-end' && piMessageId) {
-        const partId = typeof data.partId === 'string' ? data.partId : '0'
-        const text = typeof data.text === 'string' ? data.text : ''
-        if (text) updatePiMessages((items) => {
-          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-          return existing.map((item) => {
-            if (item.id !== piMessageId) return item
-            let found = false
-            const parts = (item.parts ?? []).map((p) => {
-              if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
-                found = true
-                return p.text ? p : { ...p, text }
-              }
-              return p
-            })
-            return { ...item, parts: (found ? parts : [...parts, { type: 'text' as const, id: partId, text }]) as UIMessage['parts'] }
-          })
-        })
-      } else if (typed.type === 'data-pi-reasoning-start' && piMessageId) {
-        const partId = typeof data.partId === 'string' ? data.partId : '0'
-        updatePiMessages((items) => {
-          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-          return existing.map((item) => item.id === piMessageId
-            ? { ...item, parts: item.parts?.some((p) => p.type === 'reasoning' && (p as { id?: string }).id === partId) ? item.parts : [...(item.parts ?? []), { type: 'reasoning' as const, id: partId, text: '' }] }
-            : item)
-        })
-      } else if (typed.type === 'data-pi-reasoning-delta' && piMessageId) {
-        const partId = typeof data.partId === 'string' ? data.partId : '0'
-        const delta = typeof data.delta === 'string' ? data.delta : ''
-        if (delta) updatePiMessages((items) => {
-          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-          return existing.map((item) => {
-            if (item.id !== piMessageId) return item
-            let found = false
-            const parts = (item.parts ?? []).map((p) => {
-              if (p.type === 'reasoning' && (p as { id?: string }).id === partId) {
-                found = true
-                return { ...p, text: `${p.text}${delta}` }
-              }
-              return p
-            })
-            return { ...item, parts: (found ? parts : [...parts, { type: 'reasoning' as const, id: partId, text: delta }]) as UIMessage['parts'] }
-          })
-        })
-      } else if (typed.type === 'data-pi-tool-call-end' && piMessageId) {
-        const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
-        const toolName = typeof data.toolName === 'string' ? data.toolName : undefined
-        if (toolCallId && toolName) updatePiMessages((items) => {
-          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-          return existing.map((item) => item.id === piMessageId
-            ? { ...item, parts: [...(item.parts ?? []).filter((p) => (p as { toolCallId?: string }).toolCallId !== toolCallId), { type: `tool-${toolName}`, toolCallId, state: 'input-available', input: data.input }] as UIMessage['parts'] }
-            : item)
-        })
-      } else if (typed.type === 'data-pi-tool-result' && piMessageId) {
-        const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
-        if (toolCallId) updatePiMessages((items) => items.map((item) => item.id === piMessageId
-          ? { ...item, parts: (item.parts ?? []).map((p) => (p as { toolCallId?: string }).toolCallId === toolCallId ? { ...p, state: data.isError ? 'output-error' : 'output-available', output: data.output } : p) as UIMessage['parts'] }
-          : item))
-      } else if (typed.type === 'data-pi-message-end' && piMessageId) {
-        const text = typeof data.text === 'string' ? data.text : ''
-        if (text) updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && p.text)
-          ? { ...item, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
-          : item))
-      }
-      if (typed.type === 'data-followup-consumed') {
-        const serverText = typeof typed.data?.text === 'string' ? typed.data.text : ''
-        const pending = pendingMessagesRef.current.find((item) => !item.consumed && (item.serverMessage === serverText || item.text === serverText))
-          ?? pendingMessagesRef.current.find((item) => !item.consumed)
-        consumedFollowUpRef.current = pending
-          ? { text: pending.text, files: pending.files }
-          : serverText
-            ? { text: serverText, files: [] }
-            : null
-        if (pending) {
-          lastConsumedProjectedUserRef.current = pending.id
-          updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, consumed: true } : item))
-          updateProjectedFollowUps((items) => items.map((item) => item.id === pending.id ? { ...item, status: 'done' } : item))
-        }
-      } else if (typed.type === 'data-pi-message-start') {
-        const role = typed.data?.role
-        const messageId = typeof typed.data?.messageId === 'string' ? typed.data.messageId : undefined
-        if (role === 'assistant' && messageId && pendingMessagesRef.current.some((item) => item.consumed)) {
-          activeProjectedAssistantRef.current = messageId
-          updateProjectedFollowUps((items) => {
-            if (items.some((item) => item.id === messageId)) return items
-            const nextAssistant: ProjectedFollowUpMessage = { id: messageId, role: 'assistant', text: '', status: 'streaming' }
-            const afterUserId = lastConsumedProjectedUserRef.current
-            const userIndex = afterUserId ? items.findIndex((item) => item.id === afterUserId) : -1
-            if (userIndex < 0) return [...items, nextAssistant]
-            return [...items.slice(0, userIndex + 1), nextAssistant, ...items.slice(userIndex + 1)]
-          })
-        }
-      } else if (typed.type === 'data-pi-message-delta') {
-        const messageId = typeof typed.data?.messageId === 'string' ? typed.data.messageId : activeProjectedAssistantRef.current
-        const delta = typeof typed.data?.delta === 'string' ? typed.data.delta : ''
-        if (messageId && delta && projectedFollowUpsRef.current.some((item) => item.id === messageId)) {
-          updateProjectedFollowUps((items) => items.map((item) => item.id === messageId ? { ...item, text: item.text + delta } : item))
-        }
-      } else if (typed.type === 'data-pi-message-end') {
-        const role = typed.data?.role
-        const messageId = typeof typed.data?.messageId === 'string' ? typed.data.messageId : activeProjectedAssistantRef.current
-        const text = typeof typed.data?.text === 'string' ? typed.data.text : ''
-        if (role === 'assistant' && messageId && projectedFollowUpsRef.current.some((item) => item.id === messageId)) {
-          updateProjectedFollowUps((items) => items.map((item) => item.id === messageId ? { ...item, text: item.text || text, status: 'done' } : item))
-          if (activeProjectedAssistantRef.current === messageId) activeProjectedAssistantRef.current = null
-        }
-      }
+      piDataHandlerRef.current(part)
+      followUpDataHandlerRef.current(part)
       onData?.(part)
     },
     requestHeaders,
-    persistMessages: false,
+    persistMessages: capabilities.aiSdkOwnsHistory,
   })
 
-  const rebuildPiMessagesFromDataParts = useCallback((sourceMessages: UIMessage[]): UIMessage[] => {
-    const dataParts = sourceMessages.flatMap((message) => message.parts ?? []).filter((part) => typeof part.type === 'string' && part.type.startsWith('data-pi-')) as Array<{ type: string; data?: Record<string, unknown> }>
-    if (dataParts.length === 0) return []
-    const rebuilt: UIMessage[] = []
-    const ensureMessage = (id: string, role: 'user' | 'assistant', text = '') => {
-      let msg = rebuilt.find((item) => item.id === id)
-      if (!msg) {
-        msg = { id, role, parts: text ? [{ type: 'text' as const, text }] : [] }
-        rebuilt.push(msg)
-      } else if (text && !(msg.parts ?? []).some((part) => part.type === 'text' && part.text)) {
-        msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
-      }
-      return msg
-    }
-    for (const part of dataParts) {
-      const data = part.data ?? {}
-      const messageId = typeof data.messageId === 'string' ? data.messageId : undefined
-      if (!messageId) continue
-      if (part.type === 'data-pi-message-start' && (data.role === 'user' || data.role === 'assistant')) {
-        ensureMessage(messageId, data.role, typeof data.text === 'string' ? data.text : '')
-      } else if (part.type === 'data-pi-text-start') {
-        const msg = ensureMessage(messageId, 'assistant')
-        const partId = typeof data.partId === 'string' ? data.partId : '0'
-        if (!msg.parts?.some((p) => p.type === 'text' && (p as { id?: string }).id === partId)) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, id: partId, text: '' } as UIMessage['parts'][number]]
-      } else if (part.type === 'data-pi-text-delta') {
-        const msg = ensureMessage(messageId, 'assistant')
-        const partId = typeof data.partId === 'string' ? data.partId : '0'
-        const delta = typeof data.delta === 'string' ? data.delta : ''
-        let found = false
-        msg.parts = (msg.parts ?? []).map((p) => {
-          if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
-            found = true
-            return { ...p, text: `${p.text}${delta}` }
-          }
-          return p
-        })
-        if (!found) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, id: partId, text: delta } as UIMessage['parts'][number]]
-      } else if (part.type === 'data-pi-text-end') {
-        const msg = ensureMessage(messageId, 'assistant')
-        const text = typeof data.text === 'string' ? data.text : ''
-        if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && p.text)) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
-      } else if (part.type === 'data-pi-message-end' && data.role === 'assistant') {
-        const msg = ensureMessage(messageId, 'assistant')
-        const text = typeof data.text === 'string' ? data.text : ''
-        if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && p.text)) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
-      }
-    }
-    return rebuilt
-  }, [])
+  const { piMessages, handleData: handlePiData } = usePiChatProjection({
+    messages,
+    status,
+    sessionId,
+    requestHeaders,
+  })
+  piDataHandlerRef.current = handlePiData
 
-  useEffect(() => {
-    if (status !== 'ready' || piMessagesRef.current.length > 0 || messages.length === 0) return
-    if (rebuildPiMessagesFromDataParts(messages).length > 0) return
-    updatePiMessages(() => messages)
-  }, [messages, status, rebuildPiMessagesFromDataParts, updatePiMessages])
-
-  const mergeRebuiltPiMessages = useCallback((existing: UIMessage[], rebuilt: UIMessage[]): UIMessage[] => {
-    if (rebuilt.length === 0) return existing
-    const rebuiltIds = new Set(rebuilt.map((message) => message.id))
-    const preserved = existing.filter((message) => {
-      if (rebuiltIds.has(message.id)) return false
-      return !(message.parts ?? []).some((part) => typeof part.type === 'string' && part.type.startsWith('data-pi-'))
-    })
-    return [...preserved, ...rebuilt]
-  }, [])
-
-  useEffect(() => {
-    const rebuilt = rebuildPiMessagesFromDataParts(messages)
-    if (rebuilt.length > 0) updatePiMessages((current) => mergeRebuiltPiMessages(current, rebuilt))
-  }, [messages, rebuildPiMessagesFromDataParts, mergeRebuiltPiMessages, updatePiMessages])
-
-  const prevPiPersistStatusRef = useRef(status)
-  useEffect(() => {
-    const prev = prevPiPersistStatusRef.current
-    prevPiPersistStatusRef.current = status
-    if (status !== 'ready') return
-    if (prev !== 'streaming' && prev !== 'submitted') return
-    if (!sessionId || piMessages.length === 0) return
-    const canonicalMessages = rebuildPiMessagesFromDataParts(piMessages)
-    const messagesToPersist = canonicalMessages.length > 0 ? mergeRebuiltPiMessages(piMessages, canonicalMessages) : piMessages
-    const stripped = messagesToPersist.map((msg) => ({
-      ...msg,
-      parts: msg.parts?.filter((part: unknown) => {
-        const p = part as Record<string, unknown>
-        return !(typeof p.type === 'string' && p.type.startsWith('data-pi-'))
-      }).map((part: unknown) => {
-        const p = part as Record<string, unknown>
-        if (p.type === 'file' && typeof p.url === 'string' && p.url.startsWith('data:')) return { ...p, url: '' }
-        if (p.type === 'text' && 'id' in p) {
-          const rest = { ...p }
-          delete rest.id
-          return rest
-        }
-        return part
-      }),
-    }))
-    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', ...requestHeaders },
-      body: JSON.stringify({ messages: stripped }),
-    }).catch(() => {})
-    try {
-      globalThis.localStorage?.setItem(`boring-agent:messages:${sessionId}`, JSON.stringify(stripped))
-    } catch { /* ignore */ }
-  }, [sessionId, status, piMessages, requestHeaders, rebuildPiMessagesFromDataParts, mergeRebuiltPiMessages])
+  const {
+    projectedTailMessages,
+    projectedStatusById,
+    queueFollowUp,
+    handleData: handleFollowUpData,
+    stopAndClearFollowUps,
+  } = useNativeFollowUpQueue({
+    sessionId,
+    status,
+    requestHeaders,
+    stop,
+  })
+  followUpDataHandlerRef.current = handleFollowUpData
 
   const mergedToolRenderers = mergeShadcnToolRenderers(toolRenderers)
 
@@ -872,23 +570,6 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const isStreaming = status === 'submitted' || status === 'streaming'
 
-  const projectedTailMessages = useMemo<UIMessage[]>(() =>
-    projectedFollowUps.map((item) => ({
-      id: item.id,
-      role: item.role,
-      parts: [
-        ...(item.files ?? []),
-        { type: 'text' as const, text: item.text },
-      ],
-    })),
-  [projectedFollowUps])
-
-  const projectedStatusById = useMemo(() => {
-    const map = new Map<string, ProjectedFollowUpMessage['status']>()
-    for (const item of projectedFollowUps) map.set(item.id, item.status)
-    return map
-  }, [projectedFollowUps])
-
   const displayMessages = useMemo(() => {
     const waitingTail = projectedTailMessages.filter((message) => projectedStatusById.get(message.id) === 'queued')
     return piMessages.length > 0
@@ -896,97 +577,10 @@ export function ChatPanel(props: ChatPanelProps) {
       : [...messages, ...projectedTailMessages]
   }, [messages, piMessages, projectedTailMessages, projectedStatusById])
 
-  const postPendingFollowUps = useCallback(() => {
-    if (followUpPostInFlightRef.current) return
-    followUpPostInFlightRef.current = true
-    void (async () => {
-      let shouldContinue = true
-      try {
-        while (true) {
-          const pending = pendingMessagesRef.current.find((item) => item.sessionId === sessionId && !item.posted)
-          if (!pending) return
-          updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, posted: true } : item))
-          try {
-            const res = await fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...requestHeaders,
-              },
-              body: JSON.stringify({
-                message: pending.serverMessage,
-                displayText: pending.text,
-                attachments: pending.attachments,
-                clientNonce: pending.clientNonce,
-                clientSeq: pending.clientSeq,
-              }),
-            })
-            if (!res.ok) throw new Error(`follow-up rejected: ${res.status}`)
-          } catch {
-            shouldContinue = false
-            updatePendingMessages((items) => items.map((item) => item.id === pending.id ? { ...item, posted: false } : item))
-            return
-          }
-        }
-      } finally {
-        followUpPostInFlightRef.current = false
-        if (shouldContinue && pendingMessagesRef.current.some((item) => item.sessionId === sessionId && !item.posted)) {
-          postPendingFollowUps()
-        } else if (pendingMessagesRef.current.some((item) => !item.posted)) {
-          queueMicrotask(() => postPendingFollowUpsRef.current())
-        }
-      }
-    })()
-  }, [sessionId, requestHeaders, updatePendingMessages])
-  postPendingFollowUpsRef.current = postPendingFollowUps
-
-  // Wait until the active request is genuinely streaming before handing the
-  // queued follow-up to pi. During AI SDK `submitted`, pi may not be in its
-  // running state yet; pi-native followUp() is reliable once streaming starts.
-  useEffect(() => {
-    if (status !== 'streaming') return
-    if (!pendingMessagesRef.current.some((item) => !item.posted)) return
-    postPendingFollowUps()
-  }, [status, postPendingFollowUps])
-
-  // Server-side inline follow-ups keep the same HTTP stream open. Pi DTOs are
-  // already reduced into canonical messages while streaming; when the stream
-  // settles, clear only the optimistic queued/projection state.
-  const prevStatusForQueue = useRef(status)
-  useEffect(() => {
-    const prev = prevStatusForQueue.current
-    prevStatusForQueue.current = status
-    if (status !== 'ready') return
-    if (prev !== 'streaming' && prev !== 'submitted') return
-    const consumed = consumedFollowUpRef.current
-    if (!consumed) return
-    consumedFollowUpRef.current = null
-    if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
-    followUpPostTimerRef.current = null
-    updatePendingMessages((items) => items.filter((item) => !item.consumed))
-    projectedFollowUpsRef.current = []
-    activeProjectedAssistantRef.current = null
-    lastConsumedProjectedUserRef.current = null
-    setProjectedFollowUps([])
-  }, [status, updatePendingMessages])
-
   // Stop button: cancels stream AND clears the queued follow-up.
   const handleStop = useCallback(() => {
-    stop()
-    consumedFollowUpRef.current = null
-    pendingMessagesRef.current = []
-    projectedFollowUpsRef.current = []
-    activeProjectedAssistantRef.current = null
-    lastConsumedProjectedUserRef.current = null
-    if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
-    followUpPostTimerRef.current = null
-    setPendingMessages([])
-    setProjectedFollowUps([])
-    fetch(`/api/v1/agent/chat/${encodeURIComponent(sessionId)}/followup`, {
-      method: 'DELETE',
-      headers: requestHeaders,
-    }).catch(() => {})
-  }, [stop, sessionId, requestHeaders])
+    stopAndClearFollowUps()
+  }, [stopAndClearFollowUps])
 
   // Escape: interrupts the stream but keeps the queued message — it auto-sends next.
   // Same behaviour as pi's keyboard interrupt: "stop this, do my follow-up instead."
@@ -1196,34 +790,12 @@ export function ChatPanel(props: ChatPanelProps) {
     const resolvedAttachments = await resolveAttachmentUrls(files)
 
     if (isStreaming) {
-      const nextPending: PendingFollowUp = {
-        id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
-        sessionId,
+      queueFollowUp({
         text,
         files: files ?? [],
         serverMessage,
         attachments: resolvedAttachments,
-        posted: false,
-        consumed: false,
-        clientNonce: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}-nonce`,
-        clientSeq: nextStoredFollowUpSeq(sessionId),
-      }
-      updatePendingMessages((items) => [...items, nextPending])
-      updateProjectedFollowUps((items) => [...items, {
-        id: nextPending.id,
-        role: 'user',
-        text: nextPending.text,
-        files: nextPending.files,
-        status: 'queued',
-      }])
-      if (status === 'streaming') {
-        queueMicrotask(() => postPendingFollowUps())
-      } else {
-        if (followUpPostTimerRef.current) clearTimeout(followUpPostTimerRef.current)
-        followUpPostTimerRef.current = setTimeout(() => {
-          postPendingFollowUps()
-        }, 1000)
-      }
+      })
       return
     }
 
