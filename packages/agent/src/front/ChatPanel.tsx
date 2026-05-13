@@ -1,34 +1,6 @@
 import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
-
-const INLINE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml', 'application/yaml']
-
-async function resolveAttachmentUrls(files: FileUIPart[] | undefined) {
-  if (!files) return []
-  return Promise.all(files.map(async (file) => ({
-    filename: file.filename,
-    mediaType: file.mediaType,
-    url: file.url.startsWith('blob:')
-      ? (await convertBlobUrlToDataUrl(file.url)) ?? file.url
-      : file.url,
-  })))
-}
-
-/** Best-effort fetch of a FileUIPart's bytes as UTF-8 text. */
-async function readFileAsText(file: FileUIPart): Promise<string | null> {
-  const looksText =
-    INLINE_TEXT_MIME_PREFIXES.some((p) => file.mediaType?.startsWith(p)) ||
-    /\.(md|txt|csv|json|yaml|yml|ts|tsx|js|jsx|py|rb|rs|go|sh|bash|css|html|sql|log)$/i.test(file.filename ?? '')
-  if (!looksText) return null
-  try {
-    const res = await fetch(file.url)
-    if (!res.ok) return null
-    return await res.text()
-  } catch {
-    return null
-  }
-}
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MentionPicker, detectMention, type MentionState } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
@@ -59,7 +31,6 @@ import {
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
-  convertBlobUrlToDataUrl,
   usePromptInputAttachments,
 } from './primitives/prompt-input'
 import {
@@ -89,185 +60,31 @@ import {
   CommandItem,
 } from '@hachej/boring-ui-kit'
 import { cn } from './lib'
+import { resolveAttachmentUrls, readFileAsText } from './chatAttachments'
+import { friendlyError } from './chatErrors'
+import { displayModelLabel, displayProviderLabel } from './chatModelLabels'
+import { getReasoningPart, isBlankTextPart, isFilePart, isTextPart, type ReasoningPartView } from './chatMessageParts'
+import {
+  clearStoredModelSelection,
+  DEFAULT_THINKING,
+  decodeModelKey,
+  encodeModelKey,
+  isThinkingLevel,
+  modelPayload,
+  parseModelSelection,
+  readStoredModelState,
+  readStoredShowThoughts,
+  readStoredThinking,
+  THINKING_LEVELS,
+  writeStoredModelSelection,
+  writeStoredShowThoughts,
+  writeStoredThinking,
+  type AvailableModel,
+  type ModelSelection,
+  type ThinkingLevel,
+} from './chatPanelSettings'
 
-const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
-const STORAGE_MODEL_USER_KEY = 'boring-agent:composer:model:user-selected'
-const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
-const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
-
-/**
- * Extended-thinking budget. Sent through to pi-coding-agent which forwards
- * it to providers that support it (Anthropic Claude 4.x). 'off' means no
- * reasoning chunks; the higher tiers progressively allow more think-time.
- */
-export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
-
-const DEFAULT_THINKING: ThinkingLevel = 'off'
-const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high']
-
-function isThinkingLevel(value: unknown): value is ThinkingLevel {
-  return typeof value === 'string' && (THINKING_LEVELS as readonly string[]).includes(value)
-}
-
-function readStoredThinking(): ThinkingLevel {
-  try {
-    const raw = globalThis.localStorage?.getItem(STORAGE_THINKING_KEY)
-    if (isThinkingLevel(raw)) return raw
-  } catch { /* storage unavailable */ }
-  return DEFAULT_THINKING
-}
-
-function readStoredShowThoughts(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(STORAGE_SHOW_THOUGHTS_KEY) === '1'
-  } catch { /* storage unavailable */ }
-  return false
-}
-
-/**
- * Selected model, stored as { provider, id } so the composer can speak
- * pi-coding-agent's real registered IDs (claude-sonnet-4-6, gpt-5.2-codex,
- * …) rather than a 3-alias shorthand. Unqualified legacy aliases are ignored:
- * Boring must not infer a provider when Pi owns model selection.
- */
-export interface ModelSelection {
-  provider: string
-  id: string
-}
-
-interface AvailableModel extends ModelSelection {
-  label: string
-  available: boolean
-}
-
-function modelPayload(model: ModelSelection | null): { model?: ModelSelection } {
-  return model ? { model } : {}
-}
-
-function parseModelSelection(value: unknown): ModelSelection | null {
-  if (typeof value === 'object' && value !== null) {
-    const parsed = value as Partial<ModelSelection>
-    return typeof parsed.provider === 'string' && typeof parsed.id === 'string'
-      ? { provider: parsed.provider, id: parsed.id }
-      : null
-  }
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  if (!trimmed) return null
-  if (trimmed.startsWith('{')) {
-    try {
-      return parseModelSelection(JSON.parse(trimmed))
-    } catch {
-      return null
-    }
-  }
-  const idx = trimmed.indexOf(':')
-  return idx > 0 && idx < trimmed.length - 1
-    ? { provider: trimmed.slice(0, idx), id: trimmed.slice(idx + 1) }
-    : null
-}
-
-function readStoredModel(): ModelSelection | null {
-  try {
-    return parseModelSelection(globalThis.localStorage?.getItem(STORAGE_MODEL_KEY))
-  } catch { /* storage unavailable */ }
-  return null
-}
-
-function readStoredModelState(): { model: ModelSelection | null; userSelected: boolean } {
-  const model = readStoredModel()
-  let userSelected = false
-  try {
-    userSelected = globalThis.localStorage?.getItem(STORAGE_MODEL_USER_KEY) === '1'
-  } catch { /* storage unavailable */ }
-  return {
-    // Only an explicit user-selection marker makes a stored model authoritative.
-    // App defaults must come from props or /api/v1/agent/models.defaultModel;
-    // otherwise child apps that seed localStorage can silently override the
-    // composer after the user picks a different provider.
-    model: userSelected ? model : null,
-    userSelected,
-  }
-}
-
-function encodeModelKey(sel: ModelSelection): string {
-  return `${sel.provider}:${sel.id}`
-}
-function decodeModelKey(key: string): ModelSelection | null {
-  const idx = key.indexOf(':')
-  if (idx < 0) return null
-  return { provider: key.slice(0, idx), id: key.slice(idx + 1) }
-}
-
-/**
- * Turn whatever AI SDK dumped into error.message into something readable.
- * We try three shapes:
- *   1) raw text (just return it)
- *   2) JSON with { error: { code, message, field? } } — our Fastify shape
- *   3) JSON with { message: … } — AI SDK's generic server-error response
- *
- * Also maps the known validation error codes to friendlier copy.
- */
-interface FriendlyError {
-  title: string
-  detail?: string
-}
-function friendlyError(err: Error): FriendlyError {
-  const raw = err.message ?? ''
-  // Non-JSON error (network, etc.)
-  if (!raw.startsWith('{')) {
-    return { title: raw || 'Something went wrong.' }
-  }
-  try {
-    const parsed = JSON.parse(raw)
-    const inner = parsed?.error ?? parsed
-    const code = typeof inner?.code === 'string' ? inner.code : undefined
-    const message = typeof inner?.message === 'string' ? inner.message : undefined
-    const field = typeof inner?.field === 'string' ? inner.field : undefined
-
-    if (code === 'validation_error') {
-      const label = field ? `\`${field}\`` : 'the request'
-      return {
-        title: 'Your message couldn’t be sent.',
-        detail: `${label} ${message?.toLowerCase() ?? 'failed validation'}.`,
-      }
-    }
-    if (code === 'internal' || code === 'internal_error') {
-      return { title: 'The server hit an internal error.', detail: message }
-    }
-    return { title: message ?? 'Something went wrong.', detail: code }
-  } catch {
-    return { title: raw }
-  }
-}
-
-function displayModelLabel(id: string): string {
-  // "claude-sonnet-4-6" → "Claude Sonnet 4.6"
-  // "gpt-5.3-codex" → "GPT-5.3 Codex"
-  const modelId = id.split('/').pop() ?? id
-  return modelId
-    .replace(/[-_]/g, ' ')
-    .replace(/\s(\d+)\s(\d+)/g, ' $1.$2')
-    .replace(/\bgpt\b/g, 'GPT')
-    .replace(/\b(qwen|grok|glm|claude|sonnet|haiku|opus|codex|mini|max|spark|flash|turbo|pro|omni|mimo|deepseek|euryale)\b/g, (m) =>
-      m.charAt(0).toUpperCase() + m.slice(1),
-    )
-}
-
-function displayProviderLabel(provider: string): string {
-  const known: Record<string, string> = {
-    anthropic: 'Anthropic',
-    openai: 'OpenAI',
-    'openai-codex': 'OpenAI Codex',
-    infomaniak: 'Infomaniak',
-  }
-  if (known[provider]) return known[provider]
-  return provider
-    .split(/[-_]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
+export type { ModelSelection, ThinkingLevel } from './chatPanelSettings'
 
 export interface ChatPanelProps {
   sessionId: string
@@ -338,41 +155,6 @@ export interface ChatPanelProps {
    * @hachej/boring-workspace's DataProvider context. */
   onUploadFile?: (file: File) => Promise<{ url: string }>
 }
-
-function isTextPart(part: UIMessage['parts'][number]): part is Extract<UIMessage['parts'][number], { type: 'text' }> {
-  return part.type === 'text'
-}
-
-function isBlankTextPart(part: UIMessage['parts'][number]): boolean {
-  return isTextPart(part) && part.text.trim().length === 0
-}
-
-function isFilePart(part: UIMessage['parts'][number]): part is FileUIPart {
-  return part.type === 'file'
-}
-
-interface ReasoningPartView {
-  text: string
-  state: 'streaming' | 'done'
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'object' || value === null) return null
-  return value as Record<string, unknown>
-}
-
-function getReasoningPart(part: UIMessage['parts'][number]): ReasoningPartView | null {
-  const record = asRecord(part)
-  if (!record || record.type !== 'reasoning') return null
-  const textCandidate = record.text ?? record.content
-  if (typeof textCandidate !== 'string' || textCandidate.length === 0) return null
-  const stateCandidate = record.state
-  return {
-    text: textCandidate,
-    state: stateCandidate === 'streaming' ? 'streaming' : 'done',
-  }
-}
-
 
 export function ChatPanel(props: ChatPanelProps) {
   const {
@@ -470,14 +252,10 @@ export function ChatPanel(props: ChatPanelProps) {
   const [showThoughts, setShowThoughts] = useState<boolean>(() => readStoredShowThoughts())
   useEffect(() => {
     if (!thinkingControl) return
-    try {
-      globalThis.localStorage?.setItem(STORAGE_THINKING_KEY, thinkingLevel)
-    } catch { /* noop */ }
+    writeStoredThinking(thinkingLevel)
   }, [thinkingControl, thinkingLevel])
   useEffect(() => {
-    try {
-      globalThis.localStorage?.setItem(STORAGE_SHOW_THOUGHTS_KEY, showThoughts ? '1' : '0')
-    } catch { /* noop */ }
+    writeStoredShowThoughts(showThoughts)
   }, [showThoughts])
   /**
    * Client-side transient notice for attachment validation (too many files,
@@ -495,10 +273,7 @@ export function ChatPanel(props: ChatPanelProps) {
 
   useEffect(() => {
     if (!userSelectedModel || !model) return
-    try {
-      globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(model))
-      globalThis.localStorage?.setItem(STORAGE_MODEL_USER_KEY, '1')
-    } catch { /* noop */ }
+    writeStoredModelSelection(model)
   }, [model, userSelectedModel])
 
   useEffect(() => {
@@ -524,10 +299,7 @@ export function ChatPanel(props: ChatPanelProps) {
 
           userSelectedModelRef.current = false
           setUserSelectedModel(false)
-          try {
-            globalThis.localStorage?.removeItem(STORAGE_MODEL_KEY)
-            globalThis.localStorage?.removeItem(STORAGE_MODEL_USER_KEY)
-          } catch { /* noop */ }
+          clearStoredModelSelection()
 
           return payload.defaultModel
             ? { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
@@ -737,10 +509,7 @@ export function ChatPanel(props: ChatPanelProps) {
           setModel: (model) => {
             const next = parseModelSelection(model)
             if (!next) return false
-            try {
-              globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(next))
-              globalThis.localStorage?.setItem(STORAGE_MODEL_USER_KEY, '1')
-            } catch {}
+            writeStoredModelSelection(next)
             globalThis.dispatchEvent?.(new CustomEvent('boring:model-change', { detail: next }))
             return true
           },

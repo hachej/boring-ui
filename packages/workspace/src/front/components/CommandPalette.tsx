@@ -32,6 +32,15 @@ import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
 import type { CommandConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
+import {
+  CATALOG_MODE_LABEL,
+  MAX_RESULTS,
+  errorMessage,
+  filterAvailableRecentEntries,
+  searchCommands,
+  type CatalogSearchGroup,
+  type PaletteMode,
+} from "./CommandPalette.helpers"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 import type { ExplorerRow } from "./DataExplorer/types"
 import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
@@ -42,31 +51,7 @@ import {
 } from "./recent"
 import type { RecentEntry } from "./recent"
 
-const MAX_RESULTS = 50
-
 export type CommandPaletteProps = Record<string, never>
-type PaletteMode = "catalogs" | "commands"
-const CATALOG_MODE_LABEL = "Catalogs"
-
-interface CatalogSearchGroup {
-  catalog: CatalogConfig
-  rows: ExplorerRow[]
-  loading: boolean
-  error?: string
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Search failed"
-}
-
-function isActiveCommand(cmd: CommandConfig): boolean {
-  if (!cmd.when) return true
-  try {
-    return cmd.when()
-  } catch {
-    return false
-  }
-}
 
 export function CommandPalette(_props?: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
@@ -267,24 +252,12 @@ export function CommandPalette(_props?: CommandPaletteProps) {
 
   const commandResults = useMemo(() => {
     if (!isCommandMode) return []
-    const active = commands.filter(isActiveCommand)
-    if (!searchQuery) return active.slice(0, MAX_RESULTS)
-    const lower = searchQuery.toLowerCase()
-    return active.filter((c) => {
-      if (c.title.toLowerCase().includes(lower)) return true
-      return c.keywords?.some((keyword) => keyword.toLowerCase().includes(lower)) ?? false
-    }).slice(0, MAX_RESULTS)
+    return searchCommands(commands, searchQuery)
   }, [commands, isCommandMode, searchQuery])
 
   const recentEntries = useMemo((): RecentEntry[] => {
     if (isCommandMode || searchQuery) return []
-    const entries = loadRecent()
-    return entries.filter((entry) => {
-      if (entry.type === "catalog") {
-        return catalogs.some((c) => c.id === entry.catalogId)
-      }
-      return commands.some((c) => c.id === entry.commandId)
-    })
+    return filterAvailableRecentEntries(loadRecent(), catalogs, commands)
   }, [isCommandMode, searchQuery, catalogs, commands])
 
   const handleCatalogSelect = useCallback((catalog: CatalogConfig, row: ExplorerRow) => {
