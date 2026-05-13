@@ -267,7 +267,13 @@ export function WorkspaceAgentFront<
     : hasExplicitSessionProps
       ? activeSessionId ?? null
       : localSessions.activeId
-  const resolvedSwitch = sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
+  const rawSwitch = sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
+  const resolvedSwitch = useCallback((nextSessionId: string) => {
+    if (resolvedActiveId && nextSessionId !== resolvedActiveId) {
+      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: resolvedActiveId } }))
+    }
+    return rawSwitch(nextSessionId)
+  }, [rawSwitch, resolvedActiveId])
   const resolvedCreate = sessionApi
     ? () => sessionApi.create()
     : onCreateSession ?? localSessionStore.create

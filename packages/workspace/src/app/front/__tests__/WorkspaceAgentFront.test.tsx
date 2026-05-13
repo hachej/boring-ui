@@ -252,6 +252,30 @@ describe("WorkspaceAgentFront", () => {
     )
   })
 
+  it("cancels pending session-scoped attention when switching sessions", async () => {
+    const user = userEvent.setup()
+    const onSwitchSession = vi.fn()
+    const observed = vi.fn()
+    window.addEventListener("boring:workspace-composer-stop", observed)
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="switch-cancel"
+        chatPanel={ChatPanel}
+        sessions={[{ id: "s1", title: "Session one" }, { id: "s2", title: "Session two" }]}
+        activeSessionId="s1"
+        onSwitchSession={onSwitchSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByText("Session two"))
+    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))
+
+    window.removeEventListener("boring:workspace-composer-stop", observed)
+  })
+
   it("creates the first remote session when a sessions hook loads empty", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal("fetch", fetchMock)
