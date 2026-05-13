@@ -35,14 +35,35 @@ function defaultSessionDir(cwd: string): string {
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
+
+function sessionDirForNamespace(namespace: string): string {
+  const safeNamespace = namespace.trim();
+  if (!SAFE_SESSION_NAMESPACE.test(safeNamespace)) {
+    throw new Error("session namespace must contain only letters, numbers, underscores, and dashes");
+  }
+  return join(homedir(), ".pi", "agent", "sessions", safeNamespace);
+}
+
+export interface PiSessionStoreOptions {
+  sessionDir?: string;
+  sessionNamespace?: string;
+}
 
 export class PiSessionStore implements SessionStore {
   private cwd: string;
   private sessionDir: string;
 
-  constructor(cwd: string, sessionDir?: string) {
+  constructor(cwd: string, options?: string | PiSessionStoreOptions) {
     this.cwd = cwd;
-    this.sessionDir = sessionDir ?? defaultSessionDir(cwd);
+    if (typeof options === "string") {
+      this.sessionDir = options;
+      return;
+    }
+    this.sessionDir = options?.sessionDir
+      ?? (options?.sessionNamespace
+        ? sessionDirForNamespace(options.sessionNamespace)
+        : defaultSessionDir(cwd));
   }
 
   async list(ctx: SessionCtx): Promise<SessionSummary[]> {

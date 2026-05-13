@@ -18,7 +18,6 @@ export const ConfigSchema = z.object({
 export type AgentConfig = z.infer<typeof ConfigSchema>
 
 export const EnvSchema = z.object({
-  ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
   BORING_AGENT_MODE: RuntimeModeSchema.optional(),
   BORING_AGENT_WORKSPACE_ROOT: z.string().optional(),
   BORING_AGENT_PORT: z.coerce.number().int().positive().optional(),

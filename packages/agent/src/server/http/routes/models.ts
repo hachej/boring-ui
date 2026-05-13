@@ -98,7 +98,7 @@ export function modelsRoutes(
     const defaultModel = configuredDefaultModel
       && models.some((m) => m.available && m.provider === configuredDefaultModel.provider && m.id === configuredDefaultModel.id)
       ? configuredDefaultModel
-      : models.find((m) => m.available)
+      : undefined
     const payload: ModelsResponse = defaultModel
       ? { models, defaultModel: { provider: defaultModel.provider, id: defaultModel.id } }
       : { models }

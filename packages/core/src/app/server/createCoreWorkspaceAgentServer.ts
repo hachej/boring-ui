@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs'
 import path from 'node:path'
 
 import {
+  compactPiPackages,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
   type RuntimeProvisioningContribution,
@@ -111,6 +112,31 @@ export interface CreateCoreWorkspaceAgentServerOptions
   serveFrontend?: boolean
 }
 
+type AgentResourceLoaderOptions = RegisterAgentRoutesOptions['resourceLoaderOptions']
+
+function dedupeStrings(values: string[]): string[] {
+  return Array.from(new Set(values))
+}
+
+function mergeResourceLoaderOptions(
+  base?: AgentResourceLoaderOptions,
+  override?: AgentResourceLoaderOptions,
+): AgentResourceLoaderOptions {
+  if (!base && !override) return undefined
+  return {
+    ...base,
+    ...override,
+    additionalSkillPaths: dedupeStrings([
+      ...(base?.additionalSkillPaths ?? []),
+      ...(override?.additionalSkillPaths ?? []),
+    ]),
+    piPackages: compactPiPackages([
+      ...(base?.piPackages ?? []),
+      ...(override?.piPackages ?? []),
+    ]),
+  }
+}
+
 function contentType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase()
   return MIME_TYPES[ext] ?? 'application/octet-stream'
@@ -205,6 +231,12 @@ function httpError(message: string, statusCode: number): Error & { statusCode: n
   return error
 }
 
+function firstString(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (!Array.isArray(value)) return undefined
+  return value.find((item): item is string => typeof item === 'string')
+}
+
 function validateWorkspaceIdSegment(value: string): string {
   const workspaceId = value.trim()
   if (!workspaceId) throw httpError('workspace id is required', 400)
@@ -220,19 +252,19 @@ function validateWorkspaceIdSegment(value: string): string {
   return workspaceId
 }
 
+function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unknown>; query?: unknown }): string {
+  const headers = request.headers ?? {}
+  const headerValue = headers['x-boring-workspace-id']
+    ?? Object.entries(headers).find(([key]) => key.toLowerCase() === 'x-boring-workspace-id')?.[1]
+  const query = request.query as Record<string, unknown> | undefined
+  return validateWorkspaceIdSegment(firstString(headerValue) ?? firstString(query?.workspaceId) ?? '')
+}
+
 async function resolveAuthorizedWorkspaceId(
   request: { headers?: Record<string, unknown>; query?: unknown; user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
   workspaceStore: WorkspaceStore,
 ): Promise<string> {
-  const headerValue = request.headers?.['x-boring-workspace-id']
-  const query = request.query as Record<string, unknown> | undefined
-  const queryValue = query?.workspaceId
-  const workspaceId = typeof headerValue === 'string'
-    ? headerValue
-    : typeof queryValue === 'string'
-      ? queryValue
-      : ''
-  const normalizedWorkspaceId = validateWorkspaceIdSegment(workspaceId)
+  const normalizedWorkspaceId = resolveWorkspaceIdFromRequest(request)
   const user = request.user
   if (!user?.id) throw httpError('authentication required', 401)
 
@@ -474,17 +506,18 @@ export async function createCoreWorkspaceAgentServer(
   const provisionedWorkspaceRoots = new Map<string, Promise<void>>()
   const ensureWorkspaceProvisioned = (root: string): Promise<void> => {
     if (pluginCollection.provisioningContributions.length === 0) return Promise.resolve()
-    const existing = provisionedWorkspaceRoots.get(root)
+    const resolvedRoot = path.resolve(root)
+    const existing = provisionedWorkspaceRoots.get(resolvedRoot)
     if (existing) return existing
     const pending = provisionWorkspaceAgentServer({
-      workspaceRoot: root,
+      workspaceRoot: resolvedRoot,
       provisioningContributions: pluginCollection.provisioningContributions,
       force: options.forceProvisioning,
     }).catch((error) => {
-      provisionedWorkspaceRoots.delete(root)
+      provisionedWorkspaceRoots.delete(resolvedRoot)
       throw error
     })
-    provisionedWorkspaceRoots.set(root, pending)
+    provisionedWorkspaceRoots.set(resolvedRoot, pending)
     return pending
   }
 
@@ -492,10 +525,11 @@ export async function createCoreWorkspaceAgentServer(
 
   const bridges = new Map<string, UiBridge>()
   const getUiBridge = (workspaceId: string): UiBridge => {
-    let bridge = bridges.get(workspaceId)
+    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
+    let bridge = bridges.get(safeWorkspaceId)
     if (!bridge) {
       bridge = createInMemoryBridge()
-      bridges.set(workspaceId, bridge)
+      bridges.set(safeWorkspaceId, bridge)
     }
     return bridge
   }
@@ -513,6 +547,32 @@ export async function createCoreWorkspaceAgentServer(
     await ensureWorkspaceProvisioned(root)
     return root
   }
+  const resourceLoaderOptionsByRoot = new Map<string, AgentResourceLoaderOptions>()
+  const getPluginResourceLoaderOptions = (root: string): AgentResourceLoaderOptions => {
+    const resolvedRoot = path.resolve(root)
+    if (resourceLoaderOptionsByRoot.has(resolvedRoot)) {
+      return resourceLoaderOptionsByRoot.get(resolvedRoot)
+    }
+    const scopedPluginCollection = collectWorkspaceAgentServerPlugins({
+      workspaceRoot: resolvedRoot,
+      systemPromptAppend: options.systemPromptAppend,
+      resourceLoaderOptions: options.resourceLoaderOptions,
+      plugins: options.plugins,
+      excludeDefaults: options.excludeDefaults,
+    })
+    resourceLoaderOptionsByRoot.set(
+      resolvedRoot,
+      scopedPluginCollection.agentOptions.resourceLoaderOptions,
+    )
+    return scopedPluginCollection.agentOptions.resourceLoaderOptions
+  }
+  const resolveResourceLoaderOptions: NonNullable<RegisterAgentRoutesOptions['getResourceLoaderOptions']> = async (ctx) => {
+    const pluginOptions = getPluginResourceLoaderOptions(ctx.workspaceRoot)
+    const callerOptions = options.getResourceLoaderOptions
+      ? await options.getResourceLoaderOptions(ctx)
+      : undefined
+    return mergeResourceLoaderOptions(pluginOptions, callerOptions)
+  }
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
@@ -526,6 +586,9 @@ export async function createCoreWorkspaceAgentServer(
     ],
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
     resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
+    getResourceLoaderOptions: resolveResourceLoaderOptions,
+    sessionNamespace: options.sessionNamespace,
+    getSessionNamespace: options.getSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
       return [
