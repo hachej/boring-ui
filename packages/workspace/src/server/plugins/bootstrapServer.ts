@@ -43,6 +43,7 @@ export interface ServerBootstrapResult {
   agentTools: AgentTool[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
+  preservedUiStateKeys: string[]
 }
 
 function collectPiPackages(plugins: WorkspaceServerPlugin[]): WorkspacePiPackageSource[] {
@@ -87,6 +88,8 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
 
+  const preservedUiStateKeys = [...new Set(finalPlugins.flatMap((p) => p.preservedUiStateKeys ?? []))]
+
   return {
     registered: finalPlugins.map((p) => p.id),
     systemPromptAppend,
@@ -94,5 +97,6 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     agentTools,
     provisioningContributions,
     routeContributions,
+    preservedUiStateKeys,
   }
 }

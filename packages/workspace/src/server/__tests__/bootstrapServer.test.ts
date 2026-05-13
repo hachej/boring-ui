@@ -25,6 +25,7 @@ describe("bootstrapServer", () => {
       agentTools: [],
       provisioningContributions: [],
       routeContributions: [],
+      preservedUiStateKeys: [],
     })
   })
 
@@ -139,6 +140,15 @@ describe("bootstrapServer", () => {
     expect(result.routeContributions).toEqual([{ id: "routes", routes }])
   })
 
+  it("collects plugin-owned preserved UI state keys", () => {
+    const result = bootstrapServer({
+      defaults: [{ id: "questions", preservedUiStateKeys: ["questions.pending"] }],
+      plugins: [{ id: "other", preservedUiStateKeys: ["questions.pending", "other.state"] }],
+    })
+
+    expect(result.preservedUiStateKeys).toEqual(["questions.pending", "other.state"])
+  })
+
   it("collects native Pi package declarations from plugins", () => {
     const result = bootstrapServer({
       defaults: [{ id: "preview", piPackages: ["npm:pi-markdown-preview@0.9.7"] }],
@@ -238,6 +248,15 @@ describe("bootstrapServer", () => {
         routes: "not-a-function" as any,
       }),
     ).toThrow("routes must be a Fastify plugin function")
+  })
+
+  it("defineServerPlugin rejects malformed preserved UI state keys", () => {
+    expect(() =>
+      defineServerPlugin({
+        id: "bad-state-keys",
+        preservedUiStateKeys: [""] as any,
+      }),
+    ).toThrow("preservedUiStateKeys must be a non-empty string array")
   })
 
   it("defineServerPlugin rejects malformed Pi package declarations", () => {

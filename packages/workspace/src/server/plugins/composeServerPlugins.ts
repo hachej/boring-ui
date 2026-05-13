@@ -19,6 +19,7 @@ export interface ComposeServerPluginsOptions {
   agentTools?: AgentTool[]
   provisioning?: RuntimeProvisioningContribution
   routes?: FastifyPluginAsync
+  preservedUiStateKeys?: string[]
 }
 
 function compactPrompts(
@@ -86,6 +87,10 @@ export function composeServerPlugins(
     ...options.plugins.map((plugin) => plugin.routes),
     options.routes,
   ])
+  const preservedUiStateKeys = [...new Set([
+    ...options.plugins.flatMap((plugin) => plugin.preservedUiStateKeys ?? []),
+    ...(options.preservedUiStateKeys ?? []),
+  ])]
 
   return defineServerPlugin({
     id: options.id,
@@ -95,5 +100,6 @@ export function composeServerPlugins(
     ...(agentTools.length > 0 ? { agentTools } : {}),
     ...(provisioning ? { provisioning } : {}),
     ...(routes ? { routes } : {}),
+    ...(preservedUiStateKeys.length > 0 ? { preservedUiStateKeys } : {}),
   })
 }

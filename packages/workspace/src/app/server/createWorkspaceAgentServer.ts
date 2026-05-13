@@ -18,7 +18,6 @@ import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import { createAskUserPluginBundle } from "../../plugins/askUserPlugin/server"
-import { ASK_USER_UI_STATE_SLOTS } from "../../plugins/askUserPlugin/shared"
 import {
   ServerPluginError,
   bootstrapServer,
@@ -73,6 +72,7 @@ export type {
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
+  preservedUiStateKeys: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
     "extraTools" | "systemPromptAppend" | "resourceLoaderOptions"
@@ -111,6 +111,7 @@ export function collectWorkspaceAgentServerPlugins(
   return {
     provisioningContributions: result.provisioningContributions,
     routeContributions: result.routeContributions,
+    preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
       extraTools: result.agentTools,
       systemPromptAppend: [buildBoringSystemPrompt(), opts.systemPromptAppend, result.systemPromptAppend]
@@ -155,7 +156,7 @@ export async function createWorkspaceAgentServer(
   const askUserPlugin = createAskUserPluginBundle({ workspaceRoot, bridge })
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
-    plugins: [askUserPlugin, ...(opts.plugins ?? [])],
+    defaults: [askUserPlugin, ...(opts.defaults ?? [])],
   })
 
   if (opts.provisionWorkspace !== false) {
@@ -181,7 +182,7 @@ export async function createWorkspaceAgentServer(
     ].filter(Boolean).join("\n\n") || undefined,
     resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
   })
-  await app.register(uiRoutes, { bridge, preserveStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING] })
+  await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }
