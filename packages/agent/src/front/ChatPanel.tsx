@@ -423,6 +423,7 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [handlePiData])
 
   const {
+    pendingMessages,
     projectedTailMessages,
     projectedStatusById,
     queueFollowUp,
@@ -573,6 +574,7 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [setModel])
 
   const isStreaming = status === 'submitted' || status === 'streaming'
+  const attachmentsDisabled = isStreaming || pendingMessages.length > 0
 
   const displayMessages = useMemo(() => {
     const waitingTail = projectedTailMessages.filter((message) => projectedStatusById.get(message.id) === 'queued')
@@ -791,6 +793,11 @@ export function ChatPanel(props: ChatPanelProps) {
     // next pi turn in the same HTTP stream. This avoids a second AI SDK
     // sendMessage() call while the previous assistant message is still last in
     // client state — that was the source of duplicated assistant text.
+    if (isStreaming && files.length > 0) {
+      setAttachmentNotice('Attachments can be sent after the current response finishes.')
+      throw new Error('attachments_disabled_while_streaming')
+    }
+
     const resolvedAttachments = await resolveAttachmentUrls(files)
 
     if (isStreaming && capabilities.nativeFollowUp) {
@@ -1246,7 +1253,7 @@ export function ChatPanel(props: ChatPanelProps) {
             // caps `attachments` at 20 entries; we match that client-side and
             // add a 5 MB-per-file limit so a giant drag-drop doesn't blow
             // localStorage's ~5 MB origin quota when the cached history grows.
-            maxFiles={20}
+            maxFiles={attachmentsDisabled ? 0 : 20}
             maxFileSize={5 * 1024 * 1024}
             onError={(err) => {
               const e = err as { code: string; message?: string; max?: number }
@@ -1282,7 +1289,7 @@ export function ChatPanel(props: ChatPanelProps) {
               {/* Left-side actions cluster so attach + model feel like one
                * group rather than two disconnected controls. */}
               <div className="flex items-center gap-1">
-                <AttachmentButton />
+                <AttachmentButton disabled={attachmentsDisabled} />
                 <ModelSelect
                   value={model}
                   onChange={setModel}
@@ -1603,16 +1610,20 @@ function ThoughtVisibilityButton({
   )
 }
 
-function AttachmentButton() {
+function AttachmentButton({ disabled }: { disabled?: boolean }) {
   const attachments = usePromptInputAttachments()
   return (
     <IconButton
       type="button"
       variant="ghost"
       size="icon-sm"
-      onClick={() => attachments.openFileDialog()}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) attachments.openFileDialog()
+      }}
       className={cn(composerActionClass, "w-8")}
       aria-label="Attach files"
+      title={disabled ? 'Attachments are available after the current response finishes.' : 'Attach files'}
     >
       <PaperclipIcon className="h-4 w-4" />
     </IconButton>
