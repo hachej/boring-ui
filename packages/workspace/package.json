@@ -60,8 +60,8 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "pnpm --filter @hachej/boring-ui-kit build && tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
-    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
+    "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-data-explorer build && tsup && vite build && node ./scripts/build-workspace-css.mjs && node ./scripts/assert-build-artifacts.mjs",
+    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-agent build && tsc --noEmit -p tsconfig.front.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "check:bundle-size": "node ./scripts/check-bundle-size.mjs",
     "lint:plugin-invariants": "node ./scripts/check-plugin-invariants.mjs",
@@ -135,7 +135,8 @@
     "react-arborist": "^3.4.0",
     "tailwind-merge": "^2.0.0",
     "zod": "^3.23.0",
-    "zustand": "^5.0.0"
+    "zustand": "^5.0.0",
+    "@hachej/boring-data-explorer": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",

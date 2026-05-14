@@ -14,7 +14,7 @@ import {
 import type { PluginOutput } from "../shared/plugins/types"
 import type { WorkspaceFrontPlugin } from "../shared/plugins/defineFrontPlugin"
 import { events, workspaceEvents } from "../front/events"
-import type { ExplorerAdapter, SearchResult } from "../shared/types/explorer"
+import type { ExplorerAdapter, SearchResult } from "@hachej/boring-data-explorer/shared"
 
 const DummyPanel = () => null
 

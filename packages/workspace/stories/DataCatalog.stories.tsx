@@ -1,11 +1,11 @@
 import React from "react"
 import type { Meta, StoryObj } from "@storybook/react"
-import { DataExplorer } from "../src/front/components/DataExplorer/DataExplorer"
+import { DataExplorer } from "@hachej/boring-data-explorer/front"
 import {
   createMockSeriesAdapter,
   createMockTablesAdapter,
-} from "../src/front/components/DataExplorer/storybookAdapters"
-import type { ExplorerRow } from "../src/front/components/DataExplorer/types"
+} from "@hachej/boring-data-explorer/testing"
+import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
 
 const meta: Meta<typeof DataExplorer> = {
   title: "Workspace/DataExplorer",

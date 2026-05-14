@@ -7,7 +7,7 @@ import { SurfaceResolverRegistry } from "../../../../front/registry/SurfaceResol
 import { CatalogRegistry } from "../../../../front/plugin/CatalogRegistry"
 import { events, workspaceEvents } from "../../../../front/events"
 import { bootstrap, defineFrontPlugin } from "../../../../shared/plugins"
-import type { ExplorerAdapter, ExplorerRow } from "../../../../shared/types/explorer"
+import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import {
   DATA_CATALOG_ROW_SURFACE_KIND,
   appendDataCatalogOutputs,

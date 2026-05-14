@@ -1,5 +1,5 @@
 import type { CatalogConfig } from "../../../shared/plugins/types"
-import type { ExplorerRow, SearchResult } from "../../../shared/types/explorer"
+import type { ExplorerRow, SearchResult } from "@hachej/boring-data-explorer/shared"
 import { toFileSearchGlob } from "./search"
 import { FILES_CATALOG_ID } from "../shared/constants"
 

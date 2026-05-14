@@ -9,8 +9,8 @@ import {
   type ReactNode,
 } from "react"
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react"
-import { DataExplorer } from "../../../front/components/DataExplorer"
-import type { DataExplorerProps } from "../../../front/components/DataExplorer"
+import { DataExplorer } from "@hachej/boring-data-explorer/front"
+import type { DataExplorerProps } from "@hachej/boring-data-explorer/front"
 import type {
   DragPayload,
   ExplorerAdapter,
@@ -19,7 +19,7 @@ import type {
   FacetValue,
   Facets,
   SearchResult,
-} from "../../../shared/types/explorer"
+} from "@hachej/boring-data-explorer/shared"
 import { Input } from "@hachej/boring-ui-kit"
 import { cn } from "../../../front/lib/utils"
 import { definePanel } from "../../../front/registry/types"

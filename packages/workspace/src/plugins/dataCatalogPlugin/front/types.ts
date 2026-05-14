@@ -1,11 +1,11 @@
 import type { ComponentType, ReactNode } from "react"
-import type { DataExplorerProps } from "../../../front/components/DataExplorer"
+import type { DataExplorerProps } from "@hachej/boring-data-explorer/front"
 import type {
   DragPayload,
   ExplorerAdapter,
   ExplorerRow,
   FacetConfig,
-} from "../../../shared/types/explorer"
+} from "@hachej/boring-data-explorer/shared"
 import type { WorkspaceBridge } from "../../../front/bridge/types"
 import type { PaneProps, PanelConfig } from "../../../front/registry/types"
 import type { LeftTabParams } from "../../../shared/plugins/types"

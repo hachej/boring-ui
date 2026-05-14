@@ -1,5 +1,5 @@
 import type { RecentEntry } from "./types"
-import type { ExplorerRow } from "../../../shared/types/explorer"
+import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import { migrateRecent } from "./migrate"
 
 const STORAGE_KEY = "boring-ui-v2:command-palette:recent"

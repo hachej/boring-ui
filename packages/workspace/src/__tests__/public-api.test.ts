@@ -22,6 +22,9 @@ describe("@hachej/boring-workspace public API", () => {
       expect(api.FileTree).toBeDefined()
       expect(api.CodeEditor).toBeDefined()
       expect(api.MarkdownEditor).toBeDefined()
+      expect("DataExplorer" in api).toBe(false)
+      expect("useExplorerState" in api).toBe(false)
+      expect("createSourcesAdapter" in api).toBe(false)
       expect("DataCatalog" in api).toBe(false)
     })
 

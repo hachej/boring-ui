@@ -12,7 +12,7 @@ Canonical migration example: `d26e1e7` (`refactor(macro): rewrite App.tsx + serv
 `DataCatalog` and `DataCatalogPane` are no longer exported from `@boring/workspace`.
 Data catalog UI now lives behind plugin outputs. Use `createDataCatalogPlugin()`
 for standalone catalogs or `appendDataCatalogOutputs()` inside an app/domain
-plugin. Use `DataExplorer` directly only for generic explorer UI.
+plugin. Generic explorer UI moved to `@hachej/boring-data-explorer`; Storybook/mock adapter helpers moved to `@hachej/boring-data-explorer/testing`.
 
 #### `<CommandPalette>` no longer accepts file-search props
 
@@ -140,7 +140,8 @@ Before:
 After:
 
 ```tsx
-import { defineFrontPlugin, DataExplorer } from "@boring/workspace";
+import { DataExplorer } from "@hachej/boring-data-explorer/front";
+import { defineFrontPlugin } from "@boring/workspace";
 
 const macroSeriesTab = {
   type: "left-tab",

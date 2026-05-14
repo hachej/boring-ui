@@ -1,4 +1,4 @@
-import type { ExplorerAdapter, ExplorerRow, SearchResult } from "../../../shared/types/explorer"
+import type { ExplorerAdapter, ExplorerRow, SearchResult } from "@hachej/boring-data-explorer/shared"
 import {
   defineServerPlugin,
   type WorkspaceServerPlugin,

@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import type { CatalogConfig } from '../../shared/plugins/types'
 import type { CommandConfig } from '../registry/types'
-import type { ExplorerRow } from '../../shared/types/explorer'
+import type { ExplorerRow } from '@hachej/boring-data-explorer/shared'
 import {
   addCatalogToRecent,
   addCommandToRecent,

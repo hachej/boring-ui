@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import type { ExplorerAdapter, ExplorerRow } from "../../shared/types/explorer"
+import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import {
   createDataCatalogAgentTool,
   createDataCatalogServerPlugin,
