@@ -12,10 +12,15 @@ describe('MentionPicker', () => {
     })))
   })
 
-  it('uses the shared file-search glob semantics and ignores case', () => {
-    expect(mentionSearchGlob('read')).toBe('*[Rr][Ee][Aa][Dd]*')
-    expect(mentionSearchGlob('README')).toBe('*[Rr][Ee][Aa][Dd][Mm][Ee]*')
-    expect(mentionSearchGlob('src/*.tsx')).toBe('[Ss][Rr][Cc]/*.[Tt][Ss][Xx]')
+  it.each([
+    ['read', '*[Rr][Ee][Aa][Dd]*'],
+    ['README', '*[Rr][Ee][Aa][Dd][Mm][Ee]*'],
+    ['src/*.tsx', '[Ss][Rr][Cc]/*.[Tt][Ss][Xx]'],
+  ])('uses workspace-compatible file-search glob semantics for %s', (query, glob) => {
+    expect(mentionSearchGlob(query)).toBe(glob)
+  })
+
+  it('keeps bare @ suggestions broad for empty mention queries', () => {
     expect(mentionSearchGlob('')).toBe('*')
   })
 
