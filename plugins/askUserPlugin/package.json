@@ -5,21 +5,22 @@
   "private": true,
   "exports": {
     "./front": {
-      "types": "./front/index.tsx",
-      "import": "./front/index.tsx"
+      "types": "./dist/front.d.ts",
+      "import": "./dist/front.js"
     },
     "./server": {
-      "types": "./server/index.ts",
-      "import": "./server/index.ts"
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
     },
     "./shared": {
-      "types": "./shared/index.ts",
-      "import": "./shared/index.ts"
+      "types": "./dist/shared.d.ts",
+      "import": "./dist/shared.js"
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-workspace build && tsup",
+    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit -p tsconfig.json",
+    "test": "pnpm --filter @hachej/boring-ui-kit build && vitest run"
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
@@ -33,8 +34,9 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",
-    "jsdom": "^25.0.0",
+    "jsdom": "^29.0.2",
+    "tsup": "^8.4.0",
     "typescript": "~5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^3.1.3"
   }
 }
