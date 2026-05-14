@@ -40,6 +40,26 @@ type ContextValue = QuestionFormState & {
 
 const QuestionFormContext = createContext<ContextValue | null>(null)
 
+function cx(...values: Array<string | false | null | undefined>): string {
+  return values.filter(Boolean).join(" ")
+}
+
+const fieldClass = "space-y-2"
+const fieldLabelClass = "flex flex-col gap-2 text-sm font-medium text-foreground"
+const legendClass = "mb-2 text-sm font-medium text-foreground"
+const helpTextClass = "text-sm text-muted-foreground"
+const errorTextClass = "text-sm text-destructive"
+const controlClass = cx(
+  "w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground shadow-sm",
+  "placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+  "aria-invalid:border-destructive aria-invalid:ring-destructive/20",
+)
+const inputClass = cx(controlClass, "h-9")
+const textareaClass = cx(controlClass, "min-h-24")
+const choiceLabelClass = "flex items-start gap-2 rounded-md text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+const choiceInputClass = "mt-1 disabled:cursor-not-allowed disabled:opacity-50"
+
 export function useQuestionForm(): ContextValue {
   const ctx = useContext(QuestionFormContext)
   if (!ctx) throw new Error("useQuestionForm must be used inside QuestionFormProvider")
@@ -138,11 +158,11 @@ export function QuestionField({ field }: { field: AskUserField }) {
   const hintId = `${field.name}-hint`
   const describedBy = [field.helpText ? helpId : undefined, error ? errorId : undefined, dirtyHints[field.name] ? hintId : undefined].filter(Boolean).join(" ")
   const renderer = rendererRegistry[field.type] ?? defaultRenderers[field.type] ?? rendererRegistry.unsupported ?? UnsupportedFieldRenderer
-  return <div data-field={field.name}>
+  return <div data-field={field.name} className={fieldClass}>
     {renderer({ field, value: values[field.name], error, disabled: disabled || submitting, describedBy, onChange: (value) => setValue(field.name, value), onBlur: () => touch(field.name) })}
-    {field.helpText ? <p id={helpId}>{field.helpText}</p> : null}
-    {dirtyHints[field.name] ? <p id={hintId}>{dirtyHints[field.name]}</p> : null}
-    {error ? <p id={errorId} role="alert">{error}</p> : null}
+    {field.helpText ? <p id={helpId} className={helpTextClass}>{field.helpText}</p> : null}
+    {dirtyHints[field.name] ? <p id={hintId} className={helpTextClass}>{dirtyHints[field.name]}</p> : null}
+    {error ? <p id={errorId} className={errorTextClass} role="alert">{error}</p> : null}
   </div>
 }
 
@@ -158,17 +178,67 @@ export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButto
 }
 
 const defaultRenderers: QuestionFieldRendererRegistry = {
-  text: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "text" && <label>{label(field)}<input name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} pattern={field.pattern} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} /></label>,
-  textarea: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "textarea" && <label>{label(field)}<textarea name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} /></label>,
-  select: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => (field.type === "select" || field.type === "radio") && <fieldset aria-describedby={field.type === "radio" ? describedBy || undefined : undefined} aria-invalid={field.type === "radio" ? !!error : undefined} aria-errormessage={field.type === "radio" && error ? `${field.name}-error` : undefined}><legend>{label(field)}</legend>{field.options.map((option) => field.type === "select" ? null : <label key={option.value}><input type="radio" name={field.name} checked={value === option.value} disabled={disabled} onChange={() => onChange(option.value)} onBlur={onBlur} />{option.label}{option.description ? <small>{option.description}</small> : null}</label>)}{field.type === "select" ? <select name={field.name} value={typeof value === "string" ? value : ""} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur}><option value="">Select…</option>{field.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select> : null}</fieldset>,
+  text: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "text" && (
+    <label className={fieldLabelClass}>
+      {label(field)}
+      <input className={inputClass} name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} pattern={field.pattern} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />
+    </label>
+  ),
+  textarea: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "textarea" && (
+    <label className={fieldLabelClass}>
+      {label(field)}
+      <textarea className={textareaClass} name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />
+    </label>
+  ),
+  select: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => (field.type === "select" || field.type === "radio") && (
+    <fieldset className="space-y-2" aria-describedby={field.type === "radio" ? describedBy || undefined : undefined} aria-invalid={field.type === "radio" ? !!error : undefined} aria-errormessage={field.type === "radio" && error ? `${field.name}-error` : undefined}>
+      <legend className={legendClass}>{label(field)}</legend>
+      {field.options.map((option) => field.type === "select" ? null : (
+        <label key={option.value} className={choiceLabelClass}>
+          <input className={choiceInputClass} type="radio" name={field.name} checked={value === option.value} disabled={disabled} onChange={() => onChange(option.value)} onBlur={onBlur} />
+          <span className="flex flex-col gap-1">
+            <span>{option.label}</span>
+            {option.description ? <small className={helpTextClass}>{option.description}</small> : null}
+          </span>
+        </label>
+      ))}
+      {field.type === "select" ? <select className={inputClass} name={field.name} value={typeof value === "string" ? value : ""} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur}><option value="">Select…</option>{field.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select> : null}
+    </fieldset>
+  ),
   radio: (props) => defaultRenderers.select?.(props),
-  multiselect: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "multiselect" && <fieldset aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined}><legend>{label(field)}</legend>{field.options.map((option) => { const list = Array.isArray(value) ? value : []; return <label key={option.value}><input type="checkbox" name={field.name} checked={list.includes(option.value)} disabled={disabled} onChange={(e) => onChange(e.target.checked ? [...list, option.value] : list.filter((item) => item !== option.value))} onBlur={onBlur} />{option.label}{option.description ? <small>{option.description}</small> : null}</label> })}</fieldset>,
-  checkbox: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "checkbox" && <label><input type="checkbox" name={field.name} checked={value === true} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.checked)} onBlur={onBlur} />{field.label}</label>,
-  number: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "number" && <label>{label(field)}<input type="number" name={field.name} value={typeof value === "number" ? String(value) : ""} min={field.min} max={field.max} step={field.integer ? 1 : field.step} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} onBlur={onBlur} /></label>,
+  multiselect: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "multiselect" && (
+    <fieldset className="space-y-2" aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined}>
+      <legend className={legendClass}>{label(field)}</legend>
+      {field.options.map((option) => {
+        const list = Array.isArray(value) ? value : []
+        return (
+          <label key={option.value} className={choiceLabelClass}>
+            <input className={choiceInputClass} type="checkbox" name={field.name} checked={list.includes(option.value)} disabled={disabled} onChange={(e) => onChange(e.target.checked ? [...list, option.value] : list.filter((item) => item !== option.value))} onBlur={onBlur} />
+            <span className="flex flex-col gap-1">
+              <span>{option.label}</span>
+              {option.description ? <small className={helpTextClass}>{option.description}</small> : null}
+            </span>
+          </label>
+        )
+      })}
+    </fieldset>
+  ),
+  checkbox: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "checkbox" && (
+    <label className={choiceLabelClass}>
+      <input className={choiceInputClass} type="checkbox" name={field.name} checked={value === true} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.checked)} onBlur={onBlur} />
+      <span>{field.label}</span>
+    </label>
+  ),
+  number: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "number" && (
+    <label className={fieldLabelClass}>
+      {label(field)}
+      <input className={inputClass} type="number" name={field.name} value={typeof value === "number" ? String(value) : ""} min={field.min} max={field.max} step={field.integer ? 1 : field.step} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} onBlur={onBlur} />
+    </label>
+  ),
   unsupported: UnsupportedFieldRenderer,
 }
 
-function UnsupportedFieldRenderer({ field }: QuestionFieldRendererProps) { return <p role="note">Unsupported question field: {field.type}</p> }
+function UnsupportedFieldRenderer({ field }: QuestionFieldRendererProps) { return <p className={helpTextClass} role="note">Unsupported question field: {field.type}</p> }
 function label(field: AskUserField): React.ReactNode { return <>{field.label}{"required" in field && field.required ? <span aria-hidden="true"> *</span> : null}</> }
 function defaultsFor(schema?: AskUserFormSchema, initial?: QuestionFormValues): QuestionFormValues {
   const values: QuestionFormValues = { ...(initial ?? {}) }

@@ -150,8 +150,8 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   }, [api, pending, params?.question, question])
 
   return <div className={className ?? "h-full"}>
-    <div className="h-full overflow-auto bg-[radial-gradient(circle_at_top_left,color-mix(in_oklch,var(--primary)_12%,transparent),transparent_34%),linear-gradient(180deg,color-mix(in_oklch,var(--muted)_62%,transparent),transparent_52%)] p-5 text-sm">
-      {!question ? <Card className="border-dashed bg-background/85 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-muted-foreground" /> No pending questions</CardTitle><CardDescription>When the agent needs a decision, the form will appear here.</CardDescription></CardHeader></Card> : null}
+    <div className="h-full overflow-auto bg-muted/20 p-5 text-sm">
+      {!question ? <Card className="border-dashed bg-background shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-muted-foreground" /> No pending questions</CardTitle><CardDescription>When the agent needs a decision, the form will appear here.</CardDescription></CardHeader></Card> : null}
       {question?.status === "ready" && question.schema ? (
         <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
@@ -164,21 +164,20 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }}>
-          <Card className="overflow-hidden border-primary/15 bg-background/95 shadow-[0_18px_60px_-36px_color-mix(in_oklch,var(--primary)_55%,transparent)]">
-            <div className="h-1 bg-[linear-gradient(90deg,color-mix(in_oklch,var(--primary)_80%,transparent),color-mix(in_oklch,var(--accent)_80%,transparent))]" />
+          <Card className="overflow-hidden bg-background shadow-sm">
             <CardHeader className="gap-3 pb-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-2">
-                  <Badge variant="secondary" className="w-fit gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium"><Sparkles className="h-3 w-3" /> Needs your input</Badge>
+                  <Badge variant="secondary" className="w-fit gap-1 px-2.5 py-1 font-medium"><Sparkles className="h-3 w-3" /> Needs your input</Badge>
                   <CardTitle className="text-balance text-xl leading-tight tracking-tight">{question.title ?? "Question"}</CardTitle>
                 </div>
                 <div className="rounded-full border bg-primary/10 p-2 text-primary"><HelpCircle className="h-5 w-5" /></div>
               </div>
-              {question.context ? <CardDescription className="max-w-[62ch] text-[13px] leading-6">{question.context}</CardDescription> : null}
+              {question.context ? <CardDescription className="max-w-prose text-sm leading-6">{question.context}</CardDescription> : null}
             </CardHeader>
             <CardContent>
               <QuestionForm>
-                <div className="space-y-4 rounded-xl border bg-muted/20 p-4 [&_[data-field]]:space-y-2 [&_fieldset]:space-y-2 [&_input:not([type=radio]):not([type=checkbox])]:h-9 [&_input:not([type=radio]):not([type=checkbox])]:w-full [&_input:not([type=radio]):not([type=checkbox])]:rounded-md [&_input:not([type=radio]):not([type=checkbox])]:border [&_input:not([type=radio]):not([type=checkbox])]:bg-background [&_input:not([type=radio]):not([type=checkbox])]:px-3 [&_label]:flex [&_label]:items-center [&_label]:gap-2 [&_legend]:mb-2 [&_legend]:font-medium [&_p[role=alert]]:text-destructive [&_select]:h-9 [&_select]:w-full [&_select]:rounded-md [&_select]:border [&_select]:bg-background [&_select]:px-3 [&_small]:text-muted-foreground [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-md [&_textarea]:border [&_textarea]:bg-background [&_textarea]:p-3"><QuestionFields /></div>
+                <div className="space-y-4 rounded-xl border bg-muted/20 p-4"><QuestionFields /></div>
                 {error ? <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive" role="alert">{error}</p> : null}
                 <div className="mt-5 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Submit closes this temporary question pane.</p><div className="flex gap-2"><Button asChild variant="outline"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild><QuestionSubmitButton>{question.schema.submitLabel ?? "Submit"}</QuestionSubmitButton></Button></div></div>
               </QuestionForm>
