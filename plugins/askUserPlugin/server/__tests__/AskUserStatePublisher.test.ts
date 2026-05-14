@@ -8,7 +8,7 @@ import { AskUserRuntime } from "../AskUserRuntime"
 import { AskUserStatePublisher } from "../AskUserStatePublisher"
 import { questionsRoutes } from "../questionsRoutes"
 import Fastify from "fastify"
-import type { UiBridge, UiCommand, UiState } from "../../../../shared/ui-bridge"
+import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 
 function bridge(): UiBridge & { commands: UiCommand[] } {
   let state: UiState | null = null

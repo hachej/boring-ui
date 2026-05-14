@@ -9,7 +9,7 @@ import { AskUserRuntime } from "../AskUserRuntime"
 import { AskUserStatePublisher } from "../AskUserStatePublisher"
 import { createAskUserTool } from "../createAskUserTool"
 import { questionsRoutes } from "../questionsRoutes"
-import type { UiBridge, UiCommand, UiState } from "../../../../shared/ui-bridge"
+import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 
 function createBridge(): UiBridge & { commands: UiCommand[] } {
   let state: UiState | null = null

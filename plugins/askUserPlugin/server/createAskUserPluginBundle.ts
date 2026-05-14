@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import type { UiBridge, WorkspaceServerPlugin } from "../../../server"
+import type { UiBridge, WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { FileAskUserStore, type AskUserStore } from "./AskUserStore"
 import { AskUserRuntime } from "./AskUserRuntime"
 import { AskUserStatePublisher } from "./AskUserStatePublisher"

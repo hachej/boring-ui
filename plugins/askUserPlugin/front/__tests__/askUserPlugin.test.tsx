@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
@@ -24,6 +24,10 @@ function getProvider() {
 function getPanel() {
   return (askUserPlugin.outputs!.find((output) => output.type === "panel") as any).panel.component as any
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe("askUserPlugin front shell", () => {
   it("reads pending question, submits with token/session, and closes ephemeral pane", async () => {

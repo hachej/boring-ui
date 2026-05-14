@@ -12,7 +12,10 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@hachej/boring-workspace/server": ["./src/server/index.ts"]
+    }
   },
   "include": [
     "src/server/**/*",

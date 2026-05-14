@@ -10,7 +10,15 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@hachej/boring-workspace/app/front": ["../../packages/workspace/src/app/front/index.ts"],
+      "@hachej/boring-workspace/app/server": ["../../packages/workspace/src/app/server/index.ts"],
+      "@hachej/boring-workspace/server": ["../../packages/workspace/src/server/index.ts"],
+      "@hachej/boring-workspace": ["../../packages/workspace/src/index.ts"],
+      "@hachej/boring-workspace-ask-user/front": ["../../plugins/askUserPlugin/front/index.tsx"],
+      "@hachej/boring-workspace-ask-user/server": ["../../plugins/askUserPlugin/server/index.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
