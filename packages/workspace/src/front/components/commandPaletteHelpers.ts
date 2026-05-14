@@ -1,6 +1,6 @@
 import type { CatalogConfig } from '../../shared/plugins/types'
 import type { CommandConfig } from '../registry/types'
-import type { ExplorerRow } from '../../shared/types/explorer'
+import type { ExplorerRow } from '@hachej/boring-data-explorer/shared'
 import type { RecentEntry } from './recent'
 
 export const MAX_RESULTS = 50

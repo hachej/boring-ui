@@ -5,10 +5,9 @@ import {
   postUiCommand,
   type CreateDataCatalogOutputsOptions,
   type DataCatalogSelectContext,
-  type ExplorerAdapter,
-  type ExplorerRow,
   type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
+import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import { PLAYGROUND_DATA_PLUGIN_ID } from "../shared/constants"
 import { PLAYGROUND_CSV_DATASETS } from "../shared/fixtures"
 

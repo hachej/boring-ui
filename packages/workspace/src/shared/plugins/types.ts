@@ -5,7 +5,7 @@ import type {
   ToolExecContext,
   ToolResult,
 } from "../types/agent-tool"
-import type { ExplorerAdapter, ExplorerRow } from "../types/explorer"
+import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import type { CommandConfig, PaneProps, PanelConfig } from "../types/panel"
 import type { SurfaceResolverConfig } from "../types/surface"
 

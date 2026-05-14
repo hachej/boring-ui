@@ -1,7 +1,7 @@
 "use client"
 
 import type { DragEvent, KeyboardEvent } from "react"
-import type { Badge, DragPayload, ExplorerRow, Facets } from "../../../shared/types/explorer"
+import type { Badge, DragPayload, ExplorerRow, Facets } from "@hachej/boring-data-explorer/shared"
 import { cn } from "../../../front/lib/utils"
 import type { ExplorerSectionFilter } from "./index"
 

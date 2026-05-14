@@ -16,7 +16,8 @@
     "@hachej/boring-workspace-ask-user": "workspace:*",
     "@duckdb/node-api": "1.5.2-r.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@hachej/boring-data-explorer": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

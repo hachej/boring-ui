@@ -7,7 +7,7 @@ import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { CatalogRegistry } from "../../plugin/CatalogRegistry"
 import type { CatalogConfig } from "../../../shared/plugins/types"
-import type { ExplorerRow, SearchResult } from "../../../shared/types/explorer"
+import type { ExplorerRow, SearchResult } from "@hachej/boring-data-explorer/shared"
 import type { RecentEntry } from "../recent/types"
 import { STORAGE_KEY as RECENT_KEY } from "../recent/recentStore"
 

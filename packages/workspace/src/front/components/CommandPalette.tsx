@@ -36,7 +36,7 @@ import {
   type PaletteMode,
 } from "./commandPaletteHelpers"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
-import type { ExplorerRow } from "../../shared/types/explorer"
+import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
 import { useCommandPaletteSelection } from "./useCommandPaletteSelection"
 import { useCommandPaletteChrome } from "./useCommandPaletteChrome"

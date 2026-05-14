@@ -6,7 +6,7 @@ import {
   ExplorerView,
   type SectionedExplorerAdapter,
 } from "../front"
-import type { ExplorerAdapter, ExplorerRow } from "../../../shared/types/explorer"
+import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
 
 const rows: ExplorerRow[] = [
   { id: "GDPC1", title: "Real GDP", group: "Q", leading: { code: "Q" } },

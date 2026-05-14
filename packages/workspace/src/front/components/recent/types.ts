@@ -1,4 +1,4 @@
-import type { ExplorerRow } from "../../../shared/types/explorer"
+import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
 
 /**
  * Discriminated union for Recent entries in CommandPalette.

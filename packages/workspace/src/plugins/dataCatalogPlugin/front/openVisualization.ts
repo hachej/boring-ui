@@ -1,4 +1,4 @@
-import type { ExplorerRow } from "../../../shared/types/explorer"
+import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import { postUiCommand } from "../../../front/bridge"
 import type { OpenDataCatalogVisualizationOptions } from "./types"
 import { DATA_CATALOG_ROW_SURFACE_KIND } from "../shared/constants"

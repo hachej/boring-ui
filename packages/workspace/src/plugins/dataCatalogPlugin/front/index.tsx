@@ -3,8 +3,8 @@
 import { BarChart3, Database } from "lucide-react"
 import { definePanel } from "../../../front/registry/types"
 import { PanelChrome } from "../../../front/dock"
-import { DataExplorer } from "../../../front/components/DataExplorer"
-import type { ExplorerRow } from "../../../shared/types/explorer"
+import { DataExplorer } from "@hachej/boring-data-explorer/front"
+import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import { defineFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
 import type {
   CatalogConfig,

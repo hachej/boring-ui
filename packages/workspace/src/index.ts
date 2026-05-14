@@ -304,25 +304,6 @@ export type {
 } from "./plugins/filesystemPlugin/front/file-tree/FileTree"
 export { MarkdownEditor } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditor"
 export type { MarkdownEditorProps } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditor"
-export {
-  DataExplorer,
-  useExplorerState,
-} from "./front/components/DataExplorer"
-export type {
-  DataExplorerProps,
-  UseExplorerStateOptions,
-  UseExplorerStateReturn,
-  ExplorerRow,
-  ExplorerAdapter,
-  Badge,
-  FacetConfig,
-  FacetValue,
-  Facets,
-  FacetsArgs,
-  SearchArgs,
-  SearchResult,
-  DragPayload,
-} from "./front/components/DataExplorer"
 export { SessionList } from "./front/components/SessionList"
 export type {
   SessionListProps,
