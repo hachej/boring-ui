@@ -15,6 +15,26 @@ interface LocalWorkspace {
   available: boolean
 }
 
+export function workspaceIdFromCliUrl(pathname: string): string | null {
+  const match = pathname.match(/^\/workspace\/([^/?#]+)/)
+  if (!match?.[1]) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return match[1]
+  }
+}
+
+export function cliWorkspacePath(workspaceId: string): string {
+  return `/workspace/${encodeURIComponent(workspaceId)}`
+}
+
+function syncCliWorkspaceUrl(workspaceId: string): void {
+  const nextPath = cliWorkspacePath(workspaceId)
+  if (window.location.pathname === nextPath) return
+  window.history.replaceState(null, "", nextPath)
+}
+
 function areWorkspacesEqual(a: LocalWorkspace[], b: LocalWorkspace[]): boolean {
   if (a.length !== b.length) return false
   return a.every((workspace, index) => {
@@ -41,8 +61,9 @@ export function CliWorkspaceShell() {
         const next = data.workspaces ?? []
         setWorkspaces((current) => areWorkspacesEqual(current, next) ? current : next)
         setActiveWorkspaceId((current) => {
+          const urlWorkspaceId = workspaceIdFromCliUrl(window.location.pathname)
           const stored = window.localStorage.getItem("boring-ui:local-workspace-id")
-          const preferred = current ?? stored
+          const preferred = current ?? urlWorkspaceId ?? stored
           const availablePreferred = preferred ? next.find((workspace) => workspace.id === preferred && workspace.available) : null
           const selected = availablePreferred ?? next.find((workspace) => workspace.available) ?? null
           if (selected) window.localStorage.setItem("boring-ui:local-workspace-id", selected.id)
@@ -77,11 +98,21 @@ export function CliWorkspaceShell() {
   useEffect(() => {
     if (!workspacesMode) return
     const onFocus = () => refreshWorkspaces()
+    const onPopState = () => {
+      setActiveWorkspaceId(workspaceIdFromCliUrl(window.location.pathname))
+    }
     window.addEventListener("focus", onFocus)
+    window.addEventListener("popstate", onPopState)
     return () => {
       window.removeEventListener("focus", onFocus)
+      window.removeEventListener("popstate", onPopState)
     }
   }, [refreshWorkspaces, workspacesMode])
+
+  useEffect(() => {
+    if (!workspacesMode || !activeWorkspaceId) return
+    syncCliWorkspaceUrl(activeWorkspaceId)
+  }, [activeWorkspaceId, workspacesMode])
 
   const plugins = useMemo(() => [], [])
 

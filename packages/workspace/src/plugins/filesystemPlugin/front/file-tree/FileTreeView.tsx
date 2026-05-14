@@ -32,7 +32,6 @@ import {
 import type { WorkspaceBridge } from "../../../../front/bridge/types"
 import { PanelChrome } from "../../../../front/dock"
 import {
-  CLIENT_FILTER_THRESHOLD,
   DEFAULT_TREE_IGNORE,
   filterIgnoredEntries,
   matchesAny,
@@ -167,14 +166,7 @@ export function FileTreeView({
   const [revealPath, setRevealPath] = useState<string | null>(null)
   const draftSeqRef = useRef(0)
 
-  const totalFileCount =
-    (fileList?.length ?? 0) +
-    Array.from(expandedChildrenWithOptimistic.values()).reduce(
-      (s, v) => s + v.length,
-      0,
-    )
-  const useServerSearch =
-    totalFileCount >= CLIENT_FILTER_THRESHOLD && (searchQuery?.length ?? 0) > 0
+  const useServerSearch = (searchQuery?.trim().length ?? 0) > 0
   const { data: searchResults } = useFileSearch(
     useServerSearch ? toFileSearchGlob(searchQuery ?? "") : "",
     50,
