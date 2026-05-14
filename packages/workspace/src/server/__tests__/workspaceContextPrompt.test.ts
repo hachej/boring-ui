@@ -14,6 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { buildWorkspaceContextPrompt } from "../../app/server/createWorkspaceAgentServer"
+import { buildBoringSystemPrompt } from "../boringSystemPrompt"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
 
 // ── spy ───────────────────────────────────────────────────────────────────────
@@ -127,6 +128,17 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     await app.close()
     expect(capturedSystemPromptAppend).toBeDefined()
     expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt())
+  })
+
+  test("boring-ui docs prompt is included by default", async () => {
+    const workspaceRoot = await makeTempDir("boring-wcp-docs-")
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+    await app.close()
+    expect(capturedSystemPromptAppend).toContain(buildBoringSystemPrompt())
   })
 
   test("plugin system prompts appear alongside workspace context in direct mode", async () => {
