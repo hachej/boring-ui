@@ -1,3 +1,4 @@
+import React from "react"
 import type { Meta, StoryObj } from "@storybook/react"
 import { FileTree } from "../src/plugins/filesystemPlugin/front/file-tree/FileTree"
 import { generateFileTreeNodes } from "./storybook-mocks"

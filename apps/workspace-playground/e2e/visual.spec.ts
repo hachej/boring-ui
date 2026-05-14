@@ -12,7 +12,7 @@ const STORAGE_KEY = "boring-ui-v2:layout:playground"
 
 async function openPalette(page: import("@playwright/test").Page) {
   await page.goto("/")
-  await page.waitForLoadState("networkidle")
+  await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
   await page.keyboard.press("ControlOrMeta+KeyK")
   await expect(
     page.getByRole("dialog", { name: /command palette/i }),
@@ -44,14 +44,13 @@ test.describe("command palette visual chrome", () => {
 
   test("dialog is widened to the design's 640px max", async ({ page }) => {
     await openPalette(page)
-    const maxWidth = await page.evaluate(() => {
+    const width = await page.evaluate(() => {
       const content = document.querySelector('[data-slot="dialog-content"]')
-      if (!content) return null
-      return getComputedStyle(content).maxWidth
+      return content?.getBoundingClientRect().width ?? null
     })
-    // sm:max-w-[640px] applies above 640px viewport (Playwright's
-    // default 1280×720). Tolerate slight Tailwind translation to "px".
-    expect(maxWidth).toMatch(/640/)
+    expect(width).not.toBeNull()
+    expect(width!).toBeGreaterThan(600)
+    expect(width!).toBeLessThanOrEqual(640)
   })
 
   test("footer keyboard hints are present", async ({ page }) => {

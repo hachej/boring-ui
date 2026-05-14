@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useMemo } from "react"
-import type { ExplorerRow } from "../../../front/components/DataExplorer"
+import type { ExplorerRow } from "../../../shared/types/explorer"
 import type { LeftTabParams } from "../../../shared/plugins/types"
 import { openDataCatalogVisualization } from "./openVisualization"
 import type {

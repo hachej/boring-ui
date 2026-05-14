@@ -365,6 +365,61 @@ describe("streaming concurrency", () => {
     }));
   });
 
+  it("does not duplicate final reasoning snapshot after streamed thinking chunks", async () => {
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/tmp/test-stream-reasoning-dedupe",
+    });
+
+    const ctx: RunContext = {
+      abortSignal: new AbortController().signal,
+      workdir: "/tmp/test-stream-reasoning-dedupe",
+    };
+
+    const iter = harness.sendMessage(
+      { sessionId: "sess-stream-reasoning-dedupe", message: "think" },
+      ctx,
+    );
+    const reader = iter[Symbol.asyncIterator]();
+    const chunks: unknown[] = [];
+
+    const firstRead = reader.next();
+    await new Promise((r) => setTimeout(r, 5));
+
+    emitPiEvent({ type: "message_start", message: { id: "assistant-reasoning-dedupe", role: "assistant" } });
+    chunks.push((await firstRead).value);
+    emitPiEvent({ type: "message_update", messageId: "assistant-reasoning-dedupe", assistantMessageEvent: { type: "thinking_start", contentIndex: 0 } });
+    emitPiEvent({ type: "message_update", messageId: "assistant-reasoning-dedupe", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "I should inspect the files." } });
+    emitPiEvent({ type: "message_update", messageId: "assistant-reasoning-dedupe", assistantMessageEvent: { type: "thinking_end", contentIndex: 0 } });
+    emitPiEvent({
+      type: "message_end",
+      message: {
+        id: "assistant-reasoning-dedupe",
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "I should inspect the files." },
+          { type: "text", text: "Done." },
+        ],
+      },
+    });
+    emitPiEvent({ type: "agent_end" });
+    promptHandle.resolve!();
+
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+
+    const reasoningDeltas = chunks.filter((chunk) => {
+      const rec = chunk as { type?: string; data?: { messageId?: string; delta?: string } };
+      return rec.type === "data-pi-reasoning-delta"
+        && rec.data?.messageId === "assistant-reasoning-dedupe"
+        && rec.data?.delta === "I should inspect the files.";
+    });
+    expect(reasoningDeltas).toHaveLength(1);
+  });
+
   it("emits a text delta when pi only provides final text on agent_end", async () => {
     const harness = createPiCodingAgentHarness({
       tools: [],

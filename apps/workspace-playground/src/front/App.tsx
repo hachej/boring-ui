@@ -71,7 +71,7 @@ export function WorkspaceShell() {
       plugins={[playgroundDataCatalogPlugin]}
       apiBaseUrl=""
       persistenceEnabled
-      providerStorageKey={`boring-ui-v2:layout:${showcase ? "playground" : projectName}`}
+      providerStorageKey="boring-ui-v2:layout:playground"
       appTitle={showcase ? "Boring" : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
       useSessions={showcase ? undefined : useAgentSessions}

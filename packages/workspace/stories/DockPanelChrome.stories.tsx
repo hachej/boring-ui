@@ -1,3 +1,4 @@
+import React from "react"
 import { DatabaseIcon } from "lucide-react"
 import type { Meta, StoryObj } from "@storybook/react"
 import type { DockviewPanelApi } from "dockview-react"

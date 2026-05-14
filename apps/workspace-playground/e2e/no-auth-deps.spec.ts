@@ -35,7 +35,7 @@ test.describe("workspace-playground auth-free boot", () => {
     })
 
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
     // Idle long enough for any deferred AuthProvider / ConfigProvider
     // useEffects to fire.
     await page.waitForTimeout(1500)
@@ -50,7 +50,7 @@ test.describe("workspace-playground auth-free boot", () => {
     page,
   }) => {
     await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
     await page.waitForTimeout(1500)
 
     // The workspace shell should be visible without a core app wrapper.
