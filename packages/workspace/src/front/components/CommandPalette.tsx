@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import {
   ArrowDown,
   ArrowUp,
@@ -29,13 +29,9 @@ import {
 } from "@hachej/boring-ui-kit"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
-import type { CatalogConfig } from "../../shared/plugins/types"
 import {
   CATALOG_MODE_LABEL,
-  MAX_RESULTS,
-  errorMessage,
   searchCommands,
-  type CatalogSearchGroup,
   type PaletteMode,
 } from "./CommandPalette.helpers"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
@@ -43,6 +39,7 @@ import type { ExplorerRow } from "./DataExplorer/types"
 import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
 import { useCommandPaletteSelection } from "./useCommandPaletteSelection"
 import { useCommandPaletteChrome } from "./useCommandPaletteChrome"
+import { useCommandPaletteCatalogSearch } from "./useCommandPaletteCatalogSearch"
 
 export type CommandPaletteProps = Record<string, never>
 
@@ -50,8 +47,6 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [mode, setMode] = useState<PaletteMode>("catalogs")
-  const [debouncedCatalogQuery, setDebouncedCatalogQuery] = useState("")
-  const [catalogGroups, setCatalogGroups] = useState<CatalogSearchGroup[]>([])
   const catalogs = useCatalogs()
   const commands = useCommands()
   const workspaceCtx = useWorkspaceContextOptional()
@@ -65,14 +60,11 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   const isCommandMode = mode === "commands"
   const searchQuery = query.trim()
 
-  useEffect(() => {
-    if (isCommandMode) {
-      setDebouncedCatalogQuery("")
-      return
-    }
-    const timer = setTimeout(() => setDebouncedCatalogQuery(searchQuery), 180)
-    return () => clearTimeout(timer)
-  }, [isCommandMode, searchQuery])
+  const catalogGroups = useCommandPaletteCatalogSearch({
+    catalogs,
+    isCommandMode,
+    searchQuery,
+  })
 
   const { inputRef, switchMode, handleInputKeyDown } = useCommandPaletteChrome({
     open,
@@ -90,72 +82,6 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     }
     setQuery(next)
   }, [])
-
-  useEffect(() => {
-    if (isCommandMode || !debouncedCatalogQuery) {
-      setCatalogGroups([])
-      return
-    }
-
-    const controller = new AbortController()
-    const activeCatalogs = [...catalogs]
-    setCatalogGroups(
-      activeCatalogs.map((catalog) => ({
-        catalog,
-        rows: [],
-        loading: true,
-      })),
-    )
-
-    const updateCatalog = (
-      catalog: CatalogConfig,
-      next: Omit<CatalogSearchGroup, "catalog">,
-    ) => {
-      if (controller.signal.aborted) return
-      setCatalogGroups((groups) =>
-        groups.map((group) =>
-          group.catalog.id === catalog.id ? { catalog, ...next } : group,
-        ),
-      )
-    }
-
-    for (const catalog of activeCatalogs) {
-      try {
-        const result = catalog.adapter.search({
-          query: debouncedCatalogQuery,
-          filters: {},
-          limit: MAX_RESULTS,
-          offset: 0,
-          signal: controller.signal,
-        })
-        void Promise.resolve(result).then(
-          (result) => {
-            updateCatalog(catalog, {
-              rows: result.items.slice(0, MAX_RESULTS),
-              loading: false,
-            })
-          },
-          (error) => {
-            updateCatalog(catalog, {
-              rows: [],
-              loading: false,
-              error: errorMessage(error),
-            })
-          },
-        )
-      } catch (error) {
-        updateCatalog(catalog, {
-          rows: [],
-          loading: false,
-          error: errorMessage(error),
-        })
-      }
-    }
-
-    return () => {
-      controller.abort()
-    }
-  }, [catalogs, debouncedCatalogQuery, isCommandMode])
 
   const commandResults = useMemo(() => {
     if (!isCommandMode) return []
