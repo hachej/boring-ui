@@ -2,14 +2,28 @@ import { vi } from "vitest"
 
 vi.mock("@boring/agent/server", () => ({}))
 
+import { existsSync } from "node:fs"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { FileAskUserStore } from "../AskUserStore"
-import { AskUserRuntime } from "../AskUserRuntime"
+import { FileAskUserStore } from "../askUserStore"
+import { AskUserRuntime } from "../askUserRuntime"
 import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
+import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+
+function bridge(): UiBridge & { commands: UiCommand[] } {
+  let state: UiState | null = null
+  const commands: UiCommand[] = []
+  return {
+    commands,
+    async getState() { return state },
+    async setState(next) { state = next },
+    async postCommand(cmd) { commands.push(cmd); return { seq: commands.length, status: "ok" } },
+    subscribeCommands() { return () => undefined },
+  }
+}
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 
@@ -86,5 +100,14 @@ describe("createAskUserServerPlugin", () => {
     expect(plugin.id).toBe("ask-user")
     expect(plugin.routes).toEqual(expect.any(Function))
     expect(plugin.agentTools).toHaveLength(1)
+  })
+
+  it("creates default runtime/store/publisher from workspaceRoot and bridge", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ask-user-plugin-defaults-"))
+    const ui = bridge()
+    const plugin = createAskUserServerPlugin({ workspaceRoot: dir, bridge: ui })
+    expect(plugin.id).toBe("ask-user")
+    expect(plugin.agentTools).toHaveLength(1)
+    expect(existsSync(join(dir, ".boring", "ask-user.json"))).toBe(false)
   })
 })

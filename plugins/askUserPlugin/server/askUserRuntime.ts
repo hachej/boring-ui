@@ -10,7 +10,7 @@ import type {
   AskUserRequest,
   AskUserToolResult,
 } from "../shared/types"
-import type { AskUserStore } from "./AskUserStore"
+import type { AskUserStore } from "./askUserStore"
 
 export class AskUserRuntimeError extends Error {
   constructor(

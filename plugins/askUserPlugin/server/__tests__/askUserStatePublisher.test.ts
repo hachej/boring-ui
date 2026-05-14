@@ -3,9 +3,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
-import { FileAskUserStore } from "../AskUserStore"
-import { AskUserRuntime } from "../AskUserRuntime"
-import { AskUserStatePublisher } from "../AskUserStatePublisher"
+import { FileAskUserStore } from "../askUserStore"
+import { AskUserRuntime } from "../askUserRuntime"
+import { AskUserStatePublisher } from "../askUserStatePublisher"
 import { questionsRoutes } from "../questionsRoutes"
 import Fastify from "fastify"
 import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
@@ -29,6 +29,16 @@ async function makeStore() {
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer" }] }
 
+async function waitForPending(store: FileAskUserStore, sessionId: string) {
+  let pending = await store.getPending(sessionId)
+  for (let i = 0; i < 40 && !pending; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    pending = await store.getPending(sessionId)
+  }
+  expect(pending).not.toBeNull()
+  return pending!
+}
+
 describe("AskUserStatePublisher", () => {
   it("publishes pending slot on create, answer, cancel, and abandon", async () => {
     const store = await makeStore()
@@ -47,22 +57,14 @@ describe("AskUserStatePublisher", () => {
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
 
     const cancelPending = runtime.ask({ sessionId: "s1", schema })
-    const q2 = await vi.waitFor(async () => {
-      const pending = await store.getPending("s1")
-      expect(pending).not.toBeNull()
-      return pending!
-    })
+    const q2 = await waitForPending(store, "s1")
     await runtime.cancelQuestion(q2.questionId, "s1")
     await expect(cancelPending).resolves.toMatchObject({ status: "cancelled" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
 
     const abandonedController = new AbortController()
     const abandonedPending = runtime.ask({ sessionId: "s1", schema }, abandonedController.signal)
-    const q3 = await vi.waitFor(async () => {
-      const pending = await store.getPending("s1")
-      expect(pending).not.toBeNull()
-      return pending!
-    })
+    const q3 = await waitForPending(store, "s1")
     await store.markAbandoned(q3.questionId)
     abandonedController.abort()
     await expect(abandonedPending).resolves.toMatchObject({ status: "cancelled" })
@@ -76,11 +78,7 @@ describe("ask-user UI open", () => {
     const ui = bridge()
     const runtime = new AskUserRuntime({ store, uiBridge: ui })
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
-    let question = await store.getPending("s1")
-    await vi.waitFor(async () => {
-      question = await store.getPending("s1")
-      expect(question).not.toBeNull()
-    })
+    const question = await waitForPending(store, "s1")
     await new Promise((resolve) => setTimeout(resolve, 10))
     await expect(store.getPending("s1")).resolves.not.toBeNull()
     await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
@@ -93,7 +91,7 @@ describe("ask-user UI open", () => {
     const runtime = new AskUserRuntime({ store, uiBridge: ui })
     const controller = new AbortController()
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
-    await vi.waitFor(async () => expect(await store.getPending("s1")).not.toBeNull())
+    await new Promise((resolve) => setTimeout(resolve, 0))
     controller.abort()
     await expect(pending).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
   })
@@ -104,11 +102,7 @@ describe("ask-user UI open", () => {
     ui.postCommand = async () => { throw new Error("disconnected") }
     const runtime = new AskUserRuntime({ store, uiBridge: ui })
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
-    let question = await store.getPending("s1")
-    await vi.waitFor(async () => {
-      question = await store.getPending("s1")
-      expect(question).not.toBeNull()
-    })
+    const question = await waitForPending(store, "s1")
     await runtime.submitAnswer(question!.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
   })

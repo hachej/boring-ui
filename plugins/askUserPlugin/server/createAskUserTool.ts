@@ -1,6 +1,6 @@
 import { validateAskUserToolInput } from "../shared/schema"
 import type { AskUserToolInput, AskUserToolResult } from "../shared/types"
-import type { AskUserRuntime } from "./AskUserRuntime"
+import type { AskUserRuntime } from "./askUserRuntime"
 
 export type AskUserToolResultPayload = {
   content: Array<{ type: "text"; text: string }>

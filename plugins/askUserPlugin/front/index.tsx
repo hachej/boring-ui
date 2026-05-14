@@ -194,15 +194,13 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   </div>
 }
 
-export function createAskUserOutputs(): PluginOutput[] {
-  const panel = definePanel({ id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, icon: HelpCircle, component: QuestionsPane, placement: "center", source: "builtin", chromeless: true })
-  const resolver: SurfaceResolverConfig = { id: `${ASK_USER_PLUGIN_ID}.surface`, source: "builtin", resolve(request) { if (request.kind !== ASK_USER_SURFACE_KIND) return undefined; const metaQuestion = typeof request.meta === "object" && request.meta && "question" in request.meta ? (request.meta as { question?: AskUserQuestion }).question : undefined; return { component: ASK_USER_PANEL_ID, id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, params: { questionId: request.target, question: metaQuestion } } } }
-  return [
-    { type: "provider", id: `${ASK_USER_PLUGIN_ID}.provider`, component: AskUserProvider },
-    { type: "panel", panel },
-    { type: "surface-resolver", resolver },
-    { type: "command", command: { id: `${ASK_USER_PLUGIN_ID}.open`, title: "Open Questions", run: () => window.dispatchEvent(new CustomEvent("boring:ask-user-open")) } },
-  ]
-}
+const panel = definePanel({ id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, icon: HelpCircle, component: QuestionsPane, placement: "center", source: "builtin", chromeless: true })
+const resolver: SurfaceResolverConfig = { id: `${ASK_USER_PLUGIN_ID}.surface`, source: "builtin", resolve(request) { if (request.kind !== ASK_USER_SURFACE_KIND) return undefined; const metaQuestion = typeof request.meta === "object" && request.meta && "question" in request.meta ? (request.meta as { question?: AskUserQuestion }).question : undefined; return { component: ASK_USER_PANEL_ID, id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, params: { questionId: request.target, question: metaQuestion } } } }
+const outputs: PluginOutput[] = [
+  { type: "provider", id: `${ASK_USER_PLUGIN_ID}.provider`, component: AskUserProvider },
+  { type: "panel", panel },
+  { type: "surface-resolver", resolver },
+  { type: "command", command: { id: `${ASK_USER_PLUGIN_ID}.open`, title: "Open Questions", run: () => window.dispatchEvent(new CustomEvent("boring:ask-user-open")) } },
+]
 
-export const askUserPlugin: WorkspaceFrontPlugin = defineFrontPlugin({ id: ASK_USER_PLUGIN_ID, label: ASK_USER_PANEL_TITLE, outputs: createAskUserOutputs() })
+export const askUserPlugin: WorkspaceFrontPlugin = defineFrontPlugin({ id: ASK_USER_PLUGIN_ID, label: ASK_USER_PANEL_TITLE, outputs })
