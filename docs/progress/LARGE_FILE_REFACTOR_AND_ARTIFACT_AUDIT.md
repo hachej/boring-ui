@@ -66,6 +66,16 @@ Scanned the monorepo for large source files, leaky abstractions, and generated/b
 - UI components leak IO/storage policy: file tree loading and markdown image upload should be driven by injected IO hooks/callbacks.
 - Plugin `index.tsx` files leak implementation details instead of acting as stable entrypoints.
 
+### Temporary known leak: `@file` chat mentions
+
+`@file` mentions in the agent composer are workspace-specific, but currently live in `@boring/agent` as a tactical compatibility path. The mention search now mirrors workspace filesystem search semantics so the user-facing behavior matches the left pane and command palette, but the helper is intentionally duplicated instead of imported across packages to preserve current package boundaries:
+
+- `@boring/agent` must remain standalone.
+- Workspace base/plugin code must stay agent-neutral.
+- Importing either package into the other for this helper would violate those boundaries.
+
+Follow-up issue #26 tracks the correct long-term fix: move `@file` mentions into a workspace-provided composer extension so workspace owns file search, selection, and message enrichment.
+
 ## Generated/build artifact audit
 
 Large generated/build artifacts found locally:
