@@ -9,8 +9,6 @@ export {
   WorkspaceBootGate,
   type WorkspaceBootGateProps,
 } from "./WorkspaceBootGate"
-export { askUserPlugin } from "../../plugins/askUserPlugin/front"
-
 export {
   createLocalStorageSessions,
   useLocalStorageSessions,

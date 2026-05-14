@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { resolve } from "node:path"
-import { createAskUserPluginBundle, createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
+import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
+import { createAskUserPluginBundle } from "../../../../packages/workspace/src/plugins/askUserPlugin/server"
 import { createPlaygroundDataServerPlugin } from "../plugins/playgroundDataCatalog/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
