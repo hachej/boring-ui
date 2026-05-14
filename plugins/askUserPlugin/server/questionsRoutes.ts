@@ -2,8 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { QuestionsCommandSchema } from "../shared/schema"
 import type { QuestionsCommand } from "../shared/types"
 import { QuestionsBridge, QuestionsBridgeError, constantTimeEqual, type QuestionsAuthContext } from "./questionsBridge"
-import type { AskUserRuntime } from "./AskUserRuntime"
-import type { AskUserStore } from "./AskUserStore"
+import type { AskUserRuntime } from "./askUserRuntime"
+import type { AskUserStore } from "./askUserStore"
 
 export type QuestionsRoutesOptions = {
   store: AskUserStore

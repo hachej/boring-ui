@@ -1,25 +1,35 @@
+import { join } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
-import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
+import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { ASK_USER_PLUGIN_ID, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
-import type { AskUserRuntime } from "./AskUserRuntime"
-import type { AskUserStore } from "./AskUserStore"
+import { AskUserRuntime } from "./askUserRuntime"
+import { FileAskUserStore, type AskUserStore } from "./askUserStore"
+import { AskUserStatePublisher } from "./askUserStatePublisher"
 import { createAskUserTool } from "./createAskUserTool"
 import { questionsRoutes, type QuestionsRoutesOptions } from "./questionsRoutes"
 
 export type AskUserServerPluginOptions = {
-  runtime: AskUserRuntime
-  store: AskUserStore
-  sessionId: string | (() => string)
+  workspaceRoot?: string
+  bridge?: UiBridge
+  runtime?: AskUserRuntime
+  store?: AskUserStore
+  sessionId?: string | (() => string)
   routes?: Omit<QuestionsRoutesOptions, "runtime" | "store">
   onClose?: () => void
 }
 
 export function createAskUserServerPlugin(options: AskUserServerPluginOptions): WorkspaceServerPlugin {
+  const store = options.store ?? createDefaultStore(options.workspaceRoot)
+  const runtime = options.runtime ?? new AskUserRuntime({ store, uiBridge: options.bridge })
+  const stopPublisher = options.bridge ? new AskUserStatePublisher(store, options.bridge).start() : undefined
   const routes: FastifyPluginAsync = async (app) => {
-    if (options.onClose) app.addHook("onClose", async () => options.onClose?.())
-    await app.register(questionsRoutes, { ...options.routes, runtime: options.runtime, store: options.store })
+    app.addHook("onClose", async () => {
+      stopPublisher?.()
+      options.onClose?.()
+    })
+    await app.register(questionsRoutes, { ...defaultRoutes, ...options.routes, runtime, store })
   }
-  const askUserTool = createAskUserTool({ runtime: options.runtime, sessionId: options.sessionId })
+  const askUserTool = createAskUserTool({ runtime, sessionId: options.sessionId ?? (() => "default") })
   return defineServerPlugin({
     id: ASK_USER_PLUGIN_ID,
     label: "Questions",
@@ -34,4 +44,23 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     routes,
     preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
   })
+}
+
+const defaultRoutes: Omit<QuestionsRoutesOptions, "runtime" | "store"> = {
+  // No-auth playground/default shells still need the browser command channel to
+  // bind to the question's owning session. The answerToken remains the terminal
+  // mutation secret; this context only prevents the default anonymous session
+  // sentinel from rejecting legitimate no-auth submits as SESSION_MISMATCH.
+  getAuthContext: (request) => {
+    const body = request.body as { params?: { sessionId?: unknown } } | undefined
+    return {
+      sessionId: typeof body?.params?.sessionId === "string" ? body.params.sessionId : "anonymous",
+      principalId: "anonymous",
+    }
+  },
+}
+
+function createDefaultStore(workspaceRoot: string | undefined): AskUserStore {
+  if (!workspaceRoot) throw new Error("createAskUserServerPlugin requires workspaceRoot when store is not provided")
+  return new FileAskUserStore(join(workspaceRoot, ".boring", "ask-user.json"))
 }

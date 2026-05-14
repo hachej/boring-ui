@@ -1,8 +1,8 @@
 import { timingSafeEqual } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import type { AskUserAnswerValue, AskUserField, AskUserQuestion, QuestionsCommand } from "../shared/types"
-import type { AskUserRuntime } from "./AskUserRuntime"
-import type { AskUserStore } from "./AskUserStore"
+import type { AskUserRuntime } from "./askUserRuntime"
+import type { AskUserStore } from "./askUserStore"
 
 export class QuestionsBridgeError extends Error {
   constructor(

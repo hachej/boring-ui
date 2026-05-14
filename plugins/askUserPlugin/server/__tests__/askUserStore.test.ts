@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 import type { AskUserQuestion } from "../../shared/types"
-import { FileAskUserStore } from "../AskUserStore"
+import { FileAskUserStore } from "../askUserStore"
 
 let dir: string
 let store: FileAskUserStore

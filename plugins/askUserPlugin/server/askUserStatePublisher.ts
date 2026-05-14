@@ -1,7 +1,7 @@
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
 import type { UiBridge, UiState } from "@hachej/boring-workspace/server"
-import type { AskUserStore, AskUserStoreChange } from "./AskUserStore"
+import type { AskUserStore, AskUserStoreChange } from "./askUserStore"
 
 export type AskUserPendingState = {
   question: AskUserQuestion | null
@@ -37,10 +37,6 @@ export class AskUserStatePublisher {
     }
     await this.bridge.setState(next)
   }
-}
-
-export function createAskUserStatePublisher(store: AskUserStore, bridge: UiBridge): AskUserStatePublisher {
-  return new AskUserStatePublisher(store, bridge)
 }
 
 export type { AskUserStoreChange }

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os"
 import { describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 import type { AskUserFormSchema } from "../../shared/types"
-import { FileAskUserStore } from "../AskUserStore"
-import { AskUserRuntime, InProcessAskUserCoordinator, requireAskUserRuntime } from "../AskUserRuntime"
+import { FileAskUserStore } from "../askUserStore"
+import { AskUserRuntime, InProcessAskUserCoordinator, requireAskUserRuntime } from "../askUserRuntime"
 
 const schema: AskUserFormSchema = { wireVersion: 1, fields: [{ type: "text", name: "answer", label: "Answer" }] }
 
