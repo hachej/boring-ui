@@ -60,12 +60,12 @@ import {
   CommandItem,
 } from '@hachej/boring-ui-kit'
 import { cn } from './lib'
-import { resolveAttachmentUrls, readFileAsText } from './chatAttachments'
 import { friendlyError } from './chatErrors'
 import { displayModelLabel, displayProviderLabel } from './chatModelLabels'
 import { getReasoningPart, isBlankTextPart, isFilePart, isTextPart, type ReasoningPartView } from './chatMessageParts'
 import { useComposerHistory } from './useComposerHistory'
 import { useComposerPickers } from './useComposerPickers'
+import { createEnrichedSubmitPayload } from './chatSubmit'
 import {
   clearStoredModelSelection,
   DEFAULT_THINKING,
@@ -471,30 +471,11 @@ export function ChatPanel(props: ChatPanelProps) {
       }
     }
 
-    // Build the server-side enriched message (text attachments inlined for
-    // pi, which is text-only). Importantly, the VISIBLE user bubble only
-    // shows the raw `text` plus file chips — the enriched version is not
-    // rendered in the UI, just sent to the server. This keeps
-    // "[attached: foo.png …]" markers out of the message bubble.
-    const attachmentSummaries: string[] = []
-    for (const file of files ?? []) {
-      const label = file.filename ?? 'attachment'
-      const mime = file.mediaType ?? 'application/octet-stream'
-      const content = await readFileAsText(file)
-      if (content !== null) {
-        attachmentSummaries.push(`[attached: ${label} (${mime})]\n\`\`\`\n${content}\n\`\`\``)
-      } else {
-        attachmentSummaries.push(`[attached: ${label} (${mime}, not inlined — binary)]`)
-      }
-    }
-    const mentionNote = mentionedFiles.length > 0
-      ? `@files: ${mentionedFiles.join(', ')}`
-      : null
-    const serverMessage = [
-      text.trim(),
-      ...(attachmentSummaries.length > 0 ? [attachmentSummaries.join('\n\n')] : []),
-      ...(mentionNote ? [mentionNote] : []),
-    ].filter(Boolean).join('\n\n') || text
+    const { serverMessage, attachments: resolvedAttachments } = await createEnrichedSubmitPayload({
+      text,
+      files: files ?? [],
+      mentionedFiles,
+    })
     clearMentionedFiles()
 
     // Queue the message if the agent is currently streaming. The server-side
@@ -506,8 +487,6 @@ export function ChatPanel(props: ChatPanelProps) {
       setAttachmentNotice('Attachments can be sent after the current response finishes.')
       throw new Error('attachments_disabled_while_streaming')
     }
-
-    const resolvedAttachments = await resolveAttachmentUrls(files)
 
     if (isStreaming && capabilities.nativeFollowUp) {
       queueFollowUp({
