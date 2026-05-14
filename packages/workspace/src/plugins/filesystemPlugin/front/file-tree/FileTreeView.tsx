@@ -21,6 +21,14 @@ import {
 } from "../data"
 import type { FileEntry } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
+import {
+  buildTree,
+  dirKey,
+  injectDraftIntoTree,
+  mergeEntries,
+  parentDir,
+  type DraftEditing,
+} from "./treeModel"
 import type { WorkspaceBridge } from "../../../../front/bridge/types"
 import { PanelChrome } from "../../../../front/dock"
 import {
@@ -60,86 +68,6 @@ export function preloadFileTreeComponent(): void {
 }
 
 const FileTree = lazy(loadFileTreeComponent)
-
-function buildTree(
-  entries: FileEntry[],
-  childrenByDir: Map<string, FileEntry[]>,
-): FileTreeNode[] {
-  const dirs: FileTreeNode[] = []
-  const files: FileTreeNode[] = []
-  for (const entry of entries) {
-    if (entry.kind === "dir") {
-      const children = childrenByDir.get(entry.path)
-      dirs.push({
-        ...entry,
-        children: children ? buildTree(children, childrenByDir) : [],
-      })
-    } else {
-      files.push({ ...entry })
-    }
-  }
-  dirs.sort((a, b) => a.name.localeCompare(b.name))
-  files.sort((a, b) => a.name.localeCompare(b.name))
-  return [...dirs, ...files]
-}
-
-function parentDir(path: string): string {
-  const i = path.lastIndexOf("/")
-  return i > 0 ? path.slice(0, i) : "."
-}
-
-function dirKey(dir: string): string {
-  return dir && dir !== "" ? dir : "."
-}
-
-function mergeEntries(
-  base: FileEntry[] | undefined,
-  optimistic: FileEntry[] | undefined,
-): FileEntry[] | undefined {
-  if (!optimistic?.length) return base
-  const byPath = new Map<string, FileEntry>()
-  for (const entry of base ?? []) byPath.set(entry.path, entry)
-  for (const entry of optimistic) byPath.set(entry.path, entry)
-  return Array.from(byPath.values())
-}
-
-type DraftEditing =
-  | { kind: "create-file"; parentDir: string; path: string }
-  | { kind: "create-folder"; parentDir: string; path: string }
-  | { kind: "rename"; path: string; initialValue: string }
-  | null
-
-function injectDraftIntoTree(
-  tree: FileTreeNode[],
-  editing: DraftEditing,
-  rootDir: string,
-): FileTreeNode[] {
-  if (!editing || editing.kind === "rename") return tree
-  const draft: FileTreeNode = {
-    name: "",
-    path: editing.path,
-    kind: editing.kind === "create-folder" ? "dir" : "file",
-    isDraft: true,
-  }
-  const targetDir = editing.parentDir
-  // Inserting at the root is easy: just prepend a draft row.
-  if (targetDir === rootDir || targetDir === "." || targetDir === "") {
-    return [draft, ...tree]
-  }
-  return tree.map((node) => {
-    if (node.kind !== "dir") return node
-    if (node.path === targetDir) {
-      return { ...node, children: [draft, ...(node.children ?? [])] }
-    }
-    if (node.children?.length) {
-      return {
-        ...node,
-        children: injectDraftIntoTree(node.children, editing, rootDir),
-      }
-    }
-    return node
-  })
-}
 
 /**
  * Copy `text` to the clipboard. Falls back to a hidden-textarea + execCommand
@@ -268,12 +196,7 @@ export function FileTreeView({
   // Inline edit state. `path` identifies which row renders an <input>; for
   // drafts (new file/folder), `parentDir` says where to place the result, and
   // `path` is a synthetic id so the row can be located in the tree.
-  type EditingState =
-    | { kind: "rename"; path: string; initialValue: string }
-    | { kind: "create-file"; parentDir: string; path: string }
-    | { kind: "create-folder"; parentDir: string; path: string }
-    | null
-  const [editing, setEditing] = useState<EditingState>(null)
+  const [editing, setEditing] = useState<DraftEditing>(null)
   const [revealPath, setRevealPath] = useState<string | null>(null)
   const draftSeqRef = useRef(0)
 
