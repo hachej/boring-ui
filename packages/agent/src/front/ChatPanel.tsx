@@ -68,19 +68,15 @@ import { useComposerPickers } from './useComposerPickers'
 import { createEnrichedSubmitPayload } from './chatSubmit'
 import { useChatModelSelection } from './hooks/useChatModelSelection'
 import { useServerSkills } from './hooks/useServerSkills'
+import { useThinkingSettings } from './hooks/useThinkingSettings'
 import {
-  DEFAULT_THINKING,
   decodeModelKey,
   encodeModelKey,
   isThinkingLevel,
   modelPayload,
   parseModelSelection,
-  readStoredShowThoughts,
-  readStoredThinking,
   THINKING_LEVELS,
   writeStoredModelSelection,
-  writeStoredShowThoughts,
-  writeStoredThinking,
   type AvailableModel,
   type ModelSelection,
   type ThinkingLevel,
@@ -236,17 +232,8 @@ export function ChatPanel(props: ChatPanelProps) {
     defaultModel,
     requestHeaders,
   })
-  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
-    thinkingControl ? readStoredThinking() : DEFAULT_THINKING,
-  )
-  const [showThoughts, setShowThoughts] = useState<boolean>(() => readStoredShowThoughts())
-  useEffect(() => {
-    if (!thinkingControl) return
-    writeStoredThinking(thinkingLevel)
-  }, [thinkingControl, thinkingLevel])
-  useEffect(() => {
-    writeStoredShowThoughts(showThoughts)
-  }, [showThoughts])
+  const { thinkingLevel, setThinkingLevel, showThoughts, setShowThoughts } =
+    useThinkingSettings(thinkingControl)
   /**
    * Client-side transient notice for attachment validation (too many files,
    * single file too large, …). PromptInput's onError fires synchronously on
