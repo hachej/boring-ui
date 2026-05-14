@@ -1,6 +1,6 @@
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
-import type { UiBridge, UiState } from "../../../shared/ui-bridge"
+import type { UiBridge, UiState } from "../../../server"
 import type { AskUserStore, AskUserStoreChange } from "./AskUserStore"
 
 export type AskUserPendingState = {

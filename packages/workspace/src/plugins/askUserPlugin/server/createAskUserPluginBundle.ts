@@ -1,6 +1,5 @@
 import { join } from "node:path"
-import type { UiBridge } from "../../../shared/ui-bridge"
-import type { WorkspaceServerPlugin } from "../../../server/plugins/defineServerPlugin"
+import type { UiBridge, WorkspaceServerPlugin } from "../../../server"
 import { FileAskUserStore, type AskUserStore } from "./AskUserStore"
 import { AskUserRuntime } from "./AskUserRuntime"
 import { AskUserStatePublisher } from "./AskUserStatePublisher"

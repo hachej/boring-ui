@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify"
-import { defineServerPlugin, type WorkspaceServerPlugin } from "../../../server/plugins/defineServerPlugin"
+import { defineServerPlugin, type WorkspaceServerPlugin } from "../../../server"
 import { ASK_USER_PLUGIN_ID, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import type { AskUserRuntime } from "./AskUserRuntime"
 import type { AskUserStore } from "./AskUserStore"

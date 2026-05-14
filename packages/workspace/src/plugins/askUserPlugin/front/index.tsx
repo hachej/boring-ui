@@ -1,15 +1,19 @@
 "use client"
 
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@hachej/boring-ui-kit"
+import {
+  defineFrontPlugin,
+  definePanel,
+  UI_COMMAND_EVENT,
+  useWorkspaceAttention,
+  type PaneProps,
+  type PluginOutput,
+  type PluginProviderProps,
+  type SurfaceResolverConfig,
+  type WorkspaceFrontPlugin,
+} from "@hachej/boring-workspace"
 import { CheckCircle2, HelpCircle, Sparkles, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
-import { UI_COMMAND_EVENT } from "../../../front/bridge"
-import { useWorkspaceAttention } from "../../../front/provider"
-import { definePanel } from "../../../front/registry/types"
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../front/components/ui"
-import { defineFrontPlugin, type WorkspaceFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
-import type { PluginOutput, PluginProviderProps } from "../../../shared/plugins/types"
-import type { PaneProps } from "../../../shared/types/panel"
-import type { SurfaceResolverConfig } from "../../../shared/types/surface"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
 import { createQuestionsClient, readPendingQuestionFromState, QuestionsClientError } from "./client"
