@@ -69,6 +69,7 @@ import { createEnrichedSubmitPayload } from './chatSubmit'
 import { useChatModelSelection } from './hooks/useChatModelSelection'
 import { useServerSkills } from './hooks/useServerSkills'
 import { useThinkingSettings } from './hooks/useThinkingSettings'
+import { useAttachmentNotice } from './hooks/useAttachmentNotice'
 import {
   decodeModelKey,
   encodeModelKey,
@@ -234,18 +235,7 @@ export function ChatPanel(props: ChatPanelProps) {
   })
   const { thinkingLevel, setThinkingLevel, showThoughts, setShowThoughts } =
     useThinkingSettings(thinkingControl)
-  /**
-   * Client-side transient notice for attachment validation (too many files,
-   * single file too large, …). PromptInput's onError fires synchronously on
-   * selection; we mirror it to a small banner below the composer so the user
-   * gets immediate feedback without a mysterious silent drop.
-   */
-  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
-  useEffect(() => {
-    if (!attachmentNotice) return
-    const timer = setTimeout(() => setAttachmentNotice(null), 4000)
-    return () => clearTimeout(timer)
-  }, [attachmentNotice])
+  const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
   const isStreaming = status === 'submitted' || status === 'streaming'
   const attachmentsDisabled = isStreaming || pendingMessages.length > 0
 
