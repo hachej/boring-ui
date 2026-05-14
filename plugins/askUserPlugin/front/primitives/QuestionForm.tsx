@@ -41,7 +41,7 @@ type ContextValue = QuestionFormState & {
 
 const QuestionFormContext = createContext<ContextValue | null>(null)
 
-const fieldClass = "mt-4 first:mt-0"
+const fieldClass = "rounded-md border border-border/60 bg-card p-3 shadow-xs"
 const choiceControlClass = "mt-0.5"
 
 export function useQuestionForm(): ContextValue {

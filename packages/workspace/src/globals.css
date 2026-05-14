@@ -15,6 +15,8 @@
 @source "../../ui/src/alert-dialog.tsx";
 @source "../../ui/src/card.tsx";
 @source "../../ui/src/checkbox.tsx";
+@source "../../ui/src/radio.tsx";
+@source "../../ui/src/choice-group.tsx";
 @source "../../ui/src/popover.tsx";
 @source "../../ui/src/scroll-area.tsx";
 @source "../../ui/src/sheet.tsx";

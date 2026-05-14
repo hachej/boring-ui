@@ -151,7 +151,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
 
   return <div className={className ?? "h-full"}>
     <Pane className="h-full border-0 bg-background text-sm">
-      <PaneHeader className="border-b">
+      <PaneHeader className="border-b bg-muted/20">
         <div>
           <PaneTitle className="flex items-center gap-2"><MessageSquareWarning className="h-4 w-4 text-muted-foreground" /> Agent needs input</PaneTitle>
           <PaneDescription>Answer to continue the current task.</PaneDescription>
@@ -171,18 +171,18 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
           finally { setSubmitting(false) }
         }}>
           <QuestionForm>
-            <PaneBody className="overflow-auto p-5">
-              <div className="space-y-5">
-                <section className="border border-border/50 bg-muted/20 p-4">
+            <PaneBody className="overflow-auto bg-muted/10 p-4">
+              <div className="space-y-4">
+                <section className="rounded-lg border border-border/60 bg-card p-4 shadow-xs">
                   <div className="text-xs font-medium text-muted-foreground">Waiting for answer</div>
                   <h2 className="mt-2 text-balance text-base font-semibold leading-6 text-foreground">{question.title ?? "Question"}</h2>
                   {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
                 </section>
-                <div className="space-y-4"><QuestionFields /></div>
+                <div className="space-y-3"><QuestionFields /></div>
                 {error ? <Notice tone="destructive" role="alert">{error}</Notice> : null}
               </div>
             </PaneBody>
-            <PaneFooter className="justify-end border-t bg-background px-5 py-3"><div className="flex gap-2"><Button asChild variant="outline"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div></PaneFooter>
+            <PaneFooter className="justify-end border-t bg-background px-4 py-3"><div className="flex gap-2"><Button asChild variant="ghost"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div></PaneFooter>
           </QuestionForm>
         </QuestionFormProvider>
       ) : null}
