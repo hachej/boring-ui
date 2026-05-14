@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   ArrowDown,
   ArrowUp,
@@ -27,7 +27,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@hachej/boring-ui-kit"
-import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useCatalogs } from "../plugin/useCatalogs"
 import { useCommands } from "../plugin/useCommands"
 import type { CatalogConfig } from "../../shared/plugins/types"
@@ -43,6 +42,7 @@ import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
 import type { ExplorerRow } from "./DataExplorer/types"
 import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
 import { useCommandPaletteSelection } from "./useCommandPaletteSelection"
+import { useCommandPaletteChrome } from "./useCommandPaletteChrome"
 
 export type CommandPaletteProps = Record<string, never>
 
@@ -62,10 +62,6 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     }
     return map
   }, [workspaceCtx?.registeredPlugins])
-  const inputRef = useRef<HTMLInputElement>(null)
-  const priorFocusRef = useRef<HTMLElement | null>(null)
-  const wasOpenRef = useRef(false)
-
   const isCommandMode = mode === "commands"
   const searchQuery = query.trim()
 
@@ -78,88 +74,13 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     return () => clearTimeout(timer)
   }, [isCommandMode, searchQuery])
 
-  // cmdk's CommandInput captures Escape and preventDefaults to clear its
-  // own value before the event can reach Radix's onEscapeKeyDown — so the
-  // first Escape press feels like a no-op and users have to press twice.
-  // Attach a window-level keydown at capture phase while the palette is
-  // open so we always win the race and close on the first press.
-  //
-  // Same pattern for pointerdown: clicking the dialog overlay should close
-  // the palette on the first click. Radix has onPointerDownOutside +
-  // onOpenChange wired but in combination with cmdk's Command primitive
-  // those callbacks don't fire reliably (the overlay click reaches Radix
-  // but Radix decides not to dismiss). A window-level pointerdown that
-  // checks "is the click inside dialog-content?" lets us close on the
-  // first click outside, regardless of which primitive intercepts what.
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
-      event.preventDefault()
-      event.stopPropagation()
-      setOpen(false)
-    }
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null
-      if (!target) return
-      const content = document.querySelector('[data-slot="dialog-content"]')
-      if (content && !content.contains(target)) {
-        event.preventDefault()
-        event.stopPropagation()
-        setOpen(false)
-      }
-    }
-    window.addEventListener("keydown", onKeyDown, { capture: true })
-    window.addEventListener("pointerdown", onPointerDown, { capture: true })
-    return () => {
-      window.removeEventListener("keydown", onKeyDown, { capture: true })
-      window.removeEventListener("pointerdown", onPointerDown, { capture: true })
-    }
-  }, [open])
-
-  const openPalette = useCallback(() => {
-    if (!open && document.activeElement instanceof HTMLElement) {
-      priorFocusRef.current = document.activeElement
-    }
-    setOpen(true)
-  }, [open])
-
-  useKeyboardShortcuts({
-    shortcuts: useMemo(
-      () => [
-        { key: "k", mod: true, allowInEditable: true, handler: openPalette },
-        { key: "p", mod: true, allowInEditable: true, handler: openPalette },
-      ],
-      [openPalette],
-    ),
+  const { inputRef, switchMode, handleInputKeyDown } = useCommandPaletteChrome({
+    open,
+    setOpen,
+    mode,
+    setMode,
+    setQuery,
   })
-
-  useEffect(() => {
-    if (open) {
-      setQuery("")
-      setMode("catalogs")
-      requestAnimationFrame(() => {
-        inputRef.current?.focus()
-      })
-    } else if (wasOpenRef.current) {
-      const prior = priorFocusRef.current
-      if (prior && prior.isConnected) {
-        prior.focus()
-      }
-      priorFocusRef.current = null
-    }
-    wasOpenRef.current = open
-  }, [open])
-
-  const switchMode = useCallback((nextMode: PaletteMode) => {
-    setMode(nextMode)
-    setQuery((current) => current.replace(/^>\s*/, ""))
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [])
-
-  const toggleMode = useCallback(() => {
-    switchMode(mode === "commands" ? "catalogs" : "commands")
-  }, [mode, switchMode])
 
   const handleQueryChange = useCallback((next: string) => {
     if (next.startsWith(">")) {
@@ -169,13 +90,6 @@ export function CommandPalette(_props?: CommandPaletteProps) {
     }
     setQuery(next)
   }, [])
-
-  const handleInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Tab") return
-    event.preventDefault()
-    event.stopPropagation()
-    toggleMode()
-  }, [toggleMode])
 
   useEffect(() => {
     if (isCommandMode || !debouncedCatalogQuery) {
