@@ -15,6 +15,7 @@ import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
 } from "../../app/server/createWorkspaceAgentServer"
+import { createAskUserPluginBundle } from "../../plugins/askUserPlugin/server"
 import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
 
@@ -44,7 +45,7 @@ describe("createWorkspaceAgentServer — ask-user plugin wiring", () => {
       logger: false,
       provisionWorkspace: false,
       disableDefaultFileTools: true,
-      pluginFactories: [({ bridge }) => appServerApi.createAskUserPluginBundle({ workspaceRoot: tmpdir(), bridge })],
+      pluginFactories: [({ bridge }) => createAskUserPluginBundle({ workspaceRoot: tmpdir(), bridge })],
     })
     const badCommand = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
     expect(badCommand.statusCode).toBe(400)
