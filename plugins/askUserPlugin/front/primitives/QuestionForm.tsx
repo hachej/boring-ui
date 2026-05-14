@@ -41,7 +41,7 @@ type ContextValue = QuestionFormState & {
 
 const QuestionFormContext = createContext<ContextValue | null>(null)
 
-const fieldClass = "rounded-md border border-border/60 bg-card p-3 shadow-xs"
+const fieldClass = "space-y-1.5"
 const choiceControlClass = "mt-0.5"
 
 export function useQuestionForm(): ContextValue {
@@ -181,7 +181,7 @@ const defaultRenderers: QuestionFieldRendererRegistry = {
     </>
   ),
   select: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => (field.type === "select" || field.type === "radio") && (
-    <ChoiceGroup className={error && field.type === "radio" ? "rounded-md border border-destructive/40 bg-destructive/5 p-3" : undefined} aria-describedby={field.type === "radio" ? describedBy || undefined : undefined} aria-invalid={field.type === "radio" ? !!error : undefined} aria-errormessage={field.type === "radio" && error ? `${field.name}-error` : undefined}>
+    <ChoiceGroup aria-describedby={field.type === "radio" ? describedBy || undefined : undefined} aria-invalid={field.type === "radio" ? !!error : undefined} aria-errormessage={field.type === "radio" && error ? `${field.name}-error` : undefined}>
       <ChoiceGroupLegend>{label(field)}</ChoiceGroupLegend>
       {field.options.map((option) => field.type === "select" ? null : (
         <ChoiceItem key={option.value}>
@@ -197,7 +197,7 @@ const defaultRenderers: QuestionFieldRendererRegistry = {
   ),
   radio: (props) => defaultRenderers.select?.(props),
   multiselect: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "multiselect" && (
-    <ChoiceGroup className={error ? "rounded-md border border-destructive/40 bg-destructive/5 p-3" : undefined} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined}>
+    <ChoiceGroup aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined}>
       <ChoiceGroupLegend>{label(field)}</ChoiceGroupLegend>
       {field.options.map((option) => {
         const list = Array.isArray(value) ? value : []

@@ -171,14 +171,13 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
           finally { setSubmitting(false) }
         }}>
           <QuestionForm>
-            <PaneBody className="overflow-auto bg-muted/10 p-4">
-              <div className="space-y-4">
-                <section className="rounded-lg border border-border/60 bg-card p-4 shadow-xs">
-                  <div className="text-xs font-medium text-muted-foreground">Waiting for answer</div>
-                  <h2 className="mt-2 text-balance text-base font-semibold leading-6 text-foreground">{question.title ?? "Question"}</h2>
-                  {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
-                </section>
-                <div className="space-y-3"><QuestionFields /></div>
+            <PaneBody className="overflow-auto p-5">
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h2 className="text-balance text-lg font-semibold leading-6 tracking-tight text-foreground">{question.title ?? "Question"}</h2>
+                  {question.context ? <p className="max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
+                </div>
+                <div className="space-y-5"><QuestionFields /></div>
                 {error ? <Notice tone="destructive" role="alert">{error}</Notice> : null}
               </div>
             </PaneBody>
