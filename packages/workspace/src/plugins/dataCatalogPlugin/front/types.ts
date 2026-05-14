@@ -1,11 +1,11 @@
 import type { ComponentType, ReactNode } from "react"
+import type { DataExplorerProps } from "../../../front/components/DataExplorer"
 import type {
-  DataExplorerProps,
   DragPayload,
   ExplorerAdapter,
   ExplorerRow,
   FacetConfig,
-} from "../../../front/components/DataExplorer"
+} from "../../../shared/types/explorer"
 import type { WorkspaceBridge } from "../../../front/bridge/types"
 import type { PaneProps, PanelConfig } from "../../../front/registry/types"
 import type { LeftTabParams } from "../../../shared/plugins/types"
