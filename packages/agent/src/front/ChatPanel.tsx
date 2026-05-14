@@ -66,15 +66,15 @@ import { getReasoningPart, isBlankTextPart, isFilePart, isTextPart, type Reasoni
 import { useComposerHistory } from './useComposerHistory'
 import { useComposerPickers } from './useComposerPickers'
 import { createEnrichedSubmitPayload } from './chatSubmit'
+import { useChatModelSelection } from './hooks/useChatModelSelection'
+import { useServerSkills } from './hooks/useServerSkills'
 import {
-  clearStoredModelSelection,
   DEFAULT_THINKING,
   decodeModelKey,
   encodeModelKey,
   isThinkingLevel,
   modelPayload,
   parseModelSelection,
-  readStoredModelState,
   readStoredShowThoughts,
   readStoredThinking,
   THINKING_LEVELS,
@@ -229,25 +229,13 @@ export function ChatPanel(props: ChatPanelProps) {
     () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
     [extraCommands],
   )
-  // Bumped when server skills are added to registry so the picker re-renders
-  const [skillsStamp, setSkillsStamp] = useState(0)
+  const skillsStamp = useServerSkills({ registry, requestHeaders })
   const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
 
-  const initialModelState = useMemo(readStoredModelState, [])
-  const [model, setModelState] = useState<ModelSelection | null>(
-    () => initialModelState.model ?? defaultModel ?? null,
-  )
-  const [userSelectedModel, setUserSelectedModel] = useState<boolean>(
-    () => initialModelState.userSelected,
-  )
-  const userSelectedModelRef = useRef(userSelectedModel)
-  useEffect(() => {
-    userSelectedModelRef.current = userSelectedModel
-  }, [userSelectedModel])
-  const setModel = useCallback((next: ModelSelection) => {
-    setUserSelectedModel(true)
-    setModelState(next)
-  }, [])
+  const { availableModels, model, setModel } = useChatModelSelection({
+    defaultModel,
+    requestHeaders,
+  })
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
     thinkingControl ? readStoredThinking() : DEFAULT_THINKING,
   )
@@ -271,82 +259,6 @@ export function ChatPanel(props: ChatPanelProps) {
     const timer = setTimeout(() => setAttachmentNotice(null), 4000)
     return () => clearTimeout(timer)
   }, [attachmentNotice])
-  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
-
-  useEffect(() => {
-    if (!userSelectedModel || !model) return
-    writeStoredModelSelection(model)
-  }, [model, userSelectedModel])
-
-  useEffect(() => {
-    if (userSelectedModelRef.current || !defaultModel) return
-    setModelState(defaultModel)
-  }, [defaultModel])
-
-  // Fetch the live list from pi's ModelRegistry so the dropdown reflects
-  // what the server actually has auth for, not a hardcoded alias set.
-  useEffect(() => {
-    let aborted = false
-    fetch('/api/v1/agent/models', { headers: requestHeaders })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
-        if (aborted || !payload?.models) return
-        setAvailableModels(payload.models)
-        const available = payload.models.filter((m) => m.available)
-        setModelState((current) => {
-          const currentAvailable = current
-            ? available.some((m) => m.provider === current.provider && m.id === current.id)
-            : false
-          if (currentAvailable) return current
-
-          userSelectedModelRef.current = false
-          setUserSelectedModel(false)
-          clearStoredModelSelection()
-
-          return payload.defaultModel
-            ? { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
-            : null
-        })
-      })
-      .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
-    return () => { aborted = true }
-  }, [requestHeaders])
-
-  // Fetch PI skills and register them so the slash picker shows them without
-  // host apps needing to hardcode them in extraCommands. Server skills never
-  // overwrite builtins or host-provided extraCommands (first-write wins).
-  useEffect(() => {
-    let aborted = false
-    fetch('/api/v1/agent/skills', { headers: requestHeaders })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { skills?: Array<{ name: string; description: string }> } | null) => {
-        if (aborted || !payload?.skills) return
-        let added = 0
-        for (const skill of payload.skills) {
-          if (!registry.get(skill.name)) {
-            registry.register({ name: skill.name, description: skill.description, kind: 'skill', handler: () => {} })
-            added++
-          }
-        }
-        if (added > 0) setSkillsStamp((n) => n + 1)
-      })
-      .catch(() => {})
-    return () => { aborted = true }
-  }, [requestHeaders, registry])
-
-  // Optional integration hook for host slash commands. Accepts explicit
-  // provider-qualified selections only ({ provider, id } or "provider:id");
-  // unqualified legacy aliases are intentionally ignored so Boring never
-  // guesses a model provider on Pi's behalf.
-  useEffect(() => {
-    const onChange = (event: Event) => {
-      const next = parseModelSelection((event as CustomEvent).detail)
-      if (next) setModel(next)
-    }
-    globalThis.addEventListener?.('boring:model-change', onChange)
-    return () => globalThis.removeEventListener?.('boring:model-change', onChange)
-  }, [setModel])
-
   const isStreaming = status === 'submitted' || status === 'streaming'
   const attachmentsDisabled = isStreaming || pendingMessages.length > 0
 
