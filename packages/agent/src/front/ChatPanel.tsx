@@ -483,6 +483,7 @@ export function ChatPanel(props: ChatPanelProps) {
             const isWaitingFollowUp = role === 'user' && projectedStatus === 'queued'
             const textParts = message.parts.filter(isTextPart)
             const fileParts = message.parts.filter(isFilePart)
+            const seenReasoningTexts = new Set<string>()
             const orderedParts = message.parts.reduce<Array<
               | { kind: 'reasoning'; text: string; state: ReasoningPartView['state']; key: string }
               | { kind: 'part'; part: UIMessage['parts'][number]; key: string }
@@ -499,6 +500,9 @@ export function ChatPanel(props: ChatPanelProps) {
                 }
                 return items
               }
+              const normalizedReasoning = reasoningPart.text.trim()
+              if (normalizedReasoning && seenReasoningTexts.has(normalizedReasoning)) return items
+              if (normalizedReasoning) seenReasoningTexts.add(normalizedReasoning)
               const previous = items[items.length - 1]
               if (previous?.kind === 'reasoning') {
                 previous.text = `${previous.text}\n\n${reasoningPart.text}`
@@ -537,7 +541,8 @@ export function ChatPanel(props: ChatPanelProps) {
             // reply — regenerating an older turn would fork history in
             // ways we don't support. Restricting visibility to the tail
             // keeps the UX honest.
-            const isLastMessage = messageIndex === messages.length - 1
+            const isLastMessage = messageIndex === displayMessages.length - 1
+            const shouldReserveStreamingActions = isStreaming && role === 'assistant' && isLastMessage
 
             return (
               <Message
@@ -674,7 +679,7 @@ export function ChatPanel(props: ChatPanelProps) {
                  * Regenerate is gated to the LAST assistant message — see
                  * the regenerateLastTurn helper below for why we bypass
                  * AI SDK's built-in `regenerate()`. */}
-                {role === 'assistant' && textParts.length > 0 && (
+                {role === 'assistant' && (textParts.length > 0 || shouldReserveStreamingActions) && (
                   <MessageActionsBar
                     text={textParts.map((p) => p.text).join('\n\n')}
                     canRegenerate={isLastMessage && !isStreaming}

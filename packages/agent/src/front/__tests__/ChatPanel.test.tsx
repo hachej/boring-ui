@@ -187,6 +187,32 @@ describe('ChatPanel (shadcn)', () => {
     })
   })
 
+  test('deduplicates repeated reasoning snapshots around assistant text', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            { type: 'reasoning', text: 'same thought', state: 'done' },
+            { type: 'text', text: 'The visible answer' },
+            { type: 'reasoning', text: 'same thought', state: 'done' },
+          ],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'ready',
+      error: undefined,
+    })
+
+    withLocalStorage({ 'boring-agent:composer:show-thoughts': '1' }, () => {
+      const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning-dup" />)
+
+      expect(html.match(/same thought/g)).toHaveLength(1)
+      expect(html).toContain('The visible answer')
+    })
+  })
+
   test('renders tool call with default renderer', () => {
     mockUseAgentChat.mockReturnValue({
       messages: [
