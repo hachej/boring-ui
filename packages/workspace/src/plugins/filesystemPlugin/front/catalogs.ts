@@ -1,5 +1,5 @@
 import type { CatalogConfig } from "../../../shared/plugins/types"
-import type { ExplorerRow, SearchResult } from "../../../front/components/DataExplorer/types"
+import type { ExplorerRow, SearchResult } from "../../../shared/types/explorer"
 import { toFileSearchGlob } from "./search"
 import { FILES_CATALOG_ID } from "../shared/constants"
 

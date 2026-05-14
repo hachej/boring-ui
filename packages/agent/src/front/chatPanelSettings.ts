@@ -4,9 +4,9 @@ const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
 const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
 
 /**
- * Extended-thinking budget. Sent through to pi-coding-agent which forwards
- * it to providers that support it (Anthropic Claude 4.x). 'off' means no
- * reasoning chunks; the higher tiers progressively allow more think-time.
+ * Extended-thinking budget. Sent through the agent runtime to providers that
+ * support reasoning controls. 'off' means no reasoning chunks; the higher
+ * tiers progressively allow more think-time.
  */
 export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
 
@@ -45,10 +45,10 @@ export function writeStoredShowThoughts(value: boolean): void {
 }
 
 /**
- * Selected model, stored as { provider, id } so the composer can speak
- * pi-coding-agent's real registered IDs (claude-sonnet-4-6, gpt-5.2-codex,
- * …) rather than a 3-alias shorthand. Unqualified legacy aliases are ignored:
- * Boring must not infer a provider when Pi owns model selection.
+ * Selected model, stored as { provider, id } so the composer can pass through
+ * the agent runtime's registered model IDs rather than a local alias table.
+ * Unqualified legacy aliases are ignored: Boring must not infer a provider
+ * when the runtime owns model selection.
  */
 export interface ModelSelection {
   provider: string

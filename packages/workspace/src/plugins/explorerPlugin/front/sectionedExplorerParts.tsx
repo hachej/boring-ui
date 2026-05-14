@@ -1,7 +1,7 @@
 "use client"
 
 import type { DragEvent, KeyboardEvent } from "react"
-import type { Badge, DragPayload, ExplorerRow, Facets } from "../../../front/components/DataExplorer"
+import type { Badge, DragPayload, ExplorerRow, Facets } from "../../../shared/types/explorer"
 import { cn } from "../../../front/lib/utils"
 import type { ExplorerSectionFilter } from "./index"
 

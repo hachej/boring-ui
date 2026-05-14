@@ -1,14 +1,14 @@
 import { useCallback, useMemo } from 'react'
 import type { CatalogConfig } from '../../shared/plugins/types'
 import type { CommandConfig } from '../registry/types'
-import type { ExplorerRow } from './DataExplorer/types'
+import type { ExplorerRow } from '../../shared/types/explorer'
 import {
   addCatalogToRecent,
   addCommandToRecent,
   loadRecent,
 } from './recent'
 import type { RecentEntry } from './recent'
-import { filterAvailableRecentEntries } from './CommandPalette.helpers'
+import { filterAvailableRecentEntries } from './commandPaletteHelpers'
 
 export function useCommandPaletteSelection({
   catalogs,

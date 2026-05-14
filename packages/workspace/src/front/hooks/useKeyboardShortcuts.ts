@@ -21,7 +21,10 @@ function matchesShortcut(e: KeyboardEvent, binding: ShortcutBinding): boolean {
   if (!binding.mod && mod) return false
   if (binding.shift && !e.shiftKey) return false
   if (!binding.shift && e.shiftKey) return false
-  return e.key.toLowerCase() === binding.key.toLowerCase()
+  const key = binding.key.toLowerCase()
+  const eventKey = e.key.toLowerCase()
+  const eventCode = e.code.toLowerCase()
+  return eventKey === key || eventCode === key || eventCode === `key${key}`
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

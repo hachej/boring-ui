@@ -4,7 +4,7 @@ import {
   MAX_RESULTS,
   errorMessage,
   type CatalogSearchGroup,
-} from './CommandPalette.helpers'
+} from './commandPaletteHelpers'
 
 export function useCommandPaletteCatalogSearch({
   catalogs,

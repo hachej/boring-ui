@@ -1,4 +1,4 @@
-import type { ExplorerRow } from "../../../front/components/DataExplorer"
+import type { ExplorerRow } from "../../../shared/types/explorer"
 import type { SurfaceResolverConfig } from "../../../shared/types/surface"
 import { DATA_CATALOG_ROW_SURFACE_KIND } from "../shared/constants"
 import { dataCatalogPanelInstanceId } from "./openVisualization"

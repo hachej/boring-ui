@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, type Dispatch, type KeyboardEvent, type SetStateAction } from 'react'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
-import type { PaletteMode } from './CommandPalette.helpers'
+import type { PaletteMode } from './commandPaletteHelpers'
 
 export function useCommandPaletteChrome({
   open,

@@ -10,8 +10,8 @@ import {
 } from "react"
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react"
 import { DataExplorer } from "../../../front/components/DataExplorer"
+import type { DataExplorerProps } from "../../../front/components/DataExplorer"
 import type {
-  DataExplorerProps,
   DragPayload,
   ExplorerAdapter,
   ExplorerRow,
@@ -19,7 +19,7 @@ import type {
   FacetValue,
   Facets,
   SearchResult,
-} from "../../../front/components/DataExplorer"
+} from "../../../shared/types/explorer"
 import { Input } from "@hachej/boring-ui-kit"
 import { cn } from "../../../front/lib/utils"
 import { definePanel } from "../../../front/registry/types"
