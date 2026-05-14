@@ -431,21 +431,24 @@ export function ChatPanel(props: ChatPanelProps) {
           Top of the chat surface so it's the first thing the eye registers.
           Self-contained via motion/react so consumers don't need to import
           a separate stylesheet for the keyframes. */}
-      {isStreaming && (
-        <div
-          className="relative h-[2px] w-full shrink-0 overflow-hidden bg-[oklch(from_var(--accent)_l_c_h/0.08)]"
-          role="progressbar"
-          aria-busy="true"
-          aria-label="Agent working"
-        >
-          <motion.div
-            className="absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-[color:var(--accent)] to-transparent"
-            initial={{ x: '-100%' }}
-            animate={{ x: '400%' }}
-            transition={{ duration: 1.4, ease: [0.65, 0, 0.35, 1], repeat: Infinity }}
-          />
-        </div>
-      )}
+      <div
+        className={cn(
+          "relative h-[2px] w-full shrink-0 overflow-hidden bg-[oklch(from_var(--accent)_l_c_h/0.08)]",
+          "transition-opacity duration-200",
+          isStreaming ? "opacity-100" : "opacity-0",
+        )}
+        role={isStreaming ? "progressbar" : undefined}
+        aria-busy={isStreaming || undefined}
+        aria-hidden={!isStreaming}
+        aria-label={isStreaming ? "Agent working" : undefined}
+      >
+        <motion.div
+          className="absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-[color:var(--accent)] to-transparent"
+          initial={{ x: '-100%' }}
+          animate={{ x: isStreaming ? '400%' : '-100%' }}
+          transition={{ duration: 1.4, ease: [0.65, 0, 0.35, 1], repeat: isStreaming ? Infinity : 0 }}
+        />
+      </div>
       <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">
         <ConversationContent className={cn(
           "mx-auto flex w-full flex-col gap-6",
@@ -664,17 +667,18 @@ export function ChatPanel(props: ChatPanelProps) {
                   })}
                 </MessageContent>
 
-                {/* Per-message action bar. Lives OUTSIDE MessageContent so
-                 * it doesn't reserve layout space in idle reads. `hidden`
-                 * → zero height when not hovered; `group-hover:flex` +
-                 * `group-focus-within:flex` reveal on interaction.
+                {/* Per-message action bar. Lives OUTSIDE MessageContent.
+                 * During streaming it stays mounted but visually/a11y hidden
+                 * so the final transition from "working" to "done" doesn't
+                 * add a new row and nudge the transcript.
                  * Regenerate is gated to the LAST assistant message — see
                  * the regenerateLastTurn helper below for why we bypass
                  * AI SDK's built-in `regenerate()`. */}
-                {role === 'assistant' && !isStreaming && textParts.length > 0 && (
+                {role === 'assistant' && textParts.length > 0 && (
                   <MessageActionsBar
                     text={textParts.map((p) => p.text).join('\n\n')}
-                    canRegenerate={isLastMessage}
+                    canRegenerate={isLastMessage && !isStreaming}
+                    visible={!isStreaming}
                     onRegenerate={() => {
                       void regenerateLastTurn({
                         messages,
@@ -1081,21 +1085,20 @@ function regenerateLastTurn({
  * Per-message action bar. Appears on assistant messages once the turn
  * has finished streaming — Copy + Regenerate, standard chat affordances.
  *
- * Rendered via `hidden` / `group-hover:flex` / `group-focus-within:flex`
- * so at rest the bar takes ZERO layout height. The old `opacity-0`
- * approach reserved space even when invisible, which made idle
- * assistant messages look like they had mysterious trailing padding
- * below the text. This pattern is called out in .impeccable.md rule #4
- * ("Reveal reserves nothing").
+ * The row reserves its final height while streaming, but stays visually and
+ * accessibility hidden, so the transcript does not jump when the working
+ * state settles and the controls fade in.
  */
 function MessageActionsBar({
   text,
   canRegenerate,
   onRegenerate,
+  visible = true,
 }: {
   text: string
   canRegenerate: boolean
   onRegenerate: () => void
+  visible?: boolean
 }) {
   const [copied, setCopied] = useState(false)
   const markCopied = () => {
@@ -1103,6 +1106,7 @@ function MessageActionsBar({
     setTimeout(() => setCopied(false), 1500)
   }
   const handleCopy = async () => {
+    if (!visible) return
     if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
       try {
         await navigator.clipboard.writeText(text)
@@ -1140,20 +1144,23 @@ function MessageActionsBar({
     "hover:bg-foreground/[0.04] hover:text-muted-foreground/80",
     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40",
   )
+  const hiddenActionProps = visible ? {} : { tabIndex: -1 }
   return (
     <div
+      aria-hidden={!visible}
       className={cn(
-        // Always visible but quiet — discrete utility row under the
+        // Always mounted but quiet — discrete utility row under the
         // assistant message. Hovering an individual button bumps it
         // back to full contrast.
-        "flex items-center gap-0.5 -mt-1",
+        "flex min-h-6 items-center gap-0.5 -mt-1 transition-opacity duration-200",
+        visible ? "opacity-100" : "pointer-events-none opacity-0",
       )}
     >
-      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={iconActionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'} title={copied ? 'Copied' : 'Copy'}>
+      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={iconActionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'} title={copied ? 'Copied' : 'Copy'} {...hiddenActionProps}>
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
       </Button>
       {canRegenerate && (
-        <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={iconActionBtnClass} aria-label="Regenerate" title="Regenerate">
+        <Button type="button" variant="ghost" size="xs" onClick={visible ? onRegenerate : undefined} className={iconActionBtnClass} aria-label="Regenerate" title="Regenerate" {...hiddenActionProps}>
           <RefreshCwIcon className="h-3.5 w-3.5" />
         </Button>
       )}
