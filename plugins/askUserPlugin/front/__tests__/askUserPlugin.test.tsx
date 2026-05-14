@@ -48,8 +48,8 @@ describe("askUserPlugin front shell", () => {
     const choice = screen.getByRole("radio", { name: "A" })
     fireEvent.click(choice)
     fireEvent.change(choice, { target: { checked: true } })
-    await waitFor(() => expect(screen.getByRole("button", { name: "Submit" })).not.toBeDisabled())
-    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send answers" })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole("button", { name: "Send answers" }))
 
     await waitFor(() => expect(close).toHaveBeenCalled())
     expect(closeWorkbench).toHaveBeenCalled()

@@ -44,7 +44,7 @@ describe("QuestionForm primitives", () => {
     render(<Form schema={allFields} onSubmit={submit} onCancel={cancel} />)
     screen.getByRole("form", { name: "Question form" }).focus()
     fireEvent.click(screen.getByRole("button", { name: "Submit" }))
-    expect(screen.getByLabelText(/Text/)).not.toHaveFocus()
+    expect(screen.getByLabelText(/Text/)).toHaveFocus()
     fireEvent.change(screen.getByLabelText(/Text/), { target: { value: "ok" } })
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "a" } })
     fireEvent.click(screen.getByLabelText(/X/))
