@@ -56,13 +56,16 @@ describe("AskUserStatePublisher", () => {
     await expect(cancelPending).resolves.toMatchObject({ status: "cancelled" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
 
-    void runtime.ask({ sessionId: "s1", schema })
+    const abandonedController = new AbortController()
+    const abandonedPending = runtime.ask({ sessionId: "s1", schema }, abandonedController.signal)
     const q3 = await vi.waitFor(async () => {
       const pending = await store.getPending("s1")
       expect(pending).not.toBeNull()
       return pending!
     })
     await store.markAbandoned(q3.questionId)
+    abandonedController.abort()
+    await expect(abandonedPending).resolves.toMatchObject({ status: "cancelled" })
     await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
   })
 })
