@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { cn } from '../lib'
+import { toFileSearchGlob } from '../fileSearchGlob'
 import { usePickerKeyboard } from './use-picker-keyboard'
 
 export interface MentionState {
@@ -16,6 +17,8 @@ interface MentionPickerProps {
   onDismiss: () => void
   apiBaseUrl?: string
 }
+
+export const mentionSearchGlob = toFileSearchGlob
 
 function highlight(text: string, query: string): { before: string; match: string; after: string } | null {
   if (!query) return null
@@ -33,7 +36,7 @@ export function MentionPicker({ mention, onSelect, onDismiss, apiBaseUrl = '' }:
     setActiveIdx(0)
     const ctrl = new AbortController()
     const t = setTimeout(() => {
-      fetch(`${apiBaseUrl}/api/v1/files/search?q=${encodeURIComponent(mention.query || '*')}&limit=8`, { signal: ctrl.signal })
+      fetch(`${apiBaseUrl}/api/v1/files/search?q=${encodeURIComponent(mentionSearchGlob(mention.query))}&limit=8`, { signal: ctrl.signal })
         .then((r) => r.ok ? r.json() : null)
         .then((data: { results?: string[] } | null) => {
           if (data?.results) setResults(data.results.slice(0, 8))

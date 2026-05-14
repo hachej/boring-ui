@@ -187,6 +187,32 @@ describe('ChatPanel (shadcn)', () => {
     })
   })
 
+  test('deduplicates repeated reasoning snapshots around assistant text', () => {
+    mockUseAgentChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            { type: 'reasoning', text: 'same thought', state: 'done' },
+            { type: 'text', text: 'The visible answer' },
+            { type: 'reasoning', text: 'same thought', state: 'done' },
+          ],
+        },
+      ],
+      sendMessage: mockSendMessage,
+      status: 'ready',
+      error: undefined,
+    })
+
+    withLocalStorage({ 'boring-agent:composer:show-thoughts': '1' }, () => {
+      const html = renderToStaticMarkup(<ChatPanel sessionId="sess-reasoning-dup" />)
+
+      expect(html.match(/same thought/g)).toHaveLength(1)
+      expect(html).toContain('The visible answer')
+    })
+  })
+
   test('renders tool call with default renderer', () => {
     mockUseAgentChat.mockReturnValue({
       messages: [
@@ -280,6 +306,35 @@ describe('ChatPanel (shadcn)', () => {
           message: 'Run tests',
           attachments: [],
         },
+      },
+    )
+  })
+
+  test('keeps image attachments visible as file parts while sending binary marker only to server', async () => {
+    renderToStaticMarkup(<ChatPanel sessionId="sess-image" />)
+    const image = {
+      type: 'file' as const,
+      filename: 'Screenshot.png',
+      mediaType: 'image/png',
+      url: '/api/v1/files/assets/images/Screenshot.png',
+    }
+
+    await capturedOnSubmit!({ text: 'can you read this?', files: [image] })
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      { text: 'can you read this?', files: [image] },
+      {
+        body: expect.objectContaining({
+          sessionId: 'sess-image',
+          message: 'can you read this?\n\n[attached: Screenshot.png (image/png, not inlined — binary)]',
+          attachments: [
+            {
+              filename: 'Screenshot.png',
+              mediaType: 'image/png',
+              url: '/api/v1/files/assets/images/Screenshot.png',
+            },
+          ],
+        }),
       },
     )
   })

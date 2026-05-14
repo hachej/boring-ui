@@ -1,3 +1,4 @@
+import React from "react"
 import type { Meta, StoryObj } from "@storybook/react"
 import { DockviewShell } from "../src/front/dock"
 import { WorkspaceProvider } from "../src/front/provider/WorkspaceProvider"
