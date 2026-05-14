@@ -2,7 +2,7 @@ import Fastify from "fastify"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { ASK_USER_ERROR_CODES } from "../../shared/error-codes"
 import { FileAskUserStore } from "../AskUserStore"
 import { AskUserRuntime } from "../AskUserRuntime"
@@ -10,12 +10,19 @@ import { constantTimeEqual, QuestionsBridge } from "../questionsBridge"
 import { questionsRoutes } from "../questionsRoutes"
 
 const schema = { wireVersion: 1 as const, fields: [{ type: "text" as const, name: "answer", label: "Answer", required: true }] }
+const controllers: AbortController[] = []
+
+afterEach(() => {
+  for (const controller of controllers.splice(0)) controller.abort()
+})
 
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), "ask-user-routes-"))
   const store = new FileAskUserStore(join(dir, "questions.json"))
   const runtime = new AskUserRuntime({ store, ownerPrincipalId: "p1" })
-  const result = runtime.ask({ sessionId: "s1", title: "T", schema })
+  const controller = new AbortController()
+  controllers.push(controller)
+  const result = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
   const question = await vi.waitFor(async () => {
     const pending = await store.getPending("s1")
     expect(pending).not.toBeNull()
