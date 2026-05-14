@@ -1,36 +1,8 @@
 import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
-
-const INLINE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml', 'application/yaml']
-
-async function resolveAttachmentUrls(files: FileUIPart[] | undefined) {
-  if (!files) return []
-  return Promise.all(files.map(async (file) => ({
-    filename: file.filename,
-    mediaType: file.mediaType,
-    url: file.url.startsWith('blob:')
-      ? (await convertBlobUrlToDataUrl(file.url)) ?? file.url
-      : file.url,
-  })))
-}
-
-/** Best-effort fetch of a FileUIPart's bytes as UTF-8 text. */
-async function readFileAsText(file: FileUIPart): Promise<string | null> {
-  const looksText =
-    INLINE_TEXT_MIME_PREFIXES.some((p) => file.mediaType?.startsWith(p)) ||
-    /\.(md|txt|csv|json|yaml|yml|ts|tsx|js|jsx|py|rb|rs|go|sh|bash|css|html|sql|log)$/i.test(file.filename ?? '')
-  if (!looksText) return null
-  try {
-    const res = await fetch(file.url)
-    if (!res.ok) return null
-    return await res.text()
-  } catch {
-    return null
-  }
-}
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MentionPicker, detectMention, type MentionState } from './primitives/mention-picker'
+import { MentionPicker } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
 import { usePiChatProjection } from './pi/piChatProjection'
@@ -59,7 +31,6 @@ import {
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
-  convertBlobUrlToDataUrl,
   usePromptInputAttachments,
 } from './primitives/prompt-input'
 import {
@@ -69,205 +40,37 @@ import {
   AttachmentInfo,
   AttachmentRemove,
 } from './primitives/attachments'
-import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, BrainIcon, EyeIcon, EyeOffIcon, BotIcon, Loader2, AlertCircleIcon } from 'lucide-react'
+import { PaperclipIcon, CopyIcon, CheckIcon, RefreshCwIcon, Loader2, AlertCircleIcon } from 'lucide-react'
 import {
   Button,
   IconButton,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
 } from '@hachej/boring-ui-kit'
 import { cn } from './lib'
+import { friendlyError } from './chatErrors'
+import { getReasoningPart, isBlankTextPart, isFilePart, isTextPart, type ReasoningPartView } from './chatMessageParts'
+import { useComposerHistory } from './useComposerHistory'
+import { useComposerPickers } from './useComposerPickers'
+import { createEnrichedSubmitPayload } from './chatSubmit'
+import { useChatModelSelection } from './hooks/useChatModelSelection'
+import { useServerSkills } from './hooks/useServerSkills'
+import { useThinkingSettings } from './hooks/useThinkingSettings'
+import { useAttachmentNotice } from './hooks/useAttachmentNotice'
+import {
+  modelPayload,
+  parseModelSelection,
+  writeStoredModelSelection,
+  type ModelSelection,
+  type ThinkingLevel,
+} from './chatPanelSettings'
+import {
+  composerActionClass,
+  ModelSelect,
+  ThinkingSelect,
+  ThoughtVisibilityButton,
+} from './chatPanelComposerControls'
+import { KbdHints } from './chatPanelKbdHints'
 
-const STORAGE_MODEL_KEY = 'boring-agent:composer:model'
-const STORAGE_MODEL_USER_KEY = 'boring-agent:composer:model:user-selected'
-const STORAGE_THINKING_KEY = 'boring-agent:composer:thinking'
-const STORAGE_SHOW_THOUGHTS_KEY = 'boring-agent:composer:show-thoughts'
-
-/**
- * Extended-thinking budget. Sent through to pi-coding-agent which forwards
- * it to providers that support it (Anthropic Claude 4.x). 'off' means no
- * reasoning chunks; the higher tiers progressively allow more think-time.
- */
-export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
-
-const DEFAULT_THINKING: ThinkingLevel = 'off'
-const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high']
-
-function isThinkingLevel(value: unknown): value is ThinkingLevel {
-  return typeof value === 'string' && (THINKING_LEVELS as readonly string[]).includes(value)
-}
-
-function readStoredThinking(): ThinkingLevel {
-  try {
-    const raw = globalThis.localStorage?.getItem(STORAGE_THINKING_KEY)
-    if (isThinkingLevel(raw)) return raw
-  } catch { /* storage unavailable */ }
-  return DEFAULT_THINKING
-}
-
-function readStoredShowThoughts(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(STORAGE_SHOW_THOUGHTS_KEY) === '1'
-  } catch { /* storage unavailable */ }
-  return false
-}
-
-/**
- * Selected model, stored as { provider, id } so the composer can speak
- * pi-coding-agent's real registered IDs (claude-sonnet-4-6, gpt-5.2-codex,
- * …) rather than a 3-alias shorthand. Unqualified legacy aliases are ignored:
- * Boring must not infer a provider when Pi owns model selection.
- */
-export interface ModelSelection {
-  provider: string
-  id: string
-}
-
-interface AvailableModel extends ModelSelection {
-  label: string
-  available: boolean
-}
-
-function modelPayload(model: ModelSelection | null): { model?: ModelSelection } {
-  return model ? { model } : {}
-}
-
-function parseModelSelection(value: unknown): ModelSelection | null {
-  if (typeof value === 'object' && value !== null) {
-    const parsed = value as Partial<ModelSelection>
-    return typeof parsed.provider === 'string' && typeof parsed.id === 'string'
-      ? { provider: parsed.provider, id: parsed.id }
-      : null
-  }
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  if (!trimmed) return null
-  if (trimmed.startsWith('{')) {
-    try {
-      return parseModelSelection(JSON.parse(trimmed))
-    } catch {
-      return null
-    }
-  }
-  const idx = trimmed.indexOf(':')
-  return idx > 0 && idx < trimmed.length - 1
-    ? { provider: trimmed.slice(0, idx), id: trimmed.slice(idx + 1) }
-    : null
-}
-
-function readStoredModel(): ModelSelection | null {
-  try {
-    return parseModelSelection(globalThis.localStorage?.getItem(STORAGE_MODEL_KEY))
-  } catch { /* storage unavailable */ }
-  return null
-}
-
-function readStoredModelState(): { model: ModelSelection | null; userSelected: boolean } {
-  const model = readStoredModel()
-  let userSelected = false
-  try {
-    userSelected = globalThis.localStorage?.getItem(STORAGE_MODEL_USER_KEY) === '1'
-  } catch { /* storage unavailable */ }
-  return {
-    // Only an explicit user-selection marker makes a stored model authoritative.
-    // App defaults must come from props or /api/v1/agent/models.defaultModel;
-    // otherwise child apps that seed localStorage can silently override the
-    // composer after the user picks a different provider.
-    model: userSelected ? model : null,
-    userSelected,
-  }
-}
-
-function encodeModelKey(sel: ModelSelection): string {
-  return `${sel.provider}:${sel.id}`
-}
-function decodeModelKey(key: string): ModelSelection | null {
-  const idx = key.indexOf(':')
-  if (idx < 0) return null
-  return { provider: key.slice(0, idx), id: key.slice(idx + 1) }
-}
-
-/**
- * Turn whatever AI SDK dumped into error.message into something readable.
- * We try three shapes:
- *   1) raw text (just return it)
- *   2) JSON with { error: { code, message, field? } } — our Fastify shape
- *   3) JSON with { message: … } — AI SDK's generic server-error response
- *
- * Also maps the known validation error codes to friendlier copy.
- */
-interface FriendlyError {
-  title: string
-  detail?: string
-}
-function friendlyError(err: Error): FriendlyError {
-  const raw = err.message ?? ''
-  // Non-JSON error (network, etc.)
-  if (!raw.startsWith('{')) {
-    return { title: raw || 'Something went wrong.' }
-  }
-  try {
-    const parsed = JSON.parse(raw)
-    const inner = parsed?.error ?? parsed
-    const code = typeof inner?.code === 'string' ? inner.code : undefined
-    const message = typeof inner?.message === 'string' ? inner.message : undefined
-    const field = typeof inner?.field === 'string' ? inner.field : undefined
-
-    if (code === 'validation_error') {
-      const label = field ? `\`${field}\`` : 'the request'
-      return {
-        title: 'Your message couldn’t be sent.',
-        detail: `${label} ${message?.toLowerCase() ?? 'failed validation'}.`,
-      }
-    }
-    if (code === 'internal' || code === 'internal_error') {
-      return { title: 'The server hit an internal error.', detail: message }
-    }
-    return { title: message ?? 'Something went wrong.', detail: code }
-  } catch {
-    return { title: raw }
-  }
-}
-
-function displayModelLabel(id: string): string {
-  // "claude-sonnet-4-6" → "Claude Sonnet 4.6"
-  // "gpt-5.3-codex" → "GPT-5.3 Codex"
-  const modelId = id.split('/').pop() ?? id
-  return modelId
-    .replace(/[-_]/g, ' ')
-    .replace(/\s(\d+)\s(\d+)/g, ' $1.$2')
-    .replace(/\bgpt\b/g, 'GPT')
-    .replace(/\b(qwen|grok|glm|claude|sonnet|haiku|opus|codex|mini|max|spark|flash|turbo|pro|omni|mimo|deepseek|euryale)\b/g, (m) =>
-      m.charAt(0).toUpperCase() + m.slice(1),
-    )
-}
-
-function displayProviderLabel(provider: string): string {
-  const known: Record<string, string> = {
-    anthropic: 'Anthropic',
-    openai: 'OpenAI',
-    'openai-codex': 'OpenAI Codex',
-    infomaniak: 'Infomaniak',
-  }
-  if (known[provider]) return known[provider]
-  return provider
-    .split(/[-_]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
+export type { ModelSelection, ThinkingLevel } from './chatPanelSettings'
 
 export type ComposerBlockerAction = {
   id: string
@@ -357,41 +160,6 @@ export interface ChatPanelProps {
   onUploadFile?: (file: File) => Promise<{ url: string }>
 }
 
-function isTextPart(part: UIMessage['parts'][number]): part is Extract<UIMessage['parts'][number], { type: 'text' }> {
-  return part.type === 'text'
-}
-
-function isBlankTextPart(part: UIMessage['parts'][number]): boolean {
-  return isTextPart(part) && part.text.trim().length === 0
-}
-
-function isFilePart(part: UIMessage['parts'][number]): part is FileUIPart {
-  return part.type === 'file'
-}
-
-interface ReasoningPartView {
-  text: string
-  state: 'streaming' | 'done'
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'object' || value === null) return null
-  return value as Record<string, unknown>
-}
-
-function getReasoningPart(part: UIMessage['parts'][number]): ReasoningPartView | null {
-  const record = asRecord(part)
-  if (!record || record.type !== 'reasoning') return null
-  const textCandidate = record.text ?? record.content
-  if (typeof textCandidate !== 'string' || textCandidate.length === 0) return null
-  const stateCandidate = record.state
-  return {
-    text: textCandidate,
-    state: stateCandidate === 'streaming' ? 'streaming' : 'done',
-  }
-}
-
-
 export function ChatPanel(props: ChatPanelProps) {
   const {
     sessionId,
@@ -469,134 +237,16 @@ export function ChatPanel(props: ChatPanelProps) {
     () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
     [extraCommands],
   )
-  // Bumped when server skills are added to registry so the picker re-renders
-  const [skillsStamp, setSkillsStamp] = useState(0)
+  const skillsStamp = useServerSkills({ registry, requestHeaders })
   const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
 
-  const initialModelState = useMemo(readStoredModelState, [])
-  const [model, setModelState] = useState<ModelSelection | null>(
-    () => initialModelState.model ?? defaultModel ?? null,
-  )
-  const [userSelectedModel, setUserSelectedModel] = useState<boolean>(
-    () => initialModelState.userSelected,
-  )
-  const userSelectedModelRef = useRef(userSelectedModel)
-  useEffect(() => {
-    userSelectedModelRef.current = userSelectedModel
-  }, [userSelectedModel])
-  const setModel = useCallback((next: ModelSelection) => {
-    setUserSelectedModel(true)
-    setModelState(next)
-  }, [])
-  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
-    thinkingControl ? readStoredThinking() : DEFAULT_THINKING,
-  )
-  const [showThoughts, setShowThoughts] = useState<boolean>(() => readStoredShowThoughts())
-  useEffect(() => {
-    if (!thinkingControl) return
-    try {
-      globalThis.localStorage?.setItem(STORAGE_THINKING_KEY, thinkingLevel)
-    } catch { /* noop */ }
-  }, [thinkingControl, thinkingLevel])
-  useEffect(() => {
-    try {
-      globalThis.localStorage?.setItem(STORAGE_SHOW_THOUGHTS_KEY, showThoughts ? '1' : '0')
-    } catch { /* noop */ }
-  }, [showThoughts])
-  /**
-   * Client-side transient notice for attachment validation (too many files,
-   * single file too large, …). PromptInput's onError fires synchronously on
-   * selection; we mirror it to a small banner below the composer so the user
-   * gets immediate feedback without a mysterious silent drop.
-   */
-  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null)
-  useEffect(() => {
-    if (!attachmentNotice) return
-    const timer = setTimeout(() => setAttachmentNotice(null), 4000)
-    return () => clearTimeout(timer)
-  }, [attachmentNotice])
-  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
-
-  useEffect(() => {
-    if (!userSelectedModel || !model) return
-    try {
-      globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(model))
-      globalThis.localStorage?.setItem(STORAGE_MODEL_USER_KEY, '1')
-    } catch { /* noop */ }
-  }, [model, userSelectedModel])
-
-  useEffect(() => {
-    if (userSelectedModelRef.current || !defaultModel) return
-    setModelState(defaultModel)
-  }, [defaultModel])
-
-  // Fetch the live list from pi's ModelRegistry so the dropdown reflects
-  // what the server actually has auth for, not a hardcoded alias set.
-  useEffect(() => {
-    let aborted = false
-    fetch('/api/v1/agent/models', { headers: requestHeaders })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
-        if (aborted || !payload?.models) return
-        setAvailableModels(payload.models)
-        const available = payload.models.filter((m) => m.available)
-        setModelState((current) => {
-          const currentAvailable = current
-            ? available.some((m) => m.provider === current.provider && m.id === current.id)
-            : false
-          if (currentAvailable) return current
-
-          userSelectedModelRef.current = false
-          setUserSelectedModel(false)
-          try {
-            globalThis.localStorage?.removeItem(STORAGE_MODEL_KEY)
-            globalThis.localStorage?.removeItem(STORAGE_MODEL_USER_KEY)
-          } catch { /* noop */ }
-
-          return payload.defaultModel
-            ? { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
-            : null
-        })
-      })
-      .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
-    return () => { aborted = true }
-  }, [requestHeaders])
-
-  // Fetch PI skills and register them so the slash picker shows them without
-  // host apps needing to hardcode them in extraCommands. Server skills never
-  // overwrite builtins or host-provided extraCommands (first-write wins).
-  useEffect(() => {
-    let aborted = false
-    fetch('/api/v1/agent/skills', { headers: requestHeaders })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { skills?: Array<{ name: string; description: string }> } | null) => {
-        if (aborted || !payload?.skills) return
-        let added = 0
-        for (const skill of payload.skills) {
-          if (!registry.get(skill.name)) {
-            registry.register({ name: skill.name, description: skill.description, kind: 'skill', handler: () => {} })
-            added++
-          }
-        }
-        if (added > 0) setSkillsStamp((n) => n + 1)
-      })
-      .catch(() => {})
-    return () => { aborted = true }
-  }, [requestHeaders, registry])
-
-  // Optional integration hook for host slash commands. Accepts explicit
-  // provider-qualified selections only ({ provider, id } or "provider:id");
-  // unqualified legacy aliases are intentionally ignored so Boring never
-  // guesses a model provider on Pi's behalf.
-  useEffect(() => {
-    const onChange = (event: Event) => {
-      const next = parseModelSelection((event as CustomEvent).detail)
-      if (next) setModel(next)
-    }
-    globalThis.addEventListener?.('boring:model-change', onChange)
-    return () => globalThis.removeEventListener?.('boring:model-change', onChange)
-  }, [setModel])
-
+  const { availableModels, model, setModel } = useChatModelSelection({
+    defaultModel,
+    requestHeaders,
+  })
+  const { thinkingLevel, setThinkingLevel, showThoughts, setShowThoughts } =
+    useThinkingSettings(thinkingControl)
+  const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
   const isStreaming = status === 'submitted' || status === 'streaming'
   const attachmentsDisabled = isStreaming || pendingMessages.length > 0
 
@@ -642,86 +292,24 @@ export function ChatPanel(props: ChatPanelProps) {
       .filter(Boolean),
     [messages],
   )
-  const historyIdxRef = useRef(-1)
-  const draftRef = useRef('')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const [mentionState, setMentionState] = useState<MentionState | null>(null)
-  const [slashQuery, setSlashQuery] = useState<string | null>(null)
-  const [mentionedFiles, setMentionedFiles] = useState<string[]>([])
+  const {
+    mentionState,
+    slashQuery,
+    mentionedFiles,
+    clearMentionedFiles,
+    dismissMention,
+    dismissSlash,
+    handleComposerChange,
+    selectMention,
+    selectSlashCommand,
+  } = useComposerPickers({ textareaRef })
 
-  const handleComposerChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const ta = e.currentTarget
-    textareaRef.current = ta
-    const cursor = ta.selectionStart ?? ta.value.length
-    const before = ta.value.slice(0, cursor)
-    const slashMatch = before.match(/^\/(\S*)$/)
-    if (slashMatch) {
-      setSlashQuery(slashMatch[1])
-      setMentionState(null)
-    } else {
-      setSlashQuery(null)
-      setMentionState(detectMention(ta.value, cursor))
-    }
-  }, [])
-
-  const selectMention = useCallback((path: string) => {
-    const ta = textareaRef.current
-    if (!ta || !mentionState) return
-    const { anchorStart, anchorEnd } = mentionState
-    const token = `@${path.split('/').pop() ?? path}`
-    const newValue = ta.value.slice(0, anchorStart) + token + ta.value.slice(anchorEnd)
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-    setter?.call(ta, newValue)
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
-    const newCursor = anchorStart + token.length
-    ta.setSelectionRange(newCursor, newCursor)
-    ta.focus()
-    setMentionState(null)
-    setMentionedFiles((prev) => prev.includes(path) ? prev : [...prev, path])
-  }, [mentionState])
-
-  const selectSlashCommand = useCallback((name: string) => {
-    const ta = textareaRef.current
-    if (!ta) return
-    const newValue = `/${name} `
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-    setter?.call(ta, newValue)
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
-    ta.setSelectionRange(newValue.length, newValue.length)
-    ta.focus()
-    setSlashQuery(null)
-  }, [])
-
-  const handleComposerKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const ta = e.currentTarget
-    textareaRef.current = ta
-    if (mentionState !== null || slashQuery !== null) return
-    if (e.key === 'ArrowUp') {
-      if (ta.selectionStart !== 0 || ta.selectionEnd !== 0) return
-      if (userHistory.length === 0) return
-      e.preventDefault()
-      if (historyIdxRef.current === -1) draftRef.current = ta.value
-      const next = Math.min(historyIdxRef.current + 1, userHistory.length - 1)
-      historyIdxRef.current = next
-      const text = userHistory[userHistory.length - 1 - next]
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-      setter?.call(ta, text)
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
-      ta.setSelectionRange(0, 0)
-    } else if (e.key === 'ArrowDown') {
-      if (historyIdxRef.current === -1) return
-      e.preventDefault()
-      const next = historyIdxRef.current - 1
-      historyIdxRef.current = next
-      const text = next === -1 ? draftRef.current : userHistory[userHistory.length - 1 - next]
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-      setter?.call(ta, text)
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
-      ta.setSelectionRange(text.length, text.length)
-    } else if (!['Shift', 'Meta', 'Control', 'Alt', 'CapsLock'].includes(e.key)) {
-      historyIdxRef.current = -1
-    }
-  }, [userHistory, mentionState, slashQuery])
+  const handleComposerKeyDown = useComposerHistory({
+    userHistory,
+    textareaRef,
+    disabled: mentionState !== null || slashQuery !== null,
+  })
 
   async function handleSubmit({ text, files }: { text: string; files: FileUIPart[] }): Promise<void> {
     // Guard against pointless empty submits (just Enter with nothing typed
@@ -764,10 +352,7 @@ export function ChatPanel(props: ChatPanelProps) {
           setModel: (model) => {
             const next = parseModelSelection(model)
             if (!next) return false
-            try {
-              globalThis.localStorage?.setItem(STORAGE_MODEL_KEY, JSON.stringify(next))
-              globalThis.localStorage?.setItem(STORAGE_MODEL_USER_KEY, '1')
-            } catch {}
+            writeStoredModelSelection(next)
             globalThis.dispatchEvent?.(new CustomEvent('boring:model-change', { detail: next }))
             return true
           },
@@ -789,31 +374,12 @@ export function ChatPanel(props: ChatPanelProps) {
       }
     }
 
-    // Build the server-side enriched message (text attachments inlined for
-    // pi, which is text-only). Importantly, the VISIBLE user bubble only
-    // shows the raw `text` plus file chips — the enriched version is not
-    // rendered in the UI, just sent to the server. This keeps
-    // "[attached: foo.png …]" markers out of the message bubble.
-    const attachmentSummaries: string[] = []
-    for (const file of files ?? []) {
-      const label = file.filename ?? 'attachment'
-      const mime = file.mediaType ?? 'application/octet-stream'
-      const content = await readFileAsText(file)
-      if (content !== null) {
-        attachmentSummaries.push(`[attached: ${label} (${mime})]\n\`\`\`\n${content}\n\`\`\``)
-      } else {
-        attachmentSummaries.push(`[attached: ${label} (${mime}, not inlined — binary)]`)
-      }
-    }
-    const mentionNote = mentionedFiles.length > 0
-      ? `@files: ${mentionedFiles.join(', ')}`
-      : null
-    const serverMessage = [
-      text.trim(),
-      ...(attachmentSummaries.length > 0 ? [attachmentSummaries.join('\n\n')] : []),
-      ...(mentionNote ? [mentionNote] : []),
-    ].filter(Boolean).join('\n\n') || text
-    setMentionedFiles([])
+    const { serverMessage, attachments: resolvedAttachments } = await createEnrichedSubmitPayload({
+      text,
+      files: files ?? [],
+      mentionedFiles,
+    })
+    clearMentionedFiles()
 
     // Queue the message if the agent is currently streaming. The server-side
     // harness will consume this after agent_end and run the follow-up as the
@@ -824,8 +390,6 @@ export function ChatPanel(props: ChatPanelProps) {
       setAttachmentNotice('Attachments can be sent after the current response finishes.')
       throw new Error('attachments_disabled_while_streaming')
     }
-
-    const resolvedAttachments = await resolveAttachmentUrls(files)
 
     if (isStreaming && capabilities.nativeFollowUp) {
       queueFollowUp({
@@ -894,21 +458,24 @@ export function ChatPanel(props: ChatPanelProps) {
           Top of the chat surface so it's the first thing the eye registers.
           Self-contained via motion/react so consumers don't need to import
           a separate stylesheet for the keyframes. */}
-      {isStreaming && (
-        <div
-          className="relative h-[2px] w-full shrink-0 overflow-hidden bg-[oklch(from_var(--accent)_l_c_h/0.08)]"
-          role="progressbar"
-          aria-busy="true"
-          aria-label="Agent working"
-        >
-          <motion.div
-            className="absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-[color:var(--accent)] to-transparent"
-            initial={{ x: '-100%' }}
-            animate={{ x: '400%' }}
-            transition={{ duration: 1.4, ease: [0.65, 0, 0.35, 1], repeat: Infinity }}
-          />
-        </div>
-      )}
+      <div
+        className={cn(
+          "relative h-[2px] w-full shrink-0 overflow-hidden bg-[oklch(from_var(--accent)_l_c_h/0.08)]",
+          "transition-opacity duration-200",
+          isStreaming ? "opacity-100" : "opacity-0",
+        )}
+        role={isStreaming ? "progressbar" : undefined}
+        aria-busy={isStreaming || undefined}
+        aria-hidden={!isStreaming}
+        aria-label={isStreaming ? "Agent working" : undefined}
+      >
+        <motion.div
+          className="absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-[color:var(--accent)] to-transparent"
+          initial={{ x: '-100%' }}
+          animate={{ x: isStreaming ? '400%' : '-100%' }}
+          transition={{ duration: 1.4, ease: [0.65, 0, 0.35, 1], repeat: isStreaming ? Infinity : 0 }}
+        />
+      </div>
       <Conversation className="flex-1" aria-label="Agent conversation" aria-live="polite">
         <ConversationContent className={cn(
           "mx-auto flex w-full flex-col gap-6",
@@ -943,6 +510,7 @@ export function ChatPanel(props: ChatPanelProps) {
             const isWaitingFollowUp = role === 'user' && projectedStatus === 'queued'
             const textParts = message.parts.filter(isTextPart)
             const fileParts = message.parts.filter(isFilePart)
+            const seenReasoningTexts = new Set<string>()
             const orderedParts = message.parts.reduce<Array<
               | { kind: 'reasoning'; text: string; state: ReasoningPartView['state']; key: string }
               | { kind: 'part'; part: UIMessage['parts'][number]; key: string }
@@ -959,6 +527,9 @@ export function ChatPanel(props: ChatPanelProps) {
                 }
                 return items
               }
+              const normalizedReasoning = reasoningPart.text.trim()
+              if (normalizedReasoning && seenReasoningTexts.has(normalizedReasoning)) return items
+              if (normalizedReasoning) seenReasoningTexts.add(normalizedReasoning)
               const previous = items[items.length - 1]
               if (previous?.kind === 'reasoning') {
                 previous.text = `${previous.text}\n\n${reasoningPart.text}`
@@ -997,7 +568,8 @@ export function ChatPanel(props: ChatPanelProps) {
             // reply — regenerating an older turn would fork history in
             // ways we don't support. Restricting visibility to the tail
             // keeps the UX honest.
-            const isLastMessage = messageIndex === messages.length - 1
+            const isLastMessage = messageIndex === displayMessages.length - 1
+            const shouldReserveStreamingActions = isStreaming && role === 'assistant' && isLastMessage
 
             return (
               <Message
@@ -1127,17 +699,18 @@ export function ChatPanel(props: ChatPanelProps) {
                   })}
                 </MessageContent>
 
-                {/* Per-message action bar. Lives OUTSIDE MessageContent so
-                 * it doesn't reserve layout space in idle reads. `hidden`
-                 * → zero height when not hovered; `group-hover:flex` +
-                 * `group-focus-within:flex` reveal on interaction.
+                {/* Per-message action bar. Lives OUTSIDE MessageContent.
+                 * During streaming it stays mounted but visually/a11y hidden
+                 * so the final transition from "working" to "done" doesn't
+                 * add a new row and nudge the transcript.
                  * Regenerate is gated to the LAST assistant message — see
                  * the regenerateLastTurn helper below for why we bypass
                  * AI SDK's built-in `regenerate()`. */}
-                {role === 'assistant' && !isStreaming && textParts.length > 0 && (
+                {role === 'assistant' && (textParts.length > 0 || shouldReserveStreamingActions) && (
                   <MessageActionsBar
                     text={textParts.map((p) => p.text).join('\n\n')}
-                    canRegenerate={isLastMessage}
+                    canRegenerate={isLastMessage && !isStreaming}
+                    visible={!isStreaming}
                     onRegenerate={() => {
                       void regenerateLastTurn({
                         messages,
@@ -1259,7 +832,7 @@ export function ChatPanel(props: ChatPanelProps) {
             <MentionPicker
               mention={mentionState}
               onSelect={selectMention}
-              onDismiss={() => setMentionState(null)}
+              onDismiss={dismissMention}
             />
           )}
           {slashQuery !== null && (
@@ -1267,7 +840,7 @@ export function ChatPanel(props: ChatPanelProps) {
               query={slashQuery}
               commands={allCommands}
               onSelect={selectSlashCommand}
-              onDismiss={() => setSlashQuery(null)}
+              onDismiss={dismissSlash}
             />
           )}
         </div>
@@ -1413,259 +986,7 @@ export function ChatPanel(props: ChatPanelProps) {
   )
 }
 
-/**
- * Keyboard hint chips rendered between the left-side actions and the
- * send button. Small, muted, ornamental — pure discoverability aid.
- * Hidden on narrow widths so the composer doesn't feel crowded.
- */
-function KbdHints() {
-  return (
-    <div
-      aria-hidden="true"
-      className={cn(
-        "hidden items-center gap-1.5 text-[11px] text-muted-foreground/80",
-        "sm:flex",
-      )}
-    >
-      <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[var(--radius-sm)] border border-border/60 bg-background/60 px-1 font-mono text-[10px]">
-        ↵
-      </kbd>
-      <span>send</span>
-      <span className="text-muted-foreground/30">·</span>
-      <kbd className="inline-flex h-[18px] items-center rounded-[var(--radius-sm)] border border-border/60 bg-background/60 px-1 font-mono text-[10px]">
-        ⇧↵
-      </kbd>
-      <span>new line</span>
-    </div>
-  )
-}
-
 // ---- Composer helpers ----
-
-/**
- * Model picker whose options are pi-coding-agent's actual available
- * models (fetched from /api/v1/agent/models). Groups by provider and
- * shows a concise human-friendly label with the raw pi id as the
- * SelectItem's stored value, encoded as "{provider}:{id}" to keep
- * ids stable across providers.
- */
-function ModelSelect({
-  value,
-  onChange,
-  options,
-  disabled,
-}: {
-  value: ModelSelection | null
-  onChange: (next: ModelSelection) => void
-  options: AvailableModel[]
-  disabled?: boolean
-}) {
-  const currentKey = value ? encodeModelKey(value) : null
-  // Trigger label prefers a live entry, falls back to raw id for offline /
-  // legacy short-alias sessions. With no selected/default model, show the
-  // honest state: Pi will choose its configured/session fallback server-side.
-  const current = value
-    ? options.find((m) => m.provider === value.provider && m.id === value.id)
-    : undefined
-  const triggerLabel = value ? current?.label ?? displayModelLabel(value.id) : 'Pi default'
-  const triggerProviderLabel = value ? displayProviderLabel(value.provider) : 'Auto'
-
-  const availableOptions = options.filter((m) => m.available)
-  const hasCurrentOption = currentKey
-    ? availableOptions.some((m) => encodeModelKey(m) === currentKey)
-    : true
-  const menuOptions = hasCurrentOption || !value
-    ? availableOptions
-    : [
-        {
-          provider: value.provider,
-          id: value.id,
-          label: triggerLabel,
-          available: true,
-        },
-        ...availableOptions,
-      ]
-
-  // Group by provider, preserving the server's already-sorted order.
-  const groups = new Map<string, AvailableModel[]>()
-  for (const m of menuOptions) {
-    const list = groups.get(m.provider) ?? []
-    list.push(m)
-    groups.set(m.provider, list)
-  }
-
-  const [open, setOpen] = useState(false)
-
-  return (
-    <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          data-boring-agent-part="model-select"
-          data-boring-state={disabled ? "disabled" : undefined}
-          disabled={disabled}
-          aria-label="Model"
-          className={cn(
-            composerActionClass,
-            "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
-            open && "bg-muted/60 text-foreground",
-          )}
-        >
-          <BotIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate">{triggerLabel}</span>
-          <span className="hidden shrink-0 rounded-full border border-border/70 bg-background/45 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
-            {triggerProviderLabel}
-          </span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        data-boring-agent=""
-        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-popover p-0 shadow-2xl"
-      >
-        <Command>
-          <CommandInput
-            placeholder="Search models…"
-            className="h-9 border-0 text-[13px] focus:ring-0"
-          />
-          <CommandList className="max-h-[280px]">
-            <CommandEmpty className="py-4 text-center text-[13px] text-muted-foreground">
-              No models found
-            </CommandEmpty>
-            {[...groups.entries()].map(([provider, list]) => (
-              <CommandGroup
-                key={provider}
-                heading={displayProviderLabel(provider)}
-                className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-muted-foreground/75"
-              >
-                {list.map((m) => {
-                  const key = encodeModelKey(m)
-                  const label = m.label || displayModelLabel(m.id)
-                  return (
-                    <CommandItem
-                      key={key}
-                      value={`${label} ${m.id} ${displayProviderLabel(m.provider)}`}
-                      onSelect={() => { onChange(m); setOpen(false) }}
-                      className={cn(
-                        "flex flex-col items-start gap-0.5 rounded-md px-2 py-2 text-[13px]",
-                        key === currentKey && "bg-foreground/[0.06]",
-                      )}
-                    >
-                      <span className="truncate font-medium">{label}</span>
-                      <span className="truncate text-[11px] text-muted-foreground">{m.id}</span>
-                    </CommandItem>
-                  )
-                })}
-              </CommandGroup>
-            ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-
-// Shared composer-action surface — single opinion on size, radius, hover,
-// focus, and disabled states. Every button inside the composer footer
-// wraps this so we never drift.
-const composerActionClass = cn(
-  "inline-flex h-8 items-center justify-center gap-1.5 rounded-md border-0 bg-transparent",
-  "text-muted-foreground shadow-none transition",
-  "hover:bg-muted/60 hover:text-foreground",
-  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-  "disabled:pointer-events-none disabled:opacity-50",
-)
-
-const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
-  off: 'Off',
-  low: 'Low',
-  medium: 'Med',
-  high: 'High',
-}
-
-const THINKING_LEVEL_TRIGGER_LABELS: Record<ThinkingLevel, string> = {
-  off: 'Off',
-  low: 'Low',
-  medium: 'Med',
-  high: 'High',
-}
-
-function ThinkingSelect({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: ThinkingLevel
-  onChange: (next: ThinkingLevel) => void
-  disabled?: boolean
-}) {
-  return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        if (isThinkingLevel(next)) onChange(next)
-      }}
-      disabled={disabled}
-    >
-      <SelectTrigger
-        data-boring-agent-part="thinking-select"
-        data-boring-state={disabled ? "disabled" : undefined}
-        className={cn(composerActionClass, "w-8 px-0")}
-        aria-label="Thinking level"
-        data-testid="thinking-select"
-      >
-        {THINKING_LEVELS.map((level) => (
-          <span key={level} data-value={level} hidden />
-        ))}
-        <BrainIcon className="h-3.5 w-3.5" />
-      </SelectTrigger>
-      <SelectContent position="popper" side="top" align="end" data-boring-agent="" className="w-auto min-w-0 rounded-lg border-border/70 bg-popover p-2 shadow-2xl">
-        <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-          Think
-        </div>
-        <div className="flex items-center gap-1">
-          {THINKING_LEVELS.map((level) => (
-            <SelectItem
-              key={level}
-              value={level}
-              className="min-w-10 justify-center rounded-md px-2 py-1.5 text-center text-xs font-medium"
-            >
-              {THINKING_LEVEL_LABELS[level]}
-            </SelectItem>
-          ))}
-        </div>
-      </SelectContent>
-    </Select>
-  )
-}
-
-function ThoughtVisibilityButton({
-  visible,
-  onToggle,
-}: {
-  visible: boolean
-  onToggle: () => void
-}) {
-  const Icon = visible ? EyeIcon : EyeOffIcon
-  return (
-    <IconButton
-      type="button"
-      data-boring-agent-part="thought-toggle"
-      data-boring-state={visible ? "selected" : undefined}
-      variant="ghost"
-      size="icon-sm"
-      onClick={onToggle}
-      className={cn(composerActionClass, "w-8")}
-      aria-pressed={visible}
-      aria-label={visible ? "Hide thoughts" : "Show thoughts"}
-      title={visible ? "Hide thoughts" : "Show thoughts"}
-    >
-      <Icon className="h-3.5 w-3.5" />
-    </IconButton>
-  )
-}
 
 function AttachmentButton({ disabled }: { disabled?: boolean }) {
   const attachments = usePromptInputAttachments()
@@ -1821,21 +1142,20 @@ function regenerateLastTurn({
  * Per-message action bar. Appears on assistant messages once the turn
  * has finished streaming — Copy + Regenerate, standard chat affordances.
  *
- * Rendered via `hidden` / `group-hover:flex` / `group-focus-within:flex`
- * so at rest the bar takes ZERO layout height. The old `opacity-0`
- * approach reserved space even when invisible, which made idle
- * assistant messages look like they had mysterious trailing padding
- * below the text. This pattern is called out in .impeccable.md rule #4
- * ("Reveal reserves nothing").
+ * The row reserves its final height while streaming, but stays visually and
+ * accessibility hidden, so the transcript does not jump when the working
+ * state settles and the controls fade in.
  */
 function MessageActionsBar({
   text,
   canRegenerate,
   onRegenerate,
+  visible = true,
 }: {
   text: string
   canRegenerate: boolean
   onRegenerate: () => void
+  visible?: boolean
 }) {
   const [copied, setCopied] = useState(false)
   const markCopied = () => {
@@ -1843,6 +1163,7 @@ function MessageActionsBar({
     setTimeout(() => setCopied(false), 1500)
   }
   const handleCopy = async () => {
+    if (!visible) return
     if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
       try {
         await navigator.clipboard.writeText(text)
@@ -1880,20 +1201,23 @@ function MessageActionsBar({
     "hover:bg-foreground/[0.04] hover:text-muted-foreground/80",
     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--accent)]/40",
   )
+  const hiddenActionProps = visible ? {} : { tabIndex: -1 }
   return (
     <div
+      aria-hidden={!visible}
       className={cn(
-        // Always visible but quiet — discrete utility row under the
+        // Always mounted but quiet — discrete utility row under the
         // assistant message. Hovering an individual button bumps it
         // back to full contrast.
-        "flex items-center gap-0.5 -mt-1",
+        "flex min-h-6 items-center gap-0.5 -mt-1 transition-opacity duration-200",
+        visible ? "opacity-100" : "pointer-events-none opacity-0",
       )}
     >
-      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={iconActionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'} title={copied ? 'Copied' : 'Copy'}>
+      <Button type="button" variant="ghost" size="xs" onClick={handleCopy} className={iconActionBtnClass} aria-label={copied ? 'Copied' : 'Copy message'} title={copied ? 'Copied' : 'Copy'} {...hiddenActionProps}>
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-[color:var(--accent)]" /> : <CopyIcon className="h-3.5 w-3.5" />}
       </Button>
       {canRegenerate && (
-        <Button type="button" variant="ghost" size="xs" onClick={onRegenerate} className={iconActionBtnClass} aria-label="Regenerate" title="Regenerate">
+        <Button type="button" variant="ghost" size="xs" onClick={visible ? onRegenerate : undefined} className={iconActionBtnClass} aria-label="Regenerate" title="Regenerate" {...hiddenActionProps}>
           <RefreshCwIcon className="h-3.5 w-3.5" />
         </Button>
       )}

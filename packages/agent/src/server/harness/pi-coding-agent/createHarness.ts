@@ -492,6 +492,7 @@ export function createPiCodingAgentHarness(opts: {
       let sawTextChunk = false;
       let inlineTurnIndex = 0;
       let currentPiAssistantMessageId: string | null = null;
+      const messageIdsWithStreamedReasoning = new Set<string>();
       let piSeq = 0;
       const nextPiSeq = () => ++piSeq;
 
@@ -584,11 +585,13 @@ export function createPiCodingAgentHarness(opts: {
               data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), ...(typeof ame.content === "string" ? { text: ame.content } : {}) },
             } as unknown as UIMessageChunk);
           } else if (ame.type === "thinking_start") {
+            messageIdsWithStreamedReasoning.add(messageId);
             piHistoryChunks.push({
               type: "data-pi-reasoning-start",
               data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
             } as unknown as UIMessageChunk);
           } else if (ame.type === "thinking_delta") {
+            messageIdsWithStreamedReasoning.add(messageId);
             piHistoryChunks.push({
               type: "data-pi-reasoning-delta",
               data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), delta: ame.delta },
@@ -615,7 +618,7 @@ export function createPiCodingAgentHarness(opts: {
           const text = role === "user"
             ? extractUserMessageText(eventMessage)
             : extractAssistantMessageText(eventMessage).text;
-          if (role === "assistant") {
+          if (role === "assistant" && !messageIdsWithStreamedReasoning.has(messageId)) {
             for (const reasoningText of extractAssistantReasoningTexts(eventMessage)) {
               const partId = `reasoning-${nextPiSeq()}`;
               piHistoryChunks.push(

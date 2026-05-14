@@ -1,3 +1,4 @@
+import React from "react"
 import type { Meta, StoryObj } from "@storybook/react"
 import { DataExplorer } from "../src/front/components/DataExplorer/DataExplorer"
 import {

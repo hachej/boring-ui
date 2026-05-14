@@ -230,13 +230,18 @@ async function startWorkspacesMode(opts: {
   await registerStatic(app, opts.publicDir)
   await app.listen({ port: opts.port, host: opts.host })
 
+  const initialWorkspace = (await registry.list()).find((workspace) => workspace.available)
+  const initialUrl = initialWorkspace
+    ? `http://localhost:${opts.port}/workspace/${encodeURIComponent(initialWorkspace.id)}`
+    : `http://localhost:${opts.port}`
+
   console.log(`\nBoring UI`)
   console.log(`  workspaces ${registry.path}`)
   console.log(`  mode       ${opts.cliMode}`)
   console.log(`  port       ${opts.port}`)
   console.log(`  host       ${opts.host}`)
-  console.log(`\n  http://localhost:${opts.port}\n`)
-  openBrowser(`http://localhost:${opts.port}`)
+  console.log(`\n  ${initialUrl}\n`)
+  openBrowser(initialUrl)
 }
 
 async function handleWorkspacesCommand(opts: {

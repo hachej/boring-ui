@@ -6,7 +6,7 @@ import {
   ExplorerView,
   type SectionedExplorerAdapter,
 } from "../front"
-import type { ExplorerAdapter, ExplorerRow } from "../../../front/components/DataExplorer"
+import type { ExplorerAdapter, ExplorerRow } from "../../../shared/types/explorer"
 
 const rows: ExplorerRow[] = [
   { id: "GDPC1", title: "Real GDP", group: "Q", leading: { code: "Q" } },

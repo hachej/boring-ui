@@ -21,10 +21,17 @@ import {
 } from "../data"
 import type { FileEntry } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
+import {
+  buildTree,
+  dirKey,
+  injectDraftIntoTree,
+  mergeEntries,
+  parentDir,
+  type DraftEditing,
+} from "./treeModel"
 import type { WorkspaceBridge } from "../../../../front/bridge/types"
 import { PanelChrome } from "../../../../front/dock"
 import {
-  CLIENT_FILTER_THRESHOLD,
   DEFAULT_TREE_IGNORE,
   filterIgnoredEntries,
   matchesAny,
@@ -51,6 +58,9 @@ import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import type { PaneProps } from "../../../../shared/types/panel"
 import type { LeftTabParams } from "../../../../shared/plugins/types"
+import { copyToClipboard } from "./clipboard"
+
+export { copyToClipboard } from "./clipboard"
 
 const loadFileTreeComponent = () =>
   import("./FileTree").then((m) => ({ default: m.FileTree }))
@@ -60,122 +70,6 @@ export function preloadFileTreeComponent(): void {
 }
 
 const FileTree = lazy(loadFileTreeComponent)
-
-function buildTree(
-  entries: FileEntry[],
-  childrenByDir: Map<string, FileEntry[]>,
-): FileTreeNode[] {
-  const dirs: FileTreeNode[] = []
-  const files: FileTreeNode[] = []
-  for (const entry of entries) {
-    if (entry.kind === "dir") {
-      const children = childrenByDir.get(entry.path)
-      dirs.push({
-        ...entry,
-        children: children ? buildTree(children, childrenByDir) : [],
-      })
-    } else {
-      files.push({ ...entry })
-    }
-  }
-  dirs.sort((a, b) => a.name.localeCompare(b.name))
-  files.sort((a, b) => a.name.localeCompare(b.name))
-  return [...dirs, ...files]
-}
-
-function parentDir(path: string): string {
-  const i = path.lastIndexOf("/")
-  return i > 0 ? path.slice(0, i) : "."
-}
-
-function dirKey(dir: string): string {
-  return dir && dir !== "" ? dir : "."
-}
-
-function mergeEntries(
-  base: FileEntry[] | undefined,
-  optimistic: FileEntry[] | undefined,
-): FileEntry[] | undefined {
-  if (!optimistic?.length) return base
-  const byPath = new Map<string, FileEntry>()
-  for (const entry of base ?? []) byPath.set(entry.path, entry)
-  for (const entry of optimistic) byPath.set(entry.path, entry)
-  return Array.from(byPath.values())
-}
-
-type DraftEditing =
-  | { kind: "create-file"; parentDir: string; path: string }
-  | { kind: "create-folder"; parentDir: string; path: string }
-  | { kind: "rename"; path: string; initialValue: string }
-  | null
-
-function injectDraftIntoTree(
-  tree: FileTreeNode[],
-  editing: DraftEditing,
-  rootDir: string,
-): FileTreeNode[] {
-  if (!editing || editing.kind === "rename") return tree
-  const draft: FileTreeNode = {
-    name: "",
-    path: editing.path,
-    kind: editing.kind === "create-folder" ? "dir" : "file",
-    isDraft: true,
-  }
-  const targetDir = editing.parentDir
-  // Inserting at the root is easy: just prepend a draft row.
-  if (targetDir === rootDir || targetDir === "." || targetDir === "") {
-    return [draft, ...tree]
-  }
-  return tree.map((node) => {
-    if (node.kind !== "dir") return node
-    if (node.path === targetDir) {
-      return { ...node, children: [draft, ...(node.children ?? [])] }
-    }
-    if (node.children?.length) {
-      return {
-        ...node,
-        children: injectDraftIntoTree(node.children, editing, rootDir),
-      }
-    }
-    return node
-  })
-}
-
-/**
- * Copy `text` to the clipboard. Falls back to a hidden-textarea + execCommand
- * when `navigator.clipboard` is unavailable (non-secure contexts: plain http
- * served from a non-localhost IP, file://, etc.).
- */
-export async function copyToClipboard(text: string): Promise<void> {
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return
-    } catch {
-      // Some browsers reject when not focused — fall through to legacy path.
-    }
-  }
-  if (typeof document === "undefined") {
-    throw new Error("Clipboard not available")
-  }
-  const ta = document.createElement("textarea")
-  ta.value = text
-  ta.setAttribute("readonly", "")
-  ta.style.position = "fixed"
-  ta.style.top = "-9999px"
-  ta.style.left = "-9999px"
-  ta.style.opacity = "0"
-  document.body.appendChild(ta)
-  let ok = false
-  try {
-    ta.focus()
-    ta.select()
-    ok = !!document.execCommand?.("copy")
-  } finally {
-    document.body.removeChild(ta)
-  }
-  if (!ok) throw new Error("Clipboard not available")
-}
 
 interface ContextMenuState {
   node: FileTreeNode
@@ -268,23 +162,11 @@ export function FileTreeView({
   // Inline edit state. `path` identifies which row renders an <input>; for
   // drafts (new file/folder), `parentDir` says where to place the result, and
   // `path` is a synthetic id so the row can be located in the tree.
-  type EditingState =
-    | { kind: "rename"; path: string; initialValue: string }
-    | { kind: "create-file"; parentDir: string; path: string }
-    | { kind: "create-folder"; parentDir: string; path: string }
-    | null
-  const [editing, setEditing] = useState<EditingState>(null)
+  const [editing, setEditing] = useState<DraftEditing>(null)
   const [revealPath, setRevealPath] = useState<string | null>(null)
   const draftSeqRef = useRef(0)
 
-  const totalFileCount =
-    (fileList?.length ?? 0) +
-    Array.from(expandedChildrenWithOptimistic.values()).reduce(
-      (s, v) => s + v.length,
-      0,
-    )
-  const useServerSearch =
-    totalFileCount >= CLIENT_FILTER_THRESHOLD && (searchQuery?.length ?? 0) > 0
+  const useServerSearch = (searchQuery?.trim().length ?? 0) > 0
   const { data: searchResults } = useFileSearch(
     useServerSearch ? toFileSearchGlob(searchQuery ?? "") : "",
     50,

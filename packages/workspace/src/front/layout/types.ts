@@ -17,5 +17,6 @@ export interface ChatLayoutProps {
   storageKey?: string
   onOpenNav?: () => void
   onOpenSurface?: () => void
+  onOpenSidebar?: () => void
   className?: string
 }

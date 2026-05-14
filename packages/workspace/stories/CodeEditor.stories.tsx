@@ -1,3 +1,4 @@
+import React from "react"
 import type { Meta, StoryObj } from "@storybook/react"
 import { CodeEditor } from "../src/plugins/filesystemPlugin/front/code-editor/CodeEditor"
 

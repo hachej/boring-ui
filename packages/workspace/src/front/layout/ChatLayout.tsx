@@ -98,9 +98,12 @@ export function ChatLayout(props: ChatLayoutProps) {
   const uiCloseWorkbench = getFunction<() => void>(props.centerParams, "closeWorkbench")
   const closeNav = getCallback(props.navParams, "onClose")
   const closeSurface = getCallback(props.surfaceParams, "onClose")
+  const closeSidebar = getCallback(props.sidebarParams, "onClose")
   const createSession = getCallback(props.navParams, "onCreate")
+  const sidebarOpen = Boolean(props.sidebar)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
+  const canControlSidebar = sidebarOpen ? Boolean(closeSidebar) : Boolean(props.onOpenSidebar)
   const toggleNav = useCallback(() => {
     if (navOpen) {
       closeNav?.()
@@ -115,6 +118,13 @@ export function ChatLayout(props: ChatLayoutProps) {
     }
     props.onOpenSurface?.()
   }, [closeSurface, props.onOpenSurface, surfaceOpen])
+  const toggleSidebar = useCallback(() => {
+    if (sidebarOpen) {
+      closeSidebar?.()
+      return
+    }
+    props.onOpenSidebar?.()
+  }, [closeSidebar, props.onOpenSidebar, sidebarOpen])
   const focusChat = useCallback(() => {
     if (navOpen) closeNav?.()
     if (surfaceOpen) closeSurface?.()
@@ -131,11 +141,14 @@ export function ChatLayout(props: ChatLayoutProps) {
       if (canControlSurface) {
         shortcuts.push({ key: "2", mod: true, handler: toggleSurface })
       }
+      if (canControlSidebar) {
+        shortcuts.push({ key: "3", mod: true, allowInEditable: true, handler: toggleSidebar })
+      }
       if (centerId === "chat") {
         shortcuts.push({ key: "Escape", allowInEditable: true, handler: focusChat })
       }
       return shortcuts
-    }, [canControlNav, canControlSurface, centerId, focusChat, toggleNav, toggleSurface]),
+    }, [canControlNav, canControlSidebar, canControlSurface, centerId, focusChat, toggleNav, toggleSidebar, toggleSurface]),
   })
 
   useEffect(() => {
@@ -161,6 +174,15 @@ export function ChatLayout(props: ChatLayoutProps) {
       pluginId,
       when: () => canControlSurface,
       run: toggleSurface,
+    })
+    commandRegistry.registerCommand({
+      id: "workspace:toggle-workbench-left-panel",
+      title: sidebarOpen ? "Close Workbench Left Panel" : "Open Workbench Left Panel",
+      keywords: ["left", "sidebar", "tabs", "workbench", sidebarOpen ? "close" : "open"],
+      shortcut: "⌘3",
+      pluginId,
+      when: () => canControlSidebar,
+      run: toggleSidebar,
     })
     if (centerId === "chat") {
       commandRegistry.registerCommand({
@@ -194,14 +216,19 @@ export function ChatLayout(props: ChatLayoutProps) {
     props.surfaceParams,
     props.onOpenNav,
     props.onOpenSurface,
+    props.onOpenSidebar,
     canControlNav,
     canControlSurface,
+    canControlSidebar,
     closeNav,
     closeSurface,
+    closeSidebar,
     createSession,
     focusChat,
+    sidebarOpen,
     toggleNav,
     toggleSurface,
+    toggleSidebar,
   ])
 
   useEffect(() => {
