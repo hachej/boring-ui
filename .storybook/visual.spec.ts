@@ -45,7 +45,7 @@ test.describe("storybook visual baseline", () => {
   test("workspace dark-mode stories", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
 
-    await openStory(page, "workspace-datacatalog--multiple-sources", { dark: true })
+    await openStory(page, "workspace-dataexplorer--series", { dark: true })
     await expect(page.locator("#storybook-root")).toHaveScreenshot("workspace-datacatalog-dark.png", snapshotOptions)
 
     await openStory(page, "workspace-dock-groupchrome--locked-and-collapsible", { dark: true })
