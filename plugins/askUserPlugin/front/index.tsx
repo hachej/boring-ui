@@ -1,6 +1,6 @@
 "use client"
 
-import { Button, EmptyState, Notice, Pane, PaneBody, PaneDescription, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
+import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
   defineFrontPlugin,
   definePanel,
@@ -12,7 +12,7 @@ import {
   type SurfaceResolverConfig,
   type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
-import { CheckCircle2, HelpCircle, MessageSquareWarning, XCircle } from "lucide-react"
+import { HelpCircle, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
@@ -151,13 +151,12 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
 
   return <div className={className ?? "h-full"}>
     <Pane className="h-full border-0 bg-background text-sm">
-      <PaneHeader className="border-b bg-muted/20">
+      <PaneHeader className="border-b bg-background/95">
         <div>
-          <PaneTitle className="flex items-center gap-2"><MessageSquareWarning className="h-4 w-4 text-muted-foreground" /> Agent needs input</PaneTitle>
-          <PaneDescription>Answer to continue the current task.</PaneDescription>
+          <PaneTitle className="flex items-center gap-2"><HelpCircle className="h-4 w-4 text-muted-foreground" /> Agent needs input</PaneTitle>
         </div>
       </PaneHeader>
-      {!question ? <PaneBody className="overflow-auto p-5"><EmptyState icon={<CheckCircle2 className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
+      {!question ? <PaneBody className="overflow-auto p-4"><EmptyState icon={<HelpCircle className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
       {question?.status === "ready" && question.schema ? (
         <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
@@ -171,17 +170,18 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
           finally { setSubmitting(false) }
         }}>
           <QuestionForm>
-            <PaneBody className="overflow-auto p-5">
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h2 className="text-balance text-lg font-semibold leading-6 tracking-tight text-foreground">{question.title ?? "Question"}</h2>
-                  {question.context ? <p className="max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
-                </div>
-                <div className="space-y-5"><QuestionFields /></div>
+            <PaneBody className="overflow-auto p-4">
+              <div className="space-y-4">
+                <section className="rounded-md border border-border/60 bg-muted/30 p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/90">Waiting for answer</div>
+                  <h2 className="mt-2 text-balance text-sm font-semibold leading-5 text-foreground">{question.title ?? "Question"}</h2>
+                  {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
+                </section>
+                <div className="space-y-4"><QuestionFields /></div>
                 {error ? <Notice tone="destructive" role="alert">{error}</Notice> : null}
               </div>
             </PaneBody>
-            <PaneFooter className="justify-end border-t bg-background px-4 py-3"><div className="flex gap-2"><Button asChild variant="ghost"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div></PaneFooter>
+            <PaneFooter className="justify-between border-t bg-background px-4 py-3"><p className="min-w-0 text-xs text-muted-foreground/80">Sends answers and closes the pane.</p><div className="flex gap-2"><Button asChild variant="outline" size="sm"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild size="sm"><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div></PaneFooter>
           </QuestionForm>
         </QuestionFormProvider>
       ) : null}
