@@ -34,9 +34,9 @@ import {
   searchCommands,
   type CatalogSearchGroup,
   type PaletteMode,
-} from "./CommandPalette.helpers"
+} from "./commandPaletteHelpers"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
-import type { ExplorerRow } from "./DataExplorer/types"
+import type { ExplorerRow } from "../../shared/types/explorer"
 import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
 import { useCommandPaletteSelection } from "./useCommandPaletteSelection"
 import { useCommandPaletteChrome } from "./useCommandPaletteChrome"
@@ -108,7 +108,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="cmdk-shell overflow-hidden border-border/60 p-0 shadow-2xl backdrop-blur-md sm:max-w-[640px] [&>button.dialog-close]:hidden"
+        className="cmdk-shell overflow-hidden border-border/60 p-0 shadow-2xl backdrop-blur-md sm:!max-w-[640px] [&>button.dialog-close]:hidden"
         showCloseButton={false}
         onPointerDownOutside={() => setOpen(false)}
         onEscapeKeyDown={() => setOpen(false)}

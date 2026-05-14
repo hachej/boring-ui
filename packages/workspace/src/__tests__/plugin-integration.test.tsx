@@ -14,7 +14,7 @@ import {
 import type { PluginOutput } from "../shared/plugins/types"
 import type { WorkspaceFrontPlugin } from "../shared/plugins/defineFrontPlugin"
 import { events, workspaceEvents } from "../front/events"
-import type { ExplorerAdapter, SearchResult } from "../front/components/DataExplorer/types"
+import type { ExplorerAdapter, SearchResult } from "../shared/types/explorer"
 
 const DummyPanel = () => null
 

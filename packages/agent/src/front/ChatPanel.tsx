@@ -67,8 +67,8 @@ import {
   ModelSelect,
   ThinkingSelect,
   ThoughtVisibilityButton,
-} from './ChatPanelComposerControls'
-import { KbdHints } from './ChatPanelKbdHints'
+} from './chatPanelComposerControls'
+import { KbdHints } from './chatPanelKbdHints'
 
 export type { ModelSelection, ThinkingLevel } from './chatPanelSettings'
 

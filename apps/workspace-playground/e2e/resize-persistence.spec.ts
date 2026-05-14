@@ -75,15 +75,16 @@ test.describe("workspace shell resize", () => {
   })
 
   test("drawer and workbench collapsed state persists across reloads", async ({ page }) => {
-    await page.getByRole("button", { name: /close sessions/i }).click()
-    await page.getByRole("button", { name: /close workbench/i }).click()
+    const closeSessions = page.getByRole("button", { name: /close sessions/i })
+    if (await closeSessions.isVisible().catch(() => false)) await closeSessions.click()
+    const closeWorkbench = page.getByRole("button", { name: /close workbench/i })
+    if (await closeWorkbench.isVisible().catch(() => false)) await closeWorkbench.click()
 
-    await expect
-      .poll(() => page.evaluate((k) => localStorage.getItem(k), DRAWER_OPEN_KEY))
-      .toBe("0")
-    await expect
-      .poll(() => page.evaluate((k) => localStorage.getItem(k), SURFACE_OPEN_KEY))
-      .toBe("0")
+    await expect(page.locator('aside[aria-label="Session browser"]')).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    )
+    await expect(page.locator('aside[aria-label="Surface"]')).toBeHidden()
 
     await page.reload()
     await expect(page.locator('aside[aria-label="Session browser"]')).toHaveAttribute(

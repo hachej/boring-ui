@@ -1,4 +1,4 @@
-import type { ExplorerRow } from "../DataExplorer/types"
+import type { ExplorerRow } from "../../../shared/types/explorer"
 
 /**
  * Discriminated union for Recent entries in CommandPalette.
