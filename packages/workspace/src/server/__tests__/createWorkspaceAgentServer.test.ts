@@ -15,7 +15,6 @@ import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
 } from "../../app/server/createWorkspaceAgentServer"
-import { createAskUserPluginBundle } from "../../plugins/askUserPlugin/server"
 import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
 
@@ -37,24 +36,35 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-describe("createWorkspaceAgentServer — ask-user plugin wiring", () => {
-  test("registers ask-user routes and tool when installed by the host app", async () => {
+describe("createWorkspaceAgentServer — plugin factory wiring", () => {
+  test("registers factory-created routes and tools with bridge context", async () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot: tmpdir(),
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
       disableDefaultFileTools: true,
-      pluginFactories: [({ bridge }) => createAskUserPluginBundle({ workspaceRoot: tmpdir(), bridge })],
+      pluginFactories: [({ bridge }) => appServerApi.defineServerPlugin({
+        id: "factory-plugin",
+        agentTools: [{
+          name: "factory_tool",
+          description: "Factory tool",
+          parameters: { type: "object", properties: {} },
+          execute: async () => ({ content: [{ type: "text", text: "ok" }] }),
+        }],
+        routes: async (instance) => {
+          instance.get("/factory-plugin/state", async () => ({ state: await bridge.getState() }))
+        },
+      })],
     })
-    const badCommand = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
-    expect(badCommand.statusCode).toBe(400)
+    const route = await app.inject({ method: "GET", url: "/factory-plugin/state" })
+    expect(route.statusCode).toBe(200)
     const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
-    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).toContain("ask_user")
+    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).toContain("factory_tool")
     await app.close()
   })
 
-  test("does not register ask-user routes or tool unless installed", async () => {
+  test("does not register plugin routes or tools unless installed", async () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot: tmpdir(),
       mode: "direct",
@@ -62,10 +72,10 @@ describe("createWorkspaceAgentServer — ask-user plugin wiring", () => {
       provisionWorkspace: false,
       disableDefaultFileTools: true,
     })
-    const command = await app.inject({ method: "POST", url: "/api/v1/questions/commands", payload: {} })
-    expect(command.statusCode).toBe(404)
+    const route = await app.inject({ method: "GET", url: "/factory-plugin/state" })
+    expect(route.statusCode).toBe(404)
     const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
-    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).not.toContain("ask_user")
+    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).not.toContain("factory_tool")
     await app.close()
   })
 })

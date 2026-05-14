@@ -1,0 +1,40 @@
+{
+  "name": "@hachej/boring-workspace-ask-user",
+  "version": "0.1.13",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./front": {
+      "types": "./front/index.tsx",
+      "import": "./front/index.tsx"
+    },
+    "./server": {
+      "types": "./server/index.ts",
+      "import": "./server/index.ts"
+    },
+    "./shared": {
+      "types": "./shared/index.ts",
+      "import": "./shared/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hachej/boring-ui-kit": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
+    "fastify": "^5.3.3",
+    "lucide-react": "^1.8.0",
+    "react": "^19.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "jsdom": "^25.0.0",
+    "typescript": "~5.9.3",
+    "vitest": "^2.1.9"
+  }
+}

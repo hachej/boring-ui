@@ -1,6 +1,6 @@
 # Ask User Questions Plugin Spec
 
-Status: implemented in `packages/workspace/src/plugins/askUserPlugin`.
+Status: implemented in `plugins/askUserPlugin`.
 
 ## Goal
 
@@ -161,11 +161,13 @@ Policy:
 - Stop remains clickable while blocked
 - Stop cancels the pending question for that session and closes Questions pane
 
-## Default app wiring
+## App wiring
 
-`createWorkspaceAgentServer()` includes the ask-user server plugin by default.
-`WorkspaceAgentFront()` includes the ask-user front plugin by default. Both honor
-`excludeDefaults: ["ask-user"]` so consumers can opt out symmetrically.
+The ask-user plugin is not hard-wired into `createWorkspaceAgentServer()` or
+`WorkspaceAgentFront()`. Host apps install both halves explicitly:
+
+- front: pass `askUserPlugin` through the workspace `plugins` prop
+- server: pass a plugin factory that creates `createAskUserPluginBundle({ workspaceRoot, bridge })`
 
 Ask-user server plugin contributes:
 
@@ -174,7 +176,7 @@ Ask-user server plugin contributes:
 - system prompt snippet
 - preserved UI state key
 
-The state publisher is started only when the default plugin is actually created
+The state publisher is started only when the host app installs the server plugin
 and is disposed on Fastify close.
 
 ## Tests to keep
@@ -185,4 +187,4 @@ and is disposed on Fastify close.
 - bridge auth/session/token/answer validation
 - front Questions pane submit/cancel/stop behavior
 - generic ChatPanelHost blocker action behavior
-- default app server/front symmetry and opt-out
+- host app front/server plugin installation symmetry

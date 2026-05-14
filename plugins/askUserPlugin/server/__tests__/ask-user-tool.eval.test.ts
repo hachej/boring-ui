@@ -5,7 +5,7 @@
  *
  * Gated on OPENROUTER_API_KEY — skipped silently in CI without it.
  * Run manually:
- *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @hachej/boring-workspace test src/plugins/askUserPlugin/server/__tests__/ask-user-tool.eval.test.ts
+ *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @hachej/boring-workspace exec vitest run ../../plugins/askUserPlugin/server/__tests__/ask-user-tool.eval.test.ts
  */
 import { describe, expect, test } from "vitest"
 import { mkdtemp } from "node:fs/promises"
