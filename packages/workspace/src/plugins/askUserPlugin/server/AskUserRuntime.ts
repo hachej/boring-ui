@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { AskUserFormSchemaSchema } from "../shared/schema"
 import { ASK_USER_SURFACE_KIND } from "../shared/constants"
-import type { UiBridge } from "../../../shared/ui-bridge"
+import type { UiBridge } from "../../../server"
 import type {
   AskUserAnswer,
   AskUserCancelReason,
