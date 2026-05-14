@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import { Checkbox, ChoiceGroup, ChoiceGroupLegend, ChoiceItem, ChoiceItemBody, ChoiceItemDescription, ChoiceItemTitle, Field, FieldDescription, FieldError, FieldLabel, Input, Radio, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Textarea } from "@hachej/boring-ui-kit"
 import type { AskUserAnswerValue, AskUserField, AskUserFormSchema } from "../../shared/types"
 
 export type QuestionFormValues = Record<string, AskUserAnswerValue>
@@ -40,25 +41,8 @@ type ContextValue = QuestionFormState & {
 
 const QuestionFormContext = createContext<ContextValue | null>(null)
 
-function cx(...values: Array<string | false | null | undefined>): string {
-  return values.filter(Boolean).join(" ")
-}
-
-const fieldClass = "space-y-2"
-const fieldLabelClass = "flex flex-col gap-2 text-sm font-medium text-foreground"
-const legendClass = "mb-2 text-sm font-medium text-foreground"
-const helpTextClass = "text-sm text-muted-foreground"
-const errorTextClass = "text-sm text-destructive"
-const controlClass = cx(
-  "w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground shadow-sm",
-  "placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-  "aria-invalid:border-destructive aria-invalid:ring-destructive/20",
-)
-const inputClass = cx(controlClass, "h-9")
-const textareaClass = cx(controlClass, "min-h-24")
-const choiceLabelClass = "flex items-start gap-2 rounded-md text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-const choiceInputClass = "mt-1 disabled:cursor-not-allowed disabled:opacity-50"
+const fieldClass = "mt-4 first:mt-0"
+const choiceControlClass = "mt-0.5"
 
 export function useQuestionForm(): ContextValue {
   const ctx = useContext(QuestionFormContext)
@@ -92,6 +76,7 @@ export function QuestionFormProvider({
   const [values, setValues] = useState<QuestionFormValues>(() => defaultsFor(schema, initialValues))
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
   const [dirtyHints, setDirtyHints] = useState<Record<string, string>>({})
   const formRef = useRef<HTMLFormElement>(null)
 
@@ -107,7 +92,12 @@ export function QuestionFormProvider({
     })
   }, [schema, initialValues, touched])
 
-  const errors = useMemo(() => (schema ? validateQuestionValues(schema, values).errors : {}), [schema, values])
+  const errors = useMemo(() => {
+    if (!schema) return {}
+    const allErrors = validateQuestionValues(schema, values).errors
+    if (submitted) return allErrors
+    return Object.fromEntries(Object.entries(allErrors).filter(([name]) => touched[name]))
+  }, [schema, values, submitted, touched])
   const setValue = useCallback((name: string, value: AskUserAnswerValue) => {
     setTouched((current) => ({ ...current, [name]: true }))
     setValues((current) => ({ ...current, [name]: value }))
@@ -117,6 +107,7 @@ export function QuestionFormProvider({
     if (!schema || status !== "ready" || disabled) return
     const result = validateQuestionValues(schema, values)
     if (!result.valid) {
+      setSubmitted(true)
       const first = Object.keys(result.errors)[0]
       formRef.current?.querySelector<HTMLElement>(`[name="${cssEscape(first)}"]`)?.focus()
       return
@@ -158,18 +149,17 @@ export function QuestionField({ field }: { field: AskUserField }) {
   const hintId = `${field.name}-hint`
   const describedBy = [field.helpText ? helpId : undefined, error ? errorId : undefined, dirtyHints[field.name] ? hintId : undefined].filter(Boolean).join(" ")
   const renderer = rendererRegistry[field.type] ?? defaultRenderers[field.type] ?? rendererRegistry.unsupported ?? UnsupportedFieldRenderer
-  return <div data-field={field.name} className={fieldClass}>
+  return <Field data-field={field.name} className={fieldClass}>
     {renderer({ field, value: values[field.name], error, disabled: disabled || submitting, describedBy, onChange: (value) => setValue(field.name, value), onBlur: () => touch(field.name) })}
-    {field.helpText ? <p id={helpId} className={helpTextClass}>{field.helpText}</p> : null}
-    {dirtyHints[field.name] ? <p id={hintId} className={helpTextClass}>{dirtyHints[field.name]}</p> : null}
-    {error ? <p id={errorId} className={errorTextClass} role="alert">{error}</p> : null}
-  </div>
+    {field.helpText ? <FieldDescription id={helpId}>{field.helpText}</FieldDescription> : null}
+    {dirtyHints[field.name] ? <FieldDescription id={hintId}>{dirtyHints[field.name]}</FieldDescription> : null}
+    {error ? <FieldError id={errorId} role="alert">{error}</FieldError> : null}
+  </Field>
 }
 
 export function QuestionSubmitButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const { schema, status, errors, submitting, disabled } = useQuestionForm()
-  const invalid = !!schema && Object.keys(errors).length > 0
-  return <button {...props} type="submit" disabled={disabled || submitting || status !== "ready" || invalid}>{props.children ?? "Submit"}</button>
+  return <button {...props} type="submit" disabled={disabled || submitting || status !== "ready"}>{props.children ?? "Submit"}</button>
 }
 
 export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -179,67 +169,67 @@ export function QuestionCancelButton(props: React.ButtonHTMLAttributes<HTMLButto
 
 const defaultRenderers: QuestionFieldRendererRegistry = {
   text: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "text" && (
-    <label className={fieldLabelClass}>
-      {label(field)}
-      <input className={inputClass} name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} pattern={field.pattern} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />
-    </label>
+    <>
+      <FieldLabel htmlFor={field.name}>{label(field)}</FieldLabel>
+      <Input id={field.name} name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} pattern={field.pattern} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />
+    </>
   ),
   textarea: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "textarea" && (
-    <label className={fieldLabelClass}>
-      {label(field)}
-      <textarea className={textareaClass} name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />
-    </label>
+    <>
+      <FieldLabel htmlFor={field.name}>{label(field)}</FieldLabel>
+      <Textarea id={field.name} name={field.name} value={typeof value === "string" ? value : ""} placeholder={field.placeholder} minLength={field.minLength} maxLength={field.maxLength} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />
+    </>
   ),
   select: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => (field.type === "select" || field.type === "radio") && (
-    <fieldset className="space-y-2" aria-describedby={field.type === "radio" ? describedBy || undefined : undefined} aria-invalid={field.type === "radio" ? !!error : undefined} aria-errormessage={field.type === "radio" && error ? `${field.name}-error` : undefined}>
-      <legend className={legendClass}>{label(field)}</legend>
+    <ChoiceGroup className={error && field.type === "radio" ? "rounded-md border border-destructive/40 bg-destructive/5 p-3" : undefined} aria-describedby={field.type === "radio" ? describedBy || undefined : undefined} aria-invalid={field.type === "radio" ? !!error : undefined} aria-errormessage={field.type === "radio" && error ? `${field.name}-error` : undefined}>
+      <ChoiceGroupLegend>{label(field)}</ChoiceGroupLegend>
       {field.options.map((option) => field.type === "select" ? null : (
-        <label key={option.value} className={choiceLabelClass}>
-          <input className={choiceInputClass} type="radio" name={field.name} checked={value === option.value} disabled={disabled} onChange={() => onChange(option.value)} onBlur={onBlur} />
-          <span className="flex flex-col gap-1">
-            <span>{option.label}</span>
-            {option.description ? <small className={helpTextClass}>{option.description}</small> : null}
-          </span>
-        </label>
+        <ChoiceItem key={option.value}>
+          <Radio className={choiceControlClass} name={field.name} checked={value === option.value} disabled={disabled} onChange={() => onChange(option.value)} onBlur={onBlur} />
+          <ChoiceItemBody>
+            <ChoiceItemTitle>{option.label}</ChoiceItemTitle>
+            {option.description ? <ChoiceItemDescription>{option.description}</ChoiceItemDescription> : null}
+          </ChoiceItemBody>
+        </ChoiceItem>
       ))}
-      {field.type === "select" ? <select className={inputClass} name={field.name} value={typeof value === "string" ? value : ""} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value)} onBlur={onBlur}><option value="">Select…</option>{field.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select> : null}
-    </fieldset>
+      {field.type === "select" ? <Select name={field.name} value={typeof value === "string" ? value : ""} disabled={disabled} onValueChange={(next) => onChange(next)}><SelectTrigger className="w-full" aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onBlur={onBlur}><SelectValue placeholder="Select…" /></SelectTrigger><SelectContent>{field.options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select> : null}
+    </ChoiceGroup>
   ),
   radio: (props) => defaultRenderers.select?.(props),
   multiselect: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "multiselect" && (
-    <fieldset className="space-y-2" aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined}>
-      <legend className={legendClass}>{label(field)}</legend>
+    <ChoiceGroup className={error ? "rounded-md border border-destructive/40 bg-destructive/5 p-3" : undefined} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined}>
+      <ChoiceGroupLegend>{label(field)}</ChoiceGroupLegend>
       {field.options.map((option) => {
         const list = Array.isArray(value) ? value : []
         return (
-          <label key={option.value} className={choiceLabelClass}>
-            <input className={choiceInputClass} type="checkbox" name={field.name} checked={list.includes(option.value)} disabled={disabled} onChange={(e) => onChange(e.target.checked ? [...list, option.value] : list.filter((item) => item !== option.value))} onBlur={onBlur} />
-            <span className="flex flex-col gap-1">
-              <span>{option.label}</span>
-              {option.description ? <small className={helpTextClass}>{option.description}</small> : null}
-            </span>
-          </label>
+          <ChoiceItem key={option.value}>
+            <Checkbox className={choiceControlClass} name={field.name} checked={list.includes(option.value)} disabled={disabled} onCheckedChange={(checked) => onChange(checked ? [...list, option.value] : list.filter((item) => item !== option.value))} onBlur={onBlur} />
+            <ChoiceItemBody>
+              <ChoiceItemTitle>{option.label}</ChoiceItemTitle>
+              {option.description ? <ChoiceItemDescription>{option.description}</ChoiceItemDescription> : null}
+            </ChoiceItemBody>
+          </ChoiceItem>
         )
       })}
-    </fieldset>
+    </ChoiceGroup>
   ),
   checkbox: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "checkbox" && (
-    <label className={choiceLabelClass}>
-      <input className={choiceInputClass} type="checkbox" name={field.name} checked={value === true} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.checked)} onBlur={onBlur} />
-      <span>{field.label}</span>
-    </label>
+    <ChoiceItem>
+      <Checkbox className={choiceControlClass} name={field.name} checked={value === true} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onCheckedChange={(checked) => onChange(checked === true)} onBlur={onBlur} />
+      <ChoiceItemTitle>{field.label}</ChoiceItemTitle>
+    </ChoiceItem>
   ),
   number: ({ field, value, disabled, describedBy, error, onChange, onBlur }) => field.type === "number" && (
-    <label className={fieldLabelClass}>
-      {label(field)}
-      <input className={inputClass} type="number" name={field.name} value={typeof value === "number" ? String(value) : ""} min={field.min} max={field.max} step={field.integer ? 1 : field.step} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} onBlur={onBlur} />
-    </label>
+    <>
+      <FieldLabel htmlFor={field.name}>{label(field)}</FieldLabel>
+      <Input id={field.name} type="number" name={field.name} value={typeof value === "number" ? String(value) : ""} min={field.min} max={field.max} step={field.integer ? 1 : field.step} disabled={disabled} aria-describedby={describedBy || undefined} aria-invalid={!!error} aria-errormessage={error ? `${field.name}-error` : undefined} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} onBlur={onBlur} />
+    </>
   ),
   unsupported: UnsupportedFieldRenderer,
 }
 
-function UnsupportedFieldRenderer({ field }: QuestionFieldRendererProps) { return <p className={helpTextClass} role="note">Unsupported question field: {field.type}</p> }
-function label(field: AskUserField): React.ReactNode { return <>{field.label}{"required" in field && field.required ? <span aria-hidden="true"> *</span> : null}</> }
+function UnsupportedFieldRenderer({ field }: QuestionFieldRendererProps) { return <FieldDescription role="note">Unsupported question field: {field.type}</FieldDescription> }
+function label(field: AskUserField): React.ReactNode { return <>{field.label}{"required" in field && field.required ? <span className="text-destructive" aria-hidden="true"> *</span> : null}</> }
 function defaultsFor(schema?: AskUserFormSchema, initial?: QuestionFormValues): QuestionFormValues {
   const values: QuestionFormValues = { ...(initial ?? {}) }
   for (const field of schema?.fields ?? []) if (values[field.name] === undefined && "defaultValue" in field) values[field.name] = field.defaultValue as AskUserAnswerValue

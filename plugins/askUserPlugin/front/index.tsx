@@ -1,6 +1,6 @@
 "use client"
 
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@hachej/boring-ui-kit"
+import { Button, EmptyState, Notice, Pane, PaneBody, PaneDescription, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
   defineFrontPlugin,
   definePanel,
@@ -12,7 +12,7 @@ import {
   type SurfaceResolverConfig,
   type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
-import { CheckCircle2, HelpCircle, Sparkles, XCircle } from "lucide-react"
+import { CheckCircle2, HelpCircle, MessageSquareWarning, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
@@ -64,7 +64,7 @@ function useQuestionsRuntime(): QuestionsRuntime {
 }
 
 function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderProps) {
-  const attention = useWorkspaceAttention()
+  const { addBlocker, removeBlocker } = useWorkspaceAttention()
   const storeRef = useRef<QuestionsStore | null>(null)
   if (!storeRef.current) storeRef.current = createQuestionsStore()
   const runtime = useMemo<QuestionsRuntime>(() => ({ ...storeRef.current!, apiBaseUrl, authHeaders }), [apiBaseUrl, authHeaders])
@@ -73,7 +73,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
     const pending = runtime.getPending()
     const blockerId = pending ? `${ASK_USER_PLUGIN_ID}:${pending.sessionId}:${pending.questionId}` : null
     if (pending?.status === "ready" && blockerId) {
-      attention.addBlocker({
+      addBlocker({
         id: blockerId,
         reason: "waiting_for_user_input",
         surfaceKind: ASK_USER_SURFACE_KIND,
@@ -83,8 +83,8 @@ function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderPr
         actions: [{ id: "open", label: "Open Questions" }],
       })
     }
-    return () => { if (blockerId) attention.removeBlocker(blockerId) }
-  }, [attention, runtime, pendingSnapshot])
+    return () => { if (blockerId) removeBlocker(blockerId) }
+  }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
 
   useEffect(() => {
     const onStop = (event: Event) => {
@@ -128,18 +128,17 @@ type QuestionsPaneParams = { questionId?: string; question?: AskUserQuestion; __
 function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams>) {
   const runtime = useQuestionsRuntime()
   const pending = useSyncExternalStore(runtime.subscribe, runtime.getPending, runtime.getPending)
-  const [question, setQuestion] = useState(params?.question ?? pending)
+  const [closedQuestionId, setClosedQuestionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  useEffect(() => {
-    setQuestion(pending ?? params?.question ?? null)
-  }, [pending, params?.question])
+  const paramQuestion = params?.question
+  const question = pending ?? (paramQuestion?.questionId === closedQuestionId ? null : paramQuestion) ?? null
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
     const onStop = (event: Event) => {
       const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
       if (!question || (sessionId && sessionScopedBlockerId(question.sessionId) && sessionId !== question.sessionId)) return
-      setQuestion(null)
+      setClosedQuestionId(question.questionId)
       runtime.setPending(null)
       api.close()
     }
@@ -147,50 +146,48 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
     return () => window.removeEventListener("boring:workspace-composer-stop", onStop)
   }, [api, question, runtime])
   useEffect(() => {
-    if (question && pending === null && !params?.question) {
-      setQuestion(null)
-      api.close()
-    }
-  }, [api, pending, params?.question, question])
+    if (question && pending === null && !paramQuestion) api.close()
+  }, [api, pending, paramQuestion, question])
 
   return <div className={className ?? "h-full"}>
-    <div className="h-full overflow-auto bg-muted/20 p-5 text-sm">
-      {!question ? <Card className="border-dashed bg-background shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-muted-foreground" /> No pending questions</CardTitle><CardDescription>When the agent needs a decision, the form will appear here.</CardDescription></CardHeader></Card> : null}
+    <Pane className="h-full border-0 bg-background text-sm">
+      <PaneHeader className="border-b">
+        <div>
+          <PaneTitle className="flex items-center gap-2"><MessageSquareWarning className="h-4 w-4 text-muted-foreground" /> Agent needs input</PaneTitle>
+          <PaneDescription>Answer to continue the current task.</PaneDescription>
+        </div>
+      </PaneHeader>
+      {!question ? <PaneBody className="overflow-auto p-5"><EmptyState icon={<CheckCircle2 className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
       {question?.status === "ready" && question.schema ? (
         <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
-          try { await client.submit(question, values); setQuestion(null); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.submit(question, values); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }} onCancel={async () => {
           setSubmitting(true); setError(null)
-          try { await client.cancel(question); setQuestion(null); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.cancel(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }}>
-          <Card className="overflow-hidden bg-background shadow-sm">
-            <CardHeader className="gap-3 pb-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-2">
-                  <Badge variant="secondary" className="w-fit gap-1 px-2.5 py-1 font-medium"><Sparkles className="h-3 w-3" /> Needs your input</Badge>
-                  <CardTitle className="text-balance text-xl leading-tight tracking-tight">{question.title ?? "Question"}</CardTitle>
-                </div>
-                <div className="rounded-full border bg-primary/10 p-2 text-primary"><HelpCircle className="h-5 w-5" /></div>
+          <QuestionForm>
+            <PaneBody className="overflow-auto p-5">
+              <div className="space-y-5">
+                <section className="border border-border/50 bg-muted/20 p-4">
+                  <div className="text-xs font-medium text-muted-foreground">Waiting for answer</div>
+                  <h2 className="mt-2 text-balance text-base font-semibold leading-6 text-foreground">{question.title ?? "Question"}</h2>
+                  {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
+                </section>
+                <div className="space-y-4"><QuestionFields /></div>
+                {error ? <Notice tone="destructive" role="alert">{error}</Notice> : null}
               </div>
-              {question.context ? <CardDescription className="max-w-prose text-sm leading-6">{question.context}</CardDescription> : null}
-            </CardHeader>
-            <CardContent>
-              <QuestionForm>
-                <div className="space-y-4 rounded-xl border bg-muted/20 p-4"><QuestionFields /></div>
-                {error ? <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive" role="alert">{error}</p> : null}
-                <div className="mt-5 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Submit closes this temporary question pane.</p><div className="flex gap-2"><Button asChild variant="outline"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild><QuestionSubmitButton>{question.schema.submitLabel ?? "Submit"}</QuestionSubmitButton></Button></div></div>
-              </QuestionForm>
-            </CardContent>
-          </Card>
+            </PaneBody>
+            <PaneFooter className="justify-end border-t bg-background px-5 py-3"><div className="flex gap-2"><Button asChild variant="outline"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div></PaneFooter>
+          </QuestionForm>
         </QuestionFormProvider>
       ) : null}
-      {question && question.status !== "ready" ? <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><XCircle className="h-4 w-4 text-muted-foreground" />Question {question.status}</CardTitle></CardHeader></Card> : null}
-    </div>
+      {question && question.status !== "ready" ? <PaneBody className="p-5"><Notice><span className="flex items-center gap-2"><XCircle className="h-4 w-4 text-muted-foreground" />Question {question.status}</span></Notice></PaneBody> : null}
+    </Pane>
   </div>
 }
 
