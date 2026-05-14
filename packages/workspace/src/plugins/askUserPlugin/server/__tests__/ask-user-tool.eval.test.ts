@@ -5,13 +5,13 @@
  *
  * Gated on OPENROUTER_API_KEY — skipped silently in CI without it.
  * Run manually:
- *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @boring/workspace test src/eval/__tests__/ask-user-tool.test.ts
+ *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @hachej/boring-workspace test src/plugins/askUserPlugin/server/__tests__/ask-user-tool.eval.test.ts
  */
 import { describe, expect, test } from "vitest"
 import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { AskUserRuntime, createAskUserTool, FileAskUserStore } from "../../plugins/askUserPlugin/server"
+import { AskUserRuntime, createAskUserTool, FileAskUserStore } from "../index"
 
 const HAS_KEY = !!process.env.OPENROUTER_API_KEY
 const describeIf = HAS_KEY ? describe : describe.skip
