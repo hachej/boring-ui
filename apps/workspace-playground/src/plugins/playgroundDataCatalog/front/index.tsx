@@ -8,11 +8,11 @@ import {
   type CreateDataCatalogPluginOptions,
   type DataCatalogSelectContext,
 } from "@hachej/boring-data-catalog/front"
-import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
+import type { ExplorerDataSource, ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import { PLAYGROUND_DATA_PLUGIN_ID } from "../shared/constants"
 import { PLAYGROUND_CSV_DATASETS } from "../shared/fixtures"
 
-const rows: ExplorerRow[] = PLAYGROUND_CSV_DATASETS.map((dataset) => ({
+const rows: ExplorerItem[] = PLAYGROUND_CSV_DATASETS.map((dataset) => ({
   id: dataset.path,
   title: dataset.title,
   subtitle: dataset.description,
@@ -21,7 +21,7 @@ const rows: ExplorerRow[] = PLAYGROUND_CSV_DATASETS.map((dataset) => ({
   meta: dataset.columns.join(", "),
 }))
 
-const adapter: ExplorerAdapter = {
+const adapter: ExplorerDataSource = {
   async search({ query, limit, offset, group }) {
     const q = query.trim().toLowerCase()
     let pool = rows
@@ -49,7 +49,7 @@ const adapter: ExplorerAdapter = {
   },
 }
 
-function openDataset(row: ExplorerRow, context: DataCatalogSelectContext): void {
+function openDataset(row: ExplorerItem, context: DataCatalogSelectContext): void {
   if (context.bridge) {
     void context.bridge.openFile(row.id, { mode: "edit" })
     return

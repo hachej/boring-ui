@@ -1,4 +1,4 @@
-import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
+import type { ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import { postUiCommand } from "@hachej/boring-workspace"
 import type { OpenDataCatalogVisualizationOptions } from "./types"
 import { DATA_CATALOG_ROW_SURFACE_KIND } from "../shared/constants"
@@ -35,7 +35,7 @@ export function dataCatalogPanelInstanceId(
 }
 
 export function openDataCatalogVisualization(
-  row: ExplorerRow,
+  row: ExplorerItem,
   options: OpenDataCatalogVisualizationOptions,
 ): void {
   const meta: Record<string, unknown> = {
@@ -57,6 +57,6 @@ export function openDataCatalogVisualization(
 
 export function createDataCatalogOpenHandler(
   options: OpenDataCatalogVisualizationOptions,
-): (row: ExplorerRow) => void {
+): (row: ExplorerItem) => void {
   return (row) => openDataCatalogVisualization(row, options)
 }

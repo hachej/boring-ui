@@ -1,4 +1,4 @@
-import type { ExplorerAdapter, ExplorerRow, SearchResult } from "@hachej/boring-data-explorer/shared"
+import type { ExplorerDataSource, ExplorerItem, SearchResult } from "@hachej/boring-data-explorer/shared"
 import {
   defineServerPlugin,
   type WorkspaceServerPlugin,
@@ -13,7 +13,7 @@ import {
 export interface DataCatalogAgentToolOptions {
   name?: string
   label?: string
-  adapter: ExplorerAdapter
+  adapter: ExplorerDataSource
   defaultLimit?: number
   maxLimit?: number
 }
@@ -63,7 +63,7 @@ function normalizeLimitOptions(options: DataCatalogAgentToolOptions): {
   return { defaultLimit, maxLimit }
 }
 
-function formatBadge(row: ExplorerRow): string {
+function formatBadge(row: ExplorerItem): string {
   const parts = [
     row.leading?.code,
     ...(row.trailing ?? []).map((badge) => badge.code),

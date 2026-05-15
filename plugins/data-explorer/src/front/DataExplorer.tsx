@@ -6,22 +6,22 @@ import { Popover, PopoverTrigger, PopoverContent } from "@hachej/boring-ui-kit"
 import { useExplorerState } from "./useExplorerState"
 import type {
   Badge as BadgeT,
-  ExplorerAdapter,
-  ExplorerRow,
+  ExplorerDataSource,
+  ExplorerItem,
   FacetConfig,
   DragPayload,
 } from "./types"
 
 export type DataExplorerProps = {
-  adapter: ExplorerAdapter
+  adapter: ExplorerDataSource
   /** Facets shown in the toolbar popover. Adapter must implement fetchFacets for this to work. */
   facets?: FacetConfig[]
   /** Single grouping axis (must match a facet key). When set, renders tree mode. */
   groupBy?: string
   /** Activated when a row is clicked, double-clicked, or Enter-pressed. */
-  onActivate?: (row: ExplorerRow) => void
+  onActivate?: (row: ExplorerItem) => void
   /** Returning a payload makes rows draggable. */
-  getDragPayload?: (row: ExplorerRow) => DragPayload | null | undefined
+  getDragPayload?: (row: ExplorerItem) => DragPayload | null | undefined
   /** Empty state shown when the top-level result has no rows and no query/filters. */
   emptyState?: ReactNode
   searchPlaceholder?: string
@@ -320,12 +320,12 @@ function FlatList({
   onActivate,
   getDragPayload,
 }: {
-  items: ExplorerRow[]
+  items: ExplorerItem[]
   hasMore: boolean
   loading: boolean
   onLoadMore: () => void
-  onActivate?: (row: ExplorerRow) => void
-  getDragPayload?: (row: ExplorerRow) => DragPayload | null | undefined
+  onActivate?: (row: ExplorerItem) => void
+  getDragPayload?: (row: ExplorerItem) => DragPayload | null | undefined
 }) {
   return (
     <ul className="flex flex-col px-1 py-1">
@@ -360,12 +360,12 @@ function TreeList({
 }: {
   entries: { value: string; count: number; label: string }[]
   isExpanded: (v: string) => boolean
-  getGroup: (v: string) => { items: ExplorerRow[]; hasMore: boolean; loading: boolean }
+  getGroup: (v: string) => { items: ExplorerItem[]; hasMore: boolean; loading: boolean }
   onExpand: (v: string) => void
   onCollapse: (v: string) => void
   onLoadMoreGroup: (v: string) => void
-  onActivate?: (row: ExplorerRow) => void
-  getDragPayload?: (row: ExplorerRow) => DragPayload | null | undefined
+  onActivate?: (row: ExplorerItem) => void
+  getDragPayload?: (row: ExplorerItem) => DragPayload | null | undefined
 }) {
   return (
     <ul className="flex flex-col py-1">
@@ -437,10 +437,10 @@ function Row({
   onActivate,
   getDragPayload,
 }: {
-  row: ExplorerRow
+  row: ExplorerItem
   indent?: boolean
-  onActivate?: (row: ExplorerRow) => void
-  getDragPayload?: (row: ExplorerRow) => DragPayload | null | undefined
+  onActivate?: (row: ExplorerItem) => void
+  getDragPayload?: (row: ExplorerItem) => DragPayload | null | undefined
 }) {
   const interactive = !!onActivate
   const payload = getDragPayload?.(row)

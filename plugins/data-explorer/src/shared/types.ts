@@ -11,7 +11,7 @@ export type Badge = {
   tooltip?: string
 }
 
-export type ExplorerRow = {
+export type ExplorerItem = {
   id: string
   title: string
   /** Optional muted second line (truncates with title). */
@@ -52,7 +52,7 @@ export type SearchArgs = {
 }
 
 export type SearchResult = {
-  items: ExplorerRow[]
+  items: ExplorerItem[]
   /** Total count for the current scope (query + filters + optional group). */
   total: number
   hasMore: boolean
@@ -63,7 +63,7 @@ export type FacetsArgs = {
   signal?: AbortSignal
 }
 
-export type ExplorerAdapter = {
+export type ExplorerDataSource = {
   search(args: SearchArgs): Promise<SearchResult>
   /** Optional. When omitted, the explorer renders flat (no facet popover). */
   fetchFacets?(args: FacetsArgs): Promise<Facets>

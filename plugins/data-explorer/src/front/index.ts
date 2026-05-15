@@ -6,8 +6,8 @@ export { createSourcesAdapter } from "./adapters"
 export type { SourceEntry } from "./adapters"
 export type {
   Badge,
-  ExplorerRow,
-  ExplorerAdapter,
+  ExplorerItem,
+  ExplorerDataSource,
   FacetConfig,
   FacetValue,
   Facets,

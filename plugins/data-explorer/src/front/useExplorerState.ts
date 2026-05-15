@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useReducer, useRef } from "react"
 import type {
-  ExplorerAdapter,
-  ExplorerRow,
+  ExplorerDataSource,
+  ExplorerItem,
   FacetConfig,
   Facets,
   SearchArgs,
 } from "./types"
 
 export type UseExplorerStateOptions = {
-  adapter: ExplorerAdapter
+  adapter: ExplorerDataSource
   /** Facets shown in the toolbar popover. Adapter must implement fetchFacets. */
   facets?: FacetConfig[]
   /** Facet key used as the single grouping axis (tree mode). */
@@ -26,7 +26,7 @@ export type UseExplorerStateOptions = {
 }
 
 type GroupState = {
-  items: ExplorerRow[]
+  items: ExplorerItem[]
   total: number
   hasMore: boolean
   loading: boolean
@@ -36,7 +36,7 @@ type State = {
   query: string
   pendingQuery: string
   filters: Record<string, string[]>
-  topItems: ExplorerRow[]
+  topItems: ExplorerItem[]
   topTotal: number
   topHasMore: boolean
   topOffset: number
@@ -54,8 +54,8 @@ type Action =
   | { type: "setFilters"; filters: Record<string, string[]> }
   | { type: "expandGroup"; value: string }
   | { type: "collapseGroup"; value: string }
-  | { type: "topResolved"; items: ExplorerRow[]; total: number; hasMore: boolean; offset: number; append: boolean }
-  | { type: "groupResolved"; value: string; items: ExplorerRow[]; total: number; hasMore: boolean; append: boolean }
+  | { type: "topResolved"; items: ExplorerItem[]; total: number; hasMore: boolean; offset: number; append: boolean }
+  | { type: "groupResolved"; value: string; items: ExplorerItem[]; total: number; hasMore: boolean; append: boolean }
   | { type: "groupLoading"; value: string; loading: boolean }
   | { type: "facetsResolved"; facets: Facets }
   | { type: "loading"; loading: boolean }
