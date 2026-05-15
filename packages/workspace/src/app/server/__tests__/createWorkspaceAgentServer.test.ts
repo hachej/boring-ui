@@ -452,3 +452,66 @@ describe("Phase 1 — directory-source plugin entries", () => {
     expect(agentOptions.systemPromptAppend).toContain("MOD_OBJ")
   })
 })
+
+describe("Phase 5 — beforeReload triggers directory-source re-resolve", () => {
+  test("editing a dir-source plugin's server entry shows up after /reload (via beforeReload)", async () => {
+    const dir = await makeTempDir("phase5-reload-")
+    await mkdir(join(dir, "src", "server"), { recursive: true })
+    await writeFile(
+      join(dir, "src", "server", "index.ts"),
+      "export default { id: 'p5', systemPrompt: 'V1' }",
+      "utf8",
+    )
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p5" }), "utf8")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("phase5-host-"),
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ spec: { dir }, hotReload: true }],
+    })
+
+    // Edit the plugin's server module
+    await writeFile(
+      join(dir, "src", "server", "index.ts"),
+      "export default { id: 'p5', systemPrompt: 'V2_AFTER_RELOAD' }",
+      "utf8",
+    )
+
+    // Simulate /reload firing via the beforeReload hook captured by createAgentApp.
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void> },
+    ]
+    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
+
+    // The exposed rebuild closure should reflect the new content.
+    const rebuilt = await (app as unknown as { __boringRebuildPlugins: () => Promise<{ plugins: { id: string; systemPrompt?: string }[] }> }).__boringRebuildPlugins()
+    expect(rebuilt.plugins[0].systemPrompt).toBe("V2_AFTER_RELOAD")
+  })
+
+  test("dir-source plugin re-resolve failure surfaces as a 422-style throw in beforeReload", async () => {
+    const dir = await makeTempDir("phase5-bad-")
+    await mkdir(join(dir, "src", "server"), { recursive: true })
+    await writeFile(
+      join(dir, "src", "server", "index.ts"),
+      "export default { id: 'good', systemPrompt: 'OK' }",
+      "utf8",
+    )
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p" }), "utf8")
+
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("phase5-bad-host-"),
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ spec: { dir }, hotReload: true }],
+    })
+
+    // Replace the server entry with a syntax error so the next jiti import throws.
+    await writeFile(join(dir, "src", "server", "index.ts"), "this is not valid typescript {{", "utf8")
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { beforeReload?: () => Promise<void> },
+    ]
+    await expect(agentOptions.beforeReload?.()).rejects.toThrow(/Boring plugin re-resolve failed/)
+  })
+})
