@@ -191,9 +191,14 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       { pi?: { packages?: unknown[]; getDynamicResources?: () => { packages?: unknown[] } } },
     ]
-    expect(agentOptions.pi?.packages).toEqual([
+    // pi.packages is the STATIC set: bundled @hachej/boring-pi skill +
+    // host-supplied + factory-plugin entries. The bundled skill is added
+    // when @hachej/boring-pi is resolvable from the workspace.
+    expect(agentOptions.pi?.packages ?? []).toContainEqual(
       expect.objectContaining({ skills: ["skills/boring-plugin-authoring"] }),
-    ])
+    )
+    // The package.json#pi.packages discovered for the test plugin live in
+    // getDynamicResources() — Phase 1 / reload-pluggability split.
     expect(agentOptions.pi?.getDynamicResources?.().packages).toEqual([
       join(pluginRoot),
       { source: join(pluginRoot, "agent"), extensions: ["index.ts"] },
@@ -233,14 +238,16 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       .calls[0] as unknown as [
       { pi?: { packages?: unknown[] } },
     ]
-    expect(agentOptions.pi?.packages).toEqual([
+    // Static set: bundled @hachej/boring-pi skill (when resolvable) +
+    // factory-plugin contributions + host-supplied entries.
+    expect(agentOptions.pi?.packages).toContainEqual(
       expect.objectContaining({ skills: ["skills/boring-plugin-authoring"] }),
-      {
-        source: "npm:plugin-pi",
-        extensions: ["./a.ts", "./b.ts"],
-      },
-      "npm:host-pi",
-    ])
+    )
+    expect(agentOptions.pi?.packages).toContainEqual({
+      source: "npm:plugin-pi",
+      extensions: ["./a.ts", "./b.ts"],
+    })
+    expect(agentOptions.pi?.packages).toContain("npm:host-pi")
   })
 
   test("getDynamicResources reflects package.json#pi changes between calls", async () => {

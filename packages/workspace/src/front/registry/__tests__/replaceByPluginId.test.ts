@@ -23,8 +23,8 @@ describe("Phase 3 — atomic replaceByPluginId", () => {
 
   test("PanelRegistry: replace preserves registration order for new entries", () => {
     const registry = new PanelRegistry()
-    registry.register("a", { id: "a", title: "A", placement: "center", component: () => null, pluginId: "p1" })
-    registry.register("b", { id: "b", title: "B", placement: "center", component: () => null, pluginId: "other" })
+    registry.register("a", { title: "A", placement: "center", component: () => null, pluginId: "p1" })
+    registry.register("b", { title: "B", placement: "center", component: () => null, pluginId: "other" })
 
     const subscriber = vi.fn()
     registry.subscribe(subscriber)
@@ -40,12 +40,15 @@ describe("Phase 3 — atomic replaceByPluginId", () => {
 
   test("CatalogRegistry: replace clears old + adds new in one emit", () => {
     const registry = new CatalogRegistry({ warnOnDuplicate: false })
-    registry.register({ id: "old", label: "Old", adapter: { search: async () => ({ items: [], total: 0 }) } }, "p1")
+    const stubAdapter = {
+      search: async () => ({ items: [], total: 0, hasMore: false }),
+    }
+    registry.register({ id: "old", label: "Old", adapter: stubAdapter, onSelect: () => {} }, "p1")
 
     const subscriber = vi.fn()
     registry.subscribe(subscriber)
     registry.replaceByPluginId("p1", [
-      { id: "new", label: "New", adapter: { search: async () => ({ items: [], total: 0 }) } },
+      { id: "new", label: "New", adapter: stubAdapter, onSelect: () => {} },
     ])
 
     expect(subscriber).toHaveBeenCalledTimes(1)
@@ -55,8 +58,8 @@ describe("Phase 3 — atomic replaceByPluginId", () => {
 
   test("SurfaceResolverRegistry: replace by pluginId is atomic", () => {
     const registry = new SurfaceResolverRegistry()
-    registry.register("r1", { id: "r1", source: "plugin", resolve: () => undefined, pluginId: "p1" })
-    registry.register("r2", { id: "r2", source: "plugin", resolve: () => undefined, pluginId: "other" })
+    registry.register("r1", { source: "plugin", resolve: () => undefined, pluginId: "p1" })
+    registry.register("r2", { source: "plugin", resolve: () => undefined, pluginId: "other" })
 
     const subscriber = vi.fn()
     registry.subscribe(subscriber)
@@ -103,7 +106,7 @@ describe("Phase 3 — atomic replaceByPluginId", () => {
   test("PanelRegistry: collision skip preserves cross-plugin isolation", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const registry = new PanelRegistry()
-    registry.register("shared", { id: "shared", title: "Other", placement: "center", component: () => null, pluginId: "other" })
+    registry.register("shared", { title: "Other", placement: "center", component: () => null, pluginId: "other" })
 
     registry.replaceByPluginId("intruder", [
       { id: "shared", title: "Hijack", placement: "center", component: () => null },
