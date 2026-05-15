@@ -68,6 +68,12 @@ export interface CreateAgentAppOptions {
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
   beforeReload?: () => void | Promise<void>
+  /**
+   * Optional dynamic system-prompt source forwarded to the harness. The
+   * harness calls it whenever it builds or rebuilds a session prompt. Used by
+   * the workspace plugin layer.
+   */
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
 }
 
 export async function createAgentApp(
@@ -125,6 +131,7 @@ export async function createAgentApp(
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
     systemPromptAppend: opts.systemPromptAppend,
+    systemPromptDynamic: opts.systemPromptDynamic,
   })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 

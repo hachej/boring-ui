@@ -8,6 +8,13 @@ export interface AgentHarnessFactoryInput {
   systemPromptAppend?: string
   sessionNamespace?: string
   sessionDir?: string
+  /**
+   * Optional dynamic system-prompt source. Harness calls it whenever it
+   * builds or rebuilds a session prompt and appends the returned string.
+   * Workspace plugin layer wires this so live-reloaded plugins can contribute
+   * prompt context without a workspace-injected harness extension.
+   */
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
 }
 
 export type AgentHarnessFactory = (input: AgentHarnessFactoryInput) => AgentHarness | Promise<AgentHarness>

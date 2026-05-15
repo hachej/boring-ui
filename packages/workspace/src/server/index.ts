@@ -40,7 +40,7 @@ export type {
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"
 export { boringPluginRoutes } from "./agentPlugins/routes"
-export { createBoringPiExtension } from "./agentPlugins/boringPiExtension"
+export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"
 export { preflightBoringPlugins, readBoringPlugins } from "./agentPlugins/scan"
 export type {
   BoringPackageField,
