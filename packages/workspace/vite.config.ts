@@ -38,6 +38,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
+      "@hachej/boring-workspace/server": resolve(__dirname, "src/server/index.ts"),
+      "@hachej/boring-workspace": resolve(__dirname, "src/index.ts"),
     },
   },
   build: {

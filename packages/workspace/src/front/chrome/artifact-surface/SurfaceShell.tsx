@@ -144,6 +144,8 @@ export function SurfaceShell({
   onReadyRef.current = onReady
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const bridgeSelectorsRef = useRef(new Set<(state: WorkspaceState) => void>())
 
   // Read of the panel registry — used to validate `openPanel({component})`
@@ -225,8 +227,12 @@ export function SurfaceShell({
       normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
         ? findOpenFilePanel(api, normalizedRequest.target) ?? api.getPanel(panelId)
         : api.getPanel(panelId)
+    const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
+    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
+      ? { ...(resolved.params ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
+      : resolved.params
     if (existing) {
-      if (resolved.params) existing.api.updateParameters(resolved.params)
+      if (resolvedParams) existing.api.updateParameters(resolvedParams)
       existing.api.setActive()
       return
     }
@@ -242,7 +248,7 @@ export function SurfaceShell({
       id: panelId,
       component: resolved.component,
       title: resolved.title ?? normalizedRequest.target,
-      params: resolved.params,
+      params: resolvedParams,
     })
   }, [])
 

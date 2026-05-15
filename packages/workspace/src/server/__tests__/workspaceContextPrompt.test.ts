@@ -14,6 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { buildWorkspaceContextPrompt } from "../../app/server/createWorkspaceAgentServer"
+import { buildBoringSystemPrompt } from "../boringSystemPrompt"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
 
 // ── spy ───────────────────────────────────────────────────────────────────────
@@ -129,6 +130,17 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt())
   })
 
+  test("boring-ui docs prompt is included by default", async () => {
+    const workspaceRoot = await makeTempDir("boring-wcp-docs-")
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+    await app.close()
+    expect(capturedSystemPromptAppend).toContain(buildBoringSystemPrompt())
+  })
+
   test("plugin system prompts appear alongside workspace context in direct mode", async () => {
     const workspaceRoot = await makeTempDir("boring-wcp-plugin-")
     const app = await createWorkspaceAgentServer({
@@ -157,7 +169,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     expect(contextIdx).toBeLessThan(pluginIdx)
   })
 
-  test("systemPromptAppend is undefined when vercel-sandbox mode and no plugin prompts", async () => {
+  test("vercel-sandbox omits workspace context even with default app prompts", async () => {
     const workspaceRoot = await makeTempDir("boring-wcp-vs-undef-")
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
@@ -165,6 +177,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       logger: false,
     })
     await app.close()
-    expect(capturedSystemPromptAppend).toBeUndefined()
+    expect(capturedSystemPromptAppend).toBeDefined()
+    expect(capturedSystemPromptAppend).not.toContain(buildWorkspaceContextPrompt())
   })
 })

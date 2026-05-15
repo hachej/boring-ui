@@ -41,6 +41,12 @@ function createBodyValidator<T>(schema: ZodSchema<T>) {
 export interface UiRoutesOptions {
   bridge?: UiBridge;
   getBridge?: (request: FastifyRequest) => UiBridge | Promise<UiBridge>;
+  /**
+   * Server/plugin-owned state slots preserved across browser full-state PUTs.
+   * Browser UI snapshots are replace-style for normal workspace state, but
+   * these slots are published out-of-band by server plugins.
+   */
+  preserveStateKeys?: string[];
 }
 
 export function uiRoutes(
@@ -74,7 +80,13 @@ export function uiRoutes(
     async (request, reply) => {
       const body = request.body as z.infer<typeof setStateBodySchema>;
       const bridge = await resolveBridge(request);
-      await bridge.setState(body.state);
+      const current = (await bridge.getState()) ?? {};
+      const preserved = Object.fromEntries(
+        (opts.preserveStateKeys ?? [])
+          .filter((key) => !(key in body.state) && key in current)
+          .map((key) => [key, current[key]]),
+      );
+      await bridge.setState({ ...body.state, ...preserved });
       return reply.code(204).send();
     },
   );

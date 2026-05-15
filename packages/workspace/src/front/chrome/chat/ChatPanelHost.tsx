@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect } from "react"
-import { useWorkspaceChatPanel } from "../../provider"
+import { useWorkspaceAttention, useWorkspaceChatPanel } from "../../provider"
 import { emitAgentData } from "../../events"
 import { dispatchUiCommand, startUiCommandStream } from "../../bridge"
 import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
@@ -15,6 +15,7 @@ export interface ChatPanelHostShellProps {
   getSurface?: () => SurfaceShellApi | null
   isWorkbenchOpen?: () => boolean
   openWorkbench?: () => void
+  closeWorkbench?: () => void
 }
 
 export type ChatPanelHostProps = WorkspaceChatPanelProps & ChatPanelHostShellProps
@@ -33,10 +34,12 @@ function streamEndpointFromBridgeEndpoint(endpoint: string | null | undefined): 
 
 export function ChatPanelHost(props: ChatPanelHostProps) {
   const ChatPanelImpl = useWorkspaceChatPanel()
+  const { blockers } = useWorkspaceAttention()
   const {
     getSurface,
     isWorkbenchOpen,
     openWorkbench,
+    closeWorkbench,
     bridgeEndpoint,
     ...chatPanelProps
   } = props
@@ -46,15 +49,16 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       if (getSurface && isWorkbenchOpen && openWorkbench) {
         dispatchUiCommand(
           { kind: "openFile", params: { path } },
-          { surface: getSurface, isWorkbenchOpen, openWorkbench },
+          { surface: getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench },
         )
       }
       props.onOpenArtifact?.(path)
     },
-    [getSurface, isWorkbenchOpen, openWorkbench, props.onOpenArtifact],
+    [getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, props.onOpenArtifact],
   )
 
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
+  const composerBlockers = blockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === chatPanelProps.sessionId)
 
   useEffect(() => {
     if (bridgeEndpoint === null || !getSurface || !isWorkbenchOpen || !openWorkbench) return
@@ -65,9 +69,32 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
         surface: getSurface,
         isWorkbenchOpen,
         openWorkbench,
+        closeWorkbench,
       },
     })
-  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, uiWorkspaceId])
+  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, uiWorkspaceId])
+
+  const handleComposerStop = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
+    props.onComposerStop?.()
+  }, [chatPanelProps.sessionId, props.onComposerStop])
+
+  const handleComposerBlockerAction = useCallback(
+    (blocker: NonNullable<WorkspaceChatPanelProps["composerBlockers"]>[number], action: string) => {
+      if (action === "cancel") {
+        window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
+        return
+      }
+      if (action !== "open" || !blocker.surfaceKind) return
+      if (getSurface && isWorkbenchOpen && openWorkbench) {
+        dispatchUiCommand(
+          { kind: "openSurface", params: { kind: blocker.surfaceKind, target: blocker.target, meta: {} } },
+          { surface: getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench },
+        )
+      }
+    },
+    [chatPanelProps.sessionId, closeWorkbench, getSurface, isWorkbenchOpen, openWorkbench],
+  )
 
   const handleData = useCallback(
     (part: unknown) => {
@@ -83,6 +110,9 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
       {...chatPanelProps}
       onOpenArtifact={openArtifact}
       onData={handleData}
+      composerBlockers={composerBlockers}
+      onComposerStop={handleComposerStop}
+      onComposerBlockerAction={handleComposerBlockerAction}
     />
   )
 }

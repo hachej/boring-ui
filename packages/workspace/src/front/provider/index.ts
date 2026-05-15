@@ -17,6 +17,14 @@ export type {
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
 } from "./WorkspaceProvider"
+export {
+  WorkspaceAttentionProvider,
+  useWorkspaceAttention,
+} from "../attention"
+export type {
+  WorkspaceAttentionBlocker,
+  WorkspaceAttentionContextValue,
+} from "../attention"
 export type {
   OpenArtifactHandler,
   WorkspaceChatPanelComponent,
