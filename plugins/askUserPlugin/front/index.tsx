@@ -173,7 +173,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
             <PaneBody className="overflow-auto p-4">
               <div className="space-y-4">
                 <section className="rounded-md border border-border/60 bg-muted/30 p-4">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/90">Waiting for answer</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Waiting for answer</div>
                   <h2 className="mt-2 text-balance text-sm font-semibold leading-5 text-foreground">{question.title ?? "Question"}</h2>
                   {question.context ? <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">{question.context}</p> : null}
                 </section>
@@ -181,7 +181,7 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
                 {error ? <Notice tone="destructive" role="alert">{error}</Notice> : null}
               </div>
             </PaneBody>
-            <PaneFooter className="justify-between border-t bg-background px-4 py-3"><p className="min-w-0 text-xs text-muted-foreground/80">Sends answers and closes the pane.</p><div className="flex gap-2"><Button asChild variant="outline" size="sm"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild size="sm"><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div></PaneFooter>
+            <PaneFooter className="justify-between border-t bg-background px-4 py-3"><p className="min-w-0 text-xs text-muted-foreground">Sends answers and closes the pane.</p><div className="flex gap-2"><Button asChild variant="outline" size="sm"><QuestionCancelButton>Cancel</QuestionCancelButton></Button><Button asChild size="sm"><QuestionSubmitButton>{question.schema.submitLabel ?? "Send answers"}</QuestionSubmitButton></Button></div></PaneFooter>
           </QuestionForm>
         </QuestionFormProvider>
       ) : null}
