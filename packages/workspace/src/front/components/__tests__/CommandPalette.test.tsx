@@ -7,7 +7,7 @@ import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { CatalogRegistry } from "../../plugin/CatalogRegistry"
 import type { CatalogConfig } from "../../../shared/plugins/types"
-import type { ExplorerRow, SearchResult } from "@hachej/boring-data-explorer/shared"
+import type { CatalogRow, CatalogSearchResult } from "../../../shared/plugins/types"
 import type { RecentEntry } from "../recent/types"
 import { STORAGE_KEY as RECENT_KEY } from "../recent/recentStore"
 
@@ -59,7 +59,7 @@ function createWrapper(commandRegistry?: CommandRegistry, catalogRegistry?: Cata
   }
 }
 
-function rowFromPath(path: string): ExplorerRow {
+function rowFromPath(path: string): CatalogRow {
   const lastSlash = path.lastIndexOf("/")
   return {
     id: path,
@@ -68,7 +68,7 @@ function rowFromPath(path: string): ExplorerRow {
   }
 }
 
-function resultFor(paths: string[]): SearchResult {
+function resultFor(paths: string[]): CatalogSearchResult {
   return {
     items: paths.map(rowFromPath),
     total: paths.length,

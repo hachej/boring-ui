@@ -36,12 +36,11 @@ import {
   type PaletteMode,
 } from "./commandPaletteHelpers"
 import { PluginErrorBoundary } from "../plugin/PluginErrorBoundary"
-import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import { useWorkspaceContextOptional } from "../provider/WorkspaceProvider"
 import { useCommandPaletteSelection } from "./useCommandPaletteSelection"
 import { useCommandPaletteChrome } from "./useCommandPaletteChrome"
 import { useCommandPaletteCatalogSearch } from "./useCommandPaletteCatalogSearch"
-import type { CatalogConfig } from "../../shared/plugins/types"
+import type { CatalogConfig, CatalogRow } from "../../shared/plugins/types"
 import type { CommandConfig } from "../registry/types"
 import type { RecentEntry } from "./recent"
 
@@ -277,7 +276,7 @@ function CatalogResultsSections({
 }: {
   catalogGroups: CatalogSearchGroup[]
   isCommandMode: boolean
-  onCatalogSelect: (catalog: CatalogConfig, row: ExplorerRow) => void
+  onCatalogSelect: (catalog: CatalogConfig, row: CatalogRow) => void
 }) {
   if (isCommandMode) return null
 
@@ -442,7 +441,7 @@ function ModeButton({
   )
 }
 
-function CatalogRowLabel({ row }: { row: ExplorerRow }) {
+function CatalogRowLabel({ row }: { row: CatalogRow }) {
   return (
     <span className="flex min-w-0 flex-1 items-baseline gap-2 truncate">
       <span className="truncate font-medium text-foreground">{row.title}</span>

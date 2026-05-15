@@ -1,12 +1,11 @@
 import {
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
-  defineFrontPlugin,
   postUiCommand,
   type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
 import {
-  appendDataCatalogOutputs,
-  type CreateDataCatalogOutputsOptions,
+  createDataCatalogPlugin,
+  type CreateDataCatalogPluginOptions,
   type DataCatalogSelectContext,
 } from "@hachej/boring-data-catalog/front"
 import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
@@ -66,8 +65,9 @@ function openDataset(row: ExplorerRow, context: DataCatalogSelectContext): void 
   })
 }
 
-function createPlaygroundDataCatalogOptions(): CreateDataCatalogOutputsOptions {
+function createPlaygroundDataCatalogOptions(): CreateDataCatalogPluginOptions {
   return {
+    pluginId: PLAYGROUND_DATA_PLUGIN_ID,
     id: PLAYGROUND_DATA_PLUGIN_ID,
     label: "Data",
     adapter,
@@ -83,10 +83,6 @@ function createPlaygroundDataCatalogOptions(): CreateDataCatalogOutputsOptions {
   }
 }
 
-export const playgroundDataCatalogPlugin: WorkspaceFrontPlugin = appendDataCatalogOutputs(
-  defineFrontPlugin({
-    id: PLAYGROUND_DATA_PLUGIN_ID,
-    label: "Playground Data",
-  }),
+export const playgroundDataCatalogPlugin: WorkspaceFrontPlugin = createDataCatalogPlugin(
   createPlaygroundDataCatalogOptions(),
 )
