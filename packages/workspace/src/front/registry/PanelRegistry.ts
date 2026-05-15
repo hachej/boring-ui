@@ -56,6 +56,38 @@ export class PanelRegistry {
     this.emit()
   }
 
+  /**
+   * Atomic replace: unregister all panels owned by `pluginId`, then register
+   * the new set, in one emit cycle. Subscribers see exactly one intermediate
+   * state — never an empty registry between unregister and re-register.
+   *
+   * Pi parity (`core/agent-session.js:1896` reload): teardown + rebuild as a
+   * single observable transition. Used by Phase 5 reload wiring.
+   */
+  replaceByPluginId(pluginId: string, registrations: PanelRegistration[]): void {
+    let changed = false
+    for (const [id, panel] of this.panels) {
+      if (panel.pluginId === pluginId) {
+        this.panels.delete(id)
+        this.lazyComponentCache.delete(id)
+        this.wrapperComponentCache.delete(id)
+        changed = true
+      }
+    }
+    if (changed) {
+      this.registrationOrder = this.registrationOrder.filter((oid) => this.panels.has(oid))
+    }
+    for (const config of registrations) {
+      const id = config.id
+      if (!id) continue
+      const existed = this.panels.has(id)
+      this.panels.set(id, { ...config, id, pluginId } as PanelConfig)
+      if (!existed) this.registrationOrder.push(id)
+      changed = true
+    }
+    if (changed) this.emit()
+  }
+
   get(id: string): PanelConfig | undefined {
     return this.panels.get(id)
   }
