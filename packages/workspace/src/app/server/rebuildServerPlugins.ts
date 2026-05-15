@@ -133,3 +133,12 @@ function classifyEntryPath(entry: WorkspacePluginEntry): string | undefined {
   if (isDirEntry(entry)) return entry.spec.dir
   return undefined
 }
+
+/**
+ * Stable single-line diagnostic format for the /reload error path. Kept
+ * here so consumers (current beforeReload thrower, future Phase 6 SSE
+ * payload) render identically.
+ */
+export function formatPluginDiagnostic(d: PluginReloadDiagnostic): string {
+  return `${d.source}${d.path ? ` (${d.path})` : ""}: ${d.message}`
+}
