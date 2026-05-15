@@ -61,31 +61,44 @@ export class PanelRegistry {
    * the new set, in one emit cycle. Subscribers see exactly one intermediate
    * state — never an empty registry between unregister and re-register.
    *
+   * Collision policy: a new registration whose id is already owned by a
+   * DIFFERENT pluginId is skipped with a warning. Preserves cross-plugin
+   * isolation during reload — a renamed plugin can't silently steal another
+   * plugin's panel id.
+   *
    * Pi parity (`core/agent-session.js:1896` reload): teardown + rebuild as a
    * single observable transition. Used by Phase 5 reload wiring.
    */
   replaceByPluginId(pluginId: string, registrations: PanelRegistration[]): void {
-    let changed = false
+    const ownedIds = new Set<string>()
     for (const [id, panel] of this.panels) {
-      if (panel.pluginId === pluginId) {
-        this.panels.delete(id)
-        this.lazyComponentCache.delete(id)
-        this.wrapperComponentCache.delete(id)
-        changed = true
-      }
+      if (panel.pluginId === pluginId) ownedIds.add(id)
     }
-    if (changed) {
+    if (ownedIds.size === 0 && registrations.length === 0) return
+
+    for (const id of ownedIds) {
+      this.panels.delete(id)
+      this.lazyComponentCache.delete(id)
+      this.wrapperComponentCache.delete(id)
+    }
+    if (ownedIds.size > 0) {
       this.registrationOrder = this.registrationOrder.filter((oid) => this.panels.has(oid))
     }
     for (const config of registrations) {
       const id = config.id
       if (!id) continue
-      const existed = this.panels.has(id)
+      const existing = this.panels.get(id)
+      if (existing && existing.pluginId && existing.pluginId !== pluginId) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[PanelRegistry] plugin "${pluginId}" tried to register panel "${id}" already owned by "${existing.pluginId}" — skipped`,
+        )
+        continue
+      }
       this.panels.set(id, { ...config, id, pluginId } as PanelConfig)
-      if (!existed) this.registrationOrder.push(id)
-      changed = true
+      if (!this.registrationOrder.includes(id)) this.registrationOrder.push(id)
     }
-    if (changed) this.emit()
+    this.emit()
   }
 
   get(id: string): PanelConfig | undefined {
