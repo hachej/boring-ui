@@ -31,7 +31,7 @@ afterEach(() => {
 
 describe("askUserPlugin front shell", () => {
   it("reads pending question, submits with token/session, and closes ephemeral pane", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json({ [ASK_USER_UI_STATE_SLOTS.PENDING]: { question } })
       if (String(url).endsWith("/api/v1/questions/commands")) return Response.json({ ok: true, status: "answered" })
       return Response.json({})
@@ -61,7 +61,7 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("renders question from openSurface metadata even before pending-state poll catches up", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json({})
       return Response.json({})
     })
@@ -74,7 +74,7 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("composer stop cancels pending question even when pane is closed", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
       if (String(url).endsWith("/api/v1/ui/state")) return Response.json({ [ASK_USER_UI_STATE_SLOTS.PENDING]: { question } })
       if (String(url).endsWith("/api/v1/questions/commands")) return Response.json({ ok: true, status: "cancelled" })
       return Response.json({})

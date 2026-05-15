@@ -77,7 +77,7 @@ export function QuestionFormProvider({
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [dirtyHints, setDirtyHints] = useState<Record<string, string>>({})
+  const dirtyHints: Record<string, string> = {}
   const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
@@ -158,7 +158,7 @@ export function QuestionField({ field }: { field: AskUserField }) {
 }
 
 export function QuestionSubmitButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const { schema, status, errors, submitting, disabled } = useQuestionForm()
+  const { status, submitting, disabled } = useQuestionForm()
   return <button {...props} type="submit" disabled={disabled || submitting || status !== "ready"}>{props.children ?? "Submit"}</button>
 }
 
