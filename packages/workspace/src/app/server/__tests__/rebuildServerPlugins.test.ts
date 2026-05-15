@@ -35,7 +35,7 @@ describe("Phase 4 — rebuildServerPlugins", () => {
 
     const result = await rebuildServerPlugins({
       entries: [{ spec: { dir }, hotReload: true }],
-      ctx: { workspaceRoot: "/tmp/host", bridge: {} },
+      ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
       bus,
       currentPluginIds: ["rebuilt"],
     })
@@ -65,7 +65,7 @@ describe("Phase 4 — rebuildServerPlugins", () => {
         { spec: { dir: "/nonexistent" }, hotReload: true },
         { spec: { dir: goodDir }, hotReload: true },
       ],
-      ctx: { workspaceRoot: "/tmp/host", bridge: {} },
+      ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
     })
 
     expect(result.ok).toBe(false)
@@ -83,7 +83,7 @@ describe("Phase 4 — rebuildServerPlugins", () => {
         { id: "obj", systemPrompt: "O" },
         factory,
       ],
-      ctx: { workspaceRoot: "/tmp/host", bridge: {} },
+      ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
     })
 
     expect(result.plugins.map((p) => p.id)).toEqual(["obj", "fact"])
@@ -95,12 +95,46 @@ describe("Phase 4 — rebuildServerPlugins", () => {
     const emitSpy = vi.spyOn(bus, "emit")
     const result = await rebuildServerPlugins({
       entries: [{ id: "obj", systemPrompt: "" }],
-      ctx: { workspaceRoot: "/tmp/host", bridge: {} },
+      ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
       bus,
       currentPluginIds: ["obj"],
     })
 
     expect(result.ok).toBe(true)
     expect(emitSpy).not.toHaveBeenCalled()
+  })
+
+  test("consecutive rebuilds: shutdown fires for the LIVE set, not the boot set", async () => {
+    // Caller-side simulation of how createWorkspaceAgentServer's
+    // __boringRebuildPlugins closure tracks `liveLoadedIds` across calls.
+    const bus = new ServerPluginLifecycleBus()
+    const log: string[] = []
+    bus.on("plugin_shutdown", (e) => { log.push(`down:${e.pluginId}`) })
+    bus.on("plugin_start", (e) => { log.push(`up:${e.pluginId}:${e.reason}`) })
+
+    let liveLoadedIds: string[] = ["v1"]
+
+    // First rebuild: replace v1 with v2
+    let result = await rebuildServerPlugins({
+      entries: [{ id: "v2", systemPrompt: "B" }],
+      ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
+      bus,
+      currentPluginIds: liveLoadedIds,
+    })
+    liveLoadedIds = result.plugins.map((p) => p.id)
+    expect(liveLoadedIds).toEqual(["v2"])
+
+    // Second rebuild: replace v2 with v3. shutdown MUST fire for v2,
+    // not v1 (the boot id) — that was xAI Phase 4 review's stale-snapshot bug.
+    result = await rebuildServerPlugins({
+      entries: [{ id: "v3", systemPrompt: "C" }],
+      ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
+      bus,
+      currentPluginIds: liveLoadedIds,
+    })
+    expect(log).toEqual([
+      "down:v1", "up:v2:reload",
+      "down:v2", "up:v3:reload",  // <-- v2 (live), not v1 (boot)
+    ])
   })
 })
