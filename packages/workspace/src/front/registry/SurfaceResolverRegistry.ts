@@ -36,6 +36,32 @@ export class SurfaceResolverRegistry {
     this.emit()
   }
 
+  /**
+   * Atomic replace by pluginId: drop owned resolvers and register the new
+   * set in one emit. Pi parity for reload semantics.
+   */
+  replaceByPluginId(pluginId: string, resolvers: SurfaceResolverRegistration[]): void {
+    let changed = false
+    for (const [id, resolver] of this.resolvers) {
+      if (resolver.pluginId === pluginId) {
+        this.resolvers.delete(id)
+        changed = true
+      }
+    }
+    if (changed) {
+      this.registrationOrder = this.registrationOrder.filter((oid) => this.resolvers.has(oid))
+    }
+    for (const config of resolvers) {
+      const id = config.id
+      if (!id) continue
+      const existed = this.resolvers.has(id)
+      this.resolvers.set(id, { ...config, id, pluginId })
+      if (!existed) this.registrationOrder.push(id)
+      changed = true
+    }
+    if (changed) this.emit()
+  }
+
   get(id: string): SurfaceResolverConfig | undefined {
     return this.resolvers.get(id)
   }
