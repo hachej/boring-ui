@@ -63,7 +63,7 @@ plugins/<name>/
   tsconfig.json      paths aliases into packages/workspace/src for fast iteration
   tsup.config.ts     entries: front/index, server/index, shared/index
   vitest.config.ts   jsdom + @vitejs/plugin-react + globals: true
-                     setupFiles: ../_shared/vitest.setup.ts
+                     setupFiles: ./src/test-setup.ts
   src/
     front/
       index.tsx      createXxxPlugin() — entry, re-exports
@@ -530,13 +530,13 @@ Server side, the host app's server entry wires plugins via `bootstrapServer({ pl
 
 ## 9. Testing
 
-The shared setup at `plugins/_shared/vitest.setup.ts` covers:
+Each plugin owns a `src/test-setup.ts` (copied from `plugins/_template/src/test-setup.ts`). It covers:
 - `@testing-library/jest-dom` matchers (manually extended — do NOT use `import "@testing-library/jest-dom/vitest"` shorthand)
 - `ResizeObserver` polyfill
 - `Range.getClientRects` stub (tiptap compatibility)
 - `afterEach(cleanup)` for testing-library
 
-Each plugin's `vitest.config.ts` points at this shared setup. The template uses `@vitejs/plugin-react` for JSX and `globals: true` for `describe`/`it`.
+Each plugin's `vitest.config.ts` points at its own `./src/test-setup.ts` (so plugins stay self-contained). The template uses `@vitejs/plugin-react` for JSX and `globals: true` for `describe`/`it`.
 
 Common patterns:
 - Front plugin tests: instantiate the plugin and assert `outputs[].type`, render panels with `PaneProps` mocks, verify event subscriptions.
@@ -584,7 +584,7 @@ Run `pnpm lint:invariants` before pushing. The same rules run in CI.
 
 1. **Forgetting to register a plugin** — `WorkspaceAgentFront plugins={[myPlugin]}` is the only attachment point. The plugin is inert until passed there.
 2. **Re-using a panel id on a different plugin** — bootstrap throws on duplicate ids across the whole graph.
-3. **Importing `@testing-library/jest-dom/vitest`** — silently broken under monorepo vitest dedup. Use the shared setup.
+3. **Importing `@testing-library/jest-dom/vitest`** — silently broken under monorepo vitest dedup. Use the manual `expect.extend` pattern from `plugins/_template/src/test-setup.ts`.
 4. **Setting `lazy: true` manually when it's not needed** — auto-detection handles it for dynamic-import factories. Manual `lazy: true` is a fallback for unusual cases.
 5. **Surface resolvers returning a non-existent `component:`** — the openSurface command silently fails; check `uiState.openTabs` after dispatch.
 6. **Cross-plugin imports** — plugins MUST NOT import from each other directly. Use the workspace event bus or a shared package.

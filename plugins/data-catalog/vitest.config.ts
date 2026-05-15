@@ -15,6 +15,6 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    setupFiles: [resolve(__dirname, "../_shared/vitest.setup.ts")],
+    setupFiles: ["./src/test-setup.ts"],
   },
 })
