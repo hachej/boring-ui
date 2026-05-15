@@ -32,7 +32,7 @@ import {
   type PluginSpec,
 } from "./pluginEntryResolver"
 import { ServerPluginLifecycleBus } from "./serverPluginLifecycle"
-import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
+import { formatPluginDiagnostic, rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
@@ -477,9 +477,7 @@ export async function createWorkspaceAgentServer(
       // /reload response shape to carry diagnostics non-fatally.
       const rebuild = await rebuildPlugins()
       if (rebuild.diagnostics.length > 0) {
-        const details = rebuild.diagnostics
-          .map((d) => `${d.source}${d.path ? ` (${d.path})` : ""}: ${d.message}`)
-          .join("\n\n")
+        const details = rebuild.diagnostics.map(formatPluginDiagnostic).join("\n\n")
         throw new Error(`Boring plugin re-resolve failed:\n\n${details}`)
       }
       await opts.beforeReload?.()
