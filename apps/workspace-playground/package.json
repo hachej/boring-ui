@@ -4,16 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-workspace-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite",
-    "dev:local": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-workspace-ask-user build && pnpm --filter @hachej/boring-data-catalog build && BORING_USE_LOCAL_PACKAGES=1 vite",
-    "build": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-workspace-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite build",
-    "typecheck": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-workspace-ask-user build && pnpm --filter @hachej/boring-data-catalog build && tsc --noEmit",
+    "dev": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite",
+    "dev:local": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && BORING_USE_LOCAL_PACKAGES=1 vite",
+    "build": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite build",
+    "typecheck": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && tsc --noEmit",
     "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "@hachej/boring-workspace-ask-user": "workspace:*",
+    "@hachej/boring-ask-user": "workspace:*",
     "@duckdb/node-api": "1.5.2-r.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
