@@ -582,6 +582,11 @@ The shell never lies: changes that can't apply hot fire a precise event
 (`needs-page-reload`, `needs-session-restart`, `needs-server-restart`)
 the user can act on. Everything else swaps silently.
 
+> **Note:** `hotReload: true` only applies to `{ spec: { dir } }`
+> entries. Pre-built objects, factory functions, and `{ spec: { module } }`
+> entries are imported once at boot and don't re-resolve on /reload —
+> their host already controls the import lifecycle.
+
 ---
 
 ## 9. Testing
