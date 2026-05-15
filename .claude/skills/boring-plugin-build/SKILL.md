@@ -506,6 +506,8 @@ The shell calls `bootstrap()` once during `WorkspaceProvider` mount.
 
 ## 8. Registering with the shell
 
+### Front side
+
 For a macro-style app (auto-bootstraps with sensible defaults):
 
 ```tsx
@@ -524,7 +526,61 @@ import { WorkspaceProvider } from "@hachej/boring-workspace"
 </WorkspaceProvider>
 ```
 
-Server side, the host app's server entry wires plugins via `bootstrapServer({ plugins: [createMyServerPlugin()] })`.
+### Server side
+
+`createWorkspaceAgentServer` accepts a single `plugins:` array with four
+entry shapes — pick whichever fits the host's needs:
+
+```ts
+import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
+import { createAskUserServerPlugin } from "@hachej/boring-ask-user/server"
+import dataCatalogServerPlugin from "@hachej/boring-data-catalog/server"
+
+await createWorkspaceAgentServer({
+  workspaceRoot,
+  plugins: [
+    // 1. Pre-built WorkspaceServerPlugin object
+    createMyPlugin(),
+
+    // 2. Factory function — receives { workspaceRoot, bridge } at install time.
+    //    Use when the plugin needs the workspace bridge or root.
+    ({ bridge, workspaceRoot }) => createAskUserServerPlugin({ workspaceRoot, bridge }),
+
+    // 3. { spec: { module }, options? } — workspace dep imported by the host.
+    //    The factory receives `(options, ctx)` and returns a WorkspaceServerPlugin.
+    { spec: { module: () => import("@hachej/boring-data-catalog/server") },
+      options: { adapter: myAdapter } },
+
+    // 4. { spec: { dir }, options?, hotReload? } — directory-source plugin.
+    //    Manifest-first: reads `package.json#boring.server` then falls back
+    //    to `dist/server/index.js` or `src/server/index.ts` (Pi parity:
+    //    @mariozechner/pi-coding-agent core/package-manager.js
+    //    resolveExtensionEntries). hotReload: true uses jiti so /reload
+    //    re-imports the module fresh.
+    { spec: { dir: "plugins/my-local-plugin" }, hotReload: true },
+  ],
+})
+```
+
+### Hot reload (`/reload`) coverage matrix
+
+When the chat /reload command fires, what swaps depends on which output
+type the plugin contributes. Pi parity: rebuild over diff
+(`@mariozechner/pi-coding-agent core/agent-session.js:1896 reload`).
+
+| Output | On `/reload` | Notes |
+|---|---|---|
+| Panel, command, surface-resolver, left-tab, binding | ✅ swap | Atomic `replaceByPluginId` on the front registry; subscribers see one transition. |
+| Catalog | ✅ swap | Same. |
+| Provider (React context) | ❌ requires page reload | React doesn't support re-rooting providers around a live tree; shell shows a `boring.plugin.needs-page-reload` toast. |
+| `pi.systemPrompt` (manifest field) | ✅ next agent turn | Pi re-fires `before_agent_start` which re-aggregates via `systemPromptDynamic`. |
+| `pi.extensions` / `pi.skills` / `pi.packages` | ✅ next reload | Pi's jiti re-imports them; `getDynamicResources` provides them. |
+| `defineServerPlugin({ agentTools })` (statically registered) | ❌ requires session restart | Captured in the harness `tools[]` at session creation. To get hot reload, move the tool to a Pi extension factory under `pi.extensions` and bridge-proxy to long-lived workspace state. |
+| `defineServerPlugin({ routes })` (free-form Fastify path) | ❌ requires server restart | Fastify routes are bound once. To get hot reload, namespace the plugin's routes under `/api/boring-plugins/<id>/*`. |
+
+The shell never lies: changes that can't apply hot fire a precise event
+(`needs-page-reload`, `needs-session-restart`, `needs-server-restart`)
+the user can act on. Everything else swaps silently.
 
 ---
 
