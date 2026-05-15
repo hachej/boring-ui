@@ -3,6 +3,7 @@ import { execSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { basename, isAbsolute, join, resolve } from "node:path"
 import { parseArgs } from "node:util"
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 
 export interface RunCliOptions {
@@ -95,6 +96,31 @@ async function registerStatic(app: FastifyInstance, publicDir: string) {
   })
 }
 
+const AUTH_GUIDE = [
+  "",
+  "  ⚠  No LLM provider configured.",
+  "",
+  "  boring-ui needs an API key to power the coding agent.",
+  "",
+  "  Quick setup — pick one:",
+  "",
+  "  1. Run in another terminal:",
+  "     npx @mariozechner/pi-coding-agent /login",
+  "",
+  "  2. Or set an env var:",
+  "     https://pi.dev/docs/providers",
+  "     export ANTHROPIC_API_KEY=sk-ant-...",
+  "",
+  "  Then refresh the browser.",
+  "",
+].join("\n")
+
+function checkAuth(): number {
+  const authStorage = AuthStorage.create()
+  const registry = ModelRegistry.create(authStorage)
+  return registry.getAvailable().length
+}
+
 async function startFolderMode(opts: {
   folderArg?: string
   publicDir: string
@@ -105,12 +131,14 @@ async function startFolderMode(opts: {
 }) {
   const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? resolve(opts.folderArg ?? process.cwd())
   const projectName = basename(resolve(workspaceRoot)) || "workspace"
+  const modelCount = checkAuth()
 
   console.log(`\n${projectName}`)
   console.log(`  workspace  ${workspaceRoot}`)
   console.log(`  mode       ${opts.cliMode}`)
   console.log(`  port       ${opts.port}`)
   console.log(`  host       ${opts.host}`)
+  if (modelCount === 0) console.log(AUTH_GUIDE)
 
   const { createWorkspaceAgentServer } = await import("@hachej/boring-workspace/app/server")
   const app = await createWorkspaceAgentServer({
@@ -241,6 +269,7 @@ async function startWorkspacesMode(opts: {
   console.log(`  port       ${opts.port}`)
   console.log(`  host       ${opts.host}`)
   console.log(`\n  ${initialUrl}\n`)
+  if (checkAuth() === 0) console.log(AUTH_GUIDE)
   openBrowser(initialUrl)
 }
 
