@@ -1,19 +1,19 @@
 "use client"
 
 import { BarChart3, Database } from "lucide-react"
-import { definePanel } from "../../../front/registry/types"
-import { PanelChrome } from "../../../front/dock"
+import { definePanel } from "@hachej/boring-workspace"
+import { PanelChrome } from "@hachej/boring-workspace"
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
 import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
-import { defineFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
+import { defineFrontPlugin } from "@hachej/boring-workspace"
 import type {
   CatalogConfig,
   LeftTabParams,
   PluginOutput,
-} from "../../../shared/plugins/types"
-import type { WorkspaceFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
-import type { WorkspaceBridge } from "../../../front/bridge/types"
-import type { PaneProps, PanelConfig } from "../../../front/registry/types"
+} from "@hachej/boring-workspace"
+import type { WorkspaceFrontPlugin } from "@hachej/boring-workspace"
+import type { WorkspaceBridge } from "@hachej/boring-workspace"
+import type { PaneProps, PanelConfig } from "@hachej/boring-workspace"
 import {
   DATA_CATALOG_PLUGIN_ID,
   DATA_CATALOG_ROW_SURFACE_KIND,

@@ -1,0 +1,65 @@
+{
+  "name": "@hachej/boring-data-catalog",
+  "version": "0.1.13",
+  "type": "module",
+  "license": "MIT",
+  "description": "Data catalog plugin package for Boring workspace apps, built on @hachej/boring-data-explorer.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-workspace build && tsup",
+    "typecheck": "pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
+    "test": "pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-workspace build && vitest run --passWithNoTests",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "^0.1.13",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@hachej/boring-data-explorer": "workspace:*",
+    "lucide-react": "^1.8.0"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jsdom": "^29.0.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}

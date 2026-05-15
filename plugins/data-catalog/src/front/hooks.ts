@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react"
 import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
-import type { LeftTabParams } from "../../../shared/plugins/types"
+import type { LeftTabParams } from "@hachej/boring-workspace"
 import { openDataCatalogVisualization } from "./openVisualization"
 import type {
   DataCatalogResolvedQuery,

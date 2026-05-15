@@ -1,5 +1,5 @@
 import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
-import { postUiCommand } from "../../../front/bridge"
+import { postUiCommand } from "@hachej/boring-workspace"
 import type { OpenDataCatalogVisualizationOptions } from "./types"
 import { DATA_CATALOG_ROW_SURFACE_KIND } from "../shared/constants"
 

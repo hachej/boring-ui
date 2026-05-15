@@ -1,12 +1,12 @@
 import type { ComponentType } from "react"
 import { fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { CommandRegistry } from "../../../../front/registry/CommandRegistry"
-import { PanelRegistry } from "../../../../front/registry/PanelRegistry"
-import { SurfaceResolverRegistry } from "../../../../front/registry/SurfaceResolverRegistry"
-import { CatalogRegistry } from "../../../../front/plugin/CatalogRegistry"
-import { events, workspaceEvents } from "../../../../front/events"
-import { bootstrap, defineFrontPlugin } from "../../../../shared/plugins"
+import { CommandRegistry } from "@hachej/boring-workspace"
+import { PanelRegistry } from "@hachej/boring-workspace"
+import { SurfaceResolverRegistry } from "@hachej/boring-workspace"
+import { CatalogRegistry } from "@hachej/boring-workspace"
+import { workspaceEvents } from "@hachej/boring-workspace/events"
+import { bootstrap, defineFrontPlugin, events } from "@hachej/boring-workspace"
 import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import {
   DATA_CATALOG_ROW_SURFACE_KIND,

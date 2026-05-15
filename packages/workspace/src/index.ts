@@ -67,37 +67,6 @@ export {
 export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin/front"
 export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
 export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
-export {
-  appendDataCatalogOutputs,
-  createDataCatalogOpenHandler,
-  createDataCatalogCatalog,
-  createDataCatalogOutputs,
-  createDataCatalogPlugin,
-  createDataCatalogSurfaceResolver,
-  dataCatalogPanelInstanceId,
-  openDataCatalogVisualization,
-  readDataCatalogRow,
-  resolveDataCatalogControlledQuery,
-  resolveDataCatalogQuery,
-  resolveDataCatalogVisualizationState,
-  useDataCatalogOpenVisualization,
-  useDataCatalogQuery,
-  useDataCatalogVisualizationState,
-  DATA_CATALOG_DEFAULT_TOOL_NAME,
-  DATA_CATALOG_PLUGIN_ID,
-  DATA_CATALOG_ROW_SURFACE_KIND,
-} from "./plugins/dataCatalogPlugin/front"
-export type {
-  CreateDataCatalogOutputsOptions,
-  CreateDataCatalogPluginOptions,
-  CreateDataCatalogSurfaceResolverOptions,
-  DataCatalogSelectContext,
-  DataCatalogResolvedQuery,
-  DataCatalogVisualizationParams,
-  DataCatalogVisualizationState,
-  OpenDataCatalogVisualizationOptions,
-} from "./plugins/dataCatalogPlugin/front"
-
 // Utility
 export { cn } from "./front/lib/utils"
 
@@ -126,7 +95,7 @@ export type {
 } from "./front/registry"
 
 // Dock / layout runtime
-export { DockviewShell, useDockviewApi } from "./front/dock"
+export { DockviewShell, PanelChrome, useDockviewApi } from "./front/dock"
 export type {
   LayoutConfig,
   GroupConfig,

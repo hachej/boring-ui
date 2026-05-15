@@ -3,4 +3,3 @@ packages:
   - "plugins/*"
   - "packages/agent/examples/*"
   - "apps/*"
-  - "plugins/*"

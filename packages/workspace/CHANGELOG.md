@@ -11,11 +11,11 @@ Canonical migration example: `d26e1e7` (`refactor(macro): rewrite App.tsx + serv
 
 `DataCatalog`, `DataCatalogPane`, `DataExplorer`, `useExplorerState`,
 `createSourcesAdapter`, and generic explorer plugin helpers are no longer
-exported from `@boring/workspace`. Data catalog UI now lives behind plugin
-outputs. Use `createDataCatalogPlugin()` for standalone catalogs or
-`appendDataCatalogOutputs()` inside an app/domain plugin. Generic explorer UI
-moved to `@hachej/boring-data-explorer`; Storybook/mock adapter helpers moved
-to `@hachej/boring-data-explorer/testing`.
+exported from `@boring/workspace`. Data catalog UI/plugin helpers moved to
+`@hachej/boring-data-catalog`; use `createDataCatalogPlugin()` for standalone
+catalogs or `appendDataCatalogOutputs()` inside an app/domain plugin from that
+package. Generic explorer UI moved to `@hachej/boring-data-explorer`;
+Storybook/mock adapter helpers moved to `@hachej/boring-data-explorer/testing`.
 
 #### `<CommandPalette>` no longer accepts file-search props
 
@@ -124,7 +124,7 @@ Migration recipe:
 
 1. Replace `ChatCenteredShell` with `ChatLayout` for stock chat/workbench chrome, or `ResponsiveDockviewShell` when you need custom group layout.
 2. Pass `chatPanel={ChatPanel}` to `WorkspaceProvider`; do not import `@boring/agent` from inside `@boring/workspace`.
-3. Move `data: DataPaneConfig` to a plugin-owned data catalog plugin, using `createDataCatalogPlugin({ adapter })` for standalone catalogs or `appendDataCatalogOutputs(...)` inside an app/domain plugin.
+3. Move `data: DataPaneConfig` to a plugin-owned data catalog plugin, using `createDataCatalogPlugin({ adapter })` for standalone catalogs or `appendDataCatalogOutputs(...)` from `@hachej/boring-data-catalog` inside an app/domain plugin.
 4. Move `extraPanels` to the declarative surface gate (`allowedPanels`) or omit it when every registered panel is allowed in that shell. In Tier 1 layouts this travels through `surfaceParams` to the surface panel that reads the gate.
 5. Delete `withCommandPalette`; `WorkspaceProvider` mounts the registry-backed command palette.
 
@@ -298,7 +298,7 @@ type WorkspaceServerPlugin = {
 - Tier 1 layouts: `ChatLayout`, `IdeLayout`, `buildChatLayout`, and `buildIdeLayout`.
 - Tier 2 shell primitives: `TopBar` and `ResponsiveDockviewShell`.
 - Registry-driven workbench tabs via `placement: "left-tab"` panels.
-- `createDataCatalogPlugin()` / `appendDataCatalogOutputs()` for reusable data catalog tabs backed by an `ExplorerAdapter`.
+- `@hachej/boring-data-catalog` provides `createDataCatalogPlugin()` / `appendDataCatalogOutputs()` for reusable data catalog tabs backed by an `ExplorerAdapter`.
 - Polymorphic Recent entries for catalogs and commands.
 - Plugin-owned surface resolvers for path and domain-target routing.
 - `@boring/workspace/events` package subpath for typed workspace UI events.

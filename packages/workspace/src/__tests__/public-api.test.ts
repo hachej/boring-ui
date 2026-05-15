@@ -45,14 +45,14 @@ describe("@hachej/boring-workspace public API", () => {
       expect("EXPLORER_PLUGIN_ID" in api).toBe(false)
     })
 
-    it("exports data catalog plugin factories", () => {
-      expect(api.createDataCatalogPlugin).toBeDefined()
-      expect(api.createDataCatalogOutputs).toBeDefined()
-      expect(api.appendDataCatalogOutputs).toBeDefined()
-      expect(api.openDataCatalogVisualization).toBeDefined()
-      expect(api.useDataCatalogQuery).toBeDefined()
-      expect(api.useDataCatalogVisualizationState).toBeDefined()
-      expect(api.DATA_CATALOG_PLUGIN_ID).toBe("data-catalog")
+    it("does not export the extracted data catalog plugin", () => {
+      expect("createDataCatalogPlugin" in api).toBe(false)
+      expect("createDataCatalogOutputs" in api).toBe(false)
+      expect("appendDataCatalogOutputs" in api).toBe(false)
+      expect("openDataCatalogVisualization" in api).toBe(false)
+      expect("useDataCatalogQuery" in api).toBe(false)
+      expect("useDataCatalogVisualizationState" in api).toBe(false)
+      expect("DATA_CATALOG_PLUGIN_ID" in api).toBe(false)
     })
 
     it("does not export the retired static data factory", () => {

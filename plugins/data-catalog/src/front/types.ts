@@ -6,9 +6,9 @@ import type {
   ExplorerRow,
   FacetConfig,
 } from "@hachej/boring-data-explorer/shared"
-import type { WorkspaceBridge } from "../../../front/bridge/types"
-import type { PaneProps, PanelConfig } from "../../../front/registry/types"
-import type { LeftTabParams } from "../../../shared/plugins/types"
+import type { WorkspaceBridge } from "@hachej/boring-workspace"
+import type { PaneProps, PanelConfig } from "@hachej/boring-workspace"
+import type { LeftTabParams } from "@hachej/boring-workspace"
 
 export interface DataCatalogVisualizationParams {
   row?: ExplorerRow

@@ -2,8 +2,8 @@ import type { ExplorerAdapter, ExplorerRow, SearchResult } from "@hachej/boring-
 import {
   defineServerPlugin,
   type WorkspaceServerPlugin,
-} from "../../../server/plugins/defineServerPlugin"
-import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
+} from "@hachej/boring-workspace/server"
+import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import {
   DATA_CATALOG_DEFAULT_TOOL_NAME,
   DATA_CATALOG_PLUGIN_ID,
