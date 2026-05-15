@@ -87,37 +87,32 @@ export async function rebuildServerPlugins(opts: {
   const diagnostics: PluginReloadDiagnostic[] = []
 
   for (const entry of entries) {
+    // Gemini Phase 4 review: classify ONCE outside the try block so the
+    // catch branch can use the same shape without recomputing.
+    const source = classifyEntrySource(entry)
+    const path = classifyEntryPath(entry)
     try {
       let plugin: WorkspaceServerPlugin
-      let source: PluginReloadDiagnostic["source"]
-      let pathHint: string | undefined
       if (typeof entry === "function") {
         plugin = entry(ctx as unknown as WorkspaceAgentServerPluginContext)
-        source = "factory"
       } else if (isDirEntry(entry)) {
         plugin = await resolveDirServerPlugin(entry, ctx as unknown as ResolveDirServerPluginContext)
-        source = "directory"
-        pathHint = entry.spec.dir
       } else if (isModuleEntry(entry)) {
         plugin = await resolveModuleServerPlugin(entry, ctx as unknown as ResolveDirServerPluginContext)
-        source = "module"
       } else {
         plugin = entry as WorkspaceServerPlugin
-        source = "object"
       }
       plugins.push(plugin)
       // Pi parity: emit `plugin_start { reason: "reload" }` after each
-      // successful resolve. Tasks 5 will use this to drive front
+      // successful resolve. Phase 5 will use this to drive front
       // re-mount and bridge re-subscription.
       if (bus?.hasHandlers("plugin_start")) {
         await bus.emit({ type: "plugin_start", pluginId: plugin.id, reason: "reload" })
       }
-      void source
-      void pathHint
     } catch (error) {
       diagnostics.push({
-        source: classifyEntrySource(entry),
-        path: classifyEntryPath(entry),
+        source,
+        path,
         message: error instanceof Error ? error.message : String(error),
       })
     }
