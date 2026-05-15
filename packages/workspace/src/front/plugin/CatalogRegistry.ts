@@ -43,6 +43,25 @@ export class CatalogRegistry {
     if (changed) this.emit()
   }
 
+  /**
+   * Atomic replace by pluginId: drop owned catalogs and register the new
+   * set in one emit. Pi parity for reload semantics.
+   */
+  replaceByPluginId(pluginId: string, catalogs: CatalogConfig[]): void {
+    let changed = false
+    for (const [id, catalog] of this.catalogs) {
+      if (catalog.pluginId === pluginId) {
+        this.catalogs.delete(id)
+        changed = true
+      }
+    }
+    for (const config of catalogs) {
+      this.catalogs.set(config.id, { ...config, pluginId })
+      changed = true
+    }
+    if (changed) this.emit()
+  }
+
   list(): readonly CatalogConfig[] {
     return this.getSnapshot()
   }
