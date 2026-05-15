@@ -31,6 +31,8 @@ import {
   type ModuleSpec,
   type PluginSpec,
 } from "./pluginEntryResolver"
+import { ServerPluginLifecycleBus } from "./serverPluginLifecycle"
+import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
@@ -378,10 +380,14 @@ export async function createWorkspaceAgentServer(
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
-  const resolvedPlugins = await resolvePluginEntries(
-    [...(opts.plugins ?? []), ...(opts.pluginFactories ?? [])],
-    ctx,
-  )
+  // Phase 4: server-side plugin lifecycle bus. Phase 5 will wire it to the
+  // /reload route so consumers can subscribe for cleanup/rebuild work.
+  const pluginLifecycleBus = new ServerPluginLifecycleBus()
+  const allPluginEntries: WorkspacePluginEntry[] = [
+    ...(opts.plugins ?? []),
+    ...(opts.pluginFactories ?? []),
+  ]
+  const resolvedPlugins = await resolvePluginEntries(allPluginEntries, ctx)
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
     plugins: resolvedPlugins,
@@ -466,5 +472,28 @@ export async function createWorkspaceAgentServer(
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }
+
+  // Phase 4: emit `plugin_start { reason: "startup" }` for every initially
+  // installed plugin. Pi parity (`agent-session.js:1912` `session_start
+  // { reason }`). Subscribers (none yet — Phase 5 wires them) can use this
+  // to mirror initial state.
+  if (pluginLifecycleBus.hasHandlers("plugin_start")) {
+    for (const plugin of resolvedPlugins) {
+      await pluginLifecycleBus.emit({ type: "plugin_start", pluginId: plugin.id, reason: "startup" })
+    }
+  }
+
+  // Phase 4: expose the rebuild closure on the Fastify instance under a
+  // typed property so Phase 5's /reload wiring can call it without
+  // re-resolving the entry list. Stays internal until Phase 5.
+  ;(app as FastifyInstance & { __boringRebuildPlugins?: () => Promise<PluginRebuildResult> }).__boringRebuildPlugins =
+    () =>
+      rebuildServerPlugins({
+        entries: allPluginEntries,
+        ctx,
+        bus: pluginLifecycleBus,
+        currentPluginIds: resolvedPlugins.map((p) => p.id),
+      })
+
   return app
 }

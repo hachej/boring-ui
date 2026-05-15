@@ -43,7 +43,7 @@ export class SurfaceResolverRegistry {
    * Collision policy: a new resolver id already owned by a DIFFERENT
    * pluginId is skipped with a warning.
    */
-  replaceByPluginId(pluginId: string, resolvers: SurfaceResolverRegistration[]): void {
+  replaceByPluginId(pluginId: string, resolvers: SurfaceResolverConfig[]): void {
     const ownedIds = new Set<string>()
     for (const [id, resolver] of this.resolvers) {
       if (resolver.pluginId === pluginId) ownedIds.add(id)
