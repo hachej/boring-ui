@@ -29,7 +29,7 @@ type Action =
 
 const safePathArb = fc.stringMatching(/^\/[a-zA-Z0-9/_.-]{1,50}$/)
 const panelIdArb = fc.stringMatching(/^[a-zA-Z0-9_-]{1,20}$/)
-const componentArb = fc.constantFrom("editor", "filetree", "markdown", "data-catalog", "empty")
+const componentArb = fc.constantFrom("editor", "filetree", "markdown", "fake-catalog", "empty")
 
 const actionArb: fc.Arbitrary<Action> = fc.oneof(
   { weight: 3, arbitrary: safePathArb.map((path) => ({ type: "openFile" as const, path })) },

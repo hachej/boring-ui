@@ -13,7 +13,7 @@ function setup() {
 
 const safePathArb = fc.stringMatching(/^\/[a-zA-Z0-9/_.-]{1,100}$/)
 const panelIdArb = fc.stringMatching(/^[a-zA-Z0-9_-]{1,32}$/)
-const componentArb = fc.constantFrom("editor", "filetree", "markdown", "data-catalog", "empty")
+const componentArb = fc.constantFrom("editor", "filetree", "markdown", "fake-catalog", "empty")
 
 describe("Bridge property-based tests", () => {
   describe("Invariant: essential panels cannot be closed", () => {

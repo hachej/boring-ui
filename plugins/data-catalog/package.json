@@ -2,6 +2,7 @@
   "name": "@hachej/boring-data-catalog",
   "version": "0.1.13",
   "type": "module",
+  "private": true,
   "license": "MIT",
   "description": "Data catalog plugin package for Boring workspace apps, built on @hachej/boring-data-explorer.",
   "repository": {
