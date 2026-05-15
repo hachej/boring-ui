@@ -28,20 +28,30 @@ export class CommandRegistry {
   /**
    * Atomic replace by pluginId: drop owned commands and register the new
    * set in one emit. Pi parity for reload semantics.
+   *
+   * Collision policy: a new command id already owned by a DIFFERENT pluginId
+   * is skipped with a warning — preserves cross-plugin isolation on reload.
    */
   replaceByPluginId(pluginId: string, commands: CommandConfig[]): void {
-    let changed = false
+    const ownedIds = new Set<string>()
     for (const [id, cmd] of this.commands) {
-      if (cmd.pluginId === pluginId) {
-        this.commands.delete(id)
-        changed = true
-      }
+      if (cmd.pluginId === pluginId) ownedIds.add(id)
     }
+    if (ownedIds.size === 0 && commands.length === 0) return
+
+    for (const id of ownedIds) this.commands.delete(id)
     for (const config of commands) {
+      const existing = this.commands.get(config.id)
+      if (existing && existing.pluginId && existing.pluginId !== pluginId) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[CommandRegistry] plugin "${pluginId}" tried to register command "${config.id}" already owned by "${existing.pluginId}" — skipped`,
+        )
+        continue
+      }
       this.commands.set(config.id, { ...config, pluginId })
-      changed = true
     }
-    if (changed) this.emit()
+    this.emit()
   }
 
   getCommand(id: string): CommandConfig | undefined {

@@ -84,4 +84,34 @@ describe("Phase 3 — atomic replaceByPluginId", () => {
     registry.replaceByPluginId("p1", [])
     expect(subscriber).not.toHaveBeenCalled()
   })
+
+  test("replaceByPluginId skips an id owned by a different plugin (with warning)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const registry = new CommandRegistry()
+    registry.registerCommand({ id: "shared", title: "Owned by other", run: () => {}, pluginId: "other-plugin" })
+
+    registry.replaceByPluginId("intruder", [{ id: "shared", title: "Hijack", run: () => {} }])
+
+    expect(registry.getCommand("shared")?.pluginId).toBe("other-plugin")
+    expect(registry.getCommand("shared")?.title).toBe("Owned by other")
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain("intruder")
+    expect(warn.mock.calls[0][0]).toContain("other-plugin")
+    warn.mockRestore()
+  })
+
+  test("PanelRegistry: collision skip preserves cross-plugin isolation", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const registry = new PanelRegistry()
+    registry.register("shared", { id: "shared", title: "Other", placement: "center", component: () => null, pluginId: "other" })
+
+    registry.replaceByPluginId("intruder", [
+      { id: "shared", title: "Hijack", placement: "center", component: () => null },
+    ])
+
+    expect(registry.get("shared")?.pluginId).toBe("other")
+    expect(registry.get("shared")?.title).toBe("Other")
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
 })
