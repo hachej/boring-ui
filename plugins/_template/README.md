@@ -1,0 +1,68 @@
+# Plugin template
+
+Canonical, self-contained shape for plugins under `plugins/*`. The
+existing plugins (`askUserPlugin`, `data-explorer`, `data-catalog`) are
+aligned to match this shape — if they drift, fix them, not the template.
+
+## Scaffolding a new plugin
+
+```sh
+cp -R plugins/_template plugins/<your-name>
+cd plugins/<your-name>
+# rename: `sample` → `<your-name>` in src/, package.json:name,
+#         tsup entries, vitest aliases as needed
+pnpm install
+pnpm typecheck && pnpm test
+```
+
+The plugin is automatically picked up by `pnpm-workspace.yaml`'s
+`plugins/*` glob.
+
+## Shape
+
+```
+plugins/<name>/
+  package.json         private: true, workspace:* deps, nested exports map
+  tsconfig.json        paths aliases into packages/workspace/src for fast iteration
+  tsup.config.ts       nested entries (front/index, server/index, shared/index)
+  vitest.config.ts     jsdom + @vitejs/plugin-react + globals: true
+                       setupFiles: ../_shared/vitest.setup.ts
+  src/
+    front/
+      index.ts         createXxxPlugin() — entry, re-exports
+      panels.tsx
+      catalogs.ts
+      surfaceResolver.ts
+      bindings.tsx
+      __tests__/xxxPlugin.test.ts
+    server/
+      index.ts         createXxxServerPlugin() — agent tools, system prompt
+    shared/
+      constants.ts     ids, surface kinds
+      types.ts         param/option types
+      index.ts         re-export
+```
+
+## What lives where
+
+- **front/** — anything that runs in the browser shell: panels, command
+  contributions, catalog configs, surface resolvers, bindings.
+- **server/** — anything that runs in the agent backend: agent tools,
+  system prompt fragments, server hooks.
+- **shared/** — constants and types used by both sides. Keep it tiny.
+- **`../_shared/vitest.setup.ts`** — jest-dom matchers, ResizeObserver +
+  Range polyfills, testing-library cleanup. Do **not** `import
+  "@testing-library/jest-dom/vitest"` instead — see the comment at the
+  top of that file for the reason.
+
+## What this template intentionally does NOT have
+
+- A `testing/` entry. Add one only when other packages need stable
+  fixtures from your plugin (see `plugins/data-explorer/src/testing/`).
+- A `src/test-setup.ts` shim. Point vitest's `setupFiles` directly at
+  the shared setup instead.
+
+## Invariants
+
+`packages/workspace/scripts/check-plugin-invariants.mjs` lints this
+template (and the live plugins) for the plugin contract. Keep it valid.

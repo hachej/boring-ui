@@ -14,3 +14,7 @@ export function createSamplePlugin() {
   })
 }
 
+export { samplePanel } from "./panels"
+export { sampleSurfaceResolver } from "./surfaceResolver"
+export { SampleBinding } from "./bindings"
+export { createSampleCatalog } from "./catalogs"
