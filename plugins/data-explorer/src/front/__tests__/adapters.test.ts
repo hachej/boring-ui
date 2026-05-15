@@ -9,7 +9,7 @@ const sources: SourceEntry[] = [
 ]
 
 describe("createSourcesAdapter", () => {
-  it("returns rows shaped as ExplorerRow with type as leading code", async () => {
+  it("returns rows shaped as ExplorerItem with type as leading code", async () => {
     const adapter = createSourcesAdapter(sources)
     const result = await adapter.search({ query: "", filters: {}, offset: 0, limit: 50 })
     expect(result.total).toBe(4)

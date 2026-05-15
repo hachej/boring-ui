@@ -1,4 +1,4 @@
-import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
+import type { ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import type { SurfaceResolverConfig } from "@hachej/boring-workspace"
 import { DATA_CATALOG_ROW_SURFACE_KIND } from "../shared/constants"
 import { dataCatalogPanelInstanceId } from "./openVisualization"
@@ -14,9 +14,9 @@ export interface CreateDataCatalogSurfaceResolverOptions {
   source?: string
 }
 
-function isExplorerRow(value: unknown): value is ExplorerRow {
+function isExplorerItem(value: unknown): value is ExplorerItem {
   if (!value || typeof value !== "object") return false
-  const row = value as Partial<ExplorerRow>
+  const row = value as Partial<ExplorerItem>
   return typeof row.id === "string" && typeof row.title === "string"
 }
 
@@ -40,7 +40,7 @@ export function createDataCatalogSurfaceResolver(
       const meta = request.meta ?? {}
       const catalogId = stringMeta(meta, "catalogId")
       if (catalogId && catalogId !== options.catalogId) return undefined
-      const row = isExplorerRow(meta.row) ? meta.row : undefined
+      const row = isExplorerItem(meta.row) ? meta.row : undefined
       const {
         catalogId: _catalogId,
         row: _row,

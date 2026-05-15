@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { renderHook, act, waitFor } from "@testing-library/react"
 import { useExplorerState } from "../useExplorerState"
-import type { ExplorerAdapter, SearchArgs, SearchResult, Facets } from "../types"
+import type { ExplorerDataSource, SearchArgs, SearchResult, Facets } from "../types"
 
 // ---------------------------------------------------------------------------
 // Test adapter factory — records every call, lets each call resolve manually
@@ -19,7 +19,7 @@ function makeAdapter(opts: { facets?: Facets } = {}) {
   const calls: Pending[] = []
   const facetCalls: { filters: Record<string, string[]> }[] = []
 
-  const adapter: ExplorerAdapter = {
+  const adapter: ExplorerDataSource = {
     search(args) {
       const pending: Pending = {
         args,

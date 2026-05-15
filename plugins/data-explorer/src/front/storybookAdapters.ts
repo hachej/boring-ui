@@ -6,21 +6,21 @@
 // production wiring. NOT exported from the package's public API.
 // ---------------------------------------------------------------------------
 
-import type { ExplorerAdapter, ExplorerRow, Facets } from "./types"
+import type { ExplorerDataSource, ExplorerItem, Facets } from "./types"
 
 const wait = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-type FacetExtractor = (row: ExplorerRow) => Record<string, string>
+type FacetExtractor = (row: ExplorerItem) => Record<string, string>
 
 function makeAdapter(
-  rows: ExplorerRow[],
+  rows: ExplorerItem[],
   extractFacets: FacetExtractor,
   opts: { latencyMs?: number } = {},
-): ExplorerAdapter {
+): ExplorerDataSource {
   const latency = opts.latencyMs ?? 80
 
-  const matchFilters = (row: ExplorerRow, filters: Record<string, string[]>) => {
+  const matchFilters = (row: ExplorerItem, filters: Record<string, string[]>) => {
     const facetValues = extractFacets(row)
     for (const [key, vs] of Object.entries(filters)) {
       if (!vs.length) continue
@@ -116,8 +116,8 @@ const SERIES_NAMES = [
   "Housing Starts",
 ]
 
-function generateSeriesRows(): ExplorerRow[] {
-  const rows: ExplorerRow[] = []
+function generateSeriesRows(): ExplorerItem[] {
+  const rows: ExplorerItem[] = []
   let i = 0
   for (const { code, n } of FREQ_DISTRIBUTION) {
     for (let k = 0; k < n; k++) {
@@ -139,7 +139,7 @@ function generateSeriesRows(): ExplorerRow[] {
   return rows
 }
 
-export function createMockSeriesAdapter(): ExplorerAdapter {
+export function createMockSeriesAdapter(): ExplorerDataSource {
   const rows = generateSeriesRows()
   return makeAdapter(
     rows,
@@ -177,8 +177,8 @@ const TABLE_DEFS: Array<{
   { schema: "audit", name: "auth_events", kind: "STR", rows: "live" },
 ]
 
-export function createMockTablesAdapter(): ExplorerAdapter {
-  const rows: ExplorerRow[] = TABLE_DEFS.map((t) => ({
+export function createMockTablesAdapter(): ExplorerDataSource {
+  const rows: ExplorerItem[] = TABLE_DEFS.map((t) => ({
     id: `${t.schema}.${t.name}`,
     title: t.name,
     subtitle: t.schema,

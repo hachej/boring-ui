@@ -1,10 +1,10 @@
-import type { ExplorerAdapter, ExplorerRow, Facets } from "./types"
+import type { ExplorerDataSource, ExplorerItem, Facets } from "./types"
 
 // ---------------------------------------------------------------------------
 // createSourcesAdapter
 //
 // Wraps a small static array of {id, name, type, description, schema?} entries
-// into an ExplorerAdapter. Used by panes that still expose a legacy `sources`
+// into an ExplorerDataSource. Used by panes that still expose a legacy `sources`
 // API. When at least one source has a `schema`, the adapter also exposes
 // fetchFacets so the explorer can render schema-grouped, toggleable sections.
 // ---------------------------------------------------------------------------
@@ -18,8 +18,8 @@ export type SourceEntry = {
   schema?: string
 }
 
-export function createSourcesAdapter(sources: SourceEntry[]): ExplorerAdapter {
-  const rows: ExplorerRow[] = sources.map((s) => ({
+export function createSourcesAdapter(sources: SourceEntry[]): ExplorerDataSource {
+  const rows: ExplorerItem[] = sources.map((s) => ({
     id: s.id,
     title: s.name,
     subtitle: s.description,
@@ -28,7 +28,7 @@ export function createSourcesAdapter(sources: SourceEntry[]): ExplorerAdapter {
   }))
   const hasSchema = rows.some((r) => r.group)
 
-  const adapter: ExplorerAdapter = {
+  const adapter: ExplorerDataSource = {
     async search(args) {
       let pool = rows
       if (args.group) {

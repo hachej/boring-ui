@@ -4,7 +4,7 @@ import { BarChart3, Database } from "lucide-react"
 import { definePanel } from "@hachej/boring-workspace"
 import { PanelChrome } from "@hachej/boring-workspace"
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
-import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
+import type { ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import { defineFrontPlugin } from "@hachej/boring-workspace"
 import type {
   CatalogConfig,
@@ -96,7 +96,7 @@ export function createDataCatalogOutputs(
   function DataCatalogLeftTab({ params, className }: PaneProps<LeftTabParams>) {
     const { query, controlled } = useDataCatalogQuery(params)
     const bridge = params?.bridge as WorkspaceBridge | undefined
-    const handleSelect = (row: ExplorerRow) => onSelect(row, { params, bridge })
+    const handleSelect = (row: ExplorerItem) => onSelect(row, { params, bridge })
     return (
       <DataExplorer
         adapter={options.adapter}
@@ -124,7 +124,7 @@ export function createDataCatalogOutputs(
       params,
       visualizationTitle,
     )
-    const handleSelect = (nextRow: ExplorerRow) => onSelect(nextRow, {})
+    const handleSelect = (nextRow: ExplorerItem) => onSelect(nextRow, {})
 
     return (
       <PanelChrome

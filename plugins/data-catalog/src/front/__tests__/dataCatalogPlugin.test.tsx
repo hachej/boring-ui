@@ -7,7 +7,7 @@ import { SurfaceResolverRegistry } from "@hachej/boring-workspace"
 import { CatalogRegistry } from "@hachej/boring-workspace"
 import { workspaceEvents } from "@hachej/boring-workspace/events"
 import { bootstrap, defineFrontPlugin, events } from "@hachej/boring-workspace"
-import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
+import type { ExplorerDataSource, ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import {
   DATA_CATALOG_ROW_SURFACE_KIND,
   appendDataCatalogOutputs,
@@ -21,7 +21,7 @@ import {
 
 const DummyChatPanel = () => null
 
-const rows: ExplorerRow[] = [
+const rows: ExplorerItem[] = [
   {
     id: "orders_daily",
     title: "Daily Orders",
@@ -37,7 +37,7 @@ const rows: ExplorerRow[] = [
   },
 ]
 
-const adapter: ExplorerAdapter = {
+const adapter: ExplorerDataSource = {
   async search(args) {
     const q = args.query.toLowerCase()
     const pool = rows.filter((row) =>

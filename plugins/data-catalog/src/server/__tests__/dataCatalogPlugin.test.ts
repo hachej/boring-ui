@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
+import type { ExplorerDataSource, ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import {
   createDataCatalogAgentTool,
   createDataCatalogServerPlugin,
@@ -7,7 +7,7 @@ import {
   formatDataCatalogSearchResult,
 } from "../index"
 
-const rows: ExplorerRow[] = [
+const rows: ExplorerItem[] = [
   {
     id: "orders_daily",
     title: "Daily Orders",
@@ -23,7 +23,7 @@ const rows: ExplorerRow[] = [
   },
 ]
 
-const adapter: ExplorerAdapter = {
+const adapter: ExplorerDataSource = {
   async search(args) {
     const q = args.query.toLowerCase()
     const pool = rows.filter((row) =>
@@ -77,7 +77,7 @@ describe("data catalog server helpers", () => {
 
     expect(result.isError).toBeFalsy()
     expect(result.content[0]?.text).toContain("orders_daily: Daily Orders")
-    expect((result.details as { items: ExplorerRow[] }).items).toHaveLength(1)
+    expect((result.details as { items: ExplorerItem[] }).items).toHaveLength(1)
   })
 
   it("normalizes invalid tool limit options", () => {
@@ -113,7 +113,7 @@ describe("data catalog server helpers", () => {
 
     expect(result.isError).toBeFalsy()
     expect(search).toHaveBeenCalledWith(expect.objectContaining({ limit: 5 }))
-    expect((result.details as { items: ExplorerRow[] }).items).toHaveLength(1)
+    expect((result.details as { items: ExplorerItem[] }).items).toHaveLength(1)
   })
 
   it("returns a validation error when the agent tool query is blank", async () => {

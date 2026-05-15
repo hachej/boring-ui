@@ -9,8 +9,8 @@
 export type {
   Badge,
   DragPayload,
-  ExplorerAdapter,
-  ExplorerRow,
+  ExplorerDataSource,
+  ExplorerItem,
   FacetConfig,
   FacetValue,
   Facets,

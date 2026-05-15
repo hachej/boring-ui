@@ -2,8 +2,8 @@ import type { ComponentType, ReactNode } from "react"
 import type { DataExplorerProps } from "@hachej/boring-data-explorer/front"
 import type {
   DragPayload,
-  ExplorerAdapter,
-  ExplorerRow,
+  ExplorerDataSource,
+  ExplorerItem,
   FacetConfig,
 } from "@hachej/boring-data-explorer/shared"
 import type { WorkspaceBridge } from "@hachej/boring-workspace"
@@ -11,7 +11,7 @@ import type { PaneProps, PanelConfig } from "@hachej/boring-workspace"
 import type { LeftTabParams } from "@hachej/boring-workspace"
 
 export interface DataCatalogVisualizationParams {
-  row?: ExplorerRow
+  row?: ExplorerItem
   query?: string
 }
 
@@ -34,11 +34,11 @@ export interface CreateDataCatalogOutputsOptions {
    */
   id?: string
   label?: string
-  adapter: ExplorerAdapter
+  adapter: ExplorerDataSource
   facets?: FacetConfig[]
   groupBy?: string
-  getDragPayload?: (row: ExplorerRow) => DragPayload | null | undefined
-  onSelect?: (row: ExplorerRow, context: DataCatalogSelectContext) => void
+  getDragPayload?: (row: ExplorerItem) => DragPayload | null | undefined
+  onSelect?: (row: ExplorerItem, context: DataCatalogSelectContext) => void
   emptyState?: ReactNode
   searchPlaceholder?: string
   pageSize?: number
@@ -72,7 +72,7 @@ export interface DataCatalogResolvedQuery {
 }
 
 export interface DataCatalogVisualizationState extends DataCatalogResolvedQuery {
-  row?: ExplorerRow
+  row?: ExplorerItem
   title: string
 }
 

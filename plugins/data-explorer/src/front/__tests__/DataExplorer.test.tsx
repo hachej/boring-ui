@@ -3,8 +3,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { DataExplorer } from "../DataExplorer"
 import type {
-  ExplorerAdapter,
-  ExplorerRow,
+  ExplorerDataSource,
+  ExplorerItem,
   Facets,
   SearchArgs,
   SearchResult,
@@ -14,7 +14,7 @@ import type {
 // Synchronous in-memory adapter — paginates and groups a fixed dataset.
 // ---------------------------------------------------------------------------
 
-function makeAdapter(rows: ExplorerRow[], facetData?: Facets): ExplorerAdapter {
+function makeAdapter(rows: ExplorerItem[], facetData?: Facets): ExplorerDataSource {
   return {
     async search(args: SearchArgs): Promise<SearchResult> {
       let pool = rows
@@ -40,7 +40,7 @@ function makeAdapter(rows: ExplorerRow[], facetData?: Facets): ExplorerAdapter {
   }
 }
 
-const seriesRows: ExplorerRow[] = [
+const seriesRows: ExplorerItem[] = [
   { id: "GDPC1", title: "Real GDP", group: "Q", leading: { code: "Q" } },
   { id: "CPIAUCSL", title: "CPI All Urban", group: "M", leading: { code: "M" } },
   { id: "UNRATE", title: "Unemployment Rate", group: "M", leading: { code: "M" }, trailing: [{ code: "D" }] },
@@ -125,7 +125,7 @@ describe("DataExplorer", () => {
   // -------------------------------------------------------------------------
   it("rows are draggable when getDragPayload is provided and the payload is set on dragStart", async () => {
     const adapter = makeAdapter(seriesRows)
-    const getDragPayload = vi.fn((row: ExplorerRow) => ({
+    const getDragPayload = vi.fn((row: ExplorerItem) => ({
       mimeType: "text/series-id",
       value: row.id,
     }))

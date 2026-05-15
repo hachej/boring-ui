@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useMemo } from "react"
-import type { ExplorerRow } from "@hachej/boring-data-explorer/shared"
+import type { ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import type { LeftTabParams } from "@hachej/boring-workspace"
 import { openDataCatalogVisualization } from "./openVisualization"
 import type {
@@ -11,11 +11,11 @@ import type {
   OpenDataCatalogVisualizationOptions,
 } from "./types"
 
-export function readDataCatalogRow(value: unknown): ExplorerRow | undefined {
+export function readDataCatalogRow(value: unknown): ExplorerItem | undefined {
   if (!value || typeof value !== "object") return undefined
-  const row = value as Partial<ExplorerRow>
+  const row = value as Partial<ExplorerItem>
   if (typeof row.id !== "string" || typeof row.title !== "string") return undefined
-  return row as ExplorerRow
+  return row as ExplorerItem
 }
 
 export function resolveDataCatalogQuery(
@@ -69,10 +69,10 @@ export function useDataCatalogVisualizationState(
 
 export function useDataCatalogOpenVisualization(
   options: OpenDataCatalogVisualizationOptions,
-): (row: ExplorerRow) => void {
+): (row: ExplorerItem) => void {
   const { catalogId, surfaceKind, title, params } = options
   return useCallback(
-    (row: ExplorerRow) =>
+    (row: ExplorerItem) =>
       openDataCatalogVisualization(row, { catalogId, surfaceKind, title, params }),
     [catalogId, surfaceKind, title, params],
   )
