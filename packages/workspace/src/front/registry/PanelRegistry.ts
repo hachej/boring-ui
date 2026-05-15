@@ -69,12 +69,12 @@ export class PanelRegistry {
    * Pi parity (`core/agent-session.js:1896` reload): teardown + rebuild as a
    * single observable transition. Used by Phase 5 reload wiring.
    */
-  replaceByPluginId(pluginId: string, registrations: PanelRegistration[]): void {
+  replaceByPluginId(pluginId: string, panels: PanelConfig[]): void {
     const ownedIds = new Set<string>()
     for (const [id, panel] of this.panels) {
       if (panel.pluginId === pluginId) ownedIds.add(id)
     }
-    if (ownedIds.size === 0 && registrations.length === 0) return
+    if (ownedIds.size === 0 && panels.length === 0) return
 
     for (const id of ownedIds) {
       this.panels.delete(id)
@@ -84,7 +84,7 @@ export class PanelRegistry {
     if (ownedIds.size > 0) {
       this.registrationOrder = this.registrationOrder.filter((oid) => this.panels.has(oid))
     }
-    for (const config of registrations) {
+    for (const config of panels) {
       const id = config.id
       if (!id) continue
       const existing = this.panels.get(id)
@@ -95,7 +95,7 @@ export class PanelRegistry {
         )
         continue
       }
-      this.panels.set(id, { ...config, id, pluginId } as PanelConfig)
+      this.panels.set(id, { ...config, id, pluginId })
       if (!this.registrationOrder.includes(id)) this.registrationOrder.push(id)
     }
     this.emit()
