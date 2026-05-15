@@ -428,6 +428,21 @@ export async function createWorkspaceAgentServer(
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
   })
 
+  // Phase 5: rebuild closure created BEFORE createAgentApp so beforeReload
+  // can call it. `liveLoadedIds` is mutable across reloads (Phase 4 review
+  // bug fix). Each rebuild updates it from its result.plugins.
+  let liveLoadedIds: string[] = resolvedPlugins.map((p) => p.id)
+  const rebuildPlugins = async (): Promise<PluginRebuildResult> => {
+    const result = await rebuildServerPlugins({
+      entries: allPluginEntries,
+      ctx,
+      bus: pluginLifecycleBus,
+      currentPluginIds: liveLoadedIds,
+    })
+    liveLoadedIds = result.plugins.map((p) => p.id)
+    return result
+  }
+
   const app = await createAgentApp({
     ...opts,
     mode: resolvedMode,
@@ -451,6 +466,21 @@ export async function createWorkspaceAgentServer(
             .join("\n\n")
           throw new Error(`Boring plugin reload failed:\n\n${details}`)
         }
+      }
+      // Phase 5: re-resolve directory-source plugin entries via jiti so
+      // their fresh `WorkspaceServerPlugin` is in the registry the next
+      // turn's `systemPromptDynamic` / `getDynamicResources` reads from.
+      // Diagnostics from failed entries are surfaced as a thrown error
+      // matching boringAssetManager's posture — Pi parity: errors are
+      // reload diagnostics, but the workspace currently throws to keep
+      // the existing /reload error format. Phase 6+ will widen the
+      // /reload response shape to carry diagnostics non-fatally.
+      const rebuild = await rebuildPlugins()
+      if (rebuild.diagnostics.length > 0) {
+        const details = rebuild.diagnostics
+          .map((d) => `${d.source}${d.path ? ` (${d.path})` : ""}: ${d.message}`)
+          .join("\n\n")
+        throw new Error(`Boring plugin re-resolve failed:\n\n${details}`)
       }
       await opts.beforeReload?.()
     },
@@ -483,26 +513,11 @@ export async function createWorkspaceAgentServer(
     }
   }
 
-  // Phase 4: expose the rebuild closure on the Fastify instance under a
-  // typed property so Phase 5's /reload wiring can call it without
-  // re-resolving the entry list. Stays internal until Phase 5.
-  //
-  // `liveLoadedIds` tracks the CURRENTLY-loaded plugin set across reloads,
-  // not the boot snapshot — fixes the stale-snapshot bug xAI flagged in
-  // the Phase 4 review (after the first reload, plugin_shutdown would
-  // have fired against the original boot ids forever).
-  let liveLoadedIds: string[] = resolvedPlugins.map((p) => p.id)
+  // Phase 5: expose the rebuild closure on the Fastify instance for
+  // external callers / tests. The same closure is also wired into
+  // `beforeReload` above so /reload triggers it automatically.
   ;(app as FastifyInstance & { __boringRebuildPlugins?: () => Promise<PluginRebuildResult> }).__boringRebuildPlugins =
-    async () => {
-      const result = await rebuildServerPlugins({
-        entries: allPluginEntries,
-        ctx,
-        bus: pluginLifecycleBus,
-        currentPluginIds: liveLoadedIds,
-      })
-      liveLoadedIds = result.plugins.map((p) => p.id)
-      return result
-    }
+    rebuildPlugins
 
   return app
 }
