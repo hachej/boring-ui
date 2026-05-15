@@ -5,8 +5,8 @@
   "scripts": {
     "build": "pnpm -r run build",
     "dev": "pnpm -r run dev",
-    "storybook": "storybook dev -p 6006",
-    "storybook:build": "storybook build",
+    "storybook": "pnpm --filter @hachej/boring-ui-kit build && storybook dev -p 6006",
+    "storybook:build": "pnpm --filter @hachej/boring-ui-kit build && storybook build",
     "visual:storybook": "pnpm storybook:build && pnpm exec playwright test -c .storybook/playwright.config.ts",
     "visual:storybook:update": "pnpm storybook:build && pnpm exec playwright test -c .storybook/playwright.config.ts --update-snapshots",
     "typecheck": "pnpm -r --workspace-concurrency=1 run typecheck",
