@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import { BoringPluginAssetManager } from "../agentPlugins/manager"
-import { createBoringPiExtension } from "../agentPlugins/boringPiExtension"
+import { aggregatePluginPrompts } from "../agentPlugins/aggregatePluginPrompts"
 import { boringPluginRoutes } from "../agentPlugins/routes"
 import { preflightBoringPlugins, readBoringPlugins } from "../agentPlugins/scan"
 
@@ -243,35 +243,36 @@ describe("boring agent plugin assets", () => {
     expect(manager.list()[0].revision).toBe(3)
   })
 
-  test("reloads changed agent prompt context from package pi metadata", async () => {
+  test("aggregatePluginPrompts reflects current package pi.systemPrompt across reloads", async () => {
     const root = await tmp("boring-plugin-agent-context-reload-")
     await writePlugin(root)
     const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
     await manager.load()
 
-    let beforeAgentStart: ((event: { systemPrompt: string }) => Promise<void | { systemPrompt: string }>) | undefined
-    const extension = createBoringPiExtension({ manager })
-    extension({
-      on(event: string, handler: unknown) {
-        if (event === "before_agent_start") {
-          beforeAgentStart = handler as typeof beforeAgentStart
-        }
-      },
-      registerCommand() {},
-    } as never)
-
-    await expect(beforeAgentStart?.({ systemPrompt: "Base" })).resolves.toEqual({
-      systemPrompt: expect.stringContaining("Test plugin context"),
-    })
+    expect(aggregatePluginPrompts(manager)).toContain("Test plugin context")
 
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
     pkg.pi.systemPrompt = "Updated plugin context"
     await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
     await manager.load()
 
-    const updated = await beforeAgentStart?.({ systemPrompt: "Base" })
-    expect(updated?.systemPrompt).toContain("Updated plugin context")
-    expect(updated?.systemPrompt).not.toContain("Test plugin context")
+    const updated = aggregatePluginPrompts(manager)
+    expect(updated).toContain("Updated plugin context")
+    expect(updated).not.toContain("Test plugin context")
+  })
+
+  test("aggregatePluginPrompts returns undefined when no plugin contributes a prompt", async () => {
+    const root = await tmp("boring-plugin-agent-context-empty-")
+    await mkdir(join(root, "front"), { recursive: true })
+    await writeFile(join(root, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(root, "package.json"), JSON.stringify({
+      name: "no-prompt-plugin",
+      version: "1.0.0",
+      boring: { front: "./front/index.tsx" },
+    }), "utf8")
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+    await manager.load()
+    expect(aggregatePluginPrompts(manager)).toBeUndefined()
   })
 
   test("loads explicit server routes, emits load events, and dispatches hot routes", async () => {
