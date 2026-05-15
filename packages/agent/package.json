@@ -45,7 +45,7 @@
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e": "pnpm --filter @hachej/boring-ui-kit build && playwright test -c e2e/playwright.config.ts",
     "test:regression": "vitest run src/server/__tests__/system-prompt-size.regression.test.ts",
     "test:watch": "vitest",
     "eval": "tsx ./scripts/eval.ts",
