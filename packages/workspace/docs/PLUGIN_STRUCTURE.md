@@ -133,7 +133,7 @@ slash commands.
 ## Current Plugins
 
 - `packages/workspace/src/plugins/filesystemPlugin`
-- `packages/workspace/src/plugins/dataCatalogPlugin`
+- Data catalog package: `@hachej/boring-data-catalog` (`plugins/data-catalog/src`)
 - `apps/workspace-playground/src/plugins/playgroundDataCatalog`
 - Macro plugin example: `hachej/boring-macro` (`src/plugins/macro`)
 

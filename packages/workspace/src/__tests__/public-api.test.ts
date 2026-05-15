@@ -22,6 +22,9 @@ describe("@hachej/boring-workspace public API", () => {
       expect(api.FileTree).toBeDefined()
       expect(api.CodeEditor).toBeDefined()
       expect(api.MarkdownEditor).toBeDefined()
+      expect("DataExplorer" in api).toBe(false)
+      expect("useExplorerState" in api).toBe(false)
+      expect("createSourcesAdapter" in api).toBe(false)
       expect("DataCatalog" in api).toBe(false)
     })
 
@@ -35,21 +38,21 @@ describe("@hachej/boring-workspace public API", () => {
   })
 
   describe("plugins", () => {
-    it("exports explorer plugin factories", () => {
-      expect(api.createExplorerPlugin).toBeDefined()
-      expect(api.createExplorerOutputs).toBeDefined()
-      expect(api.ExplorerView).toBeDefined()
-      expect(api.EXPLORER_PLUGIN_ID).toBe("explorer")
+    it("does not export the extracted data explorer plugin", () => {
+      expect("createExplorerPlugin" in api).toBe(false)
+      expect("createExplorerOutputs" in api).toBe(false)
+      expect("ExplorerView" in api).toBe(false)
+      expect("EXPLORER_PLUGIN_ID" in api).toBe(false)
     })
 
-    it("exports data catalog plugin factories", () => {
-      expect(api.createDataCatalogPlugin).toBeDefined()
-      expect(api.createDataCatalogOutputs).toBeDefined()
-      expect(api.appendDataCatalogOutputs).toBeDefined()
-      expect(api.openDataCatalogVisualization).toBeDefined()
-      expect(api.useDataCatalogQuery).toBeDefined()
-      expect(api.useDataCatalogVisualizationState).toBeDefined()
-      expect(api.DATA_CATALOG_PLUGIN_ID).toBe("data-catalog")
+    it("does not export the extracted data catalog plugin", () => {
+      expect("createDataCatalogPlugin" in api).toBe(false)
+      expect("createDataCatalogOutputs" in api).toBe(false)
+      expect("appendDataCatalogOutputs" in api).toBe(false)
+      expect("openDataCatalogVisualization" in api).toBe(false)
+      expect("useDataCatalogQuery" in api).toBe(false)
+      expect("useDataCatalogVisualizationState" in api).toBe(false)
+      expect("DATA_CATALOG_PLUGIN_ID" in api).toBe(false)
     })
 
     it("does not export the retired static data factory", () => {

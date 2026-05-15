@@ -11,7 +11,7 @@
 > are superseded by generic `surface-resolver` outputs. Workspace core owns
 > only the resolver registry and `openSurface` dispatch. Filesystem path/glob
 > mapping lives in `plugins/filesystemPlugin/surfaceResolver.ts`; data catalog
-> row-to-visualization mapping lives in `plugins/dataCatalogPlugin`.
+> row-to-visualization mapping now lives in `@hachej/boring-data-catalog`.
 
 Prior status (v7.6): round-5 review patches — Step 0 sequencing (move workspace into v7.5 layout BEFORE Phase 1, not after); split plugin entrypoints (index.ts client + server.ts per plugin); strict type-only imports for cross-folder Plugin refs; cleanup pack (uiBridge dedup, EmptyFilePanel relocation, A/B parallelism tightened, TL;DR scrub, tsconfig excludes, pi-tools-migration catch-up). **Meta-rule: when files move, they go DIRECTLY to final v7.6 destinations — no intermediate placements.**
 
@@ -588,10 +588,10 @@ Use Fastify's `inject()` for in-process testing; no port binding.
 Dropping `data: DataPaneConfig` from `<ChatCenteredShell>` removed
 the one-liner ergonomics for hosts that just want a simple data
 tab with their adapter (gemini P2). Restore them via the reusable
-data catalog plugin factory exported from `@boring/workspace`:
+data catalog plugin factory now exported from `@hachej/boring-data-catalog/front`:
 
 ```ts
-import { createDataCatalogPlugin } from "@boring/workspace"
+import { createDataCatalogPlugin } from "@hachej/boring-data-catalog/front"
 import { myAdapter } from "./adapter"
 
 export const dataPlugin = createDataCatalogPlugin({
@@ -746,7 +746,7 @@ type changes. The plan does NOT delete `chatSuggestions` from
 |---|---|---|
 | **`filesystemPlugin`** | UI-only: a Files catalog (cmd palette); FileTree panel registration as `placement: 'left-tab'`; CodeEditor + MarkdownEditor panel registrations (with `filePatterns`). **No `agentTools` field** — file tools are harness substrate (see §"Tools belong with the harness, not the plugin"). | Hosts that want a chat-only UI (no file tree, no code editor opening on file click) can opt out. When excluded: file UI disappears; LLM file tools STAY (controlled separately by `disableDefaultFileTools` on `createAgentApp`). |
 
-**v6 had a `dataCatalogPlugin` second default; v6.2 cuts it.**
+**v6 had a data catalog plugin second default; v6.2 cuts it.**
 Reason (codex round-3 P1): with `recentKind` cut and no other
 filter, a generic "Data" tab couldn't unambiguously pick *which*
 catalog to display when multiple plugins contribute catalogs (e.g.,
@@ -1269,7 +1269,7 @@ agent tools and catalogs but leave a dead Files tab in the UI.
 Phase 1 step 5c retrofits `WorkbenchLeftPane` to query
 `PanelRegistry` for `placement: 'left-tab'`, sorted by
 registration order. `filesystemPlugin` contributes the Files tab;
-`dataCatalogPlugin` contributes the Data tab.
+the data catalog plugin contributes the Data tab.
 `excludeDefaults: ['filesystem']` truly removes the tab.
 
 (`'right-tab'` is reserved in the contract but no Phase 1 component
@@ -1533,7 +1533,7 @@ model**.
    │                @boring/workspace                            │
    │   • Plugin contract (definePlugin, factories)               │
    │   • Registries (Panel / Command / Catalog)                  │
-   │   • Default plugins (filesystemPlugin, dataCatalogPlugin)   │
+   │   • Default plugins (filesystemPlugin; data catalog is now external)   │
    │   • UI bridge core (moved from @boring/agent)               │
    │   • Substrate routes /api/v1/{ui,files,tree,files/search}   │
    │   • Event bus + WorkspaceEventMap                           │
@@ -1655,7 +1655,7 @@ packages/workspace/
 │   │   └── defaults/
 │   │       ├── filesystemPlugin.ts                  (imports filesystemAgentTools
 │   │       │                                         from @boring/agent)
-│   │       └── dataCatalogPlugin.ts
+│   │       └── dataCatalogPlugin.ts (historical; now external package)
 │   ├── registry/
 │   │   ├── PanelRegistry.ts                         [EXISTS — retrofitted:
 │   │   │                                             subscribable, path-aware
@@ -1878,7 +1878,7 @@ restructure; subsequent phases assume the v7.6 layout exists.
 │      registered by createAgentApp via pi-tools-migration's       │
 │      buildFilesystemAgentTools(bundle) — NOT the plugin's job.   │
 │                                                                  │
-│      (v6 had dataCatalogPlugin as a second default; v6.2 cuts    │
+│      (v6 had a data catalog plugin as a second default; v6.2 cuts    │
 │      it — plugins that want a workbench data tab contribute      │
 │      their own left-tab panel.)                                  │
 │                                                                  │
@@ -1930,7 +1930,7 @@ restructure; subsequent phases assume the v7.6 layout exists.
 │        was the original justification for the retrofit.          │
 │      - Drop `data: DataPaneConfig` prop. Hosts that want a       │
 │        workbench data tab register their own left-tab panel      │
-│        or compose the reusable `createDataCatalogPlugin(opts)`   │
+│        or compose `createDataCatalogPlugin(opts)` from `@hachej/boring-data-catalog/front`   │
 │        / `appendDataCatalogOutputs(...)` helpers.                │
 │      - Drop `extraPanels` prop. Panels come from PanelRegistry;  │
 │        new optional `allowedPanels?: string[]` for gating.       │
@@ -2056,7 +2056,7 @@ export const makeMacroServerPlugin = (): Plugin =>
 component is `DataExplorer` configured with macro's adapter and
 `onActivate` that calls `surface.openPanel({ component:
 "chart-canvas", … })`. This replaces the v5 dataPaneConfig wiring
-without needing a default `dataCatalogPlugin`. The catalog
+without needing a default data catalog plugin. The catalog
 (`seriesCatalog`) stays separate — it's what powers the cmd palette
 search; the panel is what shows the workbench browser.
 
@@ -2417,7 +2417,7 @@ apps/boring-macro-v2/src/plugin/     ← macroPlugin lives here
 - `src/components/chat/` (whole folder; Phase A + C + G)
 - Top-level `src/panes/{code-editor, markdown-editor, file-tree}/` — moved INTO
   `src/plugin/defaults/filesystemPlugin/` (panes/sidebar split per role) by j9p7.9
-- `src/panes/data-catalog/` — orphaned (dataCatalogPlugin was cut in v6.2);
+- `src/panes/data-catalog/` — orphaned (the data catalog plugin was cut in v6.2);
   audit during j9p7.30: delete if no consumer, otherwise re-home as a primitive
   in `components/` for plugin authors who want a generic data-tab implementation
 - `src/panes/EmptyPane.tsx` (loose) — moved to `chrome/EmptyPane.tsx`
@@ -3417,7 +3417,7 @@ simple hosts.** A host that just wants "a data tab with my
 adapter" had a one-liner; v6.2's "register your own left-tab
 panel" makes it ~10 lines. **Fix:** use
 `createDataCatalogPlugin` for standalone data catalog plugins, or
-`appendDataCatalogOutputs` when an app plugin needs to install
+`appendDataCatalogOutputs` from `@hachej/boring-data-catalog/front` when an app plugin needs to install
 the data catalog as part of a domain plugin. Macro uses the latter
 so chart/deck behavior stays in the macro app.
 
@@ -3474,7 +3474,7 @@ by `createWorkspaceAgentApp` rather than evaluated at module load.
 `data` prop.** With `recentKind` cut and multiple registered
 catalogs (filesystem's Files + macro's Series), nothing in the
 spec said which one fills the generic Data tab. **Fix:** drop
-`dataCatalogPlugin` from defaults entirely. There is no generic
+the data catalog plugin from defaults entirely. There is no generic
 Data tab; plugins that want a workbench data tab register their
 own `placement: 'left-tab'` panel (e.g., macro's `macroSeriesPanel`
 which internally renders DataExplorer with the macro adapter +
@@ -3516,7 +3516,7 @@ rolled back.
 
 ### Net impact (v6.1 → v6.2)
 
-- One default plugin removed (`dataCatalogPlugin`).
+- One default plugin removed (the data catalog plugin; now external).
 - Two factory shapes formalized (`createFilesystemAgentTools(deps)`
   and `makeFilesystemPlugin(deps)`).
 - Macro example honors client/server split.

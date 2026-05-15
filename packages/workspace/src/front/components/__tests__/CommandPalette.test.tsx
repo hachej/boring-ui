@@ -6,8 +6,10 @@ import { RegistryProvider } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../registry/CommandRegistry"
 import { CatalogRegistry } from "../../plugin/CatalogRegistry"
+import { bootstrap } from "../../../shared/plugins/bootstrap"
+import type { WorkspaceFrontPlugin } from "../../../shared/plugins/defineFrontPlugin"
 import type { CatalogConfig } from "../../../shared/plugins/types"
-import type { ExplorerRow, SearchResult } from "../../../shared/types/explorer"
+import type { CatalogRow, CatalogSearchResult } from "../../../shared/plugins/types"
 import type { RecentEntry } from "../recent/types"
 import { STORAGE_KEY as RECENT_KEY } from "../recent/recentStore"
 
@@ -59,7 +61,7 @@ function createWrapper(commandRegistry?: CommandRegistry, catalogRegistry?: Cata
   }
 }
 
-function rowFromPath(path: string): ExplorerRow {
+function rowFromPath(path: string): CatalogRow {
   const lastSlash = path.lastIndexOf("/")
   return {
     id: path,
@@ -68,7 +70,7 @@ function rowFromPath(path: string): ExplorerRow {
   }
 }
 
-function resultFor(paths: string[]): SearchResult {
+function resultFor(paths: string[]): CatalogSearchResult {
   return {
     items: paths.map(rowFromPath),
     total: paths.length,
@@ -76,21 +78,40 @@ function resultFor(paths: string[]): SearchResult {
   }
 }
 
-function createCatalog(
+const TEST_CATALOG_ID = "test-files"
+const TEST_CATALOG_PLUGIN_ID = "test-catalog-plugin"
+
+function createTestCatalog(
   search: CatalogConfig["adapter"]["search"],
   onSelect = vi.fn(),
 ): CatalogConfig {
   return {
-    id: "files",
-    label: "Files",
+    id: TEST_CATALOG_ID,
+    label: "Test Files",
     adapter: { search },
     onSelect,
   }
 }
 
-function registryWithCatalog(catalog: CatalogConfig): CatalogRegistry {
+function createTestCatalogPlugin(catalog: CatalogConfig): WorkspaceFrontPlugin {
+  return {
+    id: TEST_CATALOG_PLUGIN_ID,
+    label: "Test Catalog Plugin",
+    catalogs: [catalog],
+  }
+}
+
+function registryWithCatalogPlugin(catalog: CatalogConfig): CatalogRegistry {
   const registry = new CatalogRegistry({ warnOnDuplicate: false })
-  registry.register(catalog, "test-plugin")
+  bootstrap({
+    chatPanel: {},
+    plugins: [createTestCatalogPlugin(catalog)],
+    registries: {
+      panels: new PanelRegistry(),
+      commands: new CommandRegistry(),
+      catalogs: registry,
+    },
+  })
   return registry
 }
 
@@ -219,7 +240,7 @@ describe("CommandPalette", () => {
     it("shows catalog results from registered catalogs", async () => {
       const user = userEvent.setup()
       const searchFn = vi.fn().mockResolvedValue(resultFor(["/src/App.tsx", "/src/index.ts"]))
-      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      const catalogRegistry = registryWithCatalogPlugin(createTestCatalog(searchFn))
       render(<CommandPalette />, {
         wrapper: createWrapper(undefined, catalogRegistry),
       })
@@ -242,7 +263,7 @@ describe("CommandPalette", () => {
       const row = rowFromPath("/src/App.tsx")
       const searchFn = vi.fn().mockResolvedValue({ items: [row], total: 1, hasMore: false })
       const onSelect = vi.fn()
-      const catalogRegistry = registryWithCatalog(createCatalog(searchFn, onSelect))
+      const catalogRegistry = registryWithCatalogPlugin(createTestCatalog(searchFn, onSelect))
       render(<CommandPalette />, {
         wrapper: createWrapper(undefined, catalogRegistry),
       })
@@ -261,7 +282,7 @@ describe("CommandPalette", () => {
     it("shows empty state when no catalog rows match", async () => {
       const user = userEvent.setup()
       const searchFn = vi.fn().mockResolvedValue(resultFor([]))
-      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      const catalogRegistry = registryWithCatalogPlugin(createTestCatalog(searchFn))
       render(<CommandPalette />, {
         wrapper: createWrapper(undefined, catalogRegistry),
       })
@@ -280,7 +301,7 @@ describe("CommandPalette", () => {
       const searchFn = vi.fn(() => {
         throw new Error("Catalog unavailable")
       })
-      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      const catalogRegistry = registryWithCatalogPlugin(createTestCatalog(searchFn))
       render(<CommandPalette />, {
         wrapper: createWrapper(undefined, catalogRegistry),
       })
@@ -297,7 +318,7 @@ describe("CommandPalette", () => {
     it("closes palette after catalog row selection", async () => {
       const user = userEvent.setup()
       const searchFn = vi.fn().mockResolvedValue(resultFor(["/src/App.tsx"]))
-      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      const catalogRegistry = registryWithCatalogPlugin(createTestCatalog(searchFn))
       render(<CommandPalette />, {
         wrapper: createWrapper(undefined, catalogRegistry),
       })
@@ -540,7 +561,7 @@ describe("CommandPalette", () => {
     it("saves selected catalog rows as RecentEntry with type catalog", async () => {
       const user = userEvent.setup()
       const searchFn = vi.fn().mockResolvedValue(resultFor(["/src/App.tsx"]))
-      const catalogRegistry = registryWithCatalog(createCatalog(searchFn))
+      const catalogRegistry = registryWithCatalogPlugin(createTestCatalog(searchFn))
       render(<CommandPalette />, {
         wrapper: createWrapper(undefined, catalogRegistry),
       })
@@ -556,7 +577,7 @@ describe("CommandPalette", () => {
       const recent: RecentEntry[] = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]")
       expect(recent[0]).toMatchObject({
         type: "catalog",
-        catalogId: "files",
+        catalogId: TEST_CATALOG_ID,
         rowId: "/src/App.tsx",
       })
       expect(recent[0].type === "catalog" && recent[0].rowSnapshot.title).toBe("App.tsx")
@@ -565,13 +586,13 @@ describe("CommandPalette", () => {
     it("shows recent catalog entries when no query", async () => {
       const catalogEntry: RecentEntry = {
         type: "catalog",
-        catalogId: "files",
+        catalogId: TEST_CATALOG_ID,
         rowId: "/src/recent.ts",
         rowSnapshot: { id: "/src/recent.ts", title: "recent.ts", subtitle: "/src/" },
         selectedAt: Date.now(),
       }
       localStorage.setItem(RECENT_KEY, JSON.stringify([catalogEntry]))
-      const catalogRegistry = registryWithCatalog(createCatalog(vi.fn().mockResolvedValue(resultFor([]))))
+      const catalogRegistry = registryWithCatalogPlugin(createTestCatalog(vi.fn().mockResolvedValue(resultFor([]))))
       render(<CommandPalette />, { wrapper: createWrapper(undefined, catalogRegistry) })
       fireKeydown("p", { metaKey: true })
       await waitFor(() => {
@@ -657,13 +678,13 @@ describe("CommandPalette", () => {
       const row = rowFromPath("/src/App.tsx")
       const catalogEntry: RecentEntry = {
         type: "catalog",
-        catalogId: "files",
+        catalogId: TEST_CATALOG_ID,
         rowId: "/src/App.tsx",
         rowSnapshot: row,
         selectedAt: Date.now(),
       }
       localStorage.setItem(RECENT_KEY, JSON.stringify([catalogEntry]))
-      const catalogRegistry = registryWithCatalog(createCatalog(vi.fn().mockResolvedValue(resultFor([])), onSelect))
+      const catalogRegistry = registryWithCatalogPlugin(createTestCatalog(vi.fn().mockResolvedValue(resultFor([])), onSelect))
       render(<CommandPalette />, { wrapper: createWrapper(undefined, catalogRegistry) })
       fireKeydown("p", { metaKey: true })
       await waitFor(() => {

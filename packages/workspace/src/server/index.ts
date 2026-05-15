@@ -37,14 +37,3 @@ export type {
   WorkspaceRouteContribution,
   WorkspaceServerPlugin,
 } from "./plugins/bootstrapServer"
-export {
-  createDataCatalogAgentTool,
-  createDataCatalogServerPlugin,
-  createDataCatalogSkillPrompt,
-  formatDataCatalogSearchResult,
-} from "../plugins/dataCatalogPlugin/server"
-export type {
-  DataCatalogAgentToolOptions,
-  DataCatalogServerPluginOptions,
-  DataCatalogSkillOptions,
-} from "../plugins/dataCatalogPlugin/server"

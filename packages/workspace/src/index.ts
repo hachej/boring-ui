@@ -26,7 +26,16 @@ export type {
 export type {
   WorkspaceFrontPlugin,
   PluginBinding,
+  CatalogAdapter,
+  CatalogBadge,
   CatalogConfig,
+  CatalogFacets,
+  CatalogFacetsArgs,
+  CatalogFacetConfig,
+  CatalogFacetValue,
+  CatalogRow,
+  CatalogSearchArgs,
+  CatalogSearchResult,
   PluginOutput,
   LeftTabOutput,
   LeftTabParams,
@@ -67,59 +76,6 @@ export {
 export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin/front"
 export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
 export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
-export {
-  createExplorerPlugin,
-  createExplorerOutputs,
-  ExplorerView,
-  EXPLORER_PLUGIN_ID,
-} from "./plugins/explorerPlugin/front"
-export type {
-  CreateExplorerOutputsOptions,
-  CreateExplorerPluginOptions,
-  ExplorerCatalogConfig,
-  ExplorerContributionConfig,
-  ExplorerMode,
-  ExplorerSection,
-  ExplorerSectionFilter,
-  ExplorerViewProps,
-  SectionedExplorerAdapter,
-  SectionedExplorerFacetArgs,
-  SectionedExplorerProps,
-  SectionedExplorerSearchArgs,
-  SectionedExplorerSectionsArgs,
-} from "./plugins/explorerPlugin/front"
-
-export {
-  appendDataCatalogOutputs,
-  createDataCatalogOpenHandler,
-  createDataCatalogCatalog,
-  createDataCatalogOutputs,
-  createDataCatalogPlugin,
-  createDataCatalogSurfaceResolver,
-  dataCatalogPanelInstanceId,
-  openDataCatalogVisualization,
-  readDataCatalogRow,
-  resolveDataCatalogControlledQuery,
-  resolveDataCatalogQuery,
-  resolveDataCatalogVisualizationState,
-  useDataCatalogOpenVisualization,
-  useDataCatalogQuery,
-  useDataCatalogVisualizationState,
-  DATA_CATALOG_DEFAULT_TOOL_NAME,
-  DATA_CATALOG_PLUGIN_ID,
-  DATA_CATALOG_ROW_SURFACE_KIND,
-} from "./plugins/dataCatalogPlugin/front"
-export type {
-  CreateDataCatalogOutputsOptions,
-  CreateDataCatalogPluginOptions,
-  CreateDataCatalogSurfaceResolverOptions,
-  DataCatalogSelectContext,
-  DataCatalogResolvedQuery,
-  DataCatalogVisualizationParams,
-  DataCatalogVisualizationState,
-  OpenDataCatalogVisualizationOptions,
-} from "./plugins/dataCatalogPlugin/front"
-
 // Utility
 export { cn } from "./front/lib/utils"
 
@@ -148,7 +104,7 @@ export type {
 } from "./front/registry"
 
 // Dock / layout runtime
-export { DockviewShell, useDockviewApi } from "./front/dock"
+export { DockviewShell, PanelChrome, useDockviewApi } from "./front/dock"
 export type {
   LayoutConfig,
   GroupConfig,
@@ -304,25 +260,6 @@ export type {
 } from "./plugins/filesystemPlugin/front/file-tree/FileTree"
 export { MarkdownEditor } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditor"
 export type { MarkdownEditorProps } from "./plugins/filesystemPlugin/front/markdown-editor/MarkdownEditor"
-export {
-  DataExplorer,
-  useExplorerState,
-} from "./front/components/DataExplorer"
-export type {
-  DataExplorerProps,
-  UseExplorerStateOptions,
-  UseExplorerStateReturn,
-  ExplorerRow,
-  ExplorerAdapter,
-  Badge,
-  FacetConfig,
-  FacetValue,
-  Facets,
-  FacetsArgs,
-  SearchArgs,
-  SearchResult,
-  DragPayload,
-} from "./front/components/DataExplorer"
 export { SessionList } from "./front/components/SessionList"
 export type {
   SessionListProps,

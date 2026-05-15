@@ -4,7 +4,16 @@ export { defineFrontPlugin, PluginError } from "./defineFrontPlugin"
 export type { PluginErrorKind, WorkspaceFrontPlugin } from "./defineFrontPlugin"
 export type {
   PluginBinding,
+  CatalogAdapter,
+  CatalogBadge,
   CatalogConfig,
+  CatalogFacets,
+  CatalogFacetsArgs,
+  CatalogFacetConfig,
+  CatalogFacetValue,
+  CatalogRow,
+  CatalogSearchArgs,
+  CatalogSearchResult,
   PluginOutput,
   LeftTabOutput,
   LeftTabParams,

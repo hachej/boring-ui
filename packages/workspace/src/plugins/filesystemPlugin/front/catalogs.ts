@@ -1,5 +1,4 @@
-import type { CatalogConfig } from "../../../shared/plugins/types"
-import type { ExplorerRow, SearchResult } from "../../../shared/types/explorer"
+import type { CatalogConfig, CatalogRow, CatalogSearchResult } from "../../../shared/plugins/types"
 import { toFileSearchGlob } from "./search"
 import { FILES_CATALOG_ID } from "../shared/constants"
 
@@ -9,10 +8,10 @@ export interface FilesCatalogClient {
 
 export interface CreateFilesCatalogOptions {
   client: FilesCatalogClient
-  onSelect?: (path: string, row: ExplorerRow) => void
+  onSelect?: (path: string, row: CatalogRow) => void
 }
 
-function rowFromPath(path: string): ExplorerRow {
+function rowFromPath(path: string): CatalogRow {
   const lastSlash = path.lastIndexOf("/")
   return {
     id: path,
@@ -21,7 +20,7 @@ function rowFromPath(path: string): ExplorerRow {
   }
 }
 
-function emptySearchResult(): SearchResult {
+function emptyCatalogSearchResult(): CatalogSearchResult {
   return { items: [], total: 0, hasMore: false }
 }
 
@@ -35,9 +34,9 @@ export function createFilesCatalog({
     adapter: {
       async search({ query, limit, signal }) {
         const trimmed = query.trim()
-        if (!trimmed || signal?.aborted) return emptySearchResult()
+        if (!trimmed || signal?.aborted) return emptyCatalogSearchResult()
         const paths = await client.search(toFileSearchGlob(trimmed), limit, signal)
-        if (signal?.aborted) return emptySearchResult()
+        if (signal?.aborted) return emptyCatalogSearchResult()
         return {
           items: paths.map(rowFromPath),
           total: paths.length,

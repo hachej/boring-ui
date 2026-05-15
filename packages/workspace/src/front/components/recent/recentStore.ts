@@ -1,5 +1,5 @@
 import type { RecentEntry } from "./types"
-import type { ExplorerRow } from "../../../shared/types/explorer"
+import type { CatalogRow } from "../../../shared/plugins/types"
 import { migrateRecent } from "./migrate"
 
 const STORAGE_KEY = "boring-ui-v2:command-palette:recent"
@@ -34,7 +34,7 @@ export function saveRecent(entries: RecentEntry[]): void {
 
 export function addCatalogToRecent(
   catalogId: string,
-  row: ExplorerRow,
+  row: CatalogRow,
 ): void {
   const entries = loadRecent().filter(
     (e) => !(e.type === "catalog" && e.catalogId === catalogId && e.rowId === row.id),
