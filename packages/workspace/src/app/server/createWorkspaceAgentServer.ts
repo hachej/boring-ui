@@ -486,14 +486,23 @@ export async function createWorkspaceAgentServer(
   // Phase 4: expose the rebuild closure on the Fastify instance under a
   // typed property so Phase 5's /reload wiring can call it without
   // re-resolving the entry list. Stays internal until Phase 5.
+  //
+  // `liveLoadedIds` tracks the CURRENTLY-loaded plugin set across reloads,
+  // not the boot snapshot — fixes the stale-snapshot bug xAI flagged in
+  // the Phase 4 review (after the first reload, plugin_shutdown would
+  // have fired against the original boot ids forever).
+  let liveLoadedIds: string[] = resolvedPlugins.map((p) => p.id)
   ;(app as FastifyInstance & { __boringRebuildPlugins?: () => Promise<PluginRebuildResult> }).__boringRebuildPlugins =
-    () =>
-      rebuildServerPlugins({
+    async () => {
+      const result = await rebuildServerPlugins({
         entries: allPluginEntries,
         ctx,
         bus: pluginLifecycleBus,
-        currentPluginIds: resolvedPlugins.map((p) => p.id),
+        currentPluginIds: liveLoadedIds,
       })
+      liveLoadedIds = result.plugins.map((p) => p.id)
+      return result
+    }
 
   return app
 }
