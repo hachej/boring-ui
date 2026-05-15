@@ -7,12 +7,15 @@ Canonical migration example: `d26e1e7` (`refactor(macro): rewrite App.tsx + serv
 
 ### Breaking Changes
 
-#### Legacy `DataCatalog` components removed
+#### Legacy `DataCatalog` components and generic explorer UI removed
 
-`DataCatalog` and `DataCatalogPane` are no longer exported from `@boring/workspace`.
-Data catalog UI now lives behind plugin outputs. Use `createDataCatalogPlugin()`
-for standalone catalogs or `appendDataCatalogOutputs()` inside an app/domain
-plugin. Generic explorer UI moved to `@hachej/boring-data-explorer`; Storybook/mock adapter helpers moved to `@hachej/boring-data-explorer/testing`.
+`DataCatalog`, `DataCatalogPane`, `DataExplorer`, `useExplorerState`,
+`createSourcesAdapter`, and generic explorer plugin helpers are no longer
+exported from `@boring/workspace`. Data catalog UI now lives behind plugin
+outputs. Use `createDataCatalogPlugin()` for standalone catalogs or
+`appendDataCatalogOutputs()` inside an app/domain plugin. Generic explorer UI
+moved to `@hachej/boring-data-explorer`; Storybook/mock adapter helpers moved
+to `@hachej/boring-data-explorer/testing`.
 
 #### `<CommandPalette>` no longer accepts file-search props
 
