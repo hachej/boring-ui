@@ -26,7 +26,7 @@ plugins/<name>/
   tsconfig.json        paths aliases into packages/workspace/src for fast iteration
   tsup.config.ts       nested entries (front/index, server/index, shared/index)
   vitest.config.ts     jsdom + @vitejs/plugin-react + globals: true
-                       setupFiles: ../_shared/vitest.setup.ts
+                       setupFiles: ./src/test-setup.ts
   src/
     front/
       index.ts         createXxxPlugin() — entry, re-exports
@@ -50,17 +50,17 @@ plugins/<name>/
 - **server/** — anything that runs in the agent backend: agent tools,
   system prompt fragments, server hooks.
 - **shared/** — constants and types used by both sides. Keep it tiny.
-- **`../_shared/vitest.setup.ts`** — jest-dom matchers, ResizeObserver +
-  Range polyfills, testing-library cleanup. Do **not** `import
+- **`src/test-setup.ts`** — jest-dom matchers, ResizeObserver + Range
+  polyfills, testing-library cleanup. Each plugin owns its own copy;
+  keep them in sync with `plugins/_template/src/test-setup.ts` if the
+  canonical setup changes. Do **not** `import
   "@testing-library/jest-dom/vitest"` instead — see the comment at the
-  top of that file for the reason.
+  top of the file for the reason.
 
 ## What this template intentionally does NOT have
 
 - A `testing/` entry. Add one only when other packages need stable
   fixtures from your plugin (see `plugins/data-explorer/src/testing/`).
-- A `src/test-setup.ts` shim. Point vitest's `setupFiles` directly at
-  the shared setup instead.
 
 ## Invariants
 
