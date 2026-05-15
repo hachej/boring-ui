@@ -1,7 +1,11 @@
 import { defineConfig } from "@playwright/test"
 
 export default defineConfig({
-  testDir: "./e2e",
+  testDir: "../..",
+  testMatch: [
+    "apps/workspace-playground/e2e/**/*.spec.ts",
+    "plugins/askUserPlugin/e2e/**/*.spec.ts",
+  ],
   timeout: 30_000,
   retries: 0,
   // The playground tests share a single Vite dev server (one HMR socket,

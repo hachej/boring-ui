@@ -31,27 +31,6 @@ const question = {
 test.describe("ask_user Questions pane", () => {
   test("ui command opens pane from metadata, submits, and closes", async ({ page }) => {
     const commands: unknown[] = []
-    await page.addInitScript((q) => {
-      class MockEventSource extends EventTarget {
-        url: string
-        readyState = 1
-        withCredentials = false
-        CONNECTING = 0
-        OPEN = 1
-        CLOSED = 2
-        constructor(url: string) {
-          super()
-          this.url = url
-          setTimeout(() => {
-            this.dispatchEvent(new MessageEvent("init", { data: "{}" }))
-            this.dispatchEvent(new MessageEvent("command", { data: JSON.stringify({ kind: "openSurface", params: { kind: "questions", target: q.questionId, meta: { question: q } } }) }))
-          }, 250)
-        }
-        close() { this.readyState = 2 }
-      }
-      Object.defineProperty(window, "EventSource", { value: MockEventSource, configurable: true })
-    }, question)
-
     await page.route("**/api/v1/ui/state", async (route) => {
       if (route.request().method() === "GET") {
         // Regression guard: even if state polling has not caught up yet, the
@@ -68,8 +47,12 @@ test.describe("ask_user Questions pane", () => {
       await route.fulfill({ json: { ok: true, status: "answered" } })
     })
 
-    await page.goto("/")
-    await page.waitForLoadState("networkidle")
+    const commandStreamReady = page.waitForRequest((request) => request.url().includes("/api/v1/ui/commands/next"), { timeout: 10_000 })
+    await page.goto("/", { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("textbox", { name: "Ask anything…" })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Nothing open yet")).toBeVisible({ timeout: 10_000 })
+    await commandStreamReady
+    await page.request.post("/api/v1/ui/commands", { data: { kind: "openSurface", params: { kind: "questions", target: question.questionId, meta: { question } } } })
 
     await expect(page.getByText("Choose A or B")).toBeVisible({ timeout: 8_000 })
     await page.getByRole("radio", { name: "A" }).click()
