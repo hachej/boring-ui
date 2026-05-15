@@ -67,9 +67,31 @@ export interface WorkspaceAgentServerPluginContext {
 
 export type WorkspaceAgentServerPluginFactory = (context: WorkspaceAgentServerPluginContext) => WorkspaceServerPlugin
 
+/**
+ * Single install entry type. Accepts:
+ *  - `WorkspaceServerPlugin` — pre-built plugin object (today's `plugins:` shape).
+ *  - `WorkspaceAgentServerPluginFactory` — callable that receives the workspace
+ *     context (workspaceRoot + bridge) and returns a `WorkspaceServerPlugin`.
+ *
+ * Phase 1 will add `{ spec, options, hotReload }` directory-source variants.
+ * Phase 0 (this commit) is pure type widening — no behaviour change.
+ */
+export type WorkspacePluginEntry =
+  | WorkspaceServerPlugin
+  | WorkspaceAgentServerPluginFactory
+
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
-    Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
+    Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
+  /**
+   * Plugins to install. Accepts either pre-built `WorkspaceServerPlugin` objects
+   * or factory functions that receive the workspace context — same array.
+   */
+  plugins?: WorkspacePluginEntry[]
+  /**
+   * @deprecated Pass factory functions in `plugins:` instead. Kept for
+   * back-compat; entries are concatenated into the unified install array.
+   */
   pluginFactories?: WorkspaceAgentServerPluginFactory[]
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
@@ -303,6 +325,20 @@ function readPackageJsonPiSnapshot(pluginDirs: string[]): PackageJsonPiSnapshot 
   }
 }
 
+/**
+ * Phase 0 resolver: turn the unified `WorkspacePluginEntry[]` array into a
+ * flat `WorkspaceServerPlugin[]` that `bootstrapServer` consumes. Pre-built
+ * plugin objects pass through unchanged; factory functions are called with
+ * the workspace context. No directory-source / hot-reload behaviour yet —
+ * Phase 1 adds that.
+ */
+export function resolvePluginEntries(
+  entries: WorkspacePluginEntry[],
+  ctx: WorkspaceAgentServerPluginContext,
+): WorkspaceServerPlugin[] {
+  return entries.map((entry) => (typeof entry === "function" ? entry(ctx) : entry))
+}
+
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -316,10 +352,14 @@ export async function createWorkspaceAgentServer(
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
-  const factoryPlugins = opts.pluginFactories?.map((factory) => factory({ workspaceRoot, bridge })) ?? []
+  const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
+  const resolvedPlugins = resolvePluginEntries(
+    [...(opts.plugins ?? []), ...(opts.pluginFactories ?? [])],
+    ctx,
+  )
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
-    plugins: [...(opts.plugins ?? []), ...factoryPlugins],
+    plugins: resolvedPlugins,
   })
   const boringPluginDirs = collectBoringPluginDirs(workspaceRoot, pluginCollection)
   const boringPluginReload = opts.boringPluginReload ?? true

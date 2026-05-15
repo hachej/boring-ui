@@ -274,4 +274,44 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }), "utf8")
     expect(agentOptions.pi?.getDynamicResources?.().packages).toEqual(["npm:updated"])
   })
+
+  test("plugins[] accepts both pre-built objects and factory functions", async () => {
+    const builtPlugin = { id: "built", systemPrompt: "BUILT" }
+    const factoryFn = vi.fn(() => ({ id: "fromfactory", systemPrompt: "FACTORY" }))
+
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/phase0-mixed-entries",
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [builtPlugin, factoryFn],
+    })
+
+    expect(factoryFn).toHaveBeenCalledTimes(1)
+    expect(factoryFn).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceRoot: "/tmp/phase0-mixed-entries", bridge: expect.anything() }),
+    )
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { systemPromptAppend?: string },
+    ]
+    expect(agentOptions.systemPromptAppend).toContain("BUILT")
+    expect(agentOptions.systemPromptAppend).toContain("FACTORY")
+  })
+
+  test("pluginFactories alias still works (back-compat)", async () => {
+    const factoryFn = vi.fn(() => ({ id: "legacy", systemPrompt: "LEGACY" }))
+
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/phase0-legacy-alias",
+      logger: false,
+      provisionWorkspace: false,
+      pluginFactories: [factoryFn],
+    })
+
+    expect(factoryFn).toHaveBeenCalledTimes(1)
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { systemPromptAppend?: string },
+    ]
+    expect(agentOptions.systemPromptAppend).toContain("LEGACY")
+  })
 })
