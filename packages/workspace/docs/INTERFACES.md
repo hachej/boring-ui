@@ -35,8 +35,8 @@ commands, and default workspace plugins.
 - Filesystem data: `src/plugins/filesystemPlugin/front/data`
   - Filesystem client, hooks, event stream, and cache invalidation are plugin
     owned.
-- Data catalog: `src/plugins/dataCatalogPlugin/front` and
-  `src/plugins/dataCatalogPlugin/server`
+- Data catalog package: `@hachej/boring-data-catalog/front` and
+  `@hachej/boring-data-catalog/server`
   - Catalog rows are opened through `openSurface`; row-to-panel mapping belongs
     to the plugin resolver.
 - Server plugins: `src/server/plugins`
