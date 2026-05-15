@@ -12,4 +12,3 @@ export const samplePanel = definePanel<SampleParams>({
   placement: "center",
   source: "app",
 })
-
