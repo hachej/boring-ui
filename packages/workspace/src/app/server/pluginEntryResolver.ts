@@ -89,7 +89,15 @@ export function resolvePluginEntryPath(
   return null
 }
 
-export function resolvePluginEntries(dir: string): {
+/**
+ * Returns the resolved file paths for a directory-source plugin's server
+ * and front entries. Pi parity (`core/package-manager.js`).
+ *
+ * (Renamed from `resolvePluginEntries` per Phase 1 review feedback —
+ * disambiguates from the entry-resolution dispatcher in
+ * `createWorkspaceAgentServer.ts`.)
+ */
+export function resolvePluginEntryPaths(dir: string): {
   pkg: PluginPackageJson | null
   serverPath: string | null
   frontPath: string | null
@@ -104,15 +112,31 @@ export function resolvePluginEntries(dir: string): {
 
 const require = createRequire(import.meta.url)
 
+let warnedJitiMissing = false
+function warnJitiUnavailable(serverPath: string, reason: string): void {
+  if (warnedJitiMissing) return
+  warnedJitiMissing = true
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[boring-workspace] hotReload requested but jiti is unavailable (${reason}). ` +
+      `Falling back to native import() for ${serverPath}; subsequent reloads will NOT pick up source changes ` +
+      `because Node's module cache will return the same module. Install jiti or set hotReload: false.`,
+  )
+}
+
 function jitiImport(serverPath: string): Promise<unknown> | null {
   try {
     const jitiModule = require("jiti") as {
       createJiti?: (url: string, opts?: { moduleCache?: boolean }) => { import: (path: string) => Promise<unknown> }
     }
     const create = jitiModule.createJiti
-    if (!create) return null
+    if (!create) {
+      warnJitiUnavailable(serverPath, "createJiti not exported")
+      return null
+    }
     return create(import.meta.url, { moduleCache: false }).import(serverPath)
-  } catch {
+  } catch (err) {
+    warnJitiUnavailable(serverPath, err instanceof Error ? err.message : String(err))
     return null
   }
 }
@@ -121,7 +145,6 @@ async function importServerModule(serverPath: string, hotReload: boolean): Promi
   if (hotReload) {
     const jiti = jitiImport(serverPath)
     if (jiti) return (await jiti) as { default?: unknown }
-    // Fall through to regular import if jiti unavailable in this env.
   }
   const href = pathToFileURL(serverPath).href
   return (await import(/* @vite-ignore */ href)) as { default?: unknown }
@@ -133,23 +156,41 @@ export interface ResolveDirServerPluginContext {
 }
 
 /**
- * Resolves a directory-source entry to a `WorkspaceServerPlugin` by:
- *  1. Reading the plugin's package.json.
- *  2. Locating its server entry (manifest first, conventions fallback).
- *  3. Importing it (jiti when `hotReload`, otherwise regular `import()`).
- *  4. Calling its `default` export with `(options, ctx)` if it's a function;
- *     otherwise treating the export as a pre-built plugin object.
- *
- * Throws when the directory has no package.json, no server entry resolves,
- * or the import fails. Failures are the caller's responsibility to convert
- * into diagnostics (Phase 5 will wrap them in the rebuild error path).
+ * Unwraps the `default` export from an imported module. Handles the
+ * common namespace shape `{ default: X }` and the bare-value shape `X`.
+ * Then applies the factory contract: function → call with `(options, ctx)`;
+ * object → use as a pre-built plugin.
+ */
+function instantiatePluginExport(
+  exported: unknown,
+  options: unknown,
+  ctx: ResolveDirServerPluginContext,
+  source: string,
+): WorkspaceServerPlugin {
+  const value =
+    typeof exported === "object" && exported !== null && "default" in exported
+      ? (exported as { default?: unknown }).default
+      : exported
+  if (typeof value === "function") {
+    return (value as (options: unknown, ctx: ResolveDirServerPluginContext) => WorkspaceServerPlugin)(options, ctx)
+  }
+  if (value && typeof value === "object") return value as WorkspaceServerPlugin
+  throw new Error(`boring plugin: ${source} default export is neither a function nor a plugin object`)
+}
+
+/**
+ * Resolves a directory-source entry to a `WorkspaceServerPlugin` by reading
+ * the plugin's package.json, locating its server entry (manifest first,
+ * convention fallback, declared-but-missing throws), importing it (jiti
+ * when `hotReload`, otherwise regular `import()`), and applying the factory
+ * contract. Throws when no package.json or server entry is resolved.
  */
 export async function resolveDirServerPlugin(
   entry: { spec: DirSpec; options?: unknown; hotReload?: boolean },
   ctx: ResolveDirServerPluginContext,
 ): Promise<WorkspaceServerPlugin> {
   const dir = resolve(entry.spec.dir)
-  const { pkg, serverPath } = resolvePluginEntries(dir)
+  const { pkg, serverPath } = resolvePluginEntryPaths(dir)
   if (!pkg) throw new Error(`boring plugin: no package.json found in ${dir}`)
   if (!serverPath) {
     throw new Error(
@@ -158,39 +199,20 @@ export async function resolveDirServerPlugin(
     )
   }
   const mod = await importServerModule(serverPath, entry.hotReload === true)
-  const exported = mod.default
-  if (typeof exported === "function") {
-    return (exported as (options: unknown, ctx: ResolveDirServerPluginContext) => WorkspaceServerPlugin)(
-      entry.options,
-      ctx,
-    )
-  }
-  if (exported && typeof exported === "object") return exported as WorkspaceServerPlugin
-  throw new Error(`boring plugin: ${serverPath} default export is neither a function nor a plugin object`)
+  return instantiatePluginExport(mod, entry.options, ctx, serverPath)
 }
 
 /**
- * Resolves a `{ spec: { module } }` entry. Same factory contract as the
- * directory variant: function exports are called with `(options, ctx)`,
- * object exports are returned as-is.
+ * Resolves a `{ spec: { module } }` entry. The `module` thunk returns
+ * either an imported module (`{ default: X }`) or a bare value `X`.
+ * Either shape resolves through `instantiatePluginExport`.
  */
 export async function resolveModuleServerPlugin(
   entry: { spec: ModuleSpec; options?: unknown },
   ctx: ResolveDirServerPluginContext,
 ): Promise<WorkspaceServerPlugin> {
   const result = await entry.spec.module()
-  const exported =
-    typeof result === "object" && result !== null && "default" in result
-      ? (result as { default?: unknown }).default
-      : result
-  if (typeof exported === "function") {
-    return (exported as (options: unknown, ctx: ResolveDirServerPluginContext) => WorkspaceServerPlugin)(
-      entry.options,
-      ctx,
-    )
-  }
-  if (exported && typeof exported === "object") return exported as WorkspaceServerPlugin
-  throw new Error(`boring plugin: module spec resolved to neither a function nor a plugin object`)
+  return instantiatePluginExport(result, entry.options, ctx, "module-spec")
 }
 
 export function isDirEntry(entry: unknown): entry is { spec: DirSpec; options?: unknown; hotReload?: boolean } {
