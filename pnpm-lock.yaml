@@ -672,9 +672,6 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
-      '@hachej/boring-data-explorer':
-        specifier: workspace:*
-        version: link:../../plugins/data-explorer
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
