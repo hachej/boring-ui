@@ -15,11 +15,12 @@ import {
 import type { FastifyInstance } from "fastify"
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
 import { boringPluginRoutes } from "../../server/agentPlugins/routes"
-import { createBoringPiExtension } from "../../server/agentPlugins/boringPiExtension"
+import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
@@ -102,6 +103,7 @@ export type {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const require = createRequire(import.meta.url)
 
 function resolveWorkspacePackageRoot(): string {
   const candidates = [
@@ -134,6 +136,53 @@ function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioning
       ],
     },
   }
+}
+
+function resolveBoringPiPackageRoot(): string | null {
+  const workspacePackageRoot = resolveWorkspacePackageRoot()
+  const candidates = [
+    join(workspacePackageRoot, "..", "pi"),
+    join(workspacePackageRoot, "node_modules", "@hachej", "boring-pi"),
+  ]
+  for (const candidate of candidates) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
+      if (pkg.name === "@hachej/boring-pi") return candidate
+    } catch {
+      // try next layout
+    }
+  }
+  try {
+    return dirname(require.resolve("@hachej/boring-pi/package.json"))
+  } catch {
+    return null
+  }
+}
+
+function createBoringPiPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
+  const packageRoot = resolveBoringPiPackageRoot()
+  if (!packageRoot || !existsSync(join(packageRoot, "package.json"))) return null
+  return {
+    id: "boring-pi-package",
+    provisioning: {
+      nodePackages: [
+        {
+          id: "boring-pi",
+          packageName: "@hachej/boring-pi",
+          packageRoot,
+        },
+      ],
+    },
+  }
+}
+
+function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
+  const workspacePackageRoot = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+  const source = existsSync(join(workspacePackageRoot, "package.json"))
+    ? workspacePackageRoot
+    : resolveBoringPiPackageRoot()
+  if (!source || !existsSync(join(source, "package.json"))) return undefined
+  return { source, skills: ["skills/boring-plugin-authoring"] }
 }
 
 export interface WorkspaceAgentServerPluginCollection {
@@ -180,6 +229,7 @@ export function collectWorkspaceAgentServerPlugins(
   return {
     provisioningContributions: [
       createWorkspacePackageProvisioningContribution(),
+      createBoringPiPackageProvisioningContribution(),
       ...result.provisioningContributions,
     ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry)),
     routeContributions: result.routeContributions,
@@ -229,12 +279,18 @@ function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: Worksp
   ]
 }
 
-function emptyPackageJsonPiOptions(): Required<Pick<WorkspaceAgentPiOptions, "additionalSkillPaths" | "packages" | "extensionPaths">> {
+interface PackageJsonPiSnapshot {
+  additionalSkillPaths: string[]
+  packages: WorkspacePiPackageSource[]
+  extensionPaths: string[]
+}
+
+function emptyPackageJsonPiSnapshot(): PackageJsonPiSnapshot {
   return { additionalSkillPaths: [], packages: [], extensionPaths: [] }
 }
 
-function collectPackageJsonPiOptions(pluginDirs: string[]): Required<Pick<WorkspaceAgentPiOptions, "additionalSkillPaths" | "packages" | "extensionPaths">> {
-  if (!preflightBoringPlugins(pluginDirs).ok) return emptyPackageJsonPiOptions()
+function readPackageJsonPiSnapshot(pluginDirs: string[]): PackageJsonPiSnapshot {
+  if (!preflightBoringPlugins(pluginDirs).ok) return emptyPackageJsonPiSnapshot()
   try {
     const plugins = readBoringPlugins(pluginDirs)
     return {
@@ -243,18 +299,8 @@ function collectPackageJsonPiOptions(pluginDirs: string[]): Required<Pick<Worksp
       extensionPaths: plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
     }
   } catch {
-    return emptyPackageJsonPiOptions()
+    return emptyPackageJsonPiSnapshot()
   }
-}
-
-function refreshPackageJsonPiOptions(
-  target: Required<Pick<WorkspaceAgentPiOptions, "additionalSkillPaths" | "packages" | "extensionPaths">>,
-  pluginDirs: string[],
-): void {
-  const next = collectPackageJsonPiOptions(pluginDirs)
-  target.additionalSkillPaths.splice(0, target.additionalSkillPaths.length, ...next.additionalSkillPaths)
-  target.packages.splice(0, target.packages.length, ...next.packages)
-  target.extensionPaths.splice(0, target.extensionPaths.length, ...next.extensionPaths)
 }
 
 export async function createWorkspaceAgentServer(
@@ -287,40 +333,25 @@ export async function createWorkspaceAgentServer(
     })
   }
 
-  const packageJsonPi = piPluginReload ? collectPackageJsonPiOptions(boringPluginDirs) : emptyPackageJsonPiOptions()
-  const piAdditionalSkillPaths = [
-    ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
-    ...packageJsonPi.additionalSkillPaths,
-  ]
-  const piPackages = compactPiPackages([
+  // Static Pi resources known at boot: workspace skill dir, factory-supplied
+  // values, and the bundled @hachej/boring-pi skill package. These never
+  // change for the lifetime of the server.
+  const workspacePackagePiPackage = createBoringPiPackageSource(workspaceRoot)
+  const staticPiSkillPaths = pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []
+  const staticPiPackages = compactPiPackages([
+    workspacePackagePiPackage,
     ...(pluginCollection.agentOptions.pi?.packages ?? []),
-    ...packageJsonPi.packages,
   ])
-  const piExtensionPaths = [
-    ...(pluginCollection.agentOptions.pi?.extensionPaths ?? []),
-    ...packageJsonPi.extensionPaths,
-  ]
-  const syncPackageJsonPiOptions = () => {
-    if (!piPluginReload) return
-    refreshPackageJsonPiOptions(packageJsonPi, boringPluginDirs)
-    piAdditionalSkillPaths.splice(
-      0,
-      piAdditionalSkillPaths.length,
-      ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
-      ...packageJsonPi.additionalSkillPaths,
-    )
-    piPackages.splice(
-      0,
-      piPackages.length,
-      ...compactPiPackages([...(pluginCollection.agentOptions.pi?.packages ?? []), ...packageJsonPi.packages]),
-    )
-    piExtensionPaths.splice(
-      0,
-      piExtensionPaths.length,
-      ...(pluginCollection.agentOptions.pi?.extensionPaths ?? []),
-      ...packageJsonPi.extensionPaths,
-    )
-  }
+  const staticPiExtensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
+
+  // Dynamic Pi resources discovered from package.json#pi at /reload time.
+  // Pi calls `getDynamicResources()` on every reloadSession() and merges the
+  // result with the static fields above, so the workspace never mutates
+  // arrays the harness already captured.
+  const getDynamicPiResources = piPluginReload
+    ? () => readPackageJsonPiSnapshot(boringPluginDirs)
+    : undefined
+
   const boringAssetManager = new BoringPluginAssetManager({
     pluginDirs: boringPluginDirs,
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
@@ -341,7 +372,6 @@ export async function createWorkspaceAgentServer(
       pluginCollection.agentOptions.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
     beforeReload: async () => {
-      syncPackageJsonPiOptions()
       if (boringPluginReload) {
         const result = await boringAssetManager.load()
         if (result.errors.length > 0) {
@@ -355,14 +385,15 @@ export async function createWorkspaceAgentServer(
     },
     pi: {
       ...pluginCollection.agentOptions.pi,
-      additionalSkillPaths: piAdditionalSkillPaths,
-      packages: piPackages,
-      extensionPaths: piExtensionPaths,
-      extensionFactories: [
-        ...(piPluginReload ? [createBoringPiExtension({ manager: boringAssetManager })] : []),
-        ...(pluginCollection.agentOptions.pi?.extensionFactories ?? []),
-      ],
+      additionalSkillPaths: staticPiSkillPaths,
+      packages: staticPiPackages,
+      extensionPaths: staticPiExtensionPaths,
+      extensionFactories: pluginCollection.agentOptions.pi?.extensionFactories,
+      getDynamicResources: getDynamicPiResources,
     },
+    systemPromptDynamic: piPluginReload
+      ? () => aggregatePluginPrompts(boringAssetManager)
+      : undefined,
   })
   await boringAssetManager.load()
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
