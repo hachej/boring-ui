@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
-import { askUserPlugin } from "@hachej/boring-workspace-ask-user/front"
+import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog/front"
 

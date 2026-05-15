@@ -2,9 +2,9 @@ import { defineConfig } from "tsup"
 
 export default defineConfig({
   entry: {
-    front: "front/index.tsx",
-    server: "server/index.ts",
-    shared: "shared/index.ts",
+    "front/index": "src/front/index.tsx",
+    "server/index": "src/server/index.ts",
+    "shared/index": "src/shared/index.ts",
   },
   format: ["esm"],
   dts: true,
@@ -13,9 +13,7 @@ export default defineConfig({
   outDir: "dist",
   target: "es2022",
   external: [
-    "@hachej/boring-ui-kit",
-    "@hachej/boring-workspace",
-    "@hachej/boring-workspace/server",
+    /^@hachej\/boring-/,
     "fastify",
     "lucide-react",
     "react",

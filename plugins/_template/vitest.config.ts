@@ -9,7 +9,6 @@ export default defineConfig({
       "@hachej/boring-workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
       "@hachej/boring-workspace/events": resolve(__dirname, "../../packages/workspace/src/front/events/index.ts"),
       "@hachej/boring-workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
-      "@hachej/boring-data-explorer/shared": resolve(__dirname, "../data-explorer/src/shared/index.ts"),
     },
   },
   test: {

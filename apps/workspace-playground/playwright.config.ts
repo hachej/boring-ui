@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: "../..",
   testMatch: [
     "apps/workspace-playground/e2e/**/*.spec.ts",
-    "plugins/askUserPlugin/e2e/**/*.spec.ts",
+    "plugins/ask-user/e2e/**/*.spec.ts",
   ],
   timeout: 30_000,
   retries: 0,

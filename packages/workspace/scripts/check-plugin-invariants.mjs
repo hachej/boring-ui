@@ -19,7 +19,7 @@ const repoRoot = findRepoRoot(workspacePackageDir)
 const sourceRoots = [
   "packages/workspace/src",
   "packages/workspace/stories",
-  "packages/workspace/templates/plugin",
+  "plugins/_template/src",
   "apps/workspace-playground/src",
 ]
   .map((path) => join(repoRoot, path))
@@ -116,13 +116,11 @@ function pluginLayer(repoPath) {
   }
 
   if (
-    parts[0] === "packages" &&
-    parts[1] === "workspace" &&
-    parts[2] === "templates" &&
-    parts[3] === "plugin" &&
+    parts[0] === "plugins" &&
+    parts[2] === "src" &&
     parts.length > 5
   ) {
-    return parts[4]
+    return parts[3]
   }
 
   return null
