@@ -16,11 +16,17 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./styles.css": {
+      "style": "./dist/styles.css",
+      "default": "./dist/styles.css"
     }
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "*.css"
+  ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/build-styles.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm run typecheck",
     "test": "vitest run --passWithNoTests",
@@ -57,6 +63,9 @@
     "react-dom": "^19.1.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.3"
+    "vitest": "^3.1.3",
+    "@tailwindcss/postcss": "^4.2.4",
+    "postcss": "^8.5.13",
+    "tailwindcss": "^4.2.4"
   }
 }

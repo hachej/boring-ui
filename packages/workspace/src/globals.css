@@ -1,12 +1,12 @@
 @import "tailwindcss" source(none);
 
+/* @hachej/boring-ui-kit styles imported as a regular package. */
+@import "@hachej/boring-ui-kit/styles.css";
+
 /* Workspace's own components — every consumer that imports this CSS file
  * gets the utility classes used by workspace chrome, panes, ui-shadcn
- * primitives, etc. Without this, consumers had to add their own
- * @source pointing back at workspace's src; that broke whenever the
- * consumer moved between repos. */
+ * primitives, etc. */
 @source "./**/*.{ts,tsx}";
-@source "../node_modules/@hachej/boring-ui-kit/src/**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));
 

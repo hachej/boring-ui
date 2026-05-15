@@ -11,6 +11,8 @@ export type {
   IsolatedCodeOutput,
 } from './sandbox'
 export type { AgentTool, ToolExecContext, ToolResult, JSONSchema } from './tool'
+export type { ToolUiMetadata } from './tool-ui'
+export { isToolUiMetadata, extractToolUiMetadata } from './tool-ui'
 export type { CatalogDeps, ToolCatalog } from './catalog'
 export type {
   SessionStore,

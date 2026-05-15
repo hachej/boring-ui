@@ -1,0 +1,48 @@
+/*
+ * @hachej/boring-ui-kit stylesheet source.
+ *
+ * This file is compiled during package build into dist/styles.css. The
+ * published CSS is a regular package stylesheet that contains the Tailwind
+ * utilities required by ui-kit components, so consumers do not need to scan
+ * ui-kit source files or know this package's internal layout.
+ */
+
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme) source(none);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+/* Package-private scan root used only while building dist/styles.css. */
+@source "./**/*.{ts,tsx}";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--boring-background);
+  --color-foreground: var(--boring-foreground);
+  --color-card: var(--boring-card);
+  --color-card-foreground: var(--boring-card-foreground);
+  --color-popover: var(--boring-popover);
+  --color-popover-foreground: var(--boring-popover-foreground);
+  --color-primary: var(--boring-primary);
+  --color-primary-foreground: var(--boring-primary-foreground);
+  --color-secondary: var(--boring-secondary);
+  --color-secondary-foreground: var(--boring-secondary-foreground);
+  --color-muted: var(--boring-muted);
+  --color-muted-foreground: var(--boring-muted-foreground);
+  --color-accent: var(--boring-accent);
+  --color-accent-foreground: var(--boring-accent-foreground);
+  --color-success: var(--boring-success);
+  --color-success-foreground: var(--boring-success-foreground);
+  --color-success-soft: var(--boring-success-soft);
+  --color-destructive: var(--boring-destructive);
+  --color-destructive-foreground: var(--boring-destructive-foreground);
+  --color-border: var(--boring-border);
+  --color-input: var(--boring-input);
+  --color-ring: var(--boring-ring);
+  --radius-sm: var(--boring-radius-sm);
+  --radius-md: var(--boring-radius-md);
+  --radius-lg: var(--boring-radius-lg);
+  --radius-xl: var(--boring-radius-xl);
+  --font-sans: var(--boring-font-sans);
+  --font-mono: var(--boring-font-mono);
+}

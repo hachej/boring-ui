@@ -82,8 +82,6 @@ async function startFrontend(apiPort: number): Promise<string> {
         '@hachej/boring-agent/front': path.resolve(packageSrc, 'front/index.ts'),
         '@hachej/boring-agent/shared': path.resolve(packageSrc, 'shared/index.ts'),
         '@hachej/boring-agent/server': path.resolve(packageSrc, 'server/index.ts'),
-        // Resolve @hachej/boring-ui-kit from source so E2E doesn't need a pre-built dist.
-        '@hachej/boring-ui-kit': path.resolve(packageSrc, '..', '..', 'ui', 'src', 'index.ts'),
         '@': packageSrc,
       },
     },
