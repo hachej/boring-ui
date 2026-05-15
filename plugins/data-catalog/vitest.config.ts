@@ -1,8 +1,17 @@
 import { defineConfig } from "vitest/config"
+import { resolve } from "node:path"
 import react from "@vitejs/plugin-react"
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@hachej/boring-workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
+      "@hachej/boring-workspace/events": resolve(__dirname, "../../packages/workspace/src/front/events/index.ts"),
+      "@hachej/boring-workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
+      "@hachej/boring-data-explorer/shared": resolve(__dirname, "../data-explorer/src/shared/index.ts"),
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
