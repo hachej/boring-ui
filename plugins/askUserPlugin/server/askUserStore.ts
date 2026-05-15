@@ -2,7 +2,6 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
-import { AskUserFormSchemaSchema } from "../shared/schema"
 import type {
   AskUserAnswer,
   AskUserQuestion,

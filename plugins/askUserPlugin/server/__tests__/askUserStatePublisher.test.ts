@@ -6,8 +6,6 @@ import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import { FileAskUserStore } from "../askUserStore"
 import { AskUserRuntime } from "../askUserRuntime"
 import { AskUserStatePublisher } from "../askUserStatePublisher"
-import { questionsRoutes } from "../questionsRoutes"
-import Fastify from "fastify"
 import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
 
 function bridge(): UiBridge & { commands: UiCommand[] } {
