@@ -34,8 +34,14 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       mode: "local",
       logger: true,
-      plugins: [createPlaygroundDataServerPlugin({ workspaceRoot })],
-      pluginFactories: [({ bridge }) => createAskUserServerPlugin({ workspaceRoot, bridge })],
+      // Single install array (Phase 2 of unified plugin plan): pre-built
+      // objects and factories live side-by-side. The factory variant
+      // receives `{ workspaceRoot, bridge }` so plugins that need the
+      // workspace bridge can wire it up at install time.
+      plugins: [
+        createPlaygroundDataServerPlugin({ workspaceRoot }),
+        ({ bridge }) => createAskUserServerPlugin({ workspaceRoot, bridge }),
+      ],
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()
