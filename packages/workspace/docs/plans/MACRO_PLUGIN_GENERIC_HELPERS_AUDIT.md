@@ -320,7 +320,7 @@ createDataCatalogPreset({
 });
 ```
 
-Owner: `dataCatalogPlugin`, not macro.
+Owner: the `@hachej/boring-data-catalog` package, not macro.
 
 2. **Drag payload helper**
 
@@ -328,7 +328,7 @@ Owner: `dataCatalogPlugin`, not macro.
 getDragPayload: createTextDragPayload("text/series-id", (row) => row.id);
 ```
 
-Owner: future `explorerPlugin` or `DataExplorer/adapters`.
+Owner: the future `@hachej/boring-data-explorer` package or `DataExplorer/adapters`.
 
 3. **Facet config helper**
 
@@ -406,8 +406,8 @@ Also extract generic query helper:
 toQueryString(params: Record<string, string | number | string[] | undefined>): string
 ```
 
-Owner: `explorerPlugin/adapters.ts` once created. Temporary owner can be
-`front/components/DataExplorer/adapters.ts`.
+Owner: `@hachej/boring-data-explorer/adapters.ts` once created. Temporary owner can be
+`@hachej/boring-data-explorer/front` adapter helpers.
 
 Risk: don't overfit response shape. Keep mapper hooks explicit.
 
@@ -563,7 +563,7 @@ surfaceResolverOutputs(resolvers): PluginOutput[]
 ```
 
 Owner: `front/registry/surfaceResolverHelpers.ts` or future
-`plugins/explorerPlugin/surface.ts`. Since these helpers are not explorer-only,
+`@hachej/boring-data-explorer` surface helpers. Since these helpers are not explorer-only,
 prefer `front/registry` or a new `front/surface` module.
 
 ### `data/macroSeriesData.ts`
@@ -662,7 +662,7 @@ createOpenSurfacePrompt({
 });
 ```
 
-Owner: workspace server UI-control or dataCatalogPlugin server utilities.
+Owner: workspace server UI-control or data catalog package server utilities.
 
 3. **Provisioning type**
 
@@ -851,16 +851,16 @@ Better integration opportunities:
    plugin composition.
 3. `createRestExplorerAdapter()` for `/catalog` + `/facets` endpoints.
 4. `createOpenSurfaceRowHandler()` for catalog row activation.
-5. Future `explorerPlugin` owns explorer primitives and adapter helpers;
-   `dataCatalogPlugin` composes them.
+5. The future `@hachej/boring-data-explorer` package owns explorer primitives and adapter helpers;
+   the `@hachej/boring-data-catalog` package composes them.
 
-Do not make macro depend directly on a future `explorerPlugin` if
-`dataCatalogPlugin` can provide the right data-catalog specialization. Macro
+Do not make macro depend directly on a future `@hachej/boring-data-explorer` package if
+the `@hachej/boring-data-catalog` package can provide the right data-catalog specialization. Macro
 should depend on the highest-level appropriate abstraction:
 
 ```txt
-macro series catalog -> dataCatalogPlugin plugin/factory
-macro custom project/tree explorer -> explorerPlugin plugin/factory
+macro series catalog -> data catalog package plugin/factory
+macro custom project/tree explorer -> data explorer package plugin/factory
 macro chart/deck panels -> macro-owned panels
 ```
 

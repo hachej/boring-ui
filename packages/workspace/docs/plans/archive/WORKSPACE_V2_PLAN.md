@@ -21,7 +21,7 @@ Use this section as the live handoff ledger while executing this plan.
 - Current source uses generic `surface-resolver` plugin outputs plus the
   `openSurface` UI command. Filesystem path matching belongs to
   `plugins/filesystemPlugin/surfaceResolver.ts`; data catalog row opening
-  belongs to `plugins/dataCatalogPlugin`.
+  belongs to the extracted `@hachej/boring-data-catalog` package.
 
 ### Pass 2 — Full milestone verification (2026-04-24)
 

@@ -7,9 +7,9 @@ Status: draft plan. No code has moved yet.
 ## Problem
 
 Workspace currently has a good generic `DataExplorer` primitive under
-`src/front/components/DataExplorer`. The data-catalog-specific legacy wrappers
+`@hachej/boring-data-explorer/front`. The data-catalog-specific legacy wrappers
 under `src/front/components/data-catalog` have been removed; data catalog behavior
-now lives only in `dataCatalogPlugin`. Feret v2 shows the next requirement: not
+now lives only in the `@hachej/boring-data-catalog` package. Feret v2 shows the next requirement: not
 just flat/faceted database rows, but mixed project trees with
 filesystem rows, virtual DB rows, section filters, friendly labels, and domain
 open routing.
@@ -28,7 +28,7 @@ We need a cleaner ownership model:
 Create a dedicated generic explorer plugin/family:
 
 ```txt
-packages/workspace/src/plugins/explorerPlugin/
+plugins/data-explorer/src/
   index.tsx
   constants.ts
   types.ts
@@ -47,13 +47,13 @@ emit panes/outputs and own a feature contract, but they do not encode an app
 domain like files, data catalog, or Feret. Domain plugins compose it:
 
 ```txt
-dataCatalogPlugin    -> uses explorerPlugin for generic explorer rendering
-filesystemPlugin     -> may use explorerPlugin for project/friendly trees later
-Feret app plugin     -> uses explorerPlugin directly for Project Tree and Data/Feret
-future domain plugin -> uses explorerPlugin for symbols/docs/jobs/issues/etc.
+data catalog package    -> uses data explorer package for generic explorer rendering
+filesystemPlugin     -> may use data explorer package for project/friendly trees later
+Feret app plugin     -> uses data explorer package directly for Project Tree and Data/Feret
+future domain plugin -> uses data explorer package for symbols/docs/jobs/issues/etc.
 ```
 
-Do **not** put generic explorer under `dataCatalogPlugin`. That would make other
+Do **not** put generic explorer under the `@hachej/boring-data-catalog` package. That would make other
 domains depend on a data-catalog name and blur ownership.
 
 ## Target Package Shape
@@ -83,9 +83,11 @@ src/front/
   toast/
 
 src/plugins/
-  explorerPlugin/      # generic explorer feature family
-  dataCatalogPlugin/   # data catalog specialization
   filesystemPlugin/    # files/editors/tree specialization
+
+root plugins/
+  data-explorer/       # @hachej/boring-data-explorer
+  data-catalog/        # @hachej/boring-data-catalog
 ```
 
 ## Explorer Plugin API Shape
@@ -282,10 +284,10 @@ Implementation must validate adapter/mode combinations at runtime too:
 
 ## Data Catalog After Refactor
 
-`dataCatalogPlugin` becomes a specialization that composes explorer outputs:
+the `@hachej/boring-data-catalog` package becomes a specialization that composes explorer outputs:
 
 ```txt
-dataCatalogPlugin/
+@hachej/boring-data-catalog/
   index.tsx             # createDataCatalogPlugin, appendDataCatalogOutputs
   constants.ts
   types.ts
@@ -312,7 +314,7 @@ Non-responsibilities:
 
 Legacy `src/front/components/data-catalog` is removed. Consumers should use
 `createDataCatalogPlugin()` / `appendDataCatalogOutputs()` or compose
-`DataExplorer` directly until it moves to `explorerPlugin`.
+`DataExplorer` directly until it moves to the `@hachej/boring-data-explorer` package.
 
 ## Feret v2 Requirements Driving Explorer Plugin
 
@@ -356,7 +358,7 @@ filters.
 
 | Current location                              | Decision                                                                                          | Rationale                                                                                                                                            |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `front/components/DataExplorer/*`             | Move to `plugins/explorerPlugin/*`                                                                | Generic feature family, but pane-capable and adapter-owned; multiple plugins depend on it.                                                           |
+| `@hachej/boring-data-explorer/front`       | Extracted to `plugins/data-explorer/src/front/*`                                                                | Generic feature family, but pane-capable and adapter-owned; multiple plugins depend on it.                                                           |
 | `front/components/data-catalog/*`             | Removed                                                                                           | Data-catalog naming is domain-ish; real data catalog behavior is plugin-owned already.                                                               |
 | `front/components/CommandPalette.tsx`         | Keep in `front/components`                                                                        | Generic workspace chrome over command/catalog registries, not a domain plugin.                                                                       |
 | `front/components/recent/*`                   | Keep in `front/components` for now                                                                | Generic command/catalog recent state used by CommandPalette. Could become `commandPalette` subfolder later.                                          |
@@ -374,39 +376,39 @@ filters.
 | `plugins/filesystemPlugin/front/code-editor/*`      | Keep in filesystem plugin                                                                         | File editor domain and file data hooks.                                                                                                              |
 | `plugins/filesystemPlugin/front/markdown-editor/*`  | Keep in filesystem plugin                                                                         | File editor domain and file data hooks.                                                                                                              |
 | `plugins/filesystemPlugin/front/empty-file-panel/*` | Keep in filesystem plugin                                                                   | File-specific empty panel.                                                                                                                           |
-| `plugins/dataCatalogPlugin/front/*`           | Keep plugin-owned, but import explorer from `explorerPlugin`                                      | Domain specialization.                                                                                                                               |
+| `@hachej/boring-data-catalog/front`        | Extracted to `plugins/data-catalog/src/front/*`; imports explorer from `@hachej/boring-data-explorer`                                      | Domain specialization.                                                                                                                               |
 
 ## Public API Migration
 
 Avoid breaking current consumers in the first pass.
 
-1. Add `plugins/explorerPlugin` and re-export explorer APIs from old package
+1. Add `plugins/data-explorer` and re-export explorer APIs from old package
    root names:
    - `DataExplorer` stays exported, but source moves.
    - `ExplorerRow`, `ExplorerAdapter`, `FacetConfig`, etc. stay exported with
      compatibility aliases.
-2. Keep `front/components/DataExplorer/index.ts` as a thin deprecated re-export
-   for one release if internal import churn is high.
+2. Keep any workspace compatibility re-export thin and temporary if internal
+   import churn requires it; the canonical API is `@hachej/boring-data-explorer/front`.
 3. `DataCatalog` and `DataCatalogPane` root exports are removed now; use data catalog plugin helpers instead.
-4. Move app/plugin imports to `plugins/explorerPlugin` or package-root exports.
+4. Move app/plugin imports to `plugins/data-explorer` or package-root exports.
 
 ## Implementation Beads
 
 ### Bead 1 — Explorer plugin skeleton
 
-- Add `src/plugins/explorerPlugin` with current `DataExplorer` code moved mostly
+- Add `plugins/data-explorer/src` with current `DataExplorer` code moved mostly
   intact.
 - Export compatibility aliases.
-- Update internal imports from `front/components/DataExplorer` to
-  `plugins/explorerPlugin`.
+- Update internal imports from `@hachej/boring-data-explorer/front` to
+  `plugins/data-explorer`.
 - Tests: current DataExplorer tests pass unchanged after path update.
 
 ### Bead 2 — Data catalog plugin composition
 
-- Change `dataCatalogPlugin` to import explorer APIs from `explorerPlugin`.
+- Change the `@hachej/boring-data-catalog` package to import explorer APIs from `@hachej/boring-data-explorer`.
 - Split data catalog helpers into `catalogs.ts` if useful.
 - Keep `front/components/data-catalog` removed; do not add compatibility wrappers back.
-- Tests: dataCatalogPlugin tests and public API tests.
+- Tests: data catalog package tests and public API tests.
 
 ### Bead 3 — Tree adapter design
 
@@ -441,9 +443,9 @@ filesystem tree to explorer tree` before the legacy data-catalog removal bead.
 - Do not force filesystem to depend on data catalog.
 - Do not rewrite file tree in the first bead.
 - Do not remove public exports without an explicit breaking cleanup bead.
-- Do not allow reverse imports from `explorerPlugin` into domain plugins. Add or
-  extend invariant lint so allowed direction is domain plugin -> explorerPlugin,
-  never explorerPlugin -> dataCatalogPlugin/filesystemPlugin/app plugins.
+- Do not allow reverse imports from `@hachej/boring-data-explorer` into domain plugins. Add or
+  extend invariant lint so allowed direction is domain plugin -> data explorer package,
+  never data explorer package -> data catalog package, filesystemPlugin, or app plugins.
 
 ## Acceptance Criteria
 
