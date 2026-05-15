@@ -22,6 +22,15 @@ import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
 import { boringPluginRoutes } from "../../server/agentPlugins/routes"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
+import {
+  isDirEntry,
+  isModuleEntry,
+  resolveDirServerPlugin,
+  resolveModuleServerPlugin,
+  type DirSpec,
+  type ModuleSpec,
+  type PluginSpec,
+} from "./pluginEntryResolver"
 import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
@@ -69,16 +78,19 @@ export type WorkspaceAgentServerPluginFactory = (context: WorkspaceAgentServerPl
 
 /**
  * Single install entry type. Accepts:
- *  - `WorkspaceServerPlugin` — pre-built plugin object (today's `plugins:` shape).
+ *  - `WorkspaceServerPlugin` — pre-built plugin object.
  *  - `WorkspaceAgentServerPluginFactory` — callable that receives the workspace
  *     context (workspaceRoot + bridge) and returns a `WorkspaceServerPlugin`.
- *
- * Phase 1 will add `{ spec, options, hotReload }` directory-source variants.
- * Phase 0 (this commit) is pure type widening — no behaviour change.
+ *  - `{ spec: { module }, options?, hotReload? }` — workspace dep imported
+ *     by the host. Calls the module's default export with `(options, ctx)`.
+ *  - `{ spec: { dir }, options?, hotReload? }` — directory-source plugin
+ *     resolved via package.json#boring.server (Pi parity: manifest first,
+ *     convention fallback, declared-but-missing throws).
  */
 export type WorkspacePluginEntry =
   | WorkspaceServerPlugin
   | WorkspaceAgentServerPluginFactory
+  | { spec: PluginSpec; options?: unknown; hotReload?: boolean }
 
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
@@ -325,17 +337,31 @@ function readPackageJsonPiSnapshot(pluginDirs: string[]): PackageJsonPiSnapshot 
   }
 }
 
-// Phase 0 resolver: turn the unified `WorkspacePluginEntry[]` array into a
-// flat `WorkspaceServerPlugin[]` that `bootstrapServer` consumes. Pre-built
-// plugin objects pass through; factory functions are called with the
-// workspace context. Phase 1 will extend this to handle directory-source
-// `{ spec, options, hotReload }` entries (async) — kept as a named function
-// so the Phase 1 diff is contained.
-function resolvePluginEntries(
+// Resolve the unified `WorkspacePluginEntry[]` array into a flat
+// `WorkspaceServerPlugin[]` for `bootstrapServer`.
+//
+//  - `WorkspaceServerPlugin` object → pass through.
+//  - `WorkspaceAgentServerPluginFactory` function → call with `ctx`.
+//  - `{ spec: { module }, options? }` → import + factory call.
+//  - `{ spec: { dir }, options?, hotReload? }` → read package.json,
+//    locate server entry (Pi parity: manifest first, conventions fallback,
+//    declared-but-missing throws), import via jiti when `hotReload`.
+//
+// Async because directory and module specs need dynamic imports. Failures
+// during resolution are thrown — the caller (Phase 4 rebuild) is
+// responsible for converting them into reload diagnostics.
+async function resolvePluginEntries(
   entries: WorkspacePluginEntry[],
   ctx: WorkspaceAgentServerPluginContext,
-): WorkspaceServerPlugin[] {
-  return entries.map((entry) => (typeof entry === "function" ? entry(ctx) : entry))
+): Promise<WorkspaceServerPlugin[]> {
+  return Promise.all(
+    entries.map(async (entry): Promise<WorkspaceServerPlugin> => {
+      if (typeof entry === "function") return entry(ctx)
+      if (isDirEntry(entry)) return await resolveDirServerPlugin(entry, ctx)
+      if (isModuleEntry(entry)) return await resolveModuleServerPlugin(entry, ctx)
+      return entry as WorkspaceServerPlugin
+    }),
+  )
 }
 
 export async function createWorkspaceAgentServer(
@@ -352,7 +378,7 @@ export async function createWorkspaceAgentServer(
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
-  const resolvedPlugins = resolvePluginEntries(
+  const resolvedPlugins = await resolvePluginEntries(
     [...(opts.plugins ?? []), ...(opts.pluginFactories ?? [])],
     ctx,
   )

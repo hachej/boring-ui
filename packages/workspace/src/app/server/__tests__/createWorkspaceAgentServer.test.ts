@@ -315,3 +315,133 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentOptions.systemPromptAppend).toContain("LEGACY")
   })
 })
+
+describe("Phase 1 — directory-source plugin entries", () => {
+  async function writeDirPlugin(opts: {
+    dir: string
+    serverEntry?: string  // path inside dir
+    factory?: boolean     // export factory vs object
+    optionsKey?: string
+  }): Promise<void> {
+    await mkdir(opts.dir, { recursive: true })
+    const serverRel = opts.serverEntry ?? "src/server/index.ts"
+    await mkdir(join(opts.dir, serverRel.split("/").slice(0, -1).join("/")), { recursive: true })
+    const body = opts.factory
+      ? `export default function (options, ctx) {
+           return { id: "dir-factory", systemPrompt: "OPTS=" + JSON.stringify(options ?? {}) + " ROOT=" + ctx.workspaceRoot }
+         }`
+      : `export default { id: "dir-object", systemPrompt: "OBJECT_PROMPT" }`
+    await writeFile(join(opts.dir, serverRel), body, "utf8")
+    const pkg: Record<string, unknown> = { name: "test-plugin" }
+    if (opts.serverEntry && opts.serverEntry !== "src/server/index.ts") {
+      pkg.boring = { server: opts.serverEntry }
+    }
+    await writeFile(join(opts.dir, "package.json"), JSON.stringify(pkg), "utf8")
+  }
+
+  test("dir entry with factory export receives options and ctx", async () => {
+    const dir = await makeTempDir("phase1-dir-factory-")
+    await writeDirPlugin({ dir, factory: true })
+
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/phase1-host",
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ spec: { dir }, options: { adapter: "abc" }, hotReload: true }],
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { systemPromptAppend?: string },
+    ]
+    expect(agentOptions.systemPromptAppend).toContain('OPTS={"adapter":"abc"}')
+    expect(agentOptions.systemPromptAppend).toContain("ROOT=/tmp/phase1-host")
+  })
+
+  test("dir entry with object export passes through", async () => {
+    const dir = await makeTempDir("phase1-dir-object-")
+    await writeDirPlugin({ dir, factory: false })
+
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/phase1-obj-host",
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ spec: { dir }, hotReload: true }],
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { systemPromptAppend?: string },
+    ]
+    expect(agentOptions.systemPromptAppend).toContain("OBJECT_PROMPT")
+  })
+
+  test("dir entry honors explicit boring.server manifest field", async () => {
+    const dir = await makeTempDir("phase1-explicit-")
+    await writeDirPlugin({ dir, serverEntry: "src/custom/srv.ts", factory: true })
+
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/phase1-explicit-host",
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ spec: { dir }, hotReload: true }],
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { systemPromptAppend?: string },
+    ]
+    expect(agentOptions.systemPromptAppend).toContain("OPTS={}")
+  })
+
+  test("dir entry: declared-but-missing manifest field throws loudly", async () => {
+    const dir = await makeTempDir("phase1-missing-")
+    await mkdir(dir, { recursive: true })
+    await writeFile(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "missing", boring: { server: "src/server/missing.ts" } }),
+      "utf8",
+    )
+
+    await expect(
+      createWorkspaceAgentServer({
+        workspaceRoot: "/tmp/phase1-missing-host",
+        logger: false,
+        provisionWorkspace: false,
+        plugins: [{ spec: { dir }, hotReload: true }],
+      }),
+    ).rejects.toThrow(/declared but not found/)
+  })
+
+  test("module entry calls factory with options and ctx", async () => {
+    const factory = vi.fn((options: { x: number }, ctx: { workspaceRoot: string }) => ({
+      id: "mod",
+      systemPrompt: `MOD x=${options.x} root=${ctx.workspaceRoot}`,
+    }))
+
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/phase1-mod",
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ spec: { module: () => ({ default: factory }) }, options: { x: 7 } }],
+    })
+
+    expect(factory).toHaveBeenCalledTimes(1)
+    expect(factory).toHaveBeenCalledWith({ x: 7 }, expect.objectContaining({ workspaceRoot: "/tmp/phase1-mod" }))
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { systemPromptAppend?: string },
+    ]
+    expect(agentOptions.systemPromptAppend).toContain("MOD x=7 root=/tmp/phase1-mod")
+  })
+
+  test("module entry with object export passes through", async () => {
+    await createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/phase1-mod-obj",
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ spec: { module: () => ({ default: { id: "mod-obj", systemPrompt: "MOD_OBJ" } }) } }],
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { systemPromptAppend?: string },
+    ]
+    expect(agentOptions.systemPromptAppend).toContain("MOD_OBJ")
+  })
+})
