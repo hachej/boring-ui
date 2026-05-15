@@ -14,9 +14,10 @@
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
     "paths": {
       "@hachej/boring-workspace": ["../../packages/workspace/src/index.ts"],
-      "@hachej/boring-workspace/server": ["../../packages/workspace/src/server/index.ts"]
+      "@hachej/boring-workspace/server": ["../../packages/workspace/src/server/index.ts"],
+      "@hachej/boring-workspace/events": ["../../packages/workspace/src/front/events/index.ts"]
     }
   },
-  "include": ["front/**/*", "server/**/*", "shared/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
