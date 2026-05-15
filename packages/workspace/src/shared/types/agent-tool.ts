@@ -4,6 +4,8 @@ export interface ToolExecContext {
   abortSignal: AbortSignal
   toolCallId: string
   onUpdate?: (partial: string) => void
+  /** Agent chat/session id executing this tool, when known. */
+  sessionId?: string
 }
 
 export interface ToolResult {

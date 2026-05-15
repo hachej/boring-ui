@@ -13,6 +13,7 @@ import {
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
 import { join } from "node:path"
+import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
@@ -45,17 +46,19 @@ type WorkspaceAgentCreateOptions = Omit<
   resourceLoaderOptions?: WorkspaceAgentResourceLoaderOptions
 }
 
+export interface WorkspaceAgentServerPluginContext {
+  workspaceRoot: string
+  bridge: ReturnType<typeof createInMemoryBridge>
+}
+
+export type WorkspaceAgentServerPluginFactory = (context: WorkspaceAgentServerPluginContext) => WorkspaceServerPlugin
+
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
     Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
+  pluginFactories?: WorkspaceAgentServerPluginFactory[]
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
-  /**
-   * Whether exec_ui should stat-check file paths against the workspaceRoot
-   * before queueing the command. Defaults to true only for local host-backed
-   * modes (direct/local). Remote sandbox modes should leave this false because
-   * workspace files may not exist on the host server running Fastify.
-   */
   validateUiPaths?: boolean
 }
 
@@ -76,6 +79,7 @@ export type {
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
+  preservedUiStateKeys: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
     "extraTools" | "systemPromptAppend" | "resourceLoaderOptions"
@@ -83,11 +87,11 @@ export interface WorkspaceAgentServerPluginCollection {
 }
 
 export interface CollectWorkspaceAgentServerPluginsOptions
-  extends Pick<
-      WorkspaceAgentCreateOptions,
-      "workspaceRoot" | "systemPromptAppend" | "resourceLoaderOptions"
-    >,
-    Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {}
+  extends Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
+  workspaceRoot?: string
+  systemPromptAppend?: string
+  resourceLoaderOptions?: WorkspaceAgentResourceLoaderOptions
+}
 
 export function buildWorkspaceContextPrompt(): string {
   return [
@@ -114,6 +118,7 @@ export function collectWorkspaceAgentServerPlugins(
   return {
     provisioningContributions: result.provisioningContributions,
     routeContributions: result.routeContributions,
+    preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
       extraTools: result.agentTools,
       systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
@@ -149,13 +154,17 @@ export async function createWorkspaceAgentServer(
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const workspaceFsCapability = opts.runtimeModeAdapter
-    ? opts.runtimeModeAdapter.workspaceFsCapability ?? 'best-effort'
-    : resolveMode(resolvedMode).workspaceFsCapability ?? 'best-effort'
-  const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === 'strong'
+    ? opts.runtimeModeAdapter.workspaceFsCapability ?? "best-effort"
+    : resolveMode(resolvedMode).workspaceFsCapability ?? "best-effort"
+  const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
-  const pluginCollection = collectWorkspaceAgentServerPlugins(opts)
+  const factoryPlugins = opts.pluginFactories?.map((factory) => factory({ workspaceRoot, bridge })) ?? []
+  const pluginCollection = collectWorkspaceAgentServerPlugins({
+    ...opts,
+    plugins: [...(opts.plugins ?? []), ...factoryPlugins],
+  })
 
   if (opts.provisionWorkspace !== false) {
     await provisionWorkspaceAgentServer({
@@ -175,12 +184,13 @@ export async function createWorkspaceAgentServer(
       ...(pluginCollection.agentOptions.extraTools ?? []),
     ],
     systemPromptAppend: [
-      workspaceFsCapability === 'strong' ? buildWorkspaceContextPrompt() : undefined,
+      workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt() : undefined,
+      buildBoringSystemPrompt(),
       pluginCollection.agentOptions.systemPromptAppend,
-    ].filter(Boolean).join('\n\n') || undefined,
+    ].filter(Boolean).join("\n\n") || undefined,
     resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
   })
-  await app.register(uiRoutes, { bridge })
+  await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }

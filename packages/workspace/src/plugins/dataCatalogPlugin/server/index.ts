@@ -2,7 +2,7 @@ import type { ExplorerAdapter, ExplorerRow, SearchResult } from "../../../shared
 import {
   defineServerPlugin,
   type WorkspaceServerPlugin,
-} from "../../../server/plugins/bootstrapServer"
+} from "../../../server/plugins/defineServerPlugin"
 import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
 import {
   DATA_CATALOG_DEFAULT_TOOL_NAME,

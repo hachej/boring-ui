@@ -157,6 +157,16 @@ describe("dispatchUiCommand", () => {
     ])
   })
 
+  it("marks openSurface as ephemeral when it had to open a closed workbench", () => {
+    const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => { cb(0); return 0 })
+    const surface = fakeSurface()
+    let open = false
+    const c = ctx({ isWorkbenchOpen: () => open, openWorkbench: () => { open = true } }, surface)
+    dispatchUiCommand({ kind: "openSurface", params: { kind: "questions", target: "q1" } }, c)
+    expect(c.__surface.__surfaces).toEqual([{ kind: "questions", target: "q1", meta: { closeWorkbenchOnDone: true } }])
+    raf.mockRestore()
+  })
+
   it("openSurface requires kind and target", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openSurface", params: { kind: "x" } }, c)

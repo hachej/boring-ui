@@ -19,6 +19,8 @@ export interface WorkspaceServerPlugin {
   agentTools?: AgentTool[]
   provisioning?: RuntimeProvisioningContribution
   routes?: FastifyPluginAsync
+  /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
+  preservedUiStateKeys?: string[]
 }
 
 export class ServerPluginError extends Error {
@@ -178,6 +180,11 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   }
   if (plugin.routes !== undefined && typeof plugin.routes !== "function") {
     fail(plugin.id, "routes must be a Fastify plugin function when provided")
+  }
+  if (plugin.preservedUiStateKeys !== undefined) {
+    if (!Array.isArray(plugin.preservedUiStateKeys) || plugin.preservedUiStateKeys.some((key) => typeof key !== "string" || key.length === 0)) {
+      fail(plugin.id, "preservedUiStateKeys must be a non-empty string array when provided")
+    }
   }
   if (plugin.provisioning !== undefined) {
     validateProvisioning(plugin.id, plugin.provisioning)

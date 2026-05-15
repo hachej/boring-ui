@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { resolve } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
+import { createAskUserServerPlugin } from "@hachej/boring-workspace-ask-user/server"
 import { createPlaygroundDataServerPlugin } from "../plugins/playgroundDataCatalog/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -34,6 +35,7 @@ export async function startPlaygroundServer(): Promise<void> {
       mode: "local",
       logger: true,
       plugins: [createPlaygroundDataServerPlugin({ workspaceRoot })],
+      pluginFactories: [({ bridge }) => createAskUserServerPlugin({ workspaceRoot, bridge })],
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()

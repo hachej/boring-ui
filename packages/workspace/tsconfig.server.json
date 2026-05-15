@@ -12,13 +12,18 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@hachej/boring-workspace/server": ["./src/server/index.ts"]
+    }
   },
   "include": [
     "src/server/**/*",
     "src/app/server/**/*",
     "src/shared/**/*",
     "src/plugins/**/server/**/*",
+    "src/plugins/**/agent/**/*",
+    "src/plugins/**/shared/**/*",
     "src/plugins/**/constants.ts"
   ],
   "exclude": ["node_modules", "dist", "src/app/front/**", "src/shared/plugins/**"]

@@ -20,11 +20,13 @@ test('ToolExecContext contract', () => {
     abortSignal: AbortSignal
     toolCallId: string
     onUpdate?: (partial: string) => void
+    sessionId?: string
   }>()
 
   expectTypeOf<ToolExecContext['onUpdate']>().toEqualTypeOf<
     ((partial: string) => void) | undefined
   >()
+  expectTypeOf<ToolExecContext['sessionId']>().toEqualTypeOf<string | undefined>()
 })
 
 test('ToolResult contract', () => {

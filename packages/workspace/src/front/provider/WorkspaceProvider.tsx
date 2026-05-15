@@ -36,6 +36,7 @@ import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugi
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
+import { WorkspaceAttentionProvider } from "../attention"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -542,6 +543,7 @@ export function WorkspaceProvider({
     <WorkspaceContext.Provider value={workspaceValue}>
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
+          <WorkspaceAttentionProvider>
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}
@@ -570,6 +572,7 @@ export function WorkspaceProvider({
               </WorkspacePluginProviders>
             </RegistryProvider>
           </PluginErrorProvider>
+          </WorkspaceAttentionProvider>
         </WorkspaceBridgeContext.Provider>
       </ThemeContext.Provider>
     </WorkspaceContext.Provider>

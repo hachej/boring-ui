@@ -95,6 +95,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
   const uiIsWorkbenchOpen = getFunction<() => boolean>(props.centerParams, "isWorkbenchOpen")
   const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
+  const uiCloseWorkbench = getFunction<() => void>(props.centerParams, "closeWorkbench")
   const closeNav = getCallback(props.navParams, "onClose")
   const closeSurface = getCallback(props.surfaceParams, "onClose")
   const closeSidebar = getCallback(props.sidebarParams, "onClose")
@@ -236,11 +237,12 @@ export function ChatLayout(props: ChatLayoutProps) {
       surface: uiSurface,
       isWorkbenchOpen: uiIsWorkbenchOpen,
       openWorkbench: uiOpenWorkbench,
+      closeWorkbench: uiCloseWorkbench,
     }
     return events.on(workspaceEvents.uiCommand, ({ command }) => {
       dispatchUiCommand(command, ctx)
     })
-  }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench])
+  }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench, uiCloseWorkbench])
 
   return (
     <div

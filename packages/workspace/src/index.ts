@@ -262,7 +262,7 @@ export type {
 // Bridge
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
-export { postUiCommand } from "./front/bridge"
+export { postUiCommand, UI_COMMAND_EVENT } from "./front/bridge"
 export type {
   BridgeClient,
   BridgeClientOptions,
@@ -360,12 +360,15 @@ export {
   useWorkspaceContext,
   useWorkspaceContextOptional,
   useWorkspaceChatPanel,
+  useWorkspaceAttention,
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
+  WorkspaceAttentionBlocker,
+  WorkspaceAttentionContextValue,
 } from "./front/provider"
 
 // Store (selectors only — store itself is NOT exported)
