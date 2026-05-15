@@ -205,56 +205,160 @@ hot reload (everything else swaps; provider changes prompt page reload).
 
 ## Per-plugin migration analysis
 
-After the install pipeline lands, each plugin needs **zero code changes** to
-become hot-reload-eligible. The only thing required is the host opting in:
+The unification has three migration levels, each plugin chooses how far to go:
 
-```ts
-plugins: [
-  { spec: { module: askUserPlugin },     options: { workspaceRoot } },  // build-time
-  { spec: { dir: "plugins/ask-user" },   hotReload: true },             // hot, same author code
-]
+| Level | What changes in the plugin | What you get |
+|---|---|---|
+| **L0 — install-call-site only** | Zero plugin-code change. Host updates `dev.ts` to use the unified `plugins:` array. | Same behaviour as today. Validates the plugin still installs through the new pipeline. |
+| **L1 — declare manifest entries** | Add `package.json#boring.front`/`boring.server`. Optionally `pi.systemPrompt`. No source-code changes. | Plugin becomes installable as `{ spec: { dir }, hotReload: true }`. Front + server modules participate in directory-source hot reload. Limited by which output types are diff-safe (provider edits still require page reload; static `agentTools` still require session restart). |
+| **L2 — full hot-reload coverage** | Move `agentTools` body into `agent/index.ts` Pi extension; bridge-proxy to long-lived workspace state. Move free-form routes under namespaced `/api/boring-plugins/<id>/*`. | All output types swap on `/reload`. Edits to the tool body, prompt, panel, command, resolver, etc. land in the next agent turn or the next request without restart. Cost: bridge protocol per plugin, breaking URL changes for routes. |
+
+Each plugin can sit at a different level. L0 is the floor — every plugin
+gets that automatically. L1 and L2 are opt-in per-plugin upgrades the
+plugin author chooses.
+
+### Concrete adaptation by plugin (current main)
+
+Each subsection lists the specific files that change and the LoC ballpark.
+
+#### `plugins/ask-user/` (`@hachej/boring-ask-user`)
+
+Today's contributions (read from
+`plugins/ask-user/src/server/askUserServerPlugin.ts` +
+`plugins/ask-user/src/front/index.tsx`):
+
+| Output | Diff-safe? |
+|---|---|
+| Provider (`AskUserProvider` React context) | ❌ page reload to change |
+| Panel (`ASK_USER_PANEL_ID`) | ✅ swappable |
+| Surface resolver | ✅ swappable |
+| Command (`open` event dispatcher) | ✅ swappable |
+| `agentTools: [ask_user]` (closure captures `runtime`, `sessionId`, `bridge`) | ❌ session restart |
+| `routes` (free-form `/api/questions/*`) | ❌ server restart |
+| `preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING]` | ✅ recomputable |
+
+**L1 migration** (recommended next step):
+
+```jsonc
+// plugins/ask-user/package.json — add
+{
+  "boring": {
+    "front":  "src/front/index.tsx",
+    "server": "src/server/askUserServerPlugin.ts"
+  }
+}
 ```
 
-But each plugin's *effective hot-reload coverage* depends on what it
-contributes today.
+No source changes. Plugin installs as `{ spec: { dir }, hotReload: true }`.
+Effective coverage ~60% (panel/resolver/command swap; provider/tool/routes
+require restart). **Cost: ~5 lines in `package.json`.**
 
-### `plugins/ask-user`
+**L2 migration** (when full hot reload is wanted):
 
-Contributions today:
-- Provider (`AskUserProvider`) ← **page reload required** to change
-- Panel, surface resolver, command ← hot-swap safe
-- `agentTools: [ask_user]` ← session restart required (or move to Pi extension)
-- `routes` (free-form via `pluginFactories`) ← server restart required (or namespace)
-- `preservedUiStateKeys` ← recomputable
+1. New file `plugins/ask-user/src/agent/index.ts` (~30 LoC) — Pi extension
+   factory that registers `ask_user` via `pi.registerTool`. Handler
+   bridge-proxies to `AskUserRuntime`.
 
-Effective hot-reload coverage today: ~60%. Provider edits and tool/route
-edits require restart. Edits to the panel body, surface resolver, command
-handlers swap cleanly.
+   ```ts
+   import { z } from "zod"
+   export default function (pi) {
+     pi.registerTool("ask_user", {
+       description: "Ask the user a blocking question.",
+       inputSchema: z.object({ /* same schema */ }),
+       handler: async (args, ctx) => ctx.bridge.request("askUser:ask", args),
+     })
+   }
+   ```
 
-To raise to ~95%:
-- Move `ask_user` tool to `agent/index.ts` and add
-  `package.json#pi.extensions: ["src/agent/index.ts"]`. Bridge-proxies to
-  `AskUserRuntime`. Pi+jiti hot-reloads the tool body.
-- Move routes under `/api/boring-plugins/ask-user/*` namespace. Breaking
-  URL change but unlocks hot route swap.
+2. Remove `agentTools: [ask_user]` from `askUserServerPlugin.ts`. Add
+   bridge subscriber: `bridge.handle("askUser:ask", (args) => runtime.ask(args))`.
+3. Add `pi.extensions: ["src/agent/index.ts"]` and
+   `pi.systemPrompt: "When you need a blocking decision..."` to
+   `package.json`.
+4. Migrate `/api/questions/*` URLs to `/api/boring-plugins/ask-user/*`.
+   **Breaking change** — front client (`createQuestionsClient`) and any
+   external consumer must update.
+5. `AskUserRuntime`, `AskUserStore`, `AskUserStatePublisher` stay in
+   `server/index.ts` — long-lived state survives reload.
 
-These are optional plugin-author upgrades, not required by the unification.
+**Cost: ~150 LoC across 4 files.** Effective coverage ~95% after.
 
-### `plugins/data-catalog`
+#### `plugins/data-catalog/` (`@hachej/boring-data-catalog`)
 
-Contributions today:
-- Panel, catalog, left-tab, surface resolver ← all hot-swap safe
-- `agentTools: [data_catalog]` ← session restart required
-- No routes, no provider
+Today's contributions (`plugins/data-catalog/src/server/index.ts` +
+`plugins/data-catalog/src/front/index.tsx`):
 
-Effective hot-reload coverage today: ~80%. Tool edit needs session restart.
+| Output | Diff-safe? |
+|---|---|
+| Panel + catalog + left-tab + surface resolver | ✅ all swappable |
+| `agentTools: [data_catalog]` (closure captures caller-supplied `adapter`) | ❌ session restart |
+| `systemPrompt` | ✅ via `systemPromptDynamic` |
+| No routes, no provider | n/a |
 
-To raise to 100%: move the tool to `agent/index.ts` (Pi extension) +
-bridge-proxy.
+**L1 migration** (3 lines in `package.json`):
 
-### `plugins/data-explorer`
+```jsonc
+{
+  "boring": {
+    "front":  "src/front/index.tsx",
+    "server": "src/server/index.ts"
+  }
+}
+```
 
-Not a plugin. No migration.
+Effective coverage ~80%. Only the tool body needs session restart.
+
+**L2 migration** is light because there are no routes or providers:
+
+1. New `plugins/data-catalog/src/agent/index.ts` (~25 LoC) — registers
+   `data_catalog` Pi tool that bridge-proxies to the adapter.
+2. Remove `agentTools` from `defineServerPlugin` call. Server side keeps
+   the adapter and registers a bridge handler.
+3. Caller passes adapter via the unified install entry's `options` field:
+   `{ spec: { module: dataCatalogServerPlugin }, options: { adapter } }`
+   instead of `createDataCatalogServerPlugin({ adapter })`.
+
+**Cost: ~80 LoC across 2 files.** Effective coverage 100% after.
+
+#### `plugins/data-explorer/` (`@hachej/boring-data-explorer`)
+
+Per its `package.json#exports` (no `./server` export), this is a UI
+component library, not a plugin. **No migration needed.** It stays a
+regular dep that `data-catalog` and the workspace shell consume.
+
+#### `apps/workspace-playground/src/plugins/playgroundDataCatalog/`
+
+Playground-internal plugin (`createPlaygroundDataServerPlugin`), wired
+statically into `dev.ts`. Contributes seed data + a server tool. **L0
+only** — there is no scenario for hot-reloading it because the playground
+is the host. The unified install array in Phase 2 already covers it.
+
+### Migration order recommendation
+
+1. **`data-catalog` first.** Lighter (no routes, no provider, no URL break).
+   Smallest blast radius. Validates L1 + L2 paths end-to-end.
+2. **`ask-user` second.** Heavier (routes namespace migration is breaking;
+   provider stays L1-bounded). Migrate L1 immediately, L2 only if the
+   `/api/questions/*` URL break is acceptable.
+3. **playground / future first-party plugins**: stay at L0 unless someone
+   needs to hot-edit them during dev.
+
+### What changes in the plugin-authoring skill
+
+The `/boring-plugin-build` skill needs three additions:
+
+1. New "**Installing your plugin in a host app**" section showing the
+   unified `plugins: [...]` shape with the four entry variants
+   (object / factory / `{ spec: { module } }` / `{ spec: { dir } }`).
+2. New "**Hot-reload coverage matrix**" section explaining what each
+   output type does on `/reload` (the L1 vs L2 table above).
+3. Update the "**Server side**" section to mention the optional Pi
+   extension path (`src/agent/index.ts` + `pi.extensions` manifest field)
+   for tools that want full hot reload.
+
+The template (`plugins/_template/`) stays as-is for L0/L1; an optional
+`agent/index.ts` example can be added later when L2 migration of any
+shipped plugin proves the pattern.
 
 ## Implementation phasing
 
