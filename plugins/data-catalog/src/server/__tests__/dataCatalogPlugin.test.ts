@@ -5,7 +5,7 @@ import {
   createDataCatalogServerPlugin,
   createDataCatalogSkillPrompt,
   formatDataCatalogSearchResult,
-} from "../../plugins/dataCatalogPlugin/server"
+} from "../index"
 
 const rows: ExplorerRow[] = [
   {

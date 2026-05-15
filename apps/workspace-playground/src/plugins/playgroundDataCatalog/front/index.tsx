@@ -1,12 +1,14 @@
 import {
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
-  appendDataCatalogOutputs,
   defineFrontPlugin,
   postUiCommand,
-  type CreateDataCatalogOutputsOptions,
-  type DataCatalogSelectContext,
   type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
+import {
+  appendDataCatalogOutputs,
+  type CreateDataCatalogOutputsOptions,
+  type DataCatalogSelectContext,
+} from "@hachej/boring-data-catalog/front"
 import type { ExplorerAdapter, ExplorerRow } from "@hachej/boring-data-explorer/shared"
 import { PLAYGROUND_DATA_PLUGIN_ID } from "../shared/constants"
 import { PLAYGROUND_CSV_DATASETS } from "../shared/fixtures"
