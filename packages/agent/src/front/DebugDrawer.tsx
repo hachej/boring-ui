@@ -50,7 +50,7 @@ function DebugValue({ label, value }: { label: string; value: string }) {
         </span>
         <CopyButton value={value} label={`Copy ${label}`} />
       </div>
-      <code className="block break-all font-mono text-[11px] leading-relaxed text-foreground">
+      <code className="block break-all font-mono text-[11px] leading-relaxed text-foreground dark:text-zinc-100">
         {value}
       </code>
     </div>

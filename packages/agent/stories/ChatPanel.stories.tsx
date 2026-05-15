@@ -19,12 +19,27 @@ function MockAgentApiProvider({ children }: { children: ReactNode }) {
         "http://localhost",
       )
 
+      if (url.pathname === "/api/v1/agent/models") {
+        return Response.json({
+          models: [{ provider: "pi", id: "default", label: "Pi default", available: true }],
+          defaultModel: { provider: "pi", id: "default" },
+        })
+      }
+
+      if (url.pathname === "/api/v1/agent/skills") {
+        return Response.json({ skills: [] })
+      }
+
       if (url.pathname === "/api/v1/agent/chat") {
         return new Response(null, { status: 204 })
       }
 
+      if (url.pathname.startsWith("/api/v1/agent/chat/") && url.pathname.endsWith("/messages")) {
+        return Response.json({ messages: [] })
+      }
+
       if (url.pathname.startsWith("/api/v1/agent/sessions/")) {
-        return new Response(null, { status: 204 })
+        return Response.json({ id: url.pathname.split("/").at(-1), title: "Storybook session" })
       }
 
       return originalFetch(input, init)
