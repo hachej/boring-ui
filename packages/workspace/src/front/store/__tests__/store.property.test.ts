@@ -12,7 +12,7 @@ function makeStore() {
 }
 
 const panelIdArb = fc.stringMatching(/^[a-zA-Z0-9_-]{1,32}$/)
-const componentNameArb = fc.constantFrom("editor", "filetree", "markdown", "data-catalog", "empty")
+const componentNameArb = fc.constantFrom("editor", "filetree", "markdown", "fake-catalog", "empty")
 const filePathArb = fc.stringMatching(/^\/[a-zA-Z0-9/_.-]{1,100}$/)
 const sidebarWidthArb = fc.integer({ min: 1, max: 2000 })
 const themeArb = fc.constantFrom("light" as const, "dark" as const)

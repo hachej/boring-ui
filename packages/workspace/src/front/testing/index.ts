@@ -31,9 +31,5 @@ export type {
   BootCleanOptions,
   OpenPaneViaBridgeConfig,
 } from "./e2e"
-export {
-  createMockSeriesAdapter,
-  createMockTablesAdapter,
-} from "../components/DataExplorer/storybookAdapters"
 export { createMockPaneProps } from "./createMockPaneProps"
 export type { CreateMockPaneOptions } from "./createMockPaneProps"

@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from 'react'
-import type { CatalogConfig } from '../../shared/plugins/types'
+import type { CatalogConfig, CatalogRow } from '../../shared/plugins/types'
 import type { CommandConfig } from '../registry/types'
-import type { ExplorerRow } from '../../shared/types/explorer'
 import {
   addCatalogToRecent,
   addCommandToRecent,
@@ -24,7 +23,7 @@ export function useCommandPaletteSelection({
   close: () => void
 }): {
   recentEntries: RecentEntry[]
-  handleCatalogSelect: (catalog: CatalogConfig, row: ExplorerRow) => void
+  handleCatalogSelect: (catalog: CatalogConfig, row: CatalogRow) => void
   handleCommandSelect: (cmd: CommandConfig) => void
   handleRecentSelect: (entry: RecentEntry) => void
 } {
@@ -33,7 +32,7 @@ export function useCommandPaletteSelection({
     return filterAvailableRecentEntries(loadRecent(), catalogs, commands)
   }, [isCommandMode, searchQuery, catalogs, commands])
 
-  const handleCatalogSelect = useCallback((catalog: CatalogConfig, row: ExplorerRow) => {
+  const handleCatalogSelect = useCallback((catalog: CatalogConfig, row: CatalogRow) => {
     addCatalogToRecent(catalog.id, row)
     catalog.onSelect(row)
     close()

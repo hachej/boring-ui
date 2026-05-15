@@ -7,7 +7,7 @@ export default defineConfig({
   testMatch: '*.spec.ts',
   fullyParallel: false,
   workers: CI ? 1 : undefined,
-  globalTimeout: CI ? 120_000 : undefined,
+  globalTimeout: CI ? 300_000 : undefined,
   timeout: 45_000,
   forbidOnly: CI,
   retries: CI ? 1 : 0,

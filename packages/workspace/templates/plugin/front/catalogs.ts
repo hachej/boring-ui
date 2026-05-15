@@ -1,14 +1,5 @@
-import type { CreateDataCatalogOutputsOptions } from "@hachej/boring-workspace"
+import type { CatalogConfig } from "@hachej/boring-workspace"
 
-export function createSampleCatalogOptions(
-  adapter: CreateDataCatalogOutputsOptions["adapter"],
-): CreateDataCatalogOutputsOptions {
-  return {
-    id: "sample",
-    label: "Sample",
-    adapter,
-    catalogId: "sample",
-    catalogLabel: "Sample",
-  }
+export function createSampleCatalog(catalog: CatalogConfig): CatalogConfig {
+  return catalog
 }
-

@@ -87,7 +87,7 @@ src/
 │   │   ├── defaultEditorPanels.ts ← MOVED from panes/ (3 apps consume via barrel — keep)
 │   │   └── __tests__/
 │   │
-│   └── dataCatalogPlugin/      (reusable data catalog outputs + hooks)
+│   └── (moved out) data catalog package: `@hachej/boring-data-catalog`
 │
 ├── server/           (existing)
 └── shared/           (existing)
@@ -108,8 +108,7 @@ plugin with hardcoded data.
 
 `DataCatalog` belongs alongside `DataExplorer` in `front/components/` — both are
 presentational peers. Move `panes/data-catalog/*` → `front/components/data-catalog/*`.
-Apps install data catalog outputs through `createDataCatalogPlugin` or
-`appendDataCatalogOutputs`.
+Apps install data catalog outputs through `@hachej/boring-data-catalog/front` (`createDataCatalogPlugin` or `appendDataCatalogOutputs`).
 
 ---
 

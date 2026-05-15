@@ -1,6 +1,5 @@
-import type { CatalogConfig } from '../../shared/plugins/types'
+import type { CatalogConfig, CatalogRow } from '../../shared/plugins/types'
 import type { CommandConfig } from '../registry/types'
-import type { ExplorerRow } from '../../shared/types/explorer'
 import type { RecentEntry } from './recent'
 
 export const MAX_RESULTS = 50
@@ -10,7 +9,7 @@ export type PaletteMode = 'catalogs' | 'commands'
 
 export interface CatalogSearchGroup {
   catalog: CatalogConfig
-  rows: ExplorerRow[]
+  rows: CatalogRow[]
   loading: boolean
   error?: string
 }

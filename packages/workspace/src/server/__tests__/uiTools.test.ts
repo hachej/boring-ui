@@ -163,9 +163,9 @@ describe("createExecUiTool — path validation", () => {
       {
         kind: "openSurface",
         params: {
-          kind: "data-catalog.open-row",
+          kind: "my-plugin.open-row",
           target: "orders_daily",
-          meta: { catalogId: "data-catalog" },
+          meta: { catalogId: "my-plugin" },
         },
       },
       FAKE_CTX,
@@ -194,7 +194,7 @@ describe("createExecUiTool — path validation", () => {
   test("openSurface validates required target params", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const missingTarget = await tool.execute(
-      { kind: "openSurface", params: { kind: "data-catalog.open-row" } },
+      { kind: "openSurface", params: { kind: "my-plugin.open-row" } },
       FAKE_CTX,
     )
     expect(missingTarget.isError).toBe(true)
@@ -202,7 +202,7 @@ describe("createExecUiTool — path validation", () => {
     const badMeta = await tool.execute(
       {
         kind: "openSurface",
-        params: { kind: "data-catalog.open-row", target: "x", meta: "bad" },
+        params: { kind: "my-plugin.open-row", target: "x", meta: "bad" },
       },
       FAKE_CTX,
     )
