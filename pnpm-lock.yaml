@@ -148,6 +148,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@hachej/boring-ask-user':
+        specifier: workspace:*
+        version: link:../../plugins/ask-user
       '@hachej/boring-data-catalog':
         specifier: workspace:*
         version: link:../../plugins/data-catalog
@@ -157,9 +160,6 @@ importers:
       '@hachej/boring-workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
-      '@hachej/boring-workspace-ask-user':
-        specifier: workspace:*
-        version: link:../../plugins/askUserPlugin
       react:
         specifier: ^19.0.0
         version: 19.2.5
@@ -894,27 +894,24 @@ importers:
         specifier: ^3.1.3
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(jiti@2.6.1)(jsdom@29.0.2(@noble/hashes@2.2.0))(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
 
-  plugins/askUserPlugin:
+  plugins/ask-user:
     dependencies:
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@hachej/boring-workspace':
-        specifier: workspace:*
-        version: link:../../packages/workspace
       fastify:
         specifier: ^5.3.3
         version: 5.8.5
       lucide-react:
         specifier: ^1.8.0
         version: 1.8.0(react@19.2.5)
-      react:
-        specifier: ^19.0.0
-        version: 19.2.5
       zod:
         specifier: ^3.23.0
         version: 3.25.76
     devDependencies:
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -924,9 +921,24 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.17
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-react':
+        specifier: ^4.0.0
+        version: 4.7.0(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
       jsdom:
         specifier: ^29.0.2
         version: 29.0.2(@noble/hashes@2.2.0)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.5
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.5(react@19.2.5)
       tsup:
         specifier: ^8.4.0
         version: 8.5.1(@microsoft/api-extractor@7.58.7(@types/node@22.19.17))(jiti@2.6.1)(postcss@8.5.13)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3)
