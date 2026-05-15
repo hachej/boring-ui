@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BotIcon, BrainIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
+import { BotIcon, BrainIcon, CheckIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
 import {
   Command,
   CommandEmpty,
@@ -110,7 +110,7 @@ export function ModelSelect({
           aria-label="Model"
           className={cn(
             composerActionClass,
-            "w-auto max-w-[min(56vw,240px)] px-2.5 text-xs font-medium",
+            "w-auto max-w-[min(52vw,200px)] px-2 text-xs font-medium",
             open && "bg-muted/60 text-foreground",
           )}
         >
@@ -125,14 +125,16 @@ export function ModelSelect({
         align="start"
         sideOffset={6}
         data-boring-agent=""
-        className="w-[min(92vw,360px)] rounded-lg border-border/70 bg-popover p-0 shadow-2xl"
+        className="w-[min(90vw,260px)] rounded-xl border-border/60 bg-popover p-1 shadow-xl"
       >
-        <Command>
+        {menuOptions.length > 8 && (
           <CommandInput
             placeholder="Search models…"
-            className="h-9 border-0 text-[13px] focus:ring-0"
+            className="h-8 border-0 text-[13px] focus:ring-0"
           />
-          <CommandList className="max-h-[280px]">
+        )}
+        <Command>
+          <CommandList className="max-h-[300px] p-0.5">
             <CommandEmpty className="py-4 text-center text-[13px] text-muted-foreground">
               No models found
             </CommandEmpty>
@@ -140,7 +142,7 @@ export function ModelSelect({
               <CommandGroup
                 key={provider}
                 heading={displayProviderLabel(provider)}
-                className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-muted-foreground/75"
+                className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-muted-foreground/60"
               >
                 {list.map((m) => {
                   const key = encodeModelKey(m)
@@ -151,12 +153,18 @@ export function ModelSelect({
                       value={`${label} ${m.id} ${displayProviderLabel(m.provider)}`}
                       onSelect={() => { onChange(m); setOpen(false) }}
                       className={cn(
-                        "flex flex-col items-start gap-0.5 rounded-md px-2 py-2 text-[13px]",
-                        key === currentKey && "bg-foreground/[0.06]",
+                        "flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px]",
+                        key === currentKey && "bg-accent text-accent-foreground",
                       )}
                     >
-                      <span className="truncate font-medium">{label}</span>
-                      <span className="truncate text-[11px] text-muted-foreground">{m.id}</span>
+                      <CheckIcon
+                        className={cn(
+                          "h-3.5 w-3.5 shrink-0",
+                          key === currentKey ? "opacity-100" : "opacity-0",
+                        )}
+                      />
+                      <span className="truncate">{label}</span>
+                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/50">{m.id}</span>
                     </CommandItem>
                   )
                 })}
