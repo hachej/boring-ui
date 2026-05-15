@@ -325,14 +325,13 @@ function readPackageJsonPiSnapshot(pluginDirs: string[]): PackageJsonPiSnapshot 
   }
 }
 
-/**
- * Phase 0 resolver: turn the unified `WorkspacePluginEntry[]` array into a
- * flat `WorkspaceServerPlugin[]` that `bootstrapServer` consumes. Pre-built
- * plugin objects pass through unchanged; factory functions are called with
- * the workspace context. No directory-source / hot-reload behaviour yet —
- * Phase 1 adds that.
- */
-export function resolvePluginEntries(
+// Phase 0 resolver: turn the unified `WorkspacePluginEntry[]` array into a
+// flat `WorkspaceServerPlugin[]` that `bootstrapServer` consumes. Pre-built
+// plugin objects pass through; factory functions are called with the
+// workspace context. Phase 1 will extend this to handle directory-source
+// `{ spec, options, hotReload }` entries (async) — kept as a named function
+// so the Phase 1 diff is contained.
+function resolvePluginEntries(
   entries: WorkspacePluginEntry[],
   ctx: WorkspaceAgentServerPluginContext,
 ): WorkspaceServerPlugin[] {
