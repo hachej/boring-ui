@@ -107,18 +107,18 @@ export function ChatEmptyState({
       )}
     >
       {eyebrow && (
-        <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+        <div className="flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground dark:text-zinc-300">
           <span className="inline-block h-px w-4 bg-[color:var(--accent)]" aria-hidden="true" />
           {eyebrow}
         </div>
       )}
       {title && (
-        <h3 className="mt-3 text-[34px] font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
+        <h3 className="mt-3 text-[34px] font-medium leading-[1.05] tracking-[-0.02em] text-foreground dark:text-zinc-50">
           {title}
         </h3>
       )}
       {description && (
-        <p className="mt-3 max-w-[440px] text-[14px] leading-relaxed text-muted-foreground">
+        <p className="mt-3 max-w-[440px] text-[14px] leading-relaxed text-muted-foreground dark:text-zinc-300">
           {description}
         </p>
       )}
