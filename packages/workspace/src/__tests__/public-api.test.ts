@@ -38,11 +38,11 @@ describe("@hachej/boring-workspace public API", () => {
   })
 
   describe("plugins", () => {
-    it("exports explorer plugin factories", () => {
-      expect(api.createExplorerPlugin).toBeDefined()
-      expect(api.createExplorerOutputs).toBeDefined()
-      expect(api.ExplorerView).toBeDefined()
-      expect(api.EXPLORER_PLUGIN_ID).toBe("explorer")
+    it("does not export the extracted data explorer plugin", () => {
+      expect("createExplorerPlugin" in api).toBe(false)
+      expect("createExplorerOutputs" in api).toBe(false)
+      expect("ExplorerView" in api).toBe(false)
+      expect("EXPLORER_PLUGIN_ID" in api).toBe(false)
     })
 
     it("exports data catalog plugin factories", () => {

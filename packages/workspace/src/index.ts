@@ -68,28 +68,6 @@ export type { UseAutoOpenAgentFilesOptions } from "./plugins/filesystemPlugin/fr
 export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
 export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
 export {
-  createExplorerPlugin,
-  createExplorerOutputs,
-  ExplorerView,
-  EXPLORER_PLUGIN_ID,
-} from "./plugins/explorerPlugin/front"
-export type {
-  CreateExplorerOutputsOptions,
-  CreateExplorerPluginOptions,
-  ExplorerCatalogConfig,
-  ExplorerContributionConfig,
-  ExplorerMode,
-  ExplorerSection,
-  ExplorerSectionFilter,
-  ExplorerViewProps,
-  SectionedExplorerAdapter,
-  SectionedExplorerFacetArgs,
-  SectionedExplorerProps,
-  SectionedExplorerSearchArgs,
-  SectionedExplorerSectionsArgs,
-} from "./plugins/explorerPlugin/front"
-
-export {
   appendDataCatalogOutputs,
   createDataCatalogOpenHandler,
   createDataCatalogCatalog,
