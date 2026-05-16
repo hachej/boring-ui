@@ -1,0 +1,9 @@
+<!-- JSM-WATERMARK v1 -->
+bundle_id: ff27c87b-f3d2-4f9e-8f3f-fef673769a19
+key_version: v1
+user_handle: fab0d3daacee
+skill: documentation-website-for-software-project@10
+issued_at: 2026-05-12T09:43:15.104Z
+license: https://jeffreys-skills.md/terms
+<!-- /JSM-WATERMARK -->
+This bundle is licensed subject to https://jeffreys-skills.md/terms.

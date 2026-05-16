@@ -1,0 +1,11 @@
+import { chromium } from 'playwright';
+const browser=await chromium.launch({headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+await page.goto('http://213.32.19.186:5213',{waitUntil:'domcontentloaded'});
+await page.waitForTimeout(2000);
+await page.keyboard.press('Meta+Shift+K');
+await page.waitForTimeout(200);
+await page.keyboard.press('ArrowDown');
+await page.waitForTimeout(200);
+await page.screenshot({ path: '/tmp/workspace-picker-cursor.png', fullPage: true });
+await browser.close();

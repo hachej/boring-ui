@@ -1,0 +1,31 @@
+## Review
+- Correct: The README already has a strong core idea in multiple places: “Chat should be the control layer — not the destination” (`README.md:16-24`), “Chat in → workspace out” (`README.md:31-33`), and “agents open UI, not just text” (`README.md:64-71`). Those all point toward the same product truth: the value is not chat itself, but turning agent actions into inspectable workspace state.
+- Blocker: The page currently presents multiple top-level angles instead of one crisp one. The opening hero says “Bring your agent skills and get a fully agent-centered app” and “agent-centered app” (`README.md:5-7`), then the body pivots to “chat as control layer” (`README.md:16-24`), then to “framework for building agent-native software” (`README.md:61-62`), then to “production-grade agent, workspace, and app-shell packages” (`README.md:12`). These are adjacent ideas, but not the same promise, so the message feels broadened instead of sharpened.
+- Note: Audience is mixed too early. The hero and “A different belief” speak to product builders and framing (`README.md:5-33`), while the very next sections shift into package inventory and repo composition (`README.md:39-91`). This makes the page read partly like a product homepage, partly like a monorepo maintainer README, and partly like package docs. The result is diluted positioning.
+- Note: Several ideas repeat with slightly different wording rather than compounding the argument. Repeats include: “chat is the control layer” (`README.md:20`, `README.md:35`), “workspace is where work appears” (`README.md:35`, `README.md:48-56`), “agent opens UI / renders outputs” (`README.md:26-29`, `README.md:68`, `README.md:84`), and “composable stack of core + agent + workspace” (`README.md:39-47`, `README.md:73-91`). This repetition takes up prime top-of-page space without increasing precision.
+- Note: Some framing is vague or padded. Examples: “real product surface” (`README.md:7`) is broad and non-specific; “The goal is software whose interface can adapt to the work” (`README.md:29`) is evocative but abstract; “Composable deployment model” (`README.md:94-99`) sounds infrastructure-heavy without clarifying user value. These phrases could be tightened around one concrete outcome.
+- Note: The “What you can build” section broadens the scope too much (`README.md:37-42`). “browser-based coding agents” aligns strongly, but “internal tools with agent-driven workflows,” “copilots inside custom workspaces,” and “apps whose interface adapts to the task” move from specific to generic. That weakens the sharper, more ownable angle.
+- Note: The package naming and product naming create mild conceptual drift. The repo title is “Boring UI” (`README.md:3`), but the quickstart emphasizes a CLI (`README.md:111-123`), while the core description emphasizes app shell/auth/database (`README.md:145-156`). Without a single framing sentence tying these together, readers may not know whether Boring UI is primarily a coding-agent product, a framework, or a monorepo of primitives.
+- Note: The current top section likely over-explains architecture before earning it. “Packages at a glance,” “Design principles,” “How the stack is composed,” and “Package composition” all appear before quickstart (`README.md:39-91`). For a README, that is a lot of internal taxonomy before the reader gets a simple answer to “what is this and why would I use it?”
+- Note: The strongest differentiator appears to be: agents do work by creating and controlling visible workspace artifacts, not by stopping at chat. That should probably become the singular angle, with package and architecture sections recast as proof, not co-equal messaging themes.
+
+- Fixed: No file edits applied, per instruction.
+
+- Note: Recommended unifying positioning statement:
+  “Boring UI is a framework for building agent-native software where chat triggers actions and the real work shows up as inspectable workspace artifacts.”
+
+- Note: Alternate tighter version if you want more edge:
+  “Boring UI turns chat from a reply surface into a control surface for real workspace output.”
+
+- Note: Rewritten top section outline:
+  1. **Hero** — State the single promise: Boring UI helps builders create agent-native apps where chat drives actions and work appears in the workspace.
+  2. **Why it exists** — Contrast Boring UI with chat-only AI products and explain that replies are insufficient when users need inspectable outputs and ongoing work state.
+  3. **How it works** — Define the core interaction model in one pass: chat triggers actions, commands refine intent, and artifacts/panels/workspace surfaces hold the results.
+  4. **What makes it different** — Name the differentiators: agent-controlled UI, visible artifacts, embeddable workspace, and deployable runtime modes.
+  5. **What you can build** — Give 3–4 tightly scoped examples that all fit the same angle, ideally centered on coding agents and agent-driven workspaces.
+  6. **Fastest way to try it** — Put the CLI or quickest runnable path here so the message converts immediately into experience.
+  7. **How the stack is packaged** — Introduce core, agent, and workspace as implementation modules that support the main promise rather than as the main story.
+  8. **When to use which package** — Help technical readers map their use case to standalone agent vs full composed app.
+  9. **Deep docs / repo layout** — Move architecture diagrams, repo inventory, and package-level references below the top story so they support rather than interrupt the positioning.
+
+- Note: Practical rewrite direction for the top: collapse “A different belief,” “In one line,” and “What are artifacts?” into one clean narrative block; move most of “Packages at a glance” and “Package composition” below quickstart; reduce “What you can build” to examples that reinforce the same product category instead of widening it.

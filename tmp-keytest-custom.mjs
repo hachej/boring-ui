@@ -1,0 +1,15 @@
+import { chromium } from 'playwright';
+const browser=await chromium.launch({headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:900}});
+await page.goto('http://213.32.19.186:5213',{waitUntil:'domcontentloaded'});
+await page.waitForTimeout(2000);
+await page.keyboard.press('Meta+Shift+K');
+await page.waitForTimeout(300);
+const before=await page.evaluate(()=>document.activeElement?.textContent ?? '');
+const menuVisible=await page.locator('#boring-local-workspace-picker').isVisible().catch(()=>false);
+await page.keyboard.press('ArrowDown');
+await page.waitForTimeout(200);
+const afterDown=await page.evaluate(()=>document.activeElement?.textContent ?? '');
+await page.screenshot({ path: '/tmp/boring-custom-picker-public.png', fullPage: true });
+console.log(JSON.stringify({menuVisible,before,afterDown}));
+await browser.close();
