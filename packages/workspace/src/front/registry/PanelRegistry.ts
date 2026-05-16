@@ -91,7 +91,7 @@ export class PanelRegistry {
       if (existing && existing.pluginId !== pluginId) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[PanelRegistry] plugin "${pluginId}" tried to register panel "${id}" already owned by "${existing.pluginId}" — skipped`,
+          `[PanelRegistry] plugin "${pluginId}" tried to register panel "${id}" already owned by "${existing.pluginId ?? 'system'}" — skipped`,
         )
         continue
       }

@@ -45,7 +45,7 @@ export class CommandRegistry {
       if (existing && existing.pluginId !== pluginId) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[CommandRegistry] plugin "${pluginId}" tried to register command "${config.id}" already owned by "${existing.pluginId}" — skipped`,
+          `[CommandRegistry] plugin "${pluginId}" tried to register command "${config.id}" already owned by "${existing.pluginId ?? 'system'}" — skipped`,
         )
         continue
       }
