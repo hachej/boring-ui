@@ -904,15 +904,15 @@ export function ChatPanel(props: ChatPanelProps) {
               onChange={handleComposerChange}
               onKeyDown={handleComposerKeyDown}
               className={cn(
-                "min-h-[52px] resize-none border-0 bg-transparent shadow-none",
-                "px-5 pt-3.5 pb-1 text-[13px] leading-[1.55] placeholder:text-muted-foreground/60",
+                "min-h-[48px] resize-none border-0 bg-transparent shadow-none",
+                "px-4 py-3 text-[13px] leading-[1.55] placeholder:text-muted-foreground/50",
                 "focus-visible:ring-0 focus-visible:ring-offset-0",
               )}
             />
             <PromptInputFooter
               className={cn(
-                "flex items-center gap-2 border-0 bg-transparent",
-                "px-2.5 pb-2.5 pt-0",
+                "flex items-center gap-1.5 border-0 bg-transparent",
+                "px-2 pb-2 pt-0",
               )}
             >
               {/* Left-side actions cluster so attach + model feel like one
@@ -941,7 +941,7 @@ export function ChatPanel(props: ChatPanelProps) {
                     />
                   </>
                 )}
-                <div className="ml-1 flex items-center gap-2">
+                <div className="ml-1 flex items-center gap-1.5">
                   <KbdHints />
                   <PromptInputSubmit
                     status={status}
@@ -954,14 +954,15 @@ export function ChatPanel(props: ChatPanelProps) {
                     // to earn the real estate. Becomes a Stop affordance
                     // (square icon + aria-label="Stop") while the turn
                     // streams.
-                    "h-8 w-8 shrink-0 rounded-[var(--radius-md)]",
+                    "h-7 w-7 shrink-0 rounded-[var(--radius-md)]",
                     "bg-[color:var(--accent)] text-[color:var(--accent-foreground)]",
-                    "shadow-[0_1px_0_oklch(0_0_0/0.04),0_2px_6px_-2px_oklch(from_var(--accent)_l_c_h/0.45)]",
-                    "transition-[transform,box-shadow,background-color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                    "hover:brightness-[1.05] active:scale-[0.97]",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/45",
+                    "shadow-[0_0_0_0_oklch(from_var(--accent)_l_c_h/0.35)]",
+                    "transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                    "hover:shadow-[0_0_0_4px_oklch(from_var(--accent)_l_c_h/0.18)] hover:brightness-[1.05]",
+                    "active:scale-[0.96]",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40",
                     "disabled:pointer-events-none disabled:opacity-40",
-                    "[&>svg]:size-4",
+                    "[&>svg]:size-3.5",
                   )}
                   />
                 </div>
