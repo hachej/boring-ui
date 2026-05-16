@@ -23,13 +23,9 @@ import { boringPluginRoutes } from "../../server/agentPlugins/routes"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
-  isDirEntry,
-  isModuleEntry,
-  resolveDirServerPlugin,
-  resolveModuleServerPlugin,
-  type DirSpec,
-  type ModuleSpec,
-  type PluginSpec,
+  resolveOnePluginEntry,
+  type DirPluginEntry,
+  type ModulePluginEntry,
 } from "./pluginEntryResolver"
 import { ServerPluginLifecycleBus } from "./serverPluginLifecycle"
 import { formatPluginDiagnostic, rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
@@ -81,18 +77,21 @@ export type WorkspaceAgentServerPluginFactory = (context: WorkspaceAgentServerPl
 /**
  * Single install entry type. Accepts:
  *  - `WorkspaceServerPlugin` — pre-built plugin object.
- *  - `WorkspaceAgentServerPluginFactory` — callable that receives the workspace
- *     context (workspaceRoot + bridge) and returns a `WorkspaceServerPlugin`.
- *  - `{ spec: { module }, options?, hotReload? }` — workspace dep imported
- *     by the host. Calls the module's default export with `(options, ctx)`.
- *  - `{ spec: { dir }, options?, hotReload? }` — directory-source plugin
- *     resolved via package.json#boring.server (Pi parity: manifest first,
- *     convention fallback, declared-but-missing throws).
+ *  - `WorkspaceAgentServerPluginFactory` — callable that receives the
+ *     workspace context (workspaceRoot + bridge) and returns a
+ *     `WorkspaceServerPlugin`.
+ *  - `{ module, options? }` — workspace dep imported by the host. Calls
+ *     the module's default export with `(options, ctx)`.
+ *  - `{ dir, options?, hotReload? }` — directory-source plugin resolved
+ *     via package.json#boring.server (Pi parity: manifest first,
+ *     convention fallback, declared-but-missing throws). hotReload uses
+ *     jiti so /reload picks up source edits.
  */
 export type WorkspacePluginEntry =
   | WorkspaceServerPlugin
   | WorkspaceAgentServerPluginFactory
-  | { spec: PluginSpec; options?: unknown; hotReload?: boolean }
+  | DirPluginEntry
+  | ModulePluginEntry
 
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
@@ -157,21 +156,28 @@ function resolveWorkspacePackageRoot(): string {
   return join(__dirname, "../../..")
 }
 
-function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  const packageRoot = resolveWorkspacePackageRoot()
-  if (!existsSync(join(packageRoot, "package.json"))) return null
+function nodePackageContribution(
+  contributionId: string,
+  nodePackageId: string,
+  packageName: string,
+  packageRoot: string | null,
+): WorkspaceProvisioningContribution | null {
+  if (!packageRoot || !existsSync(join(packageRoot, "package.json"))) return null
   return {
-    id: "boring-workspace-package",
+    id: contributionId,
     provisioning: {
-      nodePackages: [
-        {
-          id: "boring-workspace",
-          packageName: "@hachej/boring-workspace",
-          packageRoot,
-        },
-      ],
+      nodePackages: [{ id: nodePackageId, packageName, packageRoot }],
     },
   }
+}
+
+function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
+  return nodePackageContribution(
+    "boring-workspace-package",
+    "boring-workspace",
+    "@hachej/boring-workspace",
+    resolveWorkspacePackageRoot(),
+  )
 }
 
 function resolveBoringPiPackageRoot(): string | null {
@@ -196,20 +202,7 @@ function resolveBoringPiPackageRoot(): string | null {
 }
 
 function createBoringPiPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  const packageRoot = resolveBoringPiPackageRoot()
-  if (!packageRoot || !existsSync(join(packageRoot, "package.json"))) return null
-  return {
-    id: "boring-pi-package",
-    provisioning: {
-      nodePackages: [
-        {
-          id: "boring-pi",
-          packageName: "@hachej/boring-pi",
-          packageRoot,
-        },
-      ],
-    },
-  }
+  return nodePackageContribution("boring-pi-package", "boring-pi", "@hachej/boring-pi", resolveBoringPiPackageRoot())
 }
 
 function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
@@ -339,31 +332,14 @@ function readPackageJsonPiSnapshot(pluginDirs: string[]): PackageJsonPiSnapshot 
   }
 }
 
-// Resolve the unified `WorkspacePluginEntry[]` array into a flat
-// `WorkspaceServerPlugin[]` for `bootstrapServer`.
-//
-//  - `WorkspaceServerPlugin` object → pass through.
-//  - `WorkspaceAgentServerPluginFactory` function → call with `ctx`.
-//  - `{ spec: { module }, options? }` → import + factory call.
-//  - `{ spec: { dir }, options?, hotReload? }` → read package.json,
-//    locate server entry (Pi parity: manifest first, conventions fallback,
-//    declared-but-missing throws), import via jiti when `hotReload`.
-//
-// Async because directory and module specs need dynamic imports. Failures
-// during resolution are thrown — the caller (Phase 4 rebuild) is
-// responsible for converting them into reload diagnostics.
+// Resolve the unified entry array into `WorkspaceServerPlugin[]` for
+// `bootstrapServer`. Dispatch lives in `resolveOnePluginEntry` so the
+// same logic serves rebuilds on /reload (rebuildServerPlugins.ts).
 async function resolvePluginEntries(
   entries: WorkspacePluginEntry[],
   ctx: WorkspaceAgentServerPluginContext,
 ): Promise<WorkspaceServerPlugin[]> {
-  return Promise.all(
-    entries.map(async (entry): Promise<WorkspaceServerPlugin> => {
-      if (typeof entry === "function") return entry(ctx)
-      if (isDirEntry(entry)) return await resolveDirServerPlugin(entry, ctx)
-      if (isModuleEntry(entry)) return await resolveModuleServerPlugin(entry, ctx)
-      return entry as WorkspaceServerPlugin
-    }),
-  )
+  return Promise.all(entries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx, (fn) => fn(ctx))))
 }
 
 export async function createWorkspaceAgentServer(
