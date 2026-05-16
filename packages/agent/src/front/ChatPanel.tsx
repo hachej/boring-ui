@@ -912,7 +912,7 @@ export function ChatPanel(props: ChatPanelProps) {
             <PromptInputFooter
               className={cn(
                 "flex items-center gap-1.5 border-0 bg-transparent",
-                "px-2 pb-2 pt-0",
+                "px-2 pb-2 pt-1.5",
               )}
             >
               {/* Left-side actions cluster so attach + model feel like one
@@ -954,12 +954,11 @@ export function ChatPanel(props: ChatPanelProps) {
                     // to earn the real estate. Becomes a Stop affordance
                     // (square icon + aria-label="Stop") while the turn
                     // streams.
-                    "h-7 w-7 shrink-0 rounded-[var(--radius-md)]",
+                    "h-8 w-8 shrink-0 rounded-[var(--radius-lg)]",
                     "bg-[color:var(--accent)] text-[color:var(--accent-foreground)]",
-                    "shadow-[0_0_0_0_oklch(from_var(--accent)_l_c_h/0.35)]",
                     "transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                    "hover:shadow-[0_0_0_4px_oklch(from_var(--accent)_l_c_h/0.18)] hover:brightness-[1.05]",
-                    "active:scale-[0.96]",
+                    "hover:shadow-[0_0_0_3px_oklch(from_var(--accent)_l_c_h/0.30)] hover:brightness-110 hover:scale-[1.04]",
+                    "active:scale-[0.93] active:brightness-95",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40",
                     "disabled:pointer-events-none disabled:opacity-40",
                     "[&>svg]:size-3.5",
