@@ -570,17 +570,21 @@ type the plugin contributes. Pi parity: rebuild over diff
 
 | Output | On `/reload` | Notes |
 |---|---|---|
-| Panel, command, surface-resolver, left-tab, binding | ✅ swap | Atomic `replaceByPluginId` on the front registry; subscribers see one transition. |
-| Catalog | ✅ swap | Same. |
-| Provider (React context) | ❌ requires page reload | React doesn't support re-rooting providers around a live tree; shell shows a `boring.plugin.needs-page-reload` toast. |
+| Panel, command, surface-resolver, left-tab | ✅ atomic swap | `replaceByPluginId` on the front registry; subscribers see one transition (registered as part of Phase 6 wiring). |
+| Catalog | ❌ not delivered by hot loader | Front hot loader doesn't capture catalogs today — they remain static-composition-only. To change a plugin's catalog body, restart the dev app. |
+| Provider, binding (React context / render-less components) | ❌ not delivered by hot loader | Same as catalogs — need a React render boundary the loader doesn't yet wrap. Plugins that contribute providers must use static install. |
 | `pi.systemPrompt` (manifest field) | ✅ next agent turn | Pi re-fires `before_agent_start` which re-aggregates via `systemPromptDynamic`. |
 | `pi.extensions` / `pi.skills` / `pi.packages` | ✅ next reload | Pi's jiti re-imports them; `getDynamicResources` provides them. |
-| `defineServerPlugin({ agentTools })` (statically registered) | ❌ requires session restart | Captured in the harness `tools[]` at session creation. To get hot reload, move the tool to a Pi extension factory under `pi.extensions` and bridge-proxy to long-lived workspace state. |
-| `defineServerPlugin({ routes })` (free-form Fastify path) | ❌ requires server restart | Fastify routes are bound once. To get hot reload, namespace the plugin's routes under `/api/boring-plugins/<id>/*`. |
+| `defineServerPlugin({ agentTools })` (statically registered) | ❌ session restart | Captured in the harness `tools[]` at session creation; the rebuild surfaces a fatal diagnostic. To get hot reload, move the tool to a Pi extension factory under `pi.extensions` and bridge-proxy to long-lived workspace state. |
+| `defineServerPlugin({ routes })` (free-form Fastify path) | ❌ server restart | Fastify routes are bound once. To get hot reload, namespace under `/api/boring-plugins/<id>/*` (handled by the asset manager's dispatcher). |
 
-The shell never lies: changes that can't apply hot fire a precise event
-(`needs-page-reload`, `needs-session-restart`, `needs-server-restart`)
-the user can act on. Everything else swaps silently.
+**Current diagnostic posture:** server-side re-resolve failures throw
+from `beforeReload` (the existing 422-style error). The
+`PluginReloadDiagnostic.needs` field (`"page-reload" |
+"session-restart" | "server-restart"`) exists in the type system but
+isn't yet emitted as a structured event — that's wired in a future
+phase. For now, the visible signal is the fatal `/reload` error
+message plus the diagnostic line `(source) (path): message`.
 
 > **Note:** `hotReload: true` only applies to `{ spec: { dir } }`
 > entries. Pre-built objects, factory functions, and `{ spec: { module } }`
