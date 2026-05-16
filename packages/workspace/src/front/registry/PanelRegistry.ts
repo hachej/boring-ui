@@ -76,6 +76,7 @@ export class PanelRegistry {
     }
     if (ownedIds.size === 0 && panels.length === 0) return
 
+    let changed = ownedIds.size > 0
     for (const id of ownedIds) {
       this.panels.delete(id)
       this.lazyComponentCache.delete(id)
@@ -97,8 +98,9 @@ export class PanelRegistry {
       }
       this.panels.set(id, { ...config, id, pluginId })
       if (!this.registrationOrder.includes(id)) this.registrationOrder.push(id)
+      changed = true
     }
-    this.emit()
+    if (changed) this.emit()
   }
 
   get(id: string): PanelConfig | undefined {

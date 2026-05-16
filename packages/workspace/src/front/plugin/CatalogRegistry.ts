@@ -58,6 +58,7 @@ export class CatalogRegistry {
     }
     if (ownedIds.size === 0 && catalogs.length === 0) return
 
+    let changed = ownedIds.size > 0
     for (const id of ownedIds) this.catalogs.delete(id)
     for (const config of catalogs) {
       const existing = this.catalogs.get(config.id)
@@ -69,8 +70,9 @@ export class CatalogRegistry {
         continue
       }
       this.catalogs.set(config.id, { ...config, pluginId })
+      changed = true
     }
-    this.emit()
+    if (changed) this.emit()
   }
 
   list(): readonly CatalogConfig[] {

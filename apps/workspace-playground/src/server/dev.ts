@@ -36,11 +36,12 @@ export async function startPlaygroundServer(): Promise<void> {
       logger: true,
       // Single install array (Phase 2 of unified plugin plan): pre-built
       // objects and factories live side-by-side. The factory variant
-      // receives `{ workspaceRoot, bridge }` so plugins that need the
-      // workspace bridge can wire it up at install time.
+      // receives `{ workspaceRoot, bridge }`; this site happens to only
+      // destructure `{ bridge }` and reuse `workspaceRoot` from the outer
+      // closure for symmetry with the static call site above.
       plugins: [
         createPlaygroundDataServerPlugin({ workspaceRoot }),
-        ({ bridge }) => createAskUserServerPlugin({ workspaceRoot, bridge }),
+        ({ workspaceRoot: ctxRoot, bridge }) => createAskUserServerPlugin({ workspaceRoot: ctxRoot, bridge }),
       ],
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
