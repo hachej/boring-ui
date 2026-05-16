@@ -1,0 +1,18 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+await page.goto('http://127.0.0.1:5213', { waitUntil: 'domcontentloaded', timeout: 60000 });
+await page.waitForTimeout(2500);
+await page.screenshot({ path: '/tmp/boring-workspace-hub-fixed.png', fullPage: true });
+await page.keyboard.press('Meta+Shift+K');
+await page.waitForTimeout(700);
+const menuVisible = await page.locator('[data-slot="dropdown-menu-content"]').isVisible().catch(() => false);
+const focusedText = await page.evaluate(() => document.activeElement?.textContent ?? document.activeElement?.getAttribute('aria-label') ?? '');
+await page.screenshot({ path: '/tmp/boring-workspace-picker-fixed.png', fullPage: true });
+await page.keyboard.press('ArrowDown');
+await page.waitForTimeout(200);
+await page.keyboard.press('ArrowUp');
+await page.waitForTimeout(200);
+await page.screenshot({ path: '/tmp/boring-workspace-picker-fixed-arrows.png', fullPage: true });
+console.log(JSON.stringify({ menuVisible, focusedText }));
+await browser.close();

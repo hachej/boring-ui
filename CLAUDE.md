@@ -117,15 +117,17 @@ export function WidgetPane({ params, api, containerApi }: PaneProps<Params>) {
 
 ### Output types
 
-| type | contributes |
-|---|---|
-| `panel` | a center/right/bottom pane opened programmatically |
-| `left-tab` | a persistent tab in the left sidebar |
-| `command` | an entry in the command palette |
-| `catalog` | a data explorer tab with search + row selection |
-| `surface-resolver` | maps a `SurfaceOpenRequest` kind → panel id |
-| `binding` | a React component mounted in the provider tree (for context) |
-| `provider` | same as binding but receives `apiBaseUrl`, `authHeaders`, etc. |
+
+| type               | contributes                                                    |
+| ------------------ | -------------------------------------------------------------- |
+| `panel`            | a center/right/bottom pane opened programmatically             |
+| `left-tab`         | a persistent tab in the left sidebar                           |
+| `command`          | an entry in the command palette                                |
+| `catalog`          | a data explorer tab with search + row selection                |
+| `surface-resolver` | maps a `SurfaceOpenRequest` kind → panel id                    |
+| `binding`          | a React component mounted in the provider tree (for context)   |
+| `provider`         | same as binding but receives `apiBaseUrl`, `authHeaders`, etc. |
+
 
 ### Composing plugins
 
@@ -167,6 +169,7 @@ A surface resolver maps an agent-emitted `SurfaceOpenRequest` (e.g. `{ kind: "op
 ## Vite alias convention (boring-macro-v2)
 
 The macro app resolves `@boring/workspace` to source (`packages/workspace/src/index.ts`) for HMR. If you add a new `@boring/workspace/*` subpath import, add it to **both**:
+
 - `apps/boring-macro-v2/vite.config.ts` → `resolve.alias`
 - `packages/workspace/package.json` → `exports` map (and rebuild workspace)
 

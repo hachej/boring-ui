@@ -1,0 +1,66 @@
+{
+  "bundle_format": 1,
+  "skill_slug": "readme-writing",
+  "skill_version": "1",
+  "user_handle": "fab0d3daacee",
+  "bundle_id": "09e678ea-836c-4114-a117-27176c28a0ab",
+  "generated_at": "2026-05-12T09:39:31.538Z",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "sha256": "517f2340889ea2edb5d237cd4d7c3ccbeaf7555f8dac2bc52c55455f00f40679",
+      "bytes": 311
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "87d5ed008c315e3ea919fb7e053e355a243d90563b9920916db30658bb67e0ec",
+      "bytes": 7530
+    },
+    {
+      "path": "references/AGENTS-MD.md",
+      "sha256": "ae99cae21b24637138caf31970d7447c0b7c2b410aa42402def2d9f552a33ce3",
+      "bytes": 2270
+    },
+    {
+      "path": "references/BADGES.md",
+      "sha256": "960a8f7ff3a2f1c807b8c0ba1b2c089ab3ab80cc1709b915c68a3277e98df567",
+      "bytes": 2842
+    },
+    {
+      "path": "references/CORE-TEMPLATES.md",
+      "sha256": "78f2d5fcb2fd0c80747f4d41eb9f02cdfa4ccf39b260d1f6c3883279c06dd6ea",
+      "bytes": 6619
+    },
+    {
+      "path": "references/EXAMPLES.md",
+      "sha256": "200ab85e523d9f525a23660b59da7332df157556f0e2e5ad197f54809b194410",
+      "bytes": 4406
+    },
+    {
+      "path": "references/EXTENDED-TEMPLATES.md",
+      "sha256": "59b8ebd83020ff6413ea23296df18a7ad127dd518ecfd2ef214009812e88a38f",
+      "bytes": 9578
+    },
+    {
+      "path": "references/PROMPTS.md",
+      "sha256": "b2207610d582b43294073bc8afc589a0d87cf05f7fc5fc1f7a2b240cd22c7e74",
+      "bytes": 8398
+    },
+    {
+      "path": "references/QUICK-REFERENCE.md",
+      "sha256": "da4d1b3aa72dd303429d101dff9a01cee04c979a4f116f4cbc748cd62d84c68e",
+      "bytes": 4802
+    },
+    {
+      "path": "skill.spec.json",
+      "sha256": "2c12e01c92a3c5b88e0396014d75ab8a10e59637a625defde28984a1c4b3d26a",
+      "bytes": 4674
+    }
+  ],
+  "signature": {
+    "alg": "ed25519",
+    "key_version": 1,
+    "value": "yxJvGOoyuPiANnXGyYMAYQuL7o/7itkJqMuz1F0V9HQQ7ybONC3L8dolhJgkgofGEOsZ+F0RbT/7r1+W2eCTCg=="
+  },
+  "signed_bytes": "eyJidW5kbGVfZm9ybWF0IjoxLCJidW5kbGVfaWQiOiIwOWU2NzhlYS04MzZjLTQxMTQtYTExNy0yNzE3NmMyOGEwYWIiLCJmaWxlcyI6W3siYnl0ZXMiOjMxMSwicGF0aCI6IkxJQ0VOU0UudHh0Iiwic2hhMjU2IjoiNTE3ZjIzNDA4ODllYTJlZGI1ZDIzN2NkNGQ3YzNjY2JlYWY3NTU1ZjhkYWMyYmM1MmM1NTQ1NWYwMGY0MDY3OSJ9LHsiYnl0ZXMiOjc1MzAsInBhdGgiOiJTS0lMTC5tZCIsInNoYTI1NiI6Ijg3ZDVlZDAwOGMzMTVlM2VhOTE5ZmI3ZTA1M2UzNTVhMjQzZDkwNTYzYjk5MjA5MTZkYjMwNjU4YmI2N2UwZWMifSx7ImJ5dGVzIjoyMjcwLCJwYXRoIjoicmVmZXJlbmNlcy9BR0VOVFMtTUQubWQiLCJzaGEyNTYiOiJhZTk5Y2FlMjFiMjQ2MzcxMzhjYWYzMTk3MGQ3NDQ3YzBiN2MyYjQxMGFhNDI0MDJkZWYyZDlmNTUyYTMzY2UzIn0seyJieXRlcyI6Mjg0MiwicGF0aCI6InJlZmVyZW5jZXMvQkFER0VTLm1kIiwic2hhMjU2IjoiOTYwYThmN2ZmM2EyZjFjODA3YjhjMGJhMWIyYzA4OWFiM2FiODBjYzE3MDliOTE1YzY4YTMyNzdlOThkZjU2NyJ9LHsiYnl0ZXMiOjY2MTksInBhdGgiOiJyZWZlcmVuY2VzL0NPUkUtVEVNUExBVEVTLm1kIiwic2hhMjU2IjoiNzhmMmQ1ZmNiMmZkMGM4MDc0N2Y0ZDQxZWI5ZjAyY2RmYTRjY2YzOWIyNjBkMWY2YzM4ODMyNzljMDZkZDZlYSJ9LHsiYnl0ZXMiOjQ0MDYsInBhdGgiOiJyZWZlcmVuY2VzL0VYQU1QTEVTLm1kIiwic2hhMjU2IjoiMjAwYWI4NWU1MjNkOWY1MjVhMjM2NjBiNTlkYTczMzJkZjE1NzU1NmYwZTJlNWFkMTk3ZjU0ODA5YjE5NDQxMCJ9LHsiYnl0ZXMiOjk1NzgsInBhdGgiOiJyZWZlcmVuY2VzL0VYVEVOREVELVRFTVBMQVRFUy5tZCIsInNoYTI1NiI6IjU5YjhlYmQ4MzAyMGZmNjQxM2VhMjMyOTZkZjE4YTdhZDEyN2RkNTE4ZWNmZDJlZjIxNDAwOTgxMmU4OGEzOGYifSx7ImJ5dGVzIjo4Mzk4LCJwYXRoIjoicmVmZXJlbmNlcy9QUk9NUFRTLm1kIiwic2hhMjU2IjoiYjIyMDc2MTBkNTgyYjQzMjk0MDczYmM4YWZjNTg5YTBkODdjZjA1ZjdmYzVmYzFmN2EyYjI0MGNkMjJjN2U3NCJ9LHsiYnl0ZXMiOjQ4MDIsInBhdGgiOiJyZWZlcmVuY2VzL1FVSUNLLVJFRkVSRU5DRS5tZCIsInNoYTI1NiI6ImRhNGQxYjNhYTcyZGQzMDM0MjlkMTAxZGZmOWEwMWNlZTA0Yzk3OWE0ZjExNmY0Y2JjNzQ4Y2Q2MmQ4NGM2OGUifSx7ImJ5dGVzIjo0Njc0LCJwYXRoIjoic2tpbGwuc3BlYy5qc29uIiwic2hhMjU2IjoiMmMxMmUwMWM5MmEzYzViODhlMDM5NjAxNGQ3NWFiOGExMGU1OTYzN2E2MjVkZWZkZTI4OTg0YTFjNGIzZDI2YSJ9XSwiZ2VuZXJhdGVkX2F0IjoiMjAyNi0wNS0xMlQwOTozOTozMS41MzhaIiwic2tpbGxfc2x1ZyI6InJlYWRtZS13cml0aW5nIiwic2tpbGxfdmVyc2lvbiI6IjEiLCJ1c2VyX2hhbmRsZSI6ImZhYjBkM2RhYWNlZSJ9"
+}
