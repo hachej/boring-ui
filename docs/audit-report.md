@@ -10,7 +10,7 @@
 
 The codebase is **remarkably clean** on architectural invariants and import boundaries. No `node:*` or `Buffer` leaks in shared code. No cross-package contamination (agent↔workspace, agent↔core, workspace↔core). All UI primitives are heavily used. All hooks are consumed.
 
-**Key finding:** The main issues are **unused server route files** in `core/src/server/routes/` and an **unused provisioner** — both only referenced in documentation/examples, not in any running code.
+**Key finding:** The codebase is architecturally clean. The only actionable item is a single abandoned test file. The routes and provisioner initially flagged as "dead" are actually live code — wired into `createCoreWorkspaceAgentServer.ts` and `createCoreApp`.
 
 ---
 
@@ -24,7 +24,7 @@ No critical issues found.
 
 ## P1: High (should fix soon)
 
-### 1.1 Unused Server Route Files in `core/src/server/routes/`
+### 1.1 ~~Unused Server Route Files~~ — Actually LIVE
 
 **Files:**
 - `packages/core/src/server/routes/workspaces.ts`
@@ -32,26 +32,28 @@ No critical issues found.
 - `packages/core/src/server/routes/invites.ts`
 - `packages/core/src/server/routes/settings.ts`
 
-**Evidence:** These files are exported from `core/src/server/index.ts` and used only in `core/e2e/v7-platform.test.ts`. They are NOT used in `createCoreApp()` or `registerRoutes()` — the actual app uses `core/src/server/app/routes.ts` which has its own inline route definitions.
+**Status:** NOT dead. These are wired into `createCoreWorkspaceAgentServer.ts` (line 471-474):
+```ts
+await app.register(registerWorkspaceRoutes)
+await app.register(registerMemberRoutes)
+await app.register(registerSettingsRoutes)
+await app.register(registerInviteRoutes)
+```
 
-**Impact:** 4 files (~500+ lines total) of dead code that could confuse developers about the actual route structure.
+Also used by `apps/full-app` (in generated bundle). The provisioner IS used in workspaces.ts (create/destroy workspace dirs) and settings.ts (workspace directory management).
 
-**Recommendation:** Either wire these into `createCoreApp` if they're needed, or remove them and update the barrel export in `core/src/server/index.ts`.
+**Verdict:** P1 issue retracted. These are live, production routes.
 
-### 1.2 Unused Provisioner
+### 1.2 ~~Unused Provisioner~~ — Actually LIVE
 
 **File:** `packages/core/src/server/provisioner/fsProvisioner.ts`
 
-**Evidence:** `createFsProvisioner` is only referenced in:
-- `core/docs/CORE.md` (documentation example)
-- `core/docs/plans/core-gap-closure-spec.md` (spec)
-- `core/src/server/provisioner/index.ts` (barrel export)
+**Status:** NOT dead. Used in:
+- `createCoreApp.ts:184` — decorated on app instance: `app.decorate('provisioner', options?.provisioner ?? null)`
+- `workspaces.ts:9,28,31,134,136` — `provisioner.provision()` on workspace create, `provisioner.destroy()` on workspace delete
+- `settings.ts:63` — workspace directory management
 
-It is NOT called anywhere in `createCoreApp`, `registerRoutes`, or any app code. The `provisioner` option exists in `CreateCoreAppOptions` but no caller passes it.
-
-**Impact:** Dead code that adds complexity to the API surface.
-
-**Recommendation:** Remove `createFsProvisioner` and the `provisioner` option from `CreateCoreAppOptions` unless there's a concrete plan to wire it into `createCoreApp`.
+**Verdict:** P1 issue retracted. Provisioner is live and functional.
 
 ### 1.3 `__tmp-skip.test.ts` — Abandoned Test File
 
@@ -232,8 +234,8 @@ All 6 mail templates (VerifyEmail, ResetPassword, MagicLink, WorkspaceInvite, We
 | Unused hooks | ✅ CLEAN | 0 |
 | Unused components | ✅ CLEAN | 0 |
 | Unused UI primitives | ✅ CLEAN | 0 |
-| Unused server routes | ❌ 4 files | `core/src/server/routes/*.ts` |
-| Unused provisioner | ❌ 1 file | `core/src/server/provisioner/fsProvisioner.ts` |
+| Unused server routes | ✅ CLEAN | Wired into `createCoreWorkspaceAgentServer.ts` |
+| Unused provisioner | ✅ CLEAN | Wired into `createCoreApp`, used in workspace/settings routes |
 | Circular dependencies | ✅ CLEAN | 0 |
 | Large files | ⚠️ 4 files | ChatPanel, prompt-input, PostgresWorkspaceStore, createHarness |
 | Console.warn in prod | ℹ️ INFO | 17 calls (reasonable for dev tool) |
@@ -242,9 +244,9 @@ All 6 mail templates (VerifyEmail, ResetPassword, MagicLink, WorkspaceInvite, We
 
 ## Recommended Actions (Prioritized)
 
-1. **[P1]** Remove `packages/core/src/server/routes/` — 4 unused route files
-2. **[P1]** Remove `packages/core/src/server/provisioner/` — unused provisioner
-3. **[P1]** Delete `packages/agent/src/__tmp-skip.test.ts` — abandoned test
+1. **[P1]** Delete `packages/agent/src/__tmp-skip.test.ts` — abandoned test file
+
+*(P1 items 1-2 retracted: routes and provisioner are live code wired into `createCoreWorkspaceAgentServer` and `createCoreApp`)*
 4. **[P2]** Consider breaking `ChatPanel.tsx` (1227 lines) into sub-components
 5. **[P2]** Consider breaking `prompt-input.tsx` (1161 lines) into sub-components
 6. **[P3]** Gate some `console.warn` calls behind a debug flag
