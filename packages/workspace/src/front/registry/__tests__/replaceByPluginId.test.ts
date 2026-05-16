@@ -103,6 +103,20 @@ describe("Phase 3 — atomic replaceByPluginId", () => {
     warn.mockRestore()
   })
 
+  test("replaceByPluginId does NOT emit when every incoming entry is a collision (no net change)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const registry = new CommandRegistry()
+    registry.registerCommand({ id: "owned-by-other", title: "X", run: () => {}, pluginId: "other" })
+
+    const subscriber = vi.fn()
+    registry.subscribe(subscriber)
+    registry.replaceByPluginId("intruder", [{ id: "owned-by-other", title: "Hijack", run: () => {} }])
+
+    expect(subscriber).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   test("PanelRegistry: collision skip preserves cross-plugin isolation", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const registry = new PanelRegistry()

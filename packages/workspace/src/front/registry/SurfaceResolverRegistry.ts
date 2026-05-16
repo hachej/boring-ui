@@ -50,6 +50,7 @@ export class SurfaceResolverRegistry {
     }
     if (ownedIds.size === 0 && resolvers.length === 0) return
 
+    let changed = ownedIds.size > 0
     for (const id of ownedIds) this.resolvers.delete(id)
     if (ownedIds.size > 0) {
       this.registrationOrder = this.registrationOrder.filter((oid) => this.resolvers.has(oid))
@@ -67,8 +68,9 @@ export class SurfaceResolverRegistry {
       }
       this.resolvers.set(id, { ...config, id, pluginId })
       if (!this.registrationOrder.includes(id)) this.registrationOrder.push(id)
+      changed = true
     }
-    this.emit()
+    if (changed) this.emit()
   }
 
   get(id: string): SurfaceResolverConfig | undefined {
