@@ -1,44 +1,30 @@
 /**
- * Phase 4 of the unified plugin plan: server-side rebuild on /reload.
+ * Server-side rebuild on /reload. Mirrors Pi's reload pattern
+ * (`@mariozechner/pi-coding-agent core/agent-session.js:1896 reload`):
  *
- * Mirrors Pi's reload pattern (`@mariozechner/pi-coding-agent`
- * `core/agent-session.js:1896 reload`):
- *
- *   1. Snapshot user-set state.
+ *   1. Snapshot user-set state (the caller owns this — `liveLoadedIds`).
  *   2. Emit `plugin_shutdown` for each currently-loaded plugin.
  *   3. Re-resolve hot-reload-eligible entries (re-import via jiti).
  *   4. Emit `plugin_start { reason: "reload" }` for the fresh set.
- *   5. Return a diagnostics list — failed entries don't abort the rest.
- *
- * Phase 4 introduces this primitive. Phase 5 will wire it into the
- * actual `/reload` HTTP path so the response carries the diagnostics.
+ *   5. Return a diagnostics list — failed entries don't abort the rest
+ *      (Pi parity: `core/extensions/loader.js:288` error continuation).
  *
  * What this DOES rebuild:
- *   - WorkspaceServerPlugin objects derived from `{ spec: { dir }, hotReload: true }`
- *     entries. Their `systemPrompt` flows back into the next agent turn
- *     via `systemPromptDynamic`, and their `piPackages`/`extensionPaths`
- *     via `getDynamicResources`.
+ *   - `{ dir, hotReload: true }` entries — their fresh systemPrompt
+ *     flows through `systemPromptDynamic` and pi resources through
+ *     `getDynamicResources`.
  *
- * What this does NOT rebuild (Pi parity boundary — these are
- * captured-at-session-creation in the harness/Fastify):
- *   - Static `agentTools` registered via WorkspaceServerPlugin.agentTools
- *     — a future phase will compare prev/next and set
- *     `PluginReloadDiagnostic.needs: "session-restart"`. Today: a tool
- *     swap silently misses until the session restarts.
- *   - Free-form Fastify `routes` registered via factory entries — same
- *     plan: future `needs: "server-restart"` diagnostic. Today: the
- *     route handler is captured once at boot.
- *
- * The `PluginReloadDiagnostic.needs` field is defined for that future
- * wiring; this rebuild does NOT populate it today.
+ * What this does NOT rebuild (Pi parity boundary — captured at session
+ * creation in the harness/Fastify): static `agentTools` and free-form
+ * routes. A future phase may surface that as a structured diagnostic;
+ * today swaps to those surfaces only land after a restart.
  */
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
 import type { ServerPluginLifecycleBus } from "./serverPluginLifecycle"
 import {
   isDirEntry,
   isModuleEntry,
-  resolveDirServerPlugin,
-  resolveModuleServerPlugin,
+  resolveOnePluginEntry,
   type ResolveDirServerPluginContext,
 } from "./pluginEntryResolver"
 import type { WorkspacePluginEntry, WorkspaceAgentServerPluginContext } from "./createWorkspaceAgentServer"
@@ -48,8 +34,6 @@ export interface PluginReloadDiagnostic {
   source: "module" | "directory" | "factory" | "object"
   path?: string
   message: string
-  /** Hint to consumers about what action would clear the diagnostic. */
-  needs?: "page-reload" | "session-restart" | "server-restart"
 }
 
 export interface PluginRebuildResult {
@@ -58,20 +42,6 @@ export interface PluginRebuildResult {
   diagnostics: PluginReloadDiagnostic[]
 }
 
-/**
- * Rebuild the SERVER plugin set by re-resolving the current entry list.
- *
- * - Pre-built objects and factory functions pass through (their bodies
- *   were captured at boot; nothing to re-import).
- * - `{ spec: { module } }` entries call their `module()` thunk again —
- *   if the host wired a fresh-import thunk, the new module is loaded.
- * - `{ spec: { dir }, hotReload: true }` entries re-resolve via jiti
- *   (Pi parity: `extensions/loader.js:224 createJiti({ moduleCache: false })`).
- *
- * Returns diagnostics for any entry that fails to re-resolve. The other
- * entries still rebuild — Pi posture (`extensions/loader.js:288`):
- * one failed extension records `{ path, error }` and the loop continues.
- */
 export async function rebuildServerPlugins(opts: {
   entries: WorkspacePluginEntry[]
   ctx: WorkspaceAgentServerPluginContext
@@ -81,8 +51,6 @@ export async function rebuildServerPlugins(opts: {
 }): Promise<PluginRebuildResult> {
   const { entries, ctx, bus, currentPluginIds = [] } = opts
 
-  // Pi parity: emit shutdown to every currently-loaded plugin BEFORE
-  // re-resolving. Handlers can flush state before their module is gone.
   if (bus?.hasHandlers("plugin_shutdown")) {
     for (const pluginId of currentPluginIds) {
       await bus.emit({ type: "plugin_shutdown", pluginId, reason: "reload" })
@@ -93,29 +61,27 @@ export async function rebuildServerPlugins(opts: {
   const diagnostics: PluginReloadDiagnostic[] = []
 
   for (const entry of entries) {
-    // Gemini Phase 4 review: classify ONCE outside the try block so the
-    // catch branch can use the same shape without recomputing.
-    const source = classifyEntrySource(entry)
-    const path = classifyEntryPath(entry)
     try {
-      let plugin: WorkspaceServerPlugin
-      if (typeof entry === "function") {
-        plugin = entry(ctx as unknown as WorkspaceAgentServerPluginContext)
-      } else if (isDirEntry(entry)) {
-        plugin = await resolveDirServerPlugin(entry, ctx as unknown as ResolveDirServerPluginContext)
-      } else if (isModuleEntry(entry)) {
-        plugin = await resolveModuleServerPlugin(entry, ctx as unknown as ResolveDirServerPluginContext)
-      } else {
-        plugin = entry as WorkspaceServerPlugin
-      }
+      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(
+        entry,
+        ctx as unknown as ResolveDirServerPluginContext,
+        (fn) => fn(ctx as unknown as ResolveDirServerPluginContext),
+      )
       plugins.push(plugin)
-      // Pi parity: emit `plugin_start { reason: "reload" }` after each
-      // successful resolve. Phase 5 will use this to drive front
-      // re-mount and bridge re-subscription.
       if (bus?.hasHandlers("plugin_start")) {
         await bus.emit({ type: "plugin_start", pluginId: plugin.id, reason: "reload" })
       }
     } catch (error) {
+      // Classify the failed entry inline — only needed here.
+      const source: PluginReloadDiagnostic["source"] =
+        typeof entry === "function"
+          ? "factory"
+          : isDirEntry(entry)
+            ? "directory"
+            : isModuleEntry(entry)
+              ? "module"
+              : "object"
+      const path = isDirEntry(entry) ? entry.dir : undefined
       diagnostics.push({
         source,
         path,
@@ -127,24 +93,7 @@ export async function rebuildServerPlugins(opts: {
   return { ok: diagnostics.length === 0, plugins, diagnostics }
 }
 
-function classifyEntrySource(entry: WorkspacePluginEntry): PluginReloadDiagnostic["source"] {
-  if (typeof entry === "function") return "factory"
-  if (isDirEntry(entry)) return "directory"
-  if (isModuleEntry(entry)) return "module"
-  return "object"
-}
-
-function classifyEntryPath(entry: WorkspacePluginEntry): string | undefined {
-  if (typeof entry !== "object" || entry === null) return undefined
-  if (isDirEntry(entry)) return entry.spec.dir
-  return undefined
-}
-
-/**
- * Stable single-line diagnostic format for the /reload error path. Kept
- * here so consumers (current beforeReload thrower, future Phase 6 SSE
- * payload) render identically.
- */
+/** Stable single-line diagnostic format for the /reload error path. */
 export function formatPluginDiagnostic(d: PluginReloadDiagnostic): string {
   return `${d.source}${d.path ? ` (${d.path})` : ""}: ${d.message}`
 }
