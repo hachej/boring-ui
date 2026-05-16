@@ -91,6 +91,14 @@ export interface ChatPanelProps {
   sessionId: string
   toolRenderers?: ToolRendererOverrides
   extraCommands?: SlashCommand[]
+  /**
+   * App-level hot-reload toggle. When `false`, the `/reload` and `/update`
+   * slash commands are hidden from the picker and the `/help` listing,
+   * and the PluginUpdateStatus banner above the composer never renders.
+   * Production apps that don't expose live plugin editing should pass
+   * `false`. Defaults to `true`.
+   */
+  hotReloadEnabled?: boolean
   onSessionReset?: () => void | Promise<void>
   /**
    * Render flush, without the outer canvas tint or the inner mx/my rounded
@@ -153,6 +161,7 @@ export function ChatPanel(props: ChatPanelProps) {
     sessionId,
     toolRenderers,
     extraCommands,
+    hotReloadEnabled = true,
     onSessionReset,
     className,
     chrome = true,
@@ -217,8 +226,17 @@ export function ChatPanel(props: ChatPanelProps) {
   const composerBlockerLabel = primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
 
   const registry = useMemo(
-    () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
-    [extraCommands],
+    () => {
+      // When hot reload is disabled at the app level, hide /reload and
+      // /update from every consumer (picker, /help, programmatic list)
+      // by not registering them in the first place.
+      const hotReloadOnly = new Set(['reload', 'update'])
+      const effectiveBuiltins = hotReloadEnabled
+        ? builtinCommands
+        : builtinCommands.filter((cmd) => !hotReloadOnly.has(cmd.name))
+      return createCommandRegistry([...effectiveBuiltins, ...(extraCommands ?? [])])
+    },
+    [extraCommands, hotReloadEnabled],
   )
   const skillsStamp = useServerSkills({ registry, requestHeaders })
   const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
@@ -860,11 +878,13 @@ export function ChatPanel(props: ChatPanelProps) {
             ))}
           </div>
         )}
-        <PluginUpdateStatus
-          state={pluginUpdateState}
-          onDismiss={dismissPluginUpdate}
-          onRetry={runPluginUpdate}
-        />
+        {hotReloadEnabled && (
+          <PluginUpdateStatus
+            state={pluginUpdateState}
+            onDismiss={dismissPluginUpdate}
+            onRetry={runPluginUpdate}
+          />
+        )}
         {attachmentNotice && (
           <div
             role="status"
