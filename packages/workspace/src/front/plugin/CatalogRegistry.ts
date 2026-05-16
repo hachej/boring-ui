@@ -61,7 +61,7 @@ export class CatalogRegistry {
     for (const id of ownedIds) this.catalogs.delete(id)
     for (const config of catalogs) {
       const existing = this.catalogs.get(config.id)
-      if (existing && existing.pluginId && existing.pluginId !== pluginId) {
+      if (existing && existing.pluginId !== pluginId) {
         // eslint-disable-next-line no-console
         console.warn(
           `[CatalogRegistry] plugin "${pluginId}" tried to register catalog "${config.id}" already owned by "${existing.pluginId}" — skipped`,

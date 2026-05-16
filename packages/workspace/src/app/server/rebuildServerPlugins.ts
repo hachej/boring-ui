@@ -22,9 +22,15 @@
  * What this does NOT rebuild (Pi parity boundary — these are
  * captured-at-session-creation in the harness/Fastify):
  *   - Static `agentTools` registered via WorkspaceServerPlugin.agentTools
- *     — emit `boring.plugin.needs-session-restart` diagnostic.
- *   - Free-form Fastify `routes` registered via factory entries — emit
- *     `boring.plugin.needs-server-restart` diagnostic.
+ *     — a future phase will compare prev/next and set
+ *     `PluginReloadDiagnostic.needs: "session-restart"`. Today: a tool
+ *     swap silently misses until the session restarts.
+ *   - Free-form Fastify `routes` registered via factory entries — same
+ *     plan: future `needs: "server-restart"` diagnostic. Today: the
+ *     route handler is captured once at boot.
+ *
+ * The `PluginReloadDiagnostic.needs` field is defined for that future
+ * wiring; this rebuild does NOT populate it today.
  */
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
 import type { ServerPluginLifecycleBus } from "./serverPluginLifecycle"

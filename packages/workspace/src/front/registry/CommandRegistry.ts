@@ -42,7 +42,7 @@ export class CommandRegistry {
     for (const id of ownedIds) this.commands.delete(id)
     for (const config of commands) {
       const existing = this.commands.get(config.id)
-      if (existing && existing.pluginId && existing.pluginId !== pluginId) {
+      if (existing && existing.pluginId !== pluginId) {
         // eslint-disable-next-line no-console
         console.warn(
           `[CommandRegistry] plugin "${pluginId}" tried to register command "${config.id}" already owned by "${existing.pluginId}" — skipped`,
