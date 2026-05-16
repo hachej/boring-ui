@@ -69,6 +69,14 @@ export interface WorkspaceAgentFrontProps<
   onDeleteSession?: (id: string) => void
   onActiveSessionIdChange?: (sessionId: string) => void
   chatParams?: Record<string, unknown>
+  /**
+   * Forward to ChatPanel — when `false`, the `/reload` and `/update`
+   * slash commands are hidden and the PluginUpdateStatus banner above
+   * the composer is suppressed. Production apps that don't ship live
+   * plugin editing should pass `false`. Defaults to `true` (dev/playground
+   * default — keeps the commands visible).
+   */
+  hotReloadEnabled?: boolean
   extraPanels?: string[]
   extraCommands?: SlashCommand[]
 }
@@ -220,6 +228,7 @@ export function WorkspaceAgentFront<
   topBarLeft,
   topBarRight,
   chatParams,
+  hotReloadEnabled,
   extraPanels,
   extraCommands,
   onOpenNav,
@@ -415,8 +424,12 @@ export function WorkspaceAgentFront<
       openWorkbench,
       closeWorkbench,
       extraCommands,
+      // Forward the explicit prop when set. Omitting the key (when undefined)
+      // lets ChatPanel apply its own default (true) and avoids overriding a
+      // value passed through chatParams.
+      ...(hotReloadEnabled !== undefined ? { hotReloadEnabled } : {}),
     }),
-    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands],
+    [chatParams, chatSessionId, requestHeaders, bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, closeWorkbench, extraCommands, hotReloadEnabled],
   )
 
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
