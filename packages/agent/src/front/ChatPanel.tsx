@@ -439,29 +439,34 @@ export function ChatPanel(props: ChatPanelProps) {
     useThinkingSettings(thinkingControl)
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
 
+  // Shared low-level reload call used by both /reload (text-only)
+  // and /update (banner + text). Throws on failure; the callers wrap
+  // it with their own surface-specific error handling.
+  const callPluginReload = useCallback(async (): Promise<{ reloaded: boolean }> => {
+    const res = await fetch('/api/v1/agent/reload', {
+      method: 'POST',
+      headers: { ...(requestHeaders ?? {}), 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    })
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({})) as { error?: string }
+      throw new Error(payload.error || `reload failed (${res.status})`)
+    }
+    const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+    }
+    return { reloaded: Boolean(payload.reloaded) }
+  }, [requestHeaders, sessionId])
+
   const reloadAgentPlugins = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/agent/reload', {
-        method: 'POST',
-        headers: {
-          ...(requestHeaders ?? {}),
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ sessionId }),
-      })
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(payload.error || `reload failed (${res.status})`)
-      }
-      const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent(AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
-      }
-      return payload.reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
+      const { reloaded } = await callPluginReload()
+      return reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
     } catch (err) {
       return err instanceof Error ? err.message : 'Agent plugin reload failed.'
     }
-  }, [requestHeaders, sessionId])
+  }, [callPluginReload])
 
   // Plugin update status banner (above the composer). Driven by the
   // `/update` slash command. `running` while in-flight, then `success`
@@ -470,30 +475,15 @@ export function ChatPanel(props: ChatPanelProps) {
   const runPluginUpdate = useCallback(async () => {
     setPluginUpdateState({ kind: 'running', startedAt: Date.now() })
     try {
-      const res = await fetch('/api/v1/agent/reload', {
-        method: 'POST',
-        headers: { ...(requestHeaders ?? {}), 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      })
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({})) as { error?: string }
-        const message = payload.error || `reload failed (${res.status})`
-        setPluginUpdateState({ kind: 'error', finishedAt: Date.now(), message })
-        return `Plugin update failed: ${message}`
-      }
-      const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent(AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
-      }
-      const reloaded = Boolean(payload.reloaded)
+      const { reloaded } = await callPluginReload()
       setPluginUpdateState({ kind: 'success', finishedAt: Date.now(), reloaded })
       return reloaded ? 'Plugins updated.' : 'Plugins will reload on the next message.'
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Plugin update failed.'
       setPluginUpdateState({ kind: 'error', finishedAt: Date.now(), message })
-      return message
+      return `Plugin update failed: ${message}`
     }
-  }, [requestHeaders, sessionId])
+  }, [callPluginReload])
   const dismissPluginUpdate = useCallback(() => setPluginUpdateState(null), [])
 
 
