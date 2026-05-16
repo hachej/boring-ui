@@ -17,7 +17,7 @@ import {
 import type { defaultToolRenderers as bareDefaults } from './bareToolRenderers/renderers'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput, getStatusBadge } from './primitives/tool'
 import { CollapsibleTrigger } from '@hachej/boring-ui-kit'
-import { ChevronDownIcon, ExternalLinkIcon, ZapIcon } from 'lucide-react'
+import { ChevronDownIcon, ExternalLinkIcon, FileDiffIcon, FilePlus2Icon, FileTextIcon, SearchIcon, SquareTerminalIcon, ZapIcon } from 'lucide-react'
 import { CodeBlock } from './primitives/code-block'
 import { useOpenArtifact } from './ArtifactOpenContext'
 import {
@@ -146,7 +146,7 @@ function renderBash(part: ToolPart): ReactNode {
 
   return (
     <Tool>
-      <ToolHeader title={`bash · ${title}`} {...toHeaderProps(part)} />
+      <ToolHeader icon={<SquareTerminalIcon className="size-4 text-muted-foreground" />} title={`bash · ${title}`} {...toHeaderProps(part)} />
       <ToolContent>
         {command && (
           <section className="space-y-2">
@@ -179,7 +179,7 @@ function renderRead(part: ToolPart): ReactNode {
 
   return (
     <Tool>
-      <ToolHeader title={pathTitle('read', path)} {...toHeaderProps(part)} />
+      <ToolHeader icon={<FileTextIcon className="size-4 text-muted-foreground" />} title={pathTitle('read', path)} {...toHeaderProps(part)} />
       <ToolContent>
         <ToolInput input={input} />
         {content && (
@@ -210,7 +210,7 @@ function renderWrite(part: ToolPart): ReactNode {
 
   return (
     <Tool>
-      <ToolHeader title={pathTitle('write', path)} {...toHeaderProps(part)} />
+      <ToolHeader icon={<FilePlus2Icon className="size-4 text-muted-foreground" />} title={pathTitle('write', path)} {...toHeaderProps(part)} />
       <ToolContent>
         {/* Flat surface: the outer <Tool> already owns a bordered card, so
          * the nested <Artifact> drops its own border/shadow to keep stacked
@@ -276,7 +276,7 @@ function renderEdit(part: ToolPart): ReactNode {
 
   return (
     <Tool>
-      <ToolHeader title={pathTitle('edit', path)} {...toHeaderProps(part)} />
+      <ToolHeader icon={<FileDiffIcon className="size-4 text-muted-foreground" />} title={pathTitle('edit', path)} {...toHeaderProps(part)} />
       <ToolContent>
         <section className="space-y-2">
           <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -307,6 +307,7 @@ function renderEdit(part: ToolPart): ReactNode {
 
 function renderSearchLike(toolName: 'find' | 'grep' | 'ls', part: ToolPart): ReactNode {
   const input = asRecord(part.input)
+  const SearchLikeIcon = toolName === 'find' || toolName === 'grep' ? SearchIcon : FileTextIcon
   const pattern = typeof input.pattern === 'string' ? input.pattern : ''
   const path = typeof input.path === 'string' ? input.path : ''
   const glob = typeof input.glob === 'string' ? input.glob : ''
@@ -315,6 +316,7 @@ function renderSearchLike(toolName: 'find' | 'grep' | 'ls', part: ToolPart): Rea
   return (
     <Tool>
       <ToolHeader
+        icon={<SearchLikeIcon className="size-4 text-muted-foreground" />}
         title={summary ? `${toolName} · ${summary}` : toolName}
         {...toHeaderProps(part)}
       />

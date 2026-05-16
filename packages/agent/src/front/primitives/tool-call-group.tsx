@@ -2,7 +2,7 @@
 
 import { getToolName, isToolUIPart } from 'ai'
 import type { UIMessage } from 'ai'
-import { ChevronRightIcon } from 'lucide-react'
+import { ChevronDownIcon } from 'lucide-react'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@hachej/boring-ui-kit'
 import { extractToolUiMetadata } from '../../shared/tool-ui'
@@ -78,16 +78,23 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
     <Collapsible open={isOpen} onOpenChange={handleOpenChange} className="not-prose my-1.5">
       <CollapsibleTrigger
         className={cn(
-          'group/trigger flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+          'group/trigger flex w-fit items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
           'border border-border/40 bg-card/40 text-muted-foreground/70',
           'hover:border-border/70 hover:bg-card/70 hover:text-muted-foreground',
           hasError && 'border-destructive/30 text-destructive/60 hover:text-destructive/80',
         )}
       >
-        <ChevronRightIcon
+        {/* State-coded dot: green settled, amber running, red error */}
+        <span
+          className={cn(
+            'size-1.5 shrink-0 rounded-full',
+            hasError ? 'bg-destructive' : isSettled ? 'bg-emerald-500/70' : 'bg-amber-500/70',
+          )}
+        />
+        <ChevronDownIcon
           className={cn(
             'size-3 shrink-0 transition-transform duration-150',
-            isOpen && 'rotate-90',
+            isOpen && 'rotate-180',
           )}
         />
         {!isSettled ? (
@@ -97,7 +104,10 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
         ) : (
           <span>{title}</span>
         )}
-        <span className="ml-0.5 tabular-nums text-muted-foreground/40">
+        <span className={cn(
+          'ml-1 shrink-0 rounded-sm border border-border/40 px-1 tabular-nums',
+          'text-[10px] text-muted-foreground/50',
+        )}>
           {tools.length}
         </span>
       </CollapsibleTrigger>
