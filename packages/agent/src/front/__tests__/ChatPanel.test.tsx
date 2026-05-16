@@ -1424,7 +1424,7 @@ describe('ChatPanel (shadcn)', () => {
   })
 
   describe('hotReloadEnabled flag', () => {
-    test('default (true): /reload and /update slash commands route to their handlers', async () => {
+    test('default (true): /reload slash command routes to its handler', async () => {
       renderToStaticMarkup(<ChatPanel sessionId="sess-hr-default" />)
       // /reload triggers the fetch path; assert it was called rather than
       // sending the slash text as a message.
@@ -1447,21 +1447,6 @@ describe('ChatPanel (shadcn)', () => {
           body: {
             sessionId: 'sess-hr-off',
             message: '/reload',
-            attachments: [],
-          },
-        },
-      )
-    })
-
-    test('hotReloadEnabled=false: /update also falls through', async () => {
-      renderToStaticMarkup(<ChatPanel sessionId="sess-hr-upd-off" hotReloadEnabled={false} />)
-      await capturedOnSubmit!({ text: '/update', files: [] })
-      expect(mockSendMessage).toHaveBeenCalledWith(
-        { text: '/update', files: [] },
-        {
-          body: {
-            sessionId: 'sess-hr-upd-off',
-            message: '/update',
             attachments: [],
           },
         },

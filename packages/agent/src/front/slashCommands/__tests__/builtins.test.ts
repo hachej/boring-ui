@@ -92,8 +92,17 @@ describe('/help', () => {
 })
 
 describe('/reload', () => {
-  test('reloads agent plugins', async () => {
-    const ctx = makeContext()
+  test('uses pluginUpdate.run (banner UX) when the host provides it', async () => {
+    const run = vi.fn().mockResolvedValue('Plugins updated.')
+    const ctx = makeContext({ pluginUpdate: { run } })
+    const result = await getBuiltin('reload').handler('', ctx)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(ctx.reloadAgentPlugins).not.toHaveBeenCalled()
+    expect(result).toBe('Plugins updated.')
+  })
+
+  test('falls back to inline-text reload when pluginUpdate is absent', async () => {
+    const ctx = makeContext({ pluginUpdate: undefined })
     const result = await getBuiltin('reload').handler('', ctx)
     expect(ctx.reloadAgentPlugins).toHaveBeenCalledOnce()
     expect(result).toBe('Agent plugins reloaded.')
@@ -108,30 +117,12 @@ describe('/cost', () => {
   })
 })
 
-describe('all 7 builtins are registered', () => {
-  test('has exactly 7 commands', () => {
-    expect(builtinCommands).toHaveLength(7)
+describe('all 6 builtins are registered', () => {
+  test('has exactly 6 commands', () => {
+    expect(builtinCommands).toHaveLength(6)
   })
 
-  test.each(['clear', 'reset', 'model', 'reload', 'update', 'help', 'cost'])('includes /%s', (name) => {
+  test.each(['clear', 'reset', 'model', 'reload', 'help', 'cost'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
-  })
-})
-
-describe('/update', () => {
-  test('uses pluginUpdate.run when provided', async () => {
-    const run = vi.fn().mockResolvedValue('Plugins updated.')
-    const ctx = makeContext({ pluginUpdate: { run } })
-    const result = await getBuiltin('update').handler('', ctx)
-    expect(run).toHaveBeenCalledTimes(1)
-    expect(result).toBe('Plugins updated.')
-  })
-
-  test('falls back to reloadAgentPlugins when pluginUpdate is absent', async () => {
-    const reloadAgentPlugins = vi.fn().mockResolvedValue('Agent plugins reloaded.')
-    const ctx = makeContext({ reloadAgentPlugins, pluginUpdate: undefined })
-    const result = await getBuiltin('update').handler('', ctx)
-    expect(reloadAgentPlugins).toHaveBeenCalledTimes(1)
-    expect(result).toBe('Agent plugins reloaded.')
   })
 })

@@ -17,11 +17,12 @@ export interface SlashCommandContext {
   listCommands: () => SlashCommand[]
   reloadAgentPlugins: () => Promise<string>
   /**
-   * Drives the PluginUpdateStatus banner above the composer. The `/update`
-   * builtin calls `pluginUpdate.run()` which: (1) sets the banner to
-   * "running", (2) hits /api/v1/agent/reload, (3) transitions to
-   * "success" or "error" with diagnostics. Returns a short string ack
-   * for the assistant message bubble.
+   * Drives the PluginUpdateStatus banner above the composer. The `/reload`
+   * builtin prefers this over the inline-text path: it calls
+   * `pluginUpdate.run()` which (1) sets the banner to "running", (2)
+   * hits /api/v1/agent/reload, (3) transitions to "success" or "error"
+   * with diagnostics. Returns a short string ack for the assistant
+   * message bubble.
    */
   pluginUpdate?: {
     run: () => Promise<string>

@@ -1,7 +1,8 @@
 /**
  * Plugin update status banner. Rendered above the composer, immediately
- * before the attachment-notice slot. Driven by the `/update` slash
- * command (see slashCommands/builtins.ts).
+ * before the attachment-notice slot. Driven by the `/reload` slash
+ * command when the host wires `pluginUpdate` (see
+ * slashCommands/builtins.ts and slashCommands/registry.ts).
  *
  * Surfaces:
  *  - "running"  — yellow-ish accent, while the /api/v1/agent/reload call
@@ -9,7 +10,7 @@
  *  - "success"  — green-ish accent, with the reloaded plugin count and
  *    a dismiss button.
  *  - "error"    — red-ish accent, with the diagnostic message and a
- *    "Try again" button that re-runs `/update`.
+ *    "Try again" button that re-runs `/reload`.
  */
 import type { ReactElement } from "react"
 import { cn } from "../lib"
