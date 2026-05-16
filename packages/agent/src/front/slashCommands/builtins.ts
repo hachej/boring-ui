@@ -31,16 +31,9 @@ export const builtinCommands: SlashCommand[] = [
     name: 'reload',
     description: 'Reload agent plugins',
     handler(_, ctx) {
-      return ctx.reloadAgentPlugins()
-    },
-  },
-  {
-    name: 'update',
-    description: 'Update plugins and show status above the composer',
-    handler(_, ctx) {
+      // Use the banner status UX when the host has wired pluginUpdate;
+      // otherwise fall back to printing the result inline in chat.
       if (ctx.pluginUpdate) return ctx.pluginUpdate.run()
-      // Fallback when the host hasn't wired the status banner — same
-      // behaviour as /reload so the command still does something useful.
       return ctx.reloadAgentPlugins()
     },
   },
