@@ -35,6 +35,16 @@ export const builtinCommands: SlashCommand[] = [
     },
   },
   {
+    name: 'update',
+    description: 'Update plugins and show status above the composer',
+    handler(_, ctx) {
+      if (ctx.pluginUpdate) return ctx.pluginUpdate.run()
+      // Fallback when the host hasn't wired the status banner — same
+      // behaviour as /reload so the command still does something useful.
+      return ctx.reloadAgentPlugins()
+    },
+  },
+  {
     name: 'help',
     description: 'Show available commands',
     handler(_, ctx) {
