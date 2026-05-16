@@ -15,9 +15,9 @@ import type { ReactElement } from "react"
 import { cn } from "../lib"
 
 export type PluginUpdateState =
-  | { kind: "running"; startedAt: number }
-  | { kind: "success"; finishedAt: number; reloaded: boolean }
-  | { kind: "error"; finishedAt: number; message: string }
+  | { kind: "running" }
+  | { kind: "success"; reloaded: boolean }
+  | { kind: "error"; message: string }
 
 export interface PluginUpdateStatusProps {
   state: PluginUpdateState | null
@@ -25,13 +25,13 @@ export interface PluginUpdateStatusProps {
   onRetry: () => void
 }
 
-function relativeTime(timestamp: number): string {
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000))
-  if (seconds < 5) return "just now"
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.round(seconds / 60)
-  return `${minutes}m ago`
-}
+// Reviewer feedback (Gemini 3.1, xAI): the previous version computed a
+// relative-time string ("just now", "3m ago") on every render against a
+// captured timestamp. Without a setInterval tick the string would freeze
+// at "just now" until something else re-rendered ChatPanel — a stale-UI
+// bug. The banner is a transient notice anyway (dismissed by the user
+// or replaced by a new state), so we drop the relative time entirely
+// and use a static phrase.
 
 export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateStatusProps): ReactElement | null {
   if (!state) return null
@@ -67,8 +67,8 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
         <span className="text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
         <span className="flex-1">
           {state.reloaded
-            ? `Plugins updated ${relativeTime(state.finishedAt)}.`
-            : `Plugins will reload on the next message (${relativeTime(state.finishedAt)}).`}
+            ? "Plugins updated."
+            : "Plugins will reload on the next message."}
         </span>
         <button
           type="button"
@@ -94,7 +94,7 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
     >
       <div className="flex items-center gap-2">
         <span className="text-destructive" aria-hidden="true">⚠</span>
-        <span className="flex-1 font-medium">Plugin update failed {relativeTime(state.finishedAt)}.</span>
+        <span className="flex-1 font-medium">Plugin update failed.</span>
         <button
           type="button"
           onClick={onRetry}
