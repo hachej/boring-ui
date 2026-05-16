@@ -39,6 +39,7 @@ export class CommandRegistry {
     }
     if (ownedIds.size === 0 && commands.length === 0) return
 
+    let changed = ownedIds.size > 0
     for (const id of ownedIds) this.commands.delete(id)
     for (const config of commands) {
       const existing = this.commands.get(config.id)
@@ -50,8 +51,9 @@ export class CommandRegistry {
         continue
       }
       this.commands.set(config.id, { ...config, pluginId })
+      changed = true
     }
-    this.emit()
+    if (changed) this.emit()
   }
 
   getCommand(id: string): CommandConfig | undefined {
