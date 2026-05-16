@@ -51,7 +51,7 @@ function classifyError(
   const message = err instanceof Error ? err.message : 'unknown error'
   const code = (err as NodeJS.ErrnoException)?.code
 
-  if (code === 'EPERM' || message.includes('traversal') || message.includes('EPERM')) {
+  if (code === 'EPERM' || message.toLowerCase().includes('traversal') || message.includes('EPERM')) {
     return reply.code(403).send({
       error: { code: ERROR_CODE_PATH_REJECTED, message: 'path traversal rejected' },
     })
@@ -329,12 +329,14 @@ export function fileRoutes(
       const base = basenameForUpload(filename)
       const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
       const path = `${dir}/${base}-${unique}.${ext}`
-      const bytes = Buffer.from(contentBase64, 'base64')
-      if (bytes.byteLength === 0 || bytes.byteLength > MAX_UPLOAD_BYTES) {
+      // Check base64 length before allocating — base64 is ~4/3 the size of raw bytes.
+      const estimatedBytes = Math.ceil(contentBase64.length * 0.75)
+      if (estimatedBytes === 0 || estimatedBytes > MAX_UPLOAD_BYTES) {
         return reply.code(400).send({
           error: { code: ERROR_CODE_VALIDATION_ERROR, message: `upload must be 1 byte to ${MAX_UPLOAD_BYTES} bytes`, field: 'contentBase64' },
         })
       }
+      const bytes = Buffer.from(contentBase64, 'base64')
 
       await workspace.mkdir(dir, { recursive: true })
       const stat = workspace.writeBinaryFileWithStat

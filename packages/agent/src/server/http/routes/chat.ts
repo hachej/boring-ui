@@ -70,7 +70,18 @@ export function chatRoutes(
   const { sessionChangesTracker } = opts
   const validateBody = createBodyValidator(chatBodySchema)
   const buffers = new StreamBufferStore()
+  // Track last follow-up seq/nonce per session for dedupe detection.
+  // Evict entries when sessions are deleted via the sessionChangesTracker
+  // hook below, and cap at 5000 to bound memory in long-running servers.
   const lastFollowUpBySession = new Map<string, { seq: number; nonce?: string }>()
+  const MAX_FOLLOWUP_CACHE = 5000
+  function evictFollowupCache(): void {
+    if (lastFollowUpBySession.size <= MAX_FOLLOWUP_CACHE) return
+    const keys = Array.from(lastFollowUpBySession.keys())
+    for (let i = 0; i < keys.length - MAX_FOLLOWUP_CACHE; i++) {
+      lastFollowUpBySession.delete(keys[i])
+    }
+  }
 
   async function resolveRuntime(request: FastifyRequest): Promise<{
     harness: AgentHarness
@@ -328,6 +339,7 @@ export function chatRoutes(
       }
       if (clientSeq !== undefined) {
         lastFollowUpBySession.set(sessionId, { seq: clientSeq, nonce: clientNonce })
+        evictFollowupCache()
       }
       return reply.code(202).send({ queued: true })
     },
