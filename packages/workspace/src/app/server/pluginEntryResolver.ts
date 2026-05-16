@@ -29,11 +29,9 @@ export interface ModuleSpec {
 
 export type PluginSpec = DirSpec | ModuleSpec
 
-export interface DirPluginEntry {
-  spec: PluginSpec
-  options?: unknown
-  hotReload?: boolean
-}
+// (Phase 1 review — Gemini 3.1: the `DirPluginEntry` interface was exported
+// but never used; the canonical shape lives inline on `WorkspacePluginEntry`
+// in createWorkspaceAgentServer.ts. Removed to prevent drift.)
 
 export interface BoringPackageJsonField {
   front?: string
@@ -103,10 +101,15 @@ export function resolvePluginEntryPaths(dir: string): {
   frontPath: string | null
 } {
   const pkg = readPluginPackageJson(dir)
+  // Gemini 3.1 Phase 1 review: no package.json → no chance of resolving any
+  // entry. Short-circuit to avoid wasted existsSync calls on conventions
+  // for a dir that's not a plugin anyway. The caller (resolveDirServerPlugin)
+  // already throws on missing pkg.
+  if (!pkg) return { pkg: null, serverPath: null, frontPath: null }
   return {
     pkg,
-    serverPath: resolvePluginEntryPath(dir, pkg?.boring?.server, SERVER_CONVENTIONS),
-    frontPath: resolvePluginEntryPath(dir, pkg?.boring?.front, FRONT_CONVENTIONS),
+    serverPath: resolvePluginEntryPath(dir, pkg.boring?.server, SERVER_CONVENTIONS),
+    frontPath: resolvePluginEntryPath(dir, pkg.boring?.front, FRONT_CONVENTIONS),
   }
 }
 

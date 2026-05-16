@@ -58,7 +58,7 @@ export class SurfaceResolverRegistry {
       const id = config.id
       if (!id) continue
       const existing = this.resolvers.get(id)
-      if (existing && existing.pluginId && existing.pluginId !== pluginId) {
+      if (existing && existing.pluginId !== pluginId) {
         // eslint-disable-next-line no-console
         console.warn(
           `[SurfaceResolverRegistry] plugin "${pluginId}" tried to register resolver "${id}" already owned by "${existing.pluginId}" — skipped`,
