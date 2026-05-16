@@ -23,16 +23,16 @@ describe("buildBoringSystemPrompt", () => {
 
     expect(prompt).toContain(join(workspaceRoot, "node_modules", "@hachej", "boring-workspace", "dist", "docs", "plugins.md"))
     expect(prompt).toContain(join(workspaceRoot, "node_modules", "@hachej", "boring-workspace", "dist", "docs", "panels.md"))
-    expect(prompt).toContain("use the boring-plugin-authoring skill")
+    expect(prompt).toContain("boring-plugin-authoring")
   })
 
-  test("keeps only pointers and minimum fallback rules, not full docs", () => {
+  test("stays lean — points at the skill, not the full docs inline", () => {
     const prompt = buildBoringSystemPrompt()
 
-    expect(prompt).toContain("Fallback boring-ui package docs location")
+    expect(prompt).toContain("Fallback reference docs location")
     expect(prompt).toContain("boring-plugin-authoring")
-    expect(prompt).toContain("BoringFrontFactory")
-    expect(prompt).toContain("/reload")
     expect(prompt).not.toContain("## Universal plugin layout")
+    // The prompt should be a thin pointer, not a duplicate of the skill.
+    expect(prompt.length).toBeLessThan(1200)
   })
 })

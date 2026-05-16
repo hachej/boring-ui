@@ -77,13 +77,23 @@ package.json requirements:
 - pi.extensions: ["agent/index.ts"]
 - pi.systemPrompt: "Eval task list plugin v1: use task_list_status for task list status."
 
-front/index.tsx requirements:
-- default-export a BoringFrontFactory from @hachej/boring-workspace/plugin
-- register one panel id "eval-task-list.panel" rendering text "Eval Task List v1"
-- register one panel command with id "eval-task-list.open" titled "Open Eval Task List" and panelId "eval-task-list.panel"
-- register one left tab id "eval-task-list.tab" titled "Eval Tasks"
-- register one surface resolver id "eval-task-list.surface" for kind "eval-task-list.open"
-- do NOT use defineFrontPlugin and do NOT put systemPrompt in front code
+front/index.tsx requirements — the factory is IMPERATIVE (\`(api) => void\`),
+NOT a declarative object. Do NOT export \`{ panels: [...], commands: [...] }\` —
+call \`api.registerPanel(...)\` etc. Skeleton:
+
+\`\`\`tsx
+import type { BoringFrontFactory } from "@hachej/boring-workspace/plugin"
+
+const factory: BoringFrontFactory = (api) => {
+  api.registerPanel({ id: "eval-task-list.panel", label: "Eval Task List", component: () => <div>Eval Task List v1</div> })
+  api.registerPanelCommand({ id: "eval-task-list.open", title: "Open Eval Task List", panelId: "eval-task-list.panel" })
+  api.registerLeftTab({ id: "eval-task-list.tab", title: "Eval Tasks", panelId: "eval-task-list.panel" })
+  api.registerSurfaceResolver({ id: "eval-task-list.surface", kind: "eval-task-list.open", resolve: () => ({ id: "eval-task-list", component: "eval-task-list.panel", title: "Eval Task List" }) })
+}
+export default factory
+\`\`\`
+
+Do NOT use defineFrontPlugin and do NOT put systemPrompt in front code.
 
 agent/index.ts requirements:
 - default-export a Pi extension function
