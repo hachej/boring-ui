@@ -94,28 +94,21 @@ export function resolvePluginEntryPath(
 }
 
 /**
- * Returns the resolved file paths for a directory-source plugin's server
- * and front entries. Pi parity (`core/package-manager.js`).
- *
- * (Renamed from `resolvePluginEntries` per Phase 1 review feedback —
- * disambiguates from the entry-resolution dispatcher in
- * `createWorkspaceAgentServer.ts`.)
+ * Returns the resolved server entry path for a directory-source plugin.
+ * Manifest first (`package.json#boring.server`), then convention fallback
+ * (Pi parity: `core/package-manager.js`). Short-circuits to `null` when
+ * the dir has no package.json — the caller (resolveDirServerPlugin)
+ * throws on that case.
  */
 export function resolvePluginEntryPaths(dir: string): {
   pkg: PluginPackageJson | null
   serverPath: string | null
-  frontPath: string | null
 } {
   const pkg = readPluginPackageJson(dir)
-  // Gemini 3.1 Phase 1 review: no package.json → no chance of resolving any
-  // entry. Short-circuit to avoid wasted existsSync calls on conventions
-  // for a dir that's not a plugin anyway. The caller (resolveDirServerPlugin)
-  // already throws on missing pkg.
-  if (!pkg) return { pkg: null, serverPath: null, frontPath: null }
+  if (!pkg) return { pkg: null, serverPath: null }
   return {
     pkg,
     serverPath: resolvePluginEntryPath(dir, pkg.boring?.server, SERVER_CONVENTIONS),
-    frontPath: resolvePluginEntryPath(dir, pkg.boring?.front, FRONT_CONVENTIONS),
   }
 }
 
@@ -159,21 +152,26 @@ async function importServerModule(serverPath: string, hotReload: boolean): Promi
   return (await import(/* @vite-ignore */ href)) as { default?: unknown }
 }
 
-export interface ResolveDirServerPluginContext {
+/**
+ * Context the resolver hands to plugin factories. Same shape as the
+ * top-level `WorkspaceAgentServerPluginContext` (workspaceRoot + bridge)
+ * — keeping a single name here would create a circular type import,
+ * but the structural type is identical and callers cast between them.
+ */
+export interface PluginResolveContext {
   workspaceRoot: string
   bridge: unknown
 }
 
 /**
- * Unwraps the `default` export from an imported module. Handles the
- * common namespace shape `{ default: X }` and the bare-value shape `X`.
- * Then applies the factory contract: function → call with `(options, ctx)`;
- * object → use as a pre-built plugin.
+ * Unwraps `{ default: X }` namespace or bare value, then applies the
+ * factory contract: function → call with `(options, ctx)`; object → use
+ * as a pre-built plugin.
  */
 function instantiatePluginExport(
   exported: unknown,
   options: unknown,
-  ctx: ResolveDirServerPluginContext,
+  ctx: PluginResolveContext,
   source: string,
 ): WorkspaceServerPlugin {
   const value =
@@ -181,22 +179,15 @@ function instantiatePluginExport(
       ? (exported as { default?: unknown }).default
       : exported
   if (typeof value === "function") {
-    return (value as (options: unknown, ctx: ResolveDirServerPluginContext) => WorkspaceServerPlugin)(options, ctx)
+    return (value as (options: unknown, ctx: PluginResolveContext) => WorkspaceServerPlugin)(options, ctx)
   }
   if (value && typeof value === "object") return value as WorkspaceServerPlugin
   throw new Error(`boring plugin: ${source} default export is neither a function nor a plugin object`)
 }
 
-/**
- * Resolves a directory-source entry. Reads package.json, locates the
- * server entry (manifest first, convention fallback, declared-but-missing
- * throws), imports it (jiti when `hotReload`, otherwise regular import),
- * and applies the factory contract. Throws when no package.json or
- * server entry is resolved.
- */
 export async function resolveDirServerPlugin(
   entry: DirPluginEntry,
-  ctx: ResolveDirServerPluginContext,
+  ctx: PluginResolveContext,
 ): Promise<WorkspaceServerPlugin> {
   const dir = resolve(entry.dir)
   const { pkg, serverPath } = resolvePluginEntryPaths(dir)
@@ -211,14 +202,9 @@ export async function resolveDirServerPlugin(
   return instantiatePluginExport(mod, entry.options, ctx, serverPath)
 }
 
-/**
- * Resolves a `{ module }` entry. The thunk returns a module namespace
- * (`{ default: X }`) or a bare value; both unwrap through
- * `instantiatePluginExport`.
- */
 export async function resolveModuleServerPlugin(
   entry: ModulePluginEntry,
-  ctx: ResolveDirServerPluginContext,
+  ctx: PluginResolveContext,
 ): Promise<WorkspaceServerPlugin> {
   const result = await entry.module()
   return instantiatePluginExport(result, entry.options, ctx, "module-spec")
@@ -244,10 +230,9 @@ export function isModuleEntry(entry: unknown): entry is ModulePluginEntry {
  */
 export async function resolveOnePluginEntry<TPlugin extends WorkspaceServerPlugin>(
   entry: unknown,
-  ctx: ResolveDirServerPluginContext,
-  invokeFactory: (fn: (ctx: ResolveDirServerPluginContext) => TPlugin) => TPlugin,
+  ctx: PluginResolveContext,
 ): Promise<TPlugin> {
-  if (typeof entry === "function") return invokeFactory(entry as (ctx: ResolveDirServerPluginContext) => TPlugin)
+  if (typeof entry === "function") return (entry as (ctx: PluginResolveContext) => TPlugin)(ctx)
   if (isDirEntry(entry)) return (await resolveDirServerPlugin(entry, ctx)) as TPlugin
   if (isModuleEntry(entry)) return (await resolveModuleServerPlugin(entry, ctx)) as TPlugin
   return entry as TPlugin
