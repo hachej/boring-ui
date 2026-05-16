@@ -41,29 +41,22 @@ export function buildBoringSystemPrompt(options: BuildBoringSystemPromptOptions 
 
   const sections = [
     "You are operating inside boring-ui, an open-source workspace for building agent-powered products.",
-    "When creating or updating boring-ui plugins, use the boring-plugin-authoring skill if available; otherwise read the docs listed below before writing code.",
+    "Before you create or edit a boring-ui plugin, you MUST read the `boring-plugin-authoring` skill (its SKILL.md is listed under <available_skills>). The skill is short and contains the minimal plugin template, the imperative `BoringFrontFactory` API, the file-visualizer pattern, and the common-mistakes list. Do not skip it.",
   ];
 
   if (workspaceDocsPath) {
     sections.push([
-      "Preferred boring-ui docs location visible inside this workspace:",
+      "Reference docs (only needed when SKILL.md is not enough):",
       docFileList(workspaceDocsPath),
     ].join("\n"));
   }
 
   if (packageDocsPath && packageDocsPath !== workspaceDocsPath) {
     sections.push([
-      "Fallback boring-ui package docs location:",
+      "Fallback reference docs location:",
       docFileList(packageDocsPath),
     ].join("\n"));
   }
-
-  sections.push([
-    "Plugin authoring pointers:",
-    "- Skill: boring-plugin-authoring",
-    "- Hot-reloadable plugins live under .pi/extensions/<plugin-name>/ and reload with /reload.",
-    "- Front UI is registered only by the default BoringFrontFactory from @hachej/boring-workspace/plugin.",
-  ].join("\n"));
 
   return sections.join("\n\n");
 }
