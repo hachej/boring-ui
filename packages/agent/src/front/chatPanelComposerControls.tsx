@@ -71,7 +71,6 @@ export function ModelSelect({
     ? options.find((m) => m.provider === value.provider && m.id === value.id)
     : undefined
   const triggerLabel = value ? current?.label ?? displayModelLabel(value.id) : 'Pi default'
-  const triggerProviderLabel = value ? displayProviderLabel(value.provider) : 'Auto'
 
   const availableOptions = options.filter((m) => m.available)
   const hasCurrentOption = currentKey
@@ -114,11 +113,8 @@ export function ModelSelect({
             open && "bg-muted/60 text-foreground",
           )}
         >
-          <BotIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <BotIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate">{triggerLabel}</span>
-          <span className="hidden shrink-0 rounded-full border border-border/70 bg-background/45 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-flex">
-            {triggerProviderLabel}
-          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -164,7 +160,7 @@ export function ModelSelect({
                         )}
                       />
                       <span className="truncate">{label}</span>
-                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/50">{m.id}</span>
+                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{m.id}</span>
                     </CommandItem>
                   )
                 })}
