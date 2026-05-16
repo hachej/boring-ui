@@ -108,12 +108,30 @@ describe('/cost', () => {
   })
 })
 
-describe('all 6 builtins are registered', () => {
-  test('has exactly 6 commands', () => {
-    expect(builtinCommands).toHaveLength(6)
+describe('all 7 builtins are registered', () => {
+  test('has exactly 7 commands', () => {
+    expect(builtinCommands).toHaveLength(7)
   })
 
-  test.each(['clear', 'reset', 'model', 'reload', 'help', 'cost'])('includes /%s', (name) => {
+  test.each(['clear', 'reset', 'model', 'reload', 'update', 'help', 'cost'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
+  })
+})
+
+describe('/update', () => {
+  test('uses pluginUpdate.run when provided', async () => {
+    const run = vi.fn().mockResolvedValue('Plugins updated.')
+    const ctx = makeContext({ pluginUpdate: { run } })
+    const result = await getBuiltin('update').handler('', ctx)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(result).toBe('Plugins updated.')
+  })
+
+  test('falls back to reloadAgentPlugins when pluginUpdate is absent', async () => {
+    const reloadAgentPlugins = vi.fn().mockResolvedValue('Agent plugins reloaded.')
+    const ctx = makeContext({ reloadAgentPlugins, pluginUpdate: undefined })
+    const result = await getBuiltin('update').handler('', ctx)
+    expect(reloadAgentPlugins).toHaveBeenCalledTimes(1)
+    expect(result).toBe('Agent plugins reloaded.')
   })
 })
