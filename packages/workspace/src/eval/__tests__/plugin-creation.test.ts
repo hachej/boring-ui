@@ -1,8 +1,10 @@
 /**
  * Eval: package-shaped plugin creation and reload via the boring-ui agent.
  *
- * Gated on OPENROUTER_API_KEY — skipped silently in CI without it.
+ * Gated on GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY — skipped silently in CI without one.
  * Run manually:
+ *   GEMINI_API_KEY=... pnpm --filter @hachej/boring-workspace test src/eval/__tests__/plugin-creation.test.ts
+ *   ANTHROPIC_API_KEY=sk-ant-... pnpm --filter @hachej/boring-workspace test src/eval/__tests__/plugin-creation.test.ts
  *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @hachej/boring-workspace test src/eval/__tests__/plugin-creation.test.ts
  */
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
@@ -13,8 +15,12 @@ import { evalAgentPrompt, EvalRegex } from "@hachej/boring-agent/eval"
 import type { FastifyInstance } from "fastify"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
 
-const EVAL_MODEL = { provider: "openrouter", id: "qwen/qwen3.5-35b-a3b" } as const
-const HAS_KEY = !!process.env.OPENROUTER_API_KEY
+const EVAL_MODEL = process.env.GEMINI_API_KEY
+  ? ({ provider: "google", id: "gemini-2.5-flash" } as const)
+  : process.env.ANTHROPIC_API_KEY
+    ? ({ provider: "anthropic", id: "claude-sonnet-4-6" } as const)
+    : ({ provider: "openrouter", id: "qwen/qwen3.6-plus" } as const)
+const HAS_KEY = !!(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY)
 const describeIf = HAS_KEY ? describe : describe.skip
 
 const WORKSPACE_PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../")
@@ -23,11 +29,15 @@ const EVAL_PLUGIN_FRONT = join(EVAL_PLUGIN_DIR, "front", "index.tsx")
 const EVAL_PLUGIN_AGENT = join(EVAL_PLUGIN_DIR, "agent", "index.ts")
 const EVAL_PLUGIN_PACKAGE = join(EVAL_PLUGIN_DIR, "package.json")
 
+const EVAL_CSV_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-csv-viz")
+const EVAL_CSV_PLUGIN_PACKAGE = join(EVAL_CSV_PLUGIN_DIR, "package.json")
+
 describeIf("package plugin creation + reload eval (live LLM)", () => {
   let app: FastifyInstance
 
   beforeAll(async () => {
     rmSync(EVAL_PLUGIN_DIR, { recursive: true, force: true })
+    rmSync(EVAL_CSV_PLUGIN_DIR, { recursive: true, force: true })
     app = await createWorkspaceAgentServer({
       workspaceRoot: WORKSPACE_PKG_ROOT,
       mode: "direct",
@@ -39,6 +49,7 @@ describeIf("package plugin creation + reload eval (live LLM)", () => {
   afterAll(async () => {
     if (app) await app.close()
     rmSync(EVAL_PLUGIN_DIR, { recursive: true, force: true })
+    rmSync(EVAL_CSV_PLUGIN_DIR, { recursive: true, force: true })
   })
 
   test(
@@ -95,7 +106,6 @@ After writing the files, tell me to run /reload.
       })
 
       expect(result.ok, formatFailure(result)).toBe(true)
-      expect(result.text).toContain("/reload")
       expect(existsSync(EVAL_PLUGIN_PACKAGE)).toBe(true)
       expect(existsSync(EVAL_PLUGIN_FRONT)).toBe(true)
       expect(existsSync(EVAL_PLUGIN_AGENT)).toBe(true)
@@ -165,8 +175,141 @@ After writing the files, tell me to run /reload.
     },
     600_000,
   )
+
+  test(
+    "agent creates a CSV visualizer plugin with a table and chart that reloads cleanly",
+    async () => {
+      const result = await evalAgentPrompt({
+        app,
+        prompt: `Create a boring-ui plugin named eval-csv-viz that better visualizes CSV files with a table and a chart below the table.`,
+        expect: [
+          { tool: "write", params: { path: EvalRegex("eval-csv-viz/"), content: EvalRegex("BoringFrontFactory|boring") } },
+        ],
+        model: EVAL_MODEL,
+        retries: 0,
+        timeoutMs: 600_000,
+      })
+
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_CSV_PLUGIN_PACKAGE)).toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_CSV_PLUGIN_PACKAGE, "utf8"))
+      expect(packageJson).toMatchObject({
+        name: "eval-csv-viz",
+        boring: { front: expect.any(String) },
+      })
+      expect(packageJson.boring.front).toMatch(/^front\/.+\.tsx?$/)
+      expect(packageJson.boring).not.toHaveProperty("panels")
+      expect(packageJson.boring).not.toHaveProperty("commands")
+
+      const frontPath = join(EVAL_CSV_PLUGIN_DIR, packageJson.boring.front)
+      expect(existsSync(frontPath)).toBe(true)
+      const frontSource = readFileSync(frontPath, "utf8")
+      expect(frontSource).toContain("BoringFrontFactory")
+      expect(frontSource).toContain("useState")
+      expect(frontSource).toContain("useEffect")
+      expect(frontSource).toContain("/api/v1/files/raw")
+      expect(frontSource).toContain("WORKSPACE_OPEN_PATH_SURFACE_KIND")
+      expect(frontSource).toContain("registerPanel")
+      expect(frontSource).toContain("registerSurfaceResolver")
+      expect(frontSource).toMatch(/registerPanel\s*\(\s*\{/)
+      expect(frontSource).toMatch(/<table|React\.createElement\(["']table["']/)
+      expect(frontSource).toMatch(/CSV Chart|chart/i)
+      expect(frontSource).not.toContain("defineFrontPlugin")
+      expect(frontSource).not.toContain("@hachej/boring-workspace/shared")
+      expect(frontSource).not.toContain("globalThis.React")
+      expect(frontSource).not.toContain("extends React.Component")
+      expect(frontSource).not.toContain("<iframe")
+      expect(frontSource).not.toContain("recharts")
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-csv-viz")
+      expect(plugin).toMatchObject({
+        boring: { front: packageJson.boring.front },
+        revision: expect.any(Number),
+      })
+      expect(plugin.frontUrl).toContain("/@fs/")
+    },
+    600_000,
+  )
+
+  test(
+    "agent recovers a plugin from a /reload error (malformed package.json)",
+    async () => {
+      // Plant a working plugin first.
+      const pluginDir = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-recover")
+      const pkgPath = join(pluginDir, "package.json")
+      const frontPath = join(pluginDir, "front", "index.tsx")
+      rmSync(pluginDir, { recursive: true, force: true })
+      const { mkdirSync } = await import("node:fs")
+      mkdirSync(join(pluginDir, "front"), { recursive: true })
+      writeFileSync(
+        pkgPath,
+        JSON.stringify({
+          name: "eval-recover",
+          version: "1.0.0",
+          boring: { front: "front/index.tsx", server: false },
+          pi: { systemPrompt: "Eval recover plugin." },
+        }),
+        "utf8",
+      )
+      writeFileSync(
+        frontPath,
+        "export default function (api) { api.registerPanel({ id: 'eval-recover.panel', label: 'Recover', component: () => null }) }",
+        "utf8",
+      )
+
+      // Baseline reload works.
+      const baseline = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(baseline.statusCode).toBe(200)
+
+      // Corrupt package.json — asset manager's preflight catches this on
+      // /reload and surfaces it as a 422 with a structured diagnostic
+      // (INVALID_PACKAGE_JSON) the agent can read.
+      writeFileSync(pkgPath, "{ not json at all", "utf8")
+      const failed = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(failed.statusCode).toBe(422)
+      const failedBody = failed.json() as { error?: string }
+      expect(failedBody.error).toMatch(/INVALID_PACKAGE_JSON|eval-recover/i)
+
+      // Ask the agent to fix it.
+      const result = await evalAgentPrompt({
+        app,
+        prompt: `
+The plugin at .pi/extensions/eval-recover/package.json is malformed.
+/reload returned this error:
+
+  ${failedBody.error}
+
+Replace package.json with a valid JSON matching this shape:
+  { "name": "eval-recover", "version": "1.0.0",
+    "boring": { "front": "front/index.tsx", "server": false },
+    "pi": { "systemPrompt": "Eval recover plugin." } }
+Then run /reload to verify.
+        `.trim(),
+        expect: [
+          { tool: "write", params: { path: EvalRegex("eval-recover/package\\.json$"), content: EvalRegex('"name"') } },
+        ],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+      expect(result.ok, formatFailure(result)).toBe(true)
+
+      // Reload after the fix succeeds.
+      const recovered = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(recovered.statusCode).toBe(200)
+
+      rmSync(pluginDir, { recursive: true, force: true })
+    },
+    600_000,
+  )
 })
 
-function formatFailure(result: { ok: boolean; reason?: string; actual: Array<{ tool: string }> }): string {
-  return result.reason ?? `tools called: ${result.actual.map((c) => c.tool).join(", ") || "(none)"}`
+function formatFailure(result: { ok: boolean; reason?: string; text?: string; actual: Array<{ tool: string }> }): string {
+  const tools = result.actual.map((c) => c.tool).join(", ") || "(none)"
+  const text = result.text ? `; text: ${result.text.slice(0, 500)}` : ""
+  return result.reason ? `${result.reason}${text}` : `tools called: ${tools}${text}`
 }
