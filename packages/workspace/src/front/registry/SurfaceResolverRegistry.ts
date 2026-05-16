@@ -61,7 +61,7 @@ export class SurfaceResolverRegistry {
       if (existing && existing.pluginId !== pluginId) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[SurfaceResolverRegistry] plugin "${pluginId}" tried to register resolver "${id}" already owned by "${existing.pluginId}" — skipped`,
+          `[SurfaceResolverRegistry] plugin "${pluginId}" tried to register resolver "${id}" already owned by "${existing.pluginId ?? 'system'}" — skipped`,
         )
         continue
       }
