@@ -1422,4 +1422,50 @@ describe('ChatPanel (shadcn)', () => {
       expect(html).not.toContain('animate-spin')
     })
   })
+
+  describe('hotReloadEnabled flag', () => {
+    test('default (true): /reload and /update slash commands route to their handlers', async () => {
+      renderToStaticMarkup(<ChatPanel sessionId="sess-hr-default" />)
+      // /reload triggers the fetch path; assert it was called rather than
+      // sending the slash text as a message.
+      await capturedOnSubmit!({ text: '/reload', files: [] })
+      // mockSendMessage should NOT have received "/reload" as text;
+      // instead the reload handler ran (which on success appends an
+      // assistant message via setMessages, not via sendMessage).
+      expect(mockSendMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ text: '/reload' }),
+        expect.anything(),
+      )
+    })
+
+    test('hotReloadEnabled=false: /reload falls through as regular message (command not registered)', async () => {
+      renderToStaticMarkup(<ChatPanel sessionId="sess-hr-off" hotReloadEnabled={false} />)
+      await capturedOnSubmit!({ text: '/reload', files: [] })
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: '/reload', files: [] },
+        {
+          body: {
+            sessionId: 'sess-hr-off',
+            message: '/reload',
+            attachments: [],
+          },
+        },
+      )
+    })
+
+    test('hotReloadEnabled=false: /update also falls through', async () => {
+      renderToStaticMarkup(<ChatPanel sessionId="sess-hr-upd-off" hotReloadEnabled={false} />)
+      await capturedOnSubmit!({ text: '/update', files: [] })
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        { text: '/update', files: [] },
+        {
+          body: {
+            sessionId: 'sess-hr-upd-off',
+            message: '/update',
+            attachments: [],
+          },
+        },
+      )
+    })
+  })
 })
