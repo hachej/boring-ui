@@ -27,7 +27,7 @@ import {
   type DirPluginEntry,
   type ModulePluginEntry,
 } from "./pluginEntryResolver"
-import { ServerPluginLifecycleBus } from "./serverPluginLifecycle"
+import { LifecycleBus } from "../../shared/plugins/lifecycleBus"
 import { formatPluginDiagnostic, rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
@@ -339,7 +339,7 @@ async function resolvePluginEntries(
   entries: WorkspacePluginEntry[],
   ctx: WorkspaceAgentServerPluginContext,
 ): Promise<WorkspaceServerPlugin[]> {
-  return Promise.all(entries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx, (fn) => fn(ctx))))
+  return Promise.all(entries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)))
 }
 
 export async function createWorkspaceAgentServer(
@@ -358,7 +358,7 @@ export async function createWorkspaceAgentServer(
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
   // Phase 4: server-side plugin lifecycle bus. Phase 5 will wire it to the
   // /reload route so consumers can subscribe for cleanup/rebuild work.
-  const pluginLifecycleBus = new ServerPluginLifecycleBus()
+  const pluginLifecycleBus = new LifecycleBus()
   const allPluginEntries: WorkspacePluginEntry[] = [
     ...(opts.plugins ?? []),
     ...(opts.pluginFactories ?? []),

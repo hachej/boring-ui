@@ -1,15 +1,15 @@
 import { describe, expect, test, vi } from "vitest"
-import { PluginLifecycleBus } from "../pluginLifecycle"
+import { LifecycleBus } from "../../../shared/plugins/lifecycleBus"
 
-describe("Phase 3 — PluginLifecycleBus", () => {
+describe("Phase 3 — LifecycleBus", () => {
   test("hasHandlers returns false when no subscribers", () => {
-    const bus = new PluginLifecycleBus()
+    const bus = new LifecycleBus()
     expect(bus.hasHandlers("plugin_shutdown")).toBe(false)
     expect(bus.hasHandlers("plugin_start")).toBe(false)
   })
 
   test("emit fans out to all subscribers in order", async () => {
-    const bus = new PluginLifecycleBus()
+    const bus = new LifecycleBus()
     const log: string[] = []
     bus.on("plugin_start", (e) => { log.push(`a:${e.pluginId}:${e.reason}`) })
     bus.on("plugin_start", (e) => { log.push(`b:${e.pluginId}:${e.reason}`) })
@@ -19,7 +19,7 @@ describe("Phase 3 — PluginLifecycleBus", () => {
   })
 
   test("hasHandlers reflects subscribe/unsubscribe", () => {
-    const bus = new PluginLifecycleBus()
+    const bus = new LifecycleBus()
     const off = bus.on("plugin_shutdown", () => {})
     expect(bus.hasHandlers("plugin_shutdown")).toBe(true)
     off()
@@ -27,7 +27,7 @@ describe("Phase 3 — PluginLifecycleBus", () => {
   })
 
   test("handler errors are isolated — other handlers still run (Pi parity)", async () => {
-    const bus = new PluginLifecycleBus()
+    const bus = new LifecycleBus()
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const okHandler = vi.fn()
     bus.on("plugin_shutdown", () => { throw new Error("boom") })
@@ -40,7 +40,7 @@ describe("Phase 3 — PluginLifecycleBus", () => {
   })
 
   test("subscriber that unsubscribes during emit doesn't break iteration", async () => {
-    const bus = new PluginLifecycleBus()
+    const bus = new LifecycleBus()
     const log: string[] = []
     const offB = bus.on("plugin_start", () => { log.push("a"); offB() })
     bus.on("plugin_start", () => { log.push("b") })

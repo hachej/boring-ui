@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { rebuildServerPlugins } from "../rebuildServerPlugins"
-import { ServerPluginLifecycleBus } from "../serverPluginLifecycle"
+import { LifecycleBus } from "../../../shared/plugins/lifecycleBus"
 
 const tempDirs: string[] = []
 
@@ -28,7 +28,7 @@ describe("Phase 4 — rebuildServerPlugins", () => {
     )
     await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p" }), "utf8")
 
-    const bus = new ServerPluginLifecycleBus()
+    const bus = new LifecycleBus()
     const events: string[] = []
     bus.on("plugin_shutdown", (e) => { events.push(`down:${e.pluginId}:${e.reason}`) })
     bus.on("plugin_start", (e) => { events.push(`up:${e.pluginId}:${e.reason}`) })
@@ -72,8 +72,7 @@ describe("Phase 4 — rebuildServerPlugins", () => {
     expect(result.plugins).toHaveLength(1)
     expect(result.plugins[0].id).toBe("good")
     expect(result.diagnostics).toHaveLength(1)
-    expect(result.diagnostics[0].source).toBe("directory")
-    expect(result.diagnostics[0].path).toBe("/nonexistent")
+    expect(result.diagnostics[0].source).toBe("directory (/nonexistent)")
   })
 
   test("pre-built objects and factory functions pass through unchanged", async () => {
@@ -91,7 +90,7 @@ describe("Phase 4 — rebuildServerPlugins", () => {
   })
 
   test("skips lifecycle emit when no handlers — Pi parity (hasHandlers gate)", async () => {
-    const bus = new ServerPluginLifecycleBus()
+    const bus = new LifecycleBus()
     const emitSpy = vi.spyOn(bus, "emit")
     const result = await rebuildServerPlugins({
       entries: [{ id: "obj", systemPrompt: "" }],
@@ -107,7 +106,7 @@ describe("Phase 4 — rebuildServerPlugins", () => {
   test("consecutive rebuilds: shutdown fires for the LIVE set, not the boot set", async () => {
     // Caller-side simulation of how createWorkspaceAgentServer's
     // __boringRebuildPlugins closure tracks `liveLoadedIds` across calls.
-    const bus = new ServerPluginLifecycleBus()
+    const bus = new LifecycleBus()
     const log: string[] = []
     bus.on("plugin_shutdown", (e) => { log.push(`down:${e.pluginId}`) })
     bus.on("plugin_start", (e) => { log.push(`up:${e.pluginId}:${e.reason}`) })
