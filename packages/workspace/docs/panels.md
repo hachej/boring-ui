@@ -32,6 +32,11 @@ export const myPanel = definePanel({
 
 ## Panel component API
 
+Panel components receive `PaneProps<T>`. Hot-loaded plugin panels may be normal
+React function components using hooks; host Vite config is responsible for
+aliasing/deduping React so plugin hooks use the workspace shell's React
+singleton.
+
 Panel components receive `PaneProps<T>`:
 
 ```ts
@@ -77,6 +82,24 @@ useEffect(() => {
 - Component `(props) => JSX` → eager (loaded at startup)
 
 ---
+
+## Plugin panel registration
+
+Hot-reloadable plugins register panels from `BoringFrontFactory` in
+`front/index.tsx`:
+
+```tsx
+import type { BoringFrontFactory } from "@hachej/boring-workspace/plugin"
+
+const plugin: BoringFrontFactory = (api) => {
+  api.registerPanel({ id: "my-panel", label: "My Panel", component: MyPane })
+  api.registerPanelCommand({ id: "open-my-panel", title: "Open My Panel", panelId: "my-panel" })
+  api.registerLeftTab({ id: "my-left-tab", title: "My Plugin", panelId: "my-panel" })
+}
+```
+
+Do not put panel definitions in `package.json#boring`; it only stores discovery
+metadata (`label`, `front`, `server`, `derivesFrom`).
 
 ## Opening panels
 

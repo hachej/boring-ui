@@ -23,13 +23,14 @@ describe("buildBoringSystemPrompt", () => {
 
     expect(prompt).toContain(join(workspaceRoot, "node_modules", "@hachej", "boring-workspace", "dist", "docs", "plugins.md"))
     expect(prompt).toContain(join(workspaceRoot, "node_modules", "@hachej", "boring-workspace", "dist", "docs", "panels.md"))
-    expect(prompt).toContain("read the boring-ui documentation before writing code")
+    expect(prompt).toContain("use the boring-plugin-authoring skill")
   })
 
   test("keeps only pointers and minimum fallback rules, not full docs", () => {
     const prompt = buildBoringSystemPrompt()
 
     expect(prompt).toContain("Fallback boring-ui package docs location")
+    expect(prompt).toContain("boring-plugin-authoring")
     expect(prompt).toContain("BoringFrontFactory")
     expect(prompt).toContain("/reload")
     expect(prompt).not.toContain("## Universal plugin layout")

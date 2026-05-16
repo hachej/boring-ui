@@ -9,6 +9,24 @@ export interface CreateBoringAppViteAliasesOptions {
   repoRoot: string
 }
 
+export interface CreateBoringReactViteAliasesOptions {
+  /** Vite host app root containing the React dependency used by the shell. */
+  appRoot: string
+}
+
+export const BORING_REACT_VITE_DEDUPE = ['react', 'react-dom'] as const
+
+export function createBoringReactViteAliases({ appRoot }: CreateBoringReactViteAliasesOptions): BoringViteAlias[] {
+  const nodeModules = path.resolve(appRoot, 'node_modules')
+  return [
+    { find: /^react$/, replacement: path.resolve(nodeModules, 'react') },
+    { find: /^react-dom$/, replacement: path.resolve(nodeModules, 'react-dom') },
+    { find: /^react-dom\/client$/, replacement: path.resolve(nodeModules, 'react-dom/client.js') },
+    { find: /^react\/jsx-runtime$/, replacement: path.resolve(nodeModules, 'react/jsx-runtime.js') },
+    { find: /^react\/jsx-dev-runtime$/, replacement: path.resolve(nodeModules, 'react/jsx-dev-runtime.js') },
+  ]
+}
+
 export function createBoringAppViteAliases({
   repoRoot,
 }: CreateBoringAppViteAliasesOptions): BoringViteAlias[] {
