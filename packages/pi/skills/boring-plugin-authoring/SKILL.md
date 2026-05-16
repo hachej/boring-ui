@@ -40,3 +40,11 @@ entirely. Plugins with a non-standard layout declare them.
 Pi-side resources stay in `package.json#pi` (extensions, skills,
 packages, systemPrompt) — that contract belongs to Pi and is
 independent of `boring.*`.
+
+> **Hot reload requires `hotReload: true`.** A plugin installed via
+> `{ spec: { dir } }` only re-imports its server entry on `/reload`
+> when the host passes `hotReload: true` on the install entry. Without
+> it, the module imports once at boot and Node's module cache wins on
+> subsequent reloads — your `boring.server` changes won't show up until
+> the agent server restarts. Host apps usually flip this on in dev and
+> leave it off in prod.
