@@ -2,116 +2,32 @@
 
 # Boring UI
 
+Bring your agent skills. Get a UI.
+
+
+
 <img src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" alt="Boring UI banner" width="350" />
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-Bring your agent skills. Get a UI.
+Boring UI is a framework for building apps around an agent.
 
-Boring UI is an agent-centric web app framework built around a simple idea: in agent-first software, chat should drive the work, and the interface should show the work.
+Traditional SaaS is built around workflows users drive by hand: buttons, forms, pages, and dashboards.
 
-Why “Boring”?
+Agents change that.
 
-Because we think agent-first apps only need two core surfaces:
+When software can understand intent and do the work, the UI can collapse into two core surfaces:
 
-- **one chat** for user intent
-- **one workbench** the agent can control to display results
+- **chat** to tell the agent what to do
+- **a workbench** to inspect, steer, and refine the result
 
-Everything else should support those two surfaces, not compete with them.
+Boring UI gives you that structure out of the box. See [Boring UI Core](#boring-ui-core).
 
-Boring UI gives you that foundation out of the box. If you want to build an agent app, you should mostly need to bring:
+Everything else comes through the [Plugin System](#plugin-system): skills, tools, and domain-specific panels.
 
-- the agent skills and tools
-- the domain-specific panels or visualizations
-
-## Why it exists
-
-Most AI products stop at chat.
-
-Boring UI is built around a different idea: **chat starts the work, but the workspace should show the work.**
-
-An agent should not only respond. It should open panels, inspect files, run tools, and leave behind outputs the user can review and continue from.
-
-
-
-## What are workspace artifacts?
-
-Workspace artifacts are the visible outputs the agent creates while it works.
-
-They can be:
-
-- a file or code diff
-- a chart, report, or table
-- a generated note or document
-- a query result or dataset preview
-- a log stream or command output
-- a custom panel for your domain
-
-
-
-## Design principles
-
-> **Opinionated at the center. Extensible at the edges.**
-
-### Opinionated core
-
-Boring UI has a strong default point of view:
-
-- chat is a first-class control surface
-- the workspace is the main output surface
-- agents open UI, not just text
-- auth, config, and workspaces are part of the default shape
-
-This is not a blank-canvas UI kit. It is a framework for agent-first software.
-
-### Extensible by design
-
-The core is built to expand.
-
-You customize it through plugins and composition points:
-
-- add panels for your domain
-- add catalogs, commands, and bindings
-- add agent tools
-- add surface resolvers that map actions to UI
-- swap runtime modes depending on deployment model
-
-The framework has a point of view. Your product still keeps its own.
-
-## How the stack is packaged
-
-
-| Package                    | Role                                                                                                                                                                 | Use it when                           |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `@hachej/boring-core`      | Auth, config, database, app shell, and backend foundation. Owns persistence and identity.                                                                            | You want a full app shell             |
-| `@hachej/boring-agent`     | Embeddable coding agent with a Pi-native harness and `direct`, `local`, and `vercel-sandbox` runtime modes. Can run standalone with zero core dependency at runtime. | You want agent execution and chat     |
-| `@hachej/boring-workspace` | Workspace UI, plugins, layouts, editors, and UI bridge. Owns workspace UI contracts and app composition helpers.                                                     | You want agent-controlled UI          |
-| `@hachej/boring-ui-cli`    | Zero-setup entrypoint for running a full agent workspace.                                                                                                            | You want to try Boring UI immediately |
-
-
-## Why Boring UI
-
-- **Agent-controlled UI** — agents open panels and render outputs, not just text replies
-- **Visible work** — the result lives in the workspace, not only in chat
-- **Pi-native harness** — Boring UI uses Pi as its first harness and extends Pi through its plugin system
-- **Sandboxed execution** — run in `direct`, `local`, or `vercel-sandbox` modes
-- **Plugin extensibility** — add panels, catalogs, commands, bindings, and tools
-- **Core product scaffolding** — auth, workspaces, config, and app shell already wired
-
-## Repo layout
-
-- `packages/core` — core package
-- `packages/agent` — agent package
-- `packages/workspace` — workspace package
-- `packages/ui` — shared UI kit
-- `packages/cli` — CLI package
-- `apps/full-app` — reference production app
-- `apps/agent-playground` — agent-focused playground
-- `apps/workspace-playground` — workspace-focused playground
+You bring the intelligence. Boring UI brings the workspace.
 
 ## Quickstart
-
-### Fastest way to try it
 
 ```bash
 npx @hachej/boring-ui-cli
@@ -121,117 +37,140 @@ This starts a full agent workspace in your current directory: chat, panels, file
 
 No clone. No database. No app setup.
 
-You can also provide an API key directly:
+For agent authentication options, see Pi's [Quick Start](https://github.com/badlogic/pi-mono/tree/main/packages/pi-coding-agent#quick-start) and [Providers docs](https://github.com/badlogic/pi-mono/blob/main/packages/pi-coding-agent/docs/providers.md).
 
-```bash
-ANTHROPIC_API_KEY=sk-ant-... npx @hachej/boring-ui-cli
+## Boring UI Core
+
+Boring UI is opinionated at the center.
+
+Its default shape is simple:
+
+- chat is the control surface
+- the workspace is the output surface and is controllable by the agent
+
+Boring UI ships as five packages:
+
+
+| Package                    | Role                                                   | Demo app                    |
+| -------------------------- | ------------------------------------------------------ | --------------------------- |
+| `@hachej/boring-agent`     | Agent runtime, chat UI, tools, and sandboxed execution | `apps/agent-playground`     |
+| `@hachej/boring-workspace` | Workbench UI, plugins, layouts, and UI bridge          | `apps/workspace-playground` |
+| `@hachej/boring-core`      | App shell, auth, config, and persistence               | `apps/full-app`             |
+| `@hachej/boring-ui-cli`    | Zero-setup way to run a full agent workspace locally   | `npx @hachej/boring-ui-cli` |
+| `@hachej/boring-ui-kit`    | Shared UI kit and reusable interface primitives        | -                           |
+
+
+## Built on Pi
+
+Boring UI uses [Pi](https://github.com/earendil-works/pi/tree/main) as its agent harness.
+
+Pi provides the core agent runtime: the agent loop, tool calling, sessions, skills, and prompt system.
+
+Boring UI turns that runtime into an app:
+
+- a web chat and workbench UI
+- sandboxed agent execution, locally with `bwrap` or remotely with Vercel Sandboxes
+
+## Plugin System
+
+Boring UI relies on Pi's plugin infrastructure.
+
+Plugins are standard Node packages, distributed through npm, and loaded by Pi.
+
+Pi handles the agent-side customization: skills, prompts, tools, and system-prompt extensions.
+
+Boring UI adds the workbench layer on top: panels, commands, catalogs, and other UI surfaces the agent can control.
+
+Package plugin shape is:
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["agent/index.ts"],
+    "skills": ["agent/skills"],
+    "prompts": ["agent/prompts"]
+  },
+  "boring": {
+    "label": "My Plugin",
+    "front": "front/index.tsx",
+    "server": "server/index.ts",
+    "derivesFrom": ["optional-parent-plugin"]
+  }
+}
 ```
 
-See `packages/cli/README.md` for CLI details.
+`pi` is the standard Pi package manifest, so any Pi package can be loaded as-is. `boring` adds the UI and workspace layer on top.
 
-### Run the full reference app
+Common use cases:
 
-```bash
-pnpm install
-cp apps/full-app/.env.example apps/full-app/.env
+- Need agent skills? Add them under `pi.skills`.
+- Need agent prompts ? Add them under `pi.prompts`.
+- Need agent-side tools ? Add them under `pi.extensions`.
+- Need workbench panels ? Point `boring.front` to your front plugin.
+- Need server-side tools or routes? Point `boring.server` to your server plugin.
+- Need to layer on top of another plugin? Use `boring.derivesFrom`.
+
+Boring UI gives you the structure. Plugins make it yours.
+
+## Architecture
+
+Boring UI core is built around a small set of swappable interfaces.
+
+The key abstractions are:
+
+| Interface | Package | Responsibility |
+| --- | --- | --- |
+| `Workspace` | `@hachej/boring-agent` | Filesystem operations |
+| `Sandbox` | `@hachej/boring-agent` | Shell execution |
+| `AgentHarness` | `@hachej/boring-agent` | Agent runtime |
+| `UiBridge` | `@hachej/boring-workspace` | Agent-to-UI control |
+
+
+Those interfaces fit together like this:
+
+```text
+chat UI
+  -> AgentHarness
+  -> ToolCatalog
+  -> Workspace + Sandbox
+
+agent/server actions
+  -> UiBridge
+  -> workbench UI
+
+session history
+  -> SessionStore
 ```
 
-Fill in the required values in `apps/full-app/.env`:
+A few important rules follow from that design:
 
-- `DATABASE_URL`
-- `BETTER_AUTH_SECRET`
-- `WORKSPACE_SETTINGS_ENCRYPTION_KEY`
-- `BETTER_AUTH_URL`
+- `Workspace` is the single filesystem interface. Agent tools and frontend file routes both use it.
+- `Sandbox` is only for execution. `Workspace` is for file operations.
+- `AgentHarness` does not know about files or shells directly. It only sees tools.
+- Runtime modes (`direct`, `local`, `vercel-sandbox`) swap the `Workspace` + `Sandbox` pair, not the rest of the system.
+- `UiBridge` is how the agent opens files, panels, surfaces, and other workbench UI.
 
-Then run:
+At a package level:
 
-```bash
-pnpm --filter full-app migrate
-pnpm --filter full-app dev
-```
+- `@hachej/boring-agent` owns the harness, tools, workspace, and sandbox contracts
+- `@hachej/boring-workspace` owns the workbench UI, plugin outputs, and UI bridge
+- `@hachej/boring-core` owns auth, config, persistence, and app-shell concerns
+- `@hachej/boring-ui-kit` provides shared UI primitives across the stack
+- `@hachej/boring-ui-cli` packages the whole thing into a zero-setup entrypoint
 
-Frontend runs at `http://localhost:5173`.
+## Reference apps
 
-See `apps/full-app/README.md` for full setup and deploy steps.
+The repo ships three reference apps:
 
-### Verify the repo
+- `apps/full-app`
+- `apps/agent-playground`
+- `apps/workspace-playground`
 
-```bash
-pnpm lint
-pnpm typecheck
-pnpm test
-```
-
-For the full CI check:
-
-```bash
-pnpm ci
-```
-
-## Common scripts
-
-From the repo root:
-
-```bash
-pnpm build
-pnpm dev
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm e2e
-pnpm storybook
-```
-
-## Package details
-
-> Start with the product model above. Use the details below when you need implementation boundaries.
-
-### `@hachej/boring-core`
-
-Foundation package for Boring UI apps.
-
-It provides:
-
-- config loading and validation
-- Fastify app factory
-- Postgres + Drizzle integration
-- better-auth integration
-- user/workspace management
-- frontend app shell and providers
-
-Docs: `packages/core/docs/CORE.md`
-
-### `@hachej/boring-agent`
-
-Embeddable coding agent and standalone app with a Pi-native harness.
-
-It ships three runtime modes behind one interface:
-
-- `direct` — no isolation, local dev friendly
-- `local` — `bwrap` isolation on Linux
-- `vercel-sandbox` — Firecracker microVM execution
-
-Docs: `packages/agent/docs/plans/agent-package-spec.md`
-
-### `@hachej/boring-workspace`
-
-Workspace UI and bridge package.
-
-It provides:
-
-- layout runtime and Dockview composition
-- plugin registries
-- workspace bridge commands
-- default workspace plugins
-- app composition helpers for agent-integrated shells
-
-Docs: `packages/workspace/docs/INTERFACES.md`
-
-## Reference app
-
-`apps/full-app` is the canonical wiring example for core + agent + workspace.
-
-Useful commands:
+Useful commands for the full reference app:
 
 ```bash
 pnpm --filter full-app dev
@@ -241,14 +180,6 @@ pnpm --filter full-app e2e:smoke
 ```
 
 More: `apps/full-app/README.md`
-
-## Specs
-
-Canonical docs live in:
-
-- `packages/core/docs/CORE.md`
-- `packages/workspace/docs/INTERFACES.md`
-- `packages/agent/docs/plans/agent-package-spec.md`
 
 ## License
 
