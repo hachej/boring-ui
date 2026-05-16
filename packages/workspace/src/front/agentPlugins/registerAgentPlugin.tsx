@@ -5,7 +5,9 @@ import {
   type CapturedBoringFrontRegistrations,
 } from "../../shared/plugins/frontFactory"
 import type { BoringPackageBoringField } from "../../shared/plugins/manifest"
-import type { SurfaceOpenRequest } from "../../shared/types/surface"
+import type { PanelConfig } from "../../shared/types/panel"
+import type { SurfaceOpenRequest, SurfaceResolverConfig } from "../../shared/types/surface"
+import type { CommandConfig } from "../registry/types"
 import { useCommandRegistry, useRegistry, useSurfaceResolverRegistry } from "../registry/RegistryProvider"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "./reloadEvent"
 
@@ -57,12 +59,25 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
   return api.flush()
 }
 
-function commitCapturedFrontFactory(pluginId: string, captured: CapturedBoringFrontRegistrations, registries: ReturnType<typeof getRegistries>): void {
-  // Dynamic hot reload can atomically replace registry-owned contributions.
-  // Providers, bindings, and catalogs need a React render boundary and remain
-  // static-composition-only until the front asset loader grows that support.
+/**
+ * Translate a CapturedBoringFrontRegistrations into the registry shapes
+ * expected by the four atomic `replaceByPluginId` ops added in Phase 3.
+ * Providers, bindings, and catalogs aren't returned by the hot front
+ * factory today — they remain static-composition-only until the front
+ * asset loader grows that support.
+ */
+function buildRegistryPayloads(
+  pluginId: string,
+  captured: CapturedBoringFrontRegistrations,
+): {
+  panels: PanelConfig[]
+  commands: CommandConfig[]
+  surfaceResolvers: SurfaceResolverConfig[]
+} {
+  const panels: PanelConfig[] = []
   for (const panel of captured.panels) {
-    registries.panels.register(panel.id, {
+    panels.push({
+      id: panel.id,
       title: panel.label ?? panel.id,
       component: panel.component,
       placement: panel.placement ?? "center",
@@ -73,10 +88,11 @@ function commitCapturedFrontFactory(pluginId: string, captured: CapturedBoringFr
       ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
       ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
       ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
-    })
+    } as PanelConfig)
   }
   for (const tab of captured.leftTabs) {
-    registries.panels.register(tab.id, {
+    panels.push({
+      id: tab.id,
       title: tab.title,
       component: tab.component ?? (() => null),
       placement: "left-tab",
@@ -86,64 +102,49 @@ function commitCapturedFrontFactory(pluginId: string, captured: CapturedBoringFr
       ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
       ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
       ...(tab.chromeless !== undefined ? { chromeless: tab.chromeless } : {}),
-    })
+    } as PanelConfig)
   }
-  for (const command of captured.panelCommands) {
-    registries.commands.registerCommand({
-      id: command.id,
-      title: command.title,
-      run: command.run ?? (() => undefined),
-      pluginId,
-    })
-  }
-  for (const resolver of captured.surfaceResolvers) {
-    registries.surfaceResolvers.register(resolver.id ?? `${pluginId}:${resolver.kind}`, {
-      source: resolver.source ?? "plugin",
-      pluginId,
-      resolve(request: SurfaceOpenRequest) {
-        if (request.kind !== resolver.kind) return undefined
-        return resolver.resolve(request) ?? undefined
-      },
-    })
-  }
+  const commands: CommandConfig[] = captured.panelCommands.map((command) => ({
+    id: command.id,
+    title: command.title,
+    run: command.run ?? (() => undefined),
+    pluginId,
+  }))
+  const surfaceResolvers: SurfaceResolverConfig[] = captured.surfaceResolvers.map((resolver) => ({
+    id: resolver.id ?? `${pluginId}:${resolver.kind}`,
+    source: resolver.source ?? "plugin",
+    pluginId,
+    resolve(request: SurfaceOpenRequest) {
+      if (request.kind !== resolver.kind) return undefined
+      return resolver.resolve(request) ?? undefined
+    },
+  }))
+  return { panels, commands, surfaceResolvers }
+}
+
+/**
+ * Atomic per-registry replace. Each registry sees exactly ONE emit —
+ * never an intermediate empty state — fixing the prior in-place
+ * register-then-prune transient that DockView could observe.
+ *
+ * Pi parity: `agent-session.js:1896 reload` — rebuild over diff, single
+ * observable transition per registry.
+ */
+function commitCapturedFrontFactory(
+  pluginId: string,
+  captured: CapturedBoringFrontRegistrations,
+  registries: ReturnType<typeof getRegistries>,
+): void {
+  const payloads = buildRegistryPayloads(pluginId, captured)
+  registries.panels.replaceByPluginId(pluginId, payloads.panels)
+  registries.commands.replaceByPluginId(pluginId, payloads.commands)
+  registries.surfaceResolvers.replaceByPluginId(pluginId, payloads.surfaceResolvers)
 }
 
 function unregisterPlugin(pluginId: string, registries: ReturnType<typeof getRegistries>): void {
-  registries.panels.unregisterByPluginId(pluginId)
-  registries.commands.unregisterByPluginId(pluginId)
-  registries.surfaceResolvers.unregisterByPluginId(pluginId)
-}
-
-function capturedIds(pluginId: string, captured: CapturedBoringFrontRegistrations): {
-  panels: Set<string>
-  commands: Set<string>
-  surfaceResolvers: Set<string>
-} {
-  return {
-    panels: new Set([...captured.panels, ...captured.leftTabs].map((entry) => entry.id)),
-    commands: new Set(captured.panelCommands.map((entry) => entry.id)),
-    surfaceResolvers: new Set(
-      captured.surfaceResolvers.map((entry) => entry.id ?? `${pluginId}:${entry.kind}`),
-    ),
-  }
-}
-
-function pruneMissingPluginContributions(
-  pluginId: string,
-  keep: ReturnType<typeof capturedIds>,
-  registries: ReturnType<typeof getRegistries>,
-): void {
-  for (const panel of registries.panels.listAll()) {
-    if (panel.pluginId === pluginId && !keep.panels.has(panel.id)) registries.panels.unregister(panel.id)
-  }
-  for (const command of registries.commands.getCommands()) {
-    if (command.pluginId === pluginId && !keep.commands.has(command.id)) registries.commands.unregisterCommand(command.id)
-  }
-  for (const resolver of registries.surfaceResolvers.list()) {
-    if (resolver.pluginId === pluginId && !keep.surfaceResolvers.has(resolver.id)) {
-      registries.surfaceResolvers.unregister(resolver.id)
-    }
-  }
+  registries.panels.replaceByPluginId(pluginId, [])
+  registries.commands.replaceByPluginId(pluginId, [])
+  registries.surfaceResolvers.replaceByPluginId(pluginId, [])
 }
 
 export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): void {
@@ -182,14 +183,11 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
             window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
             return
           }
-          // Replace contributions in-place. A transient unregister makes
-          // already-mounted panes briefly resolve to null; DockView may then
-          // discard the tab before the replacement registration arrives.
-          // Registering over the same ids is atomic for mounted wrappers and
-          // preserves old state until the new component is ready.
-          const keep = capturedIds(event.id, captured)
+          // Atomic per-registry replace (Phase 3 + Phase 6 wiring):
+          // `replaceByPluginId` drops owned entries and registers the new
+          // set in a single emit. Subscribers (including DockView) see
+          // exactly one transition — never an intermediate empty state.
           commitCapturedFrontFactory(event.id, captured, registries)
-          pruneMissingPluginContributions(event.id, keep, registries)
           lastSeenRef.current.set(event.id, event.revision)
           window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
         } catch (error) {
