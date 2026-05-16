@@ -312,6 +312,41 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     }
   })
 
+  /**
+   * Simulates the CLI scenario: a globally-installed boring-ui binary runs
+   * in a fresh user workspace with no pre-populated node_modules. The chain
+   * we exercise is:
+   *
+   *   require.resolve("@hachej/boring-pi/package.json")  // CLI process
+   *     ↓ provisionRuntime copies skills/ into <workspaceRoot>/node_modules/
+   *     ↓ createBoringPiPackageSource emits the package source
+   *     ↓ createResourceSettingsManager injects it into Pi's project settings
+   *     ↓ Pi indexes package.json#pi.skills
+   *     ↓ Pi surfaces the skill via /api/v1/agent/skills
+   *
+   * If any link breaks (package missing on publish, provisioning skips the
+   * skills dir, injection drops the package), the skill goes silent for
+   * every CLI user. This test fails loudly before any of that ships.
+   */
+  test("CLI-like boot in fresh workspace auto-discovers boring-plugin-authoring skill via /api/v1/agent/skills", async () => {
+    const workspaceRoot = await makeTempDir("boring-cli-skill-discovery-")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/skills" })
+      expect(res.statusCode).toBe(200)
+      const skillNames: string[] = res.json().skills.map((s: { name: string }) => s.name)
+      expect(skillNames).toContain("boring-plugin-authoring")
+    } finally {
+      await app.close()
+    }
+  })
+
   test("collects plugin provisioning declarations and asks agent to seed workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-provisioned-")
     const templateRoot = await makeTempDir("boring-workspace-template-")
