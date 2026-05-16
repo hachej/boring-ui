@@ -180,6 +180,8 @@ export async function createAgentApp(
   await app.register(skillsRoutes, {
     workspaceRoot,
     additionalSkillPaths: opts.pi?.additionalSkillPaths,
+    piPackages: opts.pi?.packages,
+    noSkills: opts.pi?.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
