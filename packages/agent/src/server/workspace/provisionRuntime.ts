@@ -122,10 +122,16 @@ async function fingerprint(contributions: Array<{ id: string; provisioning: Runt
       hash.update(`node-package:${spec.id}:${spec.packageName}:${packageRoot}\n`)
       const packageJson = join(packageRoot, 'package.json')
       const distDir = join(packageRoot, 'dist')
+      const docsDir = join(packageRoot, 'docs')
+      const skillsDir = join(packageRoot, 'skills')
+      const referencesDir = join(packageRoot, 'references')
       const sourceDocsDir = join(packageRoot, 'src', 'server', 'docs')
       if (await exists(packageJson)) await hashPath(packageJson, hash)
       if (await exists(distDir)) await hashPath(distDir, hash)
-      else if (await exists(sourceDocsDir)) await hashPath(sourceDocsDir, hash)
+      if (await exists(docsDir)) await hashPath(docsDir, hash)
+      if (await exists(skillsDir)) await hashPath(skillsDir, hash)
+      if (await exists(referencesDir)) await hashPath(referencesDir, hash)
+      else if (!(await exists(distDir)) && await exists(sourceDocsDir)) await hashPath(sourceDocsDir, hash)
     }
   }
   return `sha256:${hash.digest('hex')}`
@@ -192,6 +198,13 @@ async function ensureNodePackages(workspaceRoot: string, specs: RuntimeNodePacka
     if (!(await exists(join(target, 'dist', 'docs', 'plugins.md')))) {
       await copyIfExists(join(packageRoot, 'src', 'server', 'docs'), join(target, 'dist', 'docs'))
     }
+    // Pi package skills use package-relative docs/ paths, matching npm
+    // installs. Materialize root docs in provisioned child workspaces too.
+    if (!(await copyIfExists(join(packageRoot, 'docs'), join(target, 'docs')))) {
+      await copyIfExists(join(packageRoot, 'src', 'server', 'docs'), join(target, 'docs'))
+    }
+    await copyIfExists(join(packageRoot, 'skills'), join(target, 'skills'))
+    await copyIfExists(join(packageRoot, 'references'), join(target, 'references'))
     await copyIfExists(join(packageRoot, 'src', 'globals.css'), join(target, 'src', 'globals.css'))
   }
 }

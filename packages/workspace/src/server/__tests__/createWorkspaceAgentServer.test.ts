@@ -301,6 +301,12 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       )
       expect(docs).toContain("Boring UI Plugin System")
       expect(docs).toContain("BoringFrontFactory")
+      const skill = await readFile(
+        join(workspaceRoot, "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
+        "utf8",
+      )
+      expect(skill).toContain("name: boring-plugin-authoring")
+      expect(skill).toContain("../../references/workspace/plugins.md")
     } finally {
       await app.close()
     }

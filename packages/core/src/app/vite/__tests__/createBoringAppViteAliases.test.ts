@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createBoringAppViteAliases, type BoringViteAlias } from '../index.js'
+import {
+  BORING_REACT_VITE_DEDUPE,
+  createBoringAppViteAliases,
+  createBoringReactViteAliases,
+  type BoringViteAlias,
+} from '../index.js'
 
 function applyViteLikeAlias(aliases: BoringViteAlias[], specifier: string): string {
   for (const alias of aliases) {
@@ -14,6 +19,22 @@ function applyViteLikeAlias(aliases: BoringViteAlias[], specifier: string): stri
   }
   return specifier
 }
+
+describe('createBoringReactViteAliases', () => {
+  it('pins React family imports to the host app singleton paths', () => {
+    const aliases = createBoringReactViteAliases({ appRoot: '/repo/apps/full-app' })
+
+    expect(applyViteLikeAlias(aliases, 'react')).toBe('/repo/apps/full-app/node_modules/react')
+    expect(applyViteLikeAlias(aliases, 'react-dom')).toBe('/repo/apps/full-app/node_modules/react-dom')
+    expect(applyViteLikeAlias(aliases, 'react-dom/client')).toBe('/repo/apps/full-app/node_modules/react-dom/client.js')
+    expect(applyViteLikeAlias(aliases, 'react/jsx-runtime')).toBe('/repo/apps/full-app/node_modules/react/jsx-runtime.js')
+    expect(applyViteLikeAlias(aliases, 'react/jsx-dev-runtime')).toBe('/repo/apps/full-app/node_modules/react/jsx-dev-runtime.js')
+  })
+
+  it('exports the Vite dedupe list required for hot plugin hook components', () => {
+    expect([...BORING_REACT_VITE_DEDUPE]).toEqual(['react', 'react-dom'])
+  })
+})
 
 describe('createBoringAppViteAliases', () => {
   it('does not let app/front entry alias swallow app/front/styles.css', () => {

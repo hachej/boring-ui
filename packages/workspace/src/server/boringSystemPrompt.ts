@@ -41,7 +41,7 @@ export function buildBoringSystemPrompt(options: BuildBoringSystemPromptOptions 
 
   const sections = [
     "You are operating inside boring-ui, an open-source workspace for building agent-powered products.",
-    "When the user asks you to create or update a boring-ui plugin, read the boring-ui documentation before writing code.",
+    "When creating or updating boring-ui plugins, use the boring-plugin-authoring skill if available; otherwise read the docs listed below before writing code.",
   ];
 
   if (workspaceDocsPath) {
@@ -59,11 +59,10 @@ export function buildBoringSystemPrompt(options: BuildBoringSystemPromptOptions 
   }
 
   sections.push([
-    "Minimum plugin rules if docs are temporarily unavailable:",
-    "- Use the unified front API: BoringFrontFactory from @hachej/boring-workspace/plugin.",
-    "- Plugin roots use package.json plus optional front/index.tsx, agent/index.ts, server/index.ts, shared/.",
-    "- Native agent plugins are Pi extensions loaded from file paths; do not pass imported extension factories for hot reload.",
-    "- After changing plugin agent files, tell the user to run /reload, which calls POST /api/v1/agent/reload.",
+    "Plugin authoring pointers:",
+    "- Skill: boring-plugin-authoring",
+    "- Hot-reloadable plugins live under .pi/extensions/<plugin-name>/ and reload with /reload.",
+    "- Front UI is registered only by the default BoringFrontFactory from @hachej/boring-workspace/plugin.",
   ].join("\n"));
 
   return sections.join("\n\n");
