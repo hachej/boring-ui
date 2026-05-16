@@ -100,7 +100,13 @@ export default plugin
 ```
 
 Front plugin code is browser code. It must not contribute executable agent tools.
-The legacy front-side `agentTools` / `agent-tool` output path is removed.
+Hot-loaded panels are ordinary React function components: hooks such as
+`useState`, `useEffect`, and `useMemo` are supported. The host Vite dev server
+must resolve `react`, `react-dom`, `react/jsx-runtime`, and
+`react/jsx-dev-runtime` to the same singleton modules used by the workspace
+shell; duplicate React copies are a host configuration bug, not a plugin author
+contract. The legacy front-side `agentTools` / `agent-tool` output path is
+removed.
 
 ### Server/workspace
 
@@ -120,13 +126,15 @@ skill loading, and `piSession.reload()`.
 
 1. User sends `/reload` in chat.
 2. Front slash-command calls `POST /api/v1/agent/reload`.
-3. Generic agent route calls the configured harness `reloadSession` method.
-4. Pi harness implementation refreshes Pi extension/skill/package inputs and
-   reloads the Pi session.
-5. Workspace composition `beforeReload` reloads `BoringPluginAssetManager`.
-6. Manager emits `boring.plugin.load`, `boring.plugin.unload`, or
+3. Generic agent route calls the workspace-provided `beforeReload` hook.
+4. Workspace composition refreshes package.json `pi` inputs and reloads
+   `BoringPluginAssetManager`.
+5. Manager emits `boring.plugin.load`, `boring.plugin.unload`, or
    `boring.plugin.error` SSE events.
-7. Front plugin runtime hot-swaps successful `front` modules and keeps the last
+6. Generic agent route calls the configured harness `reloadSession` method.
+7. Pi harness implementation reloads Pi extension/skill/package resources for
+   the session.
+8. Front plugin runtime hot-swaps successful `front` modules and keeps the last
    good UI alive on malformed/error events.
 
 The generic agent package exposes only the harness seam; Pi-specific knobs live
@@ -172,7 +180,9 @@ agent-doc-embedding plan.
 Hot-loaded front entries currently use Vite-style `/@fs/<absolute-path>` module
 URLs. `WorkspaceProvider` gates that path behind `frontPluginHotReload="vite"`,
 which defaults on only in dev, because Vite transforms TypeScript/TSX and React
-imports for the browser.
+imports for the browser. Vite hosts that enable this mode must alias/dedupe the
+React family imports to the host app singleton so hook-based plugin panels run
+under the same dispatcher as the workspace shell.
 
 A production Fastify-only host needs a workspace-owned authenticated module
 asset endpoint/bundler before front plugin hot-loading can work without Vite.

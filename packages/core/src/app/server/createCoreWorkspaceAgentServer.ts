@@ -12,6 +12,7 @@ import {
   collectWorkspaceAgentServerPlugins,
   provisionWorkspaceAgentServer,
   type CreateWorkspaceAgentServerOptions,
+  type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/app/server'
 import {
   createInMemoryBridge,
@@ -94,10 +95,9 @@ export type CoreWorkspaceAgentServer = FastifyInstance & {
   workspaceStore: WorkspaceStore
 }
 
-export type CoreWorkspaceAgentServerPlugin =
-  NonNullable<CreateWorkspaceAgentServerOptions['plugins']>[number] & {
-    provisioning?: RuntimeProvisioningContribution
-  }
+export type CoreWorkspaceAgentServerPlugin = WorkspaceServerPlugin & {
+  provisioning?: RuntimeProvisioningContribution
+}
 
 export interface CreateCoreWorkspaceAgentServerOptions
   extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {

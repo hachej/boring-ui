@@ -2,17 +2,22 @@ import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { createBoringAppViteAliases } from '@hachej/boring-core/app/vite'
+import {
+  BORING_REACT_VITE_DEDUPE,
+  createBoringAppViteAliases,
+  createBoringReactViteAliases,
+} from '@hachej/boring-core/app/vite'
 
 const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === '1'
+const reactAliases = createBoringReactViteAliases({ appRoot: __dirname })
+const localPackageAliases = createBoringAppViteAliases({ repoRoot: resolve(__dirname, '../..') })
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  resolve: useLocalPackages
-    ? {
-        alias: createBoringAppViteAliases({ repoRoot: resolve(__dirname, '../..') }),
-      }
-    : undefined,
+  resolve: {
+    alias: useLocalPackages ? [...reactAliases, ...localPackageAliases] : reactAliases,
+    dedupe: [...BORING_REACT_VITE_DEDUPE],
+  },
   build: {
     outDir: 'dist/front',
     emptyOutDir: true,

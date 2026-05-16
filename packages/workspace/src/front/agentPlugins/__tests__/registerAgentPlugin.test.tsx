@@ -206,6 +206,58 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
   })
 
+  test("supports hook-based panel components from hot-loaded front factories", async () => {
+    const importFront = async (): Promise<{ default: BoringFrontFactory }> => ({
+      default(api) {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HookPane() {
+            const [count, setCount] = React.useState(0)
+            const [ready, setReady] = React.useState(false)
+            React.useEffect(() => {
+              setReady(true)
+            }, [])
+            return React.createElement(
+              "button",
+              { "data-testid": "hook-pane", onClick: () => setCount((value) => value + 1) },
+              `${ready ? "ready" : "loading"}:${count}`,
+            )
+          },
+        })
+      },
+    })
+
+    function Listener() {
+      useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+      return null
+    }
+
+    render(
+      <RegistryProvider
+        panelRegistry={new PanelRegistry()}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <Listener />
+        <PaneRenderer id="hot-pane" />
+      </RegistryProvider>,
+    )
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/hook-front.tsx",
+      boring: { front: "front/index.tsx" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("hook-pane")).toHaveTextContent("ready:0"))
+    screen.getByTestId("hook-pane").click()
+    await waitFor(() => expect(screen.getByTestId("hook-pane")).toHaveTextContent("ready:1"))
+  })
+
   test("resolves relative front module URLs through apiBaseUrl", async () => {
     const importedUrls: string[] = []
     function Listener() {
