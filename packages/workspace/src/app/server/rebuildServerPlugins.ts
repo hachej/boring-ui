@@ -80,7 +80,3 @@ export async function rebuildServerPlugins(opts: {
   return { ok: diagnostics.length === 0, plugins, diagnostics }
 }
 
-/** Stable single-line diagnostic format for the /reload error path. */
-export function formatPluginDiagnostic(d: PluginReloadDiagnostic): string {
-  return `${d.source}: ${d.message}`
-}

@@ -28,7 +28,7 @@ import {
   type ModulePluginEntry,
 } from "./pluginEntryResolver"
 import { LifecycleBus } from "../../shared/plugins/lifecycleBus"
-import { formatPluginDiagnostic, rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
+import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
@@ -332,16 +332,6 @@ function readPackageJsonPiSnapshot(pluginDirs: string[]): PackageJsonPiSnapshot 
   }
 }
 
-// Resolve the unified entry array into `WorkspaceServerPlugin[]` for
-// `bootstrapServer`. Dispatch lives in `resolveOnePluginEntry` so the
-// same logic serves rebuilds on /reload (rebuildServerPlugins.ts).
-async function resolvePluginEntries(
-  entries: WorkspacePluginEntry[],
-  ctx: WorkspaceAgentServerPluginContext,
-): Promise<WorkspaceServerPlugin[]> {
-  return Promise.all(entries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)))
-}
-
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -363,7 +353,12 @@ export async function createWorkspaceAgentServer(
     ...(opts.plugins ?? []),
     ...(opts.pluginFactories ?? []),
   ]
-  const resolvedPlugins = await resolvePluginEntries(allPluginEntries, ctx)
+  // Inline dispatch: each entry shape (object / factory / { dir } /
+   // { module }) is resolved by `resolveOnePluginEntry`. Same logic
+   // serves rebuilds on /reload (rebuildServerPlugins.ts).
+  const resolvedPlugins = await Promise.all(
+    allPluginEntries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)),
+  )
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
     plugins: resolvedPlugins,
@@ -453,7 +448,7 @@ export async function createWorkspaceAgentServer(
       // /reload response shape to carry diagnostics non-fatally.
       const rebuild = await rebuildPlugins()
       if (rebuild.diagnostics.length > 0) {
-        const details = rebuild.diagnostics.map(formatPluginDiagnostic).join("\n\n")
+        const details = rebuild.diagnostics.map((d) => `${d.source}: ${d.message}`).join("\n\n")
         throw new Error(`Boring plugin re-resolve failed:\n\n${details}`)
       }
       await opts.beforeReload?.()

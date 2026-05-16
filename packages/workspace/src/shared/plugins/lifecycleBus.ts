@@ -28,35 +28,37 @@ export interface PluginStartEvent {
 
 export type PluginLifecycleEvent = PluginShutdownEvent | PluginStartEvent
 
-export type PluginLifecycleHandler<E extends { type: string } = PluginLifecycleEvent> = (
+export type PluginLifecycleHandler<E extends PluginLifecycleEvent = PluginLifecycleEvent> = (
   event: E,
 ) => void | Promise<void>
 
-export class LifecycleBus<E extends { type: string } = PluginLifecycleEvent> {
-  private handlers = new Map<E["type"], Set<PluginLifecycleHandler<E>>>()
+export class LifecycleBus {
+  private handlers = new Map<PluginLifecycleEvent["type"], Set<PluginLifecycleHandler>>()
 
-  on<T extends E["type"]>(type: T, handler: PluginLifecycleHandler<Extract<E, { type: T }>>): () => void {
+  on<T extends PluginLifecycleEvent["type"]>(
+    type: T,
+    handler: PluginLifecycleHandler<Extract<PluginLifecycleEvent, { type: T }>>,
+  ): () => void {
     let set = this.handlers.get(type)
     if (!set) {
       set = new Set()
       this.handlers.set(type, set)
     }
-    set.add(handler as PluginLifecycleHandler<E>)
+    set.add(handler as PluginLifecycleHandler)
     return () => {
-      set!.delete(handler as PluginLifecycleHandler<E>)
+      set!.delete(handler as PluginLifecycleHandler)
     }
   }
 
-  hasHandlers(type: E["type"]): boolean {
+  hasHandlers(type: PluginLifecycleEvent["type"]): boolean {
     const set = this.handlers.get(type)
     return Boolean(set && set.size > 0)
   }
 
-  async emit(event: E): Promise<void> {
-    const set = this.handlers.get(event.type as E["type"])
+  async emit(event: PluginLifecycleEvent): Promise<void> {
+    const set = this.handlers.get(event.type)
     if (!set || set.size === 0) return
-    const snapshot = [...set]
-    for (const handler of snapshot) {
+    for (const handler of [...set]) {
       try {
         await handler(event)
       } catch (error) {
