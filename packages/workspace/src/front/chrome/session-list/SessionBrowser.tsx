@@ -182,7 +182,7 @@ function SessionRow({
       className={cn(
         "group relative mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
         "cursor-pointer hover:bg-foreground/[0.04]",
-        active && "bg-foreground/[0.06] text-foreground",
+        active && "border-l-2 border-accent bg-foreground/[0.06] text-foreground",
       )}
       onClick={() => onSwitch?.(session.id)}
     >

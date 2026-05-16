@@ -768,10 +768,13 @@ export function ChatPanel(props: ChatPanelProps) {
       </Conversation>
 
       <div className={cn(chrome ? "px-4 pb-4 pt-2 sm:px-6 sm:pb-5" : "px-3 pb-3 pt-1")}>
+        {/* Working… badge — collapses to 0 height when idle so it doesn't waste
+            vertical space. Height transition preserves layout stability. */}
         <div
           className={cn(
-            "mx-auto mb-2 flex w-full items-center gap-2",
+            "mx-auto w-full overflow-hidden transition-all duration-300",
             chrome ? "max-w-3xl" : "max-w-[680px]",
+            isStreaming ? "mb-2 max-h-8" : "max-h-0",
           )}
         >
           <div
@@ -779,9 +782,7 @@ export function ChatPanel(props: ChatPanelProps) {
             role="status"
             aria-live="polite"
             className={cn(
-              "flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur",
-              "transition-opacity duration-300",
-              isStreaming ? "opacity-100" : "opacity-0 pointer-events-none",
+              "inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/85 px-2.5 py-1 text-[12px] text-muted-foreground/75 shadow-sm backdrop-blur",
             )}
           >
             <motion.span

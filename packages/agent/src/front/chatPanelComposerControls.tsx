@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BotIcon, BrainIcon, CheckIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
+import { BotIcon, BrainIcon, CheckIcon, ChevronDownIcon, EyeIcon, EyeOffIcon } from 'lucide-react'
 import {
   Command,
   CommandEmpty,
@@ -115,6 +115,7 @@ export function ModelSelect({
         >
           <BotIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate">{triggerLabel}</span>
+          <ChevronDownIcon className="h-3 w-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
         </button>
       </PopoverTrigger>
       <PopoverContent
