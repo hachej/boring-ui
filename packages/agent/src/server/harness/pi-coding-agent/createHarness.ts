@@ -375,6 +375,7 @@ export function createPiCodingAgentHarness(opts: {
     if (!handle) return;
     handle.piSession.dispose();
     piSessions.delete(sessionId);
+    nativeFollowUpPending.delete(sessionId);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);

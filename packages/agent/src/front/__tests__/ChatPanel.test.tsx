@@ -636,8 +636,8 @@ describe('ChatPanel (shadcn)', () => {
         error: undefined,
       })
       const html = renderToStaticMarkup(<ChatPanel sessionId="s" />)
-      // Badge is always in DOM; hidden via opacity when not working
-      expect(html).toContain('opacity-0 pointer-events-none')
+      // Badge is always in DOM; hidden via max-h-0 when not working
+      expect(html).toContain('max-h-0')
     })
   })
 

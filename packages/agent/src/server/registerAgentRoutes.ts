@@ -207,6 +207,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getSessionNamespace === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
   const runtimeBindings = new Map<string, Promise<RuntimeBinding>>()
+  const MAX_RUNTIME_BINDINGS = 256
+  function evictRuntimeBindings(): void {
+    if (runtimeBindings.size <= MAX_RUNTIME_BINDINGS) return
+    const keys = Array.from(runtimeBindings.keys())
+    for (let i = 0; i < keys.length - MAX_RUNTIME_BINDINGS; i++) {
+      runtimeBindings.delete(keys[i])
+    }
+  }
 
   async function resolveRuntimeScope(
     workspaceId: string,
@@ -347,6 +355,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
     const created = createRuntimeBinding(workspaceId, scope, request)
     runtimeBindings.set(scope.key, created)
+    evictRuntimeBindings()
     try {
       return await ensureRuntimeBindingReady(
         workspaceId,
@@ -368,6 +377,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
     const created = createRuntimeBinding(workspaceId, scope)
     runtimeBindings.set(scope.key, created)
+    evictRuntimeBindings()
     try {
       const binding = await created
       binding.lastHealthCheckMs = Date.now()
