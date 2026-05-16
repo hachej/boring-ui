@@ -34,7 +34,7 @@ describe("Phase 4 — rebuildServerPlugins", () => {
     bus.on("plugin_start", (e) => { events.push(`up:${e.pluginId}:${e.reason}`) })
 
     const result = await rebuildServerPlugins({
-      entries: [{ spec: { dir }, hotReload: true }],
+      entries: [{ dir, hotReload: true }],
       ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
       bus,
       currentPluginIds: ["rebuilt"],
@@ -62,8 +62,8 @@ describe("Phase 4 — rebuildServerPlugins", () => {
 
     const result = await rebuildServerPlugins({
       entries: [
-        { spec: { dir: "/nonexistent" }, hotReload: true },
-        { spec: { dir: goodDir }, hotReload: true },
+        { dir: "/nonexistent", hotReload: true },
+        { dir: goodDir, hotReload: true },
       ],
       ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
     })

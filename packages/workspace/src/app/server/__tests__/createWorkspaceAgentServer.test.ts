@@ -354,7 +354,7 @@ describe("Phase 1 — directory-source plugin entries", () => {
       workspaceRoot: "/tmp/phase1-host",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ spec: { dir }, options: { adapter: "abc" }, hotReload: true }],
+      plugins: [{ dir, options: { adapter: "abc" }, hotReload: true }],
     })
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
@@ -372,7 +372,7 @@ describe("Phase 1 — directory-source plugin entries", () => {
       workspaceRoot: "/tmp/phase1-obj-host",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ spec: { dir }, hotReload: true }],
+      plugins: [{ dir, hotReload: true }],
     })
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
@@ -389,7 +389,7 @@ describe("Phase 1 — directory-source plugin entries", () => {
       workspaceRoot: "/tmp/phase1-explicit-host",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ spec: { dir }, hotReload: true }],
+      plugins: [{ dir, hotReload: true }],
     })
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
@@ -412,7 +412,7 @@ describe("Phase 1 — directory-source plugin entries", () => {
         workspaceRoot: "/tmp/phase1-missing-host",
         logger: false,
         provisionWorkspace: false,
-        plugins: [{ spec: { dir }, hotReload: true }],
+        plugins: [{ dir, hotReload: true }],
       }),
     ).rejects.toThrow(/declared but not found/)
   })
@@ -427,7 +427,7 @@ describe("Phase 1 — directory-source plugin entries", () => {
       workspaceRoot: "/tmp/phase1-mod",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ spec: { module: () => ({ default: factory }) }, options: { x: 7 } }],
+      plugins: [{ module: () => ({ default: factory }), options: { x: 7 } }],
     })
 
     expect(factory).toHaveBeenCalledTimes(1)
@@ -443,7 +443,7 @@ describe("Phase 1 — directory-source plugin entries", () => {
       workspaceRoot: "/tmp/phase1-mod-obj",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ spec: { module: () => ({ default: { id: "mod-obj", systemPrompt: "MOD_OBJ" } }) } }],
+      plugins: [{ module: () => ({ default: { id: "mod-obj", systemPrompt: "MOD_OBJ" } }) }],
     })
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
@@ -468,7 +468,7 @@ describe("Phase 5 — beforeReload triggers directory-source re-resolve", () => 
       workspaceRoot: await makeTempDir("phase5-host-"),
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ spec: { dir }, hotReload: true }],
+      plugins: [{ dir, hotReload: true }],
     })
 
     // Edit the plugin's server module
@@ -503,7 +503,7 @@ describe("Phase 5 — beforeReload triggers directory-source re-resolve", () => 
       workspaceRoot: await makeTempDir("phase5-bad-host-"),
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ spec: { dir }, hotReload: true }],
+      plugins: [{ dir, hotReload: true }],
     })
 
     // Replace the server entry with a syntax error so the next jiti import throws.

@@ -19,19 +19,25 @@ import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
 
-export interface DirSpec {
+/**
+ * Directory-source entry: `{ dir, options?, hotReload? }`. Resolved via
+ * jiti when `hotReload: true`, native `import()` otherwise.
+ */
+export interface DirPluginEntry {
   dir: string
+  options?: unknown
+  hotReload?: boolean
 }
 
-export interface ModuleSpec {
+/**
+ * Module-source entry: `{ module, options? }`. The `module` thunk returns
+ * a module namespace (`{ default: X }`) or a bare value; both forms are
+ * unwrapped by `instantiatePluginExport`.
+ */
+export interface ModulePluginEntry {
   module: () => unknown | Promise<unknown>
+  options?: unknown
 }
-
-export type PluginSpec = DirSpec | ModuleSpec
-
-// (Phase 1 review — Gemini 3.1: the `DirPluginEntry` interface was exported
-// but never used; the canonical shape lives inline on `WorkspacePluginEntry`
-// in createWorkspaceAgentServer.ts. Removed to prevent drift.)
 
 export interface BoringPackageJsonField {
   front?: string
@@ -182,17 +188,17 @@ function instantiatePluginExport(
 }
 
 /**
- * Resolves a directory-source entry to a `WorkspaceServerPlugin` by reading
- * the plugin's package.json, locating its server entry (manifest first,
- * convention fallback, declared-but-missing throws), importing it (jiti
- * when `hotReload`, otherwise regular `import()`), and applying the factory
- * contract. Throws when no package.json or server entry is resolved.
+ * Resolves a directory-source entry. Reads package.json, locates the
+ * server entry (manifest first, convention fallback, declared-but-missing
+ * throws), imports it (jiti when `hotReload`, otherwise regular import),
+ * and applies the factory contract. Throws when no package.json or
+ * server entry is resolved.
  */
 export async function resolveDirServerPlugin(
-  entry: { spec: DirSpec; options?: unknown; hotReload?: boolean },
+  entry: DirPluginEntry,
   ctx: ResolveDirServerPluginContext,
 ): Promise<WorkspaceServerPlugin> {
-  const dir = resolve(entry.spec.dir)
+  const dir = resolve(entry.dir)
   const { pkg, serverPath } = resolvePluginEntryPaths(dir)
   if (!pkg) throw new Error(`boring plugin: no package.json found in ${dir}`)
   if (!serverPath) {
@@ -206,26 +212,43 @@ export async function resolveDirServerPlugin(
 }
 
 /**
- * Resolves a `{ spec: { module } }` entry. The `module` thunk returns
- * either an imported module (`{ default: X }`) or a bare value `X`.
- * Either shape resolves through `instantiatePluginExport`.
+ * Resolves a `{ module }` entry. The thunk returns a module namespace
+ * (`{ default: X }`) or a bare value; both unwrap through
+ * `instantiatePluginExport`.
  */
 export async function resolveModuleServerPlugin(
-  entry: { spec: ModuleSpec; options?: unknown },
+  entry: ModulePluginEntry,
   ctx: ResolveDirServerPluginContext,
 ): Promise<WorkspaceServerPlugin> {
-  const result = await entry.spec.module()
+  const result = await entry.module()
   return instantiatePluginExport(result, entry.options, ctx, "module-spec")
 }
 
-export function isDirEntry(entry: unknown): entry is { spec: DirSpec; options?: unknown; hotReload?: boolean } {
-  if (typeof entry !== "object" || entry === null) return false
-  const candidate = entry as { spec?: unknown }
-  return typeof candidate.spec === "object" && candidate.spec !== null && "dir" in candidate.spec
+export function isDirEntry(entry: unknown): entry is DirPluginEntry {
+  return typeof entry === "object" && entry !== null && "dir" in entry
 }
 
-export function isModuleEntry(entry: unknown): entry is { spec: ModuleSpec; options?: unknown } {
-  if (typeof entry !== "object" || entry === null) return false
-  const candidate = entry as { spec?: unknown }
-  return typeof candidate.spec === "object" && candidate.spec !== null && "module" in candidate.spec
+export function isModuleEntry(entry: unknown): entry is ModulePluginEntry {
+  return typeof entry === "object" && entry !== null && "module" in entry && typeof (entry as ModulePluginEntry).module === "function"
+}
+
+/**
+ * Single dispatch point for any entry shape:
+ *   - WorkspaceServerPlugin object → pass through
+ *   - factory function → call with ctx
+ *   - DirPluginEntry → jiti/import + factory
+ *   - ModulePluginEntry → thunk + factory
+ *
+ * Used by both initial install (createWorkspaceAgentServer) and rebuild
+ * (rebuildServerPlugins) so the dispatch lives in one place.
+ */
+export async function resolveOnePluginEntry<TPlugin extends WorkspaceServerPlugin>(
+  entry: unknown,
+  ctx: ResolveDirServerPluginContext,
+  invokeFactory: (fn: (ctx: ResolveDirServerPluginContext) => TPlugin) => TPlugin,
+): Promise<TPlugin> {
+  if (typeof entry === "function") return invokeFactory(entry as (ctx: ResolveDirServerPluginContext) => TPlugin)
+  if (isDirEntry(entry)) return (await resolveDirServerPlugin(entry, ctx)) as TPlugin
+  if (isModuleEntry(entry)) return (await resolveModuleServerPlugin(entry, ctx)) as TPlugin
+  return entry as TPlugin
 }
