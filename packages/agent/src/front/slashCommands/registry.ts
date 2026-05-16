@@ -16,6 +16,16 @@ export interface SlashCommandContext {
   setModel: (model: string | { provider: string; id: string }) => boolean
   listCommands: () => SlashCommand[]
   reloadAgentPlugins: () => Promise<string>
+  /**
+   * Drives the PluginUpdateStatus banner above the composer. The `/update`
+   * builtin calls `pluginUpdate.run()` which: (1) sets the banner to
+   * "running", (2) hits /api/v1/agent/reload, (3) transitions to
+   * "success" or "error" with diagnostics. Returns a short string ack
+   * for the assistant message bubble.
+   */
+  pluginUpdate?: {
+    run: () => Promise<string>
+  }
 }
 
 export interface CommandRegistry {

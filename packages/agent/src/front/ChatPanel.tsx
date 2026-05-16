@@ -18,6 +18,7 @@ import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
+import { PluginUpdateStatus, type PluginUpdateState } from './composer/PluginUpdateStatus'
 import {
   type ToolRendererOverrides,
 } from './bareToolRenderers'
@@ -444,6 +445,39 @@ export function ChatPanel(props: ChatPanelProps) {
     }
   }, [requestHeaders, sessionId])
 
+  // Plugin update status banner (above the composer). Driven by the
+  // `/update` slash command. `running` while in-flight, then `success`
+  // or `error` with diagnostic details.
+  const [pluginUpdateState, setPluginUpdateState] = useState<PluginUpdateState | null>(null)
+  const runPluginUpdate = useCallback(async () => {
+    setPluginUpdateState({ kind: 'running', startedAt: Date.now() })
+    try {
+      const res = await fetch('/api/v1/agent/reload', {
+        method: 'POST',
+        headers: { ...(requestHeaders ?? {}), 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      })
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({})) as { error?: string }
+        const message = payload.error || `reload failed (${res.status})`
+        setPluginUpdateState({ kind: 'error', finishedAt: Date.now(), message })
+        return `Plugin update failed: ${message}`
+      }
+      const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+      }
+      const reloaded = Boolean(payload.reloaded)
+      setPluginUpdateState({ kind: 'success', finishedAt: Date.now(), reloaded })
+      return reloaded ? 'Plugins updated.' : 'Plugins will reload on the next message.'
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Plugin update failed.'
+      setPluginUpdateState({ kind: 'error', finishedAt: Date.now(), message })
+      return message
+    }
+  }, [requestHeaders, sessionId])
+  const dismissPluginUpdate = useCallback(() => setPluginUpdateState(null), [])
+
 
   const isStreaming = status === 'submitted' || status === 'streaming'
   const attachmentsDisabled = isStreaming || pendingMessages.length > 0
@@ -576,6 +610,7 @@ export function ChatPanel(props: ChatPanelProps) {
           },
           listCommands: () => registry.list(),
           reloadAgentPlugins,
+          pluginUpdate: { run: runPluginUpdate },
         }
         const result = await Promise.resolve(cmd.handler(parsed.args, ctx))
         if (typeof result === 'string') {
@@ -1056,6 +1091,11 @@ export function ChatPanel(props: ChatPanelProps) {
             ))}
           </div>
         )}
+        <PluginUpdateStatus
+          state={pluginUpdateState}
+          onDismiss={dismissPluginUpdate}
+          onRetry={runPluginUpdate}
+        />
         {attachmentNotice && (
           <div
             role="status"
