@@ -20,19 +20,14 @@
  * today swaps to those surfaces only land after a restart.
  */
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
-import type { ServerPluginLifecycleBus } from "./serverPluginLifecycle"
-import {
-  isDirEntry,
-  isModuleEntry,
-  resolveOnePluginEntry,
-  type ResolveDirServerPluginContext,
-} from "./pluginEntryResolver"
+import type { LifecycleBus } from "../../shared/plugins/lifecycleBus"
+import { isDirEntry, resolveOnePluginEntry } from "./pluginEntryResolver"
 import type { WorkspacePluginEntry, WorkspaceAgentServerPluginContext } from "./createWorkspaceAgentServer"
 
 export interface PluginReloadDiagnostic {
   pluginId?: string
-  source: "module" | "directory" | "factory" | "object"
-  path?: string
+  /** Free-form prefix already formatted for display (e.g. "directory (/abs/path)"). */
+  source: string
   message: string
 }
 
@@ -45,7 +40,7 @@ export interface PluginRebuildResult {
 export async function rebuildServerPlugins(opts: {
   entries: WorkspacePluginEntry[]
   ctx: WorkspaceAgentServerPluginContext
-  bus?: ServerPluginLifecycleBus
+  bus?: LifecycleBus
   /** Plugin ids known to be loaded today, used for plugin_shutdown emission. */
   currentPluginIds?: string[]
 }): Promise<PluginRebuildResult> {
@@ -62,29 +57,21 @@ export async function rebuildServerPlugins(opts: {
 
   for (const entry of entries) {
     try {
-      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(
-        entry,
-        ctx as unknown as ResolveDirServerPluginContext,
-        (fn) => fn(ctx as unknown as ResolveDirServerPluginContext),
-      )
+      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
       plugins.push(plugin)
       if (bus?.hasHandlers("plugin_start")) {
         await bus.emit({ type: "plugin_start", pluginId: plugin.id, reason: "reload" })
       }
     } catch (error) {
-      // Classify the failed entry inline — only needed here.
-      const source: PluginReloadDiagnostic["source"] =
+      // Compose the diagnostic source prefix inline — only needed here.
+      const source =
         typeof entry === "function"
           ? "factory"
           : isDirEntry(entry)
-            ? "directory"
-            : isModuleEntry(entry)
-              ? "module"
-              : "object"
-      const path = isDirEntry(entry) ? entry.dir : undefined
+            ? `directory (${entry.dir})`
+            : "entry"
       diagnostics.push({
         source,
-        path,
         message: error instanceof Error ? error.message : String(error),
       })
     }
@@ -95,5 +82,5 @@ export async function rebuildServerPlugins(opts: {
 
 /** Stable single-line diagnostic format for the /reload error path. */
 export function formatPluginDiagnostic(d: PluginReloadDiagnostic): string {
-  return `${d.source}${d.path ? ` (${d.path})` : ""}: ${d.message}`
+  return `${d.source}: ${d.message}`
 }
