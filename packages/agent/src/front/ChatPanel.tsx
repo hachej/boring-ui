@@ -472,20 +472,26 @@ export function ChatPanel(props: ChatPanelProps) {
   // `/update` slash command. `running` while in-flight, then `success`
   // or `error` with diagnostic details.
   const [pluginUpdateState, setPluginUpdateState] = useState<PluginUpdateState | null>(null)
-  // Gemini 3.1 review: clear the banner when the host swaps `sessionId`
-  // without unmounting ChatPanel. Without this, a previous session's
-  // success/error banner leaks into the new session.
+  // Clear the banner synchronously on `sessionId` swap. The ref carries
+  // the live session value across async boundaries so an in-flight
+  // /update started under a previous session can't race-write its
+  // success/error into the new one.
+  const activeSessionRef = useRef(sessionId)
   useEffect(() => {
+    activeSessionRef.current = sessionId
     setPluginUpdateState(null)
   }, [sessionId])
   const runPluginUpdate = useCallback(async () => {
+    const capturedSession = activeSessionRef.current
     setPluginUpdateState({ kind: 'running' })
     try {
       const { reloaded } = await callPluginReload()
+      if (activeSessionRef.current !== capturedSession) return 'Plugins updated.'
       setPluginUpdateState({ kind: 'success', reloaded })
       return reloaded ? 'Plugins updated.' : 'Plugins will reload on the next message.'
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Plugin update failed.'
+      if (activeSessionRef.current !== capturedSession) return `Plugin update failed: ${message}`
       setPluginUpdateState({ kind: 'error', message })
       return `Plugin update failed: ${message}`
     }

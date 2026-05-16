@@ -25,14 +25,6 @@ export interface PluginUpdateStatusProps {
   onRetry: () => void
 }
 
-// Reviewer feedback (Gemini 3.1, xAI): the previous version computed a
-// relative-time string ("just now", "3m ago") on every render against a
-// captured timestamp. Without a setInterval tick the string would freeze
-// at "just now" until something else re-rendered ChatPanel — a stale-UI
-// bug. The banner is a transient notice anyway (dismissed by the user
-// or replaced by a new state), so we drop the relative time entirely
-// and use a static phrase.
-
 export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateStatusProps): ReactElement | null {
   if (!state) return null
 
