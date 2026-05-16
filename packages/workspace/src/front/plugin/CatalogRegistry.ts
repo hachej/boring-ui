@@ -64,7 +64,7 @@ export class CatalogRegistry {
       if (existing && existing.pluginId !== pluginId) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[CatalogRegistry] plugin "${pluginId}" tried to register catalog "${config.id}" already owned by "${existing.pluginId}" — skipped`,
+          `[CatalogRegistry] plugin "${pluginId}" tried to register catalog "${config.id}" already owned by "${existing.pluginId ?? 'system'}" — skipped`,
         )
         continue
       }
