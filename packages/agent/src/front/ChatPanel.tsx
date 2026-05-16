@@ -92,9 +92,9 @@ export interface ChatPanelProps {
   toolRenderers?: ToolRendererOverrides
   extraCommands?: SlashCommand[]
   /**
-   * App-level hot-reload toggle. When `false`, the `/reload` and `/update`
-   * slash commands are hidden from the picker and the `/help` listing,
-   * and the PluginUpdateStatus banner above the composer never renders.
+   * App-level hot-reload toggle. When `false`, the `/reload` slash
+   * command is hidden from the picker and the `/help` listing, and the
+   * PluginUpdateStatus banner above the composer never renders.
    * Production apps that don't expose live plugin editing should pass
    * `false`. Defaults to `true`.
    */
@@ -227,13 +227,12 @@ export function ChatPanel(props: ChatPanelProps) {
 
   const registry = useMemo(
     () => {
-      // When hot reload is disabled at the app level, hide /reload and
-      // /update from every consumer (picker, /help, programmatic list)
-      // by not registering them in the first place.
-      const hotReloadOnly = new Set(['reload', 'update'])
+      // When hot reload is disabled at the app level, hide /reload from
+      // every consumer (picker, /help, programmatic list) by not
+      // registering it in the first place.
       const effectiveBuiltins = hotReloadEnabled
         ? builtinCommands
-        : builtinCommands.filter((cmd) => !hotReloadOnly.has(cmd.name))
+        : builtinCommands.filter((cmd) => cmd.name !== 'reload')
       return createCommandRegistry([...effectiveBuiltins, ...(extraCommands ?? [])])
     },
     [extraCommands, hotReloadEnabled],
@@ -249,9 +248,9 @@ export function ChatPanel(props: ChatPanelProps) {
     useThinkingSettings(thinkingControl)
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
 
-  // Shared low-level reload call used by both /reload (text-only)
-  // and /update (banner + text). Throws on failure; the callers wrap
-  // it with their own surface-specific error handling.
+  // Low-level reload call. /reload uses the banner UX via
+  // runPluginUpdate when the host has wired it, otherwise falls back
+  // to reloadAgentPlugins below for inline-text feedback.
   const callPluginReload = useCallback(async (): Promise<{ reloaded: boolean }> => {
     const res = await fetch('/api/v1/agent/reload', {
       method: 'POST',
@@ -279,12 +278,12 @@ export function ChatPanel(props: ChatPanelProps) {
   }, [callPluginReload])
 
   // Plugin update status banner (above the composer). Driven by the
-  // `/update` slash command. `running` while in-flight, then `success`
-  // or `error` with diagnostic details.
+  // `/reload` slash command when the host wires `pluginUpdate`.
+  // `running` while in-flight, then `success` or `error` with details.
   const [pluginUpdateState, setPluginUpdateState] = useState<PluginUpdateState | null>(null)
   // Clear the banner synchronously on `sessionId` swap. The ref carries
   // the live session value across async boundaries so an in-flight
-  // /update started under a previous session can't race-write its
+  // /reload started under a previous session can't race-write its
   // success/error into the new one.
   const activeSessionRef = useRef(sessionId)
   useEffect(() => {
