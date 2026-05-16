@@ -53,7 +53,6 @@ export interface PluginPackageJson {
 }
 
 const SERVER_CONVENTIONS = ["dist/server/index.js", "src/server/index.ts"] as const
-const FRONT_CONVENTIONS = ["dist/front/index.js", "src/front/index.tsx", "src/front/index.ts"] as const
 
 export function readPluginPackageJson(dir: string): PluginPackageJson | null {
   const pkgPath = resolve(dir, "package.json")
@@ -93,24 +92,9 @@ export function resolvePluginEntryPath(
   return null
 }
 
-/**
- * Returns the resolved server entry path for a directory-source plugin.
- * Manifest first (`package.json#boring.server`), then convention fallback
- * (Pi parity: `core/package-manager.js`). Short-circuits to `null` when
- * the dir has no package.json — the caller (resolveDirServerPlugin)
- * throws on that case.
- */
-export function resolvePluginEntryPaths(dir: string): {
-  pkg: PluginPackageJson | null
-  serverPath: string | null
-} {
-  const pkg = readPluginPackageJson(dir)
-  if (!pkg) return { pkg: null, serverPath: null }
-  return {
-    pkg,
-    serverPath: resolvePluginEntryPath(dir, pkg.boring?.server, SERVER_CONVENTIONS),
-  }
-}
+// Manifest-first + convention-fallback (Pi parity:
+// `core/package-manager.js`) is implemented inline in
+// `resolveDirServerPlugin` below — single caller, no wrapper.
 
 const require = createRequire(import.meta.url)
 
@@ -190,8 +174,9 @@ export async function resolveDirServerPlugin(
   ctx: PluginResolveContext,
 ): Promise<WorkspaceServerPlugin> {
   const dir = resolve(entry.dir)
-  const { pkg, serverPath } = resolvePluginEntryPaths(dir)
+  const pkg = readPluginPackageJson(dir)
   if (!pkg) throw new Error(`boring plugin: no package.json found in ${dir}`)
+  const serverPath = resolvePluginEntryPath(dir, pkg.boring?.server, SERVER_CONVENTIONS)
   if (!serverPath) {
     throw new Error(
       `boring plugin: no server entry resolved for ${dir}\n` +
