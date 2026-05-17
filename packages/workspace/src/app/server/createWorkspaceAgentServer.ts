@@ -321,7 +321,8 @@ function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: Worksp
  * Resolve each entry in `defaultPluginPackages` to an absolute package
  * directory. Accepts either an npm-style name (resolved via
  * `require.resolve('<name>/package.json')`) or an absolute filesystem
- * path. Entries that fail to resolve are dropped with a warning.
+ * path. THROWS on unresolved entries — a typo or missing dependency
+ * is an app boot-time error, not something to silently drop.
  */
 function resolveDefaultPluginPackagePaths(
   workspaceRoot: string,
@@ -329,30 +330,33 @@ function resolveDefaultPluginPackagePaths(
 ): string[] {
   if (defaultPluginPackages.length === 0) return []
   const require = createRequire(join(workspaceRoot, "package.json"))
+  const requireFromHere = createRequire(import.meta.url)
   const resolved: string[] = []
   for (const entry of defaultPluginPackages) {
     if (entry.startsWith("/")) {
-      if (existsSync(join(entry, "package.json"))) {
-        resolved.push(entry)
-      } else {
-        // eslint-disable-next-line no-console
-        console.warn(`[boring-workspace] defaultPluginPackages entry has no package.json: ${entry}`)
+      if (!existsSync(join(entry, "package.json"))) {
+        throw new Error(
+          `defaultPluginPackages: "${entry}" has no package.json — provide a path to a directory containing package.json with a "boring" field.`,
+        )
       }
+      resolved.push(entry)
       continue
     }
+    let resolvedPath: string | null = null
     try {
-      resolved.push(dirname(require.resolve(`${entry}/package.json`)))
+      resolvedPath = dirname(require.resolve(`${entry}/package.json`))
     } catch {
       try {
-        // Fallback: try resolving from this module's location (e.g. when the
-        // host workspace doesn't have its own package.json layout for resolve).
-        const requireFromHere = createRequire(import.meta.url)
-        resolved.push(dirname(requireFromHere.resolve(`${entry}/package.json`)))
+        // Fallback: resolve from this module's location (covers hosts
+        // whose workspace doesn't have its own package.json layout).
+        resolvedPath = dirname(requireFromHere.resolve(`${entry}/package.json`))
       } catch {
-        // eslint-disable-next-line no-console
-        console.warn(`[boring-workspace] defaultPluginPackages: cannot resolve ${entry}`)
+        throw new Error(
+          `defaultPluginPackages: cannot resolve "${entry}" — install it as a dep of the app (or workspace root) so require.resolve can find its package.json. Pass an absolute path instead if the package lives outside node_modules.`,
+        )
       }
     }
+    resolved.push(resolvedPath)
   }
   return resolved
 }

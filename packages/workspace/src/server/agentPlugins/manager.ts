@@ -114,10 +114,11 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
 }
 
 async function importServerModule(serverPath: string, href: string): Promise<{ default?: BoringServerFactory }> {
-  if (process.env.VITEST) {
-    const source = `${readFileSync(serverPath, "utf8")}\n//# boring-cache-bust=${Date.now()}-${Math.random()}\n`
-    return await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`) as { default?: BoringServerFactory }
-  }
+  // jiti handles both fresh re-imports (moduleCache:false) and npm bare-
+  // specifier resolution (essential for plugins that import from
+  // @hachej/boring-workspace/server etc.). Same path is used inside
+  // VITEST — the data:URL shortcut we previously had there couldn't
+  // resolve npm specifiers and silently lost packages with deps.
   const jitiImport = optionalJitiImport(serverPath)
   if (jitiImport) return await jitiImport
   return await import(/* @vite-ignore */ href) as { default?: BoringServerFactory }
@@ -267,13 +268,25 @@ export class BoringPluginAssetManager {
   private async loadServerHandlers(serverPath: string): Promise<Map<string, BoringServerRouteHandler>> {
     const cacheBust = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const href = `${pathToFileURL(serverPath).href}?v=${cacheBust}`
+    const handlers = new Map<string, BoringServerRouteHandler>()
     const mod = await importServerModule(serverPath, href)
     if (typeof mod.default !== "function") {
       throw new Error(`server plugin ${serverPath} must default-export a BoringServerFactory`)
     }
+    // Discriminate between the two `boring.server` default-export
+    // contracts by arity:
+    //   - `BoringServerFactory = (api) => void` — length 1 (or 0). The
+    //     asset manager owns route registration. We call it here.
+    //   - `(options, ctx) => WorkspaceServerPlugin` — length 2. Handled
+    //     by the pluginEntryResolver path (loaded as a DirPluginEntry
+    //     when listed in `defaultPluginPackages` or `plugins:`). We
+    //     skip route registration here; the WorkspaceServerPlugin's
+    //     own `routes` field is registered via Fastify by the bootstrap.
+    if (mod.default.length >= 2) {
+      return handlers
+    }
     const api = createCapturingBoringServerAPI()
     await mod.default(api)
-    const handlers = new Map<string, BoringServerRouteHandler>()
     for (const route of api.flush()) {
       handlers.set(routeKey(route.method, route.path), route.handler)
     }
