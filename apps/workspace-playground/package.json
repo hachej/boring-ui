@@ -3,6 +3,12 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "boring": {
+    "defaultPluginPackages": [
+      "@hachej/boring-ask-user",
+      "./src/plugins/playgroundDataCatalog"
+    ]
+  },
   "scripts": {
     "dev": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && vite",
     "dev:local": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-catalog build && BORING_USE_LOCAL_PACKAGES=1 vite",

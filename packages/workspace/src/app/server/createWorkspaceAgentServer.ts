@@ -129,6 +129,29 @@ export interface CreateWorkspaceAgentServerOptions
    * load process.
    */
   defaultPluginPackages?: string[]
+  /**
+   * Absolute path to the app's `package.json`. When passed, the workspace
+   * reads `package.json#boring.defaultPluginPackages: string[]` from it
+   * and merges those entries with anything passed in
+   * `defaultPluginPackages`. Relative entries in package.json resolve
+   * against the package.json's own directory.
+   *
+   * Example app `package.json`:
+   *
+   *     {
+   *       "name": "my-app",
+   *       "boring": {
+   *         "defaultPluginPackages": [
+   *           "@hachej/boring-ask-user",
+   *           "./src/plugins/playgroundDataCatalog"
+   *         ]
+   *       }
+   *     }
+   *
+   * Lets apps declare their plugin set in the canonical app manifest
+   * instead of inside the server boot path.
+   */
+  appPackageJsonPath?: string
 }
 
 export {
@@ -317,6 +340,37 @@ function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: Worksp
 }
 
 /**
+ * Read `package.json#boring.defaultPluginPackages: string[]` from the
+ * app's package.json, if `appPackageJsonPath` was provided. Relative
+ * entries are resolved against the package.json's own directory so apps
+ * can write paths like "./src/plugins/foo" without computing absolutes
+ * in their boot code. Returns the resolved absolute paths (or npm names
+ * unchanged, for later resolution by resolveDefaultPluginPackagePaths).
+ */
+function readAppManifestDefaultPlugins(appPackageJsonPath: string | undefined): string[] {
+  if (!appPackageJsonPath || !existsSync(appPackageJsonPath)) return []
+  let pkg: { boring?: { defaultPluginPackages?: unknown } }
+  try {
+    pkg = JSON.parse(readFileSync(appPackageJsonPath, "utf8"))
+  } catch {
+    return []
+  }
+  const entries = pkg.boring?.defaultPluginPackages
+  if (!Array.isArray(entries)) return []
+  const pkgDir = dirname(appPackageJsonPath)
+  return entries
+    .filter((e): e is string => typeof e === "string")
+    .map((entry) => {
+      // Relative paths resolve from the package.json's directory; npm names
+      // and absolute paths pass through unchanged.
+      if (entry.startsWith("./") || entry.startsWith("../")) {
+        return join(pkgDir, entry)
+      }
+      return entry
+    })
+}
+
+/**
  * Resolve each entry in `defaultPluginPackages` to an absolute package
  * directory. Accepts either an npm-style name (resolved via
  * `require.resolve('<name>/package.json')`) or an absolute filesystem
@@ -399,15 +453,18 @@ export async function createWorkspaceAgentServer(
   })
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
 
-  // Resolve app-default plugin packages early so they can flow into BOTH
-  // the server-side install array (as DirPluginEntries) AND, downstream,
-  // Pi packages + the boring asset manager scan. ONE declaration, all
-  // sides. Plugins authored as package directories with package.json#boring
-  // are loaded via the standard pluginEntryResolver path.
-  const defaultPluginPackagePaths = resolveDefaultPluginPackagePaths(
-    workspaceRoot,
-    opts.defaultPluginPackages ?? [],
-  )
+  // Resolve app-default plugin packages from two sources, merged:
+  //   1. `opts.defaultPluginPackages` (explicit, set in code)
+  //   2. `package.json#boring.defaultPluginPackages` (declarative, the
+  //      canonical app manifest location — preferred for new apps).
+  // Each entry is resolved to an absolute package dir and flows into
+  // BOTH the server-side install array (as DirPluginEntries) AND the
+  // boring asset manager scan. ONE declaration, all sides.
+  const manifestPluginPackages = readAppManifestDefaultPlugins(opts.appPackageJsonPath)
+  const defaultPluginPackagePaths = resolveDefaultPluginPackagePaths(workspaceRoot, [
+    ...manifestPluginPackages,
+    ...(opts.defaultPluginPackages ?? []),
+  ])
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths.map(
     (dir) => ({ dir, hotReload: opts.boringPluginReload ?? true }),
   )
