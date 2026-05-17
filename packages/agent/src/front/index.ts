@@ -31,7 +31,6 @@ export {
   type SlashCommandContext,
 } from './slashCommands'
 export {
-  DiffView,
   defaultToolRenderers,
   mergeToolRenderers,
   resolveToolRenderer,
