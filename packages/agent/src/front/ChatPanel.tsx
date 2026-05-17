@@ -8,7 +8,6 @@ import { useAgentChat } from './hooks/useAgentChat'
 import { usePiChatProjection } from './pi/piChatProjection'
 import { usePiNativeFollowUpQueue } from './pi/piNativeFollowUpQueue'
 import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
-import { DebugDrawer } from './DebugDrawer'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
@@ -142,12 +141,6 @@ export interface ChatPanelProps {
    * future renderer can consume it without a prop drill.
    */
   onOpenArtifact?: OpenArtifactHandler
-  /**
-   * Enable the admin debug drawer — system prompt, raw messages JSON, and
-   * live onData stream events. Intended for development and ops; keep off
-   * in production consumer UIs.
-   */
-  debug?: boolean
   /** Generic host-provided blockers that prevent starting a new user turn. */
   composerBlockers?: ComposerBlocker[]
   /** Called when the user presses Stop in the composer. */
@@ -173,12 +166,10 @@ export function ChatPanel(props: ChatPanelProps) {
     onData,
     requestHeaders,
     onOpenArtifact,
-    debug = false,
     composerBlockers = [],
     onComposerStop,
     onComposerBlockerAction,
   } = props
-  const [debugWidth, setDebugWidth] = useState(440)
   const capabilities = PI_AGENT_RUNTIME_CAPABILITIES
   const piDataHandlerRef = useRef<(part: unknown) => void>(() => {})
   const followUpDataHandlerRef = useRef<(part: unknown) => void>(() => {})
@@ -431,7 +422,7 @@ export function ChatPanel(props: ChatPanelProps) {
       data-boring-agent-part="chat"
       className={cn(
         "flex h-full min-h-0 overflow-hidden text-foreground antialiased",
-        debug ? "flex-row" : "flex-col",
+        "flex-col",
         chrome
           ? "bg-[color:var(--canvas)] text-[13px]"
           : "bg-transparent text-[13px]",
@@ -440,7 +431,7 @@ export function ChatPanel(props: ChatPanelProps) {
       role="region"
       aria-label="Agent assistant"
     >
-      <div className={cn("flex min-h-0 min-w-0 flex-col", debug ? "flex-1" : "h-full")}>
+      <div className="flex min-h-0 min-w-0 flex-col flex-1">
       <div
         className={cn(
           "flex h-full min-h-0 flex-col overflow-hidden",
@@ -967,15 +958,6 @@ export function ChatPanel(props: ChatPanelProps) {
       </div>
       </div>
       </div>
-      {debug && (
-        <DebugDrawer
-          sessionId={sessionId}
-          messages={messages}
-          requestHeaders={requestHeaders}
-          width={debugWidth}
-          onWidthChange={setDebugWidth}
-        />
-      )}
     </div>
     </ArtifactOpenProvider>
   )
