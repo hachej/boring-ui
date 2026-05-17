@@ -6,11 +6,10 @@ import {
   useWorkspaceAttention,
   type PaneProps,
   type PluginProviderProps,
-  type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
 import {
-  boringFrontFactoryToPlugin,
-  type BoringFrontFactory,
+  definePlugin,
+  type BoringFrontFactoryWithId,
 } from "@hachej/boring-workspace/plugin"
 import { HelpCircle, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, useState } from "react"
@@ -194,12 +193,14 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
 }
 
 /**
- * Default-exported `BoringFrontFactory` for the ask-user plugin.
- * Registers (1) a provider that owns the per-app questions runtime
- * (apiBaseUrl, auth headers, in-memory pending-question store), (2) a
- * "Questions" panel rendering the pending question form, and (3) a
- * surface resolver mapping ASK_USER_SURFACE_KIND requests into the
- * panel with the request's questionId + question object as params.
+ * `BoringFrontFactoryWithId` for the ask-user plugin. Registers
+ * (1) a provider that owns the per-app questions runtime (apiBaseUrl,
+ * auth headers, in-memory pending-question store), (2) a "Questions"
+ * panel rendering the pending question form, and (3) a surface
+ * resolver mapping ASK_USER_SURFACE_KIND requests into the panel.
+ *
+ * Pass directly to `WorkspaceProvider.plugins` — the shell auto-wraps
+ * `BoringFrontFactoryWithId` entries via `toWorkspacePlugin`.
  *
  * Legacy `outputs[]` had a fourth entry — a `command` dispatching
  * `boring:ask-user-open` via window.dispatchEvent — but nothing
@@ -208,7 +209,9 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
  * resolver (kind: ASK_USER_SURFACE_KIND) which is how the server-side
  * agent tool already triggers it.
  */
-export const askUserFactory: BoringFrontFactory = (api) => {
+export const askUserPlugin: BoringFrontFactoryWithId = definePlugin(
+  ASK_USER_PLUGIN_ID,
+  (api) => {
   api.registerProvider({
     id: `${ASK_USER_PLUGIN_ID}.provider`,
     component: AskUserProvider,
@@ -241,19 +244,8 @@ export const askUserFactory: BoringFrontFactory = (api) => {
       }
     },
   })
-}
-
-export default askUserFactory
-
-/**
- * Pre-wrapped `WorkspaceFrontPlugin` for callers that pass plugins
- * via the existing `WorkspaceProvider.plugins[]` prop (the legacy
- * declarative shape). New callers should prefer the default-exported
- * `askUserFactory` and wrap on their own side, OR rely on the
- * workspace shell auto-detecting the factory shape when that lands.
- */
-export const askUserPlugin: WorkspaceFrontPlugin = boringFrontFactoryToPlugin(
-  ASK_USER_PLUGIN_ID,
-  askUserFactory,
+  },
   { label: ASK_USER_PANEL_TITLE },
 )
+
+export default askUserPlugin

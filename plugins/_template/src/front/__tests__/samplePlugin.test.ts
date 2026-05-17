@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import samplePlugin, { SAMPLE_PANEL_ID, SamplePanel } from "../index"
-import { SAMPLE_SURFACE_KIND } from "../../shared/constants"
+import { SAMPLE_PLUGIN_ID, SAMPLE_SURFACE_KIND } from "../../shared/constants"
 
 describe("samplePlugin (BoringFrontFactory)", () => {
   it("registers a panel, a panel command, and a surface resolver", async () => {
@@ -44,5 +44,10 @@ describe("samplePlugin (BoringFrontFactory)", () => {
 
   it("is the default export (required for hot-reload dynamic import)", () => {
     expect(typeof samplePlugin).toBe("function")
+  })
+
+  it("carries pluginId + pluginLabel metadata (definePlugin contract)", () => {
+    expect(samplePlugin.pluginId).toBe(SAMPLE_PLUGIN_ID)
+    expect(samplePlugin.pluginLabel).toBe("Sample")
   })
 })
