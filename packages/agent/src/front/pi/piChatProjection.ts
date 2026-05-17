@@ -50,7 +50,12 @@ export function rebuildPiMessagesFromDataParts(sourceMessages: UIMessage[]): UIM
     } else if (part.type === 'data-pi-text-end') {
       const msg = ensureMessage(messageId, 'assistant')
       const text = typeof data.text === 'string' ? data.text : ''
-      if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && p.text)) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
+      const partId = typeof data.partId === 'string' ? data.partId : '0'
+      // Check for the specific partId (not just any text part) to avoid
+      // adding duplicate text when a different partId already has content.
+      if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && (p as { id?: string }).id === partId && p.text)) {
+        msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
+      }
     } else if (part.type === 'data-pi-reasoning-start') {
       const msg = ensureMessage(messageId, 'assistant')
       const partId = typeof data.partId === 'string' ? data.partId : '0'
@@ -84,7 +89,12 @@ export function rebuildPiMessagesFromDataParts(sourceMessages: UIMessage[]): UIM
     } else if (part.type === 'data-pi-message-end' && data.role === 'assistant') {
       const msg = ensureMessage(messageId, 'assistant')
       const text = typeof data.text === 'string' ? data.text : ''
-      if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && p.text)) msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
+      // Check for the specific partId (not just any text part) to avoid
+      // adding duplicate text when a different partId already has content.
+      const partId = typeof data.partId === 'string' ? data.partId : '0'
+      if (text && !(msg.parts ?? []).some((p) => p.type === 'text' && (p as { id?: string }).id === partId && p.text)) {
+        msg.parts = [...(msg.parts ?? []), { type: 'text' as const, text }]
+      }
     }
   }
   return rebuilt
@@ -229,7 +239,8 @@ export function usePiChatProjection({
         : item))
     } else if (typed.type === 'data-pi-message-end' && piMessageId) {
       const text = typeof data.text === 'string' ? data.text : ''
-      if (text) updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && p.text)
+      const partId = typeof data.partId === 'string' ? data.partId : '0'
+      if (text) updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && (p as { id?: string }).id === partId && p.text)
         ? { ...item, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
         : item))
     }

@@ -151,6 +151,10 @@ export function chatRoutes(
               buf.append(errChunk)
               writer.write(errChunk)
             } finally {
+              // Set streamCompleted BEFORE marking buffer complete so the
+              // reply.raw 'close' event handler (which fires asynchronously
+              // and may arrive before markComplete's callback) sees the flag
+              // and does NOT abort an already-finished stream.
               streamCompleted = true
               buf.markComplete(() => buffers.evict(sessionId, turnId))
             }
