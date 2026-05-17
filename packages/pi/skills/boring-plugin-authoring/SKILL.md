@@ -1,26 +1,58 @@
 ---
 name: boring-plugin-authoring
-description: Create or update boring-ui workspace plugins, including hot-reloadable package plugins, React panels, file visualizers, surface resolvers, and Pi/agent contributions. Use when the user asks to build or modify a boring-ui plugin.
+description: Create, extend, or update boring-ui workspace plugins, including hot-reloadable user plugins, app-default plugins shipped with apps, React panels, file visualizers, surface resolvers, server-side agent tools, and Pi/agent contributions. Use when the user asks to build, extend, configure, or modify a boring-ui plugin.
 ---
 
 # Boring Plugin Authoring
 
 ## What a boring-ui plugin is
 
-A directory with a `package.json#boring` manifest. Live hot-reloadable
-plugins live at `.pi/extensions/<plugin-name>/`. The directory is **not** an
-installable npm package — you write the `.tsx`/`.ts` source files directly
-and `/reload` re-imports them.
+A directory with `package.json` declaring `boring` and/or `pi` fields.
+Plugins enter the workspace through **one load process**:
 
-> Do **not** run `npm init`, `npm install`, or create `node_modules/`/`dist/`
-> inside `.pi/extensions/<plugin-name>/`. Those are not part of the plugin
-> shape and will be ignored. Just write `package.json` + the entry files.
+```
+                                                                
+   Source → BoringPluginAssetManager scan → SSE event           
+                  → front dynamic import (Vite /@fs/)           
+                  → server load (jiti, fresh on each /reload)   
+                                                                
+```
 
-## Minimal hot-reloadable plugin
+Three places plugins can come from — same load pipeline for all:
 
-Write exactly these two files (plus optional `agent/index.ts`):
+| Source | Used for |
+|---|---|
+| `<workspace>/.pi/extensions/<name>/` | User-added plugins (you write them locally, /reload picks them up) |
+| `defaultPluginPackages` in `createWorkspaceAgentServer` | App-default plugins (npm packages the app ships with) |
+| `pi install npm:<pkg>` | Ad-hoc Pi-installed packages (the workspace picks them up via Pi's package registry) |
 
-`.pi/extensions/my-plugin/package.json`
+## The single way to define a plugin: `definePlugin`
+
+```ts
+import { definePlugin } from "@hachej/boring-workspace/plugin"
+
+export default definePlugin("my-plugin", (api) => {
+  api.registerPanel({ ... })
+  api.registerPanelCommand({ ... })
+  api.registerSurfaceResolver({ ... })
+}, { label: "My Plugin" })
+```
+
+`definePlugin(id, factory, { label? })` returns a `BoringFrontFactoryWithId` —
+a function with `pluginId` (and optional `pluginLabel`) static fields. The
+workspace shell auto-wraps it when you pass it to `WorkspaceProvider.plugins`,
+and the asset manager loads it identically whether it lives in
+`.pi/extensions/<name>/` or an npm package.
+
+> Do **not** use `defineFrontPlugin` (removed from the public API), do **not**
+> return an object literal like `{ panels: [...] }` from the factory, and do
+> **not** `npm init` inside `.pi/extensions/<name>/`.
+
+## Minimal hot-reloadable user plugin
+
+Write exactly these two files under `<workspace>/.pi/extensions/my-plugin/`:
+
+`package.json`
 
 ```jsonc
 {
@@ -37,38 +69,115 @@ Write exactly these two files (plus optional `agent/index.ts`):
 }
 ```
 
-`.pi/extensions/my-plugin/front/index.tsx`
+`front/index.tsx`
 
 ```tsx
 import React from "react"
-import type { BoringFrontFactory } from "@hachej/boring-workspace/plugin"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 
 function MyPane() {
   return <div>Hello from my-plugin</div>
 }
 
-const factory: BoringFrontFactory = (api) => {
+export default definePlugin("my-plugin", (api) => {
   api.registerPanel({ id: "my-plugin.panel", label: "My Plugin", component: MyPane })
   api.registerPanelCommand({ id: "my-plugin.open", title: "Open My Plugin", panelId: "my-plugin.panel" })
-}
-
-export default factory
+}, { label: "My Plugin" })
 ```
 
 After editing, the user runs `/reload`.
 
-## `BoringFrontFactory` is **imperative**
+## App-default plugins (apps ship with these)
 
-The factory signature is `(api) => void | Promise<void>`. Call
-`api.registerPanel(...)`, `api.registerPanelCommand(...)`,
-`api.registerLeftTab(...)`, `api.registerSurfaceResolver(...)`.
+For plugins an app installs as npm deps (e.g. `@hachej/boring-ask-user`),
+declare them in the workspace server boot:
 
-> Do **not** return an object literal like `{ panels: [...], commands: [...] }`.
-> That shape is not supported — the workspace will ignore it and your plugin
-> will not register anything.
+```ts
+// apps/my-app/src/server/dev.ts
+await createWorkspaceAgentServer({
+  workspaceRoot,
+  defaultPluginPackages: ["@hachej/boring-ask-user"],
+})
+```
 
-Panel components are normal React function components; `useState` and
-`useEffect` work.
+The workspace:
+1. Resolves each name via `require.resolve('<name>/package.json')`
+2. Registers the package dir as a plugin source (asset manager scans it)
+3. Forwards its `pi.*` contributions to Pi (skills, systemPrompt, extensions)
+4. Loads its `boring.server` via the standard jiti path on /reload
+
+The app's front-end (`apps/my-app/src/front/App.tsx`) does **not** import
+or list these packages in `WorkspaceProvider.plugins` — they arrive on the
+front via SSE just like `.pi/extensions/<name>/` plugins.
+
+## Extending an existing plugin (no `composePlugins` helper)
+
+There's no library function for composition because the imperative API makes
+composition trivial — you just call functions with the same `api`. Five
+patterns ranked by frequency:
+
+### 1. Configure via factory options (most common)
+
+Most plugins are factories taking options. Wrap with your own configuration
+and default-export the result. List the wrapper under `defaultPluginPackages`.
+
+```ts
+// my-app/src/plugins/my-data/front/index.tsx
+import { createDataCatalogPlugin } from "@hachej/boring-data-catalog"
+import { myAdapter } from "./adapter"
+export default createDataCatalogPlugin({ adapter: myAdapter, label: "My Data" })
+```
+
+### 2. Component reuse from primitive packages
+
+Plugins like `@hachej/boring-data-explorer` are libraries — they export React
+components/hooks (no factory). Use them inside your own plugin's UI:
+
+```tsx
+import { definePlugin } from "@hachej/boring-workspace/plugin"
+import { DataExplorer } from "@hachej/boring-data-explorer/front"
+
+export default definePlugin("my-thing", (api) => {
+  api.registerPanel({
+    id: "my-thing.panel",
+    component: () => <DataExplorer adapter={myAdapter} />,
+  })
+})
+```
+
+### 3. Wrap a factory (chain by sharing `api`)
+
+Run the base plugin's registrations, then add your own:
+
+```ts
+import { definePlugin } from "@hachej/boring-workspace/plugin"
+import { createDataCatalogPlugin } from "@hachej/boring-data-catalog"
+
+const baseFactory = createDataCatalogPlugin({ adapter: myAdapter })
+
+export default definePlugin("my-extended", (api) => {
+  baseFactory(api)                         // base registrations
+  api.registerPanelCommand({               // your additions
+    id: "my-extended.export",
+    title: "Export to CSV",
+    panelId: "my-extended-panel",
+  })
+})
+```
+
+### 4. Side-by-side declaration
+
+Just list multiple plugins. They coexist in the registries (each scoped by
+its `pluginId`):
+
+```ts
+defaultPluginPackages: ["@hachej/boring-ask-user", "./src/plugins/my-data"]
+```
+
+### 5. Fork (last resort)
+
+If upstream options don't cover what you need to change, copy the plugin's
+source into your own package and modify. Standard npm pattern.
 
 ## File visualizers — opening files in your panel
 
@@ -79,11 +188,8 @@ into your panel; the panel fetches raw bytes from
 
 ```tsx
 import React, { useState, useEffect } from "react"
-import {
-  WORKSPACE_OPEN_PATH_SURFACE_KIND,
-  type BoringFrontFactory,
-  type PaneProps,
-} from "@hachej/boring-workspace"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
+import { WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace"
 
 function CsvPane({ params }: PaneProps<{ path: string }>) {
   const [text, setText] = useState("")
@@ -95,13 +201,12 @@ function CsvPane({ params }: PaneProps<{ path: string }>) {
   return <pre>{text}</pre>
 }
 
-const factory: BoringFrontFactory = (api) => {
+export default definePlugin("csv-viz", (api) => {
   api.registerPanel({ id: "csv-viz.panel", label: "CSV Viz", component: CsvPane })
   api.registerSurfaceResolver({
     id: "csv-viz.surface",
     kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
     resolve(request) {
-      if (request.kind !== WORKSPACE_OPEN_PATH_SURFACE_KIND) return undefined
       if (!request.target.toLowerCase().endsWith(".csv")) return undefined
       return {
         id: `csv-viz:${request.target}`,
@@ -112,14 +217,73 @@ const factory: BoringFrontFactory = (api) => {
       }
     },
   })
-}
-export default factory
+}, { label: "CSV Viewer" })
 ```
 
-## Native agent tools (optional)
+## Server-side plugin (agent tools, routes)
 
-`.pi/extensions/<plugin-name>/agent/index.ts` is a Pi extension. The agent
-loads it directly — declare it in `package.json#pi.extensions`:
+If your plugin contributes agent tools or HTTP routes, declare `boring.server`
+in `package.json` and add a server entry. `boring.server` has two valid
+default-export shapes — the workspace discriminates by function arity:
+
+### Shape A — `WorkspaceServerPlugin` factory (most plugins)
+
+For plugins contributing agent tools + routes via a single `WorkspaceServerPlugin`
+object. Signature `(options, ctx) => WorkspaceServerPlugin` (arity ≥ 2):
+
+```ts
+// .pi/extensions/my-plugin/server/index.ts  OR
+// plugins/my-plugin/src/server/index.ts
+import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
+
+export default function myServerPlugin(
+  _options: unknown,
+  ctx: { workspaceRoot: string; bridge: unknown },
+): WorkspaceServerPlugin {
+  return defineServerPlugin({
+    id: "my-plugin",
+    agentTools: [
+      {
+        name: "my_tool",
+        description: "What this tool does.",
+        parameters: { type: "object", properties: {} },
+        async execute() {
+          return { content: [{ type: "text", text: `workspace at ${ctx.workspaceRoot}` }] }
+        },
+      },
+    ],
+    routes: async (app) => {
+      app.get("/my-plugin/status", async () => ({ ok: true }))
+    },
+    systemPrompt: "Use my_tool when …",
+  })
+}
+```
+
+### Shape B — `BoringServerFactory` (routes only, no agent tools)
+
+If your plugin only contributes HTTP routes (no tools, no systemPrompt),
+use the simpler `BoringServerFactory = (api) => void` shape (arity ≤ 1):
+
+```ts
+import type { BoringServerFactory } from "@hachej/boring-workspace/server"
+
+const server: BoringServerFactory = (api) => {
+  api.get("/my-plugin/health", async () => ({ ok: true }))
+}
+
+export default server
+```
+
+The asset manager arity-discriminates: arity-1 → registers routes directly;
+arity-2 → skipped here (the plugin loads via `pluginEntryResolver` and its
+`WorkspaceServerPlugin.routes` is wired by the bootstrap).
+
+## Native Pi extension (agent-side tools, optional)
+
+`.pi/extensions/<plugin-name>/agent/index.ts` is a Pi extension (different
+from `boring.server` — this runs inside the Pi agent process, not as a
+workspace-side route). Declare in `package.json#pi.extensions`:
 
 ```jsonc
 { "pi": { "extensions": ["agent/index.ts"], "systemPrompt": "..." } }
@@ -138,30 +302,38 @@ export default function extension(api: { registerTool(tool: unknown): void }) {
 }
 ```
 
+Use this for tools the agent should reach without going through the workspace's
+HTTP layer (e.g. lightweight in-process state queries).
+
 ## Manifest shortcuts
 
 If your layout follows the conventions (`front/index.tsx`, `server/index.ts`,
 `agent/index.ts`), you can omit `boring.front` / `boring.server`. Including
 them explicitly is also fine and recommended for clarity.
 
+Plugins ALWAYS need a `package.json#name` — that becomes the plugin id
+(`@scope/name` becomes `scope-name`).
+
 ## Common mistakes — do not do these
 
 - **Do not** `npm init` / `npm install` inside `.pi/extensions/<id>/`.
-- **Do not** return `{ panels: [...] }` from `BoringFrontFactory` — call
+- **Do not** use `defineFrontPlugin` (removed from public API) — use
+  `definePlugin(id, factory, { label? })`.
+- **Do not** return `{ panels: [...] }` from the factory — call
   `api.registerPanel(...)`.
-- **Do not** use `defineFrontPlugin` (legacy) — default-export a
-  `BoringFrontFactory` instead.
-- **Do not** import Node-only modules from `front/index.tsx`. It runs in
-  the browser.
-- **Do not** put agent tools in `boring.server`. Agent contributions go
-  under `pi`.
+- **Do not** import `composePlugins` (removed) — chain factories by calling
+  them sequentially with the same `api`.
+- **Do not** import Node-only modules from `front/index.tsx` (it runs in
+  the browser).
+- **Do not** put agent tools in `boring.server` arity-1 form (`BoringServerFactory`)
+  — that shape only handles routes. Use the arity-2 `(options, ctx) =>
+  WorkspaceServerPlugin` form for `agentTools`.
 - **Do not** add heavy chart libraries (recharts, chart.js) for quick
-  visualizers — plain SVG with `<rect>`, `<line>`, `<polyline>` is fine
-  and avoids dependency churn.
+  visualizers — plain SVG with `<rect>`, `<line>`, `<polyline>` is fine.
 
 ## More detail
 
-When the simple case above does not cover your situation, read:
+When the patterns above don't cover your case, read:
 
 - [Plugin authoring reference](../../references/workspace/plugins.md) —
   full package shape, conventions, hot-reload internals.

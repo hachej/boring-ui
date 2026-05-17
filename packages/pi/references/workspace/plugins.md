@@ -42,12 +42,13 @@ The plugin id is `package.json#name` (`@scope/name` becomes `scope-name`). There
 
 ## Front entry
 
-`boring.front` default-exports a `BoringFrontFactory`:
+`boring.front` default-exports a `BoringFrontFactoryWithId` (produced by
+`definePlugin`):
 
 ```tsx
-import type { BoringFrontFactory } from "@hachej/boring-workspace/plugin"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 
-const plugin: BoringFrontFactory = (api) => {
+export default definePlugin("widget", (api) => {
   api.registerPanel({
     id: "widget-panel",
     label: "Widget",
@@ -58,17 +59,19 @@ const plugin: BoringFrontFactory = (api) => {
     title: "Open widget",
     panelId: "widget-panel",
   })
-}
-
-export default plugin
+}, { label: "Widget" })
 ```
 
+`definePlugin(id, factory, { label? })` returns a `BoringFrontFactoryWithId`
+— a function with `pluginId`/`pluginLabel` static fields. The shell auto-wraps
+it. The bare `BoringFrontFactory = (api) => void | Promise<void>` type still
+exists but is internal; consumers should always use `definePlugin`.
+
 Front code is browser code. Do not import Node-only modules and do not define
-agent tools in front plugins. `BoringFrontFactory` is a function type, not a
-class; do not construct it with `new`. Use object-shaped registrations such as
+agent tools in front plugins. Use object-shaped registrations such as
 `api.registerPanel({ id, label, component })` and `api.registerSurfaceResolver({
-id, kind, resolve })`. Use `registerPanelCommand`, not `registerCommand`, inside
-`BoringFrontFactory`. Hot-loaded panels are normal React function components;
+id, kind, resolve })`. Use `registerPanelCommand`, not `registerCommand`,
+inside the factory. Hot-loaded panels are normal React function components;
 hooks such as `useState` and `useEffect` are supported when the Vite host
 aliases/dedupes React to the workspace shell singleton. Keep generated
 hot-reload examples dependency-light: only import packages already resolvable
@@ -82,7 +85,7 @@ To replace the built-in viewer for files, register a panel plus a
 
 ```tsx
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND, type PaneProps } from "@hachej/boring-workspace"
-import type { BoringFrontFactory } from "@hachej/boring-workspace/plugin"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 
 function CsvPanel({ params }: PaneProps<{ path?: string }>) {
   // Browser panels can fetch raw workspace file contents from:
@@ -90,13 +93,12 @@ function CsvPanel({ params }: PaneProps<{ path?: string }>) {
   return <div>{params?.path}</div>
 }
 
-const plugin: BoringFrontFactory = (api) => {
+export default definePlugin("csv-viz", (api) => {
   api.registerPanel({ id: "csv-viz", label: "CSV Viz", component: CsvPanel })
   api.registerSurfaceResolver({
     id: "csv-viz-open-path",
     kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
     resolve(request) {
-      if (request.kind !== WORKSPACE_OPEN_PATH_SURFACE_KIND) return undefined
       if (!request.target.toLowerCase().endsWith(".csv")) return undefined
       return {
         id: `csv-viz:${request.target}`,
@@ -107,7 +109,7 @@ const plugin: BoringFrontFactory = (api) => {
       }
     },
   })
-}
+})
 ```
 
 Use `/api/v1/files/raw` for raw text/blob bytes. `/api/v1/files` returns the
