@@ -2,24 +2,18 @@ import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
+import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
 
-const useLocalPackages = process.env.BORING_USE_LOCAL_PACKAGES === "1"
-const reactSingletonAliases = [
-  { find: /^react$/, replacement: resolve(__dirname, "node_modules/react") },
-  { find: /^react-dom$/, replacement: resolve(__dirname, "node_modules/react-dom") },
-  { find: /^react-dom\/client$/, replacement: resolve(__dirname, "node_modules/react-dom/client.js") },
-  { find: /^react\/jsx-runtime$/, replacement: resolve(__dirname, "node_modules/react/jsx-runtime.js") },
-  { find: /^react\/jsx-dev-runtime$/, replacement: resolve(__dirname, "node_modules/react/jsx-dev-runtime.js") },
-]
-const localWorkspaceAlias = [
-  { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../../packages/workspace/src/globals.css") },
-  { find: /^@hachej\/boring-workspace\/shared$/, replacement: resolve(__dirname, "../../packages/workspace/src/shared/index.ts") },
-  { find: /^@hachej\/boring-workspace\/app\/front$/, replacement: resolve(__dirname, "../../packages/workspace/src/app/front/index.ts") },
-  { find: /^@hachej\/boring-workspace\/app\/server$/, replacement: resolve(__dirname, "../../packages/workspace/src/app/server/index.ts") },
-  { find: /^@hachej\/boring-workspace\/server$/, replacement: resolve(__dirname, "../../packages/workspace/src/server/index.ts") },
-  { find: /^@hachej\/boring-workspace\/testing$/, replacement: resolve(__dirname, "../../packages/workspace/src/front/testing/index.ts") },
-  { find: /^@hachej\/boring-workspace$/, replacement: resolve(__dirname, "../../packages/workspace/src/index.ts") },
+const baseResolve = createBoringAppViteAliases({
+  appRoot: __dirname,
+  monorepoRepoRoot: resolve(__dirname, "../.."),
+})
+// The playground is the standalone dev surface for the workspace
+// package — its src/ contains `@/` (workspace-src-rooted) imports that
+// the standard helper doesn't cover. Add those alongside the shared
+// aliases.
+const playgroundOnlyAliases = [
   { find: "@/", replacement: resolve(__dirname, "../../packages/workspace/src") + "/" },
   { find: "@", replacement: resolve(__dirname, "../../packages/workspace/src") },
 ]
@@ -50,8 +44,8 @@ export default defineConfig({
     },
   ],
   resolve: {
-    alias: useLocalPackages ? [...reactSingletonAliases, ...localWorkspaceAlias] : reactSingletonAliases,
-    dedupe: ["react", "react-dom"],
+    alias: [...baseResolve.alias, ...playgroundOnlyAliases],
+    dedupe: baseResolve.dedupe,
   },
   server: {
     port: VITE_PORT,

@@ -245,3 +245,16 @@ export function createPlaygroundDataServerPlugin(
     extensionFactories: [createPlaygroundDataPiExtension(options.workspaceRoot)],
   })
 }
+
+/**
+ * Default export — adapter for the standard `defaultPluginPackages`
+ * load process. The workspace's `pluginEntryResolver` calls the default
+ * export with `(options, ctx)`; we forward `ctx.workspaceRoot` into
+ * the existing `createPlaygroundDataServerPlugin` factory.
+ */
+export default function defaultPlaygroundDataServerPlugin(
+  _options: unknown,
+  ctx: { workspaceRoot: string; bridge: unknown },
+): WorkspaceServerPlugin {
+  return createPlaygroundDataServerPlugin({ workspaceRoot: ctx.workspaceRoot })
+}

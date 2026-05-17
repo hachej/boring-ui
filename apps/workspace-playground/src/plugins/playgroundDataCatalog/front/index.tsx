@@ -83,5 +83,7 @@ function createPlaygroundDataCatalogOptions(): CreateDataCatalogPluginOptions {
   }
 }
 
-export const playgroundDataCatalogPlugin: BoringFrontFactoryWithId =
+const playgroundDataCatalogPlugin: BoringFrontFactoryWithId =
   createDataCatalogPlugin(createPlaygroundDataCatalogOptions())
+
+export default playgroundDataCatalogPlugin
