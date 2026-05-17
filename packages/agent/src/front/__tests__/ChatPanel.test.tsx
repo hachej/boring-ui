@@ -118,8 +118,7 @@ describe('ChatPanel (shadcn)', () => {
     const html = renderToStaticMarkup(
       <ChatPanel
         sessionId="sess-custom-empty"
-        emptyTitle="Plan a release"
-        emptyDescription="Start from a recipe."
+        emptyState={{ title: 'Plan a release', description: 'Start from a recipe.' }}
         suggestions={[
           { label: 'Cut a release branch', hint: 'From main', prompt: 'Cut release/' },
           { label: 'Triage open PRs' },
