@@ -144,7 +144,7 @@ function discoverBoringPluginDirs(pluginDirs: string[]): DiscoveredBoringPluginD
   return { dirs: [...out].sort(), missingPackageJson: [...new Set(missingPackageJson)].sort() }
 }
 
-export function expandBoringPluginDirs(pluginDirs: string[]): string[] {
+function expandBoringPluginDirs(pluginDirs: string[]): string[] {
   return discoverBoringPluginDirs(pluginDirs).dirs
 }
 

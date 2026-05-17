@@ -17,6 +17,7 @@ import { resolve } from "node:path"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
+import type { BoringPluginPackageJson } from "../../shared/plugins/manifest"
 
 /**
  * Directory-source entry: `{ dir, options?, hotReload? }`. Resolved via
@@ -38,26 +39,13 @@ export interface ModulePluginEntry {
   options?: unknown
 }
 
-export interface BoringPackageJsonField {
-  front?: string
-  server?: string
-  label?: string
-  derivesFrom?: string
-}
-
-export interface PluginPackageJson {
-  name?: string
-  boring?: BoringPackageJsonField
-  pi?: Record<string, unknown>
-}
-
 const SERVER_CONVENTIONS = ["dist/server/index.js", "src/server/index.ts"] as const
 
-export function readPluginPackageJson(dir: string): PluginPackageJson | null {
+function readPluginPackageJson(dir: string): BoringPluginPackageJson | null {
   const pkgPath = resolve(dir, "package.json")
   if (!existsSync(pkgPath)) return null
   try {
-    return JSON.parse(readFileSync(pkgPath, "utf8")) as PluginPackageJson
+    return JSON.parse(readFileSync(pkgPath, "utf8")) as BoringPluginPackageJson
   } catch {
     return null
   }
@@ -69,11 +57,12 @@ export function readPluginPackageJson(dir: string): PluginPackageJson | null {
  * - conventions fallback only when no explicit field.
  * - returns `null` if neither is present.
  */
-export function resolvePluginEntryPath(
+function resolvePluginEntryPath(
   dir: string,
-  explicit: string | undefined,
+  explicit: string | false | undefined,
   conventions: readonly string[],
 ): string | null {
+  if (explicit === false) return null
   if (explicit) {
     const path = resolve(dir, explicit)
     if (!existsSync(path)) {
@@ -168,7 +157,7 @@ function instantiatePluginExport(
   throw new Error(`boring plugin: ${source} default export is neither a function nor a plugin object`)
 }
 
-export async function resolveDirServerPlugin(
+async function resolveDirServerPlugin(
   entry: DirPluginEntry,
   ctx: PluginResolveContext,
 ): Promise<WorkspaceServerPlugin> {
@@ -186,7 +175,7 @@ export async function resolveDirServerPlugin(
   return instantiatePluginExport(mod, entry.options, ctx, serverPath)
 }
 
-export async function resolveModuleServerPlugin(
+async function resolveModuleServerPlugin(
   entry: ModulePluginEntry,
   ctx: PluginResolveContext,
 ): Promise<WorkspaceServerPlugin> {

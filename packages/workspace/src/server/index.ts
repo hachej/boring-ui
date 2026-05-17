@@ -42,7 +42,6 @@ export { boringPluginRoutes } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"
 export { preflightBoringPlugins, readBoringPlugins } from "./agentPlugins/scan"
 export type {
-  BoringPackageField,
   BoringPluginEvent,
   BoringPluginListEntry,
   BoringServerPluginManifest,

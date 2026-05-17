@@ -279,5 +279,3 @@ export function validateBoringPluginManifest(
   }
 }
 
-export const validateBoringPluginPackageJson = validateBoringPluginManifest
-export type BoringPluginPackageJsonValidationResult = BoringPluginManifestValidationResult

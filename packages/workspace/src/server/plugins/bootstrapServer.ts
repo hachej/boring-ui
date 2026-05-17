@@ -47,10 +47,6 @@ export interface ServerBootstrapResult {
   preservedUiStateKeys: string[]
 }
 
-function collectPiPackages(plugins: WorkspaceServerPlugin[]): WorkspacePiPackageSource[] {
-  return compactPiPackages(plugins.flatMap((plugin) => plugin.piPackages ?? []))
-}
-
 export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstrapResult {
   const excludedDefaults = new Set(options.excludeDefaults ?? [])
   const finalPlugins = [
@@ -79,7 +75,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .map((p) => p.systemPrompt!.trim())
     .join("\n\n")
 
-  const piPackages = collectPiPackages(finalPlugins)
+  const piPackages = compactPiPackages(finalPlugins.flatMap((plugin) => plugin.piPackages ?? []))
 
   const extensionPaths = finalPlugins.flatMap((p) => p.extensionPaths ?? [])
   const extensionFactories = finalPlugins.flatMap((p) => p.extensionFactories ?? [])

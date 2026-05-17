@@ -198,7 +198,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect.objectContaining({ skills: ["skills/boring-plugin-authoring"] }),
     )
     // The package.json#pi.packages discovered for the test plugin live in
-    // getDynamicResources() — Phase 1 / reload-pluggability split.
+    // getDynamicResources() so hot reload can re-read them.
     expect(agentOptions.pi?.getDynamicResources?.().packages).toEqual([
       join(pluginRoot),
       { source: join(pluginRoot, "agent"), extensions: ["index.ts"] },
@@ -307,7 +307,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
 
 })
 
-describe("Phase 1 — directory-source plugin entries", () => {
+describe("directory-source plugin entries", () => {
   async function writeDirPlugin(opts: {
     dir: string
     serverEntry?: string  // path inside dir
@@ -437,7 +437,7 @@ describe("Phase 1 — directory-source plugin entries", () => {
   })
 })
 
-describe("Phase 5 — beforeReload triggers directory-source re-resolve", () => {
+describe("beforeReload triggers directory-source re-resolve", () => {
   test("editing a dir-source plugin's server entry shows up after /reload (via beforeReload)", async () => {
     const dir = await makeTempDir("phase5-reload-")
     await mkdir(join(dir, "src", "server"), { recursive: true })

@@ -43,7 +43,6 @@ commands, and default workspace plugins.
 - Server plugins: `src/server/plugins`
   - `defineServerPlugin()` validates tools, routes, provisioning, and native Pi
     package declarations.
-  - `composeServerPlugins()` combines smaller server plugin fragments.
   - `piPackages` are passed to `@hachej/boring-agent` as in-memory Pi settings, so
     workspace adapters can depend on native Pi packages without requiring
     Boring-specific exports from those packages.
