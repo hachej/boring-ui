@@ -2,16 +2,16 @@
 
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
-  defineFrontPlugin,
-  definePanel,
   UI_COMMAND_EVENT,
   useWorkspaceAttention,
   type PaneProps,
-  type PluginOutput,
   type PluginProviderProps,
-  type SurfaceResolverConfig,
   type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
+import {
+  boringFrontFactoryToPlugin,
+  type BoringFrontFactory,
+} from "@hachej/boring-workspace/plugin"
 import { HelpCircle, XCircle } from "lucide-react"
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
@@ -193,21 +193,67 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   </div>
 }
 
-const panel = definePanel({ id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, icon: HelpCircle, component: QuestionsPane, placement: "center", source: "builtin", chromeless: true })
-const resolver: SurfaceResolverConfig = { id: `${ASK_USER_PLUGIN_ID}.surface`, source: "builtin", resolve(request) { if (request.kind !== ASK_USER_SURFACE_KIND) return undefined; const metaQuestion = typeof request.meta === "object" && request.meta && "question" in request.meta ? (request.meta as { question?: AskUserQuestion }).question : undefined; return { component: ASK_USER_PANEL_ID, id: ASK_USER_PANEL_ID, title: ASK_USER_PANEL_TITLE, params: { questionId: request.target, question: metaQuestion } } } }
-const outputs: PluginOutput[] = [
-  { type: "provider", id: `${ASK_USER_PLUGIN_ID}.provider`, component: AskUserProvider },
-  { type: "panel", panel },
-  { type: "surface-resolver", resolver },
-  {
-    type: "command",
-    command: {
-      id: `${ASK_USER_PLUGIN_ID}.open`,
-      title: "Open Questions",
-      run: () => window.dispatchEvent(new CustomEvent("boring:ask-user-open")),
-      when: () => sharedQuestionsStore.getPending() !== null,
+/**
+ * Default-exported `BoringFrontFactory` for the ask-user plugin.
+ * Registers (1) a provider that owns the per-app questions runtime
+ * (apiBaseUrl, auth headers, in-memory pending-question store), (2) a
+ * "Questions" panel rendering the pending question form, and (3) a
+ * surface resolver mapping ASK_USER_SURFACE_KIND requests into the
+ * panel with the request's questionId + question object as params.
+ *
+ * Legacy `outputs[]` had a fourth entry — a `command` dispatching
+ * `boring:ask-user-open` via window.dispatchEvent — but nothing
+ * listens for that event anywhere in the workspace, so the
+ * imperative migration drops it. The panel is opened via the surface
+ * resolver (kind: ASK_USER_SURFACE_KIND) which is how the server-side
+ * agent tool already triggers it.
+ */
+export const askUserFactory: BoringFrontFactory = (api) => {
+  api.registerProvider({
+    id: `${ASK_USER_PLUGIN_ID}.provider`,
+    component: AskUserProvider,
+  })
+  api.registerPanel({
+    id: ASK_USER_PANEL_ID,
+    label: ASK_USER_PANEL_TITLE,
+    icon: HelpCircle,
+    component: QuestionsPane,
+    placement: "center",
+    source: "builtin",
+    chromeless: true,
+  })
+  api.registerSurfaceResolver({
+    id: `${ASK_USER_PLUGIN_ID}.surface`,
+    kind: ASK_USER_SURFACE_KIND,
+    source: "builtin",
+    // No inner kind guard — the workspace's surface registry already
+    // pre-filters by the top-level `kind` field before calling resolve.
+    resolve(request) {
+      const metaQuestion =
+        typeof request.meta === "object" && request.meta && "question" in request.meta
+          ? (request.meta as { question?: AskUserQuestion }).question
+          : undefined
+      return {
+        component: ASK_USER_PANEL_ID,
+        id: ASK_USER_PANEL_ID,
+        title: ASK_USER_PANEL_TITLE,
+        params: { questionId: request.target, question: metaQuestion },
+      }
     },
-  },
-]
+  })
+}
 
-export const askUserPlugin: WorkspaceFrontPlugin = defineFrontPlugin({ id: ASK_USER_PLUGIN_ID, label: ASK_USER_PANEL_TITLE, outputs })
+export default askUserFactory
+
+/**
+ * Pre-wrapped `WorkspaceFrontPlugin` for callers that pass plugins
+ * via the existing `WorkspaceProvider.plugins[]` prop (the legacy
+ * declarative shape). New callers should prefer the default-exported
+ * `askUserFactory` and wrap on their own side, OR rely on the
+ * workspace shell auto-detecting the factory shape when that lands.
+ */
+export const askUserPlugin: WorkspaceFrontPlugin = boringFrontFactoryToPlugin(
+  ASK_USER_PLUGIN_ID,
+  askUserFactory,
+  { label: ASK_USER_PANEL_TITLE },
+)
