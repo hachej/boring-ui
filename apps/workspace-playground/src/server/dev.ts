@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { resolve } from "node:path"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
-import { createAskUserServerPlugin } from "@hachej/boring-ask-user/server"
 import { createPlaygroundDataServerPlugin } from "../plugins/playgroundDataCatalog/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -34,14 +33,18 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       mode: "local",
       logger: true,
-      // Single install array (Phase 2 of unified plugin plan): pre-built
-      // objects and factories live side-by-side. The factory variant
-      // receives `{ workspaceRoot, bridge }`; this site happens to only
-      // destructure `{ bridge }` and reuse `workspaceRoot` from the outer
-      // closure for symmetry with the static call site above.
+      // App-default plugin packages loaded by the STANDARD plugin load
+      // process: workspace resolves each name → absolute package dir,
+      // registers as a Pi package, and feeds the dir to the boring asset
+      // manager. The package's default-exported `(options, ctx) =>
+      // WorkspaceServerPlugin` is invoked with runtime context
+      // automatically. /reload re-imports via jiti.
+      defaultPluginPackages: ["@hachej/boring-ask-user"],
+      // Direct-factory entries remain supported for app-internal
+      // scaffolding that doesn't ship as its own package (e.g. the
+      // playground's data catalog seeded from local fixtures).
       plugins: [
         createPlaygroundDataServerPlugin({ workspaceRoot }),
-        ({ workspaceRoot: ctxRoot, bridge }) => createAskUserServerPlugin({ workspaceRoot: ctxRoot, bridge }),
       ],
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })

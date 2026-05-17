@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
-import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog/front"
+// `@hachej/boring-ask-user` is declared as a defaultPluginPackage on the
+// server side (src/server/dev.ts). The workspace's BoringPluginAssetManager
+// scans it, emits SSE on boot, and the front shell dynamic-imports the
+// plugin's front entry via the standard hot-reload pipeline — no explicit
+// import or `plugins={[askUserPlugin]}` wiring needed here.
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -69,7 +73,7 @@ export function WorkspaceShell() {
     <WorkspaceAgentFront
       chatPanel={ChatPanel}
       workspaceId={showcase ? "playground" : projectName}
-      plugins={[playgroundDataCatalogPlugin, askUserPlugin]}
+      plugins={[playgroundDataCatalogPlugin]}
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey="boring-ui-v2:layout:playground"

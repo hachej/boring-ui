@@ -5,10 +5,13 @@
 // Consumers should NEVER need deep imports.
 // ---------------------------------------------------------------------------
 
-// Plugin model
+// Plugin model. The single public way to author a plugin is
+// `definePlugin` from "@hachej/boring-workspace/plugin"; the legacy
+// `defineFrontPlugin`/`WorkspaceFrontPlugin` shape is kept INTERNAL
+// for the bootstrap pipeline (boringFrontFactoryToPlugin) but is no
+// longer part of the public API.
 export {
   composePlugins,
-  defineFrontPlugin,
   bootstrap,
   PluginError,
 } from "./shared/plugins"
@@ -23,7 +26,6 @@ export type {
   SurfaceResolverRegistryLike,
 } from "./shared/plugins"
 export type {
-  WorkspaceFrontPlugin,
   PluginBinding,
   CatalogAdapter,
   CatalogBadge,
