@@ -61,10 +61,11 @@ async function captureFrontFactory(pluginId: string, frontUrl: string, revision:
 
 /**
  * Translate a CapturedBoringFrontRegistrations into the registry shapes
- * expected by the four atomic `replaceByPluginId` ops added in Phase 3.
- * Providers, bindings, and catalogs aren't returned by the hot front
- * factory today — they remain static-composition-only until the front
- * asset loader grows that support.
+ * expected by the four atomic `replaceByPluginId` ops (panels, panel
+ * commands, left tabs, surface resolvers). Providers, bindings, and
+ * catalogs aren't returned by the hot front factory today — they
+ * remain static-composition-only until the front asset loader grows
+ * that support.
  */
 function buildRegistryPayloads(
   pluginId: string,
@@ -183,10 +184,10 @@ export function useAgentPluginHotReload(options: RegisterAgentPluginOptions): vo
             window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))
             return
           }
-          // Atomic per-registry replace (Phase 3 + Phase 6 wiring):
-          // `replaceByPluginId` drops owned entries and registers the new
-          // set in a single emit. Subscribers (including DockView) see
-          // exactly one transition — never an intermediate empty state.
+          // Atomic per-registry replace: `replaceByPluginId` drops
+          // owned entries and registers the new set in a single emit.
+          // Subscribers (including DockView) see exactly one
+          // transition — never an intermediate empty state.
           commitCapturedFrontFactory(event.id, captured, registries)
           lastSeenRef.current.set(event.id, event.revision)
           window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: event }))

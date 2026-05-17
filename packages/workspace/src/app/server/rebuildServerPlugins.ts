@@ -1,21 +1,18 @@
 /**
- * Server-side rebuild on /reload. Mirrors Pi's reload pattern
- * (`@mariozechner/pi-coding-agent core/agent-session.js:1896 reload`):
+ * Server-side rebuild on /reload. Re-resolves every entry in
+ * `entries` (via jiti for dir-source entries → fresh modules) and
+ * returns a diagnostics list. Failed entries do NOT abort the rest;
+ * they surface as `diagnostics[]` for the caller to format into a
+ * structured /reload response.
  *
- *   1. Snapshot user-set state (the caller owns this — `liveLoadedIds`).
- *   2. Re-resolve hot-reload-eligible entries (re-import via jiti).
- *   3. Return a diagnostics list — failed entries don't abort the rest
- *      (Pi parity: `core/extensions/loader.js:288` error continuation).
- *
- * What this DOES rebuild:
+ * What this rebuilds:
  *   - `{ dir, hotReload: true }` entries — their fresh systemPrompt
  *     flows through `systemPromptDynamic` and pi resources through
  *     `getDynamicResources`.
  *
- * What this does NOT rebuild (Pi parity boundary — captured at session
- * creation in the harness/Fastify): static `agentTools` and free-form
- * routes. A future phase may surface that as a structured diagnostic;
- * today swaps to those surfaces only land after a restart.
+ * What this does NOT rebuild (captured at session creation in the
+ * harness/Fastify): static `agentTools` and free-form routes. Swaps
+ * to those surfaces only land after a server restart.
  */
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
 import { isDirEntry, resolveOnePluginEntry } from "./pluginEntryResolver"
@@ -37,8 +34,6 @@ export interface PluginRebuildResult {
 export async function rebuildServerPlugins(opts: {
   entries: WorkspacePluginEntry[]
   ctx: WorkspaceAgentServerPluginContext
-  /** Plugin ids known to be loaded today; reserved for diagnostics. */
-  currentPluginIds?: string[]
 }): Promise<PluginRebuildResult> {
   const { entries, ctx } = opts
 

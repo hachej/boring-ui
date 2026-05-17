@@ -532,18 +532,10 @@ export async function createWorkspaceAgentServer(
     errorRoot: join(workspaceRoot, ".pi", "extensions"),
   })
 
-  // Phase 5: rebuild closure created BEFORE createAgentApp so beforeReload
-  // can call it. `liveLoadedIds` is mutable across reloads (Phase 4 review
-  // bug fix). Each rebuild updates it from its result.plugins.
-  let liveLoadedIds: string[] = resolvedPlugins.map((p) => p.id)
+  // Rebuild closure created BEFORE createAgentApp so beforeReload can
+  // call it.
   const rebuildPlugins = async (): Promise<PluginRebuildResult> => {
-    const result = await rebuildServerPlugins({
-      entries: allPluginEntries,
-      ctx,
-      currentPluginIds: liveLoadedIds,
-    })
-    liveLoadedIds = result.plugins.map((p) => p.id)
-    return result
+    return rebuildServerPlugins({ entries: allPluginEntries, ctx })
   }
 
   const app = await createAgentApp({
@@ -570,14 +562,12 @@ export async function createWorkspaceAgentServer(
           throw new Error(`Boring plugin reload failed:\n\n${details}`)
         }
       }
-      // Phase 5: re-resolve directory-source plugin entries via jiti so
-      // their fresh `WorkspaceServerPlugin` is in the registry the next
-      // turn's `systemPromptDynamic` / `getDynamicResources` reads from.
-      // Diagnostics from failed entries are surfaced as a thrown error
-      // matching boringAssetManager's posture — Pi parity: errors are
-      // reload diagnostics, but the workspace currently throws to keep
-      // the existing /reload error format. Phase 6+ will widen the
-      // /reload response shape to carry diagnostics non-fatally.
+      // Re-resolve directory-source plugin entries via jiti so their
+      // fresh `WorkspaceServerPlugin` is in the registry the next
+      // turn's `systemPromptDynamic` / `getDynamicResources` reads
+      // from. Diagnostics from failed entries are surfaced as a thrown
+      // error matching boringAssetManager's posture. A future iteration
+      // may widen /reload's response to carry diagnostics non-fatally.
       const rebuild = await rebuildPlugins()
       if (rebuild.diagnostics.length > 0) {
         const details = rebuild.diagnostics.map((d) => `${d.source}: ${d.message}`).join("\n\n")

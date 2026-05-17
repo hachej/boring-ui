@@ -30,7 +30,6 @@ describe("rebuildServerPlugins", () => {
     const result = await rebuildServerPlugins({
       entries: [{ dir, hotReload: true }],
       ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
-      currentPluginIds: ["rebuilt"],
     })
 
     expect(result.ok).toBe(true)
