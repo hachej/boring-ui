@@ -4,15 +4,7 @@
   "type": "module",
   "private": true,
   "license": "MIT",
-  "description": "Data catalog plugin package for Boring workspace apps, built on @hachej/boring-data-explorer.",
-  "boring": {
-    "label": "Data Catalog",
-    "front": "dist/front/index.js",
-    "server": "dist/server/index.js"
-  },
-  "pi": {
-    "systemPrompt": "Use the data catalog left tab and visualization panel when the user asks to browse, search, or open structured datasets registered in the workspace."
-  },
+  "description": "Plugin BUILDER for Boring workspace data catalogs. Consumers call `createDataCatalogPlugin(options)` to bind their own adapter/facets and get a configured BoringFrontFactoryWithId. NOT a direct `defaultPluginPackages` entry (no default export, options required) \u2014 wrap in an app-local plugin module that default-exports the built factory, then list that wrapper in `defaultPluginPackages`.",
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
@@ -37,7 +29,8 @@
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "sideEffects": false,
   "scripts": {
