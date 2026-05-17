@@ -27,7 +27,6 @@ import {
   type DirPluginEntry,
   type ModulePluginEntry,
 } from "./pluginEntryResolver"
-import { LifecycleBus } from "../../shared/plugins/lifecycleBus"
 import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
@@ -399,9 +398,6 @@ export async function createWorkspaceAgentServer(
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
-  // Phase 4: server-side plugin lifecycle bus. Phase 5 will wire it to the
-  // /reload route so consumers can subscribe for cleanup/rebuild work.
-  const pluginLifecycleBus = new LifecycleBus()
 
   // Resolve app-default plugin packages early so they can flow into BOTH
   // the server-side install array (as DirPluginEntries) AND, downstream,
@@ -491,7 +487,6 @@ export async function createWorkspaceAgentServer(
     const result = await rebuildServerPlugins({
       entries: allPluginEntries,
       ctx,
-      bus: pluginLifecycleBus,
       currentPluginIds: liveLoadedIds,
     })
     liveLoadedIds = result.plugins.map((p) => p.id)
@@ -556,19 +551,9 @@ export async function createWorkspaceAgentServer(
     await app.register(routes)
   }
 
-  // Phase 4: emit `plugin_start { reason: "startup" }` for every initially
-  // installed plugin. Pi parity (`agent-session.js:1912` `session_start
-  // { reason }`). Subscribers (none yet — Phase 5 wires them) can use this
-  // to mirror initial state.
-  if (pluginLifecycleBus.hasHandlers("plugin_start")) {
-    for (const plugin of resolvedPlugins) {
-      await pluginLifecycleBus.emit({ type: "plugin_start", pluginId: plugin.id, reason: "startup" })
-    }
-  }
-
-  // Phase 5: expose the rebuild closure on the Fastify instance for
-  // external callers / tests. The same closure is also wired into
-  // `beforeReload` above so /reload triggers it automatically.
+  // Expose the rebuild closure on the Fastify instance for external
+  // callers / tests. The same closure is also wired into `beforeReload`
+  // above so /reload triggers it automatically.
   ;(app as FastifyInstance & { __boringRebuildPlugins?: () => Promise<PluginRebuildResult> }).__boringRebuildPlugins =
     rebuildPlugins
 

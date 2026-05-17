@@ -1,5 +1,3 @@
-export { composePlugins } from "./composePlugins"
-export type { ComposePluginsOptions } from "./composePlugins"
 export { defineFrontPlugin, PluginError } from "./defineFrontPlugin"
 export type { PluginErrorKind, WorkspaceFrontPlugin } from "./defineFrontPlugin"
 export type {
