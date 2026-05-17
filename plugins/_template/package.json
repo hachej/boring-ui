@@ -3,7 +3,15 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "description": "Canonical self-contained plugin shape. Copy this folder to plugins/<name>/, search-and-replace `sample` ids, and align package.json fields.",
+  "description": "Canonical boring-ui plugin template: imperative BoringFrontFactory demonstrating registerPanel, registerPanelCommand, and registerSurfaceResolver. Copy to plugins/<name>/ and search-and-replace `sample` ids.",
+  "boring": {
+    "label": "Sample",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "Sample plugin template — replace this prompt with a short hint telling the agent when to use your plugin's panels/tools."
+  },
   "files": [
     "dist"
   ],
