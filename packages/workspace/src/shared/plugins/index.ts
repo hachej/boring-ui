@@ -44,39 +44,6 @@ export type {
   SurfaceResolverRegistryLike,
 } from "./bootstrap"
 
-export {
-  createCapturingBoringFrontAPI,
-  boringFrontFactoryToPlugin,
-  definePlugin,
-  toWorkspacePlugin,
-} from "./frontFactory"
-export type {
-  BoringFrontAPI,
-  BoringFrontFactory,
-  BoringFrontFactoryWithId,
-  BoringFrontPanelRegistration,
-  BoringFrontPanelCommandRegistration,
-  BoringFrontLeftTabRegistration,
-  BoringFrontSurfaceResolverRegistration,
-  CapturedBoringFrontRegistrations,
-  CapturingBoringFrontAPIHandle,
-  WorkspaceFrontPluginInput,
-} from "./frontFactory"
-
-export {
-  validateBoringPluginManifest,
-  isSafePluginRelativePath,
-  isSafePluginRelativeGlob,
-  isValidBoringPluginId,
-  BORING_PLUGIN_MANIFEST_ERROR_CODES,
-} from "./manifest"
-export type {
-  BoringPackageBoringField,
-  BoringPackagePiField,
-  BoringPackagePiSource,
-  BoringPackagePiSourceObject,
-  BoringPluginManifestErrorCode,
-  BoringPluginManifestIssue,
-  BoringPluginManifestValidationResult,
-  BoringPluginPackageJson,
-} from "./manifest"
+// frontFactory and manifest exports live on the "@hachej/boring-workspace/plugin"
+// subpath. Internal callers import them directly from ./frontFactory or
+// ./manifest — no barrel re-export needed here.
