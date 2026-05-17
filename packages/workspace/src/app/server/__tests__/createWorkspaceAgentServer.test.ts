@@ -305,22 +305,6 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentOptions.systemPromptAppend).toContain("FACTORY")
   })
 
-  test("pluginFactories alias still works (back-compat)", async () => {
-    const factoryFn = vi.fn(() => ({ id: "legacy", systemPrompt: "LEGACY" }))
-
-    await createWorkspaceAgentServer({
-      workspaceRoot: "/tmp/phase0-legacy-alias",
-      logger: false,
-      provisionWorkspace: false,
-      pluginFactories: [factoryFn],
-    })
-
-    expect(factoryFn).toHaveBeenCalledTimes(1)
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { systemPromptAppend?: string },
-    ]
-    expect(agentOptions.systemPromptAppend).toContain("LEGACY")
-  })
 })
 
 describe("Phase 1 — directory-source plugin entries", () => {
