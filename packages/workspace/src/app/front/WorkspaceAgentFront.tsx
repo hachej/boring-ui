@@ -10,6 +10,7 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { useRegistry } from "../../front/registry"
 import type { WorkspaceFrontPlugin } from "../../shared/plugins"
+import { toWorkspacePlugin } from "../../shared/plugins/frontFactory"
 import type { PanelOutput, PluginOutput } from "../../shared/plugins/types"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
@@ -375,9 +376,15 @@ export function WorkspaceAgentFront<
     surfaceOpenRef.current = false
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
-  const pluginOutputs = useMemo(
-    () => plugins?.flatMap((plugin: WorkspaceFrontPlugin) => plugin.outputs ?? []) ?? [],
+  // Plugins can be either legacy WorkspaceFrontPlugin objects or new
+  // BoringFrontFactoryWithId entries; normalize before reading outputs.
+  const normalizedPlugins = useMemo(
+    () => plugins?.map(toWorkspacePlugin) ?? [],
     [plugins],
+  )
+  const pluginOutputs = useMemo(
+    () => normalizedPlugins.flatMap((plugin: WorkspaceFrontPlugin) => plugin.outputs ?? []),
+    [normalizedPlugins],
   )
   const hasLeftTabs = useMemo(
     () => pluginOutputs.some((output) => output.type === "left-tab"),

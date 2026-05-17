@@ -44,16 +44,20 @@ export type {
 export {
   createCapturingBoringFrontAPI,
   boringFrontFactoryToPlugin,
+  definePlugin,
+  toWorkspacePlugin,
 } from "./frontFactory"
 export type {
   BoringFrontAPI,
   BoringFrontFactory,
+  BoringFrontFactoryWithId,
   BoringFrontPanelRegistration,
   BoringFrontPanelCommandRegistration,
   BoringFrontLeftTabRegistration,
   BoringFrontSurfaceResolverRegistration,
   CapturedBoringFrontRegistrations,
   CapturingBoringFrontAPIHandle,
+  WorkspaceFrontPluginInput,
 } from "./frontFactory"
 
 export {

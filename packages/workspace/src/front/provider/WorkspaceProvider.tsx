@@ -33,6 +33,10 @@ import type {
   ProviderOutput,
 } from "../../shared/plugins/types"
 import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
+import {
+  toWorkspacePlugin,
+  type WorkspaceFrontPluginInput,
+} from "../../shared/plugins/frontFactory"
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
@@ -349,7 +353,13 @@ function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) 
 export interface WorkspaceProviderProps {
   children: ReactNode
   chatPanel?: WorkspaceChatPanelComponent
-  plugins?: WorkspaceFrontPlugin[]
+  /**
+   * Plugin entries. Each is either a legacy `WorkspaceFrontPlugin`
+   * object (from `defineFrontPlugin`) or a new
+   * `BoringFrontFactoryWithId` (from `definePlugin(id, factory)`). The
+   * shell normalizes both via `toWorkspacePlugin` at the boundary.
+   */
+  plugins?: WorkspaceFrontPluginInput[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
   commands?: CommandConfig[]
@@ -484,11 +494,15 @@ export function WorkspaceProvider({
     const defaultPlugins: WorkspaceFrontPlugin[] = excludedDefaults.has(filesystemPlugin.id)
       ? []
       : [filesystemPlugin]
-    const allPlugins = [...defaultPlugins, ...(plugins ?? [])]
+    // Normalize the user-provided plugins (each is either a legacy
+    // WorkspaceFrontPlugin object OR a new BoringFrontFactoryWithId).
+    // After normalization everything below treats them as plugin objects.
+    const normalizedPlugins: WorkspaceFrontPlugin[] = (plugins ?? []).map(toWorkspacePlugin)
+    const allPlugins = [...defaultPlugins, ...normalizedPlugins]
 
     bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,
-      plugins: plugins ?? [],
+      plugins: normalizedPlugins,
       defaults: defaultPlugins,
       excludeDefaults,
       registries: { panels: pr, commands: cr, catalogs: cat, surfaceResolvers: sr },
