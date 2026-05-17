@@ -92,6 +92,17 @@ export function usePiNativeFollowUpQueue({
     clearLocal()
   }, [sessionId, clearLocal])
 
+  // Clean up timers on unmount to prevent stale retries after component
+  // unmounts (e.g. when switching sessions).
+  useEffect(() => {
+    return () => {
+      if (followUpPostTimerRef.current) {
+        clearTimeout(followUpPostTimerRef.current)
+        followUpPostTimerRef.current = null
+      }
+    }
+  }, [])
+
   const postPendingFollowUps = useCallback(() => {
     if (followUpPostInFlightRef.current) return
     followUpPostInFlightRef.current = true

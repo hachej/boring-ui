@@ -108,7 +108,11 @@ export function useAgentChat(opts: UseAgentChatOptions) {
   const status = chat.status
   useEffect(() => {
     if (opts.persistMessages === false) return
-    if (!hydrated || !cacheKey || messages.length === 0) return
+    if (!hydrated || !cacheKey) return
+    if (messages.length === 0) return
+    // Only save when messages actually changed (not on every render).
+    // The `messages` dependency already handles this, but we also skip
+    // saves during hydration to avoid overwriting with partial state.
     try {
       globalThis.localStorage?.setItem(cacheKey, JSON.stringify(messages))
     } catch { /* quota exceeded: drop cache silently */ }
