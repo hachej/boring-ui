@@ -643,3 +643,69 @@ describe("createWorkspaceAgentServer — extraTools merge", () => {
   })
 })
 
+describe("createWorkspaceAgentServer — defaultPluginPackages (standard load process)", () => {
+  test("npm-name resolves, server side loads via default export, asset manager discovers boring.front, plugin appears in /api/agent-plugins", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-default-pkg-")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      disableDefaultFileTools: true,
+      // The real npm package — proves require.resolve + DirPluginEntry
+      // + BoringPluginAssetManager scan all wire together correctly.
+      defaultPluginPackages: ["@hachej/boring-ask-user"],
+    })
+
+    try {
+      // Server-side: the package's default-exported (options, ctx) =>
+      // WorkspaceServerPlugin adapter ran. Its agentTool "ask_user"
+      // appears in the agent catalog.
+      const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+      expect(catalog.statusCode).toBe(200)
+      const toolNames = (catalog.json().tools as Array<{ name: string }>).map((t) => t.name)
+      expect(toolNames).toContain("ask_user")
+
+      // Front-side discovery: the package appears in /api/agent-plugins
+      // with a frontUrl pointing at its boring.front entry. The
+      // front-side SSE subscriber would dynamic-import this URL.
+      const plugins = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      expect(plugins.statusCode).toBe(200)
+      // Plugin id is derived from package.json#name via @scope/name → scope-name
+      const list = plugins.json() as Array<{ id: string; frontUrl?: string }>
+      const found = list.find((p) => p.id === "hachej-boring-ask-user")
+      expect(found, `hachej-boring-ask-user not in /api/agent-plugins; got: ${JSON.stringify(list)}`).toBeDefined()
+      expect(found?.frontUrl).toMatch(/\/@fs\//)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("throws a clear error on unresolved package name", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-default-pkg-bad-")
+    await expect(
+      createWorkspaceAgentServer({
+        workspaceRoot,
+        mode: "direct",
+        logger: false,
+        provisionWorkspace: false,
+        defaultPluginPackages: ["@hachej/boring-ask-user-typo-does-not-exist"],
+      }),
+    ).rejects.toThrow(/cannot resolve.*ask-user-typo-does-not-exist/)
+  })
+
+  test("throws on absolute path that has no package.json", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-default-pkg-empty-")
+    const emptyDir = await makeTempDir("boring-empty-")
+    await expect(
+      createWorkspaceAgentServer({
+        workspaceRoot,
+        mode: "direct",
+        logger: false,
+        provisionWorkspace: false,
+        defaultPluginPackages: [emptyDir],
+      }),
+    ).rejects.toThrow(/has no package\.json/)
+  })
+})
+

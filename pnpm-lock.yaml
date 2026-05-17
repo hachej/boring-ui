@@ -795,6 +795,9 @@ importers:
         specifier: ^5.0.0
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
     devDependencies:
+      '@hachej/boring-ask-user':
+        specifier: workspace:*
+        version: link:../../plugins/ask-user
       '@tailwindcss/postcss':
         specifier: ^4.0.0
         version: 4.2.4

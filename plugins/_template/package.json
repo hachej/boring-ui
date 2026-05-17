@@ -10,7 +10,7 @@
     "server": "dist/server/index.js"
   },
   "pi": {
-    "systemPrompt": "Sample plugin template — replace this prompt with a short hint telling the agent when to use your plugin's panels/tools."
+    "systemPrompt": "Sample plugin template \u2014 replace this prompt with a short hint telling the agent when to use your plugin's panels/tools."
   },
   "files": [
     "dist"
@@ -31,7 +31,8 @@
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "sideEffects": false,
   "scripts": {
