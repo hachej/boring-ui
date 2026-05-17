@@ -71,6 +71,81 @@ export interface BoringFrontAPI {
 
 export type BoringFrontFactory = (api: BoringFrontAPI) => void | Promise<void>
 
+/**
+ * A `BoringFrontFactory` that carries its own plugin id (and optional
+ * label) as static properties. Lets the workspace shell accept a bare
+ * factory in `plugins[]` without requiring the consumer to wrap it
+ * with `boringFrontFactoryToPlugin(id, factory)` at the call site.
+ *
+ * Produced by `definePlugin(id, factory, options?)`.
+ */
+export type BoringFrontFactoryWithId = BoringFrontFactory & {
+  pluginId: string
+  pluginLabel?: string
+}
+
+/**
+ * Either input shape accepted by `WorkspaceProvider.plugins`:
+ * - The legacy declarative `WorkspaceFrontPlugin` object (built via
+ *   `defineFrontPlugin({ outputs: [...] })`).
+ * - A new imperative `BoringFrontFactoryWithId` (a factory function
+ *   plus `pluginId`/`pluginLabel` metadata).
+ *
+ * The shell normalizes via `toWorkspacePlugin` at the boundary.
+ */
+export type WorkspaceFrontPluginInput = WorkspaceFrontPlugin | BoringFrontFactoryWithId
+
+/**
+ * Attach a `pluginId` (and optional label) to a `BoringFrontFactory`
+ * so it can be passed directly to `WorkspaceProvider.plugins`.
+ *
+ *   export default definePlugin("my-plugin", (api) => {
+ *     api.registerPanel({ ... })
+ *   }, { label: "My Plugin" })
+ *
+ * Returns the same function reference with the static fields attached
+ * (mutation; no wrapping closure) so identity is preserved for
+ * registry replace-by-plugin-id semantics.
+ */
+export function definePlugin(
+  id: string,
+  factory: BoringFrontFactory,
+  options: { label?: string } = {},
+): BoringFrontFactoryWithId {
+  const attached = factory as BoringFrontFactoryWithId
+  attached.pluginId = id
+  if (options.label !== undefined) attached.pluginLabel = options.label
+  return attached
+}
+
+/**
+ * Type guard: is this entry a `BoringFrontFactoryWithId`?
+ */
+function isBoringFrontFactoryWithId(input: unknown): input is BoringFrontFactoryWithId {
+  return typeof input === "function" && typeof (input as BoringFrontFactoryWithId).pluginId === "string"
+}
+
+/**
+ * Normalize an input entry (legacy plugin object or new
+ * `BoringFrontFactoryWithId`) into a `WorkspaceFrontPlugin` ready for
+ * bootstrap. Factory entries are wrapped via
+ * `boringFrontFactoryToPlugin` using the attached metadata.
+ */
+export function toWorkspacePlugin(input: WorkspaceFrontPluginInput): WorkspaceFrontPlugin {
+  if (isBoringFrontFactoryWithId(input)) {
+    return boringFrontFactoryToPlugin(input.pluginId, input, {
+      ...(input.pluginLabel !== undefined ? { label: input.pluginLabel } : {}),
+    })
+  }
+  if (typeof input === "function") {
+    throw new Error(
+      "WorkspaceProvider.plugins received a bare BoringFrontFactory without a pluginId. " +
+        "Wrap it with `definePlugin(id, factory, { label? })` before passing it in.",
+    )
+  }
+  return input
+}
+
 export interface CapturedBoringFrontRegistrations {
   providers: BoringFrontProviderRegistration[]
   bindings: BoringFrontBindingRegistration[]

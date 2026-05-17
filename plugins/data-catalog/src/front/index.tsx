@@ -2,9 +2,10 @@
 
 import { BarChart3, Database } from "lucide-react"
 import { PanelChrome } from "@hachej/boring-workspace"
-import type {
-  BoringFrontFactory,
-  BoringFrontSurfaceResolverRegistration,
+import {
+  definePlugin,
+  type BoringFrontFactoryWithId,
+  type BoringFrontSurfaceResolverRegistration,
 } from "@hachej/boring-workspace/plugin"
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
 import type { ExplorerItem } from "@hachej/boring-data-explorer/shared"
@@ -63,18 +64,20 @@ export type {
 } from "./types"
 
 /**
- * Builds a `BoringFrontFactory` for the data-catalog plugin. The
- * factory captures `options` in a closure and registers the configured
- * left tab, visualization panel, catalog entry, and surface resolver
- * imperatively when the workspace calls it.
+ * Builds a `BoringFrontFactoryWithId` for the data-catalog plugin.
+ * The factory captures `options` in a closure and registers the
+ * configured left tab, visualization panel, catalog entry, and
+ * surface resolver imperatively when the workspace calls it.
  *
  * Each contribution is opt-out via the `include*` flags so host apps
  * can compose a subset (e.g. catalog-only without a visualization
- * panel).
+ * panel). The returned factory carries its `pluginId` + `pluginLabel`
+ * so it can be passed directly to `WorkspaceProvider.plugins` (the
+ * shell auto-wraps via `toWorkspacePlugin`).
  */
 export function createDataCatalogPlugin(
   options: CreateDataCatalogPluginOptions,
-): BoringFrontFactory {
+): BoringFrontFactoryWithId {
   const id = options.id ?? DATA_CATALOG_PLUGIN_ID
   const label = options.label ?? "Data"
   const catalogId = options.catalogId ?? id
@@ -168,52 +171,56 @@ export function createDataCatalogPlugin(
     )
   }
 
-  return (api) => {
-    if (includeLeftTab) {
-      api.registerLeftTab({
-        id: leftTabId,
-        title: leftTabTitle,
-        icon: options.leftTabIcon ?? Database,
-        component: DataCatalogLeftTab,
-        source,
-        chromeless: true,
-        panelId: leftTabId,
-      })
-    }
-
-    if (includeVisualizationPanel) {
-      api.registerPanel<DataCatalogVisualizationParams>({
-        id: visualizationPanelId,
-        label: visualizationTitle,
-        icon: options.visualizationIcon ?? BarChart3,
-        component: options.visualizationComponent ?? DefaultVisualizationPanel,
-        placement: "center",
-        source,
-      })
-    }
-
-    if (includeCatalog) {
-      const catalog: CatalogConfig = {
-        id: catalogId,
-        label: catalogLabel,
-        adapter: options.adapter,
-        onSelect: (row) => onSelect(row, {}),
+  return definePlugin(
+    id,
+    (api) => {
+      if (includeLeftTab) {
+        api.registerLeftTab({
+          id: leftTabId,
+          title: leftTabTitle,
+          icon: options.leftTabIcon ?? Database,
+          component: DataCatalogLeftTab,
+          source,
+          chromeless: true,
+          panelId: leftTabId,
+        })
       }
-      api.registerCatalog(catalog)
-    }
 
-    if (includeSurfaceResolver) {
-      const resolver: BoringFrontSurfaceResolverRegistration = createDataCatalogSurfaceResolver({
-        id,
-        catalogId,
-        visualizationPanelId,
-        visualizationTitle,
-        panelIdPrefix: id,
-        surfaceKind,
-        surfaceResolverId: options.surfaceResolverId,
-        source,
-      })
-      api.registerSurfaceResolver(resolver)
-    }
-  }
+      if (includeVisualizationPanel) {
+        api.registerPanel<DataCatalogVisualizationParams>({
+          id: visualizationPanelId,
+          label: visualizationTitle,
+          icon: options.visualizationIcon ?? BarChart3,
+          component: options.visualizationComponent ?? DefaultVisualizationPanel,
+          placement: "center",
+          source,
+        })
+      }
+
+      if (includeCatalog) {
+        const catalog: CatalogConfig = {
+          id: catalogId,
+          label: catalogLabel,
+          adapter: options.adapter,
+          onSelect: (row) => onSelect(row, {}),
+        }
+        api.registerCatalog(catalog)
+      }
+
+      if (includeSurfaceResolver) {
+        const resolver: BoringFrontSurfaceResolverRegistration = createDataCatalogSurfaceResolver({
+          id,
+          catalogId,
+          visualizationPanelId,
+          visualizationTitle,
+          panelIdPrefix: id,
+          surfaceKind,
+          surfaceResolverId: options.surfaceResolverId,
+          source,
+        })
+        api.registerSurfaceResolver(resolver)
+      }
+    },
+    { label },
+  )
 }

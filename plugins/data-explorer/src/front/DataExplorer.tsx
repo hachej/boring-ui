@@ -209,7 +209,7 @@ function Toolbar({
               autoFocus
               placeholder={searchPlaceholder}
               value={query}
-              onChange={(e) => onQueryChange(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onQueryChange(e.target.value)}
               className="h-8 rounded-sm text-[12.5px]"
             />
             {query.length > 0 ? (

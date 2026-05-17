@@ -1,8 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { toWorkspacePlugin } from "@hachej/boring-workspace/plugin"
 import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
+
+// `askUserPlugin` is now a BoringFrontFactoryWithId. Normalize to the
+// captured WorkspaceFrontPlugin shape once so the existing
+// outputs[]-based tests can keep their structure.
+const normalizedPlugin = toWorkspacePlugin(askUserPlugin)
 
 const question: AskUserQuestion = {
   questionId: "q1",
@@ -18,11 +24,11 @@ const question: AskUserQuestion = {
 }
 
 function getProvider() {
-  return askUserPlugin.outputs!.find((output) => output.type === "provider")!.component as any
+  return normalizedPlugin.outputs!.find((output) => output.type === "provider")!.component as any
 }
 
 function getPanel() {
-  return (askUserPlugin.outputs!.find((output) => output.type === "panel") as any).panel.component as any
+  return (normalizedPlugin.outputs!.find((output) => output.type === "panel") as any).panel.component as any
 }
 
 afterEach(() => {
@@ -88,10 +94,15 @@ describe("askUserPlugin front shell", () => {
   })
 
   it("registers surface resolver and no-topbar panel output", () => {
-    const panel = askUserPlugin.outputs!.find((output) => output.type === "panel") as any
-    const resolver = askUserPlugin.outputs!.find((output) => output.type === "surface-resolver") as any
+    const panel = normalizedPlugin.outputs!.find((output) => output.type === "panel") as any
+    const resolver = normalizedPlugin.outputs!.find((output) => output.type === "surface-resolver") as any
     expect(panel.panel.id).toBe("ask-user.questions")
     expect(panel.panel.chromeless).toBe(true)
     expect(resolver.resolver.resolve({ kind: "questions", target: "q1", meta: { question } })).toMatchObject({ component: "ask-user.questions", id: "ask-user.questions", params: { questionId: "q1", question } })
+  })
+
+  it("carries pluginId + pluginLabel metadata (definePlugin contract)", () => {
+    expect(askUserPlugin.pluginId).toBe("ask-user")
+    expect(askUserPlugin.pluginLabel).toBe("Questions")
   })
 })
