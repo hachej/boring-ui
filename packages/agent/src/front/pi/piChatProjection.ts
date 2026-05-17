@@ -147,7 +147,8 @@ export function usePiChatProjection({
     // Dispatch table for data-pi-* events — each handler receives (data, updatePiMessages)
     const handlers: Record<string, (d: Record<string, unknown>) => void> = {
       'data-pi-message-start': (d) => {
-        const role = d.role as 'user' | 'assistant'
+        const role = d.role
+        if (role !== 'user' && role !== 'assistant') return
         const text = typeof d.text === 'string' ? d.text : ''
         updatePiMessages((items) => {
           const existing = items.find((item) => item.id === piMessageId)
@@ -263,7 +264,7 @@ export function usePiChatProjection({
           : item))
       },
     }
-    if (typed.type) handlers[typed.type](data)
+    if (typed.type) handlers[typed.type]?.(data)
   }, [updatePiMessages])
 
   useEffect(() => {
