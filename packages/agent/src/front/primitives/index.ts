@@ -39,5 +39,3 @@ export {
   usePromptInputAttachments,
   type PromptInputProps,
 } from './prompt-input'
-
-
