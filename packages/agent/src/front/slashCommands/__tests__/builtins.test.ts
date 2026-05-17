@@ -7,7 +7,6 @@ function makeContext(overrides?: Partial<SlashCommandContext>): SlashCommandCont
     sessionId: 'test-session',
     clearMessages: vi.fn(),
     resetSession: vi.fn(),
-    setModel: vi.fn().mockReturnValue(true),
     listCommands: vi.fn().mockReturnValue(builtinCommands),
     reloadAgentPlugins: vi.fn().mockResolvedValue('Agent plugins reloaded.'),
     ...overrides,

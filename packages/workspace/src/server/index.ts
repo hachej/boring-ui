@@ -24,12 +24,10 @@ export type { UiBridge, UiState, UiCommand, CommandResult } from "../shared/ui-b
 export {
   ServerPluginError,
   bootstrapServer,
-  composeServerPlugins,
   defineServerPlugin,
   validateServerPlugin,
 } from "./plugins/bootstrapServer"
 export type {
-  ComposeServerPluginsOptions,
   ServerBootstrapOptions,
   ServerBootstrapResult,
   WorkspacePiPackageSource,

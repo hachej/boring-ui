@@ -35,12 +35,10 @@ import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
   ServerPluginError,
   bootstrapServer,
-  composeServerPlugins,
   defineServerPlugin,
   validateServerPlugin,
   compactPiPackages,
   type ServerBootstrapOptions,
-  type ComposeServerPluginsOptions,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
   type WorkspaceExtensionFactory,
@@ -156,12 +154,10 @@ export interface CreateWorkspaceAgentServerOptions
 
 export {
   ServerPluginError,
-  composeServerPlugins,
   defineServerPlugin,
   validateServerPlugin,
 }
 export type {
-  ComposeServerPluginsOptions,
   WorkspacePiPackageSource,
   WorkspaceServerPlugin,
   WorkspaceProvisioningContribution,

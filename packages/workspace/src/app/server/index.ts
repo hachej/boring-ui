@@ -1,12 +1,10 @@
 export {
   buildWorkspaceContextPrompt,
   collectWorkspaceAgentServerPlugins,
-  composeServerPlugins,
   createWorkspaceAgentServer,
   defineServerPlugin,
   provisionWorkspaceAgentServer,
   type CollectWorkspaceAgentServerPluginsOptions,
-  type ComposeServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
   type WorkspaceAgentPiOptions,
   type WorkspacePiPackageSource,

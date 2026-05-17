@@ -15,8 +15,6 @@ export {
   defineServerPlugin,
   validateServerPlugin,
 } from "./defineServerPlugin"
-export { composeServerPlugins } from "./composeServerPlugins"
-export type { ComposeServerPluginsOptions } from "./composeServerPlugins"
 export { compactPiPackages } from "./piPackages"
 export type { WorkspaceServerPlugin, WorkspaceExtensionFactory } from "./defineServerPlugin"
 export type { WorkspacePiPackageSource } from "./piPackages"

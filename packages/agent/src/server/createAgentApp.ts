@@ -1,5 +1,4 @@
 import Fastify, { type FastifyInstance } from 'fastify'
-import { basename } from 'node:path'
 import type { AgentTool } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
@@ -31,13 +30,6 @@ import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
-
-function pluginNameFromPath(path: string): string {
-  const fileName = basename(path)
-  if (fileName.endsWith('.mjs')) return fileName.slice(0, -4)
-  if (fileName.endsWith('.js')) return fileName.slice(0, -3)
-  return fileName
-}
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
