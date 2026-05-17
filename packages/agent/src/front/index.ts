@@ -31,7 +31,6 @@ export {
   type SlashCommandContext,
 } from './slashCommands'
 export {
-  DiffView,
   defaultToolRenderers,
   mergeToolRenderers,
   resolveToolRenderer,
@@ -50,25 +49,17 @@ export {
   MessageActions,
   MessageAction,
   MessageResponse,
-  MessageToolbar,
   Conversation,
   ConversationContent,
-  ConversationEmptyState,
   ConversationScrollButton,
   Reasoning,
   ReasoningTrigger,
   ReasoningContent,
   CodeBlock,
-  CodeBlockContainer,
-  CodeBlockHeader,
-  CodeBlockContent,
-  CodeBlockCopyButton,
   PromptInput,
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
-  PromptInputButton,
-  Shimmer,
 } from './primitives'
 
 // cn utility for consumers doing custom composition

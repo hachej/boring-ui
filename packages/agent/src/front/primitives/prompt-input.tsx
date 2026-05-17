@@ -67,19 +67,6 @@ import {
 } from "./prompt-input-wrappers";
 import { usePromptInputProviderAttachments } from "./use-prompt-input-provider-attachments";
 
-export {
-  PromptInputSelect,
-  PromptInputSelectContent,
-  PromptInputSelectItem,
-  PromptInputSelectTrigger,
-  PromptInputSelectValue,
-  type PromptInputSelectContentProps,
-  type PromptInputSelectItemProps,
-  type PromptInputSelectProps,
-  type PromptInputSelectTriggerProps,
-  type PromptInputSelectValueProps,
-} from "./prompt-input-select";
-
 export { convertBlobUrlToDataUrl } from "../browserFiles";
 export {
   LocalReferencedSourcesContext,
