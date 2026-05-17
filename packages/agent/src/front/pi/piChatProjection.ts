@@ -142,108 +142,128 @@ export function usePiChatProjection({
     const typed = part as { type?: string; data?: Record<string, unknown> }
     const data = typed.data ?? {}
     const piMessageId = typeof data.messageId === 'string' ? data.messageId : undefined
-    if (typed.type === 'data-pi-message-start' && piMessageId && (data.role === 'user' || data.role === 'assistant')) {
-      const role = data.role as 'user' | 'assistant'
-      const text = typeof data.text === 'string' ? data.text : ''
-      updatePiMessages((items) => {
-        const existing = items.find((item) => item.id === piMessageId)
-        if (!existing) return [...items, { id: piMessageId, role, parts: text ? [{ type: 'text' as const, text }] : [] }]
-        if (!text || (existing.parts ?? []).some((part) => part.type === 'text' && part.text)) return items
-        return items.map((item) => item.id === piMessageId
-          ? { ...item, role, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
-          : item)
-      })
-    } else if (typed.type === 'data-pi-text-start' && piMessageId) {
-      const partId = typeof data.partId === 'string' ? data.partId : '0'
-      updatePiMessages((items) => {
-        const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-        return existing.map((item) => item.id === piMessageId
-          ? { ...item, parts: item.parts?.some((p) => p.type === 'text' && (p as { id?: string }).id === partId) ? item.parts : [...(item.parts ?? []), { type: 'text' as const, id: partId, text: '' }] }
-          : item)
-      })
-    } else if (typed.type === 'data-pi-text-delta' && piMessageId) {
-      const partId = typeof data.partId === 'string' ? data.partId : '0'
-      const delta = typeof data.delta === 'string' ? data.delta : ''
-      if (delta) updatePiMessages((items) => {
-        const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-        return existing.map((item) => {
-          if (item.id !== piMessageId) return item
-          let found = false
-          const parts = (item.parts ?? []).map((p) => {
-            if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
-              found = true
-              return { ...p, text: `${p.text}${delta}` }
-            }
-            return p
-          })
-          return { ...item, parts: (found ? parts : [...parts, { type: 'text' as const, id: partId, text: delta }]) as UIMessage['parts'] }
+    if (!piMessageId) return
+
+    // Dispatch table for data-pi-* events — each handler receives (data, updatePiMessages)
+    const handlers: Record<string, (d: Record<string, unknown>) => void> = {
+      'data-pi-message-start': (d) => {
+        const role = d.role as 'user' | 'assistant'
+        const text = typeof d.text === 'string' ? d.text : ''
+        updatePiMessages((items) => {
+          const existing = items.find((item) => item.id === piMessageId)
+          if (!existing) return [...items, { id: piMessageId, role, parts: text ? [{ type: 'text' as const, text }] : [] }]
+          if (!text || (existing.parts ?? []).some((part) => part.type === 'text' && part.text)) return items
+          return items.map((item) => item.id === piMessageId
+            ? { ...item, role, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
+            : item)
         })
-      })
-    } else if (typed.type === 'data-pi-text-end' && piMessageId) {
-      const partId = typeof data.partId === 'string' ? data.partId : '0'
-      const text = typeof data.text === 'string' ? data.text : ''
-      if (text) updatePiMessages((items) => {
-        const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-        return existing.map((item) => {
-          if (item.id !== piMessageId) return item
-          let found = false
-          const parts = (item.parts ?? []).map((p) => {
-            if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
-              found = true
-              return p.text ? p : { ...p, text }
-            }
-            return p
-          })
-          return { ...item, parts: (found ? parts : [...parts, { type: 'text' as const, id: partId, text }]) as UIMessage['parts'] }
+      },
+      'data-pi-text-start': (d) => {
+        const partId = typeof d.partId === 'string' ? d.partId : '0'
+        updatePiMessages((items) => {
+          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
+          return existing.map((item) => item.id === piMessageId
+            ? { ...item, parts: item.parts?.some((p) => p.type === 'text' && (p as { id?: string }).id === partId) ? item.parts : [...(item.parts ?? []), { type: 'text' as const, id: partId, text: '' }] }
+            : item)
         })
-      })
-    } else if (typed.type === 'data-pi-reasoning-start' && piMessageId) {
-      const partId = typeof data.partId === 'string' ? data.partId : '0'
-      updatePiMessages((items) => {
-        const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-        return existing.map((item) => item.id === piMessageId
-          ? { ...item, parts: item.parts?.some((p) => p.type === 'reasoning' && (p as { id?: string }).id === partId) ? item.parts : [...(item.parts ?? []), { type: 'reasoning' as const, id: partId, text: '' }] }
-          : item)
-      })
-    } else if (typed.type === 'data-pi-reasoning-delta' && piMessageId) {
-      const partId = typeof data.partId === 'string' ? data.partId : '0'
-      const delta = typeof data.delta === 'string' ? data.delta : ''
-      if (delta) updatePiMessages((items) => {
-        const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-        return existing.map((item) => {
-          if (item.id !== piMessageId) return item
-          let found = false
-          const parts = (item.parts ?? []).map((p) => {
-            if (p.type === 'reasoning' && (p as { id?: string }).id === partId) {
-              found = true
-              return { ...p, text: `${p.text}${delta}` }
-            }
-            return p
+      },
+      'data-pi-text-delta': (d) => {
+        const partId = typeof d.partId === 'string' ? d.partId : '0'
+        const delta = typeof d.delta === 'string' ? d.delta : ''
+        if (!delta) return
+        updatePiMessages((items) => {
+          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
+          return existing.map((item) => {
+            if (item.id !== piMessageId) return item
+            let found = false
+            const parts = (item.parts ?? []).map((p) => {
+              if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
+                found = true
+                return { ...p, text: `${p.text}${delta}` }
+              }
+              return p
+            })
+            return { ...item, parts: (found ? parts : [...parts, { type: 'text' as const, id: partId, text: delta }]) as UIMessage['parts'] }
           })
-          return { ...item, parts: (found ? parts : [...parts, { type: 'reasoning' as const, id: partId, text: delta }]) as UIMessage['parts'] }
         })
-      })
-    } else if (typed.type === 'data-pi-tool-call-end' && piMessageId) {
-      const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
-      const toolName = typeof data.toolName === 'string' ? data.toolName : undefined
-      if (toolCallId && toolName) updatePiMessages((items) => {
-        const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
-        return existing.map((item) => item.id === piMessageId
-          ? { ...item, parts: [...(item.parts ?? []).filter((p) => (p as { toolCallId?: string }).toolCallId !== toolCallId), { type: `tool-${toolName}`, toolCallId, state: 'input-available', input: data.input }] as UIMessage['parts'] }
-          : item)
-      })
-    } else if (typed.type === 'data-pi-tool-result' && piMessageId) {
-      const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : undefined
-      if (toolCallId) updatePiMessages((items) => items.map((item) => item.id === piMessageId
-        ? { ...item, parts: (item.parts ?? []).map((p) => (p as { toolCallId?: string }).toolCallId === toolCallId ? { ...p, state: data.isError ? 'output-error' : 'output-available', output: data.output } : p) as UIMessage['parts'] }
-        : item))
-    } else if (typed.type === 'data-pi-message-end' && piMessageId) {
-      const text = typeof data.text === 'string' ? data.text : ''
-      const partId = typeof data.partId === 'string' ? data.partId : '0'
-      if (text) updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && (p as { id?: string }).id === partId && p.text)
-        ? { ...item, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
-        : item))
+      },
+      'data-pi-text-end': (d) => {
+        const partId = typeof d.partId === 'string' ? d.partId : '0'
+        const text = typeof d.text === 'string' ? d.text : ''
+        if (!text) return
+        updatePiMessages((items) => {
+          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
+          return existing.map((item) => {
+            if (item.id !== piMessageId) return item
+            let found = false
+            const parts = (item.parts ?? []).map((p) => {
+              if (p.type === 'text' && ((p as { id?: string }).id ?? partId) === partId) {
+                found = true
+                return p.text ? p : { ...p, text }
+              }
+              return p
+            })
+            return { ...item, parts: (found ? parts : [...parts, { type: 'text' as const, id: partId, text }]) as UIMessage['parts'] }
+          })
+        })
+      },
+      'data-pi-reasoning-start': (d) => {
+        const partId = typeof d.partId === 'string' ? d.partId : '0'
+        updatePiMessages((items) => {
+          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
+          return existing.map((item) => item.id === piMessageId
+            ? { ...item, parts: item.parts?.some((p) => p.type === 'reasoning' && (p as { id?: string }).id === partId) ? item.parts : [...(item.parts ?? []), { type: 'reasoning' as const, id: partId, text: '' }] }
+            : item)
+        })
+      },
+      'data-pi-reasoning-delta': (d) => {
+        const partId = typeof d.partId === 'string' ? d.partId : '0'
+        const delta = typeof d.delta === 'string' ? d.delta : ''
+        if (!delta) return
+        updatePiMessages((items) => {
+          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
+          return existing.map((item) => {
+            if (item.id !== piMessageId) return item
+            let found = false
+            const parts = (item.parts ?? []).map((p) => {
+              if (p.type === 'reasoning' && (p as { id?: string }).id === partId) {
+                found = true
+                return { ...p, text: `${p.text}${delta}` }
+              }
+              return p
+            })
+            return { ...item, parts: (found ? parts : [...parts, { type: 'reasoning' as const, id: partId, text: delta }]) as UIMessage['parts'] }
+          })
+        })
+      },
+      'data-pi-tool-call-end': (d) => {
+        const toolCallId = typeof d.toolCallId === 'string' ? d.toolCallId : undefined
+        const toolName = typeof d.toolName === 'string' ? d.toolName : undefined
+        if (!toolCallId || !toolName) return
+        updatePiMessages((items) => {
+          const existing = items.some((item) => item.id === piMessageId) ? items : [...items, { id: piMessageId, role: 'assistant' as const, parts: [] }]
+          return existing.map((item) => item.id === piMessageId
+            ? { ...item, parts: [...(item.parts ?? []).filter((p) => (p as { toolCallId?: string }).toolCallId !== toolCallId), { type: `tool-${toolName}`, toolCallId, state: 'input-available', input: d.input }] as UIMessage['parts'] }
+            : item)
+        })
+      },
+      'data-pi-tool-result': (d) => {
+        const toolCallId = typeof d.toolCallId === 'string' ? d.toolCallId : undefined
+        if (!toolCallId) return
+        updatePiMessages((items) => items.map((item) => item.id === piMessageId
+          ? { ...item, parts: (item.parts ?? []).map((p) => (p as { toolCallId?: string }).toolCallId === toolCallId ? { ...p, state: d.isError ? 'output-error' : 'output-available', output: d.output } : p) as UIMessage['parts'] }
+          : item))
+      },
+      'data-pi-message-end': (d) => {
+        const text = typeof d.text === 'string' ? d.text : ''
+        const partId = typeof d.partId === 'string' ? d.partId : '0'
+        if (!text) return
+        updatePiMessages((items) => items.map((item) => item.id === piMessageId && !(item.parts ?? []).some((p) => p.type === 'text' && (p as { id?: string }).id === partId && p.text)
+          ? { ...item, parts: [...(item.parts ?? []), { type: 'text' as const, text }] }
+          : item))
+      },
     }
+    if (typed.type) handlers[typed.type](data)
   }, [updatePiMessages])
 
   useEffect(() => {
@@ -287,9 +307,6 @@ export function usePiChatProjection({
       headers: { 'Content-Type': 'application/json', ...requestHeaders },
       body: JSON.stringify({ messages: stripped }),
     }).catch(() => {})
-    try {
-      globalThis.localStorage?.setItem(`boring-agent:messages:${sessionId}`, JSON.stringify(stripped))
-    } catch { /* ignore */ }
   }, [sessionId, status, piMessages, requestHeaders])
 
   return { piMessages, handleData }
