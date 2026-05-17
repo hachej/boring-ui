@@ -5,6 +5,14 @@
   "private": true,
   "license": "MIT",
   "description": "Data catalog plugin package for Boring workspace apps, built on @hachej/boring-data-explorer.",
+  "boring": {
+    "label": "Data Catalog",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "Use the data catalog left tab and visualization panel when the user asks to browse, search, or open structured datasets registered in the workspace."
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"

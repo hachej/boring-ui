@@ -1,19 +1,19 @@
 "use client"
 
 import { BarChart3, Database } from "lucide-react"
-import { definePanel } from "@hachej/boring-workspace"
 import { PanelChrome } from "@hachej/boring-workspace"
+import type {
+  BoringFrontFactory,
+  BoringFrontSurfaceResolverRegistration,
+} from "@hachej/boring-workspace/plugin"
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
 import type { ExplorerItem } from "@hachej/boring-data-explorer/shared"
-import { defineFrontPlugin } from "@hachej/boring-workspace"
 import type {
   CatalogConfig,
   LeftTabParams,
-  PluginOutput,
+  WorkspaceBridge,
 } from "@hachej/boring-workspace"
-import type { WorkspaceFrontPlugin } from "@hachej/boring-workspace"
-import type { WorkspaceBridge } from "@hachej/boring-workspace"
-import type { PaneProps, PanelConfig } from "@hachej/boring-workspace"
+import type { PaneProps } from "@hachej/boring-workspace"
 import {
   DATA_CATALOG_PLUGIN_ID,
   DATA_CATALOG_ROW_SURFACE_KIND,
@@ -25,7 +25,6 @@ import {
   useDataCatalogVisualizationState,
 } from "./hooks"
 import type {
-  CreateDataCatalogOutputsOptions,
   CreateDataCatalogPluginOptions,
   DataCatalogVisualizationParams,
 } from "./types"
@@ -54,7 +53,6 @@ export type {
   CreateDataCatalogSurfaceResolverOptions,
 } from "./surfaceResolver"
 export type {
-  CreateDataCatalogOutputsOptions,
   CreateDataCatalogPluginOptions,
   DataCatalogResolvedQuery,
   DataCatalogSelectContext,
@@ -64,9 +62,19 @@ export type {
   OpenDataCatalogVisualizationOptions,
 } from "./types"
 
-export function createDataCatalogOutputs(
-  options: CreateDataCatalogOutputsOptions,
-): PluginOutput[] {
+/**
+ * Builds a `BoringFrontFactory` for the data-catalog plugin. The
+ * factory captures `options` in a closure and registers the configured
+ * left tab, visualization panel, catalog entry, and surface resolver
+ * imperatively when the workspace calls it.
+ *
+ * Each contribution is opt-out via the `include*` flags so host apps
+ * can compose a subset (e.g. catalog-only without a visualization
+ * panel).
+ */
+export function createDataCatalogPlugin(
+  options: CreateDataCatalogPluginOptions,
+): BoringFrontFactory {
   const id = options.id ?? DATA_CATALOG_PLUGIN_ID
   const label = options.label ?? "Data"
   const catalogId = options.catalogId ?? id
@@ -87,10 +95,7 @@ export function createDataCatalogOutputs(
   const onSelect =
     options.onSelect ??
     (includeVisualizationPanel
-      ? createDataCatalogOpenHandler({
-          catalogId,
-          surfaceKind,
-        })
+      ? createDataCatalogOpenHandler({ catalogId, surfaceKind })
       : () => {})
 
   function DataCatalogLeftTab({ params, className }: PaneProps<LeftTabParams>) {
@@ -117,20 +122,24 @@ export function createDataCatalogOutputs(
 
   function DefaultVisualizationPanel({
     params,
-    api,
+    api: panelApi,
     className,
   }: PaneProps<DataCatalogVisualizationParams>) {
     const { row, query, controlled, title } = useDataCatalogVisualizationState(
       params,
       visualizationTitle,
     )
-    const handleSelect = (nextRow: ExplorerItem) => onSelect(nextRow, {})
+    // Pass `params` so consumers can read panel state when handling a
+    // row activation from inside the visualization panel itself (the
+    // left-tab path already passes `{ params, bridge }`; this aligns
+    // the two and unblocks bridge-aware callers from the panel route).
+    const handleSelect = (nextRow: ExplorerItem) => onSelect(nextRow, { params })
 
     return (
       <PanelChrome
         title={title}
         icon={options.visualizationIcon ?? BarChart3}
-        panelApi={api}
+        panelApi={panelApi}
         className={className}
       >
         {row ? (
@@ -159,50 +168,42 @@ export function createDataCatalogOutputs(
     )
   }
 
-  const outputs: PluginOutput[] = []
-
-  if (includeLeftTab) {
-    outputs.push({
-      type: "left-tab",
-      id: leftTabId,
-      title: leftTabTitle,
-      icon: options.leftTabIcon ?? Database,
-      component: DataCatalogLeftTab,
-      source,
-      chromeless: true,
-    })
-  }
-
-  if (includeVisualizationPanel) {
-    const panel = definePanel<DataCatalogVisualizationParams>({
-      id: visualizationPanelId,
-      title: visualizationTitle,
-      icon: options.visualizationIcon ?? BarChart3,
-      component: options.visualizationComponent ?? DefaultVisualizationPanel,
-      placement: "center",
-      source,
-    }) as PanelConfig
-
-    outputs.push({
-      type: "panel",
-      panel,
-    })
-  }
-
-  if (includeCatalog) {
-    const catalog: CatalogConfig = {
-      id: catalogId,
-      label: catalogLabel,
-      adapter: options.adapter,
-      onSelect: (row) => onSelect(row, {}),
+  return (api) => {
+    if (includeLeftTab) {
+      api.registerLeftTab({
+        id: leftTabId,
+        title: leftTabTitle,
+        icon: options.leftTabIcon ?? Database,
+        component: DataCatalogLeftTab,
+        source,
+        chromeless: true,
+        panelId: leftTabId,
+      })
     }
-    outputs.push({ type: "catalog", catalog })
-  }
 
-  if (includeSurfaceResolver) {
-    outputs.push({
-      type: "surface-resolver",
-      resolver: createDataCatalogSurfaceResolver({
+    if (includeVisualizationPanel) {
+      api.registerPanel<DataCatalogVisualizationParams>({
+        id: visualizationPanelId,
+        label: visualizationTitle,
+        icon: options.visualizationIcon ?? BarChart3,
+        component: options.visualizationComponent ?? DefaultVisualizationPanel,
+        placement: "center",
+        source,
+      })
+    }
+
+    if (includeCatalog) {
+      const catalog: CatalogConfig = {
+        id: catalogId,
+        label: catalogLabel,
+        adapter: options.adapter,
+        onSelect: (row) => onSelect(row, {}),
+      }
+      api.registerCatalog(catalog)
+    }
+
+    if (includeSurfaceResolver) {
+      const resolver: BoringFrontSurfaceResolverRegistration = createDataCatalogSurfaceResolver({
         id,
         catalogId,
         visualizationPanelId,
@@ -211,44 +212,8 @@ export function createDataCatalogOutputs(
         surfaceKind,
         surfaceResolverId: options.surfaceResolverId,
         source,
-      }),
-    })
-  }
-
-  return outputs
-}
-
-export function createDataCatalogPlugin(
-  options: CreateDataCatalogPluginOptions,
-): WorkspaceFrontPlugin {
-  const pluginId = options.pluginId ?? options.id ?? DATA_CATALOG_PLUGIN_ID
-  return defineFrontPlugin({
-    id: pluginId,
-    label: options.label ?? "Data Catalog",
-    outputs: createDataCatalogOutputs(options),
-  })
-}
-
-export function appendDataCatalogOutputs<T extends WorkspaceFrontPlugin>(
-  plugin: T,
-  options: CreateDataCatalogOutputsOptions,
-): T {
-  return defineFrontPlugin({
-    ...plugin,
-    outputs: [...(plugin.outputs ?? []), ...createDataCatalogOutputs(options)],
-  }) as T
-}
-
-export function createDataCatalogCatalog(
-  options: Pick<
-    CreateDataCatalogOutputsOptions,
-    "id" | "label" | "adapter" | "catalogId" | "catalogLabel" | "onSelect"
-  >,
-): CatalogConfig {
-  return {
-    id: options.catalogId ?? options.id ?? DATA_CATALOG_PLUGIN_ID,
-    label: options.catalogLabel ?? options.label ?? "Data",
-    adapter: options.adapter,
-    onSelect: (row) => options.onSelect?.(row, {}),
+      })
+      api.registerSurfaceResolver(resolver)
+    }
   }
 }

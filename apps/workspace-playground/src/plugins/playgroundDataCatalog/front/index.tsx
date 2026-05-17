@@ -3,6 +3,7 @@ import {
   postUiCommand,
   type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
+import { boringFrontFactoryToPlugin } from "@hachej/boring-workspace/plugin"
 import {
   createDataCatalogPlugin,
   type CreateDataCatalogPluginOptions,
@@ -83,6 +84,13 @@ function createPlaygroundDataCatalogOptions(): CreateDataCatalogPluginOptions {
   }
 }
 
-export const playgroundDataCatalogPlugin: WorkspaceFrontPlugin = createDataCatalogPlugin(
-  createPlaygroundDataCatalogOptions(),
+// `createDataCatalogPlugin` returns a `BoringFrontFactory` (imperative
+// `(api) => void`). The current `WorkspaceProvider.plugins` prop still
+// expects the legacy `WorkspaceFrontPlugin` object shape, so wrap with
+// `boringFrontFactoryToPlugin` to bridge until the prop accepts a
+// union of both shapes.
+export const playgroundDataCatalogPlugin: WorkspaceFrontPlugin = boringFrontFactoryToPlugin(
+  PLAYGROUND_DATA_PLUGIN_ID,
+  createDataCatalogPlugin(createPlaygroundDataCatalogOptions()),
+  { label: "Data" },
 )
