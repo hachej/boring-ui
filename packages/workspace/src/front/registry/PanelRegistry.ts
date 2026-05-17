@@ -64,10 +64,8 @@ export class PanelRegistry {
    * Collision policy: a new registration whose id is already owned by a
    * DIFFERENT pluginId is skipped with a warning. Preserves cross-plugin
    * isolation during reload — a renamed plugin can't silently steal another
-   * plugin's panel id.
-   *
-   * Pi parity (`core/agent-session.js:1896` reload): teardown + rebuild as a
-   * single observable transition. Used by Phase 5 reload wiring.
+   * plugin's panel id. Teardown + rebuild as a single observable transition,
+   * driven by the front-side SSE reload subscriber.
    */
   replaceByPluginId(pluginId: string, panels: PanelConfig[]): void {
     const ownedIds = new Set<string>()

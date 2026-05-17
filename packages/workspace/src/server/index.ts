@@ -35,6 +35,7 @@ export type {
   WorkspaceRouteContribution,
   WorkspaceServerPlugin,
 } from "./plugins/bootstrapServer"
+// Boring plugin asset manager + reload-pluggability helpers.
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"
 export { boringPluginRoutes } from "./agentPlugins/routes"
