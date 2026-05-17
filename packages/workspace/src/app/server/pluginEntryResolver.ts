@@ -1,10 +1,9 @@
 /**
- * Phase 1 of the unified plugin plan: directory-source resolution.
+ * Directory-source plugin resolution.
  *
- * Resolves `{ spec: { dir }, options?, hotReload? }` plugin entries into a
+ * Resolves `{ dir, options?, hotReload? }` plugin entries into a
  * `WorkspaceServerPlugin` by reading the plugin's `package.json` and
- * importing its server entry. Mirrors Pi's resolution shape from
- * `@mariozechner/pi-coding-agent` core/package-manager.js:resolveExtensionEntries:
+ * importing its server entry:
  *
  *  1. Manifest field wins (`package.json#boring.server`). Declared-but-missing
  *     fails loudly — no silent fallback.
