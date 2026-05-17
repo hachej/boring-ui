@@ -7,13 +7,11 @@
 import {
   autoDetectMode,
   createAgentApp,
-  createResourceSettingsManager,
   provisionRuntimeWorkspace,
   resolveMode,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
 } from "@hachej/boring-agent/server"
-import { DefaultPackageManager, getAgentDir } from "@mariozechner/pi-coding-agent"
 import type { FastifyInstance } from "fastify"
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -103,11 +101,6 @@ export interface CreateWorkspaceAgentServerOptions
    * or factory functions that receive the workspace context — same array.
    */
   plugins?: WorkspacePluginEntry[]
-  /**
-   * @deprecated Pass factory functions in `plugins:` instead. Kept for
-   * back-compat; entries are concatenated into the unified install array.
-   */
-  pluginFactories?: WorkspaceAgentServerPluginFactory[]
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
@@ -364,60 +357,6 @@ function resolveDefaultPluginPackagePaths(
   return resolved
 }
 
-/**
- * Ask Pi for every package it has resolved (app-default, .pi/extensions/
- * auto-discovered, and pi-install-ed CLI packages), derive the package
- * root for each, and return roots that declare `package.json#boring`
- * (i.e. contribute a workspace front/server entry).
- *
- * Used to feed the BoringPluginAssetManager from Pi's single registry —
- * one source of truth for what packages exist in this workspace.
- */
-function resolveBoringPluginRootsFromPi(opts: {
-  workspaceRoot: string
-  piPackages: WorkspacePiPackageSource[]
-}): string[] {
-  if (opts.piPackages.length === 0) return []
-  try {
-    const agentDir = getAgentDir()
-    const settingsManager = createResourceSettingsManager(
-      opts.workspaceRoot,
-      agentDir,
-      opts.piPackages,
-    )
-    const packageManager = new DefaultPackageManager({
-      cwd: opts.workspaceRoot,
-      agentDir,
-      settingsManager,
-    })
-    // resolve() is async but we need a synchronous result here at boot.
-    // Pi's DefaultPackageManager.resolve() is async-only; defer to
-    // synchronous package.json lookups by reading the configured package
-    // source paths directly from settings (avoids the round-trip).
-    const seen = new Set<string>()
-    for (const pkg of opts.piPackages) {
-      const sourcePath = typeof pkg === "string" ? pkg : pkg.source
-      if (!sourcePath || !sourcePath.startsWith("/")) continue
-      const pkgJsonPath = join(sourcePath, "package.json")
-      if (!existsSync(pkgJsonPath)) continue
-      try {
-        const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as { boring?: unknown }
-        if (pkgJson.boring && typeof pkgJson.boring === "object") {
-          seen.add(sourcePath)
-        }
-      } catch {
-        // ignore parse errors
-      }
-    }
-    // Reference packageManager so the import is exercised (will be used
-    // in a future Phase 2 for async ad-hoc-installed-package discovery).
-    void packageManager
-    return [...seen]
-  } catch {
-    return []
-  }
-}
-
 interface PackageJsonPiSnapshot {
   additionalSkillPaths: string[]
   packages: WorkspacePiPackageSource[]
@@ -476,7 +415,6 @@ export async function createWorkspaceAgentServer(
   const allPluginEntries: WorkspacePluginEntry[] = [
     ...defaultPluginDirEntries,
     ...(opts.plugins ?? []),
-    ...(opts.pluginFactories ?? []),
   ]
   // Inline dispatch: each entry shape (object / factory / { dir } /
    // { module }) is resolved by `resolveOnePluginEntry`. Same logic
@@ -491,12 +429,11 @@ export async function createWorkspaceAgentServer(
   const boringPluginReload = opts.boringPluginReload ?? true
   const piPluginReload = opts.piPluginReload ?? true
 
-  // (defaultPluginPackagePaths was resolved earlier — reuse it here so the
-  // same package paths flow into BOTH the server-side install entries AND
-  // the Pi package list.)
-  const defaultPluginPiSources: WorkspacePiPackageSource[] = defaultPluginPackagePaths.map(
-    (sourcePath) => ({ source: sourcePath }),
-  )
+  // Note: we don't need to explicitly register defaultPluginPackagePaths
+  // as Pi packages here. They land in `boringPluginDirs` below, and the
+  // dynamic Pi resources path (`readPackageJsonPiSnapshot`) reads each
+  // package's `pi.*` fields from there and forwards them to Pi on every
+  // session creation + /reload. ONE pi-discovery path, no duplication.
 
   if (opts.provisionWorkspace !== false) {
     await provisionWorkspaceAgentServer({
@@ -506,30 +443,27 @@ export async function createWorkspaceAgentServer(
     })
   }
 
-  // Static Pi resources known at boot: workspace skill dir, factory-supplied
-  // values, the bundled @hachej/boring-pi skill package, AND the app-default
-  // plugin packages. These never change for the lifetime of the server.
+  // Static Pi resources known at boot: workspace skill dir,
+  // factory-supplied values, and the bundled @hachej/boring-pi skill
+  // package. defaultPluginPackages are NOT included here — they flow
+  // to Pi via the dynamic resources path (boringPluginDirs scan +
+  // readPackageJsonPiSnapshot) which already reads each package's
+  // pi.* fields on every session/reload.
   const workspacePackagePiPackage = createBoringPiPackageSource(workspaceRoot)
   const staticPiSkillPaths = pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []
   const staticPiPackages = compactPiPackages([
     workspacePackagePiPackage,
-    ...defaultPluginPiSources,
     ...(pluginCollection.agentOptions.pi?.packages ?? []),
   ])
   const staticPiExtensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
 
-  // Boring plugin discovery: scan .pi/extensions/ + any plugin-contributed
-  // extension parent paths + the app-default plugin packages that Pi sees
-  // (single source of truth for "what packages exist in this workspace").
-  // The Pi-derived list also picks up `pi install npm:<pkg>` packages once
-  // we wire the async resolve path in Phase 2 — for now boot-time only.
-  const piDerivedBoringPluginRoots = resolveBoringPluginRootsFromPi({
-    workspaceRoot,
-    piPackages: staticPiPackages,
-  })
+  // Boring plugin discovery: scan .pi/extensions/, any plugin-contributed
+  // extension parent paths, and the app-default plugin package dirs.
+  // The asset manager treats each as a plugin source; SSE + jiti reload
+  // works the same for all three categories.
   const boringPluginDirs = [
     ...collectBoringPluginDirs(workspaceRoot, pluginCollection),
-    ...piDerivedBoringPluginRoots,
+    ...defaultPluginPackagePaths,
   ]
 
   // Dynamic Pi resources discovered from package.json#pi at /reload time.
