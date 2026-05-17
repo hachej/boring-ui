@@ -27,7 +27,6 @@ export type {
 
 export {
   validateBoringPluginManifest,
-  validateBoringPluginPackageJson,
   isSafePluginRelativePath,
   isSafePluginRelativeGlob,
   isValidBoringPluginId,
@@ -42,5 +41,4 @@ export type {
   BoringPluginManifestIssue,
   BoringPluginManifestValidationResult,
   BoringPluginPackageJson,
-  BoringPluginPackageJsonValidationResult,
 } from "./shared/plugins/manifest"

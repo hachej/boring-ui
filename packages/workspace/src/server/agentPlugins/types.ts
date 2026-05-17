@@ -4,15 +4,12 @@ import type {
   BoringPackagePiField,
 } from "../../shared/plugins/manifest"
 
-export type BoringPackageField = BoringPackageBoringField
-export type BoringPiPackageField = BoringPackagePiField
-
 export interface BoringServerPluginManifest {
   id: string
   rootDir: string
   version: string
-  boring: BoringPackageField
-  pi?: BoringPiPackageField
+  boring: BoringPackageBoringField
+  pi?: BoringPackagePiField
   frontPath?: string
   frontUrl?: string
   serverPath?: string
@@ -24,7 +21,7 @@ export type BoringPluginEvent =
   | {
       type: "boring.plugin.load"
       id: string
-      boring: BoringPackageField
+      boring: BoringPackageBoringField
       version: string
       revision: number
       frontUrl?: string
@@ -34,8 +31,8 @@ export type BoringPluginEvent =
 
 export interface BoringPluginListEntry {
   id: string
-  boring: BoringPackageField
-  pi?: BoringPiPackageField
+  boring: BoringPackageBoringField
+  pi?: BoringPackagePiField
   version: string
   revision: number
   frontUrl?: string
