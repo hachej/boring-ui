@@ -3,6 +3,10 @@ import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+// Same event name as workspace's WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT.
+// Duplicated (not imported) because @hachej/boring-agent must not depend
+// on @hachej/boring-workspace (workspace depends on agent — would cycle).
+// Keep the two literals in sync.
 const AGENT_PLUGINS_RELOADED_EVENT = 'boring-ui:agent-plugins-reloaded'
 
 // Lazy import so the DebugDrawer chunk (~10kb + its tab subcomponents that fetch
@@ -64,8 +68,6 @@ import { useThinkingSettings } from './hooks/useThinkingSettings'
 import { useAttachmentNotice } from './hooks/useAttachmentNotice'
 import {
   modelPayload,
-  parseModelSelection,
-  writeStoredModelSelection,
   type ModelSelection,
   type ThinkingLevel,
 } from './chatPanelSettings'
@@ -619,13 +621,6 @@ export function ChatPanel(props: ChatPanelProps) {
                 : { method: 'DELETE' },
             ).catch(() => {})
             void onSessionReset?.()
-          },
-          setModel: (model) => {
-            const next = parseModelSelection(model)
-            if (!next) return false
-            writeStoredModelSelection(next)
-            globalThis.dispatchEvent?.(new CustomEvent('boring:model-change', { detail: next }))
-            return true
           },
           listCommands: () => registry.list(),
           reloadAgentPlugins,
