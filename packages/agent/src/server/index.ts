@@ -48,6 +48,7 @@ export type {
   PiHarnessOptions,
   PiPackageSource,
 } from './harness/pi-coding-agent/createHarness'
+export { createResourceSettingsManager } from './harness/pi-coding-agent/createHarness'
 export {
   compactPiPackages,
   mergePiPackageSources,
