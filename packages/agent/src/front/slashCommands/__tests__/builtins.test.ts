@@ -56,32 +56,14 @@ describe('/reset', () => {
   })
 })
 
-describe('/model', () => {
-  test('returns usage when no args', () => {
-    const ctx = makeContext()
-    const result = getBuiltin('model').handler('', ctx)
-    expect(ctx.setModel).not.toHaveBeenCalled()
-    expect(result).toContain('Usage')
-  })
-
-  test('returns error for invalid model', () => {
-    const ctx = makeContext({ setModel: vi.fn().mockReturnValue(false) })
-    const result = getBuiltin('model').handler('gpt4', ctx)
-    expect(result).toContain('Unknown model')
-    expect(result).toContain('gpt4')
-  })
-})
-
 describe('/help', () => {
   test('lists all commands', () => {
     const ctx = makeContext()
     const result = getBuiltin('help').handler('', ctx)
     expect(result).toContain('/clear')
-    expect(result).toContain('/model')
-    expect(result).toContain('/help')
-    expect(result).toContain('/reload')
-    expect(result).toContain('/cost')
     expect(result).toContain('/reset')
+    expect(result).toContain('/reload')
+    expect(result).toContain('/help')
   })
 
   test('returns message when no commands', () => {
@@ -109,20 +91,17 @@ describe('/reload', () => {
   })
 })
 
-describe('/cost', () => {
-  test('returns coming soon', () => {
-    const ctx = makeContext()
-    const result = getBuiltin('cost').handler('', ctx)
-    expect(result).toBe('Coming soon.')
-  })
-})
-
-describe('all 6 builtins are registered', () => {
-  test('has exactly 6 commands', () => {
-    expect(builtinCommands).toHaveLength(6)
+describe('all 4 builtins are registered', () => {
+  test('has exactly 4 commands', () => {
+    expect(builtinCommands).toHaveLength(4)
   })
 
-  test.each(['clear', 'reset', 'model', 'reload', 'help', 'cost'])('includes /%s', (name) => {
+  test.each(['clear', 'reset', 'reload', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
+  })
+
+  test('does NOT include /model or /cost (removed)', () => {
+    expect(builtinCommands.find((c) => c.name === 'model')).toBeUndefined()
+    expect(builtinCommands.find((c) => c.name === 'cost')).toBeUndefined()
   })
 })
