@@ -32,6 +32,11 @@ export function mergeTools(options: MergeToolsOptions): AgentTool[] {
   }
 
   for (const tool of options.extraTools ?? []) {
+    if (merged.has(tool.name)) {
+      options.logger?.warn(
+        `[catalog] Tool "${tool.name}" overridden by extraTools`,
+      )
+    }
     setLastRegistered(merged, tool)
   }
 

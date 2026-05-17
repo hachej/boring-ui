@@ -1,5 +1,5 @@
 import { readdir, stat, readFile } from "node:fs/promises";
-import { join, extname, resolve, sep } from "node:path";
+import { join, extname, resolve, sep, relative } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import type { AgentTool } from "../../../shared/tool.js";
@@ -119,7 +119,16 @@ async function loadNpmPlugin(
   const main = pkgJson.main ?? "index.js";
   const resolvedMain = resolve(pkgDir, main);
   const resolvedPkgDir = resolve(pkgDir);
+  // Guard against path traversal: resolvedMain must be exactly pkgDir
+  // (for entrypoints like "." or "./") or a direct child of pkgDir.
+  // Using sep ensures we match on directory boundaries (e.g. pkgDir
+  // = "/a" must not match "/ab/foo.js").
   if (resolvedMain !== resolvedPkgDir && !resolvedMain.startsWith(resolvedPkgDir + sep)) {
+    return [];
+  }
+  // Extra guard: the relative path from pkgDir must not contain "..".
+  const relPath = relative(resolvedPkgDir, resolvedMain);
+  if (relPath.startsWith("..")) {
     return [];
   }
   return loadModule(resolvedMain, importFn);
