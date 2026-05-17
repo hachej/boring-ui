@@ -44,7 +44,7 @@ describe("createWorkspaceAgentServer — plugin factory wiring", () => {
       logger: false,
       provisionWorkspace: false,
       disableDefaultFileTools: true,
-      pluginFactories: [({ bridge }) => appServerApi.defineServerPlugin({
+      plugins: [({ bridge }) => appServerApi.defineServerPlugin({
         id: "factory-plugin",
         agentTools: [{
           name: "factory_tool",
