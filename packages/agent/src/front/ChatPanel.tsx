@@ -103,12 +103,8 @@ export interface ChatPanelProps {
    * app — e.g. a data-app might offer "Build a chart from a CSV" instead.
    */
   suggestions?: ChatSuggestion[]
-  /** Eyebrow above the empty-state headline. */
-  emptyEyebrow?: string
-  /** Empty-state headline. */
-  emptyTitle?: string
-  /** Empty-state description below the headline. */
-  emptyDescription?: string
+  /** Custom empty-state text. Omit to use defaults. */
+  emptyState?: { eyebrow?: string; title?: string; description?: string }
   /**
    * Render the extended-thinking selector in the composer footer (off / low
    * / medium / high). When enabled, the selected level is persisted in
@@ -158,9 +154,7 @@ export function ChatPanel(props: ChatPanelProps) {
     className,
     chrome = true,
     suggestions = defaultChatSuggestions,
-    emptyEyebrow,
-    emptyTitle,
-    emptyDescription,
+    emptyState,
     thinkingControl = false,
     defaultModel,
     onData,
@@ -469,9 +463,9 @@ export function ChatPanel(props: ChatPanelProps) {
         )}>
           {displayMessages.length === 0 && (
             <ChatEmptyState
-              eyebrow={emptyEyebrow}
-              title={emptyTitle}
-              description={emptyDescription}
+              eyebrow={emptyState?.eyebrow}
+              title={emptyState?.title}
+              description={emptyState?.description}
               suggestions={suggestions}
               onSelect={(s) => {
                 const text = s.prompt ?? s.label
