@@ -739,6 +739,14 @@ export function createPiCodingAgentHarness(opts: {
             continue;
           }
           try {
+            // Pre-check base64 length to avoid allocating oversized buffers
+            // (DoS vector: a client could send a massive base64 string).
+            // Base64 decodes to ~75% of encoded length; cap at 10 MB.
+            const estimatedSize = Math.ceil(b64.length * 0.75)
+            if (estimatedSize > 10 * 1024 * 1024) {
+              writeErrors.push(`${a.filename ?? "image"}: attachment exceeds 10 MB limit`);
+              continue;
+            }
             const bytes = Buffer.from(b64, "base64");
             const ext = extForAttachment(a.filename ?? "image", contentType);
             const base = basenameForAttachment(a.filename ?? "image");
