@@ -9,7 +9,7 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { useRegistry } from "../../front/registry"
-import type { WorkspaceFrontPlugin } from "../../shared/plugins"
+import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
 import { toWorkspacePlugin } from "../../shared/plugins/frontFactory"
 import type { PanelOutput, PluginOutput } from "../../shared/plugins/types"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
@@ -71,11 +71,10 @@ export interface WorkspaceAgentFrontProps<
   onActiveSessionIdChange?: (sessionId: string) => void
   chatParams?: Record<string, unknown>
   /**
-   * Forward to ChatPanel — when `false`, the `/reload` and `/update`
-   * slash commands are hidden and the PluginUpdateStatus banner above
-   * the composer is suppressed. Production apps that don't ship live
-   * plugin editing should pass `false`. Defaults to `true` (dev/playground
-   * default — keeps the commands visible).
+   * Forward to ChatPanel — when `false`, the `/reload` slash command is
+   * hidden and the PluginUpdateStatus banner above the composer is
+   * suppressed. Production apps that don't ship live plugin editing
+   * should pass `false`. Defaults to `true` (dev/playground default).
    */
   hotReloadEnabled?: boolean
   extraPanels?: string[]
@@ -456,8 +455,6 @@ export function WorkspaceAgentFront<
     setSurfaceOpen,
   ])
 
-  const workspaceAgentPlugins = plugins
-
   const openCommandPalette = () => {
     document.dispatchEvent(new KeyboardEvent("keydown", {
       key: "k",
@@ -475,7 +472,7 @@ export function WorkspaceAgentFront<
         panels={panels}
         commands={commands}
         catalogs={catalogs}
-        plugins={workspaceAgentPlugins}
+        plugins={plugins}
         excludeDefaults={excludeDefaults}
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}

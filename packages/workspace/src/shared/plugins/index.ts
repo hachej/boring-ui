@@ -1,5 +1,10 @@
-export { defineFrontPlugin, PluginError } from "./defineFrontPlugin"
-export type { PluginErrorKind, WorkspaceFrontPlugin } from "./defineFrontPlugin"
+// `defineFrontPlugin` and `WorkspaceFrontPlugin` are INTERNAL bootstrap
+// IR. They are deliberately NOT re-exported here — public consumers
+// should use `definePlugin` from "@hachej/boring-workspace/plugin". The
+// rare internal callers (the bootstrap pipeline, tests) import them
+// directly from `./defineFrontPlugin`.
+export { PluginError } from "./defineFrontPlugin"
+export type { PluginErrorKind } from "./defineFrontPlugin"
 export type {
   PluginBinding,
   CatalogAdapter,
