@@ -26,6 +26,6 @@
     "src/plugins/**/shared/**/*",
     "src/plugins/**/constants.ts"
   ],
-  "files": ["src/shared/plugins/manifest.ts", "src/shared/plugins/lifecycleBus.ts"],
+  "files": ["src/shared/plugins/manifest.ts"],
   "exclude": ["node_modules", "dist", "src/app/front/**", "src/shared/plugins/**"]
 }

@@ -9,14 +9,13 @@
 // `definePlugin` from "@hachej/boring-workspace/plugin"; the legacy
 // `defineFrontPlugin`/`WorkspaceFrontPlugin` shape is kept INTERNAL
 // for the bootstrap pipeline (boringFrontFactoryToPlugin) but is no
-// longer part of the public API.
+// longer part of the public API. Plugin composition is just calling
+// multiple factories with the same api (see docs).
 export {
-  composePlugins,
   bootstrap,
   PluginError,
 } from "./shared/plugins"
 export type {
-  ComposePluginsOptions,
   PluginErrorKind,
   BootstrapOptions,
   BootstrapResult,

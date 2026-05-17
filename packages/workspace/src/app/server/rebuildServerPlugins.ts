@@ -3,10 +3,8 @@
  * (`@mariozechner/pi-coding-agent core/agent-session.js:1896 reload`):
  *
  *   1. Snapshot user-set state (the caller owns this — `liveLoadedIds`).
- *   2. Emit `plugin_shutdown` for each currently-loaded plugin.
- *   3. Re-resolve hot-reload-eligible entries (re-import via jiti).
- *   4. Emit `plugin_start { reason: "reload" }` for the fresh set.
- *   5. Return a diagnostics list — failed entries don't abort the rest
+ *   2. Re-resolve hot-reload-eligible entries (re-import via jiti).
+ *   3. Return a diagnostics list — failed entries don't abort the rest
  *      (Pi parity: `core/extensions/loader.js:288` error continuation).
  *
  * What this DOES rebuild:
@@ -20,7 +18,6 @@
  * today swaps to those surfaces only land after a restart.
  */
 import type { WorkspaceServerPlugin } from "../../server/plugins/bootstrapServer"
-import type { LifecycleBus } from "../../shared/plugins/lifecycleBus"
 import { isDirEntry, resolveOnePluginEntry } from "./pluginEntryResolver"
 import type { WorkspacePluginEntry, WorkspaceAgentServerPluginContext } from "./createWorkspaceAgentServer"
 
@@ -40,17 +37,10 @@ export interface PluginRebuildResult {
 export async function rebuildServerPlugins(opts: {
   entries: WorkspacePluginEntry[]
   ctx: WorkspaceAgentServerPluginContext
-  bus?: LifecycleBus
-  /** Plugin ids known to be loaded today, used for plugin_shutdown emission. */
+  /** Plugin ids known to be loaded today; reserved for diagnostics. */
   currentPluginIds?: string[]
 }): Promise<PluginRebuildResult> {
-  const { entries, ctx, bus, currentPluginIds = [] } = opts
-
-  if (bus?.hasHandlers("plugin_shutdown")) {
-    for (const pluginId of currentPluginIds) {
-      await bus.emit({ type: "plugin_shutdown", pluginId, reason: "reload" })
-    }
-  }
+  const { entries, ctx } = opts
 
   const plugins: WorkspaceServerPlugin[] = []
   const diagnostics: PluginReloadDiagnostic[] = []
@@ -59,9 +49,6 @@ export async function rebuildServerPlugins(opts: {
     try {
       const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
       plugins.push(plugin)
-      if (bus?.hasHandlers("plugin_start")) {
-        await bus.emit({ type: "plugin_start", pluginId: plugin.id, reason: "reload" })
-      }
     } catch (error) {
       // Compose the diagnostic source prefix inline — only needed here.
       const source =

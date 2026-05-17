@@ -77,7 +77,10 @@ describe("@hachej/boring-workspace public API", () => {
       expect(api.CommandRegistry).toBeDefined()
       expect(api.CatalogRegistry).toBeDefined()
       expect(api.bootstrap).toBeDefined()
-      expect(api.composePlugins).toBeDefined()
+      // composePlugins removed: with the imperative BoringFrontFactory
+      // API, plugin composition is just calling multiple factories with
+      // the same `api`. No library helper needed.
+      expect("composePlugins" in api).toBe(false)
     })
 
     it("exports registry hooks and provider", () => {
