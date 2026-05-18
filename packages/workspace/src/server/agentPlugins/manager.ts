@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
@@ -73,26 +73,49 @@ function fileSignature(path: string | undefined): string {
 function directorySignature(root: string | undefined): string {
   if (!root || !existsSync(root)) return "missing"
   const hash = createHash("sha256")
-  const visit = (dir: string) => {
+  // Symlinks: follow ONCE via realpath, dedupe via a visited Set.
+  // Without this, pnpm `link:` workflows (where plugin sources live
+  // behind a symlinked package root) silently never trigger reload.
+  // Caps prevent runaway walks if a symlink chain re-enters itself.
+  const visited = new Set<string>()
+  const rootReal = realpathSync(root)
+  visited.add(rootReal)
+  let count = 0
+  const visit = (dir: string, depth: number) => {
+    if (depth > 8 || count > 50_000) return
     const entries = readdirSync(dir, { withFileTypes: true })
       .filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules")
       .sort((a, b) => a.name.localeCompare(b.name))
     for (const entry of entries) {
+      count++
       const path = join(dir, entry.name)
       const rel = relative(root, path)
       const stat = lstatSync(path)
-      if (stat.isSymbolicLink()) continue
+      if (stat.isSymbolicLink()) {
+        let target: string
+        try { target = realpathSync(path) } catch { continue }
+        if (visited.has(target)) {
+          hash.update(rel); hash.update("symlink-cycle")
+          continue
+        }
+        visited.add(target)
+        const targetStat = statSync(target)
+        hash.update(rel); hash.update("symlink:"); hash.update(target)
+        if (targetStat.isDirectory()) visit(target, depth + 1)
+        else if (targetStat.isFile()) hash.update(readFileSync(target))
+        continue
+      }
       hash.update(rel)
       hash.update(String(stat.mtimeMs))
       hash.update(String(stat.size))
       if (stat.isDirectory()) {
-        visit(path)
+        visit(path, depth + 1)
       } else if (stat.isFile()) {
         hash.update(readFileSync(path))
       }
     }
   }
-  visit(root)
+  visit(root, 0)
   return hash.digest("hex")
 }
 
