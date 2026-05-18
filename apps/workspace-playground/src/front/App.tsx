@@ -2,11 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-// All plugins (ask-user, playground data catalog) are declared via
-// `defaultPluginPackages` in src/server/dev.ts. The asset manager scans
-// each package on boot, emits SSE events, and the workspace front shell
-// dynamic-imports the front entries through the standard pipeline. The
-// front side does not import any plugin module directly.
+// Plugins are declared in package.json#boring.defaultPluginPackages —
+// the front side does not import any plugin module directly.
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
