@@ -1094,12 +1094,23 @@ Update playground's `package.json`:
 ] }
 ```
 
-**Acceptance.** All four build, install via `defaultPluginPackages`,
-hot-reload via `/reload`. `_template` contents match the checklist
-above. Factory chaining in playgroundDataCatalog registers explorer +
-catalog surfaces from one entry. Intra-plugin id collision throws at
-capture with a clear error. lint:invariants catches id-derivation
-mismatches and missing peerDeps.
+#### Apps coverage (3 apps in `apps/`)
+
+| App | Migration in this phase |
+| --- | --- |
+| `apps/workspace-playground/` | Add `boring.defaultPluginPackages` to its package.json (covered above); `src/server/dev.ts` passes `appPackageJsonPath` to `createWorkspaceAgentServer`. |
+| `apps/full-app/` | Wraps `@hachej/boring-core`'s `runCoreWorkspaceAgentServer`. Two changes: (1) add `boring.defaultPluginPackages` to `apps/full-app/package.json`; (2) update `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` to read `appPackageJsonPath` from the caller's `import.meta.url` (or accept an explicit option) and forward to `createWorkspaceAgentServer`. Verify the production reference app boots with at least one first-party plugin (ask-user). |
+| `apps/agent-playground/` | **Out of scope.** Uses raw `createAgentApp` directly, no workspace shell. Belongs in the agent layer rather than the workspace plugin layer; left untouched. |
+
+**Acceptance.** All four plugins build, install via
+`defaultPluginPackages`, hot-reload via `/reload`. `_template`
+contents match the checklist above. Factory chaining in
+playgroundDataCatalog registers explorer + catalog surfaces from one
+entry. Intra-plugin id collision throws at capture with a clear
+error. lint:invariants catches id-derivation mismatches and missing
+peerDeps. **Both `workspace-playground` AND `full-app` boot with
+their `defaultPluginPackages` resolved through `createWorkspaceAgentServer`**;
+`agent-playground` continues to boot unchanged (no plugin layer).
 
 ### Phase 10 — Docs
 
