@@ -10,7 +10,6 @@ export {
   type WorkspacePiPackageSource,
   type WorkspaceAgentServerPluginCollection,
   type WorkspaceAgentServerPluginContext,
-  type WorkspaceAgentServerPluginFactory,
   type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
