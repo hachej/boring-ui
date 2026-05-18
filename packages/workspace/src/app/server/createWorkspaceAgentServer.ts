@@ -91,16 +91,12 @@ export interface CreateWorkspaceAgentServerOptions
   validateUiPaths?: boolean
   /**
    * Whether /reload refreshes Boring package plugin UI/server assets.
-   * Initial plugin discovery still runs so statically configured plugins load.
+   * Drives both server re-import (jiti) and Pi resource refresh
+   * (getDynamicResources + systemPromptDynamic). Initial plugin
+   * discovery always runs so statically configured plugins load.
    * Defaults to true.
    */
-  boringPluginReload?: boolean
-  /**
-   * Whether package.json#pi contributions from Boring package plugins are
-   * forwarded to Pi and refreshed by /reload. Host-supplied opts.pi values are
-   * unaffected. Defaults to true.
-   */
-  piPluginReload?: boolean
+  pluginHotReload?: boolean
   /**
    * App-default plugin packages (by npm name OR absolute filesystem path).
    * Each entry is resolved at boot, registered as a Pi package (so Pi sees
@@ -449,8 +445,9 @@ export async function createWorkspaceAgentServer(
     ...manifestPluginPackages,
     ...(opts.defaultPluginPackages ?? []),
   ])
+  const pluginHotReload = opts.pluginHotReload ?? true
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths.map(
-    (dir) => ({ dir, hotReload: opts.boringPluginReload ?? true }),
+    (dir) => ({ dir, hotReload: pluginHotReload }),
   )
 
   const allPluginEntries: WorkspacePluginEntry[] = [
@@ -466,8 +463,6 @@ export async function createWorkspaceAgentServer(
     ...opts,
     plugins: resolvedPlugins,
   })
-  const boringPluginReload = opts.boringPluginReload ?? true
-  const piPluginReload = opts.piPluginReload ?? true
 
   // Note: we don't need to explicitly register defaultPluginPackagePaths
   // as Pi packages here. They land in `boringPluginDirs` below, and the
@@ -510,7 +505,7 @@ export async function createWorkspaceAgentServer(
   // Pi calls `getDynamicResources()` on every reloadSession() and merges the
   // result with the static fields above, so the workspace never mutates
   // arrays the harness already captured.
-  const getDynamicPiResources = piPluginReload
+  const getDynamicPiResources = pluginHotReload
     ? () => readPackageJsonPiSnapshot(boringPluginDirs)
     : undefined
 
@@ -547,10 +542,10 @@ export async function createWorkspaceAgentServer(
       // entire reload, leaving every other plugin on stale code and
       // contradicting the "previous live state untouched, other
       // plugins unaffected" recovery story.
-      if (boringPluginReload) {
+      if (pluginHotReload) {
         await boringAssetManager.load()
+        await rebuildPlugins()
       }
-      await rebuildPlugins()
       await opts.beforeReload?.()
     },
     pi: {
@@ -561,7 +556,7 @@ export async function createWorkspaceAgentServer(
       extensionFactories: pluginCollection.agentOptions.pi?.extensionFactories,
       getDynamicResources: getDynamicPiResources,
     },
-    systemPromptDynamic: piPluginReload
+    systemPromptDynamic: pluginHotReload
       ? () => aggregatePluginPrompts(boringAssetManager)
       : undefined,
   })
