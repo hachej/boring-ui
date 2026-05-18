@@ -39,13 +39,6 @@ type PlaygroundPiExtensionFactory = (api: unknown) => void | Promise<void>
 
 interface PlaygroundPiExtensionAPI {
   registerTool(tool: PlaygroundPiToolDefinition): void
-  on(
-    event: "before_agent_start",
-    handler: (event: { systemPrompt: string }) =>
-      | void
-      | { systemPrompt: string }
-      | Promise<void | { systemPrompt: string }>,
-  ): void
 }
 
 function textResult(text: string, details?: unknown): ExecuteSqlResult {
@@ -216,9 +209,6 @@ export function createPlaygroundDataPiExtension(workspaceRoot: string): Playgrou
   return (api) => {
     const pi = api as PlaygroundPiExtensionAPI
     pi.registerTool(createPlaygroundExecuteSqlPiTool(workspaceRoot))
-    pi.on("before_agent_start", (event) => ({
-      systemPrompt: `${event.systemPrompt}\n\n${playgroundDataPrompt()}`,
-    }))
   }
 }
 
@@ -242,6 +232,7 @@ export function createPlaygroundDataServerPlugin(
   return defineServerPlugin({
     id: PLAYGROUND_DATA_PLUGIN_ID,
     label: "Playground Data",
+    systemPrompt: playgroundDataPrompt(),
     extensionFactories: [createPlaygroundDataPiExtension(options.workspaceRoot)],
   })
 }
