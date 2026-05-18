@@ -63,17 +63,12 @@ describe("rebuildServerPlugins", () => {
     expect(result.diagnostics[0].source).toBe("directory (/nonexistent)")
   })
 
-  test("pre-built objects and factory functions pass through unchanged", async () => {
-    const factory = vi.fn(() => ({ id: "fact", systemPrompt: "F" }))
+  test("pre-built objects pass through unchanged", async () => {
     const result = await rebuildServerPlugins({
-      entries: [
-        { id: "obj", systemPrompt: "O" },
-        factory,
-      ],
+      entries: [{ id: "obj", systemPrompt: "O" }],
       ctx: { workspaceRoot: "/tmp/host", bridge: {} as never },
     })
 
-    expect(result.plugins.map((p) => p.id)).toEqual(["obj", "fact"])
-    expect(factory).toHaveBeenCalledTimes(1)
+    expect(result.plugins.map((p) => p.id)).toEqual(["obj"])
   })
 })

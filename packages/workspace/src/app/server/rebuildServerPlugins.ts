@@ -45,13 +45,7 @@ export async function rebuildServerPlugins(opts: {
       const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
       plugins.push(plugin)
     } catch (error) {
-      // Compose the diagnostic source prefix inline — only needed here.
-      const source =
-        typeof entry === "function"
-          ? "factory"
-          : isDirEntry(entry)
-            ? `directory (${entry.dir})`
-            : "entry"
+      const source = isDirEntry(entry) ? `directory (${entry.dir})` : "entry"
       diagnostics.push({
         source,
         message: error instanceof Error ? error.message : String(error),

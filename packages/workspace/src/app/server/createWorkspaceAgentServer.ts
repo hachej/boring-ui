@@ -25,7 +25,6 @@ import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPac
 import {
   resolveOnePluginEntry,
   type DirPluginEntry,
-  type ModulePluginEntry,
 } from "./pluginEntryResolver"
 import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
@@ -69,33 +68,22 @@ export interface WorkspaceAgentServerPluginContext {
   bridge: ReturnType<typeof createInMemoryBridge>
 }
 
-export type WorkspaceAgentServerPluginFactory = (context: WorkspaceAgentServerPluginContext) => WorkspaceServerPlugin
-
 /**
  * Single install entry type. Accepts:
  *  - `WorkspaceServerPlugin` — pre-built plugin object.
- *  - `WorkspaceAgentServerPluginFactory` — callable that receives the
- *     workspace context (workspaceRoot + bridge) and returns a
- *     `WorkspaceServerPlugin`.
- *  - `{ module, options? }` — workspace dep imported by the host. Calls
- *     the module's default export with `(options, ctx)`.
  *  - `{ dir, options?, hotReload? }` — directory-source plugin resolved
  *     via package.json#boring.server (Pi parity: manifest first,
  *     convention fallback, declared-but-missing throws). hotReload uses
  *     jiti so /reload picks up source edits.
  */
-export type WorkspacePluginEntry =
-  | WorkspaceServerPlugin
-  | WorkspaceAgentServerPluginFactory
-  | DirPluginEntry
-  | ModulePluginEntry
+export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
 
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
     Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
   /**
-   * Plugins to install. Accepts either pre-built `WorkspaceServerPlugin` objects
-   * or factory functions that receive the workspace context — same array.
+   * Plugins to install. Accepts pre-built `WorkspaceServerPlugin` objects
+   * or `{ dir, options?, hotReload? }` directory-source entries.
    */
   plugins?: WorkspacePluginEntry[]
   provisionWorkspace?: boolean
@@ -469,9 +457,8 @@ export async function createWorkspaceAgentServer(
     ...defaultPluginDirEntries,
     ...(opts.plugins ?? []),
   ]
-  // Inline dispatch: each entry shape (object / factory / { dir } /
-   // { module }) is resolved by `resolveOnePluginEntry`. Same logic
-   // serves rebuilds on /reload (rebuildServerPlugins.ts).
+  // Each entry (pre-built plugin or { dir, ... }) is resolved by
+  // resolveOnePluginEntry. Same logic serves rebuilds on /reload.
   const resolvedPlugins = await Promise.all(
     allPluginEntries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)),
   )

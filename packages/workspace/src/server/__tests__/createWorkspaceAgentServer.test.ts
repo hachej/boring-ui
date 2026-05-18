@@ -36,31 +36,31 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-describe("createWorkspaceAgentServer — plugin factory wiring", () => {
-  test("registers factory-created routes and tools with bridge context", async () => {
+describe("createWorkspaceAgentServer — plugin wiring", () => {
+  test("registers pre-built plugin routes and tools", async () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot: tmpdir(),
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
       disableDefaultFileTools: true,
-      plugins: [({ bridge }) => appServerApi.defineServerPlugin({
-        id: "factory-plugin",
+      plugins: [appServerApi.defineServerPlugin({
+        id: "test-plugin",
         agentTools: [{
-          name: "factory_tool",
-          description: "Factory tool",
+          name: "test_tool",
+          description: "Test tool",
           parameters: { type: "object", properties: {} },
           execute: async () => ({ content: [{ type: "text", text: "ok" }] }),
         }],
         routes: async (instance) => {
-          instance.get("/factory-plugin/state", async () => ({ state: await bridge.getState() }))
+          instance.get("/test-plugin/ping", async () => ({ ok: true }))
         },
       })],
     })
-    const route = await app.inject({ method: "GET", url: "/factory-plugin/state" })
+    const route = await app.inject({ method: "GET", url: "/test-plugin/ping" })
     expect(route.statusCode).toBe(200)
     const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
-    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).toContain("factory_tool")
+    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).toContain("test_tool")
     await app.close()
   })
 
@@ -72,10 +72,10 @@ describe("createWorkspaceAgentServer — plugin factory wiring", () => {
       provisionWorkspace: false,
       disableDefaultFileTools: true,
     })
-    const route = await app.inject({ method: "GET", url: "/factory-plugin/state" })
+    const route = await app.inject({ method: "GET", url: "/test-plugin/ping" })
     expect(route.statusCode).toBe(404)
     const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
-    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).not.toContain("factory_tool")
+    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).not.toContain("test_tool")
     await app.close()
   })
 })

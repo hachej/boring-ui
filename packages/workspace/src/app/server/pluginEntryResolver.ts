@@ -29,16 +29,6 @@ export interface DirPluginEntry {
   hotReload?: boolean
 }
 
-/**
- * Module-source entry: `{ module, options? }`. The `module` thunk returns
- * a module namespace (`{ default: X }`) or a bare value; both forms are
- * unwrapped by `instantiatePluginExport`.
- */
-export interface ModulePluginEntry {
-  module: () => unknown | Promise<unknown>
-  options?: unknown
-}
-
 const SERVER_CONVENTIONS = ["dist/server/index.js", "src/server/index.ts"] as const
 
 function readPluginPackageJson(dir: string): BoringPluginPackageJson | null {
@@ -79,10 +69,6 @@ function resolvePluginEntryPath(
   }
   return null
 }
-
-// Manifest-first + convention-fallback (Pi parity:
-// `core/package-manager.js`) is implemented inline in
-// `resolveDirServerPlugin` below — single caller, no wrapper.
 
 const require = createRequire(import.meta.url)
 
@@ -135,28 +121,6 @@ export interface PluginResolveContext {
   bridge: unknown
 }
 
-/**
- * Unwraps `{ default: X }` namespace or bare value, then applies the
- * factory contract: function → call with `(options, ctx)`; object → use
- * as a pre-built plugin.
- */
-function instantiatePluginExport(
-  exported: unknown,
-  options: unknown,
-  ctx: PluginResolveContext,
-  source: string,
-): WorkspaceServerPlugin {
-  const value =
-    typeof exported === "object" && exported !== null && "default" in exported
-      ? (exported as { default?: unknown }).default
-      : exported
-  if (typeof value === "function") {
-    return (value as (options: unknown, ctx: PluginResolveContext) => WorkspaceServerPlugin)(options, ctx)
-  }
-  if (value && typeof value === "object") return value as WorkspaceServerPlugin
-  throw new Error(`boring plugin: ${source} default export is neither a function nor a plugin object`)
-}
-
 async function resolveDirServerPlugin(
   entry: DirPluginEntry,
   ctx: PluginResolveContext,
@@ -172,31 +136,25 @@ async function resolveDirServerPlugin(
     )
   }
   const mod = await importServerModule(serverPath, entry.hotReload === true)
-  return instantiatePluginExport(mod, entry.options, ctx, serverPath)
-}
-
-async function resolveModuleServerPlugin(
-  entry: ModulePluginEntry,
-  ctx: PluginResolveContext,
-): Promise<WorkspaceServerPlugin> {
-  const result = await entry.module()
-  return instantiatePluginExport(result, entry.options, ctx, "module-spec")
+  const value =
+    typeof mod === "object" && mod !== null && "default" in mod
+      ? (mod as { default?: unknown }).default
+      : mod
+  if (typeof value === "function") {
+    return (value as (options: unknown, ctx: PluginResolveContext) => WorkspaceServerPlugin)(entry.options, ctx)
+  }
+  if (value && typeof value === "object") return value as WorkspaceServerPlugin
+  throw new Error(`boring plugin: ${serverPath} default export is neither a function nor a plugin object`)
 }
 
 export function isDirEntry(entry: unknown): entry is DirPluginEntry {
   return typeof entry === "object" && entry !== null && "dir" in entry
 }
 
-export function isModuleEntry(entry: unknown): entry is ModulePluginEntry {
-  return typeof entry === "object" && entry !== null && "module" in entry && typeof (entry as ModulePluginEntry).module === "function"
-}
-
 /**
  * Single dispatch point for any entry shape:
  *   - WorkspaceServerPlugin object → pass through
- *   - factory function → call with ctx
  *   - DirPluginEntry → jiti/import + factory
- *   - ModulePluginEntry → thunk + factory
  *
  * Used by both initial install (createWorkspaceAgentServer) and rebuild
  * (rebuildServerPlugins) so the dispatch lives in one place.
@@ -205,8 +163,6 @@ export async function resolveOnePluginEntry<TPlugin extends WorkspaceServerPlugi
   entry: unknown,
   ctx: PluginResolveContext,
 ): Promise<TPlugin> {
-  if (typeof entry === "function") return (entry as (ctx: PluginResolveContext) => TPlugin)(ctx)
   if (isDirEntry(entry)) return (await resolveDirServerPlugin(entry, ctx)) as TPlugin
-  if (isModuleEntry(entry)) return (await resolveModuleServerPlugin(entry, ctx)) as TPlugin
   return entry as TPlugin
 }

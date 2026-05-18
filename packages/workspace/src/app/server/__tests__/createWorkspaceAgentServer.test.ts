@@ -282,27 +282,20 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(agentOptions.pi?.getDynamicResources?.().packages).toEqual(["npm:updated"])
   })
 
-  test("plugins[] accepts both pre-built objects and factory functions", async () => {
+  test("plugins[] accepts pre-built objects", async () => {
     const builtPlugin = { id: "built", systemPrompt: "BUILT" }
-    const factoryFn = vi.fn(() => ({ id: "fromfactory", systemPrompt: "FACTORY" }))
 
     await createWorkspaceAgentServer({
       workspaceRoot: "/tmp/phase0-mixed-entries",
       logger: false,
       provisionWorkspace: false,
-      plugins: [builtPlugin, factoryFn],
+      plugins: [builtPlugin],
     })
-
-    expect(factoryFn).toHaveBeenCalledTimes(1)
-    expect(factoryFn).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceRoot: "/tmp/phase0-mixed-entries", bridge: expect.anything() }),
-    )
 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       { systemPromptAppend?: string },
     ]
     expect(agentOptions.systemPromptAppend).toContain("BUILT")
-    expect(agentOptions.systemPromptAppend).toContain("FACTORY")
   })
 
 })
@@ -401,40 +394,6 @@ describe("directory-source plugin entries", () => {
     ).rejects.toThrow(/declared but not found/)
   })
 
-  test("module entry calls factory with options and ctx", async () => {
-    const factory = vi.fn((options: { x: number }, ctx: { workspaceRoot: string }) => ({
-      id: "mod",
-      systemPrompt: `MOD x=${options.x} root=${ctx.workspaceRoot}`,
-    }))
-
-    await createWorkspaceAgentServer({
-      workspaceRoot: "/tmp/phase1-mod",
-      logger: false,
-      provisionWorkspace: false,
-      plugins: [{ module: () => ({ default: factory }), options: { x: 7 } }],
-    })
-
-    expect(factory).toHaveBeenCalledTimes(1)
-    expect(factory).toHaveBeenCalledWith({ x: 7 }, expect.objectContaining({ workspaceRoot: "/tmp/phase1-mod" }))
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { systemPromptAppend?: string },
-    ]
-    expect(agentOptions.systemPromptAppend).toContain("MOD x=7 root=/tmp/phase1-mod")
-  })
-
-  test("module entry with object export passes through", async () => {
-    await createWorkspaceAgentServer({
-      workspaceRoot: "/tmp/phase1-mod-obj",
-      logger: false,
-      provisionWorkspace: false,
-      plugins: [{ module: () => ({ default: { id: "mod-obj", systemPrompt: "MOD_OBJ" } }) }],
-    })
-
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { systemPromptAppend?: string },
-    ]
-    expect(agentOptions.systemPromptAppend).toContain("MOD_OBJ")
-  })
 })
 
 describe("beforeReload triggers directory-source re-resolve", () => {
