@@ -91,32 +91,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(refreshed?.extensionPaths).toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "two.ts"))
   })
 
-  test("piPluginReload=false disables package.json Pi contributions while preserving host Pi options", async () => {
-    const workspaceRoot = await makeTempDir("boring-workspace-agent-plugin-reload-off-")
-    await writeHotPlugin(workspaceRoot, "one.ts")
-
-    await createWorkspaceAgentServer({
-      workspaceRoot,
-      logger: false,
-      provisionWorkspace: false,
-      piPluginReload: false,
-      pi: {
-        extensionPaths: [join(workspaceRoot, "host-extension.ts")],
-        additionalSkillPaths: [join(workspaceRoot, "host-skills")],
-      },
-    })
-
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { pi?: { extensionPaths?: string[]; additionalSkillPaths?: string[]; extensionFactories?: unknown[] } },
-    ]
-    expect(agentOptions.pi?.extensionPaths).toEqual([join(workspaceRoot, "host-extension.ts")])
-    expect(agentOptions.pi?.additionalSkillPaths).toContain(join(workspaceRoot, "host-skills"))
-    expect(agentOptions.pi?.additionalSkillPaths).not.toContain(join(workspaceRoot, ".pi", "extensions", "hot-plugin", "agent", "skills"))
-    expect(agentOptions.pi?.extensionFactories).toEqual([])
-  })
-
-  test("boringPluginReload=false skips Boring asset refresh during agent reload", async () => {
-    const workspaceRoot = await makeTempDir("boring-workspace-boring-reload-off-")
+  test("pluginHotReload=false disables both Boring asset refresh AND Pi resource refresh", async () => {
+    // The previous boringPluginReload + piPluginReload pair collapsed
+    // to a single pluginHotReload flag (DESIGN.md §4.7) because the
+    // useful matrix had only two states.
+    const workspaceRoot = await makeTempDir("boring-workspace-plugin-hotreload-off-")
     await writeHotPlugin(workspaceRoot, "one.ts")
     const beforeReload = vi.fn(async () => {})
 
@@ -124,19 +103,28 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       workspaceRoot,
       logger: false,
       provisionWorkspace: false,
-      boringPluginReload: false,
+      pluginHotReload: false,
+      pi: {
+        extensionPaths: [join(workspaceRoot, "host-extension.ts")],
+        additionalSkillPaths: [join(workspaceRoot, "host-skills")],
+      },
       beforeReload,
     })
 
-    const pluginRoot = join(workspaceRoot, ".pi", "extensions", "hot-plugin")
-    await writeFile(join(pluginRoot, "server.js"), "export const broken = true\n", "utf8")
-    const pkg = JSON.parse(await readFile(join(pluginRoot, "package.json"), "utf8"))
-    pkg.boring.server = "server.js"
-    await writeFile(join(pluginRoot, "package.json"), JSON.stringify(pkg), "utf8")
-
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { beforeReload?: () => Promise<void> },
+      {
+        pi?: { extensionPaths?: string[]; additionalSkillPaths?: string[]; extensionFactories?: unknown[]; getDynamicResources?: unknown }
+        systemPromptDynamic?: unknown
+        beforeReload?: () => Promise<void>
+      },
     ]
+    // Host pi options preserved.
+    expect(agentOptions.pi?.extensionPaths).toEqual([join(workspaceRoot, "host-extension.ts")])
+    expect(agentOptions.pi?.additionalSkillPaths).toContain(join(workspaceRoot, "host-skills"))
+    // Dynamic Pi refresh disabled.
+    expect(agentOptions.pi?.getDynamicResources).toBeUndefined()
+    expect(agentOptions.systemPromptDynamic).toBeUndefined()
+    // beforeReload still calls user's hook; just skips scan + rebuild.
     await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
     expect(beforeReload).toHaveBeenCalledTimes(1)
   })
