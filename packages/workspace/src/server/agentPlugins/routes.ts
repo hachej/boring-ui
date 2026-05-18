@@ -25,16 +25,6 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
     return reply.type("text/plain").send(error)
   })
 
-  app.all<{ Params: { pluginId: string; "*": string } }>("/api/boring-plugins/:pluginId/*", async (request, reply) => {
-    return await manager.dispatch(
-      request.params.pluginId,
-      request.method,
-      `/${request.params["*"] ?? ""}`,
-      request,
-      reply,
-    )
-  })
-
   app.get("/api/v1/agent-plugins/events", async (request, reply) => {
     reply.hijack()
     const res = reply.raw

@@ -45,9 +45,6 @@ export type {
   BoringPluginEvent,
   BoringPluginListEntry,
   BoringServerPluginManifest,
-  BoringServerAPI,
-  BoringServerFactory,
-  BoringServerRouteHandler,
 } from "./agentPlugins/types"
 
 export {
