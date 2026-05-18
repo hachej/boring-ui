@@ -270,16 +270,12 @@ function panelOutput(panel: BoringFrontPanelRegistration<any>): PluginOutput {
   }
 }
 
-function EmptyLeftTab(_props: PaneProps<LeftTabParams>): null {
-  return null
-}
-
 function leftTabOutput(tab: BoringFrontLeftTabRegistration<any>): PluginOutput {
   return {
     type: "left-tab",
     id: tab.id,
     title: tab.title,
-    component: tab.component ?? EmptyLeftTab,
+    component: tab.component ?? (() => null),
     ...(tab.icon ? { icon: tab.icon } : {}),
     ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
     ...(tab.chromeless !== undefined ? { chromeless: tab.chromeless } : {}),
