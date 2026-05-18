@@ -14,7 +14,6 @@ export interface BoringPackageBoringField {
   /** Workspace/UI support server entry. Set false to disable convention lookup. */
   server?: string | false
   label?: string
-  derivesFrom?: string
 }
 
 export interface BoringPackagePiSourceObject {
@@ -62,17 +61,6 @@ export type BoringPluginManifestValidationResult =
   | { valid: true; packageJson: BoringPluginPackageJson }
   | { valid: false; issues: BoringPluginManifestIssue[] }
 
-export const BORING_PLUGIN_MANIFEST_ERROR_CODES: Record<
-  BoringPluginManifestErrorCode,
-  BoringPluginManifestErrorCode
-> = {
-  INVALID_ID: "INVALID_ID",
-  INVALID_VERSION: "INVALID_VERSION",
-  INVALID_FIELD: "INVALID_FIELD",
-  INVALID_PATH: "INVALID_PATH",
-  MISSING_REQUIRED_FIELD: "MISSING_REQUIRED_FIELD",
-}
-
 const SEMVER_RE =
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 
@@ -94,16 +82,6 @@ export function isSafePluginRelativePath(value: string): boolean {
     !value.startsWith("//") &&
     !/^[A-Za-z]:[\\/]/.test(value) &&
     !value.split("/").includes("..")
-  )
-}
-
-export function isSafePluginRelativeGlob(value: string): boolean {
-  return (
-    isSafePluginRelativePath(value) &&
-    !value.startsWith("!") &&
-    !/\{[^}]*\.\.[^}]*\}/.test(value) &&
-    !/\*\*.*\.\./.test(value) &&
-    !/\.\..*\*\*/.test(value)
   )
 }
 
@@ -162,17 +140,13 @@ function validateBoringField(
   if (server !== undefined && server !== false && (typeof server !== "string" || !isSafePluginRelativePath(server))) {
     issues.push(issue("INVALID_PATH", "boring.server", "boring.server must be a safe relative path or false"))
   }
-  for (const field of ["label", "derivesFrom"] as const) {
-    const value = boring[field]
-    if (value !== undefined && typeof value !== "string") {
-      issues.push(issue("INVALID_FIELD", `boring.${field}`, `boring.${field} must be a string when provided`))
-    }
+  if (boring.label !== undefined && typeof boring.label !== "string") {
+    issues.push(issue("INVALID_FIELD", "boring.label", "boring.label must be a string when provided"))
   }
   return {
     ...(typeof boring.front === "string" ? { front: boring.front } : {}),
     ...(typeof boring.server === "string" || boring.server === false ? { server: boring.server } : {}),
     ...(typeof boring.label === "string" ? { label: boring.label } : {}),
-    ...(typeof boring.derivesFrom === "string" ? { derivesFrom: boring.derivesFrom } : {}),
   }
 }
 
