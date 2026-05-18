@@ -240,11 +240,6 @@ export class BoringPluginAssetManager {
     return { loaded: this.list(), events, errors }
   }
 
-  // Asset manager is scan + hash + emit only (DESIGN.md Gotcha #4).
-  // Server-side plugin instantiation lives in pluginEntryResolver /
-  // rebuildServerPlugins, NOT here. Plugins that need HTTP routes
-  // declare them on WorkspaceServerPlugin.routes.
-
   private bumpRevision(id: string): number {
     const next = (this.revisions.get(id) ?? 0) + 1
     this.revisions.set(id, next)

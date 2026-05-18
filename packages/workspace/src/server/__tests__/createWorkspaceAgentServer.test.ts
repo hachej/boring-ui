@@ -44,7 +44,7 @@ describe("createWorkspaceAgentServer — plugin wiring", () => {
       logger: false,
       provisionWorkspace: false,
       disableDefaultFileTools: true,
-      plugins: [appServerApi.defineServerPlugin({
+      plugins: [serverApi.defineServerPlugin({
         id: "test-plugin",
         agentTools: [{
           name: "test_tool",
@@ -84,7 +84,7 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
   test("is exported from the app entry, not the server entry", () => {
     expect(appServerApi.createWorkspaceAgentServer).toBe(createWorkspaceAgentServer)
     expect(appServerApi.collectWorkspaceAgentServerPlugins).toBe(collectWorkspaceAgentServerPlugins)
-    expect("createWorkspaceAgentServerBindings" in appServerApi).toBe(false)
+    expect("createWorkspaceAgentServerBindings" in serverApi).toBe(false)
     expect("createWorkspaceAgentServer" in serverApi).toBe(false)
   })
 

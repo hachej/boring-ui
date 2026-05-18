@@ -1,4 +1,4 @@
-import type { WorkspaceServerPlugin } from "@hachej/boring-workspace/app/server"
+import type { WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import {
   createAskUserServerPlugin,
   type AskUserServerPluginOptions,
