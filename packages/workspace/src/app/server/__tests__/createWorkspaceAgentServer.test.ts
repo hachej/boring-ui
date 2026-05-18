@@ -432,7 +432,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     expect(rebuilt.plugins[0].systemPrompt).toBe("V2_AFTER_RELOAD")
   })
 
-  test("dir-source plugin re-resolve failure surfaces as a 422-style throw in beforeReload", async () => {
+  test("dir-source plugin re-resolve failure is tolerated; beforeReload does NOT throw (DESIGN.md §4.5 partial-failure tolerance)", async () => {
     const dir = await makeTempDir("phase5-bad-")
     await mkdir(join(dir, "src", "server"), { recursive: true })
     await writeFile(
@@ -455,6 +455,8 @@ describe("beforeReload triggers directory-source re-resolve", () => {
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       { beforeReload?: () => Promise<void> },
     ]
-    await expect(agentOptions.beforeReload?.()).rejects.toThrow(/Boring plugin re-resolve failed/)
+    // Per-plugin rebuild failures must NOT abort the reload — diagnostics
+    // surface via SSE error events + .error files, not by aborting beforeReload.
+    await expect(agentOptions.beforeReload?.()).resolves.not.toThrow()
   })
 })

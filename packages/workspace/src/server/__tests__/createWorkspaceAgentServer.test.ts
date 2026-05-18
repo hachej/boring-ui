@@ -418,7 +418,11 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     }
   })
 
-  test("POST /api/v1/agent/reload returns boring plugin compile errors for agent feedback", async () => {
+  test("POST /api/v1/agent/reload tolerates per-plugin failures; error surfaces via SSE + /api/agent-plugins/:id/error", async () => {
+    // Per DESIGN.md §4.5 + Phase 4: per-plugin failures do NOT abort
+    // the whole reload. Healthy plugins still pick up new code; the
+    // failed plugin's previous state stays live, and the error is
+    // surfaced via the SSE error event + the .error file.
     const workspaceRoot = await makeTempDir("boring-workspace-agent-reload-error-")
     const pluginRoot = await makeTempDir("boring-workspace-bad-plugin-")
     await mkdir(join(pluginRoot, "agent"), { recursive: true })
@@ -442,10 +446,12 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
 
     try {
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
-      expect(reload.statusCode).toBe(422)
-      expect(reload.json().error).toContain("Boring plugin reload failed")
-      expect(reload.json().error).toContain("bad-plugin")
-      expect(reload.json().error).toContain("default-export")
+      // Reload itself succeeds — the bad plugin doesn't take down the agent.
+      expect(reload.statusCode).toBe(200)
+      // The error is recorded for the offending plugin.
+      const errorRes = await app.inject({ method: "GET", url: "/api/agent-plugins/bad-plugin/error" })
+      expect(errorRes.statusCode).toBe(200)
+      expect(errorRes.body).toMatch(/default-export|default export/)
     } finally {
       await app.close()
     }

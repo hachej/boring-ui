@@ -110,7 +110,10 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
     }
   })
 
-  test("plugin removed between reloads: subsequent reload tolerates missing dir", async () => {
+  test("plugin removed between reloads: subsequent reload tolerates missing dir without throwing", async () => {
+    // Per DESIGN.md §4.5: per-plugin failures (including a missing dir
+    // on rebuild) do NOT abort the reload. Diagnostics surface via
+    // SSE error events + the POST response body; not by throwing.
     const dir = await makeTempDir("edge-removed-")
     await writeDirPlugin(dir, "export default { id: 'p', systemPrompt: 'V1' }")
     const host = await makeTempDir("edge-removed-host-")
@@ -132,9 +135,8 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
     // Delete the plugin dir entirely.
     await rm(dir, { recursive: true, force: true })
 
-    // Second reload throws (re-resolve fails) — diagnostic surfaced
-    // via the 422-style error. The thrown message names the source.
-    await expect(agentOptions.beforeReload?.()).rejects.toThrow(/directory .* no package\.json/)
+    // Second reload tolerates the missing dir — no throw.
+    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
   })
 
   test("declared-but-missing boring.server fails LOUDLY (Pi parity)", async () => {
@@ -156,7 +158,11 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
     ).rejects.toThrow(/declared but not found/)
   })
 
-  test("syntax error in the new module body: throw on reload, prior state intact", async () => {
+  test("syntax error in the new module body: reload tolerates, prior state intact", async () => {
+    // Per DESIGN.md §4.5: per-plugin failures must not abort the reload.
+    // Healthy plugins still pick up edits; the failed plugin's
+    // diagnostic surfaces via the rebuild result's diagnostics array
+    // (the asset manager + SSE channel carry the same info).
     const dir = await makeTempDir("edge-syntax-")
     await writeDirPlugin(dir, "export default { id: 'p', systemPrompt: 'GOOD' }")
     const host = await makeTempDir("edge-syntax-host-")
@@ -174,17 +180,15 @@ describe("Reload edge cases — directory-source { spec: { dir } }", () => {
 
     // Plant a syntax error.
     await writeFile(join(dir, "src", "server", "index.ts"), "this is not !!! valid {{ typescript", "utf8")
-    await expect(agentOptions.beforeReload?.()).rejects.toThrow(/Boring plugin re-resolve failed/)
+    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
 
-    // The exposed rebuild closure still works against the previous good
-    // state — the failed reload doesn't poison subsequent reads.
-    type Rebuild = () => Promise<{ plugins: { id: string }[] }>
+    // Diagnostic is observable via the exposed rebuild closure (also via
+    // SSE + .error files in the full stack).
+    type Rebuild = () => Promise<{ plugins: { id: string }[]; diagnostics: { source: string; message: string }[] }>
     const rebuild = (app as unknown as { __boringRebuildPlugins: Rebuild }).__boringRebuildPlugins
-    // After the failed reload, the rebuild result still surfaces a
-    // diagnostic (Pi parity: errors are diagnostics, not aborts; the
-    // throw from beforeReload only formats them as an HTTP-style error).
     const rebuildResult = await rebuild()
     expect(rebuildResult.plugins).toHaveLength(0)
+    expect(rebuildResult.diagnostics.length).toBeGreaterThan(0)
   })
 
   test("reload idempotency: rebuild closure does not double-mount on repeat", async () => {
@@ -304,14 +308,15 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     expect(after).toBeUndefined()
   })
 
-  test("malformed package.json: boot succeeds; /reload surfaces a 422-style error naming the bad plugin", async () => {
+  test("malformed package.json: boot succeeds; /reload tolerates the bad plugin (diagnostic via SSE error event + .error file)", async () => {
+    // Per DESIGN.md §4.5: per-plugin failures don't abort the reload.
+    // The malformed package.json surfaces via SSE + .error files, not by
+    // throwing out of beforeReload.
     const host = await makeTempDir("edge-bad-pkg-")
     const dir = join(host, ".pi", "extensions", "bad-pkg")
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, "package.json"), "{ this is not json", "utf8")
 
-    // Initial install does NOT throw — the asset manager treats bad
-    // package.json as a preflight error and lets boot continue.
     await expect(
       createWorkspaceAgentServer({
         workspaceRoot: host,
@@ -321,21 +326,15 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     ).resolves.toBeTruthy()
     expect(agentServerMock.createAgentApp).toHaveBeenCalledTimes(1)
 
-    // beforeReload re-runs preflight; the malformed package.json now
-    // throws with the diagnostic the agent will see in the /reload
-    // response. The throw message includes the diagnostic code so the
-    // agent can act on it.
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       { beforeReload?: () => Promise<void> },
     ]
-    await expect(agentOptions.beforeReload?.()).rejects.toThrow(/INVALID_PACKAGE_JSON/)
+    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
   })
 
-  test("two plugins with the same name: boot succeeds; /reload surfaces a duplicate-id diagnostic", async () => {
-    // The asset manager keys by package.json#name (or directory name).
-    // Two directories with the same `name` is a misconfiguration; the
-    // first load tolerates it (asset manager picks one), but /reload
-    // surfaces the conflict so the agent can fix it.
+  test("two plugins with the same name: boot succeeds; /reload tolerates the duplicate (diagnostic via SSE)", async () => {
+    // Per DESIGN.md §4.5: misconfiguration surfaces via diagnostic
+    // channels, not by aborting the reload.
     const host = await makeTempDir("edge-dup-id-")
     const dirA = join(host, ".pi", "extensions", "alpha")
     const dirB = join(host, ".pi", "extensions", "beta")
@@ -358,9 +357,7 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
       { beforeReload?: () => Promise<void> },
     ]
-    // Reload throws with the duplicate name in the diagnostic so the
-    // agent can act on it.
-    await expect(agentOptions.beforeReload?.()).rejects.toThrow(/twin/)
+    await expect(agentOptions.beforeReload?.()).resolves.toBeUndefined()
   })
 
   test("rebuild closure called BEFORE first /reload returns the boot-time set unchanged", async () => {
