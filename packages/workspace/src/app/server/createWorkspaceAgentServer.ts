@@ -540,26 +540,17 @@ export async function createWorkspaceAgentServer(
       pluginCollection.agentOptions.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
     beforeReload: async () => {
+      // Per-plugin scan/rebuild failures are surfaced via SSE error
+      // events + `.error` files (asset manager) and via the response
+      // body of POST /api/v1/agent/reload (rebuild diagnostics). They
+      // MUST NOT throw out of beforeReload — that would abort the
+      // entire reload, leaving every other plugin on stale code and
+      // contradicting the "previous live state untouched, other
+      // plugins unaffected" recovery story.
       if (boringPluginReload) {
-        const result = await boringAssetManager.load()
-        if (result.errors.length > 0) {
-          const details = result.errors
-            .map((error) => `${error.id}#${error.revision}: ${error.message}`)
-            .join("\n\n")
-          throw new Error(`Boring plugin reload failed:\n\n${details}`)
-        }
+        await boringAssetManager.load()
       }
-      // Re-resolve directory-source plugin entries via jiti so their
-      // fresh `WorkspaceServerPlugin` is in the registry the next
-      // turn's `systemPromptDynamic` / `getDynamicResources` reads
-      // from. Diagnostics from failed entries are surfaced as a thrown
-      // error matching boringAssetManager's posture. A future iteration
-      // may widen /reload's response to carry diagnostics non-fatally.
-      const rebuild = await rebuildPlugins()
-      if (rebuild.diagnostics.length > 0) {
-        const details = rebuild.diagnostics.map((d) => `${d.source}: ${d.message}`).join("\n\n")
-        throw new Error(`Boring plugin re-resolve failed:\n\n${details}`)
-      }
+      await rebuildPlugins()
       await opts.beforeReload?.()
     },
     pi: {

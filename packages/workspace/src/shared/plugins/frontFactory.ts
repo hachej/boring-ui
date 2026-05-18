@@ -96,26 +96,32 @@ export type BoringFrontFactoryWithId = BoringFrontFactory & {
 export type WorkspaceFrontPluginInput = WorkspaceFrontPlugin | BoringFrontFactoryWithId
 
 /**
- * Attach a `pluginId` (and optional label) to a `BoringFrontFactory`
- * so it can be passed directly to `WorkspaceProvider.plugins`.
+ * Wrap a `BoringFrontFactory` with `pluginId` (and optional label)
+ * metadata so it can be passed directly to `WorkspaceProvider.plugins`.
  *
  *   export default definePlugin("my-plugin", (api) => {
  *     api.registerPanel({ ... })
  *   }, { label: "My Plugin" })
  *
- * Returns the same function reference with the static fields attached
- * (mutation; no wrapping closure) so identity is preserved for
- * registry replace-by-plugin-id semantics.
+ * Returns a NEW wrapper function. The caller's factory is not mutated —
+ * it stays unbranded and reusable. Calling `definePlugin` twice on the
+ * same input with the same id is safe; with different ids throws.
  */
 export function definePlugin(
   id: string,
   factory: BoringFrontFactory,
   options: { label?: string } = {},
 ): BoringFrontFactoryWithId {
-  const attached = factory as BoringFrontFactoryWithId
-  attached.pluginId = id
-  if (options.label !== undefined) attached.pluginLabel = options.label
-  return attached
+  const existing = (factory as Partial<BoringFrontFactoryWithId>).pluginId
+  if (existing !== undefined && existing !== id) {
+    throw new Error(`definePlugin: factory already branded as "${existing}", cannot rebrand as "${id}"`)
+  }
+  const wrapper = ((api) => factory(api)) as BoringFrontFactoryWithId
+  Object.defineProperty(wrapper, "pluginId", { value: id, enumerable: true })
+  if (options.label !== undefined) {
+    Object.defineProperty(wrapper, "pluginLabel", { value: options.label, enumerable: true })
+  }
+  return wrapper
 }
 
 /**
@@ -174,33 +180,60 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
   const leftTabs: BoringFrontLeftTabRegistration<any>[] = []
   const surfaceResolvers: BoringFrontSurfaceResolverRegistration[] = []
   const outputs: PluginOutput[] = []
+  // Intra-plugin id collision detection (DESIGN.md §6.7): two register*
+  // calls in the same factory chain landing the same id are silent
+  // last-write-wins in the atomic-replace path (same pluginId → no
+  // collision warning from replaceByPluginId). Catch them at capture
+  // time so factory-chaining mistakes (two kits both registering panel
+  // "table") surface immediately with a clear error.
+  const seen = new Map<string, string>()
+  const claim = (kind: string, id: string) => {
+    const key = `${kind}:${id}`
+    const prior = seen.get(key)
+    if (prior !== undefined) {
+      const owner = options.pluginId ?? "<plugin>"
+      throw new Error(
+        `plugin "${owner}" registers ${kind} "${id}" twice (first as ${prior}, then again). ` +
+          `If you are composing kits, two of them are registering the same id — namespace one of them.`,
+      )
+    }
+    seen.set(key, `${kind} "${id}"`)
+  }
 
   return {
     registerProvider(registration) {
+      claim("provider", registration.id)
       providers.push(registration)
       outputs.push({ type: "provider", id: registration.id, component: registration.component })
     },
     registerBinding(registration) {
+      claim("binding", registration.id)
       bindings.push(registration)
       outputs.push({ type: "binding", id: registration.id, component: registration.component })
     },
     registerCatalog(registration) {
+      claim("catalog", registration.id)
       catalogs.push(registration)
       outputs.push({ type: "catalog", catalog: registration })
     },
     registerPanel(registration) {
+      claim("panel", registration.id)
       panels.push(registration)
       outputs.push(panelOutput(registration))
     },
     registerPanelCommand(registration) {
+      claim("command", registration.id)
       panelCommands.push(registration)
       outputs.push(commandOutput(registration))
     },
     registerLeftTab(registration) {
+      claim("left-tab", registration.id)
       leftTabs.push(registration)
       outputs.push(leftTabOutput(registration))
     },
     registerSurfaceResolver(registration) {
+      const id = registration.id ?? `${options.pluginId ?? "anon"}:${registration.kind}`
+      claim("surface-resolver", id)
       surfaceResolvers.push(registration)
       outputs.push(resolverOutput(registration, options.pluginId))
     },
