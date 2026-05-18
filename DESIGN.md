@@ -310,9 +310,11 @@ interface CreateWorkspaceAgentServerOptions extends Omit<CreateAgentAppOptions, 
   pluginHotReload?:      boolean               // default: NODE_ENV !== "production"; governs server re-import + Pi-resource refresh
   /** Server-side allowlist. Plugins not in the list are loaded front-only
    *  (their boring.server is ignored with a logged warning). `"all"`
-   *  trusts every defaultPluginPackages entry. Recommended in prod: list
-   *  the exact ids you trust to execute server code. */
-  serverPluginAllowlist?: "all" | "none" | string[]   // default in prod: "all"; explicit list is safer
+   *  trusts every defaultPluginPackages entry. **`NODE_ENV === "production"`
+   *  REQUIRES an explicit value** — boot throws if undefined, asking the
+   *  operator to pick `"all"` (and accept the trust-everything posture) or
+   *  a list of plugin ids. Dev defaults to `"all"`. */
+  serverPluginAllowlist?: "all" | "none" | string[]
   provisionWorkspace?:   boolean
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?:      boolean
@@ -344,9 +346,11 @@ interface WorkspaceAgentFrontProps<TSession>
   defaultSurfaceOpen?: boolean defaultWorkbenchLeftTab?: WorkbenchLeftTabId
   topBarLeft?: ReactNode       topBarRight?: ReactNode
   chatParams?: Partial<WorkspaceChatPanelProps>
-  /** Default: undefined → use the server's reported capability (from a header on the
-   *  SSE handshake). Setting `true` / `false` overrides. Avoid setting unless you have
-   *  a specific reason — letting the server own this prevents UI/server drift. */
+  /** Default: undefined → use the server's reported capability from
+   *  `GET /api/agent-plugins/diagnostics` (fetched once on mount; banner
+   *  shows a brief loading state until it lands). Setting `true` / `false`
+   *  overrides. Avoid setting unless you have a specific reason — letting
+   *  the server own this prevents UI/server drift. */
   hotReloadEnabled?: boolean
   extraPanels?: string[]       extraCommands?: SlashCommand[]
 }
@@ -750,11 +754,15 @@ interface BoringServerPluginManifest {
   serverPath?: string; extensionPaths?: string[]; skillPaths?: string[]
 }
 type BoringPluginEvent =
-  | { type: "boring.plugin.load";      id; boring; version; revision; frontUrl? }
-  | { type: "boring.plugin.unload";    id; revision }
-  | { type: "boring.plugin.skip";      id; revision; reason: "signature-unchanged" }
-  | { type: "boring.plugin.error";     id; revision; message; source?: string }
-  | { type: "boring.plugin.heartbeat"; ts: number }   // synthetic, every 60 s; lets the front observe SSE liveness
+  | { type: "boring.plugin.load";      id; boring; version; revision; frontUrl?; reloadId?: string }
+  | { type: "boring.plugin.unload";    id; revision;                              reloadId?: string }
+  | { type: "boring.plugin.skip";      id; revision; reason: "signature-unchanged"; reloadId?: string }
+  | { type: "boring.plugin.error";     id; revision; message; source?: string;    reloadId?: string }
+  | { type: "boring.plugin.heartbeat"; ts: number }   // synthetic, every 60 s; lets the front observe SSE liveness; no reloadId
+
+// reloadId is omitted on replay-on-connect events and on initial-boot
+// scans (no triggering POST). Events emitted as part of a /reload cycle
+// carry the reloadId returned in the POST response body.
 interface BoringPluginListEntry { id; boring; pi?; version; revision; frontUrl?; lastLoadedAt: number; signatureSegments?: string[] }
 ```
 
@@ -870,14 +878,16 @@ entries per plugin id. Surface SSE liveness on the front.
 `server/agentPlugins/routes.ts` — `boringPluginRoutes(app, { manager,
 logger, capability })`:
 
-- `POST /api/boring.reload` → `manager.load()`; if any per-plugin
-  errors or rebuild diagnostics: 422 with `{ ok:false, errors,
-  diagnostics, plugins }`; else 200 with `{ ok:true, plugins }`. The
-  body carries diagnostics from BOTH the asset manager AND
-  `rebuildServerPlugins` (Phase 4 wires them in).
-- `POST /api/boring.reload/:id` → load a single plugin by id (looks up
-  dir from manager); useful for "reload only this plugin while I'm
-  iterating."
+- `POST /api/boring.reload` → `manager.load()`; assigns
+  `reloadId: string` (ULID/uuid). Response: 422 with
+  `{ ok:false, reloadId, errors, diagnostics, plugins }` on errors,
+  else 200 with `{ ok:true, reloadId, plugins }`. The body carries
+  diagnostics from BOTH the asset manager AND `rebuildServerPlugins`
+  (Phase 4 wires them in). Every `boring.plugin.{load,skip,error}`
+  event emitted *during* this load() call carries the same
+  `reloadId`, so the front can scope its banner (success / no-changes
+  / error) to the cycle it triggered — concurrent reloads from other
+  tabs don't pollute the count.
 - `GET  /api/agent-plugins` → `manager.list()`.
 - `GET  /api/agent-plugins/:id/error` → text body or 404.
 - `GET  /api/agent-plugins/diagnostics` → `manager.diagnostics()` —
@@ -927,6 +937,7 @@ interface RegisterAgentPluginOptions {
   apiBaseUrl?: string; workspaceId?: string; enabled?: boolean
   importFront?: (frontUrl, revision) => Promise<{ default?: BoringFrontFactory }>
   onHealthChange?: (healthy: boolean) => void   // surfaces sseHealthy to PluginUpdateStatus
+  onReloadEvent?: (event: BoringPluginEvent) => void   // raw event stream for PluginUpdateStatus to filter by reloadId
 }
 ```
 
@@ -1267,6 +1278,10 @@ exports match §4 and the public surface allowlist snapshot.
 
 Out of scope for the first cut but worth tracking:
 
+- `POST /api/boring.reload/:id` — single-plugin reload route. Requires
+  a filtered `rebuildServerPlugins({ entries: [oneEntry], ... })`
+  path and careful `dispose` scoping so the other plugins' state is
+  untouched. Defer until the basic `/reload` is shipped and stable.
 - `create-boring-plugin` CLI generator (`pnpm dlx create-boring-plugin
   <slug>`) that copies `_template` with token replacement and prints
   the exact `defaultPluginPackages` line to add. Reduces "renamed
@@ -1305,7 +1320,11 @@ mtimeMs/size of each tracked file + top-level dir mtime/size)`.
 `directorySignature(\`${dirname(frontPath)}/../shared\`)` + serverPath +
 `fileSignature(serverPath)` + `directorySignature(dirname(serverPath))` +
 `extensionPaths.join("|")` + `skillPaths.join("|")`. `O(N file bytes)`
-— expensive.
+— expensive. The `../shared` walk targets the **source** layout
+(`src/front` + `src/shared`); in `dist` layouts it usually resolves to
+`dist/shared` which may not exist (shared types are inlined into the
+front bundle at build time) — `directorySignature` returns `"missing"`,
+hashed stably as a single segment, no false invalidation.
 
 `doLoadOnce` computes quick first; if unchanged → emit `skip` event,
 no revision bump. Otherwise compute full; bump revision iff full
@@ -1525,6 +1544,8 @@ The same path runs on full unload (plugin removed from
 22. **Single-flight `load()` coalescing** protects against `/reload` spam.
 23. **`getDynamicResources` MUST do no I/O.** Pi calls it on every rebuild including mid-turn; a slow disk would stall Pi. Use the manager's cached snapshot.
 24. **Server-only plugins are valid.** `boring.front: false` (or absent) skips front import path. The SSE consumer must handle `frontUrl?: undefined` cleanly.
+25. **Reload events carry `reloadId`.** Front banners scope `success`/`no-changes`/`error` counts to events whose `reloadId` matches the POST response — concurrent reloads from other tabs don't cross-pollute UI state. Replay-on-connect events do NOT carry a `reloadId` (they're not part of any cycle).
+26. **`NODE_ENV === "production"` boot is fail-closed on `serverPluginAllowlist`.** Operator must explicitly choose `"all"`, `"none"`, or an array of trusted ids. Forgetting the option in prod throws at boot with a clear message — better than silently trusting every npm-installed plugin.
 
 ---
 
@@ -1548,9 +1569,15 @@ Merge gate:
    `pnpm test:e2e` all green.
 2. All four built-in plugins install via the playground's
    `defaultPluginPackages`.
-3. Edit plugin front → `/reload` → updated pane visible (p95 ≤
-   500 ms with 4 plugins loaded; quick-signature path keeps the
-   no-change case ≤ 50 ms).
+3. Edit plugin front → `/reload` → updated pane visible.
+   Measured by `packages/workspace/tests/perf/reload.bench.ts`:
+   touches `mtimeMs` on a plugin's front file, POSTs
+   `/api/v1/agent/reload`, awaits the matching `reloadId` event
+   committing to the registry; 20 iterations, asserts
+   **p95 end-to-end ≤ 500 ms** with the playground's 4 plugins
+   loaded. Quick-signature path asserts the no-change case (touching
+   only an irrelevant dotfile) at **p95 ≤ 50 ms**. CI runs the bench
+   as part of `pnpm ci`; failure blocks merge.
 4. Edit plugin server → `/reload` → next agent turn uses new prompt /
    extensionFactories. Tool edits visible in next chat session;
    banner surfaces this.
@@ -1595,7 +1622,7 @@ Merge gate:
 | Plugin id collision across packages | `bootstrapServer` throws on duplicate; preflight detects across dirs; both source files in error |
 | Intra-pluginId output collision in factory-chained kits | Detected at capture in `createCapturingBoringFrontAPI`; throws with kind + id + stack source |
 | Path-shape attacks in manifest paths | Manifest validation rejects unsafe paths; runtime `realpathSync` containment for declared entry only. NOT a sandbox |
-| RCE via malicious npm-installed plugin | `serverPluginAllowlist` gates server-side load; prod default should explicitly list trusted plugin ids; document like a `dependencies` trust boundary |
+| RCE via malicious npm-installed plugin | `serverPluginAllowlist` gates server-side load. **Prod boots fail-closed**: `NODE_ENV === "production"` requires the option to be set explicitly (no implicit "all"). Operator must opt in to either `"all"` (and accept the posture) or a list of trusted plugin ids. Documented like a `dependencies` trust boundary |
 | Browser holds prior front URL | Cache-bust `?v=<rev>` per revision |
 | SSE connection silently dies (corporate proxy buffering, k8s ingress) | Observable heartbeat every 60 s; front computes `sseHealthy`; banner degraded state |
 | SSE connection exhaustion | 32-connection cap per workspaceId; slow-consumer events dropped + logged |
