@@ -74,7 +74,7 @@ The app never imports plugin modules statically.
 | **App** | Host that calls `createWorkspaceAgentServer` + renders `WorkspaceAgentFront`. Declares its plugin set via `package.json#boring.defaultPluginPackages`. |
 | **`BoringFrontFactory`** | `(api: BoringFrontAPI) => void`. Default export of `boring.front`. |
 | **`WorkspaceServerPlugin`** | Declarative server plugin object (system prompt, agent tools, Pi packages, routes, …). Returned by `boring.server`'s default export, called with `(options, ctx) = (undefined, { workspaceRoot, bridge })`. |
-| **Asset manager** | `BoringPluginAssetManager`. Scans plugin dirs, hashes content, emits `boring.plugin.{load,unload,skip,error}` events on its listener bus + the SSE endpoint. |
+| **Asset manager** | `BoringPluginAssetManager`. Scans plugin dirs, hashes content, emits `boring.plugin.{load,unload,error}` events on its listener bus + the SSE endpoint. |
 | **Revision** | Per-plugin monotonic int. Bumps when a plugin's content signature changes. Cache-busts the front module URL. |
 | **Surface** | Abstract UI request `{ kind, target, meta }`. Front plugins register resolvers that translate a surface into a panel open. |
 
@@ -385,7 +385,7 @@ produces every subpath dist file; a consumer can import each subpath.
 `shared/plugins/manifest.ts`:
 
 ```ts
-interface BoringPackageBoringField { front?: string | false; server?: string | false; label?: string; derivesFrom?: string }
+interface BoringPackageBoringField { front?: string; server?: string | false; label?: string }
 interface BoringPackagePiSourceObject { source: string; extensions?: string[]; skills?: string[]; themes?: string[]; prompts?: string[] }
 type    BoringPackagePiSource = string | BoringPackagePiSourceObject
 interface BoringPackagePiField { extensions?; skills?; packages?: BoringPackagePiSource[]; systemPrompt?: string }
@@ -658,7 +658,7 @@ to the 422 body of `POST /api/boring.reload`. UI + plugin SSE routes
 ### Phase 5 — Asset manager
 
 **Goal.** Scan plugin dirs → hash → emit
-`boring.plugin.{load,unload,skip,error}` events. Single-flight,
+`boring.plugin.{load,unload,error}` events. Single-flight,
 coalescing.
 
 **Deliverables.**
@@ -675,13 +675,12 @@ interface BoringServerPluginManifest {
 type BoringPluginEvent =
   | { type: "boring.plugin.load";   id; boring; version; revision; frontUrl? }
   | { type: "boring.plugin.unload"; id; revision }
-  | { type: "boring.plugin.skip";   id; revision; reason: "signature-unchanged" }
   | { type: "boring.plugin.error";  id; revision; message; source?: string }
 interface BoringPluginListEntry { id; boring; pi?; version; revision; frontUrl? }
 ```
 
-The `skip` event lets the front banner show "no changes detected"
-rather than treating a silent reload as success.
+Unchanged-signature plugins are silently skipped during reload; no
+event is emitted (v1 keeps the wire chatter minimal).
 
 `server/agentPlugins/scan.ts`:
 
@@ -718,8 +717,8 @@ sha256(dir).slice(0,12)`), bump revision, emit error event,
 **continue**. Compute `next = readBoringPlugins(...)`. Unload set =
 ids in `loaded` not in `next` → delete + bump revision + emit unload.
 For each `next` plugin: compute `signature = pluginSignature(plugin)`
-(§6.1); if `loaded.get(id)?.signature === signature` → emit `skip
-{ reason: "signature-unchanged" }`. Else: bump revision, update
+(§6.1); if `loaded.get(id)?.signature === signature` → silently
+continue (no event). Else: bump revision, update
 record, clear `.error`, emit `load`. On exception during update:
 write `.error`, emit error, keep prior record.
 
@@ -749,7 +748,7 @@ prompts per §4.6 ordering, dedupes identical lines; returns
 `undefined` if none.
 
 **Acceptance.** Empty dirs → empty result. Single valid plugin →
-load(rev=1). Reload no changes → `skip` events emitted (not silent
+load(rev=1). Reload no changes → no events emitted (silent
 no-op). Edit a file → revision bumps, single load. Delete a plugin →
 unload + bump. Preflight failure → error events + previous live
 unchanged. 5 concurrent `load()` calls → 1–2 doLoadOnce passes.
@@ -831,7 +830,7 @@ coverage promised by §4.5.
   registry context.
 - `/reload` slash command calls `POST /api/v1/agent/reload`. Composer
   banner uses `PluginUpdateStatus` to surface running / success /
-  no-changes / error.
+  error.
 - If a reloaded plugin declares `routes` or `agentTools`, the
   response body carries a tip; banner shows the appropriate
   "restart required" / "new session required" message.
@@ -955,7 +954,6 @@ public prop types.
 type PluginUpdateState =
   | { kind: "running" }
   | { kind: "success"; reloaded: boolean; tips?: string[] }   // tips: route/tool reload caveats
-  | { kind: "no-changes" }                                     // emitted when all events were "skip"
   | { kind: "error"; message: string }
 function PluginUpdateStatus({ state, onDismiss, onRetry })
 ```
@@ -966,8 +964,7 @@ existing brand throws. `toWorkspacePlugin` rejects bare factories.
 Intra-pluginId collision throws at capture. SSE hook mounts only when
 `hotReloadEnabled !== false`. Storage keys default correctly.
 `WorkspaceUiStateSync` noop when `bridgeEndpoint` null.
-`PluginUpdateStatus` renders all 4 states; "no-changes" appears when
-all events were `skip`.
+`PluginUpdateStatus` renders all 3 states (running / success / error).
 
 ### Phase 9 — Built-in plugins
 
@@ -1128,7 +1125,7 @@ Refresh repo `README.md` "Plugin system" section to match this design.
 Run: `pnpm typecheck`, `pnpm test`, `pnpm lint:invariants`,
 `pnpm test:e2e`. Manual smoke in playground: load all plugins, edit
 a source file, `/reload`, observe banner cycle (running → success or
-no-changes). Introduce a syntax error, observe error banner; confirm
+success). Introduce a syntax error, observe error banner; confirm
 other plugins still update. Add a route to a plugin, observe the
 "restart required" tip. Audit barrel exports — confirm they match §4.
 
@@ -1163,8 +1160,7 @@ returns `"missing"`, hashed stably as a single segment, no false
 invalidation.
 
 Revision: `(revisions.get(id) ?? 0) + 1`, set, return. Signature
-unchanged → no bump, emit `skip` event so the front can show "no
-changes detected".
+unchanged → no bump, no event (silent skip).
 
 ### 6.2 jiti hot-reload import
 

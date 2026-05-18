@@ -1,7 +1,7 @@
 import type { ComponentType } from "react"
 import type { PanelConfig, PaneProps } from "../types/panel"
 import type { SurfaceOpenRequest, SurfacePanelResolution } from "../types/surface"
-import { defineFrontPlugin, type WorkspaceFrontPlugin } from "./defineFrontPlugin"
+import { defineFrontPlugin, PluginError, type WorkspaceFrontPlugin } from "./defineFrontPlugin"
 import type {
   CatalogConfig,
   LeftTabParams,
@@ -192,7 +192,8 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
     const prior = seen.get(key)
     if (prior !== undefined) {
       const owner = options.pluginId ?? "<plugin>"
-      throw new Error(
+      throw new PluginError(
+        "duplicate-id",
         `plugin "${owner}" registers ${kind} "${id}" twice (first as ${prior}, then again). ` +
           `If you are composing kits, two of them are registering the same id — namespace one of them.`,
       )

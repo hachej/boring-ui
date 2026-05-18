@@ -144,10 +144,6 @@ function discoverBoringPluginDirs(pluginDirs: string[]): DiscoveredBoringPluginD
   return { dirs: [...out].sort(), missingPackageJson: [...new Set(missingPackageJson)].sort() }
 }
 
-function expandBoringPluginDirs(pluginDirs: string[]): string[] {
-  return discoverBoringPluginDirs(pluginDirs).dirs
-}
-
 export function preflightBoringPlugins(pluginDirs: string[]): BoringPluginPreflightResult {
   const errors: BoringPluginPreflightIssue[] = []
   const seenIds = new Map<string, string>()
@@ -217,7 +213,7 @@ function resolveConventionalServerPath(rootDir: string): string | undefined {
 export function readBoringPlugins(pluginDirs: string[]): BoringServerPluginManifest[] {
   if (!preflightBoringPlugins(pluginDirs).ok) return []
   const plugins: BoringServerPluginManifest[] = []
-  for (const rootDir of expandBoringPluginDirs(pluginDirs)) {
+  for (const rootDir of discoverBoringPluginDirs(pluginDirs).dirs) {
     const raw = parsePackageJson(rootDir)
     if (!hasPluginMetadata(raw)) continue
     const result = validateBoringPluginManifest(raw)
