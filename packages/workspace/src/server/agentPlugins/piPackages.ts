@@ -17,14 +17,6 @@ function packageLocalPathFromSource(source: string): string | null {
   return source.startsWith("file:") ? source.slice("file:".length) : source
 }
 
-function isSafePiPackageSource(source: string): boolean {
-  const localPath = packageLocalPathFromSource(source)
-  if (localPath == null) return source.length > 0
-  if (localPath === "." || localPath === "./") return true
-  const normalized = localPath.startsWith("./") ? localPath.slice(2) : localPath
-  return isSafePluginRelativePath(normalized)
-}
-
 function normalizeLocalPiPackageSource(pluginRoot: string, source: string): string {
   const localPath = packageLocalPathFromSource(source)
   if (localPath == null) return source
