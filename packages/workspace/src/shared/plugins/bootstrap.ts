@@ -38,7 +38,6 @@ export interface BootstrapOptions {
 
 export interface BootstrapResult {
   registered: string[]
-  systemPromptAppend: string
 }
 
 function registerOutput(
@@ -117,34 +116,12 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
   }
 
   for (const plugin of finalPlugins) {
-    for (const panel of plugin.panels ?? []) {
-      const { id, ...registration } = panel
-      options.registries.panels.register(id, {
-        ...registration,
-        pluginId: plugin.id,
-      })
-    }
-    for (const command of plugin.commands ?? []) {
-      options.registries.commands.registerCommand({
-        ...command,
-        pluginId: plugin.id,
-      })
-    }
-    for (const catalog of plugin.catalogs ?? []) {
-      options.registries.catalogs.register(catalog, plugin.id)
-    }
     for (const output of plugin.outputs ?? []) {
       registerOutput(output, plugin, options.registries)
     }
   }
 
-  const systemPromptAppend = finalPlugins
-    .filter((p) => p.systemPrompt && p.systemPrompt.trim())
-    .map((p) => p.systemPrompt!.trim())
-    .join("\n\n")
-
   return {
     registered: finalPlugins.map((plugin) => plugin.id),
-    systemPromptAppend,
   }
 }
