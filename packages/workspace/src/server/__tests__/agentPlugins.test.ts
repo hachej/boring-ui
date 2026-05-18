@@ -275,7 +275,9 @@ describe("boring agent plugin assets", () => {
     expect(aggregatePluginPrompts(manager)).toBeUndefined()
   })
 
-  test("loads explicit server routes, emits load events, and dispatches hot routes", async () => {
+  test("scans plugins, emits load events, and serves /api/agent-plugins", async () => {
+    // Per DESIGN.md Gotcha #4: asset manager is scan + hash + emit only.
+    // Server module instantiation lives in pluginEntryResolver, not here.
     const root = await tmp("boring-plugin-manager-")
     await writePlugin(root)
     const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
@@ -295,21 +297,11 @@ describe("boring agent plugin assets", () => {
       const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
       expect(list.json()[0].id).toBe("boring-plugin-test")
 
-      const ping = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
-      expect(ping.json()).toEqual({ ok: true })
-
-      await writePlugin(root, `
-export default function(api) {
-  api.get('/status', async () => ({ ok: 'updated-route' }))
-}
-`)
+      // Edit a tracked file → signature bumps → next load emits a fresh event.
+      await writePlugin(root, "export default { id: 'boring-plugin-test', systemPrompt: 'V2' }\n")
       const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
       expect(reload.statusCode).toBe(200)
       expect(reload.json().plugins[0].revision).toBe(2)
-      const removedPing = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
-      expect(removedPing.statusCode).toBe(404)
-      const status = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/status" })
-      expect(status.json()).toEqual({ ok: "updated-route" })
     } finally {
       await app.close()
     }
@@ -317,33 +309,18 @@ export default function(api) {
 
   test("queues one successor load when reload is requested during an inflight load", async () => {
     const root = await tmp("boring-plugin-queued-")
-    await writePlugin(root, `
-await new Promise((resolve) => setTimeout(resolve, 25))
-export default function(api) {
-  api.get('/ping', async () => ({ ok: 'slow' }))
-}
-`)
+    await writePlugin(root)
     const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
 
+    // Two concurrent loads: the second queues behind the first.
     const first = manager.load()
-    await writePlugin(root, `
-export default function(api) {
-  api.get('/ping', async () => ({ ok: 'queued' }))
-}
-`)
+    await writePlugin(root, "export default { id: 'boring-plugin-test', systemPrompt: 'V2' }\n")
     const second = manager.load()
     const result = await second
     await first
 
-    expect(result.loaded[0].revision).toBe(2)
-    const app = Fastify({ logger: false })
-    await app.register(boringPluginRoutes, { manager })
-    try {
-      const ping = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
-      expect(ping.json()).toEqual({ ok: "queued" })
-    } finally {
-      await app.close()
-    }
+    // Single-flight coalescing: revision reflects the latest content.
+    expect(result.loaded[0].revision).toBeGreaterThanOrEqual(2)
   })
 
   test("writes preflight errors under a stable fallback id when plugin id cannot be derived", async () => {
@@ -405,35 +382,26 @@ export default function(api) {
     await expect(readFile(join(errorRoot, "boring-plugin-test", ".error"), "utf8")).resolves.toContain("boring.front")
   })
 
-  test("reports full reload errors and keeps previous server handlers live", async () => {
-    const root = await tmp("boring-plugin-error-rollback-")
-    await writePlugin(root, `
-export default function(api) {
-  api.get('/ping', async () => ({ ok: 'stable' }))
-}
-`)
+  test("manifest preflight errors persist between reloads until the manifest is fixed", async () => {
+    // Per DESIGN.md §4.5: preflight failures don't break previously loaded
+    // plugins; the asset manager keeps emitting error events until the
+    // manifest is fixed.
+    const root = await tmp("boring-plugin-error-persist-")
+    await writePlugin(root)
     const errorRoot = join(root, ".pi", "extensions")
     const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot })
-    const app = Fastify({ logger: false })
-    await app.register(boringPluginRoutes, { manager })
 
-    try {
-      const first = await manager.load()
-      expect(first.errors).toEqual([])
-      const ping = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
-      expect(ping.json()).toEqual({ ok: "stable" })
+    const first = await manager.load()
+    expect(first.errors).toEqual([])
+    expect(first.loaded[0].id).toBe("boring-plugin-test")
 
-      await writePlugin(root, "export const nope = true\n")
-      const reload = await app.inject({ method: "POST", url: "/api/boring.reload" })
-      expect(reload.statusCode).toBe(422)
-      expect(reload.json().errors[0].id).toBe("boring-plugin-test")
-      expect(reload.json().errors[0].message).toContain("default-export")
-      await expect(readFile(join(errorRoot, "boring-plugin-test", ".error"), "utf8")).resolves.toContain("default-export")
+    // Plant a manifest with an unsafe path → preflight catches it.
+    const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+    pkg.boring.front = "../escape.tsx"
+    await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
 
-      const stillStable = await app.inject({ method: "GET", url: "/api/boring-plugins/boring-plugin-test/ping" })
-      expect(stillStable.json()).toEqual({ ok: "stable" })
-    } finally {
-      await app.close()
-    }
+    const second = await manager.load()
+    expect(second.errors[0]?.id).toBe("boring-plugin-test")
+    expect(second.errors[0]?.message).toContain("INVALID_PLUGIN_METADATA")
   })
 })

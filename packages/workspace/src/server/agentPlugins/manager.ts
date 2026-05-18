@@ -1,17 +1,12 @@
 import { createHash } from "node:crypto"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
-import { createRequire } from "node:module"
-import { pathToFileURL } from "node:url"
 import { isValidBoringPluginId } from "../../shared/plugins/manifest"
-import { createCapturingBoringServerAPI } from "./serverApi"
 import { preflightBoringPlugins, readBoringPlugins, type BoringPluginPreflightResult } from "./scan"
 import type {
   BoringPluginEvent,
   BoringPluginListEntry,
   BoringServerPluginManifest,
-  BoringServerFactory,
-  BoringServerRouteHandler,
 } from "./types"
 
 interface LoadedPluginRecord extends BoringServerPluginManifest {
@@ -38,26 +33,8 @@ export interface LoadBoringAssetsResult {
 
 type Listener = (event: BoringPluginEvent) => void
 
-function routeKey(method: string, path: string): string {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`
-  return `${method.toUpperCase()} ${normalizedPath}`
-}
-
 function preflightErrorId(pluginDir: string): string {
   return `preflight-${createHash("sha256").update(pluginDir).digest("hex").slice(0, 12)}`
-}
-
-const require = createRequire(import.meta.url)
-
-function optionalJitiImport(serverPath: string): Promise<{ default?: BoringServerFactory }> | null {
-  try {
-    const jitiModule = require("jiti") as { createJiti?: (url: string, opts?: { moduleCache?: boolean }) => { import: (path: string) => Promise<unknown> } }
-    const createJiti = jitiModule.createJiti
-    if (!createJiti) return null
-    return createJiti(import.meta.url, { moduleCache: false }).import(serverPath) as Promise<{ default?: BoringServerFactory }>
-  } catch {
-    return null
-  }
 }
 
 function fileSignature(path: string | undefined): string {
@@ -136,23 +113,11 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
     .digest("hex")
 }
 
-async function importServerModule(serverPath: string, href: string): Promise<{ default?: BoringServerFactory }> {
-  // jiti handles both fresh re-imports (moduleCache:false) and npm bare-
-  // specifier resolution (essential for plugins that import from
-  // @hachej/boring-workspace/server etc.). Same path is used inside
-  // VITEST — the data:URL shortcut we previously had there couldn't
-  // resolve npm specifiers and silently lost packages with deps.
-  const jitiImport = optionalJitiImport(serverPath)
-  if (jitiImport) return await jitiImport
-  return await import(/* @vite-ignore */ href) as { default?: BoringServerFactory }
-}
-
 export class BoringPluginAssetManager {
   private readonly pluginDirs: string[]
   private readonly errorRoot: string
   private readonly loaded = new Map<string, LoadedPluginRecord>()
   private readonly revisions = new Map<string, number>()
-  private readonly serverHandlers = new Map<string, Map<string, BoringServerRouteHandler>>()
   private readonly listeners = new Set<Listener>()
   private loading: Promise<LoadBoringAssetsResult> | null = null
   private reloadQueued = false
@@ -220,7 +185,6 @@ export class BoringPluginAssetManager {
       if (nextIds.has(id)) continue
       const revision = this.bumpRevision(id)
       this.loaded.delete(id)
-      this.serverHandlers.delete(id)
       const event: BoringPluginEvent = { type: "boring.plugin.unload", id, revision }
       events.push(event)
       this.emit(event)
@@ -231,11 +195,6 @@ export class BoringPluginAssetManager {
         const signature = pluginSignature(plugin)
         const previous = this.loaded.get(plugin.id)
         if (previous?.signature === signature) continue
-        if (plugin.serverPath) {
-          this.serverHandlers.set(plugin.id, await this.loadServerHandlers(plugin.serverPath))
-        } else {
-          this.serverHandlers.delete(plugin.id)
-        }
         const revision = this.bumpRevision(plugin.id)
         const record: LoadedPluginRecord = { ...plugin, revision, signature }
         this.loaded.set(plugin.id, record)
@@ -281,40 +240,10 @@ export class BoringPluginAssetManager {
     return { loaded: this.list(), events, errors }
   }
 
-  async dispatch(pluginId: string, method: string, path: string, request: Parameters<BoringServerRouteHandler>[0], reply: Parameters<BoringServerRouteHandler>[1]): Promise<unknown> {
-    const handlers = this.serverHandlers.get(pluginId)
-    const handler = handlers?.get(routeKey(method, path))
-    if (!handler) return reply.status(404).send({ error: "not_found" })
-    return await handler(request, reply)
-  }
-
-  private async loadServerHandlers(serverPath: string): Promise<Map<string, BoringServerRouteHandler>> {
-    const cacheBust = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const href = `${pathToFileURL(serverPath).href}?v=${cacheBust}`
-    const handlers = new Map<string, BoringServerRouteHandler>()
-    const mod = await importServerModule(serverPath, href)
-    if (typeof mod.default !== "function") {
-      throw new Error(`server plugin ${serverPath} must default-export a BoringServerFactory`)
-    }
-    // Discriminate between the two `boring.server` default-export
-    // contracts by arity:
-    //   - `BoringServerFactory = (api) => void` — length 1 (or 0). The
-    //     asset manager owns route registration. We call it here.
-    //   - `(options, ctx) => WorkspaceServerPlugin` — length 2. Handled
-    //     by the pluginEntryResolver path (loaded as a DirPluginEntry
-    //     when listed in `defaultPluginPackages` or `plugins:`). We
-    //     skip route registration here; the WorkspaceServerPlugin's
-    //     own `routes` field is registered via Fastify by the bootstrap.
-    if (mod.default.length >= 2) {
-      return handlers
-    }
-    const api = createCapturingBoringServerAPI()
-    await mod.default(api)
-    for (const route of api.flush()) {
-      handlers.set(routeKey(route.method, route.path), route.handler)
-    }
-    return handlers
-  }
+  // Asset manager is scan + hash + emit only (DESIGN.md Gotcha #4).
+  // Server-side plugin instantiation lives in pluginEntryResolver /
+  // rebuildServerPlugins, NOT here. Plugins that need HTTP routes
+  // declare them on WorkspaceServerPlugin.routes.
 
   private bumpRevision(id: string): number {
     const next = (this.revisions.get(id) ?? 0) + 1
