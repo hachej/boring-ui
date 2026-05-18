@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest"
 import {
-  BORING_PLUGIN_MANIFEST_ERROR_CODES,
-  isSafePluginRelativeGlob,
   isSafePluginRelativePath,
   isValidBoringPluginId,
   validateBoringPluginManifest,
@@ -25,20 +23,6 @@ describe("package.json plugin manifest helpers", () => {
     expect(isSafePluginRelativePath("C:/tmp/file.ts")).toBe(false)
     expect(isSafePluginRelativePath("front\\index.tsx")).toBe(false)
     expect(isSafePluginRelativePath("bad\0path")).toBe(false)
-  })
-
-  it("keeps glob helper conservative", () => {
-    expect(isSafePluginRelativeGlob("src/**/*.ts")).toBe(true)
-    expect(isSafePluginRelativeGlob("!src/**/*.ts")).toBe(false)
-    expect(isSafePluginRelativeGlob("../src/**")).toBe(false)
-  })
-
-  it("exports stable manifest error codes", () => {
-    expect(BORING_PLUGIN_MANIFEST_ERROR_CODES.INVALID_ID).toBe("INVALID_ID")
-    expect(BORING_PLUGIN_MANIFEST_ERROR_CODES.INVALID_VERSION).toBe("INVALID_VERSION")
-    expect(BORING_PLUGIN_MANIFEST_ERROR_CODES.INVALID_FIELD).toBe("INVALID_FIELD")
-    expect(BORING_PLUGIN_MANIFEST_ERROR_CODES.INVALID_PATH).toBe("INVALID_PATH")
-    expect(BORING_PLUGIN_MANIFEST_ERROR_CODES.MISSING_REQUIRED_FIELD).toBe("MISSING_REQUIRED_FIELD")
   })
 })
 

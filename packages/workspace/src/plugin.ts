@@ -28,9 +28,7 @@ export type {
 export {
   validateBoringPluginManifest,
   isSafePluginRelativePath,
-  isSafePluginRelativeGlob,
   isValidBoringPluginId,
-  BORING_PLUGIN_MANIFEST_ERROR_CODES,
 } from "./shared/plugins/manifest"
 export type {
   BoringPackageBoringField,
