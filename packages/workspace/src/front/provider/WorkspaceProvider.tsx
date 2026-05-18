@@ -277,21 +277,14 @@ function WorkspaceCatalogBindings({
 function WorkspacePluginBindings({ plugins }: { plugins: WorkspaceFrontPlugin[] }) {
   return (
     <>
-      {plugins.map((plugin) => {
-        const outputBindings =
-          plugin.outputs?.filter(
-            (output): output is BindingOutput => output.type === "binding",
-          ) ?? []
-        return [
-          ...(plugin.bindings ?? []).map((Binding, index) => (
-            <Binding key={`${plugin.id}:binding:${index}`} />
-          )),
-          ...outputBindings.map((output) => {
+      {plugins.map((plugin) =>
+        (plugin.outputs ?? [])
+          .filter((output): output is BindingOutput => output.type === "binding")
+          .map((output) => {
             const Binding = output.component
-            return <Binding key={`${plugin.id}:output:${output.id}`} />
+            return <Binding key={`${plugin.id}:${output.id}`} />
           }),
-        ]
-      })}
+      )}
     </>
   )
 }
@@ -514,7 +507,6 @@ export function WorkspaceProvider({
       ...allPlugins.map((p) => ({
         id: p.id,
         label: p.label,
-        systemPrompt: p.systemPrompt,
       })),
     ]
 
