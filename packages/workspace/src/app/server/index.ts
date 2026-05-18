@@ -1,8 +1,9 @@
+// App-server surface (host integration). Plugin author types live on
+// /server, not here — keep this barrel scoped to orchestration.
 export {
   buildWorkspaceContextPrompt,
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
-  defineServerPlugin,
   provisionWorkspaceAgentServer,
   type CollectWorkspaceAgentServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
@@ -10,7 +11,6 @@ export {
   type WorkspacePiPackageSource,
   type WorkspaceAgentServerPluginCollection,
   type WorkspaceAgentServerPluginContext,
-  type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "./createWorkspaceAgentServer"
