@@ -39,7 +39,7 @@ describe("filesystemPlugin", () => {
         resolver: expect.objectContaining({ id: "filesystem-path" }),
       }),
     )
-    expect(filesystemPlugin.panels).toBeUndefined()
+    // panels field removed from WorkspaceFrontPlugin IR — only `outputs` remains.
     const ids = filesystemPlugin.outputs!
       .filter((output) => output.type === "panel")
       .map((output) => output.panel.id)
@@ -101,10 +101,6 @@ describe("filesystemPlugin", () => {
     )
   })
 
-  it("has no catalogs (catalogs are registered at runtime via bindings)", () => {
-    expect(filesystemPlugin.catalogs).toBeUndefined()
-  })
-
   it("ships runtime bindings as factory outputs", () => {
     const bindingIds = filesystemPlugin.outputs!
       .filter((output) => output.type === "binding")
@@ -115,7 +111,6 @@ describe("filesystemPlugin", () => {
       "filesystem-file-panel",
       "filesystem-agent-file-bridge",
     ])
-    expect(createFilesystemPlugin().bindings).toBeUndefined()
   })
 
   it("default-exports a BoringFrontFactory for shape parity", () => {

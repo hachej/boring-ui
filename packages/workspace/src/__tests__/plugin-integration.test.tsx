@@ -54,11 +54,9 @@ describe("WorkspaceProvider — plugin integration", () => {
     const testPlugin = defineFrontPlugin({
       id: "test-plugin",
       label: "Test",
-      panels: [
-        { id: "test-panel", title: "Test", component: DummyPanel, source: "app" },
-      ],
-      commands: [
-        { id: "test-cmd", title: "Test Command", run: vi.fn() },
+      outputs: [
+        { type: "panel", panel: { id: "test-panel", title: "Test", component: DummyPanel, source: "app" } },
+        { type: "command", command: { id: "test-cmd", title: "Test Command", run: vi.fn() } },
       ],
     })
 
@@ -122,13 +120,16 @@ describe("WorkspaceProvider — plugin integration", () => {
     const plugin = defineFrontPlugin({
       id: "plugin-commands",
       label: "Plugin Commands",
-      commands: [
+      outputs: [
         {
-          id: "plugin.open-dashboard",
-          title: "Open Plugin Dashboard",
-          keywords: ["plugin-dashboard"],
-          shortcut: "⌘D",
-          run,
+          type: "command",
+          command: {
+            id: "plugin.open-dashboard",
+            title: "Open Plugin Dashboard",
+            keywords: ["plugin-dashboard"],
+            shortcut: "⌘D",
+            run,
+          },
         },
       ],
     })
@@ -226,8 +227,8 @@ describe("WorkspaceProvider — plugin integration", () => {
   it("user plugin alongside defaults does not conflict", () => {
     const customPlugin = defineFrontPlugin({
       id: "analytics",
-      panels: [
-        { id: "analytics-dashboard", title: "Analytics", component: DummyPanel, source: "app" },
+      outputs: [
+        { type: "panel", panel: { id: "analytics-dashboard", title: "Analytics", component: DummyPanel, source: "app" } },
       ],
     })
 
@@ -293,7 +294,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
   it("core panels register BEFORE plugin panels (ordering)", () => {
     const testPlugin = defineFrontPlugin({
       id: "custom",
-      panels: [{ id: "custom-panel", title: "Custom", component: DummyPanel, source: "app" }],
+      outputs: [{ type: "panel", panel: { id: "custom-panel", title: "Custom", component: DummyPanel, source: "app" } }],
     })
 
     function Inspector() {
@@ -317,7 +318,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
   it("core panels + filesystem defaults + user plugin all coexist", () => {
     const testPlugin = defineFrontPlugin({
       id: "test",
-      panels: [{ id: "test-panel", title: "Test", component: DummyPanel, source: "app" }],
+      outputs: [{ type: "panel", panel: { id: "test-panel", title: "Test", component: DummyPanel, source: "app" } }],
     })
 
     function Inspector() {
