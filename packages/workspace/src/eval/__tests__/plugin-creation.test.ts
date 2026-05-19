@@ -15,13 +15,21 @@ import { evalAgentPrompt, EvalRegex } from "@hachej/boring-agent/eval"
 import type { FastifyInstance } from "fastify"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
 
-const EVAL_MODEL = process.env.GEMINI_API_KEY
-  ? ({ provider: "google", id: "gemini-2.5-flash" } as const)
-  : process.env.ANTHROPIC_API_KEY
-    ? ({ provider: "anthropic", id: "claude-sonnet-4-6" } as const)
-    : ({ provider: "openrouter", id: "qwen/qwen3.6-plus" } as const)
-const HAS_KEY = !!(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY)
-const describeIf = HAS_KEY ? describe : describe.skip
+// Matrix mode: iterate over EVERY provider whose API key is present.
+// Previously priority-based (Gemini > Anthropic > OpenRouter), which
+// meant CI with both keys set only exercised one model — the dual-
+// provider eval claim in the PR description was vacuous. Now each
+// provider becomes its own describe.each row, so CI runs the whole
+// suite under each model.
+const ENABLED_MODELS = (
+  [
+    process.env.GEMINI_API_KEY ? ({ provider: "google", id: "gemini-2.5-flash" } as const) : null,
+    process.env.ANTHROPIC_API_KEY ? ({ provider: "anthropic", id: "claude-sonnet-4-6" } as const) : null,
+    process.env.OPENROUTER_API_KEY ? ({ provider: "openrouter", id: "qwen/qwen3.6-plus" } as const) : null,
+  ].filter(Boolean) as Array<{ provider: string; id: string }>
+)
+const HAS_KEY = ENABLED_MODELS.length > 0
+const describeIf = HAS_KEY ? describe.each(ENABLED_MODELS) : describe.skip.each([{ provider: "none", id: "none" }] as Array<{ provider: string; id: string }>)
 
 const WORKSPACE_PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../")
 const EVAL_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-task-list")
@@ -45,7 +53,7 @@ const EVAL_REFINE_FRONT = join(EVAL_REFINE_DIR, "front", "index.tsx")
 const EVAL_CROSS_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-cross")
 const EVAL_CROSS_PACKAGE = join(EVAL_CROSS_DIR, "package.json")
 
-describeIf("package plugin creation + reload eval (live LLM)", () => {
+describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (EVAL_MODEL) => {
   let app: FastifyInstance
 
   const cleanupDirs = [
@@ -435,11 +443,17 @@ Then run /reload to verify.
         .map((c) => String(c.params.path ?? c.params.file_path ?? ""))
       const loadedSkill = readCalls.some((p) => p.includes("boring-plugin-authoring"))
       // eslint-disable-next-line no-console
-      console.log(`[minimal-eval diag] tools: ${toolSequence}`)
+      console.log(`[minimal-eval diag][${EVAL_MODEL.provider}] tools: ${toolSequence}`)
       // eslint-disable-next-line no-console
-      console.log(`[minimal-eval diag] read paths: ${JSON.stringify(readCalls)}`)
+      console.log(`[minimal-eval diag][${EVAL_MODEL.provider}] read paths: ${JSON.stringify(readCalls)}`)
       // eslint-disable-next-line no-console
-      console.log(`[minimal-eval diag] loaded boring-plugin-authoring skill: ${loadedSkill}`)
+      console.log(`[minimal-eval diag][${EVAL_MODEL.provider}] loaded boring-plugin-authoring skill: ${loadedSkill}`)
+      // Soft signal — we DON'T hard-assert loadedSkill because the system
+      // prompt now inlines the canonical shape, so the agent can succeed
+      // without reading the skill. If the metric drops to 0%, that means
+      // the skill is dead weight and we should either delete it or
+      // strengthen the prompt's pointer to it.
+      trackAttempts(EVAL_MODEL.provider, "minimal-prompt", result.attempts)
 
       // result.ok with expect=[] just means the turn completed; the real
       // assertions are the file-on-disk + /reload checks below.
@@ -755,4 +769,27 @@ function formatFailure(result: { ok: boolean; reason?: string; text?: string; ac
   const tools = result.actual.map((c) => c.tool).join(", ") || "(none)"
   const text = result.text ? `; text: ${result.text.slice(0, 500)}` : ""
   return result.reason ? `${result.reason}${text}` : `tools called: ${tools}${text}`
+}
+
+/**
+ * Flake telemetry: records attempt counts per eval (when evalAgentPrompt
+ * retried at least once) and dumps a summary at process exit. Lets us
+ * see which evals are intermittently flaky without manually re-running.
+ * `attempts > 1` = test passed after a retry; treat as a flake signal.
+ */
+const FLAKE_LOG: Array<{ provider: string; testName: string; attempts: number }> = []
+function trackAttempts(provider: string, testName: string, attempts: number | undefined): void {
+  if (typeof attempts !== "number" || attempts <= 1) return
+  FLAKE_LOG.push({ provider, testName, attempts })
+}
+if (typeof process !== "undefined" && typeof process.on === "function") {
+  process.on("beforeExit", () => {
+    if (FLAKE_LOG.length === 0) return
+    // eslint-disable-next-line no-console
+    console.log("\n[eval-flake-summary] evals that needed > 1 attempt:")
+    for (const entry of FLAKE_LOG) {
+      // eslint-disable-next-line no-console
+      console.log(`  [${entry.provider}] ${entry.testName} → ${entry.attempts} attempts`)
+    }
+  })
 }
