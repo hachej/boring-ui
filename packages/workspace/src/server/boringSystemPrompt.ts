@@ -105,7 +105,9 @@ export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions = {
       "",
       "For file visualizers, plugin composition, and other patterns, read the `boring-plugin-authoring` skill from the `<location>` under `<available_skills>`.",
       "",
-      "After editing, ask the user to run `/reload`.",
+      "**Closed loop for testing**: after editing any plugin file, run `bash` with `boring-ui verify-plugin` (no args = checks all plugins under `.pi/extensions/`; pass a plugin name to check just one). It validates manifest + file existence + the `boring.server` value and reports per-plugin errors with actionable hints. Fix anything it reports and call again until it returns `OK`. Only then ask the user to run `/reload`.",
+      "",
+      "After editing and verifying, ask the user to run `/reload`.",
     ].join("\n"),
   ].join("\n\n")
 }

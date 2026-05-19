@@ -6,6 +6,7 @@ export default defineConfig({
     "src/server/cli.ts",
     "src/server/localWorkspaces.ts",
     "src/server/scaffoldPlugin.ts",
+    "src/server/verifyPlugin.ts",
   ],
   format: ["esm"],
   target: "node20",

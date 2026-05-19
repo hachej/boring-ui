@@ -16,12 +16,15 @@ export type {
   BoringFrontAPI,
   BoringFrontFactory,
   BoringFrontFactoryWithId,
+  BoringFrontBindingRegistration,
   BoringFrontPanelRegistration,
   BoringFrontPanelCommandRegistration,
   BoringFrontLeftTabRegistration,
+  BoringFrontProviderRegistration,
   BoringFrontSurfaceResolverRegistration,
   CapturedBoringFrontRegistrations,
   CapturingBoringFrontAPIHandle,
+  DefinePluginConfig,
   WorkspaceFrontPluginInput,
 } from "./shared/plugins/frontFactory"
 
