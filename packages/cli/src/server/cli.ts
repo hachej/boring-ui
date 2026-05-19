@@ -7,6 +7,7 @@ import { parseArgs } from "node:util"
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { scaffoldPlugin } from "./scaffoldPlugin.js"
+import { findHintForError, formatVerifyResult, verifyPlugin } from "./verifyPlugin.js"
 
 export interface RunCliOptions {
   argv?: string[]
@@ -374,10 +375,48 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     return
   }
 
+  if (positionals[0] === "verify-plugin") {
+    handleVerifyPluginCommand({ positionals })
+    return
+  }
+
   await startFolderMode({
     ...base,
     folderArg: positionals[0],
   })
+}
+
+function handleVerifyPluginCommand(opts: { positionals: string[] }) {
+  // Usage: `boring-ui verify-plugin [<name>] [<workspace>]`
+  // No name: verify every plugin under .pi/extensions/.
+  // With name: verify only `.pi/extensions/<name>/`.
+  // Workspace defaults to cwd. The flag-free positional form keeps the
+  // invocation short for the agent's bash tool.
+  const maybeName = opts.positionals[1]
+  const maybeWorkspace = opts.positionals[2]
+  const looksLikePath = maybeName && (maybeName.includes("/") || maybeName.startsWith("."))
+  const name = looksLikePath ? undefined : maybeName
+  const workspaceRoot = resolve(maybeWorkspace ?? (looksLikePath ? maybeName! : process.cwd()))
+
+  const result = verifyPlugin({ workspaceRoot, ...(name ? { name } : {}) })
+  console.log(formatVerifyResult(result))
+  if (!result.ok) {
+    // Surface actionable hints for the well-known mistakes so the agent
+    // sees a one-line "do this instead" alongside the raw error.
+    const hints: string[] = []
+    for (const outcome of result.outcomes) {
+      for (const err of outcome.errors) {
+        const hint = findHintForError(err)
+        if (hint) hints.push(`  hint (${outcome.id}): ${hint}`)
+      }
+    }
+    if (hints.length > 0) {
+      console.log("")
+      console.log("Suggestions:")
+      for (const hint of hints) console.log(hint)
+    }
+    process.exit(1)
+  }
 }
 
 function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
