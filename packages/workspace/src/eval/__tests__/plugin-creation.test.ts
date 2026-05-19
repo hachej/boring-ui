@@ -333,13 +333,19 @@ After writing the files, tell me to run /reload.
       expect(baseline.statusCode).toBe(200)
 
       // Corrupt package.json — asset manager's preflight catches this on
-      // /reload and surfaces it as a 422 with a structured diagnostic
-      // (INVALID_PACKAGE_JSON) the agent can read.
+      // /reload. Per DESIGN.md §4.5 the agent route (/api/v1/agent/reload)
+      // tolerates per-plugin failures (returns 200; the diagnostic is
+      // surfaced via SSE error events + the .error file). The
+      // workspace-owned route (/api/boring.reload) returns 422 with the
+      // structured diagnostic the agent can act on.
       writeFileSync(pkgPath, "{ not json at all", "utf8")
-      const failed = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
-      expect(failed.statusCode).toBe(422)
-      const failedBody = failed.json() as { error?: string }
-      expect(failedBody.error).toMatch(/INVALID_PACKAGE_JSON|eval-recover/i)
+      const agentReload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(agentReload.statusCode).toBe(200)
+      const boringReload = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
+      expect(boringReload.statusCode).toBe(422)
+      const failedBody = boringReload.json() as { errors?: Array<{ message: string }> }
+      const errorMessage = (failedBody.errors ?? []).map((e) => e.message).join("\n")
+      expect(errorMessage).toMatch(/INVALID_PACKAGE_JSON|eval-recover/i)
 
       // Ask the agent to fix it.
       const result = await evalAgentPrompt({
@@ -348,7 +354,7 @@ After writing the files, tell me to run /reload.
 The plugin at .pi/extensions/eval-recover/package.json is malformed.
 /reload returned this error:
 
-  ${failedBody.error}
+  ${errorMessage}
 
 Replace package.json with a valid JSON matching this shape:
   { "name": "eval-recover", "version": "1.0.0",
@@ -365,8 +371,8 @@ Then run /reload to verify.
       })
       expect(result.ok, formatFailure(result)).toBe(true)
 
-      // Reload after the fix succeeds.
-      const recovered = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      // Reload after the fix succeeds on BOTH routes.
+      const recovered = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
       expect(recovered.statusCode).toBe(200)
 
       rmSync(pluginDir, { recursive: true, force: true })
