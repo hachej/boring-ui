@@ -22,17 +22,17 @@ Read this first. Re-read after compaction.
 
 **boring-ui-v2** is a greenfield monorepo building **three publishable packages**:
 
-- **`@boring/core`** — canonical app shell: DB (Postgres/Drizzle), auth (better-auth), config, HTTP app factory (Fastify), and frontend provider stack (`<BoringApp>`). Every child app imports core first. See [`packages/core/docs/CORE.md`](packages/core/docs/CORE.md) for the full spec.
-- **`@boring/agent`** — pane-embeddable coding agent. Ships 3 execution modes behind one mental model: `direct` (no isolation, macOS/Windows dev) / `local` (bwrap on Linux) / `vercel-sandbox` (Firecracker microVM). Also ships as a first-class CLI (`npx @boring/agent`), zero setup, zero deploy.
-- **`@boring/workspace`** — workspace UI and bridge package. Front code composes injected chat, plugin-owned left tabs/editors/catalogs, DockView layouts, and the UI bridge client. Server/app code exports workspace bridge routes/tools and `createWorkspaceAgentApp()` for shells that compose `@boring/agent/server`.
+- **`@hachej/boring-core`** — canonical app shell: DB (Postgres/Drizzle), auth (better-auth), config, HTTP app factory (Fastify), and frontend provider stack (`<BoringApp>`). Every child app imports core first. See [`packages/core/docs/CORE.md`](packages/core/docs/CORE.md) for the full spec.
+- **`@hachej/boring-agent`** — pane-embeddable coding agent. Ships 3 execution modes behind one mental model: `direct` (no isolation, macOS/Windows dev) / `local` (bwrap on Linux) / `vercel-sandbox` (Firecracker microVM). Also ships as a first-class CLI (`npx @hachej/boring-agent`), zero setup, zero deploy.
+- **`@hachej/boring-workspace`** — workspace UI and bridge package. Front code composes injected chat, plugin-owned left tabs/editors/catalogs, DockView layouts, and the UI bridge client. Server/app code exports workspace bridge routes/tools and `createWorkspaceAgentApp()` for shells that compose `@hachej/boring-agent/server`.
 
 **Dependency graph (inverted — core at the bottom):**
 ```
-  apps/*  →  @boring/workspace  →  @boring/core
+  apps/*  →  @hachej/boring-workspace  →  @hachej/boring-core
     │              ↑
-    └──────→  @boring/agent  (standalone OK — zero core imports at runtime)
+    └──────→  @hachej/boring-agent  (standalone OK — zero core imports at runtime)
 ```
-`@boring/core` owns persistence and identity. `@boring/agent` and `@boring/workspace` stay DB-free; core injects stores via `createCoreApp` options. Agent can also boot standalone (`createAgentApp`) with zero core dependency.
+`@hachej/boring-core` owns persistence and identity. `@hachej/boring-agent` and `@hachej/boring-workspace` stay DB-free; core injects stores via `createCoreApp` options. Agent can also boot standalone (`createAgentApp`) with zero core dependency.
 
 The three packages are designed to be composed by a final **app shell** (the end user's app). See `packages/agent/docs/plans/agent-package-spec.md`, `packages/workspace/docs/INTERFACES.md`, and `packages/core/docs/CORE.md` for current package boundaries.
 
@@ -40,8 +40,8 @@ The three packages are designed to be composed by a final **app shell** (the end
 
 v1 boring-ui tangled chat, layout, sandboxing, and deploy concerns into a single repo. v2 untangles them on purpose:
 
-- **`@boring/agent` is a product by itself** — `npx @boring/agent` is a legitimate standalone tool. Users who want "Claude Code in a browser against my repo" don't need layouts or panels or git UI.
-- **`@boring/workspace` owns workspace UI contracts** — layouts, plugin registries, catalogs, surface resolvers, and the UI bridge. Base front/shared code stays agent-free; `@boring/workspace/app/*` may provide batteries-included composition with `@boring/agent`.
+- **`@hachej/boring-agent` is a product by itself** — `npx @hachej/boring-agent` is a legitimate standalone tool. Users who want "Claude Code in a browser against my repo" don't need layouts or panels or git UI.
+- **`@hachej/boring-workspace` owns workspace UI contracts** — layouts, plugin registries, catalogs, surface resolvers, and the UI bridge. Base front/shared code stays agent-free; `@hachej/boring-workspace/app/*` may provide batteries-included composition with `@hachej/boring-agent`.
 
 **Future packages (not yet implemented, but shape current decisions):**
 
@@ -95,9 +95,162 @@ These must hold in all code. Grep-enforced in CI (see beads tagged `invariant-li
 4. **Path validation is the adapter's job** — consumers pass user paths; adapters reject `../` / absolute / symlink-escape.
 5. **Workspace + Sandbox swap as a paired `RuntimeModeAdapter`** — they must share a filesystem substrate. Mixed pairings = split-brain.
 6. **`UiBridge.postCommand` is the single dispatch source** — chat-stream `data-ui-command` parts are display-only derivatives.
-7. **Workspace base front/shared code has ZERO value imports from `@boring/agent`** — package-neutral workspace UI keeps agent injected. `@boring/workspace/app/front` may import documented `@boring/agent/front` APIs for default app composition, and `@boring/workspace/app/server` may import documented `@boring/agent/server` APIs.
+7. **Workspace base front/shared code has ZERO value imports from `@hachej/boring-agent`** — package-neutral workspace UI keeps agent injected. `@hachej/boring-workspace/app/front` may import documented `@hachej/boring-agent/front` APIs for default app composition, and `@hachej/boring-workspace/app/server` may import documented `@hachej/boring-agent/server` APIs.
 8. **Every error has a stable code** from the canonical error-codes enum (one import site, no raw string codes).
 9. **Pi-tools migration stays locked** — `bash`/`read`/`write`/`edit`/`find`/`grep`/`ls` flow through pi factories plus Operations adapters. Custom AgentTools require Principle 3 justification from epic `boring-ui-v2-uhwx`.
+
+---
+
+## Working in the codebase
+
+### Commands
+
+All commands use `pnpm`. Run from the repo root unless stated otherwise.
+
+```bash
+pnpm install          # install all workspace deps
+pnpm dev              # run all dev servers concurrently
+pnpm build            # build all packages
+pnpm typecheck        # tsc --noEmit across all packages (sequential)
+pnpm lint             # lint (currently runs typecheck per package)
+pnpm test             # vitest run across all packages
+pnpm lint:invariants  # validate plugin definitions + agent isolation
+pnpm ci               # lint + typecheck + test + lint:invariants + e2e
+```
+
+**Scoped commands (use these during development):**
+
+```bash
+# Run tests for one package
+pnpm --filter @hachej/boring-workspace run test
+pnpm --filter @hachej/boring-agent run test
+
+# Run a single test file
+pnpm --filter @hachej/boring-workspace run test src/shared/plugins/__tests__/bootstrap.test.ts
+
+# Run tests matching a name pattern
+pnpm --filter @hachej/boring-workspace run test --testNamePattern "bootstrap"
+
+# Watch mode
+pnpm --filter @hachej/boring-agent run test:watch
+
+# Typecheck one package
+pnpm --filter @hachej/boring-workspace run typecheck
+
+# Run a specific app dev server
+pnpm --filter full-app dev
+pnpm --filter workspace-playground dev
+pnpm --filter agent-playground dev
+```
+
+**Apps that consume `@hachej/boring-workspace` from source need it built once first:**
+
+```bash
+pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playground test
+```
+
+### Plugin system — code patterns
+
+The user-facing intro is in [`README.md#plugin-system`](README.md#plugin-system). Canonical structure for new plugins is in [`packages/workspace/docs/PLUGIN_STRUCTURE.md`](packages/workspace/docs/PLUGIN_STRUCTURE.md). The code patterns you'll write most often:
+
+**Minimal plugin:**
+
+```ts
+import { defineFrontPlugin, definePanel } from "@hachej/boring-workspace"
+
+export const myPlugin = defineFrontPlugin({
+  id: "my-plugin",
+  label: "My Plugin",
+  systemPrompt: "You can open widgets with the 'open-widget' tool.",  // injected into agent context
+  outputs: [
+    {
+      type: "panel",
+      panel: definePanel({
+        id: "my-widget",
+        title: "Widget",
+        placement: "center",
+        component: () => import("./WidgetPane").then(m => ({ default: m.WidgetPane })),
+      }),
+    },
+  ],
+})
+```
+
+**Panel components** receive `PaneProps<T>`:
+
+```ts
+import type { PaneProps } from "@hachej/boring-workspace"
+
+interface Params { id?: string }
+
+export function WidgetPane({ params, api, containerApi }: PaneProps<Params>) {
+  // params       — data passed when the panel is opened
+  // api          — DockviewPanelApi (close, setTitle, onDidParametersChange, …)
+  // containerApi — DockviewApi (addPanel, fromJSON, …)
+}
+```
+
+**Do NOT set `lazy: true`.** The registry auto-detects it: a zero-arg function `() => import(...)` is a lazy factory; a component `(props) => JSX` is eager. Plugin panels are code-split automatically.
+
+**Output types:**
+
+| type | contributes |
+|---|---|
+| `panel` | center/right/bottom pane opened programmatically |
+| `left-tab` | persistent tab in the left sidebar |
+| `command` | command palette entry |
+| `catalog` | searchable, faceted data-explorer tab |
+| `surface-resolver` | maps `SurfaceOpenRequest` kind → panel id |
+| `binding` | React component mounted in the provider tree |
+| `provider` | binding that also receives `apiBaseUrl`, `authHeaders`, etc. |
+
+**Composing plugins:**
+
+```ts
+import { composePlugins } from "@hachej/boring-workspace"
+
+export const myPlugin = composePlugins({
+  id: "my-plugin",
+  plugins: [panelsPlugin, catalogPlugin, surfacePlugin],
+})
+```
+
+**Registering with the shell:**
+
+```tsx
+<WorkspaceProvider plugins={[myPlugin]} {...shellOptions}>
+  <IdeLayout />
+</WorkspaceProvider>
+```
+
+### Key architectural flows
+
+**How panels render:**
+
+1. `WorkspaceProvider` creates a `PanelRegistry` and calls `bootstrap()` with all plugins.
+2. `bootstrap()` calls `registry.register()` for every panel output.
+3. `PanelRegistry.register()` auto-detects lazy vs eager from `component.length`.
+4. `DockviewShell` calls `registry.getComponents()` which wraps lazy panels in `React.lazy + Suspense + PluginErrorBoundary`.
+5. When dockview opens a panel by id it renders the wrapped component.
+
+**Bridge / UI commands:**
+
+The workspace has a typed pubsub bus (`events`, `postUiCommand`) for communication between the agent backend and the frontend. Use `events.on(workspaceEvents.xxx, handler)` on the front, and `postUiCommand(...)` from the server-side plugin to trigger panel opens, file navigation, etc.
+
+**Surface resolver:**
+
+A surface resolver maps an agent-emitted `SurfaceOpenRequest` (e.g. `{ kind: "open-series", seriesId: "GDPC1" }`) to a panel-open call. Register via a `type: "surface-resolver"` output with a `resolve(req) → SurfacePanelResolution | null` function.
+
+### Vite alias convention
+
+Apps that consume `@hachej/boring-workspace` from source for HMR (e.g. `apps/workspace-playground`) gate the source alias on a `BORING_USE_LOCAL_PACKAGES=1` env var. If you add a new `@hachej/boring-workspace/*` subpath import, add it to **both**:
+
+- the app's `vite.config.ts` → `resolve.alias`
+- `packages/workspace/package.json` → `exports` map (and rebuild workspace)
+
+### TypeScript
+
+Each package has its own `tsconfig.json`. Workspace has separate `tsconfig.front.json` and `tsconfig.server.json`. Run `pnpm typecheck` from root to check all. `moduleResolution: Bundler` is used throughout — subpath imports follow `package.json` exports.
 
 ---
 
