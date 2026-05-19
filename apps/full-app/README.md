@@ -1,42 +1,193 @@
 # full-app
 
-Reference app wiring for `@hachej/boring-core` + `@hachej/boring-agent` + `@hachej/boring-workspace`. This is the production-shaped template — see [`packages/core/docs/CORE.md`](../../packages/core/docs/CORE.md) for the full spec ([Quickstart](../../packages/core/docs/CORE.md#quickstart), [Deployment](../../packages/core/docs/CORE.md#deployment)).
+<div align="center">
 
-## Run Locally
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-1. Install workspace deps:
+</div>
+
+The production reference app for boring-ui. Wires together `@hachej/boring/core` + `@hachej/boring-agent` + `@hachej/boring-workspace` into a deployable shell with Postgres, auth, workspaces, multi-user invites, email flows, and a full IDE workbench.
 
 ```bash
-pnpm install
+git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm install && pnpm --filter full-app dev
 ```
 
-2. Configure env:
+---
+
+## TL;DR
+
+**The Problem**: You know how boring-ui's individual packages work, but you need a real app — one you can deploy, that has user accounts, Postgres-backed workspaces, team invites with roles, email verification, password reset, and an agent workbench — all running together.
+
+**The Solution**: `full-app` is the canonical production-shaped template. It's the proof that the three packages compose correctly. It ships with Vercel + Fly.io deployment guides, a Dockerfile, a post-deploy smoke test, and Playwright e2e suites.
+
+### Why Use full-app?
+
+| Feature | What It Does |
+|---------|--------------|
+| **Full auth stack** | Email/password + email verification + password reset + magic links (better-auth) |
+| **Workspace management** | CRUD, member roles (owner/editor/viewer), invites with TTL, email notifications |
+| **Agent workbench** | Chat, file tree, editor panels, command palette — all wired to the agent runtime |
+| **Three deployment targets** | Vercel (Fluid Compute + Firecracker VMs), Fly.io (Docker), Docker (anywhere) |
+| **Post-deploy smoke** | Validates signup → email verification → password reset → capabilities in production |
+| **Plugin-ready** | Compose workspace plugins via `WorkspaceProvider` — ask-user, data-catalog, or your own |
+
+---
+
+## Quick Example
+
+```bash
+# Clone and install
+git clone https://github.com/hachej/boring-ui.git
+cd boring-ui && pnpm install
+
+# Copy env example and fill in real values
+cp apps/full-app/.env.example apps/full-app/.env
+# Edit .env: DATABASE_URL, BETTER_AUTH_SECRET, MAIL_TRANSPORT_URL, etc.
+
+# Run migrations
+pnpm --filter full-app migrate
+
+# Start the dev server
+pnpm --filter full-app dev
+```
+
+Open `http://localhost:5173`. You get:
+- Sign-in / sign-up pages with email flow
+- Workspace creation and member invites
+- A full agent workbench at `/workspace/:id`
+- User profile at `/me`
+
+---
+
+## What's Inside
+
+### Server (`src/server/`)
+
+| File | Purpose |
+|------|---------|
+| `main.ts` | Production entrypoint — `createCoreApp()` + agent routes + static file serving |
+| `dev.ts` | Dev entrypoint with HMR-friendly rebuild chain |
+| `migrate.ts` | Standalone migration runner (run before first boot) |
+| `vercel-entry.ts` | Vercel Fluid Compute handler — same app, serverless topology |
+
+The server flow:
+```
+createCoreApp(config)
+  ├── Postgres DB (Drizzle)
+  ├── better-auth (sessions, email, reset)
+  ├── Core routes (/api/v1/workspaces/*, /api/v1/me, /api/v1/invites/*)
+  ├── Agent routes (registerAgentRoutes)
+  ├── Helmet + CORS + rate limits + secret redaction
+  └── Graceful shutdown
+```
+
+### Frontend (`src/front/`)
+
+| File | Purpose |
+|------|---------|
+| `main.tsx` | Mounts `<BoringApp>` → routes → `WorkspaceProvider` → `IdeLayout` |
+
+```tsx
+<BoringApp>
+  <Route path="/workspace/:id" element={
+    <WorkspaceProvider chatPanel={ChatPanel} workspaceId={id}>
+      <IdeLayout />
+    </WorkspaceProvider>
+  } />
+</BoringApp>
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                  Browser (Vite/Svelte)           │
+│                                                  │
+│  /auth/*   /me   /workspace/:id                  │
+│  signin → workbench → chat + panels + tree      │
+└──────────────────────┬──────────────────────────┘
+                       │ HTTP (cookie auth)
+┌──────────────────────▼──────────────────────────┐
+│               full-app (Fastify)                 │
+│                                                  │
+│  ┌──────────────────────────────────────────┐   │
+│  │  @hachej/boring/core                     │   │
+│  │  ├── better-auth (sessions, email)       │   │
+│  │  ├── workspace CRUD + invites + roles    │   │
+│  │  ├── capabilities aggregation            │   │
+│  │  └── config loader (TOML + env + Zod)   │   │
+│  └──────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────┐   │
+│  │  @hachej/boring/agent                    │   │
+│  │  ├── agent harness (pi-coding-agent)     │   │
+│  │  ├── tool catalog (bash, read, write…)   │   │
+│  │  └── chat session management             │   │
+│  └──────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────┐   │
+│  │  Helmets, CORS, rate limits, redaction   │   │
+│  └──────────────────────────────────────────┘   │
+└──────────────────────┬──────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────┐
+│              Postgres (Drizzle ORM)              │
+│  users · sessions · workspaces · members        │
+│  invites · workspaces.runtime · user_settings    │
+└──────────────────────────────────────────────────┘
+```
+
+---
+
+## Installation
+
+### Prerequisites
+
+- **Node.js** ≥ 18
+- **pnpm** ≥ 8
+- **Postgres** (local or cloud — Neon, Supabase, Supavisor, etc.)
+
+### From Source
+
+```bash
+git clone https://github.com/hachej/boring-ui.git
+cd boring-ui && pnpm install
+```
+
+### Docker
+
+```bash
+docker build -f apps/full-app/Dockerfile -t boring-full-app .
+docker run --rm -p 3000:3000 --env-file apps/full-app/.env boring-full-app
+```
+
+---
+
+## Quick Start
+
+### 1. Environment
 
 ```bash
 cp apps/full-app/.env.example apps/full-app/.env
 ```
 
-Update `.env` with real values for:
-- `DATABASE_URL`
-- `BETTER_AUTH_SECRET`
-- `WORKSPACE_SETTINGS_ENCRYPTION_KEY`
-- `BETTER_AUTH_URL`
+Required variables:
+```bash
+DATABASE_URL=postgres://...
+BETTER_AUTH_SECRET=<64-char hex>
+BETTER_AUTH_URL=http://localhost:5173
+WORKSPACE_SETTINGS_ENCRYPTION_KEY=<32-byte hex>
+MAIL_FROM=noreply@yourapp.dev
+MAIL_TRANSPORT_URL=console://    # dev: logs to stdout
+```
 
-Optional model default:
-- `BORING_AGENT_DEFAULT_MODEL_PROVIDER` + `BORING_AGENT_DEFAULT_MODEL_ID`
-- For Infomaniak OpenAI-compatible chat, set `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, and `BORING_AGENT_INFOMANIAK_MODEL`
-
-Optional Vercel sandbox lifetime:
-- `BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS` controls new sandbox auto-stop timeout. Vercel currently rejects values above `2700000`.
-- Dirty `vercel-sandbox` workspaces snapshot every 10 minutes; `BORING_AGENT_SNAPSHOT_KEEP` controls retained snapshots and defaults to `2`.
-
-3. Run DB migrations (before app boot):
+### 2. Migrate
 
 ```bash
 pnpm --filter full-app migrate
 ```
 
-4. Start the app:
+### 3. Run
 
 ```bash
 pnpm --filter full-app dev
@@ -44,149 +195,192 @@ pnpm --filter full-app dev
 
 Frontend: `http://localhost:5173`
 
-## Build + Start
+### 4. Build + Start (production)
 
 ```bash
 pnpm --filter full-app build
 pnpm --filter full-app start
 ```
 
-Production server listens on `PORT` (default `3000`).
+Production listens on `PORT` (default `3000`).
 
-## Smoke Test
+---
 
-```bash
-pnpm --filter full-app e2e:smoke
-```
+## Deployment
 
-The smoke test validates app boot, sign-in flow (`dev@local`), and `/workspace/:id` route load.
-
-## Post-Deploy Smoke
-
-Run against a deployed URL:
+### Vercel (recommended for remote execution)
 
 ```bash
-DEPLOY_URL=https://<your-app>.fly.dev \
-pnpm --filter full-app smoke:post-deploy
+cd apps/full-app
+vercel link
+vercel env add DATABASE_URL production
+vercel env add BETTER_AUTH_SECRET production
+vercel env add BETTER_AUTH_URL production
+vercel env add MAIL_TRANSPORT_URL production
+vercel pull --yes --environment=production
+vercel build --prod && vercel deploy --prebuilt --prod
 ```
 
-Recommended env for reliable email verification + password reset polling:
+**Key config:**
+- `maxDuration: 300` (requires Vercel plan with 300s functions)
+- `BORING_AGENT_MODE=vercel-sandbox` (default on Vercel — Firecracker microVMs)
+- Sandbox handles persisted in Postgres runtime store, not `/tmp`
+
+### Fly.io (recommended for local/bwrap mode)
 
 ```bash
-RESEND_API_KEY=<resend-api-key>      # proves the real Resend send happened
-AGENTMAIL_API_KEY=<agentmail-key>    # creates/uses a real @agentmail.to inbox and proves delivery
-# Optional when reusing an inbox instead of creating one per run:
-AGENTMAIL_INBOX_ID=<inbox-id>
-AGENTMAIL_EMAIL=<inbox-address>
-# Or bypass AgentMail and target a known verified recipient/domain:
-SMOKE_EMAIL_DOMAIN=<resend-verified-domain>   # ignored when AGENTMAIL_API_KEY is set and SMOKE_EMAIL is unset
-SMOKE_EMAIL=<recipient@example.com>            # explicit recipient override
+fly launch --no-deploy
+fly secrets set DATABASE_URL=... BETTER_AUTH_SECRET=... \
+  BETTER_AUTH_URL=https://<app>.fly.dev MAIL_TRANSPORT_URL=...
+fly deploy
 ```
 
-Checks:
-- `GET /health` returns `200` + `{ ok: true }` within 10s
-- signup endpoint succeeds (`/api/auth/sign-up/email` or `/auth/sign-up/email`)
-- verification link is found (signup response payload or Resend polling when `RESEND_API_KEY` is set)
-- forgot-password sends a real reset email; when both `RESEND_API_KEY` and `AGENTMAIL_API_KEY` are set, smoke requires both Resend sent-mail visibility and AgentMail inbox receipt
-- reset token is consumed, new password signs in, and old password is rejected
-- `GET /api/v1/capabilities` returns `200` and includes `agent` key
+**Key config:**
+- Docker-based, always-on
+- `BORING_AGENT_MODE=local` for bwrap sandboxing
+- Full Postgres-backed workspace management
 
-This is also wired into GitHub Actions via `.github/workflows/post-deploy-smoke.yml` (workflow_dispatch or repository_dispatch).
-
-## Docker
+### Docker (anywhere)
 
 ```bash
 docker build -f apps/full-app/Dockerfile -t boring-full-app .
 docker run --rm -p 3000:3000 --env-file apps/full-app/.env boring-full-app
 ```
 
-## Vercel Walkthrough
+Same binary, portable to any container host.
 
-`full-app` can run on Vercel as a thin Node/Fluid Compute orchestrator while agent commands and workspace files run inside Vercel Sandbox Firecracker microVMs.
+---
 
-1. Link the app from this directory:
+## Smoke Testing
 
-```bash
-cd apps/full-app
-vercel link
-```
-
-2. Configure required production env:
+### Local e2e
 
 ```bash
-vercel env add DATABASE_URL production
-vercel env add BETTER_AUTH_SECRET production
-vercel env add WORKSPACE_SETTINGS_ENCRYPTION_KEY production
-vercel env add BETTER_AUTH_URL production # https://<your-app>.vercel.app
-vercel env add MAIL_FROM production
-vercel env add MAIL_TRANSPORT_URL production
-vercel env add VERCEL_TEAM_ID production
-vercel env add VERCEL_PROJECT_ID production
+pnpm --filter full-app e2e:smoke
 ```
 
-Set `BORING_AGENT_MODE=vercel-sandbox` if you want it explicit; the Vercel handler defaults to that mode. Production on Vercel should use Vercel OIDC automatically. For local Vercel emulation, use `vercel link && vercel env pull` or set `VERCEL_TOKEN`.
+Validates:
+- App boot
+- Sign-in flow (`dev@local`)
+- `/workspace/:id` route load
 
-3. Run migrations against the production database before first traffic:
+### Post-deploy smoke (against a live URL)
 
 ```bash
-pnpm --filter full-app migrate
+DEPLOY_URL=https://<your-app>.fly.dev \
+pnpm --filter full-app smoke:post-deploy
 ```
 
-4. Deploy:
-
+**Enhanced with real mail verification:**
 ```bash
-cd apps/full-app
-vercel pull --yes --environment=production
-vercel build --prod
-vercel deploy --prebuilt --prod
+RESEND_API_KEY=<key> \
+AGENTMAIL_API_KEY=<key> \
+DEPLOY_URL=https://<your-app>.fly.dev \
+pnpm --filter full-app smoke:post-deploy
 ```
 
-5. Verify:
+| Check | What It Validates |
+|-------|-------------------|
+| `GET /health` | Server responds 200 within 10s |
+| Sign-up | Creates user account |
+| Email verification | Finds verification link in email |
+| Forgot-password | Sends real reset email + consumes token + new password works |
+| `GET /api/v1/capabilities` | Returns 200 with `agent` key |
 
-```bash
-curl https://<your-app>.vercel.app/health
-DEPLOY_URL=https://<your-app>.vercel.app pnpm --filter full-app smoke:post-deploy
-```
+---
 
-Notes:
+## Configuration
 
-- `maxDuration: 300` assumes a Vercel plan that supports 300 second Node functions. Lower it in `vercel.json` for smaller plan limits.
-- The Vercel function does not execute untrusted code. It forwards agent filesystem and shell work to `vercel-sandbox` mode.
-- Sandbox handles are persisted through core's Postgres workspace runtime store, not the function filesystem.
-- The function uses `/tmp/boring-workspaces` only as ephemeral host scratch space; real workspace state belongs in Vercel Sandbox.
+### Environment Variables
 
-## Fly.io Walkthrough
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | Postgres connection string |
+| `BETTER_AUTH_SECRET` | Yes | Session signing key (64-char hex) |
+| `BETTER_AUTH_URL` | Yes | Public app URL |
+| `WORKSPACE_SETTINGS_ENCRYPTION_KEY` | Yes | Workspace settings encryption key |
+| `MAIL_FROM` | Yes (prod) | Email sender address |
+| `MAIL_TRANSPORT_URL` | Yes (prod) | `resend://key`, `smtp://...`, or `console://` |
+| `PORT` | No | Server port (default 3000) |
+| `BORING_AGENT_MODE` | No | `direct`, `local`, or `vercel-sandbox` |
+| `ANTHROPIC_API_KEY` | Yes (prod) | Claude API key |
+| `INFOMANIAK_API_TOKEN` | No | Infomaniak OpenAI-compatible provider |
+| `BORING_AGENT_DEFAULT_MODEL_PROVIDER` | No | Override default provider |
+| `BORING_AGENT_DEFAULT_MODEL_ID` | No | Override default model |
 
-Fly remains a Docker fallback for always-on deployments or local `bwrap` mode.
+---
 
-1. Launch app shell:
+## How full-app Compares
 
-```bash
-fly launch --no-deploy
-```
+| Feature | full-app | Custom Express app | Next.js app |
+|---------|----------|--------------------|-------------|
+| Auth flows | ✅ email + reset + magic links | ❌ Build yourself | ⚠️ NextAuth (different UX) |
+| Workspace management | ✅ CRUD + invites + roles | ❌ Build yourself | ❌ Build yourself |
+| Agent integration | ✅ Pi harness + tool catalog | ❌ Manual | ❌ Manual |
+| Multi-tenant safe | ✅ Workspace-scoped routes + guards | ❌ DIY | ❌ DIY |
+| Deployment guides | ✅ Vercel + Fly.io + Docker | ⚠️ Whatever you choose | ✅ Vercel only |
+| Post-deploy smoke | ✅ signup → email → reset → capabilities | ❌ DIY | ❌ DIY |
 
-2. Set required secrets:
+**When to use full-app:**
+- You're building a multi-user agent app and want a working starting point
+- You need to see how core + agent + workspace compose in the real world
+- You want deployable templates (Vercel or Fly.io) with smoke tests
 
-```bash
-fly secrets set \
-  DATABASE_URL=... \
-  BETTER_AUTH_SECRET=... \
-  WORKSPACE_SETTINGS_ENCRYPTION_KEY=... \
-  BETTER_AUTH_URL=https://<your-app>.fly.dev \
-  MAIL_FROM=... \
-  MAIL_TRANSPORT_URL=...
-```
+**When it might not fit:**
+- You just want to try the agent quickly (use `npx @hachej/boring-ui-cli`)
+- You only need the workbench (use `apps/workspace-playground`)
+- You only need the agent (use `apps/agent-playground`)
+- You want to build your own auth/workspace stack from scratch (import `@boring/core` subpaths directly)
 
-3. Deploy:
+---
 
-```bash
-fly deploy
-```
+## Troubleshooting
 
-4. Verify:
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `database connection refused` | Postgres not running or wrong URL | Check `DATABASE_URL` and network access |
+| `migration failed` | Schema mismatch or missing tables | Run `pnpm --filter full-app migrate` before first boot |
+| `sign-up succeeds but no verification email` | Mail transport not configured | Set `MAIL_TRANSPORT_URL=console://` for dev logs |
+| `workspace/:id` 403 | User not member of workspace | Create workspace first from `/me`, or seed a default |
+| `agent chat 500` | Missing `ANTHROPIC_API_KEY` | Set the env var and restart |
+| `vercel function timeout` | Long agent response hitting limit | Check `maxDuration` in `vercel.json` (plan must support it) |
 
-```bash
-curl https://<your-app>.fly.dev/health
-```
+---
 
-See `packages/core/docs/CORE.md` for full deployment requirements and runtime topology.
+## Limitations
+
+- **Private app template** — Not a published npm package. Clone from the monorepo and adapt.
+- **Opinionated stack** — Postgres + Drizzle + better-auth + Fastify. Swapping any layer requires code changes.
+- **Vercel maxDuration** — Agent chat can timeout on lower-tier Vercel plans. The `maxDuration: 300` setting requires a plan that supports 5-minute functions.
+- **No GitHub OAuth** — Deferred to v1.x. Email/password + magic links only.
+- **No billing/Stripe** — Multi-tenant billing is future `@boring/cloud` territory.
+- **Single language server** — No LSP integration. The editor (CodeMirror6) has syntax highlighting but no semantic features.
+
+---
+
+## FAQ
+
+**Q: Do I need to run migrations every time I deploy?**  
+A: Yes, run `pnpm --filter full-app migrate` before the first boot after a schema change. It's idempotent — safe to run on every deploy.
+
+**Q: Can I use this without Postgres?**  
+A: Not in production. For dev, you can set `CORE_STORES=local` in the core config to use in-memory stores, but state resets on restart.
+
+**Q: What's the difference between `dev.ts` and `main.ts`?**  
+A: `dev.ts` rebuilds all workspace packages before each run for HMR. `main.ts` is the production entrypoint that runs pre-built artifacts.
+
+**Q: How do I add custom plugins to full-app?**  
+A: Register them in the `WorkspaceProvider` plugins array. See `packages/workspace/README.md` for the plugin contract.
+
+**Q: Can I deploy full-app to Render or Railway?**  
+A: Yes — both support Docker + Postgres. Use the Dockerfile and set the required env vars. The app is 12-factor.
+
+---
+
+*About Contributions:* Please don't take this the wrong way, but I do not accept outside contributions for any of my projects. I simply don't have the mental bandwidth to review anything, and it's my name on the thing, so I'm responsible for any problems it causes; thus, the risk-reward is highly asymmetric from my perspective. I'd also have to worry about other "stakeholders," which seems unwise for tools I mostly make for myself for free. Feel free to submit issues, and even PRs if you want to illustrate a proposed fix, but know I won't merge them directly. Instead, I'll have Claude or Codex review submissions via `gh` and independently decide whether and how to address them. Bug reports in particular are welcome. Sorry if this offends, but I want to avoid wasted time and hurt feelings. I understand this isn't in sync with the prevailing open-source ethos that seeks community contributions, but it's the only way I can move at this velocity and keep my sanity.
+
+---
+
+## License
+
+MIT
