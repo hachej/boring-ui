@@ -1,10 +1,43 @@
 import type { FastifyInstance } from "fastify"
 import type { BoringPluginAssetManager } from "./manager"
-import type { BoringPluginEvent } from "./types"
+import type { BoringPluginEvent, PluginRestartSurface } from "./types"
 
 export interface PluginReloadRebuild {
   ok: boolean
   diagnostics: { source: string; message: string; pluginId?: string }[]
+}
+
+/**
+ * One per plugin whose load event carried a non-empty
+ * `requiresRestart` field. Surfaced alongside the /reload response so
+ * the agent (and chat UI) can warn the user without subscribing to
+ * the SSE event stream.
+ */
+export interface PluginRestartWarning {
+  id: string
+  surfaces: PluginRestartSurface[]
+  message: string
+}
+
+/**
+ * Walk a load result's events for boring.plugin.load events that
+ * carried `requiresRestart`. Each becomes a human-readable warning
+ * with a one-line message — small, surface-aware, formatted for both
+ * humans and agents.
+ */
+export function collectRestartWarnings(events: BoringPluginEvent[]): PluginRestartWarning[] {
+  const warnings: PluginRestartWarning[] = []
+  for (const event of events) {
+    if (event.type !== "boring.plugin.load") continue
+    const surfaces = event.requiresRestart
+    if (!surfaces || surfaces.length === 0) continue
+    warnings.push({
+      id: event.id,
+      surfaces: [...surfaces],
+      message: `${event.id} reloaded — ${surfaces.join(" + ")} still on old code. Restart the server to pick up changes.`,
+    })
+  }
+  return warnings
 }
 
 export interface BoringPluginRoutesOptions {
@@ -25,6 +58,7 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
   app.post("/api/boring.reload", async (_request, reply) => {
     const scan = await manager.load()
     const rebuild = rebuildPlugins ? await rebuildPlugins() : { ok: true, diagnostics: [] }
+    const restart_warnings = collectRestartWarnings(scan.events)
     const hasFailures = scan.errors.length > 0 || rebuild.diagnostics.length > 0
     if (hasFailures) {
       return reply.status(422).send({
@@ -32,9 +66,16 @@ export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPlugi
         errors: scan.errors,
         diagnostics: rebuild.diagnostics,
         plugins: scan.loaded,
+        // Even on failure, emit warnings for plugins that DID reload
+        // — partial-failure tolerance means some loaded successfully.
+        ...(restart_warnings.length > 0 ? { restart_warnings } : {}),
       })
     }
-    return reply.send({ ok: true, plugins: scan.loaded })
+    return reply.send({
+      ok: true,
+      plugins: scan.loaded,
+      ...(restart_warnings.length > 0 ? { restart_warnings } : {}),
+    })
   })
 
   app.get("/api/agent-plugins", async () => manager.list())

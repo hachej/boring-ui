@@ -59,7 +59,17 @@ export interface CreateAgentAppOptions {
   sessionNamespace?: string
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
-  beforeReload?: () => void | Promise<void>
+  /**
+   * Called BEFORE the harness reloads its session. May return a
+   * `ReloadHookResult` (with `restart_warnings`) — surfaced verbatim on
+   * the /api/v1/agent/reload response. `void` / undefined return = no
+   * warnings (backwards compatible).
+   */
+  beforeReload?: () =>
+    | void
+    | import("./http/routes/reload.js").ReloadHookResult
+    | undefined
+    | Promise<void | import("./http/routes/reload.js").ReloadHookResult | undefined>
   /**
    * Optional dynamic system-prompt source forwarded to the harness. The
    * harness calls it whenever it builds or rebuilds a session prompt. Used by

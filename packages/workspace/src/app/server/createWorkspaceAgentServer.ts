@@ -19,7 +19,7 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
-import { boringPluginRoutes } from "../../server/agentPlugins/routes"
+import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
@@ -564,11 +564,17 @@ export async function createWorkspaceAgentServer(
       // entire reload, leaving every other plugin on stale code and
       // contradicting the "previous live state untouched, other
       // plugins unaffected" recovery story.
+      let restart_warnings: ReturnType<typeof collectRestartWarnings> = []
       if (pluginHotReload) {
-        await boringAssetManager.load()
+        const scan = await boringAssetManager.load()
+        restart_warnings = collectRestartWarnings(scan.events)
         await rebuildPlugins()
       }
       await opts.beforeReload?.()
+      // Surface restart warnings on the /api/v1/agent/reload response so
+      // the chat UI / agent can render "restart needed for: routes" when
+      // a plugin's server file changed mid-session.
+      return restart_warnings.length > 0 ? { restart_warnings } : undefined
     },
     pi: {
       ...pluginCollection.agentOptions.pi,
