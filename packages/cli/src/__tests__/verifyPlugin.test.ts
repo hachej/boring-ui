@@ -219,7 +219,8 @@ describe("verifyPlugin", () => {
     const result = verifyPlugin({ workspaceRoot })
     const outcome = result.outcomes.find((o) => o.id === "added-server")!
     expect(outcome.warnings).toHaveLength(1)
-    expect(outcome.warnings[0]).toMatch(/cached signature: none/)
+    expect(outcome.warnings[0]).toMatch(/server file changed/i)
+    expect(outcome.warnings[0]).toMatch(/restart the workspace process/i)
   })
 
   test("formatVerifyResult prints a clean OK line when all pass", () => {

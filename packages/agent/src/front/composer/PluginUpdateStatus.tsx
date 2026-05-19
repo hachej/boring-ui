@@ -75,7 +75,9 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
           <span className="text-[oklch(0.45_0.13_148)]" aria-hidden="true">✓</span>
           <span className="flex-1">
             {state.reloaded
-              ? "Plugins updated."
+              ? warnings.length > 0
+                ? "Plugins partially updated."
+                : "Plugins updated."
               : "Plugins will reload on the next message."}
           </span>
           <button
@@ -109,7 +111,7 @@ export function PluginUpdateStatus({ state, onDismiss, onRetry }: PluginUpdateSt
               ))}
             </ul>
             <p className="mt-1 text-foreground/70">
-              The front bundle reloaded successfully, but routes and agent tools were wired at boot. Restart the server to pick up the new code.
+              The front bundle reloaded successfully, but routes and agent tools were wired at boot. Stop and restart the workspace process (Ctrl-C, then re-run your dev command) to pick up the new code.
             </p>
           </div>
         ) : null}

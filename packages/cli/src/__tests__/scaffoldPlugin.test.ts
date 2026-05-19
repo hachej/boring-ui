@@ -15,10 +15,12 @@ describe("scaffoldPlugin", () => {
     rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
-  test("creates .pi/extensions/<name>/{package.json,front/index.tsx,server/index.ts}", () => {
+  test("creates .pi/extensions/<name>/{package.json,front/index.tsx,server/index.ts,.gitignore}", () => {
     const result = scaffoldPlugin({ name: "my-plugin", workspaceRoot })
     expect(result.pluginDir).toBe(join(workspaceRoot, ".pi", "extensions", "my-plugin"))
-    expect(result.filesCreated).toHaveLength(3)
+    expect(result.filesCreated).toHaveLength(4)
+    const gitignore = readFileSync(join(result.pluginDir, ".gitignore"), "utf8")
+    expect(gitignore).toContain(".boring-signature.json")
 
     const pkg = JSON.parse(readFileSync(join(result.pluginDir, "package.json"), "utf8"))
     expect(pkg).toMatchObject({

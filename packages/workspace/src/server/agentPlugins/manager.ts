@@ -157,9 +157,10 @@ function computeRequiresRestart(
   // Both present — we can't compare the PREVIOUS file's content (it's
   // been overwritten). Store the serverPath's fileSignature on the
   // record at load time and compare; for the current revision we just
-  // recompute. If the previous record carries no `serverSignature`, this
-  // is the first reload after we added the field — be conservative and
-  // flag as restart-needed so users see the prompt at least once.
+  // recompute. Every record set since this field was added carries
+  // `serverSignature` (see the load loop below), so the undefined branch
+  // is defensive — kept as belt-and-braces in case a future code path
+  // forgets to populate it.
   const prevSig = previous.serverSignature
   if (prevSig === undefined) return ["routes", "agentTools"]
   const nextSig = fileSignature(next.serverPath)

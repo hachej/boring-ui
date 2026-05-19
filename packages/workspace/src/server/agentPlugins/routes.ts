@@ -34,7 +34,7 @@ export function collectRestartWarnings(events: BoringPluginEvent[]): PluginResta
     warnings.push({
       id: event.id,
       surfaces: [...surfaces],
-      message: `${event.id} reloaded — ${surfaces.join(" + ")} still on old code. Restart the server to pick up changes.`,
+      message: `${event.id} reloaded — front bundle is live, but server-side ${surfaces.join(" + ")} were wired at boot and still run the old code. Stop and restart the workspace process (Ctrl-C, then re-run your dev command) to pick up changes.`,
     })
   }
   return warnings

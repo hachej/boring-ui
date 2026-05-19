@@ -439,7 +439,8 @@ describe("boring agent plugin assets", () => {
       expect(body.restart_warnings).toHaveLength(1)
       expect(body.restart_warnings![0].id).toBe("boring-plugin-test")
       expect(body.restart_warnings![0].surfaces).toEqual(["routes", "agentTools"])
-      expect(body.restart_warnings![0].message).toContain("Restart the server")
+      expect(body.restart_warnings![0].message).toContain("restart the workspace process")
+      expect(body.restart_warnings![0].message).toContain("Ctrl-C")
     } finally {
       await app.close()
     }
