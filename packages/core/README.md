@@ -1,9 +1,9 @@
-# @boring/core
+# @hachej/boring-core
 
 Database, auth, and app factory for boring-ui apps.
 
 ```bash
-pnpm add @boring/core
+pnpm add @hachej/boring-core
 ```
 
 ---
@@ -22,7 +22,7 @@ pnpm add @boring/core
 Server:
 
 ```ts
-import { createCoreApp, loadConfig } from "@boring/core/server"
+import { createCoreApp, loadConfig } from "@hachej/boring-core/server"
 
 const config = await loadConfig()
 const app = await createCoreApp(config)
@@ -32,8 +32,8 @@ await app.listen({ port: config.port })
 Frontend:
 
 ```tsx
-import { BoringApp } from "@boring/core/front"
-import { WorkspaceProvider, IdeLayout } from "@boring/workspace"
+import { BoringApp } from "@hachej/boring-core/front"
+import { WorkspaceProvider, IdeLayout } from "@hachej/boring-workspace"
 
 export function App() {
   return (
@@ -59,7 +59,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 Run migrations:
 
 ```bash
-pnpm --filter @boring/core drizzle:migrate
+pnpm --filter @hachej/boring-core drizzle:migrate
 ```
 
 ---
@@ -67,9 +67,9 @@ pnpm --filter @boring/core drizzle:migrate
 ## Package surfaces
 
 ```ts
-import { ... } from "@boring/core/server"   // Fastify app factory, config
-import { ... } from "@boring/core/front"    // React shell, auth pages
-import { ... } from "@boring/core/db"       // Drizzle schema and client
+import { ... } from "@hachej/boring-core/server"   // Fastify app factory, config
+import { ... } from "@hachej/boring-core/front"    // React shell, auth pages
+import { ... } from "@hachej/boring-core/db"       // Drizzle schema and client
 ```
 
 ---
@@ -78,6 +78,8 @@ import { ... } from "@boring/core/db"       // Drizzle schema and client
 
 | Package | Role |
 |---|---|
-| `@boring/core` | DB, auth, app factory |
-| `@boring/workspace` | Plugin system, layouts |
-| `@boring/agent` | Agent runtime + tools |
+| `@hachej/boring-agent` | Agent runtime + tools |
+| `@hachej/boring-workspace` | Plugin system, workbench |
+| `@hachej/boring-core` | DB, auth, app factory |
+| `@hachej/boring-ui-kit` | Shared UI primitives |
+| `@hachej/boring-ui-cli` | Zero-setup CLI |

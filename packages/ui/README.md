@@ -1,16 +1,16 @@
-# @boring/ui
+# @hachej/boring-ui-kit
 
 Shared UI primitives for boring-ui packages and plugins.
 
 ```bash
-pnpm add @boring/ui
+pnpm add @hachej/boring-ui-kit
 ```
 
 ---
 
 ## What it provides
 
-shadcn-style React components with no global CSS — styles come from the host package CSS (`@boring/workspace/globals.css`).
+shadcn-style React components with no global CSS — styles come from the host package CSS (`@hachej/boring-workspace/globals.css`).
 
 **Layout & surfaces** — `Pane`, `PaneHeader`, `PaneBody`, `PaneToolbar`, `FloatingPanel`
 
@@ -31,7 +31,7 @@ shadcn-style React components with no global CSS — styles come from the host p
 ## Usage
 
 ```tsx
-import { Button, EmptyState, Pane, PaneHeader, PaneBody } from "@boring/ui"
+import { Button, EmptyState, Pane, PaneHeader, PaneBody } from "@hachej/boring-ui-kit"
 
 export function MyPanel() {
   return (
@@ -50,7 +50,7 @@ Styles are provided by the host — no separate CSS import needed in plugins:
 
 ```ts
 // In your app shell (once)
-import "@boring/workspace/globals.css"
+import "@hachej/boring-workspace/globals.css"
 ```
 
 ---
@@ -59,7 +59,8 @@ import "@boring/workspace/globals.css"
 
 | Package | Role |
 |---|---|
-| `@boring/core` | DB, auth, app factory |
-| `@boring/workspace` | Plugin system, layouts |
-| `@boring/agent` | Agent runtime + tools |
-| `@boring/ui` | Shared UI primitives |
+| `@hachej/boring-agent` | Agent runtime + tools |
+| `@hachej/boring-workspace` | Plugin system, workbench |
+| `@hachej/boring-core` | DB, auth, app factory |
+| `@hachej/boring-ui-kit` | Shared UI primitives |
+| `@hachej/boring-ui-cli` | Zero-setup CLI |

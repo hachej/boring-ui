@@ -1,9 +1,9 @@
-# @boring/agent
+# @hachej/boring-agent
 
 Agent runtime and chat UI for boring-ui apps.
 
 ```bash
-pnpm add @boring/agent
+pnpm add @hachej/boring-agent
 ```
 
 ---
@@ -29,8 +29,8 @@ pnpm add @boring/agent
 ## Quickstart
 
 ```tsx
-import { ChatPanel } from "@boring/agent"
-import { WorkspaceProvider, IdeLayout } from "@boring/workspace"
+import { ChatPanel } from "@hachej/boring-agent"
+import { WorkspaceProvider, IdeLayout } from "@hachej/boring-workspace"
 
 export function App() {
   return (
@@ -44,7 +44,7 @@ export function App() {
 Server:
 
 ```ts
-import { createAgentApp } from "@boring/agent/server"
+import { createAgentApp } from "@hachej/boring-agent/server"
 
 const app = await createAgentApp({ mode: "local", workspaceRoot: process.cwd() })
 await app.listen({ port: 3001 })
@@ -65,10 +65,10 @@ BORING_AGENT_DEFAULT_MODEL_ID=claude-sonnet-4-6
 ## Package surfaces
 
 ```ts
-import { ChatPanel } from "@boring/agent"           // React chat UI
-import { ... } from "@boring/agent/server"          // Node/server entry
-import { ... } from "@boring/agent/front"           // Frontend-only
-import { ... } from "@boring/agent/shared"          // Platform-agnostic contracts
+import { ChatPanel } from "@hachej/boring-agent"           // React chat UI
+import { ... } from "@hachej/boring-agent/server"          // Node/server entry
+import { ... } from "@hachej/boring-agent/front"           // Frontend-only
+import { ... } from "@hachej/boring-agent/shared"          // Platform-agnostic contracts
 ```
 
 ---
@@ -77,6 +77,8 @@ import { ... } from "@boring/agent/shared"          // Platform-agnostic contrac
 
 | Package | Role |
 |---|---|
-| `@boring/core` | DB, auth, app factory |
-| `@boring/workspace` | Plugin system, layouts |
-| `@boring/agent` | Agent runtime + tools |
+| `@hachej/boring-agent` | Agent runtime + tools |
+| `@hachej/boring-workspace` | Plugin system, workbench |
+| `@hachej/boring-core` | DB, auth, app factory |
+| `@hachej/boring-ui-kit` | Shared UI primitives |
+| `@hachej/boring-ui-cli` | Zero-setup CLI |

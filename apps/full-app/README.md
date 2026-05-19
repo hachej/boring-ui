@@ -1,6 +1,6 @@
 # full-app
 
-Reference app wiring for `@boring/core` + `@boring/agent` + `@boring/workspace`. This is the production-ready template — see [`packages/core/docs/CORE.md`](../../packages/core/docs/CORE.md) for the full spec ([Quickstart](../../packages/core/docs/CORE.md#quickstart), [Deployment](../../packages/core/docs/CORE.md#deployment)).
+Reference app wiring for `@hachej/boring-core` + `@hachej/boring-agent` + `@hachej/boring-workspace`. This is the production-shaped template — see [`packages/core/docs/CORE.md`](../../packages/core/docs/CORE.md) for the full spec ([Quickstart](../../packages/core/docs/CORE.md#quickstart), [Deployment](../../packages/core/docs/CORE.md#deployment)).
 
 ## Run Locally
 

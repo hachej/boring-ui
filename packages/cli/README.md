@@ -1,6 +1,6 @@
-# @hachej/boring-ui
+# @hachej/boring-ui-cli
 
-**Turn an agent into an app.**
+**Turn an agent into an app — in one command.**
 
 Start a full agent workspace pointed at your current directory — chat, panels, file tree, command palette — in one command.
 
