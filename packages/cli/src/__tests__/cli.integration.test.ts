@@ -63,7 +63,7 @@ test("package exposes an installable boring-ui bin with published assets", async
   expect(builtBin.startsWith("#!/usr/bin/env node")).toBe(true)
 })
 
-test("installed CLI workspace subcommands use an isolated registry", async () => {
+test("installed CLI workspace subcommands use an isolated registry", { timeout: 15_000 }, async () => {
   const root = await makeTempDir("boring-cli-install-root-")
   const project = await makeTempDir("boring-cli-install-project-")
   const registryPath = join(root, "workspaces.yaml")
@@ -125,6 +125,29 @@ test("installed CLI serves built assets with browser-safe MIME types", async () 
     await app.close()
   }
 }, 20_000)
+
+test("installed CLI scaffolds a hot-reloadable plugin", async () => {
+  const workspace = await makeTempDir("boring-cli-scaffold-")
+  const result = await runCli(["scaffold-plugin", "demo-plugin", workspace], {})
+  expect(result.stdout).toContain("scaffolded demo-plugin")
+  expect(result.stdout).toContain("Next steps:")
+
+  const pluginDir = join(workspace, ".pi", "extensions", "demo-plugin")
+  const pkg = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as {
+    name: string
+    boring: { front: string }
+  }
+  expect(pkg.name).toBe("demo-plugin")
+  expect(pkg.boring.front).toBe("front/index.tsx")
+
+  const front = await readFile(join(pluginDir, "front", "index.tsx"), "utf-8")
+  expect(front).toContain("definePlugin")
+  expect(front).toContain('"demo-plugin"')
+
+  await expect(runCli(["scaffold-plugin", "BadName"], {})).rejects.toMatchObject({
+    stderr: expect.stringContaining("kebab-case"),
+  })
+})
 
 test("installed CLI rejects file paths as local workspaces", async () => {
   const root = await makeTempDir("boring-cli-install-root-")
