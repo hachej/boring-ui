@@ -23,9 +23,16 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).toContain("createPlugin")
     expect(prompt).toContain("registerComponent")
     expect(prompt).toContain("defineFrontPlugin")
+    // Server-side canonical shape:
+    expect(prompt).toContain("defineServerPlugin")
+    expect(prompt).toContain("@hachej/boring-workspace/server")
+    expect(prompt).toContain("execute") // not "handler"
+    expect(prompt).toContain('content: [{ type: "text"')
     // Skill pointer for deeper questions:
     expect(prompt).toContain("boring-plugin-authoring")
-    // Cap at 3000 chars — small enough to keep context budget for the user task.
-    expect(prompt.length).toBeLessThan(3000)
+    // Cap at 5000 chars — covers both front + server canonical shapes
+    // while leaving plenty of budget for the user task. Skill remains for
+    // the longer-form patterns (file visualizers, plugin composition).
+    expect(prompt.length).toBeLessThan(5000)
   })
 })
