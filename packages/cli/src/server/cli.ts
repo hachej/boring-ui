@@ -6,6 +6,7 @@ import { basename, isAbsolute, join, resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
+import { scaffoldPlugin } from "./scaffoldPlugin.js"
 
 export interface RunCliOptions {
   argv?: string[]
@@ -368,8 +369,32 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     return
   }
 
+  if (positionals[0] === "scaffold-plugin") {
+    handleScaffoldPluginCommand({ positionals })
+    return
+  }
+
   await startFolderMode({
     ...base,
     folderArg: positionals[0],
   })
+}
+
+function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
+  const name = opts.positionals[1]
+  if (!name) {
+    throw new Error("usage: boring-ui scaffold-plugin <name> [workspace]")
+  }
+  const workspaceRoot = resolve(opts.positionals[2] ?? process.cwd())
+  const result = scaffoldPlugin({ name, workspaceRoot })
+  console.log(`scaffolded ${name}`)
+  console.log(`  dir   ${result.pluginDir}`)
+  for (const file of result.filesCreated) {
+    console.log(`  +     ${file}`)
+  }
+  console.log("")
+  console.log("Next steps:")
+  console.log(`  1. npx @hachej/boring-ui-cli ${workspaceRoot}`)
+  console.log(`  2. ask the agent: /reload`)
+  console.log(`  3. open the "${name}" tab in the left sidebar`)
 }

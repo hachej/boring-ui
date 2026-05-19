@@ -50,7 +50,17 @@ and the asset manager loads it identically whether it lives in
 
 ## Minimal hot-reloadable user plugin
 
-Write exactly these two files under `<workspace>/.pi/extensions/my-plugin/`:
+The fastest way is the CLI scaffold (writes `package.json` + `front/index.tsx`
+into `<workspace>/.pi/extensions/<name>/`, then a `/reload` picks it up):
+
+```sh
+# Run from inside the workspace root:
+npx @hachej/boring-ui-cli scaffold-plugin my-plugin
+# …or pass the workspace path explicitly:
+npx @hachej/boring-ui-cli scaffold-plugin my-plugin /path/to/workspace
+```
+
+Or write the two files by hand:
 
 `package.json`
 
