@@ -2,19 +2,39 @@ import type { FastifyInstance } from "fastify"
 import type { BoringPluginAssetManager } from "./manager"
 import type { BoringPluginEvent } from "./types"
 
+export interface PluginReloadRebuild {
+  ok: boolean
+  diagnostics: { source: string; message: string; pluginId?: string }[]
+}
+
 export interface BoringPluginRoutesOptions {
   manager: BoringPluginAssetManager
+  /**
+   * Server-side plugin rebuild closure (jiti re-import of dir-source
+   * entries). Called AFTER the asset manager scan. Per-plugin failures
+   * surface as diagnostics; combined with asset-manager errors into the
+   * 422 response body so the agent's /reload UI can show them. Optional —
+   * tests that exercise the route in isolation can omit it.
+   */
+  rebuildPlugins?: () => Promise<PluginReloadRebuild>
 }
 
 export async function boringPluginRoutes(app: FastifyInstance, opts: BoringPluginRoutesOptions): Promise<void> {
-  const { manager } = opts
+  const { manager, rebuildPlugins } = opts
 
   app.post("/api/boring.reload", async (_request, reply) => {
-    const result = await manager.load()
-    if (result.errors.length > 0) {
-      return reply.status(422).send({ ok: false, errors: result.errors, plugins: result.loaded })
+    const scan = await manager.load()
+    const rebuild = rebuildPlugins ? await rebuildPlugins() : { ok: true, diagnostics: [] }
+    const hasFailures = scan.errors.length > 0 || rebuild.diagnostics.length > 0
+    if (hasFailures) {
+      return reply.status(422).send({
+        ok: false,
+        errors: scan.errors,
+        diagnostics: rebuild.diagnostics,
+        plugins: scan.loaded,
+      })
     }
-    return reply.send({ ok: true, plugins: result.loaded })
+    return reply.send({ ok: true, plugins: scan.loaded })
   })
 
   app.get("/api/agent-plugins", async () => manager.list())

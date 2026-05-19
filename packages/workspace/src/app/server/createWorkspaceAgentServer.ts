@@ -546,7 +546,10 @@ export async function createWorkspaceAgentServer(
   })
   await boringAssetManager.load()
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
-  await app.register(boringPluginRoutes, { manager: boringAssetManager })
+  await app.register(boringPluginRoutes, {
+    manager: boringAssetManager,
+    rebuildPlugins,
+  })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }
