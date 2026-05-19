@@ -96,21 +96,102 @@ export type BoringFrontFactoryWithId = BoringFrontFactory & {
 export type WorkspaceFrontPluginInput = WorkspaceFrontPlugin | BoringFrontFactoryWithId
 
 /**
- * Wrap a `BoringFrontFactory` with `pluginId` (and optional label)
- * metadata so it can be passed directly to `WorkspaceProvider.plugins`.
+ * Declarative plugin config — the canonical shape for `definePlugin`.
+ *
+ * Each `<thing>s` field is an array of registration objects matching the
+ * same shape `api.register<Thing>(...)` accepts. The plugin runtime loops
+ * through each non-empty field and calls the corresponding `api.register*`
+ * method internally — composition is just JS spread + concat.
+ *
+ *   definePlugin({
+ *     id: "my-plugin",
+ *     label: "My Plugin",
+ *     panels: [{ id: "my-plugin.panel", label: "My Plugin", component: MyPane }],
+ *     commands: [{ id: "my-plugin.open", title: "Open My Plugin", panelId: "my-plugin.panel" }],
+ *   })
+ *
+ * The optional `setup(api)` escape hatch is called LAST, after all
+ * declarative registrations. Use only for conditional registration or
+ * runtime branching that the declarative fields can't express.
+ */
+export interface DefinePluginConfig {
+  id: string
+  label?: string
+  panels?: BoringFrontPanelRegistration<any>[]
+  commands?: BoringFrontPanelCommandRegistration[]
+  leftTabs?: BoringFrontLeftTabRegistration<any>[]
+  surfaceResolvers?: BoringFrontSurfaceResolverRegistration[]
+  providers?: BoringFrontProviderRegistration[]
+  bindings?: BoringFrontBindingRegistration[]
+  catalogs?: CatalogConfig[]
+  /**
+   * Escape hatch for registrations that can't be expressed
+   * declaratively (conditional, runtime-branched, etc.). Called LAST,
+   * after every declarative field has been registered.
+   */
+  setup?: BoringFrontFactory
+}
+
+/**
+ * Define a boring-ui plugin. Canonical (declarative) form:
+ *
+ *   export default definePlugin({
+ *     id: "my-plugin",
+ *     label: "My Plugin",
+ *     panels: [{ id: "my-plugin.panel", label: "My Plugin", component: MyPane }],
+ *   })
+ *
+ * Legacy imperative form is also accepted (factories built outside this
+ * function still work):
  *
  *   export default definePlugin("my-plugin", (api) => {
  *     api.registerPanel({ ... })
  *   }, { label: "My Plugin" })
  *
- * Returns a NEW wrapper function. The caller's factory is not mutated —
- * it stays unbranded and reusable. Calling `definePlugin` twice on the
- * same input with the same id is safe; with different ids throws.
+ * Returns a `BoringFrontFactoryWithId` — a function carrying `pluginId`
+ * (and optional `pluginLabel`) as static fields. Pass directly to
+ * `WorkspaceProvider.plugins`; the workspace's bootstrap normalizes
+ * it via `toWorkspacePlugin`.
  */
+export function definePlugin(config: DefinePluginConfig): BoringFrontFactoryWithId
 export function definePlugin(
   id: string,
   factory: BoringFrontFactory,
+  options?: { label?: string },
+): BoringFrontFactoryWithId
+export function definePlugin(
+  configOrId: DefinePluginConfig | string,
+  factory?: BoringFrontFactory,
   options: { label?: string } = {},
+): BoringFrontFactoryWithId {
+  if (typeof configOrId === "string") {
+    return definePluginFromFactory(configOrId, factory!, options)
+  }
+  return definePluginFromConfig(configOrId)
+}
+
+function definePluginFromConfig(config: DefinePluginConfig): BoringFrontFactoryWithId {
+  if (typeof config.id !== "string" || config.id.length === 0) {
+    throw new Error("definePlugin: `id` is required and must be a non-empty string")
+  }
+  const factory: BoringFrontFactory = (api) => {
+    for (const panel of config.panels ?? []) api.registerPanel(panel)
+    for (const command of config.commands ?? []) api.registerPanelCommand(command)
+    for (const tab of config.leftTabs ?? []) api.registerLeftTab(tab)
+    for (const resolver of config.surfaceResolvers ?? []) api.registerSurfaceResolver(resolver)
+    for (const provider of config.providers ?? []) api.registerProvider(provider)
+    for (const binding of config.bindings ?? []) api.registerBinding(binding)
+    for (const catalog of config.catalogs ?? []) api.registerCatalog(catalog)
+    if (config.setup) return config.setup(api)
+    return undefined
+  }
+  return definePluginFromFactory(config.id, factory, { label: config.label })
+}
+
+function definePluginFromFactory(
+  id: string,
+  factory: BoringFrontFactory,
+  options: { label?: string },
 ): BoringFrontFactoryWithId {
   const existing = (factory as Partial<BoringFrontFactoryWithId>).pluginId
   if (existing !== undefined && existing !== id) {
