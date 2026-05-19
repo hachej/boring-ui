@@ -1,4 +1,3 @@
-import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -6,10 +5,7 @@ import { createBoringAppViteAliases } from '@hachej/boring-core/app/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  resolve: createBoringAppViteAliases({
-    appRoot: __dirname,
-    monorepoRepoRoot: resolve(__dirname, '../..'),
-  }),
+  resolve: createBoringAppViteAliases({ appRoot: __dirname }),
   build: {
     outDir: 'dist/front',
     emptyOutDir: true,

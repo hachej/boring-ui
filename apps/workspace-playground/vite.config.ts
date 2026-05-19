@@ -5,10 +5,7 @@ import { resolve } from "node:path"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
 
-const baseResolve = createBoringAppViteAliases({
-  appRoot: __dirname,
-  monorepoRepoRoot: resolve(__dirname, "../.."),
-})
+const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 // The playground is the standalone dev surface for the workspace
 // package — its src/ contains `@/` (workspace-src-rooted) imports that
 // the standard helper doesn't cover. Add those alongside the shared
