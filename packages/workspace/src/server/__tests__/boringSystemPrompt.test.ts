@@ -8,12 +8,24 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).toContain("<available_skills>")
   })
 
-  test("stays minimal — the skill is the doc, the prompt is just a pointer", () => {
+  test("inlines the canonical plugin shape and forbidden patterns", () => {
     const prompt = buildBoringSystemPrompt()
-    // Doc-content shouldn't be inlined.
-    expect(prompt).not.toContain("BoringFrontFactory")
-    expect(prompt).not.toContain("registerPanel")
-    expect(prompt).not.toContain("definePlugin")
-    expect(prompt.length).toBeLessThan(700)
+    // Canonical shape — the agent should not need to guess any of these:
+    expect(prompt).toContain("definePlugin")
+    expect(prompt).toContain("registerPanel")
+    expect(prompt).toContain("registerPanelCommand")
+    expect(prompt).toContain("registerLeftTab")
+    expect(prompt).toContain("registerSurfaceResolver")
+    expect(prompt).toContain("@hachej/boring-workspace/plugin")
+    expect(prompt).toContain(".pi/extensions/")
+    expect(prompt).toContain("front/index.tsx")
+    // Forbidden patterns we want the agent to recognize:
+    expect(prompt).toContain("createPlugin")
+    expect(prompt).toContain("registerComponent")
+    expect(prompt).toContain("defineFrontPlugin")
+    // Skill pointer for deeper questions:
+    expect(prompt).toContain("boring-plugin-authoring")
+    // Cap at 3000 chars — small enough to keep context budget for the user task.
+    expect(prompt.length).toBeLessThan(3000)
   })
 })
