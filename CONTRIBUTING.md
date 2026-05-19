@@ -56,10 +56,10 @@ If it fails, look at `packages/workspace/scripts/check-plugin-invariants.mjs` fo
 
 ### Plugin shape
 
-If you're adding a plugin, start from [`plugins/_template`](plugins/_template/README.md):
+If you're adding a plugin, start from [`plugins/_template-full`](plugins/_template-full/README.md):
 
 ```bash
-cp -R plugins/_template plugins/<your-name>
+cp -R plugins/_template-full plugins/<your-name>
 # rename `sample` → `<your-name>` in src/, package.json, tsup, vitest
 pnpm install
 pnpm --filter @hachej/boring-<your-name> typecheck
@@ -85,7 +85,7 @@ A plugin breaking these rules will fail invariant lint.
 - **E2E**: `playwright`. See `apps/workspace-playground/e2e/*.spec.ts` for the patterns. The playground server is the canonical test target.
 - **Visual / DOM-shape regressions**: prefer DOM assertions over screenshot diffs (font-shift makes screenshots flaky). See `apps/workspace-playground/e2e/visual.spec.ts` for the pattern.
 
-Don't add a new test setup file. Each plugin owns a copy of `src/test-setup.ts` — keep it in sync with [`plugins/_template/src/test-setup.ts`](plugins/_template/src/test-setup.ts).
+Don't add a new test setup file. Each plugin owns a copy of `src/test-setup.ts` — keep it in sync with [`plugins/_template-full/src/test-setup.ts`](plugins/_template-full/src/test-setup.ts).
 
 ### Code style
 

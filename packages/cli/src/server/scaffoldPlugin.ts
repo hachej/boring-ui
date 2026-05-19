@@ -71,14 +71,28 @@ export function scaffoldPlugin(opts: ScaffoldPluginOptions): ScaffoldPluginResul
   }
 
   // package-canonical.json carries a `_doc_` instructional key — strip it
-  // and substitute placeholders.
-  const pkgRaw = JSON.parse(readFileSync(tplPackage, "utf8")) as Record<string, unknown>
+  // and substitute placeholders. We also set `boring.server` to the
+  // server file path so the always-included server stub below is wired.
+  const pkgRaw = JSON.parse(readFileSync(tplPackage, "utf8")) as {
+    _doc_?: unknown
+    boring?: Record<string, unknown>
+    [key: string]: unknown
+  }
   delete pkgRaw._doc_
+  pkgRaw.boring = { ...(pkgRaw.boring ?? {}), server: "server/index.ts" }
   const pkgJson = substitute(JSON.stringify(pkgRaw, null, 2), opts.name, label)
   write("package.json", `${pkgJson}\n`)
 
   const frontSource = substitute(readFileSync(tplFront, "utf8"), opts.name, label)
   write("front/index.tsx", frontSource)
+
+  // Always include a server stub. Most plugins want one eventually; an
+  // empty `agentTools: []` stub is harmless until the agent fills it in.
+  // For front-only plugins, the next-steps message printed by the CLI
+  // tells the user/agent to delete both server/index.ts AND the
+  // boring.server field — verify-plugin catches the half-removed case.
+  const serverSource = substitute(readFileSync(tplServer, "utf8"), opts.name, label)
+  write("server/index.ts", serverSource)
 
   return { pluginDir, filesCreated }
 }
