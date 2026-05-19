@@ -1,9 +1,9 @@
-# @boring/workspace
+# @hachej/boring-workspace
 
 Plugin system, panel registry, and IDE-style layout for boring-ui apps.
 
 ```bash
-pnpm add @boring/workspace
+pnpm add @hachej/boring-workspace
 ```
 
 ---
@@ -21,8 +21,8 @@ pnpm add @boring/workspace
 ## Quickstart
 
 ```tsx
-import { WorkspaceProvider, IdeLayout } from "@boring/workspace"
-import { ChatPanel } from "@boring/agent"
+import { WorkspaceProvider, IdeLayout } from "@hachej/boring-workspace"
+import { ChatPanel } from "@hachej/boring-agent"
 
 export function App() {
   return (
@@ -38,7 +38,7 @@ export function App() {
 ## Writing a plugin
 
 ```ts
-import { defineFrontPlugin, definePanel } from "@boring/workspace"
+import { defineFrontPlugin, definePanel } from "@hachej/boring-workspace"
 
 export const myPlugin = defineFrontPlugin({
   id: "my-plugin",
@@ -61,7 +61,7 @@ export const myPlugin = defineFrontPlugin({
 Panel components receive `PaneProps<T>`:
 
 ```ts
-import type { PaneProps } from "@boring/workspace"
+import type { PaneProps } from "@hachej/boring-workspace"
 
 export function WidgetPane({ params, api }: PaneProps<{ id: string }>) {
   // params — data passed when the panel is opened
@@ -89,6 +89,8 @@ Panels are auto-lazy: a zero-arg factory `() => import(...)` is code-split autom
 
 | Package | Role |
 |---|---|
-| `@boring/core` | DB, auth, app factory |
-| `@boring/workspace` | Plugin system, layouts |
-| `@boring/agent` | Agent runtime + tools |
+| `@hachej/boring-agent` | Agent runtime + tools |
+| `@hachej/boring-workspace` | Plugin system, workbench |
+| `@hachej/boring-core` | DB, auth, app factory |
+| `@hachej/boring-ui-kit` | Shared UI primitives |
+| `@hachej/boring-ui-cli` | Zero-setup CLI |

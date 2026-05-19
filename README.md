@@ -1,93 +1,106 @@
-
-
 # Boring UI
 
-Bring your agent skills. Get a UI.
-
-
-
-<img src="https://github.com/user-attachments/assets/6bb196de-1518-4f20-a603-6a5809552cf7" alt="Boring UI banner" width="350" />
+![Boring UI — bring your agent skills, get a UI](docs/assets/readme/hero.png)
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-Boring UI is a framework for building apps around an agent.
+Boring UI is an opinionated framework for building apps around an agent.
 
-Traditional SaaS is built around workflows users drive by hand: buttons, forms, pages, and dashboards.
+When an agent can understand intent and act, the UI collapses to three surfaces:
 
-Agents change that.
+- **Chat** — tell the agent what to do
+- **Workbench** — inspect, steer, and refine
+- **File sandbox** — the read/write substrate the agent works against
 
-When software can understand intent and do the work, the UI can collapse into two core surfaces:
+Boring UI ships those surfaces. Skills, tools, panels, and domain logic come through plugins. You bring the intelligence. Boring UI brings the workspace.
 
-- **chat** to tell the agent what to do
-- **a workbench** to inspect, steer, and refine the result
-
-Boring UI gives you that structure out of the box. See [Boring UI Core](#boring-ui-core).
-
-Everything else comes through the [Plugin System](#plugin-system): skills, tools, and domain-specific panels.
-
-You bring the intelligence. Boring UI brings the workspace.
+---
 
 ## Quickstart
 
 ```bash
-npx @hachej/boring-ui-cli
+ANTHROPIC_API_KEY=sk-ant-... npx @hachej/boring-ui-cli
 ```
 
-This starts a full agent workspace in your current directory: chat, panels, file tree, and command palette.
+Starts a full agent workspace pointed at the current directory — chat, panels, file tree, command palette. No clone. No database. No setup.
 
-No clone. No database. No app setup.
+Defaults to Claude. Run without an env var and the CLI prompts for Claude / GPT / Gemini / Copilot login on first launch (credentials persist for future runs). Full provider list: [`packages/cli`](packages/cli/README.md).
 
-For agent authentication options, see Pi's [Quick Start](https://github.com/badlogic/pi-mono/tree/main/packages/pi-coding-agent#quick-start) and [Providers docs](https://github.com/badlogic/pi-mono/blob/main/packages/pi-coding-agent/docs/providers.md).
+It opens at `http://localhost:5200`. Try these in chat:
 
-## Boring UI Core
+- _"list every TODO in this repo and open them in the editor"_
+- _"search package.json for stale dependencies, summarise in a table"_
+- _"create a markdown file called notes.md with bullet points of my open files"_
 
-Boring UI is opinionated at the center.
+You'll see the agent open files in the workbench, render results into panels, and react to your follow-ups — all from the chat box, against your real directory.
 
-Its default shape is simple:
+---
 
-- chat is the control surface
-- the workspace is the output surface and is controllable by the agent
+## What it looks like
 
-Boring UI ships as five packages:
+![Boring UI — chat, file tree, workbench, and command palette across one shell](docs/assets/readme/demo.gif)
 
+Three surfaces in one shell:
 
-| Package                    | Role                                                   | Demo app                    |
-| -------------------------- | ------------------------------------------------------ | --------------------------- |
-| `@hachej/boring-agent`     | Agent runtime, chat UI, tools, and sandboxed execution | `apps/agent-playground`     |
-| `@hachej/boring-workspace` | Workbench UI, plugins, layouts, and UI bridge          | `apps/workspace-playground` |
-| `@hachej/boring-core`      | App shell, auth, config, and persistence               | `apps/full-app`             |
-| `@hachej/boring-ui-cli`    | Zero-setup way to run a full agent workspace locally   | `npx @hachej/boring-ui-cli` |
-| `@hachej/boring-ui-kit`    | Shared UI kit and reusable interface primitives        | -                           |
+- **Chat** (centre) — you steer; the agent calls tools
+- **File tree** (right) — the sandbox the agent reads and writes
+- **Workbench** (right of file tree) — where the agent opens panels: editors, tables, catalogs, custom plugin panes
+- **Command palette** (`⌘K`) — keyboard-driven access to commands and catalogs
 
+Plugins extend the workbench with new pane types, commands, and catalogs. The agent decides when to open them.
 
-## Built on Pi
+---
 
-Boring UI uses [Pi](https://github.com/earendil-works/pi/tree/main) as its agent harness.
+## Built with boring-ui
 
-Pi provides the core agent runtime: the agent loop, tool calling, sessions, skills, and prompt system.
+[![MacroAnalyst — AI macro research, accelerated](docs/assets/readme/showcase-macro.png)](https://boring-macro.fly.dev/)
 
-Boring UI turns that runtime into an app:
+**[MacroAnalyst](https://boring-macro.fly.dev/)** — an AI analyst for macroeconomic research. Ask in plain English, get charts back in under a minute. 800,000+ economic series from FRED, BLS, BEA, and Treasury, all behind one chat and one workbench.
 
-- a web chat and workbench UI
-- sandboxed agent execution, locally with `bwrap` or remotely with Vercel Sandboxes
+Production, paying customers, single codebase. Built on `@hachej/boring-core` + `@hachej/boring-agent` + `@hachej/boring-workspace` + custom domain plugins.
 
-## Plugin System
+<sub>More on the same chassis in flight: `boring-accountant`, `boring-design`, `boring-lawyer`.</sub>
 
-Boring UI relies on Pi's plugin infrastructure.
+---
 
-Plugins are standard Node packages, distributed through npm, and loaded by Pi.
+## Repo map
 
-Pi handles the agent-side customization: skills, prompts, tools, and system-prompt extensions.
+### Packages
 
-Boring UI adds the workbench layer on top: panels, commands, catalogs, and other UI surfaces the agent can control.
+| Package | Role | README |
+|---|---|---|
+| `@hachej/boring-agent` | Agent runtime, tools, chat UI | [`packages/agent`](packages/agent/README.md) |
+| `@hachej/boring-workspace` | Workbench, panels, plugin system | [`packages/workspace`](packages/workspace/README.md) |
+| `@hachej/boring-core` | Auth, DB, app factory | [`packages/core`](packages/core/README.md) |
+| `@hachej/boring-ui-kit` | Shared UI primitives | [`packages/ui`](packages/ui/README.md) |
+| `@hachej/boring-ui-cli` | Zero-setup local entrypoint | [`packages/cli`](packages/cli/README.md) |
 
-Package plugin shape is:
+### Plugins
+
+| Plugin | What it adds | README |
+|---|---|---|
+| `@hachej/boring-ask-user` | Agent-to-user question/answer surface and `ask_user` tool | [`plugins/ask-user`](plugins/ask-user/README.md) |
+| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [`plugins/data-explorer`](plugins/data-explorer/README.md) |
+| `@hachej/boring-data-catalog` | Configurable catalog tab built on `data-explorer` | [`plugins/data-catalog`](plugins/data-catalog/README.md) |
+| Plugin template | Canonical scaffold for new plugins | [`plugins/_template`](plugins/_template/README.md) |
+
+### Reference apps
+
+| App | Purpose | README |
+|---|---|---|
+| `apps/full-app` | Production-shaped reference: auth, DB, multi-workspace | [`apps/full-app`](apps/full-app/README.md) |
+| `apps/agent-playground` | `@hachej/boring-agent` alone — no workbench, no DB | [`apps/agent-playground`](apps/agent-playground/README.md) |
+| `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [`apps/workspace-playground`](apps/workspace-playground/README.md) |
+
+---
+
+## Plugin shape
+
+Plugins are standard Node packages, distributed through npm, loaded by Pi. Each `package.json` declares both halves of the contract:
 
 ```json
 {
   "name": "my-plugin",
-  "version": "1.0.0",
-  "type": "module",
   "keywords": ["pi-package"],
   "pi": {
     "extensions": ["agent/index.ts"],
@@ -103,83 +116,81 @@ Package plugin shape is:
 }
 ```
 
-`pi` is the standard Pi package manifest, so any Pi package can be loaded as-is. `boring` adds the UI and workspace layer on top.
+- `pi.*` — agent side: skills, prompts, tools, system-prompt extensions (loaded by Pi as-is)
+- `boring.front` — workbench UI: panels, commands, catalogs, surface resolvers
+- `boring.server` — server side: agent tools that need backend state, HTTP routes
+- `boring.derivesFrom` — layer on top of an existing plugin
 
-Common use cases:
+Start from [`plugins/_template`](plugins/_template/README.md).
 
-- Need agent skills? Add them under `pi.skills`.
-- Need agent prompts ? Add them under `pi.prompts`.
-- Need agent-side tools ? Add them under `pi.extensions`.
-- Need workbench panels ? Point `boring.front` to your front plugin.
-- Need server-side tools or routes? Point `boring.server` to your server plugin.
-- Need to layer on top of another plugin? Use `boring.derivesFrom`.
-
-Boring UI gives you the structure. Plugins make it yours.
+---
 
 ## Architecture
 
-Boring UI core is built around a small set of swappable interfaces.
+Boring UI is built around four swappable interfaces:
 
-The key abstractions are:
-
-| Interface | Package | Responsibility |
-| --- | --- | --- |
+| Interface | Owner | Responsibility |
+|---|---|---|
 | `Workspace` | `@hachej/boring-agent` | Filesystem operations |
 | `Sandbox` | `@hachej/boring-agent` | Shell execution |
 | `AgentHarness` | `@hachej/boring-agent` | Agent runtime |
-| `UiBridge` | `@hachej/boring-workspace` | Agent-to-UI control |
+| `UiBridge` | `@hachej/boring-workspace` | Agent → workbench control |
 
-
-Those interfaces fit together like this:
+Flow:
 
 ```text
-chat UI
-  -> AgentHarness
-  -> ToolCatalog
-  -> Workspace + Sandbox
+chat UI ─► AgentHarness ─► ToolCatalog ─► Workspace + Sandbox
 
-agent/server actions
-  -> UiBridge
-  -> workbench UI
+agent / server actions ─► UiBridge ─► workbench UI
 
-session history
-  -> SessionStore
+session history ─► SessionStore
 ```
 
-A few important rules follow from that design:
+Rules that follow from this shape:
 
-- `Workspace` is the single filesystem interface. Agent tools and frontend file routes both use it.
-- `Sandbox` is only for execution. `Workspace` is for file operations.
-- `AgentHarness` does not know about files or shells directly. It only sees tools.
-- Runtime modes (`direct`, `local`, `vercel-sandbox`) swap the `Workspace` + `Sandbox` pair, not the rest of the system.
-- `UiBridge` is how the agent opens files, panels, surfaces, and other workbench UI.
+- `Workspace` is the single filesystem interface — agent tools and frontend file routes both go through it
+- `Sandbox` is only for execution
+- `AgentHarness` doesn't know about files or shells — it only sees tools
+- Runtime modes (`direct`, `local`, `vercel-sandbox`) swap the `Workspace` + `Sandbox` pair, not the rest
+- `UiBridge` is how the agent opens files, panels, surfaces, and any other workbench UI
 
-At a package level:
+---
 
-- `@hachej/boring-agent` owns the harness, tools, workspace, and sandbox contracts
-- `@hachej/boring-workspace` owns the workbench UI, plugin outputs, and UI bridge
-- `@hachej/boring-core` owns auth, config, persistence, and app-shell concerns
-- `@hachej/boring-ui-kit` provides shared UI primitives across the stack
-- `@hachej/boring-ui-cli` packages the whole thing into a zero-setup entrypoint
+## Built on Pi
 
-## Reference apps
+Boring UI uses [Pi](https://github.com/earendil-works/pi/tree/main) as its agent harness. Pi provides the agent loop, tool calling, sessions, skills, and prompts. Boring UI adds the web chat, workbench, plugin system, sandboxed execution (`bwrap` locally, Vercel Sandboxes remotely), and the app shell on top.
 
-The repo ships three reference apps:
+Agent authentication options: Pi's [Quick Start](https://github.com/badlogic/pi-mono/tree/main/packages/pi-coding-agent#quick-start) and [Providers docs](https://github.com/badlogic/pi-mono/blob/main/packages/pi-coding-agent/docs/providers.md).
 
-- `apps/full-app`
-- `apps/agent-playground`
-- `apps/workspace-playground`
+---
 
-Useful commands for the full reference app:
+## Working in the repo
 
 ```bash
-pnpm --filter full-app dev
-pnpm --filter full-app build
-pnpm --filter full-app start
-pnpm --filter full-app e2e:smoke
+pnpm install
+pnpm build            # build all packages
+pnpm dev              # run all dev servers
+pnpm typecheck        # tsc --noEmit across all packages
+pnpm test             # vitest across all packages
+pnpm lint:invariants  # plugin contract + agent isolation lint
+pnpm ci               # lint + typecheck + test + invariants + e2e
 ```
 
-More: `apps/full-app/README.md`
+Scoped commands during development:
+
+```bash
+pnpm --filter @hachej/boring-workspace test
+pnpm --filter @hachej/boring-agent test:watch
+pnpm --filter full-app dev
+```
+
+Apps that consume `@hachej/boring-workspace` source need the workspace built once first:
+
+```bash
+pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playground test
+```
+
+---
 
 ## License
 
