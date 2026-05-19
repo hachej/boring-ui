@@ -1,9 +1,0 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
-
-[project]
-name = "sample-plugin-sdk"
-version = "0.1.0"
-description = "Python SDK installed into the agent sandbox by the sample plugin."
-requires-python = ">=3.11"

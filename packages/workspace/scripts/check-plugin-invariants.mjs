@@ -19,7 +19,7 @@ const repoRoot = findRepoRoot(workspacePackageDir)
 const sourceRoots = [
   "packages/workspace/src",
   "packages/workspace/stories",
-  "plugins/_template/src",
+  "plugins/_template-full/src",
   "apps/workspace-playground/src",
 ]
   .map((path) => join(repoRoot, path))

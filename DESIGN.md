@@ -972,7 +972,7 @@ Intra-pluginId collision throws at capture. SSE hook mounts only when
 
 | Path | Category | Notes |
 | --- | --- | --- |
-| `plugins/_template/` | Plugin (reference) | See "Template contents" below. |
+| `plugins/_template-full/` | Plugin (reference) | See "Template contents" below. |
 | `plugins/ask-user/` | Plugin | Questions panel + `ask_user` tool. Server default: `(options, ctx) => createAskUserServerPlugin({ ...options, workspaceRoot: ctx.workspaceRoot, bridge: ctx.bridge })`. |
 | `plugins/data-explorer/` | Plugin (**promoted from library**) | Adds `package.json#boring.{front,server}`. Front default-exports a factory that registers the Explorer left-tab + a `"explorer.open"` surface resolver. Also exports `dataExplorerFactory(api)` named for kit-style composition. |
 | `plugins/data-catalog/` | Kit | No `package.json#boring`. Exports `createDataCatalogPlugin({ adapter })` (front) and `createDataCatalogServerPlugin({ adapter })` (server). |
@@ -982,7 +982,7 @@ Intra-pluginId collision throws at capture. SSE hook mounts only when
 
 #### Template contents (explicit)
 
-`plugins/_template/` MUST demonstrate the patterns plugin authors ask
+`plugins/_template-full/` MUST demonstrate the patterns plugin authors ask
 about within the first hour:
 
 - Front entry: one panel, one panel-command, one surface resolver,

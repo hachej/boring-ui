@@ -15,21 +15,24 @@ describe("scaffoldPlugin", () => {
     rmSync(workspaceRoot, { recursive: true, force: true })
   })
 
-  test("creates .pi/extensions/<name>/{package.json,front/index.tsx}", () => {
+  test("creates .pi/extensions/<name>/{package.json,front/index.tsx,server/index.ts}", () => {
     const result = scaffoldPlugin({ name: "my-plugin", workspaceRoot })
     expect(result.pluginDir).toBe(join(workspaceRoot, ".pi", "extensions", "my-plugin"))
-    expect(result.filesCreated).toHaveLength(2)
+    expect(result.filesCreated).toHaveLength(3)
 
     const pkg = JSON.parse(readFileSync(join(result.pluginDir, "package.json"), "utf8"))
     expect(pkg).toMatchObject({
       name: "my-plugin",
       version: "0.1.0",
-      boring: { label: "My Plugin", front: "front/index.tsx" },
+      boring: {
+        label: "My Plugin",
+        front: "front/index.tsx",
+        // Always include the server stub — front-only plugins delete it
+        // (the CLI's "Next steps" output explains how).
+        server: "server/index.ts",
+      },
       pi: { systemPrompt: expect.stringContaining("My Plugin") },
     })
-    // `boring.server` is omitted by default in the front-only scaffold;
-    // batch 3 (--server flag / always-server) adds it back.
-    expect(pkg.boring.server).toBeUndefined()
 
     const front = readFileSync(join(result.pluginDir, "front", "index.tsx"), "utf8")
     expect(front).toContain('import { definePlugin } from "@hachej/boring-workspace/plugin"')
@@ -71,6 +74,17 @@ describe("scaffoldPlugin", () => {
     // The _doc_ key from the template must be stripped before writing
     // (it's a comment for human readers of the template).
     expect(pkg._doc_).toBeUndefined()
-    expect(pkg.boring.server).toBeUndefined()
+    expect(pkg.boring.server).toBe("server/index.ts")
+  })
+
+  test("server stub is shape-correct and uses the plugin id", () => {
+    const result = scaffoldPlugin({ name: "tool-plugin", workspaceRoot })
+    const serverPath = join(result.pluginDir, "server", "index.ts")
+    const serverSource = readFileSync(serverPath, "utf8")
+    expect(serverSource).toContain('import { defineServerPlugin')
+    expect(serverSource).toContain('"@hachej/boring-workspace/server"')
+    expect(serverSource).toContain('"tool-plugin"')
+    // Sanity that we didn't leak template placeholders.
+    expect(serverSource).not.toContain("<kebab-name>")
   })
 })

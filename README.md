@@ -63,7 +63,64 @@ In practice, a plugin is a Node package with two manifest blocks:
 - `pi.*` — agent side: skills, prompts, tools (loaded by [Pi](https://pi.dev))
 - `boring.*` — UI side: panels, commands, catalogs, surface resolvers
 
-Each `package.json` declares both halves:
+Plugins compose. Use `derivesFrom` to extend an existing plugin instead of forking. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
+
+Start from [plugins/_template-full](plugins/_template-full/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
+
+---
+
+## Built with boring-ui
+
+![MacroAnalyst — AI macro research, accelerated](docs/assets/readme/showcase-macro.png)
+
+**[MacroAnalyst](https://boring-macro.fly.dev/)** — an AI analyst for macroeconomic research. Ask in plain English, get charts back in under a minute. 800,000+ economic series from FRED, BLS, BEA, and Treasury, all behind one chat and one workbench.
+
+Production, paying customers, single codebase. Built on `@hachej/boring-core` + `@hachej/boring-agent` + `@hachej/boring-workspace` + custom domain plugins.
+
+More on the same chassis in flight: `boring-accountant`, `boring-design`, `boring-lawyer`.
+
+---
+
+## Repo map
+
+### Packages
+
+
+| Package                    | Role                             | README                                             |
+| -------------------------- | -------------------------------- | -------------------------------------------------- |
+| `@hachej/boring-agent`     | Agent runtime, tools, chat UI    | [packages/agent](packages/agent/README.md)         |
+| `@hachej/boring-workspace` | Workbench, panels, plugin system | [packages/workspace](packages/workspace/README.md) |
+| `@hachej/boring-core`      | Auth, DB, app factory            | [packages/core](packages/core/README.md)           |
+| `@hachej/boring-ui-kit`    | Shared UI primitives             | [packages/ui](packages/ui/README.md)               |
+| `@hachej/boring-ui-cli`    | Zero-setup local entrypoint      | [packages/cli](packages/cli/README.md)             |
+
+
+### Plugins
+
+
+| Plugin                         | What it adds                                                              | README                                                   |
+| ------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                 | [plugins/ask-user](plugins/ask-user/README.md)           |
+| `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [plugins/data-explorer](plugins/data-explorer/README.md) |
+| `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                         | [plugins/data-catalog](plugins/data-catalog/README.md)   |
+| Plugin template                | Canonical scaffold for new plugins                                        | [plugins/_template-full](plugins/_template-full/README.md)         |
+
+
+### Reference apps
+
+
+| App                         | Purpose                                                | README                                                           |
+| --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| `apps/full-app`             | Production-shaped reference: auth, DB, multi-workspace | [apps/full-app](apps/full-app/README.md)                         |
+| `apps/agent-playground`     | `@hachej/boring-agent` alone — no workbench, no DB     | [apps/agent-playground](apps/agent-playground/README.md)         |
+| `apps/workspace-playground` | `@hachej/boring-workspace` + plugins — no auth backend | [apps/workspace-playground](apps/workspace-playground/README.md) |
+
+
+---
+
+## Plugin shape
+
+Plugins are standard Node packages, distributed through npm, loaded by Pi. Each `package.json` declares both halves of the contract:
 
 ```json
 {
@@ -88,7 +145,7 @@ Each `package.json` declares both halves:
 - `boring.server` — server side: tools that need backend state, HTTP routes
 - `boring.derivesFrom` — layer on top of an existing plugin
 
-Start from [plugins/_template](plugins/_template/README.md).
+Start from [plugins/_template-full](plugins/_template-full/README.md).
 
 **What you can add:**
 
