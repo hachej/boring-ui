@@ -411,6 +411,21 @@ Then run /reload to verify.
         timeoutMs: 300_000,
       })
 
+      // Diagnostic: log the tool call sequence so we can verify the agent
+      // actually loaded the boring-plugin-authoring skill (which is the
+      // whole premise of the "skill-only" path).
+      const toolSequence = result.actual.map((c) => c.tool).join(", ")
+      const readCalls = result.actual
+        .filter((c) => c.tool === "read")
+        .map((c) => String(c.params.path ?? c.params.file_path ?? ""))
+      const loadedSkill = readCalls.some((p) => p.includes("boring-plugin-authoring"))
+      // eslint-disable-next-line no-console
+      console.log(`[minimal-eval diag] tools: ${toolSequence}`)
+      // eslint-disable-next-line no-console
+      console.log(`[minimal-eval diag] read paths: ${JSON.stringify(readCalls)}`)
+      // eslint-disable-next-line no-console
+      console.log(`[minimal-eval diag] loaded boring-plugin-authoring skill: ${loadedSkill}`)
+
       // result.ok with expect=[] just means the turn completed; the real
       // assertions are the file-on-disk + /reload checks below.
       expect(result.ok, formatFailure(result)).toBe(true)
