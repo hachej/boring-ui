@@ -46,6 +46,7 @@ export function filterAvailableRecentEntries(
     if (entry.type === 'catalog') {
       return catalogs.some((c) => c.id === entry.catalogId)
     }
-    return commands.some((c) => c.id === entry.commandId)
+    const cmd = commands.find((c) => c.id === entry.commandId)
+    return Boolean(cmd) && isActiveCommand(cmd!)
   })
 }
