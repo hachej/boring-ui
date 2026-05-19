@@ -35,6 +35,11 @@ describe("scaffoldPlugin", () => {
     expect(front).toContain('"my-plugin.open"')
     expect(front).toContain('"my-plugin.tab"')
     expect(front).toContain("MyPluginPane")
+    // The scaffold reads from the canonical template files (not inline
+    // strings), so placeholder leakage like "<kebab-name>" indicates the
+    // substitution missed something.
+    expect(front).not.toContain("<kebab-name>")
+    expect(front).not.toContain("<Label>")
   })
 
   test("rejects non-kebab-case names", () => {
@@ -53,5 +58,16 @@ describe("scaffoldPlugin", () => {
     const front = readFileSync(join(result.pluginDir, "front", "index.tsx"), "utf8")
     expect(front).toContain("CsvVizPane")
     expect(front).toContain('label: "Csv Viz"')
+  })
+
+  test("reads from canonical template files (single source of truth)", () => {
+    // Sanity: scaffold output should match what the system prompt points
+    // at — the templates in packages/pi/references/workspace/templates/.
+    const result = scaffoldPlugin({ name: "share-source", workspaceRoot })
+    const pkg = JSON.parse(readFileSync(join(result.pluginDir, "package.json"), "utf8"))
+    // The _doc_ key from the template must be stripped before writing
+    // (it's a comment for human readers of the template).
+    expect(pkg._doc_).toBeUndefined()
+    expect(pkg.boring.server).toBe(false)
   })
 })

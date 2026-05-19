@@ -230,6 +230,7 @@ function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
   return existsSync(skillFile) ? [skillFile] : []
 }
 
+
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
@@ -541,6 +542,12 @@ export async function createWorkspaceAgentServer(
     ],
     systemPromptAppend: [
       workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt() : undefined,
+      // scaffoldCommand intentionally NOT passed: the published
+      // @hachej/boring-ui-cli (≤ 0.1.13) doesn't yet ship the
+      // scaffold-plugin subcommand; pointing the agent at
+      // `npx @hachej/boring-ui-cli scaffold-plugin <name>` makes
+      // it hang on the deprecated CLI startup. Re-enable once a
+      // new CLI version ships.
       buildBoringSystemPrompt(),
       pluginCollection.agentOptions.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
