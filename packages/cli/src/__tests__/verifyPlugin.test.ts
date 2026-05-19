@@ -26,10 +26,20 @@ describe("verifyPlugin", () => {
     return dir
   }
 
-  test("returns OK + empty outcomes when .pi/extensions/ doesn't exist", () => {
+  test("returns ok + empty outcomes when .pi/extensions/ doesn't exist, but flags the missing dir", () => {
     const result = verifyPlugin({ workspaceRoot })
     expect(result.ok).toBe(true)
     expect(result.outcomes).toEqual([])
+    expect(result.extensionsDirMissing).toBe(true)
+    expect(result.extensionsDir).toContain(".pi/extensions")
+  })
+
+  test("formatVerifyResult WARNs when the extensions dir is missing (so agent doesn't think OK = success)", () => {
+    const result = verifyPlugin({ workspaceRoot })
+    const text = formatVerifyResult(result)
+    expect(text).toMatch(/^WARNING/)
+    expect(text).toContain("does not exist")
+    expect(text).toContain(result.extensionsDir)
   })
 
   test("returns OK for a valid plugin with boring.front and an existing file", () => {
@@ -156,5 +166,8 @@ describe("verifyPlugin", () => {
     const text = formatVerifyResult(result)
     expect(text).toMatch(/^OK/)
     expect(text).toContain("✓ happy")
+    // OK line should also surface the scanned dir so the agent can
+    // confirm it's looking at the right place.
+    expect(text).toContain(".pi/extensions")
   })
 })
