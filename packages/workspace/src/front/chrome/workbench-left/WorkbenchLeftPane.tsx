@@ -117,8 +117,8 @@ export function WorkbenchLeftPane({
   return (
     <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0 flex-col", className)}>
       <div className="flex h-11 items-center gap-1 border-b border-[color:oklch(from_var(--border)_l_c_h/0.25)] px-2">
-        <Tabs value={activeTab} onValueChange={setTab} className="min-w-0 flex-1" aria-label="Workbench sources">
-          <TabsList variant="line" className="h-auto gap-0.5 p-0">
+        <Tabs value={activeTab} onValueChange={setTab} className="min-w-0 flex-1 overflow-hidden" aria-label="Workbench sources">
+          <TabsList variant="line" className="h-auto min-w-0 max-w-full gap-0.5 overflow-x-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {tabs.map((entry) => (
               <TabsTrigger
                 key={entry.id}

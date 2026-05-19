@@ -35,13 +35,20 @@ export function useCommandPaletteCatalogSearch({
 
     const controller = new AbortController()
     const activeCatalogs = [...catalogs]
-    setCatalogGroups(
-      activeCatalogs.map((catalog) => ({
-        catalog,
-        rows: [],
-        loading: true,
-      })),
-    )
+    // Don't blank rows on every keystroke — that visually collapses the list
+    // and makes cmdk re-anchor selection to the top (the "jumpy" feeling).
+    // Keep prior rows visible with a loading flag until fresh results arrive.
+    setCatalogGroups((prev) => {
+      const prevById = new Map(prev.map((group) => [group.catalog.id, group]))
+      return activeCatalogs.map((catalog) => {
+        const prior = prevById.get(catalog.id)
+        return {
+          catalog,
+          rows: prior?.rows ?? [],
+          loading: true,
+        }
+      })
+    })
 
     const updateCatalog = (
       catalog: CatalogConfig,
