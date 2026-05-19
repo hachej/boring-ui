@@ -61,8 +61,6 @@ describeIf("package plugin creation + reload eval (live LLM)", () => {
 Create a hot-reloadable boring-ui package plugin called "eval-task-list" at:
   .pi/extensions/eval-task-list/
 
-Read docs/plugins.md and docs/panels.md before writing code.
-
 Create exactly these files:
 1. .pi/extensions/eval-task-list/package.json
 2. .pi/extensions/eval-task-list/front/index.tsx
