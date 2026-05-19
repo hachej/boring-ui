@@ -6,13 +6,21 @@
 
 Boring UI is an opinionated framework for building apps around an agent.
 
-When an agent can understand intent and act, the UI collapses to three surfaces:
+Traditional SaaS is built around workflows users drive by hand — buttons, forms, pages, dashboards.
 
-- **Chat** — tell the agent what to do
-- **Workbench** — inspect, steer, and refine
-- **File sandbox** — the read/write substrate the agent works against
+Agents change that.
 
-Boring UI ships those surfaces. Skills, tools, panels, and domain logic come through plugins. You bring the intelligence. Boring UI brings the workspace.
+When software can understand intent and act, the UI collapses to three surfaces:
+
+- **Chat** — tell the agent what to do.
+- **Workbench** — inspect, steer, and refine the result.
+- **File sandbox** — the read/write substrate the agent works against.
+
+Boring UI ships those surfaces out of the box.
+
+Skills, tools, panels, and domain logic come through plugins.
+
+You bring the intelligence. Boring UI brings the workspace.
 
 ---
 
