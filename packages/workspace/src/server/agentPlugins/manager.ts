@@ -19,12 +19,13 @@ interface LoadedPluginRecord extends BoringServerPluginManifest {
   revision: number
   signature: string
   /**
-   * fileSignature(serverPath) captured at load time. Lets
-   * computeRequiresRestart() decide whether the server file changed
-   * between this revision and the next — without re-reading the prior
-   * file's bytes (they've been overwritten by then).
+   * pluginFileSignature(serverPath) captured at load time, or `null` when
+   * the plugin has no server entry. Lets computeRequiresRestart() decide
+   * whether the server file changed between this revision and the next
+   * without re-reading the prior file's bytes (they've been overwritten
+   * by then).
    */
-  serverSignature?: string
+  serverSignature: string | null
 }
 
 export interface BoringPluginAssetManagerOptions {
@@ -50,10 +51,9 @@ function preflightErrorId(pluginDir: string): string {
   return `preflight-${createHash("sha256").update(pluginDir).digest("hex").slice(0, 12)}`
 }
 
-// fileSignature is shared with verify-plugin via `./signatureCache` so
-// both compute identical signatures when comparing "what the manager
-// loaded" against "what's on disk now".
-const fileSignature = pluginFileSignature
+// `pluginFileSignature` is imported from `./signatureCache` so verify-plugin
+// computes identical signatures when comparing what the manager loaded vs
+// what's on disk now.
 
 function directorySignature(root: string | undefined): string {
   if (!root || !existsSync(root)) return "missing"
@@ -122,11 +122,11 @@ function pluginSignature(plugin: BoringServerPluginManifest): string {
     .update(JSON.stringify(plugin.pi ?? {}))
     .update(plugin.version)
     .update(plugin.frontPath ?? "")
-    .update(fileSignature(plugin.frontPath))
+    .update(pluginFileSignature(plugin.frontPath))
     .update(directorySignature(plugin.frontPath ? dirname(plugin.frontPath) : undefined))
     .update(directorySignature(join(plugin.rootDir, "shared")))
     .update(plugin.serverPath ?? "")
-    .update(fileSignature(plugin.serverPath))
+    .update(pluginFileSignature(plugin.serverPath))
     .update(directorySignature(plugin.serverPath ? dirname(plugin.serverPath) : undefined))
     .update((plugin.extensionPaths ?? []).join("\0"))
     .update((plugin.skillPaths ?? []).join("\0"))
@@ -155,16 +155,10 @@ function computeRequiresRestart(
   // to take effect.
   if (prevHasServer !== nextHasServer) return ["routes", "agentTools"]
   // Both present — we can't compare the PREVIOUS file's content (it's
-  // been overwritten). Store the serverPath's fileSignature on the
-  // record at load time and compare; for the current revision we just
-  // recompute. Every record set since this field was added carries
-  // `serverSignature` (see the load loop below), so the undefined branch
-  // is defensive — kept as belt-and-braces in case a future code path
-  // forgets to populate it.
-  const prevSig = previous.serverSignature
-  if (prevSig === undefined) return ["routes", "agentTools"]
-  const nextSig = fileSignature(next.serverPath)
-  if (prevSig === nextSig) return []
+  // been overwritten), so compare the cached load-time signature against
+  // the current on-disk signature.
+  const nextSig = pluginFileSignature(next.serverPath)
+  if (previous.serverSignature === nextSig) return []
   return ["routes", "agentTools"]
 }
 
@@ -258,7 +252,7 @@ export class BoringPluginAssetManager {
         const previous = this.loaded.get(plugin.id)
         if (previous?.signature === signature) continue
         const revision = this.bumpRevision(plugin.id)
-        const serverSignature = plugin.serverPath ? fileSignature(plugin.serverPath) : undefined
+        const serverSignature = plugin.serverPath ? pluginFileSignature(plugin.serverPath) : null
         const record: LoadedPluginRecord = { ...plugin, revision, signature, serverSignature }
         this.loaded.set(plugin.id, record)
         this.clearError(plugin.id)
@@ -268,9 +262,7 @@ export class BoringPluginAssetManager {
         // load (the in-memory record is authoritative for the running
         // process; the cache is purely advisory for the CLI).
         try {
-          writePluginSignatureCache(plugin.rootDir, {
-            serverSignature: serverSignature ?? null,
-          })
+          writePluginSignatureCache(plugin.rootDir, { serverSignature })
         } catch {}
         // requiresRestart: only set when the server file's signature
         // changed between revisions. The asset manager re-imports the

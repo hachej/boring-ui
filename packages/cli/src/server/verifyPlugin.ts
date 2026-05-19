@@ -9,7 +9,7 @@ import {
   readPluginSignatureCache,
 } from "@hachej/boring-workspace/server"
 
-export interface VerifyPluginOptions {
+interface VerifyPluginOptions {
   /** Workspace root containing `.pi/extensions/`. */
   workspaceRoot: string
   /** Optional plugin name to verify only one; otherwise verifies all. */
@@ -246,18 +246,10 @@ export function formatVerifyResult(result: VerifyPluginResult): string {
   return lines.join("\n")
 }
 
-export interface RecognizedMistake {
-  pattern: RegExp
-  hint: string
-}
-
-/**
- * Optional helper — turn a raw error string into a one-line hint when
- * we recognize a common mistake. Used by the CLI command to surface
- * actionable suggestions. NOT part of verifyPlugin itself (which stays
- * pure / structured) so callers can render however they like.
- */
-export const COMMON_MISTAKE_HINTS: RecognizedMistake[] = [
+// Turn a raw error string into a one-line hint when we recognize a
+// common mistake. Used by the CLI to surface actionable suggestions
+// alongside the raw verify output.
+const COMMON_MISTAKE_HINTS: Array<{ pattern: RegExp; hint: string }> = [
   {
     pattern: /boring\.server must be a safe relative path or false/i,
     hint:
