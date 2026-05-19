@@ -535,19 +535,19 @@ describe("MarkdownEditor", () => {
         const onChange = vi.fn()
         render(
           <MarkdownEditor
-            content='![Boring-UI banner](doc/assets/header.png)'
+            content='![Boring-UI banner](docs/assets/branding/header.png)'
             onChange={onChange}
           />,
         )
         await waitFor(() => {
           const img = document.querySelector("[data-resizable-image] img") as HTMLImageElement | null
-          expect(img?.getAttribute("src")).toBe("/api/v1/files/raw?path=doc%2Fassets%2Fheader.png")
+          expect(img?.getAttribute("src")).toBe("/api/v1/files/raw?path=docs%2Fassets%2Fbranding%2Fheader.png")
           expect(img?.getAttribute("alt")).toBe("Boring-UI banner")
         })
         fireEvent.click(screen.getByTitle("Horizontal rule"))
         await waitFor(() => {
           expect(lastCall(onChange)).toContain(
-            '![Boring-UI banner](doc/assets/header.png)',
+            '![Boring-UI banner](docs/assets/branding/header.png)',
           )
         })
       })
