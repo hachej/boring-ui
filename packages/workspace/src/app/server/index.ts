@@ -8,9 +8,11 @@ export {
   type CollectWorkspaceAgentServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
   type WorkspaceAgentPiOptions,
-  type WorkspacePiPackageSource,
   type WorkspaceAgentServerPluginCollection,
   type WorkspaceAgentServerPluginContext,
-  type WorkspaceProvisioningContribution,
-  type WorkspaceRouteContribution,
 } from "./createWorkspaceAgentServer"
+export type {
+  WorkspacePiPackageSource,
+  WorkspaceProvisioningContribution,
+  WorkspaceRouteContribution,
+} from "../../server/plugins/bootstrapServer"

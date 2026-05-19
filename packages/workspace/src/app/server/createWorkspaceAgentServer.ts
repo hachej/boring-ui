@@ -32,15 +32,11 @@ import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
-  ServerPluginError,
   bootstrapServer,
-  defineServerPlugin,
-  validateServerPlugin,
   compactPiPackages,
   type ServerBootstrapOptions,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
-  type WorkspaceExtensionFactory,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
@@ -134,18 +130,6 @@ export interface CreateWorkspaceAgentServerOptions
    * instead of inside the server boot path.
    */
   appPackageJsonPath?: string
-}
-
-export {
-  ServerPluginError,
-  defineServerPlugin,
-  validateServerPlugin,
-}
-export type {
-  WorkspacePiPackageSource,
-  WorkspaceServerPlugin,
-  WorkspaceProvisioningContribution,
-  WorkspaceRouteContribution,
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
