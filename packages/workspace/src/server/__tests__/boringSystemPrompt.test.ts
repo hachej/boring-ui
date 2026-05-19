@@ -2,60 +2,69 @@ import { describe, expect, test } from "vitest"
 import { buildBoringSystemPrompt } from "../boringSystemPrompt"
 
 describe("buildBoringSystemPrompt", () => {
-  test("inlines the declarative canonical shape", () => {
-    const prompt = buildBoringSystemPrompt()
-    // Canonical declarative config — the agent should not need to guess any of these:
-    expect(prompt).toContain("definePlugin({")
-    expect(prompt).toContain("panels:")
-    expect(prompt).toContain("commands:")
-    expect(prompt).toContain("leftTabs:")
-    expect(prompt).toContain("surfaceResolvers:")
-    expect(prompt).toContain("setup")
-    expect(prompt).toContain("@hachej/boring-workspace/plugin")
-    expect(prompt).toContain(".pi/extensions/")
-    expect(prompt).toContain("front/index.tsx")
+  test("renders a numbered TODO workflow", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+    })
+    expect(prompt).toMatch(/\*\*1\.\s+Scaffold/)
+    expect(prompt).toMatch(/\*\*2\.\s+Edit/)
+    expect(prompt).toMatch(/\*\*3\.\s+Verify/)
+    expect(prompt).toMatch(/\*\*4\.\s+Ask the user to run `\/reload`/)
   })
 
-  test("calls out the high-signal forbidden patterns", () => {
-    const prompt = buildBoringSystemPrompt()
-    expect(prompt).toContain("createPlugin")
-    expect(prompt).toContain("defineFrontPlugin")
-    expect(prompt).toContain("@hachej/boring-pi")
-    // Server tool common mistake:
-    expect(prompt).toContain("handler")
-    expect(prompt).toContain("execute")
+  test("includes the scaffold and verify CLI invocations", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+    })
+    expect(prompt).toContain("boring-ui scaffold-plugin <kebab-name>")
+    expect(prompt).toContain("boring-ui verify-plugin")
   })
 
-  test("inlines the server-side canonical shape", () => {
-    const prompt = buildBoringSystemPrompt()
-    expect(prompt).toContain("defineServerPlugin")
-    expect(prompt).toContain("@hachej/boring-workspace/server")
-    expect(prompt).toContain('content: [{ type: "text"')
+  test("calls out the highest-leverage manifest mistake (boring.server: true)", () => {
+    const prompt = buildBoringSystemPrompt({ scaffoldCommand: "x", verifyCommand: "y" })
+    expect(prompt).toContain("NEVER the boolean `true`")
   })
 
   test("points at the boring-plugin-authoring skill for the long tail", () => {
-    const prompt = buildBoringSystemPrompt()
+    const prompt = buildBoringSystemPrompt({ scaffoldCommand: "x", verifyCommand: "y" })
     expect(prompt).toContain("boring-plugin-authoring")
     expect(prompt).toContain("<available_skills>")
   })
 
-  test("does not mention scaffold-plugin when no scaffoldCommand is provided", () => {
+  test("without scaffoldCommand, step 1 is creating files (no scaffold available)", () => {
     const prompt = buildBoringSystemPrompt()
-    expect(prompt).not.toContain("Step 1 — scaffold")
+    expect(prompt).toMatch(/\*\*1\.\s+Create the plugin files/)
+    expect(prompt).toContain("definePlugin")
+    expect(prompt).not.toMatch(/\*\*1\.\s+Scaffold/)
   })
 
-  test("surfaces the scaffold command as Step 1 when provided", () => {
+  test("inlines the front-file definePlugin skeleton (most violated piece)", () => {
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "npx @hachej/boring-ui-cli scaffold-plugin",
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
     })
-    expect(prompt).toContain("Step 1 — scaffold")
-    expect(prompt).toContain("npx @hachej/boring-ui-cli scaffold-plugin <kebab-name>")
+    expect(prompt).toContain("definePlugin({")
+    expect(prompt).toContain("@hachej/boring-workspace/plugin")
+    expect(prompt).toContain("panels: [")
+    expect(prompt).toContain("commands: [")
   })
 
-  test("stays under 5000 chars", () => {
+  test("verifyCommand=false drops the verify step", () => {
     const prompt = buildBoringSystemPrompt({
-      scaffoldCommand: "npx @hachej/boring-ui-cli scaffold-plugin",
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: false,
     })
-    expect(prompt.length).toBeLessThan(5000)
+    expect(prompt).not.toContain("Verify")
+    expect(prompt).not.toContain("verify-plugin")
+  })
+
+  test("stays under 3500 chars in the full configuration", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "boring-ui scaffold-plugin",
+      verifyCommand: "boring-ui verify-plugin",
+    })
+    expect(prompt.length).toBeLessThan(3500)
   })
 })

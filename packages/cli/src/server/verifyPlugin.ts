@@ -22,6 +22,10 @@ export interface PluginVerifyOutcome {
 export interface VerifyPluginResult {
   outcomes: PluginVerifyOutcome[]
   ok: boolean
+  /** Absolute path of the `.pi/extensions/` dir that was scanned. */
+  extensionsDir: string
+  /** True when `.pi/extensions/` doesn't exist at all under the workspace. */
+  extensionsDirMissing: boolean
 }
 
 /**
@@ -43,6 +47,8 @@ export function verifyPlugin(opts: VerifyPluginOptions): VerifyPluginResult {
     return {
       outcomes: [],
       ok: true,
+      extensionsDir,
+      extensionsDirMissing: true,
     }
   }
 
@@ -55,6 +61,8 @@ export function verifyPlugin(opts: VerifyPluginOptions): VerifyPluginResult {
           { id: opts.name, dir, ok: false, errors: [`plugin directory not found: ${dir}`] },
         ],
         ok: false,
+        extensionsDir,
+        extensionsDirMissing: false,
       }
     }
     targets.push(dir)
@@ -70,6 +78,8 @@ export function verifyPlugin(opts: VerifyPluginOptions): VerifyPluginResult {
   return {
     outcomes,
     ok: outcomes.every((o) => o.ok),
+    extensionsDir,
+    extensionsDirMissing: false,
   }
 }
 
@@ -144,18 +154,29 @@ function formatIssue(issue: BoringPluginManifestIssue): string {
 }
 
 export function formatVerifyResult(result: VerifyPluginResult): string {
+  if (result.extensionsDirMissing) {
+    return [
+      `WARNING — no plugins to verify. Scanned: ${result.extensionsDir} (directory does not exist).`,
+      "",
+      "If you just wrote a plugin: check that you put it under THIS workspace's `.pi/extensions/` and not a different cwd. The scanned path above is `<cwd>/.pi/extensions/`.",
+    ].join("\n")
+  }
   if (result.outcomes.length === 0) {
-    return "No plugins found under .pi/extensions/ — nothing to verify."
+    return [
+      `WARNING — scanned ${result.extensionsDir} but found NO plugin directories.`,
+      "",
+      "If you just wrote a plugin: it is NOT in this dir. Either you wrote to a different `.pi/extensions/` (check your cwd), or the dir name starts with `.` / `preflight-` (skipped).",
+    ].join("\n")
   }
   const lines: string[] = []
   const failures = result.outcomes.filter((o) => !o.ok)
   if (failures.length === 0) {
-    lines.push(`OK — ${result.outcomes.length} plugin(s) verified, no errors.`)
+    lines.push(`OK — ${result.outcomes.length} plugin(s) verified, no errors.  (scanned ${result.extensionsDir})`)
     for (const outcome of result.outcomes) {
       lines.push(`  ✓ ${outcome.id}`)
     }
   } else {
-    lines.push(`FAILED — ${failures.length} of ${result.outcomes.length} plugin(s) have errors.`)
+    lines.push(`FAILED — ${failures.length} of ${result.outcomes.length} plugin(s) have errors.  (scanned ${result.extensionsDir})`)
     lines.push("")
     for (const outcome of result.outcomes) {
       if (outcome.ok) {

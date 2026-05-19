@@ -19,7 +19,7 @@ const EVAL_MODEL = process.env.GEMINI_API_KEY
   ? ({ provider: "google", id: "gemini-2.5-flash" } as const)
   : process.env.ANTHROPIC_API_KEY
     ? ({ provider: "anthropic", id: "claude-sonnet-4-6" } as const)
-    : ({ provider: "openrouter", id: "qwen/qwen3-coder-plus" } as const)
+    : ({ provider: "openrouter", id: "qwen/qwen3.6-plus" } as const)
 const HAS_KEY = !!(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY)
 const describeIf = HAS_KEY ? describe : describe.skip
 
@@ -125,11 +125,11 @@ After writing the files, tell me to run /reload.
         // bundled boring-plugin-authoring skill the agent may go straight
         // to writing. The post-write assertions below verify correctness
         // of the produced files, which is what actually matters.
-        expect: [
-          { tool: "write", params: { path: EvalRegex("eval-task-list/package\\.json$"), content: EvalRegex('"boring"') } },
-          { tool: "write", params: { path: EvalRegex("eval-task-list/front/index\\.tsx$"), content: EvalRegex("BoringFrontFactory") } },
-          { tool: "write", params: { path: EvalRegex("eval-task-list/agent/index\\.ts$"), content: EvalRegex("task_list_status") } },
-        ],
+        // Outcome-based: with the scaffold-plugin CLI available, the
+        // agent may create the initial files via `bash` instead of
+        // direct `write` calls. The file-on-disk assertions below are
+        // the real check.
+        expect: [],
         model: EVAL_MODEL,
         retries: 1,
         timeoutMs: 300_000,
