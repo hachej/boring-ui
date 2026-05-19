@@ -19,7 +19,7 @@ const EVAL_MODEL = process.env.GEMINI_API_KEY
   ? ({ provider: "google", id: "gemini-2.5-flash" } as const)
   : process.env.ANTHROPIC_API_KEY
     ? ({ provider: "anthropic", id: "claude-sonnet-4-6" } as const)
-    : ({ provider: "openrouter", id: "qwen/qwen3.6-plus" } as const)
+    : ({ provider: "openrouter", id: "qwen/qwen3-coder-plus" } as const)
 const HAS_KEY = !!(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY)
 const describeIf = HAS_KEY ? describe : describe.skip
 
