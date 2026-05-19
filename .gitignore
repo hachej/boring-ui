@@ -70,3 +70,8 @@ packages/workspace/src/plugins/eval-*/
 # Repo-root .pi/ too — when the agent's cwd resolves to the monorepo root
 # instead of the workspace package, eval scratch lands here.
 /.pi/
+
+# Per-plugin signature cache written by BoringPluginAssetManager on load —
+# read by `boring-ui verify-plugin` to detect server-file drift. Runtime
+# state, never checked in.
+**/.boring-signature.json
