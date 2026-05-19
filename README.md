@@ -27,12 +27,12 @@ You bring the intelligence. Boring UI brings the workspace.
 ## Quickstart
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... npx @hachej/boring-ui-cli
+npx @hachej/boring-ui-cli
 ```
 
 Starts a full agent workspace pointed at the current directory — chat, panels, file tree, command palette. No clone. No database. No setup.
 
-Defaults to Claude. Run without an env var and the CLI prompts for Claude / GPT / Gemini / Copilot login on first launch (credentials persist for future runs). Full provider list: [`packages/cli`](packages/cli/README.md).
+Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before running — or skip the env var and the CLI prompts for login on first launch (credentials persist for future runs). More on auth: [`packages/cli`](packages/cli/README.md).
 
 It opens at `http://localhost:5200`. Try these in chat:
 
