@@ -248,7 +248,6 @@ export function collectWorkspaceAgentServerPlugins(
   const callerAdditional = opts.pi?.additionalSkillPaths ?? []
   const callerPiPackages = opts.pi?.packages ?? []
   const callerExtensionPaths = opts.pi?.extensionPaths ?? []
-  const callerExtensionFactories = opts.pi?.extensionFactories ?? []
 
   return {
     provisioningContributions: [
@@ -268,7 +267,10 @@ export function collectWorkspaceAgentServerPlugins(
         additionalSkillPaths: [workspaceSkillsDir, ...callerAdditional],
         packages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
         extensionPaths: [...result.extensionPaths, ...callerExtensionPaths],
-        extensionFactories: [...result.extensionFactories, ...callerExtensionFactories],
+        // Host-level extensionFactories (opts.pi.extensionFactories) flow
+        // straight through via the ...opts.pi spread above. Plugins no
+        // longer contribute extensionFactories — tools live on agentTools,
+        // file-based extensions on extensionPaths.
       },
     },
   }

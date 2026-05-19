@@ -3,7 +3,6 @@ import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {
   validateServerPlugin,
-  type WorkspaceExtensionFactory,
   type WorkspaceServerPlugin,
 } from "./defineServerPlugin"
 import {
@@ -16,7 +15,7 @@ export {
   validateServerPlugin,
 } from "./defineServerPlugin"
 export { compactPiPackages } from "./piPackages"
-export type { WorkspaceServerPlugin, WorkspaceExtensionFactory } from "./defineServerPlugin"
+export type { WorkspaceServerPlugin } from "./defineServerPlugin"
 export type { WorkspacePiPackageSource } from "./piPackages"
 
 export interface ServerBootstrapOptions {
@@ -40,7 +39,6 @@ export interface ServerBootstrapResult {
   systemPromptAppend: string
   piPackages: WorkspacePiPackageSource[]
   extensionPaths: string[]
-  extensionFactories: WorkspaceExtensionFactory[]
   agentTools: AgentTool[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
@@ -78,7 +76,6 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
   const piPackages = compactPiPackages(finalPlugins.flatMap((plugin) => plugin.piPackages ?? []))
 
   const extensionPaths = finalPlugins.flatMap((p) => p.extensionPaths ?? [])
-  const extensionFactories = finalPlugins.flatMap((p) => p.extensionFactories ?? [])
 
   const provisioningContributions = finalPlugins
     .filter((p) => p.provisioning)
@@ -95,7 +92,6 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     systemPromptAppend,
     piPackages,
     extensionPaths,
-    extensionFactories,
     agentTools,
     provisioningContributions,
     routeContributions,

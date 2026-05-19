@@ -2,7 +2,8 @@ import { DuckDBConnection, quotedIdentifier, quotedString } from "@duckdb/node-a
 import {
   defineServerPlugin,
   type WorkspaceServerPlugin,
-} from "@hachej/boring-workspace/app/server"
+} from "@hachej/boring-workspace/server"
+import type { AgentTool } from "@hachej/boring-workspace/shared"
 import { resolve } from "node:path"
 import { PLAYGROUND_CSV_DATASETS } from "../shared/fixtures"
 import { PLAYGROUND_DATA_PLUGIN_ID } from "../shared/constants"
@@ -21,24 +22,6 @@ interface ExecuteSqlResult {
   text: string
   details?: unknown
   isError?: boolean
-}
-
-interface PlaygroundPiToolDefinition {
-  name: string
-  label: string
-  description: string
-  parameters: Record<string, unknown>
-  execute(
-    toolCallId: string,
-    params: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<{ content: Array<{ type: "text"; text: string }>; details?: unknown }>
-}
-
-type PlaygroundPiExtensionFactory = (api: unknown) => void | Promise<void>
-
-interface PlaygroundPiExtensionAPI {
-  registerTool(tool: PlaygroundPiToolDefinition): void
 }
 
 function textResult(text: string, details?: unknown): ExecuteSqlResult {
@@ -187,28 +170,20 @@ function executeSqlParameters(): Record<string, unknown> {
   }
 }
 
-export function createPlaygroundExecuteSqlPiTool(workspaceRoot: string): PlaygroundPiToolDefinition {
+export function createPlaygroundExecuteSqlTool(workspaceRoot: string): AgentTool {
   const executeSql = createExecuteSqlRunner(workspaceRoot)
   return {
     name: "execute_sql",
-    label: "Execute SQL",
     description: "Run read-only DuckDB SQL against the playground CSV data catalog.",
     parameters: executeSqlParameters(),
-    async execute(_toolCallId, params) {
+    async execute(params) {
       const result = await executeSql(params)
-      if (result.isError) throw new Error(result.text)
+      if (result.isError) return { content: [{ type: "text", text: result.text }], isError: true }
       return {
         content: [{ type: "text", text: result.text }],
         details: result.details,
       }
     },
-  }
-}
-
-export function createPlaygroundDataPiExtension(workspaceRoot: string): PlaygroundPiExtensionFactory {
-  return (api) => {
-    const pi = api as PlaygroundPiExtensionAPI
-    pi.registerTool(createPlaygroundExecuteSqlPiTool(workspaceRoot))
   }
 }
 
@@ -233,7 +208,7 @@ export function createPlaygroundDataServerPlugin(
     id: PLAYGROUND_DATA_PLUGIN_ID,
     label: "Playground Data",
     systemPrompt: playgroundDataPrompt(),
-    extensionFactories: [createPlaygroundDataPiExtension(options.workspaceRoot)],
+    agentTools: [createPlaygroundExecuteSqlTool(options.workspaceRoot)],
   })
 }
 
