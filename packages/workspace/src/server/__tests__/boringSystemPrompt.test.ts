@@ -2,12 +2,6 @@ import { describe, expect, test } from "vitest"
 import { buildBoringSystemPrompt } from "../boringSystemPrompt"
 
 describe("buildBoringSystemPrompt", () => {
-  test("points the agent at the boring-plugin-authoring skill", () => {
-    const prompt = buildBoringSystemPrompt()
-    expect(prompt).toContain("boring-plugin-authoring")
-    expect(prompt).toContain("<available_skills>")
-  })
-
   test("inlines the canonical plugin shape and forbidden patterns", () => {
     const prompt = buildBoringSystemPrompt()
     // Canonical shape — the agent should not need to guess any of these:
@@ -30,9 +24,26 @@ describe("buildBoringSystemPrompt", () => {
     expect(prompt).toContain('content: [{ type: "text"')
     // Skill pointer for deeper questions:
     expect(prompt).toContain("boring-plugin-authoring")
-    // Cap at 5000 chars — covers both front + server canonical shapes
-    // while leaving plenty of budget for the user task. Skill remains for
-    // the longer-form patterns (file visualizers, plugin composition).
+  })
+
+  test("does not mention the scaffold command when none is provided", () => {
+    const prompt = buildBoringSystemPrompt()
+    expect(prompt).not.toContain("Step 1 — scaffold")
+    expect(prompt).not.toContain("scaffold-plugin")
+  })
+
+  test("surfaces the scaffold command as Step 1 when provided", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "npx @hachej/boring-ui-cli scaffold-plugin",
+    })
+    expect(prompt).toContain("Step 1 — scaffold")
+    expect(prompt).toContain("npx @hachej/boring-ui-cli scaffold-plugin <kebab-name>")
+  })
+
+  test("stays under 5000 chars (templates inlined, scaffold pointer optional)", () => {
+    const prompt = buildBoringSystemPrompt({
+      scaffoldCommand: "npx @hachej/boring-ui-cli scaffold-plugin",
+    })
     expect(prompt.length).toBeLessThan(5000)
   })
 })
