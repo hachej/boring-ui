@@ -107,7 +107,8 @@ export function CommandPalette(_props?: CommandPaletteProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="cmdk-shell overflow-hidden border-border/60 p-0 shadow-2xl backdrop-blur-md sm:!max-w-[640px] [&>button.dialog-close]:hidden"
+        className="cmdk-shell flex flex-col gap-0 overflow-hidden border-border/60 p-0 shadow-2xl backdrop-blur-md [&>button.dialog-close]:hidden"
+        style={{ height: 520, width: "min(640px, calc(100vw - 2rem))", maxWidth: 640 }}
         showCloseButton={false}
         onPointerDownOutside={() => setOpen(false)}
         onEscapeKeyDown={() => setOpen(false)}
@@ -116,7 +117,7 @@ export function CommandPalette(_props?: CommandPaletteProps) {
           <DialogTitle>Command Palette</DialogTitle>
           <DialogDescription>Search catalogs or switch to commands</DialogDescription>
         </DialogHeader>
-        <Command shouldFilter={false} className="bg-transparent">
+        <Command shouldFilter={false} className="flex min-h-0 flex-1 flex-col bg-transparent">
           <PaletteSearchHeader
             inputRef={inputRef}
             isCommandMode={isCommandMode}
@@ -124,9 +125,13 @@ export function CommandPalette(_props?: CommandPaletteProps) {
             onQueryChange={handleQueryChange}
             onInputKeyDown={handleInputKeyDown}
             onSwitchMode={switchMode}
+            loading={!isCommandMode && catalogGroups.some((group) => group.loading)}
           />
 
-          <CommandList className="max-h-[440px] overflow-y-auto py-1">
+          <CommandList
+            className="min-h-0 flex-1 overflow-y-auto py-1"
+            style={{ maxHeight: "none" }}
+          >
             <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
               {isCommandMode ? "No matching commands" : "No catalog results"}
             </CommandEmpty>
@@ -164,6 +169,7 @@ function PaletteSearchHeader({
   onQueryChange,
   onInputKeyDown,
   onSwitchMode,
+  loading,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>
   isCommandMode: boolean
@@ -171,9 +177,10 @@ function PaletteSearchHeader({
   onQueryChange: (next: string) => void
   onInputKeyDown: React.KeyboardEventHandler<HTMLInputElement>
   onSwitchMode: (mode: PaletteMode) => void
+  loading?: boolean
 }) {
   return (
-    <>
+    <div className="relative shrink-0">
       {/**
        * Don't add another border-b on this outer wrapper —
        * shadcn's <CommandInput> renders its own wrapper div
@@ -217,7 +224,17 @@ function PaletteSearchHeader({
           className="h-12 bg-transparent text-base focus-visible:ring-0"
         />
       </div>
-    </>
+      {/* Slim loading strip — sits on the cmdk-emitted border-b so it never
+          shifts layout when results are refreshing. */}
+      <div
+        aria-hidden="true"
+        className={
+          loading
+            ? "pointer-events-none absolute inset-x-0 bottom-0 h-px animate-pulse bg-[color:var(--accent)] opacity-80"
+            : "pointer-events-none absolute inset-x-0 bottom-0 h-px bg-transparent"
+        }
+      />
+    </div>
   )
 }
 
@@ -283,17 +300,16 @@ function CatalogResultsSections({
   return (
     <>
       {catalogGroups
-        .filter((group) => group.loading || group.error || group.rows.length > 0)
+        .filter((group) => group.error || group.rows.length > 0)
         .map((group) => (
           <CommandGroup key={group.catalog.id} heading={group.catalog.label}>
-            {group.loading ? <CatalogLoadingRow catalogId={group.catalog.id} /> : null}
             {group.error ? (
               <CatalogErrorRow catalogId={group.catalog.id} error={group.error} />
             ) : null}
             {group.rows.map((row) => (
               <CommandItem
                 key={`${group.catalog.id}:${row.id}`}
-                value={`${group.catalog.id}:${row.id}:${row.title}:${row.subtitle ?? ""}`}
+                value={`${group.catalog.id}:${row.id}`}
                 onSelect={() => onCatalogSelect(group.catalog, row)}
                 className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
               >
@@ -310,19 +326,6 @@ function CatalogResultsSections({
           </CommandGroup>
         ))}
     </>
-  )
-}
-
-function CatalogLoadingRow({ catalogId }: { catalogId: string }) {
-  return (
-    <CommandItem
-      value={`${catalogId}:loading`}
-      disabled
-      className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm"
-    >
-      <FileIcon className="size-4 shrink-0 text-muted-foreground/70" />
-      <span className="text-muted-foreground">Searching...</span>
-    </CommandItem>
   )
 }
 
