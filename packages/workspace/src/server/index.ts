@@ -47,14 +47,5 @@ export type {
   BoringServerPluginManifest,
 } from "./agentPlugins/types"
 
-export {
-  createDataCatalogAgentTool,
-  createDataCatalogServerPlugin,
-  createDataCatalogSkillPrompt,
-  formatDataCatalogSearchResult,
-} from "../plugins/dataCatalogPlugin/server"
-export type {
-  DataCatalogAgentToolOptions,
-  DataCatalogServerPluginOptions,
-  DataCatalogSkillOptions,
-} from "../plugins/dataCatalogPlugin/server"
+// dataCatalog factories moved to the standalone @hachej/boring-data-catalog
+// package — import from there instead of re-exporting from /server.
