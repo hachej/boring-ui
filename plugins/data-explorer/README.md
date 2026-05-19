@@ -3,15 +3,16 @@
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![npm](https://img.shields.io/npm/v/@hachej/boring-data-explorer.svg)](https://www.npmjs.com/package/@hachej/boring-data-explorer)
 
 </div>
 
 Searchable, faceted data tables for the workbench. The headless primitive that `data-catalog` and other explorer-style plugins build on top of.
 
 ```bash
-curl -o install-data-explorer.sh https://raw.githubusercontent.com/hachej/boring-ui/main/plugins/data-explorer/install.sh | bash
+git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm install
 ```
+
+> **Note:** This plugin is workspace-private (`"private": true`) — install from source within the monorepo.
 
 ---
 
@@ -19,7 +20,7 @@ curl -o install-data-explorer.sh https://raw.githubusercontent.com/hachej/boring
 
 **The Problem**: You have data — customers, invoices, logs, metrics — and you want users to search, filter, and explore it inside an agent app. But building faceted tables with virtualization, paging, and selection from scratch is tedious.
 
-**The Solution**: `@hachej/boring-data-explorer` provides a controlled `<DataExplorer>` component + `useExplorerState` hook + an `ExplorerDataSource` adapter contract. You implement two methods (`search`, `facets`) against any backend. The component handles the rest.
+**The Solution**: `@hachej/boring-data-explorer` provides a controlled `<DataExplorer>` component + `useExplorerState` hook + an `ExplorerDataSource` adapter contract. You implement `search(args)` (and optionally `fetchFacets(args)`) against any backend. The component handles the rest.
 
 ### Why Use @hachej/boring-data-explorer?
 
@@ -27,33 +28,25 @@ curl -o install-data-explorer.sh https://raw.githubusercontent.com/hachej/boring
 |---------|--------------|
 | **`<DataExplorer>` component** | Search box, faceted filters, virtualized rows, row selection, drag-and-drop payload |
 | **`useExplorerState` hook** | Manages query, facets, paging, and selection state |
-| **Adapter contract** | `search(args)` + `facets(args)` — implement once, plug any backend (SQL, REST, in-memory, gRPC) |
-| **`createSourcesAdapter`** | Fan a single explorer across multiple datasources (one component, many tables) |
-| **Agent-driven** | Rows expose a drag-out payload; the agent can open any row via surface resolver |
+| **Adapter contract** | `search(args)` + optional `fetchFacets(args)` — implement once, plug any backend (SQL, REST, in-memory, gRPC) |
+| **`createSourcesAdapter`** | Wrap a static source list into an `ExplorerDataSource` (one component, many rows) |
+| **Agent-driven** | Rows expose a `DragPayload`; the agent can open any row via surface resolver |
 | **Headless + styled** | Use the hook alone for custom UI, or mount the full component out of the box |
 
 ---
 
 ## Quick Example
 
-```bash
-pnpm add @hachej/boring-data-explorer
-```
-
 ```tsx
-import { DataExplorer, useExplorerState } from "@hachej/boring-data-explorer"
-import type { ExplorerDataSource } from "@hachej/boring-data-explorer"
+import { DataExplorer, useExplorerState } from "@hachej/boring-data-explorer/front"
+import type { ExplorerDataSource, SearchArgs, SearchResult } from "@hachej/boring-data-explorer/shared"
 
 // 1. Implement the adapter against your backend
 const customersSource: ExplorerDataSource = {
-  async search({ query, facets, page, pageSize }) {
-    const res = await fetch(`/api/customers?q=${query}&page=${page}`)
+  async search({ query, filters, limit, offset, signal }): Promise<SearchResult> {
+    const res = await fetch(`/api/customers?q=${query}&limit=${limit}&offset=${offset}`, { signal })
     const { items, total } = await res.json()
-    return { items, total }
-  },
-  async facets({ query }) {
-    const res = await fetch(`/api/customers/facets?q=${query}`)
-    return res.json()
+    return { items, total, hasMore: offset + items.length < total }
   },
 }
 
@@ -68,19 +61,95 @@ The result is a sortable, filterable table — users can search, filter by facet
 
 ---
 
+## Adapter Contract
+
+```ts
+// Explorer item shape rendered by the DataExplorer
+export type ExplorerItem = {
+  id: string
+  title: string
+  subtitle?: string          // muted second line (truncates with title)
+  group?: string             // group key — matches a facet value for grouping
+  leading?: Badge            // leading mono chip (e.g. type code)
+  trailing?: Badge[]         // trailing chips for status flags
+  meta?: string              // right-aligned plain text (e.g. "1.2M")
+}
+
+export type Badge = {
+  code: string               // 1-4 char mono code rendered as a chip
+  tooltip?: string
+}
+
+// Search arguments from the explorer to your adapter
+export type SearchArgs = {
+  query: string
+  filters: Record<string, string[]>   // active facet filters
+  group?: { key: string; value: string }  // scope to single group (paging inside a group)
+  limit: number
+  offset: number
+  signal?: AbortSignal
+}
+
+// Search result your adapter returns
+export type SearchResult = {
+  items: ExplorerItem[]
+  total: number               // total count for the current scope (query + filters + optional group)
+  hasMore: boolean            // whether there are more pages
+}
+
+// Facets — optional. When omitted, the explorer renders flat (no facet popover)
+export type Facets = Record<string, FacetValue[]>
+export type FacetValue = { value: string; count: number }
+
+export type FacetsArgs = {
+  filters: Record<string, string[]>
+  signal?: AbortSignal
+}
+
+// The adapter contract
+export interface ExplorerDataSource {
+  search(args: SearchArgs): Promise<SearchResult>
+  fetchFacets?(args: FacetsArgs): Promise<Facets>   // optional
+}
+```
+
+Implement against **any backend**. The component doesn't care whether data comes from SQL, REST, Elasticsearch, or a JSON file.
+
+### Multi-Source Adapter
+
+```tsx
+import { createSourcesAdapter, type SourceEntry } from "@hachej/boring-data-explorer"
+
+const entries: SourceEntry[] = [
+  { id: "customers", name: "Customers", type: "table", description: "Customer records" },
+  { id: "invoices",  name: "Invoices",  type: "table", description: "Invoice records", schema: "finance" },
+]
+
+const adapter = createSourcesAdapter(entries)
+// adapter is an ExplorerDataSource — pass it to <DataExplorer>
+// When at least one entry has a `schema`, the adapter also exposes fetchFacets
+// to render schema-grouped, toggleable facet sections.
+```
+
+---
+
 ## Installation
 
 ```bash
-# pnpm
-pnpm add @hachej/boring-data-explorer
-
-# npm
-npm install @hachej/boring-data-explorer
-
-# from source
-cd boring-ui/plugins/data-explorer
-pnpm install && pnpm build
+# From source (workspace-only — not published to npm)
+cd boring-ui/plugins/data-explorer && pnpm install && pnpm build
 ```
+
+---
+
+## Package Surfaces
+
+| Import | Environment | What You Get |
+|--------|-------------|--------------|
+| `@hachej/boring-data-explorer` | Browser | `<DataExplorer>`, `useExplorerState`, all types re-exported |
+| `@hachej/boring-data-explorer/front` | Browser | Same as top-level (explicit subpath) |
+| `@hachej/boring-data-explorer/shared` | Any | `ExplorerDataSource`, `ExplorerItem`, `Facets`, `SearchArgs`, `DragPayload`, `Badge` — no React deps |
+| `@hachej/boring-data-explorer/testing` | Browser | Test utilities and mock data sources |
 
 ---
 
@@ -96,16 +165,16 @@ pnpm install && pnpm build
 │  │ ← │ │ 1..25 of 430  │  │
 │  └───┘ └───────────────┘  │
 └──────────────┬─────────────┘
-               │ state.source.search()
-               │ state.source.facets()
+               │ source.search(args)
+               │ source.fetchFacets?(args)
 ┌──────────────▼─────────────┐
 │    ExplorerDataSource      │
 │  (your adapter impl)       │
 │                            │
-│  search({ query, facets,   │
-│          page, pageSize }) │
+│  search({ query, filters,  │
+│          limit, offset })  │
 │                            │
-│  facets({ query })         │
+│  fetchFacets?({ filters }) │
 └──────────────┬─────────────┘
                │
 ┌──────────────▼─────────────┐
@@ -116,60 +185,6 @@ pnpm install && pnpm build
 └────────────────────────────┘
 ```
 
-### Package Surfaces
-
-| Import | Environment | What You Get |
-|--------|-------------|--------------|
-| `@hachej/boring-data-explorer` | Browser | `<DataExplorer>`, `useExplorerState`, `createSourcesAdapter` |
-| `@hachej/boring-data-explorer/shared` | Any | `ExplorerDataSource`, `ExplorerItem`, `FacetValue`, types |
-| `@hachej/boring-data-explorer/testing` | Browser | Test utilities and mock data sources |
-
-### Adapter Contract
-
-```ts
-interface ExplorerDataSource {
-  search(args: {
-    query: string
-    facets: Record<string, string[]>   // active facet filters
-    page: number
-    pageSize: number
-  }): Promise<{ items: ExplorerItem[]; total: number }>
-
-  facets(args: { query: string }): Promise<FacetValue[]>
-}
-
-interface ExplorerItem {
-  id: string
-  label: string
-  data: Record<string, unknown>        // row payload — anything you need
-  dragPayload?: unknown                // what gets dragged when user drops the row
-}
-
-interface FacetValue {
-  facetId: string
-  values: { value: string; count: number }[]
-}
-```
-
-Implement against **any backend**. The component doesn't care whether data comes from SQL, REST, Elasticsearch, or a JSON file.
-
-### Multi-Source Adapter
-
-```tsx
-import { createSourcesAdapter } from "@hachej/boring-data-explorer"
-
-const adapter = createSourcesAdapter({
-  sources: {
-    customers: customersSource,
-    invoices: invoicesSource,
-    orders: ordersSource,
-  },
-  defaultSource: "customers",
-})
-
-// Now one explorer can switch between all three sources
-```
-
 ---
 
 ## How @hachej/boring-data-explorer Compares
@@ -177,8 +192,8 @@ const adapter = createSourcesAdapter({
 | Feature | @hachej/boring-data-explorer | AG Grid | TanStack Table | Build your own |
 |---------|------------------------------|---------|----------------|----------------|
 | Built-in search + facets | ✅ One hook | ⚠️ Filter only | ❌ DIY | ❌ |
-| Backend adapter contract | ✅ `search` + `facets` | ❌ In-memory | ⚠️ Sorting/filtering | ❌ |
-| Drag-and-drop payload | ✅ Built in | ⚠️ Add-on | ❌ | ❌ |
+| Backend adapter contract | ✅ `search` + `fetchFacets` | ❌ In-memory | ⚠️ Sorting/filtering | ❌ |
+| Drag-and-drop payload | ✅ `DragPayload` type | ⚠️ Add-on | ❌ | ❌ |
 | Agent integration | ✅ Surface resolver | ❌ | ❌ | ❌ |
 | Virtualized rows | ✅ | ✅ | ⚠️ Manual | ❌ |
 | Complexity | ✅ ~10 lines to mount | ❌ Heavy API | ⚠️ Complex API | ❌ Weeks |
@@ -200,38 +215,39 @@ const adapter = createSourcesAdapter({
 | Error | Cause | Fix |
 |-------|-------|-----|
 | No rows showing | `search()` returned empty items | Check your backend query — log the response |
-| Facets empty | `facets()` not implemented or returning empty array | Implement the `facets` method on your data source |
+| Facets empty | `fetchFacets()` not implemented | Add the optional `fetchFacets` method to your adapter |
 | Infinite loading loop | `useExplorerState` deps changing every render | Memoize your `source` object or move it outside the component |
-| Drag not working | Row has no `dragPayload` | Ensure your `search()` result items include `dragPayload` |
-| Wrong source selected | Multi-source adapter misconfigured | Check `defaultSource` matches a source key |
+| Drag not working | Row has no `DragPayload` | Pass `getDragPayload` prop to `<DataExplorer>` |
+| Wrong source selected | `createSourcesAdapter` entries misconfigured | Check `SourceEntry` id and name fields |
 
 ---
 
 ## Limitations
 
+- **Workspace-private** — `"private": true` in package.json. Not published to npm. Install from source within the monorepo.
 - **Not an enterprise data grid** — No cell editing, pivot tables, or group-by. It's a search-and-filter primitive, not AG Grid.
-- **No built-in data fetching** — You implement `search()` and `facets()`. The adapter doesn't cache or debounce.
+- **No built-in data fetching** — You implement `search()` and optionally `fetchFacets()`. The adapter doesn't cache or debounce.
 - **Requires boring-ui workspace chrome** — The component assumes it's mounted inside a workspace panel layout. Standalone use is possible but you lose the drag-to-panel behavior.
-- **No column customization UI** — Columns are derived from the row data. No per-column sort configuration or visibility toggles in v1.
+- **No column customization UI** — Column shape is derived from `ExplorerItem` (title / subtitle / leading / trailing / meta) — no arbitrary column projection.
 
 ---
 
 ## FAQ
 
 **Q: What's the difference between `data-explorer` and `data-catalog`?**  
-A: `data-explorer` is the primitive — a single table you mount wherever. `data-catalog` is a higher-level plugin: it puts a sidebar tab listing multiple data sources, and clicking a source opens the explorer table.
+A: `data-explorer` is the primitive — a single table you mount wherever. `data-catalog` is a higher-level plugin: it puts a sidebar tab listing data sources, and clicking a source opens the explorer table.
 
 **Q: Can I use this without the boring-ui workspace?**  
 A: Yes. `<DataExplorer>` and `useExplorerState` are standalone React exports. You'll just lose the drag-to-panel integration since there's no workbench to receive the payload.
 
 **Q: How do I customize the table columns?**  
-A: The component renders columns from `ExplorerItem.data`. Add a `columns` prop (or map data fields) in your own wrapper. v1 ships with auto-generated columns from the data keys.
+A: Columns are derived from `ExplorerItem` fields: `title` (primary), `subtitle` (secondary), `leading` (mono chip), `trailing` (status badges), `meta` (right-aligned text). There is no per-column projection API.
 
 **Q: Does it support server-side pagination?**  
-A: Yes — `search()` receives `page` and `pageSize`. Your backend can return a slice. The `total` field drives the pager.
+A: Yes — `search()` receives `limit` and `offset`. Your backend can return a slice. `total` and `hasMore` drive the pager.
 
 **Q: Can I use this for non-tabular data?**  
-A: The interface expects `{ items: [...], total }`. You can map any data shape (GraphQL results, CSV rows, API responses) to `ExplorerItem[]`.
+A: Yes — map any data shape (GraphQL results, CSV rows, API responses) to `ExplorerItem[]`. The adapter is backend-agnostic.
 
 ---
 

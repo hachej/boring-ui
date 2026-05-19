@@ -3,79 +3,150 @@
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![npm](https://img.shields.io/npm/v/@hachej/boring-data-catalog.svg)](https://www.npmjs.com/package/@hachej/boring-data-catalog)
 
 </div>
 
-A configurable data catalog as a persistent workbench tab. Built on [`@hachej/boring-data-explorer`](../data-explorer/README.md) — adds a sidebar source navigator with search, facets, and agent-driven row opening.
+A configurable data catalog plugin for the workbench — left sidebar tab with a searchable, faceted list and a visualization panel to explore rows. Built on [`@hachej/boring-data-explorer`](../data-explorer/README.md).
 
 ```bash
-curl -o install-data-catalog.sh https://raw.githubusercontent.com/hachej/boring-ui/main/plugins/data-catalog/install.sh | bash
+git clone https://github.com/hachej/boring-ui.git && cd boring-ui && pnpm install
 ```
+
+> **Note:** This plugin is workspace-private (`"private": true`) — install from source within the monorepo.
 
 ---
 
 ## TL;DR
 
-**The Problem**: Your agent app has multiple data sources (customers, invoices, orders) and you want a single sidebar tab listing them all, where users can pick a source and explore its rows. Building this catalog UI — source switching, open-in-panel routing, agent surface resolver — from scratch is repetitive.
+**The Problem**: You have a data source (customers, invoices, time series, whatever) and you want users to browse it from a sidebar tab, click rows to open detail visualizations, and let the agent open specific rows programmatically. But wiring up a catalog tab + explorer panel + surface resolver + agent tool is repetitive.
 
-**The Solution**: `@hachej/boring-data-catalog` gives you a ready-made left-tab plugin: configure your sources, wire up a data adapter, and you get a browsable catalog with faceted search and agent integration.
+**The Solution**: `@hachej/boring-data-catalog` gives you a one-call plugin factory: pass in an `ExplorerDataSource` adapter and configure labels, facets, and behavior. It produces a left tab, a visualization panel, a catalog, and a surface resolver — all wired up.
 
 ### Why Use @hachej/boring-data-catalog?
 
 | Feature | What It Does |
 |---------|--------------|
-| **Left-tab catalog** | Persistent sidebar listing all configured data sources with icons |
-| **Source switching** | Click a source → opens it in an explorer panel |
-| **Surface resolver** | Agent can request "open this row" via typed open-request — routed to the right panel |
+| **Left sidebar catalog tab** | Persistent sidebar listing rows from your adapter, with search and facet filters |
+| **Visualization panel** | Click a row → opens a detail panel that also shows an explorer table |
+| **Surface resolver** | Agent can open a specific row via `openSurface` with `DATA_CATALOG_ROW_SURFACE_KIND` |
+| **Agent tool** | Server plugin ships a `search_catalog` tool the agent uses to find rows before opening them |
 | **Pre-wired with data-explorer** | Search + facets + drag-out behavior comes for free |
-| **Server adapter contract** | Backend-agnostic — implement `ExplorerDataSource` once per source |
+| **Customizable** | Swap the visualization component, customize facets/groupBy/onSelect, or pick which outputs to include |
 
-### Quick Example
+---
 
-```bash
-pnpm add @hachej/boring-data-catalog
-```
+## Quick Example
 
 **Frontend (workbench):**
 
 ```ts
 import { createDataCatalogPlugin } from "@hachej/boring-data-catalog/front"
+import type { ExplorerDataSource } from "@hachej/boring-data-explorer/shared"
 
+// Your data adapter
+const adapter: ExplorerDataSource = {
+  async search({ query, filters, limit, offset }) {
+    // fetch from your backend
+    return { items: [...], total, hasMore: ... }
+  },
+}
+
+// One plugin = left tab + visualization panel + catalog + surface resolver
 const catalogPlugin = createDataCatalogPlugin({
-  sources: [
-    { id: "customers", label: "Customers", icon: "users" },
-    { id: "invoices", label: "Invoices", icon: "receipt" },
+  id: "customers",
+  label: "Customers",
+  adapter,
+  facets: [
+    { key: "industry", label: "Industry", formatValue: (v) => v },
+    { key: "region", label: "Region", order: ["US", "EU", "APAC"], formatValue: (v) => v },
   ],
+  groupBy: "industry",
 })
 ```
+
+Add `catalogPlugin` to your `WorkspaceProvider` plugins array.
 
 **Server (agent runtime):**
 
 ```ts
 import { createDataCatalogServerPlugin } from "@hachej/boring-data-catalog/server"
+import { ExplorerDataSource } from "@hachej/boring-data-explorer/shared"
 
 const catalogServerPlugin = createDataCatalogServerPlugin({
-  adapter: yourSourcesAdapter, // implements ExplorerDataSource per source id
+  label: "Customers",
+  adapter,        // same ExplorerDataSource as front
+  defaultLimit: 20,
+  maxLimit: 50,
 })
 ```
 
-Pass both plugins into your `WorkspaceProvider` and `createAgentApp`. Users see a "Data Catalog" tab in the sidebar; clicking a source opens a faceted explorer table.
+Add `catalogServerPlugin` to `createAgentApp` `plugins` array.
+
+Now agents can search the catalog via the tool and open specific rows via the UI bridge `openSurface` command:
+```
+openSurface({ kind: DATA_CATALOG_ROW_SURFACE_KIND, target: row.id, meta: { catalogId, row } })
+```
 
 ---
 
-## Installation
+## What It Produces
 
-```bash
-# pnpm
-pnpm add @hachej/boring-data-catalog
+One call to `createDataCatalogPlugin()` produces four outputs:
 
-# npm
-npm install @hachej/boring-data-catalog
+| Output | What | Toggle |
+|--------|------|--------|
+| **Left tab** | Sidebar tab with searchable, faceted table | `includeLeftTab` (default: true) |
+| **Visualization panel** | Center panel for exploring a selected row's context | `includeVisualizationPanel` (default: true) |
+| **Catalog** | Command-palette-searchable catalog entry | `includeCatalog` (default: true) |
+| **Surface resolver** | Maps `openSurface` calls to panel open | `includeSurfaceResolver` (default: true if visualization panel is on) |
 
-# from source
-cd boring-ui/plugins/data-catalog
-pnpm install && pnpm build
+You can disable any of these with the `include*` flags. For example, a plugin that only contributes a left tab:
+
+```ts
+createDataCatalogPlugin({
+  id: "metrics",
+  label: "Metrics",
+  adapter,
+  includeLeftTab: true,
+  includeVisualizationPanel: false,
+  includeCatalog: false,
+  includeSurfaceResolver: false,
+})
+```
+
+---
+
+## Configuration
+
+```ts
+interface CreateDataCatalogPluginOptions {
+  pluginId?: string
+  id: string
+  label: string
+  adapter: ExplorerDataSource        // required — your data source
+  facets?: FacetConfig[]             // facet filter definitions
+  groupBy?: string                   // group key for the left tab rows
+  getDragPayload?: (row) => DragPayload | null
+  onSelect?: (row, context) => void  // custom row click handler
+  emptyState?: ReactNode
+  searchPlaceholder?: string
+  pageSize?: number
+  debounceMs?: number
+  leftTabId?: string
+  leftTabTitle?: string
+  leftTabIcon?: IconType
+  catalogId?: string
+  catalogLabel?: string
+  visualizationPanelId?: string
+  visualizationTitle?: string
+  visualizationIcon?: IconType
+  visualizationComponent?: ComponentType<PaneProps<DataCatalogVisualizationParams>>
+  includeLeftTab?: boolean           // default true
+  includeCatalog?: boolean           // default true
+  includeVisualizationPanel?: boolean // default true
+  includeSurfaceResolver?: boolean   // default true (if visualization panel on)
+  source?: "builtin" | "app"         // panel attribution
+}
 ```
 
 ---
@@ -83,95 +154,97 @@ pnpm install && pnpm build
 ## Architecture
 
 ```
-┌────────────────────────────────┐
-│   Workspace Sidebar            │
-│   ┌────────────────────────┐   │
-│   │ ▤ Data Catalog         │   │
-│   │ ───────────────────────│   │
-│   │ 👥 Customers      430  │   │
-│   │ 📄 Invoices      1,203 │   │
-│   │ 📦 Orders        5,678 │   │
-│   └────────────────────────┘   │
-└──────────┬─────────────────────┘
-           │ click → open source
-           ▼
-┌────────────────────────────────┐
-│   Explorer Panel (center)       │
-│   ┌──────────────────────┐     │
-│   │ 🔍  [search...]      │     │
-│   │ [facet: region ▼]    │     │
-│   │ ─────────────────────│     │
-│   │ id │ name  │ revenue │     │
-│   │ 1  │ Acme  │ $42K    │     │
-│   │ ... drag row out ... │     │
-│   └──────────────────────┘     │
-└────────────────────────────────┘
+┌───────────────────────────────────────┐
+│   Workspace Left Sidebar             │
+│   ┌───────────────────────────────┐  │
+│   │ 📊 Customers (left tab)       │  │
+│   │ ┌───────────────────────────┐ │  │
+│   │ │ [Search: "acme..."]       │ │  │
+│   │ │ [Industry: Tech ▼]        │ │  │
+│   │ │ ───────────────────────── │ │  │
+│   │ │ US: Acme Corp      [T]  ✓ │ │  │
+│   │ │ EU: Acme GmbH      [T]    │ │  │
+│   │ │ APAC: Acme KK      [L]    │ │  │
+│   │ └─────────────────────────── │ │  │
+│   └───────────────────────────────┘  │
+└───────────────┬───────────────────────┘
+                │ click row → open panel
+                ▼
+┌───────────────────────────────────────┐
+│   Center Panel (visualization)        │
+│   ┌───────────────────────────────┐  │
+│   │ Acme Corp                     │  │
+│   │ US: Acme Corp [T]            │  │
+│   │ ┌───────────────────────────┐│  │
+│   │ │ [Search...]               ││  │
+│   │ │ [filtered by row context] ││  │
+│   │ │ ...explorer table...      ││  │
+│   │ └───────────────────────────┘│  │
+│   └───────────────────────────────┘  │
+└───────────────────────────────────────┘
 ```
 
-### Package Surfaces
-
-| Import | Environment | What You Get |
-|--------|-------------|--------------|
-| `@hachej/boring-data-catalog/front` | Browser | `createDataCatalogPlugin()` — sidebar tab + panel opener |
-| `@hachej/boring-data-catalog/server` | Node | `createDataCatalogServerPlugin()` — routes + adapter wiring |
-| `@hachej/boring-data-catalog/shared` | Any | Source config types, constants |
-
-### Configuration
-
-```ts
-interface CatalogSource {
-  id: string           // unique source key
-  label: string        // display name in sidebar
-  icon: string         // lucide icon name (e.g. "users", "receipt")
-  description?: string // optional tooltip
-}
-
-// Front plugin
-createDataCatalogPlugin({
-  sources: CatalogSource[]
-})
-
-// Server plugin
-createDataCatalogServerPlugin({
-  adapter: {
-    getSource(sourceId: string): ExplorerDataSource | null
-  }
-})
+The agent can open any row programmatically:
+```
+POST /api/v1/ui/commands
+{ kind: "openSurface", params: {
+  surfaceKind: "data-catalog-row",
+  target: <row.id>,
+  meta: { catalogId: "customers", row: { title: "Acme Corp", ... } }
+}}
 ```
 
 ---
 
-## When to Use This vs `data-explorer`
+## Installation
 
-| Use `data-explorer` when... | Use `data-catalog` when... |
-|-----------------------------|----------------------------|
-| You want a single faceted table inside a custom panel | You want a sidebar tab listing **multiple** data sources |
-| You're building a one-off table | You want a reusable catalog the agent can navigate |
-| You need total control over layout | You want "browse sources → click → explore" out of the box |
-
-Both plugins share the same `ExplorerDataSource` adapter contract. You can use both in the same app.
+```bash
+# From source (workspace-only — not published to npm)
+cd boring-ui/plugins/data-catalog && pnpm install && pnpm build
+```
 
 ---
 
 ## How @hachej/boring-data-catalog Compares
 
 | Feature | @hachej/boring-data-catalog | Custom sidebar + table | Embedded BI tool |
-|---------|------------------------------|------------------------|------------------|
-| Source list sidebar | ✅ Built-in | ❌ DIY | ⚠️ Configuration-heavy |
-| Agent row opening | ✅ Surface resolver | ❌ DIY | ❌ |
+|---------|------------------------------|-----------------------|------------------|
+| Catalog tab + panel | ✅ One plugin call | ❌ DIY each piece | ⚠️ Configuration-heavy |
+| Agent tool + bridge | ✅ search + openSurface | ❌ DIY | ❌ |
 | Wiring effort | ✅ ~10 lines | ❌ Hours | ❌ Days |
-| Data source flexibility | ✅ Any backend via adapter | ⚠️ Custom per source | ⚠️ Vendor-defined |
+| Data source flexibility | ✅ Any backend via ExplorerDataSource | ⚠️ Custom per source | ⚠️ Vendor-defined |
 | Workbench integration | ✅ Drag-to-panel, exec_ui | ⚠️ Manual | ❌ None |
+| Customizable outputs | ✅ Toggle left-tab / panel / catalog / resolver | ❌ All or nothing | ❌ |
 
 **When to use @hachej/boring-data-catalog:**
-- You have 2+ data sources users need to browse
-- You want a "data hub" sidebar in your agent app
-- You want the agent to open specific rows in panels
+- You want a sidebar catalog tab that lets users browse your data
+- You want the agent to search and open specific rows in panels
+- You want a left-tab + visualization panel combo with minimal code
 
 **When it might not fit:**
-- You only need one table (use `@hachej/boring-data-explorer` directly)
+- You only need a standalone table (use `@hachej/boring-data-explorer` directly)
 - You want a full BI dashboard with charting (embed a dedicated BI tool)
 - You need real-time data streaming (not supported in v1)
+
+---
+
+## Package Surfaces
+
+| Import | Environment | What You Get |
+|--------|-------------|--------------|
+| `@hachej/boring-data-catalog/front` | Browser | `createDataCatalogPlugin()`, types, hooks, surface resolver |
+| `@hachej/boring-data-catalog/server` | Node | `createDataCatalogServerPlugin()` — agent tool + skill prompt |
+| `@hachej/boring-data-catalog/shared` | Any | `DATA_CATALOG_PLUGIN_ID`, `DATA_CATALOG_ROW_SURFACE_KIND`, constants |
+
+---
+
+## Dependencies
+
+| Package | Required | Why |
+|---------|----------|-----|
+| `@hachej/boring-data-explorer` | ✅ Yes | Core table component and `ExplorerDataSource` adapter |
+| `@hachej/boring-workspace` | ✅ peerDependency | Plugin system and panel registry |
+| `lucide-react` | ✅ Yes | Catalog icons (Database, BarChart3) |
 
 ---
 
@@ -180,45 +253,39 @@ Both plugins share the same `ExplorerDataSource` adapter contract. You can use b
 | Error | Cause | Fix |
 |-------|-------|-----|
 | Catalog tab doesn't appear | Front plugin not in workspace | Add `createDataCatalogPlugin()` to `WorkspaceProvider` plugins |
-| Clicking a source does nothing | Server adapter not returning data source | Check your `adapter.getSource(sourceId)` implementation |
-| Explorer panel opens but shows no rows | `search()` returning empty results | Verify your backend query and `ExplorerDataSource` implementation |
-| Agent can't open rows | Surface resolver not registered | Ensure `createDataCatalogServerPlugin()` is added to agent app |
-| Icons not rendering | Invalid lucide icon name | Check icon names against [lucide.dev](https://lucide.dev/icons/) |
+| Clicking a row does nothing | `adapter.search()` is broken or returns nothing | Test your adapter independently |
+| Agent tool not found | Server plugin not registered | Add `createDataCatalogServerPlugin()` to agent app `plugins` |
+| Agent can't open rows | Surface resolver disabled | Set `includeSurfaceResolver: true` (on by default) |
+| Icons not rendering | Invalid lucide icon name | Check `leftTabIcon` / `visualizationIcon` against [lucide.dev](https://lucide.dev/icons/) |
 
 ---
 
 ## Limitations
 
-- **Depends on `data-explorer`** — This plugin wraps the explorer. You need `@hachej/boring-data-explorer` installed as a dependency.
-- **No charting or visualization** — The catalog opens tables, not charts. For visualizations, build a custom surface resolver that maps row clicks to a chart panel.
-- **No server-side caching** — Each source switch triggers a fresh `search()` call. Cache at your adapter level if needed.
-- **Single selection** — Only one source can be explored at a time. No split-panel dual-source comparison.
+- **Workspace-private** — `"private": true` in package.json. Not published to npm. Install from source within the monorepo.
+- **Single data source per plugin** — Each call to `createDataCatalogPlugin()` wires to one `ExplorerDataSource`. For multiple catalogs, instantiate the plugin multiple times with different adapters and labels.
+- **No charting or visualization** — The visualization panel shows another explorer table, not charts. For visualizations, provide a custom `visualizationComponent`.
+- **No server-side caching** — Each search triggers a fresh `search()` call. Cache at your adapter level if needed.
+- **Real-time data** — Not supported in v1. Search uses debounce and pagination but no live streaming.
 
 ---
 
 ## FAQ
 
-**Q: Can I add a new source without rebuilding the frontend?**  
-A: The source list is configured at plugin creation time. For dynamic source discovery, implement a server route that returns source metadata and build a dynamic catalog plugin.
+**Q: How do I use multiple data sources?**  
+A: Call `createDataCatalogPlugin()` once per data source, each with a different `id`, `label`, and `adapter`. Or use `createSourcesAdapter(SourceEntry[])` from data-explorer to wrap a static source list.
 
 **Q: How does the agent open a specific row?**  
-A: The catalog registers a surface resolver. The agent calls `exec_ui({ kind: "open-catalog-row", params: { sourceId, itemId } })` and the resolver opens the row in an explorer panel.
+A: The catalog registers a surface resolver. The agent uses the UI bridge `openSurface` command: `{ kind: DATA_CATALOG_ROW_SURFACE_KIND, target: row.id, meta: { catalogId, row } }`.
 
-**Q: Can I customize the explorer panel that opens?**  
-A: Yes. The catalog uses `data-explorer` internally. Wrap it with your own `createDataCatalogPlugin()` options to customize which columns, facets, or features are enabled.
+**Q: Can I customize the visualization panel?**  
+A: Yes. Pass a custom `visualizationComponent` to `createDataCatalogPlugin()`. It receives `PaneProps<DataCatalogVisualizationParams>` with the selected row and context.
 
 **Q: What if my data source is a REST API, not a database?**  
-A: The `ExplorerDataSource` adapter is backend-agnostic. Implement `search()` and `facets()` to hit your REST endpoint. The plugin doesn't care where data comes from.
+A: The `ExplorerDataSource` adapter is backend-agnostic. Implement `search()` (and optionally `fetchFacets()`) to hit your REST endpoint.
 
----
-
-## Dependencies
-
-| Package | Required | Why |
-|---------|----------|-----|
-| `@hachej/boring-data-explorer` | ✅ Yes | Core table component and adapter contract |
-| `@hachej/boring-workspace` | ✅ Yes | Plugin system and panel registry |
-| `lucide-react` | ✅ Yes | Source icons in the sidebar |
+**Q: Can I disable outputs I don't need?**  
+A: Yes. Set `includeLeftTab`, `includeVisualizationPanel`, `includeCatalog`, or `includeSurfaceResolver` to `false`. A left-tab-only plugin is a perfectly valid output.
 
 ---
 

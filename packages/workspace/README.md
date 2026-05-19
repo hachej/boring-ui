@@ -44,7 +44,7 @@ import { ChatPanel } from "@hachej/boring-agent"
 // Full shell — plug in your chat and plugins
 function App() {
   return (
-    <WorkspaceProvider chatPanel={ChatPanel} plugins={[myPanelPlugin, dataCatalogPlugin]}>
+    <WorkspaceProvider chatPanel={ChatPanel} workspaceId="default" plugins={[myPanelPlugin, dataCatalogPlugin]}>
       <IdeLayout />
     </WorkspaceProvider>
   )

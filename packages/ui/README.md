@@ -10,7 +10,7 @@
 Shared shadcn-style UI primitives for boring-ui packages and plugins. Buttons, dialogs, panes, inputs, feedback states, settings panels — everything a panel needs to look consistent. Zero global CSS dependencies.
 
 ```bash
-curl -o install-ui-kit.sh https://raw.githubusercontent.com/hachej/boring-ui/main/scripts/install-ui-kit.sh | bash
+pnpm add @hachej/boring-ui-kit
 ```
 
 ---
@@ -83,6 +83,72 @@ npm install @hachej/boring-ui-kit
 git clone https://github.com/hachej/boring-ui.git
 cd boring-ui && pnpm install
 pnpm --filter @hachej/boring-ui-kit build
+```
+
+---
+
+## Architecture
+
+`@hachej/boring-ui-kit` is the shared design system at the bottom of every boring-ui package:
+
+```
+┌──────────────────────────────────────────┐
+│  @hachej/boring-workspace                │
+│  (Dockview chrome, panels, plugins)      │
+├──────────────────────────────────────────┤
+│  @hachej/boring-ui-kit ◄── YOU ARE HERE   │
+│                                          │
+│  ┌────────┐ ┌────────┐ ┌────────┐        │
+│  │ Layout │ │ Form   │ │Overlay │        │
+│  │Pane, … │ │Input, …│ │Dialog, │        │
+│  └────────┘ └────────┘ └────────┘        │
+│                                          │
+│  Styled by CSS vars from host:            │
+│  – @boring-core/theme.css                 │
+│  – @boring-workspace/globals.css          │
+│  (or your own --boring-* vars)            │
+└──────────────────────────────────────────┘
+```
+
+The kit imports **no global CSS**. Styles come from CSS custom properties set by the host app. In a full app, you import the workspace globals once:
+
+```ts
+// In your app shell (once)
+import "@hachej/boring-workspace/globals.css"
+```
+
+Then every UI kit component picks up those variables automatically.
+
+### Styling Contract
+
+Override any CSS variable at any scope:
+
+```css
+/* Use :root for normal React apps, :host for Shadow DOM */
+:root {
+  --boring-border: 1px solid rgba(255, 255, 255, 0.1);
+  --boring-radius: 6px;
+  --boring-color-bg: #1a1a1a;
+  --boring-color-text: #e0e0e0;
+  /* ... more vars set by @hachej/boring-workspace/globals.css */
+}
+```
+
+### Theming
+
+```css
+.my-green-panel {
+  --boring-color-accent: #22c55e;
+  --boring-color-accent-hover: #16a34a;
+}
+```
+
+The kit uses class-variance-authority (CVA) for consistent variant patterns:
+
+```tsx
+<Button variant="destructive" size="sm">Delete</Button>
+{/* variants: default | destructive | secondary | ghost */}
+{/* sizes: sm | md | lg */}
 ```
 
 ---
@@ -162,49 +228,6 @@ pnpm --filter @hachej/boring-ui-kit build
 | `SettingsPanel` | Full-page settings layout |
 | `SettingsNav` | Vertical navigation for settings sections |
 | `SettingsActionRow` | Row with label, description, and action control |
-
----
-
-## Styling Contract
-
-The kit ships **no global CSS dependencies**. Styles are driven by CSS custom properties set by the host app:
-
-```css
-/* In your app shell or workspace globals */
-:host {
-  --boring-border: 1px solid rgba(255, 255, 255, 0.1);
-  --boring-radius: 6px;
-  --boring-color-bg: #1a1a1a;
-  --boring-color-text: #e0e0e0;
-  /* ... more vars set by @hachej/boring-workspace/globals.css */
-}
-```
-
-Plugins don't import separate CSS — they inherit the host's theme. The kit provides `styles.css` for standalone use:
-
-```ts
-// In your app shell (once)
-import "@hachej/boring-ui-kit/styles.css"
-```
-
-### Theming
-
-Override any CSS variable at any scope:
-
-```css
-.my-green-panel {
-  --boring-color-accent: #22c55e;
-  --boring-color-accent-hover: #16a34a;
-}
-```
-
-The kit uses class-variance-authority (CVA) for consistent variant patterns:
-
-```tsx
-<Button variant="destructive" size="sm">Delete</Button>
-{/* variants: default | destructive | secondary | ghost */}
-{/* sizes: sm | md | lg */}
-```
 
 ---
 

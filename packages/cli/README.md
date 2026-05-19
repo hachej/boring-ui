@@ -26,7 +26,7 @@ npx @hachej/boring-ui-cli
 | Feature | What It Does |
 |---------|--------------|
 | **Zero-config startup** | `npx @hachej/boring-ui-cli` — that's it. Opens your browser to a full agent workbench. |
-| **Multiple auth paths** | Set `ANTHROPIC_API_KEY`, or log in via Claude/Copilot/Gemini/Codex on first launch. |
+| **Simple auth** | Set `ANTHROPIC_API_KEY` in your environment. The agent runs with direct filesystem access to your cwd. |
 | **Full workspace** | Chat, file tree, editor panels, command palette — all running against your real directory. |
 | **No database** | Runs in-memory. State persists for the session. No external dependencies. |
 | **Customizable port + root** | `PORT=8080` and `BORING_AGENT_WORKSPACE_ROOT=/path` env vars for power users. |
@@ -96,23 +96,13 @@ npx ./packages/cli/dist/index.js
 
 ## Authentication
 
-You need credentials to talk to an LLM. The CLI supports two paths:
-
-### Option 1: API Key (fastest)
+The CLI talks to Anthropic Claude via the agent runtime. You need a valid API key:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... npx @hachej/boring-ui-cli
 ```
 
-### Option 2: Browser Login
-
-Run without an API key — the first launch opens a login prompt where you can authenticate via:
-- **Claude** (Anthropic)
-- **Copilot** (GitHub)
-- **Gemini** (Google)
-- **Codex** (OpenAI)
-
-Credentials are stored locally and reused on future runs. No API key needed after login.
+Only Anthropic Claude is wired in v1. The agent harness supports other providers via the `AgentHarness` interface, but only Anthropic is implemented.
 
 ---
 
@@ -120,7 +110,7 @@ Credentials are stored locally and reused on future runs. No API key needed afte
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `ANTHROPIC_API_KEY` | (unset) | Anthropic API key. If unset, triggers browser login. |
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key. The agent requires a valid key to function. |
 | `PORT` | `5200` | Port to run the server on |
 | `BORING_AGENT_WORKSPACE_ROOT` | `.` (cwd) | Root directory for the workspace. The agent sees this as its filesystem. |
 | `BORING_AGENT_MODE` | `direct` | `direct` (no sandbox) or `local` (bwrap sandbox, Linux only) |
@@ -176,10 +166,10 @@ All running locally against your real filesystem with no database.
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `ANTHROPIC_API_KEY not set` | No API key, login flow unavailable | Set `ANTHROPIC_API_KEY` or ensure browser can open the login page |
+| `ANTHROPIC_API_KEY not set` | No API key | `export ANTHROPIC_API_KEY=sk-ant-...` before running |
 | `port already in use` | Port 5200 occupied | `PORT=5201 npx @hachej/boring-ui-cli` |
 | Browser doesn't open | `BROWSER=none` or no display | Manually navigate to `http://localhost:5200` |
-| Agent returns errors | Invalid credentials after login | Login credentials may have expired — restart and re-login |
+| Agent returns errors | Invalid API key | Verify your Anthropic API key is valid and has quota |
 | `workspace root not found` | `BORING_AGENT_WORKSPACE_ROOT` points to non-existent dir | Create the directory or unset the variable to use cwd |
 
 ---
@@ -191,6 +181,7 @@ All running locally against your real filesystem with no database.
 - **No auth management**: No user accounts, invites, or role-based access.
 - **Direct mode only**: No bwrap sandbox by default (use `BORING_AGENT_MODE=local` on Linux with bubblewrap installed).
 - **Not for production**: This is a developer tool, not a deployment target. Use `@hachej/boring-core` for multi-user apps.
+- **Only Anthropic Claude**: No OpenAI, Google, or other model providers wired in v1.
 
 ---
 
@@ -203,7 +194,7 @@ A: No. `npx` downloads and runs the package on first use. Subsequent runs use th
 A: The server keeps running. Stop it with `Ctrl+C` in the terminal.
 
 **Q: Can I use this with OpenAI models?**  
-A: The CLI uses `@hachej/boring-agent` internally, which currently only supports Anthropic Claude. The login flow may support other providers — check the login prompt on first launch.
+A: Only Anthropic Claude is wired in v1. Additional providers may be supported in future versions.
 
 **Q: Is my code sent to the cloud?**  
 A: Yes — the agent sends file contents and chat messages to the LLM provider (e.g. Anthropic). The filesystem operations run locally on your machine.
