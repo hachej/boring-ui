@@ -1,53 +1,78 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Candidates ordered by likelihood: dist layout first (flat file in dist/),
-// then src layout (src/server/ subdirectory), then env var override.
-// tsup outputs dist/server.js (not dist/server/boringSystemPrompt.js), so
-// __dirname in dist is packages/workspace/dist/, one level above docs/.
-function resolveDocsPath(): string | null {
-  const override = process.env.BORING_DOCS_PATH;
-  if (override) return override;
-
-  const candidates = [
-    join(__dirname, "../docs"),   // dist/server.js → packages/workspace/docs/
-    join(__dirname, "../../docs"), // src/server/*.ts → packages/workspace/docs/
-  ];
-  return candidates.find(existsSync) ?? null;
+/**
+ * boring-ui system prompt — numbered TODO workflow.
+ *
+ * The canonical plugin shape is NOT inlined here. Instead:
+ *   - `boring-ui scaffold-plugin` writes the shape into the workspace
+ *     (the agent reads the generated files to learn it).
+ *   - `boring-ui verify-plugin` validates manifests + file existence
+ *     and surfaces actionable hints (the closed loop).
+ *   - The `boring-plugin-authoring` skill (under <available_skills>)
+ *     is the longer-form reference for composition, file visualizers,
+ *     etc.
+ *
+ * The prompt's only job is to teach the WORKFLOW + name the common
+ * hallucinations that don't exist. Everything else flows from the
+ * tools and the skill.
+ */
+export interface BuildBoringSystemPromptOptions {
+  /**
+   * CLI invocation that writes the canonical files (e.g.
+   * `boring-ui scaffold-plugin` or `npx @hachej/boring-ui-cli
+   * scaffold-plugin`). When unset, step 1 falls back to "read the
+   * skill" — the agent then has no canonical anchor and reliability
+   * suffers on smaller models, so always provide this in production.
+   */
+  scaffoldCommand?: string
+  /** CLI invocation that validates `.pi/extensions/*` manifests. */
+  verifyCommand: string
 }
 
-function readDocOrFallback(docsPath: string, name: string): string {
-  const file = join(docsPath, name);
-  try {
-    return existsSync(file) ? readFileSync(file, "utf-8").trim() : "";
-  } catch {
-    return "";
+export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions): string {
+  const verify = opts.verifyCommand
+  const steps: string[] = []
+  let n = 0
+
+  if (opts.scaffoldCommand) {
+    n += 1
+    steps.push(
+      `**${n}. Scaffold.** Bash \`${opts.scaffoldCommand} <kebab-name>\` — writes the canonical \`package.json\` + \`front/index.tsx\` under \`<cwd>/.pi/extensions/<kebab-name>/\`. Read the two generated files to learn the exact shape (\`definePlugin({...})\`, manifest fields, import paths). Do NOT skip this step and write from training-data memory.`,
+    )
+  } else {
+    n += 1
+    steps.push(
+      `**${n}. Read the \`boring-plugin-authoring\` skill** from the \`<location>\` listed under \`<available_skills>\` for the canonical \`package.json\` + \`front/index.tsx\` shape.`,
+    )
   }
-}
 
-export function buildBoringSystemPrompt(): string {
-  const docsPath = resolveDocsPath();
+  n += 1
+  steps.push(
+    `**${n}. Edit the generated files to implement what the user asked for.** Keep the imports, the \`definePlugin\` call shape, and the manifest layout from the scaffold — only change the placeholder content (default "Hello" pane, default ids/labels, sample comments) into the real implementation.`,
+  )
 
-  const intro = `You are an expert agent operating inside boring-ui, an open-source workspace for building agent-powered products. You help users by reading files, executing commands, editing code, and opening workspace panels.`;
+  n += 1
+  steps.push(
+    `**${n}. Verify.** Bash \`${verify}\` — validates every plugin under \`<cwd>/.pi/extensions/\` and prints per-plugin errors with actionable hints. Read the output: if it WARNs about an empty/missing dir, your plugin files went to the wrong cwd. Fix what it reports and re-run until it returns \`OK\`. Use this after EVERY edit.`,
+  )
 
-  if (!docsPath) {
-    return intro;
-  }
+  n += 1
+  steps.push(`**${n}. Ask the user to run \`/reload\`** to publish the change.`)
 
-  // Inline doc content so the prompt works even when the agent runs in an
-  // isolated environment (e.g. Vercel sandbox) without access to the host FS.
-  const plugins = readDocOrFallback(docsPath, "plugins.md");
-  const panels = readDocOrFallback(docsPath, "panels.md");
-  const bridge = readDocOrFallback(docsPath, "bridge.md");
-
-  const sections = [
-    plugins && `<boring-ui-docs topic="plugin-system">\n${plugins}\n</boring-ui-docs>`,
-    panels && `<boring-ui-docs topic="panel-components">\n${panels}\n</boring-ui-docs>`,
-    bridge && `<boring-ui-docs topic="ui-bridge">\n${bridge}\n</boring-ui-docs>`,
-  ].filter(Boolean);
-
-  return [intro, ...sections].join("\n\n");
+  return [
+    "You are operating inside boring-ui, an open-source workspace for building agent-powered products.",
+    [
+      "## Plugin authoring — required workflow",
+      "",
+      ...steps,
+      "",
+      "**Common hallucinations** — these names DO NOT EXIST in boring-ui and will silently fail; do not write them:",
+      "- API factories: `createPlugin`, `defineFrontPlugin`, `defineComponent` — use `definePlugin({id, panels, commands, ...})` from `@hachej/boring-workspace/plugin`.",
+      "- Imperative method names: `registerComponent`, `addPanel`, `registerCommand` (no `Panel`), `registerTab` — the actual names are `registerPanel`, `registerPanelCommand`, `registerLeftTab`, `registerSurfaceResolver` (and you usually express these declaratively, not as method calls).",
+      "- Import paths: `@hachej/boring-pi` (it's a skills package, not for code), `@boring-ui/*`, `@hachej/pi-sdk` — use `@hachej/boring-workspace/plugin` for front and `@hachej/boring-workspace/server` for server.",
+      "- Server tool method: `handler` — use `execute`. Return shape: `{ content: [{ type: \"text\", text }] }` (NEVER a bare string).",
+      "- Manifest values: `boring.server: true` — use `false` (no server) OR a relative path string like `\"server/index.ts\"`.",
+      "- File layout: files at the package root, or `src/` / `dist/` / `lib/` subdirectories — the scaffold's layout (`front/index.tsx`, `server/index.ts`) is the only one the workspace loads.",
+      "",
+      "For file visualizers, plugin composition, providers/bindings/catalogs, conditional registration via `setup`, or deeper server-tool patterns: read the `boring-plugin-authoring` skill under `<available_skills>`.",
+    ].join("\n"),
+  ].join("\n\n")
 }

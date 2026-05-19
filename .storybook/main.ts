@@ -30,6 +30,9 @@ const config: StorybookConfig = {
   async viteFinal(baseConfig) {
     return mergeConfig(baseConfig, {
       plugins: [tailwindcss()],
+      esbuild: {
+        jsx: "automatic",
+      },
       resolve: {
         alias: [
           {

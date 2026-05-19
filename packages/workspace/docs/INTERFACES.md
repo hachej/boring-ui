@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-02
 
-`@boring/workspace` is a workspace UI and bridge package. The app shell owns
+`@hachej/boring-workspace` is a workspace UI and bridge package. The app shell owns
 auth, routing, application persistence, and the concrete chat component.
 Workspace owns layout runtime, layout preferences, plugin registries, bridge
 commands, and default workspace plugins.
@@ -19,13 +19,14 @@ commands, and default workspace plugins.
   and no agent package imports.
 - `src/app/` hosts front/server composition helpers such as
   `WorkspaceAgentFront` and `createWorkspaceAgentServer`, where workspace app
-  code may compose with documented `@boring/agent/server` APIs.
+  code may compose with documented `@hachej/boring-agent/server` APIs.
 
 ## Core Contracts
 
 - Plugin outputs: `src/shared/plugins/types.ts`
   - `panel`, `left-tab`, `command`, `catalog`, `binding`, `provider`,
-    `surface-resolver`, and `agent-tool`.
+    and `surface-resolver`. Agent tools belong to Pi/server runtime paths, not
+    front plugin outputs.
 - Surface opening: `src/shared/types/surface.ts`
   - `SurfaceOpenRequest { kind, target, meta }` is resolved by plugin
     `surface-resolver` outputs into panel openings.
@@ -42,8 +43,7 @@ commands, and default workspace plugins.
 - Server plugins: `src/server/plugins`
   - `defineServerPlugin()` validates tools, routes, provisioning, and native Pi
     package declarations.
-  - `composeServerPlugins()` combines smaller server plugin fragments.
-  - `piPackages` are passed to `@boring/agent` as in-memory Pi settings, so
+  - `piPackages` are passed to `@hachej/boring-agent` as in-memory Pi settings, so
     workspace adapters can depend on native Pi packages without requiring
     Boring-specific exports from those packages.
 
@@ -54,5 +54,5 @@ commands, and default workspace plugins.
   compatibility layer.
 - Use `openSurface` for domain targets that need resolver selection.
 - Use `openPanel` only when the caller intentionally names the concrete panel.
-- Front/shared workspace code does not value-import `@boring/agent`; app/server
+- Front/shared workspace code does not value-import `@hachej/boring-agent`; app/server
   composition may import documented agent server APIs.

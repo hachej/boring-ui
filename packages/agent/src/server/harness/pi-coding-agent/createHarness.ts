@@ -12,6 +12,8 @@ import {
   DefaultResourceLoader,
   SettingsManager,
   getAgentDir,
+  loadSkills,
+  type ExtensionFactory,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
@@ -39,7 +41,7 @@ interface PiSessionHandle {
 export { mergePiPackageSources } from "../../piPackages.js";
 export type { PiPackageSource } from "../../piPackages.js";
 
-export interface PiResourceLoaderOptions {
+export interface PiHarnessOptions {
   noContextFiles?: boolean;
   noSkills?: boolean;
   additionalSkillPaths?: string[];
@@ -48,7 +50,43 @@ export interface PiResourceLoaderOptions {
    * These are applied as in-memory SettingsManager overrides, so host/plugin
    * declarations do not mutate .pi/settings.json.
    */
-  piPackages?: PiPackageSource[];
+  packages?: PiPackageSource[];
+  /**
+   * Additional native pi extension entrypoints. Pi loads these through jiti and
+   * re-imports them on ctx.reload(), which is required for hot-reloadable
+   * boring agent plugins.
+   */
+  extensionPaths?: string[];
+  /** In-process host extensions. Use only for trusted built-ins; hot plugin code should use paths. */
+  extensionFactories?: ExtensionFactory[];
+  /**
+   * Optional source of dynamic Pi resources. Pi calls it on every
+   * reloadSession() (and once at session build) and merges the result with
+   * the static fields above. Lets the workspace plugin layer contribute
+   * package.json-discovered skills/packages/extensions without mutating
+   * arrays that the harness already captured.
+   */
+  getDynamicResources?: () => DynamicPiResources;
+}
+
+export interface DynamicPiResources {
+  additionalSkillPaths?: string[];
+  packages?: PiPackageSource[];
+  extensionPaths?: string[];
+}
+
+export type PiExtensionFactory = ExtensionFactory;
+
+function buildDynamicPromptExtension(
+  source: () => string | undefined | Promise<string | undefined>,
+): ExtensionFactory {
+  return (pi) => {
+    pi.on("before_agent_start", async (event) => {
+      const extra = (await source())?.trim()
+      if (!extra) return
+      return { systemPrompt: `${event.systemPrompt}\n\n${extra}` }
+    })
+  }
 }
 
 
@@ -242,8 +280,13 @@ export function createPiCodingAgentHarness(opts: {
   cwd: string;
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
-  /** Optional pi resource-loader isolation knobs. */
-  resourceLoaderOptions?: PiResourceLoaderOptions;
+  /**
+   * Dynamic system-prompt source. Read on every before_agent_start, so live
+   * plugin reloads land in the next agent turn without re-creating the harness.
+   */
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>;
+  /** Optional pi adapter/runtime knobs. */
+  pi?: PiHarnessOptions;
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
@@ -254,6 +297,35 @@ export function createPiCodingAgentHarness(opts: {
     sessionDir: opts.sessionDir,
   });
   const piSessions = new Map<string, PiSessionHandle>();
+
+  // Effective Pi resources merge static caller-supplied fields with
+  // getDynamicResources() output. Pi's DefaultResourceLoader keeps the
+  // array references it was constructed with and re-reads them on
+  // piSession.reload(), so we mutate via splice instead of replacing.
+  const effectiveSkillPaths: string[] = []
+  const effectivePackages: PiPackageSource[] = []
+  const effectiveExtensionPaths: string[] = []
+  const refreshEffectiveResources = (): void => {
+    const dynamic = opts.pi?.getDynamicResources?.() ?? {}
+    effectiveSkillPaths.splice(
+      0,
+      effectiveSkillPaths.length,
+      ...(opts.pi?.additionalSkillPaths ?? []),
+      ...(dynamic.additionalSkillPaths ?? []),
+    )
+    effectivePackages.splice(
+      0,
+      effectivePackages.length,
+      ...mergePiPackageSources(opts.pi?.packages ?? [], dynamic.packages ?? []),
+    )
+    effectiveExtensionPaths.splice(
+      0,
+      effectiveExtensionPaths.length,
+      ...(opts.pi?.extensionPaths ?? []),
+      ...(dynamic.extensionPaths ?? []),
+    )
+  }
+  refreshEffectiveResources()
   const scheduleSessionTitle = createSessionTitleScheduler({
     loadSession: (sessionId) =>
       sessionStore.load({ workspaceId: "default" }, sessionId),
@@ -310,35 +382,64 @@ export function createPiCodingAgentHarness(opts: {
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
     // We keep pi's default system prompt, but can disable ambient AGENTS.md
     // and global skill discovery while injecting explicit local skill paths.
+    refreshEffectiveResources()
+    const dynamicPromptExtension = opts.systemPromptDynamic
+      ? buildDynamicPromptExtension(opts.systemPromptDynamic)
+      : undefined
     const resourceLoader =
       opts.systemPromptAppend ||
-      opts.resourceLoaderOptions?.noContextFiles ||
-      opts.resourceLoaderOptions?.noSkills ||
-      (opts.resourceLoaderOptions?.additionalSkillPaths?.length ?? 0) > 0 ||
-      (opts.resourceLoaderOptions?.piPackages?.length ?? 0) > 0
+      opts.systemPromptDynamic ||
+      opts.pi?.noContextFiles ||
+      opts.pi?.noSkills ||
+      effectiveSkillPaths.length > 0 ||
+      effectivePackages.length > 0 ||
+      effectiveExtensionPaths.length > 0 ||
+      (opts.pi?.extensionFactories?.length ?? 0) > 0
         ? (() => {
             const agentDir = getAgentDir()
-            const additionalSkillPaths =
-              opts.resourceLoaderOptions?.additionalSkillPaths ?? []
-            const piPackages = opts.resourceLoaderOptions?.piPackages ?? []
+            const extensionFactories = [
+              ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
+              ...(opts.pi?.extensionFactories ?? []),
+            ]
             const settingsManager = createResourceSettingsManager(
               ctx.workdir,
               agentDir,
-              piPackages,
+              effectivePackages,
             )
             return new DefaultResourceLoader({
               cwd: ctx.workdir,
               agentDir,
               settingsManager,
+              ...(effectiveExtensionPaths.length ? { additionalExtensionPaths: effectiveExtensionPaths } : {}),
+              ...(extensionFactories.length ? { extensionFactories } : {}),
               ...(opts.systemPromptAppend
                 ? { appendSystemPromptOverride: (base: string[]) => [...base, opts.systemPromptAppend!] }
                 : {}),
-              ...(opts.resourceLoaderOptions?.noContextFiles
+              ...(opts.pi?.noContextFiles
                 ? { noContextFiles: true }
                 : {}),
-              ...(opts.resourceLoaderOptions?.noSkills ? { noSkills: true } : {}),
-              ...(additionalSkillPaths.length
-                ? { additionalSkillPaths }
+              ...(opts.pi?.noSkills ? { noSkills: true } : {}),
+              ...(effectiveSkillPaths.length
+                ? { additionalSkillPaths: effectiveSkillPaths }
+                : {}),
+              // skillsOverride REPLACES Pi's resolved skill set, which
+              // includes skills contributed by host-declared pi packages
+              // (e.g. @hachej/boring-pi → boring-plugin-authoring). Only
+              // trigger it for the explicit `noSkills` opt-out, where the
+              // host wants a clean slate. Passing additionalSkillPaths is
+              // not, by itself, a request to throw away package skills —
+              // those should keep flowing through Pi's loader and merge
+              // with the additional paths.
+              ...(opts.pi?.noSkills
+                ? {
+                    skillsOverride: () =>
+                      loadSkills({
+                        cwd: ctx.workdir,
+                        agentDir,
+                        skillPaths: effectiveSkillPaths,
+                        includeDefaults: false,
+                      }),
+                  }
                 : {}),
             })
           })()
@@ -368,6 +469,14 @@ export function createPiCodingAgentHarness(opts: {
     const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager };
     piSessions.set(sessionId, handle);
     return handle;
+  }
+
+  async function reloadPiSession(sessionId: string): Promise<boolean> {
+    const handle = piSessions.get(sessionId);
+    if (!handle) return false;
+    refreshEffectiveResources();
+    await handle.piSession.reload();
+    return true;
   }
 
   function disposePiSession(sessionId: string): void {
@@ -412,6 +521,8 @@ export function createPiCodingAgentHarness(opts: {
     getSystemPrompt(sessionId: string): string | undefined {
       return piSessions.get(sessionId)?.piSession.systemPrompt;
     },
+
+    reloadSession: reloadPiSession,
 
     async *sendMessage(
       input: SendMessageInput,

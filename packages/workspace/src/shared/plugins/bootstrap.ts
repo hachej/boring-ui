@@ -1,16 +1,11 @@
 import { PluginError } from "./defineFrontPlugin"
 import type { WorkspaceFrontPlugin } from "./defineFrontPlugin"
 import type {
-  AgentTool,
   CatalogConfig,
   PluginOutput,
 } from "./types"
 import type { CommandConfig, PanelRegistration } from "../types/panel"
 import type { SurfaceResolverRegistration } from "../types/surface"
-
-export interface AgentToolRegistry {
-  register(tool: AgentTool, pluginId: string): void
-}
 
 export interface PanelRegistryLike {
   register(id: string, config: PanelRegistration): void
@@ -38,13 +33,11 @@ export interface BootstrapOptions {
     commands: CommandRegistryLike
     catalogs: CatalogRegistryLike
     surfaceResolvers?: SurfaceResolverRegistryLike
-    agentTools?: AgentToolRegistry
   }
 }
 
 export interface BootstrapResult {
   registered: string[]
-  systemPromptAppend: string
 }
 
 function registerOutput(
@@ -92,9 +85,6 @@ function registerOutput(
       })
       return
     }
-    case "agent-tool":
-      registries.agentTools?.register(output.tool, ownerPluginId)
-      return
     case "binding":
     case "provider":
       return
@@ -126,39 +116,12 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
   }
 
   for (const plugin of finalPlugins) {
-    for (const panel of plugin.panels ?? []) {
-      const { id, ...registration } = panel
-      options.registries.panels.register(id, {
-        ...registration,
-        pluginId: plugin.id,
-      })
-    }
-    for (const command of plugin.commands ?? []) {
-      options.registries.commands.registerCommand({
-        ...command,
-        pluginId: plugin.id,
-      })
-    }
-    for (const catalog of plugin.catalogs ?? []) {
-      options.registries.catalogs.register(catalog, plugin.id)
-    }
-    if (options.registries.agentTools) {
-      for (const tool of plugin.agentTools ?? []) {
-        options.registries.agentTools.register(tool, plugin.id)
-      }
-    }
     for (const output of plugin.outputs ?? []) {
       registerOutput(output, plugin, options.registries)
     }
   }
 
-  const systemPromptAppend = finalPlugins
-    .filter((p) => p.systemPrompt && p.systemPrompt.trim())
-    .map((p) => p.systemPrompt!.trim())
-    .join("\n\n")
-
   return {
     registered: finalPlugins.map((plugin) => plugin.id),
-    systemPromptAppend,
   }
 }

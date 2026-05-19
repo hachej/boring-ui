@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { WorkspaceAgentFront } from "@hachej/boring-workspace/app/front"
-import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-import { playgroundDataCatalogPlugin } from "../plugins/playgroundDataCatalog/front"
+// Plugins are declared in package.json#boring.defaultPluginPackages —
+// the front side does not import any plugin module directly.
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -69,7 +69,6 @@ export function WorkspaceShell() {
     <WorkspaceAgentFront
       chatPanel={ChatPanel}
       workspaceId={showcase ? "playground" : projectName}
-      plugins={[playgroundDataCatalogPlugin, askUserPlugin]}
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey="boring-ui-v2:layout:playground"

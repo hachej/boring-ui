@@ -1,0 +1,766 @@
+import React, { useSyncExternalStore } from "react"
+import { render, screen, waitFor } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+import { RegistryProvider, useCommandRegistry, useRegistry } from "../../registry/RegistryProvider"
+import { PanelRegistry } from "../../registry/PanelRegistry"
+import { CommandRegistry } from "../../registry/CommandRegistry"
+import { SurfaceResolverRegistry } from "../../registry/SurfaceResolverRegistry"
+import type { BoringFrontFactory } from "../../../shared/plugins/frontFactory"
+import { useAgentPluginHotReload } from "../registerAgentPlugin"
+
+class MockEventSource {
+  static instances: MockEventSource[] = []
+  readonly url: string
+  readonly withCredentials: boolean | undefined
+  closed = false
+  private listeners = new Map<string, Set<(event: MessageEvent) => void>>()
+
+  constructor(url: string, init?: EventSourceInit) {
+    this.url = url
+    this.withCredentials = init?.withCredentials
+    MockEventSource.instances.push(this)
+  }
+
+  addEventListener(type: string, listener: EventListener): void {
+    const listeners = this.listeners.get(type) ?? new Set()
+    listeners.add(listener as (event: MessageEvent) => void)
+    this.listeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: EventListener): void {
+    this.listeners.get(type)?.delete(listener as (event: MessageEvent) => void)
+  }
+
+  close(): void {
+    this.closed = true
+  }
+
+  dispatch(type: string, data: unknown): void {
+    this.dispatchRaw(type, JSON.stringify(data))
+  }
+
+  dispatchRaw(type: string, data: string): void {
+    const event = { data } as MessageEvent
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
+  }
+}
+
+const tempDirs: string[] = []
+const originalEventSource = globalThis.EventSource
+
+beforeEach(() => {
+  MockEventSource.instances = []
+  ;(globalThis as { EventSource?: typeof EventSource }).EventSource = MockEventSource as unknown as typeof EventSource
+})
+
+afterEach(async () => {
+  ;(globalThis as { EventSource?: typeof EventSource }).EventSource = originalEventSource
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+
+async function makeTempDir(prefix: string): Promise<string> {
+  const root = join(process.cwd(), ".tmp-test-plugins")
+  await mkdir(root, { recursive: true })
+  const dir = await mkdtemp(join(root, prefix))
+  tempDirs.push(dir)
+  return dir
+}
+
+async function writeFrontModule(path: string, text: string): Promise<void> {
+  await writeFile(
+    path,
+    `
+// HOT_TEXT:${text}
+import React from "react"
+export default function hotPlugin(api) {
+  api.registerPanel({
+    id: "hot-pane",
+    label: "Hot Pane",
+    component: function HotPane() {
+      return React.createElement("div", { "data-testid": "hot-pane" }, ${JSON.stringify(text)})
+    },
+  })
+}
+`,
+    "utf8",
+  )
+  const now = new Date(Date.now() + 1_000)
+  await utimes(path, now, now)
+}
+
+async function importFrontFromDisk(frontUrl: string): Promise<{ default: BoringFrontFactory }> {
+  const filePath = frontUrl.replace(/^.*\/@fs\//, "/")
+  const source = await readFile(filePath, "utf8")
+  const match = source.match(/HOT_TEXT:([^\n]+)/)
+  const text = match?.[1]?.trim() ?? "missing"
+  return {
+    default(api) {
+      api.registerPanel({
+        id: "hot-pane",
+        label: "Hot Pane",
+        component: function HotPane() {
+          return React.createElement("div", { "data-testid": "hot-pane" }, text)
+        },
+      })
+    },
+  }
+}
+
+function AgentPluginListener({ apiBaseUrl = "" }: { apiBaseUrl?: string }) {
+  useAgentPluginHotReload({ apiBaseUrl, workspaceId: "test-workspace", importFront: importFrontFromDisk })
+  return null
+}
+
+function PaneRenderer({ id }: { id: string }) {
+  const registry = useRegistry()
+  useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+  const panel = registry.get(id)
+  if (!panel) return <div data-testid="pane-missing">missing</div>
+  const Component = panel.component as React.ComponentType
+  return <Component />
+}
+
+function PanelIds() {
+  const registry = useRegistry()
+  const panels = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+  return <div data-testid="panel-ids">{panels.map((panel) => panel.id).join(",")}</div>
+}
+
+function AllPanelIds() {
+  const registry = useRegistry()
+  useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+  return <div data-testid="all-panel-ids">{registry.listAll().map((panel) => panel.id).join(",")}</div>
+}
+
+function CommandList() {
+  const registry = useCommandRegistry()
+  const commands = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot)
+  return <div data-testid="command-list">{commands.map((command) => `${command.id}:${command.title}`).join(",")}</div>
+}
+
+function Harness({ apiBaseUrl = "" }: { apiBaseUrl?: string }) {
+  const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+  const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+  const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+  return (
+    <RegistryProvider
+      panelRegistry={panelRegistry}
+      commandRegistry={commandRegistry}
+      surfaceResolverRegistry={surfaceResolverRegistry}
+    >
+      <AgentPluginListener apiBaseUrl={apiBaseUrl} />
+      <PaneRenderer id="hot-pane" />
+    </RegistryProvider>
+  )
+}
+
+describe("useAgentPluginHotReload", () => {
+  test("imports plugin front modules from SSE load events and remounts updated panes by revision", async () => {
+    const dir = await makeTempDir("boring-front-hot-reload-")
+    const frontPath = join(dir, "front.mjs")
+    await writeFrontModule(frontPath, "version one")
+    const frontUrl = `/@fs/${frontPath}`
+
+    render(<Harness apiBaseUrl="/agent" />)
+
+    expect(MockEventSource.instances).toHaveLength(1)
+    expect(MockEventSource.instances[0].url).toBe("/agent/api/v1/agent-plugins/events?workspaceId=test-workspace")
+    expect(MockEventSource.instances[0].withCredentials).toBe(true)
+    expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version one"))
+
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    await writeFrontModule(frontPath, "version two")
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+
+    expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
+  })
+
+  test("supports hook-based panel components from hot-loaded front factories", async () => {
+    const importFront = async (): Promise<{ default: BoringFrontFactory }> => ({
+      default(api) {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HookPane() {
+            const [count, setCount] = React.useState(0)
+            const [ready, setReady] = React.useState(false)
+            React.useEffect(() => {
+              setReady(true)
+            }, [])
+            return React.createElement(
+              "button",
+              { "data-testid": "hook-pane", onClick: () => setCount((value) => value + 1) },
+              `${ready ? "ready" : "loading"}:${count}`,
+            )
+          },
+        })
+      },
+    })
+
+    function Listener() {
+      useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+      return null
+    }
+
+    render(
+      <RegistryProvider
+        panelRegistry={new PanelRegistry()}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <Listener />
+        <PaneRenderer id="hot-pane" />
+      </RegistryProvider>,
+    )
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/hook-front.tsx",
+      boring: { front: "front/index.tsx" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("hook-pane")).toHaveTextContent("ready:0"))
+    screen.getByTestId("hook-pane").click()
+    await waitFor(() => expect(screen.getByTestId("hook-pane")).toHaveTextContent("ready:1"))
+  })
+
+  test("resolves relative front module URLs through apiBaseUrl", async () => {
+    const importedUrls: string[] = []
+    function Listener() {
+      useAgentPluginHotReload({
+        apiBaseUrl: "/agent",
+        workspaceId: "test-workspace",
+        importFront: async (url) => {
+          importedUrls.push(url)
+          return { default: () => undefined }
+        },
+      })
+      return null
+    }
+    render(
+      <RegistryProvider
+        panelRegistry={new PanelRegistry()}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <Listener />
+      </RegistryProvider>,
+    )
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+
+    await waitFor(() => expect(importedUrls).toEqual(["/agent/@fs/front.mjs"]))
+  })
+
+  test("prunes contributions removed by a successful replacement without blanking kept panes", async () => {
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactory }> => ({
+      default(api) {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, `version ${revision}`)
+          },
+        })
+        if (revision === 1) {
+          api.registerPanel({
+            id: "removed-pane",
+            label: "Removed Pane",
+            component: function RemovedPane() {
+              return React.createElement("div", null, "removed")
+            },
+          })
+          api.registerPanel({
+            id: "hidden-removed-pane",
+            label: "Hidden Removed Pane",
+            requiresCapabilities: ["missing-capability"],
+            component: function HiddenRemovedPane() {
+              return React.createElement("div", null, "hidden removed")
+            },
+          })
+        }
+      },
+    })
+
+    function PruneHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+          <PanelIds />
+          <AllPanelIds />
+        </RegistryProvider>
+      )
+    }
+
+    render(<PruneHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 1"))
+    expect(screen.getByTestId("panel-ids")).toHaveTextContent("removed-pane")
+    expect(screen.getByTestId("panel-ids")).not.toHaveTextContent("hidden-removed-pane")
+    expect(screen.getByTestId("all-panel-ids")).toHaveTextContent("hidden-removed-pane")
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version 2"))
+    expect(screen.getByTestId("panel-ids")).not.toHaveTextContent("removed-pane")
+    expect(screen.getByTestId("all-panel-ids")).not.toHaveTextContent("hidden-removed-pane")
+  })
+
+  test("updates command palette entries when plugin front registrations change", async () => {
+    const importFront = async (_url: string, revision: number): Promise<{ default: BoringFrontFactory }> => ({
+      default(api) {
+        api.registerPanelCommand({
+          id: "hot-plugin.open",
+          title: revision === 1 ? "Open Hot Plugin" : "Open Hot Plugin v2",
+          panelId: "hot-pane",
+        })
+        if (revision === 1) {
+          api.registerPanelCommand({
+            id: "hot-plugin.removed",
+            title: "Removed Plugin Command",
+            panelId: "removed-pane",
+          })
+        }
+      },
+    })
+
+    function CommandHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <CommandList />
+        </RegistryProvider>
+      )
+    }
+
+    render(<CommandHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("command-list")).toHaveTextContent("hot-plugin.open:Open Hot Plugin"))
+    expect(screen.getByTestId("command-list")).toHaveTextContent("hot-plugin.removed:Removed Plugin Command")
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      frontUrl: "/@fs/front.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("command-list")).toHaveTextContent("hot-plugin.open:Open Hot Plugin v2"))
+    expect(screen.getByTestId("command-list")).not.toHaveTextContent("hot-plugin.removed")
+  })
+
+  test("ignores stale slow imports when a newer revision has already landed", async () => {
+    let resolveRev1: ((mod: { default: BoringFrontFactory }) => void) | undefined
+    let resolveRev2: ((mod: { default: BoringFrontFactory }) => void) | undefined
+    const importFront = async (_url: string, revision: number) => {
+      return await new Promise<{ default: BoringFrontFactory }>((resolve) => {
+        if (revision === 1) resolveRev1 = resolve
+        else if (revision === 2) resolveRev2 = resolve
+        else throw new Error(`unexpected revision ${revision}`)
+      })
+    }
+    const moduleFor = (text: string): { default: BoringFrontFactory } => ({
+      default(api) {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, text)
+          },
+        })
+      },
+    })
+
+    function RacingHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<RacingHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/slow-one.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      frontUrl: "/@fs/fast-two.mjs",
+      boring: { front: "./front.mjs" },
+    })
+
+    resolveRev2?.(moduleFor("version two"))
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
+    resolveRev1?.(moduleFor("version one"))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two")
+  })
+
+  test("does not let a disposed in-flight load poison reconnect for the same revision", async () => {
+    let oldImportCalls = 0
+    let resolveOldImport: ((mod: { default: BoringFrontFactory }) => void) | undefined
+    const moduleFor = (text: string): { default: BoringFrontFactory } => ({
+      default(api) {
+        api.registerPanel({
+          id: "hot-pane",
+          label: "Hot Pane",
+          component: function HotPane() {
+            return React.createElement("div", { "data-testid": "hot-pane" }, text)
+          },
+        })
+      },
+    })
+    const oldImportFront = async () => {
+      oldImportCalls += 1
+      return await new Promise<{ default: BoringFrontFactory }>((resolve) => {
+        resolveOldImport = resolve
+      })
+    }
+    const newImportFront = async () => moduleFor("fresh listener")
+
+    function ReconnectHarness({ importFront }: { importFront: (frontUrl: string, revision: number) => Promise<{ default?: BoringFrontFactory }> }) {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    const { rerender } = render(<ReconnectHarness importFront={oldImportFront} />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/slow.mjs",
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(oldImportCalls).toBe(1))
+
+    rerender(<ReconnectHarness importFront={newImportFront} />)
+    expect(MockEventSource.instances[0].closed).toBe(true)
+    MockEventSource.instances[1].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/fresh.mjs",
+      boring: { front: "./front.mjs" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("fresh listener"))
+    resolveOldImport?.(moduleFor("disposed stale listener"))
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(screen.getByTestId("hot-pane")).toHaveTextContent("fresh listener")
+  })
+
+  test("retries the same revision after a failed front import", async () => {
+    let failOnce = true
+    const importFront = async (): Promise<{ default?: BoringFrontFactory }> => {
+      if (failOnce) {
+        failOnce = false
+        return {}
+      }
+      return {
+        default(api) {
+          api.registerPanel({
+            id: "hot-pane",
+            label: "Hot Pane",
+            component: function HotPane() {
+              return React.createElement("div", { "data-testid": "hot-pane" }, "retry recovered")
+            },
+          })
+        },
+      }
+    }
+
+    function RetryHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<RetryHarness />)
+    const event = {
+      type: "boring.plugin.load" as const,
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl: "/@fs/flaky.mjs",
+      boring: { front: "./front.mjs" },
+    }
+    MockEventSource.instances[0].dispatch("boring.plugin.load", event)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", event)
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("retry recovered"))
+  })
+
+  test("keeps the current pane live when generated plugin code has no valid default factory", async () => {
+    const dir = await makeTempDir("boring-front-fail-keeps-old-")
+    const frontPath = join(dir, "front.mjs")
+    await writeFrontModule(frontPath, "stable")
+    const frontUrl = `/@fs/${frontPath}`
+
+    function FailingHarness() {
+      const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
+      const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
+      const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
+      const importFront = React.useCallback(async (url: string, revision: number) => {
+        if (revision === 2) return {}
+        return await importFrontFromDisk(url)
+      }, [])
+      function Listener() {
+        useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
+        return null
+      }
+      return (
+        <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
+          <Listener />
+          <PaneRenderer id="hot-pane" />
+        </RegistryProvider>
+      )
+    }
+
+    render(<FailingHarness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("stable"))
+
+    await writeFrontModule(frontPath, "broken replacement")
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(screen.getByTestId("hot-pane")).toHaveTextContent("stable")
+
+    await writeFrontModule(frontPath, "recovered")
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 3,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("recovered"))
+  })
+
+  test("does not register blank UI from package metadata when frontUrl is absent", async () => {
+    render(<Harness />)
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "metadata-only-plugin",
+      version: "1.0.0",
+      revision: 1,
+      boring: { label: "Metadata Only" },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing")
+  })
+
+  test("removes previous UI contributions when a plugin load no longer has a frontUrl", async () => {
+    const dir = await makeTempDir("boring-front-removed-entry-")
+    const frontPath = join(dir, "front.mjs")
+    await writeFrontModule(frontPath, "loaded")
+    const frontUrl = `/@fs/${frontPath}`
+
+    render(<Harness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
+
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 2,
+      boring: { label: "No front entry" },
+    })
+
+    await waitFor(() => expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing"))
+  })
+
+  test("ignores malformed SSE payloads and keeps previous UI live", async () => {
+    const dir = await makeTempDir("boring-front-malformed-sse-")
+    const frontPath = join(dir, "front.mjs")
+    await writeFrontModule(frontPath, "loaded")
+    const frontUrl = `/@fs/${frontPath}`
+
+    render(<Harness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
+
+    MockEventSource.instances[0].dispatchRaw("boring.plugin.load", "{not-json")
+    MockEventSource.instances[0].dispatchRaw("boring.plugin.unload", "{not-json")
+    MockEventSource.instances[0].dispatchRaw("boring.plugin.error", "{not-json")
+
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded")
+  })
+
+  test("unloads plugin panes on SSE unload events", async () => {
+    const dir = await makeTempDir("boring-front-unload-")
+    const frontPath = join(dir, "front.mjs")
+    await writeFrontModule(frontPath, "loaded")
+    const frontUrl = `/@fs/${frontPath}`
+
+    render(<Harness />)
+    MockEventSource.instances[0].dispatch("boring.plugin.load", {
+      type: "boring.plugin.load",
+      id: "hot-plugin",
+      version: "1.0.0",
+      revision: 1,
+      frontUrl,
+      boring: { front: "./front.mjs" },
+    })
+    await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("loaded"))
+
+    MockEventSource.instances[0].dispatch("boring.plugin.unload", {
+      type: "boring.plugin.unload",
+      id: "hot-plugin",
+      revision: 2,
+    })
+
+    await waitFor(() => expect(screen.getByTestId("pane-missing")).toHaveTextContent("missing"))
+  })
+})

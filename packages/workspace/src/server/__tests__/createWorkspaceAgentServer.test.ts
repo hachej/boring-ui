@@ -36,31 +36,31 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-describe("createWorkspaceAgentServer — plugin factory wiring", () => {
-  test("registers factory-created routes and tools with bridge context", async () => {
+describe("createWorkspaceAgentServer — plugin wiring", () => {
+  test("registers pre-built plugin routes and tools", async () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot: tmpdir(),
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
       disableDefaultFileTools: true,
-      pluginFactories: [({ bridge }) => appServerApi.defineServerPlugin({
-        id: "factory-plugin",
+      plugins: [serverApi.defineServerPlugin({
+        id: "test-plugin",
         agentTools: [{
-          name: "factory_tool",
-          description: "Factory tool",
+          name: "test_tool",
+          description: "Test tool",
           parameters: { type: "object", properties: {} },
           execute: async () => ({ content: [{ type: "text", text: "ok" }] }),
         }],
         routes: async (instance) => {
-          instance.get("/factory-plugin/state", async () => ({ state: await bridge.getState() }))
+          instance.get("/test-plugin/ping", async () => ({ ok: true }))
         },
       })],
     })
-    const route = await app.inject({ method: "GET", url: "/factory-plugin/state" })
+    const route = await app.inject({ method: "GET", url: "/test-plugin/ping" })
     expect(route.statusCode).toBe(200)
     const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
-    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).toContain("factory_tool")
+    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).toContain("test_tool")
     await app.close()
   })
 
@@ -72,10 +72,10 @@ describe("createWorkspaceAgentServer — plugin factory wiring", () => {
       provisionWorkspace: false,
       disableDefaultFileTools: true,
     })
-    const route = await app.inject({ method: "GET", url: "/factory-plugin/state" })
+    const route = await app.inject({ method: "GET", url: "/test-plugin/ping" })
     expect(route.statusCode).toBe(404)
     const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
-    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).not.toContain("factory_tool")
+    expect(catalog.json().tools.map((tool: { name: string }) => tool.name)).not.toContain("test_tool")
     await app.close()
   })
 })
@@ -84,7 +84,7 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
   test("is exported from the app entry, not the server entry", () => {
     expect(appServerApi.createWorkspaceAgentServer).toBe(createWorkspaceAgentServer)
     expect(appServerApi.collectWorkspaceAgentServerPlugins).toBe(collectWorkspaceAgentServerPlugins)
-    expect("createWorkspaceAgentServerBindings" in appServerApi).toBe(false)
+    expect("createWorkspaceAgentServerBindings" in serverApi).toBe(false)
     expect("createWorkspaceAgentServer" in serverApi).toBe(false)
   })
 
@@ -98,12 +98,15 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
         return { content: [{ type: "text" as const, text: "ok" }] }
       },
     }
+    const hostFactory = () => undefined
     const result = collectWorkspaceAgentServerPlugins({
       workspaceRoot,
       systemPromptAppend: "Host prompt",
-      resourceLoaderOptions: {
+      pi: {
         additionalSkillPaths: ["custom-skills"],
-        piPackages: ["npm:host-pi", { source: "npm:plugin-pi" }],
+        packages: ["npm:host-pi", { source: "npm:plugin-pi" }],
+        extensionPaths: ["/host/agent/index.ts"],
+        extensionFactories: [hostFactory],
       },
       plugins: [
         {
@@ -111,20 +114,29 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
           systemPrompt: "Plugin prompt",
           agentTools: [domainTool],
           piPackages: ["npm:plugin-pi"],
+          extensionPaths: ["/plugin/agent/index.ts"],
         },
       ],
     })
 
     expect(result.agentOptions.extraTools?.map((tool) => tool.name)).toEqual(["plugin_ping"])
-    expect(result.agentOptions.systemPromptAppend).toBe("Host prompt\n\nPlugin prompt")
-    expect(result.agentOptions.resourceLoaderOptions?.additionalSkillPaths).toEqual([
+    expect(result.agentOptions.systemPromptAppend).toContain("Host prompt")
+    expect(result.agentOptions.systemPromptAppend).toContain("Plugin prompt")
+    expect(result.agentOptions.pi?.additionalSkillPaths).toEqual([
       join(workspaceRoot, ".agents", "skills"),
       "custom-skills",
     ])
-    expect(result.agentOptions.resourceLoaderOptions?.piPackages).toEqual([
+    expect(result.agentOptions.pi?.packages).toEqual([
       "npm:plugin-pi",
       "npm:host-pi",
     ])
+    expect(result.agentOptions.pi?.extensionPaths).toEqual([
+      "/plugin/agent/index.ts",
+      "/host/agent/index.ts",
+    ])
+    // Host-level extensionFactories flow through unchanged; plugin-level
+    // declaration has been dropped (DESIGN.md §11 deferred capability).
+    expect(result.agentOptions.pi?.extensionFactories).toEqual([hostFactory])
   })
 
   test("plugin collector applies server defaults before host plugins", async () => {
@@ -155,7 +167,8 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       "default_tool",
       "host_tool",
     ])
-    expect(included.agentOptions.systemPromptAppend).toBe("Default prompt\n\nHost prompt")
+    expect(included.agentOptions.systemPromptAppend).toContain("Default prompt")
+    expect(included.agentOptions.systemPromptAppend).toContain("Host prompt")
 
     const excluded = collectWorkspaceAgentServerPlugins({
       workspaceRoot,
@@ -269,6 +282,66 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
 })
 
 describe("createWorkspaceAgentServer — plugin provisioning", () => {
+  test("materializes the boring-plugin-authoring skill into the workspace node_modules", async () => {
+    // The system prompt is minimal (it just points at this skill); the
+    // skill itself is the doc the agent reads. provisionRuntimeWorkspace
+    // must materialize it under the workspace's node_modules so Pi can
+    // load it from there.
+    const workspaceRoot = await makeTempDir("boring-workspace-skill-")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+
+    try {
+      const skill = await readFile(
+        join(workspaceRoot, "node_modules", "@hachej", "boring-pi", "skills", "boring-plugin-authoring", "SKILL.md"),
+        "utf8",
+      )
+      expect(skill).toContain("name: boring-plugin-authoring")
+      expect(skill).toContain("../../references/workspace/plugins.md")
+    } finally {
+      await app.close()
+    }
+  })
+
+  /**
+   * Simulates the CLI scenario: a globally-installed boring-ui binary runs
+   * in a fresh user workspace with no pre-populated node_modules. The chain
+   * we exercise is:
+   *
+   *   require.resolve("@hachej/boring-pi/package.json")  // CLI process
+   *     ↓ provisionRuntime copies skills/ into <workspaceRoot>/node_modules/
+   *     ↓ createBoringPiPackageSource emits the package source
+   *     ↓ createResourceSettingsManager injects it into Pi's project settings
+   *     ↓ Pi indexes package.json#pi.skills
+   *     ↓ Pi surfaces the skill via /api/v1/agent/skills
+   *
+   * If any link breaks (package missing on publish, provisioning skips the
+   * skills dir, injection drops the package), the skill goes silent for
+   * every CLI user. This test fails loudly before any of that ships.
+   */
+  test("CLI-like boot in fresh workspace auto-discovers boring-plugin-authoring skill via /api/v1/agent/skills", async () => {
+    const workspaceRoot = await makeTempDir("boring-cli-skill-discovery-")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/skills" })
+      expect(res.statusCode).toBe(200)
+      const skillNames: string[] = res.json().skills.map((s: { name: string }) => s.name)
+      expect(skillNames).toContain("boring-plugin-authoring")
+    } finally {
+      await app.close()
+    }
+  })
+
   test("collects plugin provisioning declarations and asks agent to seed workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-provisioned-")
     const templateRoot = await makeTempDir("boring-workspace-template-")
@@ -302,6 +375,68 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       await expect(
         readFile(join(workspaceRoot, ".boring-agent", "provisioning.json"), "utf8"),
       ).resolves.toContain("sha256:")
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("POST /api/v1/agent/reload reloads boring plugin assets before pi reload", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-agent-reload-assets-")
+    const pluginRoot = await makeTempDir("boring-workspace-hot-plugin-")
+    await mkdir(join(pluginRoot, "agent"), { recursive: true })
+    await mkdir(join(pluginRoot, "front"), { recursive: true })
+    await writeFile(join(pluginRoot, "agent", "index.ts"), "export default function() {}\n", "utf8")
+    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "hot-plugin",
+      version: "1.0.0",
+      boring: { front: "./front/index.tsx" },
+    }), "utf8")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      plugins: [{ id: "hot", extensionPaths: [join(pluginRoot, "agent", "index.ts")] }],
+    })
+
+    try {
+      const before = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      expect(before.json()[0].revision).toBe(1)
+      await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() { return undefined }\n", "utf8")
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
+      expect(reload.statusCode).toBe(200)
+      const after = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      expect(after.json()[0].revision).toBe(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("POST /api/v1/agent/reload tolerates per-plugin failures (DESIGN.md §4.5)", async () => {
+    // beforeReload no longer throws on per-plugin scan/rebuild errors.
+    // POST /api/v1/agent/reload returns 200 even when an underlying plugin
+    // misbehaves; diagnostics flow through SSE + /api/agent-plugins/:id/error.
+    const workspaceRoot = await makeTempDir("boring-workspace-agent-reload-tolerate-")
+    const pluginRoot = await makeTempDir("boring-workspace-bad-plugin-")
+    await mkdir(join(pluginRoot, ".pi", "extensions", "broken"), { recursive: true })
+    // Manifest with an unsafe path triggers a preflight error in the asset
+    // manager during reload — the agent reload route must still return 200.
+    await writeFile(
+      join(pluginRoot, ".pi", "extensions", "broken", "package.json"),
+      JSON.stringify({ name: "broken", version: "1.0.0", boring: { front: "../escape.tsx" } }),
+      "utf8",
+    )
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: pluginRoot,
+      mode: "direct",
+      logger: false,
+    })
+
+    try {
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
+      expect(reload.statusCode).toBe(200)
     } finally {
       await app.close()
     }
@@ -496,6 +631,72 @@ describe("createWorkspaceAgentServer — extraTools merge", () => {
     } finally {
       await app.close()
     }
+  })
+})
+
+describe("createWorkspaceAgentServer — defaultPluginPackages (standard load process)", () => {
+  test("npm-name resolves, server side loads via default export, asset manager discovers boring.front, plugin appears in /api/agent-plugins", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-default-pkg-")
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      disableDefaultFileTools: true,
+      // The real npm package — proves require.resolve + DirPluginEntry
+      // + BoringPluginAssetManager scan all wire together correctly.
+      defaultPluginPackages: ["@hachej/boring-ask-user"],
+    })
+
+    try {
+      // Server-side: the package's default-exported (options, ctx) =>
+      // WorkspaceServerPlugin adapter ran. Its agentTool "ask_user"
+      // appears in the agent catalog.
+      const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
+      expect(catalog.statusCode).toBe(200)
+      const toolNames = (catalog.json().tools as Array<{ name: string }>).map((t) => t.name)
+      expect(toolNames).toContain("ask_user")
+
+      // Front-side discovery: the package appears in /api/agent-plugins
+      // with a frontUrl pointing at its boring.front entry. The
+      // front-side SSE subscriber would dynamic-import this URL.
+      const plugins = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      expect(plugins.statusCode).toBe(200)
+      // Plugin id is derived from package.json#name via @scope/name → scope-name
+      const list = plugins.json() as Array<{ id: string; frontUrl?: string }>
+      const found = list.find((p) => p.id === "hachej-boring-ask-user")
+      expect(found, `hachej-boring-ask-user not in /api/agent-plugins; got: ${JSON.stringify(list)}`).toBeDefined()
+      expect(found?.frontUrl).toMatch(/\/@fs\//)
+    } finally {
+      await app.close()
+    }
+  })
+
+  test("throws a clear error on unresolved package name", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-default-pkg-bad-")
+    await expect(
+      createWorkspaceAgentServer({
+        workspaceRoot,
+        mode: "direct",
+        logger: false,
+        provisionWorkspace: false,
+        defaultPluginPackages: ["@hachej/boring-ask-user-typo-does-not-exist"],
+      }),
+    ).rejects.toThrow(/cannot resolve.*ask-user-typo-does-not-exist/)
+  })
+
+  test("throws on absolute path that has no package.json", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-default-pkg-empty-")
+    const emptyDir = await makeTempDir("boring-empty-")
+    await expect(
+      createWorkspaceAgentServer({
+        workspaceRoot,
+        mode: "direct",
+        logger: false,
+        provisionWorkspace: false,
+        defaultPluginPackages: [emptyDir],
+      }),
+    ).rejects.toThrow(/has no package\.json/)
   })
 })
 

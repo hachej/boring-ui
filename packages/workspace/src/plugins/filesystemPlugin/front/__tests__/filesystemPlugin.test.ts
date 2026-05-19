@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { createFilesystemPlugin, filesystemPlugin } from "../index"
+import filesystemFront, { createFilesystemPlugin, filesystemPlugin } from "../index"
 import { createFilesCatalog } from "../catalogs"
 
 describe("filesystemPlugin", () => {
@@ -11,12 +11,8 @@ describe("filesystemPlugin", () => {
     expect(filesystemPlugin.label).toBe("Filesystem")
   })
 
-  it("has no agentTools (UI-only plugin)", () => {
-    expect(filesystemPlugin.agentTools).toBeUndefined()
-  })
-
   it("registers provider, preload binding, files left-tab output, surface resolver, and editor/viewer panels", () => {
-    expect(filesystemPlugin.outputs).toHaveLength(11)
+    expect(filesystemPlugin.outputs).toHaveLength(14)
     expect(filesystemPlugin.outputs![0]).toEqual(
       expect.objectContaining({
         type: "provider",
@@ -43,7 +39,7 @@ describe("filesystemPlugin", () => {
         resolver: expect.objectContaining({ id: "filesystem-path" }),
       }),
     )
-    expect(filesystemPlugin.panels).toBeUndefined()
+    // panels field removed from WorkspaceFrontPlugin IR — only `outputs` remains.
     const ids = filesystemPlugin.outputs!
       .filter((output) => output.type === "panel")
       .map((output) => output.panel.id)
@@ -105,13 +101,20 @@ describe("filesystemPlugin", () => {
     )
   })
 
-  it("has no catalogs (catalogs are registered at runtime via bindings)", () => {
-    expect(filesystemPlugin.catalogs).toBeUndefined()
+  it("ships runtime bindings as factory outputs", () => {
+    const bindingIds = filesystemPlugin.outputs!
+      .filter((output) => output.type === "binding")
+      .map((output) => output.id)
+    expect(bindingIds).toEqual([
+      "filesystem-tree-preload",
+      "filesystem-catalog",
+      "filesystem-file-panel",
+      "filesystem-agent-file-bridge",
+    ])
   })
 
-  it("ships runtime bindings for catalog, file-panel events, and agent-created file opens", () => {
-    expect(filesystemPlugin.bindings).toHaveLength(3)
-    expect(createFilesystemPlugin().bindings).toHaveLength(3)
+  it("default-exports a BoringFrontFactory for shape parity", () => {
+    expect(typeof filesystemFront).toBe("function")
   })
 
   it("creates a case-insensitive files catalog adapter", async () => {

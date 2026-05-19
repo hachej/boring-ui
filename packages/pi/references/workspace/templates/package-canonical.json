@@ -1,0 +1,19 @@
+{
+  "_doc_": [
+    "CANONICAL package.json for a boring-ui plugin under .pi/extensions/<kebab-name>/.",
+    "Strip this _doc_ key when copying. No scripts, no dependencies, no devDependencies — the dev server transforms .tsx on the fly via Vite.",
+    "boring.front: relative path to the front factory file.",
+    "boring.server: omit (no server) OR a relative path string like 'server/index.ts'. NEVER true.",
+    "pi.extensions: optional, path string(s) to in-process Pi extension files like 'agent/index.ts' — different from boring.server (which runs server-side)."
+  ],
+  "name": "<kebab-name>",
+  "version": "0.1.0",
+  "private": true,
+  "boring": {
+    "label": "<Label>",
+    "front": "front/index.tsx"
+  },
+  "pi": {
+    "systemPrompt": "<Label> plugin — describe what it does so the agent knows when to use it."
+  }
+}

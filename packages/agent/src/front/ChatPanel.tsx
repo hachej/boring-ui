@@ -2,6 +2,9 @@ import type { FileUIPart, UIMessage } from 'ai'
 import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '../shared/agentPluginEvents'
+
 import { MentionPicker } from './primitives/mention-picker'
 import { SlashCommandPicker } from './primitives/slash-command-picker'
 import { useAgentChat } from './hooks/useAgentChat'
@@ -11,6 +14,7 @@ import { PI_AGENT_RUNTIME_CAPABILITIES } from '../shared/capabilities'
 import { builtinCommands } from './slashCommands/builtins'
 import { parseSlashCommand } from './slashCommands/parser'
 import { createCommandRegistry, type SlashCommand, type SlashCommandContext } from './slashCommands/registry'
+import { PluginUpdateStatus, type PluginUpdateState, type PluginRestartWarning } from './composer/PluginUpdateStatus'
 import {
   type ToolRendererOverrides,
 } from './bareToolRenderers'
@@ -56,8 +60,6 @@ import { useThinkingSettings } from './hooks/useThinkingSettings'
 import { useAttachmentNotice } from './hooks/useAttachmentNotice'
 import {
   modelPayload,
-  parseModelSelection,
-  writeStoredModelSelection,
   type ModelSelection,
   type ThinkingLevel,
 } from './chatPanelSettings'
@@ -88,6 +90,14 @@ export interface ChatPanelProps {
   sessionId: string
   toolRenderers?: ToolRendererOverrides
   extraCommands?: SlashCommand[]
+  /**
+   * App-level hot-reload toggle. When `false`, the `/reload` slash
+   * command is hidden from the picker and the `/help` listing, and the
+   * PluginUpdateStatus banner above the composer never renders.
+   * Production apps that don't expose live plugin editing should pass
+   * `false`. Defaults to `true`.
+   */
+  hotReloadEnabled?: boolean
   onSessionReset?: () => void | Promise<void>
   /**
    * Render flush, without the outer canvas tint or the inner mx/my rounded
@@ -150,6 +160,7 @@ export function ChatPanel(props: ChatPanelProps) {
     sessionId,
     toolRenderers,
     extraCommands,
+    hotReloadEnabled = true,
     onSessionReset,
     className,
     chrome = true,
@@ -214,8 +225,16 @@ export function ChatPanel(props: ChatPanelProps) {
   const composerBlockerLabel = primaryComposerBlocker?.label ?? 'Complete the pending workspace action to continue.'
 
   const registry = useMemo(
-    () => createCommandRegistry([...builtinCommands, ...(extraCommands ?? [])]),
-    [extraCommands],
+    () => {
+      // When hot reload is disabled at the app level, hide /reload from
+      // every consumer (picker, /help, programmatic list) by not
+      // registering it in the first place.
+      const effectiveBuiltins = hotReloadEnabled
+        ? builtinCommands
+        : builtinCommands.filter((cmd) => cmd.name !== 'reload')
+      return createCommandRegistry([...effectiveBuiltins, ...(extraCommands ?? [])])
+    },
+    [extraCommands, hotReloadEnabled],
   )
   const skillsStamp = useServerSkills({ registry, requestHeaders })
   const allCommands = useMemo(() => registry.list(), [registry, skillsStamp])
@@ -227,6 +246,82 @@ export function ChatPanel(props: ChatPanelProps) {
   const { thinkingLevel, setThinkingLevel, showThoughts, setShowThoughts } =
     useThinkingSettings(thinkingControl)
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
+
+  // Low-level reload call. /reload uses the banner UX via
+  // runPluginUpdate when the host has wired it, otherwise falls back
+  // to reloadAgentPlugins below for inline-text feedback.
+  const callPluginReload = useCallback(async (): Promise<{
+    reloaded: boolean
+    restartWarnings?: PluginRestartWarning[]
+  }> => {
+    const res = await fetch('/api/v1/agent/reload', {
+      method: 'POST',
+      headers: { ...(requestHeaders ?? {}), 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    })
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({})) as { error?: string }
+      throw new Error(payload.error || `reload failed (${res.status})`)
+    }
+    const payload = await res.json().catch(() => ({})) as {
+      reloaded?: boolean
+      restart_warnings?: PluginRestartWarning[]
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+    }
+    return {
+      reloaded: Boolean(payload.reloaded),
+      ...(payload.restart_warnings && payload.restart_warnings.length > 0
+        ? { restartWarnings: payload.restart_warnings }
+        : {}),
+    }
+  }, [requestHeaders, sessionId])
+
+  const reloadAgentPlugins = useCallback(async () => {
+    try {
+      const { reloaded } = await callPluginReload()
+      return reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Agent plugin reload failed.'
+    }
+  }, [callPluginReload])
+
+  // Plugin update status banner (above the composer). Driven by the
+  // `/reload` slash command when the host wires `pluginUpdate`.
+  // `running` while in-flight, then `success` or `error` with details.
+  const [pluginUpdateState, setPluginUpdateState] = useState<PluginUpdateState | null>(null)
+  // Clear the banner synchronously on `sessionId` swap. The ref carries
+  // the live session value across async boundaries so an in-flight
+  // /reload started under a previous session can't race-write its
+  // success/error into the new one.
+  const activeSessionRef = useRef(sessionId)
+  useEffect(() => {
+    activeSessionRef.current = sessionId
+    setPluginUpdateState(null)
+  }, [sessionId])
+  const runPluginUpdate = useCallback(async () => {
+    const capturedSession = activeSessionRef.current
+    setPluginUpdateState({ kind: 'running' })
+    try {
+      const { reloaded, restartWarnings } = await callPluginReload()
+      if (activeSessionRef.current !== capturedSession) return 'Plugins updated.'
+      setPluginUpdateState({
+        kind: 'success',
+        reloaded,
+        ...(restartWarnings && restartWarnings.length > 0 ? { restartWarnings } : {}),
+      })
+      return reloaded ? 'Plugins updated.' : 'Plugins will reload on the next message.'
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Plugin update failed.'
+      if (activeSessionRef.current !== capturedSession) return `Plugin update failed: ${message}`
+      setPluginUpdateState({ kind: 'error', message })
+      return `Plugin update failed: ${message}`
+    }
+  }, [callPluginReload])
+  const dismissPluginUpdate = useCallback(() => setPluginUpdateState(null), [])
+
+
   const isStreaming = status === 'submitted' || status === 'streaming'
   const attachmentsDisabled = isStreaming || pendingMessages.length > 0
 
@@ -329,16 +424,11 @@ export function ChatPanel(props: ChatPanelProps) {
             ).catch(() => {})
             void onSessionReset?.()
           },
-          setModel: (model) => {
-            const next = parseModelSelection(model)
-            if (!next) return false
-            writeStoredModelSelection(next)
-            globalThis.dispatchEvent?.(new CustomEvent('boring:model-change', { detail: next }))
-            return true
-          },
           listCommands: () => registry.list(),
+          reloadAgentPlugins,
+          pluginUpdate: { run: runPluginUpdate },
         }
-        const result = cmd.handler(parsed.args, ctx)
+        const result = await Promise.resolve(cmd.handler(parsed.args, ctx))
         if (typeof result === 'string') {
           setMessages((prev) => [
             ...prev,
@@ -795,6 +885,13 @@ export function ChatPanel(props: ChatPanelProps) {
               </button>
             ))}
           </div>
+        )}
+        {hotReloadEnabled && (
+          <PluginUpdateStatus
+            state={pluginUpdateState}
+            onDismiss={dismissPluginUpdate}
+            onRetry={runPluginUpdate}
+          />
         )}
         {attachmentNotice && (
           <div

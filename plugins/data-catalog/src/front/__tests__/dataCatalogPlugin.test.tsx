@@ -1,25 +1,24 @@
 import type { ComponentType } from "react"
 import { fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { CommandRegistry } from "@hachej/boring-workspace"
-import { PanelRegistry } from "@hachej/boring-workspace"
-import { SurfaceResolverRegistry } from "@hachej/boring-workspace"
-import { CatalogRegistry } from "@hachej/boring-workspace"
+import type {
+  BoringFrontAPI,
+  BoringFrontLeftTabRegistration,
+  BoringFrontPanelRegistration,
+  BoringFrontSurfaceResolverRegistration,
+} from "@hachej/boring-workspace/plugin"
+import type { CatalogConfig } from "@hachej/boring-workspace"
 import { workspaceEvents } from "@hachej/boring-workspace/events"
-import { bootstrap, defineFrontPlugin, events } from "@hachej/boring-workspace"
+import { events } from "@hachej/boring-workspace"
 import type { ExplorerDataSource, ExplorerItem } from "@hachej/boring-data-explorer/shared"
 import {
   DATA_CATALOG_ROW_SURFACE_KIND,
-  appendDataCatalogOutputs,
-  createDataCatalogOutputs,
   createDataCatalogPlugin,
   dataCatalogPanelInstanceId,
   openDataCatalogVisualization,
   useDataCatalogQuery,
   useDataCatalogVisualizationState,
 } from "../index"
-
-const DummyChatPanel = () => null
 
 const rows: ExplorerItem[] = [
   {
@@ -54,153 +53,112 @@ const adapter: ExplorerDataSource = {
   },
 }
 
-function makeRegistries() {
-  return {
-    panels: new PanelRegistry(),
-    commands: new CommandRegistry(),
-    catalogs: new CatalogRegistry({ warnOnDuplicate: false }),
-    surfaceResolvers: new SurfaceResolverRegistry(),
-  }
+interface CapturedRegistrations {
+  leftTabs: BoringFrontLeftTabRegistration<any>[]
+  panels: BoringFrontPanelRegistration<any>[]
+  catalogs: CatalogConfig[]
+  surfaceResolvers: BoringFrontSurfaceResolverRegistration[]
 }
 
-describe("dataCatalogPlugin", () => {
-  it("creates left-tab, visualization panel, and catalog outputs", () => {
-    const outputs = createDataCatalogOutputs({
+function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations } {
+  const captured: CapturedRegistrations = {
+    leftTabs: [],
+    panels: [],
+    catalogs: [],
+    surfaceResolvers: [],
+  }
+  const api: BoringFrontAPI = {
+    registerProvider: vi.fn(),
+    registerBinding: vi.fn(),
+    registerCatalog: vi.fn((c) => {
+      captured.catalogs.push(c)
+    }),
+    registerPanel: vi.fn((p) => {
+      captured.panels.push(p)
+    }),
+    registerPanelCommand: vi.fn(),
+    registerLeftTab: vi.fn((t) => {
+      captured.leftTabs.push(t)
+    }),
+    registerSurfaceResolver: vi.fn((r) => {
+      captured.surfaceResolvers.push(r)
+    }),
+  }
+  return { api, captured }
+}
+
+describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
+  it("registers left tab, visualization panel, catalog, and surface resolver by default", async () => {
+    const factory = createDataCatalogPlugin({
       id: "warehouse-data",
       label: "Data",
       adapter,
       groupBy: "category",
     })
+    const { api, captured } = makeMockApi()
+    await factory(api)
 
-    expect(outputs.map((output) => output.type)).toEqual([
-      "left-tab",
-      "panel",
-      "catalog",
-      "surface-resolver",
-    ])
-    expect(outputs[0]).toEqual(
+    expect(captured.leftTabs).toHaveLength(1)
+    expect(captured.leftTabs[0]).toEqual(
       expect.objectContaining({
-        type: "left-tab",
         id: "warehouse-data-tab",
         title: "Data",
+        panelId: "warehouse-data-tab",
       }),
     )
-    expect(outputs[1]).toEqual(
+
+    expect(captured.panels).toHaveLength(1)
+    expect(captured.panels[0]).toEqual(
       expect.objectContaining({
-        type: "panel",
-        panel: expect.objectContaining({
-          id: "warehouse-data-visualization",
-          placement: "center",
-        }),
+        id: "warehouse-data-visualization",
+        placement: "center",
       }),
     )
-    expect(outputs[2]).toEqual(
-      expect.objectContaining({
-        type: "catalog",
-        catalog: expect.objectContaining({ id: "warehouse-data", label: "Data" }),
-      }),
+
+    expect(captured.catalogs).toHaveLength(1)
+    expect(captured.catalogs[0]).toEqual(
+      expect.objectContaining({ id: "warehouse-data", label: "Data" }),
     )
-    expect(outputs[3]).toEqual(
+
+    expect(captured.surfaceResolvers).toHaveLength(1)
+    expect(captured.surfaceResolvers[0]).toEqual(
       expect.objectContaining({
-        type: "surface-resolver",
-        resolver: expect.objectContaining({ id: "warehouse-data-row" }),
+        id: "warehouse-data-row",
+        kind: DATA_CATALOG_ROW_SURFACE_KIND,
       }),
     )
   })
 
   it("passes workbench bridge context to left-tab row selection", async () => {
     const onSelect = vi.fn()
-    const outputs = createDataCatalogOutputs({
+    const factory = createDataCatalogPlugin({
       id: "metrics",
       label: "Metrics",
       adapter,
       onSelect,
     })
-    const panel = outputs.find((output) => output.type === "left-tab")
-    if (!panel || panel.type !== "left-tab") throw new Error("missing left tab")
-    const Component = panel.component as ComponentType<any>
+    const { api, captured } = makeMockApi()
+    await factory(api)
+
+    const tab = captured.leftTabs[0]
+    if (!tab) throw new Error("missing left tab")
+    const Component = tab.component as ComponentType<any>
     const bridge = { openFile: vi.fn() }
 
     render(<Component params={{ bridge }} />)
     await screen.findByText("Daily Orders")
     fireEvent.click(screen.getByRole("button", { name: /Daily Orders/ }))
 
-    await waitFor(() => expect(onSelect).toHaveBeenCalledWith(rows[0], {
-      params: { bridge },
-      bridge,
-    }))
-  })
-
-  it("registers outputs through plugin bootstrap", () => {
-    const registries = makeRegistries()
-    const plugin = createDataCatalogPlugin({
-      id: "metrics",
-      label: "Metrics",
-      adapter,
-    })
-
-    bootstrap({
-      chatPanel: DummyChatPanel,
-      plugins: [plugin],
-      defaults: [],
-      registries,
-    })
-
-    expect(registries.panels.get("metrics-tab")).toEqual(
-      expect.objectContaining({
-        id: "metrics-tab",
-        placement: "left-tab",
-        pluginId: "metrics",
-      }),
-    )
-    expect(registries.panels.get("metrics-visualization")).toEqual(
-      expect.objectContaining({
-        id: "metrics-visualization",
-        placement: "center",
-        pluginId: "metrics",
-      }),
-    )
-    expect(registries.catalogs.get("metrics")).toEqual(
-      expect.objectContaining({ id: "metrics", pluginId: "metrics" }),
-    )
-    expect(registries.surfaceResolvers.get("metrics-row")).toEqual(
-      expect.objectContaining({
-        id: "metrics-row",
-        pluginId: "metrics",
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith(rows[0], {
+        params: { bridge },
+        bridge,
       }),
     )
   })
 
-  it("appends outputs to a child app plugin without replacing its own panels", () => {
-    const child = defineFrontPlugin({
-      id: "analytics-host",
-      label: "Analytics",
-      panels: [
-        {
-          id: "insight-panel",
-          title: "Insight",
-          component: () => null,
-          placement: "center",
-          source: "app",
-        },
-      ],
-    })
-
-    const plugin = appendDataCatalogOutputs(child, {
-      id: "warehouse-data",
-      label: "Data",
-      adapter,
-      visualizationPanelId: "insight-panel",
-      includeVisualizationPanel: false,
-    })
-
-    expect(plugin.id).toBe("analytics-host")
-    expect(plugin.panels?.map((panel) => panel.id)).toEqual(["insight-panel"])
-    expect(plugin.outputs?.map((output) => output.type)).toEqual(["left-tab", "catalog"])
-  })
-
-  it("can explicitly add a resolver for a host-registered visualization panel", () => {
-    const outputs = createDataCatalogOutputs({
+  it("can explicitly add a resolver for a host-registered visualization panel", async () => {
+    const factory = createDataCatalogPlugin({
       id: "warehouse-data",
       label: "Data",
       adapter,
@@ -208,33 +166,39 @@ describe("dataCatalogPlugin", () => {
       includeVisualizationPanel: false,
       includeSurfaceResolver: true,
     })
+    const { api, captured } = makeMockApi()
+    await factory(api)
 
-    expect(outputs.map((output) => output.type)).toEqual([
-      "left-tab",
-      "catalog",
-      "surface-resolver",
-    ])
-    const resolver = outputs.find((output) => output.type === "surface-resolver")?.resolver
-    expect(resolver?.resolve({
-      kind: DATA_CATALOG_ROW_SURFACE_KIND,
-      target: "orders_daily",
-      meta: { catalogId: "warehouse-data", row: rows[0] },
-    })).toEqual(expect.objectContaining({ component: "insight-panel" }))
+    expect(captured.panels).toHaveLength(0)
+    expect(captured.leftTabs).toHaveLength(1)
+    expect(captured.catalogs).toHaveLength(1)
+    expect(captured.surfaceResolvers).toHaveLength(1)
+
+    const resolver = captured.surfaceResolvers[0]
+    expect(
+      resolver?.resolve({
+        kind: DATA_CATALOG_ROW_SURFACE_KIND,
+        target: "orders_daily",
+        meta: { catalogId: "warehouse-data", row: rows[0] },
+      }),
+    ).toEqual(expect.objectContaining({ component: "insight-panel" }))
   })
 
-  it("catalog selection posts an openSurface ui command by default", () => {
+  it("catalog selection posts an openSurface ui command by default", async () => {
     const observed: unknown[] = []
     const unsubscribe = events.on(workspaceEvents.uiCommand, (payload) =>
       observed.push(payload.command),
     )
 
     try {
-      const outputs = createDataCatalogOutputs({
+      const factory = createDataCatalogPlugin({
         id: "metrics",
         label: "Metrics",
         adapter,
       })
-      const catalog = outputs.find((output) => output.type === "catalog")?.catalog
+      const { api, captured } = makeMockApi()
+      await factory(api)
+      const catalog = captured.catalogs[0]
 
       expect(catalog).toBeDefined()
       catalog!.onSelect(rows[0]!)
@@ -294,30 +258,36 @@ describe("dataCatalogPlugin", () => {
     }
   })
 
-  it("resolves catalog row targets into visualization panels", () => {
-    const outputs = createDataCatalogOutputs({
+  it("resolves catalog row targets into visualization panels", async () => {
+    const factory = createDataCatalogPlugin({
       id: "metrics",
       label: "Metrics",
       adapter,
     })
-    const resolver = outputs.find((output) => output.type === "surface-resolver")?.resolver
+    const { api, captured } = makeMockApi()
+    await factory(api)
+    const resolver = captured.surfaceResolvers[0]
 
-    expect(resolver?.resolve({
-      kind: DATA_CATALOG_ROW_SURFACE_KIND,
-      target: "orders_daily",
-      meta: { catalogId: "metrics", row: rows[0] },
-    })).toEqual({
+    expect(
+      resolver?.resolve({
+        kind: DATA_CATALOG_ROW_SURFACE_KIND,
+        target: "orders_daily",
+        meta: { catalogId: "metrics", row: rows[0] },
+      }),
+    ).toEqual({
       id: dataCatalogPanelInstanceId("orders_daily", "metrics"),
       component: "metrics-visualization",
       title: "Daily Orders",
       params: { row: rows[0] },
       score: 0,
     })
-    expect(resolver?.resolve({
-      kind: DATA_CATALOG_ROW_SURFACE_KIND,
-      target: "orders_daily",
-      meta: { catalogId: "other", row: rows[0] },
-    })).toBeUndefined()
+    expect(
+      resolver?.resolve({
+        kind: DATA_CATALOG_ROW_SURFACE_KIND,
+        target: "orders_daily",
+        meta: { catalogId: "other", row: rows[0] },
+      }),
+    ).toBeUndefined()
   })
 
   it("keeps data catalog param resolution in plugin hooks", () => {
@@ -362,5 +332,14 @@ describe("dataCatalogPlugin", () => {
     expect(first).toContain("row-one")
     expect(first.length).toBeLessThanOrEqual(64)
     expect(second.length).toBeLessThanOrEqual(64)
+  })
+
+  it("is the default callable factory shape required by BoringFrontFactory", () => {
+    const factory = createDataCatalogPlugin({
+      id: "metrics",
+      label: "Metrics",
+      adapter,
+    })
+    expect(typeof factory).toBe("function")
   })
 })

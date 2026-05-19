@@ -43,6 +43,38 @@ export class CatalogRegistry {
     if (changed) this.emit()
   }
 
+  /**
+   * Atomic replace by pluginId: drop owned catalogs and register the new
+   * set in one emit. Pi parity for reload semantics.
+   *
+   * Collision policy: a new catalog id already owned by a DIFFERENT pluginId
+   * is skipped with a warning — same posture as `register`'s warnOnDuplicate
+   * but never silently overwriting another plugin's contribution.
+   */
+  replaceByPluginId(pluginId: string, catalogs: CatalogConfig[]): void {
+    const ownedIds = new Set<string>()
+    for (const [id, catalog] of this.catalogs) {
+      if (catalog.pluginId === pluginId) ownedIds.add(id)
+    }
+    if (ownedIds.size === 0 && catalogs.length === 0) return
+
+    let changed = ownedIds.size > 0
+    for (const id of ownedIds) this.catalogs.delete(id)
+    for (const config of catalogs) {
+      const existing = this.catalogs.get(config.id)
+      if (existing && existing.pluginId !== pluginId) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[CatalogRegistry] plugin "${pluginId}" tried to register catalog "${config.id}" already owned by "${existing.pluginId ?? 'system'}" — skipped`,
+        )
+        continue
+      }
+      this.catalogs.set(config.id, { ...config, pluginId })
+      changed = true
+    }
+    if (changed) this.emit()
+  }
+
   list(): readonly CatalogConfig[] {
     return this.getSnapshot()
   }

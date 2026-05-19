@@ -5,6 +5,8 @@ import { basename, isAbsolute, join, resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
+import { scaffoldPlugin } from "./scaffoldPlugin.js"
+import { findHintForError, formatVerifyResult, verifyPlugin } from "./verifyPlugin.js"
 
 export interface RunCliOptions {
   argv?: string[]
@@ -233,7 +235,7 @@ async function startWorkspacesMode(opts: {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
     getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
-    getResourceLoaderOptions: async ({ workspaceRoot }) => ({
+    getPi: async ({ workspaceRoot }) => ({
       additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
     }),
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
@@ -356,8 +358,74 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     return
   }
 
+  if (positionals[0] === "scaffold-plugin") {
+    handleScaffoldPluginCommand({ positionals })
+    return
+  }
+
+  if (positionals[0] === "verify-plugin") {
+    handleVerifyPluginCommand({ positionals })
+    return
+  }
+
   await startFolderMode({
     ...base,
     folderArg: positionals[0],
   })
+}
+
+function handleVerifyPluginCommand(opts: { positionals: string[] }) {
+  // Usage: `boring-ui verify-plugin [<name>] [<workspace>]`
+  // No name: verify every plugin under .pi/extensions/.
+  // With name: verify only `.pi/extensions/<name>/`.
+  // Workspace defaults to cwd. The flag-free positional form keeps the
+  // invocation short for the agent's bash tool.
+  const maybeName = opts.positionals[1]
+  const maybeWorkspace = opts.positionals[2]
+  const looksLikePath = maybeName && (maybeName.includes("/") || maybeName.startsWith("."))
+  const name = looksLikePath ? undefined : maybeName
+  const workspaceRoot = resolve(maybeWorkspace ?? (looksLikePath ? maybeName! : process.cwd()))
+
+  const result = verifyPlugin({ workspaceRoot, ...(name ? { name } : {}) })
+  console.log(formatVerifyResult(result))
+  if (!result.ok) {
+    // Surface actionable hints for the well-known mistakes so the agent
+    // sees a one-line "do this instead" alongside the raw error.
+    const hints: string[] = []
+    for (const outcome of result.outcomes) {
+      for (const err of outcome.errors) {
+        const hint = findHintForError(err)
+        if (hint) hints.push(`  hint (${outcome.id}): ${hint}`)
+      }
+    }
+    if (hints.length > 0) {
+      console.log("")
+      console.log("Suggestions:")
+      for (const hint of hints) console.log(hint)
+    }
+    process.exit(1)
+  }
+}
+
+function handleScaffoldPluginCommand(opts: { positionals: string[] }) {
+  const name = opts.positionals[1]
+  if (!name) {
+    throw new Error("usage: boring-ui scaffold-plugin <name> [workspace]")
+  }
+  const workspaceRoot = resolve(opts.positionals[2] ?? process.cwd())
+  const result = scaffoldPlugin({ name, workspaceRoot })
+  console.log(`scaffolded ${name}`)
+  console.log(`  dir   ${result.pluginDir}`)
+  for (const file of result.filesCreated) {
+    console.log(`  +     ${file}`)
+  }
+  console.log("")
+  console.log("Next steps:")
+  console.log(`  1. edit front/index.tsx (and server/index.ts if you need agent tools)`)
+  console.log(`  2. bash \`boring-ui verify-plugin\` — confirms manifests + files are valid`)
+  console.log(`  3. ask the user: /reload`)
+  console.log("")
+  console.log("Front-only plugin (no agent tools / HTTP routes)?")
+  console.log(`  Remove BOTH server/index.ts AND the \`"server": "server/index.ts"\` line`)
+  console.log(`  from package.json. \`boring-ui verify-plugin\` will catch the half-removed case.`)
 }

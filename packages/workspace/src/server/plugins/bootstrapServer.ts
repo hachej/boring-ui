@@ -14,8 +14,6 @@ export {
   defineServerPlugin,
   validateServerPlugin,
 } from "./defineServerPlugin"
-export { composeServerPlugins } from "./composeServerPlugins"
-export type { ComposeServerPluginsOptions } from "./composeServerPlugins"
 export { compactPiPackages } from "./piPackages"
 export type { WorkspaceServerPlugin } from "./defineServerPlugin"
 export type { WorkspacePiPackageSource } from "./piPackages"
@@ -40,14 +38,11 @@ export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
   piPackages: WorkspacePiPackageSource[]
+  extensionPaths: string[]
   agentTools: AgentTool[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
   preservedUiStateKeys: string[]
-}
-
-function collectPiPackages(plugins: WorkspaceServerPlugin[]): WorkspacePiPackageSource[] {
-  return compactPiPackages(plugins.flatMap((plugin) => plugin.piPackages ?? []))
 }
 
 export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstrapResult {
@@ -78,7 +73,9 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .map((p) => p.systemPrompt!.trim())
     .join("\n\n")
 
-  const piPackages = collectPiPackages(finalPlugins)
+  const piPackages = compactPiPackages(finalPlugins.flatMap((plugin) => plugin.piPackages ?? []))
+
+  const extensionPaths = finalPlugins.flatMap((p) => p.extensionPaths ?? [])
 
   const provisioningContributions = finalPlugins
     .filter((p) => p.provisioning)
@@ -94,6 +91,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     registered: finalPlugins.map((p) => p.id),
     systemPromptAppend,
     piPackages,
+    extensionPaths,
     agentTools,
     provisioningContributions,
     routeContributions,

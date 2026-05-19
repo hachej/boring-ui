@@ -1,0 +1,67 @@
+{
+  "name": "@hachej/boring-plugin-template",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Canonical boring-ui plugin template: imperative BoringFrontFactory demonstrating registerPanel, registerPanelCommand, and registerSurfaceResolver. Copy to plugins/<name>/ and search-and-replace `sample` ids.",
+  "boring": {
+    "label": "Sample",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "Sample plugin template \u2014 replace this prompt with a short hint telling the agent when to use your plugin's panels/tools."
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
+    "test": "pnpm --filter @hachej/boring-ui-kit build && vitest run --passWithNoTests",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@hachej/boring-ui-kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jsdom": "^29.0.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.1.3"
+  }
+}

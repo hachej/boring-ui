@@ -1,7 +1,10 @@
-export { composePlugins } from "./composePlugins"
-export type { ComposePluginsOptions } from "./composePlugins"
-export { defineFrontPlugin, PluginError } from "./defineFrontPlugin"
-export type { PluginErrorKind, WorkspaceFrontPlugin } from "./defineFrontPlugin"
+// `defineFrontPlugin` and `WorkspaceFrontPlugin` are INTERNAL bootstrap
+// IR. They are deliberately NOT re-exported here — public consumers
+// should use `definePlugin` from "@hachej/boring-workspace/plugin". The
+// rare internal callers (the bootstrap pipeline, tests) import them
+// directly from `./defineFrontPlugin`.
+export { PluginError } from "./defineFrontPlugin"
+export type { PluginErrorKind } from "./defineFrontPlugin"
 export type {
   PluginBinding,
   CatalogAdapter,
@@ -30,15 +33,17 @@ export type {
   JSONSchema,
   ToolExecContext,
   ToolResult,
-  AgentToolOutput,
 } from "./types"
 export { bootstrap } from "./bootstrap"
 export type {
   BootstrapOptions,
   BootstrapResult,
-  AgentToolRegistry,
   PanelRegistryLike,
   CommandRegistryLike,
   CatalogRegistryLike,
   SurfaceResolverRegistryLike,
 } from "./bootstrap"
+
+// frontFactory and manifest exports live on the "@hachej/boring-workspace/plugin"
+// subpath. Internal callers import them directly from ./frontFactory or
+// ./manifest — no barrel re-export needed here.

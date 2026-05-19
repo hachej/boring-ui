@@ -10,40 +10,53 @@ import {
   provisionRuntimeWorkspace,
   resolveMode,
   type CreateAgentAppOptions,
+  type PiExtensionFactory,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
-import { join } from "node:path"
+import { existsSync, readFileSync } from "node:fs"
+import { dirname, isAbsolute, join } from "node:path"
+import { createRequire } from "node:module"
+import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
+import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
+import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
+import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
+import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
+import {
+  resolveOnePluginEntry,
+  type DirPluginEntry,
+} from "./pluginEntryResolver"
+import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
+import { pluginRootFromExtensionPath, preflightBoringPlugins, readBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { createWorkspaceUiTools } from "../../server/ui-control/tools/uiTools"
 import { uiRoutes } from "../../server/ui-control/http/uiRoutes"
 import {
-  ServerPluginError,
   bootstrapServer,
-  composeServerPlugins,
-  defineServerPlugin,
-  validateServerPlugin,
   compactPiPackages,
   type ServerBootstrapOptions,
-  type ComposeServerPluginsOptions,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
 
-export interface WorkspaceAgentResourceLoaderOptions {
+type HostExtensionFactory = PiExtensionFactory
+
+export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
   noSkills?: boolean
   additionalSkillPaths?: string[]
-  piPackages?: WorkspacePiPackageSource[]
+  packages?: WorkspacePiPackageSource[]
+  extensionPaths?: string[]
+  extensionFactories?: HostExtensionFactory[]
 }
 
 type WorkspaceAgentCreateOptions = Omit<
   CreateAgentAppOptions,
-  "resourceLoaderOptions"
+  "pi"
 > & {
-  resourceLoaderOptions?: WorkspaceAgentResourceLoaderOptions
+  pi?: WorkspaceAgentPiOptions
 }
 
 export interface WorkspaceAgentServerPluginContext {
@@ -51,30 +64,172 @@ export interface WorkspaceAgentServerPluginContext {
   bridge: ReturnType<typeof createInMemoryBridge>
 }
 
-export type WorkspaceAgentServerPluginFactory = (context: WorkspaceAgentServerPluginContext) => WorkspaceServerPlugin
+/**
+ * Single install entry type. Accepts:
+ *  - `WorkspaceServerPlugin` — pre-built plugin object.
+ *  - `{ dir, options?, hotReload? }` — directory-source plugin resolved
+ *     via package.json#boring.server (Pi parity: manifest first,
+ *     convention fallback, declared-but-missing throws). hotReload uses
+ *     jiti so /reload picks up source edits.
+ */
+export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
 
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
-    Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
-  pluginFactories?: WorkspaceAgentServerPluginFactory[]
+    Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
+  /**
+   * Plugins to install. Accepts pre-built `WorkspaceServerPlugin` objects
+   * or `{ dir, options?, hotReload? }` directory-source entries.
+   */
+  plugins?: WorkspacePluginEntry[]
   provisionWorkspace?: boolean
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
+  /**
+   * Whether /reload refreshes Boring package plugin UI/server assets.
+   * Drives both server re-import (jiti) and Pi resource refresh
+   * (getDynamicResources + systemPromptDynamic). Initial plugin
+   * discovery always runs so statically configured plugins load.
+   * Defaults to true.
+   */
+  pluginHotReload?: boolean
+  /**
+   * App-default plugin packages (by npm name OR absolute filesystem path).
+   * Each entry is resolved at boot, registered as a Pi package (so Pi sees
+   * its skills/extensions/prompts), and discovered by the
+   * `BoringPluginAssetManager` (so the workspace sees its
+   * package.json#boring contributions). One declaration, both sides.
+   *
+   * Equivalent to the user manually placing each package under
+   * `.pi/extensions/<name>/` and `pi install`-ing it — done programmatically
+   * at app boot. Combined with `.pi/extensions/<name>/` (user-added) and
+   * any `pi install npm:<pkg>` packages, all three flow through the same
+   * load process.
+   */
+  defaultPluginPackages?: string[]
+  /**
+   * Absolute path to the app's `package.json`. When passed, the workspace
+   * reads `package.json#boring.defaultPluginPackages: string[]` from it
+   * and merges those entries with anything passed in
+   * `defaultPluginPackages`. Relative entries in package.json resolve
+   * against the package.json's own directory.
+   *
+   * Example app `package.json`:
+   *
+   *     {
+   *       "name": "my-app",
+   *       "boring": {
+   *         "defaultPluginPackages": [
+   *           "@hachej/boring-ask-user",
+   *           "./src/plugins/playgroundDataCatalog"
+   *         ]
+   *       }
+   *     }
+   *
+   * Lets apps declare their plugin set in the canonical app manifest
+   * instead of inside the server boot path.
+   */
+  appPackageJsonPath?: string
 }
 
-export {
-  ServerPluginError,
-  composeServerPlugins,
-  defineServerPlugin,
-  validateServerPlugin,
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const require = createRequire(import.meta.url)
+
+function resolveWorkspacePackageRoot(): string {
+  const candidates = [
+    join(__dirname, ".."),
+    join(__dirname, "../../.."),
+  ]
+  for (const candidate of candidates) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
+      if (pkg.name === "@hachej/boring-workspace") return candidate
+    } catch {
+      // try next layout
+    }
+  }
+  return join(__dirname, "../../..")
 }
-export type {
-  ComposeServerPluginsOptions,
-  WorkspacePiPackageSource,
-  WorkspaceServerPlugin,
-  WorkspaceProvisioningContribution,
-  WorkspaceRouteContribution,
+
+function nodePackageContribution(
+  contributionId: string,
+  nodePackageId: string,
+  packageName: string,
+  packageRoot: string | null,
+): WorkspaceProvisioningContribution | null {
+  if (!packageRoot || !existsSync(join(packageRoot, "package.json"))) return null
+  return {
+    id: contributionId,
+    provisioning: {
+      nodePackages: [{ id: nodePackageId, packageName, packageRoot }],
+    },
+  }
 }
+
+function createWorkspacePackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
+  return nodePackageContribution(
+    "boring-workspace-package",
+    "boring-workspace",
+    "@hachej/boring-workspace",
+    resolveWorkspacePackageRoot(),
+  )
+}
+
+function resolveBoringPiPackageRoot(): string | null {
+  const workspacePackageRoot = resolveWorkspacePackageRoot()
+  const candidates = [
+    join(workspacePackageRoot, "..", "pi"),
+    join(workspacePackageRoot, "node_modules", "@hachej", "boring-pi"),
+  ]
+  for (const candidate of candidates) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
+      if (pkg.name === "@hachej/boring-pi") return candidate
+    } catch {
+      // try next layout
+    }
+  }
+  try {
+    return dirname(require.resolve("@hachej/boring-pi/package.json"))
+  } catch {
+    return null
+  }
+}
+
+function createBoringPiPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
+  return nodePackageContribution("boring-pi-package", "boring-pi", "@hachej/boring-pi", resolveBoringPiPackageRoot())
+}
+
+function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
+  const workspacePackageRoot = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
+  const source = existsSync(join(workspacePackageRoot, "package.json"))
+    ? workspacePackageRoot
+    : resolveBoringPiPackageRoot()
+  if (!source || !existsSync(join(source, "package.json"))) return undefined
+  return { source, skills: ["skills/boring-plugin-authoring"] }
+}
+
+/**
+ * Direct absolute path(s) to bundled boring-pi skills.
+ *
+ * The boring-pi package source above is the canonical declarative way to
+ * register the skill, but Pi's DefaultResourceLoader skips package-resolved
+ * skills (`enabledSkills`) when `noSkills: true` is set — and boring's
+ * default agent factory does set `noSkills: true` so user-global skills
+ * (~/.agents/skills) don't leak into the agent's prompt. To keep OUR
+ * skill flowing regardless of that filter, we also push the SKILL.md
+ * path into `additionalSkillPaths`, which Pi loads via its skillsOverride
+ * even under noSkills. Belt-and-suspenders so the agent always sees the
+ * plugin-authoring skill.
+ */
+function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
+  const pkg = createBoringPiPackageSource(workspaceRoot)
+  const root = typeof pkg === "string" ? pkg : pkg?.source
+  if (!root) return []
+  const skillFile = join(root, "skills", "boring-plugin-authoring", "SKILL.md")
+  return existsSync(skillFile) ? [skillFile] : []
+}
+
 
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
@@ -82,7 +237,7 @@ export interface WorkspaceAgentServerPluginCollection {
   preservedUiStateKeys: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
-    "extraTools" | "systemPromptAppend" | "resourceLoaderOptions"
+    "extraTools" | "systemPromptAppend" | "pi"
   >
 }
 
@@ -90,7 +245,7 @@ export interface CollectWorkspaceAgentServerPluginsOptions
   extends Pick<ServerBootstrapOptions, "plugins" | "defaults" | "excludeDefaults"> {
   workspaceRoot?: string
   systemPromptAppend?: string
-  resourceLoaderOptions?: WorkspaceAgentResourceLoaderOptions
+  pi?: WorkspaceAgentPiOptions
 }
 
 export function buildWorkspaceContextPrompt(): string {
@@ -112,11 +267,16 @@ export function collectWorkspaceAgentServerPlugins(
     excludeDefaults: opts.excludeDefaults,
   })
   const workspaceSkillsDir = join(workspaceRoot, ".agents", "skills")
-  const callerAdditional = opts.resourceLoaderOptions?.additionalSkillPaths ?? []
-  const callerPiPackages = opts.resourceLoaderOptions?.piPackages ?? []
+  const callerAdditional = opts.pi?.additionalSkillPaths ?? []
+  const callerPiPackages = opts.pi?.packages ?? []
+  const callerExtensionPaths = opts.pi?.extensionPaths ?? []
 
   return {
-    provisioningContributions: result.provisioningContributions,
+    provisioningContributions: [
+      createWorkspacePackageProvisioningContribution(),
+      createBoringPiPackageProvisioningContribution(),
+      ...result.provisioningContributions,
+    ].filter((entry): entry is WorkspaceProvisioningContribution => Boolean(entry)),
     routeContributions: result.routeContributions,
     preservedUiStateKeys: result.preservedUiStateKeys,
     agentOptions: {
@@ -124,10 +284,15 @@ export function collectWorkspaceAgentServerPlugins(
       systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
         .filter(Boolean)
         .join("\n\n") || undefined,
-      resourceLoaderOptions: {
-        ...opts.resourceLoaderOptions,
+      pi: {
+        ...opts.pi,
         additionalSkillPaths: [workspaceSkillsDir, ...callerAdditional],
-        piPackages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
+        packages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
+        extensionPaths: [...result.extensionPaths, ...callerExtensionPaths],
+        // Host-level extensionFactories (opts.pi.extensionFactories) flow
+        // straight through via the ...opts.pi spread above. Plugins no
+        // longer contribute extensionFactories — tools live on agentTools,
+        // file-based extensions on extensionPaths.
       },
     },
   }
@@ -147,6 +312,123 @@ export async function provisionWorkspaceAgentServer(opts: {
   })
 }
 
+function collectBoringPluginDirs(workspaceRoot: string, pluginCollection: WorkspaceAgentServerPluginCollection): string[] {
+  const extensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
+  const pluginRoots = extensionPaths.flatMap((path) => {
+    try {
+      return [pluginRootFromExtensionPath(path)]
+    } catch {
+      return []
+    }
+  })
+  return [
+    join(workspaceRoot, ".pi", "extensions"),
+    ...pluginRoots,
+  ]
+}
+
+/**
+ * Read `package.json#boring.defaultPluginPackages: string[]` from the
+ * app's package.json, if `appPackageJsonPath` was provided. Relative
+ * entries are resolved against the package.json's own directory so apps
+ * can write paths like "./src/plugins/foo" without computing absolutes
+ * in their boot code. Returns the resolved absolute paths (or npm names
+ * unchanged, for later resolution by resolveDefaultPluginPackagePaths).
+ */
+function readAppManifestDefaultPlugins(appPackageJsonPath: string | undefined): string[] {
+  if (!appPackageJsonPath || !existsSync(appPackageJsonPath)) return []
+  let pkg: { boring?: { defaultPluginPackages?: unknown } }
+  try {
+    pkg = JSON.parse(readFileSync(appPackageJsonPath, "utf8"))
+  } catch {
+    return []
+  }
+  const entries = pkg.boring?.defaultPluginPackages
+  if (!Array.isArray(entries)) return []
+  const pkgDir = dirname(appPackageJsonPath)
+  return entries
+    .filter((e): e is string => typeof e === "string")
+    .map((entry) => {
+      // Relative paths resolve from the package.json's directory; npm names
+      // and absolute paths pass through unchanged.
+      if (entry.startsWith("./") || entry.startsWith("../")) {
+        return join(pkgDir, entry)
+      }
+      return entry
+    })
+}
+
+/**
+ * Resolve each entry in `defaultPluginPackages` to an absolute package
+ * directory. Accepts either an npm-style name (resolved via
+ * `require.resolve('<name>/package.json')`) or an absolute filesystem
+ * path. THROWS on unresolved entries — a typo or missing dependency
+ * is an app boot-time error, not something to silently drop.
+ */
+function resolveDefaultPluginPackagePaths(
+  workspaceRoot: string,
+  defaultPluginPackages: string[],
+): string[] {
+  if (defaultPluginPackages.length === 0) return []
+  const require = createRequire(join(workspaceRoot, "package.json"))
+  const requireFromHere = createRequire(import.meta.url)
+  const resolved: string[] = []
+  for (const entry of defaultPluginPackages) {
+    // isAbsolute handles both POSIX (`/foo`) and Windows (`C:\foo`) paths;
+    // startsWith("/") alone misses Windows absolute paths and incorrectly
+    // accepts `~/foo` as absolute.
+    if (isAbsolute(entry)) {
+      if (!existsSync(join(entry, "package.json"))) {
+        throw new Error(
+          `defaultPluginPackages: "${entry}" has no package.json — provide a path to a directory containing package.json with a "boring" field.`,
+        )
+      }
+      resolved.push(entry)
+      continue
+    }
+    let resolvedPath: string | null = null
+    try {
+      resolvedPath = dirname(require.resolve(`${entry}/package.json`))
+    } catch {
+      try {
+        // Fallback: resolve from this module's location (covers hosts
+        // whose workspace doesn't have its own package.json layout).
+        resolvedPath = dirname(requireFromHere.resolve(`${entry}/package.json`))
+      } catch {
+        throw new Error(
+          `defaultPluginPackages: cannot resolve "${entry}" — install it as a dep of the app (or workspace root) so require.resolve can find its package.json. Pass an absolute path instead if the package lives outside node_modules.`,
+        )
+      }
+    }
+    resolved.push(resolvedPath)
+  }
+  return resolved
+}
+
+interface PackageJsonPiSnapshot {
+  additionalSkillPaths: string[]
+  packages: WorkspacePiPackageSource[]
+  extensionPaths: string[]
+}
+
+function emptyPackageJsonPiSnapshot(): PackageJsonPiSnapshot {
+  return { additionalSkillPaths: [], packages: [], extensionPaths: [] }
+}
+
+function readPackageJsonPiSnapshot(pluginDirs: string[]): PackageJsonPiSnapshot {
+  if (!preflightBoringPlugins(pluginDirs).ok) return emptyPackageJsonPiSnapshot()
+  try {
+    const plugins = readBoringPlugins(pluginDirs)
+    return {
+      additionalSkillPaths: plugins.flatMap((plugin) => plugin.skillPaths ?? []),
+      packages: compactPiPackages(normalizeBoringPluginPiPackages(plugins)),
+      extensionPaths: plugins.flatMap((plugin) => plugin.extensionPaths ?? []),
+    }
+  } catch {
+    return emptyPackageJsonPiSnapshot()
+  }
+}
+
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -160,11 +442,44 @@ export async function createWorkspaceAgentServer(
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
-  const factoryPlugins = opts.pluginFactories?.map((factory) => factory({ workspaceRoot, bridge })) ?? []
+  const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
+
+  // Resolve app-default plugin packages from two sources, merged:
+  //   1. `opts.defaultPluginPackages` (explicit, set in code)
+  //   2. `package.json#boring.defaultPluginPackages` (declarative, the
+  //      canonical app manifest location — preferred for new apps).
+  // Each entry is resolved to an absolute package dir and flows into
+  // BOTH the server-side install array (as DirPluginEntries) AND the
+  // boring asset manager scan. ONE declaration, all sides.
+  const manifestPluginPackages = readAppManifestDefaultPlugins(opts.appPackageJsonPath)
+  const defaultPluginPackagePaths = resolveDefaultPluginPackagePaths(workspaceRoot, [
+    ...manifestPluginPackages,
+    ...(opts.defaultPluginPackages ?? []),
+  ])
+  const pluginHotReload = opts.pluginHotReload ?? true
+  const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths.map(
+    (dir) => ({ dir, hotReload: pluginHotReload }),
+  )
+
+  const allPluginEntries: WorkspacePluginEntry[] = [
+    ...defaultPluginDirEntries,
+    ...(opts.plugins ?? []),
+  ]
+  // Each entry (pre-built plugin or { dir, ... }) is resolved by
+  // resolveOnePluginEntry. Same logic serves rebuilds on /reload.
+  const resolvedPlugins = await Promise.all(
+    allPluginEntries.map((entry) => resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)),
+  )
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     ...opts,
-    plugins: [...(opts.plugins ?? []), ...factoryPlugins],
+    plugins: resolvedPlugins,
   })
+
+  // Note: we don't need to explicitly register defaultPluginPackagePaths
+  // as Pi packages here. They land in `boringPluginDirs` below, and the
+  // dynamic Pi resources path (`readPackageJsonPiSnapshot`) reads each
+  // package's `pi.*` fields from there and forwards them to Pi on every
+  // session creation + /reload. ONE pi-discovery path, no duplication.
 
   if (opts.provisionWorkspace !== false) {
     await provisionWorkspaceAgentServer({
@@ -172,6 +487,51 @@ export async function createWorkspaceAgentServer(
       provisioningContributions: pluginCollection.provisioningContributions,
       force: opts.workspaceProvisioning?.force,
     })
+  }
+
+  // Static Pi resources known at boot: workspace skill dir,
+  // factory-supplied values, and the bundled @hachej/boring-pi skill
+  // package. defaultPluginPackages are NOT included here — they flow
+  // to Pi via the dynamic resources path (boringPluginDirs scan +
+  // readPackageJsonPiSnapshot) which already reads each package's
+  // pi.* fields on every session/reload.
+  const workspacePackagePiPackage = createBoringPiPackageSource(workspaceRoot)
+  const staticPiSkillPaths = [
+    ...resolveBoringPiSkillPaths(workspaceRoot),
+    ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
+  ]
+  const staticPiPackages = compactPiPackages([
+    workspacePackagePiPackage,
+    ...(pluginCollection.agentOptions.pi?.packages ?? []),
+  ])
+  const staticPiExtensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
+
+  // Boring plugin discovery: scan .pi/extensions/, any plugin-contributed
+  // extension parent paths, and the app-default plugin package dirs.
+  // The asset manager treats each as a plugin source; SSE + jiti reload
+  // works the same for all three categories.
+  const boringPluginDirs = [
+    ...collectBoringPluginDirs(workspaceRoot, pluginCollection),
+    ...defaultPluginPackagePaths,
+  ]
+
+  // Dynamic Pi resources discovered from package.json#pi at /reload time.
+  // Pi calls `getDynamicResources()` on every reloadSession() and merges the
+  // result with the static fields above, so the workspace never mutates
+  // arrays the harness already captured.
+  const getDynamicPiResources = pluginHotReload
+    ? () => readPackageJsonPiSnapshot(boringPluginDirs)
+    : undefined
+
+  const boringAssetManager = new BoringPluginAssetManager({
+    pluginDirs: boringPluginDirs,
+    errorRoot: join(workspaceRoot, ".pi", "extensions"),
+  })
+
+  // Rebuild closure created BEFORE createAgentApp so beforeReload can
+  // call it.
+  const rebuildPlugins = async (): Promise<PluginRebuildResult> => {
+    return rebuildServerPlugins({ entries: allPluginEntries, ctx })
   }
 
   const app = await createAgentApp({
@@ -185,14 +545,64 @@ export async function createWorkspaceAgentServer(
     ],
     systemPromptAppend: [
       workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt() : undefined,
-      buildBoringSystemPrompt(),
+      // `boring-ui` resolves via PATH (pnpm's workspace bin or the
+      // user's npx/global install). We deliberately do NOT prefix with
+      // `npx @hachej/boring-ui-cli` here — that would pull the
+      // published version, which lags the locally-installed CLI when
+      // the agent is iterating in a monorepo. Keep the bin name short.
+      buildBoringSystemPrompt({
+        scaffoldCommand: "boring-ui scaffold-plugin",
+        verifyCommand: "boring-ui verify-plugin",
+      }),
       pluginCollection.agentOptions.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
-    resourceLoaderOptions: pluginCollection.agentOptions.resourceLoaderOptions,
+    beforeReload: async () => {
+      // Per-plugin scan/rebuild failures are surfaced via SSE error
+      // events + `.error` files (asset manager) and via the response
+      // body of POST /api/v1/agent/reload (rebuild diagnostics). They
+      // MUST NOT throw out of beforeReload — that would abort the
+      // entire reload, leaving every other plugin on stale code and
+      // contradicting the "previous live state untouched, other
+      // plugins unaffected" recovery story.
+      let restart_warnings: ReturnType<typeof collectRestartWarnings> = []
+      if (pluginHotReload) {
+        const scan = await boringAssetManager.load()
+        restart_warnings = collectRestartWarnings(scan.events)
+        await rebuildPlugins()
+      }
+      await opts.beforeReload?.()
+      // Surface restart warnings on the /api/v1/agent/reload response so
+      // the chat UI / agent can render "restart needed for: routes" when
+      // a plugin's server file changed mid-session.
+      return restart_warnings.length > 0 ? { restart_warnings } : undefined
+    },
+    pi: {
+      ...pluginCollection.agentOptions.pi,
+      additionalSkillPaths: staticPiSkillPaths,
+      packages: staticPiPackages,
+      extensionPaths: staticPiExtensionPaths,
+      extensionFactories: pluginCollection.agentOptions.pi?.extensionFactories,
+      getDynamicResources: getDynamicPiResources,
+    },
+    systemPromptDynamic: pluginHotReload
+      ? () => aggregatePluginPrompts(boringAssetManager)
+      : undefined,
   })
+  await boringAssetManager.load()
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
+  await app.register(boringPluginRoutes, {
+    manager: boringAssetManager,
+    rebuildPlugins,
+  })
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
   }
+
+  // Expose the rebuild closure on the Fastify instance for external
+  // callers / tests. The same closure is also wired into `beforeReload`
+  // above so /reload triggers it automatically.
+  ;(app as FastifyInstance & { __boringRebuildPlugins?: () => Promise<PluginRebuildResult> }).__boringRebuildPlugins =
+    rebuildPlugins
+
   return app
 }

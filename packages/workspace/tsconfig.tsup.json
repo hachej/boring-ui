@@ -7,6 +7,6 @@
     "emitDeclarationOnly": true,
     "outDir": "./dist"
   },
-  "include": ["src/app/**/*", "src/server/**/*", "src/shared/**/*"],
+  "include": ["src/app/**/*", "src/server/**/*", "src/shared/**/*", "src/plugin.ts"],
   "exclude": ["node_modules", "dist", "**/__tests__/**", "**/*.test.ts"]
 }

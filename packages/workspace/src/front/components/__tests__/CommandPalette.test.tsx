@@ -97,7 +97,7 @@ function createTestCatalogPlugin(catalog: CatalogConfig): WorkspaceFrontPlugin {
   return {
     id: TEST_CATALOG_PLUGIN_ID,
     label: "Test Catalog Plugin",
-    catalogs: [catalog],
+    outputs: [{ type: "catalog", catalog }],
   }
 }
 

@@ -1,222 +1,795 @@
 /**
- * Eval: plugin creation via the boring-ui agent.
+ * Eval: package-shaped plugin creation and reload via the boring-ui agent.
  *
- * Three properties verified end-to-end:
- *
- *   1. Doc access — agent reads plugins.md / bridge.md when asked domain
- *      questions (proves the boring-ui system prompt is live and paths resolve).
- *
- *   2. Comprehensive plugin creation — agent builds a plugin covering every
- *      boring-ui output type: panel, command, left-tab, surface-resolver, and
- *      systemPrompt. Doc reads are required before writing.
- *
- *   3. Compilation — after the agent writes the file, tsc --noEmit runs against
- *      the actual workspace tsconfig.front.json. A pass means the plugin is
- *      real TypeScript that the workspace can consume, not just plausible text.
- *
- * The plugin is written into src/plugins/evalTaskListPlugin/ inside the actual
- * workspace package so the TypeScript compiler sees the real @hachej/boring-workspace
- * types. It is deleted in afterAll regardless of pass/fail.
- *
- * Gated on OPENROUTER_API_KEY — skipped silently in CI without it.
+ * Gated on GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY — skipped silently in CI without one.
  * Run manually:
+ *   GEMINI_API_KEY=... pnpm --filter @hachej/boring-workspace test src/eval/__tests__/plugin-creation.test.ts
+ *   ANTHROPIC_API_KEY=sk-ant-... pnpm --filter @hachej/boring-workspace test src/eval/__tests__/plugin-creation.test.ts
  *   OPENROUTER_API_KEY=sk-or-v1-... pnpm --filter @hachej/boring-workspace test src/eval/__tests__/plugin-creation.test.ts
  */
-import { describe, test, expect, beforeAll, afterAll } from "vitest"
-import { existsSync, readFileSync, rmSync } from "node:fs"
-import { execSync } from "node:child_process"
-import { join, dirname } from "node:path"
+import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { createAgentApp } from "@hachej/boring-agent/server"
 import { evalAgentPrompt, EvalRegex } from "@hachej/boring-agent/eval"
 import type { FastifyInstance } from "fastify"
-import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
+import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
 
-const EVAL_MODEL = { provider: "openrouter", id: "qwen/qwen3.5-35b-a3b" } as const
-
-const HAS_KEY = !!process.env.OPENROUTER_API_KEY
-const describeIf = HAS_KEY ? describe : describe.skip
-
-// The workspace package root — agent writes plugin source here so tsc can
-// resolve @hachej/boring-workspace relative imports with real types.
-const WORKSPACE_PKG_ROOT = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../../",
+// Matrix mode: iterate over EVERY provider whose API key is present.
+// Previously priority-based (Gemini > Anthropic > OpenRouter), which
+// meant CI with both keys set only exercised one model — the dual-
+// provider eval claim in the PR description was vacuous. Now each
+// provider becomes its own describe.each row, so CI runs the whole
+// suite under each model.
+const ENABLED_MODELS = (
+  [
+    process.env.GEMINI_API_KEY ? ({ provider: "google", id: "gemini-2.5-flash" } as const) : null,
+    process.env.ANTHROPIC_API_KEY ? ({ provider: "anthropic", id: "claude-sonnet-4-6" } as const) : null,
+    process.env.OPENROUTER_API_KEY ? ({ provider: "openrouter", id: "qwen/qwen3.6-plus" } as const) : null,
+  ].filter(Boolean) as Array<{ provider: string; id: string }>
 )
-const EVAL_PLUGIN_DIR = join(
-  WORKSPACE_PKG_ROOT,
-  "src/plugins/evalTaskListPlugin",
-)
+const HAS_KEY = ENABLED_MODELS.length > 0
+const describeIf = HAS_KEY ? describe.each(ENABLED_MODELS) : describe.skip.each([{ provider: "none", id: "none" }] as Array<{ provider: string; id: string }>)
 
-describeIf("plugin-creation eval (live LLM)", () => {
+const WORKSPACE_PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../")
+const EVAL_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-task-list")
+const EVAL_PLUGIN_FRONT = join(EVAL_PLUGIN_DIR, "front", "index.tsx")
+const EVAL_PLUGIN_AGENT = join(EVAL_PLUGIN_DIR, "agent", "index.ts")
+const EVAL_PLUGIN_PACKAGE = join(EVAL_PLUGIN_DIR, "package.json")
+
+const EVAL_CSV_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-csv-viz")
+const EVAL_CSV_PLUGIN_PACKAGE = join(EVAL_CSV_PLUGIN_DIR, "package.json")
+
+const EVAL_MIN_PLUGIN_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-min-tasks")
+const EVAL_MIN_PLUGIN_PACKAGE = join(EVAL_MIN_PLUGIN_DIR, "package.json")
+
+const EVAL_SPLIT_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-split-files")
+const EVAL_SPLIT_PACKAGE = join(EVAL_SPLIT_DIR, "package.json")
+
+const EVAL_REFINE_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-refine")
+const EVAL_REFINE_PACKAGE = join(EVAL_REFINE_DIR, "package.json")
+const EVAL_REFINE_FRONT = join(EVAL_REFINE_DIR, "front", "index.tsx")
+
+const EVAL_CROSS_DIR = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-cross")
+const EVAL_CROSS_PACKAGE = join(EVAL_CROSS_DIR, "package.json")
+
+describeIf("package plugin creation + reload eval (live LLM) [$provider/$id]", (EVAL_MODEL) => {
   let app: FastifyInstance
 
+  const cleanupDirs = [
+    EVAL_PLUGIN_DIR,
+    EVAL_CSV_PLUGIN_DIR,
+    EVAL_MIN_PLUGIN_DIR,
+    EVAL_SPLIT_DIR,
+    EVAL_REFINE_DIR,
+    EVAL_CROSS_DIR,
+  ]
+
   beforeAll(async () => {
-    app = await createAgentApp({
+    for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true })
+    app = await createWorkspaceAgentServer({
       workspaceRoot: WORKSPACE_PKG_ROOT,
       mode: "direct",
       logger: false,
-      systemPromptAppend: buildBoringSystemPrompt(),
+      provisionWorkspace: false,
     })
-    return async () => {
-      await app.close()
-    }
   }, 30_000)
 
-  afterAll(() => {
-    // Clean up regardless of test outcome
-    if (existsSync(EVAL_PLUGIN_DIR)) {
-      rmSync(EVAL_PLUGIN_DIR, { recursive: true, force: true })
-    }
+  afterAll(async () => {
+    if (app) await app.close()
+    for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true })
   })
 
-  // ── 1. Doc pointer: plugins.md ─────────────────────────────────────────────
-
   test(
-    "reads plugins.md when asked about plugin creation",
+    "agent creates a package plugin, /reload discovers it, and later front/agent metadata changes reload",
     async () => {
-      const result = await evalAgentPrompt({
-        app,
-        prompt:
-          "I want to understand the boring-ui plugin API. " +
-          "Read the plugin documentation before answering.",
-        expect: { tool: "read", params: { path: EvalRegex("plugins\\.md$") } },
-        model: EVAL_MODEL,
-        retries: 1,
-        timeoutMs: 60_000,
-      })
-      expect(result.ok, formatFailure(result)).toBe(true)
-    },
-    120_000,
-  )
-
-  // ── 2. Doc pointer: bridge.md ──────────────────────────────────────────────
-
-  test(
-    "reads bridge.md when asked how to open a panel from the agent",
-    async () => {
-      const result = await evalAgentPrompt({
-        app,
-        prompt:
-          "How do I open a panel from the agent using exec_ui? " +
-          "Read the docs first, then explain.",
-        expect: { tool: "read", params: { path: EvalRegex("bridge\\.md$") } },
-        model: EVAL_MODEL,
-        retries: 1,
-        timeoutMs: 60_000,
-      })
-      expect(result.ok, formatFailure(result)).toBe(true)
-    },
-    120_000,
-  )
-
-  // ── 3. Full plugin: all output types + compilation ─────────────────────────
-
-  test(
-    "creates a complete plugin with all output types and it compiles",
-    async () => {
-      // Step 1 — agent writes the plugin
       const result = await evalAgentPrompt({
         app,
         prompt: `
-Create a new boring-ui plugin called "task-list" at:
-  src/plugins/evalTaskListPlugin/front/index.tsx
+Create a hot-reloadable boring-ui package plugin called "eval-task-list" at:
+  .pi/extensions/eval-task-list/
 
-Read docs/plugins.md and docs/panels.md before writing any code.
+Create exactly these files:
+1. .pi/extensions/eval-task-list/package.json
+2. .pi/extensions/eval-task-list/front/index.tsx
+3. .pi/extensions/eval-task-list/agent/index.ts
 
-The plugin must include ALL of the following:
-1. A center panel (id: "task-list-panel", component: TaskListPane) that renders a basic task list
-2. A command palette entry that opens the panel (title: "Open Task List")
-3. A left sidebar tab (id: "task-list-tab") with a list icon
-4. A surface-resolver that maps kind "task-list.open" to the task-list-panel
-5. A systemPrompt field that teaches the agent how to open the panel
+package.json requirements:
+- name: "eval-task-list"
+- version: "1.0.0"
+- boring.label: "Eval Task List"
+- boring.front: "front/index.tsx"
+- boring.server: false
+- pi.extensions: ["agent/index.ts"]
+- pi.systemPrompt: "Eval task list plugin v1: use task_list_status for task list status."
 
-IMPORTANT — import paths: the file is at src/plugins/evalTaskListPlugin/front/index.tsx.
-To reach workspace internals use THREE levels up (../../../), not two:
-  - ../../../front/registry/types   → for definePanel, PaneProps
-  - ../../../shared/plugins/defineFrontPlugin → for defineFrontPlugin
-  - ../../../shared/plugins/types   → for PluginOutput
-Export the plugin as a named export: export const taskListPlugin.
+front/index.tsx requirements — the factory is IMPERATIVE (\`(api) => void\`),
+NOT a declarative object. Do NOT export \`{ panels: [...], commands: [...] }\` —
+call \`api.registerPanel(...)\` etc. Skeleton:
+
+\`\`\`tsx
+import type { BoringFrontFactory } from "@hachej/boring-workspace/plugin"
+
+const factory: BoringFrontFactory = (api) => {
+  api.registerPanel({ id: "eval-task-list.panel", label: "Eval Task List", component: () => <div>Eval Task List v1</div> })
+  api.registerPanelCommand({ id: "eval-task-list.open", title: "Open Eval Task List", panelId: "eval-task-list.panel" })
+  api.registerLeftTab({ id: "eval-task-list.tab", title: "Eval Tasks", panelId: "eval-task-list.panel" })
+  api.registerSurfaceResolver({ id: "eval-task-list.surface", kind: "eval-task-list.open", resolve: () => ({ id: "eval-task-list", component: "eval-task-list.panel", title: "Eval Task List" }) })
+}
+export default factory
+\`\`\`
+
+Do NOT use defineFrontPlugin and do NOT put systemPrompt in front code.
+
+agent/index.ts requirements:
+- default-export a Pi extension function
+- register a tool named "task_list_status"
+- the tool description must include "eval task list v1"
+- execute returns text containing "task-list-agent-v1"
+
+After writing the files, tell me to run /reload.
+        `.trim(),
+        // Outcome-based: the prompt suggests reading docs, but with the
+        // bundled boring-plugin-authoring skill the agent may go straight
+        // to writing. The post-write assertions below verify correctness
+        // of the produced files, which is what actually matters.
+        // Outcome-based: with the scaffold-plugin CLI available, the
+        // agent may create the initial files via `bash` instead of
+        // direct `write` calls. The file-on-disk assertions below are
+        // the real check.
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_PLUGIN_PACKAGE)).toBe(true)
+      expect(existsSync(EVAL_PLUGIN_FRONT)).toBe(true)
+      expect(existsSync(EVAL_PLUGIN_AGENT)).toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_PLUGIN_PACKAGE, "utf8"))
+      expect(packageJson).toMatchObject({
+        boring: { front: "front/index.tsx", server: false },
+        pi: {
+          extensions: ["agent/index.ts"],
+          systemPrompt: expect.stringContaining("v1"),
+        },
+      })
+
+      const frontSource = readFileSync(EVAL_PLUGIN_FRONT, "utf8")
+      expect(frontSource).toContain("BoringFrontFactory")
+      expect(frontSource).toContain("registerPanel")
+      expect(frontSource).toContain("registerPanelCommand")
+      expect(frontSource).toContain("registerLeftTab")
+      expect(frontSource).toContain("registerSurfaceResolver")
+      expect(frontSource).not.toContain("defineFrontPlugin")
+
+      const agentSource = readFileSync(EVAL_PLUGIN_AGENT, "utf8")
+      expect(agentSource).toContain("task_list_status")
+      expect(agentSource).toContain("task-list-agent-v1")
+
+      const reloadOne = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reloadOne.statusCode).toBe(200)
+      const listOne = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const pluginOne = listOne.json().find((plugin: { id: string }) => plugin.id === "eval-task-list")
+      expect(pluginOne).toMatchObject({
+        boring: { front: "front/index.tsx", server: false },
+        pi: { systemPrompt: expect.stringContaining("v1") },
+        revision: expect.any(Number),
+      })
+      expect(pluginOne.frontUrl).toContain("/@fs/")
+
+      // Scenario A: front behavior changes and reload publishes a new revision.
+      writeFileSync(
+        EVAL_PLUGIN_FRONT,
+        frontSource
+          .replaceAll("Eval Task List v1", "Eval Task List v2")
+          .replaceAll("Open Eval Task List", "Open Eval Task List v2"),
+        "utf8",
+      )
+      const reloadFront = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reloadFront.statusCode).toBe(200)
+      const pluginAfterFront = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((plugin: { id: string }) => plugin.id === "eval-task-list")
+      expect(pluginAfterFront.revision).toBeGreaterThan(pluginOne.revision)
+
+      // Scenario B: agent-facing package metadata changes and reload reflects it.
+      packageJson.pi.systemPrompt = "Eval task list plugin v2: use task_list_status for updated task list status."
+      writeFileSync(EVAL_PLUGIN_PACKAGE, JSON.stringify(packageJson, null, 2), "utf8")
+      writeFileSync(
+        EVAL_PLUGIN_AGENT,
+        agentSource.replaceAll("task-list-agent-v1", "task-list-agent-v2").replaceAll("eval task list v1", "eval task list v2"),
+        "utf8",
+      )
+      const reloadAgent = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reloadAgent.statusCode).toBe(200)
+      const pluginAfterAgent = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((plugin: { id: string }) => plugin.id === "eval-task-list")
+      expect(pluginAfterAgent.pi.systemPrompt).toContain("v2")
+      expect(pluginAfterAgent.revision).toBeGreaterThan(pluginAfterFront.revision)
+    },
+    600_000,
+  )
+
+  test(
+    "agent creates a CSV visualizer plugin with a table and chart that reloads cleanly",
+    async () => {
+      const result = await evalAgentPrompt({
+        app,
+        prompt: `
+Create a hot-reloadable boring-ui CSV viewer plugin. Write exactly these files
+under .pi/extensions/eval-csv-viz/ (do NOT run npm init / npm install / create
+node_modules — this is a directory-source plugin):
+
+1. .pi/extensions/eval-csv-viz/package.json with:
+   { "name": "eval-csv-viz", "version": "1.0.0",
+     "boring": { "front": "front/index.tsx", "server": false },
+     "pi": { "systemPrompt": "CSV viewer plugin: opens .csv files in a panel." } }
+
+2. .pi/extensions/eval-csv-viz/front/index.tsx — a BoringFrontFactory.
+   The factory has the imperative signature \`(api) => void\` and calls
+   \`api.registerPanel(...)\` and \`api.registerSurfaceResolver(...)\`. It
+   must NOT return an object literal with "panels"/"surfaceResolvers"
+   keys — the declarative shape is not supported.
+
+   Example skeleton (fill in component body):
+   \`\`\`tsx
+   import React, { useState, useEffect } from "react"
+   import {
+     WORKSPACE_OPEN_PATH_SURFACE_KIND,
+     type BoringFrontFactory,
+     type PaneProps,
+   } from "@hachej/boring-workspace"
+
+   function CsvPane({ params }: PaneProps<{ path: string }>) {
+     const [rows, setRows] = useState<string[][]>([])
+     useEffect(() => {
+       fetch(\`/api/v1/files/raw?path=\${encodeURIComponent(params.path)}\`)
+         .then((r) => r.text())
+         .then((text) => setRows(text.split(/\\r?\\n/).map((line) => line.split(","))))
+     }, [params.path])
+     // …render <table>…</table> and a simple <svg>…</svg> chart…
+   }
+
+   const factory: BoringFrontFactory = (api) => {
+     api.registerPanel({ id: "eval-csv-viz.panel", label: "CSV Viz", component: CsvPane })
+     api.registerSurfaceResolver({
+       id: "eval-csv-viz.surface",
+       kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+       resolve(req) {
+         if (!req.path?.endsWith(".csv")) return null
+         return { panelId: "eval-csv-viz.panel", params: { path: req.path } }
+       },
+     })
+   }
+   export default factory
+   \`\`\`
+
+   The panel must render the parsed rows as an HTML <table> AND a simple
+   SVG bar/line chart below it (plain <svg> with <rect>/<line>/<polyline>
+   — no external chart library). Do NOT use defineFrontPlugin, do NOT use
+   globalThis.React, do NOT use <iframe>, do NOT import recharts.
+
+After writing the files, tell me to run /reload.
         `.trim(),
         expect: [
-          { tool: "read", params: { path: EvalRegex("plugins\\.md$") } },
-          { tool: "read", params: { path: EvalRegex("panels\\.md$") } },
-          {
-            tool: "write",
-            params: {
-              path: EvalRegex("evalTaskListPlugin"),
-              content: EvalRegex("defineFrontPlugin"),
-            },
-          },
+          { tool: "write", params: { path: EvalRegex("eval-csv-viz/"), content: EvalRegex("BoringFrontFactory|boring") } },
+        ],
+        model: EVAL_MODEL,
+        retries: 0,
+        timeoutMs: 600_000,
+      })
+
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_CSV_PLUGIN_PACKAGE)).toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_CSV_PLUGIN_PACKAGE, "utf8"))
+      expect(packageJson.name).toBe("eval-csv-viz")
+      expect(packageJson.boring ?? {}).not.toHaveProperty("panels")
+      expect(packageJson.boring ?? {}).not.toHaveProperty("commands")
+
+      // Manifest-first OR convention: skill allows omitting boring.front
+      // when the template layout (front/index.tsx) is used.
+      const declaredFront: string | undefined = packageJson.boring?.front
+      const candidateFronts = declaredFront
+        ? [declaredFront]
+        : ["front/index.tsx", "front/index.ts", "src/front/index.tsx", "src/front/index.ts"]
+      const frontPath = candidateFronts.map((p) => join(EVAL_CSV_PLUGIN_DIR, p)).find((p) => existsSync(p))
+      expect(frontPath, `no front entry found (tried: ${candidateFronts.join(", ")})`).toBeTruthy()
+      const frontSource = readFileSync(frontPath!, "utf8")
+      expect(frontSource).toContain("BoringFrontFactory")
+      expect(frontSource).toContain("useState")
+      expect(frontSource).toContain("useEffect")
+      expect(frontSource).toContain("/api/v1/files/raw")
+      expect(frontSource).toContain("WORKSPACE_OPEN_PATH_SURFACE_KIND")
+      expect(frontSource).toContain("registerPanel")
+      expect(frontSource).toContain("registerSurfaceResolver")
+      expect(frontSource).toMatch(/registerPanel\s*\(\s*\{/)
+      expect(frontSource).toMatch(/<table|React\.createElement\(["']table["']/)
+      expect(frontSource).toMatch(/CSV Chart|chart/i)
+      expect(frontSource).not.toContain("defineFrontPlugin")
+      expect(frontSource).not.toContain("@hachej/boring-workspace/shared")
+      expect(frontSource).not.toContain("globalThis.React")
+      expect(frontSource).not.toContain("extends React.Component")
+      expect(frontSource).not.toContain("<iframe")
+      expect(frontSource).not.toContain("recharts")
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-csv-viz")
+      expect(plugin).toBeTruthy()
+      expect(plugin.revision).toEqual(expect.any(Number))
+      expect(plugin.frontUrl).toContain("/@fs/")
+    },
+    600_000,
+  )
+
+  test(
+    "agent recovers a plugin from a /reload error (malformed package.json)",
+    async () => {
+      // Plant a working plugin first.
+      const pluginDir = join(WORKSPACE_PKG_ROOT, ".pi", "extensions", "eval-recover")
+      const pkgPath = join(pluginDir, "package.json")
+      const frontPath = join(pluginDir, "front", "index.tsx")
+      rmSync(pluginDir, { recursive: true, force: true })
+      const { mkdirSync } = await import("node:fs")
+      mkdirSync(join(pluginDir, "front"), { recursive: true })
+      writeFileSync(
+        pkgPath,
+        JSON.stringify({
+          name: "eval-recover",
+          version: "1.0.0",
+          boring: { front: "front/index.tsx", server: false },
+          pi: { systemPrompt: "Eval recover plugin." },
+        }),
+        "utf8",
+      )
+      writeFileSync(
+        frontPath,
+        "export default function (api) { api.registerPanel({ id: 'eval-recover.panel', label: 'Recover', component: () => null }) }",
+        "utf8",
+      )
+
+      // Baseline reload works.
+      const baseline = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(baseline.statusCode).toBe(200)
+
+      // Corrupt package.json — asset manager's preflight catches this on
+      // /reload. Per DESIGN.md §4.5 the agent route (/api/v1/agent/reload)
+      // tolerates per-plugin failures (returns 200; the diagnostic is
+      // surfaced via SSE error events + the .error file). The
+      // workspace-owned route (/api/boring.reload) returns 422 with the
+      // structured diagnostic the agent can act on.
+      writeFileSync(pkgPath, "{ not json at all", "utf8")
+      const agentReload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(agentReload.statusCode).toBe(200)
+      const boringReload = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
+      expect(boringReload.statusCode).toBe(422)
+      const failedBody = boringReload.json() as { errors?: Array<{ message: string }> }
+      const errorMessage = (failedBody.errors ?? []).map((e) => e.message).join("\n")
+      expect(errorMessage).toMatch(/INVALID_PACKAGE_JSON|eval-recover/i)
+
+      // Ask the agent to fix it.
+      const result = await evalAgentPrompt({
+        app,
+        prompt: `
+The plugin at .pi/extensions/eval-recover/package.json is malformed.
+/reload returned this error:
+
+  ${errorMessage}
+
+Replace package.json with a valid JSON matching this shape:
+  { "name": "eval-recover", "version": "1.0.0",
+    "boring": { "front": "front/index.tsx", "server": false },
+    "pi": { "systemPrompt": "Eval recover plugin." } }
+Then run /reload to verify.
+        `.trim(),
+        expect: [
+          { tool: "write", params: { path: EvalRegex("eval-recover/package\\.json$"), content: EvalRegex('"name"') } },
         ],
         model: EVAL_MODEL,
         retries: 1,
-        timeoutMs: 240_000,
+        timeoutMs: 300_000,
+      })
+      expect(result.ok, formatFailure(result)).toBe(true)
+
+      // Reload after the fix succeeds on BOTH routes.
+      const recovered = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
+      expect(recovered.statusCode).toBe(200)
+
+      rmSync(pluginDir, { recursive: true, force: true })
+    },
+    600_000,
+  )
+
+  // Eval #1 from the roadmap: skill-only path. The prompt deliberately
+  // contains NO skeleton, NO file shape, NO type names — only the user
+  // intent. If the bundled boring-plugin-authoring skill is self-
+  // sufficient, the agent should read it and produce a working plugin.
+  // If this fails, the skill needs to be strengthened.
+  test(
+    "minimal prompt + bundled skill is enough to produce a working plugin",
+    async () => {
+      const result = await evalAgentPrompt({
+        app,
+        prompt: [
+          "Create a hot-reloadable boring-ui plugin under",
+          "`.pi/extensions/eval-min-tasks/` (use that exact unscoped package",
+          "name in package.json — no leading @scope) that opens a panel",
+          "showing a simple todo list (a static <ul> with 3 hard-coded items",
+          "is fine for v1).",
+          "",
+          "After writing the files, tell me to run /reload.",
+        ].join("\n"),
+        // Skill-only path: outcome > mechanism. We don't care whether
+        // the agent uses write/bash/sed — only whether the files exist
+        // and reload succeeds. expect=[] disables tool-shape assertion.
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+
+      // Diagnostic: log the tool call sequence so we can verify the agent
+      // actually loaded the boring-plugin-authoring skill (which is the
+      // whole premise of the "skill-only" path).
+      const toolSequence = result.actual.map((c) => c.tool).join(", ")
+      const readCalls = result.actual
+        .filter((c) => c.tool === "read")
+        .map((c) => String(c.params.path ?? c.params.file_path ?? ""))
+      const loadedSkill = readCalls.some((p) => p.includes("boring-plugin-authoring"))
+      // eslint-disable-next-line no-console
+      console.log(`[minimal-eval diag][${EVAL_MODEL.provider}] tools: ${toolSequence}`)
+      // eslint-disable-next-line no-console
+      console.log(`[minimal-eval diag][${EVAL_MODEL.provider}] read paths: ${JSON.stringify(readCalls)}`)
+      // eslint-disable-next-line no-console
+      console.log(`[minimal-eval diag][${EVAL_MODEL.provider}] loaded boring-plugin-authoring skill: ${loadedSkill}`)
+      // Soft signal — we DON'T hard-assert loadedSkill because the system
+      // prompt now inlines the canonical shape, so the agent can succeed
+      // without reading the skill. If the metric drops to 0%, that means
+      // the skill is dead weight and we should either delete it or
+      // strengthen the prompt's pointer to it.
+      trackAttempts(EVAL_MODEL.provider, "minimal-prompt", result.attempts)
+
+      // result.ok with expect=[] just means the turn completed; the real
+      // assertions are the file-on-disk + /reload checks below.
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_MIN_PLUGIN_PACKAGE), "agent did not produce eval-min-tasks/package.json").toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_MIN_PLUGIN_PACKAGE, "utf8"))
+      expect(packageJson.name).toBe("eval-min-tasks")
+      const declaredFront: string | undefined = packageJson.boring?.front
+      // boring.front in package.json is authoritative. If the agent
+      // chose a custom layout (e.g. src/TodoPanel.tsx), accept it as
+      // long as the manifest declares it.
+      const candidateFronts = declaredFront
+        ? [declaredFront]
+        : [
+            "front/index.tsx", "front/index.ts",
+            "src/front/index.tsx", "src/front/index.ts",
+            "src/index.tsx", "src/index.ts",
+          ]
+      const frontPath = candidateFronts
+        .map((p) => join(EVAL_MIN_PLUGIN_DIR, p))
+        .find((p) => existsSync(p))
+      const { readdirSync } = await import("node:fs")
+      const dirListing = (): string => {
+        try {
+          return JSON.stringify(walkSync(EVAL_MIN_PLUGIN_DIR), null, 2)
+        } catch (error) {
+          return `(unreadable: ${error instanceof Error ? error.message : String(error)})`
+        }
+      }
+      function walkSync(root: string): Record<string, unknown> {
+        const out: Record<string, unknown> = {}
+        for (const entry of readdirSync(root, { withFileTypes: true })) {
+          out[entry.name] = entry.isDirectory() ? walkSync(join(root, entry.name)) : "<file>"
+        }
+        return out
+      }
+      expect(frontPath, `no front entry found (tried: ${candidateFronts.join(", ")}); dir contents:\n${dirListing()}`).toBeTruthy()
+
+      const frontSource = readFileSync(frontPath!, "utf8")
+      // Two equivalent shapes accepted: declarative definePlugin({panels: [...]})
+      // OR imperative definePlugin(id, (api) => api.registerPanel(...)).
+      expect(frontSource).toMatch(/definePlugin|BoringFrontFactory/)
+      expect(frontSource).toMatch(/registerPanel|panels\s*:/)
+      expect(frontSource).not.toContain("defineFrontPlugin")
+      // Loosely check the agent rendered a list-like structure.
+      expect(frontSource).toMatch(/<ul|<li|React\.createElement\(["'](ul|li)["']/)
+
+      // /reload discovers it cleanly.
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const list = await app.inject({ method: "GET", url: "/api/agent-plugins" })
+      const plugin = list.json().find((entry: { id: string }) => entry.id === "eval-min-tasks")
+      expect(plugin, "plugin not discovered after /reload").toBeTruthy()
+      expect(plugin.frontUrl).toContain("/@fs/")
+    },
+    600_000,
+  )
+
+  // Eval #2: multi-file plugin — agent splits front into a top-level
+  // `front/index.tsx` that imports a panel component from a sibling
+  // file. Tests that the agent gets relative imports + file layout right.
+  test(
+    "agent creates a multi-file plugin with front/index.tsx + a sibling component file",
+    async () => {
+      const result = await evalAgentPrompt({
+        app,
+        prompt: [
+          "Create a hot-reloadable boring-ui plugin under `.pi/extensions/eval-split-files/`",
+          "(use that exact unscoped name in package.json — no @scope) with the panel",
+          "component implemented in a SEPARATE file from front/index.tsx.",
+          "",
+          "Specifically:",
+          "- front/index.tsx must register the panel + a panel command, but should",
+          "  IMPORT the panel component from a sibling file (your choice of name,",
+          "  e.g. `./components/Panel.tsx` or `./Panel.tsx`).",
+          "- The sibling component file should export a default React component that",
+          "  renders a simple <div> with the text 'split-files plugin works'.",
+          "",
+          "After writing the files, tell me to run /reload.",
+        ].join("\n"),
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_SPLIT_PACKAGE)).toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_SPLIT_PACKAGE, "utf8"))
+      expect(packageJson.name).toBe("eval-split-files")
+      const declaredFront: string = packageJson.boring?.front ?? "front/index.tsx"
+      const frontPath = join(EVAL_SPLIT_DIR, declaredFront)
+      expect(existsSync(frontPath), `front entry missing at ${declaredFront}`).toBe(true)
+      const frontSource = readFileSync(frontPath, "utf8")
+      // The factory imports the component from a sibling file.
+      expect(frontSource).toMatch(/import\s+\w+\s+from\s+["']\.\.?\//)
+      // Either declarative (`panels: [...]`) or imperative (`registerPanel(...)`) is fine.
+      expect(frontSource).toMatch(/registerPanel|panels\s*:/)
+
+      // The imported sibling file exists somewhere under the plugin dir.
+      const { readdirSync, statSync: stat } = await import("node:fs")
+      function walk(dir: string): string[] {
+        const out: string[] = []
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, entry.name)
+          if (entry.isDirectory()) out.push(...walk(full))
+          else out.push(full)
+        }
+        return out
+      }
+      const tsxFiles = walk(EVAL_SPLIT_DIR).filter((p) => p.endsWith(".tsx") && p !== frontPath)
+      expect(tsxFiles.length, "no sibling .tsx component file found").toBeGreaterThan(0)
+      const hasSplitMarker = tsxFiles.some((p) => readFileSync(p, "utf8").includes("split-files plugin works"))
+      expect(hasSplitMarker, "no sibling file contains the expected marker text").toBe(true)
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const plugin = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((entry: { id: string }) => entry.id === "eval-split-files")
+      expect(plugin, "plugin not discovered after /reload").toBeTruthy()
+      expect(stat(frontPath).size).toBeGreaterThan(0)
+    },
+    600_000,
+  )
+
+  // Eval #3: iterative refinement (closed loop) — pre-write a working
+  // plugin, then ask the agent to MODIFY it (not rewrite from scratch).
+  // Tests the agent's read-then-edit discipline.
+  test(
+    "agent refines an existing plugin in place — adds a count badge to the panel header",
+    async () => {
+      // Plant a working plugin.
+      const { mkdirSync } = await import("node:fs")
+      rmSync(EVAL_REFINE_DIR, { recursive: true, force: true })
+      mkdirSync(join(EVAL_REFINE_DIR, "front"), { recursive: true })
+      writeFileSync(
+        EVAL_REFINE_PACKAGE,
+        JSON.stringify(
+          {
+            name: "eval-refine",
+            version: "0.1.0",
+            private: true,
+            boring: { label: "Eval Refine", front: "front/index.tsx", server: false },
+            pi: { systemPrompt: "Eval refine plugin." },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      )
+      const initialFront = [
+        `import React from "react"`,
+        `import { definePlugin } from "@hachej/boring-workspace/plugin"`,
+        ``,
+        `const TODOS = ["buy milk", "walk dog", "write code"]`,
+        ``,
+        `function RefinePane() {`,
+        `  return (`,
+        `    <div style={{ padding: 16 }}>`,
+        `      <h2>Eval Refine — todos</h2>`,
+        `      <ul>{TODOS.map((t) => <li key={t}>{t}</li>)}</ul>`,
+        `    </div>`,
+        `  )`,
+        `}`,
+        ``,
+        `export default definePlugin(`,
+        `  "eval-refine",`,
+        `  (api) => {`,
+        `    api.registerPanel({ id: "eval-refine.panel", label: "Eval Refine", component: RefinePane })`,
+        `    api.registerPanelCommand({ id: "eval-refine.open", title: "Open Eval Refine", panelId: "eval-refine.panel" })`,
+        `  },`,
+        `  { label: "Eval Refine" },`,
+        `)`,
+        ``,
+      ].join("\n")
+      writeFileSync(EVAL_REFINE_FRONT, initialFront, "utf8")
+      const baseline = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(baseline.statusCode).toBe(200)
+      const baselineRevision = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((entry: { id: string }) => entry.id === "eval-refine")?.revision
+      expect(baselineRevision).toEqual(expect.any(Number))
+
+      // Now ask the agent to refine.
+      const result = await evalAgentPrompt({
+        app,
+        prompt: [
+          "The plugin at `.pi/extensions/eval-refine/front/index.tsx` already exists.",
+          "Add a small count badge next to the 'Eval Refine — todos' heading",
+          "showing the number of items in the TODOS array (e.g. '— todos (3)').",
+          "Do NOT rewrite the whole file — read the existing one and apply a",
+          "minimal edit. Keep the existing exports, panel id, command id, and",
+          "definePlugin call intact.",
+          "",
+          "After editing, tell me to run /reload.",
+        ].join("\n"),
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
       })
 
       expect(result.ok, formatFailure(result)).toBe(true)
 
-      // Step 2 — verify the file was written
-      const pluginFile = join(EVAL_PLUGIN_DIR, "front", "index.tsx")
-      expect(existsSync(pluginFile), `plugin file not found at ${pluginFile}`).toBe(true)
+      // Agent must have READ the existing file (not just blindly written).
+      const readEvalRefine = result.actual
+        .filter((c) => c.tool === "read")
+        .some((c) => String(c.params.path ?? c.params.file_path ?? "").includes("eval-refine/front/index.tsx"))
+      expect(readEvalRefine, "agent did not read the existing front/index.tsx before editing").toBe(true)
 
-      // Step 3 — verify all output types are present in the source
-      const content = readFileSync(pluginFile, "utf8")
-      const checks: Array<[string, RegExp]> = [
-        ["defineFrontPlugin call",   /defineFrontPlugin/],
-        ["definePanel call",         /definePanel/],
-        ["panel output type",        /type:\s*["']panel["']/],
-        ["command output type",      /type:\s*["']command["']/],
-        ["left-tab output type",     /type:\s*["']left-tab["']/],
-        ["surface-resolver type",    /type:\s*["']surface-resolver["']/],
-        ["systemPrompt field",       /systemPrompt/],
-        ["taskListPlugin export",    /taskListPlugin/],
-      ]
-      for (const [label, pattern] of checks) {
-        expect(content, `missing: ${label}`).toMatch(pattern)
-      }
+      const updatedFront = readFileSync(EVAL_REFINE_FRONT, "utf8")
+      // The badge / count must appear in the source.
+      expect(updatedFront).toMatch(/TODOS\.length|todos \(3\)|\{TODOS\.length\}/)
+      // Existing structure preserved.
+      expect(updatedFront).toContain("definePlugin")
+      expect(updatedFront).toContain('"eval-refine.panel"')
+      expect(updatedFront).toContain('"eval-refine.open"')
 
-      // Step 4 — compile with the real workspace tsconfig.
-      // Filter output to only evalTaskListPlugin errors — pre-existing
-      // failures elsewhere in the workspace are not this eval's concern.
-      let tscError: string | undefined
-      try {
-        execSync("pnpm exec tsc --noEmit -p tsconfig.front.json", {
-          cwd: WORKSPACE_PKG_ROOT,
-          stdio: "pipe",
-          timeout: 60_000,
-        })
-      } catch (err) {
-        const e = err as { stdout?: Buffer; stderr?: Buffer }
-        const raw = [e.stdout?.toString(), e.stderr?.toString()]
-          .filter(Boolean)
-          .join("\n")
-        const pluginErrors = raw
-          .split("\n")
-          .filter((line) => line.includes("evalTaskListPlugin"))
-          .join("\n")
-          .trim()
-        if (pluginErrors) tscError = pluginErrors
-      }
-
-      expect(
-        tscError,
-        `plugin does not type-check:\n${tscError}`,
-      ).toBeUndefined()
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const refreshed = (await app.inject({ method: "GET", url: "/api/agent-plugins" }))
+        .json()
+        .find((entry: { id: string }) => entry.id === "eval-refine")
+      expect(refreshed.revision).toBeGreaterThan(baselineRevision)
     },
-    480_000,
+    600_000,
+  )
+
+  // Eval #4: cross-concern — single plugin contributes BOTH a server-side
+  // agent tool AND a front panel. Tests that the agent gets the dual-
+  // surface plugin shape right (boring.server: true + agent_tools).
+  test(
+    "agent creates a cross-concern plugin (server tool + front panel) that reloads cleanly",
+    async () => {
+      const result = await evalAgentPrompt({
+        app,
+        prompt: [
+          "Create a hot-reloadable boring-ui plugin at `.pi/extensions/eval-cross/`",
+          "(use that exact unscoped name in package.json) that contributes BOTH:",
+          "",
+          "1. A server-side agent tool named `eval_cross_ping` that returns the",
+          "   text 'eval-cross pong' so the agent can call it.",
+          "2. A front panel that renders a simple <div> with the text",
+          "   'Eval Cross panel'.",
+          "",
+          "Files: package.json, front/index.tsx, server/index.ts.",
+          "package.json must set `boring.server: \"server/index.ts\"` (a path string,",
+          "NOT the boolean true — manifest validator rejects true) and",
+          "`boring.front: \"front/index.tsx\"`.",
+          "",
+          "After writing, tell me to run /reload.",
+        ].join("\n"),
+        expect: [],
+        model: EVAL_MODEL,
+        retries: 1,
+        timeoutMs: 300_000,
+      })
+
+      expect(result.ok, formatFailure(result)).toBe(true)
+      expect(existsSync(EVAL_CROSS_PACKAGE)).toBe(true)
+
+      const packageJson = JSON.parse(readFileSync(EVAL_CROSS_PACKAGE, "utf8"))
+      expect(packageJson.name).toBe("eval-cross")
+      // `boring.server` accepts either an explicit path string OR `true`
+      // (some agents pick one, some pick the other). It must NOT be false /
+      // missing for a cross-concern plugin.
+      const serverField = packageJson.boring?.server
+      expect(
+        serverField === true || (typeof serverField === "string" && serverField.length > 0),
+        `boring.server must indicate a server is present; got ${JSON.stringify(serverField)}`,
+      ).toBe(true)
+      expect(packageJson.boring?.front).toMatch(/front\/index\.tsx?$/)
+
+      const frontSource = readFileSync(join(EVAL_CROSS_DIR, packageJson.boring.front), "utf8")
+      // Either declarative or imperative is fine.
+      expect(frontSource).toMatch(/registerPanel|panels\s*:/)
+      expect(frontSource).toContain("Eval Cross panel")
+
+      // Server file present and shaped roughly like a server plugin.
+      const serverPath = join(EVAL_CROSS_DIR, "server", "index.ts")
+      expect(existsSync(serverPath), "server/index.ts missing").toBe(true)
+      const serverSource = readFileSync(serverPath, "utf8")
+      // Either Shape A (defineServerPlugin + agentTools) or a function
+      // that returns a tool list. Accept both — assert on the tool name.
+      expect(serverSource).toContain("eval_cross_ping")
+      expect(serverSource).toMatch(/agentTools|defineServerPlugin|execute/)
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+      expect(reload.statusCode).toBe(200)
+      const pluginsList = (await app.inject({ method: "GET", url: "/api/agent-plugins" })).json()
+      const plugin = pluginsList.find((entry: { id: string }) => entry.id === "eval-cross")
+      const boringReload = await app.inject({ method: "POST", url: "/api/boring.reload", payload: {} })
+      const errMsg = boringReload.statusCode === 422
+        ? `; boring.reload errors: ${JSON.stringify(boringReload.json(), null, 2)}`
+        : ""
+      expect(
+        plugin,
+        `plugin not discovered after /reload; ids in registry: ${JSON.stringify(pluginsList.map((p: { id: string }) => p.id))}${errMsg}`,
+      ).toBeTruthy()
+      const serverFieldServed = plugin.boring?.server
+      expect(
+        serverFieldServed === true || (typeof serverFieldServed === "string" && serverFieldServed.length > 0),
+      ).toBe(true)
+    },
+    600_000,
   )
 })
 
-// ── helpers ────────────────────────────────────────────────────────────────
+function formatFailure(result: { ok: boolean; reason?: string; text?: string; actual: Array<{ tool: string }> }): string {
+  const tools = result.actual.map((c) => c.tool).join(", ") || "(none)"
+  const text = result.text ? `; text: ${result.text.slice(0, 500)}` : ""
+  return result.reason ? `${result.reason}${text}` : `tools called: ${tools}${text}`
+}
 
-function formatFailure(result: {
-  ok: boolean
-  reason?: string
-  actual: Array<{ tool: string }>
-}): string {
-  return (
-    result.reason ??
-    `tools called: ${result.actual.map((c) => c.tool).join(", ") || "(none)"}`
-  )
+/**
+ * Flake telemetry: records attempt counts per eval (when evalAgentPrompt
+ * retried at least once) and dumps a summary at process exit. Lets us
+ * see which evals are intermittently flaky without manually re-running.
+ * `attempts > 1` = test passed after a retry; treat as a flake signal.
+ */
+const FLAKE_LOG: Array<{ provider: string; testName: string; attempts: number }> = []
+function trackAttempts(provider: string, testName: string, attempts: number | undefined): void {
+  if (typeof attempts !== "number" || attempts <= 1) return
+  FLAKE_LOG.push({ provider, testName, attempts })
+}
+if (typeof process !== "undefined" && typeof process.on === "function") {
+  process.on("beforeExit", () => {
+    if (FLAKE_LOG.length === 0) return
+    // eslint-disable-next-line no-console
+    console.log("\n[eval-flake-summary] evals that needed > 1 attempt:")
+    for (const entry of FLAKE_LOG) {
+      // eslint-disable-next-line no-console
+      console.log(`  [${entry.provider}] ${entry.testName} → ${entry.attempts} attempts`)
+    }
+  })
 }

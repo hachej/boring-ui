@@ -33,16 +33,32 @@ import type {
   ProviderOutput,
 } from "../../shared/plugins/types"
 import type { WorkspaceFrontPlugin } from "../../shared/plugins/defineFrontPlugin"
+import {
+  toWorkspacePlugin,
+  type WorkspaceFrontPluginInput,
+} from "../../shared/plugins/frontFactory"
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
 import { WorkspaceAttentionProvider } from "../attention"
+import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function NullChatPanel(_props: WorkspaceChatPanelProps) {
+  return null
+}
+
+export type FrontPluginHotReloadMode = "vite" | false
+
+function AgentPluginHotReloadBridge(props: { apiBaseUrl: string; workspaceId?: string; mode: FrontPluginHotReloadMode }) {
+  useAgentPluginHotReload({
+    apiBaseUrl: props.apiBaseUrl,
+    workspaceId: props.workspaceId,
+    enabled: props.mode === "vite",
+  })
   return null
 }
 
@@ -148,6 +164,7 @@ export interface RegisteredPluginMeta {
 export interface WorkspaceContextValue {
   chatPanel: WorkspaceChatPanelComponent | null
   registeredPlugins: RegisteredPluginMeta[]
+  debug: boolean
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
@@ -260,21 +277,14 @@ function WorkspaceCatalogBindings({
 function WorkspacePluginBindings({ plugins }: { plugins: WorkspaceFrontPlugin[] }) {
   return (
     <>
-      {plugins.map((plugin) => {
-        const outputBindings =
-          plugin.outputs?.filter(
-            (output): output is BindingOutput => output.type === "binding",
-          ) ?? []
-        return [
-          ...(plugin.bindings ?? []).map((Binding, index) => (
-            <Binding key={`${plugin.id}:binding:${index}`} />
-          )),
-          ...outputBindings.map((output) => {
+      {plugins.map((plugin) =>
+        (plugin.outputs ?? [])
+          .filter((output): output is BindingOutput => output.type === "binding")
+          .map((output) => {
             const Binding = output.component
-            return <Binding key={`${plugin.id}:output:${output.id}`} />
+            return <Binding key={`${plugin.id}:${output.id}`} />
           }),
-        ]
-      })}
+      )}
     </>
   )
 }
@@ -336,7 +346,13 @@ function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) 
 export interface WorkspaceProviderProps {
   children: ReactNode
   chatPanel?: WorkspaceChatPanelComponent
-  plugins?: WorkspaceFrontPlugin[]
+  /**
+   * Plugin entries. Each is either a legacy `WorkspaceFrontPlugin`
+   * object (from `defineFrontPlugin`) or a new
+   * `BoringFrontFactoryWithId` (from `definePlugin(id, factory)`). The
+   * shell normalizes both via `toWorkspacePlugin` at the boundary.
+   */
+  plugins?: WorkspaceFrontPluginInput[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
   commands?: CommandConfig[]
@@ -354,6 +370,14 @@ export interface WorkspaceProviderProps {
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
   onOpenFile?: (path: string) => void
+  debug?: boolean
+  /**
+   * Hot-load dynamically discovered front plugin modules. The current
+   * implementation relies on Vite's /@fs transform endpoint, so it defaults to
+   * dev-only. Production hosts should keep this false until they provide their
+   * own module asset endpoint.
+   */
+  frontPluginHotReload?: FrontPluginHotReloadMode
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +404,8 @@ export function WorkspaceProvider({
   bridgeEndpoint,
   onAuthError,
   onOpenFile,
+  debug = false,
+  frontPluginHotReload = import.meta.env.DEV ? "vite" : false,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -461,11 +487,15 @@ export function WorkspaceProvider({
     const defaultPlugins: WorkspaceFrontPlugin[] = excludedDefaults.has(filesystemPlugin.id)
       ? []
       : [filesystemPlugin]
-    const allPlugins = [...defaultPlugins, ...(plugins ?? [])]
+    // Normalize the user-provided plugins (each is either a legacy
+    // WorkspaceFrontPlugin object OR a new BoringFrontFactoryWithId).
+    // After normalization everything below treats them as plugin objects.
+    const normalizedPlugins: WorkspaceFrontPlugin[] = (plugins ?? []).map(toWorkspacePlugin)
+    const allPlugins = [...defaultPlugins, ...normalizedPlugins]
 
     bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,
-      plugins: plugins ?? [],
+      plugins: normalizedPlugins,
       defaults: defaultPlugins,
       excludeDefaults,
       registries: { panels: pr, commands: cr, catalogs: cat, surfaceResolvers: sr },
@@ -477,7 +507,6 @@ export function WorkspaceProvider({
       ...allPlugins.map((p) => ({
         id: p.id,
         label: p.label,
-        systemPrompt: p.systemPrompt,
       })),
     ]
 
@@ -535,8 +564,8 @@ export function WorkspaceProvider({
     [bridgeConnected],
   )
   const workspaceValue = useMemo<WorkspaceContextValue>(
-    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas }),
-    [chatPanel, pluginMetas],
+    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas, debug }),
+    [chatPanel, pluginMetas, debug],
   )
 
   return (
@@ -559,6 +588,7 @@ export function WorkspaceProvider({
                 apiTimeout={apiTimeout}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
+                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} />
                 <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
                 <WorkspaceCommandBindings commands={commands} />
                 <WorkspaceCatalogBindings

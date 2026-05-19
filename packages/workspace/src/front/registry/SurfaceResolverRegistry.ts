@@ -18,14 +18,45 @@ export class SurfaceResolverRegistry {
     this.emit()
   }
 
-  unregisterByPluginId(pluginId: string): void {
-    let changed = false
+  unregister(id: string): void {
+    if (!this.resolvers.delete(id)) return
+    this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)
+    this.emit()
+  }
+
+  /**
+   * Atomic replace by pluginId: drop owned resolvers and register the new
+   * set in one emit. Pi parity for reload semantics.
+   *
+   * Collision policy: a new resolver id already owned by a DIFFERENT
+   * pluginId is skipped with a warning.
+   */
+  replaceByPluginId(pluginId: string, resolvers: SurfaceResolverConfig[]): void {
+    const ownedIds = new Set<string>()
     for (const [id, resolver] of this.resolvers) {
-      if (resolver.pluginId === pluginId) {
-        this.resolvers.delete(id)
-        this.registrationOrder = this.registrationOrder.filter((oid) => oid !== id)
-        changed = true
+      if (resolver.pluginId === pluginId) ownedIds.add(id)
+    }
+    if (ownedIds.size === 0 && resolvers.length === 0) return
+
+    let changed = ownedIds.size > 0
+    for (const id of ownedIds) this.resolvers.delete(id)
+    if (ownedIds.size > 0) {
+      this.registrationOrder = this.registrationOrder.filter((oid) => this.resolvers.has(oid))
+    }
+    for (const config of resolvers) {
+      const id = config.id
+      if (!id) continue
+      const existing = this.resolvers.get(id)
+      if (existing && existing.pluginId !== pluginId) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[SurfaceResolverRegistry] plugin "${pluginId}" tried to register resolver "${id}" already owned by "${existing.pluginId ?? 'system'}" — skipped`,
+        )
+        continue
       }
+      this.resolvers.set(id, { ...config, id, pluginId })
+      if (!this.registrationOrder.includes(id)) this.registrationOrder.push(id)
+      changed = true
     }
     if (changed) this.emit()
   }

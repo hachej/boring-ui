@@ -1,12 +1,12 @@
 import Fastify, { type FastifyInstance } from 'fastify'
-import { basename } from 'node:path'
 import type { AgentTool } from '../shared/tool'
+import type { AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
 import { getEnv } from './config/env'
 import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness } from './harness/pi-coding-agent/createHarness'
-import type { PiResourceLoaderOptions } from './harness/pi-coding-agent/createHarness'
+import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
@@ -23,19 +23,13 @@ import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
+import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
-
-function pluginNameFromPath(path: string): string {
-  const fileName = basename(path)
-  if (fileName.endsWith('.mjs')) return fileName.slice(0, -4)
-  if (fileName.endsWith('.js')) return fileName.slice(0, -3)
-  return fileName
-}
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
@@ -57,12 +51,31 @@ export interface CreateAgentAppOptions {
    * via DefaultResourceLoader's `appendSystemPromptSource`.
    */
   systemPromptAppend?: string
-  /** Optional pi resource-loader isolation knobs. */
-  resourceLoaderOptions?: PiResourceLoaderOptions
+  /** Override the default pi-backed harness with a custom agent runtime. */
+  harnessFactory?: AgentHarnessFactory
+  /** Optional pi adapter/runtime knobs used by the default harness. */
+  pi?: PiHarnessOptions
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
+  /**
+   * Called BEFORE the harness reloads its session. May return a
+   * `ReloadHookResult` (with `restart_warnings`) — surfaced verbatim on
+   * the /api/v1/agent/reload response. `void` / undefined return = no
+   * warnings (backwards compatible).
+   */
+  beforeReload?: () =>
+    | void
+    | import("./http/routes/reload.js").ReloadHookResult
+    | undefined
+    | Promise<void | import("./http/routes/reload.js").ReloadHookResult | undefined>
+  /**
+   * Optional dynamic system-prompt source forwarded to the harness. The
+   * harness calls it whenever it builds or rebuilds a session prompt. Used by
+   * the workspace plugin layer.
+   */
+  systemPromptDynamic?: () => string | undefined | Promise<string | undefined>
 }
 
 export async function createAgentApp(
@@ -106,13 +119,21 @@ export async function createAgentApp(
     ...pluginTools,
   ]
 
-  const harness = createPiCodingAgentHarness({
+  const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
+    ...input,
+    pi: {
+      noContextFiles: true,
+      noSkills: true,
+      ...opts.pi,
+    },
+  }))
+  const harness = await harnessFactory({
     tools,
     cwd: workspaceRoot,
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
     systemPromptAppend: opts.systemPromptAppend,
-    resourceLoaderOptions: opts.resourceLoaderOptions,
+    systemPromptDynamic: opts.systemPromptDynamic,
   })
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
@@ -160,10 +181,13 @@ export async function createAgentApp(
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
     workspaceRoot,
-    additionalSkillPaths: opts.resourceLoaderOptions?.additionalSkillPaths,
+    additionalSkillPaths: opts.pi?.additionalSkillPaths,
+    piPackages: opts.pi?.packages,
+    noSkills: opts.pi?.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
+  await app.register(reloadRoutes, { harness, defaultSessionId: sessionId, beforeReload: opts.beforeReload })
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app

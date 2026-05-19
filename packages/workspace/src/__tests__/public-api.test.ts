@@ -77,7 +77,10 @@ describe("@hachej/boring-workspace public API", () => {
       expect(api.CommandRegistry).toBeDefined()
       expect(api.CatalogRegistry).toBeDefined()
       expect(api.bootstrap).toBeDefined()
-      expect(api.composePlugins).toBeDefined()
+      // composePlugins removed: with the imperative BoringFrontFactory
+      // API, plugin composition is just calling multiple factories with
+      // the same `api`. No library helper needed.
+      expect("composePlugins" in api).toBe(false)
     })
 
     it("exports registry hooks and provider", () => {
@@ -88,9 +91,12 @@ describe("@hachej/boring-workspace public API", () => {
       expect(api.useCatalogs).toBeDefined()
     })
 
-    it("exports the explicit front plugin factory", () => {
-      expect(api.defineFrontPlugin).toBeDefined()
-      expect("definePlugin" in api).toBe(false)
+    it("does not export legacy defineFrontPlugin from the root surface — definePlugin (from /plugin) is the public way", async () => {
+      expect("defineFrontPlugin" in api).toBe(false)
+      expect("WorkspaceFrontPlugin" in api).toBe(false)
+      const pluginApi = await import("../plugin")
+      expect(pluginApi.definePlugin).toBeDefined()
+      expect(pluginApi.toWorkspacePlugin).toBeDefined()
     })
 
     it("exports getFileIcon utility", () => {

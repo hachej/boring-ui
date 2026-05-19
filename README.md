@@ -98,7 +98,7 @@ A plugin is a regular Node package with two manifest blocks:
 
 Plugins compose. Use `derivesFrom` to extend an existing plugin instead of forking. Swap a single surface, or add a brand-new pane type. Plugins ship through npm like any other dependency — no patching, no monorepo entanglement required.
 
-Start from [plugins/_template](plugins/_template/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
+Start from [plugins/_template-full](plugins/_template-full/README.md). The exact manifest and a working example are in [Plugin shape](#plugin-shape) below.
 
 ---
 
@@ -136,7 +136,7 @@ More on the same chassis in flight: `boring-accountant`, `boring-design`, `borin
 | `@hachej/boring-ask-user`      | Agent-to-user question/answer surface and `ask_user` tool                 | [plugins/ask-user](plugins/ask-user/README.md)           |
 | `@hachej/boring-data-explorer` | Searchable, faceted data tables — the primitive for explorer-style panels | [plugins/data-explorer](plugins/data-explorer/README.md) |
 | `@hachej/boring-data-catalog`  | Configurable catalog tab built on `data-explorer`                         | [plugins/data-catalog](plugins/data-catalog/README.md)   |
-| Plugin template                | Canonical scaffold for new plugins                                        | [plugins/_template](plugins/_template/README.md)         |
+| Plugin template                | Canonical scaffold for new plugins                                        | [plugins/_template-full](plugins/_template-full/README.md)         |
 
 
 ### Reference apps
@@ -178,7 +178,7 @@ Plugins are standard Node packages, distributed through npm, loaded by Pi. Each 
 - `boring.server` — server side: agent tools that need backend state, HTTP routes
 - `boring.derivesFrom` — layer on top of an existing plugin
 
-Start from [plugins/_template](plugins/_template/README.md).
+Start from [plugins/_template-full](plugins/_template-full/README.md).
 
 ---
 
