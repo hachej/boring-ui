@@ -28,7 +28,9 @@ interface DiscoveredBoringPluginDirs {
 
 function pluginIdFromPackageJson(pkg: { name?: string }, rootDir: string): string {
   const name = typeof pkg.name === "string" && pkg.name.trim() ? pkg.name.trim() : undefined
-  return (name ?? rootDir.split(/[\/]/).at(-1) ?? "plugin").replace(/^@/, "").replaceAll("/", "-")
+  // Split on / OR \\ so the fallback id works on Windows (basename of
+  // C:\path\to\plugin should be "plugin", not the full path).
+  return (name ?? rootDir.split(/[\\/]/).at(-1) ?? "plugin").replace(/^@/, "").replaceAll("/", "-")
 }
 
 function safePluginIdFromPackageJson(pkg: BoringPluginPackageJson | Record<string, unknown>, rootDir: string): string | undefined {

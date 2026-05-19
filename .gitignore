@@ -67,3 +67,6 @@ packages/workspace/*.csv
 packages/workspace/packages/
 packages/workspace/plugins/
 packages/workspace/src/plugins/eval-*/
+# Repo-root .pi/ too — when the agent's cwd resolves to the monorepo root
+# instead of the workspace package, eval scratch lands here.
+/.pi/

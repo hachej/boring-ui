@@ -14,7 +14,7 @@ import {
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance } from "fastify"
 import { existsSync, readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { dirname, isAbsolute, join } from "node:path"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
@@ -374,7 +374,10 @@ function resolveDefaultPluginPackagePaths(
   const requireFromHere = createRequire(import.meta.url)
   const resolved: string[] = []
   for (const entry of defaultPluginPackages) {
-    if (entry.startsWith("/")) {
+    // isAbsolute handles both POSIX (`/foo`) and Windows (`C:\foo`) paths;
+    // startsWith("/") alone misses Windows absolute paths and incorrectly
+    // accepts `~/foo` as absolute.
+    if (isAbsolute(entry)) {
       if (!existsSync(join(entry, "package.json"))) {
         throw new Error(
           `defaultPluginPackages: "${entry}" has no package.json — provide a path to a directory containing package.json with a "boring" field.`,

@@ -24,9 +24,12 @@ describe("scaffoldPlugin", () => {
     expect(pkg).toMatchObject({
       name: "my-plugin",
       version: "0.1.0",
-      boring: { label: "My Plugin", front: "front/index.tsx", server: false },
+      boring: { label: "My Plugin", front: "front/index.tsx" },
       pi: { systemPrompt: expect.stringContaining("My Plugin") },
     })
+    // `boring.server` is omitted by default in the front-only scaffold;
+    // batch 3 (--server flag / always-server) adds it back.
+    expect(pkg.boring.server).toBeUndefined()
 
     const front = readFileSync(join(result.pluginDir, "front", "index.tsx"), "utf8")
     expect(front).toContain('import { definePlugin } from "@hachej/boring-workspace/plugin"')
@@ -68,6 +71,6 @@ describe("scaffoldPlugin", () => {
     // The _doc_ key from the template must be stripped before writing
     // (it's a comment for human readers of the template).
     expect(pkg._doc_).toBeUndefined()
-    expect(pkg.boring.server).toBe(false)
+    expect(pkg.boring.server).toBeUndefined()
   })
 })
