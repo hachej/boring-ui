@@ -11,7 +11,7 @@
       --bg:        #FAF7F2;
       --canvas:    #FFFFFF;
       --fg:        #171717;
-      --muted:     #525252;
+      --muted:     #3F3A33;
       --hairline:  #E8E1D5;
       --accent:    #C7591A;     /* one accent, used sparingly */
       --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
@@ -21,7 +21,7 @@
     html, body { margin: 0; padding: 0; background: var(--bg); }
     body {
       width: 1920px;
-      height: 760px;
+      height: 720px;
       font-family: var(--sans);
       color: var(--fg);
       font-feature-settings: "ss01", "cv11", "cv02";
@@ -31,14 +31,24 @@
       width: 100%;
       height: 100%;
       display: grid;
-      grid-template-columns: 600px 1fr;
-      gap: 96px;
+      grid-template-columns: 540px 1fr;
+      gap: 112px;
       padding: 0 96px;
       align-items: center;
     }
     .text {
       padding-top: 8px;
     }
+    .meta-row {
+      display: flex;
+      gap: 24px;
+      margin-top: 28px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }
+    .meta-row span { opacity: 0.8; }
     .eyebrow {
       display: inline-flex;
       align-items: center;
@@ -58,11 +68,11 @@
       background: var(--accent);
     }
     h1 {
-      font-size: 104px;
+      font-size: 100px;
       font-weight: 700;
-      letter-spacing: -0.035em;
-      line-height: 0.95;
-      margin: 0 0 28px 0;
+      letter-spacing: -0.028em;
+      line-height: 0.94;
+      margin: 0 0 32px 0;
     }
     h1 .accent {
       color: var(--fg);
@@ -70,11 +80,11 @@
       font-weight: 500;
     }
     p.lede {
-      font-size: 26px;
-      line-height: 1.35;
+      font-size: 24px;
+      line-height: 1.55;
       color: var(--muted);
       margin: 0 0 40px 0;
-      max-width: 520px;
+      max-width: 480px;
       font-weight: 400;
     }
     p.lede b {
@@ -86,34 +96,35 @@
       align-items: center;
       gap: 14px;
       font-family: var(--mono);
-      font-size: 16px;
+      font-size: 15px;
       color: var(--fg);
       background: var(--canvas);
       border: 1px solid var(--hairline);
-      padding: 14px 18px;
+      padding: 12px 16px;
       border-radius: 10px;
       box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+      max-width: fit-content;
     }
     .cmd .dollar { color: var(--muted); user-select: none; }
     .cmd .pkg { font-weight: 500; }
     .shot-wrap {
       position: relative;
       width: 100%;
-      height: 600px;
       display: flex;
       align-items: center;
+      justify-content: center;
     }
     .shot {
       width: 100%;
-      height: 100%;
-      object-fit: cover;
-      object-position: left center;
+      height: auto;
+      object-fit: contain;
       border-radius: 14px;
       border: 1px solid var(--hairline);
       box-shadow:
         0 1px 0 rgba(0,0,0,0.04),
         0 24px 56px -28px rgba(20, 16, 8, 0.18);
       background: var(--canvas);
+      display: block;
     }
   </style>
 </head>
@@ -129,6 +140,13 @@
       <div class="cmd">
         <span class="dollar">$</span>
         <span class="pkg">npx&nbsp;@hachej/boring-ui-cli</span>
+      </div>
+      <div class="meta-row">
+        <span>MIT</span>
+        <span>·</span>
+        <span>TypeScript</span>
+        <span>·</span>
+        <span>Workspace&nbsp;+&nbsp;Agent&nbsp;+&nbsp;Plugins</span>
       </div>
     </div>
     <div class="shot-wrap">
