@@ -408,6 +408,43 @@ describe("boring agent plugin assets", () => {
     }
   })
 
+  test("POST /api/boring.reload surfaces restart_warnings when a plugin's server file changed mid-session", async () => {
+    const root = await tmp("boring-plugin-reload-warn-")
+    await writePlugin(root) // includes server/index.js + boring.server set
+    const manager = new BoringPluginAssetManager({ pluginDirs: [root], errorRoot: join(root, ".errors") })
+
+    const app = Fastify({ logger: false })
+    await app.register(boringPluginRoutes, { manager })
+
+    try {
+      // First reload: no prior record, so no requiresRestart, so no warning.
+      const initial = await app.inject({ method: "POST", url: "/api/boring.reload" })
+      expect(initial.statusCode).toBe(200)
+      const initialBody = initial.json() as { restart_warnings?: unknown }
+      expect(initialBody.restart_warnings).toBeUndefined()
+
+      // Touch the server file → next reload event carries requiresRestart →
+      // route surfaces a restart_warnings entry.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await writeFile(join(root, "server", "index.js"), "export default function(api) { api.get('/v2', async () => ({ ok: true })) }\n", "utf8")
+
+      const restart = await app.inject({ method: "POST", url: "/api/boring.reload" })
+      expect(restart.statusCode).toBe(200)
+      const body = restart.json() as {
+        ok: boolean
+        restart_warnings?: Array<{ id: string; surfaces: string[]; message: string }>
+      }
+      expect(body.ok).toBe(true)
+      expect(body.restart_warnings).toBeDefined()
+      expect(body.restart_warnings).toHaveLength(1)
+      expect(body.restart_warnings![0].id).toBe("boring-plugin-test")
+      expect(body.restart_warnings![0].surfaces).toEqual(["routes", "agentTools"])
+      expect(body.restart_warnings![0].message).toContain("Restart the server")
+    } finally {
+      await app.close()
+    }
+  })
+
   test("writes preflight errors under a stable fallback id when plugin id cannot be derived", async () => {
     const root = await tmp("boring-plugin-preflight-fallback-id-")
     await writePlugin(root)

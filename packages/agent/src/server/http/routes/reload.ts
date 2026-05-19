@@ -1,10 +1,34 @@
 import type { FastifyInstance } from "fastify"
 import type { AgentHarness } from "../../../shared/harness.js"
 
+/**
+ * One per plugin that loaded successfully but whose server-side
+ * surfaces (routes, agentTools) still hold pre-reload code. The
+ * /api/v1/agent/reload response surfaces these so the chat UI can
+ * render a "restart needed" banner without subscribing to SSE.
+ *
+ * Shape mirrors what the workspace's collectRestartWarnings() emits;
+ * we keep it untyped here (Record-shaped) to avoid agent → workspace
+ * dependency.
+ */
+export interface ReloadHookResult {
+  restart_warnings?: ReadonlyArray<{ id: string; surfaces: string[]; message: string }>
+}
+
 export interface ReloadRoutesOptions {
   harness: AgentHarness
   defaultSessionId: string
-  beforeReload?: () => void | Promise<void>
+  /**
+   * Called BEFORE the harness reloads its session. Optionally returns
+   * `{ restart_warnings }` — surfaced verbatim on the /reload response
+   * so the agent + chat UI can act on them. `void` / undefined return =
+   * no warnings (backwards compatible).
+   */
+  beforeReload?: () =>
+    | void
+    | ReloadHookResult
+    | undefined
+    | Promise<void | ReloadHookResult | undefined>
 }
 
 interface ReloadBody {
@@ -23,9 +47,15 @@ export function reloadRoutes(
 
     const sessionId = request.body?.sessionId || opts.defaultSessionId
     try {
-      await opts.beforeReload?.()
+      const hookResult = await opts.beforeReload?.()
       const reloaded = await opts.harness.reloadSession(sessionId)
-      return { ok: true, sessionId, reloaded }
+      const restart_warnings = hookResult?.restart_warnings
+      return {
+        ok: true,
+        sessionId,
+        reloaded,
+        ...(restart_warnings && restart_warnings.length > 0 ? { restart_warnings } : {}),
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       return reply.status(422).send({ ok: false, error: message })
