@@ -45,13 +45,13 @@
     .eyebrow {
       display: inline-flex;
       align-items: center;
-      gap: 14px;
-      font-size: 16px;
+      gap: 16px;
+      font-size: 19px;
       letter-spacing: 0.10em;
       text-transform: uppercase;
       color: var(--accent);
       font-weight: 500;
-      margin-bottom: 36px;
+      margin-bottom: 40px;
     }
     .eyebrow::before {
       content: "";
@@ -68,12 +68,12 @@
       margin: 0 0 18px 0;
     }
     .subtitle {
-      font-size: 36px;
+      font-size: 46px;
       font-weight: 500;
       letter-spacing: -0.015em;
-      line-height: 1.15;
+      line-height: 1.12;
       color: var(--fg);
-      margin: 0 0 18px 0;
+      margin: 0 0 36px 0;
     }
     p.lede {
       font-size: 30px;
@@ -86,14 +86,14 @@
     .cmd {
       display: inline-flex;
       align-items: center;
-      gap: 16px;
+      gap: 18px;
       font-family: var(--mono);
-      font-size: 18px;
+      font-size: 22px;
       color: var(--fg);
       background: var(--canvas);
       border: 1px solid var(--hairline);
-      padding: 14px 20px;
-      border-radius: 10px;
+      padding: 16px 24px;
+      border-radius: 12px;
       box-shadow: 0 1px 0 rgba(0,0,0,0.02);
       max-width: fit-content;
     }
@@ -101,10 +101,10 @@
     .cmd .pkg { font-weight: 500; }
     .meta-row {
       display: flex;
-      gap: 24px;
-      margin-top: 28px;
+      gap: 28px;
+      margin-top: 32px;
       font-family: var(--mono);
-      font-size: 13px;
+      font-size: 17px;
       color: var(--muted);
       letter-spacing: 0.01em;
     }
@@ -137,24 +137,24 @@
       position: absolute;
       font-family: var(--sans);
       font-weight: 700;
-      font-size: 17px;
+      font-size: 22px;
       color: var(--ink);
       line-height: 1.2;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       pointer-events: none;
     }
     .annot .sub {
       display: block;
-      font-size: 14px;
+      font-size: 18px;
       font-weight: 500;
       color: #4A463E;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.03em;
       text-transform: none;
-      margin-top: 4px;
+      margin-top: 6px;
     }
-    .annot.top-left  { top: 4px; left: 60px;  max-width: 460px; }
-    .annot.top-right { top: 4px; right: 40px; max-width: 540px; text-align: right; }
+    .annot.top-left  { top: 24px; left: 80px;  max-width: 560px; }
+    .annot.top-right { top: 24px; right: 60px; max-width: 640px; text-align: right; }
 
     .arrow {
       position: absolute;
@@ -162,16 +162,16 @@
       overflow: visible;
     }
     .arrow.top-left {
-      top: 100px;
-      left: 220px;
-      width: 220px;
-      height: 130px;
+      top: 96px;
+      left: 180px;
+      width: 280px;
+      height: 150px;
     }
     .arrow.top-right {
-      top: 100px;
-      right: 100px;
-      width: 220px;
-      height: 130px;
+      top: 96px;
+      right: 80px;
+      width: 280px;
+      height: 150px;
     }
   </style>
 </head>
@@ -195,32 +195,32 @@
 
       <!-- Both annotations at the top — arrows curve down into their halves of the screenshot -->
 
-      <!-- LEFT: agent + skills → editorial thin line into chat hero -->
+      <!-- LEFT: agent + skills → arrow into chat hero -->
       <div class="annot top-left">The agent<span class="sub">with your skills + prompts</span></div>
-      <svg class="arrow top-left" viewBox="0 0 220 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg class="arrow top-left" viewBox="0 0 280 150" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <marker id="ah-tl" viewBox="0 0 10 10" refX="9" refY="5"
-                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  markerWidth="9" markerHeight="9" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 Z" fill="#171717" />
           </marker>
         </defs>
-        <path d="M30,18 Q90,60 150,118"
-              stroke="#171717" stroke-width="1.5" fill="none"
+        <path d="M30,16 Q110,70 200,134"
+              stroke="#171717" stroke-width="2.4" fill="none"
               stroke-linecap="round"
               marker-end="url(#ah-tl)" />
       </svg>
 
-      <!-- RIGHT: workspace under agent control → editorial thin line into workbench -->
-      <div class="annot top-right">The workspace<span class="sub">it controls and shapes as you go</span></div>
-      <svg class="arrow top-right" viewBox="0 0 220 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- RIGHT: workspace the agent controls + builds → arrow into workbench -->
+      <div class="annot top-right">The workspace<span class="sub">the agent can control and build as you go</span></div>
+      <svg class="arrow top-right" viewBox="0 0 280 150" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <marker id="ah-tr" viewBox="0 0 10 10" refX="9" refY="5"
-                  markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  markerWidth="9" markerHeight="9" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 Z" fill="#171717" />
           </marker>
         </defs>
-        <path d="M190,18 Q130,60 70,118"
-              stroke="#171717" stroke-width="1.5" fill="none"
+        <path d="M250,16 Q170,70 80,134"
+              stroke="#171717" stroke-width="2.4" fill="none"
               stroke-linecap="round"
               marker-end="url(#ah-tr)" />
       </svg>
