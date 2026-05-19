@@ -3,11 +3,7 @@ import { isToolUIPart } from 'ai'
 import { motion } from 'motion/react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-// Same event name as workspace's WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT.
-// Duplicated (not imported) because @hachej/boring-agent must not depend
-// on @hachej/boring-workspace (workspace depends on agent — would cycle).
-// Keep the two literals in sync.
-const AGENT_PLUGINS_RELOADED_EVENT = 'boring-ui:agent-plugins-reloaded'
+import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '../shared/agentPluginEvents'
 
 // Lazy import so the DebugDrawer chunk (~10kb + its tab subcomponents that fetch
 // /api/v1/agent/sessions/:id/system-prompt) only loads when a host opts into
@@ -455,7 +451,7 @@ export function ChatPanel(props: ChatPanelProps) {
     }
     const payload = await res.json().catch(() => ({})) as { reloaded?: boolean }
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
     }
     return { reloaded: Boolean(payload.reloaded) }
   }, [requestHeaders, sessionId])
