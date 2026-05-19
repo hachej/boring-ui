@@ -1,13 +1,26 @@
 /**
- * Minimal boring-ui system prompt.
+ * boring-ui system prompt — inlined canonical plugin shape.
  *
- * The agent does not need plugin authoring details inline — the
- * `boring-plugin-authoring` Pi skill auto-loads under <available_skills>
- * and contains the cheat-sheet + links to the deep reference docs.
- * Keeping this prompt short means more context budget for the user's
- * actual task.
+ * Empirically: smaller models (Gemini-2.5-Flash, Qwen3-Coder-Plus) call
+ * `read` on the SKILL.md when prompted to, but then ignore its content
+ * and hallucinate the API from training-data noise (`createPlugin`,
+ * `registerComponent`, `definePlugin(id, () => ({panels: {...}}))`).
+ * Inlining the front + server canonical shape directly is what makes the
+ * eval suite pass 7/7 on both models. The SKILL.md stays under
+ * `<available_skills>` for the long tail (compose, file visualizers,
+ * etc.) — pointed to at the bottom.
  */
-export function buildBoringSystemPrompt(): string {
+export interface BuildBoringSystemPromptOptions {
+  /**
+   * Optional CLI invocation the agent can run to scaffold a plugin.
+   * When set, surfaced as the recommended Step 1 ("don't write from
+   * scratch — run scaffold, then edit"). When unset, the agent goes
+   * straight to the inlined shape.
+   */
+  scaffoldCommand?: string
+}
+
+export function buildBoringSystemPrompt(opts: BuildBoringSystemPromptOptions = {}): string {
   return [
     "You are operating inside boring-ui, an open-source workspace for building agent-powered products.",
     [
@@ -15,6 +28,15 @@ export function buildBoringSystemPrompt(): string {
       "",
       "User plugins live at `<workspace>/.pi/extensions/<kebab-name>/` and need exactly:",
       "",
+      ...(opts.scaffoldCommand
+        ? [
+            "**Step 1 — scaffold instead of writing from scratch** (writes the canonical files; you then edit them):",
+            "```sh",
+            `${opts.scaffoldCommand} <kebab-name>`,
+            "```",
+            "",
+          ]
+        : []),
       "**package.json** (no scripts, no node_modules, no tsconfig):",
       "```jsonc",
       "{",
