@@ -13,7 +13,7 @@ import {
   type WorkspaceFrontPlugin,
 } from "@hachej/boring-workspace"
 import { HelpCircle, XCircle } from "lucide-react"
-import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import type { AskUserQuestion } from "../shared/types"
 import { createQuestionsClient, readPendingQuestionFromState, QuestionsClientError } from "./client"
@@ -46,6 +46,11 @@ function createQuestionsStore(): QuestionsStore {
   }
 }
 
+// Singleton store at module scope so the "Open Questions" command's `when()`
+// predicate can check the pending state without React. The provider mounts
+// this same instance into its runtime context.
+const sharedQuestionsStore: QuestionsStore = createQuestionsStore()
+
 const QuestionsRuntimeContext = createContext<QuestionsRuntime | null>(null)
 
 function sessionScopedBlockerId(sessionId: string): string | undefined {
@@ -65,9 +70,7 @@ function useQuestionsRuntime(): QuestionsRuntime {
 
 function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderProps) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
-  const storeRef = useRef<QuestionsStore | null>(null)
-  if (!storeRef.current) storeRef.current = createQuestionsStore()
-  const runtime = useMemo<QuestionsRuntime>(() => ({ ...storeRef.current!, apiBaseUrl, authHeaders }), [apiBaseUrl, authHeaders])
+  const runtime = useMemo<QuestionsRuntime>(() => ({ ...sharedQuestionsStore, apiBaseUrl, authHeaders }), [apiBaseUrl, authHeaders])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   useEffect(() => {
     const pending = runtime.getPending()
@@ -196,7 +199,15 @@ const outputs: PluginOutput[] = [
   { type: "provider", id: `${ASK_USER_PLUGIN_ID}.provider`, component: AskUserProvider },
   { type: "panel", panel },
   { type: "surface-resolver", resolver },
-  { type: "command", command: { id: `${ASK_USER_PLUGIN_ID}.open`, title: "Open Questions", run: () => window.dispatchEvent(new CustomEvent("boring:ask-user-open")) } },
+  {
+    type: "command",
+    command: {
+      id: `${ASK_USER_PLUGIN_ID}.open`,
+      title: "Open Questions",
+      run: () => window.dispatchEvent(new CustomEvent("boring:ask-user-open")),
+      when: () => sharedQuestionsStore.getPending() !== null,
+    },
+  },
 ]
 
 export const askUserPlugin: WorkspaceFrontPlugin = defineFrontPlugin({ id: ASK_USER_PLUGIN_ID, label: ASK_USER_PANEL_TITLE, outputs })
