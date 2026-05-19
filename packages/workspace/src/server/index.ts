@@ -42,6 +42,14 @@ export { boringPluginRoutes, collectRestartWarnings } from "./agentPlugins/route
 export type { PluginReloadRebuild, PluginRestartWarning } from "./agentPlugins/routes"
 export { aggregatePluginPrompts } from "./agentPlugins/aggregatePluginPrompts"
 export { preflightBoringPlugins, readBoringPlugins } from "./agentPlugins/scan"
+export {
+  pluginFileSignature,
+  readPluginSignatureCache,
+  writePluginSignatureCache,
+  clearPluginSignatureCache,
+  PLUGIN_SIGNATURE_CACHE_FILE,
+} from "./agentPlugins/signatureCache"
+export type { PluginSignatureCachePayload } from "./agentPlugins/signatureCache"
 export type {
   BoringPluginEvent,
   BoringPluginListEntry,

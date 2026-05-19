@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { writePluginSignatureCache } from "@hachej/boring-workspace/server"
 import { formatVerifyResult, verifyPlugin } from "../server/verifyPlugin"
 
 describe("verifyPlugin", () => {
@@ -152,6 +153,73 @@ describe("verifyPlugin", () => {
     expect(text).toMatch(/^FAILED/)
     expect(text).toContain("bad")
     expect(text).toContain("verify-plugin")
+  })
+
+  test("warns when the server file's signature differs from the load-time cache (restart needed)", () => {
+    const dir = plant("drifted", {
+      "package.json": JSON.stringify({
+        name: "drifted",
+        version: "1.0.0",
+        boring: { label: "D", front: "front/index.tsx", server: "server/index.ts" },
+      }),
+      "front/index.tsx": "export default {}",
+      "server/index.ts": "export default {}",
+    })
+    // Pretend the manager loaded this plugin with a different sig.
+    writePluginSignatureCache(dir, { serverSignature: "0:0" })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(true)
+    const outcome = result.outcomes.find((o) => o.id === "drifted")!
+    expect(outcome.errors).toEqual([])
+    expect(outcome.warnings).toHaveLength(1)
+    expect(outcome.warnings[0]).toMatch(/server file changed/i)
+    expect(outcome.warnings[0]).toMatch(/restart the workspace/i)
+
+    const text = formatVerifyResult(result)
+    expect(text).toMatch(/⚠ drifted/)
+    expect(text).toContain("WARN:")
+    expect(text).toMatch(/restart \(NOT just \/reload\)/)
+  })
+
+  test("does NOT warn when the server file's signature matches the cache (fresh /reload)", () => {
+    const dir = plant("fresh", {
+      "package.json": JSON.stringify({
+        name: "fresh",
+        version: "1.0.0",
+        boring: { label: "F", front: "front/index.tsx", server: "server/index.ts" },
+      }),
+      "front/index.tsx": "export default {}",
+      "server/index.ts": "export default {}",
+    })
+    // Match the current mtime+size by computing it the same way.
+    const serverPath = join(dir, "server/index.ts")
+    const stat = statSync(serverPath)
+    writePluginSignatureCache(dir, { serverSignature: `${stat.mtimeMs}:${stat.size}` })
+
+    const result = verifyPlugin({ workspaceRoot })
+    expect(result.ok).toBe(true)
+    const outcome = result.outcomes.find((o) => o.id === "fresh")!
+    expect(outcome.warnings).toEqual([])
+  })
+
+  test("warns when the cache says no server but a server file was added (cache vs current mismatch)", () => {
+    const dir = plant("added-server", {
+      "package.json": JSON.stringify({
+        name: "added-server",
+        version: "1.0.0",
+        boring: { label: "A", front: "front/index.tsx", server: "server/index.ts" },
+      }),
+      "front/index.tsx": "export default {}",
+      "server/index.ts": "export default {}",
+    })
+    // Cache says the manager last loaded WITHOUT a server entry.
+    writePluginSignatureCache(dir, { serverSignature: null })
+
+    const result = verifyPlugin({ workspaceRoot })
+    const outcome = result.outcomes.find((o) => o.id === "added-server")!
+    expect(outcome.warnings).toHaveLength(1)
+    expect(outcome.warnings[0]).toMatch(/cached signature: none/)
   })
 
   test("formatVerifyResult prints a clean OK line when all pass", () => {

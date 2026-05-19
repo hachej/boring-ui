@@ -1,9 +1,13 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import {
   validateBoringPluginManifest,
   type BoringPluginManifestIssue,
 } from "@hachej/boring-workspace/plugin"
+import {
+  pluginFileSignature,
+  readPluginSignatureCache,
+} from "@hachej/boring-workspace/server"
 
 export interface VerifyPluginOptions {
   /** Workspace root containing `.pi/extensions/`. */
@@ -17,6 +21,14 @@ export interface PluginVerifyOutcome {
   dir: string
   ok: boolean
   errors: string[]
+  /**
+   * Non-fatal informational messages — e.g. "server file changed since
+   * the workspace last loaded this plugin; a /reload will hot-swap the
+   * front but routes/agentTools stay on the previously loaded code
+   * until you restart". Does NOT flip `ok` to false; verify-plugin is
+   * about manifest validity, not freshness.
+   */
+  warnings: string[]
 }
 
 export interface VerifyPluginResult {
@@ -58,7 +70,7 @@ export function verifyPlugin(opts: VerifyPluginOptions): VerifyPluginResult {
     if (!existsSync(dir)) {
       return {
         outcomes: [
-          { id: opts.name, dir, ok: false, errors: [`plugin directory not found: ${dir}`] },
+          { id: opts.name, dir, ok: false, errors: [`plugin directory not found: ${dir}`], warnings: [] },
         ],
         ok: false,
         extensionsDir,
@@ -86,10 +98,11 @@ export function verifyPlugin(opts: VerifyPluginOptions): VerifyPluginResult {
 function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
   const id = pluginDir.split(/[\\/]/).pop() ?? "<unknown>"
   const errors: string[] = []
+  const warnings: string[] = []
 
   const pkgPath = join(pluginDir, "package.json")
   if (!existsSync(pkgPath)) {
-    return { id, dir: pluginDir, ok: false, errors: ["package.json missing"] }
+    return { id, dir: pluginDir, ok: false, errors: ["package.json missing"], warnings }
   }
 
   let parsed: unknown
@@ -97,13 +110,13 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
     parsed = JSON.parse(readFileSync(pkgPath, "utf8"))
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return { id, dir: pluginDir, ok: false, errors: [`package.json is not valid JSON: ${message}`] }
+    return { id, dir: pluginDir, ok: false, errors: [`package.json is not valid JSON: ${message}`], warnings }
   }
 
   const result = validateBoringPluginManifest(parsed)
   if (!result.valid) {
     for (const issue of result.issues) errors.push(formatIssue(issue))
-    return { id, dir: pluginDir, ok: false, errors }
+    return { id, dir: pluginDir, ok: false, errors, warnings }
   }
 
   const manifest = result.packageJson
@@ -127,10 +140,30 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
   }
 
   // boring.server, when a string, points at a file that must exist.
+  let serverPathAbs: string | null = null
   if (typeof boring?.server === "string") {
-    const serverPath = join(pluginDir, boring.server)
-    if (!existsSync(serverPath)) {
-      errors.push(`boring.server points at "${boring.server}" but that file does not exist (looked at ${serverPath})`)
+    serverPathAbs = join(pluginDir, boring.server)
+    if (!existsSync(serverPathAbs)) {
+      errors.push(`boring.server points at "${boring.server}" but that file does not exist (looked at ${serverPathAbs})`)
+      serverPathAbs = null
+    }
+  }
+
+  // Restart-needed warning: if the asset manager has loaded this plugin
+  // at least once (cache present) and the on-disk server file's
+  // signature now differs from what it loaded, the running workspace
+  // still holds the OLD server module. A /reload alone will NOT pick up
+  // the new server code — the user has to restart the process. Surface
+  // that here so the agent doesn't tell the user "run /reload" and then
+  // be surprised when their new routes/tools don't appear.
+  const cache = readPluginSignatureCache(pluginDir)
+  if (cache) {
+    const currentServerSig = serverPathAbs ? pluginFileSignature(serverPathAbs) : null
+    const cachedSig = cache.serverSignature
+    if (cachedSig !== currentServerSig) {
+      warnings.push(
+        `server file changed since the workspace last loaded this plugin — a /reload will hot-swap the front, but routes and agentTools stay on the previously loaded code until you restart the workspace process (cached signature: ${cachedSig ?? "none"}, current: ${currentServerSig ?? "none"})`,
+      )
     }
   }
 
@@ -146,7 +179,7 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
     }
   }
 
-  return { id, dir: pluginDir, ok: errors.length === 0, errors }
+  return { id, dir: pluginDir, ok: errors.length === 0, errors, warnings }
 }
 
 function formatIssue(issue: BoringPluginManifestIssue): string {
@@ -170,23 +203,39 @@ export function formatVerifyResult(result: VerifyPluginResult): string {
   }
   const lines: string[] = []
   const failures = result.outcomes.filter((o) => !o.ok)
+  const withWarnings = result.outcomes.filter((o) => o.warnings.length > 0)
   if (failures.length === 0) {
     lines.push(`OK — ${result.outcomes.length} plugin(s) have valid manifests + present files. (scanned ${result.extensionsDir})`)
     for (const outcome of result.outcomes) {
-      lines.push(`  ✓ ${outcome.id}`)
+      const tag = outcome.warnings.length > 0 ? "⚠" : "✓"
+      lines.push(`  ${tag} ${outcome.id}`)
+      for (const w of outcome.warnings) {
+        lines.push(`      WARN: ${w}`)
+      }
     }
     lines.push("")
+    if (withWarnings.length > 0) {
+      lines.push("Manifests are valid, but one or more plugins need a workspace restart (NOT just /reload) to pick up server-side changes — see WARN lines above.")
+      lines.push("")
+    }
     lines.push("Note: this validator does NOT execute plugin code. Syntax / type / runtime errors only surface on /reload.")
   } else {
     lines.push(`FAILED — ${failures.length} of ${result.outcomes.length} plugin(s) have errors.  (scanned ${result.extensionsDir})`)
     lines.push("")
     for (const outcome of result.outcomes) {
       if (outcome.ok) {
-        lines.push(`  ✓ ${outcome.id}`)
+        const tag = outcome.warnings.length > 0 ? "⚠" : "✓"
+        lines.push(`  ${tag} ${outcome.id}`)
+        for (const w of outcome.warnings) {
+          lines.push(`      WARN: ${w}`)
+        }
       } else {
         lines.push(`  ✗ ${outcome.id}  (${outcome.dir})`)
         for (const err of outcome.errors) {
           lines.push(`      ${err}`)
+        }
+        for (const w of outcome.warnings) {
+          lines.push(`      WARN: ${w}`)
         }
       }
     }

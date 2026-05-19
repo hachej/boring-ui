@@ -3,6 +3,11 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { isValidBoringPluginId } from "../../shared/plugins/manifest"
 import { preflightBoringPlugins, readBoringPlugins, type BoringPluginPreflightResult } from "./scan"
+import {
+  clearPluginSignatureCache,
+  pluginFileSignature,
+  writePluginSignatureCache,
+} from "./signatureCache"
 import type {
   BoringPluginEvent,
   BoringPluginListEntry,
@@ -45,16 +50,10 @@ function preflightErrorId(pluginDir: string): string {
   return `preflight-${createHash("sha256").update(pluginDir).digest("hex").slice(0, 12)}`
 }
 
-function fileSignature(path: string | undefined): string {
-  // mtimeMs + size is sufficient for hot-reload change detection — every
-  // edit through the write/edit tools bumps mtime, and any meaningful
-  // content change either bumps size or mtime. Reading the whole file
-  // here was a real perf bug for 50MB+ front bundles (sync I/O on the
-  // reactor thread on every /reload).
-  if (!path || !existsSync(path)) return "missing"
-  const stat = statSync(path)
-  return `${stat.mtimeMs}:${stat.size}`
-}
+// fileSignature is shared with verify-plugin via `./signatureCache` so
+// both compute identical signatures when comparing "what the manager
+// loaded" against "what's on disk now".
+const fileSignature = pluginFileSignature
 
 function directorySignature(root: string | undefined): string {
   if (!root || !existsSync(root)) return "missing"
@@ -238,8 +237,15 @@ export class BoringPluginAssetManager {
 
     for (const id of [...this.loaded.keys()]) {
       if (nextIds.has(id)) continue
+      const previous = this.loaded.get(id)
       const revision = this.bumpRevision(id)
       this.loaded.delete(id)
+      // Stale cache outlives the plugin — verify-plugin would otherwise
+      // compare against a serverSignature for code that's no longer
+      // loaded. Best-effort: don't fail unload if rm fails.
+      if (previous) {
+        try { clearPluginSignatureCache(previous.rootDir) } catch {}
+      }
       const event: BoringPluginEvent = { type: "boring.plugin.unload", id, revision }
       events.push(event)
       this.emit(event)
@@ -255,6 +261,16 @@ export class BoringPluginAssetManager {
         const record: LoadedPluginRecord = { ...plugin, revision, signature, serverSignature }
         this.loaded.set(plugin.id, record)
         this.clearError(plugin.id)
+        // Persist the load-time server signature so verify-plugin can
+        // detect server-file drift between this load and the next user
+        // invocation. Best-effort: a failed write must not abort the
+        // load (the in-memory record is authoritative for the running
+        // process; the cache is purely advisory for the CLI).
+        try {
+          writePluginSignatureCache(plugin.rootDir, {
+            serverSignature: serverSignature ?? null,
+          })
+        } catch {}
         // requiresRestart: only set when the server file's signature
         // changed between revisions. The asset manager re-imports the
         // FRONT mid-session via jiti+Vite, but server-side surfaces
