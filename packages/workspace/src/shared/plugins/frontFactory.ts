@@ -133,44 +133,40 @@ export interface DefinePluginConfig {
 }
 
 /**
- * Define a boring-ui plugin. Canonical (declarative) form:
+ * Define a boring-ui plugin. Takes a single declarative config object:
  *
  *   export default definePlugin({
  *     id: "my-plugin",
  *     label: "My Plugin",
  *     panels: [{ id: "my-plugin.panel", label: "My Plugin", component: MyPane }],
+ *     commands: [{ id: "my-plugin.open", title: "Open My Plugin", panelId: "my-plugin.panel" }],
+ *     // setup: (api) => { ... }  // escape hatch for runtime branching
  *   })
- *
- * Legacy imperative form is also accepted (factories built outside this
- * function still work):
- *
- *   export default definePlugin("my-plugin", (api) => {
- *     api.registerPanel({ ... })
- *   }, { label: "My Plugin" })
  *
  * Returns a `BoringFrontFactoryWithId` — a function carrying `pluginId`
  * (and optional `pluginLabel`) as static fields. Pass directly to
  * `WorkspaceProvider.plugins`; the workspace's bootstrap normalizes
  * it via `toWorkspacePlugin`.
+ *
+ * The legacy 3-arg form `definePlugin(id, factory, opts)` was removed
+ * — see the soft-guard error message at call time for the rewrite
+ * path. The runtime accepts factories produced elsewhere via the
+ * `setup` field.
  */
-export function definePlugin(config: DefinePluginConfig): BoringFrontFactoryWithId
-export function definePlugin(
-  id: string,
-  factory: BoringFrontFactory,
-  options?: { label?: string },
-): BoringFrontFactoryWithId
-export function definePlugin(
-  configOrId: DefinePluginConfig | string,
-  factory?: BoringFrontFactory,
-  options: { label?: string } = {},
-): BoringFrontFactoryWithId {
-  if (typeof configOrId === "string") {
-    return definePluginFromFactory(configOrId, factory!, options)
+export function definePlugin(config: DefinePluginConfig): BoringFrontFactoryWithId {
+  if (typeof config !== "object" || config === null) {
+    // Soft guard for the common "I used the old form" mistake — make the
+    // failure message tell the agent/dev what to switch to instead of
+    // throwing a confusing TS-only type error at call time.
+    if (typeof config === "string" || typeof config === "function") {
+      throw new Error(
+        "definePlugin now takes a single declarative config object: " +
+          "definePlugin({ id, label?, panels, commands, leftTabs, surfaceResolvers, setup? }). " +
+          "The legacy 3-arg form definePlugin(id, factory, opts) was removed — use the new shape.",
+      )
+    }
+    throw new Error("definePlugin: expected a config object")
   }
-  return definePluginFromConfig(configOrId)
-}
-
-function definePluginFromConfig(config: DefinePluginConfig): BoringFrontFactoryWithId {
   if (typeof config.id !== "string" || config.id.length === 0) {
     throw new Error("definePlugin: `id` is required and must be a non-empty string")
   }
@@ -185,10 +181,18 @@ function definePluginFromConfig(config: DefinePluginConfig): BoringFrontFactoryW
     if (config.setup) return config.setup(api)
     return undefined
   }
-  return definePluginFromFactory(config.id, factory, { label: config.label })
+  return brandFactoryWithPluginId(config.id, factory, { label: config.label })
 }
 
-function definePluginFromFactory(
+/**
+ * Internal — wraps an existing BoringFrontFactory with pluginId/pluginLabel
+ * static metadata. Public consumers must go through `definePlugin(config)`;
+ * this helper exists only so the declarative path can synthesize a
+ * factory and then brand it.
+ *
+ * @internal
+ */
+function brandFactoryWithPluginId(
   id: string,
   factory: BoringFrontFactory,
   options: { label?: string },
