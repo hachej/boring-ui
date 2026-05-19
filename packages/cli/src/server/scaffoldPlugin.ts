@@ -94,6 +94,13 @@ export function scaffoldPlugin(opts: ScaffoldPluginOptions): ScaffoldPluginResul
   const serverSource = substitute(readFileSync(tplServer, "utf8"), opts.name, label)
   write("server/index.ts", serverSource)
 
+  // .gitignore: keep machine-managed sidecars out of the plugin author's
+  // git history. `.boring-signature.json` is written by the asset manager
+  // on every load (used by verify-plugin to detect server-file drift) and
+  // would otherwise show up as a dirty working tree after every dev
+  // session.
+  write(".gitignore", "# Machine-managed sidecars written by the boring-ui plugin runtime.\n.boring-signature.json\n")
+
   return { pluginDir, filesCreated }
 }
 

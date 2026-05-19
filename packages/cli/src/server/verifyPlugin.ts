@@ -162,7 +162,7 @@ function verifySinglePlugin(pluginDir: string): PluginVerifyOutcome {
     const cachedSig = cache.serverSignature
     if (cachedSig !== currentServerSig) {
       warnings.push(
-        `server file changed since the workspace last loaded this plugin — a /reload will hot-swap the front, but routes and agentTools stay on the previously loaded code until you restart the workspace process (cached signature: ${cachedSig ?? "none"}, current: ${currentServerSig ?? "none"})`,
+        "server file changed since the workspace last loaded this plugin — /reload will hot-swap the front, but routes and agent tools stay on the previously loaded code. Stop and restart the workspace process (Ctrl-C, then re-run your dev command) to pick up the new code.",
       )
     }
   }
@@ -215,7 +215,8 @@ export function formatVerifyResult(result: VerifyPluginResult): string {
     }
     lines.push("")
     if (withWarnings.length > 0) {
-      lines.push("Manifests are valid, but one or more plugins need a workspace restart (NOT just /reload) to pick up server-side changes — see WARN lines above.")
+      const n = withWarnings.length
+      lines.push(`Manifests are valid, but ${n} plugin${n === 1 ? "" : "s"} need a workspace restart (NOT just /reload) to pick up server-side changes — see WARN lines above.`)
       lines.push("")
     }
     lines.push("Note: this validator does NOT execute plugin code. Syntax / type / runtime errors only surface on /reload.")
